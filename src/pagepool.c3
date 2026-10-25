@@ -76,10 +76,9 @@ fn void* PagePool.alloc(&self) {
     return self.alloc_cleared(self.block_size);
 }
 
-// The caller initializes the remaining bytes before making them observable.
-// Fresh calloc pages need no clearing; freelist and retired-page blocks do.
-fn void* PagePool.alloc_prefix(&self, sz clear_bytes) {
-    return self.alloc_cleared(clear_bytes);
+// The caller initializes the whole block before making it observable.
+fn void* PagePool.alloc_uninit(&self) @inline {
+    return self.alloc_cleared(0);
 }
 
 macro void* PagePool.alloc_cleared(&self, sz clear_bytes) @private {

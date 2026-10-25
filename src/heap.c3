@@ -907,7 +907,6 @@ struct Heap {
     // so temproot flags must survive a safepoint collection. See mark_and_sweep.
     uint  native_frame_depth;
     uint  live_obj_count;
-    uint  peak_live_obj_count;   /// High-water mark for live objects
     // TVals visited by the last mark phase.
     //
     // live_obj_count counts allocation nodes. Marking cost is not
@@ -2621,7 +2620,6 @@ fn void Heap.reset(&self) {
     self.gc_alloc_since_begin = 0;
     self.gc_alloc_paced       = 0;
     self.live_obj_count = 0;
-    self.peak_live_obj_count = 0;
     self.marked_obj_count = 0;
     self.mark_work_last = 0;
     self.gc_pending       = false;
@@ -3110,11 +3108,7 @@ fn void Heap.free_module_cache(&self) {
  */
 fn void*? Heap.alloc(&self, usz size) {
     if (size >= MEM_LIMIT_LARGE_BLOCK) self.check_mem_limit(size);
-    if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
-    self.gc_trigger_counter--;
-    if (self.gc_trigger_counter <= 0) {
-        self.request_gc();
-    }
+    self.charge_allocation(1);
 
     void* ptr = self.alloc_func(self.heap_udata, size);
     if (ptr == null && size > 0) {
@@ -3141,13 +3135,7 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
     // Small strings stay uncounted: they are interned, so the string table backs
     // them, and counting them shifts GC cadence for every property-key
     // allocation without reclaiming more.
-    if (size > 1024) {
-        if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin += (ulong)(size >> 10);
-        self.gc_trigger_counter -= (long)(size >> 10);
-        if (self.gc_trigger_counter <= 0) {
-            self.request_gc();
-        }
-    }
+    if (size > 1024) self.charge_allocation((long)(size >> 10));
     int cls = pool_class_index(size);
     if (cls >= 0) {
         return self.small_pools[cls].alloc();
@@ -3201,30 +3189,83 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  * Returns the new HObject, or a fault if allocation fails.
  */
 fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = hobject::INLINE_PROPS) {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, inline_prop_capacity);
-    if (try obj = result) {
-        if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
-        // Keeps the flags hobject_alloc already set.
-        self.register_allocation((HeapHeader*)obj);
-        // As a temporary root, a GC outside a safepoint cannot free this object
-        // while a C3 local holds its only reference.
-        ((HeapHeader*)obj).set_temproot();
-        self.live_obj_count++;
-        if (self.live_obj_count > self.peak_live_obj_count) {
-            self.peak_live_obj_count = self.live_obj_count;
-        }
-        self.gc_trigger_counter--;
-        if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
-        if (--self.mem_check_budget == 0) {
-            self.mem_check_budget = MEM_CHECK_INTERVAL;
-            self.check_mem_limit(0);
-        }
-        gcprofile::gcprof_alloc();
-        if (self.gc_trigger_counter <= 0) {
-            self.request_gc();
-        }
+    if (cls == hobject::ObjClass.OBJECT) return self.alloc_plain_object(inline_prop_capacity);
+    if (cls == hobject::ObjClass.ARRAY && inline_array_capacity > 0
+        && inline_array_capacity <= hobject::ARRAY_INLINE_MAX_CAPACITY) {
+        return self.alloc_inline_array(inline_array_capacity);
     }
-    return result;
+    HObject* obj = hobject::hobject_alloc((void*)self, cls)!;
+    if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
+    self.adopt_object(obj);
+    return obj;
+}
+
+// Allocate an ordinary object with `capacity` inline property slots, or
+// INLINE_PROPS when neither the compact nor a sized layout has that many.
+// Only the header is written: ordinary objects publish just prop_count
+// slots, and appends and shared layouts write a slot before counting it.
+fn HObject*? Heap.alloc_plain_object(&self, uint capacity = hobject::INLINE_PROPS) {
+    bool compact = capacity == hobject::COMPACT_INLINE_PROPS;
+    uint shaped = capacity > hobject::INLINE_PROPS && capacity <= hobject::SHAPED_INLINE_MAX_PROPS
+        ? capacity - hobject::INLINE_PROPS : 0;
+    if (!compact && shaped == 0) capacity = hobject::INLINE_PROPS;
+    void* raw = null;
+$if !$feat(POOL_BYPASS):
+    // See hobject::hobject_alloc for why debug builds skip the pools.
+    raw = hobject::plain_object_pool(self, compact, shaped).alloc_uninit();
+$endif
+    bool from_pool = raw != null;
+    if (!from_pool) {
+        usz size = compact ? hobject::OBJ_SIZE_COMPACT
+            : shaped != 0 ? hobject::inline_object_alloc_size(capacity)
+            : hobject::alloc_size_for_class(hobject::ObjClass.OBJECT);
+        raw = self.alloc(size)!;
+    }
+    HObject* obj = (HObject*)raw;
+    obj.init_header({ .htype = HType.OBJECT, .extensible = true, .obj_class = hobject::ObjClass.OBJECT,
+                      .pool_fallback = !from_pool },
+                    { .compact_props = compact, .shaped_props = shaped,
+                      .inline_words = hobject::inline_words_for_class(hobject::ObjClass.OBJECT) }, capacity);
+    self.adopt_object(obj);
+    return obj;
+}
+
+// Allocate an array whose `capacity` elements, at most
+// ARRAY_INLINE_MAX_CAPACITY, live in its header block, all holes.
+fn HObject*? Heap.alloc_inline_array(&self, uint capacity) {
+    void* raw = null;
+$if !$feat(POOL_BYPASS):
+    raw = self.obj_pool_inline_arrays[capacity - 1].alloc_uninit();
+$endif
+    bool from_pool = raw != null;
+    if (!from_pool) raw = self.alloc(hobject::inline_array_alloc_size(capacity))!;
+    HObject* obj = (HObject*)raw;
+    obj.init_header({ .htype = HType.OBJECT, .extensible = true, .obj_class = hobject::ObjClass.ARRAY,
+                      .exotic_array = true, .array_len_writable = true, .pool_fallback = !from_pool },
+                    { .inline_words = hobject::inline_words_for_class(hobject::ObjClass.ARRAY) }, 0);
+    obj.array_size = capacity;
+    obj.array_len_ptr()[0] = 0;
+    obj.array_inline_capacity_ptr()[0] = capacity;
+    hobject::fill_undefined((hobject::PropValue*)((char*)obj + hobject::OBJ_SIZE_ARRAY), capacity);
+    self.adopt_object(obj);
+    return obj;
+}
+
+// Enter a fresh object in the allocation registry and charge it to the
+// collection and memory-limit budgets.
+fn void Heap.adopt_object(&self, HObject* obj) @inline {
+    // Keeps the flags the allocation already set.
+    self.register_allocation((HeapHeader*)obj);
+    // As a temporary root, a GC outside a safepoint cannot free this object
+    // while a C3 local holds its only reference.
+    ((HeapHeader*)obj).set_temproot();
+    self.live_obj_count++;
+    if (--self.mem_check_budget == 0) {
+        self.mem_check_budget = MEM_CHECK_INTERVAL;
+        self.check_mem_limit(0);
+    }
+    gcprofile::gcprof_alloc();
+    self.charge_allocation(1);
 }
 
 // The compiler template contains only numbers, so copying it creates no new
@@ -3250,21 +3291,27 @@ fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cl
     uint capacity = count <= hobject::COMPACT_INLINE_PROPS ? hobject::COMPACT_INLINE_PROPS
         : count > hobject::INLINE_PROPS && count <= hobject::SHAPED_INLINE_MAX_PROPS
             ? count : hobject::INLINE_PROPS;
-    HObject* obj = self.alloc_object(cls, 0, capacity)!;
-    self.init_object_shape(obj, shape_id)!;
+    HObject* obj = cls == hobject::ObjClass.OBJECT ? self.alloc_plain_object(capacity)!
+        : self.alloc_object(cls, 0, capacity)!;
+    self.install_shape(obj, shape_id, count)!;
     return obj;
 }
 
 // Install a shared layout into a fresh object's empty property storage.
-fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) @inline {
+fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) {
     hobject::Shape* shape = self.get_shape(shape_id);
-    uint count = shape.offset + shape.own_count;
+    return self.install_shape(obj, shape_id, shape.offset + shape.own_count);
+}
+
+// The slots `count` keys need are set to undefined before prop_count
+// publishes them.
+fn void? Heap.install_shape(&self, HObject* obj, uint shape_id, uint count) @inline {
     if (count > obj.prop_capacity) {
         void* storage = self.pool_alloc((usz)count * hobject::PropValue::size)!;
         obj.prop_alloc = storage;
         obj.prop_capacity = count;
     }
-    for (uint i = 0; i < count; i++) obj.prop_values()[i].set_undefined();
+    hobject::fill_undefined(obj.prop_values(), count);
     obj.prop_count = count;
     obj.shape_id = shape_id;
 }
@@ -3301,12 +3348,8 @@ fn HObject*? Heap.alloc_iter_result(&self, TVal value, bool done) {
  */
 fn void*? Heap.realloc(&self, void* ptr, usz new_size) {
     if (new_size >= MEM_LIMIT_LARGE_BLOCK) self.check_mem_limit(new_size);
-    if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
     gcprofile::gcprof_realloc();
-    self.gc_trigger_counter--;
-    if (self.gc_trigger_counter <= 0) {
-        self.request_gc();
-    }
+    self.charge_allocation(1);
 
     void* new_ptr = self.realloc_func(self.heap_udata, ptr, new_size);
     if (new_ptr == null && new_size > 0) {
@@ -3544,9 +3587,21 @@ fn HeapHeader* Heap.next_object(&self, HeapObjectCursor* cursor) {
     return null;
 }
 
-fn void Heap.register_allocation(&self, HeapHeader* header) {
-    self.objects_young.push(header);
+fn void Heap.register_allocation(&self, HeapHeader* header) @inline {
+    push_header(&self.objects_young, header);
     self.shade_new_header(header);
+}
+
+// List.push reserves out of line on every call. The ASan build keeps it for
+// the container annotations that guard the unused capacity.
+macro void push_header(List{HeapHeader*}* list, HeapHeader* header) {
+    $if !env::ADDRESS_SANITIZER:
+        if (list.size < list.capacity) {
+            list.entries[list.size++] = header;
+            return;
+        }
+    $endif
+    list.push(header);
 }
 
 fn void Heap.prepare_object_sweep(&self) {
@@ -4873,6 +4928,14 @@ $endif
 fn void Heap.finish_sweep(&self, bool strings_safe) {
     if (self.native_frame_depth != 0) return;
     while (self.gc_phase == GcPhase.SWEEP) self.gc_step(uint::max, true);
+}
+
+// Count `units` (allocations, or KiB for large blocks) against the collection
+// trigger and the debt of a cycle in progress.
+fn void Heap.charge_allocation(&self, long units) @inline {
+    if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin += (ulong)units;
+    self.gc_trigger_counter -= units;
+    if (self.gc_trigger_counter <= 0) self.request_gc();
 }
 
 /**

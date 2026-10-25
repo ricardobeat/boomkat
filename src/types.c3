@@ -876,6 +876,9 @@ bitstruct GcBits : uint {
     bool prototype_observed : 5;
     bool computed_names : 6; // has added a non-interned input string key
     uint shaped_props : 8..10; // original trailing capacity minus four, or zero
+    // Offset of an object's inline property slots, in eight-byte words; see
+    // HObject.inline_props_ptr.
+    uint inline_words : 11..15;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing

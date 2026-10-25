@@ -41,9 +41,6 @@ fn HBigInt*? hbigint_alloc_len(Heap* hp, int len) {
     b.header.set_temproot();
     b.len = len;
     hp.live_obj_count++;
-    if (hp.live_obj_count > hp.peak_live_obj_count) {
-        hp.peak_live_obj_count = hp.live_obj_count;
-    }
     return b;
 }
 

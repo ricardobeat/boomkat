@@ -106,7 +106,5 @@ fn void* Heap.alloc_generator_registers(&self, usz bytes) {
 // Auxiliary bytes select a major when that budget requests collection.
 fn void Heap.account_auxiliary_allocation(&self, usz bytes) {
     self.gc_aux_alloc_bytes += bytes;
-    self.gc_trigger_counter -= (long)(bytes >> 10);
-    if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin += (ulong)(bytes >> 10);
-    if (self.gc_trigger_counter <= 0) self.request_gc();
+    self.charge_allocation((long)(bytes >> 10));
 }

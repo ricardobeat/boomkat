@@ -2956,18 +2956,20 @@ fn Instruction* th_newarr_const(Instruction* pc, HandlerTable* handlers, TVal* r
 
 // NEWOBJ and NEWOBJ_SHAPE, out of line like th_newarr for the same reason. A
 // failed allocation bails, and the switch repeats it and reports the failure.
+// The new object needs no shading: allocation shades it during marking.
 fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    Vm* vm = cold.vm;
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
-    vm.heap.set_reg_undefined(ra);
+    if (!th_can_release(ra)) return pc;
+    heap::Heap* h = cold.heap;
     HObject*? new_obj = insn.op == Opcode.NEWOBJ_SHAPE
-        ? vm.heap.alloc_shaped_object(insn.get_bc())
-        : vm.heap.alloc_object(hobject::ObjClass.OBJECT);
+        ? h.alloc_shaped_object(insn.get_bc())
+        : h.alloc_plain_object();
     HObject* o = new_obj ?? null;
     if (o == null) return pc;
-    o.prototype = vm.heap.object_proto;
-    vm.heap.set_reg_object(ra, o);
+    o.prototype = h.object_proto;
+    th_do_release(ra);
+    ra.set_object(o);
     track_heap_store(cold.act, ra, (uint)insn.a);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -2999,7 +3001,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     TVal* ra = regs + insn.a;
     if (!proto.is_object() || !th_can_release(ra)) return pc;
     if (!simple && th_call_gate(cold)) return pc;
-    HObject* obj = vm.heap.alloc_object(hobject::ObjClass.OBJECT) ?? null;
+    HObject* obj = vm.heap.alloc_plain_object() ?? null;
     if (obj == null) return pc;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!simple) {

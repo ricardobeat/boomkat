@@ -1416,9 +1416,17 @@ fn usz HObject.prop_alloc_size(&self) {
 // The inline prop storage at the end of the object allocation, valid only
 // while prop_alloc is null.
 fn PropValue* HObject.inline_props_ptr(&self) @inline {
-    usz inline_bytes = self.flags.obj_class == ObjClass.ARRAY ? 0 : INLINE_EXTRA;
-    usz base_size = alloc_size_for_class(self.flags.obj_class) - inline_bytes;
-    return (PropValue*)((char*)self + base_size);
+    return (PropValue*)((char*)self + (usz)self.gc.inline_words * 8);
+}
+
+// GcBits.inline_words for a class: the inline slots follow its payload. An
+// array has no inline slots, so its offset is the end of its header.
+<*
+ @ensure return < 32
+*>
+fn uint inline_words_for_class(ObjClass cls) @inline {
+    usz inline_bytes = cls == ObjClass.ARRAY ? 0 : INLINE_EXTRA;
+    return (uint)((alloc_size_for_class(cls) - inline_bytes) / 8);
 }
 
 // The property values array: inline storage while prop_alloc is null, and the
@@ -2762,16 +2770,46 @@ fn void HObject.grow_array(&self, uint new_size, heap::Heap* h) {
 // The object starts with htype OBJECT, extensible, class `cls`, and an empty
 // property table. A short array literal reserves its dense slots in the
 // header allocation. Returns `null` on allocation failure.
-fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = INLINE_PROPS) {
-    bool compact_props = cls == ObjClass.OBJECT && inline_prop_capacity == COMPACT_INLINE_PROPS;
-    bool sized_props = cls == ObjClass.OBJECT && inline_prop_capacity > INLINE_PROPS
-        && inline_prop_capacity <= SHAPED_INLINE_MAX_PROPS;
-    bool inline_literal_array = cls == ObjClass.ARRAY
-        && inline_array_capacity > 0 && inline_array_capacity <= ARRAY_INLINE_MAX_CAPACITY;
-    usz alloc_sz = compact_props ? OBJ_SIZE_COMPACT : sized_props
-        ? inline_object_alloc_size(inline_prop_capacity) : inline_literal_array
-        ? inline_array_alloc_size(inline_array_capacity)
-        : alloc_size_for_class(cls);
+// Set `count` property values to undefined. The first few are stored unrolled:
+// as a loop, the fill becomes a library call that costs more than the stores
+// a literal needs.
+fn void fill_undefined(PropValue* slots, uint count) @inline {
+    $for var $i = 0; $i < SHAPED_INLINE_MAX_PROPS; $i++:
+        if ($i < count) slots[$i].set_undefined();
+    $endfor
+    for (uint i = SHAPED_INLINE_MAX_PROPS; i < count; i++) slots[i].set_undefined();
+}
+
+// Write every header field of a fresh ordinary object or array.
+fn void HObject.init_header(&self, ObjFlags flags, GcBits gc, uint prop_capacity) @inline {
+    self.flags = flags;
+    self.gc = gc;
+    self.prototype = null;
+    self.shape_id = 0;
+    self.prop_capacity = prop_capacity;
+    self.prop_count = 0;
+    self.array_size = 0;
+    self.array_used = 0;
+    self.prop_alloc = null;
+    self.prop_hash = null;
+}
+
+// The pool for ordinary objects created with the compact, a sized or the
+// plain inline layout, as recorded in GcBits.
+fn pagepool::PagePool* plain_object_pool(heap::Heap* h, bool compact, uint shaped) @inline {
+    if (compact) return &h.obj_pool_compact;
+    if (shaped != 0) return &h.obj_pool_shaped[shaped - 1];
+    return &h.obj_pool_plain;
+}
+
+// Allocate an object of any class but OBJECT and the inline literal arrays,
+// whose layouts Heap.alloc_plain_object and Heap.alloc_inline_array choose.
+<*
+ @require cls != ObjClass.OBJECT
+*>
+fn HObject*? hobject_alloc(void* heap_ptr, ObjClass cls) {
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    usz alloc_sz = alloc_size_for_class(cls);
 
     void* raw = null;
     bool from_pool = false;
@@ -2783,30 +2821,16 @@ $if $feat(POOL_BYPASS):
     // offending read. This costs an allocator round-trip per object: asan and
     // gc-stress targets only.
 $else
-    if (compact_props || sized_props) {
-        heap::Heap* h = (heap::Heap*)heap_ptr;
-        pagepool::PagePool* pool = compact_props ? &h.obj_pool_compact
-            : &h.obj_pool_shaped[inline_prop_capacity - INLINE_PROPS - 1];
-        raw = pool.alloc_prefix((sz)HObjectBase::size);
-        from_pool = raw != null;
-    } else if (cls == ObjClass.OBJECT) {
-        raw = ((heap::Heap*)heap_ptr).obj_pool_plain.alloc_prefix((sz)HObjectBase::size);
-        from_pool = raw != null;
-    } else if (inline_literal_array) {
-        raw = ((heap::Heap*)heap_ptr).obj_pool_inline_arrays[inline_array_capacity - 1].alloc();
-        from_pool = raw != null;
-    } else {
-        void* pool = pool_for_class(heap_ptr, cls);
-        if (pool != null) {
-            raw = ((pagepool::PagePool*)pool).alloc();
-            from_pool = true;
-        }
+    void* pool = pool_for_class(heap_ptr, cls);
+    if (pool != null) {
+        raw = ((pagepool::PagePool*)pool).alloc();
+        from_pool = true;
     }
 $endif
 
     // Fall back to malloc when pool is exhausted or unavailable
     if (raw == null) {
-        raw = ((heap::Heap*)heap_ptr).alloc(alloc_sz) ?? null;
+        raw = h.alloc(alloc_sz) ?? null;
         from_pool = false;
     }
 
@@ -2814,28 +2838,20 @@ $endif
         return OBJ_ALLOC_FAULT~;
     }
 
-    // Ordinary objects publish only prop_count initialized slots. Appends
-    // write a slot before incrementing that count, and shared layouts set
-    // their slots to undefined before publication. Other classes still need
-    // their subtype payload and trailing storage cleared in full.
-    if (!from_pool) {
-        mem::clear(raw, (sz)(cls == ObjClass.OBJECT ? HObjectBase::size : alloc_sz));
-    }
+    // Other classes need their subtype payload and trailing storage cleared.
+    if (!from_pool) mem::clear(raw, (sz)alloc_sz);
 
     HObject* obj = (HObject*)raw;
 
     obj.prop_alloc = null;
-    obj.prop_capacity = cls == ObjClass.ARRAY ? 0 : compact_props ? COMPACT_INLINE_PROPS
-        : sized_props ? inline_prop_capacity : INLINE_PROPS;
+    obj.prop_capacity = cls == ObjClass.ARRAY || cls == ObjClass.GETTER_SETTER ? 0 : INLINE_PROPS;
     obj.prop_count = 0;
 
     obj.flags.htype        = HType.OBJECT;
     obj.flags.extensible   = true;
     obj.flags.obj_class    = cls;
     obj.flags.pool_fallback = !from_pool;
-    obj.gc                 = {};
-    obj.gc.compact_props   = compact_props;
-    obj.gc.shaped_props    = sized_props ? inline_prop_capacity - INLINE_PROPS : 0;
+    obj.gc                 = { .inline_words = inline_words_for_class(cls) };
 
     if (cls == ObjClass.FUNCTION) {
         obj.flags.callable      = true;
@@ -2845,19 +2861,11 @@ $endif
         obj.flags.exotic_array = true;
         obj.flags.array_len_writable = true;
         obj.array_len_ptr()[0] = 0;
-        if (inline_literal_array) {
-            obj.array_inline_capacity_ptr()[0] = inline_array_capacity;
-            obj.array_size = inline_array_capacity;
-            PropValue* slots = obj.array_part();
-            for (uint i = 0; i < inline_array_capacity; i++) slots[i].set_undefined();
-        }
     } else if (cls == ObjClass.ARGUMENTS) {
         obj.flags.exotic_arguments = true;
     } else if (cls == ObjClass.PROXY) {
         obj.flags.exotic_proxyobj = true;
         (*obj.extra_ptr()).proxy.builtin_fn_index = -1;
-    } else if (cls == ObjClass.GETTER_SETTER) {
-        obj.prop_capacity = 0;  // no inline props for GS cells
     } else if (cls == ObjClass.ERROR) {
         // All-zero bits are not a valid TVal, since undefined has its own
         // nanbox tag, so set it explicitly and no getter can read garbage.
@@ -3000,21 +3008,9 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // Release the strings held in property slots and array elements. Every
     // other value is reclaimed by the collector, so Heap.decref ignores it.
     if (!hp.tearing_down && !slots_released) {
-        heap::Heap* h = hp;
-        PropValue* pvs = obj.prop_values();
-        for (uint i = 0; i < obj.prop_count; i++) {
-            if (pvs[i].get().is_heap_allocated()) {
-                pvs[i].release_ref(h);
-            }
-        }
+        release_slots(hp, obj.prop_values(), obj.prop_count);
         hobject::PropValue* arr = obj.array_part();
-        if (arr != null) {
-            for (uint i = 0; i < obj.array_size; i++) {
-                if (arr[i].get().is_heap_allocated()) {
-                    arr[i].release_ref(h);
-                }
-            }
-        }
+        if (arr != null) release_slots(hp, arr, obj.array_size);
     }
 
     // A private shape, from a dictionary or a delete, belongs to this object
@@ -3100,6 +3096,39 @@ fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget
     return true;
 }
 
+// Free an ordinary object or array whose storage is all in its header block:
+// it owns no out-of-line block, hash or private shape, and no cache holds its
+// identity. Returns false, having done nothing, for any other object.
+fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
+    ObjClass cls = obj.flags.obj_class;
+    if ((cls != ObjClass.OBJECT && cls != ObjClass.ARRAY) || obj.flags.pool_fallback
+        || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed
+        || h.tearing_down) return false;
+    if (obj.shape_id != 0) {
+        Shape* sh = h.get_shape(obj.shape_id);
+        if (sh != null && sh.parent == PRIVATE_SHAPE_PARENT) return false;
+    }
+    if (cls == ObjClass.ARRAY) {
+        // Without prop_alloc an array has no named slots, and its elements
+        // are inline only in a literal's header block.
+        uint capacity = obj.array_inline_capacity();
+        if (capacity == 0) return false;
+        release_slots(h, (PropValue*)((char*)obj + OBJ_SIZE_ARRAY), obj.array_size);
+        h.obj_pool_inline_arrays[capacity - 1].dealloc(obj);
+        return true;
+    }
+    release_slots(h, obj.prop_values(), obj.prop_count);
+    plain_object_pool(h, obj.gc.compact_props, obj.gc.shaped_props).dealloc(obj);
+    return true;
+}
+
+// Drop the string references held in `count` slots.
+fn void release_slots(heap::Heap* h, PropValue* slots, usz count) @inline {
+    for (usz i = 0; i < count; i++) {
+        if (slots[i].get().is_heap_allocated()) slots[i].release_ref(h);
+    }
+}
+
 fn void hobject_free(HObject* obj, void* heap_ptr, bool free_header) {
     hobject_free_impl(obj, heap_ptr, free_header, false);
 }
@@ -3113,10 +3142,8 @@ fn void hobject_free_header(HObject* obj, void* heap_ptr) {
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     if (obj.flags.pool_fallback) {
         free_block(hp, obj);
-    } else if (obj.gc.compact_props || obj.gc.shaped_props != 0) {
-        pagepool::PagePool* pool = obj.gc.compact_props ? &hp.obj_pool_compact
-            : &hp.obj_pool_shaped[obj.gc.shaped_props - 1];
-        pool.dealloc(obj);
+    } else if (obj.flags.obj_class == ObjClass.OBJECT) {
+        plain_object_pool(hp, obj.gc.compact_props, obj.gc.shaped_props).dealloc(obj);
     } else {
         uint inline_capacity = obj.array_inline_capacity();
         if (inline_capacity > 0) {
