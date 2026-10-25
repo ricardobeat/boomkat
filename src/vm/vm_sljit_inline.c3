@@ -635,6 +635,86 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
     }
     return returns > 0;
 }
+// A straight-line leaf that only computes from its arguments and fields of
+// `this` can be expanded into the loop tier's flat SSA form. Reads of `this`
+// become shape-guarded field loads, so the expansion needs no call machinery.
+fn bool function_inline_ssa_leaf(CompiledFunction* target, uint nargs) @feat(SLJIT) {
+    if (target == null || target.lazy_paren != 0 || target.code_count == 0 || target.code_count > 24
+        || target.num_regs > 32
+        || target.num_args != nargs
+        || nargs > 8
+        || target.is_class_ctor()
+        || target.flags.is_generator
+        || target.flags.is_async
+        || target.flags.has_direct_eval
+        || target.mapped_arguments()
+        || target.capture_count != 0) return false;
+    bool[32] defined;
+    for (uint i = 0; i < nargs; i++) defined[i] = true;
+    bool returns;
+    for (uint i = 0; i < target.code_count; i++) {
+        Instruction ins = target.code[i];
+        if (loop_target(ins, i) >= 0) return false;
+        if (ins.a >= 32) return false;
+        switch (ins.op) {
+            case NOP: continue;
+            case RET:
+                if (!defined[ins.a]) return false;
+                returns = true;
+                continue;
+            case LDTHIS:
+            case LDINT:
+            case LDCONST: defined[ins.a] = true; continue;
+            case LDREG:
+            case UNP:
+                if (ins.b >= 32 || !defined[ins.b]) return false;
+                defined[ins.a] = true;
+                continue;
+            case GETPROPC:
+            case GETPROPC_CACHED:
+            case GETTHISC:
+
+                {
+                    bool receiver = ins.op == Opcode.GETTHISC;
+                    if (!receiver) {
+                        if (ins.b >= 32 || !defined[ins.b] || ins.c >= target.const_count
+                            || !target.constants[ins.c].is_string()) return false;
+                    }
+                    if (target.ic_entries == null) return false;
+                    ICEntry* ic = (ICEntry*)target.ic_entries + i;
+                    if (ic.key.borrow() == null || ic.chain_len != 0 || ic.prop_flags.is_accessor
+                        || ic.prop_idx == hobject::IC_PROP_ABSENT) return false;
+                    defined[ins.a] = true;
+                    continue;
+                }
+            case ADD:
+            case ADD_FUSED:
+            case SUB:
+            case MUL:
+            case DIV:
+                if (ins.b >= 32 || ins.c >= 32 || !defined[ins.b] || !defined[ins.c]) return false;
+                defined[ins.a] = true;
+                continue;
+            case ADDI:
+            case SUBI:
+            case MULI:
+            case UNM:
+                if (ins.b >= 32 || !defined[ins.b]) return false;
+                defined[ins.a] = true;
+                continue;
+            default: return false;
+        }
+    }
+    return returns;
+}
+fn CompiledFunction* function_inline_ssa_candidate(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
+    Instruction call = cf.code[pc];
+    if (call.op != Opcode.CALL && call.op != Opcode.CALL_UNDEF_THIS) return null;
+    uint nargs               = call.c;
+    CompiledFunction* target = function_inline_target(cf, pc, h);
+    if (!function_inline_ssa_leaf(target, nargs)) return null;
+    return target;
+}
 fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
     Instruction call = cf.code[pc];
     bool fused       = call.op == Opcode.CALL_VAR || call.op == Opcode.CALL_GLOBAL;

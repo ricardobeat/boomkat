@@ -113,6 +113,14 @@ struct LoopEmitter @feat(SLJIT) {
 }
 fn int LoopEmitter.state_base(&self) @feat(SLJIT) => self.state_reg != 0 ? self.state_reg : jit::reg_s(0);
 
+// True for an ordinary double: the payload already holds its bits and no tag
+// competes with them. Only NaN boxing has that representation.
+fn bool loop_plain_double(TVal v) @feat(SLJIT) {
+    $if types::USE_NANBOX:
+        return ((ulong)v.bits >> 48) < (ulong)types::TAG_FASTINT;
+    $else return false;
+$endif
+}
 fn ulong loop_bits(TVal v) @feat(SLJIT) {
     $if types::USE_NANBOX: return v.bits; $else return 0; $endif
 }
@@ -218,7 +226,7 @@ fn bool loop_probe_doubles(LoopMemory* memory) @feat(SLJIT) {
     hobject::PropValue* dense = (hobject::PropValue*)memory.data;
     ulong[3] at               = { 0, (ulong)(memory.length / 2), (ulong)(memory.length - 1) };
     for (uint i = 0; i < 3; i++) {
-        if (((ulong)dense[at[i]].get().bits >> 48) >= (ulong)types::TAG_FASTINT) return false;
+        if (!loop_plain_double(dense[at[i]].get())) return false;
     }
     return true;
 }
@@ -252,7 +260,7 @@ fn int loop_memory_field(
         .shape = object.shape_id,
     };
     TVal value = object.prop_values()[slot].get();
-    spec.doubles = ((ulong)value.bits >> 48) < (ulong)types::TAG_FASTINT;
+    spec.doubles = loop_plain_double(value);
     uint index = plan.memory_count++;
     plan.memory[index] = spec;
     return (int)index;
@@ -278,6 +286,26 @@ fn int loop_memory_shape(
         .source = (uint)source,
         .kind = SHAPE_FIELD,
         .pc = pc,
+        .slot = slot,
+        .shape = shape,
+        .shape_gen = generation,
+        .doubles = doubles,
+    };
+    uint index = plan.memory_count++;
+    plan.memory[index] = spec;
+    return (int)index;
+}
+// Layout-keyed descriptor for a field read inside an inlined callee: the
+// receiver is an SSA value, so the descriptor only carries the layout.
+fn int loop_memory_shape_layout(LoopPlan* plan, uint shape, uint generation, int slot, bool doubles) @feat(SLJIT) {
+    for (uint i = 0; i < plan.memory_count; i++) {
+        if (plan.memory[i].kind == SHAPE_FIELD && plan.memory[i].shape == shape && plan.memory[i].slot == slot) {
+            return (int)i;
+        }
+    }
+    if (plan.memory_count == LOOP_MEMORY) return -1;
+    LoopMemorySpec spec = {
+        .kind = SHAPE_FIELD,
         .slot = slot,
         .shape = shape,
         .shape_gen = generation,
@@ -579,7 +607,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                                     HObject* probe = base.get_heapptr();
                                     if (probe != null && (int)ic.prop_idx < (int)probe.prop_count) {
                                         TVal v = probe.prop_values()[ic.prop_idx].get();
-                                        doubles = ((ulong)v.bits >> 48) < (ulong)types::TAG_FASTINT;
+                                        doubles = loop_plain_double(v);
                                     }
                                 }
                                 memory = loop_memory_shape(
@@ -750,7 +778,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         frequency[best] = 0;
     }
     // Only the SSA tier emits the guarded double element path.
-    if (ssa_loop_eligible(plan, cf)) {
+    if (ssa_loop_eligible(plan, cf, cold.heap)) {
         for (uint i = 0; i < plan.memory_count && i < LOOP_MEMORY; i++) {
             if (plan.memory[i].kind != DENSE) continue;
             LoopMemory probe;
@@ -1547,7 +1575,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
-        draft.native = ssa_loop_eligible(&draft, cf) ? ssa_loop_emit(&draft, cf, h) : null;
+        draft.native = ssa_loop_eligible(&draft, cf, h) ? ssa_loop_emit(&draft, cf, h) : null;
         draft.ssa = draft.native != null;
         if (draft.native == null) {
             for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;

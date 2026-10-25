@@ -53,7 +53,10 @@ enum SsaOp : char {
     BOX_I,
     BOX_F,
     LOAD,
-    STORE
+    STORE,
+    // Identity guard: the value must be a function whose compiled body is the
+    // one the call was expanded from.
+    CHECKFN
 }
 
 struct SsaValue @feat(SLJIT) {
@@ -80,6 +83,7 @@ struct SsaExit @feat(SLJIT) {
 struct SsaGraph @feat(SLJIT) {
     LoopPlan* plan;
     CompiledFunction* cf;
+    Heap* heap;
     SsaValue[SSA_MAX_VALUES] values;
     int[SSA_MAX_VALUES * 3] conv;
     uint value_count;
@@ -180,7 +184,7 @@ fn int ssa_convert(SsaGraph* g, int value, SsaRep rep, bool exact) @feat(SLJIT) 
 }
 fn bool ssa_numeric_rep(SsaRep rep) @feat(SLJIT) => rep == INT32 || rep == F64;
 
-fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
+fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
     if (!SSA_ENABLED) return false;
     for (uint i = 0; i < plan.memory_count; i++) {
         LoopMemoryKind kind = plan.memory[i].kind;
@@ -235,9 +239,16 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
                 {
                     uint at = pos - plan.begin;
                     if (plan.memory_at[at] == 0 || plan.intrinsic_at[at] != 0) return false;
-                    if (plan.memory[(uint)plan.memory_at[at] - 1].kind != FIELD) return false;
+                    LoopMemoryKind kind = plan.memory[(uint)plan.memory_at[at] - 1].kind;
+                    if (kind != FIELD && kind != SHAPE_FIELD) return false;
                     continue;
                 }
+            case CALL:
+            case CALL_UNDEF_THIS:
+                // Expanded in place, so the callee body must be a leaf.
+                if (plan.memory_at[pos - plan.begin] != 0) return false;
+                if (function_inline_ssa_candidate(cf, pos, h) == null) return false;
+                continue;
             default: return false;
         }
     }
@@ -283,6 +294,31 @@ fn void ssa_infer(
                 break;
             case LDINT:
             case LDCONST:
+                break;
+            case CALL:
+            case CALL_UNDEF_THIS:
+
+                {
+                    if (ins.b + 1 + ins.c >= cf.num_regs) return;
+                    for (uint i = 0; i <= ins.c + 1; i++) {
+                        uint reg = ins.b + i;
+                        (*read)[reg] = true;
+                        (*value_read)[reg] = true;
+                        if (!assigned[reg]) (*live_in)[reg] = true;
+                    }
+                    writes = false;
+                }
+                break;
+            case GETPROPC:
+            case GETPROPC_CACHED:
+            case GETTHISC:
+                if (plan.memory_at[pos - plan.begin] != 0
+                    && plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1].kind == SHAPE_FIELD
+                    && ins.op != Opcode.GETTHISC) {
+                    (*read)[ins.b] = true;
+                    (*value_read)[ins.b] = true;
+                    if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                }
                 break;
             case GETPROP:
             case GETPROP_CACHE:
@@ -680,6 +716,204 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         ssa_result(g, nv, ins.a, pos);
                         g.current[ins.a] = nv;
                     }
+                    break;
+                }
+            case CALL:
+            case CALL_UNDEF_THIS:
+
+                {
+                    CompiledFunction* callee_fn = function_inline_ssa_candidate(cf, pos, g.heap);
+                    if (callee_fn == null || g.current[ins.b] < 0 || ins.c > 8) {
+                        g.failed = true;
+                        return false;
+                    }
+                    // The site can be rebound, so the live callee must still be
+                    // the compiled body that was expanded here.
+                    int callee = g.current[ins.b];
+                    ssa_use(g, callee);
+                    ssa_use(g, ssa_value(g, CHECKFN, BOXED, callee, -1, (long)callee_fn));
+                    int[LOOP_REGS] mapped;
+                    for (uint i = 0; i < LOOP_REGS; i++) mapped[i] = -1;
+                    for (uint i = 0; i < ins.c; i++) {
+                        int arg = g.current[ins.b + 2 + i];
+                        if (arg < 0) {
+                            g.failed = true;
+                            return false;
+                        }
+                        ssa_use(g, arg);
+                        mapped[i] = arg;
+                    }
+                    int receiver = -1;
+                    if (g.current[ins.b + 1] >= 0) {
+                        receiver = g.current[ins.b + 1];
+                        ssa_use(g, receiver);
+                    }
+                    int result;
+                    for (uint ci_pos = 0; ci_pos < callee_fn.code_count; ci_pos++) {
+                        Instruction ci = callee_fn.code[ci_pos];
+                        if (ci.a >= LOOP_REGS) {
+                            g.failed = true;
+                            return false;
+                        }
+                        switch (ci.op) {
+                            case NOP: continue;
+                            case RET: result = mapped[ci.a]; continue;
+                            case LDINT:
+
+                                {
+                                    long immediate = ci.get_sbc();
+                                    mapped[ci.a] = ssa_value(
+                                        g,
+                                        CONST_F,
+                                        F64,
+                                        -1,
+                                        0,
+                                        (long)bitcast((double)immediate, ulong)
+                                    );
+                                    continue;
+                                }
+                            case LDCONST:
+
+                                {
+                                    if (ci.get_bc() >= callee_fn.const_count) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    TVal constant = callee_fn.constants[ci.get_bc()];
+                                    if (!constant.is_fastint() && !constant.is_number()) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    double number = constant.get_number_or_fastint();
+                                    mapped[ci.a] = ssa_value(g, CONST_F, F64, -1, 0, (long)bitcast(number, ulong));
+                                    continue;
+                                }
+                            case LDTHIS:
+                                if (receiver < 0) {
+                                    g.failed = true;
+                                    return false;
+                                }
+                                mapped[ci.a] = ssa_convert(g, receiver, BOXED, false);
+                                continue;
+                            case LDREG:
+                            case UNP:
+                                if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
+                                    g.failed = true;
+                                    return false;
+                                }
+                                mapped[ci.a] = mapped[ci.b];
+                                continue;
+                            case UNM:
+
+                                {
+                                    if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    int operand = ssa_convert(g, mapped[ci.b], F64, false);
+                                    ssa_use(g, operand);
+                                    mapped[ci.a] = ssa_value(g, NEG, F64, operand, -1, 0);
+                                    continue;
+                                }
+                            case ADD:
+                            case ADD_FUSED:
+                            case SUB:
+                            case MUL:
+                            case DIV:
+
+                                {
+                                    if (ci.b >= LOOP_REGS || ci.c >= LOOP_REGS || mapped[ci.b] < 0
+                                        || mapped[ci.c] < 0) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    int left  = ssa_convert(g, mapped[ci.b], F64, false);
+                                    int right = ssa_convert(g, mapped[ci.c], F64, false);
+                                    ssa_use(g, left);
+                                    ssa_use(g, right);
+                                    SsaOp op = ci.op == Opcode.ADD || ci.op == Opcode.ADD_FUSED ? ADD
+                                        : (ci.op == Opcode.SUB ? SUB : (ci.op == Opcode.MUL ? MUL : DIV));
+                                    mapped[ci.a] = ssa_value(g, op, F64, left, right, 0);
+                                    continue;
+                                }
+                            case ADDI:
+                            case SUBI:
+                            case MULI:
+
+                                {
+                                    if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    int left = ssa_convert(g, mapped[ci.b], F64, false);
+                                    int immediate = ssa_value(
+                                        g,
+                                        CONST_F,
+                                        F64,
+                                        -1,
+                                        0,
+                                        (long)bitcast((double)(ichar)ci.c, ulong)
+                                    );
+                                    ssa_use(g, left);
+                                    ssa_use(g, immediate);
+                                    SsaOp op = ci.op == Opcode.ADDI ? ADD : (ci.op == Opcode.SUBI ? SUB : MUL);
+                                    mapped[ci.a] = ssa_value(g, op, F64, left, immediate, 0);
+                                    continue;
+                                }
+                            case GETPROPC:
+                            case GETPROPC_CACHED:
+                            case GETTHISC:
+
+                                {
+                                    bool on_receiver = ci.op == Opcode.GETTHISC;
+                                    if (!on_receiver && (ci.b >= LOOP_REGS || mapped[ci.b] < 0)) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    if (callee_fn.ic_entries == null) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    ICEntry* ic   = (ICEntry*)callee_fn.ic_entries + ci_pos;
+                                    Shape* layout = g.heap.get_shape(ic.shape_id);
+                                    if (layout == null || layout.generation != ic.shape_gen) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    int receiver_value = on_receiver ? ssa_convert(g, receiver, BOXED, false)
+                                        : mapped[ci.b];
+                                    if (receiver_value < 0) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    ssa_use(g, receiver_value);
+                                    int memory = loop_memory_shape_layout(
+                                        g.plan,
+                                        ic.shape_id,
+                                        ic.shape_gen,
+                                        (int)ic.prop_idx,
+                                        false
+                                    );
+                                    if (memory < 0) {
+                                        g.failed = true;
+                                        return false;
+                                    }
+                                    mapped[ci.a] = ssa_value(g, LOAD, BOXED, receiver_value, -1, (long)memory);
+                                    continue;
+                                }
+                            default:
+                                g.failed = true;
+                                return false;
+                        }
+                    }
+                    if (result < 0) {
+                        g.failed = true;
+                        return false;
+                    }
+                    ssa_use(g, result);
+                    int nv = ssa_convert(g, result, g.rep[ins.a], false);
+                    ssa_result(g, nv, ins.a, pos);
+                    g.current[ins.a] = nv;
                     break;
                 }
             case GETPROPC:
@@ -1627,6 +1861,26 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                     if (v.home == 0) self.store_gpr((int)i, dst);
                     break;
                 }
+            case CHECKFN:
+
+                {
+                    int rr0      = jit::reg_r(0);
+                    int rr1      = jit::reg_r(1);
+                    int rr3      = jit::reg_r(3);
+                    int imm2     = jit::SLJIT_IMM;
+                    HObject object;
+                    HObjectExtra extra;
+                    long address = (char*)&object.extra - (char*)&object
+                        + ((char*)&extra.func.comp_func - (char*)&extra);
+                    self.gpr(v.a, rr0);
+                    self.e.op(jit::SLJIT_LSHR, rr3, rr0, 0, imm2, 48);
+                    self.guard(jit::SLJIT_NOT_EQUAL, rr3, 0, imm2, (long)types::TAG_OBJECT, self.pc);
+                    self.e.op(jit::SLJIT_AND, rr0, rr0, 0, imm2, (long)types::NANBOX_PAYLOAD_MASK);
+                    self.guard(jit::SLJIT_EQUAL, rr0, 0, imm2, 0, self.pc);
+                    self.e.mov(rr1, 0, jit::SLJIT_MEM | rr0, address);
+                    self.guard(jit::SLJIT_NOT_EQUAL, rr1, 0, imm2, v.imm, self.pc);
+                    break;
+                }
             case LOAD:
 
                 {
@@ -2070,6 +2324,7 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     mem::clear(graph, (sz)SsaGraph::size);
     graph.plan = plan;
     graph.cf = cf;
+    graph.heap = h;
     if (!ssa_build(graph)) return null;
     // A register can gain a double representation only after its definitions
     // are built, so rebuild the graph when the first pass asks for one.
