@@ -346,7 +346,7 @@ fn void primitive_getprop_cached(Vm* vm, Dispatch* ds, TVal* prim, HObject* prot
         hobject::ICEntry* ic = ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base);
         int idx = -1;
         if (ic.key.borrow() == (void*)key && !ic.has_proto && ic.shape_id == proto.shape_id
-            && ic.shape_gen == proto.shape_generation(vm.heap) && !ic.prop_flags.is_accessor) {
+            && !ic.prop_flags.is_accessor) {
             idx = (int)ic.prop_idx;
         } else {
             idx = proto.find_prop_idx((void*)key, vm.heap);
@@ -461,8 +461,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     void* lookup_key = null;
                     if (rc.is_string()) lookup_key = rc.get_heapptr();
                     // Check shape_id first: most likely to differ on polymorphic sites.
-                    if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key.borrow() == lookup_key
-                        && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
+                    if (lookup_key != null && ic.shape_id == hobj.shape_id && ic.key.borrow() == lookup_key) {
                         hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                         if (ic_value != null) {
                             TVal ic_val = ic_value.get();
@@ -926,7 +925,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (ds.ic_base != null) {
                         uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                         hobject::ICEntry* ic = ds.ic_base + pc_off;
-                        if (ic.key.borrow() == (void*)key_hstr && ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
+                        if (ic.key.borrow() == (void*)key_hstr && ic.shape_id == hobj.shape_id) {
                             hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                             if (ic_value != null) {
                                 TVal ic_val = ic_value.get();
@@ -1241,7 +1240,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HObject* hobj = (HObject*)rb.get_heapptr();
                 uint pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                 hobject::ICEntry* ic = ds.ic_base + pc_off;
-                if (ic.shape_id == hobj.shape_id && ic.shape_gen == hobj.shape_generation(ds.vm.heap)) {
+                if (ic.shape_id == hobj.shape_id) {
                     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
                     if (ic_value != null) {
                         TVal ic_val = ic_value.get();

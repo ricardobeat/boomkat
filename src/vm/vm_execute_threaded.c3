@@ -2381,7 +2381,7 @@ fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* r
     }
     TVal value;
     if (ic.key.borrow() == (void*)interned) {
-        if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(h)) return pc;
+        if (ic.shape_id != hobj.shape_id) return pc;
         hobject::PropValue* cached = hobject::ic_resolve_value(ic, hobj);
         if (cached == null) return pc;
         value = cached.get();
@@ -2539,8 +2539,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         return th_next(pc, handlers, regs, cold);
     }
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id
-        || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
+    if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id) {
         return th_get_shared(pc, handlers, regs, cold, hobj, key);
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
@@ -2636,7 +2635,7 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (ic.shape_id != hobj.shape_id || ic.shape_gen != hobj.live_shape_generation(cold.heap)) {
+    if (ic.shape_id != hobj.shape_id) {
         return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
@@ -2673,7 +2672,6 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (me.proto == null && ic.key.borrow() == key) {
         ic.shape_id = hobj.shape_id;
-        ic.shape_gen = hobj.live_shape_generation(cold.heap);
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
         ic.chain_len = 0;

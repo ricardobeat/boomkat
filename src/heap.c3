@@ -1227,6 +1227,11 @@ struct Heap {
     // threaded through the shapes array itself: a free slot holds
     // SHAPE_FREE_TAG | next_free cast to a pointer.
     uint                shape_free_head;
+    // Slots released since the last purge_retired_shapes, linked the same way.
+    // A property cache entry may still name one, so the id is not reused
+    // until the purge has cleared those entries.
+    uint                shape_retired_head;
+    uint                shape_retired_count;
     // Transition count at which the next major cycle sweeps unused shapes.
     uint                shape_sweep_at;
     // Source of shape generations. A generation is a value taken from this
@@ -1784,6 +1789,9 @@ const uptr SHAPE_FREE_TAG      = (uptr)1 << (uptr)(uptr::size * 8 - 1);
 // Marks the end of the free-slot list. Slot 0 holds the root shape, which is
 // never freed, so it can stand for "no next".
 const uint SHAPE_FREE_END       = 0;
+// Released shape ids accumulate to this many before a purge makes them
+// reusable, so one pass over the property caches recycles a batch.
+const uint SHAPE_RETIRED_BATCH  = 256;
 
 struct TransitionEntry {
     uint parent_id;
@@ -1882,6 +1890,8 @@ fn void Heap.init_shapes(&self) {
     self.regexp_guard = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_retired_head = SHAPE_FREE_END;
+    self.shape_retired_count = 0;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
@@ -1905,6 +1915,9 @@ fn uint Heap.alloc_shape_slot(&self) {
     // that entry would then read properties at the previous shape's offsets.
     // Every generation after the first comes from one clock, so the pair is
     // never reused.
+    if (self.shape_free_head == SHAPE_FREE_END && self.shape_retired_count >= SHAPE_RETIRED_BATCH) {
+        self.purge_retired_shapes();
+    }
     if (self.shape_free_head != SHAPE_FREE_END) {
         uint id = self.shape_free_head;
         self.shape_free_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
@@ -1952,8 +1965,8 @@ fn bool Heap.shape_slot_live(&self, uint id) {
     return ((uptr)sh & SHAPE_FREE_TAG) == 0;
 }
 
-// Release a slot holding a *private* shape, freeing the shape and putting the
-// id back on the free list.
+// Release a slot holding a *private* shape, freeing the shape and retiring the
+// id (see purge_retired_shapes).
 //
 // Only private shapes may be passed here. A private shape has
 // parent == PRIVATE_SHAPE_PARENT, is absent from the transition table, and is
@@ -1972,8 +1985,45 @@ fn void Heap.free_shape_slot(&self, uint id) {
 
 fn void Heap.release_shape_slot(&self, uint id) {
     hobject::shape_free(self.shapes[id], self);
-    self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
-    self.shape_free_head = id;
+    self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_retired_head);
+    self.shape_retired_head = id;
+    self.shape_retired_count++;
+}
+
+// Clear every property cache entry that names a released shape id, then make
+// the released ids reusable. A read entry stays valid while its receiver's
+// shape_id matches, so an id must not come back while an entry still names it.
+// Every function with caches is in compiled_funcs, which the collector also
+// relies on to root the prototypes the entries cache.
+fn void Heap.purge_retired_shapes(&self) @noinline {
+    for (uint fi = 0; fi < self.compiled_func_count; fi++) {
+        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
+        if (cf == null || cf.ic_entries == null) continue;
+        hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+        for (uint i = 0; i < cf.ic_count; i++) {
+            if (!self.ic_names_live_shapes(&entries[i])) entries[i].shape_id = SHAPE_NONE;
+        }
+    }
+    while (self.shape_retired_head != SHAPE_FREE_END) {
+        uint id = self.shape_retired_head;
+        self.shape_retired_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
+        self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
+        self.shape_free_head = id;
+    }
+    self.shape_retired_count = 0;
+}
+
+// False when `ic` names a shape id that is not live: its receiver's, or one
+// in its prototype snapshot. An empty entry names nothing.
+fn bool Heap.ic_names_live_shapes(&self, hobject::ICEntry* ic) @inline {
+    if (ic.shape_id == SHAPE_NONE || ic.key.borrow() == null) return true;
+    if (ic.shape_id >= self.shape_count || !self.shape_slot_live(ic.shape_id)) return false;
+    if (ic.chain == null || ic.chain_len == hobject::IC_CHAIN_EPOCH) return true;
+    for (uint i = 0; i < (uint)ic.chain_len; i++) {
+        uint id = ic.chain.snapshot.shapes[i];
+        if (id >= self.shape_count || !self.shape_slot_live(id)) return false;
+    }
+    return true;
 }
 
 
@@ -2006,8 +2056,8 @@ fn void Heap.mark_object_shapes(&self, ulong* live) {
  *
  * Runs in a major cycle's sweep, after object teardown, so the object lists
  * hold exactly the live objects. A native frame may hold a shape id in a raw
- * local, so the caller must also guarantee none is active. Freed ids return to
- * the free list, and bumping shape_recycle_epoch invalidates every cache that
+ * local, so the caller must also guarantee none is active. Freed ids are
+ * retired, and bumping shape_recycle_epoch invalidates every cache that
  * recorded one, including a PUTPROP cache's absent_next_shape.
  */
 fn void Heap.sweep_shapes(&self, bool force = false) {
@@ -2788,6 +2838,8 @@ fn void Heap.reset(&self) {
     self.regexp_guard = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_retired_head = SHAPE_FREE_END;
+    self.shape_retired_count = 0;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     self.shape_reuse_gen = 0;

@@ -3547,8 +3547,10 @@ $assert ICChain::size == ICChainSnapshot::size : "epoch cache payload exceeds bo
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
     uint   shape_id;
-    // Receiver shape generation for slot caches, or the heap-wide shape-recycle
-    // epoch for absent-property PUTPROP entries.
+    // Receiver shape generation for store and constructor caches, or the
+    // heap-wide shape-recycle epoch for absent-property PUTPROP entries. Reads
+    // match on shape_id alone: Heap.purge_retired_shapes clears every entry
+    // naming a released id before the id is reused.
     uint   shape_gen;
     // Property index within the owner's prop_values[], or IC_PROP_ABSENT for a
     // PUTPROP entry proving that a store adds the key: absent from the
@@ -3815,8 +3817,11 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
 // current storage so growing the property buffer does not invalidate a hit.
 fn PropValue* ic_resolve_slot(ICEntry* ic, HObject* hobj) @inline {
     if (hobj.is_proxy()) return null;
-    HObject* owner = ic_resolve_owner(ic, hobj);
-    if (owner == null || owner.is_proxy()) return null;
+    HObject* owner = hobj;
+    if (ic.has_proto) {
+        owner = ic_resolve_owner(ic, hobj);
+        if (owner == null || owner.is_proxy()) return null;
+    }
     return &owner.prop_values()[ic.prop_idx];
 }
 
