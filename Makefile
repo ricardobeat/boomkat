@@ -46,15 +46,17 @@ C3C_BUILDFLAGS = --build-dir "out/build/$(@F)" $(SDK_MIN_FLAG)
 
 # macOS only: link the executables without exports, which spares dyld the weak
 # symbol binding it otherwise does at every launch (see scripts/no_exports.exp).
+# Dead stripping drops the out-of-line copies C3 emits for @inline functions
+# whose every call was inlined, along with unused C-library code.
 ifeq ($(shell uname -s),Darwin)
-EXE_LINK_FLAGS := -z -Wl,-exported_symbols_list,scripts/no_exports.exp
+EXE_LINK_FLAGS := -z -Wl,-exported_symbols_list,scripts/no_exports.exp -z -Wl,-dead_strip
 endif
 
-# Native dead stripping also removes unused C-library code after C3's LTO.
-# On Linux, -s drops the symbol table too: -x keeps every global symbol, which
-# puts the ELF slim build over its size budget.
+# Slim builds also drop local symbols. On Linux, -s drops the symbol table
+# too: -x keeps every global symbol, which puts the ELF slim build over its
+# size budget, and --gc-sections does the dead stripping.
 ifeq ($(UNAME_S),Darwin)
-SLIM_LINK_FLAGS := $(EXE_LINK_FLAGS) -z -Wl,-x -z -Wl,-dead_strip
+SLIM_LINK_FLAGS := $(EXE_LINK_FLAGS) -z -Wl,-x
 TINY_STRIP := xcrun strip
 else ifeq ($(UNAME_S),Linux)
 SLIM_LINK_FLAGS := -z -Wl,-s -z -Wl,--gc-sections
