@@ -610,7 +610,7 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
 
     Activation* act = cold.act;
     act.curr_pc = pc + 1;
-    TVal* top = act.bottom + vm.current_func.num_regs + 4;
+    TVal* top = act.bottom + vm.current_func.num_regs + FRAME_SCRATCH_SLOTS;
     if (top > vm.valstack_top) vm.valstack_top = top;
     TVal result;
     result.set_undefined();
@@ -771,7 +771,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
 
     caller.curr_pc = pc + 1;
-    vm.valstack_top = bottom + nregs;
+    publish_frame_top(vm, bottom, nregs, nargs);
     vm.valstack_bottom = bottom;
     cold.act = la;
     *cold.regs_base_ptr = bottom;
@@ -1108,7 +1108,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     }
     if (fill < fill_end) fill.set_undefined();
 
-    vm.valstack_top = regs + nregs;
+    publish_frame_top(vm, regs, nregs, nargs);
     if (target != vm.current_func) {
         vm.current_func = target;
         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);

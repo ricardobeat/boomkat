@@ -1816,7 +1816,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                             bind_arguments(vm, new_act, target, setter_obj, &put_val, 1, true);
                                         }
 
-                                        vm.valstack_top = new_regs + target.num_regs;
+                                        publish_frame_top(vm, new_regs, target.num_regs, 1);
                                         vm.valstack_bottom = new_act.bottom;
 
                                         ds.act.curr_pc = ds.curr_pc;
@@ -2080,7 +2080,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                         bind_arguments(vm, new_act, target, setter_obj, &put_val, 1, true);
                                     }
 
-                                    vm.valstack_top = new_regs + target.num_regs;
+                                    publish_frame_top(vm, new_regs, target.num_regs, 1);
                                     vm.valstack_bottom = new_act.bottom;
 
                                     ds.act.curr_pc = ds.curr_pc;

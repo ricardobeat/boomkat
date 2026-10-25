@@ -2291,7 +2291,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         new_regs = dst;
                     }
 
-                    vm.valstack_top = new_regs + new_nregs;
+                    publish_frame_top(vm, new_regs, new_nregs, nargs);
                     vm.valstack_bottom = new_act.bottom;
 
                     // Direct dispatch to new activation (avoid restart overhead)
@@ -2393,7 +2393,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint fn_idx = (uint)(usz)func_val.get_heapptr();
 
                 {
-                    TVal* lf_extended_top = ds.act.bottom + ds.nregs + 4;
+                    TVal* lf_extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                     if (lf_extended_top > vm.valstack_top) { vm.valstack_top = lf_extended_top; }
                 }
 
@@ -2461,13 +2461,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // vm.valstack_top past ds.nregs so the extra slots are within
                     // the allocated+visible range (even if no realloc is needed).
                     {
-                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + 4;
+                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (!ensure_valstack(vm, bound_margin)) {
                             ds.regs_base[result_reg].set_undefined();
                             return (TVal){};
                         }
                         ds.regs_base = ds.act.bottom;
-                        TVal* extended_top = ds.act.bottom + ds.nregs + 4;
+                        TVal* extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
                     // Local result slot: keeps the register reference owned
@@ -2808,7 +2808,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         vm.heap.verify_roots("after_call_resume_restore");
                     $endif
 
-                    vm.valstack_top = new_regs_r + new_nregs_r;
+                    publish_frame_top(vm, new_regs_r, new_nregs_r, 0);
                     vm.valstack_bottom = new_act_r.bottom;
 
                     if (!target.is_user_generator() && !gs.persistent_async) {
@@ -3115,7 +3115,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     bind_env_arguments(vm, target, hobj, new_regs_g, nargs, new_act_g.var_env);
                 }
 
-                vm.valstack_top = new_regs_g + new_nregs_g;
+                publish_frame_top(vm, new_regs_g, new_nregs_g, nargs);
                 vm.valstack_bottom = new_act_g.bottom;
 
                 // Save caller resume point and switch into the new activation.
@@ -3324,7 +3324,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 bind_arguments(vm, new_act, target, hobj, new_regs, nargs);
             }
 
-            vm.valstack_top = new_regs + new_nregs;
+            publish_frame_top(vm, new_regs, new_nregs, nargs);
             vm.valstack_bottom = new_act.bottom;
 
             // Save caller resume point before switching activations
@@ -3478,10 +3478,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if ((*super_hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                     uint sc_bound_fn_idx = (uint)(*super_hobj.extra_ptr()).func.builtin_fn_index;
                     {
-                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + 4;
+                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (!ensure_valstack(vm, bound_margin)) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
                         ds.regs_base = ds.act.bottom;
-                        TVal* extended_top = ds.act.bottom + ds.nregs + 4;
+                        TVal* extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
                     builtins::BuiltinContext sc_bound_ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, this_val: &ds.regs_base[callee_reg + 1], callee: super_hobj, new_target: new_target, construct: true);
@@ -3713,7 +3713,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
             }
 
-            vm.valstack_top = new_regs + new_nregs;
+            publish_frame_top(vm, new_regs, new_nregs, nargs);
             vm.valstack_bottom = new_act.bottom;
             if (super_target.uses_arguments()) {
                 bind_register_arguments(vm, new_act, super_target, super_hobj, old_args, nargs);
@@ -3808,13 +3808,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // vm.valstack_top past ds.nregs so the extra slots are within
                     // the allocated+visible range (even if no realloc is needed).
                     {
-                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + 4;
+                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (!ensure_valstack(vm, bound_margin)) {
                             ds.regs_base[result_reg].set_undefined();
                             return (TVal){};
                         }
                         ds.regs_base = ds.act.bottom;
-                        TVal* extended_top = ds.act.bottom + ds.nregs + 4;
+                        TVal* extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
