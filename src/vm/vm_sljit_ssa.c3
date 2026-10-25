@@ -814,6 +814,17 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
             g.current[reg] = first;
             continue;
         }
+        // A register that one path never wrote has no value to merge. Such a
+        // register is dead: a live one has a value before the loop, which the
+        // header keeps in a phi.
+        bool missing = false;
+        for (uint p = 0; p < block.pred_count; p++) {
+            if (g.block_exit[block.preds[p]][reg] < 0) missing = true;
+        }
+        if (missing) {
+            g.current[reg] = -1;
+            continue;
+        }
         // The merged value takes the first incoming's representation; a copy
         // from a predecessor with another one converts.
         SsaRep rep = g.values[first].rep;
@@ -936,12 +947,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     // join merges the states its arms leave behind.
     if (!ssa_split_blocks(g)) {
         g.failed = true;
-                return false;
+        return false;
     }
     for (uint b = 0; b < g.block_count; b++) {
     if (!ssa_enter_block(g, b)) {
         g.failed = true;
-                return false;
+        return false;
     }
     g.block_first[b] = g.value_count;
     SsaBlock* block = &g.blocks[b];
@@ -954,20 +965,20 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             if (pos != plan.end) {
                 if (!ssa_arm_branch(g, b, pos, ins)) {
                     g.failed = true;
-                return false;
+        return false;
                 }
                 continue;
             }
             if (!ssa_comparison_op(ins.op)) {
                 g.failed = true;
-                return false;
+        return false;
             }
             int lhs =  g.current[ins.b];
             int rhs = -1;
             if (ins.op < Opcode.JMP_NLTI) rhs = g.current[ins.c];
             if (lhs < 0) {
                 g.failed = true;
-                return false;
+        return false;
             }
             bool integer = g.values[lhs].rep == INT32 && (rhs < 0 || g.values[rhs].rep == INT32);
             if (integer) {
@@ -990,7 +1001,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 {
                     if (g.current[ins.b] < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     int src = g.current[ins.b];
                     ssa_use(g, src);
@@ -1019,12 +1030,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 {
                     if (ins.get_bc() >= cf.const_count) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     TVal value = cf.constants[ins.get_bc()];
                     if (!value.is_fastint() && !value.is_number()) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     double number = value.get_number_or_fastint();
                     if (value.is_fastint()) {
@@ -1056,7 +1067,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     CompiledFunction* callee_fn = function_inline_ssa_candidate(cf, pos, g.heap);
                     if (callee_fn == null || g.current[ins.b] < 0 || ins.c > 8) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     // The site can be rebound, so the live callee must still be
                     // the compiled body that was expanded here.
@@ -1069,7 +1080,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         int arg = g.current[ins.b + 2 + i];
                         if (arg < 0) {
                             g.failed = true;
-                return false;
+        return false;
                         }
                         ssa_use(g, arg);
                         mapped[i] = arg;
@@ -1084,7 +1095,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         Instruction ci = callee_fn.code[ci_pos];
                         if (ci.a >= LOOP_REGS) {
                             g.failed = true;
-                return false;
+        return false;
                         }
                         switch (ci.op) {
                             case NOP: continue;
@@ -1108,12 +1119,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                 {
                                     if (ci.get_bc() >= callee_fn.const_count) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     TVal constant = callee_fn.constants[ci.get_bc()];
                                     if (!constant.is_fastint() && !constant.is_number()) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     double number = constant.get_number_or_fastint();
                                     mapped[ci.a] = ssa_value(g, CONST_F, F64, -1, 0, (long)bitcast(number, ulong));
@@ -1122,7 +1133,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                             case LDTHIS:
                                 if (receiver < 0) {
                                     g.failed = true;
-                return false;
+        return false;
                                 }
                                 mapped[ci.a] = ssa_convert(g, receiver, BOXED, false);
                                 continue;
@@ -1130,7 +1141,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                             case UNP:
                                 if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
                                     g.failed = true;
-                return false;
+        return false;
                                 }
                                 mapped[ci.a] = mapped[ci.b];
                                 continue;
@@ -1139,7 +1150,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                 {
                                     if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     int operand = ssa_convert(g, mapped[ci.b], F64, false);
                                     ssa_use(g, operand);
@@ -1156,7 +1167,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     if (ci.b >= LOOP_REGS || ci.c >= LOOP_REGS || mapped[ci.b] < 0
                                         || mapped[ci.c] < 0) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     int left  = ssa_convert(g, mapped[ci.b], F64, false);
                                     int right = ssa_convert(g, mapped[ci.c], F64, false);
@@ -1174,7 +1185,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                 {
                                     if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     int left = ssa_convert(g, mapped[ci.b], F64, false);
                                     int immediate = ssa_value(
@@ -1199,23 +1210,23 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     bool on_receiver = ci.op == Opcode.GETTHISC;
                                     if (!on_receiver && (ci.b >= LOOP_REGS || mapped[ci.b] < 0)) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     if (callee_fn.ic_entries == null) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     ICEntry* ic   = (ICEntry*)callee_fn.ic_entries + ci_pos;
                                     Shape* layout = g.heap.get_shape(ic.shape_id);
                                     if (layout == null || layout.generation != ic.shape_gen) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     int receiver_value = on_receiver ? ssa_convert(g, receiver, BOXED, false)
                                         : mapped[ci.b];
                                     if (receiver_value < 0) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     ssa_use(g, receiver_value);
                                     int memory = loop_memory_shape_layout(
@@ -1227,19 +1238,19 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     );
                                     if (memory < 0) {
                                         g.failed = true;
-                return false;
+        return false;
                                     }
                                     mapped[ci.a] = ssa_value(g, LOAD, BOXED, receiver_value, -1, (long)memory);
                                     continue;
                                 }
                             default:
                                 g.failed = true;
-                return false;
+        return false;
                         }
                     }
                     if (result < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     ssa_use(g, result);
                     int nv = ssa_convert(g, result, g.rep[ins.a], false);
@@ -1255,7 +1266,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     uint memory = (uint)plan.memory_at[at] - 1;
                     if (memory >= plan.memory_count) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     LoopMemorySpec spec =  plan.memory[memory];
                     int base_value      = -1;
@@ -1263,7 +1274,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         base_value = g.current[ins.b];
                         if (base_value < 0) {
                             g.failed = true;
-                return false;
+        return false;
                         }
                         ssa_use(g, base_value);
                     }
@@ -1279,7 +1290,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     uint memory = (uint)plan.memory_at[at] - 1;
                     if (memory >= plan.memory_count || g.current[ins.c] < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     int index = ssa_convert(g, g.current[ins.c], INT32, true);
                     ssa_use(g, index);
@@ -1302,7 +1313,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     uint memory = (uint)plan.memory_at[at] - 1;
                     if (memory >= plan.memory_count || g.current[ins.b] < 0 || g.current[ins.c] < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     int index           = ssa_convert(g, g.current[ins.b], INT32, true);
                     LoopMemorySpec spec = plan.memory[memory];
@@ -1330,7 +1341,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 {
                     if (g.current[ins.a] < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     // A double counter increments in place: JavaScript numbers
                     // are doubles, so this is exact and needs no int round trip.
@@ -1359,7 +1370,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int right = g.current[ins.c];
                     if (left < 0 || right < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     SsaOp op     = ins.op == Opcode.ADD || ins.op == Opcode.ADD_FUSED ? ADD
                         : ins.op == Opcode.SUB ? SUB
@@ -1391,7 +1402,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int left = g.current[ins.b];
                     if (left < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     SsaOp op     = ins.op == Opcode.SUBI ? SUB : ins.op == Opcode.MULI ? MUL : ADD;
                     bool integer = g.values[left].rep == INT32;
@@ -1420,7 +1431,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int right = g.current[ins.c];
                     if (left < 0 || right < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     left = ssa_convert(g, left, INT32, false);
                     right = ssa_convert(g, right, INT32, false);
@@ -1453,7 +1464,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int left = g.current[ins.b];
                     if (left < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     left = ssa_convert(g, left, INT32, false);
                     ssa_use(g, left);
@@ -1479,7 +1490,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int value = g.current[ins.b];
                     if (value < 0) {
                         g.failed = true;
-                return false;
+        return false;
                     }
                     value = ssa_convert(g, value, INT32, false);
                     ssa_use(g, value);
@@ -1495,7 +1506,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 }
             default:
                 g.failed = true;
-                return false;
+        return false;
         }
     }
     g.block_last[b] = g.value_count;
@@ -1518,7 +1529,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         int value = g.current[reg];
         if (value < 0) {
             g.failed = true;
-                return false;
+        return false;
         }
         if (g.values[value].rep == F64 && g.values[g.phi[reg]].rep != F64) g.force_f64 |= 1UL << reg;
         value = ssa_convert(g, value, g.values[g.phi[reg]].rep, false);
