@@ -821,8 +821,13 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
         ssa_result(g, phi, (uint)reg, block.begin);
         join.phi[reg] = phi;
         for (uint p = 0; p < block.pred_count; p++) {
-            join.incoming[p][reg] = g.block_exit[block.preds[p]][reg];
+            int incoming = g.block_exit[block.preds[p]][reg];
+            join.incoming[p][reg] = incoming;
+            // The incoming value lives until the join copies it, so its range
+            // reaches past the join and keeps it out of the phi's home.
+            ssa_use(g, incoming);
         }
+        ssa_use(g, phi);
         g.current[reg] = phi;
     }
     return true;
