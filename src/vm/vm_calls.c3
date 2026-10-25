@@ -170,9 +170,10 @@ fn void mapped_args_unmap(HObject* args_obj, uint idx) @inline {
 // clears the map, so without this a property would keep the stale value
 // captured at creation instead of the parameter's current value.
 fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
+    ulong bits = *args_obj.mapped_bits_ptr();
+    if (bits == 0) return;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return;
-    ulong bits = *args_obj.mapped_bits_ptr();
     uint i = 0;
     while (bits != 0) {
         if ((bits & 1UL) != 0) {
@@ -248,11 +249,11 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
 // dense/named path instead (index not in the map, owning frame gone, or the
 // index beyond the formal parameter list).
 fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline {
+    if (!args_is_mapped(args_obj, idx)) return false;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
-    if (!args_is_mapped(args_obj, idx)) return false;
     // The parameter register is the source of truth while the mapping is live,
     // so an assignment to the formal parameter (`a = 1`) is observable through
     // `arguments[0]`.
@@ -264,11 +265,11 @@ fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline
 // slot, mirroring it into the object's own slot so the alias holds. Returns
 // false when the write must take the ordinary path instead.
 fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inline {
+    if (!args_is_mapped(args_obj, idx)) return false;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
-    if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0 && args_obj.get_prop_flags((uint)pidx, vm.heap).is_accessor) return false;
     HObject* holder;
@@ -297,11 +298,11 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
 // slot, but leave the parameter local untouched — delete breaks the alias,
 // it does not clear the local. Returns true when the index was mapped.
 fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
+    if (!args_is_mapped(args_obj, idx)) return false;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
-    if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0) {
         hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
