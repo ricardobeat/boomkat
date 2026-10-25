@@ -3027,6 +3027,18 @@ fn Instruction* th_init_slot(Instruction* pc, HandlerTable* handlers,
     return th_next(pc + 1, handlers, regs, cold);
 }
 
+// The rare tail of th_resume_caller when the caller's function belongs to
+// another realm: enter it, then bind the caller's burst state.
+fn Instruction* th_resume_other_realm(HandlerTable* handlers, ColdCtx* cold, Activation* caller,
+                                      CompiledFunction* caller_func) @private @noinline {
+    Vm* vm = cold.vm;
+    vm.heap.enter_realm(caller_func.realm);
+    vm.current_func = caller_func;
+    if (caller_func.ic_entries == null) return caller.curr_pc;
+    th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);
+    return th_next(caller.curr_pc, handlers, caller.bottom, cold);
+}
+
 // Pop the returning frame `fa` and continue in `caller`. The result is already
 // written. A leaf, so the return handlers tail-jump here with no frame of
 // their own; an owned `this` is released by the caller of this routine.
@@ -3049,7 +3061,7 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
         // callee. The switch picks up the caller from vm.current_func when the
         // burst returns (Dispatch.sync_code).
         CompiledFunction* caller_func = (CompiledFunction*)caller.func;
-        if (vm.heap.realm != caller_func.realm) vm.heap.enter_realm(caller_func.realm);
+        if (vm.heap.realm != caller_func.realm) return th_resume_other_realm(handlers, cold, caller, caller_func);
         vm.current_func = caller_func;
         // A caller without caches (their allocation failed) runs on the switch.
         if (caller_func.ic_entries == null) return caller_pc;
@@ -3209,17 +3221,29 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
     Vm* vm = cold.vm;
     Activation* fa = cold.act;
-    if (th_frame_is_replaceable(vm, fa) && (is_undefined || !value.is_heap_allocated())
+    if (th_frame_is_replaceable(vm, fa)
         && (fa.heap_reg_count == 0 || th_tracked_regs_uncounted(fa))
         && !vm.heap.gc_safepoint_due(false)) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
         TVal* result = fa.retval;
-        if ((!cross_function || (caller.func != null && caller.curr_pc != null))
+        // An object result is stored where the caller's watermark tracks it, so
+        // it needs a register inside the caller's window and, during marking,
+        // must already be shaded (th_return_general).
+        bool object_return = !is_undefined && value.is_heap_allocated();
+        if (object_return) {
+            object_return = value.is_object() && value.get_heapptr() != null
+                && caller.func != null && caller.bottom != null && th_can_publish(vm.heap, value)
+                && result >= caller.bottom
+                && result < caller.bottom + ((CompiledFunction*)caller.func).num_regs;
+        }
+        if ((is_undefined || !value.is_heap_allocated() || object_return)
+            && (!cross_function || (caller.func != null && caller.curr_pc != null))
             && ((fa.flags & ACT_FLAG_BORROWED_CALLEE) != 0 || !result.is_refcounted())) {
             if (is_undefined) value.set_undefined();
             th_clear_tracked_regs(fa);
             *result = value;
+            if (object_return) track_heap_store(caller, result, (uint)(result - caller.bottom));
             return th_resume_caller(handlers, cold, fa, caller, cross_function);
         }
     }
