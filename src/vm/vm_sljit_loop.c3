@@ -28,7 +28,11 @@ enum LoopMemoryKind : char {
     // A data property of an object that does not change for the whole run.
     // The receiver's shape is revalidated on every native entry, so the read
     // needs no per-iteration guard.
-    FIELD
+    FIELD,
+    // A data property of an object supplied by a register that the loop
+    // rewrites, so each access guards the receiver's shape against the one
+    // the site cache recorded.
+    SHAPE_FIELD
 }
 struct LoopMemory @feat(SLJIT) {
     TVal source;
@@ -51,6 +55,7 @@ struct LoopMemorySpec @feat(SLJIT) {
     uint key_const;
     int slot;
     uint shape;
+    uint shape_gen;
 }
 struct LoopState @feat(SLJIT) {
     TVal[LOOP_REGS] values;
@@ -252,6 +257,36 @@ fn int loop_memory_field(
     plan.memory[index] = spec;
     return (int)index;
 }
+// Monomorphic site feedback for a receiver the loop rewrites: the layout is
+// fixed, so every access only has to compare the live shape id.
+fn int loop_memory_shape(
+    LoopPlan* plan,
+    int source,
+    uint pc,
+    uint shape,
+    uint generation,
+    int slot,
+    bool doubles
+) @feat(SLJIT) {
+    if (source < 0) return -1;
+    for (uint i = 0; i < plan.memory_count; i++) {
+        if (plan.memory[i].kind == SHAPE_FIELD && plan.memory[i].source == (uint)source
+            && plan.memory[i].pc == pc) return (int)i;
+    }
+    if (plan.memory_count == LOOP_MEMORY) return -1;
+    LoopMemorySpec spec = {
+        .source = (uint)source,
+        .kind = SHAPE_FIELD,
+        .pc = pc,
+        .slot = slot,
+        .shape = shape,
+        .shape_gen = generation,
+        .doubles = doubles,
+    };
+    uint index = plan.memory_count++;
+    plan.memory[index] = spec;
+    return (int)index;
+}
 fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold) @feat(SLJIT) {
     Heap* h = cold.heap;
     for (EnvRecord* scope = cold.act.lex_env; scope != null; scope = scope.parent) if (scope.is_with()) return false;
@@ -279,6 +314,13 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold) @feat(SLJI
                 spec.builtin,
                 &memory.method
             )) return false;
+            continue;
+        }
+        if (spec.kind == SHAPE_FIELD) {
+            // The receiver comes from a register, so only the recorded layout
+            // needs revalidating: shape ids are recycled, generations are not.
+            Shape* shape = h.get_shape(spec.shape);
+            if (shape == null || shape.generation != spec.shape_gen) return false;
             continue;
         }
         if (!memory.source.is_object()) return false;
@@ -350,6 +392,22 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         method[i] = -1;
     }
     uint[LOOP_REGS] frequency;
+    // Over-approximation of the registers any instruction may write; a field
+    // read off a register that the loop rewrites needs a per-access guard.
+    bool[LOOP_REGS] maybe_written;
+    for (uint pos = plan.begin; pos <= end; pos++) {
+        Instruction ins = cf.code[pos];
+        if (loop_target(ins, pos) >= 0) continue;
+        switch (ins.op) {
+            case PUTPROP:
+            case PUTPROPC:
+            case PUTTHISC:
+            case PUTGLOBAL:
+            case PUTCAP: continue;
+            default: break;
+        }
+        if (ins.a < LOOP_REGS) maybe_written[ins.a] = true;
+    }
     ulong integer_required;
     ulong entry_canonical;
     ulong written;
@@ -502,9 +560,39 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                         memory = -1;
                     }
                     if (memory < 0) {
-                        // A plain data field of an object that is stable for the
-                        // whole run: one load per iteration with no guard.
-                        memory = loop_memory_field(plan, source, base, key, pos, key_const, cold.heap);
+                        bool stable = receiver || (source >= 0 && source < (int)LOOP_REGS && !maybe_written[source]);
+                        if (stable) {
+                            // A field of an object that is stable for the whole
+                            // run: one load per iteration with no guard.
+                            memory = loop_memory_field(plan, source, base, key, pos, key_const, cold.heap);
+                        } else if (cf.ic_entries != null) {
+                            // The receiver changes, but the site is monomorphic:
+                            // guard its shape and read the recorded slot.
+                            ICEntry* ic  = (ICEntry*)cf.ic_entries + pos;
+                            Shape* shape = cold.heap.get_shape(ic.shape_id);
+                            if (ic.key.borrow() == (void*)key && ic.chain_len == 0 && shape != null
+                                && shape.generation == ic.shape_gen
+                                && !ic.prop_flags.is_accessor
+                                && ic.prop_idx != hobject::IC_PROP_ABSENT) {
+                                bool doubles;
+                                if (base.is_object()) {
+                                    HObject* probe = base.get_heapptr();
+                                    if (probe != null && (int)ic.prop_idx < (int)probe.prop_count) {
+                                        TVal v = probe.prop_values()[ic.prop_idx].get();
+                                        doubles = ((ulong)v.bits >> 48) < (ulong)types::TAG_FASTINT;
+                                    }
+                                }
+                                memory = loop_memory_shape(
+                                    plan,
+                                    source,
+                                    pos,
+                                    ic.shape_id,
+                                    ic.shape_gen,
+                                    (int)ic.prop_idx,
+                                    doubles
+                                );
+                            }
+                        }
                         if (memory < 0) return false;
                     }
                     plan.memory_at[at] = (char)(memory + 1);
@@ -1142,6 +1230,31 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
                 }
             case GETPROPC:
             case GETPROPC_CACHED:
+                if (plan.memory[memory].kind == SHAPE_FIELD) {
+                    LoopMemorySpec spec = plan.memory[memory];
+                    out.load(ins.b, r0);
+                    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+                    out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pos);
+                    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+                    out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pos);
+                    HObject probe;
+                    long shape_offset = (char*)&probe.shape_id - (char*)&probe;
+                    long alloc_offset = (char*)&probe.prop_alloc - (char*)&probe;
+                    e.mov(r2, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
+                    out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)spec.shape, pos);
+                    e.mov(r1, 0, mem | r0, alloc_offset);
+                    void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0);
+                    e.op(jit::SLJIT_ADD, r1, r0, 0, imm, HObjectBase::size);
+                    e.bind(allocated);
+                    e.mov(r0, 0, mem | r1, (long)spec.slot * 8);
+                    if (spec.doubles) {
+                        e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+                        out.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT, pos);
+                        out.fop(jit::SLJIT_MOV_F64, 1, 0, r1, (long)spec.slot * 8);
+                        out.float_result(1);
+                    }
+                    break;
+                }
                 if (plan.memory[memory].kind == FIELD) {
                     e.mov(r1, 0, mem | state, loop_memory_offset(memory, 1));
                     if (plan.memory[memory].doubles) {
@@ -1485,6 +1598,24 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         jit::sljit_free_code((void*)plan.native, null);
         h.jit_code_bytes -= plan.code_bytes;
         plan.native = null;
+        // Widening only helps when an integer operation overflowed; any other
+        // guard exit (a shape or tag mismatch) needs the straight-line tier.
+        bool overflow;
+        if (resume_pc < cf.code_count) {
+            switch (cf.code[resume_pc].op) {
+                case ADD:
+                case ADD_FUSED:
+                case ADDI:
+                case SUB:
+                case SUBI:
+                case MUL:
+                case MULI:
+                case INC:
+                case INC_LT:
+                case DEC: overflow = true; break;
+                default: break;
+            }
+        }
         uint widened = resume_pc < cf.code_count ? cf.code[resume_pc].a : LOOP_REGS;
         ulong want;
         if (plan.memory_count == 0) {
@@ -1496,7 +1627,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         } else if (widened < LOOP_REGS) {
             want = 1UL << widened;
         }
-        if (want != 0 && (want & ~plan.ssa_double) != 0 && plan.ssa_retries < 2) {
+        if (overflow && want != 0 && (want & ~plan.ssa_double) != 0 && plan.ssa_retries < 2) {
             plan.ssa_double |= want;
             plan.ssa_retries++;
             plan.native = ssa_loop_emit(plan, cf, h);

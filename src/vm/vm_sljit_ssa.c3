@@ -429,6 +429,7 @@ fn bool ssa_op_is_int(SsaGraph* g, Instruction ins, uint pos, bool[LOOP_REGS]* i
                 uint memory = plan.memory_at[pos - plan.begin];
                 if (memory == 0) return false;
                 LoopMemorySpec spec = plan.memory[memory - 1];
+                if (spec.kind == FIELD || spec.kind == SHAPE_FIELD) return false;
                 return spec.kind != DENSE && spec.cls < FLOAT32ARRAY && spec.cls != UINT32ARRAY;
             }
         default: return false;
@@ -549,9 +550,11 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         g.current[i] = -1;
         g.phi[i] = -1;
         g.arg[i] = -1;
+        // A register the loop rewrites but never uses as a number holds an
+        // arbitrary value, not an integer.
         g.rep[i] = ((g.plan.ssa_double | g.force_f64) & (1UL << i)) != 0 ? F64
             : g.int_reg[i] ? INT32
-            : ssa_rep_for(int_need[i], f64_need[i], written[i]);
+            : ssa_rep_for(int_need[i], f64_need[i], false);
     }
     for (uint i = 0; i < SSA_MAX_VALUES * 3; i++) g.conv[i] = 0;
     // Header values. Written registers get a phi; read-only numeric inputs get
@@ -689,8 +692,17 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         g.failed = true;
                         return false;
                     }
-                    LoopMemorySpec spec = plan.memory[memory];
-                    int nv              = ssa_value(g, LOAD, spec.doubles ? F64 : BOXED, -1, -1, (long)memory);
+                    LoopMemorySpec spec =  plan.memory[memory];
+                    int base_value      = -1;
+                    if (spec.kind == SHAPE_FIELD) {
+                        base_value = g.current[ins.b];
+                        if (base_value < 0) {
+                            g.failed = true;
+                            return false;
+                        }
+                        ssa_use(g, base_value);
+                    }
+                    int nv = ssa_value(g, LOAD, spec.doubles ? F64 : BOXED, base_value, -1, (long)memory);
                     ssa_result(g, nv, ins.a, pos);
                     g.current[ins.a] = nv;
                     break;
@@ -996,7 +1008,8 @@ fn void ssa_numeric_loads(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue v = g.values[i];
         if (v.op != LOAD) continue;
-        if (g.plan.memory[v.imm].kind != DENSE && g.plan.memory[v.imm].kind != FIELD) continue;
+        if (g.plan.memory[v.imm].kind != DENSE && g.plan.memory[v.imm].kind != FIELD
+            && g.plan.memory[v.imm].kind != SHAPE_FIELD) continue;
         if (g.plan.memory[v.imm].doubles) {
             g.numeric_load[i] = true;
             continue;
@@ -1692,6 +1705,41 @@ fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
 fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep) @feat(SLJIT) {
     LoopMemorySpec spec = self.plan.memory[memory];
     uint pc             = self.pc;
+    if (spec.kind == SHAPE_FIELD) {
+        int r0  = jit::reg_r(0);
+        int r1  = jit::reg_r(1);
+        int r2  = jit::reg_r(2);
+        int r3  = jit::reg_r(3);
+        int imm = jit::SLJIT_IMM;
+        self.gpr(index, r0);
+        self.e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+        self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
+        self.e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+        self.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
+        HObject obj;
+        long shape_offset = (char*)&obj.shape_id - (char*)&obj;
+        long alloc_offset = (char*)&obj.prop_alloc - (char*)&obj;
+        self.e.mov(r2, 0, jit::SLJIT_MEM | r0, shape_offset, jit::SLJIT_MOV_U32);
+        self.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)spec.shape, pc);
+        self.e.mov(r1, 0, jit::SLJIT_MEM | r0, alloc_offset);
+        void* allocated = self.e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0);
+        self.e.op(jit::SLJIT_ADD, r1, r0, 0, imm, HObjectBase::size);
+        self.e.bind(allocated);
+        self.e.mov(r0, 0, jit::SLJIT_MEM | r1, (long)spec.slot * 8);
+        if (spec.doubles) {
+            int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : 1;
+            self.e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+            self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT, pc);
+            if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, r0) != 0) self.e.failed = true;
+            if (self.g.values[dst_value].home == 0) self.store_fpr(dst_value, dst);
+            self.addr_numeric_load = true;
+        } else {
+            int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
+            if (dst != r0) self.e.mov(dst, 0, r0, 0);
+            if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
+        }
+        return;
+    }
     if (spec.kind == FIELD) {
         int r1 = jit::reg_r(1);
         int r0 = jit::reg_r(0);
