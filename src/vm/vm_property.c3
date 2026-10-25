@@ -80,18 +80,21 @@ fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
 // links. The entry records the objects stepped onto, so a hit revalidates the
 // walk by identity and shape instead of searching the chain again. Returns
 // false, leaving the entry alone, when the owner is deeper than the snapshot
-// can describe or a dictionary-mode receiver could gain a shadowing key.
+// can describe, a dictionary-mode receiver could gain a shadowing key, or a
+// dictionary-mode prototype sits on a chain the epoch cannot cover.
 fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HObject* owner) @local {
     bool is_own = owner == hobj;
     uint chain_len = 0;
     void*[hobject::IC_MAX_CHAIN] chain_protos;
     uint[hobject::IC_MAX_CHAIN] chain_shapes;
+    bool dict_proto = false;
     if (!is_own) {
         if (hobj.in_dict_mode(vm.heap)) return false;
         HObject* walk = hobj;
         while (chain_len < hobject::IC_MAX_CHAIN) {
             HObject* next = walk.prototype;
-            if (next == null || next.in_dict_mode(vm.heap)) return false;
+            if (next == null) return false;
+            dict_proto = dict_proto || next.in_dict_mode(vm.heap);
             chain_protos[chain_len] = (void*)next;
             chain_shapes[chain_len] = next.shape_id;
             chain_len++;
@@ -102,6 +105,17 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     }
     int owner_idx = owner.find_prop_idx(key, vm.heap);
     if (owner_idx < 0) return false;
+    // Ordinary named chains can share one mutation token, which also covers
+    // dictionary-mode prototypes: their indexes move only through epoch-bumping
+    // layout changes. The receiver's immediate prototype still needs an
+    // identity guard: shape sharing alone does not imply the same prototype.
+    // Other chains keep the bounded replay.
+    bool epoch_chain = !is_own && hobject::plain_property_object(hobj)
+        && !((HString*)key).is_arridx() && !((HString*)key).is_hidden();
+    for (uint i = 0; epoch_chain && i < chain_len; i++) {
+        epoch_chain = hobject::plain_property_object((HObject*)chain_protos[i]);
+    }
+    if (dict_proto && !epoch_chain) return false;
     if (chain_len > 0 && !hobject::ic_reserve_chain(ic, vm.heap)) return false;
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);
@@ -114,14 +128,6 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     }
     ic.prop_idx = (uint)owner_idx;
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
-    // Ordinary named chains can share one mutation token. The receiver's
-    // immediate prototype still needs an identity guard: shape sharing alone
-    // does not imply the same prototype. Other chains keep the bounded replay.
-    bool epoch_chain = !is_own && hobject::plain_property_object(hobj)
-        && !((HString*)key).is_arridx() && !((HString*)key).is_hidden();
-    for (uint i = 0; epoch_chain && i < chain_len; i++) {
-        epoch_chain = hobject::plain_property_object((HObject*)chain_protos[i]);
-    }
     if (epoch_chain) {
         for (uint i = 0; i < chain_len; i++) {
             ((HObject*)chain_protos[i]).gc.prototype_observed = true;
