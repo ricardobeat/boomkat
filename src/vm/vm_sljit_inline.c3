@@ -354,6 +354,17 @@ fn void FunctionEmitter.inline_call(&self, CompiledFunction* cf, uint pc, Heap* 
     CompiledFunction* target = function_inline_candidate(cf, pc, h);
     if (target == null) {
         if (self.inline_general(cf, pc, h)) return;
+        $if $feat(SLJIT_STATS):
+        {
+            TemplateEmitter* se = &self.out.e;
+            int sr3             = jit::reg_r(3);
+            int sr1             = jit::reg_r(1);
+            se.mov(sr3, 0, jit::SLJIT_IMM, (long)&self.plan.bail_calls);
+            se.mov(sr1, 0, jit::SLJIT_MEM | sr3, 0);
+            se.op(jit::SLJIT_ADD, sr1, sr1, 0, jit::SLJIT_IMM, 1);
+            se.mov(jit::SLJIT_MEM | sr3, 0, sr1, 0);
+        }
+        $endif
         self.out.link(jit::sljit_emit_jump(self.out.e.compiler, jit::SLJIT_JUMP), pc, true);
         return;
     }
@@ -549,6 +560,7 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
             case NOP:
             case PUTTHISC:
             case PUTPROPC:
+            case PUTPROP:
             case LDREG:
             case LDINT:
             case LDCONST:
@@ -869,6 +881,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
                 continue;
             case PUTTHISC:
             case PUTPROPC:
+            case PUTPROP:
                 inner.property(target, i, true, h);
                 continue;
             case GETVAR:
@@ -1022,6 +1035,17 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
         if (!self.shape(inner_plan.shapes[i], h)) out.e.failed = true;
     }
     if (inner.out.e.failed) out.e.failed = true;
+    $if $feat(SLJIT_STATS):
+    {
+        TemplateEmitter* se = &self.out.e;
+        int sr3             = jit::reg_r(3);
+        int sr1             = jit::reg_r(1);
+        se.mov(sr3, 0, jit::SLJIT_IMM, (long)&self.plan.general_inlines);
+        se.mov(sr1, 0, jit::SLJIT_MEM | sr3, 0);
+        se.op(jit::SLJIT_ADD, sr1, sr1, 0, jit::SLJIT_IMM, 1);
+        se.mov(jit::SLJIT_MEM | sr3, 0, sr1, 0);
+    }
+    $endif
     for (uint i = 0; i < inner.out.link_count; i++) {
         if (out.link_count == out.links.len) {
             out.e.failed = true;

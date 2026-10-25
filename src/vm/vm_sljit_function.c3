@@ -54,6 +54,10 @@ struct FunctionPlan @feat(SLJIT) {
     ulong flow_ops @if($feat(SLJIT_STATS));
     ulong math_calls @if($feat(SLJIT_STATS));
     ulong inline_calls @if($feat(SLJIT_STATS));
+    ulong bail_calls @if($feat(SLJIT_STATS));
+    ulong bail_ops @if($feat(SLJIT_STATS));
+    ulong general_inlines @if($feat(SLJIT_STATS));
+    ulong[512] exit_pcs @if($feat(SLJIT_STATS));
     ulong hits @if($feat(SLJIT_STATS));
     ulong completed @if($feat(SLJIT_STATS));
     ulong stalled @if($feat(SLJIT_STATS));
@@ -463,28 +467,43 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
     int r1  = jit::reg_r(1);
     int r2  = jit::reg_r(2);
     int r3  = jit::reg_r(3);
+    bool matching = literal != null && literal.is_string();
+    bool element  = false;
     if (computed) {
         self.out.load(write ? ins.b : ins.c, r1);
-        bool matching = literal != null && literal.is_string();
         if (matching && literal.get_heapptr() != key) {
             HString* left  = literal.get_heapptr();
             HString* right = key;
             matching = right != null && !left.is_symbol() && !right.is_symbol()
                 && (String)left.get_data() == (String)right.get_data();
         }
-        self.out.guard(
-            jit::SLJIT_NOT_EQUAL,
-            r1,
-            0,
-            imm,
-            matching ? (long)loop_bits(*literal) : (long)((types::TAG_STRING << 48) | (ulong)key),
-            pc
-        );
+        // A numeric key names an array element, which the dense part answers.
+        // The site cache only records string keys, so an unrecorded key is an
+        // index and the element path claims it.
+        element = !matching && key == null;
+        if (!element) {
+            self.out.guard(
+                jit::SLJIT_NOT_EQUAL,
+                r1,
+                0,
+                imm,
+                matching ? (long)loop_bits(*literal) : (long)((types::TAG_STRING << 48) | (ulong)key),
+                pc
+            );
+        }
     }
     if (receiver_this) {
         e.mov(r0, 0, jit::reg_s(3), 0);
     } else {
         self.out.load(write ? ins.a : ins.b, r0);
+    }
+    if (element) {
+        if (write) {
+            self.array_element_store(cf, pc);
+        } else {
+            self.array_element(cf, pc);
+        }
+        return true;
     }
     if (!known_shape) {
         e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
@@ -596,6 +615,114 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
     }
     if (length_done != null) e.bind(length_done);
     return usable || length_done != null;
+}
+
+// A computed read whose key is an array index. The receiver must be a dense
+// array and the key a non-negative integer below the dense capacity; the
+// element then lives in the array's dense part, whose address is the part
+// pointer plus the index. Anything else leaves to the interpreter, which owns
+// the named-property and hole paths.
+fn void FunctionEmitter.array_element(&self, CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    TemplateEmitter* e = &self.out.e;
+    Instruction ins = cf.code[pc];
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    int r2 = jit::reg_r(2);
+    int r3 = jit::reg_r(3);
+    int imm = jit::SLJIT_IMM;
+    int mem = jit::SLJIT_MEM;
+    // The receiver must be an object.
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
+    // The key must be a fastint: a fractional index names a property.
+    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT, pc);
+    e.op(jit::SLJIT_AND, r1, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    // The payload is a signed 48-bit value, so a negative index is not an
+    // element either.
+    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 47);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
+    // The receiver must be an array that keeps its indices in the dense part:
+    // a named index property shadows the dense slot.
+    HObject obj;
+    e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+    ObjFlags array;
+    array.obj_class = ARRAY;
+    e.op(jit::SLJIT_AND, r2, r2, 0, imm, 0x003F0000U | (1U << 29));
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)array, pc);
+    // The index must be below the dense capacity.
+    e.mov(r2, 0, mem | r0, (char*)&obj.array_size - (char*)&obj, jit::SLJIT_MOV_U32);
+    self.out.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r2, 0, pc);
+    // The dense part follows the property values.
+    e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
+    self.out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
+    e.mov(r3, 0, mem | r0, (char*)&obj.prop_capacity - (char*)&obj, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_SHL, r3, r3, 0, imm, 3);
+    e.op(jit::SLJIT_ADD, r2, r2, 0, r3, 0);
+    e.op(jit::SLJIT_SHL, r1, r1, 0, imm, 3);
+    e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
+    e.mov(r0, 0, mem | r2, 0);
+    // A hole is not an element: the interpreter looks the index up by name.
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED, pc);
+    self.store(ins.a, pc);
+}
+
+// A computed write into an array element. The element must already exist:
+// a write past the dense capacity grows the array, which is the interpreter's
+// job. A string in either slot needs the collector's bookkeeping, so such a
+// store leaves as well.
+fn void FunctionEmitter.array_element_store(&self, CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    TemplateEmitter* e = &self.out.e;
+    Instruction ins = cf.code[pc];
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    int r2 = jit::reg_r(2);
+    int r3 = jit::reg_r(3);
+    int imm = jit::SLJIT_IMM;
+    int mem = jit::SLJIT_MEM;
+    // The receiver must be an object.
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
+    // The key must be a fastint: a fractional index names a property.
+    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT, pc);
+    e.op(jit::SLJIT_AND, r1, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 47);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
+    // The receiver must be an array that keeps its indices in the dense part.
+    HObject obj;
+    e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+    ObjFlags array;
+    array.obj_class = ARRAY;
+    e.op(jit::SLJIT_AND, r2, r2, 0, imm, 0x003F0000U | (1U << 29));
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)array, pc);
+    // The index must be below the dense capacity.
+    e.mov(r2, 0, mem | r0, (char*)&obj.array_size - (char*)&obj, jit::SLJIT_MOV_U32);
+    self.out.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r2, 0, pc);
+    // The dense part follows the property values.
+    e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
+    self.out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
+    e.mov(r3, 0, mem | r0, (char*)&obj.prop_capacity - (char*)&obj, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_SHL, r3, r3, 0, imm, 3);
+    e.op(jit::SLJIT_ADD, r2, r2, 0, r3, 0);
+    e.op(jit::SLJIT_SHL, r1, r1, 0, imm, 3);
+    e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
+    // The replaced element must not hold a reference: only strings are
+    // counted, and releasing one is the interpreter's job.
+    e.mov(r3, 0, mem | r2, 0);
+    e.op(jit::SLJIT_LSHR, r3, r3, 0, imm, 48);
+    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING, pc);
+    // The stored value must not hold one either: storing it would take a
+    // reference the caller never gave up.
+    self.out.load(ins.c, r3);
+    e.op(jit::SLJIT_LSHR, r0, r3, 0, imm, 48);
+    self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, (long)types::TAG_STRING, pc);
+    e.mov(mem | r2, 0, r3, 0);
 }
 
 fn void FunctionEmitter.typeof_value(&self, CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
@@ -838,6 +965,14 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         if (target < 0 && loop_target(ins, pos + plan.begin) >= 0) active = false;
         if (!active) {
             if (out.flow != null) f.flow_flush();
+            $if $feat(SLJIT_STATS):
+            {
+                e.mov(r3, 0, imm, (long)&plan.bail_ops);
+                e.mov(r1, 0, mem | r3, 0);
+                e.op(jit::SLJIT_ADD, r1, r1, 0, imm, 1);
+                e.mov(mem | r3, 0, r1, 0);
+            }
+            $endif
             out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pos, true);
             if (pos + 1 < cf.code_count) f.blocks[pos + 1] = true;
             continue;
@@ -1290,7 +1425,8 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     bool emitted  = analyzed && function_emit(plan, &region, h, cold.act);
     $if $feat(SLJIT_STATS):
         if (begin != 0) io::eprintfn(
-            "SLJIT region result ops=%d analyzed=%d emitted=%d code_bytes=%d budget_used=%d limit=%d",
+            "SLJIT region result %s ops=%d analyzed=%d emitted=%d code_bytes=%d budget_used=%d limit=%d",
+            (String)cf.get_name(),
             cf.code_count,
             analyzed,
             emitted,
@@ -1406,6 +1542,7 @@ fn Instruction* sljit_function_entry(
     $if $feat(SLJIT_STATS):
         plan.hits++;
         plan.backedges += consumed;
+        if (next < cf.code_count && next < 512) plan.exit_pcs[next]++;
         if (run.budget <= 1 && consumed != 0) plan.budget_exits++;
         if (next == offset) plan.stalled++;
         if (next < cf.code_count
@@ -1428,7 +1565,7 @@ fn Instruction* sljit_function_entry(
             plan.budget_exits
         );
         if (plan.hits == 1 || plan.hits == 1000) io::eprintfn(
-            "SLJIT typed function_ops=%d begin=%d reads=%d writes=%d lengths=%d fp_ops=%d math_calls=%d inline_calls=%d",
+            "SLJIT typed function_ops=%d begin=%d reads=%d writes=%d lengths=%d fp_ops=%d math_calls=%d inline_calls=%d bail_calls=%d bail_ops=%d general=%d",
             cf.code_count,
             plan.begin,
             plan.typed_reads,
@@ -1436,8 +1573,36 @@ fn Instruction* sljit_function_entry(
             plan.typed_lengths,
             plan.flow_ops,
             plan.math_calls,
-            plan.inline_calls
+            plan.inline_calls,
+            plan.bail_calls,
+            plan.bail_ops,
+            plan.general_inlines
         );
+        if (plan.hits == 8) {
+            uint shown;
+            for (uint i = 0; i < 512; i++) {
+                if (plan.exit_pcs[i] == 0) continue;
+                io::eprintfn(
+                    "SLJIT exit %s ops=%d begin=%d pc=%d op=%d count=%d",
+                    (String)cf.get_name(),
+                    cf.code_count,
+                    plan.begin,
+                    i,
+                    i < cf.code_count ? (int)cf.code[i].op : -1,
+                    plan.exit_pcs[i]
+                );
+                shown++;
+            }
+            if (shown == 0) io::eprintfn("SLJIT exit %s none", (String)cf.get_name());
+            {
+                char[160] line_buf;
+                for (uint i = 0; i < cf.code_count; i++) {
+                    usz w        = cf.code[i].disassemble(line_buf[..]);
+                    uint end     = w < (usz)line_buf.len ? (uint)w : line_buf.len;
+                    io::eprintfn("  %4d %s", i, (String)line_buf[0:end]);
+                }
+            }
+        }
     $endif
     return cf.code + next;
 }

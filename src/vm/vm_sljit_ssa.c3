@@ -183,6 +183,12 @@ fn int ssa_convert(SsaGraph* g, int value, SsaRep rep, bool exact) @feat(SLJIT) 
     return result;
 }
 fn bool ssa_numeric_rep(SsaRep rep) @feat(SLJIT) => rep == INT32 || rep == F64;
+// The comparison branches the tier can turn into a native test. The other
+// branch forms pack their operand into the offset field.
+fn bool ssa_comparison_op(Opcode op) @feat(SLJIT) {
+    return (op >= Opcode.JMP_NLT && op <= Opcode.JMP_SNEQ)
+        || (op >= Opcode.JMP_NLTI && op <= Opcode.JMP_SNEQI);
+}
 
 fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
     if (!SSA_ENABLED) return false;
@@ -195,6 +201,9 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
         int target      = loop_target(ins, pos);
         if (target >= 0) {
             if (pos != plan.end || target != (int)plan.begin) return false;
+            // The backedge must compare two values. A truthiness test names
+            // its operand in the branch's offset field, not in a register.
+            if (!ssa_comparison_op(ins.op)) return false;
             continue;
         }
         switch (ins.op) {
@@ -627,7 +636,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         g.current_pc = pos;
         int target = loop_target(ins, pos);
         if (target >= 0) {
-            if (pos != plan.end) {
+            if (pos != plan.end || !ssa_comparison_op(ins.op)) {
                 g.failed = true;
                 return false;
             }
