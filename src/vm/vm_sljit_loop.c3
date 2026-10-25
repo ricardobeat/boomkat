@@ -24,7 +24,11 @@ enum LoopMemoryKind : char {
     TYPED,
     DENSE,
     ASCII,
-    INTRINSIC
+    INTRINSIC,
+    // A data property of an object that does not change for the whole run.
+    // The receiver's shape is revalidated on every native entry, so the read
+    // needs no per-iteration guard.
+    FIELD
 }
 struct LoopMemory @feat(SLJIT) {
     TVal source;
@@ -39,6 +43,14 @@ struct LoopMemorySpec @feat(SLJIT) {
     bool written;
     bool length_read;
     int builtin;
+    bool doubles;
+    // FIELD: the bytecode position (for the site cache's key), the constant
+    // pool index of the key when it has one, the resolved slot and the shape
+    // that made it valid.
+    uint pc;
+    uint key_const;
+    int slot;
+    uint shape;
 }
 struct LoopState @feat(SLJIT) {
     TVal[LOOP_REGS] values;
@@ -191,6 +203,55 @@ fn int loop_memory(LoopPlan* plan, int source, TVal value) @feat(SLJIT) {
     plan.memory[index] = spec;
     return (int)index;
 }
+// Dense array parts that hold ordinary doubles can take a much shorter element
+// path: no representation branch, no conversion, and no reference to release.
+// The generated code still checks each element, so this hint only chooses the
+// better shape; a wrong guess falls back to the interpreter at the first
+// element that is not a plain double.
+fn bool loop_probe_doubles(LoopMemory* memory) @feat(SLJIT) {
+    if (memory.data == null || memory.length <= 0) return false;
+    hobject::PropValue* dense = (hobject::PropValue*)memory.data;
+    ulong[3] at               = { 0, (ulong)(memory.length / 2), (ulong)(memory.length - 1) };
+    for (uint i = 0; i < 3; i++) {
+        if (((ulong)dense[at[i]].get().bits >> 48) >= (ulong)types::TAG_FASTINT) return false;
+    }
+    return true;
+}
+fn int loop_memory_field(
+    LoopPlan* plan,
+    int source,
+    TVal sample,
+    HString* key,
+    uint pc,
+    uint key_const,
+    Heap* h
+) @feat(SLJIT) {
+    if (source < 0 || key == null || !sample.is_object()) return -1;
+    for (uint i = 0; i < plan.memory_count; i++) {
+        if (plan.memory[i].kind == FIELD && plan.memory[i].source == (uint)source && plan.memory[i].pc == pc) {
+            return (int)i;
+        }
+    }
+    if (plan.memory_count == LOOP_MEMORY) return -1;
+    HObject* object = sample.get_heapptr();
+    if (object == null || object.is_proxy() || object.flags.exotic_module_ns) return -1;
+    int slot = object.find_prop_idx((void*)key, h);
+    if (slot < 0) return -1;
+    if (object.get_prop_flags((uint)slot, h).is_accessor) return -1;
+    LoopMemorySpec spec = {
+        .source = (uint)source,
+        .kind = FIELD,
+        .pc = pc,
+        .key_const = key_const,
+        .slot = slot,
+        .shape = object.shape_id,
+    };
+    TVal value = object.prop_values()[slot].get();
+    spec.doubles = ((ulong)value.bits >> 48) < (ulong)types::TAG_FASTINT;
+    uint index = plan.memory_count++;
+    plan.memory[index] = spec;
+    return (int)index;
+}
 fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold) @feat(SLJIT) {
     Heap* h = cold.heap;
     for (EnvRecord* scope = cold.act.lex_env; scope != null; scope = scope.parent) if (scope.is_with()) return false;
@@ -222,7 +283,19 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold) @feat(SLJI
         }
         if (!memory.source.is_object()) return false;
         HObject* object = memory.source.get_heapptr();
-        if (object == null || object.is_proxy() || object.get_class() != spec.cls) return false;
+        if (object == null || object.is_proxy()) return false;
+        if (spec.kind == FIELD) {
+            if (object.shape_id != spec.shape || object.flags.exotic_module_ns) return false;
+            void* key = spec.key_const != 0 ? (void*)cold.vm.current_func.constants[spec.key_const - 1].get_heapptr()
+                : (void*)((ICEntry*)cold.vm.current_func.ic_entries + spec.pc).key.borrow();
+            if (key == null) return false;
+            int slot = object.find_prop_idx(key, cold.heap);
+            if (slot != spec.slot) return false;
+            if (object.get_prop_flags((uint)slot, cold.heap).is_accessor) return false;
+            memory.data = (char*)(object.prop_values() + slot);
+            continue;
+        }
+        if (object.get_class() != spec.cls) return false;
         if (spec.kind == INTRINSIC) {
             if (!loop_lookup(h, object, (void*)h.str_intern("imul"), false, spec.builtin, &memory.method)) return false;
         } else if (spec.kind == DENSE) {
@@ -361,32 +434,81 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                 }
             case GETPROPC:
             case GETPROPC_CACHED:
+            case GETTHISC:
 
                 {
-                    if (ins.b >= cf.num_regs || ins.c >= cf.const_count || !cf.constants[ins.c].is_string()
-                        || origin[ins.b] < 0) return false;
-                    int memory = loop_memory(plan, origin[ins.b], loop_source((uint)origin[ins.b], &sample, cold));
-                    if (memory < 0) return false;
-                    HString* key = cf.constants[ins.c].get_heapptr();
-                    if (key.is_symbol()) return false;
-                    String name = (String)key.get_data();
-                    if (name == "length" && plan.memory[memory].kind != INTRINSIC) {
-                        plan.memory[memory].length_read = true;
-                    } else if ((name == "charCodeAt" && plan.memory[memory].kind == ASCII)
-                        || (name == "imul" && plan.memory[memory].kind == INTRINSIC)) {
-                        plan.memory[memory].builtin = name == "imul" ? (int)builtins::Builtin.MATH_IMUL.ordinal
-                            : (int)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal;
-                        plan.intrinsic_at[at] = 1;
-                        plan.memory_at[at] = (char)(memory + 1);
-                        origin[ins.a] = -1;
-                        method[ins.a] = memory;
-                        frequency[ins.b]++;
-                        continue;
+                    bool receiver = ins.op == Opcode.GETTHISC;
+                    if (!receiver) {
+                        if (ins.b >= cf.num_regs || ins.c >= cf.const_count || !cf.constants[ins.c].is_string()
+                            || origin[ins.b] < 0) return false;
+                    }
+                    int source = receiver ? (int)LOOP_THIS : origin[ins.b];
+                    TVal base  = loop_source((uint)source, &sample, cold);
+                    HString* key;
+                    uint key_const;
+                    if (receiver) {
+                        if (cf.ic_entries == null) return false;
+                        key = (HString*)((ICEntry*)cf.ic_entries + pos).key.borrow();
+                        if (key == null) return false;
                     } else {
-                        return false;
+                        key = cf.constants[ins.c].get_heapptr();
+                        key_const = ins.c + 1;
+                    }
+                    if (key.is_symbol()) return false;
+                    String name =  (String)key.get_data();
+                    // Element, string and builtin-method memories first.
+                    int memory  = -1;
+                    if (!receiver && base.is_string()) {
+                        memory = loop_memory(plan, source, base);
+                    } else if (!receiver && base.is_object()) {
+                        HObject* probe = base.get_heapptr();
+                        ObjClass cls   = probe == null ? OBJECT : probe.get_class();
+                        bool element   = cls == ARRAY
+                            || (cls >= INT8ARRAY && cls <= FLOAT64ARRAY && cls != UINT8CLAMPEDARRAY
+                                && cls != FLOAT16ARRAY);
+                        bool builtin   = cls == MATH || (name == "imul" || name == "charCodeAt");
+                        if (element || builtin) memory = loop_memory(plan, source, base);
+                    }
+                    if (memory >= 0 && plan.memory[memory].kind == ASCII) {
+                        if (name == "length") {
+                            plan.memory[memory].length_read = true;
+                        } else if (name == "charCodeAt") {
+                            plan.memory[memory].builtin = (int)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal;
+                            plan.intrinsic_at[at] = 1;
+                            plan.memory_at[at] = (char)(memory + 1);
+                            origin[ins.a] = -1;
+                            method[ins.a] = memory;
+                            frequency[source]++;
+                            continue;
+                        } else {
+                            memory = -1;
+                        }
+                    } else if (memory >= 0 && plan.memory[memory].kind != INTRINSIC) {
+                        if (name == "length") {
+                            plan.memory[memory].length_read = true;
+                        } else {
+                            memory = -1;
+                        }
+                    } else if (memory >= 0) {
+                        if (name == "imul") {
+                            plan.memory[memory].builtin = (int)builtins::Builtin.MATH_IMUL.ordinal;
+                            plan.intrinsic_at[at] = 1;
+                            plan.memory_at[at] = (char)(memory + 1);
+                            origin[ins.a] = -1;
+                            method[ins.a] = memory;
+                            frequency[source]++;
+                            continue;
+                        }
+                        memory = -1;
+                    }
+                    if (memory < 0) {
+                        // A plain data field of an object that is stable for the
+                        // whole run: one load per iteration with no guard.
+                        memory = loop_memory_field(plan, source, base, key, pos, key_const, cold.heap);
+                        if (memory < 0) return false;
                     }
                     plan.memory_at[at] = (char)(memory + 1);
-                    frequency[ins.b]++;
+                    if (source < (int)LOOP_REGS) frequency[(uint)source]++;
                 }
             case CALL:
 
@@ -538,6 +660,20 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         if (frequency[best] < 2) break;
         plan.cache[best] = (char)(i < 4 ? jit::reg_r((int)i + 4) : jit::reg_s((int)i - 1));
         frequency[best] = 0;
+    }
+    // Only the SSA tier emits the guarded double element path.
+    if (ssa_loop_eligible(plan, cf)) {
+        for (uint i = 0; i < plan.memory_count && i < LOOP_MEMORY; i++) {
+            if (plan.memory[i].kind != DENSE) continue;
+            LoopMemory probe;
+            probe.source = loop_source(plan.memory[i].source, &sample, cold);
+            if (!probe.source.is_object()) continue;
+            HObject* object = probe.source.get_heapptr();
+            if (object == null || object.get_class() != ARRAY) continue;
+            probe.data = (char*)object.array_part();
+            probe.length = (long)*object.array_len_ptr();
+            plan.memory[i].doubles = loop_probe_doubles(&probe);
+        }
     }
     return true;
 }
@@ -1006,6 +1142,19 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
                 }
             case GETPROPC:
             case GETPROPC_CACHED:
+                if (plan.memory[memory].kind == FIELD) {
+                    e.mov(r1, 0, mem | state, loop_memory_offset(memory, 1));
+                    if (plan.memory[memory].doubles) {
+                        e.mov(r0, 0, mem | r1, 0);
+                        e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+                        out.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT, pos);
+                        out.fop(jit::SLJIT_MOV_F64, 1, 0, mem | r1, 0);
+                        out.float_result(1);
+                    } else {
+                        e.mov(r0, 0, mem | r1, 0);
+                    }
+                    break;
+                }
                 out.memory_guard(ins.b, memory, pos);
                 e.mov(r0, 0, mem | state, loop_memory_offset(memory, plan.intrinsic_at[at] != 0 ? 3 : 2));
                 if (plan.intrinsic_at[at] == 0) out.box(r0);
@@ -1287,7 +1436,10 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         }
         draft.native = ssa_loop_eligible(&draft, cf) ? ssa_loop_emit(&draft, cf, h) : null;
         draft.ssa = draft.native != null;
-        if (draft.native == null) draft.native = loop_emit(&draft, cf);
+        if (draft.native == null) {
+            for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
+            draft.native = loop_emit(&draft, cf);
+        }
         if (draft.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
@@ -1350,7 +1502,10 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             plan.native = ssa_loop_emit(plan, cf, h);
         }
         plan.ssa = plan.native != null;
-        if (plan.native == null) plan.native = loop_emit(plan, cf);
+        if (plan.native == null) {
+            for (uint i = 0; i < plan.memory_count; i++) plan.memory[i].doubles = false;
+            plan.native = loop_emit(plan, cf);
+        }
         if (plan.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;

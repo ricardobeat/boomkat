@@ -7,10 +7,10 @@ import std::io;
 import libc;
 
 const String FUNCTION_SOURCE = $embed("../sljit_function.js");
-const String REGION_SOURCE = $embed("../sljit_regions.js");
-const String LOOP_SOURCE = $embed("../sljit_loop.js");
+const String REGION_SOURCE   = $embed("../sljit_regions.js");
+const String LOOP_SOURCE     = $embed("../sljit_loop.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
-const String RUN = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
+const String RUN             = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
 
 macro void @check(#condition) {
     if (!(#condition)) {
@@ -76,14 +76,23 @@ fn ulong function_hits(JsRuntime* rt, String name) {
     return 0;
 }
 
+// Native work done on behalf of a named function, by whichever tier compiled
+// it: a whole function region, or the hot loop inside it. A loop that the loop
+// tier can take is faster than compiling the enclosing function, so the tier
+// that owns the work is not part of the contract this checks.
 fn ulong region_work(JsRuntime* rt, String name, bool calls = false) {
     $if $feat(SLJIT) && $feat(SLJIT_STATS):
         for (uint i = 0; i < rt.rt.heap.compiled_func_count; i++) {
             CompiledFunction* cf = (CompiledFunction*)rt.rt.heap.compiled_funcs[i];
-            if (cf != null && (String)cf.get_name() == name && cf.sljit_function != null) {
-                FunctionPlan* plan = cf.sljit_function;
-                return calls ? plan.inline_calls : plan.backedges;
+            if (cf == null || (String)cf.get_name() != name) continue;
+            if (calls) {
+                if (cf.sljit_function == null) continue;
+                return ((FunctionPlan*)cf.sljit_function).inline_calls;
             }
+            ulong work = 0;
+            if (cf.sljit_function != null) work += ((FunctionPlan*)cf.sljit_function).backedges;
+            for (LoopPlan* plan = cf.sljit_loops; plan != null; plan = plan.next) work += plan.hits;
+            return work;
         }
     $endif
     return 0;
@@ -109,9 +118,12 @@ fn void main() {
     defer b.destroy();
     isolated.create(&second)!!;
     defer isolated.destroy();
-    eval(&a, "function warmField(o){return o.warm;}function freshField(o){return o.warm;}var warmRecord={warm:17};if(warmField(warmRecord)!==17||freshField(warmRecord)!==17)throw 'warm';");
+    eval(
+        &a,
+        "function warmField(o){return o.warm;}function freshField(o){return o.warm;}var warmRecord={warm:17};if(warmField(warmRecord)!==17||freshField(warmRecord)!==17)throw 'warm';"
+    );
     @check(local_read_warmed(&first, "freshField"));
-    JsContext*[3] contexts = {&a, &b, &isolated};
+    JsContext*[3] contexts = { &a, &b, &isolated };
     foreach (ctx : contexts) {
         eval(ctx, TEMPLATE_SOURCE);
         eval(ctx, RUN);
@@ -151,10 +163,16 @@ fn void main() {
         first.rt.heap.mark_and_sweep(true, true);
         for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function';");
         @check(function_hits(&first, "functionFields") > 0);
-        for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionPump(jitFunctionSource,jitFunctionSink)!==4)throw 'continuation';");
+        for (uint i = 0; i < 128; i++) eval(
+            &a,
+            "if(jitFunctionPump(jitFunctionSource,jitFunctionSink)!==4)throw 'continuation';"
+        );
         @check(function_hits(&first, "serverPump") > 0);
         first.rt.heap.mark_and_sweep(true, true);
-        for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function after GC';");
+        for (uint i = 0; i < 128; i++) eval(
+            &a,
+            "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function after GC';"
+        );
         @check(function_hits(&first, "functionFields") > 0);
         before = native_hits(&first);
         @check(first.set_jit(false));
@@ -170,7 +188,10 @@ fn void main() {
         eval(&a, "if(jitRegionFields(jitRegionRecord,20000)!==35000.25)throw 'region after GC';");
         // The getter fallback deliberately disables the old field entry after
         // repeated misses. Warm a fresh native loop for the interrupt check.
-        eval(&a, "function jitRegionPoll(o,n){var sum=0.25;for(var i=0;i<n;i++){sum=sum+o.x;sum=sum+o.y;}return sum;}for(var w=0;w<100;w++)jitRegionPoll(jitRegionRecord,32);");
+        eval(
+            &a,
+            "function jitRegionPoll(o,n){var sum=0.25;for(var i=0;i<n;i++){sum=sum+o.x;sum=sum+o.y;}return sum;}for(var w=0;w<100;w++)jitRegionPoll(jitRegionRecord,32);"
+        );
         uint region_polls;
         ulong region_before = region_work(&first, "jitRegionPoll");
         @check(region_before > 0);
@@ -186,7 +207,9 @@ fn void main() {
         before = native_hits(&first);
         first.set_interrupt(&stop_after_polls, &polls);
         bool interrupted;
-        if (catch err = a.eval("function spin(a){var x=0;for(var i=0;i<1000000;i++)x+=a[i&511];return x;}spin(bytes);")) {
+        if (catch err = a.eval(
+            "function spin(a){var x=0;for(var i=0;i<1000000;i++)x+=a[i&511];return x;}spin(bytes);"
+        )) {
             interrupted = true;
         }
         @check(interrupted && polls == 3 && native_hits(&first) > before);

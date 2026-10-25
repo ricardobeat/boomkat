@@ -228,6 +228,16 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
             case PUTPROP:
                 if (plan.memory_at[pos - plan.begin] == 0) return false;
                 continue;
+            case GETPROPC:
+            case GETPROPC_CACHED:
+            case GETTHISC:
+
+                {
+                    uint at = pos - plan.begin;
+                    if (plan.memory_at[at] == 0 || plan.intrinsic_at[at] != 0) return false;
+                    if (plan.memory[(uint)plan.memory_at[at] - 1].kind != FIELD) return false;
+                    continue;
+                }
             default: return false;
         }
     }
@@ -669,6 +679,22 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     }
                     break;
                 }
+            case GETPROPC:
+            case GETPROPC_CACHED:
+            case GETTHISC:
+
+                {
+                    uint memory = (uint)plan.memory_at[at] - 1;
+                    if (memory >= plan.memory_count) {
+                        g.failed = true;
+                        return false;
+                    }
+                    LoopMemorySpec spec = plan.memory[memory];
+                    int nv              = ssa_value(g, LOAD, spec.doubles ? F64 : BOXED, -1, -1, (long)memory);
+                    ssa_result(g, nv, ins.a, pos);
+                    g.current[ins.a] = nv;
+                    break;
+                }
             case GETPROP:
             case GETPROP_CACHE:
 
@@ -681,7 +707,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int index = ssa_convert(g, g.current[ins.c], INT32, true);
                     ssa_use(g, index);
                     LoopMemorySpec spec = plan.memory[memory];
-                    SsaRep rep          = spec.kind == DENSE ? BOXED : (spec.cls >= FLOAT32ARRAY ? F64 : INT32);
+                    SsaRep rep          = spec.doubles ? F64
+                        : (spec.kind == DENSE ? BOXED : (spec.cls >= FLOAT32ARRAY ? F64 : INT32));
 
 
 
@@ -703,7 +730,11 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int index           = ssa_convert(g, g.current[ins.b], INT32, true);
                     LoopMemorySpec spec = plan.memory[memory];
                     int value;
-                    if (spec.kind == DENSE) {
+                    if (spec.doubles) {
+                        // Every element is an ordinary double, so store one
+                        // instead of boxing the number.
+                        value = ssa_convert(g, g.current[ins.c], F64, false);
+                    } else if (spec.kind == DENSE) {
                         value = ssa_convert(g, g.current[ins.c], BOXED, false);
                     } else if (spec.cls >= FLOAT32ARRAY) {
                         value = ssa_convert(g, g.current[ins.c], F64, false);
@@ -965,7 +996,11 @@ fn void ssa_numeric_loads(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue v = g.values[i];
         if (v.op != LOAD) continue;
-        if (g.plan.memory[v.imm].kind != DENSE) continue;
+        if (g.plan.memory[v.imm].kind != DENSE && g.plan.memory[v.imm].kind != FIELD) continue;
+        if (g.plan.memory[v.imm].doubles) {
+            g.numeric_load[i] = true;
+            continue;
+        }
         bool numeric = true;
         for (uint j = 0; j < g.value_count && numeric; j++) {
             SsaValue u = g.values[j];
@@ -1081,6 +1116,7 @@ struct SsaEmitter @feat(SLJIT) {
     int addr_value;
     int addr_reg;
     bool addr_numeric_load;
+    bool addr_read_double;
 }
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
@@ -1656,12 +1692,43 @@ fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
 fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep) @feat(SLJIT) {
     LoopMemorySpec spec = self.plan.memory[memory];
     uint pc             = self.pc;
+    if (spec.kind == FIELD) {
+        int r1 = jit::reg_r(1);
+        int r0 = jit::reg_r(0);
+        int r3 = jit::reg_r(3);
+        self.e.mov(r1, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 1));
+        if (spec.doubles) {
+            int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : 1;
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r1, 0);
+            self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+            self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+            if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, r0) != 0) self.e.failed = true;
+            if (self.g.values[dst_value].home == 0) self.store_fpr(dst_value, dst);
+        } else {
+            int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
+            self.e.mov(dst, 0, jit::SLJIT_MEM | r1, 0);
+            if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
+        }
+        return;
+    }
     self.memory_guard(spec.source, memory, pc);
     self.index(index, memory, pc);
     int r0 = jit::reg_r(0);
     int r2 = jit::reg_r(2);
     int r3 = jit::reg_r(3);
-    if (spec.kind == DENSE) {
+    if (spec.doubles) {
+        // Fastest element read: an ordinary double is already its own bits, so
+        // one guard replaces the tag test, the representation branch and the
+        // conversion. Anything else exits and the interpreter reruns the loop.
+        int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : 1;
+        self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
+        self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+        self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+        if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, r0) != 0) self.e.failed = true;
+        if (self.g.values[dst_value].home == 0) self.store_fpr(dst_value, dst);
+        self.addr_numeric_load = true;
+        self.addr_read_double = true;
+    } else if (spec.kind == DENSE) {
         int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
         self.e.mov(dst, 0, jit::SLJIT_MEM | r2, 0);
         if (self.g.numeric_load[dst_value]) {
@@ -1717,6 +1784,20 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) 
     int r2       = jit::reg_r(2);
     int r3       = jit::reg_r(3);
     SsaValue src = self.g.values[value];
+    if (spec.doubles) {
+        // The element being replaced must also be an ordinary double: checking
+        // that is both the reference-release test and the invariant guard. An
+        // earlier numeric read of this exact slot already proved it.
+        if (!self.addr_read_double) {
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
+            self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+            self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+        }
+        self.load_fpr(value, 1);
+        self.bits_fpr(1, r0);
+        self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0);
+        return;
+    }
     if (spec.kind == DENSE) {
         // A numeric read of this exact slot earlier in the iteration already
         // proved the stored value holds no reference to release.
@@ -1900,13 +1981,15 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
     int r2       = jit::reg_r(2);
     SsaValue lhs = self.g.values[self.g.cmp_lhs];
     if (lhs.rep == INT32) {
-        self.gpr(self.g.cmp_lhs, r0);
+        int left = self.gpr_slot(self.g.cmp_lhs, r0);
+        int right;
         if (self.g.cmp_rhs >= 0) {
-            self.gpr(self.g.cmp_rhs, r1);
+            right = self.gpr_slot(self.g.cmp_rhs, r1);
         } else {
             self.e.mov(r1, 0, jit::SLJIT_IMM, self.g.cmp_imm);
+            right = r1;
         }
-        void* taken = self.e.cmp(loop_condition(self.g.cmp_op), r0, 0, r1, 0);
+        void* taken = self.e.cmp(loop_condition(self.g.cmp_op), left, 0, right, 0);
         if (taken == null) {
             self.e.failed = true;
         } else {
