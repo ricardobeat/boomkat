@@ -782,7 +782,18 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     // The object is built once the frame is published, since building it can
     // run a collection step that scans the frame.
-    if (target.arguments_in_reg()) bind_register_arguments(vm, la, target, function, bottom, nargs);
+    if (@unlikely(target.arguments_in_reg())) {
+        return th_enter_with_arguments(handlers, cold, la, target, function, bottom, nargs);
+    }
+    return th_next(target.code, handlers, bottom, cold);
+}
+
+// Enter the body of a frame whose `arguments` object lives in a register. The
+// call is out of line so the entry handlers stay leaves.
+fn Instruction* th_enter_with_arguments(HandlerTable* handlers, ColdCtx* cold, Activation* la,
+                                        CompiledFunction* target, HObject* function,
+                                        TVal* bottom, uint nargs) @private @noinline {
+    bind_register_arguments(cold.vm, la, target, function, bottom, nargs);
     return th_next(target.code, handlers, bottom, cold);
 }
 
