@@ -1309,12 +1309,14 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         h.jit_code_bytes += plan.code_bytes;
         $if $feat(SLJIT_STATS):
             io::eprintfn(
-                "SLJIT loop compiled %s pc=%d..%d code_bytes=%d plan_bytes=%d",
+                "SLJIT loop compiled %s pc=%d..%d code_bytes=%d plan_bytes=%d ssa=%d mem=%d",
                 (String)cf.get_name(),
                 plan.begin,
                 plan.end,
                 plan.code_bytes,
-                LoopPlan::size
+                LoopPlan::size,
+                plan.ssa,
+                plan.memory_count
             );
         $endif
     }

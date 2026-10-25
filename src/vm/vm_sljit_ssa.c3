@@ -1038,6 +1038,9 @@ struct SsaEmitter @feat(SLJIT) {
     uint pc;
     void* header;
     int length_home;
+    int base_home;
+    int[2] memory_length;
+    int[2] memory_base;
 }
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
@@ -1230,9 +1233,18 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
             loop_memory_offset(memory, 0)
         );
         self.snapshot_none(jump, self.plan.begin);
-        if (memory == 0) {
-            self.length_home = jit::reg_s(5);
-            self.e.mov(self.length_home, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2));
+        // The descriptor of an invariant memory cannot change during the run,
+        // so its data pointer and length stay in registers instead of being
+        // reloaded for every element access.
+        if (memory < 2) {
+            self.memory_length[memory] = jit::reg_s(5 + (int)memory * 2);
+            self.memory_base[memory] = jit::reg_s(6 + (int)memory * 2);
+            self.e.mov(self.memory_length[memory], 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2));
+            self.e.mov(self.memory_base[memory], 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 1));
+            if (memory == 0) {
+                self.length_home = self.memory_length[0];
+                self.base_home = self.memory_base[0];
+            }
         }
     }
 }
@@ -1572,15 +1584,19 @@ fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
     self.gpr(value, r1);
     // The first memory keeps its length in a saved register for the whole
     // loop, so bounds checks are a register comparison.
-    if (memory == 0 && self.length_home != 0) {
-        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, self.length_home, 0, pc);
+    if (memory < 2 && self.memory_length[memory] != 0) {
+        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, self.memory_length[memory], 0, pc);
     } else {
         self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2), pc);
     }
     uint shift = self.plan.memory[memory].kind == DENSE ? 3 : builtins::ta_elem_shift(self.plan.memory[memory].cls);
     if (shift != 0) self.e.op(jit::SLJIT_SHL, r1, r1, 0, jit::SLJIT_IMM, shift);
-    self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 1));
-    self.e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
+    if (memory < 2 && self.memory_base[memory] != 0) {
+        self.e.op(jit::SLJIT_ADD, r2, self.memory_base[memory], 0, r1, 0);
+    } else {
+        self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 1));
+        self.e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
+    }
 }
 fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep) @feat(SLJIT) {
     LoopMemorySpec spec = self.plan.memory[memory];
@@ -1710,7 +1726,7 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
         for (uint other = 0; other < self.cf.num_regs && other < LOOP_REGS; other++) {
             int dst = self.g.phi[other];
             if (dst < 0) continue;
-            if (self.g.values[dst].home == home) {
+            if (self.g.values[dst].home == home && ssa_same_class(self.g.values[dst].rep, self.g.values[src].rep)) {
                 cycle = true;
                 break;
             }
@@ -1833,7 +1849,7 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     e.compiler = jit::sljit_create_compiler(null);
     if (e.compiler == null) return null;
     defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW, 8 | (10 << 8), 6, 0) != 0) return null;
+    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW, 8 | (10 << 8), 9, 0) != 0) return null;
     int r0 = jit::reg_r(0);
     self.state = jit::reg_s(0);
     self.budget = jit::reg_s(1);
@@ -1842,7 +1858,6 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     for (uint i = 0; i < LOOP_REGS; i++) self.live[i] = graph.header[i];
     e.mov(self.state, 0, r0, 0);
     e.mov(self.budget, 0, jit::reg_r(1), 0);
-    e.mov(self.dirty, 0, jit::SLJIT_IMM, 0);
     // Prologue guards must not publish anything: the interpreter resumes at
     // the loop header with its original frame.
     int saved_count = (int)graph.exit_count;
