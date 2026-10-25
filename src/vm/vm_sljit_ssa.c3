@@ -22,6 +22,8 @@ const uint SSA_HOMES      = 8;
 const uint SSA_GPR_HOMES  = 7;
 const uint SSA_EXITS      = 128;
 const uint SSA_CSE        = 64;
+const uint SSA_BLOCKS     = 16;
+const uint SSA_JOINS      = 16;
 
 enum SsaRep : char {
     BOXED,
@@ -56,7 +58,14 @@ enum SsaOp : char {
     STORE,
     // Identity guard: the value must be a function whose compiled body is the
     // one the call was expanded from.
-    CHECKFN
+    CHECKFN,
+    // A value merged from several arms at a join. Its home holds whichever
+    // incoming value the path took.
+    JOIN,
+    // A conditional branch inside the body: the arms of an if.
+    BRANCH,
+    // An unconditional branch inside the body: the end of an arm.
+    GOTO
 }
 
 struct SsaValue @feat(SLJIT) {
@@ -72,6 +81,35 @@ struct SsaValue @feat(SLJIT) {
     int home;
     uint spill;
     int arg_reg;
+    // A branch names the block it leaves and the block its other arm takes.
+    int block;
+    int target;
+    int fallto;
+    Opcode branch_op;
+}
+
+// One basic block of the loop body. The blocks partition the body in
+// bytecode order, so a block's fall-through successor is the next one.
+struct SsaBlock @feat(SLJIT) {
+    uint begin;
+    uint end;
+    uint succ0;
+    uint succ1;
+    uint pred_count;
+    uint[4] preds;
+    uint branch_pc;
+    bool conditional;
+    bool jump;
+}
+
+// A block with more than one predecessor: the registers its predecessors
+// disagree about are merged here.
+struct SsaJoin @feat(SLJIT) {
+    uint block;
+    uint pred_count;
+    uint[4] preds;
+    int[LOOP_REGS] phi;
+    int[4][LOOP_REGS] incoming;
 }
 
 struct SsaExit @feat(SLJIT) {
@@ -117,6 +155,16 @@ struct SsaGraph @feat(SLJIT) {
     int[SSA_CSE] cse_memory;
     int[SSA_CSE] cse_index;
     int[SSA_CSE] cse_value;
+    // The body's block graph and the joins between its arms.
+    SsaBlock[SSA_BLOCKS] blocks;
+    uint block_count;
+    SsaJoin[SSA_JOINS] joins;
+    uint join_count;
+    // The register state at the end of each block.
+    int[SSA_BLOCKS][LOOP_REGS] block_exit;
+    // The values each block owns, in the order they were built.
+    uint[SSA_BLOCKS] block_first;
+    uint[SSA_BLOCKS] block_last;
 }
 
 fn long ssa_spill_offset(uint slot) @feat(SLJIT) {
@@ -190,6 +238,139 @@ fn bool ssa_comparison_op(Opcode op) @feat(SLJIT) {
         || (op >= Opcode.JMP_NLTI && op <= Opcode.JMP_SNEQI);
 }
 
+// Split the body into basic blocks at the forward branch targets. A block
+// ends at the branch that leaves it, or at the start of the next block, so
+// the blocks partition the body in bytecode order and a block's fall-through
+// successor is the next one.
+fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan = g.plan;
+    // A block starts at the body's head, after a conditional branch (the arm
+    // that falls through) and at the target of a forward branch.
+    uint[SSA_BLOCKS] starts;
+    uint count = 0;
+    starts[count++] = plan.begin;
+    for (uint pos = plan.begin; pos <= plan.end; pos++) {
+        Instruction ins = cf.code[pos];
+        int target = loop_target(ins, pos);
+        if (target < 0) continue;
+        if (target == (int)plan.begin) continue;
+        // A branch inside the body must move forward and stay inside it.
+        if (target <= (int)pos || target > (int)plan.end) return false;
+        if (ins.op != Opcode.JUMP && pos + 1 <= plan.end) {
+            bool found = false;
+            for (uint i = 0; i < count; i++) {
+                if (starts[i] == pos + 1) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (count == SSA_BLOCKS) return false;
+                uint at = count;
+                while (at > 0 && starts[at - 1] > pos + 1) {
+                    starts[at] = starts[at - 1];
+                    at--;
+                }
+                starts[at] = pos + 1;
+                count++;
+            }
+        }
+        bool found = false;
+        for (uint i = 0; i < count; i++) {
+            if (starts[i] == (uint)target) {
+                found = true;
+                break;
+            }
+        }
+        if (found) continue;
+        if (count == SSA_BLOCKS) return false;
+        uint at = count;
+        while (at > 0 && starts[at - 1] > (uint)target) {
+            starts[at] = starts[at - 1];
+            at--;
+        }
+        starts[at] = (uint)target;
+        count++;
+    }
+    g.block_count = count;
+    for (uint i = 0; i < count; i++) {
+        SsaBlock* block = &g.blocks[i];
+        block.begin = starts[i];
+        uint limit = i + 1 < count ? starts[i + 1] - 1 : plan.end;
+        uint e = starts[i];
+        while (e <= limit && loop_target(cf.code[e], e) < 0) e++;
+        block.branch_pc = e <= limit ? e : 0;
+        block.end = block.branch_pc != 0 ? e : limit;
+        block.conditional = false;
+        block.jump = false;
+        block.succ0 = 0;
+        block.succ1 = 0;
+        if (block.branch_pc != 0) {
+            Instruction ins = cf.code[block.branch_pc];
+            if (ins.op == Opcode.JUMP) {
+                block.jump = true;
+            } else {
+                block.conditional = true;
+            }
+        }
+    }
+    // Resolve the edges now that every block start is known.
+    for (uint i = 0; i < count; i++) {
+        SsaBlock* block = &g.blocks[i];
+        if (block.branch_pc == 0) {
+            block.succ0 = i + 1 < count ? i + 1 : 0;
+            continue;
+        }
+        Instruction ins = cf.code[block.branch_pc];
+        int target = loop_target(ins, block.branch_pc);
+        if (block.jump) {
+            block.succ0 = 0;
+            for (uint j = 0; j < count; j++) {
+                if (g.blocks[j].begin == (uint)target) {
+                    block.succ0 = j;
+                    break;
+                }
+            }
+            continue;
+        }
+        // A conditional branch: the arm that falls through is the next block,
+        // the other one is the block the target names.
+        block.succ0 = i + 1 < count ? i + 1 : 0;
+        block.succ1 = 0;
+        for (uint j = 0; j < count; j++) {
+            if (g.blocks[j].begin == (uint)target) {
+                block.succ1 = j;
+                break;
+            }
+        }
+    }
+    // The last block ends at the backedge, which the latch owns.
+    g.blocks[count - 1].succ0 = 0;
+    g.blocks[count - 1].succ1 = 0;
+    // Collect the predecessors.
+    for (uint i = 0; i < count; i++) {
+        SsaBlock* block = &g.blocks[i];
+        block.pred_count = 0;
+        for (uint j = 0; j < count; j++) {
+            SsaBlock* from = &g.blocks[j];
+            if (from.succ0 == i || from.succ1 == i) {
+                if (block.pred_count == block.preds.len) return false;
+                block.preds[block.pred_count++] = j;
+            }
+        }
+    }
+    return true;
+}
+
+// The block a bytecode position belongs to.
+fn int ssa_block_of(SsaGraph* g, uint pc) @feat(SLJIT) {
+    for (uint i = 0; i < g.block_count; i++) {
+        if (g.blocks[i].begin <= pc && pc <= g.blocks[i].end) return (int)i;
+    }
+    return -1;
+}
+
 fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
     if (!SSA_ENABLED) return false;
     for (uint i = 0; i < plan.memory_count; i++) {
@@ -200,9 +381,19 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
         Instruction ins = cf.code[pos];
         int target      = loop_target(ins, pos);
         if (target >= 0) {
-            if (pos != plan.end || target != (int)plan.begin) return false;
-            // The backedge must compare two values. A truthiness test names
-            // its operand in the branch's offset field, not in a register.
+            if (pos == plan.end) {
+                if (target != (int)plan.begin) return false;
+                // The backedge must compare two values. A truthiness test names
+                // its operand in the branch's offset field, not in a register.
+                if (!ssa_comparison_op(ins.op)) return false;
+                continue;
+            }
+            // An arm's branch: a comparison, a truthiness test, or the jump
+            // that ends an arm. A branch that leaves the body is not
+            // supported.
+            if (target <= (int)pos || target > (int)plan.end) return false;
+            if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) continue;
+            if (ins.op == Opcode.JUMP) continue;
             if (!ssa_comparison_op(ins.op)) return false;
             continue;
         }
@@ -258,7 +449,8 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
                 if (plan.memory_at[pos - plan.begin] != 0) return false;
                 if (function_inline_ssa_candidate(cf, pos, h) == null) return false;
                 continue;
-            default: return false;
+            default:
+                return false;
         }
     }
     return true;
@@ -281,16 +473,24 @@ fn void ssa_infer(
     bool[LOOP_REGS] assigned;
     for (uint pos = plan.begin; pos <= plan.end; pos++) {
         Instruction ins = cf.code[pos];
-        if (pos == plan.end && loop_target(ins, pos) >= 0) {
-            (*read)[ins.b] = true;
-            (*value_read)[ins.b] = true;
-            if (!assigned[ins.b]) (*live_in)[ins.b] = true;
-            (*int_need)[ins.b] = true;
-            if (ins.op < Opcode.JMP_NLTI) {
-                (*read)[ins.c] = true;
-                (*value_read)[ins.c] = true;
-                if (!assigned[ins.c]) (*live_in)[ins.c] = true;
-                (*int_need)[ins.c] = true;
+        if (loop_target(ins, pos) >= 0) {
+            // A comparison branch reads two numbers; a truthiness test reads
+            // one value and does not use it as a number.
+            bool comparison = ssa_comparison_op(ins.op);
+            uint left      = comparison ? ins.b : ins.a;
+            uint right     = comparison ? ins.c : left;
+            if (comparison && ins.op >= Opcode.JMP_NLTI) right = left;
+            if (left < LOOP_REGS) {
+                (*read)[left] = true;
+                (*value_read)[left] = true;
+                if (!assigned[left]) (*live_in)[left] = true;
+                if (comparison) (*int_need)[left] = true;
+            }
+            if (right < LOOP_REGS && right != left) {
+                (*read)[right] = true;
+                (*value_read)[right] = true;
+                if (!assigned[right]) (*live_in)[right] = true;
+                if (comparison) (*int_need)[right] = true;
             }
             continue;
         }
@@ -579,6 +779,103 @@ fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < LOOP_REGS; i++) g.int_reg[i] = int_reg[i];
 }
 
+// Enter a block: its register state is the merge of its predecessors' states.
+// Where the predecessors disagree, the join holds a value each of them
+// writes before it arrives.
+fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
+    SsaBlock* block = &g.blocks[b];
+    if (b == 0) return true;
+    if (block.pred_count == 0) return true;
+    if (block.pred_count == 1) {
+        uint pred = block.preds[0];
+        for (uint reg = 0; reg < LOOP_REGS; reg++) g.current[reg] = g.block_exit[pred][reg];
+        return true;
+    }
+    if (g.join_count == SSA_JOINS) return false;
+    uint index = g.join_count++;
+    SsaJoin* join = &g.joins[index];
+    join.block = b;
+    join.pred_count = block.pred_count;
+    for (uint p = 0; p < block.pred_count; p++) {
+        join.preds[p] = block.preds[p];
+        for (uint reg = 0; reg < LOOP_REGS; reg++) join.incoming[p][reg] = -1;
+    }
+    for (uint reg = 0; reg < LOOP_REGS; reg++) join.phi[reg] = -1;
+    for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        int first = g.block_exit[block.preds[0]][reg];
+        bool differ = false;
+        for (uint p = 1; p < block.pred_count; p++) {
+            if (g.block_exit[block.preds[p]][reg] != first) {
+                differ = true;
+                break;
+            }
+        }
+        if (!differ) {
+            g.current[reg] = first;
+            continue;
+        }
+        // The merged value takes the first incoming's representation; a copy
+        // from a predecessor with another one converts.
+        SsaRep rep = g.values[first].rep;
+        int phi = ssa_value(g, JOIN, rep, (int)index, (int)reg, 0);
+        ssa_result(g, phi, (uint)reg, block.begin);
+        join.phi[reg] = phi;
+        for (uint p = 0; p < block.pred_count; p++) {
+            join.incoming[p][reg] = g.block_exit[block.preds[p]][reg];
+        }
+        g.current[reg] = phi;
+    }
+    return true;
+}
+
+// An arm's branch: the condition it tests and the two blocks it reaches.
+fn bool ssa_arm_branch(SsaGraph* g, uint b, uint pos, Instruction ins) @feat(SLJIT) {
+    SsaBlock* block = &g.blocks[b];
+    int lhs;
+    int rhs = -1;
+    long imm = 0;
+    Opcode op = (Opcode)0;
+    if (ins.op == Opcode.JUMP) {
+        // The end of an arm: the block continues at the target.
+        int value = ssa_value(g, GOTO, INT32, -1, -1, 0);
+        g.values[value].block = (int)b;
+        g.values[value].target = (int)block.succ0;
+        g.values[value].fallto = 0;
+        g.values[value].pc = pos;
+        return true;
+    }
+    if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) {
+        // The truthiness of a value. An integer reads its own value; a boxed
+        // one must be a boolean, whose payload is the value.
+        if (ins.a >= LOOP_REGS) return false;
+        lhs = g.current[ins.a];
+        if (lhs < 0) return false;
+        SsaRep rep = g.values[lhs].rep;
+        if (rep != INT32 && rep != BOXED) return false;
+        imm = ins.op == Opcode.IF_TRUE ? 1 : 0;
+    } else {
+        if (ins.b >= LOOP_REGS || ins.c >= LOOP_REGS) return false;
+        lhs = g.current[ins.b];
+        if (lhs < 0) return false;
+        if (ins.op >= Opcode.JMP_NLTI) {
+            imm = (long)(ichar)ins.c;
+        } else {
+            rhs = g.current[ins.c];
+            if (rhs < 0) return false;
+        }
+        op = ins.op;
+    }
+    int value = ssa_value(g, BRANCH, INT32, lhs, rhs, imm);
+    g.values[value].block = (int)b;
+    g.values[value].target = (int)block.succ1;
+    g.values[value].fallto = (int)block.succ0;
+    g.values[value].branch_op = op;
+    g.values[value].pc = pos;
+    ssa_use(g, lhs);
+    if (rhs >= 0) ssa_use(g, rhs);
+    return true;
+}
+
 fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     CompiledFunction* cf = g.cf;
     LoopPlan* plan       = g.plan;
@@ -630,13 +927,33 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         }
     }
     for (uint reg = 0; reg < LOOP_REGS; reg++) g.header[reg] = g.current[reg];
-    for (uint pos = plan.begin; pos <= plan.end; pos++) {
+    // The body may hold arms: a forward branch splits it into blocks, and a
+    // join merges the states its arms leave behind.
+    if (!ssa_split_blocks(g)) {
+        g.failed = true;
+                return false;
+    }
+    for (uint b = 0; b < g.block_count; b++) {
+    if (!ssa_enter_block(g, b)) {
+        g.failed = true;
+                return false;
+    }
+    g.block_first[b] = g.value_count;
+    SsaBlock* block = &g.blocks[b];
+    for (uint pos = block.begin; pos <= block.end; pos++) {
         Instruction ins = cf.code[pos];
         uint at         = pos - plan.begin;
         g.current_pc = pos;
         int target = loop_target(ins, pos);
         if (target >= 0) {
-            if (pos != plan.end || !ssa_comparison_op(ins.op)) {
+            if (pos != plan.end) {
+                if (!ssa_arm_branch(g, b, pos, ins)) {
+                    g.failed = true;
+                return false;
+                }
+                continue;
+            }
+            if (!ssa_comparison_op(ins.op)) {
                 g.failed = true;
                 return false;
             }
@@ -668,7 +985,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 {
                     if (g.current[ins.b] < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     int src = g.current[ins.b];
                     ssa_use(g, src);
@@ -697,12 +1014,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 {
                     if (ins.get_bc() >= cf.const_count) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     TVal value = cf.constants[ins.get_bc()];
                     if (!value.is_fastint() && !value.is_number()) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     double number = value.get_number_or_fastint();
                     if (value.is_fastint()) {
@@ -734,7 +1051,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     CompiledFunction* callee_fn = function_inline_ssa_candidate(cf, pos, g.heap);
                     if (callee_fn == null || g.current[ins.b] < 0 || ins.c > 8) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     // The site can be rebound, so the live callee must still be
                     // the compiled body that was expanded here.
@@ -747,7 +1064,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         int arg = g.current[ins.b + 2 + i];
                         if (arg < 0) {
                             g.failed = true;
-                            return false;
+                return false;
                         }
                         ssa_use(g, arg);
                         mapped[i] = arg;
@@ -762,7 +1079,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         Instruction ci = callee_fn.code[ci_pos];
                         if (ci.a >= LOOP_REGS) {
                             g.failed = true;
-                            return false;
+                return false;
                         }
                         switch (ci.op) {
                             case NOP: continue;
@@ -786,12 +1103,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                 {
                                     if (ci.get_bc() >= callee_fn.const_count) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     TVal constant = callee_fn.constants[ci.get_bc()];
                                     if (!constant.is_fastint() && !constant.is_number()) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     double number = constant.get_number_or_fastint();
                                     mapped[ci.a] = ssa_value(g, CONST_F, F64, -1, 0, (long)bitcast(number, ulong));
@@ -800,7 +1117,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                             case LDTHIS:
                                 if (receiver < 0) {
                                     g.failed = true;
-                                    return false;
+                return false;
                                 }
                                 mapped[ci.a] = ssa_convert(g, receiver, BOXED, false);
                                 continue;
@@ -808,7 +1125,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                             case UNP:
                                 if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
                                     g.failed = true;
-                                    return false;
+                return false;
                                 }
                                 mapped[ci.a] = mapped[ci.b];
                                 continue;
@@ -817,7 +1134,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                 {
                                     if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     int operand = ssa_convert(g, mapped[ci.b], F64, false);
                                     ssa_use(g, operand);
@@ -834,7 +1151,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     if (ci.b >= LOOP_REGS || ci.c >= LOOP_REGS || mapped[ci.b] < 0
                                         || mapped[ci.c] < 0) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     int left  = ssa_convert(g, mapped[ci.b], F64, false);
                                     int right = ssa_convert(g, mapped[ci.c], F64, false);
@@ -852,7 +1169,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                 {
                                     if (ci.b >= LOOP_REGS || mapped[ci.b] < 0) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     int left = ssa_convert(g, mapped[ci.b], F64, false);
                                     int immediate = ssa_value(
@@ -877,23 +1194,23 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     bool on_receiver = ci.op == Opcode.GETTHISC;
                                     if (!on_receiver && (ci.b >= LOOP_REGS || mapped[ci.b] < 0)) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     if (callee_fn.ic_entries == null) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     ICEntry* ic   = (ICEntry*)callee_fn.ic_entries + ci_pos;
                                     Shape* layout = g.heap.get_shape(ic.shape_id);
                                     if (layout == null || layout.generation != ic.shape_gen) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     int receiver_value = on_receiver ? ssa_convert(g, receiver, BOXED, false)
                                         : mapped[ci.b];
                                     if (receiver_value < 0) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     ssa_use(g, receiver_value);
                                     int memory = loop_memory_shape_layout(
@@ -905,19 +1222,19 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     );
                                     if (memory < 0) {
                                         g.failed = true;
-                                        return false;
+                return false;
                                     }
                                     mapped[ci.a] = ssa_value(g, LOAD, BOXED, receiver_value, -1, (long)memory);
                                     continue;
                                 }
                             default:
                                 g.failed = true;
-                                return false;
+                return false;
                         }
                     }
                     if (result < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     ssa_use(g, result);
                     int nv = ssa_convert(g, result, g.rep[ins.a], false);
@@ -933,7 +1250,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     uint memory = (uint)plan.memory_at[at] - 1;
                     if (memory >= plan.memory_count) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     LoopMemorySpec spec =  plan.memory[memory];
                     int base_value      = -1;
@@ -941,7 +1258,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         base_value = g.current[ins.b];
                         if (base_value < 0) {
                             g.failed = true;
-                            return false;
+                return false;
                         }
                         ssa_use(g, base_value);
                     }
@@ -957,7 +1274,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     uint memory = (uint)plan.memory_at[at] - 1;
                     if (memory >= plan.memory_count || g.current[ins.c] < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     int index = ssa_convert(g, g.current[ins.c], INT32, true);
                     ssa_use(g, index);
@@ -980,7 +1297,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     uint memory = (uint)plan.memory_at[at] - 1;
                     if (memory >= plan.memory_count || g.current[ins.b] < 0 || g.current[ins.c] < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     int index           = ssa_convert(g, g.current[ins.b], INT32, true);
                     LoopMemorySpec spec = plan.memory[memory];
@@ -1008,7 +1325,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 {
                     if (g.current[ins.a] < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     // A double counter increments in place: JavaScript numbers
                     // are doubles, so this is exact and needs no int round trip.
@@ -1037,7 +1354,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int right = g.current[ins.c];
                     if (left < 0 || right < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     SsaOp op     = ins.op == Opcode.ADD || ins.op == Opcode.ADD_FUSED ? ADD
                         : ins.op == Opcode.SUB ? SUB
@@ -1069,7 +1386,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int left = g.current[ins.b];
                     if (left < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     SsaOp op     = ins.op == Opcode.SUBI ? SUB : ins.op == Opcode.MULI ? MUL : ADD;
                     bool integer = g.values[left].rep == INT32;
@@ -1098,7 +1415,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int right = g.current[ins.c];
                     if (left < 0 || right < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     left = ssa_convert(g, left, INT32, false);
                     right = ssa_convert(g, right, INT32, false);
@@ -1131,7 +1448,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int left = g.current[ins.b];
                     if (left < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     left = ssa_convert(g, left, INT32, false);
                     ssa_use(g, left);
@@ -1157,7 +1474,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int value = g.current[ins.b];
                     if (value < 0) {
                         g.failed = true;
-                        return false;
+                return false;
                     }
                     value = ssa_convert(g, value, INT32, false);
                     ssa_use(g, value);
@@ -1176,6 +1493,9 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 return false;
         }
     }
+    g.block_last[b] = g.value_count;
+    for (uint reg = 0; reg < LOOP_REGS; reg++) g.block_exit[b][reg] = g.current[reg];
+    }
     for (uint i = 0; i < plan.memory_count && i < LOOP_MEMORY; i++) {
         uint source = plan.memory[i].source;
         g.invariant[i] = !written[source];
@@ -1193,7 +1513,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         int value = g.current[reg];
         if (value < 0) {
             g.failed = true;
-            return false;
+                return false;
         }
         if (g.values[value].rep == F64 && g.values[g.phi[reg]].rep != F64) g.force_f64 |= 1UL << reg;
         value = ssa_convert(g, value, g.values[g.phi[reg]].rep, false);
@@ -1293,11 +1613,12 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
         if (root < 0 || root == (int)i) continue;
         if (g.values[root].last < g.values[i].last) g.values[root].last = g.values[i].last;
     }
-    // Phis are live across the whole loop and are placed first.
+    // Phis are live across the whole loop and are placed first. A join's
+    // value is live from the join to its last use, so it is placed with them.
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
         value.home = 0;
-        if (value.op != PHI) continue;
+        if (value.op != PHI && value.op != JOIN) continue;
         uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
         for (uint s = 0; s < homes; s++) {
             int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
@@ -1319,7 +1640,7 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
     }
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op == PHI || value.op == COPY) continue;
+        if (value.op == PHI || value.op == JOIN || value.op == COPY) continue;
         uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
         for (uint s = 0; s < homes; s++) {
             int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
@@ -1373,6 +1694,11 @@ struct SsaEmitter @feat(SLJIT) {
     int addr_reg;
     bool addr_numeric_load;
     bool addr_read_double;
+    // The label of each block, and the jumps that reach them.
+    void*[SSA_BLOCKS] block_label;
+    void*[64] pending_jump;
+    uint[64] pending_target;
+    uint pending_count;
 }
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
@@ -1620,8 +1946,13 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
     int r3  = jit::reg_r(3);
     int imm = jit::SLJIT_IMM;
     int mem = jit::SLJIT_MEM;
+    TemplateEmitter* e = &self.e;
     self.addr_reg = 0;
-    for (uint i = 0; i < self.g.value_count; i++) {
+    for (uint b = 0; b < self.g.block_count; b++) {
+        self.block_label[b] = e.label();
+        uint first = self.g.block_first[b];
+        uint last  = self.g.block_last[b];
+        for (uint i = first; i < last; i++) {
         SsaValue v = self.g.values[i];
         self.at_def = v.def;
         self.pc = v.pc;
@@ -1904,8 +2235,219 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                     self.store(memory, v.a, v.b);
                     break;
                 }
+            case JOIN: break;
+            case BRANCH: self.branch((int)i); break;
+            case GOTO: self.goto_block((int)i); break;
         }
         if (v.dst_reg >= 0) self.live[v.dst_reg] = (int)i;
+        }
+        // A block without a branch hands its state to the block that follows
+        // it, so the join's values are written on that path too.
+        if (self.g.blocks[b].branch_pc == 0 && b + 1 < self.g.block_count) {
+            self.join_copies(b, b + 1);
+        }
+    }
+}
+
+// Copy the values a join merges into the phi's home. Each predecessor
+// writes the home before it arrives, so the path that reaches the join
+// carries its own value.
+fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
+    if (succ >= self.g.block_count) return;
+    TemplateEmitter* e = &self.e;
+    int r0 = jit::reg_r(0);
+    for (uint j = 0; j < self.g.join_count; j++) {
+        SsaJoin* join = &self.g.joins[j];
+        if (join.block != succ) continue;
+        for (uint p = 0; p < join.pred_count; p++) {
+            if (join.preds[p] != block) continue;
+            for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                int phi = join.phi[reg];
+                if (phi < 0) continue;
+                int incoming = join.incoming[p][reg];
+                if (incoming < 0) continue;
+                SsaValue pv = self.g.values[phi];
+                SsaValue sv = self.g.values[incoming];
+                // The merged values may differ in representation, so the copy
+                // converts the incoming value to the phi's.
+                if (pv.rep == F64) {
+                    if (sv.rep == F64) {
+                        if (sv.home != 0 && pv.home != 0) {
+                            if (jit::sljit_emit_fop1(
+                                e.compiler,
+                                jit::SLJIT_MOV_F64,
+                                pv.home,
+                                0,
+                                sv.home,
+                                0
+                            ) != 0) e.failed = true;
+                        } else {
+                            self.load_fpr(incoming, 1);
+                            self.store_fpr(phi, 1);
+                        }
+                    } else {
+                        int dst = pv.home != 0 ? pv.home : 1;
+                        if (sv.rep == INT32) {
+                            int src = self.gpr_slot(incoming, r0);
+                            if (jit::sljit_emit_fop1(
+                                e.compiler,
+                                jit::SLJIT_CONV_F64_FROM_SW,
+                                dst,
+                                0,
+                                src,
+                                0
+                            ) != 0) e.failed = true;
+                        } else {
+                            self.gpr(incoming, r0);
+                            self.number(r0, dst, self.pc);
+                        }
+                        if (pv.home == 0) self.store_fpr(phi, dst);
+                    }
+                } else if (pv.rep == BOXED) {
+                    if (sv.rep == BOXED) {
+                        if (sv.home != 0 && pv.home != 0) {
+                            e.mov(pv.home, 0, sv.home, 0);
+                        } else {
+                            self.gpr(incoming, r0);
+                            self.store_gpr(phi, r0);
+                        }
+                    } else if (sv.rep == INT32) {
+                        int src = self.gpr_slot(incoming, r0);
+                        int dst = pv.home != 0 ? pv.home : r0;
+                        self.box_gpr(src);
+                        if (dst != src) e.mov(dst, 0, src, 0);
+                        if (pv.home == 0) self.store_gpr(phi, dst);
+                    } else {
+                        int src = self.fpr_slot(incoming, 1);
+                        int dst = pv.home != 0 ? pv.home : r0;
+                        self.bits_fpr(src, dst);
+                        if (pv.home == 0) self.store_gpr(phi, dst);
+                    }
+                } else {
+                    if (sv.rep == INT32) {
+                        if (sv.home != 0 && pv.home != 0) {
+                            e.mov(pv.home, 0, sv.home, 0);
+                        } else {
+                            self.gpr(incoming, r0);
+                            self.store_gpr(phi, r0);
+                        }
+                    } else {
+                        int dst = pv.home != 0 ? pv.home : r0;
+                        if (sv.rep == F64) {
+                            self.load_fpr(incoming, 1);
+                            self.trunc_int_f64(1, dst, self.pc);
+                        } else {
+                            self.gpr(incoming, r0);
+                            self.exact_int(r0, dst, self.pc);
+                        }
+                        if (pv.home == 0) self.store_gpr(phi, dst);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// An arm's branch: the condition decides which block the loop continues in.
+fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
+    SsaValue v = self.g.values[value];
+    TemplateEmitter* e = &self.e;
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    int r2 = jit::reg_r(2);
+    int r3 = jit::reg_r(3);
+    int imm = jit::SLJIT_IMM;
+    void* taken;
+    if ((int)v.branch_op == 0) {
+        // The truthiness of the condition's value.
+        if (self.g.values[v.a].rep == INT32) {
+            int src = self.gpr_slot(v.a, r0);
+            e.op(jit::SLJIT_SUB, r1, src, 0, imm, 0);
+            taken = e.cmp(v.imm != 0 ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL, r1, 0, imm, 0);
+        } else {
+            // A boxed boolean carries its value in the payload.
+            self.gpr(v.a, r0);
+            e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+            self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_BOOLEAN, self.pc);
+            e.op(jit::SLJIT_AND, r1, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+            taken = e.cmp(v.imm != 0 ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL, r1, 0, imm, 0);
+        }
+    } else {
+        SsaValue lhs = self.g.values[v.a];
+        if (lhs.rep == INT32) {
+            int left = self.gpr_slot(v.a, r0);
+            int right;
+            if (v.b >= 0) {
+                right = self.gpr_slot(v.b, r1);
+            } else {
+                e.mov(r1, 0, imm, v.imm);
+                right = r1;
+            }
+            taken = e.cmp(loop_condition(v.branch_op), left, 0, right, 0);
+        } else {
+            self.load_fpr(v.a, 1);
+            if (v.b >= 0) {
+                self.load_fpr(v.b, 2);
+            } else {
+                e.mov(r0, 0, imm, (long)bitcast((double)v.imm, ulong));
+                if (jit::sljit_emit_fcopy(e.compiler, jit::SLJIT_COPY_TO_F64, 2, r0) != 0) e.failed = true;
+            }
+            uint index = v.branch_op >= Opcode.JMP_NLTI ? v.branch_op.ordinal - Opcode.JMP_NLTI.ordinal
+                : v.branch_op.ordinal - Opcode.JMP_NLT.ordinal;
+            int[10] conditions = { 27, 34, 29, 32, 26, 35, 28, 33, 24, 25 };
+            taken = jit::sljit_emit_fcmp(e.compiler, conditions[index], 1, 0, 2, 0);
+        }
+    }
+    if (taken == null) {
+        e.failed = true;
+        return;
+    }
+    // The arm that falls through, then the arm the branch takes.
+    self.join_copies((uint)v.block, (uint)v.fallto);
+    void* fall = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(taken);
+    self.join_copies((uint)v.block, (uint)v.target);
+    void* target = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    if (self.pending_count + 2 > (uint)self.pending_jump.len) {
+        e.failed = true;
+        return;
+    }
+    self.pending_jump[self.pending_count] = fall;
+    self.pending_target[self.pending_count] = (uint)v.fallto;
+    self.pending_count++;
+    self.pending_jump[self.pending_count] = target;
+    self.pending_target[self.pending_count] = (uint)v.target;
+    self.pending_count++;
+}
+
+// The end of an arm: the block continues at the block the jump names.
+fn void SsaEmitter.goto_block(&self, int value) @feat(SLJIT) {
+    SsaValue v = self.g.values[value];
+    self.join_copies((uint)v.block, (uint)v.target);
+    void* jump = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+    if (jump == null || self.pending_count + 1 > (uint)self.pending_jump.len) {
+        self.e.failed = true;
+        return;
+    }
+    self.pending_jump[self.pending_count] = jump;
+    self.pending_target[self.pending_count] = (uint)v.target;
+    self.pending_count++;
+}
+
+// Bind the jumps that reach a block to the label it starts at.
+fn void SsaEmitter.resolve_blocks(&self) {
+    for (uint i = 0; i < self.pending_count; i++) {
+        uint target = self.pending_target[i];
+        if (target >= self.g.block_count) {
+            self.e.failed = true;
+            continue;
+        }
+        void* label = self.block_label[target];
+        if (label == null) {
+            self.e.failed = true;
+            continue;
+        }
+        jit::sljit_set_label(self.pending_jump[i], label);
     }
 }
 
@@ -2377,6 +2919,7 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     self.header = e.label();
     self.body();
     self.latch();
+    self.resolve_blocks();
     // Normal completion falls through the backedge condition.
     self.at_def = graph.stamp;
     int[LOOP_REGS] final;
