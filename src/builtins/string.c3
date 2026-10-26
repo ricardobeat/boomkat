@@ -582,20 +582,7 @@ fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
         return;
     }
 
-    int result = -1;
-    for (uint i = pos; i + search_len <= len; i++) {
-        bool found = true;
-        for (uint j = 0; j < search_len; j++) {
-            if (data[i + j] != search_data[j]) {
-                found = false;
-                break;
-            }
-        }
-        if (found) {
-            result = (int)i;
-            break;
-        }
-    }
+    int result = hstring::find_bytes(s_hstr.get_data(), search_hstr.get_data(), pos);
     if (result >= 0) {
         if (s_hstr.flags.is_ascii) {
             ctx.result_fastint((long)result);
@@ -1887,14 +1874,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     char* search_data = search_hstr.get_cstr();
     uint search_len = search_hstr.blen;
 
-    int found_pos = -1;
-    for (uint i = 0; i + search_len <= (uint)input_len; i++) {
-        bool match = true;
-        for (uint j = 0; j < search_len; j++) {
-            if (input[i + j] != search_data[j]) { match = false; break; }
-        }
-        if (match) { found_pos = (int)i; break; }
-    }
+    int found_pos = hstring::find_bytes(input[:input_len], search_hstr.get_data());
 
     if (found_pos < 0) {
         ctx.result_string(s_hstr);
@@ -2112,12 +2092,9 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
     int last_end = 0;
     int ilen = (int)input_len;
 
-    while (!out.failed && pos <= ilen - (int)search_len) {
-        bool match = true;
-        for (uint j = 0; j < search_len; j++) {
-            if (input[(uint)pos + j] != search_data[j]) { match = false; break; }
-        }
-        if (!match) { pos++; continue; }
+    while (!out.failed) {
+        pos = hstring::find_bytes(input[:input_len], search_hstr.get_data(), (uint)pos);
+        if (pos < 0) break;
 
         // Copy the unmatched prefix since the previous match.
         out.append_bytes(input[last_end : pos - last_end]);
@@ -2220,15 +2197,7 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
 
     if (search_len == 0) { ctx.result_boolean(true); return; }
 
-    bool found = false;
-    for (uint i = pos; i + search_len <= len; i++) {
-        bool match = true;
-        for (uint j = 0; j < search_len; j++) {
-            if (data[i + j] != search_data[j]) { match = false; break; }
-        }
-        if (match) { found = true; break; }
-    }
-    ctx.result_boolean(found);
+    ctx.result_boolean(hstring::find_bytes(s_hstr.get_data(), search_hstr.get_data(), pos) >= 0);
 }
 
 // String.prototype.startsWith(searchString, position)
@@ -2276,11 +2245,7 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
 
     if (pos + search_len > len) { ctx.result_boolean(false); return; }
 
-    bool found = true;
-    for (uint j = 0; j < search_len; j++) {
-        if (data[pos + j] != search_data[j]) { found = false; break; }
-    }
-    ctx.result_boolean(found);
+    ctx.result_boolean(data[pos : search_len] == search_data[:search_len]);
 }
 
 // String.prototype.endsWith(searchString, endPosition)
@@ -2329,11 +2294,7 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
     if (search_len > end_pos) { ctx.result_boolean(false); return; }
 
     uint start = end_pos - search_len;
-    bool found = true;
-    for (uint j = 0; j < search_len; j++) {
-        if (data[start + j] != search_data[j]) { found = false; break; }
-    }
-    ctx.result_boolean(found);
+    ctx.result_boolean(data[start : search_len] == search_data[:search_len]);
 }
 
 // String.prototype.repeat(count)
@@ -2619,14 +2580,7 @@ fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {
     if (search_len > len) { ctx.result_fastint(-1); return; }
     if (start > (int)(len - search_len)) start = (int)(len - search_len);
 
-    int result = -1;
-    for (int i = start; i >= 0 && i + (int)search_len <= (int)len; i--) {
-        bool found = true;
-        for (uint j = 0; j < search_len; j++) {
-            if (data[(uint)i + j] != search_data[j]) { found = false; break; }
-        }
-        if (found) { result = i; break; }
-    }
+    int result = hstring::rfind_bytes(s_hstr.get_data(), search_hstr.get_data(), (uint)start);
     if (result >= 0) {
         if (s_hstr.flags.is_ascii) {
             ctx.result_fastint((long)result);

@@ -12,6 +12,7 @@ import boomkat::types;
 import boomkat::heap;
 import boomkat::gcprofile;
 import std::core::mem;
+import libc;
 
 // ============================================================================
 // Constants
@@ -842,6 +843,37 @@ fn bool is_well_formed_unicode(char[] data) {
         }
     }
     return true;
+}
+
+// Byte offset of the first occurrence of `needle` in `haystack` at or after
+// `from`, or -1. Strings are CESU-8-canonical, so a byte match cannot straddle
+// a code-unit boundary and no decoding is needed.
+fn int find_bytes(char[] haystack, char[] needle, uint from = 0) {
+    if (needle.len == 0) return from <= haystack.len ? (int)from : -1;
+    if (needle.len > haystack.len) return -1;
+    sz last = haystack.len - needle.len;
+    sz i = from;
+    while (i <= last) {
+        // Stop the scan where the needle no longer fits.
+        char* hit = libc::memchr(&haystack[i], needle[0], (usz)(last - i + 1));
+        if (hit == null) return -1;
+        i = (sz)(hit - haystack.ptr);
+        if (haystack[i : needle.len] == needle) return (int)i;
+        i++;
+    }
+    return -1;
+}
+
+// Byte offset of the last occurrence of `needle` that starts at or before
+// `from`, or -1.
+fn int rfind_bytes(char[] haystack, char[] needle, uint from) {
+    if (needle.len > haystack.len) return -1;
+    if (needle.len == 0) return (int)min((sz)from, haystack.len);
+    sz start = min((sz)from, haystack.len - needle.len);
+    for (sz i = start; i >= 0; i--) {
+        if (haystack[i] == needle[0] && haystack[i : needle.len] == needle) return (int)i;
+    }
+    return -1;
 }
 
 // Byte length of the UTF-16 code unit starting at `data[offset]` in CESU-8
