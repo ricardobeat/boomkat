@@ -4,12 +4,6 @@
 
 **Boomkat** is a modern embeddable Javascript engine implementing 100% of the [ES2026 spec](https://tc39.es/ecma262/2025/), developed using the [C3](https://c3-lang.org/) language.
 
-## Architecture
-
-Boomkat is a conventional bytecode interpreter. It parses code into a flat AST with types erased, generates register-based bytecode, applies light optimizations (folding, peepholes, move elimination, fusion, inlining) and hands it off to a direct-threaded VM dispatcher. It also has a full tracing, generational, incremental GC - pauses are kept < 1ms which makes it suitable for UI work.
-
-See the [engine comparison](#comparison-to-other-engines) section for more detail.
-
 ## Features
 
 #### ⚡ Modern JS, built in
@@ -32,20 +26,51 @@ Boomkat currently passes 99%+ of the test262 suite, above QuickJS, V8, Spidermon
 
 Friendly C embedding API - or use it as a library directly in a C3 project.
 
-A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and Duktape can be found in [docs/features.md](docs/features.md).
+## ECMAScript conformance
 
-## Comparison to other engines
+boomkat passes over 99% of the [test262](https://test262.fyi) suite.
+
+![test262: 53,240 / 53,578](https://img.shields.io/badge/test262-99.3%25-green?logo=javascript&logoColor=yellow)
+![ES5: 23 / 23](https://img.shields.io/badge/ES5-100%25-brightgreen)
+![ES6: 29,231 / 29,497](https://img.shields.io/badge/ES2015-99.0%25-green)
+![ES7: 197 / 198](https://img.shields.io/badge/ES2016-99.4%25-green)
+![ES8: 1,359 / 1,632](https://img.shields.io/badge/ES2017-83.2%25-orange)
+![ES9: 6,890 / 6,890](https://img.shields.io/badge/ES2018-100%25-brightgreen)
+![ES2019: 185 / 185](https://img.shields.io/badge/ES2019-100%25-brightgreen)
+![ES2020: 3,076 / 3,121](https://img.shields.io/badge/ES2020-98.5%25-green)
+![ES2021: 1,038 / 1,038](https://img.shields.io/badge/ES2021-100%25-brightgreen)
+![ES2022: 7,611 / 7,611](https://img.shields.io/badge/ES2022-100%25-brightgreen)
+![ES2023: 299 / 299](https://img.shields.io/badge/ES2023-100%25-brightgreen)
+![ES2024: 813 / 866](https://img.shields.io/badge/ES2024-93.8%25-yellow)
+![ES2025: 1,322 / 1,322](https://img.shields.io/badge/ES2025-100%25-brightgreen)
+![ES2026: 375 / 375](https://img.shields.io/badge/ES2026-100%25-brightgreen)
+
+<img width="380" alt="test262-compare" src="https://github.com/user-attachments/assets/498c9584-7895-4946-a1fa-4301d55ff42e" />
+
+<br />
+
+A full feature-by-feature breakdown against QuickJS, quickjs-ng, and Duktape can be found in [docs/features.md](docs/features.md).
+
+## Architecture
+
+- parser -> type stripping -> flat AST -> bytecode
+- peephole optimizer, constant folding, fused ops, inlining
+- direct-threaded VM dispatcher
+- tracing, generational, incremental GC with pauses < 1ms
+- optional JIT via [sljit](https://github.com/zherczeg/sljit)
+
+### Comparison to other engines
 
 | Engine | Lang | Front end | Bytecode | JIT | GC | Size |
 |---|---|---|---|---|---|---|
-| boomkat | C3 | Flat AST | Register | ❌* | Generational GC + string refcount | 2.2 MB |
+| boomkat | C3 | Flat AST | Register | 🚧 * | Generational GC + string refcount | 2.2 MB |
 | QuickJS | C | Single-pass | Stack | ❌ | Refcount + cycle collector | 2.2 MB |
 | Duktape | C | Single-pass | Register | ❌ | Refcount + mark-sweep | 0.5 MB |
 | V8 | C++ | AST | Register | ✅ | Generational, concurrent GC | 51 MB |
 | Boa | Rust | AST | Register | ❌ | Tracing GC (prototype) | 30 MB |
 | Kiesel | Zig | AST, IR | Register | ❌ | Boehm (bdwgc) | 17 MB |
 
-_* integration with [sljit](https://github.com/zherczeg/sljit) is in prototype stage_
+_* not yet available in release builds_
 
 ## Performance
 
