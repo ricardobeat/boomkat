@@ -9,6 +9,7 @@ import boomkat::hstring;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::env;
+import boomkat::agent;
 
 // ECMA-262 §7.1.22 ToIndex, specialized to the [0, INT32_MAX] range this
 // engine caps buffer lengths.
@@ -136,6 +137,16 @@ fn bool is_arraybuffer_obj(HObject* obj) {
 // and DataView backing-store validation, which accept both.
 fn bool is_any_arraybuffer_obj(HObject* obj) {
     return obj != null && obj.flags.obj_class == hobject::ObjClass.ARRAYBUFFER;
+}
+
+// The buffer's current byte length. A growable SharedArrayBuffer keeps its
+// length in the shared block, because any agent sharing it can grow it; every
+// other buffer's length is fixed in the object (0xFFFFFFFF once detached).
+fn uint buffer_byte_length(HObject* buf) @inline {
+    if ((*buf.extra_ptr()).ab.is_shared && (*buf.extra_ptr()).ab.resizable) {
+        return agent::block_length((*buf.extra_ptr()).ab.data);
+    }
+    return (*buf.extra_ptr()).ab.byte_length;
 }
 
 // Receiver validation for ArrayBuffer.prototype methods/getters, mirroring
@@ -282,7 +293,13 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
     // Resizable ABs allocate only byte_length and realloc on resize() instead.
     uint alloc_len = (is_shared && has_max) ? max_byte_length : byte_length;
     char* data = null;
-    if (alloc_len > 0) {
+    if (is_shared) {
+        data = agent::block_alloc(byte_length, alloc_len);
+        if (data == null) {
+            arraybuffer_throw_range_error_pct(ctx, "Out of memory allocating %s", ctor_name);
+            return;
+        }
+    } else if (alloc_len > 0) {
         data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)alloc_len);
         if (data == null) {
             arraybuffer_throw_range_error_pct(ctx, "Out of memory allocating %s", ctor_name);
@@ -290,11 +307,11 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
         }
         mem::clear(data, (sz)((usz)alloc_len));
     }
+    (*obj.extra_ptr()).ab.is_shared = is_shared;
     (*obj.extra_ptr()).ab.data = data;
     (*obj.extra_ptr()).ab.byte_length = byte_length;
     (*obj.extra_ptr()).ab.resizable = has_max;
     (*obj.extra_ptr()).ab.max_byte_length = max_byte_length;
-    (*obj.extra_ptr()).ab.is_shared = is_shared;
 
     ctx.result_object(obj);
 }
@@ -684,7 +701,7 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
         return;
     }
 
-    long len = (long)(*obj.extra_ptr()).ab.byte_length;
+    long len = (long)buffer_byte_length(obj);
 
     TVal start_arg; start_arg.set_undefined();
     TVal end_arg;   end_arg.set_undefined();
@@ -804,7 +821,7 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
             arraybuffer_throw_type_error_label(ctx, label, "species constructor returned the same buffer");
             return;
         }
-        if ((long)(*new_buf.extra_ptr()).ab.byte_length < new_len) {
+        if ((long)buffer_byte_length(new_buf) < new_len) {
             arraybuffer_throw_type_error_label(ctx, label, "new buffer too small");
             return;
         }
@@ -818,14 +835,16 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
         ctx.heap.set_prototype(new_buf, is_shared ? ctx.heap.sharedarraybuffer_proto : ctx.heap.arraybuffer_proto);
 
         char* new_data = null;
-        if (new_len > 0) {
+        if (is_shared) {
+            new_data = agent::block_alloc((uint)new_len, (uint)new_len);
+        } else if (new_len > 0) {
             new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
             if (new_data != null) mem::clear(new_data, (sz)((usz)new_len));
         }
+        (*new_buf.extra_ptr()).ab.is_shared = is_shared;
         (*new_buf.extra_ptr()).ab.data = new_data;
         (*new_buf.extra_ptr()).ab.byte_length = (uint)new_len;
         (*new_buf.extra_ptr()).ab.views_head = null;
-        (*new_buf.extra_ptr()).ab.is_shared = is_shared;
     }
 
     // Re-check detach AFTER any user-observable species construction (the
@@ -933,7 +952,7 @@ fn HObject* sab_this(BuiltinContext* ctx, char[] method) {
 fn void builtin_sharedarraybuffer_proto_bytelength_get(BuiltinContext* ctx) {
     HObject* obj = sab_this(ctx, "byteLength");
     if (obj == null) return;
-    ctx.result_fastint((long)(*obj.extra_ptr()).ab.byte_length);
+    ctx.result_fastint((long)buffer_byte_length(obj));
 }
 
 // SharedArrayBuffer.prototype.growable getter, ECMA-262 §25.2.4.2.
@@ -971,8 +990,9 @@ fn void builtin_sharedarraybuffer_proto_grow(BuiltinContext* ctx) {
         arraybuffer_throw_range_error(ctx, "SharedArrayBuffer.prototype.grow: length exceeds maxByteLength");
         return;
     }
-    // Never shrink (§25.2.4.3: newByteLength >= current byteLength).
-    if (new_len < (*obj.extra_ptr()).ab.byte_length) {
+    // Never shrink (§25.2.4.3: newByteLength >= current byteLength). The
+    // length lives in the shared block, where another agent may have grown it.
+    if (!agent::block_grow((*obj.extra_ptr()).ab.data, new_len)) {
         arraybuffer_throw_range_error(ctx, "SharedArrayBuffer.prototype.grow: cannot shrink");
         return;
     }
