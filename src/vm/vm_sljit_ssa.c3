@@ -2410,10 +2410,7 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
                 e.mov(r0, 0, imm, (long)bitcast((double)v.imm, ulong));
                 if (jit::sljit_emit_fcopy(e.compiler, jit::SLJIT_COPY_TO_F64, 2, r0) != 0) e.failed = true;
             }
-            uint index = v.branch_op >= Opcode.JMP_NLTI ? v.branch_op.ordinal - Opcode.JMP_NLTI.ordinal
-                : v.branch_op.ordinal - Opcode.JMP_NLT.ordinal;
-            int[10] conditions = { 27, 34, 29, 32, 26, 35, 28, 33, 24, 25 };
-            taken = jit::sljit_emit_fcmp(e.compiler, conditions[index], 1, 0, 2, 0);
+            taken = jit::sljit_emit_fcmp(e.compiler, loop_float_condition(v.branch_op), 1, 0, 2, 0);
         }
     }
     if (taken == null) {
@@ -2874,10 +2871,7 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
             self.e.mov(r0, 0, jit::SLJIT_IMM, (long)bitcast((double)self.g.cmp_imm, ulong));
             if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, 2, r0) != 0) self.e.failed = true;
         }
-        uint index         = self.g.cmp_op >= Opcode.JMP_NLTI ? self.g.cmp_op.ordinal - Opcode.JMP_NLTI.ordinal
-            : self.g.cmp_op.ordinal - Opcode.JMP_NLT.ordinal;
-        int[10] conditions = { 27, 34, 29, 32, 26, 35, 28, 33, 24, 25 };
-        void* taken        = jit::sljit_emit_fcmp(self.e.compiler, conditions[index], 1, 0, 2, 0);
+        void* taken        = jit::sljit_emit_fcmp(self.e.compiler, loop_float_condition(self.g.cmp_op), 1, 0, 2, 0);
         if (taken == null) {
             self.e.failed = true;
         } else {

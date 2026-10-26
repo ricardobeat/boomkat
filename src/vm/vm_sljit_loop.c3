@@ -1106,11 +1106,7 @@ fn void*[2] LoopEmitter.condition(&self, Instruction ins, uint pc) @feat(SLJIT) 
         self.e.bind(floating);
         self.number(r0, 1, pc);
         self.number(r1, 2, pc);
-        uint index         = ins.op >= Opcode.JMP_NLTI ? ins.op.ordinal - Opcode.JMP_NLTI.ordinal
-            : ins.op.ordinal - Opcode.JMP_NLT.ordinal;
-        // Negated relations include unordered inputs; ordinary relations exclude NaNs.
-        int[10] conditions = { 27, 34, 29, 32, 26, 35, 28, 33, 24, 25 };
-        skip_float = jit::sljit_emit_fcmp(self.e.compiler, conditions[index] ^ 1, 1, 0, 2, 0);
+        skip_float = jit::sljit_emit_fcmp(self.e.compiler, loop_float_condition(ins.op) ^ 1, 1, 0, 2, 0);
         if (skip_float == null || take_integer == null) self.e.failed = true;
         self.e.bind(take_integer);
     }
@@ -1169,12 +1165,55 @@ fn void LoopEmitter.index(&self, uint reg, uint memory, uint pc) @feat(SLJIT) {
     self.e.op(jit::SLJIT_ADD, jit::reg_r(2), jit::reg_r(2), 0, jit::reg_r(1), 0);
 }
 fn int loop_condition(Opcode op) @feat(SLJIT) {
-    uint index         = op >= Opcode.JMP_NLTI ? op.ordinal - Opcode.JMP_NLTI.ordinal
-        : op.ordinal - Opcode.JMP_NLT.ordinal;
-    // Entries 10..13 name the equality and null branches, which the emitters
-    // handle themselves; they are present so the table cannot be overrun.
-    int[14] conditions = { 7, 8, 9, 6, 6, 9, 8, 7, 0, 1, 0, 1, 0, 1 };
-    return conditions[index];
+    switch (op) {
+        case JMP_NLT:
+        case JMP_NLTI: return jit::SLJIT_SIG_GREATER_EQUAL;
+        case JMP_NLE:
+        case JMP_NLEI: return jit::SLJIT_SIG_GREATER;
+        case JMP_NGT:
+        case JMP_NGTI: return jit::SLJIT_SIG_LESS_EQUAL;
+        case JMP_NGE:
+        case JMP_NGEI: return jit::SLJIT_SIG_LESS;
+        case JMP_LT:
+        case JMP_LTI: return jit::SLJIT_SIG_LESS;
+        case JMP_LE:
+        case JMP_LEI: return jit::SLJIT_SIG_LESS_EQUAL;
+        case JMP_GT:
+        case JMP_GTI: return jit::SLJIT_SIG_GREATER;
+        case JMP_GE:
+        case JMP_GEI: return jit::SLJIT_SIG_GREATER_EQUAL;
+        case JMP_SEQ:
+        case JMP_SEQI: return jit::SLJIT_EQUAL;
+        case JMP_SNEQ:
+        case JMP_SNEQI: return jit::SLJIT_NOT_EQUAL;
+        default: unreachable("loop_condition relation opcode");
+    }
+}
+// Negated relations include unordered inputs; ordinary relations exclude NaNs.
+fn int loop_float_condition(Opcode op) @feat(SLJIT) {
+    switch (op) {
+        case JMP_NLT:
+        case JMP_NLTI: return jit::SLJIT_UNORDERED_OR_GREATER_EQUAL;
+        case JMP_NLE:
+        case JMP_NLEI: return jit::SLJIT_UNORDERED_OR_GREATER;
+        case JMP_NGT:
+        case JMP_NGTI: return jit::SLJIT_UNORDERED_OR_LESS_EQUAL;
+        case JMP_NGE:
+        case JMP_NGEI: return jit::SLJIT_UNORDERED_OR_LESS;
+        case JMP_LT:
+        case JMP_LTI: return jit::SLJIT_ORDERED_LESS;
+        case JMP_LE:
+        case JMP_LEI: return jit::SLJIT_ORDERED_LESS_EQUAL;
+        case JMP_GT:
+        case JMP_GTI: return jit::SLJIT_ORDERED_GREATER;
+        case JMP_GE:
+        case JMP_GEI: return jit::SLJIT_ORDERED_GREATER_EQUAL;
+        case JMP_SEQ:
+        case JMP_SEQI: return jit::SLJIT_ORDERED_EQUAL;
+        case JMP_SNEQ:
+        case JMP_SNEQI: return jit::SLJIT_UNORDERED_OR_NOT_EQUAL;
+        default: unreachable("loop_float_condition relation opcode");
+    }
 }
 fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
     LoopEmitter out    = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = plan };

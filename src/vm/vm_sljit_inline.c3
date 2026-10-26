@@ -292,12 +292,6 @@ fn long function_inline_window(uint depth) @feat(SLJIT) {
 // above the inliner's limit are otherwise unused, and the window base is
 // already a working address for the callee's own stores.
 const uint INLINE_THIS_SLOT = 30;
-fn int function_inline_condition(Opcode op) @feat(SLJIT) {
-    uint index         = op >= Opcode.JMP_NLTI ? op.ordinal - Opcode.JMP_NLTI.ordinal
-        : op.ordinal - Opcode.JMP_NLT.ordinal;
-    int[10] conditions = { 27, 34, 29, 32, 26, 35, 28, 33, 24, 25 };
-    return conditions[index];
-}
 fn void FunctionEmitter.inline_guards(
     &self,
     CompiledFunction* cf,
@@ -439,7 +433,7 @@ fn void FunctionEmitter.inline_call(&self, CompiledFunction* cf, uint pc, Heap* 
                 } else {
                     out.fop(jit::SLJIT_MOV_F64, 1, 0, mem | run, function_inline_offset(ins.b));
                     out.fop(jit::SLJIT_MOV_F64, 2, 0, mem | run, function_inline_offset(ins.c));
-                    void* jump = jit::sljit_emit_fcmp(e.compiler, function_inline_condition(ins.op), 1, 0, 2, 0);
+                    void* jump = jit::sljit_emit_fcmp(e.compiler, loop_float_condition(ins.op), 1, 0, 2, 0);
                     if (jump == null) {
                         e.failed = true;
                     } else {

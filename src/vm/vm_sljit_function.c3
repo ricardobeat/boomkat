@@ -1871,23 +1871,6 @@ fn Instruction* sljit_function_entry(
             plan.bail_ops,
             plan.general_inlines
         );
-        if (plan.hits % 10000 == 0) {
-            uint shown;
-            for (uint i = 0; i < 512; i++) {
-                if (plan.exit_pcs[i] == 0) continue;
-                io::eprintfn(
-                    "SLJIT exit %s ops=%d begin=%d pc=%d op=%d count=%d",
-                    (String)cf.get_name(),
-                    cf.code_count,
-                    plan.begin,
-                    i,
-                    i < cf.code_count ? (int)cf.code[i].op : -1,
-                    plan.exit_pcs[i]
-                );
-                shown++;
-            }
-            if (shown == 0) io::eprintfn("SLJIT exit %s none", (String)cf.get_name());
-        }
     $endif
     return cf.code + next;
 }
