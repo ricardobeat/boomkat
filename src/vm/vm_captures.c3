@@ -6,23 +6,29 @@ import boomkat::types;
 import boomkat::heap;
 import boomkat::bytecode;
 
-// The capture record `index` of the running closure, or null when the frame
-// runs code other than the closure's own.
-fn CaptureRef* capture_ref(Activation* act, uint index) {
+// The running closure's capture records and their count, or null when the
+// frame runs code other than the closure's own.
+fn CaptureRef* capture_refs_of(Activation* act, uint* count) {
     if (!act.tv_func.is_object()) return null;
     HObjectFunction* fields = &(*((HObject*)act.tv_func.get_heapptr()).extra_ptr()).func;
     if (fields.capture_refs == null || fields.comp_func == null
-        || fields.comp_func != (CompiledFunction*)act.func
-        || index >= fields.comp_func.capture_count) return null;
-    return &fields.capture_refs[index];
+        || fields.comp_func != (CompiledFunction*)act.func) return null;
+    *count = fields.comp_func.capture_count;
+    return fields.capture_refs;
+}
+
+// The capture record `index` of the running closure, or null when the frame
+// runs code other than the closure's own.
+fn CaptureRef* capture_ref(Activation* act, uint index) {
+    uint count;
+    CaptureRef* refs = capture_refs_of(act, &count);
+    return refs != null && index < count ? &refs[index] : null;
 }
 
 // The read side of capture_value_slot without the shadow-guarded walk, which
 // returns null so the caller can fall back to capture_value_slot. It makes no
 // calls, so a handler built on it needs no stack frame.
-fn hobject::PropValue* capture_read_slot(Activation* act, uint index) {
-    CaptureRef* ref = capture_ref(act, index);
-    if (ref == null) return null;
+macro hobject::PropValue* capture_read_slot(CaptureRef* ref) {
     if (ref.is_value) return (hobject::PropValue*)&ref.value;
     HObject* owner = ref.owner;
     if (owner == null || ref.guard_shadow || (ref.is_cell && ref.prop_idx >= owner.prop_count)) return null;

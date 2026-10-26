@@ -472,6 +472,10 @@ struct ColdCtx {
     // frame switch set them.
     usz ic_bias;
     usz var_ic_bias;
+    // The running closure's capture records, filled by the first GETCAP of
+    // a frame and cleared by every threaded frame switch and burst entry.
+    hobject::CaptureRef* capture_refs;
+    uint capture_count;
 }
 
 struct Dispatch {

@@ -778,6 +778,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     publish_frame_top(vm, bottom, nregs, nargs);
     vm.valstack_bottom = bottom;
     cold.act = la;
+    cold.capture_refs = null;
     *cold.regs_base_ptr = bottom;
     if (target != vm.current_func) {
         // The switch's code and cache view follows vm.current_func when the
@@ -1113,6 +1114,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     if (fill < fill_end) fill.set_undefined();
 
     publish_frame_top(vm, regs, nregs, nargs);
+    cold.capture_refs = null;
     if (target != vm.current_func) {
         vm.current_func = target;
         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
@@ -2226,7 +2228,13 @@ fn Instruction* th_dec_global(Instruction* pc, HandlerTable* handlers, TVal* reg
 // --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
 
 fn Instruction* th_getcap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    hobject::PropValue* slot = capture_read_slot(cold.act, pc.get_bc());
+    uint index = pc.get_bc();
+    if (cold.capture_refs == null) {
+        cold.capture_refs = capture_refs_of(cold.act, &cold.capture_count);
+        if (cold.capture_refs == null) return pc;
+    }
+    if (index >= cold.capture_count) return pc;
+    hobject::PropValue* slot = capture_read_slot(&cold.capture_refs[index]);
     if (slot == null) return pc;
     TVal value = slot.get();
     TVal* dst = regs + pc.a;
@@ -3244,6 +3252,7 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
     vm.activation_count--;
     vm.gc_root_frame_count_changed();
     cold.act = caller;
+    cold.capture_refs = null;
     vm.valstack_bottom = caller.bottom;
     vm.valstack_top = caller_top;
     *cold.regs_base_ptr = caller.bottom;
@@ -3471,6 +3480,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     // allocation failed runs entirely on the switch.
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
+    cold.capture_refs = null;
     Instruction first = *pc;
     opprof_th_record(first.op);
     $if $feat(OP_PROFILE):
