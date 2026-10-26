@@ -277,7 +277,7 @@ const char[] NFM_HARNESS = "function validateNativeFunctionSource(source){var po
 const char[] ISCON_HARNESS = "function isConstructor(f){try{var p=new Proxy({},{getPrototypeOf:function(){return null;}});new f(p);return true;}catch(e){return false;}}";
 
 // Minimal $262 host object providing detachArrayBuffer, global, and evalScript.
-const char[] HOST262_HARNESS = "var $262={detachArrayBuffer:function(b){return __detachArrayBuffer(b);},global:this,gc:__gc,evalScript:function(s){return __evalScript(s);},createRealm:$262.createRealm,agent:{},AbstractModuleSource:__AbstractModuleSource,IsHTMLDDA:__isHTMLDDA()};";
+const char[] HOST262_HARNESS = "var $262={detachArrayBuffer:function(b){return __detachArrayBuffer(b);},global:this,gc:__gc,evalScript:function(s){return __evalScript(s);},createRealm:$262.createRealm,agent:$262.agent,AbstractModuleSource:__AbstractModuleSource,IsHTMLDDA:__isHTMLDDA()};";
 
 // Parse test262 frontmatter for `includes:` and load required harness files.
 fn void load_test_includes(Vm* v, Heap* hp, char[] src) {
@@ -578,6 +578,11 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
     // has to start at zero for every test regardless.
     unhandled_rejection_count = 0;
     hp.set_rejection_tracker(&runner_rejection_tracker, null);
+
+    // The agents a test starts end with it, and a CanBlockIsFalse test runs on
+    // an agent that may not suspend.
+    defer builtins::agent_host_shutdown();
+    hp.agent_no_block = has_flag(src, "CanBlockIsFalse");
 
     if (exec_js(v, hp, MIN_HARNESS) != 0) { io::eprintfn("  FAIL: MIN_HARNESS"); return 1; }
 

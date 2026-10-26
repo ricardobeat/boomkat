@@ -28,11 +28,13 @@ import boomkat::builtins;
 //
 // `length` is the live byte length, which a growable buffer raises from any
 // agent; `capacity` is the size of the data region and never changes.
+// `growable` records that the buffer was created with a maxByteLength, so an
+// agent adopting the block can rebuild the same kind of buffer.
 struct BlockHeader {
     uint refs;
     uint length;
     uint capacity;
-    uint pad;
+    uint growable;
 }
 
 const usz BLOCK_HEADER_SIZE = BlockHeader::size;
@@ -43,12 +45,13 @@ macro BlockHeader* block_header(char* data) @private => (BlockHeader*)(data - BL
 // reference. Returns the data pointer, or null when memory is exhausted. The
 // data is never null on success, even for an empty buffer, so that every
 // SharedArrayBuffer can be shared.
-fn char* block_alloc(uint length, uint capacity) {
+fn char* block_alloc(uint length, uint capacity, bool growable = false) {
     BlockHeader* header = (BlockHeader*)libc::calloc(1, BLOCK_HEADER_SIZE + (usz)capacity);
     if (header == null) return null;
     header.refs = 1;
     header.length = length;
     header.capacity = capacity;
+    header.growable = growable ? 1 : 0;
     return (char*)header + BLOCK_HEADER_SIZE;
 }
 
@@ -68,6 +71,10 @@ fn uint block_length(char* data) {
 
 fn uint block_capacity(char* data) {
     return block_header(data).capacity;
+}
+
+fn bool block_growable(char* data) {
+    return block_header(data).growable != 0;
 }
 
 // Raises the live length to `new_length`. False when that would shrink it.
@@ -552,15 +559,22 @@ fn void heap_release(Heap* heap) {
     port_release(port);
 }
 
+// Runs the heap's jobs and settles whatever other agents or timers have made
+// ready, until neither has anything left to do.
+fn void run_ready(Heap* heap, void* vm) {
+    while (true) {
+        heap.drain_microtasks(vm, true, 0xFFFF_FFFFu, true);
+        if (heap.agent_port == null || !builtins::atomics_poll(heap, vm)) return;
+    }
+}
+
 // Runs the heap's jobs, then keeps going for as long as an asynchronous
 // waiter could still settle: notified by another agent, or timed out. Returns
 // once nothing is pending, or only waits that nothing can end remain.
 fn void run_event_loop(Heap* heap, void* vm) {
     while (true) {
-        heap.drain_microtasks(vm, true, 0xFFFF_FFFFu, true);
-        if (heap.agent_port == null) return;
-        if (builtins::atomics_poll(heap, vm)) continue;
-        if (async_pending(heap) == 0) return;
+        run_ready(heap, vm);
+        if (heap.agent_port == null || async_pending(heap) == 0) return;
         Port* port = (Port*)heap.agent_port;
         bool can_end = mem::@atomic_load(port.next_deadline) != 0 || live_agents() != 0;
         if (!can_end) return;

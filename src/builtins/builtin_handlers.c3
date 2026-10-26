@@ -220,6 +220,14 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal] = &builtin_function_proto_hasInstance;
     builtin_dispatch_table[Builtin.DATE_PROTO_TOPRIMITIVE.ordinal] = &builtin_date_proto_toPrimitive;
     builtin_dispatch_table[Builtin.CREATE_REALM.ordinal] = &builtin_create_realm;
+    builtin_dispatch_table[Builtin.AGENT_START.ordinal] = &builtin_agent_start;
+    builtin_dispatch_table[Builtin.AGENT_BROADCAST.ordinal] = &builtin_agent_broadcast;
+    builtin_dispatch_table[Builtin.AGENT_GET_REPORT.ordinal] = &builtin_agent_get_report;
+    builtin_dispatch_table[Builtin.AGENT_SLEEP.ordinal] = &builtin_agent_sleep;
+    builtin_dispatch_table[Builtin.AGENT_MONOTONIC_NOW.ordinal] = &builtin_agent_monotonic_now;
+    builtin_dispatch_table[Builtin.AGENT_RECEIVE_BROADCAST.ordinal] = &builtin_agent_receive_broadcast;
+    builtin_dispatch_table[Builtin.AGENT_REPORT.ordinal] = &builtin_agent_report;
+    builtin_dispatch_table[Builtin.AGENT_LEAVING.ordinal] = &builtin_agent_leaving;
     builtin_dispatch_table[Builtin.EVAL_SCRIPT.ordinal] = &builtin_eval_script;
     builtin_dispatch_table[Builtin.MODULE_BINDING_GETTER.ordinal] = &builtin_module_binding_getter;
     builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal] = &builtin_abstract_module_source_ctor;

@@ -1,5 +1,6 @@
 module boomkat::capi @feat(!BYTECODE_ONLY);
 
+import boomkat::agent;
 import boomkat::builtins;
 import boomkat::embed;
 import boomkat::esm;
@@ -1004,7 +1005,10 @@ fn void bk_set_memory_limit(void* rtp, ulong bytes) @export("bk_set_memory_limit
 
 fn void bk_request_interrupt(void* rtp) @export("bk_request_interrupt") {
     Runtime* rt = (Runtime*)rtp;
-    if (rt != null) mem::@atomic_store(rt.heap.interrupt_requested, 1u);
+    if (rt == null) return;
+    mem::@atomic_store(rt.heap.interrupt_requested, 1u);
+    // A thread blocked in Atomics.wait sleeps on a condition, not on this flag.
+    agent::wake_interrupt(rt.heap);
 }
 
 fn void bk_clear_interrupt(void* rtp) @export("bk_clear_interrupt") {

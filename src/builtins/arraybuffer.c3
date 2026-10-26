@@ -294,7 +294,7 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
     uint alloc_len = (is_shared && has_max) ? max_byte_length : byte_length;
     char* data = null;
     if (is_shared) {
-        data = agent::block_alloc(byte_length, alloc_len);
+        data = agent::block_alloc(byte_length, alloc_len, has_max);
         if (data == null) {
             arraybuffer_throw_range_error_pct(ctx, "Out of memory allocating %s", ctor_name);
             return;
@@ -1251,4 +1251,23 @@ fn bool register_sharedarraybuffer(EnvRecord* global_env, Heap* heap) {
     env::env_declare_nonenum(global_env, ctor_key, ctor_val);
 
     return true;
+}
+
+// A SharedArrayBuffer in `heap` over a block another agent created: this is
+// how a broadcast buffer reaches an agent. The new object holds its own
+// reference, so the sender's can go. Null when the heap is out of memory.
+fn HObject* sab_adopt(Heap* heap, char* block) {
+    HObject*? raw = heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
+    if (catch err = raw) return null;
+    HObject* obj = raw;
+    heap.set_prototype(obj, heap.sharedarraybuffer_proto);
+    bool growable = agent::block_growable(block);
+    agent::block_retain(block);
+    (*obj.extra_ptr()).ab.is_shared = true;
+    (*obj.extra_ptr()).ab.data = block;
+    (*obj.extra_ptr()).ab.byte_length = agent::block_length(block);
+    (*obj.extra_ptr()).ab.views_head = null;
+    (*obj.extra_ptr()).ab.resizable = growable;
+    (*obj.extra_ptr()).ab.max_byte_length = growable ? agent::block_capacity(block) : 0;
+    return obj;
 }
