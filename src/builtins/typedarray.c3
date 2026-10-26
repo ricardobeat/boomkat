@@ -99,7 +99,7 @@ fn ushort double_to_f16(double d) {
 }
 
 // True iff `cls` is any of the TypedArray element kinds.
-fn bool is_typed_array_class(hobject::ObjClass cls) {
+fn bool is_typed_array_class(hobject::ObjClass cls) @inline {
     $if !features::BUFFERS:
         return false;
     $else
@@ -109,7 +109,7 @@ fn bool is_typed_array_class(hobject::ObjClass cls) {
 
 // True iff `cls` is a BigInt-backed TypedArray (content type "BigInt").
 // Mixing BigInt and non-BigInt arrays in set()/construction throws TypeError.
-fn bool is_bigint_typed_array_class(hobject::ObjClass cls) {
+fn bool is_bigint_typed_array_class(hobject::ObjClass cls) @inline {
     return cls == hobject::ObjClass.BIGINT64ARRAY || cls == hobject::ObjClass.BIGUINT64ARRAY;
 }
 
@@ -117,7 +117,7 @@ fn uint ta_elem_size(hobject::ObjClass cls) {
     return TA_INFO[(int)cls - (int)hobject::ObjClass.INT8ARRAY].elem_size;
 }
 
-fn uint ta_elem_shift(hobject::ObjClass cls) {
+fn uint ta_elem_shift(hobject::ObjClass cls) @inline {
     return TA_INFO[(int)cls - (int)hobject::ObjClass.INT8ARRAY].elem_shift;
 }
 

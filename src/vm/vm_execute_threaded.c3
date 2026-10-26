@@ -2558,10 +2558,23 @@ fn Instruction* th_get_typed_element(Instruction* pc, HandlerTable* handlers, TV
     uint count;
     char* base = th_typed_array_base(obj, &count);
     TVal* ra = regs + insn.a;
-    if (base == null || idx < 0 || idx >= (long)count || !th_can_release(ra)
-        || builtins::is_bigint_typed_array_class(obj.get_class())) return pc;
+    if (base == null || idx < 0 || idx >= (long)count || !th_can_release(ra)) return pc;
     hobject::ObjClass cls = obj.get_class();
-    TVal value = builtins::ta_load_number(base + ((uint)idx << builtins::ta_elem_shift(cls)), cls);
+    char* ep = base + ((uint)idx << builtins::ta_elem_shift(cls));
+    // Elements are aligned to their size. Integer kinds that fit a fastint
+    // load here; the rest convert out of line.
+    TVal value;
+    switch (cls) {
+        case hobject::ObjClass.INT8ARRAY:  value.set_fastint(*(ichar*)ep);
+        case hobject::ObjClass.UINT8ARRAY:
+        case hobject::ObjClass.UINT8CLAMPEDARRAY: value.set_fastint(*(char*)ep);
+        case hobject::ObjClass.INT16ARRAY: value.set_fastint(*(short*)ep);
+        case hobject::ObjClass.UINT16ARRAY: value.set_fastint(*(ushort*)ep);
+        case hobject::ObjClass.INT32ARRAY: value.set_fastint(*(int*)ep);
+        case hobject::ObjClass.BIGINT64ARRAY:
+        case hobject::ObjClass.BIGUINT64ARRAY: return pc;
+        default: value = builtins::ta_load_number(ep, cls);
+    }
     th_do_release(ra);
     *ra = value;
     return th_next(pc + 1, handlers, regs, cold);
