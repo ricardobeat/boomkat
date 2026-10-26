@@ -2451,7 +2451,7 @@ fn void SsaEmitter.goto_block(&self, int value) @feat(SLJIT) {
 }
 
 // Bind the jumps that reach a block to the label it starts at.
-fn void SsaEmitter.resolve_blocks(&self) {
+fn void SsaEmitter.resolve_blocks(&self) @feat(SLJIT) {
     for (uint i = 0; i < self.pending_count; i++) {
         uint target = self.pending_target[i];
         if (target >= self.g.block_count) {

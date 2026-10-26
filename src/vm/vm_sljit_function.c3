@@ -15,6 +15,9 @@ const uint FUNCTION_BAIL       = uint::max;
 const uint FUNCTION_MIN_SPAN   = 16;
 const uint FUNCTION_CAPTURES   = 8;
 const uint FUNCTION_REGION_OPS = 128;
+// Callee bodies nested inside one another each own a register window in the
+// run block.
+const uint INLINE_DEPTH = 4;
 // Each invocation owns its budget; generated code never keeps a pointer after
 // return. Stop before the final charged edge so the interpreter executes the
 // ordinary GC/interrupt safepoint with fully published register state.
@@ -22,7 +25,7 @@ struct FunctionRun @feat(SLJIT) {
     void* entry;
     long budget;
     FunctionTypedCache[2] typed;
-    double[32] inline_values;
+    double[32 * INLINE_DEPTH] inline_values;
 }
 alias FunctionNative = fn uint(TVal* regs, ColdCtx* cold, FunctionRun* run);
 
@@ -70,6 +73,10 @@ struct FunctionEmitter @feat(SLJIT) {
     FunctionFlow flow;
     CompiledFunction* cf;
     bool[FUNCTION_OPS] blocks;
+    // Nesting level of the callee bodies this emitter expands for itself.
+    uint depth;
+    // An expanded body keeps its receiver in the window, not in reg_s(3).
+    bool this_in_window;
 }
 
 fn bool function_op(Opcode op) @feat(SLJIT) {
@@ -131,6 +138,8 @@ fn bool function_op(Opcode op) @feat(SLJIT) {
         case LE:
         case GT:
         case GE:
+        case EQ:
+        case NEQ:
         case SEQ:
         case SNEQ:
         case IF_TRUE:
@@ -141,6 +150,10 @@ fn bool function_op(Opcode op) @feat(SLJIT) {
             return true;
         default: return false;
     }
+}
+fn bool function_call_op(Opcode op) @feat(SLJIT) {
+    return op == Opcode.CALL || op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL
+        || op == Opcode.CALL_UNDEF_THIS;
 }
 fn int function_capture(CompiledFunction* cf, uint name) @feat(SLJIT) {
     if (name >= cf.const_count) return -1;
@@ -361,6 +374,54 @@ fn void FunctionEmitter.equal(&self, Instruction ins, bool immediate, bool negat
     e.mov(r0, 0, imm, negate ? 0 : 1);
     e.bind(done);
 }
+// Loose equality keeps two cases native: null and undefined compare equal to
+// each other and to nothing else, and two objects compare by reference. Any
+// other pairing (a string, a BigInt, one object and one primitive) still needs
+// the interpreter's abstract equality.
+fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc) @feat(SLJIT) {
+    TemplateEmitter* e = &self.out.e;
+    int r0             = jit::reg_r(0);
+    int r1             = jit::reg_r(1);
+    int r2             = jit::reg_r(2);
+    int r3             = jit::reg_r(3);
+    int imm            = jit::SLJIT_IMM;
+    self.out.load(ins.b, r0);
+    self.out.load(ins.c, r1);
+    e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
+    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+    // Null and undefined are equal to each other and to nothing else, which is
+    // the `x == null` idiom. Their tags are adjacent, so a shifted difference
+    // is 0 or 1 for exactly those two values.
+    e.op(jit::SLJIT_SUB, r2, r2, 0, imm, (long)types::TAG_UNDEFINED);
+    e.op(jit::SLJIT_SUB, r3, r3, 0, imm, (long)types::TAG_UNDEFINED);
+    void* n0 = e.cmp(jit::SLJIT_LESS_EQUAL, r2, 0, imm, 1);
+    void* n1 = e.cmp(jit::SLJIT_LESS_EQUAL, r3, 0, imm, 1);
+    void* neither = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    // Left side nullish: equal only when the right side is too.
+    e.bind(n0);
+    void* n2 = e.cmp(jit::SLJIT_LESS_EQUAL, r3, 0, imm, 1);
+    void* one = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(n1);
+    void* other = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(n2);
+    void* both_eq = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(neither);
+    e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
+    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+    // Two objects compare by reference. Anything else (coercion, symbols,
+    // BigInts) is the interpreter's abstract equality.
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)types::TAG_OBJECT, pc);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
+    void* same = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
+    e.bind(one);
+    e.bind(other);
+    e.mov(r0, 0, imm, negate ? (((long)types::TAG_BOOLEAN << 48) | 1) : ((long)types::TAG_BOOLEAN << 48));
+    void* finish = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(same);
+    e.bind(both_eq);
+    e.mov(r0, 0, imm, negate ? ((long)types::TAG_BOOLEAN << 48) : (((long)types::TAG_BOOLEAN << 48) | 1));
+    e.bind(finish);
+}
 fn TVal* function_key_literal(CompiledFunction* cf, uint pc, uint reg) @feat(SLJIT) {
     for (uint back = pc; back > 0; back--) {
         Instruction ins = cf.code[back - 1];
@@ -495,7 +556,11 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         }
     }
     if (receiver_this) {
-        e.mov(r0, 0, jit::reg_s(3), 0);
+        if (self.this_in_window) {
+            self.out.load(INLINE_THIS_SLOT, r0);
+        } else {
+            e.mov(r0, 0, jit::reg_s(3), 0);
+        }
     } else {
         self.out.load(write ? ins.a : ins.b, r0);
     }
@@ -1186,6 +1251,9 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             case SNEQ:
                 f.equal(ins, false, ins.op == Opcode.SNEQ, pos);
                 e.op(jit::SLJIT_OR, r0, r0, 0, imm, (long)(types::TAG_BOOLEAN << 48));
+            case EQ:
+            case NEQ:
+                f.loose_equal(ins, ins.op == Opcode.NEQ, pos);
             default:
                 if (out.flow != null && function_float_op(ins.op)) {
                     f.flow_numeric(ins, pos);
@@ -1474,7 +1542,13 @@ fn Instruction* sljit_function_entry(
         if (!regs[plan.cached_regs[i]].same_bits(&previous[i])) h.decref_tval(&previous[i]);
     }
     next = next == uint::max ? offset : plan.begin + next;
-    if (consumed == 0 && next >= offset && next - offset < plan.min_span) {
+    // A run that stops at the same unexpandable call without completing a
+    // backedge repeats the same prefix on every entry loop iteration. Let the
+    // interpreter own the function once that is clearly never going to pay.
+    bool at_call = next < cf.code_count && function_call_op(cf.code[next].op);
+    bool stuck = consumed == 0 && next >= offset
+        && (next - offset < plan.min_span || at_call);
+    if (stuck) {
         if (++plan.short_runs[local] >= 8) {
             plan.entries[local] = null;
             if (offset == 0) cf.sljit_function_calls = uint::max;

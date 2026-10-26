@@ -277,6 +277,16 @@ fn long function_inline_offset(uint reg) @feat(SLJIT) {
     FunctionRun layout;
     return (char*)&layout.inline_values - (char*)&layout + (long)reg * double::size;
 }
+// Each nesting level owns a fixed window inside the run block, so a nested
+// expansion cannot overwrite the caller's temporaries.
+fn long function_inline_window(uint depth) @feat(SLJIT) {
+    FunctionRun layout;
+    return (char*)&layout.inline_values - (char*)&layout + (long)depth * 32 * double::size;
+}
+// The window slot that holds an expanded callee's receiver. Register slots
+// above the inliner's limit are otherwise unused, and the window base is
+// already a working address for the callee's own stores.
+const uint INLINE_THIS_SLOT = 30;
 fn int function_inline_condition(Opcode op) @feat(SLJIT) {
     uint index         = op >= Opcode.JMP_NLTI ? op.ordinal - Opcode.JMP_NLTI.ordinal
         : op.ordinal - Opcode.JMP_NLT.ordinal;
@@ -526,7 +536,7 @@ fn void FunctionEmitter.inline_call(&self, CompiledFunction* cf, uint pc, Heap* 
 // from arguments, arithmetic and comparisons, ending in one or more returns.
 // Writes are excluded because a guard that fires after a partial inline run
 // resumes at the call site, which would repeat the write.
-fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat(SLJIT) {
+fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap* h, uint depth) @feat(SLJIT) {
     if (target == null || target.lazy_paren != 0 || target.code_count == 0 || target.code_count > 48
         || target.num_regs > 24
         || target.num_args != nargs
@@ -539,29 +549,28 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
         || target.capture_count != 0
         || target.ic_entries == null) return false;
     uint returns;
-    bool writes;
-    bool reads;
-    bool computed_read;
-    void*[8] read_keys;
-    void*[8] write_keys;
-    uint read_count;
-    uint write_count;
+    // A guard that fires part way through an expanded callee exits at the call
+    // site, where the interpreter runs the callee again from its first
+    // instruction. A store the native run already made would then execute
+    // twice. Replay is safe when a store's value never depends on a property
+    // read: the second run recomputes the same value. So a read-dependent
+    // store may not be followed by any guard that can still exit.
+    bool pending_write;
+    bool[32] depends;
     for (uint i = 0; i < target.code_count; i++) {
         Instruction ins = target.code[i];
         int branch      = loop_target(ins, i);
         // Only forward control flow: the inlined body is emitted in bytecode
         // order, and a loop would also break the single-entry assumption.
         if (branch >= 0 && (branch <= (int)i || branch > (int)target.code_count)) return false;
-        if (ins.op == Opcode.GETTHISC || ins.op == Opcode.GETPROPC || ins.op == Opcode.GETPROPC_CACHED
-            || ins.op == Opcode.GETPROP
-            || ins.op == Opcode.GETPROP_CACHE) reads = true;
-        if (ins.op == Opcode.PUTTHISC || ins.op == Opcode.PUTPROPC) writes = true;
+        if (function_inline_guard_op(ins.op) && pending_write) return false;
         switch (ins.op) {
             case NOP:
-            case PUTTHISC:
-            case PUTPROPC:
-            case PUTPROP:
+                continue;
             case LDREG:
+                depends[ins.a] = depends[ins.b];
+                if (ins.a >= 24 || ins.b >= 24) return false;
+                continue;
             case LDINT:
             case LDCONST:
             case LDTRUE:
@@ -570,6 +579,13 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
             case LDUNDEF:
             case VOID:
             case LDTHIS:
+                depends[ins.a] = false;
+                if (ins.a >= 24 && branch < 0 && ins.op != LDINT && ins.op != LDCONST && ins.op != LDTRUE
+                    && ins.op != LDFALSE
+                    && ins.op != LDNULL
+                    && ins.op != LDUNDEF
+                    && ins.op != VOID) return false;
+                continue;
             case GETTHISC:
             case GETPROPC:
             case GETPROPC_CACHED:
@@ -577,6 +593,9 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
             case GETPROP_CACHE:
             case GETVAR:
             case GETGLOBAL:
+                depends[ins.a] = true;
+                if (ins.a >= 24 && branch < 0) return false;
+                continue;
             case ADD:
             case ADD_FUSED:
             case ADDI:
@@ -597,13 +616,6 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
             case SHLI:
             case SHRI:
             case USHRI:
-            case BNOT:
-            case UNM:
-            case UNP:
-            case TONUMERIC:
-            case INC:
-            case INC_LT:
-            case DEC:
             case LT:
             case LE:
             case GT:
@@ -612,18 +624,56 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
             case NEQ:
             case SEQ:
             case SNEQ:
+                depends[ins.a] = depends[ins.b] || depends[ins.c];
+                if (ins.a >= 24 && branch < 0) return false;
+                continue;
+            case BNOT:
+            case UNM:
+            case UNP:
+            case TONUMERIC:
+            case INC:
+            case INC_LT:
+            case DEC:
             case LNOT:
+                depends[ins.a] = depends[ins.b];
+                if (ins.a >= 24 && branch < 0) return false;
+                continue;
+            case CALL:
+            case CALL_VAR:
+            case CALL_GLOBAL:
+            case CALL_UNDEF_THIS:
+
+                {
+                    // A callee that calls another method can be expanded when
+                    // that callee is itself a general body. Its result could be
+                    // any value, so it counts as a read, and a nested store
+                    // makes any later guard a replay hazard.
+                    if (depth + 1 >= INLINE_DEPTH) return false;
+                    CompiledFunction* inner = function_inline_general_candidate(target, i, h, depth + 1);
+                    if (inner == null) return false;
+                    depends[ins.a] = true;
+                    if (function_inline_stores(inner)) pending_write = true;
+                    continue;
+                }
+            case PUTTHISC:
+            case PUTPROPC:
+            case PUTPROP:
+
+                {
+                    uint value = ins.op == Opcode.PUTTHISC ? ins.a
+                        : ins.op == Opcode.PUTPROP ? ins.c
+                        : ins.b;
+                    if (value >= 24 || depends[value]) pending_write = true;
+                    continue;
+                }
             case IF_TRUE:
             case IF_FALSE:
             case JUMP:
             case JMP_NLT..JMP_SNEQI:
-                if (ins.a >= 24 && branch < 0 && ins.op != LDINT && ins.op != LDCONST && ins.op != LDTRUE
-                    && ins.op != LDFALSE
-                    && ins.op != LDNULL
-                    && ins.op != LDUNDEF
-                    && ins.op != VOID) return false;
+                if (branch < 0 && ins.a >= 24) return false;
                 continue;
             case RET:
+            case RETUNDEF:
                 returns++;
                 continue;
             default:
@@ -633,19 +683,37 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs) @feat
                 }
         }
     }
-    // A guard that fires after a partial inline run resumes at the call site,
-    // which reruns the callee. Replay is harmless when no store can change a
-    // value the body read: with disjoint read and write keys, the second run
-    // computes the same values and repeats identical assignments.
-    if (writes && reads) {
-        if (computed_read) return false;
-        bool overlap;
-        for (uint i = 0; i < read_count; i++) {
-            for (uint j = 0; j < write_count; j++) if (read_keys[i] == write_keys[j]) overlap = true;
-        }
-        if (overlap) return false;
-    }
     return returns > 0;
+}
+// A nested callee's stores can be replayed with the outer expansion, so the
+// caller has to know whether one exists before allowing a later guard.
+fn bool function_inline_stores(CompiledFunction* target) @feat(SLJIT) {
+    for (uint i = 0; i < target.code_count; i++) {
+        Opcode op = target.code[i].op;
+        if (op == Opcode.PUTTHISC || op == Opcode.PUTPROPC || op == Opcode.PUTPROP) return true;
+    }
+    return false;
+}
+// True for an instruction whose emitted form can leave the native run part
+// way through the body.
+fn bool function_inline_guard_op(Opcode op) @feat(SLJIT) {
+    switch (op) {
+        case NOP:
+        case LDREG:
+        case LDINT:
+        case LDCONST:
+        case LDTRUE:
+        case LDFALSE:
+        case LDNULL:
+        case LDUNDEF:
+        case VOID:
+        case LDTHIS:
+        case RET:
+        case RETUNDEF:
+        case JUMP:
+            return false;
+        default: return true;
+    }
 }
 // A straight-line leaf that only computes from its arguments and fields of
 // `this` can be expanded into the loop tier's flat SSA form. Reads of `this`
@@ -727,7 +795,7 @@ fn CompiledFunction* function_inline_ssa_candidate(CompiledFunction* cf, uint pc
     if (!function_inline_ssa_leaf(target, nargs)) return null;
     return target;
 }
-fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
+fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uint pc, Heap* h, uint depth = 1) @feat(SLJIT) {
     Instruction call = cf.code[pc];
     bool fused       = call.op == Opcode.CALL_VAR || call.op == Opcode.CALL_GLOBAL;
     if (!fused && call.op != Opcode.CALL && call.op != Opcode.CALL_UNDEF_THIS) return null;
@@ -739,7 +807,7 @@ fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uin
     // A plain call's sloppy receiver coercion is the interpreter's job.
     if ((call.op == Opcode.CALL_UNDEF_THIS || call.op == Opcode.CALL_GLOBAL || call.op == Opcode.CALL_VAR)
         && !target.call_flags.ignores_this) return null;
-    if (!function_inline_general_body(target, nargs)) return null;
+    if (!function_inline_general_body(target, nargs, h, depth)) return null;
     return target;
 }
 fn bool function_call_inlineable(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
@@ -752,7 +820,8 @@ fn bool function_call_inlineable(CompiledFunction* cf, uint pc, Heap* h) @feat(S
 // ownership at the call site. Any guard leaves at the CALL, where the
 // interpreter reruns the callee from the start.
 fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
-    CompiledFunction* target = function_inline_general_candidate(cf, pc, h);
+    if (self.depth + 1 >= INLINE_DEPTH) return false;
+    CompiledFunction* target = function_inline_general_candidate(cf, pc, h, self.depth + 1);
     if (target == null) {
         return false;
     }
@@ -762,27 +831,29 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     uint base        = fused ? call.a : call.b;
     uint nargs       = fused ? call.b : call.c;
     if ((usz)out.link_count + (usz)target.code_count + 8 >= out.links.len) return false;
-    int this_reg  = jit::reg_s(3);
-    int save_this = jit::reg_s(6);
-    int window    = jit::reg_s(5);
+    int this_reg = jit::reg_s(3);
+    int window   = jit::reg_s(5);
     int imm       = jit::SLJIT_IMM;
     int mem       = jit::SLJIT_MEM;
     int r0        = jit::reg_r(0);
     int r1        = jit::reg_r(1);
     int r2        = jit::reg_r(2);
     int r3        = jit::reg_r(3);
-    FunctionRun layout;
     self.inline_guards(cf, pc, target, h, base);
     ulong flow_state   = out.flow != null ? out.flow.snapshot() : 0;
     TemplateEmitter* e = &out.e;
-    // Save the caller's `this` and install the receiver, then point a saved
-    // register at the private window.
-    e.mov(save_this, 0, this_reg, 0);
+    // Point a saved register at the callee's private window. The body keeps
+    // its receiver in the window's spare slot, so no saved register has to
+    // survive the expansion and nested bodies can each own one.
+    e.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0, imm, function_inline_window(self.depth + 1));
     if (!target.call_flags.ignores_this) {
         out.load(base + 1, r0);
-        e.mov(this_reg, 0, r0, 0);
+    } else if (self.this_in_window) {
+        out.load(INLINE_THIS_SLOT, r0);
+    } else {
+        e.mov(r0, 0, this_reg, 0);
     }
-    e.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0, imm, (long)((char*)&layout.inline_values - (char*)&layout));
+    e.mov(mem | window, loop_value_offset(INLINE_THIS_SLOT), r0, 0);
     for (uint i = 0; i < nargs; i++) {
         out.load(base + 2 + i, r0);
         e.mov(mem | window, loop_value_offset(i), r0, 0);
@@ -803,6 +874,8 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     inner.out.state_reg = window;
     inner.plan = &inner_plan;
     inner.cf = target;
+    inner.depth = self.depth + 1;
+    inner.this_in_window = true;
     TemplateEmitter* ie = &inner.out.e;
     void*[64] labels;
     void*[64] pending;
@@ -852,7 +925,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
         switch (ins.op) {
             case NOP: continue;
             case LDREG: inner.out.load(ins.b, r0); inner.store(ins.a, i); continue;
-            case LDTHIS: ie.mov(r0, 0, this_reg, 0); inner.store(ins.a, i); continue;
+            case LDTHIS: inner.out.load(INLINE_THIS_SLOT, r0); inner.store(ins.a, i); continue;
             case LDINT: { TVal v; v.set_fastint(ins.get_sbc()); ie.mov(r0, 0, imm, (long)loop_bits(v)); }
             case LDCONST: ie.mov(r0, 0, imm, (long)loop_bits(target.constants[ins.get_bc()]));
             case LDTRUE:
@@ -1026,11 +1099,28 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
                 pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
                 pending_target[pending_count++] = target.code_count;
                 continue;
+            case RETUNDEF:
+                ie.mov(r0, 0, imm, (long)loop_bits(undef));
+                function_store(out, call.a, r0, pc, false);
+                pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
+                pending_target[pending_count++] = target.code_count;
+                continue;
+            case CALL:
+            case CALL_VAR:
+            case CALL_GLOBAL:
+            case CALL_UNDEF_THIS:
+                // The predicate already resolved this site and checked the
+                // nesting bound. A failure here means the two analyses
+                // disagree; fail the plan instead of emitting a partial body.
+                if (!inner.inline_general(target, i, h)) out.e.failed = true;
+                continue;
             default: continue;
         }
         inner.store(ins.a, i);
     }
-    e.mov(this_reg, 0, save_this, 0);
+    // A nested expansion used reg_s(5) for its own window; point it back at
+    // this level's window before the caller's body continues.
+    if (self.depth > 0) e.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0, imm, function_inline_window(self.depth));
     for (uint i = 0; i < inner_plan.shape_count; i++) {
         if (!self.shape(inner_plan.shapes[i], h)) out.e.failed = true;
     }
