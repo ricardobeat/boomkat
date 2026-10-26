@@ -296,3 +296,77 @@ Two other facts matter for what comes next:
   accesses either live on a prototype or the call-site cache was cold too.
   Plan recompilation on a warm cache, or the absent-append store form, is
   the real answer.
+
+## 12. Merge with main, and the state the tiers are in
+
+main spent this window on the interpreter: read caches now match on shape
+id alone, an inherited read caches an epoch chain or a bounded snapshot,
+a site can cache several shapes, the megamorphic cache fills cold sites,
+and plain objects and literal arrays come from exact-size pools. The
+native tiers read those caches directly, so the merge had to follow the
+new entry layout, and two latent tier bugs surfaced before any of it
+could be measured.
+
+**What the merge changed in the tiers.** `ICEntry` now holds `has_proto`
+and one pointer to a shared chain block: a bounded snapshot of prototype
+identities and shapes, an epoch record (`IC_CHAIN_EPOCH`) with the owner,
+or a polymorphic set of own data slots (`IC_CHAIN_POLY`). The property
+emitter answers all three, so prototype reads no longer exit and a site
+whose receivers differ in shape reads each one natively. Reads that found
+nothing cache `IC_PROP_MISSING`, one below the absent marker; the tiers
+refuse anything at or above the missing marker instead of loading a slot
+that no property owns.
+
+**SSA loop tier.** It miscompiles a loop that boxes a constant into a
+growing array: the first native pass stores the previous iteration's
+value, because the loop is entered at its backedge after the interpreter
+already ran part of the body. `SSA_ENABLED` now follows the tier's own
+note and stays off. Reproduce with a shift loop that writes a constant
+across a fresh array twice over 500 calls; it fails on the fourth call.
+
+**Straight-line loop tier.** A second, separate mismatch remains and is
+not from the SSA tier: with SSA off, `crypto` still decrypts wrongly.
+It is data-shaped rather than loop-shaped. `crypto`'s Montgomery path
+diverges on the first `modPow` (right the second time), and `reduce`
+fails at iterations 9 and 65 of 400. Disabling the loop tier fixes it,
+disabling either `am3`'s loops or `reduce`'s own loops does not, and the
+same programs pass on the pre-merge tree, so main's compiler output is
+what changed: `bnpMultiplyTo`'s zero-fill loop now reuses one register
+for the counter and again for a copy the branch compares
+(`LDREG r7 = r4` twice per iteration), and its native plan is 2332 bytes
+where the old bytecode produced 1772. The bytecode-driven plan is
+therefore fine but something about the new shape is not. That is the next
+correctness item, and it blocks nothing in the three target minis.
+
+**Where the time actually goes now.** `sample` on a deltablue run of 1500
+iterations under `--jit`, 2329 samples on the main thread: `th_call_native`
+473, `th_call` 380, `th_try_fast_return` 281, `th_getpropc_cached` 253,
+`th_ldreg` 146, `th_getthisc` 118, `th_resume_caller` 97. The builtins
+underneath are `builtin_array_proto_push` and `builtin_array_proto_pop`.
+So the profile confirms section 11 from the other side: roughly a third of
+the run is the interpreter dispatching a builtin call, and almost all of
+it is array push and pop.
+
+Timings on the merged tree, best of three, interleaved: deltablue 250 ->
+260, richards 220 -> 230, splay 190 -> 190, crypto 280 -> 50 (5.6x),
+navier-stokes 360 -> 220 (1.6x). The JIT still earns nothing on the three
+object-heavy minis.
+
+## 13. Next, revised
+
+1. **Native `Array.prototype.push`/`pop`.** Now measured, not inferred:
+   the largest single entry in the profile. The call site is a `CALL`
+   whose callee comes from a `GETPROPC` of `push`/`pop` in the same code
+   unit (the shape `function_math_candidate` already walks for `abs`).
+   The dense form needs: array class and no proxy, no named index
+   property, a slot inside the element capacity, an undefined old value,
+   and the store from `slot_store` so a traced value gets its barrier.
+   `length` must then be bumped, and `array_used` kept at least as large
+   as the new length. `pop` mirrors it and writes undefined into the
+   vacated slot.
+2. **The loop-tier mismatch above**, with the two minimized repros it now
+   has.
+3. **Plan recompilation, or absent-append stores**, for expanded callees
+   whose property cache was cold.
+4. **Multi-target expansion** for a site whose callee differs by receiver
+   shape.
