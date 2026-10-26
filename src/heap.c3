@@ -1098,6 +1098,7 @@ struct Heap {
     CapiMarkSliceFn     capi_mark_slice;
 
     bool                jit_enabled @if($feat(SLJIT));
+    bool                jit_stress @if($feat(SLJIT));
     usz                 jit_code_bytes @if($feat(SLJIT));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
@@ -5850,6 +5851,17 @@ fn bool Heap.set_jit(&self, bool enabled) {
         if (enabled && (!types::USE_NANBOX || usz::size != 8
             || !$feat(THREADED_DISPATCH) || !jit::bind_sljit_runtime())) return false;
         self.jit_enabled = enabled;
+        return true;
+    $else
+        return !enabled;
+    $endif
+}
+// Test setting: warm every function on its first call and never retire an
+// entry, so each function the tiers accept runs native and a fault surfaces
+// in the compiler rather than behind the warmup policy.
+fn bool Heap.set_jit_stress(&self, bool enabled) {
+    $if $feat(SLJIT):
+        self.jit_stress = enabled;
         return true;
     $else
         return !enabled;

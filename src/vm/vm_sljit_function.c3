@@ -60,12 +60,12 @@ struct FunctionPlan @feat(SLJIT) {
     ulong bail_calls @if($feat(SLJIT_STATS));
     ulong bail_ops @if($feat(SLJIT_STATS));
     ulong general_inlines @if($feat(SLJIT_STATS));
-    ulong[512] exit_pcs @if($feat(SLJIT_STATS));
-    ulong hits @if($feat(SLJIT_STATS));
-    ulong completed @if($feat(SLJIT_STATS));
-    ulong stalled @if($feat(SLJIT_STATS));
-    ulong backedges @if($feat(SLJIT_STATS));
-    ulong budget_exits @if($feat(SLJIT_STATS));
+    ulong[512] exit_pcs;
+    ulong hits;
+    ulong completed;
+    ulong stalled;
+    ulong backedges;
+    ulong budget_exits;
 }
 struct FunctionEmitter @feat(SLJIT) {
     LoopEmitter out;
@@ -385,26 +385,41 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
     int r2             = jit::reg_r(2);
     int r3             = jit::reg_r(3);
     int imm            = jit::SLJIT_IMM;
+    int mem            = jit::SLJIT_MEM;
     self.out.load(ins.b, r0);
     self.out.load(ins.c, r1);
     e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
-    // Null and undefined are equal to each other and to nothing else, which is
-    // the `x == null` idiom. Their tags are adjacent, so a shifted difference
-    // is 0 or 1 for exactly those two values.
+    // Null and undefined are equal to each other and to the document.all
+    // sentinel, and to nothing else, which is the `x == null` idiom. Their
+    // tags are adjacent, so a shifted difference is 0 or 1 for exactly those
+    // two values.
     e.op(jit::SLJIT_SUB, r2, r2, 0, imm, (long)types::TAG_UNDEFINED);
     e.op(jit::SLJIT_SUB, r3, r3, 0, imm, (long)types::TAG_UNDEFINED);
     void* n0 = e.cmp(jit::SLJIT_LESS_EQUAL, r2, 0, imm, 1);
     void* n1 = e.cmp(jit::SLJIT_LESS_EQUAL, r3, 0, imm, 1);
     void* neither = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
-    // Left side nullish: equal only when the right side is too.
+    // Left side nullish: equal when the right side is too, or is the sentinel
+    // whose identity the heap holds.
     e.bind(n0);
     void* n2 = e.cmp(jit::SLJIT_LESS_EQUAL, r3, 0, imm, 1);
-    void* one = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.op(jit::SLJIT_LSHR, r2, r1, 0, imm, 48);
+    void* right_obj = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)types::TAG_OBJECT);
+    e.op(jit::SLJIT_AND, r2, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    Heap heap_view;
+    e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(0));
+    e.mov(r3, 0, mem | r3, (char*)&heap_view.htmldda_obj - (char*)&heap_view);
+    void* right_dda = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, r3, 0);
+    void* right_eq = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    // Right side nullish and left side not: equal only for the sentinel.
     e.bind(n1);
-    void* other = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
-    e.bind(n2);
-    void* both_eq = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
+    void* left_obj = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)types::TAG_OBJECT);
+    e.op(jit::SLJIT_AND, r2, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(0));
+    e.mov(r3, 0, mem | r3, (char*)&heap_view.htmldda_obj - (char*)&heap_view);
+    void* left_dda = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, r3, 0);
+    void* left_eq = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
     e.bind(neither);
     e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
@@ -413,12 +428,16 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
     self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)types::TAG_OBJECT, pc);
     self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
     void* same = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
-    e.bind(one);
-    e.bind(other);
+    e.bind(right_obj);
+    e.bind(right_dda);
+    e.bind(left_obj);
+    e.bind(left_dda);
     e.mov(r0, 0, imm, negate ? (((long)types::TAG_BOOLEAN << 48) | 1) : ((long)types::TAG_BOOLEAN << 48));
     void* finish = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(n2);
+    e.bind(right_eq);
+    e.bind(left_eq);
     e.bind(same);
-    e.bind(both_eq);
     e.mov(r0, 0, imm, negate ? ((long)types::TAG_BOOLEAN << 48) : (((long)types::TAG_BOOLEAN << 48) | 1));
     e.bind(finish);
 }
@@ -1746,6 +1765,9 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     $endif
     return plan;
 }
+// Calls a function must see before the tier compiles it. The differential
+// test setting compiles on the first call instead.
+fn uint sljit_warmup(Heap* h) @feat(SLJIT) @inline => h.jit_stress ? 1 : 64;
 fn Instruction* sljit_function_entry(
     Instruction* pc,
     TVal* regs,
@@ -1766,8 +1788,8 @@ fn Instruction* sljit_function_entry(
         // Every function size warms on taken backedges as well as calls. A
         // region may start at a hot header, not only at bytecode zero.
         if (offset == 0) {
-            if (++cf.sljit_function_calls < 64) return pc;
-        } else if (!region || cf.sljit_function_calls < 64) return pc;
+            if (++cf.sljit_function_calls < sljit_warmup(h)) return pc;
+        } else if (!region || cf.sljit_function_calls < sljit_warmup(h)) return pc;
         cf.sljit_function_calls = uint::max;
         plan = sljit_function_compile(cf, cold, offset);
         if (plan == null) return pc;
@@ -1825,66 +1847,33 @@ fn Instruction* sljit_function_entry(
     bool stuck = consumed == 0 && next >= offset
         && (next - offset < plan.min_span || at_call);
     if (stuck) {
-        if (++plan.short_runs[local] >= 8) {
+        if (!h.jit_stress && ++plan.short_runs[local] >= 8) {
             plan.entries[local] = null;
             if (offset == 0) cf.sljit_function_calls = uint::max;
         }
     } else {
         plan.short_runs[local] = 0;
     }
-    $if $feat(SLJIT_STATS):
-        plan.hits++;
-        plan.backedges += consumed;
-        if (next < cf.code_count && next < 512) plan.exit_pcs[next]++;
-        if (run.budget <= 1 && consumed != 0) plan.budget_exits++;
-        if (next == offset) plan.stalled++;
-        if (next < cf.code_count
-            && (cf.code[next].op == Opcode.RET || cf.code[next].op == Opcode.RETUNDEF)) plan.completed++;
-        if (plan.hits == 1 || plan.hits == 1000) io::eprintfn(
-            "SLJIT function native %s function_ops=%d begin=%d hits=%d returns=%d stalled=%d pc=%d",
-            (String)cf.get_name(),
-            cf.code_count,
-            plan.begin,
-            plan.hits,
-            plan.completed,
-            plan.stalled,
-            next
-        );
-        if (plan.hits == 1 || plan.hits == 1000) io::eprintfn(
-            "SLJIT residency function_ops=%d begin=%d backedges=%d budget_exits=%d",
-            cf.code_count,
-            plan.begin,
-            plan.backedges,
-            plan.budget_exits
-        );
-        if (plan.hits == 1 || plan.hits == 1000) io::eprintfn(
-            "SLJIT typed function_ops=%d begin=%d reads=%d writes=%d lengths=%d fp_ops=%d math_calls=%d inline_calls=%d bail_calls=%d bail_ops=%d general=%d",
-            cf.code_count,
-            plan.begin,
-            plan.typed_reads,
-            plan.typed_writes,
-            plan.typed_lengths,
-            plan.flow_ops,
-            plan.math_calls,
-            plan.inline_calls,
-            plan.bail_calls,
-            plan.bail_ops,
-            plan.general_inlines
-        );
-    $endif
+    plan.hits++;
+    plan.backedges += consumed;
+    if (next < cf.code_count && next < 512) plan.exit_pcs[next]++;
+    if (run.budget <= 1 && consumed != 0) plan.budget_exits++;
+    if (next == offset) plan.stalled++;
+    if (next < cf.code_count
+        && (cf.code[next].op == Opcode.RET || cf.code[next].op == Opcode.RETUNDEF)) plan.completed++;
     return cf.code + next;
 }
 // Large functions warm a bounded region at a taken loop header. Native
 // backedges return before the shared GC/interrupt budget reaches its poll.
-fn bool sljit_function_backedge(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @inline {
+fn bool sljit_function_backedge(Instruction* pc, CompiledFunction* cf, Heap* h) @feat(SLJIT) @inline {
     int target = loop_target(*pc, (uint)(pc - cf.code));
     if (target < 0) return false;
     if (cf.sljit_function != null) return sljit_function_resumes(cf.code + target, cf);
-    return cf.sljit_function_calls != uint::max && ++cf.sljit_function_calls >= 64;
+    return cf.sljit_function_calls != uint::max && ++cf.sljit_function_calls >= sljit_warmup(h);
 }
 fn Instruction* sljit_function_region(Instruction* pc, TVal* regs, ColdCtx* cold) @feat(SLJIT) @inline {
     CompiledFunction* cf = cold.vm.current_func;
-    if (cf.sljit_function_calls < 64) cf.sljit_function_calls++;
+    if (cf.sljit_function_calls < sljit_warmup(cold.heap)) cf.sljit_function_calls++;
     return sljit_function_entry(pc, regs, cold, true);
 }
 fn Instruction* sljit_function_dispatch(
@@ -1894,4 +1883,69 @@ fn Instruction* sljit_function_dispatch(
     ColdCtx* cold
 ) @feat(SLJIT) @noinline {
     return th_next(sljit_function_entry(pc, regs, cold), handlers, regs, cold);
+}// Report the counters the native tiers keep: what compiled, how often it ran,
+// where each run ended, and the totals. Driven by the CLI's --stats.
+fn void sljit_stats_dump(Heap* h) {
+    $if $feat(SLJIT):
+        uint functions;
+        uint loops;
+        uint templates;
+        ulong hits;
+        for (uint i = 0; i < h.compiled_func_count; i++) {
+            CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[i];
+            if (cf == null) continue;
+            FunctionPlan* plan = cf.sljit_function;
+            if (plan != null) {
+                functions++;
+                hits += plan.hits;
+                io::printfn(
+                    "SLJIT function %s begin=%d ops=%d bytes=%d hits=%d returns=%d stalled=%d backedges=%d budget_exits=%d",
+                    (String)cf.get_name(),
+                    plan.begin,
+                    plan.count,
+                    plan.code_bytes,
+                    plan.hits,
+                    plan.completed,
+                    plan.stalled,
+                    plan.backedges,
+                    plan.budget_exits
+                );
+                for (uint pc = 0; pc < 512; pc++) {
+                    if (plan.exit_pcs[pc] == 0) continue;
+                    io::printfn(
+                        "SLJIT exit %s begin=%d pc=%d op=%d count=%d",
+                        (String)cf.get_name(),
+                        plan.begin,
+                        pc,
+                        pc < cf.code_count ? (int)cf.code[pc].op : -1,
+                        plan.exit_pcs[pc]
+                    );
+                }
+            }
+            for (LoopPlan* lp = cf.sljit_loops; lp != null; lp = lp.next) {
+                loops++;
+                io::printfn(
+                    "SLJIT loop %s begin=%d end=%d hits=%d iterations=%d",
+                    (String)cf.get_name(),
+                    lp.begin,
+                    lp.end,
+                    lp.hits,
+                    lp.iterations
+                );
+            }
+            if (cf.sljit_template != null) {
+                TemplatePlan* tp = (TemplatePlan*)cf.sljit_template;
+                templates++;
+                io::printfn("SLJIT template %s hits=%d misses=%d", (String)cf.get_name(), tp.hits, tp.misses);
+            }
+        }
+        io::printfn(
+            "SLJIT totals functions=%d loops=%d templates=%d hits=%d code_bytes=%d",
+            functions,
+            loops,
+            templates,
+            hits,
+            h.jit_code_bytes
+        );
+    $endif
 }

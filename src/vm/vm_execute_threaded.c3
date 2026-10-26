@@ -247,7 +247,7 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 macro bool th_bwd_edge_bails(Instruction* pc, ColdCtx* cold) @private {
     heap::Heap* h = cold.heap;
     $if $feat(SLJIT):
-        if (h.jit_enabled && sljit_function_backedge(pc, cold.vm.current_func)) return true;
+        if (h.jit_enabled && sljit_function_backedge(pc, cold.vm.current_func, h)) return true;
         if (h.jit_enabled
             && (cold.vm.current_func.sljit_loop_ready & (1U << ((uint)(pc - cold.code_base) & 31))) != 0) return true;
     $endif

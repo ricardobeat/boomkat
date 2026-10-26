@@ -47,6 +47,8 @@ fn int main(String[] args) {
     // Source runs as a module unless --script selects the Script goal.
     bool script = false;
     bool jit = false;
+    bool jit_stress = false;
+    bool stats = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
         bool bytecode_input = false;
@@ -87,6 +89,11 @@ fn int main(String[] args) {
             script = true;
         } else if (a == "--jit") {
             jit = true;
+        } else if (a == "--jit-stress") {
+            jit = true;
+            jit_stress = true;
+        } else if (a == "--stats") {
+            stats = true;
         } else if (a == "--ignore-unhandled-promises") {
             ignore_unhandled_rejections = true;
         } else if (a == "--jsx") {
@@ -170,6 +177,7 @@ fn int main(String[] args) {
         hp.destroy();
         return 2;
     }
+    if (jit_stress) (void)hp.set_jit_stress(true);
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
 
     $if features::PORTABLE_BYTECODE:
@@ -189,6 +197,7 @@ fn int main(String[] args) {
         vm::vm_destroy(v);
         hp.destroy();
     }
+    defer if (stats) vm::sljit_stats_dump(hp);
 
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
     hp.jsx = jsx;
@@ -266,6 +275,8 @@ fn void print_usage() {
     io::printn("set a non-zero exit status (by default they are reported and exit with status 1).");
     $if $feat(SLJIT):
         io::printn("--jit enables native compilation of eligible hot functions (off by default).");
+        io::printn("--jit-stress also compiles on the first call and keeps every entry (test setting).");
+        io::printn("--stats reports native compilation counters before exit.");
     $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");

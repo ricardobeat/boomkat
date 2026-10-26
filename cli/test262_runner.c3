@@ -61,6 +61,11 @@ fn int run_manifest_loop(char[] mpath) {
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
     defer hp.destroy();
+    if (runner_jit && !hp.set_jit(true)) {
+        io::eprintfn("test262_runner: JIT is not available in this build");
+        return 1;
+    }
+    if (runner_jit_stress) (void)hp.set_jit_stress(true);
 
     Vm*? v_opt = vm::vm_create(hp);
     if (catch err = v_opt) { return 1; }
@@ -760,6 +765,11 @@ fn int run_worker_loop() {
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
     defer hp.destroy();
+    if (runner_jit && !hp.set_jit(true)) {
+        io::eprintfn("test262_runner: JIT is not available in this build");
+        return 1;
+    }
+    if (runner_jit_stress) (void)hp.set_jit_stress(true);
 
     Vm*? v_opt = vm::vm_create(hp);
     if (catch err = v_opt) { return 1; }
@@ -806,15 +816,30 @@ fn int run_worker_loop() {
 // Main
 // ============================================================================
 
+bool runner_jit;
+bool runner_jit_stress;
+
 fn int main(String[] args) {
     vm::test262_host_enabled = true;
-    if (args.len >= 2 && (ZString)args[1].ptr == (ZString)"--worker") {
-        return run_worker_loop();
+    bool worker;
+    String manifest;
+    for (usz i = 1; i < args.len; i++) {
+        if (args[i] == "--worker") {
+            worker = true;
+        } else if (args[i] == "--jit") {
+            runner_jit = true;
+        } else if (args[i] == "--jit-stress") {
+            runner_jit = true;
+            runner_jit_stress = true;
+        } else {
+            manifest = args[i];
+        }
     }
-    if (args.len < 2) {
-        io::eprintfn("Usage: batch_test_vm <manifest_file>");
+    if (worker) return run_worker_loop();
+    if (manifest.len == 0) {
+        io::eprintfn("Usage: batch_test_vm <manifest_file> [--jit] [--jit-stress]");
         io::eprintfn("       batch_test_vm --worker  (stdin-driven worker mode)");
         return 1;
     }
-    return run_manifest_loop(args[1]);
+    return run_manifest_loop(manifest);
 }

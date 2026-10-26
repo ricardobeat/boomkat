@@ -89,8 +89,8 @@ struct LoopPlan @feat(SLJIT) {
     bool ssa;
     char[LOOP_REGS] cache;
     char[LOOP_REGS] float_cache;
-    ulong hits @if($feat(SLJIT_STATS));
-    ulong iterations @if($feat(SLJIT_STATS));
+    ulong hits;
+    ulong iterations;
 }
 struct LoopLink @feat(SLJIT) {
     void* jump;
@@ -1739,17 +1739,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         h.decref_tval(&state.values[i]);
         if (regs[i].is_heap_allocated()) track_heap_store(cold.act, regs + i, i);
     }
-    $if $feat(SLJIT_STATS):
-        plan.hits++;
-        plan.iterations += consumed;
-        if (plan.hits == 1000) io::eprintfn(
-            "SLJIT loop native %s pc=%d..%d hits=%d iterations=%d",
-            (String)cf.get_name(),
-            plan.begin,
-            plan.end,
-            plan.hits,
-            plan.iterations
-        );
-    $endif
+    plan.hits++;
+    plan.iterations += consumed;
     return cf.code + resume_pc;
 }

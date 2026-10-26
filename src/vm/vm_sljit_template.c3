@@ -28,8 +28,8 @@ struct TemplatePlan @feat(SLJIT) {
     uint flags;
     uint result_reg;
     uint return_pc;
-    ulong hits @if($feat(SLJIT_STATS));
-    ulong misses @if($feat(SLJIT_STATS));
+    ulong hits;
+    ulong misses;
     usz code_bytes @if($feat(SLJIT_STATS));
 }
 // Symbolic values describe the admitted loop without depending on its register
@@ -449,7 +449,7 @@ fn Instruction* sljit_template_entry(Instruction* pc, TVal* regs, ColdCtx* cold)
     if (shape == null || shape.generation != plan.generation) return pc;
     long length = plan.measure(rows, count, null);
     if (length < 0) {
-        $if $feat(SLJIT_STATS): plan.misses++; $endif
+        plan.misses++;
         return pc;
     }
     // alloc_no_gc and registry growth cannot enter JS or move source objects.
@@ -462,10 +462,7 @@ fn Instruction* sljit_template_entry(Instruction* pc, TVal* regs, ColdCtx* cold)
     h.large_string_register(result);
     h.set_reg_string(regs + plan.result_reg, result);
     track_heap_store(cold.act, regs + plan.result_reg, plan.result_reg);
-    $if $feat(SLJIT_STATS):
-        plan.hits++;
-        if (plan.hits == 1000) io::eprintfn("SLJIT template native %s: hits=%d misses=%d rows=%d", (String)cf.get_name(), plan.hits, plan.misses, count);
-    $endif
+    plan.hits++;
     // Publish the result before an incremental collection can advance.
     if (count >= h.bwd_gc_budget) {
         uint elapsed = count - h.bwd_gc_budget;
