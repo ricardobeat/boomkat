@@ -72,7 +72,7 @@ snapshot.
 | Resizable `ArrayBuffer` | ✅ | ✅ | ✅ | ❌ |
 | `TypedArray` family, `DataView` | ✅ | ✅ | ✅ | ⚠️ partial |
 | Base64/hex `TypedArray` helpers (`fromBase64`, `toHex`, ...) | ✅ | ✅ | ✅ | ❌ |
-| `SharedArrayBuffer`, `Atomics` | ⚠️ single agent | ✅ | ✅ | ❌ |
+| `SharedArrayBuffer`, `Atomics` | ✅ | ✅ | ✅ | ❌ |
 | `structuredClone` | ❌ | ❌ | ❌ | ❌ |
 
 ## Numbers, strings, dates
@@ -176,7 +176,7 @@ registers `.compile()`, but the runner excludes tests tagged `legacy-regexp`.
 | ECMA-402 | Optional small/full builds; bundled formatting locales, collation, segmentation and locale queries; dictionary segmentation excluded |
 | Explicit resource management | Full: `using`/`await using` declarations, DisposableStack, AsyncDisposableStack, SuppressedError and the @@dispose/@@asyncDispose symbols |
 | Cross-realm | Shared-heap realms with independent globals and intrinsics; `$262.createRealm` supported |
-| Multi-agent | Single-agent Atomics; `$262.agent` tests excluded |
+| Multi-agent | Agents are threads with their own runtime; `$262.agent` supported; the C API cannot share a buffer between runtimes yet |
 | ShadowRealm, decorators | Not implemented yet |
 | `export defer`, await dictionaries | Excluded by feature token |
 | `structuredClone` | Host API excluded |
@@ -194,7 +194,7 @@ revision and overlapping skip rules.
 | Baseline | ES2025 + most ES2026 | ES2025 + most ES2026 | ES2025 + most ES2026 | ES5.1, partial ES6/7 |
 | `BigInt` representation | arbitrary (32-bit limb vector) | arbitrary | arbitrary | |
 | `Proxy` | full | full | full | subset |
-| `SharedArrayBuffer` | single agent | shared | shared | |
+| `SharedArrayBuffer` | shared | shared | shared | |
 | Sloppy mode | supported | supported | supported | supported |
 | Annex B | sloppy-mode parts | supported | supported | supported |
 | RegExp engine | libregexp | libregexp | libregexp | built-in |
