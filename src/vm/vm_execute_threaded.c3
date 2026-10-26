@@ -2514,14 +2514,34 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     if (rc.is_string()) return th_get_computed(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), (HString*)rc.get_heapptr());
     if (!rc.is_fastint()) return pc;
     HObject* obj = (HObject*)rb.get_heapptr();
-    if (obj.get_class() != hobject::ObjClass.ARRAY) {
-        if (builtins::is_typed_array_class(obj.get_class()) && !obj.is_proxy()) return th_get_typed_element(pc, handlers, regs, cold, obj);
+    long idx = rc.get_fastint();
+    hobject::ObjClass cls = obj.get_class();
+    hobject::PropValue* elements;
+    uint count;
+    if (cls == hobject::ObjClass.ARGUMENTS) {
+        // A parameter-mapped index reads the owning frame's register.
+        if (idx < 0 || args_is_mapped(obj, (uint)idx)) return pc;
+        // A sloppy call's object keeps its arguments as the first named slots
+        // of a shared shape until a property is added or removed. Any other
+        // keeps them in the dense part, where promoting an index to a named
+        // property empties its slot.
+        uint nargs = *obj.array_len_ptr();
+        if (nargs < cold.heap.args_shapes.len && obj.shape_id == cold.heap.args_shapes[nargs]) {
+            elements = obj.prop_values();
+            count = nargs;
+        } else {
+            elements = obj.array_part();
+            count = obj.array_size;
+        }
+    } else if (cls == hobject::ObjClass.ARRAY) {
+        if (obj.is_proxy()) return pc;
+        elements = obj.array_part();
+        count = obj.array_size;
+    } else {
+        if (builtins::is_typed_array_class(cls) && !obj.is_proxy()) return th_get_typed_element(pc, handlers, regs, cold, obj);
         return pc;
     }
-    if (obj.is_proxy()) return pc;
-    long idx = rc.get_fastint();
-    hobject::PropValue* elements = obj.array_part();
-    if (elements == null || idx < 0 || idx >= (long)obj.array_size) return pc;
+    if (elements == null || idx < 0 || idx >= (long)count) return pc;
     TVal value = elements[idx].get();
     // Undefined dense slots need named-property and prototype lookup.
     if (value.is_undefined()) return pc;

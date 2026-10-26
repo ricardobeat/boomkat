@@ -84,6 +84,15 @@ fn bool op_is_reg_pair(CompilerContext* ctx, uint i) {
         && ctx.code[i].get_bc() == ctx.code[i + 1].get_bc();
 }
 
+// True when an `arguments` object can observe or change this function's
+// bindings. One held in a register is built at call entry and cannot reach
+// an environment; it aliases parameters only in a sloppy function that has
+// some.
+fn bool arguments_observes_bindings(CompilerContext* ctx) {
+    if (!ctx.uses_arguments) return false;
+    return !ctx.arguments_in_reg || (!ctx.is_strict && ctx.num_args != 0);
+}
+
 // Remove environment producers only when the binding ledger identifies their
 // name and no captured declaration or name-based bytecode consumer can observe
 // it. Constant-pool identity merges shadowed bindings with the same spelling;
@@ -96,7 +105,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
     bool ordinary_ok = !ctx.is_global && !ctx.is_arrow
         && !ctx.is_generator && !ctx.is_async
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
-        && !ctx.uses_arguments
+        && !arguments_observes_bindings(ctx)
         && !ctx.has_thunk_defaults() && ctx.destruct_defaults.len() == 0;
     if (ctx.disable_optimize || ctx.has_wide
         || (!ordinary_ok && !can_remove_empty_arrow_scopes)) return false;
@@ -213,7 +222,7 @@ fn bool can_reuse_binding_environment(CompilerContext* ctx) {
         || ctx.is_generator || ctx.is_async || ctx.is_named_func_expr
         || ctx.has_direct_eval || ctx.has_with_stmt || ctx.outer_with
         || ctx.capture_all
-        || ctx.uses_arguments || ctx.has_thunk_defaults()
+        || arguments_observes_bindings(ctx) || ctx.has_thunk_defaults()
         || ctx.destruct_defaults.len() != 0 || ctx.has_destructured_param) {
         return false;
     }
