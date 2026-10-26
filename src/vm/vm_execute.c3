@@ -2929,14 +2929,11 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
             continue;
         }
-        // The threaded table has no WIDE handler, so a burst there would bail at once.
-        if (ds.curr_pc.op != Opcode.WIDE) {
-            ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
-            // The burst's return of the outermost frame ends the run.
-            if (ds.needs_restart) break;
-            ds.sync_code();
-            if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) continue;
-        }
+        ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
+        // The burst's return of the outermost frame ends the run.
+        if (ds.needs_restart) break;
+        ds.sync_code();
+        if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) continue;
     $endif
 
         Instruction word = *ds.curr_pc;
@@ -2944,9 +2941,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
         // WIDE prefix: the word's A/B/C fields carry the high bytes of
         // the following instruction's operands. Handlers only ever see
-        // the widened DecodedInsn, never the prefix word. The threaded
-        // burst never reaches here with WIDE (it is not in its handler
-        // table, so it bails back to this loop first).
+        // the widened DecodedInsn, never the prefix word.
         DecodedInsn insn;
         if (@unlikely(word.op == Opcode.WIDE)) {
             Instruction payload = *ds.curr_pc;

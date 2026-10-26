@@ -62,6 +62,7 @@ fn void fill_threaded_handlers() {
     // --- Tight-loop arith ops ---
     g_threaded_table.fns[Opcode.ADDI.ordinal]   = &th_addi;
     g_threaded_table.fns[Opcode.LDREG.ordinal]  = &th_ldreg;
+    g_threaded_table.fns[Opcode.WIDE.ordinal]   = &th_wide;
     g_threaded_table.fns[Opcode.LDTHIS.ordinal] = &th_ldthis;
 
     // --- Recursion (fib) cheap ops ---
@@ -327,23 +328,26 @@ macro bool th_can_publish(heap::Heap* h, TVal value) @private {
     return !h.gc_needs_mark((types::HeapHeader*)ptr);
 }
 
-fn Instruction* th_ldreg(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    TVal value = regs[insn.b];
-    TVal* ra = regs + insn.a;
+// Copy `value` into register `a`. False when the copy needs the switch.
+macro bool th_move(TVal* regs, uint a, TVal value, ColdCtx* cold) @private {
+    TVal* ra = regs + a;
     // An inert value needs no publication, retain or tracking, and a register
     // that holds anything but a string has no count to release.
     if (value.is_inert() && !ra.is_refcounted()) {
         *ra = value;
-        return th_next(pc + 1, handlers, regs, cold);
+        return true;
     }
-    if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return pc;
+    if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return false;
     th_do_retain(&value);
     th_do_release(ra);
     *ra = value;
-    track_heap_store(cold.act, ra, (uint)insn.a);
-    pc++;
-    return th_next(pc, handlers, regs, cold);
+    track_heap_store(cold.act, ra, a);
+    return true;
+}
+
+fn Instruction* th_ldreg(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    if (!th_move(regs, pc.a, regs[pc.b], cold)) return pc;
+    return th_next(pc + 1, handlers, regs, cold);
 }
 
 fn Instruction* th_ldthis(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
@@ -1718,19 +1722,103 @@ macro Instruction* th_bitop($op, $imm, Instruction* pc, HandlerTable* handlers, 
         y = (int)rc.get_fastint();
     $endif
     if (!th_can_release(ra)) return pc;
-    int x = (int)rb.get_fastint();
+    th_do_release(ra);
+    ra.set_fastint(th_int32_op($op, (int)rb.get_fastint(), y));
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+macro long th_int32_op(Opcode op, int x, int y) @private {
+    switch (op) {
+        case Opcode.BAND: return (long)(x & y);
+        case Opcode.BOR:  return (long)(x | y);
+        case Opcode.BXOR: return (long)(x ^ y);
+        case Opcode.SHL:  return (long)(x << (y & 0x1F));
+        case Opcode.SHR:  return (long)(x >> (y & 0x1F));
+        default:          return (long)((uint)x >> (y & 0x1F));
+    }
+}
+
+// A WIDE-prefixed register move, integer load, or fastint arithmetic or
+// bitwise operation; th_wide_test takes truth tests and comparisons. Anything
+// else, and any operand these cannot take, runs in the switch from the
+// prefix word.
+fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction ext = pc[0];
+    Instruction insn = pc[1];
+    uint a = ((uint)ext.a << 8) | insn.a;
+    TVal* rb = regs + (((uint)ext.b << 8) | insn.b);
+    TVal* rc = regs + (((uint)ext.c << 8) | insn.c);
+    TVal* ra = regs + a;
     long result;
-    $switch $op:
-        $case Opcode.BAND: result = (long)(x & y);
-        $case Opcode.BOR:  result = (long)(x | y);
-        $case Opcode.BXOR: result = (long)(x ^ y);
-        $case Opcode.SHL:  result = (long)(x << (y & 0x1F));
-        $case Opcode.SHR:  result = (long)(x >> (y & 0x1F));
-        $default:          result = (long)((uint)x >> (y & 0x1F));
-    $endswitch
+    switch (insn.op) {
+        case Opcode.LDREG:
+            if (!th_move(regs, a, *rb, cold)) return pc;
+            return th_next(pc + 2, handlers, regs, cold);
+        case Opcode.LDINT:
+            result = th_wide_sbc(ext, insn);
+        case Opcode.ADD:
+        case Opcode.SUB:
+            if (!types::both_fastint(rb, rc)) return pc;
+            result = insn.op == Opcode.ADD ? rb.get_fastint() + rc.get_fastint()
+                                           : rb.get_fastint() - rc.get_fastint();
+            if (!types::fits_fastint(result)) return pc;
+        case Opcode.BAND:
+        case Opcode.BOR:
+        case Opcode.BXOR:
+        case Opcode.SHL:
+        case Opcode.SHR:
+        case Opcode.USHR:
+            if (!types::both_fastint(rb, rc)) return pc;
+            result = th_int32_op(insn.op, (int)rb.get_fastint(), (int)rc.get_fastint());
+        default:
+            return th_wide_test(pc, handlers, regs, cold);
+    }
+    if (!th_can_release(ra)) return pc;
     th_do_release(ra);
     ra.set_fastint(result);
-    return th_next(pc + 1, handlers, regs, cold);
+    return th_next(pc + 2, handlers, regs, cold);
+}
+
+// The signed BC operand of an A-BC payload, whose prefix carries BC bits 16-31.
+macro int th_wide_sbc(Instruction ext, Instruction insn) @private {
+    return (int)(insn.get_bc() | ((uint)ext.b << 16) | ((uint)ext.c << 24)) - (int)bytecode::BC_BIAS;
+}
+
+fn Instruction* th_wide_test(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @noinline @private {
+    Instruction ext = pc[0];
+    Instruction insn = pc[1];
+    TVal* ra = regs + (((uint)ext.a << 8) | insn.a);
+    TVal* rb = regs + (((uint)ext.b << 8) | insn.b);
+    TVal* rc = regs + (((uint)ext.c << 8) | insn.c);
+    bool result;
+    switch (insn.op) {
+        case Opcode.IF_TRUE:
+        case Opcode.IF_FALSE:
+            int off = is_truthy(ra, cold.heap) == (insn.op == Opcode.IF_TRUE) ? th_wide_sbc(ext, insn) : 0;
+            if (off < 0 && th_bwd_edge_bails(cold)) return pc;
+            return th_next(pc + 2 + off, handlers, regs, cold);
+        case Opcode.LT:
+        case Opcode.LE:
+        case Opcode.GT:
+        case Opcode.GE:
+            if (!types::both_fastint(rb, rc)) return pc;
+            uint order = th_order_int(rb.get_fastint(), rc.get_fastint());
+            result = ((CMP_BRANCH_ON[insn.op.ordinal - Opcode.LT.ordinal + 4] >> order) & 1) != 0;
+        case Opcode.EQ:
+        case Opcode.NEQ:
+        case Opcode.SEQ:
+        case Opcode.SNEQ:
+            bool strict = insn.op == Opcode.SEQ || insn.op == Opcode.SNEQ;
+            uint order = strict ? th_strict_order(rb, rc) : th_loose_order(rb, rc, cold.heap);
+            if (order == TH_EQ_UNKNOWN) return pc;
+            result = (order == ORDER_EQ) != (insn.op == Opcode.NEQ || insn.op == Opcode.SNEQ);
+        default:
+            return pc;
+    }
+    if (!th_can_release(ra)) return pc;
+    th_do_release(ra);
+    ra.set_boolean(result);
+    return th_next(pc + 2, handlers, regs, cold);
 }
 
 fn Instruction* th_band(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
