@@ -142,8 +142,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                     self.gc_root_stage++;
                     continue;
                 }
-                if (self.async_waiters[self.gc_root_index].active) {
-                    self.mark_hobject(self.async_waiters[self.gc_root_index].buffer);
+                if (self.async_waiters[self.gc_root_index].promise != null) {
                     self.mark_hobject(self.async_waiters[self.gc_root_index].promise);
                 }
                 self.gc_root_index++;

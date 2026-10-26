@@ -14,6 +14,7 @@ import std::io;
 import std::collections::list;
 import std::collections::map;
 import boomkat::pagepool;
+import boomkat::agent;
 import std::time;
 import std::core::mem::allocators;
 
@@ -52,6 +53,9 @@ const int CATCHER_CHAIN_FREE_NODES_ONLY  = 2;
 // Runs after a microtask handler completes, with the handler's return value
 // and the downstream promise to resolve.
 alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstream);
+// Settles whatever other agents or timers have made ready for this heap.
+// Returns true if it settled anything.
+alias AgentPollFn = fn bool(void* heap, void* vm);
 
 // Host notification for a promise that was rejected with nothing watching it.
 // Called once per such promise at the end of drain_microtasks, with the
@@ -475,13 +479,13 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
     h.free_generator_state(gs);
 }
 
-// One parked Atomics.waitAsync waiter. `byte_index` is an absolute offset into
-// `buffer`, and Atomics.notify resolves `promise` with "ok".
+// One parked Atomics.waitAsync waiter. `node` is the entry in the process-wide
+// waiter table (agent.c3), null once the entry is free; `promise` is the
+// pending Promise that settles with "ok" or "timed-out" and is rooted until
+// then.
 struct AtomicsWaiter {
-    hobject::HObject* buffer;
     hobject::HObject* promise;
-    uint              byte_index;
-    bool              active;
+    void*             node;
 }
 
 // One registered host function.
@@ -1197,11 +1201,19 @@ struct Heap {
     RejectionTrackerFn   rejection_tracker_fn;
     void*                rejection_tracker_udata;
 
-    // Parked Atomics.waitAsync waiters. Each holds a pending Promise against a
-    // SharedArrayBuffer and byte index, and Atomics.notify resolves matching
-    // waiters with "ok" in FIFO order. Active waiters act as GC roots.
-    AtomicsWaiter[64] async_waiters;
-    uint      async_waiter_count;
+    // Parked Atomics.waitAsync waiters: one slot per pending Promise, with
+    // free slots left in place. Entries act as GC roots. The slots are indexed
+    // by the waiter table's nodes, so a settled slot is reused, not compacted.
+    AtomicsWaiter* async_waiters;
+    uint      async_waiter_count;      // high-water mark of used slots
+    uint      async_waiter_capacity;
+    // This agent's mailbox (agent::Port*), created the first time the heap
+    // waits on shared memory. Null for a heap that never does, which is what
+    // keeps the drain loop's poll to a single comparison.
+    void*          agent_port;
+    AgentPollFn    agent_poll_fn;
+    // AgentCanSuspend(): when set, Atomics.wait throws instead of blocking.
+    bool           agent_no_block;
 
     // Shapes (hidden classes) backing the inline caches.
     hobject::Shape**    shapes;    // each element points to one shape allocation
@@ -1699,7 +1711,12 @@ fn Heap*? create(
     h.promise_rejection_udata = null;
     h.rejection_tracker_fn    = null;
     h.rejection_tracker_udata = null;
+    h.async_waiters = null;
     h.async_waiter_count = 0;
+    h.async_waiter_capacity = 0;
+    h.agent_port = null;
+    h.agent_poll_fn = null;
+    h.agent_no_block = false;
 
     return h;
 }
@@ -2283,6 +2300,7 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    agent::heap_release(self);
     self.clear_concat_cache();
     self.free_realms();
     self.gc_gray.free();
@@ -2639,8 +2657,8 @@ fn void Heap.reset(&self) {
     self.microtask_count    = 0;
     self.microtask_draining = false;
     self.host_managed_jobs = false;
-    self.async_waiter_count = 0;
-    mem::clear(&self.async_waiters, (sz)(AtomicsWaiter::size * 64));
+    agent::heap_release(self);
+    self.agent_no_block = false;
 
     // Remaining heap state: GC roots, execution state, prototypes.
     self.flags            = 0;
@@ -4493,12 +4511,9 @@ fn void Heap.mark_roots(&self) {
         }
     }
 
-    // Atomics.waitAsync waiters keep their parked buffer + pending promise alive.
+    // Atomics.waitAsync waiters keep their pending promise alive.
     for (uint i = 0; i < self.async_waiter_count; i++) {
-        if (self.async_waiters[i].active) {
-            if (self.async_waiters[i].buffer != null) self.mark_hobject(self.async_waiters[i].buffer);
-            if (self.async_waiters[i].promise != null) self.mark_hobject(self.async_waiters[i].promise);
-        }
+        if (self.async_waiters[i].promise != null) self.mark_hobject(self.async_waiters[i].promise);
     }
 
     // CompiledFunctions live in their own tracking array rather than the GC
@@ -5700,6 +5715,10 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
         while (self.microtask_head < self.microtask_count && max_jobs > 0) {
             max_jobs--;
             if (self.gc_pending) { self.safepoint_gc(); }
+            // Another agent's notification or an elapsed waitAsync timeout
+            // settles its promise between jobs, so a script that spins on the
+            // microtask queue still sees it.
+            if (self.agent_port != null) (void)self.agent_poll_fn(self, vm);
             TVal handler    = self.microtask_queue[self.microtask_head * 3];
             TVal arg        = self.microtask_queue[self.microtask_head * 3 + 1];
             TVal downstream = self.microtask_queue[self.microtask_head * 3 + 2];

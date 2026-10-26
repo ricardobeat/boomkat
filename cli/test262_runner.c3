@@ -13,6 +13,7 @@ module test262_runner;
 
 import boomkat::compiler;
 import boomkat::esm;
+import boomkat::agent;
 import boomkat::vm;
 import boomkat::heap;
 import boomkat::env;
@@ -701,6 +702,9 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
         if (after == 0) break;
         if (after == before && drain_i > 5) break;
     }
+
+    // Agents and waitAsync timers settle promises after the script returns.
+    agent::run_event_loop(hp, v);
 
     if (async_test) {
         char[] adk = "__test262_async_done";
