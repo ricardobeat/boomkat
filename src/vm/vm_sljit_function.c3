@@ -552,6 +552,97 @@ fn void FunctionEmitter.slot_store(
     e.mov(mem | slot_base, disp, r0, 0);
 }
 
+// A store that adds a property the receiver and its whole prototype chain
+// lack. The absent-property cache names the shape the append moves the
+// receiver to, so the store needs no lookup of the key or of the transition.
+// The guards mirror the interpreter's absent-put path: a receiver with a
+// different chain, flags or storage leaves to the interpreter, which owns
+// growth, reference counts and the write barrier. The receiver arrives in r0
+// still boxed.
+fn void FunctionEmitter.append_property(&self, CompiledFunction* cf, uint pc, ICEntry* ic, Heap* h) @feat(SLJIT) {
+    TemplateEmitter* e = &self.out.e;
+    Instruction ins = cf.code[pc];
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    int r2 = jit::reg_r(2);
+    int r3 = jit::reg_r(3);
+    int imm = jit::SLJIT_IMM;
+    int mem = jit::SLJIT_MEM;
+    uint value_reg = ins.op == Opcode.PUTTHISC ? ins.a : ins.b;
+    HObject obj;
+    long shape_offset = (char*)&obj.shape_id - (char*)&obj;
+    long proto_offset = (char*)&obj.prototype - (char*)&obj;
+    // The receiver must be an object.
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
+    // An ordinary extensible object: the append installs a plain data
+    // property, so no exotic [[Set]] may intercept it.
+    ObjFlags ordinary; ordinary.obj_class = OBJECT;
+    ObjFlags forbidden;
+    forbidden.exotic_proxyobj = true;
+    forbidden.exotic_module_ns = true;
+    forbidden.exotic_deferred_ns = true;
+    ObjFlags extensible; extensible.extensible = true;
+    e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_AND, r2, r2, 0, imm, 0x003F0000U | (uint)forbidden);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)ordinary, pc);
+    e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_AND, r2, r2, 0, imm, (uint)extensible);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)extensible, pc);
+    // The receiver must be on the shape the cache names, and the recycle epoch
+    // must still hold, or the recorded transition is stale.
+    e.mov(r2, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.shape_id, pc);
+    Heap heap_view;
+    e.mov(r2, 0, mem | jit::reg_s(1), function_cold_offset(0));
+    e.mov(r2, 0, mem | r2, (char*)&heap_view.shape_recycle_epoch - (char*)&heap_view, jit::SLJIT_MOV_U32);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.shape_gen, pc);
+    // The property storage must have a free slot and no hash table.
+    e.mov(r1, 0, mem | r0, (char*)&obj.prop_count - (char*)&obj, jit::SLJIT_MOV_U32);
+    e.mov(r2, 0, mem | r0, (char*)&obj.prop_capacity - (char*)&obj, jit::SLJIT_MOV_U32);
+    self.out.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r2, 0, pc);
+    e.mov(r2, 0, mem | r0, (char*)&obj.prop_hash - (char*)&obj);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0, pc);
+    // An observed prototype needs the prototype epoch bumped, which only the
+    // interpreter does.
+    GcBits observed; observed.prototype_observed = true;
+    e.mov(r2, 0, mem | r0, (char*)&obj.gc - (char*)&obj, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_AND, r2, r2, 0, imm, (uint)observed);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0, pc);
+    // The chain must be the one the cache recorded: every link the same
+    // object with the same shape, and nothing after the last link.
+    e.mov(r3, 0, mem | r0, proto_offset);
+    for (uint i = 0; i < ic.chain_len; i++) {
+        self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)ic.chain.snapshot.protos[i], pc);
+        e.mov(r2, 0, mem | r3, shape_offset, jit::SLJIT_MOV_U32);
+        self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.chain.snapshot.shapes[i], pc);
+        e.mov(r2, 0, mem | r3, 0, jit::SLJIT_MOV_U32);
+        e.op(jit::SLJIT_AND, r2, r2, 0, imm, 0x003F0000U | (uint)forbidden);
+        self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)ordinary, pc);
+        e.mov(r3, 0, mem | r3, proto_offset);
+    }
+    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, 0, pc);
+    // The value takes the next free slot: the inline storage while the object
+    // has none, and the block the heap allocated once it did.
+    e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
+    void* external = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
+    e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
+    e.bind(external);
+    e.op(jit::SLJIT_SHL, r3, r1, 0, imm, 3);
+    e.op(jit::SLJIT_ADD, r2, r2, 0, r3, 0);
+    // The slot starts empty, so the store has no old value to release.
+    e.mov(mem | r2, 0, imm, 0);
+    self.slot_store(r0, r2, 0, value_reg, pc);
+    // The receiver moves to the shape the cache names. The store keeps the
+    // owner in r1.
+    e.mov(r2, 0, mem | r1, (char*)&obj.prop_count - (char*)&obj, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_ADD, r2, r2, 0, imm, 1);
+    e.mov(mem | r1, (char*)&obj.prop_count - (char*)&obj, r2, 0, jit::SLJIT_MOV_U32);
+    e.mov(mem | r1, shape_offset, imm, ic.absent_next_shape, jit::SLJIT_MOV_U32);
+}
+
 fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool write, Heap* h) @feat(SLJIT) {
     TemplateEmitter* e       = &self.out.e;
     Instruction ins          = cf.code[pc];
@@ -653,6 +744,22 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         }
     } else {
         self.out.load(write ? ins.a : ins.b, r0);
+    }
+    // A store that adds a property the receiver and its whole prototype chain
+    // lack: the absent-property cache names the shape the append moves the
+    // receiver to, so the store needs no lookup of the key or of the
+    // transition.
+    if (write && !computed && ic.prop_idx == hobject::IC_PROP_ABSENT) {
+        if (ic.key.borrow() == null || key == null || ic.key.borrow() != key
+            || ic.has_proto || (uint)ic.chain_len > hobject::IC_MAX_CHAIN
+            || h.get_shape(ic.absent_next_shape) == null
+            || ((HString*)key).is_arridx() || ((HString*)key).flags.is_hidden) {
+            self.out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, true);
+            return false;
+        }
+        self.append_property(cf, pc, ic, h);
+        if (tracking) self.flow.guard_shape(token, ic.absent_next_shape);
+        return true;
     }
     if (element) {
         self.array_element(cf, pc);
