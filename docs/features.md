@@ -177,7 +177,7 @@ registers `.compile()`, but the runner excludes tests tagged `legacy-regexp`.
 | Explicit resource management | Full: `using`/`await using` declarations, DisposableStack, AsyncDisposableStack, SuppressedError and the @@dispose/@@asyncDispose symbols |
 | Cross-realm | Shared-heap realms with independent globals and intrinsics; `$262.createRealm` supported |
 | Multi-agent | Single-agent Atomics; `$262.agent` tests excluded |
-| ShadowRealm, decorators | Excluded |
+| ShadowRealm, decorators | Not implemented yet |
 | `export defer`, await dictionaries | Excluded by feature token |
 | `structuredClone` | Host API excluded |
 
