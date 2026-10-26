@@ -10,6 +10,6 @@
 [  8] RETUNDEF
 
 --- Inner function 0 ---
-[  0] GETPROPC            r2 = r0, r1
-[  1] RET                 r2 = r0, r0
+[  0] GETPROPC            r1 = r0, r1
+[  1] RET                 r1 = r0, r0
 --- End bytecode ---

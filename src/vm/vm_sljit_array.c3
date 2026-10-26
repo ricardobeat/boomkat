@@ -9,12 +9,8 @@ import boomkat::jit;
 // Emit before property(), then bind the returned success jump after it. Type
 // mismatches fall through to that property's existing path. Once a dense-array
 // read is selected, every refusal resumes the original opcode before storing.
-fn void* FunctionEmitter.array_read(&self, CompiledFunction* cf, uint pc, bool guard_only = false) @feat(SLJIT) {
+fn void* FunctionEmitter.array_read(&self, CompiledFunction* cf, uint pc) @feat(SLJIT) {
     Instruction ins = cf.code[pc];
-    if (guard_only) {
-        if (ins.op != Opcode.INLINE_READ_GUARD || ins.c != 0) return null;
-        ins = { .op = Opcode.GETPROP, .b = ins.a, .c = ins.b };
-    }
     if (ins.op != Opcode.GETPROP && ins.op != Opcode.GETPROP_CACHE) return null;
     LoopEmitter* out = &self.out; TemplateEmitter* e = &out.e;
     int r0 = jit::reg_r(0); int r1 = jit::reg_r(1); int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
@@ -63,9 +59,8 @@ fn void* FunctionEmitter.array_read(&self, CompiledFunction* cf, uint pc, bool g
     // named table by defineProperty. Prototype lookup belongs to the VM.
     e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
     out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED, pc);
-    if (!guard_only) self.store(ins.a, pc);
+    self.store(ins.a, pc);
     void* done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
     e.bind(nonobject); e.bind(nullobject); e.bind(nonarray); e.bind(nonindex); e.bind(negative);
-    if (guard_only) out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, true);
     return done;
 }

@@ -127,8 +127,7 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
                 self.gc_old_count++;
                 self.gc_young_kept++;
             }
-            if (cur.gc.old) { self.objects_old.push(cur); }
-            else { self.objects_young.push(cur); }
+            push_header(cur.gc.old ? &self.objects_old : &self.objects_young, cur);
             if (cur.gc.old && cur.is_object()) {
                 HObject* owner = (HObject*)cur;
                 if (promoted || self.gc_keep_temproots || self.gc_has_host_edges(owner)) self.remember(owner);
@@ -142,7 +141,14 @@ fn void Heap.gc_sweep_objects_step(&self, uint budget) {
         }
         if (self.live_obj_count > 0) self.live_obj_count--;
         if (cur.is_object()) {
-            self.gc_free_object = (HObject*)cur;
+            HObject* obj = (HObject*)cur;
+            // Freeing costs one unit per slot, as hobject_free_step charges.
+            uint slots = obj.prop_count + obj.array_size;
+            if (slots < budget && hobject::hobject_free_inline(obj, self)) {
+                budget -= slots;
+                continue;
+            }
+            self.gc_free_object = obj;
             self.gc_free_index = 0;
         } else {
             self.free_func(self.heap_udata, cur);

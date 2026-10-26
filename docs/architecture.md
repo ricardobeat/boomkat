@@ -252,40 +252,6 @@ function therefore snapshots its private-name table into
 The fusion drivers check jump targets and register liveness before replacing a
 sequence. A branch cannot land inside a sequence whose producer was removed.
 
-`--inline` enables the experimental guarded leaf inliner in `compiler/inline.c3`.
-It runs over the completed compilation unit, collecting candidates before
-expanding callers, then reruns instruction-pair fusion. Eligible bodies have at
-most 32 instructions and 32 registers. Reads, constants, primitive numeric
-arithmetic, comparisons and branches are supported; calls, writes, allocation,
-arguments objects, generators and exception handlers exclude a candidate.
-Caller expansion is limited to 256 extra instructions. Wide-operand and
-suspending callers retain ordinary calls.
-
-Each site evaluates its callee, receiver and arguments before checking the
-compiled template's identity and realm. Copied code uses separate caller
-registers, except that a method call's receiver is read where the caller put it.
-Only registers the body reads before writing are initialized, and `INLINE_THIS`
-is emitted only for a body that reads `this` through a copy. Every `INLINE_*`
-operation has a threaded handler that follows a refused guard's jump directly;
-with `--inline-stats` they return to the switch, which owns the counters. A
-constant-key read guard that hits its property cache makes the read itself, and
-a global name resolved in the global environment is read through the
-instruction's variable cache. Any guard miss runs the ordinary call with those
-evaluated operands.
-Property guards refuse accessors, proxies and observable coercions before they
-run. Outer bindings resolve against the callee's environments, and captures use
-its closure's capture vector. Arrow bodies read the closure's lexical `this`.
-Missing bindings and TDZ values take the ordinary call. Every operation before
-fallback is a side-effect-free read or numeric computation.
-
-The inliner relocates branches, handlers and direct-eval PCs, preserving callee
-source positions on copied instructions. Expected templates are entries in the
-caller's inner-function table, so the existing GC and portable-image paths keep
-the references valid. `--inline-stats` reports attempts, identity-guard hits,
-calls avoided, fallbacks and bytecode sizes for expanded functions. Inlining
-is opt-in: it is neutral on most benchmarks and slower on DeltaBlue; `scripts/bench_guarded_inline.py`
-records interleaved timings and profiles in separate processes.
-
 `gen_module_slots` gives a module's top-level `var` a register when resolution
 finds no capture, dynamic scope or export that requires an environment binding.
 An importer reads an exported var from the module environment. A Script's

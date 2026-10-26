@@ -147,7 +147,7 @@ fn hobject::PropValue* mapped_env_slot(Vm* vm, Activation* owner, CompiledFuncti
 }
 
 // The current value of mapped formal `idx`, borrowed from its storage.
-fn TVal mapped_param_value(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx) @inline {
+fn TVal mapped_param_value(Vm* vm, Activation* owner, CompiledFunction* cf, uint idx) {
     HObject* holder;
     hobject::PropValue* slot = mapped_env_slot(vm, owner, cf, idx, &holder);
     return slot != null ? slot.get() : owner.bottom[idx];
@@ -170,9 +170,10 @@ fn void mapped_args_unmap(HObject* args_obj, uint idx) @inline {
 // clears the map, so without this a property would keep the stale value
 // captured at creation instead of the parameter's current value.
 fn void mapped_args_sync_all(Vm* vm, HObject* args_obj) @inline {
+    ulong bits = *args_obj.mapped_bits_ptr();
+    if (bits == 0) return;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return;
-    ulong bits = *args_obj.mapped_bits_ptr();
     uint i = 0;
     while (bits != 0) {
         if ((bits & 1UL) != 0) {
@@ -248,11 +249,11 @@ fn void mapped_args_freeze_on_pop(Vm* vm, Activation* act) {
 // dense/named path instead (index not in the map, owning frame gone, or the
 // index beyond the formal parameter list).
 fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline {
+    if (!args_is_mapped(args_obj, idx)) return false;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
-    if (!args_is_mapped(args_obj, idx)) return false;
     // The parameter register is the source of truth while the mapping is live,
     // so an assignment to the formal parameter (`a = 1`) is observable through
     // `arguments[0]`.
@@ -264,11 +265,11 @@ fn bool mapped_args_read(Vm* vm, HObject* args_obj, uint idx, TVal* out) @inline
 // slot, mirroring it into the object's own slot so the alias holds. Returns
 // false when the write must take the ordinary path instead.
 fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inline {
+    if (!args_is_mapped(args_obj, idx)) return false;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
-    if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0 && args_obj.get_prop_flags((uint)pidx, vm.heap).is_accessor) return false;
     HObject* holder;
@@ -297,11 +298,11 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
 // slot, but leave the parameter local untouched — delete breaks the alias,
 // it does not clear the local. Returns true when the index was mapped.
 fn bool mapped_args_delete(Vm* vm, HObject* args_obj, uint idx) @inline {
+    if (!args_is_mapped(args_obj, idx)) return false;
     Activation* owner = mapped_args_owner(vm, args_obj);
     if (owner == null) return false;
     CompiledFunction* cf = (CompiledFunction*)owner.func;
     if (cf == null || idx >= (uint)cf.num_args) return false;
-    if (!args_is_mapped(args_obj, idx)) return false;
     int pidx = args_obj.find_prop_idx(vm.heap.int_to_hstring((long)idx), vm.heap);
     if (pidx >= 0) {
         hobject::PropFlags fl = args_obj.get_prop_flags((uint)pidx, vm.heap);
@@ -648,6 +649,27 @@ fn builtins::BuiltinContext call_context(ColdCtx* ds, uint callee_reg, uint argc
     return ctx;
 }
 
+const uint CONSTRUCTOR_CAPACITY_LIMIT = 32;
+
+// A prediction below the first growth capacity could add a later allocation.
+fn uint constructor_reserve_capacity(uint count) {
+    return max(count, hobject::PROPS_INITIAL_CAPACITY);
+}
+
+// Observe the original receiver, even if the constructor returned another
+// object. A throw never enters these return hooks. Derived/super and alternate
+// newTarget calls keep their existing allocation policy.
+fn void record_constructor_capacity(Activation* act) @noinline {
+    if ((act.flags & (ACT_FLAG_CONSTRUCT | ACT_FLAG_DERIVED | ACT_FLAG_SUPER_CTOR)) != ACT_FLAG_CONSTRUCT
+        || act.func == null || !act.this_binding.is_object() || !act.tv_func.is_object()
+        || act.new_target == null || act.tv_func.get_heapptr() != act.new_target) return;
+    HObject* receiver = (HObject*)act.this_binding.get_heapptr();
+    if (receiver == null || !hobject::plain_property_object(receiver)) return;
+    CompiledFunction* target = (CompiledFunction*)act.func;
+    uint count = min(receiver.prop_count, CONSTRUCTOR_CAPACITY_LIMIT);
+    target.call_flags.constructor_capacity = count;
+}
+
 // Reuse the constructor's warmed stores to prove the entire initialization
 // before writing any slot. Each absent-property entry guards inherited setters
 // and fixes the next layout; allocation and prototype selection stay ordinary.
@@ -656,7 +678,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
     target.classify_lean_call();
     if (!target.call_flags.simple_constructor || target.ic_entries == null) return false;
     uint count = target.code_count - 1;
-    if (count > obj.prop_capacity || obj.prop_count != 0) return false;
+    if (obj.prop_count != 0) return false;
     hobject::ICEntry* entries = (hobject::ICEntry*)target.ic_entries;
     uint shape = obj.shape_id;
     for (uint i = 0; i < count; i++) {
@@ -667,6 +689,10 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
             || !hobject::ic_matches_absent_chain(ic, obj.prototype)) return false;
         shape = ic.absent_next_shape;
     }
+    // Reserve storage only after every cached store has been validated. This
+    // changes no property visibility or insertion order.
+    obj.reserve_props(vm.heap, count);
+    if (count > obj.prop_capacity) return false;
     for (uint i = 0; i < count; i++) {
         uint arg = target.code[i].a;
         TVal value;
@@ -681,7 +707,7 @@ fn bool init_simple_constructor(Vm* vm, CompiledFunction* target, HObject* obj,
 fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* ctor, HString* key) @inline {
     if (ic != null && ctor.get_class() == hobject::ObjClass.FUNCTION) {
         uint shape_gen = ctor.shape_generation(vm.heap);
-        if (ic.key.borrow() == (void*)key && ic.proto == null
+        if (ic.key.borrow() == (void*)key && !ic.has_proto
             && ic.shape_id == ctor.shape_id && ic.shape_gen == shape_gen
             && !ic.prop_flags.is_accessor && ic.prop_idx < ctor.prop_count) {
             return ctor.prop_values()[ic.prop_idx].get();
@@ -695,7 +721,7 @@ fn TVal? constructor_prototype_cached(Vm* vm, hobject::ICEntry* ic, HObject* cto
                 ic.shape_gen = shape_gen;
                 ic.prop_idx = (uint)idx;
                 ic.prop_flags = flags;
-                ic.proto = null;
+                ic.has_proto = false;
                 ic.chain_len = 0;
                 ic.key.set(vm.heap, key);
                 return ctor.prop_values()[(uint)idx].get();
@@ -996,7 +1022,7 @@ fn bool global_proto_lookup(Vm* vm, void* key, TVal* out) {
 // clearing would leak it, and a GC triggered by a getter below could otherwise
 // scan a stale pointer. Returns false, leaving the register undefined, when the
 // constant index is out of range or the constant is not a string.
-fn bool resolve_call_key(Dispatch* ds, uint name_const_idx, TVal* ra, void** key_out) @inline {
+fn bool resolve_call_key(Dispatch* ds, uint name_const_idx, TVal* ra, void** key_out) {
     Vm* vm = ds.vm;
     if (ra.is_heap_allocated()) {
         vm.heap.decref_tval(ra);
@@ -2265,7 +2291,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         new_regs = dst;
                     }
 
-                    vm.valstack_top = new_regs + new_nregs;
+                    publish_frame_top(vm, new_regs, new_nregs, nargs);
                     vm.valstack_bottom = new_act.bottom;
 
                     // Direct dispatch to new activation (avoid restart overhead)
@@ -2367,7 +2393,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 uint fn_idx = (uint)(usz)func_val.get_heapptr();
 
                 {
-                    TVal* lf_extended_top = ds.act.bottom + ds.nregs + 4;
+                    TVal* lf_extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                     if (lf_extended_top > vm.valstack_top) { vm.valstack_top = lf_extended_top; }
                 }
 
@@ -2435,13 +2461,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // vm.valstack_top past ds.nregs so the extra slots are within
                     // the allocated+visible range (even if no realloc is needed).
                     {
-                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + 4;
+                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (!ensure_valstack(vm, bound_margin)) {
                             ds.regs_base[result_reg].set_undefined();
                             return (TVal){};
                         }
                         ds.regs_base = ds.act.bottom;
-                        TVal* extended_top = ds.act.bottom + ds.nregs + 4;
+                        TVal* extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
                     // Local result slot: keeps the register reference owned
@@ -2782,7 +2808,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         vm.heap.verify_roots("after_call_resume_restore");
                     $endif
 
-                    vm.valstack_top = new_regs_r + new_nregs_r;
+                    publish_frame_top(vm, new_regs_r, new_nregs_r, 0);
                     vm.valstack_bottom = new_act_r.bottom;
 
                     if (!target.is_user_generator() && !gs.persistent_async) {
@@ -3089,7 +3115,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     bind_env_arguments(vm, target, hobj, new_regs_g, nargs, new_act_g.var_env);
                 }
 
-                vm.valstack_top = new_regs_g + new_nregs_g;
+                publish_frame_top(vm, new_regs_g, new_nregs_g, nargs);
                 vm.valstack_bottom = new_act_g.bottom;
 
                 // Save caller resume point and switch into the new activation.
@@ -3298,7 +3324,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 bind_arguments(vm, new_act, target, hobj, new_regs, nargs);
             }
 
-            vm.valstack_top = new_regs + new_nregs;
+            publish_frame_top(vm, new_regs, new_nregs, nargs);
             vm.valstack_bottom = new_act.bottom;
 
             // Save caller resume point before switching activations
@@ -3452,10 +3478,10 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if ((*super_hobj.extra_ptr()).func.builtin_fn_index >= 0) {
                     uint sc_bound_fn_idx = (uint)(*super_hobj.extra_ptr()).func.builtin_fn_index;
                     {
-                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + 4;
+                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (!ensure_valstack(vm, bound_margin)) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
                         ds.regs_base = ds.act.bottom;
-                        TVal* extended_top = ds.act.bottom + ds.nregs + 4;
+                        TVal* extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
                     builtins::BuiltinContext sc_bound_ctx = call_context(ds, callee_reg, nargs, ds.regs_base + result_reg, this_val: &ds.regs_base[callee_reg + 1], callee: super_hobj, new_target: new_target, construct: true);
@@ -3687,7 +3713,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 }
             }
 
-            vm.valstack_top = new_regs + new_nregs;
+            publish_frame_top(vm, new_regs, new_nregs, nargs);
             vm.valstack_bottom = new_act.bottom;
             if (super_target.uses_arguments()) {
                 bind_register_arguments(vm, new_act, super_target, super_hobj, old_args, nargs);
@@ -3782,13 +3808,13 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // vm.valstack_top past ds.nregs so the extra slots are within
                     // the allocated+visible range (even if no realloc is needed).
                     {
-                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + 4;
+                        uint bound_margin = (uint)(ds.act.bottom - vm.valstack) + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (!ensure_valstack(vm, bound_margin)) {
                             ds.regs_base[result_reg].set_undefined();
                             return (TVal){};
                         }
                         ds.regs_base = ds.act.bottom;
-                        TVal* extended_top = ds.act.bottom + ds.nregs + 4;
+                        TVal* extended_top = ds.act.bottom + ds.nregs + FRAME_SCRATCH_SLOTS;
                         if (extended_top > vm.valstack_top) { vm.valstack_top = extended_top; }
                     }
                     // [[Construct]]: the this slot at callee_reg+1 is not written by the
@@ -3929,6 +3955,9 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (pv.is_object() && pv.get_heapptr() != null) {
                         vm.heap.set_prototype(new_obj, (HObject*)pv.get_heapptr());
                     }
+                }
+                if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+                    new_obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
                 }
                 this_tval.set_object(new_obj);
 

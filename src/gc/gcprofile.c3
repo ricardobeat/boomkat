@@ -26,6 +26,7 @@ tlocal ulong gcprof_reallocs;
 tlocal ulong gcprof_last_live;
 tlocal ulong gcprof_cycles;
 tlocal ulong gcprof_marked;
+tlocal ulong gcprof_numeric_batches;
 tlocal ulong gcprof_swept;
 tlocal ulong gcprof_function_envs;
 tlocal ulong gcprof_declarative_envs;
@@ -167,6 +168,12 @@ macro void gcprof_mark_n(ulong n) @builtin {
     $endif
 }
 
+macro void gcprof_numeric_batch() @builtin {
+    $if $feat(GC_PROFILE):
+    gcprof_numeric_batches++;
+    $endif
+}
+
 macro void gcprof_cycle(ulong swept) @builtin {
     $if $feat(GC_PROFILE):
     gcprof_cycles++;
@@ -202,6 +209,7 @@ $if $feat(GC_PROFILE):
     }
     io::eprintfn("# GC_PROFILE allocations=%d reallocs=%d cycles=%d marked=%d swept=%d",
                  gcprof_allocations, gcprof_reallocs, gcprof_cycles, gcprof_marked, gcprof_swept);
+    io::eprintfn("# GC_NUMERIC batches=%d values=%d", gcprof_numeric_batches, gcprof_numeric_batches * 8);
     io::eprintfn("# GC_POOL allocations=%d requested_bytes=%d",
                  gcprof_pool_allocations, gcprof_pool_bytes);
     io::eprintfn("# GC_REGEXP_LASTINDEX fast_reads=%d fast_writes=%d",

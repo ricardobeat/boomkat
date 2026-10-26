@@ -9,6 +9,19 @@ import boomkat::gcprofile;
 // scanning it at once would overrun a slice.
 const uint GC_SCAN_WHOLE_MAX = 256;
 
+// Numeric slots carry no traced edge. Check a bounded group without retaining
+// a storage pointer across a collection slice or imposing a write-side type.
+fn bool gc_numeric_batch(PropValue* slots) @local {
+    TVal first = slots[0].get();
+    if (!first.is_numeric()) return false;
+    uint non_numeric = 0;
+    for (uint i = 1; i < 8; i++) {
+        TVal value = slots[i].get();
+        non_numeric |= value.is_numeric() ? 0u : 1u;
+    }
+    return non_numeric == 0;
+}
+
 // Range cursors store an owner and an index. Every slice reloads mutable
 // backing storage; insertion barriers cover values moved behind the cursor.
 fn bool Heap.gc_scan_object_step(&self, uint budget) {
@@ -43,8 +56,22 @@ fn bool Heap.gc_scan_object_step(&self, uint budget) {
                     self.gc_scan_stage++;
                 }
             case 2:
-                if (obj.array_part() != null && self.gc_scan_index < obj.array_size) {
-                    TVal value = obj.array_part()[self.gc_scan_index++].get();
+                PropValue* elems = obj.array_part();
+                if (elems != null && self.gc_scan_index < obj.array_size) {
+                    $if !$feat(GC_VERIFY) && !$feat(SCAN_POISON):
+                        // The outer loop charged one unit already. Preserve
+                        // eight units of logical scan work and slice budget.
+                        if (budget >= 7 && obj.array_size - self.gc_scan_index >= 8
+                            && gc_numeric_batch(elems + self.gc_scan_index)) {
+                            self.gc_scan_index += 8;
+                            budget -= 7;
+                            self.mark_work_last += 8;
+                            gcprofile::gcprof_mark_n(8);
+                            gcprofile::gcprof_numeric_batch();
+                            break;
+                        }
+                    $endif
+                    TVal value = elems[self.gc_scan_index++].get();
                     self.mark_tval(&value);
                 } else {
                     self.gc_scan_index = 0;
@@ -81,8 +108,21 @@ fn void Heap.gc_scan_whole_object(&self, HObject* obj) {
         TVal value = props[i].get();
         self.mark_traced_value(value);
     }
-    for (uint i = 0; i < elem_count; i++) {
-        TVal value = elems[i].get();
+    uint element_index = 0;
+    $if !$feat(GC_VERIFY) && !$feat(SCAN_POISON):
+        for (; elem_count - element_index >= 8; element_index += 8) {
+            if (gc_numeric_batch(elems + element_index)) {
+                gcprofile::gcprof_numeric_batch();
+                continue;
+            }
+            for (uint j = 0; j < 8; j++) {
+                TVal value = elems[element_index + j].get();
+                self.mark_traced_value(value);
+            }
+        }
+    $endif
+    for (; element_index < elem_count; element_index++) {
+        TVal value = elems[element_index].get();
         self.mark_traced_value(value);
     }
     self.mark_work_last += (ulong)prop_count + elem_count;
@@ -101,7 +141,7 @@ fn void Heap.gc_scan_whole_object(&self, HObject* obj) {
     self.gc_finish_object_scan(obj);
 }
 
-fn void Heap.mark_traced_value(&self, TVal value) @inline {
+fn void Heap.mark_traced_value(&self, TVal value) {
     $if $feat(GC_VERIFY) || $feat(SCAN_POISON):
         self.mark_tval(&value);
         self.mark_work_last--;
@@ -115,7 +155,7 @@ fn void Heap.mark_traced_value(&self, TVal value) @inline {
     $endif
 }
 
-fn void Heap.gc_finish_object_scan(&self, HObject* obj) @inline {
+fn void Heap.gc_finish_object_scan(&self, HObject* obj) {
     self.gc_scan_object_fields(obj);
     if (self.gc_kind == GcKind.MINOR && obj.gc.old) {
         ((HeapHeader*)obj).clear_reachable();

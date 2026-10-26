@@ -119,7 +119,7 @@ fn void Vm.shade_saved_activations(&self, ShadowActFrame* root) @noinline {
         }
         if (act.func != null && act.bottom != null) {
             CompiledFunction* cf = (CompiledFunction*)act.func;
-            TVal* end = min(act.bottom + cf.num_regs + 4, root.stack_end);
+            TVal* end = min(act.bottom + cf.num_regs + FRAME_SCRATCH_SLOTS, root.stack_end);
             for (TVal* reg = act.bottom; reg < end; reg++) self.heap.shade_root_tval(*reg);
         }
     }
@@ -269,7 +269,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         TVal* frame_end = a.bottom;
         if (a.func != null) {
             CompiledFunction* acf = (CompiledFunction*)a.func;
-            frame_end = a.bottom + acf.num_regs + 4;
+            frame_end = a.bottom + acf.num_regs + FRAME_SCRATCH_SLOTS;
         }
         // Include staged arguments through the next frame or published top.
         // Spare allocation capacity can hold pointers from completed callbacks.
@@ -292,7 +292,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
             Activation* sa = &shadow.acts[i];
             if (sa.func != null && sa.bottom != null) {
                 CompiledFunction* scf = (CompiledFunction*)sa.func;
-                TVal* send = min(sa.bottom + scf.num_regs + 4, shadow.stack_end);
+                TVal* send = min(sa.bottom + scf.num_regs + FRAME_SCRATCH_SLOTS, shadow.stack_end);
                 mark_activation_regs(h, sa, send);
             }
         }
@@ -413,7 +413,7 @@ fn bool scan_activation_root_unit(Vm* vm, heap::Heap* h, Activation* act, bool s
         case 3:
             if (act.func == null || act.bottom == null) return true;
             CompiledFunction* cf = (CompiledFunction*)act.func;
-            TVal* end = act.bottom + cf.num_regs + 4;
+            TVal* end = act.bottom + cf.num_regs + FRAME_SCRATCH_SLOTS;
             if (!saved && vm.gc_root_act_index + 1 < vm.activation_count) {
                 TVal* next = vm.activations[vm.gc_root_act_index + 1].bottom;
                 if (next > end) end = next;
@@ -595,7 +595,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
         bind_arguments(vm, new_act, target, func_obj, null, 0, true);
     }
 
-    vm.valstack_top = new_regs + new_nregs;
+    publish_frame_top(vm, new_regs, new_nregs, 0);
     vm.valstack_bottom = new_act.bottom;
 
     // Save caller's PC so it resumes correctly after getter returns
@@ -1049,6 +1049,23 @@ fn void vm_pop_activation(Vm* vm, Activation* act, ZString where, bool already_c
 // avoid, measured at about 9% of fib(32) samples. The pointer form is not lowered to
 // memset. Verify with `objdump` after any change here (the lowering decision is
 // sensitive to the surrounding inlined context, not just this loop's shape).
+// Slots past a frame's registers where native calls stage their arguments.
+// The root scanners visit them as part of the frame.
+const uint FRAME_SCRATCH_SLOTS = 4;
+
+// Publish `regs + nregs` as the top of a frame being entered, clearing its
+// scratch slots: a finished frame's registers there may name freed objects,
+// and the scanners would otherwise mark them as roots of this one. The first
+// `staged` slots hold the call's arguments, which can run past nregs and are
+// kept.
+macro void publish_frame_top(Vm* vm, TVal* regs, uint nregs, uint staged) {
+    TVal* top = regs + nregs;
+    TVal* scratch_end = top + FRAME_SCRATCH_SLOTS;
+    if (scratch_end > vm.valstack_end) scratch_end = vm.valstack_end;
+    for (TVal* p = regs + max(nregs, staged); p < scratch_end; p++) p.set_undefined();
+    vm.valstack_top = top;
+}
+
 fn void zero_regs_undefined(TVal* regs, uint start, uint end) @inline {
     TVal* p = regs + start;
     TVal* stop = regs + end;
@@ -1087,6 +1104,7 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
 
     Activation* callee_act = curr_act(vm);
     TVal* callee_result = callee_act.retval;
+    if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
     // Free catchers a return-from-try left on the chain (frame is popping).
     free_catcher_chain(vm, callee_act);

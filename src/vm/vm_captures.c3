@@ -8,7 +8,7 @@ import boomkat::bytecode;
 
 // The capture record `index` of the running closure, or null when the frame
 // runs code other than the closure's own.
-fn CaptureRef* capture_ref(Activation* act, uint index) @inline {
+fn CaptureRef* capture_ref(Activation* act, uint index) {
     if (!act.tv_func.is_object()) return null;
     HObjectFunction* fields = &(*((HObject*)act.tv_func.get_heapptr()).extra_ptr()).func;
     if (fields.capture_refs == null || fields.comp_func == null
@@ -20,7 +20,7 @@ fn CaptureRef* capture_ref(Activation* act, uint index) @inline {
 // The read side of capture_value_slot without the shadow-guarded walk, which
 // returns null so the caller can fall back to capture_value_slot. It makes no
 // calls, so a handler built on it needs no stack frame.
-fn hobject::PropValue* capture_read_slot(Activation* act, uint index) @inline {
+fn hobject::PropValue* capture_read_slot(Activation* act, uint index) {
     CaptureRef* ref = capture_ref(act, index);
     if (ref == null) return null;
     if (ref.is_value) return (hobject::PropValue*)&ref.value;

@@ -21,7 +21,7 @@ const uint INLINE_DEPTH = 4;
 // Each invocation owns its budget; generated code never keeps a pointer after
 // return. Stop before the final charged edge so the interpreter executes the
 // ordinary GC/interrupt safepoint with fully published register state.
-struct FunctionRun @feat(SLJIT) {
+struct FunctionRun {
     void* entry;
     long budget;
     FunctionTypedCache[2] typed;
@@ -564,7 +564,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         for (uint i = 0; i < cf.code_count; i++) {
             if (cf.code[i].op != Opcode.GETPROPC && cf.code[i].op != Opcode.GETPROPC_CACHED) continue;
             ICEntry* candidate = (ICEntry*)cf.ic_entries + i;
-            if (candidate.key.borrow() != key || candidate.prop_idx == hobject::IC_PROP_ABSENT
+            if (candidate.key.borrow() != key || candidate.prop_idx >= hobject::IC_PROP_MISSING
                 || candidate.prop_flags.is_accessor) continue;
             Shape* layout = h.get_shape(candidate.shape_id);
             if (layout == null || layout.generation != candidate.shape_gen) continue;
@@ -649,24 +649,44 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         e.bind(other);
     }
     Shape* shape = h.get_shape(ic.shape_id);
+    // Inherited reads cache their links on one prototype epoch, and a site
+    // whose objects differ in shape keeps a set of own data reads.
+    bool epoch_chain = !write && ic.chain_len == hobject::IC_CHAIN_EPOCH;
+    bool poly_chain  = !write && ic.chain_len == hobject::IC_CHAIN_POLY;
     bool usable  = key != null && ic.key.borrow() == key && shape != null && shape.generation == ic.shape_gen
-        && ic.chain_len <= hobject::IC_MAX_CHAIN
+        && (epoch_chain || poly_chain || ic.chain_len <= hobject::IC_MAX_CHAIN)
         && !ic.prop_flags.is_accessor
-        && ic.prop_idx != hobject::IC_PROP_ABSENT
-        && (!write || (ic.proto == null && ic.prop_flags.writable));
+        && ic.prop_idx < hobject::IC_PROP_MISSING
+        && (!write || (!ic.has_proto && ic.prop_flags.writable));
+    if (usable && epoch_chain) {
+        usable = ic.chain.epoch.owner != null && ic.chain.epoch.first != null
+            && ic.chain.epoch.owner.find_prop_idx(key, h) == (int)ic.prop_idx;
+    }
     if (usable) {
         usable = self.shape(ic.shape_id, h);
         PropFlags flags;
         int index = function_shape_slot(shape, key, &flags);
-        if (ic.chain_len == 0) {
+        if (poly_chain) {
+            // Every extra shape is a receiver this site has already read the
+            // key from as an own data slot.
+            ICPolySet* set = &ic.chain.poly;
+            usable = index < 0 && set.count > 0 && set.count <= hobject::IC_POLY_MAX;
+            for (uint i = 0; usable && i < set.count; i++) {
+                Shape* extra = h.get_shape(set.shapes[i]);
+                usable = extra != null && !extra.dict && self.shape(set.shapes[i], h)
+                    && function_shape_slot(extra, key, &flags) == (int)set.prop_idx[i];
+            }
+        } else if (epoch_chain) {
+            usable = index < 0 && !shape.dict;
+        } else if (ic.chain_len == 0) {
             usable = usable && index == (int)ic.prop_idx && !flags.is_accessor && (!write || flags.writable);
         } else {
             usable = usable && index < 0 && !shape.dict;
             for (uint i = 0; usable && i < ic.chain_len; i++) {
                 // Cache links are weak. Validate layouts through the shape table;
                 // generated code follows live links before dereferencing objects.
-                Shape* proto_shape = h.get_shape(ic.chain_shapes[i]);
-                usable = ic.chain_protos[i] != null && proto_shape != null && self.shape(ic.chain_shapes[i], h);
+                Shape* proto_shape = h.get_shape(ic.chain.snapshot.shapes[i]);
+                usable = ic.chain.snapshot.protos[i] != null && proto_shape != null && self.shape(ic.chain.snapshot.shapes[i], h);
                 if (!usable) break;
                 index = function_shape_slot(proto_shape, key, &flags);
                 if (i + 1 == ic.chain_len) {
@@ -679,6 +699,36 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
     }
     if (!usable) {
         self.out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, true);
+    } else if (poly_chain) {
+        // One compare per recorded shape, each naming the slot that shape's
+        // layout gave the key. The entry's own shape is the first and the most
+        // common; a receiver matching none leaves to the interpreter.
+        if (tracking && saved_flow != null) {
+            self.flow_materialize();
+            self.out.flow = null;
+        }
+        ICPolySet* set = &ic.chain.poly;
+        void*[hobject::IC_POLY_MAX + 1] arms;
+        uint arm_count = 0;
+        for (uint i = 0; i <= set.count; i++) {
+            uint shape_id = i == 0 ? ic.shape_id : set.shapes[i - 1];
+            uint slot     = i == 0 ? ic.prop_idx : set.prop_idx[i - 1];
+            self.out.load(base_reg, r0);
+            e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+            e.mov(r1, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
+            void* other = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, shape_id);
+            e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
+            void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
+            e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
+            e.bind(allocated);
+            e.mov(r0, 0, mem | r2, (long)slot * 8);
+            self.store(ins.a, pc);
+            arms[arm_count++] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+            e.bind(other);
+        }
+        self.out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, true);
+        void* arms_done = e.label();
+        for (uint i = 0; i < arm_count; i++) jit::sljit_set_label(arms[i], arms_done);
     } else {
         if (!known_shape) {
             e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
@@ -700,25 +750,46 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.shape_id, pc);
             if (tracking) self.flow.guard_shape(token, ic.shape_id);
         }
-        for (uint i = 0; i < ic.chain_len; i++) {
-            e.mov(r0, 0, mem | r0, proto_offset);
-            self.out.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)ic.chain_protos[i], pc);
-            e.mov(r2, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
-            self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.chain_shapes[i], pc);
-            e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
-            e.op(jit::SLJIT_AND, r2, r2, 0, imm, flag_mask);
-            self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)ordinary, pc);
-        }
-        e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
-        void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
-        e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
-        e.bind(allocated);
-        if (write) {
-            self.slot_store(r0, r2, (long)ic.prop_idx * 8, value_reg, pc);
-        } else {
+        if (epoch_chain) {
+            // The epoch covers a repointed link and every layout change on the
+            // chain, so only the first link and the shared counter remain.
+            e.mov(r2, 0, mem | r0, proto_offset);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)ic.chain.epoch.first, pc);
+            Heap heap_view;
+            e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(0));
+            e.mov(r3, 0, mem | r3, (char*)&heap_view.prototype_epoch - (char*)&heap_view);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)ic.chain.epoch.value, pc);
+            // The owner keeps its identity while the epoch holds, but its
+            // storage may have moved, so the slot is read from the live object.
+            e.mov(r1, 0, imm, (long)ic.chain.epoch.owner);
+            e.mov(r2, 0, mem | r1, (char*)&obj.prop_alloc - (char*)&obj);
+            void* owner_allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
+            e.op(jit::SLJIT_ADD, r2, r1, 0, imm, HObjectBase::size);
+            e.bind(owner_allocated);
             e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
             self.store(ins.a, pc);
             if (tracking) self.flow.remember(token, key, ins.a);
+        } else {
+            for (uint i = 0; i < ic.chain_len; i++) {
+                e.mov(r0, 0, mem | r0, proto_offset);
+                self.out.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)ic.chain.snapshot.protos[i], pc);
+                e.mov(r2, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
+                self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.chain.snapshot.shapes[i], pc);
+                e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+                e.op(jit::SLJIT_AND, r2, r2, 0, imm, flag_mask);
+                self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)ordinary, pc);
+            }
+            e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
+            void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
+            e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
+            e.bind(allocated);
+            if (write) {
+                self.slot_store(r0, r2, (long)ic.prop_idx * 8, value_reg, pc);
+            } else {
+                e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
+                self.store(ins.a, pc);
+                if (tracking) self.flow.remember(token, key, ins.a);
+            }
         }
     }
     if (length_done != null) e.bind(length_done);

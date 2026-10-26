@@ -60,7 +60,7 @@ fn TemporalUnit larger_unit(TemporalUnit a, TemporalUnit b) { return a < b ? a :
 // fractional-second digit count implies.
 const long[10] NS_POW10 = { 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000 };
 
-fn long ns_pow10(int e) @inline {
+fn long ns_pow10(int e) {
     if (e < 0 || e > 9) {
         // Outside the table: fall back to the general form so an unexpected
         // digit count still yields the same value as a multiplication loop.

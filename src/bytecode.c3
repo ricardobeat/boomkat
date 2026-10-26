@@ -1157,22 +1157,6 @@ enum Opcode : char {
     // A=result, A+1=eligible; B=source; C=key constant or 255 for array length.
     SPREAD_PROJECTION,
 
-    // Guarded leaf inlining. Guards skip the following JUMP on success.
-    // A=callee, B=has receiver, C=inner template index.
-    INLINE_GUARD,
-    // A=object, B=key register or constant index, C=constant-key flag.
-    INLINE_READ_GUARD,
-    // B and (when C=0) A must be Numbers; C=1 checks B alone.
-    INLINE_NUM_GUARD,
-    // Successful inline return, for optional profiling.
-    INLINE_COMMIT,
-    // A=result, B=callee, C=name constant or capture-vector index.
-    // Copy a side-effect-free binding and skip the following JUMP on success.
-    INLINE_GETFREE,
-    INLINE_GETCAP,
-    // A=this scratch, B=callee, C=has receiver; lexical this for arrows.
-    INLINE_THIS,
-
     // Marks the end of the enum, and is not a real opcode.
     LAST_OP,
 }
@@ -1808,7 +1792,11 @@ bitstruct CallFlags : ushort {
     // arguments object while the frame has at most FORWARD_ARGS_PAD arguments
     // beyond its formals. Every read of `arguments` is an APPLY_ARGS.
     bool forward_args : 9;
+    // Learned backing capacity for fresh ordinary constructor receivers.
+    uint constructor_capacity : 10..15;
 }
+
+const uint CONSTRUCTOR_CAPACITY_MASK = 0xFC00;
 
 // Registers reserved after the formals of a forward_args function, so the
 // arguments that exceed the formals stay in the frame.
@@ -2442,8 +2430,8 @@ fn void CompiledFunction.classify_trivial_call(&self) @noinline {
 }
 
 fn void CompiledFunction.classify_simple_constructor(&self) @noinline {
-    // At most four stores fit the ordinary object's inline property storage.
-    if (self.code_count < 2 || self.code_count > 5
+    // A short straight-line initializer can replay its warmed property stores.
+    if (self.code_count < 2 || self.code_count > 9
         || self.code[self.code_count - 1].op != Opcode.RETUNDEF) return;
     for (uint i = 0; i + 1 < self.code_count; i++) {
         Instruction store = self.code[i];

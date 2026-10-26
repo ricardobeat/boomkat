@@ -14,7 +14,7 @@ const ObjClass[8] FUNCTION_TYPED_CLASSES = {INT8ARRAY, UINT8ARRAY, INT16ARRAY, U
 // invoke JS or detach buffers. A fresh zeroed FunctionRun discards every raw
 // pointer before interpreter execution resumes. Read/write slots are separate
 // so a read cannot accidentally authorize a write to an immutable buffer.
-struct FunctionTypedCache @feat(SLJIT) {
+struct FunctionTypedCache {
     HObject* receiver;
     char* data;
     uint length;
@@ -197,7 +197,7 @@ fn bool FunctionEmitter.indexed(&self, CompiledFunction* cf, uint pc, bool write
 // returns to the interpreter before executing any part of the property read.
 fn bool FunctionEmitter.typed_length(&self, CompiledFunction* cf, uint pc, ICEntry* ic, Heap* h) @feat(SLJIT) {
     if (!ic.prop_flags.is_accessor || ic.chain_len == 0 || ic.chain_len > hobject::IC_MAX_CHAIN
-        || ic.proto != h.typedarray_proto || ic.key.borrow() != h.str(heap::BuiltinStr.LENGTH)) return false;
+        || hobject::ic_cached_proto(ic) != h.typedarray_proto || ic.key.borrow() != h.str(heap::BuiltinStr.LENGTH)) return false;
     HObject* proto = h.typedarray_proto;
     int slot = proto.find_prop_idx(ic.key.borrow(), h);
     if (slot < 0 || (uint)slot != ic.prop_idx || !proto.get_prop_flags((uint)slot, h).is_accessor) return false;
@@ -207,11 +207,11 @@ fn bool FunctionEmitter.typed_length(&self, CompiledFunction* cf, uint pc, ICEnt
     if (root == null || root.generation != ic.shape_gen || root.dict
         || function_shape_slot(root, ic.key.borrow(), &flags) >= 0 || !self.shape(ic.shape_id, h)) return false;
     for (uint i = 0; i < ic.chain_len; i++) {
-        Shape* layout = h.get_shape(ic.chain_shapes[i]);
-        if (layout == null || layout.dict || ic.chain_protos[i] == null || !self.shape(ic.chain_shapes[i], h)) return false;
+        Shape* layout = h.get_shape(ic.chain.snapshot.shapes[i]);
+        if (layout == null || layout.dict || ic.chain.snapshot.protos[i] == null || !self.shape(ic.chain.snapshot.shapes[i], h)) return false;
         int found = function_shape_slot(layout, ic.key.borrow(), &flags);
         if (i + 1 < ic.chain_len) { if (found >= 0) return false; }
-        else { if (found != slot || !flags.is_accessor || proto.shape_id != ic.chain_shapes[i]) return false; }
+        else { if (found != slot || !flags.is_accessor || proto.shape_id != ic.chain.snapshot.shapes[i]) return false; }
     }
     TemplateEmitter* e = &self.out.e;
     int r0 = jit::reg_r(0); int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
@@ -224,14 +224,14 @@ fn bool FunctionEmitter.typed_length(&self, CompiledFunction* cf, uint pc, ICEnt
     self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
     for (uint i = 0; i <= ic.chain_len; i++) {
         e.mov(r3, 0, mem | r0, (char*)&obj.shape_id - (char*)&obj, jit::SLJIT_MOV_U32);
-        self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, i == 0 ? ic.shape_id : ic.chain_shapes[i - 1], pc);
+        self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, i == 0 ? ic.shape_id : ic.chain.snapshot.shapes[i - 1], pc);
         e.mov(r3, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
         ObjFlags proxy; proxy.exotic_proxyobj = true; proxy.exotic_module_ns = true; proxy.exotic_deferred_ns = true;
         e.op(jit::SLJIT_AND, r3, r3, 0, imm, (uint)proxy);
         self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
         if (i < ic.chain_len) {
             e.mov(r0, 0, mem | r0, (char*)&obj.prototype - (char*)&obj);
-            self.out.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)ic.chain_protos[i], pc);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)ic.chain.snapshot.protos[i], pc);
         }
     }
     e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);

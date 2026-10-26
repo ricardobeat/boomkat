@@ -449,7 +449,7 @@ macro void TVal.set_temproot(&self) {
 // Take a reference for this value when it is a reference-counted heap value
 // (a string). Used where a slot is overwritten with a copy: the incref must
 // happen before the old value is released.
-fn void TVal.incref_if_heap(&self) @inline {
+fn void TVal.incref_if_heap(&self) {
     if (self.is_heap_allocated()) {
         void* ptr = self.get_heapptr();
         if (ptr != null) ((HeapHeader*)ptr).incref();
@@ -872,6 +872,13 @@ bitstruct GcBits : uint {
     // storage; see HObject.layout_moved.
     bool ic_bound : 3;
     bool compact_props : 4; // original allocation has two inline property slots
+    // An inherited read depends on this ordinary object's layout/prototype.
+    bool prototype_observed : 5;
+    bool computed_names : 6; // has added a non-interned input string key
+    uint shaped_props : 8..10; // original trailing capacity minus four, or zero
+    // Offset of an object's inline property slots, in eight-byte words; see
+    // HObject.inline_props_ptr.
+    uint inline_words : 11..15;
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing

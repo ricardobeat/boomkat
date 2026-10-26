@@ -908,7 +908,6 @@ struct Heap {
     // so temproot flags must survive a safepoint collection. See mark_and_sweep.
     uint  native_frame_depth;
     uint  live_obj_count;
-    uint  peak_live_obj_count;   /// High-water mark for live objects
     // TVals visited by the last mark phase.
     //
     // live_obj_count counts allocation nodes. Marking cost is not
@@ -1220,6 +1219,8 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
+    // Advanced only by mutations to prototype objects observed by read caches.
+    ulong               prototype_epoch;
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
     // makes back to back advance the epoch once.
@@ -1230,6 +1231,11 @@ struct Heap {
     // threaded through the shapes array itself: a free slot holds
     // SHAPE_FREE_TAG | next_free cast to a pointer.
     uint                shape_free_head;
+    // Slots released since the last purge_retired_shapes, linked the same way.
+    // A property cache entry may still name one, so the id is not reused
+    // until the purge has cleared those entries.
+    uint                shape_retired_head;
+    uint                shape_retired_count;
     // Transition count at which the next major cycle sweeps unused shapes.
     uint                shape_sweep_at;
     // Source of shape generations. A generation is a value taken from this
@@ -1288,6 +1294,7 @@ struct Heap {
     long gc_trace_allocs;
     pagepool::PagePool obj_pool_plain;
     pagepool::PagePool obj_pool_compact;
+    pagepool::PagePool[hobject::SHAPED_INLINE_POOL_COUNT] obj_pool_shaped;
     pagepool::PagePool obj_pool_array;
     pagepool::PagePool obj_pool_dense_array;
     pagepool::PagePool[hobject::ARRAY_INLINE_MAX_CAPACITY] obj_pool_inline_arrays;
@@ -1651,6 +1658,9 @@ fn Heap*? create(
         for (uint i = 0; i < 4; i++) h.object_list(i).allocator = mem;
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : h.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
         h.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         h.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : h.obj_pool_inline_arrays) {
@@ -1771,6 +1781,7 @@ const uint SHAPE_TRANS_LOAD    = 70;   // percent load that triggers a grow
 // Property count from which an object on a shape no second object has reached
 // moves to a dictionary shape. See transition_shape_new_flags.
 const uint SHAPE_SOLITARY_MIN_PROPS = 64;
+const uint SHAPE_COMPUTED_MIN_PROPS = 32;
 // The shape sweep waits for at least this many transitions, then for the table
 // to double past what the previous sweep kept, so a program whose shapes have
 // settled never pays for one.
@@ -1782,6 +1793,9 @@ const uptr SHAPE_FREE_TAG      = (uptr)1 << (uptr)(uptr::size * 8 - 1);
 // Marks the end of the free-slot list. Slot 0 holds the root shape, which is
 // never freed, so it can stand for "no next".
 const uint SHAPE_FREE_END       = 0;
+// Released shape ids accumulate to this many before a purge makes them
+// reusable, so one pass over the property caches recycles a batch.
+const uint SHAPE_RETIRED_BATCH  = 256;
 
 struct TransitionEntry {
     uint parent_id;
@@ -1880,6 +1894,8 @@ fn void Heap.init_shapes(&self) {
     self.regexp_guard = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_retired_head = SHAPE_FREE_END;
+    self.shape_retired_count = 0;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
@@ -1903,6 +1919,9 @@ fn uint Heap.alloc_shape_slot(&self) {
     // that entry would then read properties at the previous shape's offsets.
     // Every generation after the first comes from one clock, so the pair is
     // never reused.
+    if (self.shape_free_head == SHAPE_FREE_END && self.shape_retired_count >= SHAPE_RETIRED_BATCH) {
+        self.purge_retired_shapes();
+    }
     if (self.shape_free_head != SHAPE_FREE_END) {
         uint id = self.shape_free_head;
         self.shape_free_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
@@ -1950,8 +1969,8 @@ fn bool Heap.shape_slot_live(&self, uint id) {
     return ((uptr)sh & SHAPE_FREE_TAG) == 0;
 }
 
-// Release a slot holding a *private* shape, freeing the shape and putting the
-// id back on the free list.
+// Release a slot holding a *private* shape, freeing the shape and retiring the
+// id (see purge_retired_shapes).
 //
 // Only private shapes may be passed here. A private shape has
 // parent == PRIVATE_SHAPE_PARENT, is absent from the transition table, and is
@@ -1970,8 +1989,50 @@ fn void Heap.free_shape_slot(&self, uint id) {
 
 fn void Heap.release_shape_slot(&self, uint id) {
     hobject::shape_free(self.shapes[id], self);
-    self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
-    self.shape_free_head = id;
+    self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_retired_head);
+    self.shape_retired_head = id;
+    self.shape_retired_count++;
+}
+
+// Clear every property cache entry that names a released shape id, then make
+// the released ids reusable. A read entry stays valid while its receiver's
+// shape_id matches, so an id must not come back while an entry still names it.
+// Every function with caches is in compiled_funcs, which the collector also
+// relies on to root the prototypes the entries cache.
+fn void Heap.purge_retired_shapes(&self) @noinline {
+    for (uint fi = 0; fi < self.compiled_func_count; fi++) {
+        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
+        if (cf == null || cf.ic_entries == null) continue;
+        hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+        for (uint i = 0; i < cf.ic_count; i++) {
+            if (!self.ic_names_live_shapes(&entries[i])) {
+                entries[i].shape_id = SHAPE_NONE;
+                entries[i].chain_len = 0;
+            }
+        }
+    }
+    while (self.shape_retired_head != SHAPE_FREE_END) {
+        uint id = self.shape_retired_head;
+        self.shape_retired_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);
+        self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_free_head);
+        self.shape_free_head = id;
+    }
+    self.shape_retired_count = 0;
+}
+
+// False when `ic` names a shape id that is not live: its receiver's, or one
+// in its prototype snapshot. An empty entry names nothing.
+fn bool Heap.ic_names_live_shapes(&self, hobject::ICEntry* ic) @inline {
+    if (ic.shape_id == SHAPE_NONE || ic.key.borrow() == null) return true;
+    if (ic.shape_id >= self.shape_count || !self.shape_slot_live(ic.shape_id)) return false;
+    if (ic.chain == null || ic.chain_len == hobject::IC_CHAIN_EPOCH) return true;
+    bool poly = ic.chain_len == hobject::IC_CHAIN_POLY;
+    uint count = poly ? ic.chain.poly.count : (uint)ic.chain_len;
+    for (uint i = 0; i < count; i++) {
+        uint id = poly ? ic.chain.poly.shapes[i] : ic.chain.snapshot.shapes[i];
+        if (id >= self.shape_count || !self.shape_slot_live(id)) return false;
+    }
+    return true;
 }
 
 
@@ -2004,12 +2065,12 @@ fn void Heap.mark_object_shapes(&self, ulong* live) {
  *
  * Runs in a major cycle's sweep, after object teardown, so the object lists
  * hold exactly the live objects. A native frame may hold a shape id in a raw
- * local, so the caller must also guarantee none is active. Freed ids return to
- * the free list, and bumping shape_recycle_epoch invalidates every cache that
+ * local, so the caller must also guarantee none is active. Freed ids are
+ * retired, and bumping shape_recycle_epoch invalidates every cache that
  * recorded one, including a PUTPROP cache's absent_next_shape.
  */
-fn void Heap.sweep_shapes(&self) {
-    if (self.trans_count < self.shape_sweep_at) return;
+fn void Heap.sweep_shapes(&self, bool force = false) {
+    if (!force && self.trans_count < self.shape_sweep_at) return;
     usz words = ((usz)self.shape_count + 63) / 64;
     ulong* live = (ulong*)self.alloc_func(self.heap_udata, words * ulong::size);
     if (live == null) return;
@@ -2075,7 +2136,8 @@ fn uint Heap.transition_shape_new(&self, uint cur_shape_id, void* key) {
 // Returns SHAPE_NONE when no shape could be produced. The caller must treat
 // that as a hard failure: continuing with the unchanged shape would store a
 // value the shape does not describe, which reads back as a missing property.
-fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                                         uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     if (cur_shape_id >= self.shape_count || !self.shape_slot_live(cur_shape_id)) {
         return cur_shape_id;
     }
@@ -2096,8 +2158,8 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
     // The root shape's parent id is SHAPE_NONE, which reads as private.
     uint count = cur.offset + cur.own_count;
     bool is_private = cur_shape_id != 0 && cur.parent == hobject::PRIVATE_SHAPE_PARENT;
-    if (is_private || (!cur.shared && count >= SHAPE_SOLITARY_MIN_PROPS)) {
-        return self.extend_unshared(cur_shape_id, key, flags);
+    if (is_private || (!cur.shared && count >= dictionary_min)) {
+        return self.extend_unshared(cur_shape_id, key, flags, dictionary_min);
     }
 
     uint existing = self.lookup_transition(cur_shape_id, key, raw_flags);
@@ -2128,10 +2190,11 @@ fn uint Heap.transition_shape_new_flags(&self, uint cur_shape_id, void* key, hob
 // Either way it stays out of the transition table, so nothing outlives the
 // object that a freed shape id could confuse. Returns the new shape id, or
 // SHAPE_NONE when it cannot be built.
-fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags) {
+fn uint Heap.extend_unshared(&self, uint cur_shape_id, void* key, hobject::PropFlags flags,
+                              uint dictionary_min = SHAPE_SOLITARY_MIN_PROPS) {
     hobject::Shape* cur = self.shapes[cur_shape_id];
     uint count = cur.offset + cur.own_count;
-    bool dict = count >= SHAPE_SOLITARY_MIN_PROPS;
+    bool dict = count >= dictionary_min;
     hobject::Shape* flat = hobject::shape_flatten(cur, dict ? count * 2 : count + 1, self);
     if (flat == null) return SHAPE_NONE;
     flat.dict = dict;
@@ -2186,7 +2249,15 @@ fn void Heap.free_compiled_funcs(&self) {
         if (cf.constants != null) { self.free_func(self.heap_udata, cf.constants); }
         if (cf.inner_funcs != null) { self.free_func(self.heap_udata, cf.inner_funcs); }
         if (cf.source_map != null) { self.free_func(self.heap_udata, cf.source_map); }
-        if (cf.ic_entries != null) { self.free_func(self.heap_udata, cf.ic_entries); }
+        if (cf.ic_entries != null) {
+            hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+            for (uint ii = 0; ii < cf.ic_count; ii++) {
+                if (entries[ii].chain != null) {
+                    self.pool_free(entries[ii].chain, hobject::ICChain::size);
+                }
+            }
+            self.free_func(self.heap_udata, cf.ic_entries);
+        }
         if (cf.var_ic_entries != null) { self.free_func(self.heap_udata, cf.var_ic_entries); }
         if (cf.regexp_cache != null) {
             for (uint ri = 0; ri < cf.regexp_cache_count; ri++) {
@@ -2391,6 +2462,7 @@ fn void Heap.destroy(&self) {
     // Releases every pool page back to libc.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2612,7 +2684,6 @@ fn void Heap.reset(&self) {
     self.gc_alloc_since_begin = 0;
     self.gc_alloc_paced       = 0;
     self.live_obj_count = 0;
-    self.peak_live_obj_count = 0;
     self.marked_obj_count = 0;
     self.mark_work_last = 0;
     self.gc_pending       = false;
@@ -2781,6 +2852,8 @@ fn void Heap.reset(&self) {
     self.regexp_guard = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
+    self.shape_retired_head = SHAPE_FREE_END;
+    self.shape_retired_count = 0;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     self.shape_reuse_gen = 0;
@@ -2799,6 +2872,7 @@ fn void Heap.reset(&self) {
     // bump pointer and an empty freelist.
     self.obj_pool_plain.free();
     self.obj_pool_compact.free();
+    foreach (&pool : self.obj_pool_shaped) pool.free();
     self.obj_pool_array.free();
     self.obj_pool_dense_array.free();
     foreach (&pool : self.obj_pool_inline_arrays) pool.free();
@@ -2812,6 +2886,9 @@ fn void Heap.reset(&self) {
     {
         self.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         self.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
+        foreach (i, &pool : self.obj_pool_shaped) {
+            pool.init((sz)hobject::inline_object_alloc_size(hobject::INLINE_PROPS + (uint)i + 1));
+        }
         self.obj_pool_array.init(hobject::OBJ_SIZE_ARGS);
         self.obj_pool_dense_array.init(hobject::OBJ_SIZE_ARRAY);
         foreach (i, &pool : self.obj_pool_inline_arrays) {
@@ -3097,11 +3174,7 @@ fn void Heap.free_module_cache(&self) {
  */
 fn void*? Heap.alloc(&self, usz size) {
     if (size >= MEM_LIMIT_LARGE_BLOCK) self.check_mem_limit(size);
-    if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
-    self.gc_trigger_counter--;
-    if (self.gc_trigger_counter <= 0) {
-        self.request_gc();
-    }
+    self.charge_allocation(1);
 
     void* ptr = self.alloc_func(self.heap_udata, size);
     if (ptr == null && size > 0) {
@@ -3128,13 +3201,7 @@ fn void*? Heap.alloc_no_gc(&self, usz size) {
     // Small strings stay uncounted: they are interned, so the string table backs
     // them, and counting them shifts GC cadence for every property-key
     // allocation without reclaiming more.
-    if (size > 1024) {
-        if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin += (ulong)(size >> 10);
-        self.gc_trigger_counter -= (long)(size >> 10);
-        if (self.gc_trigger_counter <= 0) {
-            self.request_gc();
-        }
-    }
+    if (size > 1024) self.charge_allocation((long)(size >> 10));
     int cls = pool_class_index(size);
     if (cls >= 0) {
         return self.small_pools[cls].alloc();
@@ -3187,31 +3254,84 @@ fn void Heap.pool_free(&self, void* ptr, usz size) {
  *
  * Returns the new HObject, or a fault if allocation fails.
  */
-fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, bool compact_props = false) @inline {
-    HObject*? result = hobject::hobject_alloc((void*)self, cls, inline_array_capacity, compact_props);
-    if (try obj = result) {
-        if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
-        // Keeps the flags hobject_alloc already set.
-        self.register_allocation((HeapHeader*)obj);
-        // As a temporary root, a GC outside a safepoint cannot free this object
-        // while a C3 local holds its only reference.
-        ((HeapHeader*)obj).set_temproot();
-        self.live_obj_count++;
-        if (self.live_obj_count > self.peak_live_obj_count) {
-            self.peak_live_obj_count = self.live_obj_count;
-        }
-        self.gc_trigger_counter--;
-        if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
-        if (--self.mem_check_budget == 0) {
-            self.mem_check_budget = MEM_CHECK_INTERVAL;
-            self.check_mem_limit(0);
-        }
-        gcprofile::gcprof_alloc();
-        if (self.gc_trigger_counter <= 0) {
-            self.request_gc();
-        }
+fn HObject*? Heap.alloc_object(&self, hobject::ObjClass cls, uint inline_array_capacity = 0, uint inline_prop_capacity = hobject::INLINE_PROPS) {
+    if (cls == hobject::ObjClass.OBJECT) return self.alloc_plain_object(inline_prop_capacity);
+    if (cls == hobject::ObjClass.ARRAY && inline_array_capacity > 0
+        && inline_array_capacity <= hobject::ARRAY_INLINE_MAX_CAPACITY) {
+        return self.alloc_inline_array(inline_array_capacity);
     }
-    return result;
+    HObject* obj = hobject::hobject_alloc((void*)self, cls)!;
+    if (cls == hobject::ObjClass.FUNCTION) (*obj.extra_ptr()).func.realm = self.realm;
+    self.adopt_object(obj);
+    return obj;
+}
+
+// Allocate an ordinary object with `capacity` inline property slots, or
+// INLINE_PROPS when neither the compact nor a sized layout has that many.
+// Only the header is written: ordinary objects publish just prop_count
+// slots, and appends and shared layouts write a slot before counting it.
+fn HObject*? Heap.alloc_plain_object(&self, uint capacity = hobject::INLINE_PROPS) {
+    bool compact = capacity == hobject::COMPACT_INLINE_PROPS;
+    uint shaped = capacity > hobject::INLINE_PROPS && capacity <= hobject::SHAPED_INLINE_MAX_PROPS
+        ? capacity - hobject::INLINE_PROPS : 0;
+    if (!compact && shaped == 0) capacity = hobject::INLINE_PROPS;
+    void* raw = null;
+$if !$feat(POOL_BYPASS):
+    // See hobject::hobject_alloc for why debug builds skip the pools.
+    raw = hobject::plain_object_pool(self, compact, shaped).alloc_uninit();
+$endif
+    bool from_pool = raw != null;
+    if (!from_pool) {
+        usz size = compact ? hobject::OBJ_SIZE_COMPACT
+            : shaped != 0 ? hobject::inline_object_alloc_size(capacity)
+            : hobject::alloc_size_for_class(hobject::ObjClass.OBJECT);
+        raw = self.alloc(size)!;
+    }
+    HObject* obj = (HObject*)raw;
+    obj.init_header({ .htype = HType.OBJECT, .extensible = true, .obj_class = hobject::ObjClass.OBJECT,
+                      .pool_fallback = !from_pool },
+                    { .compact_props = compact, .shaped_props = shaped,
+                      .inline_words = hobject::inline_words_for_class(hobject::ObjClass.OBJECT) }, capacity);
+    self.adopt_object(obj);
+    return obj;
+}
+
+// Allocate an array whose `capacity` elements, at most
+// ARRAY_INLINE_MAX_CAPACITY, live in its header block, all holes.
+fn HObject*? Heap.alloc_inline_array(&self, uint capacity) {
+    void* raw = null;
+$if !$feat(POOL_BYPASS):
+    raw = self.obj_pool_inline_arrays[capacity - 1].alloc_uninit();
+$endif
+    bool from_pool = raw != null;
+    if (!from_pool) raw = self.alloc(hobject::inline_array_alloc_size(capacity))!;
+    HObject* obj = (HObject*)raw;
+    obj.init_header({ .htype = HType.OBJECT, .extensible = true, .obj_class = hobject::ObjClass.ARRAY,
+                      .exotic_array = true, .array_len_writable = true, .pool_fallback = !from_pool },
+                    { .inline_words = hobject::inline_words_for_class(hobject::ObjClass.ARRAY) }, 0);
+    obj.array_size = capacity;
+    obj.array_len_ptr()[0] = 0;
+    obj.array_inline_capacity_ptr()[0] = capacity;
+    hobject::fill_undefined((hobject::PropValue*)((char*)obj + hobject::OBJ_SIZE_ARRAY), capacity);
+    self.adopt_object(obj);
+    return obj;
+}
+
+// Enter a fresh object in the allocation registry and charge it to the
+// collection and memory-limit budgets.
+fn void Heap.adopt_object(&self, HObject* obj) @inline {
+    // Keeps the flags the allocation already set.
+    self.register_allocation((HeapHeader*)obj);
+    // As a temporary root, a GC outside a safepoint cannot free this object
+    // while a C3 local holds its only reference.
+    ((HeapHeader*)obj).set_temproot();
+    self.live_obj_count++;
+    if (--self.mem_check_budget == 0) {
+        self.mem_check_budget = MEM_CHECK_INTERVAL;
+        self.check_mem_limit(0);
+    }
+    gcprofile::gcprof_alloc();
+    self.charge_allocation(1);
 }
 
 // The compiler template contains only numbers, so copying it creates no new
@@ -3220,6 +3340,10 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
     uint length = (uint)values[0].get_fastint();
     HObject* obj = self.alloc_object(hobject::ObjClass.ARRAY, length)!;
     obj.prototype = self.array_proto;
+    if (length > obj.array_size) {
+        obj.grow_array(length, self);
+        if (length > obj.array_size) return HEAP_ALLOC_FAULT~;
+    }
     mem::copy(obj.array_part(), values + 1, (sz)length * TVal::size);
     obj.array_used = length;
     obj.array_len_ptr()[0] = length;
@@ -3229,23 +3353,31 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
 // Transition layouts remain valid until heap reset.
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
-    bool compact = cls == hobject::ObjClass.OBJECT
-        && shape.offset + shape.own_count <= hobject::COMPACT_INLINE_PROPS;
-    HObject* obj = self.alloc_object(cls, 0, compact)!;
-    self.init_object_shape(obj, shape_id)!;
+    uint count = shape.offset + shape.own_count;
+    uint capacity = count <= hobject::COMPACT_INLINE_PROPS ? hobject::COMPACT_INLINE_PROPS
+        : count > hobject::INLINE_PROPS && count <= hobject::SHAPED_INLINE_MAX_PROPS
+            ? count : hobject::INLINE_PROPS;
+    HObject* obj = cls == hobject::ObjClass.OBJECT ? self.alloc_plain_object(capacity)!
+        : self.alloc_object(cls, 0, capacity)!;
+    self.install_shape(obj, shape_id, count)!;
     return obj;
 }
 
 // Install a shared layout into a fresh object's empty property storage.
-fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) @inline {
+fn void? Heap.init_object_shape(&self, HObject* obj, uint shape_id) {
     hobject::Shape* shape = self.get_shape(shape_id);
-    uint count = shape.offset + shape.own_count;
+    return self.install_shape(obj, shape_id, shape.offset + shape.own_count);
+}
+
+// The slots `count` keys need are set to undefined before prop_count
+// publishes them.
+fn void? Heap.install_shape(&self, HObject* obj, uint shape_id, uint count) @inline {
     if (count > obj.prop_capacity) {
         void* storage = self.pool_alloc((usz)count * hobject::PropValue::size)!;
         obj.prop_alloc = storage;
         obj.prop_capacity = count;
     }
-    for (uint i = 0; i < count; i++) obj.prop_values()[i].set_undefined();
+    hobject::fill_undefined(obj.prop_values(), count);
     obj.prop_count = count;
     obj.shape_id = shape_id;
 }
@@ -3282,12 +3414,8 @@ fn HObject*? Heap.alloc_iter_result(&self, TVal value, bool done) {
  */
 fn void*? Heap.realloc(&self, void* ptr, usz new_size) {
     if (new_size >= MEM_LIMIT_LARGE_BLOCK) self.check_mem_limit(new_size);
-    if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin++;
     gcprofile::gcprof_realloc();
-    self.gc_trigger_counter--;
-    if (self.gc_trigger_counter <= 0) {
-        self.request_gc();
-    }
+    self.charge_allocation(1);
 
     void* new_ptr = self.realloc_func(self.heap_udata, ptr, new_size);
     if (new_ptr == null && new_size > 0) {
@@ -3525,9 +3653,21 @@ fn HeapHeader* Heap.next_object(&self, HeapObjectCursor* cursor) {
     return null;
 }
 
-fn void Heap.register_allocation(&self, HeapHeader* header) {
-    self.objects_young.push(header);
+fn void Heap.register_allocation(&self, HeapHeader* header) @inline {
+    push_header(&self.objects_young, header);
     self.shade_new_header(header);
+}
+
+// List.push reserves out of line on every call. The ASan build keeps it for
+// the container annotations that guard the unused capacity.
+macro void push_header(List{HeapHeader*}* list, HeapHeader* header) {
+    $if !env::ADDRESS_SANITIZER:
+        if (list.size < list.capacity) {
+            list.entries[list.size++] = header;
+            return;
+        }
+    $endif
+    list.push(header);
 }
 
 fn void Heap.prepare_object_sweep(&self) {
@@ -3715,11 +3855,18 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
     $endswitch
 }
 
+// The observed-prototype guards stay inline; the uncommon epoch update is
+// shared across layout and prototype mutations instead of cloned at each site.
+fn void Heap.bump_prototype_epoch(&self) @noinline {
+    self.prototype_epoch++;
+}
+
 /**
  * [[SetPrototypeOf]] and construction stores pass the incremental insertion
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
+    if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch();
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;
@@ -3733,7 +3880,7 @@ fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
  * and by the time an object came up its header had long been evicted, so
  * every object cost two misses instead of one.
  */
-fn void Heap.gray_push(&self, HObject* obj) @inline {
+fn void Heap.gray_push(&self, HObject* obj) {
     self.marked_obj_count++;
     self.gc_gray.push(obj);
     self.gray_count++;
@@ -3743,7 +3890,7 @@ fn void Heap.gray_push(&self, HObject* obj) @inline {
  * Remove the most recently queued gray object. Returns null when the queue is
  * empty.
  */
-fn HObject* Heap.gray_pop(&self) @inline {
+fn HObject* Heap.gray_pop(&self) {
     if (self.gc_gray.len == 0) return null;
     self.gray_count--;
     return self.gc_gray.items[--self.gc_gray.len];
@@ -4379,7 +4526,7 @@ fn void Heap.mark_roots(&self) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
-                if (ie.proto != null) { self.mark_hobject((HObject*)ie.proto); }
+                self.mark_hobject(hobject::ic_cached_proto(ie));
             }
         }
     }
@@ -4849,6 +4996,14 @@ fn void Heap.finish_sweep(&self, bool strings_safe) {
     while (self.gc_phase == GcPhase.SWEEP) self.gc_step(uint::max, true);
 }
 
+// Count `units` (allocations, or KiB for large blocks) against the collection
+// trigger and the debt of a cycle in progress.
+fn void Heap.charge_allocation(&self, long units) @inline {
+    if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin += (ulong)units;
+    self.gc_trigger_counter -= units;
+    if (self.gc_trigger_counter <= 0) self.request_gc();
+}
+
 /**
  * Ask the next safepoint to collect.
  */
@@ -5300,7 +5455,7 @@ fn void Heap.clear_concat_cache(&self) {
 }
 
 // Both operands are retained with the result, so pointer identity is enough.
-fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) @inline {
+fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) {
     ulong length = (ulong)left.blen + right.blen;
     if (length > CONCAT_CACHE_MAX_BYTES) return null;
     ConcatCacheEntry* entry = &self.concat_cache[length % CONCAT_CACHE_SIZE];
@@ -5724,7 +5879,7 @@ struct ObjStack {
     usz cap;
 }
 
-fn void ObjStack.push(&self, HObject* obj) @inline {
+fn void ObjStack.push(&self, HObject* obj) {
     if (self.len == self.cap) self.grow();
     self.items[self.len++] = obj;
 }

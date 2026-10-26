@@ -34,7 +34,7 @@ struct RegSet {
     uint  word_count;
 }
 
-fn void RegSet.clear(&self) @inline {
+fn void RegSet.clear(&self) {
     for (uint i = 0; i < self.word_count; i++) { self.words[i] = 0; }
 }
 
@@ -43,33 +43,33 @@ fn void RegSet.clear(&self) @inline {
 // JMP_LT, JMP_SNEQ) that can exceed max_reg, so an out-of-range register must
 // be dropped rather than written past the arena. Such a register cannot be
 // live, since the function never uses it.
-fn void RegSet.set(&self, uint reg) @inline {
+fn void RegSet.set(&self, uint reg) {
     uint w = reg / 32;
     if (w >= self.word_count) return;
     self.words[w] |= (1u << (reg % 32));
 }
 
-fn void RegSet.unset(&self, uint reg) @inline {
+fn void RegSet.unset(&self, uint reg) {
     uint w = reg / 32;
     if (w >= self.word_count) return;
     self.words[w] &= ~(1u << (reg % 32));
 }
 
-fn bool RegSet.test(&self, uint reg) @inline {
+fn bool RegSet.test(&self, uint reg) {
     uint w = reg / 32;
     if (w >= self.word_count) return false;
     return (self.words[w] & (1u << (reg % 32))) != 0;
 }
 
-fn void RegSet.copy_from(&self, RegSet* other) @inline {
+fn void RegSet.copy_from(&self, RegSet* other) {
     for (uint i = 0; i < self.word_count; i++) { self.words[i] = other.words[i]; }
 }
 
-fn void RegSet.union_with(&self, RegSet* other) @inline {
+fn void RegSet.union_with(&self, RegSet* other) {
     for (uint i = 0; i < self.word_count; i++) { self.words[i] |= other.words[i]; }
 }
 
-fn bool RegSet.equals(&self, RegSet* other) @inline {
+fn bool RegSet.equals(&self, RegSet* other) {
     for (uint i = 0; i < self.word_count; i++) {
         if (self.words[i] != other.words[i]) { return false; }
     }
@@ -290,7 +290,7 @@ fn void moveelim_init_roles() {
     moveelim_roles_ready = true;
 }
 
-fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) @inline {
+fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) {
     MoveelimRoles r = moveelim_roles[ins.op.ordinal];
     if (r.general) {
         moveelim_add_uses_general(ins, live, mark_call_windows);
@@ -410,7 +410,7 @@ fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_
 // Compute the register this instruction WRITES as a plain destination, if
 // any (per `moveelim_a_is_write`). Returns true and fills `out_reg` when
 // there is one.
-fn bool moveelim_get_def(Instruction ins, uint* out_reg) @inline {
+fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
     if (!moveelim_roles[ins.op.ordinal].a_write) { return false; }
     *out_reg = (uint)ins.a;
     return true;

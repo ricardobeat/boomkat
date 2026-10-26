@@ -2,6 +2,8 @@ module boomkat::compiler;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
+import boomkat::types;
+import boomkat::ast;
 
 // Publish free-name candidates after register and bytecode transformations.
 // A name declared anywhere in this function stays conservative until lexical
@@ -40,12 +42,15 @@ fn void CompilerContext.collect_capture_candidates(&self, CompiledFunction* func
 }
 
 // Only declarations visible at the closure definition can resolve a candidate.
-// Comparing interned keys links the two constant pools without borrowing names.
+// A var or function declared later in this function is visible too, since
+// hoisting binds it before any code runs. Comparing interned keys links the
+// two constant pools without borrowing names.
 fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* child) {
     uint count = 0;
     for (uint ci = 0; ci < child.capture_count; ci++) {
         uint name = child.capture_names[ci];
         bool found = false;
+        bool scoped = false;
         if (!self.is_global && !self.has_direct_eval && !self.has_with_stmt
             && !self.outer_with && !self.capture_all) {
             for (uint si = self.scope_depth; si > 0; si--) {
@@ -55,8 +60,10 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
                 if (self.constants[binding.name_idx].get_heapptr()
                     != child.constants[name].get_heapptr()) continue;
                 found = binding.is_captured;
+                scoped = true;
                 break;
             }
+            if (!scoped) found = self.declares_hoisted_name(child.constants[name]);
         }
         if (!found) continue;
         for (uint pc = 0; pc < child.code_count; pc++) {
@@ -74,6 +81,19 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
         child.capture_names[count++] = name;
     }
     child.capture_count = count;
+}
+
+// True when this function's top-level scope binds the name as a var or a
+// function declaration, whether or not the compiler has reached it yet.
+fn bool CompilerContext.declares_hoisted_name(&self, TVal name) {
+    ast::AstIndex* idx = ast::index_state;
+    if (idx == null || !idx.use || idx.unknown_outer || self.func_ast_scope == 0) return false;
+    uint atom = idx.tree.atoms.find(((HString*)name.get_heapptr()).get_data());
+    if (atom == 0) return false;
+    uint b = idx.res.lookup(self.func_ast_scope, atom);
+    if (b == 0) return false;
+    ast::DeclKind kind = idx.res.bindings.data[b].kind;
+    return kind == ast::DeclKind.VAR || kind == ast::DeclKind.FUNC;
 }
 
 fn void restore_dynamic_capture_names(CompiledFunction* func) {

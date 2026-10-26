@@ -73,18 +73,27 @@ fn void PagePool.free(&self) {
  @return "A zeroed block of `block_size` bytes"
 *>
 fn void* PagePool.alloc(&self) {
+    return self.alloc_cleared(self.block_size);
+}
+
+// The caller initializes the whole block before making it observable.
+fn void* PagePool.alloc_uninit(&self) @inline {
+    return self.alloc_cleared(0);
+}
+
+macro void* PagePool.alloc_cleared(&self, sz clear_bytes) @private {
     PoolPage* p = self.avail_head;
     if (p == null) p = self.add_page();
     void* block;
     if (p.freelist) {
         block = p.freelist;
         p.freelist = *(void**)block;
-        mem::clear(block, self.block_size);
+        mem::clear(block, clear_bytes);
     } else {
         block = p.bump;
         void* next = block + self.block_size;
         p.bump = next + self.block_size <= (void*)p + PAGE_SIZE ? next : null;
-        if (!p.zeroed) mem::clear(block, self.block_size);
+        if (!p.zeroed) mem::clear(block, clear_bytes);
     }
     if (++p.used == self.capacity) self.avail_unlink(p);
     return block;
@@ -138,7 +147,7 @@ fn void PagePool.retire_page(&self, PoolPage* p) {
     release_page(p);
 }
 
-fn void PagePool.avail_append(&self, PoolPage* p) @inline {
+fn void PagePool.avail_append(&self, PoolPage* p) {
     p.in_avail = true;
     p.avail_next = null;
     p.avail_prev = self.avail_tail;
@@ -150,7 +159,7 @@ fn void PagePool.avail_append(&self, PoolPage* p) @inline {
     self.avail_tail = p;
 }
 
-fn void PagePool.avail_unlink(&self, PoolPage* p) @inline {
+fn void PagePool.avail_unlink(&self, PoolPage* p) {
     if (!p.in_avail) return;
     p.in_avail = false;
     if (p.avail_prev) {

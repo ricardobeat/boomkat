@@ -23,6 +23,55 @@ def compile_file(generator, source, image):
     run([generator, '--compile', image, source])
 
 
+def image_fields(data):
+    """Locate mutation targets in BKBC v7 (see bytecode_image.c3::encode).
+
+    Keep format knowledge here so mutations cannot silently target other fields.
+    Only the first function's prefix is needed; later records are variable-sized.
+    """
+    cursor = 0
+    offsets = {}
+
+    def skip(size):
+        nonlocal cursor
+        if size > len(data) - cursor:
+            raise AssertionError(f'Truncated bytecode fixture at {cursor}: need {size} bytes')
+        cursor += size
+
+    def word(name):
+        offsets[name] = cursor
+        skip(4)
+        return struct.unpack_from('<I', data, offsets[name])[0]
+
+    def text(name):
+        size = word(name + '_length')
+        start = cursor
+        skip(size)
+        return data[start:cursor]
+
+    assert text('magic') == b'BKBC', 'Unexpected bytecode magic'
+    version = word('version')
+    assert version == 7, f'Update image_fields for BKBC version {version}'
+    word('opcode_signature')
+    word('capabilities')
+    assert word('function_count') > 0, 'Fixture must contain a function'
+    for name in ('flags', 'call_flags', 'num_regs', 'arguments_reg',
+                 'num_args', 'num_formals', 'capture_parent_reg'):
+        word(name)
+    has_formal_names = word('has_formal_names')
+    assert has_formal_names in (0, 1), 'Invalid formal-name presence flag'
+    if has_formal_names:
+        num_args = struct.unpack_from('<I', data, offsets['num_args'])[0]
+        skip(num_args * 4)
+    for name in ('name', 'filename', 'source'):
+        text(name)
+    code_count = word('code_count')
+    assert code_count > 0, 'Fixture must contain instructions'
+    offsets['first_instruction'] = cursor
+    skip(4)
+    return offsets
+
+
 def main():
     checks = 0
     with tempfile.TemporaryDirectory(prefix='boomkat-bytecode-') as raw:
@@ -83,15 +132,18 @@ def main():
                 checks += 1
         compile_file(GEN, ROOT / 'test/bytecode/roundtrip.js', image)
         valid = image.read_bytes()
+        fields = image_fields(valid)
         damaged = [valid[:n] for n in (0, 1, 4, 8, 12, 16, 20, 24, 60, len(valid)//2, len(valid)-1)]
         damaged += [valid + b'x']
         # A strict-only reader rejects sloppy function records independently
         # of the declared profile in the image header.
         sloppy = bytearray(valid)
-        struct.pack_into('<I', sloppy, 24, struct.unpack_from('<I', valid, 24)[0] & ~0x80)
+        struct.pack_into('<I', sloppy, fields['flags'],
+                         struct.unpack_from('<I', valid, fields['flags'])[0] & ~0x80)
         damaged.append(sloppy)
         other_catalog = bytearray(valid)
-        struct.pack_into('<I', other_catalog, 16, struct.unpack_from('<I', valid, 16)[0] ^ 2048)
+        struct.pack_into('<I', other_catalog, fields['capabilities'],
+                         struct.unpack_from('<I', valid, fields['capabilities'])[0] ^ 2048)
         damaged.append(other_catalog)
         # The profile's strict bit alone cannot authorize sloppy or loading
         # instructions. Forge the first instruction while preserving the header.
@@ -100,19 +152,16 @@ def main():
         enum = enum.split('enum Opcode', 1)[1]
         enum = enum.split('{', 1)[1].split('}', 1)[0]
         opcodes = re.findall(r'^\s*([A-Z][A-Z0-9_]*)\s*,', enum, re.M)
-        cursor = 24 + 7 * 4
-        for _ in range(3):
-            length = struct.unpack_from('<I', valid, cursor)[0]
-            cursor += 4 + length
-        assert struct.unpack_from('<I', valid, cursor)[0] > 0
         for opcode in ['DELVAR', 'WITH_START', 'WITH_END', 'WITHGET', 'WITHBASE', 'WTWR',
                        'DYN_IMPORT', 'DYN_IMPORT_DEFER', 'DYN_IMPORT_SOURCE', 'IMPORT_META']:
             data = bytearray(valid)
-            struct.pack_into('<I', data, cursor + 4, opcodes.index(opcode))
+            struct.pack_into('<I', data, fields['first_instruction'], opcodes.index(opcode))
             damaged.append(data)
-        for offset, value in [(8, 2), (8, 999), (12, 0), (16, 0), (16, 0xFFFFFFFF), (20, 0xFFFFFFFF), (24, 1)]:
+        for field, value in [('version', 2), ('version', 999), ('opcode_signature', 0),
+                             ('capabilities', 0), ('capabilities', 0xFFFFFFFF),
+                             ('function_count', 0xFFFFFFFF), ('flags', 1)]:
             data = bytearray(valid)
-            struct.pack_into('<I', data, offset, value)
+            struct.pack_into('<I', data, fields[field], value)
             damaged.append(data)
         for data in damaged:
             image.write_bytes(data)
@@ -121,8 +170,17 @@ def main():
                 assert b'Invalid or incompatible bytecode' in result.stderr
                 checks += 1
         run([GEN, '--compile'], 2)
-        run([GEN, '--script', '--compile', image, empty], 2)
-        checks += 2
+        checks += 1
+        script = tmp / 'script.js'
+        script.write_text('var scriptGlobal = 42;\n'
+                          'if (globalThis.scriptGlobal !== 42) throw new Error("script scope");\n'
+                          'if ((function () { return this; })() !== undefined) '
+                          'throw new Error("strict script");\n'
+                          'print("bytecode script passed");\n')
+        run([GEN, '--script', '--compile', image, script])
+        for runner in RUNNERS:
+            assert run([runner, image]).stdout == b'bytecode script passed\n'
+            checks += 1
     print(f'Bytecode tests: {checks} checks passed')
 
 

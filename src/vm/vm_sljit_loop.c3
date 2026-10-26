@@ -601,7 +601,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                             if (ic.key.borrow() == (void*)key && ic.chain_len == 0 && shape != null
                                 && shape.generation == ic.shape_gen
                                 && !ic.prop_flags.is_accessor
-                                && ic.prop_idx != hobject::IC_PROP_ABSENT) {
+                                && ic.prop_idx < hobject::IC_PROP_MISSING) {
                                 bool doubles;
                                 if (base.is_object()) {
                                     HObject* probe = base.get_heapptr();

@@ -15,7 +15,7 @@ import std::io;
 // Unsupported loops fall back to the straight-line loop emitter.
 // The SSA pipeline is complete but stays opt-in until the long-run
 // differential mismatch in am3-style loops is resolved.
-const bool SSA_ENABLED    = true;
+const bool SSA_ENABLED    = false;
 const uint SSA_MAX_VALUES = 512;
 const uint SSA_MAX_SPILL  = 128;
 const uint SSA_HOMES      = 8;

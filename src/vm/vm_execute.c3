@@ -652,8 +652,8 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
                      TVal* args, uint nargs, TVal this_val, void* saved_resume_gen) {
     uint nregs = target.num_regs;
     TVal* frame = callback_frame_top(vm);
-    if (frame + nregs + 4 > vm.valstack_end) {
-        if (!ensure_valstack_grow(vm, (uint)(frame - vm.valstack) + nregs + 4)) {
+    if (frame + nregs + FRAME_SCRATCH_SLOTS > vm.valstack_end) {
+        if (!ensure_valstack_grow(vm, (uint)(frame - vm.valstack) + nregs + FRAME_SCRATCH_SLOTS)) {
             TVal undef;
             undef.set_undefined();
             return undef;
@@ -717,10 +717,7 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
         frame[params].set_fastint((long)(nargs > params ? nargs - params : 0));
     }
     if (target.arguments_in_reg()) bind_register_arguments(vm, act, target, function, args, nargs);
-    // The marker includes this native scratch margin; a previous callback's
-    // register tail must not become roots of the new frame.
-    zero_regs_undefined(frame, nregs, nregs + 4);
-    vm.valstack_top = frame + nregs;
+    publish_frame_top(vm, frame, nregs, nargs);
     vm.valstack_bottom = frame;
     vm.current_func = target;
 
@@ -1034,8 +1031,8 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             // caller's, so ensure_valstack_grow relocates all live pointers).
             // The callback frame is placed above all live caller registers.
             TVal* true_top = callback_frame_top(vm);
-            if (true_top + nregs + 4 > vm.valstack_end) {
-                if (!ensure_valstack_grow(vm, (uint)(true_top - vm.valstack) + nregs + 4)) {
+            if (true_top + nregs + FRAME_SCRATCH_SLOTS > vm.valstack_end) {
+                if (!ensure_valstack_grow(vm, (uint)(true_top - vm.valstack) + nregs + FRAME_SCRATCH_SLOTS)) {
                     return undef;
                 }
                 true_top = callback_frame_top(vm);
@@ -1357,8 +1354,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
                     }
                 }
             }
-            zero_regs_undefined(frame, nregs, nregs + 4);
-            vm.valstack_top = frame + nregs;
+            publish_frame_top(vm, frame, nregs, nargs);
             vm.valstack_bottom = frame;
             vm.current_func = target;
 
@@ -1692,6 +1688,9 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
                 }
             }
         }
+        if (new_target_obj == ctor && target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+            new_this.reserve_props(heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
+        }
         this_tv.set_object(new_this);
     }
     if (is_derived_target) {
@@ -1860,10 +1859,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
         bind_arguments(vm, act, target, ctor, frame, nargs, true);
     }
 
-    // The marker includes this native scratch margin; a previous callback's
-    // register tail must not become roots of the new frame.
-    zero_regs_undefined(frame, nregs, nregs + 4);
-    vm.valstack_top = frame + nregs;
+    publish_frame_top(vm, frame, nregs, nargs);
     vm.valstack_bottom = frame;
     vm.current_func = target;
 
@@ -2263,8 +2259,8 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     // caller's, so ensure_valstack_grow relocates all live pointers). The
     // module frame is placed above all live caller registers.
     uint true_used = (uint)(true_top - vm.valstack);
-    if (true_top + nregs + 4 > vm.valstack_end) {
-        if (!ensure_valstack_grow(vm, true_used + nregs + 4)) {
+    if (true_top + nregs + FRAME_SCRATCH_SLOTS > vm.valstack_end) {
+        if (!ensure_valstack_grow(vm, true_used + nregs + FRAME_SCRATCH_SLOTS)) {
             return VM_ERROR~;
         }
         // Recompute true_top after potential realloc
@@ -2369,7 +2365,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
     for (uint i = 0; i < nregs; i++) {
         frame[i].set_undefined();
     }
-    vm.valstack_top = frame + nregs;
+    publish_frame_top(vm, frame, nregs, 0);
     vm.valstack_bottom = frame;
     vm.current_func = func;
     // The nested body must not accidentally match the caller's pending
@@ -2954,9 +2950,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
         // WIDE prefix: the word's A/B/C fields carry the high bytes of
         // the following instruction's operands. Handlers only ever see
-        // the widened DecodedInsn, never the prefix word. The threaded
-        // burst never reaches here with WIDE (it is not in its handler
-        // table, so it bails back to this loop first).
+        // the widened DecodedInsn, never the prefix word.
         DecodedInsn insn;
         if (@unlikely(word.op == Opcode.WIDE)) {
             Instruction payload = *ds.curr_pc;
@@ -4110,26 +4104,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.RETEST:
         if (catch err = vm_retest(ds, ra, rb, insn)) { return err~; }
         continue;
-    case Opcode.INLINE_GUARD:
-        if (vm_inline_guard(ds.vm, ds.act, ds.regs_base, insn)) ds.curr_pc++;
-        continue;
-    case Opcode.INLINE_READ_GUARD:
-        if (vm_inline_read_guard(ds.vm, ds.act, ds.regs_base, insn)) ds.curr_pc++;
-        continue;
-    case Opcode.INLINE_NUM_GUARD:
-        if ((rb.is_number() || rb.is_fastint())
-            && (insn.c != 0 || ra.is_number() || ra.is_fastint())) ds.curr_pc++;
-        continue;
-    case Opcode.INLINE_GETFREE:
-    case Opcode.INLINE_GETCAP:
-        if (vm_inline_binding(ds, insn, op == Opcode.INLINE_GETCAP)) ds.curr_pc++;
-        continue;
-    case Opcode.INLINE_THIS:
-        vm_inline_this(ds, insn);
-        continue;
-    case Opcode.INLINE_COMMIT:
-        if (bytecode::inline_profile) bytecode::inline_avoided++;
-        continue;
     case Opcode.HOF_GUARD:
         if (vm_hof_guard(ds, ra, rb, insn.c)) ds.curr_pc++;
         continue;
@@ -4435,6 +4409,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // `return undefined;` from a derived constructor is equivalent to
         // bare `return;` (RETUNDEF), where the same TDZ check applies.
         bool derived_this_error = val.is_undefined() && derived_ctor_returns_undefined_uninitialized(callee_act);
+        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
         // Protect the return value: if its only reference lives in a
         // callee register, decref_callee_regs below would free it.

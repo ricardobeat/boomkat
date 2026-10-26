@@ -682,7 +682,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 uint save_span = has_live_mask ? live_span : cur_func.num_regs;
                 // The retained frame is also the execution stack on resume.
                 // Reserve a scratch margin for native calls and grow on demand.
-                uint alloc_regs = max(8U, (uint)cur_func.num_regs + 4);
+                uint alloc_regs = max(8U, (uint)cur_func.num_regs + FRAME_SCRATCH_SLOTS);
                 bool in_place = ds.act.bottom == gs.saved_regs;
                 if (alloc_regs > gs.async_regs_capacity) {
                     usz regs_bytes = (usz)alloc_regs * TVal::size;

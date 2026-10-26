@@ -125,7 +125,7 @@ fn bool CompilerContext.is_declared_global(&self, uint name_idx) {
 // which is keyed by the instruction.
 fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
     if (self.is_global || self.is_module || self.func_ast_scope == 0 || self.in_eval_code) return false;
-    if (self.has_direct_eval || self.has_with_stmt || self.outer_with || self.capture_all) return false;
+    if (self.has_direct_eval || self.has_with_stmt || self.outer_with) return false;
     ast::AstIndex* idx = ast::index_state;
     if (idx == null || !idx.use || idx.unknown_outer) return false;
     HString* name = (HString*)self.constants[name_idx].get_heapptr();
@@ -139,7 +139,7 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
     uint s = self.func_ast_scope;
     while (s != 0) {
         ast::Scope* sc = &idx.res.scopes.data[s];
-        if (sc.kind == ast::ScopeKind.WITH || (sc.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_CAPTURE_ALL)) != 0) return false;
+        if (sc.kind == ast::ScopeKind.WITH || (sc.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS)) != 0) return false;
         // Script-level declarations live in the global objects themselves.
         if (sc.kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0) return false;
         s = sc.parent;
