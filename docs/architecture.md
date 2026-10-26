@@ -1224,6 +1224,36 @@ embedding runtime IDs allocate atomically. VM values and heap pointers remain
 owned by their execution thread. A host exchanges copied data between runtimes
 and keeps each runtime alive until its native callbacks and watchdog finish.
 
+### Agents and shared memory
+
+An agent is a thread with its own heap and VM (above). Agents share one thing, a
+`SharedArrayBuffer`'s bytes. The block sits in libc memory behind a 16-byte
+header holding a reference count, the live length (a growable buffer raises it
+from any agent), the capacity, and a growable flag. `ab.data` points past the
+header, so typed array loads and stores read a shared buffer exactly as they
+read an `ArrayBuffer`. The finalizer releases a reference instead of freeing, so
+the last holder frees it even after the creating heap is gone. `Atomics`
+operations on a shared buffer are real atomic instructions at the element width;
+a plain `ArrayBuffer` keeps the ordinary path, since its blocks carry no
+alignment promise.
+
+`Atomics.wait` and `notify` meet in one process-wide table of waiters, hashed on
+the cell's address and guarded by one lock (`src/agent.c3`). A waiter compares
+its cell and joins the queue in the same critical section, so a notify that
+follows the compare cannot miss it. Each heap that waits gets a refcounted
+mailbox, the *port*: a notify that claims an `Atomics.waitAsync` waiter queues it
+on the owner's port, and the owner settles the promise the next time it polls.
+The microtask drain polls between jobs when the heap has a port (a null check
+otherwise), and the host event loop (`agent::run_event_loop`) sleeps on the port
+until a notification, a timeout, or a host event. Promise settlement happens only
+on the owner's thread. A watchdog interrupt also wakes a blocked `wait`.
+
+The test262 `$262.agent` host (`src/builtins/test262_agent.c3`) starts each
+agent on a thread with a large stack, delivers broadcasts through the agent's
+port, and collects reports in a per-group queue. The runner and CLI end the group
+when a test or program finishes: they raise the agent's interrupt, post a stop
+event, and join.
+
 ### Tearing down and reusing a heap
 
 `Heap.destroy()` releases everything and frees the heap struct.

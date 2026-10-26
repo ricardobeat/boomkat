@@ -5,6 +5,13 @@ of commits since the previous release. Newest first.
 
 ## [Unreleased]
 
+- Multiple agents: `Atomics.wait` blocks and `Atomics.notify` wakes waiters in
+  other agents, `Atomics.waitAsync` settles and times out through the host event
+  loop, and `Atomics` operations on a `SharedArrayBuffer` are atomic. The
+  SharedArrayBuffer's bytes are a refcounted block that outlives the heap that
+  created it. The test262 `$262.agent` host is implemented, so the 112 agent
+  files and the 2 `CanBlockIsFalse` files run: `built-ins/Atomics` is 389/389.
+  Stage 3 proposals are in scope in the docs again.
 - Threaded dispatch now covers `WIDE`-prefixed operands, typed array element
   access, native builtin calls, constructors and `f.apply(this, arguments)`.
 - Property read caches handle megamorphic sites and several shapes per site.

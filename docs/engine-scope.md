@@ -35,7 +35,8 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   and intrinsics. The C API exposes `bk_new_context(runtime)`; test262 uses
   `$262.createRealm`. Realm storage lives until the runtime closes.
 - TypedArrays, `ArrayBuffer` (including resizable and immutable), `DataView`
-- `Atomics` and `SharedArrayBuffer`, on a single agent
+- `Atomics` and `SharedArrayBuffer`, shared between agents: threads that each
+  run their own runtime
 - ESM: `import`, `export`, namespace objects, dynamic `import()`, import
   attributes (`with { type: "json" | "text" | "bytes" }`)
 - Iterator helpers (`Iterator.prototype.map`/`filter`/`take`/`drop`/...)
@@ -100,11 +101,14 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
   and resolves zoned date units across IANA offset transitions. Time zones retain
   their complete historical transitions and recurring future rules. Temporal
   locale formatting calls Intl internally; ZonedDateTime uses its own time zone.
-- **Multi-agent coordination.** `Atomics` is well defined on one agent and ships;
-  what needs threads is the coordination surface, so test262 files driving a
-  second agent through the `$262.agent` hooks are skipped per file rather than
-  the whole directory being excluded. `CanBlockIsFalse` tests are skipped for the
-  opposite reason: this engine's single agent can suspend.
+- **Multiple agents.** An agent is a thread running its own runtime, and the
+  only thing agents share is a `SharedArrayBuffer`'s data block. `Atomics.wait`
+  blocks, `Atomics.notify` wakes waiters in other agents, and `Atomics.waitAsync`
+  promises settle (and time out) through the host's event loop, which the CLI
+  and the test262 runner run. test262 drives the second agent through
+  `$262.agent`, which the CLI and runner install. The C embedding API does not
+  yet hand a buffer from one runtime to another. `CanBlockIsFalse` tests run
+  with the main agent unable to suspend.
 
 ## Two notes for anyone editing the skip list
 
