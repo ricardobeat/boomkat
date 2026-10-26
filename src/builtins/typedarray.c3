@@ -663,7 +663,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
             uint length = 0;
             if (!len_arg.is_undefined() && !arraybuffer_to_index(ctx, &len_arg, &length)) return;
             // Both coercions may detach or resize the backing buffer.
-            uint buf_len = (*arg_obj.extra_ptr()).ab.byte_length;
+            uint buf_len = buffer_byte_length(arg_obj);
             if (buf_len == 0xFFFFFFFFu) {
                 arraybuffer_throw_type_error(ctx, "Cannot construct TypedArray on a detached ArrayBuffer");
                 return;
@@ -1084,7 +1084,7 @@ fn HObject* ta_validate(BuiltinContext* ctx) {
 fn bool view_is_out_of_bounds(HObject* obj) {
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     if (buf == null) return true;
-    uint buf_len = (*buf.extra_ptr()).ab.byte_length;
+    uint buf_len = buffer_byte_length(buf);
     if (buf_len == 0xFFFFFFFFu) return true; // detached
     if (!(*buf.extra_ptr()).ab.resizable) return false; // fixed: never OOB
     uint off = (*obj.extra_ptr()).view.byte_offset;
@@ -1130,7 +1130,7 @@ fn uint view_effective_byte_length(HObject* obj) {
         return (*obj.extra_ptr()).view.byte_length;
     }
     HObject* buf = (*obj.extra_ptr()).view.buffer;
-    uint buf_len = (*buf.extra_ptr()).ab.byte_length;
+    uint buf_len = buffer_byte_length(buf);
     uint off = (*obj.extra_ptr()).view.byte_offset;
     uint avail = buf_len - off; // off <= buf_len guaranteed by not-OOB
     if (is_typed_array_class(obj.flags.obj_class)) {

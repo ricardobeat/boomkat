@@ -1,12 +1,11 @@
-// Atomics built-in object, single-agent variant.
+// Atomics built-in object.
 //
-// This engine runs a single agent with no worker threads, so every atomic
-// read-modify-write is a plain (uncontended) memory operation. Atomics work on
-// both SharedArrayBuffer- and (per ECMA-262) ArrayBuffer-backed integer
-// TypedArrays. `wait`/`notify`/`waitAsync` degrade to their single-agent
-// no-waiter behaviour: `notify` always reports 0, `wait` returns "not-equal"
-// or "timed-out" without ever blocking, and `waitAsync` returns a synchronous
-// {async:false, value:...} result.
+// Read-modify-write operations on a SharedArrayBuffer-backed view are real
+// atomic instructions at the element width, so they stay correct when other
+// agents share the block. A plain ArrayBuffer has no other agent to race
+// with, and its data block carries no alignment promise, so it takes the
+// ordinary memory path. `wait`/`notify`/`waitAsync` coordinate through the
+// waiter table in agent.c3.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -15,6 +14,8 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hbigint;
 import boomkat::env;
+import boomkat::agent;
+import std::atomic;
 import std::io;
 import std::math;
 
@@ -140,7 +141,19 @@ fn char* atomics_elem_ptr(HObject* ta, uint idx) {
 fn TVal atomics_read(Heap* heap, HObject* ta, uint idx) {
     HObject* buf = (*ta.extra_ptr()).view.buffer;
     char* base = (*buf.extra_ptr()).ab.data + (*ta.extra_ptr()).view.byte_offset;
-    return ta_load_element(heap, base, ta.flags.obj_class, idx);
+    if (!(*buf.extra_ptr()).ab.is_shared) return ta_load_element(heap, base, ta.flags.obj_class, idx);
+
+    // One atomic load of the cell, decoded through a private copy.
+    uint width = ta_elem_size(ta.flags.obj_class);
+    ulong raw = atomics_cell_load(base + (idx * width), width);
+    return ta_load_element(heap, (char*)&raw, ta.flags.obj_class, 0);
+}
+
+// True when the view's buffer is a SharedArrayBuffer, whose cells other
+// agents can touch.
+fn bool atomics_is_shared(HObject* ta) @inline {
+    HObject* buf = (*ta.extra_ptr()).view.buffer;
+    return (*buf.extra_ptr()).ab.is_shared;
 }
 
 // ============================================================================
@@ -183,11 +196,17 @@ enum AtomicOp : char {
 // extension for the returned old value. `operand` is the ToInteger'd argument,
 // `expected` is only used for COMPARE_EXCHANGE. Writes the returned "old value"
 // into *old_out (as a double so both int32 and uint32 fit).
-fn void atomics_rmw_int(char* p, hobject::ObjClass cls, AtomicOp op, double operand, double expected, double* old_out) {
+fn void atomics_rmw_int(char* p, hobject::ObjClass cls, AtomicOp op, double operand, double expected, double* old_out, bool shared) {
     uint width = ta_elem_size(cls);
     bool is_signed = (cls == hobject::ObjClass.INT8ARRAY
         || cls == hobject::ObjClass.INT16ARRAY
         || cls == hobject::ObjClass.INT32ARRAY);
+
+    if (shared) {
+        ulong old = atomics_cell_rmw(p, width, op, (ulong)double_to_int_wrap(operand), (ulong)double_to_int_wrap(expected));
+        *old_out = atomics_raw_to_double(old, width, is_signed);
+        return;
+    }
 
     // Read current raw value (zero-extended into u64).
     ulong cur = 0;
@@ -232,6 +251,52 @@ fn void atomics_rmw_int(char* p, hobject::ObjClass cls, AtomicOp op, double oper
         case 2: { ushort v = (ushort)(result & 0xFFFF); mem::copy(p, &v, (sz)(2)); break; }
         case 4: { uint v = (uint)(result & 0xFFFFFFFF); mem::copy(p, &v, (sz)(4)); break; }
         default: break;
+    }
+}
+
+// One atomic read-modify-write on a `$Type`-wide cell, returning the value the
+// cell held before. Sequentially consistent, as the spec requires of every
+// Atomics operation. `expected` matters to COMPARE_EXCHANGE only.
+macro ulong atomics_cell_op($Type, char* p, AtomicOp op, ulong operand, ulong expected) {
+    $Type* cell = ($Type*)p;
+    $Type value = ($Type)operand;
+    switch (op) {
+        case ADD: return (ulong)atomic::fetch_add(cell, value);
+        case SUB: return (ulong)atomic::fetch_sub(cell, value);
+        case AND: return (ulong)atomic::fetch_and(cell, value, SEQ_CONSISTENT, false, $Type::size);
+        case OR:  return (ulong)atomic::fetch_or(cell, value, SEQ_CONSISTENT, false, $Type::size);
+        case XOR: return (ulong)atomic::fetch_xor(cell, value, SEQ_CONSISTENT, false, $Type::size);
+        case COMPARE_EXCHANGE: return (ulong)mem::compare_exchange(cell, ($Type)expected, value);
+        case STORE:
+            mem::@atomic_store(*cell, value);
+            return 0;
+        case EXCHANGE:
+            $Type seen = mem::@atomic_load(*cell);
+            while (true) {
+                $Type witnessed = mem::compare_exchange(cell, seen, value);
+                if (witnessed == seen) return (ulong)seen;
+                seen = witnessed;
+            }
+    }
+}
+
+// The previous contents of the `width`-byte cell at `p`, zero-extended.
+fn ulong atomics_cell_rmw(char* p, uint width, AtomicOp op, ulong operand, ulong expected) {
+    switch (width) {
+        case 1: return atomics_cell_op(char, p, op, operand, expected);
+        case 2: return atomics_cell_op(ushort, p, op, operand, expected);
+        case 4: return atomics_cell_op(uint, p, op, operand, expected);
+        default: return atomics_cell_op(ulong, p, op, operand, expected);
+    }
+}
+
+// Atomic read of the `width`-byte cell at `p`, zero-extended.
+fn ulong atomics_cell_load(char* p, uint width) {
+    switch (width) {
+        case 1: return (ulong)mem::@atomic_load(*(char*)p);
+        case 2: return (ulong)mem::@atomic_load(*(ushort*)p);
+        case 4: return (ulong)mem::@atomic_load(*(uint*)p);
+        default: return (ulong)mem::@atomic_load(*(ulong*)p);
     }
 }
 
@@ -283,7 +348,12 @@ fn long double_to_int_wrap(double d) {
 // BigInt read-modify-write.
 // ============================================================================
 
-fn void atomics_rmw_bigint(char* p, hobject::ObjClass cls, AtomicOp op, int128 operand, int128 expected, int128* old_out) {
+fn void atomics_rmw_bigint(char* p, hobject::ObjClass cls, AtomicOp op, int128 operand, int128 expected, int128* old_out, bool shared) {
+    if (shared) {
+        ulong old = atomics_cell_rmw(p, 8, op, (ulong)(long)operand, (ulong)(long)expected);
+        *old_out = cls == hobject::ObjClass.BIGINT64ARRAY ? (int128)(long)old : (int128)(uint128)old;
+        return;
+    }
     long raw;
     mem::copy(&raw, p, (sz)(8));
     int128 cur;
@@ -372,11 +442,11 @@ fn void atomics_rmw_op(BuiltinContext* ctx, AtomicOp op) {
     char* p = atomics_elem_ptr(ta, idx);
     if (is_big) {
         int128 old;
-        atomics_rmw_bigint(p, cls, op, big_operand, 0, &old);
+        atomics_rmw_bigint(p, cls, op, big_operand, 0, &old, atomics_is_shared(ta));
         atomics_set_bigint_result(ctx, cls, old);
     } else {
         double old = 0.0;
-        atomics_rmw_int(p, cls, op, num_operand, 0.0, &old);
+        atomics_rmw_int(p, cls, op, num_operand, 0.0, &old, atomics_is_shared(ta));
         atomics_set_num_result(ctx, cls, old);
     }
 }
@@ -451,13 +521,13 @@ fn void builtin_atomics_store(BuiltinContext* ctx) {
     char* p = atomics_elem_ptr(ta, idx);
     if (is_big) {
         int128 old;
-        atomics_rmw_bigint(p, cls, AtomicOp.STORE, big_operand, 0, &old);
+        atomics_rmw_bigint(p, cls, AtomicOp.STORE, big_operand, 0, &old, atomics_is_shared(ta));
         // store returns the ToBigInt'd value itself (§25.4.3.13 step 3 returns
         // `v`), NOT the width-reinterpreted stored bits.
         builtin_set_bigint_result(ctx, hbigint::hbigint_alloc(ctx.heap, big_operand) ?? null);
     } else {
         double old = 0.0;
-        atomics_rmw_int(p, cls, AtomicOp.STORE, num_operand, 0.0, &old);
+        atomics_rmw_int(p, cls, AtomicOp.STORE, num_operand, 0.0, &old, atomics_is_shared(ta));
         // store returns the (integer) value that was passed, as a Number.
         atomics_store_num_result(ctx, num_operand);
     }
@@ -519,11 +589,11 @@ fn void builtin_atomics_compareexchange(BuiltinContext* ctx) {
     char* p = atomics_elem_ptr(ta, idx);
     if (is_big) {
         int128 old;
-        atomics_rmw_bigint(p, cls, AtomicOp.COMPARE_EXCHANGE, big_rep, big_exp, &old);
+        atomics_rmw_bigint(p, cls, AtomicOp.COMPARE_EXCHANGE, big_rep, big_exp, &old, atomics_is_shared(ta));
         atomics_set_bigint_result(ctx, cls, old);
     } else {
         double old = 0.0;
-        atomics_rmw_int(p, cls, AtomicOp.COMPARE_EXCHANGE, num_rep, num_exp, &old);
+        atomics_rmw_int(p, cls, AtomicOp.COMPARE_EXCHANGE, num_rep, num_exp, &old, atomics_is_shared(ta));
         atomics_set_num_result(ctx, cls, old);
     }
 }

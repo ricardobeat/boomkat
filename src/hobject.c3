@@ -24,6 +24,7 @@ import boomkat::re_bindings;
 import boomkat::heap;
 import boomkat::lib::temporal;
 import boomkat::pagepool;
+import boomkat::agent;
 import std::io;
 
 // Faults for optional returns
@@ -2932,7 +2933,12 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
                 for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
             }
         case ObjClass.ARRAYBUFFER:
-            if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
+            if ((*obj.extra_ptr()).ab.is_shared) {
+                // A shared block outlives the heap teardown that skips the
+                // other frees: other agents may still hold it.
+                if ((*obj.extra_ptr()).ab.data != null) agent::block_release((*obj.extra_ptr()).ab.data);
+                (*obj.extra_ptr()).ab.data = null;
+            } else if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
                 hp.free_func(hp.heap_udata, (*obj.extra_ptr()).ab.data);
                 (*obj.extra_ptr()).ab.data = null;
             }
