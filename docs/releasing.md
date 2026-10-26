@@ -55,7 +55,7 @@ disabled. Tiny builds use the same feature defaults.
 Custom builds can enable root collation with
 `just build boomkat --intl=small --collator=true` or omit it from the full profile
 with `just build boomkat-full-icu --collator=false`.
-Every archive includes `LICENSE`.
+Every archive includes `LICENSE` and `THIRD_PARTY`.
 `SHA256SUMS.txt` on the GitHub release covers every archive.
 The packaging script is `scripts/package_release.py`; it is also usable locally.
 SLIM runs strict-only source code and omits console, Temporal, Intl, object
