@@ -183,6 +183,9 @@ fn int main(String[] args) {
         hp.destroy();
     }
 
+    // Agents a script started with $262.agent end before the heap does.
+    defer builtins::agent_host_shutdown();
+
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
     hp.jsx = jsx;
 

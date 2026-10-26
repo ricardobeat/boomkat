@@ -658,6 +658,14 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROXY_CALL {"", -1, true},
     TA_SPECIES_GET {"", -1, false},
     CREATE_REALM {"createRealm", 0, false},
+    AGENT_START {"start", 1, false},
+    AGENT_BROADCAST {"broadcast", 2, false},
+    AGENT_GET_REPORT {"getReport", 0, false},
+    AGENT_SLEEP {"sleep", 1, false},
+    AGENT_MONOTONIC_NOW {"monotonicNow", 0, false},
+    AGENT_RECEIVE_BROADCAST {"receiveBroadcast", 1, false},
+    AGENT_REPORT {"report", 1, false},
+    AGENT_LEAVING {"leaving", 0, false},
     EVAL_SCRIPT {"", -1, false},
     REGEXP_SPECIES_GETTER {"", -1, false},
     MODULE_BINDING_GETTER {"", -1, false},
@@ -4795,6 +4803,10 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     if (dda_obj == null) return false;
     TVal dda_tv; dda_tv.set_object(dda_obj);
     h262.put_prop(builtin_intern_string(heap, "IsHTMLDDA"), dda_tv, hobject::PROP_FLAGS_WC, heap);
+
+    $if features::SHARED_MEMORY:
+    if (!register_agent_main_side(heap, h262)) return false;
+    $endif
 
     if (global_env.bindings != null) {
         TVal g_tv;

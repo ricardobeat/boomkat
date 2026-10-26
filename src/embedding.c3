@@ -21,6 +21,7 @@
 //     them from accumulating until teardown. The registry grows on demand.
 module boomkat @feat(!BYTECODE_ONLY);
 
+import boomkat::agent;
 import boomkat::builtins;
 import boomkat::embed;
 import boomkat::vm;
@@ -1105,7 +1106,10 @@ fn void JsRuntime.set_interrupt(&self, InterruptHandler handler, void* opaque = 
 // and stationary until the watchdog has stopped; all other operations belong
 // to the engine thread. Requests stay latched until clear_interrupt().
 fn void JsRuntime.request_interrupt(&self) {
-    if (self.rt != null) mem::@atomic_store(self.rt.heap.interrupt_requested, 1u);
+    if (self.rt == null) return;
+    mem::@atomic_store(self.rt.heap.interrupt_requested, 1u);
+    // A thread blocked in Atomics.wait sleeps on a condition, not on this flag.
+    agent::wake_interrupt(self.rt.heap);
 }
 
 fn void JsRuntime.clear_interrupt(&self) {
