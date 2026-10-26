@@ -127,7 +127,7 @@ fn ulong loop_bits(TVal v) @feat(SLJIT) {
 fn int loop_target(Instruction ins, uint pc) @feat(SLJIT) {
     if (ins.op == Opcode.JUMP) return (int)pc + 1 + ins.get_sabc();
     if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) return (int)pc + 1 + ins.get_sbc();
-    if ((ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_SNEQ)
+    if ((ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_NNULL)
         || (ins.op >= Opcode.JMP_NLTI && ins.op <= Opcode.JMP_SNEQI)) return (int)pc + 1 + (int)(ichar)ins.a;
     return -1;
 }
@@ -456,10 +456,15 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         if (target >= 0) {
             if ((uint)target >= cf.code_count || (target <= (int)pos && pos != end)) return false;
             if (ins.op == Opcode.JUMP) continue;
+            // The template emitter's condition path carries the numeric
+            // relations only, so the equality and null branches stay out of
+            // this tier.
+            if (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ
+                || ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL) return false;
             uint b = ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE ? ins.a : ins.b;
             if (b >= cf.num_regs) return false;
             frequency[b]++;
-            if (ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_SNEQ) {
+            if (ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_NEQ) {
                 if (ins.c >= cf.num_regs) return false;
                 frequency[ins.c]++;
             }
@@ -1166,7 +1171,9 @@ fn void LoopEmitter.index(&self, uint reg, uint memory, uint pc) @feat(SLJIT) {
 fn int loop_condition(Opcode op) @feat(SLJIT) {
     uint index         = op >= Opcode.JMP_NLTI ? op.ordinal - Opcode.JMP_NLTI.ordinal
         : op.ordinal - Opcode.JMP_NLT.ordinal;
-    int[10] conditions = { 7, 8, 9, 6, 6, 9, 8, 7, 0, 1 };
+    // Entries 10..13 name the equality and null branches, which the emitters
+    // handle themselves; they are present so the table cannot be overrun.
+    int[14] conditions = { 7, 8, 9, 6, 6, 9, 8, 7, 0, 1, 0, 1, 0, 1 };
     return conditions[index];
 }
 fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {

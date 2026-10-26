@@ -145,7 +145,7 @@ fn bool function_op(Opcode op) @feat(SLJIT) {
         case IF_TRUE:
         case IF_FALSE:
         case JUMP:
-        case JMP_NLT..JMP_SNEQ:
+        case JMP_NLT..JMP_NNULL:
         case JMP_NLTI..JMP_SNEQI:
             return true;
         default: return false;
@@ -421,6 +421,45 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
     e.bind(both_eq);
     e.mov(r0, 0, imm, negate ? ((long)types::TAG_BOOLEAN << 48) : (((long)types::TAG_BOOLEAN << 48) | 1));
     e.bind(finish);
+}
+// A branch on `x == null` or `x != null`, which never coerces: the operand is
+// nullish when it is null or undefined, or the one object the language treats
+// as nullish (the HTMLDDA document.all sentinel). Leaves in r0 whether the
+// branch's condition holds, so the caller branches on a non-zero result.
+fn void FunctionEmitter.null_check(&self, Instruction ins, bool negate, uint pc) @feat(SLJIT) {
+    TemplateEmitter* e = &self.out.e;
+    int r0             = jit::reg_r(0);
+    int r1             = jit::reg_r(1);
+    int r2             = jit::reg_r(2);
+    int r3             = jit::reg_r(3);
+    int imm            = jit::SLJIT_IMM;
+    int mem            = jit::SLJIT_MEM;
+    self.out.load(ins.b, r0);
+    // r3 stays zero unless a case below proves the operand nullish.
+    e.mov(r3, 0, imm, 0);
+    e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
+    // Null and undefined carry adjacent tags and an empty payload.
+    e.op(jit::SLJIT_SUB, r1, r2, 0, imm, (long)types::TAG_UNDEFINED);
+    void* object_case = e.cmp(jit::SLJIT_GREATER, r1, 0, imm, 1);
+    e.op(jit::SLJIT_AND, r1, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    void* done_a      = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0);
+    e.mov(r3, 0, imm, 1);
+    void* done_b      = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(object_case);
+    // Any other value is nullish only as the document.all sentinel, whose
+    // identity the heap holds.
+    void* done_c      = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)types::TAG_OBJECT);
+    e.op(jit::SLJIT_AND, r1, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    Heap heap_view;
+    e.mov(r2, 0, mem | jit::reg_s(1), function_cold_offset(0));
+    e.mov(r2, 0, mem | r2, (char*)&heap_view.htmldda_obj - (char*)&heap_view);
+    void* done_d      = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, r2, 0);
+    e.mov(r3, 0, imm, 1);
+    e.bind(done_a);
+    e.bind(done_b);
+    e.bind(done_c);
+    e.bind(done_d);
+    e.op(jit::SLJIT_XOR, r0, r3, 0, imm, negate ? 1 : 0);
 }
 fn TVal* function_key_literal(CompiledFunction* cf, uint pc, uint reg) @feat(SLJIT) {
     for (uint back = pc; back > 0; back--) {
@@ -1136,6 +1175,18 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
                 void* skip = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
                 f.branch_target(pos, (uint)target);
                 e.bind(skip);
+            } else if (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ) {
+                f.loose_equal(ins, ins.op == Opcode.JMP_NEQ, pos);
+                // loose_equal leaves a boxed boolean, so `false` is its tag
+                // with an empty payload.
+                void* skip = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, (long)types::TAG_BOOLEAN << 48);
+                f.branch_target(pos, (uint)target);
+                e.bind(skip);
+            } else if (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL) {
+                f.null_check(ins, ins.op == Opcode.JMP_NNULL, pos);
+                void* skip = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
+                f.branch_target(pos, (uint)target);
+                e.bind(skip);
             } else {
                 void*[2] skips = out.condition(ins, pos);
                 f.branch_target(pos, (uint)target);
@@ -1713,7 +1764,7 @@ fn Instruction* sljit_function_entry(
             plan.bail_ops,
             plan.general_inlines
         );
-        if (plan.hits == 8) {
+        if (plan.hits % 10000 == 0) {
             uint shown;
             for (uint i = 0; i < 512; i++) {
                 if (plan.exit_pcs[i] == 0) continue;

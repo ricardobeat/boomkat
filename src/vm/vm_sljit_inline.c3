@@ -233,14 +233,19 @@ fn CompiledFunction* function_inline_method(CompiledFunction* cf, uint pc, Heap*
         }
         if (ins.c >= cf.const_count || !cf.constants[ins.c].is_string()) return null;
         ICEntry* ic = (ICEntry*)cf.ic_entries + (back - 1);
-        if (ic.key.borrow() != cf.constants[ins.c].get_heapptr() || ic.chain_len != 1 || ic.prop_flags.is_accessor
+        // An inherited read is either a one-link snapshot or an epoch-guarded
+        // owner; both name the object holding the method.
+        bool epoch = ic.chain_len == hobject::IC_CHAIN_EPOCH;
+        if (ic.key.borrow() != cf.constants[ins.c].get_heapptr() || (!epoch && ic.chain_len != 1)
+            || ic.prop_flags.is_accessor
             || !ic.has_proto
             || ic.prop_idx >= hobject::IC_PROP_MISSING) {
             return null;
         }
         HObject* owner = hobject::ic_cached_proto(ic);
         if (owner == null || owner.is_proxy() || owner.get_class() != ObjClass.OBJECT) return null;
-        if (owner.shape_id != ic.chain.snapshot.shapes[0] || ic.prop_idx >= owner.prop_count) return null;
+        if (!epoch && owner.shape_id != ic.chain.snapshot.shapes[0]) return null;
+        if (ic.prop_idx >= owner.prop_count) return null;
         TVal value = owner.prop_values()[ic.prop_idx].get();
         if (!value.is_object() || value.get_heapptr() == null) return null;
         HObject* function = value.get_heapptr();
@@ -669,9 +674,17 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
             case IF_TRUE:
             case IF_FALSE:
             case JUMP:
-            case JMP_NLT..JMP_SNEQI:
+            case JMP_NLT..JMP_SNEQ:
+            case JMP_NLTI..JMP_SNEQI:
                 if (branch < 0 && ins.a >= 24) return false;
                 continue;
+            case JMP_EQ:
+            case JMP_NEQ:
+            case JMP_NULL:
+            case JMP_NNULL:
+                // The expanded body's condition emitter carries the numeric
+                // relations only, so the equality and null branches stay out.
+                return false;
             case RET:
             case RETUNDEF:
                 returns++;
