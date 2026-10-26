@@ -370,3 +370,68 @@ object-heavy minis.
    whose property cache was cold.
 4. **Multi-target expansion** for a site whose callee differs by receiver
    shape.
+
+## 14. Native push and pop, and what the three minis still cost
+
+`Array.prototype.push` and `pop` now have a native form for the shape the
+builtin's own fast path accepts: a plain extensible array with a writable
+length, no named properties at all, spare dense capacity, a hole at the
+append slot (push) or a present, uncounted element (pop), and, for push,
+the heap's clean-prototype sentinel still naming the receiver's prototype.
+The append goes through `slot_store`, so a traced value keeps its barrier;
+`array_used` and the length move in step with the slot. Anything else exits
+at the call.
+
+`sample` over 1500 deltablue iterations, before and after: the interpreter
+dispatching a builtin call was the single largest entry (473 of 2329
+samples) and is now gone; `builtin_array_proto_push` and `_pop` fall from
+the top of the profile to a handful of samples. Deltablue is about ten
+percent faster than the previous commit.
+
+That is not enough. Deltablue and richards are still around four percent
+*slower* than the interpreter and splay is level. Three things were tried
+against that and rejected on measurement:
+
+- Rebuilding a plan when the interpreter has filled a site cache the region
+  stopped at. Correct in principle, but the sites that get filled are not
+  the hot ones; the bounded version is neutral and the unbounded one
+  recompiles a 98-op function 298 times in one run.
+- Retiring a loop plan whose `loop_prepare` keeps failing. No measured
+  change; the ready-bit logic already stops the threaded interpreter from
+  bailing to the switch on those.
+- Keeping a region's entry alive when it stops at a call, and rebuilding
+  once the callee becomes expandable. Strictly worse: the entry-and-exit
+  per call costs more than the expansion saves.
+- Raising the compile threshold from 64 calls to 512. Within noise.
+
+The reason none of it pays is visible in the samples: a 1500-iteration
+deltablue run under `--jit` has about *one* sample in JIT code. The tiers
+compile functions that run a thousand times in the whole program, while the
+work that dominates runs interpreted. Two causes are now identified from
+the property emitters' own refusal log:
+
+1. The hottest leaf methods are small and end at a call the region cannot
+   expand, which the stuck-entry rule then disables after eight runs. That
+   rule is what keeps the JIT from losing more time, but it also means the
+   call traffic that is 27 percent of the run (th_call 431 of 2549 samples
+   plus th_try_fast_return 261) never moves.
+2. Every constructor store that adds a property (`this.value = ...`,
+   `this.myOutput = ...`) is an `IC_PROP_ABSENT` site, which the emitter
+   refuses. Constructors therefore never compile past their first store.
+
+## 15. Next, revised again
+
+1. **Native append stores.** The absent-put entry already carries what the
+   emitter needs: `absent_next_shape`, the receiver shape, the recycle
+   epoch and a bounded prototype snapshot. The guards mirror
+   `ic_matches_absent_put` (plain extensible receiver, matching shape and
+   epoch, `prop_count < prop_capacity`, `prop_hash == null`,
+   `prototype_observed` clear, and the snapshot replayed link by link to a
+   null terminator), then: clear the slot, `slot_store`, `prop_count++`,
+   `shape_id = absent_next_shape`.
+2. **Find out why native code is so rare.** Before more emitter work, count
+   how many plans install an entry at bytecode zero and how many hot
+   functions never get one; the tiers may be declining the functions that
+   matter rather than exiting inside them.
+3. The loop-tier mismatch from section 12, which is the only correctness
+   gap left in the mini suite.
