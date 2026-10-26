@@ -1153,6 +1153,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
                     f.parseint_call(cf, pos);
                 } else if (function_math_candidate(cf, pos) >= 0) {
                     f.math_call(cf, pos);
+                } else if (function_array_candidate(cf, pos) >= 0) {
+                    f.array_call(cf, pos);
                 } else {
                     f.inline_call(cf, pos, h);
                 }
