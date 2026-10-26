@@ -21,6 +21,7 @@ import boomkat::lexer;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::esm;
+import boomkat::agent;
 import std::io, libc;
 
 // Counts rejections reported by cli_rejection_tracker so the process exits
@@ -218,6 +219,7 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
     } else {
         rc = esm::run_module_file(hp, v, (char[])path);
     }
+    if (rc == 0) agent::run_event_loop(hp, (void*)v);
     if (rc == 1 && (hp.has_error || !hp.error_value.is_undefined())) {
             print_uncaught(hp, &hp.error_value);
         } else if (rc != 0) {
@@ -301,7 +303,7 @@ fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mo
         return 1;
     }
     TVal? result = v.execute(f);
-    hp.drain_microtasks((void*)v);
+    agent::run_event_loop(hp, (void*)v);
     if (catch err = result) {
         if (v.heap.has_error) {
             print_uncaught(v.heap, &v.heap.error_value);

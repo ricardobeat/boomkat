@@ -28,6 +28,14 @@ HEAP_SRC = os.path.join(PROJECT_DIR, "src", "heap.c3")
 # Fields intentionally preserved, or initialized by the next VM.
 # Keep this list minimal and justified.
 ALLOWED_NOT_RESET = {
+    # ── Atomics waiters and the agent mailbox — agent::heap_release() ──
+    # clears them (reset() calls it), because it also has to unhook the
+    # waiters from the process-wide table.
+    "async_waiters",
+    "async_waiter_count",
+    "async_waiter_capacity",
+    "agent_port",
+    "agent_poll_fn",
     # ── Allocator callbacks — set at heap::create(), never change ──
     "alloc_func",
     "realloc_func",
