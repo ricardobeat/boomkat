@@ -462,6 +462,57 @@ fn bool FunctionEmitter.shape(&self, uint id, Heap* h) @feat(SLJIT) {
     self.plan.generations[slot] = shape.generation;
     return true;
 }
+// Store a value into a property slot. Old and new value tags are checked
+// first; a traced object is stored only when the write barrier is a no-op.
+fn void FunctionEmitter.slot_store(
+    &self,
+    int owner,
+    int slot_base,
+    long disp,
+    uint value_reg,
+    uint pc
+) @feat(SLJIT) {
+    TemplateEmitter* e = &self.out.e;
+    int r0             = jit::reg_r(0);
+    int r1             = jit::reg_r(1);
+    int r3             = jit::reg_r(3);
+    int imm            = jit::SLJIT_IMM;
+    int mem            = jit::SLJIT_MEM;
+    // Keep the owner for the object-store barrier; r0 takes the values.
+    e.mov(r1, 0, owner, 0);
+    e.mov(r0, 0, mem | slot_base, disp);
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    // Strings are reference counted and carry a decref on replacement, so
+    // only primitives and traced objects are stored natively.
+    void* old_object = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT);
+    self.out.guard(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_BOOLEAN, pc);
+    e.bind(old_object);
+    self.out.load(value_reg, r0);
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    void* new_object = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT);
+    self.out.guard(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_BOOLEAN, pc);
+    e.bind(new_object);
+    // Storing a traced object needs the write barrier. Skip it only when the
+    // collector is not shading and the owner is young, or the value being
+    // stored is already old.
+    void* primitive = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT);
+    Heap heap_view;
+    e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(0));
+    e.mov(r3, 0, mem | r3, (char*)&heap_view.gc_phase - (char*)&heap_view, jit::SLJIT_MOV_U8);
+    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)heap::GcPhase.MARK, pc);
+    HObjectBase base;
+    e.mov(r3, 0, mem | r1, (char*)&base.gc - (char*)&base, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_AND, r3, r3, 0, imm, 2);
+    void* young_owner = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, 0);
+    e.op(jit::SLJIT_AND, r3, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    e.mov(r3, 0, mem | r3, (char*)&base.gc - (char*)&base, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_AND, r3, r3, 0, imm, 2);
+    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, 0, pc);
+    e.bind(young_owner);
+    e.bind(primitive);
+    e.mov(mem | slot_base, disp, r0, 0);
+}
+
 fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool write, Heap* h) @feat(SLJIT) {
     TemplateEmitter* e       = &self.out.e;
     Instruction ins          = cf.code[pc];
@@ -663,13 +714,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
         e.bind(allocated);
         if (write) {
-            e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
-            e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
-            self.out.guard(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_BOOLEAN, pc);
-            self.out.load(value_reg, r0);
-            e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
-            self.out.guard(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_BOOLEAN, pc);
-            e.mov(mem | r2, (long)ic.prop_idx * 8, r0, 0);
+            self.slot_store(r0, r2, (long)ic.prop_idx * 8, value_reg, pc);
         } else {
             e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
             self.store(ins.a, pc);
