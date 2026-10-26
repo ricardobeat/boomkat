@@ -744,6 +744,54 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     return result;
 }
 
+// A call from a compiled region to a lean compiled callee, so that the region
+// stays native across it instead of exiting at the call and re-entering after
+// the interpreter has run the callee. `regs` is the caller's register window
+// and `pc` the CALL instruction; the callee's value lands in the instruction's
+// result register.
+//
+// Every state the region cannot survive leaves the call to the interpreter by
+// returning zero: the caller has already published its registers, so the exit
+// re-executes the call exactly as the tier did before this path existed. The
+// callee runs through vm_call_lean, which needs the value stack not to move
+// (the arguments it copies are the caller's live registers), so a frame that
+// does not fit is one of those states.
+fn long sljit_native_call(ColdCtx* cold, TVal* regs, uint pc) @feat(SLJIT) @noinline {
+    Vm* vm = cold.vm;
+    CompiledFunction* cf = vm.current_func;
+    Instruction call = cf.code[pc];
+    if (call.op != Opcode.CALL && call.op != Opcode.CALL_UNDEF_THIS) return 0;
+    TVal callee = regs[call.b];
+    if (!callee.is_object() || callee.get_heapptr() == null) return 0;
+    HObject* function = (HObject*)callee.get_heapptr();
+    TVal this_value;
+    this_value.set_undefined();
+    if (call.op == Opcode.CALL) this_value = regs[call.b + 1];
+    CompiledFunction* target = lean_callee(function, this_value);
+    if (target == null || target.realm != cold.heap.realm) return 0;
+    // A depth beyond what a nested native run may add, or a full activation
+    // stack, each need the interpreter's own accounting.
+    if (vm.activation_count >= vm.activation_capacity) return 0;
+    if (vm.run_depth + 2 >= MAX_RUN_DEPTH) return 0;
+    TVal* frame = callback_frame_top(vm);
+    if (frame + target.num_regs + FRAME_SCRATCH_SLOTS > vm.valstack_end) return 0;
+    cold.act.curr_pc = cf.code + pc;
+    TVal result = vm_call_lean(vm, function, target, callee, regs + call.b + 2, call.c,
+                               this_value, cold.heap.resume_gen);
+    if (cold.heap.has_error) {
+        // The callee's throw is the call's: hand it to the switch, which
+        // unwinds from the caller's frame, and leave the instruction for it.
+        vm.threaded_throw = cold.heap.error_value;
+        vm.threaded_handoff = ThreadedHandoff.THROW;
+        cold.heap.has_error = false;
+        return 0;
+    }
+    TVal* dest = regs + call.a;
+    cold.heap.tval_copy_ref(dest, &result);
+    if (result.is_heap_allocated()) track_heap_store(cold.act, dest, call.a);
+    return 1;
+}
+
 fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal this_val) {
     Vm* vm = (Vm*)vm_ptr;
     heap::Realm* caller_realm = vm.heap.realm;

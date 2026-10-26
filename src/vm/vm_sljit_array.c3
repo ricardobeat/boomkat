@@ -187,7 +187,10 @@ fn void FunctionEmitter.array_call(&self, CompiledFunction* cf, uint pc) @feat(S
         out.guard(jit::SLJIT_NOT_EQUAL, r1, 0, r3, 0, pc);
         if (out.flow != null) out.flow.heap_write();
         self.slot_store(r0, r2, 0, (uint)ins.b + 2, pc);
+        // The store may have clobbered every scratch register, so the receiver
+        // comes back from its slot: a live TVal, whose payload is the object.
         out.load(receiver, r0);
+        e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
         e.mov(r1, 0, mem | r0, (char*)&obj.array_used - (char*)&obj, jit::SLJIT_MOV_U32);
         e.op(jit::SLJIT_ADD, r1, r1, 0, imm, 1);
         e.mov(mem | r0, (char*)&obj.array_used - (char*)&obj, r1, 0, jit::SLJIT_MOV_U32);
@@ -216,6 +219,7 @@ fn void FunctionEmitter.array_call(&self, CompiledFunction* cf, uint pc) @feat(S
         // The element moved into its result register, so the slot keeps no
         // reference: clear it, step the hole count back and shorten the array.
         out.load(receiver, r0);
+        e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
         self.dense_elements(r0, r2, r3, pc);
         e.mov(r1, 0, mem | r0, len_offset, jit::SLJIT_MOV_U32);
         e.op(jit::SLJIT_SUB, r1, r1, 0, imm, 1);

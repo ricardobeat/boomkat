@@ -50,6 +50,8 @@ struct FunctionPlan @feat(SLJIT) {
     uint shape_clock;
     uint shape_epoch;
     bool receiver;
+    // Sites the region calls out of natively (see function_native_call).
+    bool native_calls;
     usz code_bytes;
     ulong typed_reads @if($feat(SLJIT_STATS));
     ulong typed_writes @if($feat(SLJIT_STATS));
@@ -172,6 +174,8 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
         || cf.mapped_arguments()
         || cf.sljit_loops != null) return false;
     uint useful;
+    bool calls;
+    uint call_regs;
     uint[LOOP_REGS] frequency;
     for (uint pos = 0; pos < cf.code_count; pos++) {
         Instruction ins = cf.code[pos];
@@ -191,6 +195,13 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
             // numeric inliner reserves.
             useful += 2;
             continue;
+        }
+        // A call neither tier can expand still runs through the native call
+        // entry, which hands its result to the caller with a reference of its
+        // own: the result register stays below the tracked watermark.
+        if (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS) {
+            calls = true;
+            if (ins.a + 1 > call_regs) call_regs = ins.a + 1;
         }
         if (!function_op(ins.op)) continue;
         int backedge = loop_target(ins, pos);
@@ -234,6 +245,14 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
             || ins.op == Opcode.GETPROP_CACHE
             || ins.op == Opcode.PUTPROP) useful++;
     }
+    // A native call only pays for its own entry and exit once the region runs
+    // long enough around it, which in practice means a taken backedge: a
+    // straight-line leaf that wraps a call is the interpreter's own work.
+    for (uint pos = 0; calls && !plan.native_calls && pos < cf.code_count; pos++) {
+        int target = loop_target(cf.code[pos], pos);
+        if (target >= 0 && target <= (int)pos) plan.native_calls = true;
+    }
+    if (plan.native_calls && plan.heap_regs < call_regs) plan.heap_regs = call_regs;
     for (uint i = 0; i < 4; i++) {
         uint best;
         for (uint j = 1; j < cf.num_regs && j < LOOP_REGS; j++) if (frequency[j] > frequency[best]) best = j;
@@ -322,8 +341,10 @@ fn void FunctionEmitter.store(&self, uint reg, uint pc, bool known = false) @fea
 fn void FunctionEmitter.truth(&self, uint reg, uint pc) @feat(SLJIT) {
     TemplateEmitter* e = &self.out.e;
     int r0             = jit::reg_r(0);
+    int r1             = jit::reg_r(1);
     int r3             = jit::reg_r(3);
     int imm            = jit::SLJIT_IMM;
+    int mem            = jit::SLJIT_MEM;
     self.out.load(reg, r0);
     e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
     void* integer = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT);
@@ -334,8 +355,18 @@ fn void FunctionEmitter.truth(&self, uint reg, uint pc) @feat(SLJIT) {
     e.mov(r0, 0, imm, 0);
     void* done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
     e.bind(object);
+    // An object is truthy, except the document.all sentinel: [[IsHTMLDDA]]
+    // makes exactly that object falsy, and the heap holds its identity.
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    Heap heap_view;
+    e.mov(r1, 0, mem | jit::reg_s(1), function_cold_offset(0));
+    e.mov(r1, 0, mem | r1, (char*)&heap_view.htmldda_obj - (char*)&heap_view);
+    void* sentinel = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
     e.mov(r0, 0, imm, 1);
     void* object_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(sentinel);
+    e.mov(r0, 0, imm, 0);
+    e.bind(object_done);
     e.bind(integer);
     e.bind(boolean);
     e.op(jit::SLJIT_SHL, r0, r0, 0, imm, 16);
@@ -1173,6 +1204,58 @@ fn void FunctionEmitter.branch_target(&self, uint pc, uint target) @feat(SLJIT) 
     }
     self.out.link(jit::sljit_emit_jump(self.out.e.compiler, jit::SLJIT_JUMP), target, target >= self.cf.code_count);
 }
+// A call whose callee neither inliner expands nor the analysis reserved for
+// the native call entry.
+fn bool function_native_call(CompiledFunction* cf, uint pc, FunctionPlan* plan) @feat(SLJIT) {
+    Instruction ins = cf.code[pc];
+    return plan.native_calls && (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS)
+        && ins.a + 1 <= plan.heap_regs;
+}
+
+// A call the inliner could not expand still need not end the native run: a C
+// entry runs a lean compiled callee and hands back its value, so the region
+// resumes where it left off. The register cache lives in scratch registers the
+// C ABI clobbers, so it is written back before the call and reloaded after,
+// exactly as the exits do (its values are borrowed either way).
+fn bool FunctionEmitter.native_call(&self, CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    if (!function_native_call(cf, pc, self.plan)) return false;
+    LoopEmitter* out = &self.out;
+    if ((usz)out.link_count + 2 >= out.links.len) return false;
+    // The C call clobbers every scratch register, the numeric lanes included.
+    if (out.flow != null) {
+        if (out.flow.pinned != 0) return false;
+        self.flow_materialize();
+    }
+    TemplateEmitter* e = &out.e;
+    int r0        = jit::reg_r(0);
+    int r1        = jit::reg_r(1);
+    int r2        = jit::reg_r(2);
+    int imm       = jit::SLJIT_IMM;
+    int mem       = jit::SLJIT_MEM;
+    Activation layout;
+    for (uint j = 0; j < cf.num_regs && j < LOOP_REGS; j++) if (self.plan.cache[j] != 0) {
+        e.mov(mem | jit::reg_s(0), loop_value_offset(j), self.plan.cache[j], 0);
+    }
+    e.mov(r0, 0, jit::reg_s(1), 0);
+    e.mov(r1, 0, mem | jit::reg_s(1), function_cold_offset(1));
+    e.mov(r1, 0, mem | r1, (char*)&layout.bottom - (char*)&layout);
+    e.mov(r2, 0, imm, (long)(self.plan.begin + pc));
+    if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW,
+                              jit::SLJIT_IMM, (long)&sljit_native_call) != 0) return false;
+    // The call clobbered every scratch register, so the cache comes back from
+    // the register file on both paths: an exit stub flushes the cache again,
+    // and it must write the values the slots already hold. The callee's frame
+    // may also have moved the value stack, so the base is re-read first.
+    e.mov(jit::reg_s(0), 0, mem | jit::reg_s(1), function_cold_offset(1));
+    e.mov(jit::reg_s(0), 0, mem | jit::reg_s(0), (char*)&layout.bottom - (char*)&layout);
+    for (uint j = 0; j < cf.num_regs && j < LOOP_REGS; j++) if (self.plan.cache[j] != 0) {
+        e.mov(self.plan.cache[j], 0, mem | jit::reg_s(0), loop_value_offset(j));
+    }
+    // Zero leaves the call to the interpreter, as the tier's own exit does.
+    out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
+    return true;
+}
+
 fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act) @feat(SLJIT) {
     LoopPlan layout_plan;
     layout_plan.cache = plan.cache;
@@ -1197,7 +1280,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         ) < 0 && !function_parseint_candidate(
             cf,
             i
-        ) && !function_call_inlineable(cf, i, h)) || target >= 0) && i + 1 < cf.code_count) f.blocks[i + 1] = true;
+        ) && !function_call_inlineable(cf, i, h) && !function_native_call(cf, i, plan)) || target >= 0)
+            && i + 1 < cf.code_count) f.blocks[i + 1] = true;
     }
     TemplateEmitter* e = &out.e;
     if (e.compiler == null) return false;
@@ -1240,7 +1324,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         ) || function_math_candidate(
             cf,
             pos
-        ) >= 0 || function_parseint_candidate(cf, pos) || function_call_inlineable(cf, pos, h);
+        ) >= 0 || function_parseint_candidate(cf, pos) || function_call_inlineable(cf, pos, h)
+            || function_native_call(cf, pos, plan);
         if ((ins.op == Opcode.GETCAP || ins.op == Opcode.PUTCAP || ins.op == Opcode.INC_VAR
             || ins.op == Opcode.DEC_VAR)
             && function_capture_index(

@@ -23,6 +23,7 @@ extern fn int sljit_shim_info(int key);
 extern fn usz sljit_shim_code_size(void* compiler);
 extern fn usz sljit_shim_label_addr(void* label);
 extern fn int sljit_emit_ijump(void* compiler, int type, int src, long sw);
+extern fn int sljit_emit_icall(void* compiler, int type, int arg_types, int src, long sw);
 
 const int SLJIT_IMM               = 0x7f;
 const int SLJIT_MEM               = 0x80;
@@ -54,6 +55,7 @@ const int SLJIT_SIG_GREATER_EQUAL = 7;
 const int SLJIT_SIG_GREATER       = 8;
 const int SLJIT_SIG_LESS_EQUAL    = 9;
 const int SLJIT_JUMP              = 36;
+const int SLJIT_CALL              = 38;
 const int SLJIT_ARGS2WWW          = 0x111;
 const int SLJIT_ARGS3WWW          = 0x1111;
 

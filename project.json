@@ -381,7 +381,20 @@
         "INTL",
         "INTL_FULL",
         "TEMPORAL",
-        "INTL_COLLATOR"
+        "INTL_COLLATOR",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
       ]
     },
     "test262_runner_asan": {

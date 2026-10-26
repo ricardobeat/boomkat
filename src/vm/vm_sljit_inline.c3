@@ -363,6 +363,7 @@ fn void FunctionEmitter.inline_call(&self, CompiledFunction* cf, uint pc, Heap* 
     CompiledFunction* target = function_inline_candidate(cf, pc, h);
     if (target == null) {
         if (self.inline_general(cf, pc, h)) return;
+        if (self.native_call(cf, pc)) return;
         $if $feat(SLJIT_STATS):
         {
             TemplateEmitter* se = &self.out.e;
