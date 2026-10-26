@@ -6,6 +6,8 @@ import pathlib
 import re
 import sys
 
+import changelog
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 VERSION_FILE = ROOT / "VERSION"
 CLI_FILE = ROOT / "cli" / "boomkat.c3"
@@ -27,6 +29,7 @@ def check(tag: str | None) -> None:
         raise ValueError("bk_version in src/capi.c3 must match VERSION")
     if tag is not None and tag != f"v{version}":
         raise ValueError(f"tag {tag!r} does not match committed VERSION ({version})")
+    changelog.section(version)
     print(f"release version: v{version}")
 
 

@@ -190,6 +190,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -203,9 +204,11 @@ jobs:
           cat staged/*/SHA256SUMS-*.txt > dist/SHA256SUMS.txt
           cd dist
           sha256sum -c SHA256SUMS.txt
+      - name: Extract release notes from CHANGELOG.md
+        run: python3 scripts/changelog.py show "$GITHUB_REF_NAME" > RELEASE_NOTES.md
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: RELEASE_NOTES.md
           files: dist/*

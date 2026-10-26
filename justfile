@@ -199,19 +199,20 @@ pack:
     bash {{justfile_directory()}}/scripts/pack_c3l.sh
     bash {{justfile_directory()}}/scripts/pack_c3l.sh --link
 
-# Bump VERSION, CLI_VERSION and bk_version() to <version>, check them, and create the annotated tag v<version> (does not push)
+# Roll CHANGELOG.md [Unreleased] into <version>, bump VERSION, CLI_VERSION and bk_version(), check them, and create the annotated tag v<version> (does not push)
 release version:
     #!/usr/bin/env bash
     set -euo pipefail
     cd {{justfile_directory()}}
     v='{{version}}'
     v="${v#v}"
+    python3 scripts/changelog.py roll "$v"
     printf '%s\n' "$v" > VERSION
     sed -i.bak -E "s/^(const String CLI_VERSION = \")[^\"]+(\";)/\1$v\2/" cli/boomkat.c3
     sed -i.bak -E "/fn char\* bk_version\(\)/,/^}/ s/return \"[^\"]+\";/return \"$v\";/" src/capi.c3
     rm -f cli/boomkat.c3.bak src/capi.c3.bak
     python3 scripts/check_release_version.py --tag "v$v"
-    git add VERSION cli/boomkat.c3 src/capi.c3
+    git add VERSION CHANGELOG.md cli/boomkat.c3 src/capi.c3
     git commit -m "Release v$v"
     git tag -a "v$v" -m "Boomkat v$v"
     echo "Tagged v$v. Push with: git push origin main v$v"
