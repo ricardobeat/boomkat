@@ -447,6 +447,9 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
             defer self.restore_name_eval(nef);
             self.has_inferred_name = true;
             self.inferred_name = name;
+            if (kind == ScopeKind.VAR && with_base == REG_NONE && tree.tags.data[init] == NodeTag.COND) {
+                self.cond_dest = reg;
+            }
             Val v = self.gen_expr(init, 0)!;
             self.gen_line_end(init);
             if (is_using) {
@@ -460,7 +463,7 @@ fn void? CompilerContext.gen_var_decl(&self, uint n) {
                 }
             }
             if (v.reg != reg) self.emit_abc(Opcode.LDREG, (uint)reg, (uint)v.reg, 0);
-            self.free_reg(v.reg);
+            self.free_val(v);
         } else if (!already_declared) {
             self.emit_abc(Opcode.LDUNDEF, (uint)reg, 0, 0);
         }
@@ -1597,26 +1600,34 @@ fn Val? CompilerContext.gen_logical(&self, uint n, TokenType tok, Val left) {
 fn Val? CompilerContext.gen_cond(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint rec = tree.rhs.data[n];
+    ushort dest = self.cond_dest;
+    self.cond_dest = REG_NONE;
     Val test = self.gen_expr(tree.lhs.data[n], 0)!;
     self.gen_line_main(n);
     self.has_inferred_name = false;
     self.inferred_name = {};
-    ushort result = self.alloc_reg();
+    // Each arm stores its value only once evaluated, so a destination the arms
+    // or the test read still holds its old value until then.
+    ushort result = dest != REG_NONE ? dest : self.alloc_reg();
     uint false_jump = self.emit_cond_jump(Opcode.IF_FALSE, (uint)test.reg);
     self.free_reg(test.reg);
-    Val yes = self.gen_expr(tree.field(rec, 0), 0)!;
-    self.gen_line_end(tree.field(rec, 0));
-    self.emit_abc(Opcode.LDREG, (uint)result, (uint)yes.reg, 0);
-    self.free_reg(yes.reg);
+    uint yes_node = tree.field(rec, 0);
+    if (dest != REG_NONE && tree.tags.data[yes_node] == NodeTag.COND) self.cond_dest = dest;
+    Val yes = self.gen_expr(yes_node, 0)!;
+    self.gen_line_end(yes_node);
+    if (yes.reg != result) self.emit_abc(Opcode.LDREG, (uint)result, (uint)yes.reg, 0);
+    self.free_val(yes);
     self.gen_line(tree.field(rec, 2));
     uint end_jump = self.emit_jump(Opcode.JUMP);
     self.patch_jump(false_jump);
-    Val no = self.gen_expr(tree.field(rec, 1), 0)!;
-    self.gen_line_end(tree.field(rec, 1));
-    self.emit_abc(Opcode.LDREG, (uint)result, (uint)no.reg, 0);
-    self.free_reg(no.reg);
+    uint no_node = tree.field(rec, 1);
+    if (dest != REG_NONE && tree.tags.data[no_node] == NodeTag.COND) self.cond_dest = dest;
+    Val no = self.gen_expr(no_node, 0)!;
+    self.gen_line_end(no_node);
+    if (no.reg != result) self.emit_abc(Opcode.LDREG, (uint)result, (uint)no.reg, 0);
+    self.free_val(no);
     self.patch_jump(end_jump);
-    return { result, false, 0 };
+    return dest != REG_NONE ? (Val){ result, true, result } : (Val){ result, false, 0 };
 }
 
 // ---- assignment and update of an identifier ----
@@ -1754,6 +1765,9 @@ fn Val? CompilerContext.gen_assign(&self, uint n, uint ctx) {
         compound_old_copied = true;
     }
 
+    if (is_assign && t.local && const_name == 0xFFFFFFFF && tree.tags.data[rhs_node] == NodeTag.COND) {
+        self.cond_dest = left;
+    }
     Val right = self.gen_expr(rhs_node, 0)!;
     self.gen_line_end(n);
 

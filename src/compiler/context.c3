@@ -390,6 +390,11 @@ struct CompilerContext {
     // when the next token is not a call (e.g. RPAREN closing the parens).
     bool inside_parens;
 
+    // The register the next conditional expression writes its result to, set
+    // by a store to a register-resident local so the arms need no copy.
+    // gen_cond takes it and resets it to REG_NONE.
+    ushort cond_dest;
+
     // When true, emit_private_access skips CHK_BRAND. emit_deferred_target sets it for private
     // field targets in destructuring assignment (ECMA-262 DestructuringAssignmentEvaluation):
     // the target is evaluated before GetV(value, key), but the brand check must run only after
@@ -820,6 +825,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.scope_overflow = false;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
+    self.cond_dest = REG_NONE;
     self.method_callee = 0;
     self.deferred_brand_reg_hint = 0xFFFF;
     self.super_name_idx = 0xFFFFFFFF;

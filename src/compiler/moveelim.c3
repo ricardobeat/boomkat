@@ -735,17 +735,13 @@ fn void run_move_elimination(Instruction* code, uint code_count, bool* jump_targ
 
         bool accum = moveelim_accum_safe(pop);
 
-        // The producer slot must not be a jump target: a jump landing
-        // directly on the producer bypasses whatever came before it, so the
-        // producer may be shared by more than one logical path (e.g. this
-        // LDREG's textual predecessor AND a separate jump-in entry point
-        // that reaches the producer for an unrelated purpose). Retargeting
-        // it to rDst would silently change every such path.
-        //
-        // Accumulate ops are exempt: `s = s + 1` at a loop entry is a jump
-        // target, but every path to the producer falls through to this LDREG,
-        // and backward liveness covers the back-edges into the producer.
-        if (!accum && jump_targets[i]) { continue; }
+        // Every path into the LDREG must pass through the producer, so no
+        // jump may land between them. A jump onto the producer itself is
+        // fine: it still falls through to the LDREG, as when an arm of a
+        // conditional expression starts with it.
+        bool entered_between = false;
+        for (uint s = i + 1; s <= k; s++) entered_between = entered_between || jump_targets[s];
+        if (entered_between) { continue; }
 
         // Retargeting a producer that reads rDst is only safe for accumulate ops
         // (`A = A op B`), which read their operands before writing A.
