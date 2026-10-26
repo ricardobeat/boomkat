@@ -1740,10 +1740,10 @@ macro long th_int32_op(Opcode op, int x, int y) @private {
     }
 }
 
-// A WIDE-prefixed register move, integer load, or fastint arithmetic or
-// bitwise operation; th_wide_test takes truth tests and comparisons. Anything
-// else, and any operand these cannot take, runs in the switch from the
-// prefix word.
+// A WIDE-prefixed register move, capture read, integer load, or fastint
+// arithmetic or bitwise operation; th_wide_test takes truth tests and
+// comparisons. Anything else, and any operand these cannot take, runs in the
+// switch from the prefix word.
 fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction ext = pc[0];
     Instruction insn = pc[1];
@@ -1755,6 +1755,9 @@ fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     switch (insn.op) {
         case Opcode.LDREG:
             if (!th_move(regs, a, *rb, cold)) return pc;
+            return th_next(pc + 2, handlers, regs, cold);
+        case Opcode.GETCAP:
+            if (!th_read_capture(regs, a, th_wide_bc(ext, insn), cold)) return pc;
             return th_next(pc + 2, handlers, regs, cold);
         case Opcode.LDINT:
             result = th_wide_sbc(ext, insn);
@@ -1781,9 +1784,13 @@ fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     return th_next(pc + 2, handlers, regs, cold);
 }
 
-// The signed BC operand of an A-BC payload, whose prefix carries BC bits 16-31.
+// The BC operand of an A-BC payload, whose prefix carries BC bits 16-31.
+macro uint th_wide_bc(Instruction ext, Instruction insn) @private {
+    return insn.get_bc() | ((uint)ext.b << 16) | ((uint)ext.c << 24);
+}
+
 macro int th_wide_sbc(Instruction ext, Instruction insn) @private {
-    return (int)(insn.get_bc() | ((uint)ext.b << 16) | ((uint)ext.c << 24)) - (int)bytecode::BC_BIAS;
+    return (int)th_wide_bc(ext, insn) - (int)bytecode::BC_BIAS;
 }
 
 fn Instruction* th_wide_test(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @noinline @private {
@@ -2227,23 +2234,20 @@ fn Instruction* th_dec_global(Instruction* pc, HandlerTable* handlers, TVal* reg
 
 // --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
 
-fn Instruction* th_getcap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    uint index = pc.get_bc();
+// Read capture `index` of the running closure into register `a`. False when
+// the read needs the switch.
+macro bool th_read_capture(TVal* regs, uint a, uint index, ColdCtx* cold) @private {
     if (cold.capture_refs == null) {
         cold.capture_refs = capture_refs_of(cold.act, &cold.capture_count);
-        if (cold.capture_refs == null) return pc;
+        if (cold.capture_refs == null) return false;
     }
-    if (index >= cold.capture_count) return pc;
+    if (index >= cold.capture_count) return false;
     hobject::PropValue* slot = capture_read_slot(&cold.capture_refs[index]);
-    if (slot == null) return pc;
-    TVal value = slot.get();
-    TVal* dst = regs + pc.a;
-    if (!th_can_publish(cold.heap, value)
-        || !th_can_release(dst)) return pc;
-    th_do_retain(&value);
-    th_do_release(dst);
-    *dst = value;
-    track_heap_store(cold.act, dst, (uint)pc.a);
+    return slot != null && th_move(regs, a, slot.get(), cold);
+}
+
+fn Instruction* th_getcap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    if (!th_read_capture(regs, pc.a, pc.get_bc(), cold)) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
 

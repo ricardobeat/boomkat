@@ -44,5 +44,19 @@ var expect = (function () {
 })();
 for (var r = 0; r < 3; r++) eq(f(), expect, 'wide operands, run ' + r);
 
+// Captured outer variables read and written from a wide function.
+var outer = new Function(
+    'var heap = [3, 5, 7], total = 0, label = "x";\n' +
+    'function inner(k) { var ' + decls.join(', ') + ';\n' +
+    '    var t = heap[k % 3] + v299; total = total + t; label = label + k;\n' +
+    '    return t; }\n' +
+    'for (var k = 0; k < 600; k++) inner(k);\n' +
+    'return total + ":" + label.length;');
+var want = 0;
+for (var k = 0; k < 600; k++) want += [3, 5, 7][k % 3] + 299;
+var labelLength = 1;
+for (var k = 0; k < 600; k++) labelLength += String(k).length;
+for (var r = 0; r < 2; r++) eq(outer(), want + ':' + labelLength, 'wide closure captures, run ' + r);
+
 print('wide_register_ops: ' + pass + ' passed, ' + fail + ' failed');
 if (fail > 0) { print('SOME TESTS FAILED'); throw new Error('FAIL'); }

@@ -9,7 +9,7 @@ import boomkat::ast;
 // A name declared anywhere in this function stays conservative until lexical
 // reference identities are carried through those transformations.
 fn void CompilerContext.collect_capture_candidates(&self, CompiledFunction* func) {
-    if (self.disable_optimize || self.has_wide || self.has_direct_eval
+    if (self.disable_optimize || self.has_direct_eval
         || self.has_with_stmt || self.outer_with || self.is_global
         || self.is_generator || self.is_async || self.uses_arguments) return;
     Heap* h = (Heap*)self.heap;
@@ -17,10 +17,8 @@ fn void CompilerContext.collect_capture_candidates(&self, CompiledFunction* func
     if (names == null) return;
     uint count = 0;
     for (uint pc = 0; pc < func.code_count; pc++) {
-        Instruction ins = func.code[pc];
-        if (ins.op != Opcode.GETVAR && ins.op != Opcode.PUTVAR_ASSIGN
-            && ins.op != Opcode.PUTVAR_SNAP) continue;
-        uint name = ins.op == Opcode.PUTVAR_SNAP ? ins.c : ins.get_bc();
+        uint name;
+        if (!capture_name_operand(func.code, pc, &name)) continue;
         if (name >= func.const_count || !func.constants[name].is_string()) continue;
         bool local = false;
         for (sz bi = 0; bi < self.bindings.len(); bi++) {
@@ -39,6 +37,19 @@ fn void CompilerContext.collect_capture_candidates(&self, CompiledFunction* func
     }
     func.capture_names = names;
     func.capture_count = count;
+}
+
+// The name a GETVAR, PUTVAR_ASSIGN or PUTVAR_SNAP at `pc` reads or writes,
+// with any WIDE prefix bits. A prefixed PUTVAR_SNAP keeps its name lookup.
+fn bool capture_name_operand(Instruction* code, uint pc, uint* name) {
+    Opcode op = code[pc].op;
+    if (op == Opcode.GETVAR || op == Opcode.PUTVAR_ASSIGN) {
+        *name = bytecode::code_bc(code, pc);
+        return true;
+    }
+    if (op != Opcode.PUTVAR_SNAP || (pc > 0 && code[pc - 1].op == Opcode.WIDE)) return false;
+    *name = code[pc].c;
+    return true;
 }
 
 // Only declarations visible at the closure definition can resolve a candidate.
@@ -68,13 +79,15 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
         if (!found) continue;
         for (uint pc = 0; pc < child.code_count; pc++) {
             Instruction* ins = &child.code[pc];
-            uint operand_name = ins.op == Opcode.PUTVAR_SNAP ? ins.c : ins.get_bc();
-            if (operand_name != name) continue;
-            if (ins.op == Opcode.GETVAR) {
-                *ins = bytecode::make_a_bc(Opcode.GETCAP, ins.get_a(), count);
-            } else if (ins.op == Opcode.PUTVAR_ASSIGN) {
-                *ins = bytecode::make_a_bc(Opcode.PUTCAP, ins.get_a(), count);
-            } else if (ins.op == Opcode.PUTVAR_SNAP && count <= 255) {
+            uint operand_name;
+            if (!capture_name_operand(child.code, pc, &operand_name) || operand_name != name) continue;
+            // A prefix word carries BC's high bits; an unprefixed BC holds 16.
+            bool prefixed = pc > 0 && child.code[pc - 1].op == Opcode.WIDE;
+            if (ins.op == Opcode.GETVAR || ins.op == Opcode.PUTVAR_ASSIGN) {
+                if (!prefixed && count > 0xFFFF) continue;
+                ins.op = ins.op == Opcode.GETVAR ? Opcode.GETCAP : Opcode.PUTCAP;
+                bytecode::set_code_bc(child.code, pc, count);
+            } else if (count <= 255) {
                 *ins = bytecode::make_abc(Opcode.PUTCAP_SNAP, ins.a, ins.b, (char)count);
             }
         }
@@ -104,9 +117,10 @@ fn void restore_dynamic_capture_names(CompiledFunction* func) {
     for (uint pc = 0; pc < func.code_count; pc++) {
         Instruction* ins = &func.code[pc];
         if (ins.op == Opcode.GETCAP || ins.op == Opcode.PUTCAP) {
-            if (func.capture_cells != null && func.capture_cells[ins.get_bc()] != 0) continue;
-            Opcode generic = ins.op == Opcode.GETCAP ? Opcode.GETVAR : Opcode.PUTVAR_ASSIGN;
-            *ins = bytecode::make_a_bc(generic, ins.get_a(), func.capture_names[ins.get_bc()]);
+            uint index = bytecode::code_bc(func.code, pc);
+            if (func.capture_cells != null && func.capture_cells[index] != 0) continue;
+            ins.op = ins.op == Opcode.GETCAP ? Opcode.GETVAR : Opcode.PUTVAR_ASSIGN;
+            bytecode::set_code_bc(func.code, pc, func.capture_names[index]);
         } else if (ins.op == Opcode.PUTCAP_SNAP) {
             if (func.capture_cells != null && func.capture_cells[ins.c] != 0) continue;
             *ins = bytecode::make_abc(Opcode.PUTVAR_SNAP, ins.a, ins.b, (char)func.capture_names[ins.c]);
