@@ -47,55 +47,61 @@ const TAInfo[12] TA_INFO = {
 };
 
 // ============================================================================
-// IEEE 754 half-precision (binary16) conversion, ported from QuickJS cutils.h
-// (fromfp16/tofp16). Round-to-nearest-even; NaN/Inf/subnormal preserving.
-// Used by Float16Array element load/store, Math.f16round and DataView
-// getFloat16/setFloat16. Do NOT replace with a truncating (float)cast.
+// IEEE 754 binary16 conversion for Float16Array elements, Math.f16round and
+// DataView get/setFloat16. Narrowing rounds to nearest, ties to even; a plain
+// (float) cast would round twice and is not a substitute.
 // ============================================================================
 
-// binary16 bit pattern -> double (exact; half is a subset of double).
-fn double f16_to_double(ushort v) {
-    uint v1 = (uint)v & 0x7fff;
-    if (v1 >= 0x7c00) v1 += 0x1f8000; // NaN or infinity
-    ulong bits = ((ulong)((uint)v >> 15) << 63) | ((ulong)v1 << (52 - 10));
-    double d;
-    mem::copy(&d, &bits, (sz)(8));
-    return d * 0x1p1008;
+const ulong F64_SIGN     = 0x8000000000000000;
+const ulong F64_INF      = 0x7ff0000000000000;
+const ulong F64_QUIET    = 0x0008000000000000;
+const ulong F64_MIN_F16_NORMAL    = 0x3f10000000000000; // 2^-14
+const ulong F64_HALF_MIN_F16_SUB  = 0x3e60000000000000; // 2^-25
+const ulong F64_REBIAS   = (ulong)(1023 - 15) << 52;    // exponent bias gap
+const int   MANT_GAP     = 52 - 10;                     // mantissa width gap
+const ushort F16_INF     = 0x7c00;
+const ushort F16_NAN     = 0x7c01;
+
+// Shifts `x` right by `shift` bits, rounding to nearest with ties to even.
+fn ulong shift_right_round_even(ulong x, int shift) @inline {
+    ulong below_half = ((ulong)1 << (shift - 1)) - 1;
+    return (x + below_half + ((x >> shift) & 1)) >> shift;
 }
 
-// double -> binary16 bit pattern, round-to-nearest-even (§ NumberToRawBytes).
-fn ushort double_to_f16(double d) {
-    ulong a;
-    mem::copy(&a, &d, (sz)(8));
-    uint sgn = (uint)(a >> 63);
-    a = a & 0x7fffffffffffffff;
-    uint v;
-    if (a > 0x7ff0000000000000) {
-        // NaN
-        v = 0x7c01;
-    } else if (a < 0x3f10000000000000) { // 0x1p-14
-        // subnormal f16 number or zero
-        if (a < 0x3e60000000000000) { // 0x1p-25
-            // Strictly less: 0x1p-25 itself is the tie between zero and the
-            // smallest subnormal, and anything above it rounds up to that
-            // subnormal, so both must reach the round-to-nearest-even path.
-            v = 0x0000; // zero
-        } else {
-            int shift = 1051 - (int)(a >> 52);
-            a = ((ulong)1 << 52) | (a & (((ulong)1 << 52) - 1));
-            ulong addend = ((a >> shift) & 1) + (((ulong)1 << (shift - 1)) - 1);
-            v = (uint)((a + addend) >> shift);
-        }
-    } else {
-        // normal number or infinity
-        a -= 0x3f00000000000000; // adjust the exponent
-        // round
-        ulong addend = ((a >> (52 - 10)) & 1) + (((ulong)1 << (52 - 11)) - 1);
-        v = (uint)((a + addend) >> (52 - 10));
-        // overflow ?
-        if (v > 0x7c00) v = 0x7c00;
+// Widens a binary16 bit pattern to a double; exact for every finite value.
+fn double f16_to_double(ushort h) {
+    ulong sign = (ulong)(h & 0x8000) << 48;
+    ulong body = (ulong)(h & 0x7fff) << MANT_GAP;
+    if ((h & F16_INF) == F16_INF) {
+        // Infinity, or NaN with its payload kept and the quiet bit set.
+        ulong quiet = (h & 0x3ff) != 0 ? F64_QUIET : 0;
+        return bitcast(sign | F64_INF | body | quiet, double);
     }
-    return (ushort)(v | (sgn << 15));
+    // Exponent and mantissa land in place; scaling by 2^(1023-15) fixes the
+    // bias and normalizes subnormals in one exact multiply.
+    return bitcast(sign | body, double) * 0x1p1008;
+}
+
+// Narrows a double to a binary16 bit pattern, rounding to nearest-even.
+// Every NaN becomes 0x7c01 with the input's sign; overflow gives infinity.
+fn ushort double_to_f16(double d) {
+    ulong bits = bitcast(d, ulong);
+    ushort sign = (ushort)(bits >> 48) & 0x8000;
+    ulong mag = bits & ~F64_SIGN;
+    if (mag > F64_INF) return sign | F16_NAN;
+    if (mag >= F64_MIN_F16_NORMAL) {
+        // Rebias the exponent and round off the low mantissa bits; a carry
+        // out of the mantissa bumps the exponent, possibly to infinity.
+        ulong h = shift_right_round_even(mag - F64_REBIAS, MANT_GAP);
+        return sign | (ushort)min(h, (ulong)F16_INF);
+    }
+    // 2^-25 is the tie between zero and the smallest subnormal, so it and
+    // everything above it go through rounding.
+    if (mag < F64_HALF_MIN_F16_SUB) return sign;
+    // Subnormal: restore the implicit bit and shift so 2^-24 lands at bit 0.
+    int shift = 1051 - (int)(mag >> 52);
+    ulong mant = (mag & (((ulong)1 << 52) - 1)) | ((ulong)1 << 52);
+    return sign | (ushort)shift_right_round_even(mant, shift);
 }
 
 // True iff `cls` is any of the TypedArray element kinds.
@@ -389,7 +395,7 @@ fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
 }
 
 // ES2022 §7.1.11 ToUint8Clamp, NaN -> 0, clamp to [0,255], banker's
-// rounding (round half to even) on ties. Matches QuickJS JS_ToUint8ClampFree.
+// rounding (round half to even) on ties.
 fn char ta_to_uint8_clamped(double d) {
     if (d != d) return 0; // NaN
     if (d <= 0.0) return 0;
@@ -1284,8 +1290,8 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
     // the offset (step 5, below), because the offset's valueOf runs first and
     // may itself throw, or detach the buffer. Calling ta_validate here reported
     // that detached buffer before the offset was ever coerced, so a throwing
-    // valueOf never ran. QuickJS orders it the same way: js_typed_array_set
-    // skips validate_typed_array, unlike the iterator methods beside it.
+    // valueOf never ran. Unlike the iterator methods beside it, set skips
+    // validate_typed_array, so the buffer check happens only after coercion.
     HObject* dst = ta_this_receiver(ctx);
     if (dst == null) {
         arraybuffer_throw_type_error(ctx, "TypedArray method called on incompatible receiver");
@@ -3805,115 +3811,122 @@ struct B64DecodeResult {
     bool err;
 }
 
-// FromBase64 abstract operation (proposal-arraybuffer-base64). Decodes the
-// codepoint-indexed string `src` (length `src_len` in codepoints, equal to
-// UTF-16 units for the ASCII prefix that any valid input consists of) into
-// `dst` (capacity `max_len`). Faithful port of quickjs's from_base64.
+// Index of the first non-whitespace codepoint at or after `pos`.
+fn uint b64_skip_ws(HString* s, uint pos, uint len, char alphabet) @inline {
+    while (pos < len && b64_decode_char(s.char_at_unchecked(pos), alphabet) == B64_K_WS) pos++;
+    return pos;
+}
+
+// Left-align a group of `count` sextets in a 24-bit word. Its top count - 1
+// bytes are the decoded payload.
+macro uint b64_group_word(uint bits, int count) => bits << (6 * (4 - count));
+
+// Payload-free low bits of a short group; strict mode requires them to be zero.
+fn uint b64_spare_bits(uint bits, int count) @inline {
+    return b64_group_word(bits, count) & (0xFFFFFFu >> (8 * (count - 1)));
+}
+
+// Append the count - 1 bytes decoded from a group of `count` sextets.
+fn void b64_emit_partial(char* dst, uint* out, uint bits, int count) @inline {
+    uint word = b64_group_word(bits, count);
+    for (int k = 0; k < count - 1; k++) dst[(*out)++] = (char)(word >> (16 - 8 * k));
+}
+
+// FromBase64 (ECMAScript, Uint8Array.fromBase64). Decodes the codepoints of
+// `src` into `dst`, which holds `max_len` bytes. `read` counts the codepoints
+// consumed up to the end of the last group that was written; it is the whole
+// input when decoding reaches the end. On error, `dst` keeps whatever full
+// groups were written before the bad character.
 fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_len,
                                char alphabet, char last_chunk) {
-    B64DecodeResult r;
-    r.read = 0; r.written = 0; r.err = false;
+    B64DecodeResult res;
+    if (max_len == 0) return res;
 
-    uint read = 0;
-    uint written = 0;
-    uint acc = 0;
-    int seen = 0;
-    uint index = 0;
+    uint pos = 0;
+    uint out = 0;
+    uint bits = 0;  // sextets of the group being collected
+    int count = 0;  // number of sextets in `bits`
 
-    if (max_len == 0) { r.read = 0; r.written = 0; return r; }
-
-    for (;;) {
-        if (seen == 0) {
-            // Fast path: decode complete groups of 4 valid characters.
-            while (index + 4 <= src_len && written + 3 <= max_len) {
-                char v0 = b64_decode_char(src.char_at_unchecked(index), alphabet);
-                char v1 = b64_decode_char(src.char_at_unchecked(index + 1), alphabet);
-                char v2 = b64_decode_char(src.char_at_unchecked(index + 2), alphabet);
-                char v3 = b64_decode_char(src.char_at_unchecked(index + 3), alphabet);
-                if ((v0 | v1 | v2 | v3) >= 64) break;
-                uint v = ((uint)v0 << 18) | ((uint)v1 << 12) | ((uint)v2 << 6) | (uint)v3;
-                dst[written]     = (char)(v >> 16);
-                dst[written + 1] = (char)(v >> 8);
-                dst[written + 2] = (char)v;
-                written += 3;
-                index += 4;
+    while (true) {
+        if (count == 0) {
+            // Bulk loop: four alphabet characters in a row make three bytes.
+            while (pos + 4 <= src_len && out + 3 <= max_len) {
+                char a = b64_decode_char(src.char_at_unchecked(pos), alphabet);
+                char b = b64_decode_char(src.char_at_unchecked(pos + 1), alphabet);
+                char c = b64_decode_char(src.char_at_unchecked(pos + 2), alphabet);
+                char d = b64_decode_char(src.char_at_unchecked(pos + 3), alphabet);
+                if ((a | b | c | d) >= 64) break;
+                uint word = ((uint)a << 18) | ((uint)b << 12) | ((uint)c << 6) | (uint)d;
+                dst[out] = (char)(word >> 16);
+                dst[out + 1] = (char)(word >> 8);
+                dst[out + 2] = (char)word;
+                out += 3;
+                pos += 4;
             }
-            read = index;
-            if (written >= max_len) { r.read = read; r.written = written; return r; }
+            res.read = pos;
+            if (out == max_len) break;
         }
 
-        // Slow path: whitespace, padding, partial groups, capacity.
-        while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
-
-        if (index == src_len) {
-            if (seen > 0) {
-                if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) { r.read = read; r.written = written; return r; }
-                if (last_chunk == B64_LAST_STRICT) { r.err = true; return r; }
-                // loose
-                if (seen == 1) { r.err = true; return r; }
+        pos = b64_skip_ws(src, pos, src_len, alphabet);
+        if (pos == src_len) {
+            if (count == 0) {
+                res.read = src_len;
                 break;
             }
-            r.read = src_len; r.written = written; return r;
-        }
-
-        uint ch = src.char_at_unchecked(index++);
-
-        if (ch == '=') {
-            if (seen < 2) { r.err = true; return r; }
-            while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
-            if (seen == 2) {
-                if (index == src_len) {
-                    if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) { r.read = read; r.written = written; return r; }
-                    r.err = true; return r;
-                }
-                if (src.char_at_unchecked(index) == '=') {
-                    index++;
-                    while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
-                } else {
-                    r.err = true; return r;
-                }
-            }
-            // After padding, only whitespace is allowed.
-            if (index != src_len) { r.err = true; return r; }
-            if (last_chunk == B64_LAST_STRICT) {
-                uint mask = (seen == 2) ? 0xF : 0x3;
-                if (acc & mask) { r.err = true; return r; }
+            switch (last_chunk) {
+                case B64_LAST_STOP_BEFORE_PARTIAL:
+                    break;
+                case B64_LAST_STRICT:
+                    return { .err = true };
+                default:
+                    if (count == 1) return { .err = true };
+                    b64_emit_partial(dst, &out, bits, count);
+                    res.read = src_len;
             }
             break;
         }
 
-        char v = b64_decode_char(ch, alphabet);
-        if (v >= 64) { r.err = true; return r; }
-
-        // Check remaining capacity before committing to this group.
-        uint remaining = max_len - written;
-        if ((remaining == 1 && seen == 2) || (remaining == 2 && seen == 3)) {
-            r.read = read; r.written = written; return r;
+        uint cp = src.char_at_unchecked(pos++);
+        if (cp == '=') {
+            // Padding ends the input: "xx==" or "xxx=", with whitespace
+            // allowed anywhere around the pad characters.
+            if (count < 2) return { .err = true };
+            pos = b64_skip_ws(src, pos, src_len, alphabet);
+            if (count == 2) {
+                if (pos == src_len) {
+                    if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) break;
+                    return { .err = true };
+                }
+                if (src.char_at_unchecked(pos) != '=') return { .err = true };
+                pos = b64_skip_ws(src, pos + 1, src_len, alphabet);
+            }
+            if (pos != src_len) return { .err = true };
+            if (last_chunk == B64_LAST_STRICT && b64_spare_bits(bits, count) != 0) {
+                return { .err = true };
+            }
+            b64_emit_partial(dst, &out, bits, count);
+            res.read = src_len;
+            break;
         }
 
-        acc = (acc << 6) | (uint)v;
-        seen++;
+        char v = b64_decode_char(cp, alphabet);
+        if (v >= 64) return { .err = true };
 
-        if (seen == 4) {
-            dst[written]     = (char)(acc >> 16);
-            dst[written + 1] = (char)(acc >> 8);
-            dst[written + 2] = (char)acc;
-            written += 3;
-            acc = 0;
-            seen = 0;
-            read = index;
-            if (written >= max_len) { r.read = read; r.written = written; return r; }
+        // A group of n sextets yields n - 1 bytes; stop before taking a
+        // sextet whose group could not fit in the remaining space.
+        if (count >= 2 && max_len - out == (uint)(count - 1)) break;
+
+        bits = (bits << 6) | v;
+        if (++count == 4) {
+            b64_emit_partial(dst, &out, bits, 4);
+            bits = 0;
+            count = 0;
+            res.read = pos;
+            if (out == max_len) break;
         }
     }
-
-    if (seen == 2) {
-        dst[written++] = (char)(acc >> 4);
-    } else if (seen == 3) {
-        dst[written]     = (char)(acc >> 10);
-        dst[written + 1] = (char)(acc >> 2);
-        written += 2;
-    }
-    r.read = src_len; r.written = written; return r;
+    res.written = out;
+    return res;
 }
 
 // FromHex abstract operation. Decodes hex pairs from `src` into `dst`
