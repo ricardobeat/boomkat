@@ -267,3 +267,32 @@ shape changes.
 4. Native builtin calls (`Array.prototype.push`) are still interpreter
    work at every `add`; a direct call form would remove the interpreter
    round trip from the `todo.add(...)` sites.
+
+## 11. Object-valued stores, and what they did not fix
+
+The property emitter now stores a traced object when no write barrier is
+required: the collector is not marking, and either the owner is young or the
+value being stored is already old. Strings stay with the interpreter because
+only they are reference counted. This removed richards' `schedule` exit at
+`this.currentTcb = this.currentTcb.link`, so that region now runs from the
+loop head to the `run()` call.
+
+It did not move the timings, and profiling explains why. The three minis
+spend their time in native builtin calls, not in reference stores:
+deltablue's `addPropagate` exits at `todo.removeFirst()`, whose body is
+`this.elms.pop()`; the expanded `size()` in the loop condition is fine. A
+`pop`/`push` call is a full interpreter call inside an expanded body, and
+neither has a native form.
+
+Two other facts matter for what comes next:
+
+- The function tier compiles and enters a region, exits at the first
+  non-expandable call, and re-enters at the next block; the call itself is
+  the cost, so removing calls is the only thing that moves these minis.
+- A callee's own property cache is often cold, because the interpreter
+  never runs the callee once the call is expanded. An inlined body then
+  emits an exit at the call site for its first property access. Borrowing
+  the call site's receiver shape was tried and did not help: the hot
+  accesses either live on a prototype or the call-site cache was cold too.
+  Plan recompilation on a warm cache, or the absent-append store form, is
+  the real answer.
