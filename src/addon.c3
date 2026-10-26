@@ -9,10 +9,10 @@
 // the whole contract is one struct, and adding a feature to the engine cannot
 // silently become part of the ABI.
 //
-// The design mirrors QuickJS's dlopen + js_init_module, with one addition that
-// matters for anything holding state: BkAddonApi.class_register takes a
-// gc_mark callback, so a payload can hold JS values safely. Without it an
-// add-on can only expose stateless functions.
+// The design loads a shared object with dlopen and calls one init entry
+// point, with one addition that matters for anything holding state:
+// BkAddonApi.class_register takes a gc_mark callback, so a payload can hold JS
+// values safely. Without it an add-on can only expose stateless functions.
 //
 // Loading is opt-in per Runtime (see bk_addon_enable_loading); a build that
 // never calls it links the loader but never opens anything.

@@ -11,7 +11,7 @@ import boomkat::hobject;
 import boomkat::env;
 
 // ECMA-262 §7.1.22 ToIndex, specialized to the [0, INT32_MAX] range this
-// engine caps buffer lengths at (mirrors QuickJS's int cap).
+// engine caps buffer lengths.
 // Returns false (and sets ctx.should_throw) on failure.
 fn bool arraybuffer_to_index(BuiltinContext* ctx, TVal* val, uint* out_len) {
     *out_len = 0;

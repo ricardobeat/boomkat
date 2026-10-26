@@ -554,7 +554,7 @@ fn void builtin_atomics_load(BuiltinContext* ctx) {
 }
 
 // Atomics.isLockFree(size). Returns whether an atomic op on a
-// value of the given byte size is lock-free. Per QuickJS: 1,2,4,8 are lock-free.
+// value of the given byte size is lock-free. Sizes 1, 2, 4 and 8 are lock-free.
 fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
     TVal size_arg; size_arg.set_undefined();
     if (ctx.argc >= 1) size_arg = ctx.regs[ctx.base_reg];

@@ -228,7 +228,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     // Convert integer part. Doubles beyond 2^53 no longer represent every
     // integer exactly, but the *radix expansion* of whatever double value we
     // do have is still computed exactly here via repeated float division,
-    // matching V8/QuickJS rather than saturating through a 64-bit cast.
+    // rather than saturating through a 64-bit cast.
     if (!append_double_int_radix(&out, int_part, (uint)radix)) {
         ctx.result_undefined();
         return;

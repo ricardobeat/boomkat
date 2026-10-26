@@ -1520,9 +1520,8 @@ fn bool register_function_constructor(EnvRecord* global_env, Heap* heap) {
             get_fn.flags.callable = true;
             get_fn.flags.constructable = false;
             heap.set_prototype(get_fn, heap.function_proto);
-            // Name per V8/SpiderMonkey convention. The exact name isn't
-            // asserted by the failing tests, but a real name makes
-            // toString output more readable.
+            // Give the getter a real name so toString output is readable.
+            // The exact name isn't asserted by the failing tests.
             // %ThrowTypeError% is anonymous: name is the empty string
             // (ES2017 §9.2.7, asserted by built-ins/ThrowTypeError/name.js).
             // length is defined first: built-ins/ThrowTypeError/property-order.js

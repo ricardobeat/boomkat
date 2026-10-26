@@ -1160,8 +1160,8 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // by undefined, because the key is no longer addressable on the
             // target.  Walk the pre-collected key list, advancing the index
             // past any key that no longer resolves.  Properties added during
-            // enumeration are not visited (we only walk the snapshot),
-            // matching QuickJS / Duktape.  Exotic-keyed targets (TypedArray,
+            // enumeration are not visited (we only walk the snapshot).
+            // Exotic-keyed targets (TypedArray,
             // String wrapper) and proxy targets get a dedicated existence
             // path inside `forin_key_still_exists` because their integer
             // indices are served by the exotic handler rather than the

@@ -723,9 +723,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // because the IC would have no way to detect modifications to
                             // intermediate objects in the prototype chain (e.g. when
                             // B.prototype.foo = ... is set, an IC that previously resolved
-                            // b.foo via A.prototype would return a stale value). This matches
-                            // the QuickJS approach where the shape itself encodes the proto
-                            // and lookups always walk the current chain. A live
+                            // b.foo via A.prototype would return a stale value). The shape
+                            // itself encodes the proto and lookups always walk the current
+                            // chain. A live
                             // mapped ARGUMENTS index never populates: the IC
                             // would snapshot the parameter's CURRENT value.
                             if (res.owner == hobj && res.owner != null && ds.ic_base != null) {

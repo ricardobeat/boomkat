@@ -234,7 +234,7 @@ enum ObjClass : char {
     WRAP_FOR_VALID_ITERATOR,
     // Internal GC cell for boxed accessor pairs (getter + setter).
     GETTER_SETTER,
-    // Temporal proposal (Stage 4, shipped in V8/Safari/JSC). One shared
+    // Temporal proposal (Stage 4). One shared
     // HObjectTemporal variant backs every Temporal class; obj_class
     // discriminates which internal slots are live. Runtime-registered host
     // classes preserve the limited ObjClass namespace; Temporal can use HOST

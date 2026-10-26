@@ -418,7 +418,7 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
         return vm.heap.int_to_hstring((long)val);
     }
 
-    // QuickJS js_dtoa in FREE mode emits the shortest round-trip decimal in ECMA-262
+    // The dtoa shortest-digit routine emits the shortest round-trip decimal in ECMA-262
     // Number::toString format. A truncate-and-retry loop cannot produce e.g.
     // "7.300000000000001" from "7.3000000000000007".
     char[64] buf;

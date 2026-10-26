@@ -126,8 +126,7 @@ fn double date_local_to_ms(long year, long month, long day,
 // Compute the local timezone offset (in seconds, UTC minus local) for the
 // given epoch time, i.e. how far local time is ahead of UTC. Reads
 // tm_gmtoff (exposed as TzDateTime.gmt_offset) directly off a single
-// localtime_r lookup at the UTC instant, the same single-call approach
-// as the reference engine's getTimezoneOffset. Earlier revisions
+// localtime_r lookup at the UTC instant. Earlier revisions
 // reinterpreted the local broken-down fields through the engine's own
 // civil-day math to get a second offset estimate; that round trip is
 // unstable for historical Local-Mean-Time offsets that aren't a whole

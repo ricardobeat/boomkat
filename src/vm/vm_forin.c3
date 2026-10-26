@@ -232,7 +232,7 @@ fn bool forin_mark_seen(Heap* h, ForInSeen* seen, HString* key) {
 // Exotic integer-indexed properties are not in the named-prop table or dense
 // part that `has_prop_proto` checks, so they get their own branch. Proxies
 // are skipped: their keys are virtual, and re-invoking [[HasProperty]] could
-// give inconsistent results (as Duktape's `check_existence` bypass does).
+// give inconsistent results.
 fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
     if (target == null || key == null) return false;
     if (target.is_proxy()) return true;

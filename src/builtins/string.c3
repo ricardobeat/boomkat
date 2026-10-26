@@ -1240,8 +1240,7 @@ fn void builtin_string_proto_toLocaleUpperCase(BuiltinContext* ctx) {
 // equivalent under Unicode NFC as identical (return 0). For example,
 // "o\u0308" (o + combining diaeresis) and "ö" (precomposed ö) must
 // compare equal even though their UTF-8 byte sequences differ. We
-// NFC-normalize both operands via libunicode (QuickJS's vendored
-// normalization tables) before the byte-level compare.
+// NFC-normalize both operands via libunicode before the byte-level compare.
 fn void builtin_string_proto_localeCompare(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     StringRef receiver = hstring::string_ref(s_hstr);
@@ -2918,7 +2917,7 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
 
 // String.prototype.normalize([form])
 //
-// Supports NFC, NFD, NFKC, NFKD via QuickJS's libunicode.
+// Supports NFC, NFD, NFKC and NFKD via libunicode.
 fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     StringRef receiver = hstring::string_ref(s_hstr);

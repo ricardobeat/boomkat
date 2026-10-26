@@ -23,7 +23,7 @@ const uint FNV1A_OFFSET_BASIS = 0x811C_9DC5;
 // FNV-1a 32-bit prime.
 const uint FNV1A_PRIME        = 0x0100_0193;
 
-// Maximum byte length of a single string (2^30 - 1, matching QuickJS's cap).
+// Maximum byte length of a single string (2^30 - 1).
 //
 // This is an implementation limit, not a data layout one. `blen` is a `uint`,
 // so an unbounded `a.blen + b.blen` would wrap and corrupt the heap; capping
@@ -107,7 +107,7 @@ bitstruct HStringFlags : uint {
     bool  is_arridx         : 8;
     // ECMA-262 Symbol value (internal or well-known).
     bool  is_symbol         : 9;
-    // Hidden Symbol (\xFF prefix, Duktape's scheme).
+    // Hidden Symbol (\xFF prefix).
     bool  is_hidden         : 10;
     // String data lives in an external buffer, not inline.
     bool  has_extdata       : 13;

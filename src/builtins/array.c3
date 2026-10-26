@@ -1593,8 +1593,8 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
     //   - no own array-index key was ever promoted into the named table on
     //     the receiver. Every write target here is >= the current length,
     //     and a promoted index is always < length (and disappears from the
-    //     named table entirely if length later shrinks past it, verified
-    //     against quickjs), so this can't be hit by construction, but the
+    //     named table entirely if length later shrinks past it), so this
+    //     can't be hit by construction, but the
     //     check is a free (O(1), sticky flag) second line of defense should
     //     that invariant ever have an exception this reasoning missed.
     //   - the target range stays under the same 2^24 cap the VM's PUTPROP
@@ -2973,8 +2973,7 @@ fn bool arr_from_is_callable(TVal v) {
 // already been recorded in ctx (ctx.should_throw/ctx.throw_value). Calls
 // iterator.return() if present, discarding *its* result but propagating a
 // throw from close itself would override the original completion per spec
-// step 5, however we keep the original completion (matching most engines'
-// pragmatic behavior for a non-throwing return()) since ctx already holds
+// step 5, however we keep the original completion since ctx already holds
 // the completion to propagate. If close() throws, the original completion
 // is preserved (spec step 5 says close()'s throw masks the original only
 // when the original was a normal completion, which is not this call site's

@@ -122,7 +122,7 @@ const int FORMAT_BUF = 32;
 const ulong NANBOX_PAYLOAD_MASK = 0x0000FFFFFFFFFFFF;  // bits 47-0
 
 // Tag values for NaN-boxed representation. These are full 16-bit values
-// stored in bits 63-48, matching Duktape's encoding. All doubles must
+// stored in bits 63-48. All doubles must
 // have bits 63-48 <= 0xFFF0 (achieved by NaN normalization in set_number).
 //
 // The tags that point into the heap or hold a collector reference are

@@ -1853,7 +1853,7 @@ fn int find_in_array_part(HObject* obj, TVal val, uint stride) {
 //
 // Map/Set/WeakMap/WeakSet keep entries in array_part, and scanning it on
 // every add, has, get and delete makes building a collection quadratic:
-// a linear scan of a 100k Set costs 24s against QuickJS's 9ms, over 90% of
+// a linear scan of a 100k Set costs 24s, over 90% of
 // it inside same_value_zero.
 //
 // The index stores 1-based array_part indices rather than a copy of each key,
@@ -2021,8 +2021,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                  ((HObject*)iter_fn.get_heapptr()).is_callable());
             if (!iter_callable) {
                 // ECMA-262 §7.4.1 GetIterator (sync): obj[@@iterator]() throws
-                // TypeError when @@iterator is missing. Newer specs add an
-                // array-like fallback, but V8/SpiderMonkey still throw here.
+                // TypeError when @@iterator is missing.
                 coll_throw(ctx, not_iterable_msg);
                 return;
             }
@@ -2654,7 +2653,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
 // ============================================================================
 
 // ToString(Number) per ECMA-262 §7.1.12.1, shortest round-trip decimal via
-// QuickJS js_dtoa (FREE mode), spec exponent format (1e+21, 1e-7).
+// spec exponent format (1e+21, 1e-7).
 fn HString* builtin_number_to_hstring(Heap* heap, double d) {
     if (math::is_nan(d)) return (HString*)heap.strs[heap::BuiltinStr.NAN_STR];
     if (math::is_inf(d)) {
@@ -4687,7 +4686,7 @@ fn bool register_abstract_module_source(Heap* heap) {
 // ============================================================================
 
 // The object's [[Call]]: returns null, as test262's $262.IsHTMLDDA contract
-// requires (and browser document.all() does).
+// requires.
 fn void builtin_html_dda_call(BuiltinContext* ctx) {
     ctx.result_null();
 }
