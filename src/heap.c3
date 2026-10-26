@@ -2001,7 +2001,10 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
         if (cf == null || cf.ic_entries == null) continue;
         hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
         for (uint i = 0; i < cf.ic_count; i++) {
-            if (!self.ic_names_live_shapes(&entries[i])) entries[i].shape_id = SHAPE_NONE;
+            if (!self.ic_names_live_shapes(&entries[i])) {
+                entries[i].shape_id = SHAPE_NONE;
+                entries[i].chain_len = 0;
+            }
         }
     }
     while (self.shape_retired_head != SHAPE_FREE_END) {
@@ -2019,8 +2022,10 @@ fn bool Heap.ic_names_live_shapes(&self, hobject::ICEntry* ic) @inline {
     if (ic.shape_id == SHAPE_NONE || ic.key.borrow() == null) return true;
     if (ic.shape_id >= self.shape_count || !self.shape_slot_live(ic.shape_id)) return false;
     if (ic.chain == null || ic.chain_len == hobject::IC_CHAIN_EPOCH) return true;
-    for (uint i = 0; i < (uint)ic.chain_len; i++) {
-        uint id = ic.chain.snapshot.shapes[i];
+    bool poly = ic.chain_len == hobject::IC_CHAIN_POLY;
+    uint count = poly ? ic.chain.poly.count : (uint)ic.chain_len;
+    for (uint i = 0; i < count; i++) {
+        uint id = poly ? ic.chain.poly.shapes[i] : ic.chain.snapshot.shapes[i];
         if (id >= self.shape_count || !self.shape_slot_live(id)) return false;
     }
     return true;

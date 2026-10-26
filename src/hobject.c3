@@ -3537,9 +3537,20 @@ struct ICChainEpoch {
     HObject* owner;
 }
 
+// Further receiver shapes of an own data read, the entry's own fields holding
+// the first. The site's key and the absence of an accessor are common to all.
+struct ICPolySet {
+    uint count;
+    uint[IC_POLY_MAX] shapes;
+    uint[IC_POLY_MAX] prop_idx;
+}
+
+const uint IC_POLY_MAX = 5;
+
 union ICChain {
     ICChainSnapshot snapshot;
     ICChainEpoch epoch;
+    ICPolySet poly;
 }
 
 $assert ICChain::size == ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
@@ -3578,6 +3589,41 @@ struct ICEntry {
 const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
 // An inherited ordinary read guarded by its first link and the mutation epoch.
 const char IC_CHAIN_EPOCH = 0xFF;
+// An own data read whose chain block holds an ICPolySet.
+const char IC_CHAIN_POLY = 0xFE;
+
+// The slot of `hobj`'s property in a polymorphic entry's set, or null. The
+// caller has matched the entry's key and applied the receiver checks of the
+// entry's own shape test.
+fn PropValue* ic_poly_slot(ICEntry* ic, HObject* hobj) @inline {
+    if (ic.chain_len != IC_CHAIN_POLY) return null;
+    ICPolySet* set = &ic.chain.poly;
+    for (uint i = 0; i < set.count; i++) {
+        if (set.shapes[i] == hobj.shape_id) return &hobj.prop_values()[set.prop_idx[i]];
+    }
+    return null;
+}
+
+// Record `prop_idx` as the own data slot of receivers with `shape_id` at a
+// site whose entry already caches an own data read for another shape. Returns
+// false, changing nothing, when the entry caches anything else, the set is
+// full, or its block cannot be allocated.
+fn bool ic_poly_add(ICEntry* ic, uint shape_id, uint prop_idx, heap::Heap* h) {
+    bool own_data = !ic.has_proto && !ic.prop_flags.is_accessor && ic.prop_idx != IC_PROP_ABSENT
+        && ic.prop_idx != IC_PROP_MISSING && ic.shape_id != heap::SHAPE_NONE;
+    if (!own_data || (ic.chain_len != 0 && ic.chain_len != IC_CHAIN_POLY)) return false;
+    if (ic.chain_len == 0) {
+        if (!ic_reserve_chain(ic, h)) return false;
+        ic.chain.poly.count = 0;
+        ic.chain_len = IC_CHAIN_POLY;
+    }
+    ICPolySet* set = &ic.chain.poly;
+    if (set.count == IC_POLY_MAX) return false;
+    set.shapes[set.count] = shape_id;
+    set.prop_idx[set.count] = prop_idx;
+    set.count++;
+    return true;
+}
 
 // Allocation failure leaves the previous cache entry untouched.
 fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {

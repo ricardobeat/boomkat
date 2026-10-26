@@ -2540,7 +2540,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     }
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() != key || ic.shape_id != hobj.shape_id) {
-        return th_get_shared(pc, handlers, regs, cold, hobj, key);
+        return th_get_other_shape(pc, handlers, regs, cold, hobj, key);
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) {
@@ -2636,7 +2636,7 @@ fn Instruction* th_get_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     Vm* vm = cold.vm;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.shape_id != hobj.shape_id) {
-        return th_get_shared(pc, handlers, regs, cold, hobj, ic.key.borrow());
+        return th_get_other_shape(pc, handlers, regs, cold, hobj, ic.key.borrow());
     }
     hobject::PropValue* ic_value = hobject::ic_resolve_value(ic, hobj);
     if (ic_value == null) {
@@ -2658,26 +2658,70 @@ fn Instruction* th_get_missing(Instruction* pc, HandlerTable* handlers, TVal* re
     return th_publish_read(pc, handlers, regs, cold, missing);
 }
 
-// A read whose site cache holds another shape: the heap's megamorphic cache,
-// which the switch's lookups fill, may still answer it with a data property.
-// An own property also moves the site's entry to the receiver's shape, the
-// refill the switch would make, so a site whose objects changed shape for good
-// returns to the site cache.
+// A read whose receiver shape differs from the entry's: the entry's
+// polymorphic set answers it, or the megamorphic cache does. Out of line so the
+// handlers' hit path stays as short as a monomorphic site needs.
+fn Instruction* th_get_other_shape(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                                   HObject* hobj, void* key) @private @noinline {
+    hobject::ICEntry* ic = th_ic_at(cold, pc);
+    if (ic.key.borrow() == key) {
+        hobject::PropValue* known = hobject::ic_poly_slot(ic, hobj);
+        if (known != null) return th_publish_read(pc, handlers, regs, cold, known.get());
+    }
+    return th_get_shared(pc, handlers, regs, cold, hobj, key);
+}
+
+// A read the site cache cannot answer: the heap's megamorphic cache, which the
+// switch's lookups fill, may still answer it with a data property.
 fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                               HObject* hobj, void* key) @private @noinline {
     if (key == null || !hobj.mega_cacheable(key, cold.heap)) return pc;
     hobject::MegamorphicEntry* me;
     hobject::PropValue* slot = hobject::mega_cache_lookup(cold.heap, hobj, key, &me);
     if (slot == null || me.is_accessor) return pc;
+    // An entry that has cached nothing takes the hit. An own data read for
+    // another shape joins the set of an entry caching the key, or, when the
+    // set is full or the entry caches an inherited read, moves the entry to
+    // the receiver's shape so a site whose objects changed shape for good
+    // returns to the site cache.
     hobject::ICEntry* ic = th_ic_at(cold, pc);
-    if (me.proto == null && ic.key.borrow() == key) {
+    if (ic.key.borrow() == null) {
+        th_fill_from_mega(pc, cold.heap, ic, hobj, key, me);
+    } else if (me.proto == null && ic.key.borrow() == key
+               && !hobject::ic_poly_add(ic, hobj.shape_id, me.prop_idx, cold.heap)) {
+        // A full set keeps answering for its shapes, all own data reads.
+        if (ic.chain_len != hobject::IC_CHAIN_POLY) ic.chain_len = 0;
         ic.shape_id = hobj.shape_id;
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
-        ic.chain_len = 0;
         ic.has_proto = false;
     }
     return th_publish_read(pc, handlers, regs, cold, slot.get());
+}
+
+// Fill an empty read entry from a megamorphic hit. A hit on the receiver's
+// immediate prototype becomes a one-link snapshot: the lookup has just checked
+// that link and the owner's shape, which are what the snapshot re-checks. A
+// GETPROPC becomes GETPROPC_CACHED, as when the switch fills its entry.
+fn void th_fill_from_mega(Instruction* pc, heap::Heap* h, hobject::ICEntry* ic, HObject* hobj, void* key,
+                          hobject::MegamorphicEntry* me) @private @noinline {
+    if (me.proto != null) {
+        if (!hobject::ic_reserve_chain(ic, h)) return;
+        HObject* owner = (HObject*)me.proto;
+        ic.chain.snapshot.protos[0] = (void*)owner;
+        ic.chain.snapshot.shapes[0] = owner.shape_id;
+        ic.chain_len = 1;
+        ic.has_proto = true;
+        h.shade_root_object(owner);
+    } else {
+        ic.chain_len = 0;
+        ic.has_proto = false;
+    }
+    ic.shape_id = hobj.shape_id;
+    ic.prop_idx = me.prop_idx;
+    ic.prop_flags = me.flags;
+    ic.key.set(h, (hstring::HString*)key);
+    if (pc.op == Opcode.GETPROPC) *pc = bytecode::make_abc(Opcode.GETPROPC_CACHED, pc.a, pc.b, pc.c);
 }
 
 // Copy a borrowed value into the instruction's destination register.
