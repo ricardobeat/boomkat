@@ -372,7 +372,9 @@ fn int ssa_block_of(SsaGraph* g, uint pc) @feat(SLJIT) {
 }
 
 fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
-    if (!SSA_ENABLED) return false;
+    // The off switch folds to false, so the capacity test keeps the body live:
+    // the tier stays compiled and reviewable while it is disabled.
+    if (!SSA_ENABLED || plan.memory_count > LOOP_MEMORY) return false;
     for (uint i = 0; i < plan.memory_count; i++) {
         LoopMemoryKind kind = plan.memory[i].kind;
         if (kind == ASCII || kind == INTRINSIC) return false;
