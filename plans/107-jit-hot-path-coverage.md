@@ -1,7 +1,8 @@
 # 107: Covering the deltablue, richards and splay hot paths with the JIT
 
-Status: research complete, the loop tier's arms and the array element read
-landed, the expansion work not started.
+Status: the loop tier's arms, the array element read, RETUNDEF, loose
+equality and multi-level expansion landed. Object-valued property stores
+are the next blocker; see section 10.
 
 Research baseline: `06202904` on the `rat` branch, measured on 2026-10-25 on
 Apple silicon (macOS, arm64) with the default `boomkat` target (O2, threaded
@@ -187,3 +188,82 @@ loops with a branch inside.
   that calls a helper, a site with two receiver shapes, a numeric loop with
   an `if` inside.
 - The non-NaN-boxing build, which has no JIT and must stay unaffected.
+
+## 8. The callees are rejected for four different reasons
+
+A later session dumped the actual rejected callees with `SLJIT_STATS` and
+the bytecode disassembler instead of reading the predicates. The blockers
+are mostly not call depth:
+
+1. **`RETUNDEF` was not in the general-inline opcode set.** An implicit
+   `return;` is the normal shape of a setter, so this alone rejected
+   `TaskControlBlock.markAsHeld`, `markAsSuspended`, `OrderedCollection.add`
+   and the rest of that family.
+2. **A call inside the callee.** This is the real depth work
+   (`suspendCurrent -> markAsSuspended`, `add -> elms.push`).
+3. **No resolved target at all.** Many sites never name a callee: the
+   property IC chain is not the immediate prototype (`chain_len != 1`), or
+   the site has not warmed. Some of these are multi-target sites; others are
+   simply cold.
+4. **Non-call gaps.** Object-vs-object `==`/`!=` exited through the numeric
+   path (deltablue's `c != determining`), `x == null` exited the same way,
+   an array `.length` read inside a helper tripped a guard, and stores of
+   object-valued properties are refused outright by the property emitter
+   (`guard(GREATER, tag, TAG_BOOLEAN)` on both the old and the new value).
+
+The function tier was also the tier doing the work: `loop_analyze` rejects
+any loop whose body contains a CALL, so `ssa_loop_eligible`'s leaf-call
+expansion is unreachable for these loops.
+
+## 9. What landed on top of section 5
+
+- **A real replay guard** for expanded callees. A guard that fires after a
+  partial inline run makes the interpreter rerun the callee, so a store the
+  native run already made would happen twice. The old check was a stub (the
+  key arrays were never filled). Now a store whose value depends on a
+  property read may not be followed by an instruction that can exit.
+- **`RETUNDEF`** in the predicate and the emitter. `holdCurrent` now runs
+  fully native in richards (`returns=1000`, one inline per call).
+- **Loose equality**: object-vs-object compares by reference, and
+  null/undefined compare equal to each other and to nothing else. This
+  removed deltablue's `NEQ` exit and richards' `t == null` exit in
+  `Scheduler.queue`.
+- **Multi-level expansion**, with one register window per nesting level in
+  `FunctionRun.inline_values` and the receiver kept in a spare slot of that
+  window rather than in a saved register. That last detail matters: a
+  memory save of `reg_s(3)` across the body corrupted deltablue, and the
+  window slot is both simpler and correct at any depth. The nesting bound
+  is `INLINE_DEPTH = 4` (three nested callees).
+- **Stuck-entry detection**: an entry that returns at the same
+  unexpandable CALL without completing a backedge is disabled after eight
+  attempts, so the tier stops paying an entry and exit per loop iteration
+  for a call it can never take.
+- `SsaEmitter.resolve_blocks` gained the `@feat(SLJIT)` it was missing,
+  which is what broke the no-SLJIT `boomkat_debug` target.
+
+Measurements, same machine, default target, single run each: crypto
+301 -> 150 ms and navier-stokes 561 -> 246 ms with `--jit`. The three
+object-heavy minis are still slightly slower with the JIT (deltablue
+305 -> 314, richards 230 -> 240, splay 122 -> 134). Their hot regions still
+bail: deltablue at `todo.size()` and at object-valued stores, richards at
+`this.currentTcb = this.currentTcb.link` (an object store) and at
+`t.checkPriorityAdd(...)`, splay at node property guards after the node
+shape changes.
+
+## 10. Next, in order
+
+1. **Object-valued property stores.** This is the largest remaining single
+   blocker: richards' `schedule` and `queue`, and most of deltablue's
+   planner, stop at a store of a reference. It needs the same
+   incref-new/store/decref-old sequence that `function_store` already does
+   for registers, with no exit between the incref and the decref.
+2. **The property guard bails.** Deltablue's inlined `size()` still exits
+   on the `this.elms.length` guard, and splay's loop exits on node shapes
+   that gain `left`/`right` own properties. Both need to be reproduced in a
+   micro before changing the emitter.
+3. **Multi-target expansion** at a site with two receiver shapes
+   (deltablue's `isSatisfied`), which needs the site cache to hold more
+   than one callee.
+4. Native builtin calls (`Array.prototype.push`) are still interpreter
+   work at every `add`; a direct call form would remove the interpreter
+   round trip from the `todo.add(...)` sites.
