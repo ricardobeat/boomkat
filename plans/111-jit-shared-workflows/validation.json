@@ -1,0 +1,398 @@
+[
+  {
+    "test": "test/jit_alloc_continuations.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_alloc_continuations.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_alloc_continuations.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_append_property.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_append_property.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_append_property.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_array_element_access.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_array_element_access.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_array_element_access.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_cfg_numbers.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_cfg_numbers.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_cfg_numbers.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_branches.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_branches.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_branches.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_property_write.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_property_write.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_property_write.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_recovery.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_recovery.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_inline_recovery.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_linked_calls.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_linked_calls.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_linked_calls.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_loop_arms.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_loop_arms.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_loop_arms.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_loose_equality.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_loose_equality.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_loose_equality.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_native_call.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_native_call.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_native_call.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_native_calls.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_native_calls.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_native_calls.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_nested_inline.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_nested_inline.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_nested_inline.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_proto_read_shapes.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_proto_read_shapes.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/jit_proto_read_shapes.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_function.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_function.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_function.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_inline_clamp.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_inline_clamp.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_inline_clamp.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_loop.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_loop.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_loop.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_parseint.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_parseint.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_parseint.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_regions.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_regions.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_regions.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_smallfunc.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_smallfunc.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_smallfunc.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_ssa.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_ssa.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_ssa.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_template.js",
+    "mode": "interp",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_template.js",
+    "mode": "jit",
+    "rc": 0,
+    "match": true
+  },
+  {
+    "test": "test/sljit_template.js",
+    "mode": "stress",
+    "rc": 0,
+    "match": true
+  }
+]

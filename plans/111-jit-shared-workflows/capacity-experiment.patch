@@ -1,0 +1,33 @@
+--- a/src/vm/vm_sljit_budget.c3
++++ b/src/vm/vm_sljit_budget.c3
+@@ -4,7 +4,7 @@
+ import boomkat::bytecode;
+ 
+ const usz JIT_INITIAL_CODE_LIMIT = 256 * 1024;
+-const usz JIT_MAX_CODE_LIMIT = 1024 * 1024;
++const usz JIT_MAX_CODE_LIMIT = 16 * 1024 * 1024;
+ 
+ fn usz sljit_code_limit(Heap* h) @feat(SLJIT) @inline {
+     $if $feat(SLJIT_ADAPTIVE):
+--- a/src/vm/vm_sljit_loop.c3
++++ b/src/vm/vm_sljit_loop.c3
+@@ -102,7 +102,7 @@
+     TemplateEmitter e;
+     LoopPlan* plan;
+     void*[512] labels;
+-    LoopLink[2048] links;
++    LoopLink[8192] links;
+     uint link_count;
+     bool link_limit_reached @if($feat(SLJIT_STATS));
+     bool function_mode;
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -1892,7 +1892,7 @@
+         return false;
+     }
+     void*[FUNCTION_OPS + 1] exits;
+-    void*[2048] flow_exits;
++    void*[8192] flow_exits;
+     for (uint i = 0; i < out.link_count; i++) {
+         LoopLink link = out.links[i];
+         if (!link.exit) {

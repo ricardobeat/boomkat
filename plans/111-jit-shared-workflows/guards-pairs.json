@@ -1,0 +1,522 @@
+[
+  {
+    "bench": "mandreel",
+    "repeat": 0,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.6587462921161205,
+    "phases": {
+      "Mandreel": 797
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 0,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.4645938749890774,
+    "phases": {
+      "Mandreel": 615
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 0,
+    "mode": "large",
+    "rc": 0,
+    "wall": 4.759441625094041,
+    "phases": {
+      "zlib": 4751
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 0,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 4.3290080421138555,
+    "phases": {
+      "zlib": 4322
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 0,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.20620033401064575,
+    "phases": {
+      "NavierStokes": 199
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 0,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.21198462508618832,
+    "phases": {
+      "NavierStokes": 204
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 0,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.3489795841742307,
+    "phases": {
+      "Gameboy": 313
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 0,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.36073691700585186,
+    "phases": {
+      "Gameboy": 325
+    }
+  },
+  {
+    "bench": "box2d",
+    "repeat": 0,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.24298533401452005,
+    "phases": {
+      "Box2D": 220
+    }
+  },
+  {
+    "bench": "box2d",
+    "repeat": 0,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.24276125011965632,
+    "phases": {
+      "Box2D": 222
+    }
+  },
+  {
+    "bench": "typescript",
+    "repeat": 0,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.3307458751369268,
+    "phases": {
+      "Typescript": 1274
+    }
+  },
+  {
+    "bench": "typescript",
+    "repeat": 0,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.3308132919482887,
+    "phases": {
+      "Typescript": 1274
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 1,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.2803021247964352,
+    "phases": {
+      "Mandreel": 611
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 1,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.6549607920460403,
+    "phases": {
+      "Mandreel": 798
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 1,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 4.351508082821965,
+    "phases": {
+      "zlib": 4344
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 1,
+    "mode": "large",
+    "rc": 0,
+    "wall": 4.782744500087574,
+    "phases": {
+      "zlib": 4775
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 1,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.21610429184511304,
+    "phases": {
+      "NavierStokes": 208
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 1,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.20872408407740295,
+    "phases": {
+      "NavierStokes": 201
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 1,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.3623462081886828,
+    "phases": {
+      "Gameboy": 325
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 1,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.34871687507256866,
+    "phases": {
+      "Gameboy": 312
+    }
+  },
+  {
+    "bench": "box2d",
+    "repeat": 1,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.2447946248576045,
+    "phases": {
+      "Box2D": 222
+    }
+  },
+  {
+    "bench": "box2d",
+    "repeat": 1,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.24402062501758337,
+    "phases": {
+      "Box2D": 222
+    }
+  },
+  {
+    "bench": "typescript",
+    "repeat": 1,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.333932625129819,
+    "phases": {
+      "Typescript": 1276
+    }
+  },
+  {
+    "bench": "typescript",
+    "repeat": 1,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.3330554999411106,
+    "phases": {
+      "Typescript": 1276
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 2,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.6541159169282764,
+    "phases": {
+      "Mandreel": 796
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 2,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.2922179580200464,
+    "phases": {
+      "Mandreel": 618
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 2,
+    "mode": "large",
+    "rc": 0,
+    "wall": 4.801833416102454,
+    "phases": {
+      "zlib": 4795
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 2,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 4.331242332933471,
+    "phases": {
+      "zlib": 4324
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 2,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.21167487488128245,
+    "phases": {
+      "NavierStokes": 203
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 2,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.21741437492892146,
+    "phases": {
+      "NavierStokes": 210
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 2,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.34789158403873444,
+    "phases": {
+      "Gameboy": 312
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 2,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.3616572499740869,
+    "phases": {
+      "Gameboy": 325
+    }
+  },
+  {
+    "bench": "box2d",
+    "repeat": 2,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.2442992499563843,
+    "phases": {
+      "Box2D": 222
+    }
+  },
+  {
+    "bench": "box2d",
+    "repeat": 2,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.24471545894630253,
+    "phases": {
+      "Box2D": 223
+    }
+  },
+  {
+    "bench": "typescript",
+    "repeat": 2,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.3349247090518475,
+    "phases": {
+      "Typescript": 1277
+    }
+  },
+  {
+    "bench": "typescript",
+    "repeat": 2,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.3379919161088765,
+    "phases": {
+      "Typescript": 1279
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 3,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.2884824159555137,
+    "phases": {
+      "Mandreel": 615
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 3,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.6585577500518411,
+    "phases": {
+      "Mandreel": 796
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 3,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 4.334066416835412,
+    "phases": {
+      "zlib": 4326
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 3,
+    "mode": "large",
+    "rc": 0,
+    "wall": 4.836801915895194,
+    "phases": {
+      "zlib": 4830
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 3,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.2204275829717517,
+    "phases": {
+      "NavierStokes": 212
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 3,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.21338500012643635,
+    "phases": {
+      "NavierStokes": 206
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 3,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.36293899989686906,
+    "phases": {
+      "Gameboy": 326
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 3,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.34875029092654586,
+    "phases": {
+      "Gameboy": 311
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 4,
+    "mode": "large",
+    "rc": 0,
+    "wall": 1.6558559997938573,
+    "phases": {
+      "Mandreel": 795
+    }
+  },
+  {
+    "bench": "mandreel",
+    "repeat": 4,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 1.2957426249049604,
+    "phases": {
+      "Mandreel": 617
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 4,
+    "mode": "large",
+    "rc": 0,
+    "wall": 4.823870709165931,
+    "phases": {
+      "zlib": 4817
+    }
+  },
+  {
+    "bench": "zlib",
+    "repeat": 4,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 4.33859445899725,
+    "phases": {
+      "zlib": 4331
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 4,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.21450308291241527,
+    "phases": {
+      "NavierStokes": 206
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "repeat": 4,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.21980683389119804,
+    "phases": {
+      "NavierStokes": 212
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 4,
+    "mode": "large",
+    "rc": 0,
+    "wall": 0.3485522500704974,
+    "phases": {
+      "Gameboy": 312
+    }
+  },
+  {
+    "bench": "gbemu",
+    "repeat": 4,
+    "mode": "guards",
+    "rc": 0,
+    "wall": 0.36329458304680884,
+    "phases": {
+      "Gameboy": 327
+    }
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "baseline": "bd44daea",
+  "date": "2026-10-27",
+  "platform": "macOS 27 arm64",
+  "timing_flags": "c3c build boomkat --macos-min-version 27.0; no SLJIT_STATS/OP_PROFILE/SLJIT_MAP",
+  "census_flags": "SLJIT_STATS OP_PROFILE",
+  "sample_flags": "SLJIT_STATS SLJIT_MAP (loop maps added)",
+  "diagnostic_flags": "SLJIT_STATS (some runs also SLJIT_MAP)",
+  "capacity_flags": "--max-stack-object-size 262144; 16 MiB budget; 8192 link and flow-exit entries",
+  "binaries": {
+    "census": "4ec319c19b3fec7d81ecd103623f2a78bdafabcccee6f93e02dfa592a1cee636",
+    "map": "260e900b8a9cf368f06c0ea60659987be28cd60d41d0ce70a6d1105ed8339943",
+    "diag": "3355b41179844e39fd36300481fc8188e1a9b4fea9c0c4dd7eb8acef871ca26f",
+    "base": "2fbcfee078a3357e0b0da8d5d142317193c2b97b9f74dc0d4c2b30284d2d611a",
+    "large": "68375fa04a9a16bfeae3844d4de4a5728593e8345ba8634b854ce29ecb4d150e",
+    "guards": "359c11b312e6d7fe63f1e107430fc87387901801429af2fb60a99e7c78156b5c",
+    "large-diag": "b5ff0e3231771582d626405dc80722e976b03f167b5b5138ef89285336315311",
+    "guards-diag": "e573bece74b73ca43253219b6780b41dabb49ab79327c1ad545eee09c41b1c88"
+  },
+  "diagnostics_commit": "d569b9ed"
+}

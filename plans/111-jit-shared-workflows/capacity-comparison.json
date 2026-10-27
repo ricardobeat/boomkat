@@ -1,0 +1,7472 @@
+[
+  {
+    "bench": "mandreel",
+    "base": {
+      "totals": {
+        "functions": 33,
+        "loops": 8,
+        "templates": 0,
+        "hits": 12494172,
+        "code_bytes": 1048300,
+        "native_calls": 26694,
+        "native_returns": 0
+      },
+      "threaded": 511277838,
+      "functions": [
+        {
+          "id": 177,
+          "coverage": {
+            "id": 177,
+            "line": 3878,
+            "ops": 5,
+            "regs": 3,
+            "captures": 0,
+            "name": "uint",
+            "threaded": 12280826,
+            "switch": 0,
+            "attempts": 12280763,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 177,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 5,
+            "bytes": 2108,
+            "hits": 12280700,
+            "returns": 12280700,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 177,
+            "line": 3878,
+            "name": "uint"
+          }
+        },
+        {
+          "id": 219,
+          "coverage": {
+            "id": 219,
+            "line": 4240,
+            "ops": 11,
+            "regs": 7,
+            "captures": 0,
+            "name": "sqrtf",
+            "threaded": 1478376,
+            "switch": 9,
+            "attempts": 73,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 219,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 11,
+            "bytes": 4112,
+            "hits": 10,
+            "returns": 1,
+            "stalled": 2,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 219,
+            "line": 4240,
+            "name": "sqrtf"
+          }
+        },
+        {
+          "id": 582,
+          "coverage": {
+            "id": 582,
+            "line": 10489,
+            "ops": 583,
+            "regs": 25,
+            "captures": 0,
+            "name": "_ZN15DemoApplication20localCreateRigidBodyEfRK11btTransformP16btCollisionShape",
+            "threaded": 1092480,
+            "switch": 162,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 621,
+          "coverage": {
+            "id": 621,
+            "line": 16951,
+            "ops": 143,
+            "regs": 20,
+            "captures": 0,
+            "name": "_ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i",
+            "threaded": 3343248,
+            "switch": 169121,
+            "attempts": 42284,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 23,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 621,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 143,
+            "bytes": 60080,
+            "hits": 42221,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 621,
+            "line": 16951,
+            "name": "_ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i"
+          }
+        },
+        {
+          "id": 623,
+          "coverage": {
+            "id": 623,
+            "line": 17325,
+            "ops": 290,
+            "regs": 39,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb",
+            "threaded": 203469958,
+            "switch": 26661,
+            "attempts": 27,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 624,
+          "coverage": {
+            "id": 624,
+            "line": 17479,
+            "ops": 291,
+            "regs": 38,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE9sortMaxUpEitP12btDispatcherb",
+            "threaded": 2573401,
+            "switch": 277,
+            "attempts": 5,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 626,
+          "coverage": {
+            "id": 626,
+            "line": 17796,
+            "ops": 308,
+            "regs": 37,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb",
+            "threaded": 169184810,
+            "switch": 20738,
+            "attempts": 35,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 627,
+          "coverage": {
+            "id": 627,
+            "line": 17953,
+            "ops": 331,
+            "regs": 38,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE7setAabbEP17btBroadphaseProxyRK9btVector3S5_P12btDispatcher",
+            "threaded": 8078528,
+            "switch": 449,
+            "attempts": 27,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 629,
+          "coverage": {
+            "id": 629,
+            "line": 18260,
+            "ops": 630,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11createProxyERK9btVector3S3_iPvssP12btDispatcherS4_",
+            "threaded": 1178186,
+            "switch": 238,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 643,
+          "coverage": {
+            "id": 643,
+            "line": 19280,
+            "ops": 489,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZL10insertleafP6btDbvtP10btDbvtNodeS2_",
+            "threaded": 13937418,
+            "switch": 120872,
+            "attempts": 117,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 644,
+          "coverage": {
+            "id": 644,
+            "line": 19562,
+            "ops": 282,
+            "regs": 31,
+            "captures": 0,
+            "name": "_ZL10removeleafP6btDbvtP10btDbvtNode",
+            "threaded": 2361060,
+            "switch": 72289,
+            "attempts": 42,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 645,
+          "coverage": {
+            "id": 645,
+            "line": 19727,
+            "ops": 269,
+            "regs": 30,
+            "captures": 0,
+            "name": "_ZN6btDbvt6updateEP10btDbvtNodeR12btDbvtAabbMmRK9btVector3f",
+            "threaded": 2319049,
+            "switch": 206,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 672,
+          "coverage": {
+            "id": 672,
+            "line": 22634,
+            "ops": 698,
+            "regs": 42,
+            "captures": 0,
+            "name": "_ZN16btDbvtBroadphase7setAabbEP17btBroadphaseProxyRK9btVector3S4_P12btDispatcher",
+            "threaded": 6439433,
+            "switch": 256,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 783,
+          "coverage": {
+            "id": 783,
+            "line": 36314,
+            "ops": 433,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZN16btCollisionWorld11updateAabbsEv",
+            "threaded": 3231060,
+            "switch": 234,
+            "attempts": 37,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 787,
+          "coverage": {
+            "id": 787,
+            "line": 39496,
+            "ops": 425,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss",
+            "threaded": 16185311,
+            "switch": 1022,
+            "attempts": 907,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 799,
+          "coverage": {
+            "id": 799,
+            "line": 41073,
+            "ops": 231,
+            "regs": 26,
+            "captures": 0,
+            "name": "_ZNK11btMatrix3x311getRotationER12btQuaternion",
+            "threaded": 3417600,
+            "switch": 117,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 817,
+          "coverage": {
+            "id": 817,
+            "line": 43957,
+            "ops": 256,
+            "regs": 38,
+            "captures": 0,
+            "name": "_Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_",
+            "threaded": 4285812,
+            "switch": 64,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 916,
+          "coverage": {
+            "id": 916,
+            "line": 54445,
+            "ops": 120,
+            "regs": 25,
+            "captures": 0,
+            "name": "_ZN25btSimulationIslandManager26storeIslandActivationStateEP16btCollisionWorld",
+            "threaded": 1133860,
+            "switch": 49,
+            "attempts": 20,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 918,
+          "coverage": {
+            "id": 918,
+            "line": 54687,
+            "ops": 501,
+            "regs": 32,
+            "captures": 0,
+            "name": "_ZN25btSimulationIslandManager21updateActivationStateEP16btCollisionWorldP12btDispatcher",
+            "threaded": 1289987,
+            "switch": 120,
+            "attempts": 40,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 931,
+          "coverage": {
+            "id": 931,
+            "line": 55981,
+            "ops": 154,
+            "regs": 23,
+            "captures": 0,
+            "name": "_ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii",
+            "threaded": 2218574,
+            "switch": 5313,
+            "attempts": 5224,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 1098,
+          "coverage": {
+            "id": 1098,
+            "line": 67200,
+            "ops": 298,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN15btTransformUtil18integrateTransformERK11btTransformRK9btVector3S5_fRS0_",
+            "threaded": 9868800,
+            "switch": 430,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1208,
+          "coverage": {
+            "id": 1208,
+            "line": 92234,
+            "ops": 829,
+            "regs": 33,
+            "captures": 0,
+            "name": "_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii",
+            "threaded": 2908840,
+            "switch": 106,
+            "attempts": 52,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 1212,
+          "coverage": {
+            "id": 1212,
+            "line": 93081,
+            "ops": 207,
+            "regs": 24,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld25predictUnconstraintMotionEf",
+            "threaded": 1595980,
+            "switch": 326,
+            "attempts": 2,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1216,
+          "coverage": {
+            "id": 1216,
+            "line": 93769,
+            "ops": 637,
+            "regs": 50,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld19integrateTransformsEf",
+            "threaded": 1845620,
+            "switch": 99,
+            "attempts": 2,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 1217,
+          "coverage": {
+            "id": 1217,
+            "line": 94083,
+            "ops": 2283,
+            "regs": 50,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo",
+            "threaded": 5986693,
+            "switch": 677,
+            "attempts": 115,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 1220,
+          "coverage": {
+            "id": 1220,
+            "line": 95695,
+            "ops": 343,
+            "regs": 34,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld21updateActivationStateEf",
+            "threaded": 1864880,
+            "switch": 370,
+            "attempts": 2,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1231,
+          "coverage": {
+            "id": 1231,
+            "line": 97162,
+            "ops": 95,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld12applyGravityEv",
+            "threaded": 1497860,
+            "switch": 58,
+            "attempts": 21,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 1241,
+          "coverage": {
+            "id": 1241,
+            "line": 99860,
+            "ops": 594,
+            "regs": 41,
+            "captures": 0,
+            "name": "_ZN11btRigidBody18proceedToTransformERK11btTransform",
+            "threaded": 7776000,
+            "switch": 780,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 1245,
+          "coverage": {
+            "id": 1245,
+            "line": 100225,
+            "ops": 680,
+            "regs": 37,
+            "captures": 0,
+            "name": "_ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE",
+            "threaded": 1071539,
+            "switch": 2071,
+            "attempts": 1922,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 1,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1245,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 47112,
+            "hits": 1859,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1245,
+            "line": 100225,
+            "name": "_ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE"
+          }
+        },
+        {
+          "id": 1250,
+          "coverage": {
+            "id": 1250,
+            "line": 100819,
+            "ops": 170,
+            "regs": 26,
+            "captures": 0,
+            "name": "_ZN11btRigidBody19integrateVelocitiesEf",
+            "threaded": 2822400,
+            "switch": 140,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 1251,
+          "coverage": {
+            "id": 1251,
+            "line": 100930,
+            "ops": 339,
+            "regs": 25,
+            "captures": 0,
+            "name": "_ZN11btRigidBody12applyDampingEf",
+            "threaded": 1747200,
+            "switch": 208,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1288,
+          "coverage": {
+            "id": 1288,
+            "line": 106581,
+            "ops": 266,
+            "regs": 21,
+            "captures": 0,
+            "name": "block_prepare_used",
+            "threaded": 1086325,
+            "switch": 16135,
+            "attempts": 16085,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 16,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1288,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 266,
+            "bytes": 90136,
+            "hits": 16022,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1288,
+            "line": 106581,
+            "name": "block_prepare_used"
+          }
+        },
+        {
+          "id": 1289,
+          "coverage": {
+            "id": 1289,
+            "line": 106744,
+            "ops": 341,
+            "regs": 25,
+            "captures": 0,
+            "name": "block_locate_free",
+            "threaded": 1822780,
+            "switch": 48266,
+            "attempts": 16056,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 33,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1289,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 341,
+            "bytes": 94956,
+            "hits": 15993,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1289,
+            "line": 106744,
+            "name": "block_locate_free"
+          }
+        }
+      ]
+    },
+    "large": {
+      "totals": {
+        "functions": 56,
+        "loops": 11,
+        "templates": 0,
+        "hits": 12661779,
+        "code_bytes": 2075224,
+        "native_calls": 26721,
+        "native_returns": 0
+      },
+      "threaded": 503540772,
+      "functions": [
+        {
+          "id": 177,
+          "coverage": {
+            "id": 177,
+            "line": 3878,
+            "ops": 5,
+            "regs": 3,
+            "captures": 0,
+            "name": "uint",
+            "threaded": 12280826,
+            "switch": 0,
+            "attempts": 12280763,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 177,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 5,
+            "bytes": 2108,
+            "hits": 12280700,
+            "returns": 12280700,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 177,
+            "line": 3878,
+            "name": "uint"
+          }
+        },
+        {
+          "id": 219,
+          "coverage": {
+            "id": 219,
+            "line": 4240,
+            "ops": 11,
+            "regs": 7,
+            "captures": 0,
+            "name": "sqrtf",
+            "threaded": 1478376,
+            "switch": 9,
+            "attempts": 73,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 219,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 11,
+            "bytes": 4112,
+            "hits": 10,
+            "returns": 1,
+            "stalled": 2,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 219,
+            "line": 4240,
+            "name": "sqrtf"
+          }
+        },
+        {
+          "id": 621,
+          "coverage": {
+            "id": 621,
+            "line": 16951,
+            "ops": 143,
+            "regs": 20,
+            "captures": 0,
+            "name": "_ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i",
+            "threaded": 3343248,
+            "switch": 169121,
+            "attempts": 42284,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 23,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 621,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 143,
+            "bytes": 60084,
+            "hits": 42221,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 621,
+            "line": 16951,
+            "name": "_ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i"
+          }
+        },
+        {
+          "id": 623,
+          "coverage": {
+            "id": 623,
+            "line": 17325,
+            "ops": 290,
+            "regs": 39,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb",
+            "threaded": 203469958,
+            "switch": 43397,
+            "attempts": 27,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 624,
+          "coverage": {
+            "id": 624,
+            "line": 17479,
+            "ops": 291,
+            "regs": 38,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE9sortMaxUpEitP12btDispatcherb",
+            "threaded": 2573401,
+            "switch": 286,
+            "attempts": 5,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 626,
+          "coverage": {
+            "id": 626,
+            "line": 17796,
+            "ops": 308,
+            "regs": 37,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb",
+            "threaded": 169184810,
+            "switch": 37429,
+            "attempts": 35,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 627,
+          "coverage": {
+            "id": 627,
+            "line": 17953,
+            "ops": 331,
+            "regs": 38,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE7setAabbEP17btBroadphaseProxyRK9btVector3S5_P12btDispatcher",
+            "threaded": 8078528,
+            "switch": 451,
+            "attempts": 28,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 629,
+          "coverage": {
+            "id": 629,
+            "line": 18260,
+            "ops": 630,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11createProxyERK9btVector3S3_iPvssP12btDispatcherS4_",
+            "threaded": 1077224,
+            "switch": 31772,
+            "attempts": 1938,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 2,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 629,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 56996,
+            "hits": 1875,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 629,
+            "line": 18260,
+            "name": "_ZN20btAxisSweep3InternalItE11createProxyERK9btVector3S3_iPvssP12btDispatcherS4_"
+          }
+        },
+        {
+          "id": 643,
+          "coverage": {
+            "id": 643,
+            "line": 19280,
+            "ops": 489,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZL10insertleafP6btDbvtP10btDbvtNodeS2_",
+            "threaded": 13937418,
+            "switch": 126453,
+            "attempts": 134,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 644,
+          "coverage": {
+            "id": 644,
+            "line": 19562,
+            "ops": 282,
+            "regs": 31,
+            "captures": 0,
+            "name": "_ZL10removeleafP6btDbvtP10btDbvtNode",
+            "threaded": 2361060,
+            "switch": 72286,
+            "attempts": 39,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 645,
+          "coverage": {
+            "id": 645,
+            "line": 19727,
+            "ops": 269,
+            "regs": 30,
+            "captures": 0,
+            "name": "_ZN6btDbvt6updateEP10btDbvtNodeR12btDbvtAabbMmRK9btVector3f",
+            "threaded": 2319049,
+            "switch": 206,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 672,
+          "coverage": {
+            "id": 672,
+            "line": 22634,
+            "ops": 698,
+            "regs": 42,
+            "captures": 0,
+            "name": "_ZN16btDbvtBroadphase7setAabbEP17btBroadphaseProxyRK9btVector3S4_P12btDispatcher",
+            "threaded": 4677077,
+            "switch": 19409,
+            "attempts": 19220,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 8,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 672,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 57624,
+            "hits": 19157,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 672,
+            "line": 22634,
+            "name": "_ZN16btDbvtBroadphase7setAabbEP17btBroadphaseProxyRK9btVector3S4_P12btDispatcher"
+          }
+        },
+        {
+          "id": 783,
+          "coverage": {
+            "id": 783,
+            "line": 36314,
+            "ops": 433,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZN16btCollisionWorld11updateAabbsEv",
+            "threaded": 3231060,
+            "switch": 203,
+            "attempts": 7,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 787,
+          "coverage": {
+            "id": 787,
+            "line": 39496,
+            "ops": 425,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss",
+            "threaded": 16184695,
+            "switch": 12148,
+            "attempts": 909,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 799,
+          "coverage": {
+            "id": 799,
+            "line": 41073,
+            "ops": 231,
+            "regs": 26,
+            "captures": 0,
+            "name": "_ZNK11btMatrix3x311getRotationER12btQuaternion",
+            "threaded": 3417600,
+            "switch": 120,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 817,
+          "coverage": {
+            "id": 817,
+            "line": 43957,
+            "ops": 256,
+            "regs": 38,
+            "captures": 0,
+            "name": "_Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_",
+            "threaded": 4285812,
+            "switch": 11206,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 918,
+          "coverage": {
+            "id": 918,
+            "line": 54687,
+            "ops": 501,
+            "regs": 32,
+            "captures": 0,
+            "name": "_ZN25btSimulationIslandManager21updateActivationStateEP16btCollisionWorldP12btDispatcher",
+            "threaded": 1289987,
+            "switch": 122,
+            "attempts": 42,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1098,
+          "coverage": {
+            "id": 1098,
+            "line": 67200,
+            "ops": 298,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN15btTransformUtil18integrateTransformERK11btTransformRK9btVector3S5_fRS0_",
+            "threaded": 9868800,
+            "switch": 997,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1208,
+          "coverage": {
+            "id": 1208,
+            "line": 92234,
+            "ops": 829,
+            "regs": 33,
+            "captures": 0,
+            "name": "_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii",
+            "threaded": 2454274,
+            "switch": 290,
+            "attempts": 422,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 17,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1208,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 380,
+            "ops": 128,
+            "bytes": 52496,
+            "hits": 203,
+            "returns": 0,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1208,
+            "line": 92234,
+            "name": "_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii"
+          }
+        },
+        {
+          "id": 1212,
+          "coverage": {
+            "id": 1212,
+            "line": 93081,
+            "ops": 207,
+            "regs": 24,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld25predictUnconstraintMotionEf",
+            "threaded": 1595980,
+            "switch": 328,
+            "attempts": 2,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1216,
+          "coverage": {
+            "id": 1216,
+            "line": 93769,
+            "ops": 637,
+            "regs": 50,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld19integrateTransformsEf",
+            "threaded": 1329410,
+            "switch": 38342,
+            "attempts": 19127,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 8,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1216,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 26,
+            "ops": 128,
+            "bytes": 66304,
+            "hits": 19126,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1216,
+            "line": 93769,
+            "name": "_ZN23btDiscreteDynamicsWorld19integrateTransformsEf"
+          }
+        },
+        {
+          "id": 1217,
+          "coverage": {
+            "id": 1217,
+            "line": 94083,
+            "ops": 2283,
+            "regs": 50,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo",
+            "threaded": 5986607,
+            "switch": 217537,
+            "attempts": 137,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 20,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1217,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 469,
+            "ops": 128,
+            "bytes": 68636,
+            "hits": 24,
+            "returns": 0,
+            "stalled": 2,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1217,
+            "line": 94083,
+            "name": "_ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo"
+          }
+        },
+        {
+          "id": 1220,
+          "coverage": {
+            "id": 1220,
+            "line": 95695,
+            "ops": 343,
+            "regs": 34,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld21updateActivationStateEf",
+            "threaded": 1864880,
+            "switch": 369,
+            "attempts": 2,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1231,
+          "coverage": {
+            "id": 1231,
+            "line": 97162,
+            "ops": 95,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld12applyGravityEv",
+            "threaded": 1057476,
+            "switch": 38292,
+            "attempts": 19138,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 12,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1231,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 95,
+            "bytes": 41312,
+            "hits": 19137,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1231,
+            "line": 97162,
+            "name": "_ZN23btDiscreteDynamicsWorld12applyGravityEv"
+          }
+        },
+        {
+          "id": 1241,
+          "coverage": {
+            "id": 1241,
+            "line": 99860,
+            "ops": 594,
+            "regs": 41,
+            "captures": 0,
+            "name": "_ZN11btRigidBody18proceedToTransformERK11btTransform",
+            "threaded": 7546364,
+            "switch": 19346,
+            "attempts": 19200,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 2,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1241,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 57336,
+            "hits": 19137,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1241,
+            "line": 99860,
+            "name": "_ZN11btRigidBody18proceedToTransformERK11btTransform"
+          }
+        },
+        {
+          "id": 1245,
+          "coverage": {
+            "id": 1245,
+            "line": 100225,
+            "ops": 680,
+            "regs": 37,
+            "captures": 0,
+            "name": "_ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE",
+            "threaded": 1071539,
+            "switch": 2069,
+            "attempts": 1922,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 1,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1245,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 47124,
+            "hits": 1859,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1245,
+            "line": 100225,
+            "name": "_ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE"
+          }
+        },
+        {
+          "id": 1250,
+          "coverage": {
+            "id": 1250,
+            "line": 100819,
+            "ops": 170,
+            "regs": 26,
+            "captures": 0,
+            "name": "_ZN11btRigidBody19integrateVelocitiesEf",
+            "threaded": 2554492,
+            "switch": 19276,
+            "attempts": 38337,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1250,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 170,
+            "bytes": 85636,
+            "hits": 38274,
+            "returns": 19136,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1250,
+            "line": 100819,
+            "name": "_ZN11btRigidBody19integrateVelocitiesEf"
+          }
+        },
+        {
+          "id": 1251,
+          "coverage": {
+            "id": 1251,
+            "line": 100930,
+            "ops": 339,
+            "regs": 25,
+            "captures": 0,
+            "name": "_ZN11btRigidBody12applyDampingEf",
+            "threaded": 1747200,
+            "switch": 207,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 1288,
+          "coverage": {
+            "id": 1288,
+            "line": 106581,
+            "ops": 266,
+            "regs": 21,
+            "captures": 0,
+            "name": "block_prepare_used",
+            "threaded": 1086325,
+            "switch": 16121,
+            "attempts": 16085,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 16,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1288,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 266,
+            "bytes": 90148,
+            "hits": 16022,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1288,
+            "line": 106581,
+            "name": "block_prepare_used"
+          }
+        },
+        {
+          "id": 1289,
+          "coverage": {
+            "id": 1289,
+            "line": 106744,
+            "ops": 341,
+            "regs": 25,
+            "captures": 0,
+            "name": "block_locate_free",
+            "threaded": 1822780,
+            "switch": 48251,
+            "attempts": 16056,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 33,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1289,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 341,
+            "bytes": 94956,
+            "hits": 15993,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1289,
+            "line": 106744,
+            "name": "block_locate_free"
+          }
+        }
+      ]
+    },
+    "guards": {
+      "totals": {
+        "functions": 79,
+        "loops": 11,
+        "templates": 0,
+        "hits": 3344630,
+        "code_bytes": 5845856,
+        "native_calls": 45879,
+        "native_returns": 0
+      },
+      "threaded": 101172171,
+      "functions": [
+        {
+          "id": 177,
+          "coverage": {
+            "id": 177,
+            "line": 3878,
+            "ops": 5,
+            "regs": 3,
+            "captures": 0,
+            "name": "uint",
+            "threaded": 1972803,
+            "switch": 0,
+            "attempts": 1972740,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 177,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 5,
+            "bytes": 2108,
+            "hits": 1972677,
+            "returns": 1972677,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 177,
+            "line": 3878,
+            "name": "uint"
+          }
+        },
+        {
+          "id": 219,
+          "coverage": {
+            "id": 219,
+            "line": 4240,
+            "ops": 11,
+            "regs": 7,
+            "captures": 0,
+            "name": "sqrtf",
+            "threaded": 1478376,
+            "switch": 9,
+            "attempts": 73,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 219,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 11,
+            "bytes": 4112,
+            "hits": 10,
+            "returns": 1,
+            "stalled": 2,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 219,
+            "line": 4240,
+            "name": "sqrtf"
+          }
+        },
+        {
+          "id": 621,
+          "coverage": {
+            "id": 621,
+            "line": 16951,
+            "ops": 143,
+            "regs": 20,
+            "captures": 0,
+            "name": "_ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i",
+            "threaded": 3343248,
+            "switch": 169250,
+            "attempts": 42284,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 23,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 621,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 143,
+            "bytes": 60084,
+            "hits": 42221,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 621,
+            "line": 16951,
+            "name": "_ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i"
+          }
+        },
+        {
+          "id": 626,
+          "coverage": {
+            "id": 626,
+            "line": 17796,
+            "ops": 308,
+            "regs": 37,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb",
+            "threaded": 27004119,
+            "switch": 8708,
+            "attempts": 420870,
+            "warmup": 4294967294,
+            "retired": 7,
+            "active": 23,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 626,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 308,
+            "bytes": 165992,
+            "hits": 420836,
+            "returns": 14848,
+            "stalled": 795,
+            "charged_edges": 1851494,
+            "budget_exits": 1836,
+            "id": 626,
+            "line": 17796,
+            "name": "_ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb"
+          }
+        },
+        {
+          "id": 627,
+          "coverage": {
+            "id": 627,
+            "line": 17953,
+            "ops": 331,
+            "regs": 38,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE7setAabbEP17btBroadphaseProxyRK9btVector3S5_P12btDispatcher",
+            "threaded": 3017696,
+            "switch": 13383,
+            "attempts": 53574,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 16,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 627,
+            "calls": 19143,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 331,
+            "bytes": 151460,
+            "hits": 53553,
+            "returns": 19199,
+            "stalled": 19200,
+            "charged_edges": 54719,
+            "budget_exits": 51,
+            "id": 627,
+            "line": 17953,
+            "name": "_ZN20btAxisSweep3InternalItE7setAabbEP17btBroadphaseProxyRK9btVector3S5_P12btDispatcher"
+          }
+        },
+        {
+          "id": 629,
+          "coverage": {
+            "id": 629,
+            "line": 18260,
+            "ops": 630,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZN20btAxisSweep3InternalItE11createProxyERK9btVector3S3_iPvssP12btDispatcherS4_",
+            "threaded": 1077224,
+            "switch": 32701,
+            "attempts": 1938,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 2,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 629,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 56996,
+            "hits": 1875,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 629,
+            "line": 18260,
+            "name": "_ZN20btAxisSweep3InternalItE11createProxyERK9btVector3S3_iPvssP12btDispatcherS4_"
+          }
+        },
+        {
+          "id": 643,
+          "coverage": {
+            "id": 643,
+            "line": 19280,
+            "ops": 489,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZL10insertleafP6btDbvtP10btDbvtNodeS2_",
+            "threaded": 5108204,
+            "switch": 257182,
+            "attempts": 131346,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 77,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 643,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 489,
+            "bytes": 198612,
+            "hits": 131334,
+            "returns": 4,
+            "stalled": 1,
+            "charged_edges": 6028,
+            "budget_exits": 3,
+            "id": 643,
+            "line": 19280,
+            "name": "_ZL10insertleafP6btDbvtP10btDbvtNodeS2_"
+          }
+        },
+        {
+          "id": 644,
+          "coverage": {
+            "id": 644,
+            "line": 19562,
+            "ops": 282,
+            "regs": 31,
+            "captures": 0,
+            "name": "_ZL10removeleafP6btDbvtP10btDbvtNode",
+            "threaded": 1383907,
+            "switch": 87998,
+            "attempts": 15545,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 43,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 644,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 282,
+            "bytes": 129012,
+            "hits": 15509,
+            "returns": 2,
+            "stalled": 3,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 644,
+            "line": 19562,
+            "name": "_ZL10removeleafP6btDbvtP10btDbvtNode"
+          }
+        },
+        {
+          "id": 645,
+          "coverage": {
+            "id": 645,
+            "line": 19727,
+            "ops": 269,
+            "regs": 30,
+            "captures": 0,
+            "name": "_ZN6btDbvt6updateEP10btDbvtNodeR12btDbvtAabbMmRK9btVector3f",
+            "threaded": 1630571,
+            "switch": 26939,
+            "attempts": 26849,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 40,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 645,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 269,
+            "bytes": 133052,
+            "hits": 26786,
+            "returns": 2,
+            "stalled": 3,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 645,
+            "line": 19727,
+            "name": "_ZN6btDbvt6updateEP10btDbvtNodeR12btDbvtAabbMmRK9btVector3f"
+          }
+        },
+        {
+          "id": 672,
+          "coverage": {
+            "id": 672,
+            "line": 22634,
+            "ops": 698,
+            "regs": 42,
+            "captures": 0,
+            "name": "_ZN16btDbvtBroadphase7setAabbEP17btBroadphaseProxyRK9btVector3S4_P12btDispatcher",
+            "threaded": 4677077,
+            "switch": 19410,
+            "attempts": 77,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 8,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 672,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 57624,
+            "hits": 14,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 672,
+            "line": 22634,
+            "name": "_ZN16btDbvtBroadphase7setAabbEP17btBroadphaseProxyRK9btVector3S4_P12btDispatcher"
+          }
+        },
+        {
+          "id": 783,
+          "coverage": {
+            "id": 783,
+            "line": 36314,
+            "ops": 433,
+            "regs": 36,
+            "captures": 0,
+            "name": "_ZN16btCollisionWorld11updateAabbsEv",
+            "threaded": 1793112,
+            "switch": 38609,
+            "attempts": 38372,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 45,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 783,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 433,
+            "bytes": 256280,
+            "hits": 38371,
+            "returns": 18,
+            "stalled": 1,
+            "charged_edges": 19136,
+            "budget_exits": 16,
+            "id": 783,
+            "line": 36314,
+            "name": "_ZN16btCollisionWorld11updateAabbsEv"
+          }
+        },
+        {
+          "id": 817,
+          "coverage": {
+            "id": 817,
+            "line": 43957,
+            "ops": 256,
+            "regs": 38,
+            "captures": 0,
+            "name": "_Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_",
+            "threaded": 3757314,
+            "switch": 23108,
+            "attempts": 23042,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 37,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 817,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 256,
+            "bytes": 109884,
+            "hits": 22979,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 817,
+            "line": 43957,
+            "name": "_Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_"
+          }
+        },
+        {
+          "id": 1098,
+          "coverage": {
+            "id": 1098,
+            "line": 67200,
+            "ops": 298,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN15btTransformUtil18integrateTransformERK11btTransformRK9btVector3S5_fRS0_",
+            "threaded": 6723888,
+            "switch": 607,
+            "attempts": 38432,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 10,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1098,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 298,
+            "bytes": 119284,
+            "hits": 38369,
+            "returns": 38336,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1098,
+            "line": 67200,
+            "name": "_ZN15btTransformUtil18integrateTransformERK11btTransformRK9btVector3S5_fRS0_"
+          }
+        },
+        {
+          "id": 1208,
+          "coverage": {
+            "id": 1208,
+            "line": 92234,
+            "ops": 829,
+            "regs": 33,
+            "captures": 0,
+            "name": "_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii",
+            "threaded": 2454248,
+            "switch": 288,
+            "attempts": 418,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 17,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1208,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 380,
+            "ops": 128,
+            "bytes": 52496,
+            "hits": 203,
+            "returns": 0,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1208,
+            "line": 92234,
+            "name": "_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii"
+          }
+        },
+        {
+          "id": 1212,
+          "coverage": {
+            "id": 1212,
+            "line": 93081,
+            "ops": 207,
+            "regs": 24,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld25predictUnconstraintMotionEf",
+            "threaded": 1192447,
+            "switch": 134248,
+            "attempts": 19211,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 19,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1212,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 207,
+            "bytes": 112612,
+            "hits": 19210,
+            "returns": 18,
+            "stalled": 1,
+            "charged_edges": 19116,
+            "budget_exits": 19,
+            "id": 1212,
+            "line": 93081,
+            "name": "_ZN23btDiscreteDynamicsWorld25predictUnconstraintMotionEf"
+          }
+        },
+        {
+          "id": 1216,
+          "coverage": {
+            "id": 1216,
+            "line": 93769,
+            "ops": 637,
+            "regs": 50,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld19integrateTransformsEf",
+            "threaded": 1329410,
+            "switch": 38611,
+            "attempts": 19127,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 8,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1216,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 26,
+            "ops": 128,
+            "bytes": 66304,
+            "hits": 19126,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1216,
+            "line": 93769,
+            "name": "_ZN23btDiscreteDynamicsWorld19integrateTransformsEf"
+          }
+        },
+        {
+          "id": 1217,
+          "coverage": {
+            "id": 1217,
+            "line": 94083,
+            "ops": 2283,
+            "regs": 50,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo",
+            "threaded": 5986607,
+            "switch": 217540,
+            "attempts": 143,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 20,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1217,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 469,
+            "ops": 128,
+            "bytes": 68636,
+            "hits": 24,
+            "returns": 0,
+            "stalled": 2,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1217,
+            "line": 94083,
+            "name": "_ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo"
+          }
+        },
+        {
+          "id": 1231,
+          "coverage": {
+            "id": 1231,
+            "line": 97162,
+            "ops": 95,
+            "regs": 28,
+            "captures": 0,
+            "name": "_ZN23btDiscreteDynamicsWorld12applyGravityEv",
+            "threaded": 1057453,
+            "switch": 38295,
+            "attempts": 19140,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 12,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1231,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 95,
+            "bytes": 41312,
+            "hits": 19138,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1231,
+            "line": 97162,
+            "name": "_ZN23btDiscreteDynamicsWorld12applyGravityEv"
+          }
+        },
+        {
+          "id": 1241,
+          "coverage": {
+            "id": 1241,
+            "line": 99860,
+            "ops": 594,
+            "regs": 41,
+            "captures": 0,
+            "name": "_ZN11btRigidBody18proceedToTransformERK11btTransform",
+            "threaded": 7546364,
+            "switch": 19346,
+            "attempts": 19200,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 2,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1241,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 57336,
+            "hits": 19137,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1241,
+            "line": 99860,
+            "name": "_ZN11btRigidBody18proceedToTransformERK11btTransform"
+          }
+        },
+        {
+          "id": 1245,
+          "coverage": {
+            "id": 1245,
+            "line": 100225,
+            "ops": 680,
+            "regs": 37,
+            "captures": 0,
+            "name": "_ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE",
+            "threaded": 1071539,
+            "switch": 2070,
+            "attempts": 1922,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 1,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1245,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 47108,
+            "hits": 1859,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1245,
+            "line": 100225,
+            "name": "_ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE"
+          }
+        },
+        {
+          "id": 1250,
+          "coverage": {
+            "id": 1250,
+            "line": 100819,
+            "ops": 170,
+            "regs": 26,
+            "captures": 0,
+            "name": "_ZN11btRigidBody19integrateVelocitiesEf",
+            "threaded": 2554492,
+            "switch": 19278,
+            "attempts": 38337,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1250,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 170,
+            "bytes": 85636,
+            "hits": 38274,
+            "returns": 19136,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1250,
+            "line": 100819,
+            "name": "_ZN11btRigidBody19integrateVelocitiesEf"
+          }
+        },
+        {
+          "id": 1251,
+          "coverage": {
+            "id": 1251,
+            "line": 100930,
+            "ops": 339,
+            "regs": 25,
+            "captures": 0,
+            "name": "_ZN11btRigidBody12applyDampingEf",
+            "threaded": 1230072,
+            "switch": 19341,
+            "attempts": 19216,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 19,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1251,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 339,
+            "bytes": 220264,
+            "hits": 19153,
+            "returns": 0,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1251,
+            "line": 100930,
+            "name": "_ZN11btRigidBody12applyDampingEf"
+          }
+        },
+        {
+          "id": 1288,
+          "coverage": {
+            "id": 1288,
+            "line": 106581,
+            "ops": 266,
+            "regs": 21,
+            "captures": 0,
+            "name": "block_prepare_used",
+            "threaded": 1086325,
+            "switch": 16136,
+            "attempts": 16085,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 16,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1288,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 266,
+            "bytes": 90148,
+            "hits": 16022,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1288,
+            "line": 106581,
+            "name": "block_prepare_used"
+          }
+        },
+        {
+          "id": 1289,
+          "coverage": {
+            "id": 1289,
+            "line": 106744,
+            "ops": 341,
+            "regs": 25,
+            "captures": 0,
+            "name": "block_locate_free",
+            "threaded": 1822780,
+            "switch": 48254,
+            "attempts": 16056,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 33,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1289,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 341,
+            "bytes": 94956,
+            "hits": 15993,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1289,
+            "line": 106744,
+            "name": "block_locate_free"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "bench": "zlib",
+    "base": {
+      "totals": {
+        "functions": 14,
+        "loops": 7,
+        "templates": 0,
+        "hits": 1562045,
+        "code_bytes": 616412,
+        "native_calls": 297,
+        "native_returns": 0
+      },
+      "threaded": 1583977863,
+      "functions": [
+        {
+          "id": 144,
+          "coverage": {
+            "id": 144,
+            "line": 1,
+            "ops": 37098,
+            "regs": 518,
+            "captures": 0,
+            "name": "a1",
+            "threaded": 300501202,
+            "switch": 36450424,
+            "attempts": 2996,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "WIDE"
+          }
+        },
+        {
+          "id": 146,
+          "coverage": {
+            "id": 146,
+            "line": 1,
+            "ops": 492,
+            "regs": 52,
+            "captures": 8,
+            "name": "a3",
+            "threaded": 153822660,
+            "switch": 7689,
+            "attempts": 7688,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 149,
+          "coverage": {
+            "id": 149,
+            "line": 1,
+            "ops": 429,
+            "regs": 48,
+            "captures": 3,
+            "name": "a6",
+            "threaded": 609780780,
+            "switch": 760452,
+            "attempts": 11239,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 151,
+          "coverage": {
+            "id": 151,
+            "line": 1,
+            "ops": 1370,
+            "regs": 68,
+            "captures": 6,
+            "name": "a8",
+            "threaded": 376811637,
+            "switch": 1646574,
+            "attempts": 197178,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 8,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 151,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 796,
+            "ops": 128,
+            "bytes": 52428,
+            "hits": 195589,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 4160143,
+            "budget_exits": 4126,
+            "id": 151,
+            "line": 1,
+            "name": "a8"
+          }
+        },
+        {
+          "id": 154,
+          "coverage": {
+            "id": 154,
+            "line": 1,
+            "ops": 1787,
+            "regs": 67,
+            "captures": 8,
+            "name": "bb",
+            "threaded": 56967782,
+            "switch": 4064499,
+            "attempts": 1237,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 22,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 154,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 95,
+            "ops": 128,
+            "bytes": 54124,
+            "hits": 398,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 39740,
+            "budget_exits": 38,
+            "id": 154,
+            "line": 1,
+            "name": "bb"
+          }
+        },
+        {
+          "id": 155,
+          "coverage": {
+            "id": 155,
+            "line": 1,
+            "ops": 811,
+            "regs": 57,
+            "captures": 5,
+            "name": "bc",
+            "threaded": 69824522,
+            "switch": 1242896,
+            "attempts": 1242779,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 155,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 77,
+            "ops": 128,
+            "bytes": 45620,
+            "hits": 1242778,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 155,
+            "line": 1,
+            "name": "bc"
+          }
+        },
+        {
+          "id": 156,
+          "coverage": {
+            "id": 156,
+            "line": 1,
+            "ops": 942,
+            "regs": 69,
+            "captures": 4,
+            "name": "bd",
+            "threaded": 1740423,
+            "switch": 146430,
+            "attempts": 58217,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 10,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 156,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 104,
+            "ops": 128,
+            "bytes": 50552,
+            "hits": 58215,
+            "returns": 480,
+            "stalled": 240,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 156,
+            "line": 1,
+            "name": "bd"
+          }
+        },
+        {
+          "id": 160,
+          "coverage": {
+            "id": 160,
+            "line": 1,
+            "ops": 553,
+            "regs": 66,
+            "captures": 1,
+            "name": "bh",
+            "threaded": 5728602,
+            "switch": 2771,
+            "attempts": 2772,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 160,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 162,
+            "ops": 143,
+            "bytes": 49852,
+            "hits": 2729,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 705090,
+            "budget_exits": 691,
+            "id": 160,
+            "line": 1,
+            "name": "bh"
+          }
+        },
+        {
+          "id": 162,
+          "coverage": {
+            "id": 162,
+            "line": 1,
+            "ops": 968,
+            "regs": 59,
+            "captures": 6,
+            "name": "bj",
+            "threaded": 6994852,
+            "switch": 2564,
+            "attempts": 1360,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        }
+      ]
+    },
+    "large": {
+      "totals": {
+        "functions": 14,
+        "loops": 7,
+        "templates": 0,
+        "hits": 1562045,
+        "code_bytes": 616412,
+        "native_calls": 297,
+        "native_returns": 0
+      },
+      "threaded": 1583972225,
+      "functions": [
+        {
+          "id": 144,
+          "coverage": {
+            "id": 144,
+            "line": 1,
+            "ops": 37098,
+            "regs": 518,
+            "captures": 0,
+            "name": "a1",
+            "threaded": 300501202,
+            "switch": 36450424,
+            "attempts": 2996,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "WIDE"
+          }
+        },
+        {
+          "id": 146,
+          "coverage": {
+            "id": 146,
+            "line": 1,
+            "ops": 492,
+            "regs": 52,
+            "captures": 8,
+            "name": "a3",
+            "threaded": 153822660,
+            "switch": 7689,
+            "attempts": 7688,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 149,
+          "coverage": {
+            "id": 149,
+            "line": 1,
+            "ops": 429,
+            "regs": 48,
+            "captures": 3,
+            "name": "a6",
+            "threaded": 609780780,
+            "switch": 760452,
+            "attempts": 11239,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 151,
+          "coverage": {
+            "id": 151,
+            "line": 1,
+            "ops": 1370,
+            "regs": 68,
+            "captures": 6,
+            "name": "a8",
+            "threaded": 376811637,
+            "switch": 1646574,
+            "attempts": 197178,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 8,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 151,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 796,
+            "ops": 128,
+            "bytes": 52428,
+            "hits": 195589,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 4160143,
+            "budget_exits": 4126,
+            "id": 151,
+            "line": 1,
+            "name": "a8"
+          }
+        },
+        {
+          "id": 154,
+          "coverage": {
+            "id": 154,
+            "line": 1,
+            "ops": 1787,
+            "regs": 67,
+            "captures": 8,
+            "name": "bb",
+            "threaded": 56967782,
+            "switch": 4064499,
+            "attempts": 1237,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 22,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 154,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 95,
+            "ops": 128,
+            "bytes": 54124,
+            "hits": 398,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 39740,
+            "budget_exits": 38,
+            "id": 154,
+            "line": 1,
+            "name": "bb"
+          }
+        },
+        {
+          "id": 155,
+          "coverage": {
+            "id": 155,
+            "line": 1,
+            "ops": 811,
+            "regs": 57,
+            "captures": 5,
+            "name": "bc",
+            "threaded": 69824522,
+            "switch": 1242896,
+            "attempts": 1242779,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 155,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 77,
+            "ops": 128,
+            "bytes": 45620,
+            "hits": 1242778,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 155,
+            "line": 1,
+            "name": "bc"
+          }
+        },
+        {
+          "id": 156,
+          "coverage": {
+            "id": 156,
+            "line": 1,
+            "ops": 942,
+            "regs": 69,
+            "captures": 4,
+            "name": "bd",
+            "threaded": 1740423,
+            "switch": 146430,
+            "attempts": 58217,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 10,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 156,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 104,
+            "ops": 128,
+            "bytes": 50552,
+            "hits": 58215,
+            "returns": 480,
+            "stalled": 240,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 156,
+            "line": 1,
+            "name": "bd"
+          }
+        },
+        {
+          "id": 160,
+          "coverage": {
+            "id": 160,
+            "line": 1,
+            "ops": 553,
+            "regs": 66,
+            "captures": 1,
+            "name": "bh",
+            "threaded": 5728602,
+            "switch": 2771,
+            "attempts": 2772,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 160,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 162,
+            "ops": 143,
+            "bytes": 49852,
+            "hits": 2729,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 705090,
+            "budget_exits": 691,
+            "id": 160,
+            "line": 1,
+            "name": "bh"
+          }
+        },
+        {
+          "id": 162,
+          "coverage": {
+            "id": 162,
+            "line": 1,
+            "ops": 968,
+            "regs": 59,
+            "captures": 6,
+            "name": "bj",
+            "threaded": 6989214,
+            "switch": 2570,
+            "attempts": 1366,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        }
+      ]
+    },
+    "guards": {
+      "totals": {
+        "functions": 18,
+        "loops": 7,
+        "templates": 0,
+        "hits": 2768670,
+        "code_bytes": 1231876,
+        "native_calls": 654,
+        "native_returns": 93
+      },
+      "threaded": 829272857,
+      "functions": [
+        {
+          "id": 144,
+          "coverage": {
+            "id": 144,
+            "line": 1,
+            "ops": 37098,
+            "regs": 518,
+            "captures": 0,
+            "name": "a1",
+            "threaded": 300501202,
+            "switch": 36450419,
+            "attempts": 2991,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "WIDE"
+          }
+        },
+        {
+          "id": 149,
+          "coverage": {
+            "id": 149,
+            "line": 1,
+            "ops": 429,
+            "regs": 48,
+            "captures": 3,
+            "name": "a6",
+            "threaded": 14229130,
+            "switch": 1507131,
+            "attempts": 1193511,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 67,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 149,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 429,
+            "bytes": 131488,
+            "hits": 1193504,
+            "returns": 434514,
+            "stalled": 0,
+            "charged_edges": 10759573,
+            "budget_exits": 10515,
+            "id": 149,
+            "line": 1,
+            "name": "a6"
+          }
+        },
+        {
+          "id": 151,
+          "coverage": {
+            "id": 151,
+            "line": 1,
+            "ops": 1370,
+            "regs": 68,
+            "captures": 6,
+            "name": "a8",
+            "threaded": 376811595,
+            "switch": 1646568,
+            "attempts": 197166,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 8,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 151,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 796,
+            "ops": 128,
+            "bytes": 52428,
+            "hits": 195547,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 4160185,
+            "budget_exits": 4096,
+            "id": 151,
+            "line": 1,
+            "name": "a8"
+          }
+        },
+        {
+          "id": 154,
+          "coverage": {
+            "id": 154,
+            "line": 1,
+            "ops": 1787,
+            "regs": 67,
+            "captures": 8,
+            "name": "bb",
+            "threaded": 56967781,
+            "switch": 4064493,
+            "attempts": 1230,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 22,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 154,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 95,
+            "ops": 128,
+            "bytes": 54124,
+            "hits": 397,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 39741,
+            "budget_exits": 37,
+            "id": 154,
+            "line": 1,
+            "name": "bb"
+          }
+        },
+        {
+          "id": 155,
+          "coverage": {
+            "id": 155,
+            "line": 1,
+            "ops": 811,
+            "regs": 57,
+            "captures": 5,
+            "name": "bc",
+            "threaded": 69824522,
+            "switch": 1242896,
+            "attempts": 1242779,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 3,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 155,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 77,
+            "ops": 128,
+            "bytes": 45620,
+            "hits": 1242778,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 155,
+            "line": 1,
+            "name": "bc"
+          }
+        },
+        {
+          "id": 156,
+          "coverage": {
+            "id": 156,
+            "line": 1,
+            "ops": 942,
+            "regs": 69,
+            "captures": 4,
+            "name": "bd",
+            "threaded": 1740423,
+            "switch": 146430,
+            "attempts": 58217,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 10,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 156,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 104,
+            "ops": 128,
+            "bytes": 50552,
+            "hits": 58215,
+            "returns": 480,
+            "stalled": 240,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 156,
+            "line": 1,
+            "name": "bd"
+          }
+        },
+        {
+          "id": 160,
+          "coverage": {
+            "id": 160,
+            "line": 1,
+            "ops": 553,
+            "regs": 66,
+            "captures": 1,
+            "name": "bh",
+            "threaded": 5728595,
+            "switch": 2765,
+            "attempts": 2766,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 160,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 162,
+            "ops": 143,
+            "bytes": 49852,
+            "hits": 2722,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 705097,
+            "budget_exits": 683,
+            "id": 160,
+            "line": 1,
+            "name": "bh"
+          }
+        },
+        {
+          "id": 162,
+          "coverage": {
+            "id": 162,
+            "line": 1,
+            "ops": 968,
+            "regs": 59,
+            "captures": 6,
+            "name": "bj",
+            "threaded": 1711951,
+            "switch": 3082,
+            "attempts": 1878,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 52,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 162,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 577,
+            "ops": 271,
+            "bytes": 100532,
+            "hits": 1099,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 194499,
+            "budget_exits": 199,
+            "id": 162,
+            "line": 1,
+            "name": "bj"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "base": {
+      "totals": {
+        "functions": 10,
+        "loops": 16,
+        "templates": 0,
+        "hits": 63639,
+        "code_bytes": 346804,
+        "native_calls": 0,
+        "native_returns": 0
+      },
+      "threaded": 4578827,
+      "functions": [
+        {
+          "id": 13,
+          "coverage": {
+            "id": 13,
+            "line": 517,
+            "ops": 200,
+            "regs": 15,
+            "captures": 3,
+            "name": "set_bnd",
+            "threaded": 2889445,
+            "switch": 263,
+            "attempts": 136,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 31,
+          "coverage": {
+            "id": 31,
+            "line": 788,
+            "ops": 81,
+            "regs": 26,
+            "captures": 10,
+            "name": "reset",
+            "threaded": 1030334,
+            "switch": 1240,
+            "attempts": 1017,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 20,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 31,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 81,
+            "bytes": 28612,
+            "hits": 22,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 31,
+            "line": 788,
+            "name": "reset"
+          }
+        }
+      ]
+    },
+    "large": {
+      "totals": {
+        "functions": 10,
+        "loops": 16,
+        "templates": 0,
+        "hits": 63639,
+        "code_bytes": 346804,
+        "native_calls": 0,
+        "native_returns": 0
+      },
+      "threaded": 4578827,
+      "functions": [
+        {
+          "id": 13,
+          "coverage": {
+            "id": 13,
+            "line": 517,
+            "ops": 200,
+            "regs": 15,
+            "captures": 3,
+            "name": "set_bnd",
+            "threaded": 2889445,
+            "switch": 263,
+            "attempts": 136,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity"
+          }
+        },
+        {
+          "id": 31,
+          "coverage": {
+            "id": 31,
+            "line": 788,
+            "ops": 81,
+            "regs": 26,
+            "captures": 10,
+            "name": "reset",
+            "threaded": 1030334,
+            "switch": 1240,
+            "attempts": 1017,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 20,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 31,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 81,
+            "bytes": 28612,
+            "hits": 22,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 31,
+            "line": 788,
+            "name": "reset"
+          }
+        }
+      ]
+    },
+    "guards": {
+      "totals": {
+        "functions": 11,
+        "loops": 15,
+        "templates": 0,
+        "hits": 123090,
+        "code_bytes": 478736,
+        "native_calls": 0,
+        "native_returns": 0
+      },
+      "threaded": 4128977,
+      "functions": [
+        {
+          "id": 13,
+          "coverage": {
+            "id": 13,
+            "line": 517,
+            "ops": 200,
+            "regs": 15,
+            "captures": 3,
+            "name": "set_bnd",
+            "threaded": 2439681,
+            "switch": 217939,
+            "attempts": 79823,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 22,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 13,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 200,
+            "bytes": 134984,
+            "hits": 59447,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 539,
+            "budget_exits": 0,
+            "id": 13,
+            "line": 517,
+            "name": "set_bnd"
+          }
+        },
+        {
+          "id": 31,
+          "coverage": {
+            "id": 31,
+            "line": 788,
+            "ops": 81,
+            "regs": 26,
+            "captures": 10,
+            "name": "reset",
+            "threaded": 1030334,
+            "switch": 1240,
+            "attempts": 1017,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 20,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 31,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 81,
+            "bytes": 28612,
+            "hits": 22,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 31,
+            "line": 788,
+            "name": "reset"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "bench": "gbemu",
+    "base": {
+      "totals": {
+        "functions": 77,
+        "loops": 7,
+        "templates": 0,
+        "hits": 1556064,
+        "code_bytes": 1048216,
+        "native_calls": 363771,
+        "native_returns": 305813
+      },
+      "threaded": 54160934,
+      "functions": [
+        {
+          "id": 30,
+          "coverage": {
+            "id": 30,
+            "line": 667,
+            "ops": 118,
+            "regs": 17,
+            "captures": 0,
+            "name": "base64_decode",
+            "threaded": 1572930,
+            "switch": 628,
+            "attempts": 391,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 43,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 30,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 118,
+            "bytes": 47156,
+            "hits": 10,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 30,
+            "line": 667,
+            "name": "base64_decode"
+          }
+        },
+        {
+          "id": 111,
+          "coverage": {
+            "id": 111,
+            "line": 924,
+            "ops": 22,
+            "regs": 10,
+            "captures": 0,
+            "threaded": 2458189,
+            "switch": 154,
+            "attempts": 217,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 7,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 111,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 22,
+            "bytes": 8736,
+            "hits": 76,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 68,
+            "budget_exits": 0,
+            "id": 111,
+            "line": 924,
+            "name": ""
+          }
+        },
+        {
+          "id": 681,
+          "coverage": {
+            "id": 681,
+            "line": 6878,
+            "ops": 219,
+            "regs": 20,
+            "captures": 0,
+            "threaded": 2829096,
+            "switch": 70,
+            "attempts": 34,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 685,
+          "coverage": {
+            "id": 685,
+            "line": 7041,
+            "ops": 71,
+            "regs": 17,
+            "captures": 0,
+            "threaded": 14619571,
+            "switch": 1156987,
+            "attempts": 26469,
+            "warmup": 4294967294,
+            "retired": 3,
+            "active": 37,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 685,
+            "calls": 65994,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 71,
+            "bytes": 17632,
+            "hits": 25370,
+            "returns": 1,
+            "stalled": 19,
+            "charged_edges": 165994,
+            "budget_exits": 205,
+            "id": 685,
+            "line": 7041,
+            "name": ""
+          }
+        },
+        {
+          "id": 716,
+          "coverage": {
+            "id": 716,
+            "line": 7486,
+            "ops": 175,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 13310214,
+            "switch": 258075,
+            "attempts": 261143,
+            "warmup": 4294967294,
+            "retired": 5,
+            "active": 76,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 716,
+            "calls": 159087,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 175,
+            "bytes": 57520,
+            "hits": 261141,
+            "returns": 9,
+            "stalled": 15,
+            "charged_edges": 203912,
+            "budget_exits": 201,
+            "id": 716,
+            "line": 7486,
+            "name": ""
+          }
+        },
+        {
+          "id": 729,
+          "coverage": {
+            "id": 729,
+            "line": 7743,
+            "ops": 97,
+            "regs": 16,
+            "captures": 0,
+            "threaded": 1769406,
+            "switch": 177503,
+            "attempts": 176985,
+            "warmup": 4294967295,
+            "retired": 6,
+            "active": 37,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 729,
+            "calls": 283,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 97,
+            "bytes": 32668,
+            "hits": 176922,
+            "returns": 176731,
+            "stalled": 176731,
+            "charged_edges": 283,
+            "budget_exits": 1,
+            "id": 729,
+            "line": 7743,
+            "name": ""
+          }
+        },
+        {
+          "id": 760,
+          "coverage": {
+            "id": 760,
+            "line": 8350,
+            "ops": 505,
+            "regs": 28,
+            "captures": 0,
+            "threaded": 4124133,
+            "switch": 767500,
+            "attempts": 60,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 838,
+          "coverage": {
+            "id": 838,
+            "line": 9674,
+            "ops": 350,
+            "regs": 24,
+            "captures": 0,
+            "threaded": 1568646,
+            "switch": 65903,
+            "attempts": 66,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 952,
+          "coverage": {
+            "id": 952,
+            "line": 11038,
+            "ops": 36,
+            "regs": 8,
+            "captures": 0,
+            "threaded": 1146953,
+            "switch": 164052,
+            "attempts": 162,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        }
+      ]
+    },
+    "large": {
+      "totals": {
+        "functions": 178,
+        "loops": 9,
+        "templates": 0,
+        "hits": 1871270,
+        "code_bytes": 2035432,
+        "native_calls": 454497,
+        "native_returns": 377132
+      },
+      "threaded": 49091485,
+      "functions": [
+        {
+          "id": 30,
+          "coverage": {
+            "id": 30,
+            "line": 667,
+            "ops": 118,
+            "regs": 17,
+            "captures": 0,
+            "name": "base64_decode",
+            "threaded": 1572930,
+            "switch": 628,
+            "attempts": 391,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 43,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 30,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 118,
+            "bytes": 47156,
+            "hits": 10,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 30,
+            "line": 667,
+            "name": "base64_decode"
+          }
+        },
+        {
+          "id": 111,
+          "coverage": {
+            "id": 111,
+            "line": 924,
+            "ops": 22,
+            "regs": 10,
+            "captures": 0,
+            "threaded": 2458189,
+            "switch": 157,
+            "attempts": 213,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 7,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 111,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 22,
+            "bytes": 8736,
+            "hits": 69,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 61,
+            "budget_exits": 0,
+            "id": 111,
+            "line": 924,
+            "name": ""
+          }
+        },
+        {
+          "id": 681,
+          "coverage": {
+            "id": 681,
+            "line": 6878,
+            "ops": 219,
+            "regs": 20,
+            "captures": 0,
+            "threaded": 2829096,
+            "switch": 70,
+            "attempts": 34,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 685,
+          "coverage": {
+            "id": 685,
+            "line": 7041,
+            "ops": 71,
+            "regs": 17,
+            "captures": 0,
+            "threaded": 14619571,
+            "switch": 1156983,
+            "attempts": 26465,
+            "warmup": 4294967294,
+            "retired": 3,
+            "active": 37,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 685,
+            "calls": 65994,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 71,
+            "bytes": 17632,
+            "hits": 25370,
+            "returns": 1,
+            "stalled": 19,
+            "charged_edges": 163244,
+            "budget_exits": 205,
+            "id": 685,
+            "line": 7041,
+            "name": ""
+          }
+        },
+        {
+          "id": 716,
+          "coverage": {
+            "id": 716,
+            "line": 7486,
+            "ops": 175,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 13016987,
+            "switch": 246893,
+            "attempts": 265459,
+            "warmup": 4294967294,
+            "retired": 5,
+            "active": 76,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 716,
+            "calls": 174740,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 175,
+            "bytes": 57520,
+            "hits": 265455,
+            "returns": 9,
+            "stalled": 15,
+            "charged_edges": 233369,
+            "budget_exits": 225,
+            "id": 716,
+            "line": 7486,
+            "name": ""
+          }
+        },
+        {
+          "id": 729,
+          "coverage": {
+            "id": 729,
+            "line": 7743,
+            "ops": 97,
+            "regs": 16,
+            "captures": 0,
+            "threaded": 1769406,
+            "switch": 177508,
+            "attempts": 176985,
+            "warmup": 4294967295,
+            "retired": 6,
+            "active": 37,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 729,
+            "calls": 283,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 97,
+            "bytes": 32672,
+            "hits": 176922,
+            "returns": 176731,
+            "stalled": 176731,
+            "charged_edges": 283,
+            "budget_exits": 1,
+            "id": 729,
+            "line": 7743,
+            "name": ""
+          }
+        },
+        {
+          "id": 760,
+          "coverage": {
+            "id": 760,
+            "line": 8350,
+            "ops": 505,
+            "regs": 28,
+            "captures": 0,
+            "threaded": 4124133,
+            "switch": 767479,
+            "attempts": 39,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 838,
+          "coverage": {
+            "id": 838,
+            "line": 9674,
+            "ops": 350,
+            "regs": 24,
+            "captures": 0,
+            "threaded": 1568646,
+            "switch": 65903,
+            "attempts": 66,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        }
+      ]
+    },
+    "guards": {
+      "totals": {
+        "functions": 183,
+        "loops": 9,
+        "templates": 0,
+        "hits": 1970046,
+        "code_bytes": 2868048,
+        "native_calls": 458903,
+        "native_returns": 379146
+      },
+      "threaded": 44203472,
+      "functions": [
+        {
+          "id": 30,
+          "coverage": {
+            "id": 30,
+            "line": 667,
+            "ops": 118,
+            "regs": 17,
+            "captures": 0,
+            "name": "base64_decode",
+            "threaded": 1572930,
+            "switch": 628,
+            "attempts": 391,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 43,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 30,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 118,
+            "bytes": 47156,
+            "hits": 10,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 30,
+            "line": 667,
+            "name": "base64_decode"
+          }
+        },
+        {
+          "id": 111,
+          "coverage": {
+            "id": 111,
+            "line": 924,
+            "ops": 22,
+            "regs": 10,
+            "captures": 0,
+            "threaded": 2458189,
+            "switch": 159,
+            "attempts": 215,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 7,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 111,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 22,
+            "bytes": 8736,
+            "hits": 69,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 61,
+            "budget_exits": 0,
+            "id": 111,
+            "line": 924,
+            "name": ""
+          }
+        },
+        {
+          "id": 685,
+          "coverage": {
+            "id": 685,
+            "line": 7041,
+            "ops": 71,
+            "regs": 17,
+            "captures": 0,
+            "threaded": 14619574,
+            "switch": 1156994,
+            "attempts": 26469,
+            "warmup": 4294967294,
+            "retired": 3,
+            "active": 37,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 685,
+            "calls": 66000,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 71,
+            "bytes": 17632,
+            "hits": 25373,
+            "returns": 1,
+            "stalled": 19,
+            "charged_edges": 165952,
+            "budget_exits": 207,
+            "id": 685,
+            "line": 7041,
+            "name": ""
+          }
+        },
+        {
+          "id": 716,
+          "coverage": {
+            "id": 716,
+            "line": 7486,
+            "ops": 175,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 13036515,
+            "switch": 246864,
+            "attempts": 265464,
+            "warmup": 4294967294,
+            "retired": 5,
+            "active": 76,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 716,
+            "calls": 173761,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 175,
+            "bytes": 57520,
+            "hits": 265462,
+            "returns": 9,
+            "stalled": 15,
+            "charged_edges": 232392,
+            "budget_exits": 241,
+            "id": 716,
+            "line": 7486,
+            "name": ""
+          }
+        },
+        {
+          "id": 729,
+          "coverage": {
+            "id": 729,
+            "line": 7743,
+            "ops": 97,
+            "regs": 16,
+            "captures": 0,
+            "threaded": 1769416,
+            "switch": 177528,
+            "attempts": 176985,
+            "warmup": 4294967295,
+            "retired": 6,
+            "active": 37,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 729,
+            "calls": 282,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 97,
+            "bytes": 32672,
+            "hits": 176922,
+            "returns": 176731,
+            "stalled": 176731,
+            "charged_edges": 282,
+            "budget_exits": 1,
+            "id": 729,
+            "line": 7743,
+            "name": ""
+          }
+        },
+        {
+          "id": 760,
+          "coverage": {
+            "id": 760,
+            "line": 8350,
+            "ops": 505,
+            "regs": 28,
+            "captures": 0,
+            "threaded": 3983062,
+            "switch": 892155,
+            "attempts": 31501,
+            "warmup": 4294967294,
+            "retired": 3,
+            "active": 120,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 760,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 505,
+            "bytes": 281700,
+            "hits": 31478,
+            "returns": 1654,
+            "stalled": 11,
+            "charged_edges": 29756,
+            "budget_exits": 29,
+            "id": 760,
+            "line": 8350,
+            "name": ""
+          }
+        }
+      ]
+    }
+  },
+  {
+    "bench": "box2d",
+    "base": {
+      "totals": {
+        "functions": 105,
+        "loops": 1,
+        "templates": 0,
+        "hits": 545143,
+        "code_bytes": 1047924,
+        "native_calls": 34715,
+        "native_returns": 31396
+      },
+      "threaded": 52518189,
+      "functions": [
+        {
+          "id": 168,
+          "coverage": {
+            "id": 168,
+            "line": 465,
+            "ops": 364,
+            "regs": 42,
+            "captures": 3,
+            "threaded": 2017452,
+            "switch": 20418,
+            "attempts": 22,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 269,
+          "coverage": {
+            "id": 269,
+            "line": 517,
+            "ops": 389,
+            "regs": 33,
+            "captures": 1,
+            "threaded": 1137198,
+            "switch": 35,
+            "attempts": 28,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 381,
+          "coverage": {
+            "id": 381,
+            "line": 564,
+            "ops": 24,
+            "regs": 8,
+            "captures": 0,
+            "threaded": 1713185,
+            "switch": 13,
+            "attempts": 71,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 10,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 381,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 24,
+            "bytes": 6672,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 381,
+            "line": 564,
+            "name": ""
+          }
+        },
+        {
+          "id": 427,
+          "coverage": {
+            "id": 427,
+            "line": 574,
+            "ops": 17,
+            "regs": 7,
+            "captures": 0,
+            "threaded": 1504885,
+            "switch": 3,
+            "attempts": 71,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 11,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 427,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 17,
+            "bytes": 4768,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 427,
+            "line": 574,
+            "name": ""
+          }
+        },
+        {
+          "id": 542,
+          "coverage": {
+            "id": 542,
+            "line": 611,
+            "ops": 50,
+            "regs": 20,
+            "captures": 0,
+            "threaded": 3483000,
+            "switch": 264,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 726,
+          "coverage": {
+            "id": 726,
+            "line": 685,
+            "ops": 402,
+            "regs": 53,
+            "captures": 3,
+            "threaded": 2855885,
+            "switch": 498,
+            "attempts": 11,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 728,
+          "coverage": {
+            "id": 728,
+            "line": 691,
+            "ops": 627,
+            "regs": 63,
+            "captures": 1,
+            "threaded": 21260541,
+            "switch": 55939,
+            "attempts": 161,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 730,
+          "coverage": {
+            "id": 730,
+            "line": 697,
+            "ops": 151,
+            "regs": 40,
+            "captures": 3,
+            "threaded": 3975054,
+            "switch": 529,
+            "attempts": 44,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 759,
+          "coverage": {
+            "id": 759,
+            "line": 705,
+            "ops": 425,
+            "regs": 23,
+            "captures": 2,
+            "threaded": 3458115,
+            "switch": 8415,
+            "attempts": 44,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        }
+      ]
+    },
+    "large": {
+      "totals": {
+        "functions": 178,
+        "loops": 0,
+        "templates": 0,
+        "hits": 717269,
+        "code_bytes": 2390116,
+        "native_calls": 93420,
+        "native_returns": 71526
+      },
+      "threaded": 44813264,
+      "functions": [
+        {
+          "id": 168,
+          "coverage": {
+            "id": 168,
+            "line": 465,
+            "ops": 364,
+            "regs": 42,
+            "captures": 3,
+            "threaded": 2017452,
+            "switch": 20455,
+            "attempts": 22,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 269,
+          "coverage": {
+            "id": 269,
+            "line": 517,
+            "ops": 389,
+            "regs": 33,
+            "captures": 1,
+            "threaded": 1137198,
+            "switch": 31,
+            "attempts": 26,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 381,
+          "coverage": {
+            "id": 381,
+            "line": 564,
+            "ops": 24,
+            "regs": 8,
+            "captures": 0,
+            "threaded": 1713185,
+            "switch": 13,
+            "attempts": 71,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 10,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 381,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 24,
+            "bytes": 6672,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 381,
+            "line": 564,
+            "name": ""
+          }
+        },
+        {
+          "id": 427,
+          "coverage": {
+            "id": 427,
+            "line": 574,
+            "ops": 17,
+            "regs": 7,
+            "captures": 0,
+            "threaded": 1504885,
+            "switch": 12,
+            "attempts": 71,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 11,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 427,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 17,
+            "bytes": 4772,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 427,
+            "line": 574,
+            "name": ""
+          }
+        },
+        {
+          "id": 726,
+          "coverage": {
+            "id": 726,
+            "line": 685,
+            "ops": 402,
+            "regs": 53,
+            "captures": 3,
+            "threaded": 2855885,
+            "switch": 439,
+            "attempts": 7,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        },
+        {
+          "id": 728,
+          "coverage": {
+            "id": 728,
+            "line": 691,
+            "ops": 627,
+            "regs": 63,
+            "captures": 1,
+            "threaded": 21260533,
+            "switch": 55943,
+            "attempts": 185,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 52,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 728,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 46,
+            "ops": 128,
+            "bytes": 62772,
+            "hits": 27,
+            "returns": 0,
+            "stalled": 26,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 728,
+            "line": 691,
+            "name": ""
+          }
+        },
+        {
+          "id": 730,
+          "coverage": {
+            "id": 730,
+            "line": 697,
+            "ops": 151,
+            "regs": 40,
+            "captures": 3,
+            "threaded": 1838284,
+            "switch": 474,
+            "attempts": 49509,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 75,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 730,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 151,
+            "bytes": 52132,
+            "hits": 49507,
+            "returns": 234,
+            "stalled": 0,
+            "charged_edges": 49240,
+            "budget_exits": 51,
+            "id": 730,
+            "line": 697,
+            "name": ""
+          }
+        },
+        {
+          "id": 759,
+          "coverage": {
+            "id": 759,
+            "line": 705,
+            "ops": 425,
+            "regs": 23,
+            "captures": 2,
+            "threaded": 3458115,
+            "switch": 8393,
+            "attempts": 36,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "guard/link capacity",
+            "name": ""
+          }
+        }
+      ]
+    },
+    "guards": {
+      "totals": {
+        "functions": 181,
+        "loops": 1,
+        "templates": 0,
+        "hits": 719216,
+        "code_bytes": 2978420,
+        "native_calls": 147641,
+        "native_returns": 121349
+      },
+      "threaded": 38897530,
+      "functions": [
+        {
+          "id": 381,
+          "coverage": {
+            "id": 381,
+            "line": 564,
+            "ops": 24,
+            "regs": 8,
+            "captures": 0,
+            "threaded": 1713185,
+            "switch": 13,
+            "attempts": 71,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 10,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 381,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 24,
+            "bytes": 6672,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 381,
+            "line": 564,
+            "name": ""
+          }
+        },
+        {
+          "id": 427,
+          "coverage": {
+            "id": 427,
+            "line": 574,
+            "ops": 17,
+            "regs": 7,
+            "captures": 0,
+            "threaded": 1504885,
+            "switch": 8,
+            "attempts": 71,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 11,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 427,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 17,
+            "bytes": 4772,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 427,
+            "line": 574,
+            "name": ""
+          }
+        },
+        {
+          "id": 726,
+          "coverage": {
+            "id": 726,
+            "line": 685,
+            "ops": 402,
+            "regs": 53,
+            "captures": 3,
+            "threaded": 2614531,
+            "switch": 522,
+            "attempts": 11260,
+            "warmup": 4294967294,
+            "retired": 9,
+            "active": 103,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 726,
+            "calls": 15702,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 402,
+            "bytes": 102384,
+            "hits": 11259,
+            "returns": 72,
+            "stalled": 33,
+            "charged_edges": 21082,
+            "budget_exits": 22,
+            "id": 726,
+            "line": 685,
+            "name": ""
+          }
+        },
+        {
+          "id": 728,
+          "coverage": {
+            "id": 728,
+            "line": 691,
+            "ops": 627,
+            "regs": 63,
+            "captures": 1,
+            "threaded": 21260533,
+            "switch": 55976,
+            "attempts": 193,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 52,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 728,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 46,
+            "ops": 128,
+            "bytes": 62772,
+            "hits": 27,
+            "returns": 0,
+            "stalled": 26,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 728,
+            "line": 691,
+            "name": ""
+          }
+        },
+        {
+          "id": 730,
+          "coverage": {
+            "id": 730,
+            "line": 697,
+            "ops": 151,
+            "regs": 40,
+            "captures": 3,
+            "threaded": 1816682,
+            "switch": 651,
+            "attempts": 37358,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 75,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 730,
+            "calls": 16529,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 151,
+            "bytes": 52132,
+            "hits": 37349,
+            "returns": 234,
+            "stalled": 0,
+            "charged_edges": 110974,
+            "budget_exits": 104,
+            "id": 730,
+            "line": 697,
+            "name": ""
+          }
+        }
+      ]
+    }
+  },
+  {
+    "bench": "typescript",
+    "base": {
+      "totals": {
+        "functions": 85,
+        "loops": 1,
+        "templates": 0,
+        "hits": 4609229,
+        "code_bytes": 1048308,
+        "native_calls": 5578,
+        "native_returns": 4167
+      },
+      "threaded": 198152814,
+      "functions": [
+        {
+          "id": 43,
+          "coverage": {
+            "id": 43,
+            "line": 486,
+            "ops": 15,
+            "regs": 9,
+            "captures": 0,
+            "name": "Verify",
+            "threaded": 15335468,
+            "switch": 1134,
+            "attempts": 1133,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 80,
+          "coverage": {
+            "id": 80,
+            "line": 1147,
+            "ops": 9,
+            "regs": 5,
+            "captures": 0,
+            "threaded": 1277590,
+            "switch": 174192,
+            "attempts": 79,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 3,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 80,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 9,
+            "bytes": 6780,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 80,
+            "line": 1147,
+            "name": ""
+          }
+        },
+        {
+          "id": 109,
+          "coverage": {
+            "id": 109,
+            "line": 1341,
+            "ops": 24,
+            "regs": 8,
+            "captures": 1,
+            "name": "AST",
+            "threaded": 3714888,
+            "switch": 845,
+            "attempts": 87,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 109,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 24,
+            "bytes": 9652,
+            "hits": 16,
+            "returns": 0,
+            "stalled": 8,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 109,
+            "line": 1341,
+            "name": "AST"
+          }
+        },
+        {
+          "id": 134,
+          "coverage": {
+            "id": 134,
+            "line": 1623,
+            "ops": 20,
+            "regs": 8,
+            "captures": 1,
+            "name": "Identifier",
+            "threaded": 1089224,
+            "switch": 767,
+            "attempts": 54483,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 134,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 20,
+            "bytes": 7316,
+            "hits": 54131,
+            "returns": 54115,
+            "stalled": 54123,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 134,
+            "line": 1623,
+            "name": "Identifier"
+          }
+        },
+        {
+          "id": 168,
+          "coverage": {
+            "id": 168,
+            "line": 2069,
+            "ops": 246,
+            "regs": 24,
+            "captures": 0,
+            "threaded": 1835409,
+            "switch": 23960,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 415,
+          "coverage": {
+            "id": 415,
+            "line": 4050,
+            "ops": 51,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 11254048,
+            "switch": 20479,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 424,
+          "coverage": {
+            "id": 424,
+            "line": 4223,
+            "ops": 45,
+            "regs": 16,
+            "captures": 0,
+            "name": "walkListChildren",
+            "threaded": 1318871,
+            "switch": 1531,
+            "attempts": 72,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 426,
+          "coverage": {
+            "id": 426,
+            "line": 4249,
+            "ops": 48,
+            "regs": 13,
+            "captures": 0,
+            "name": "walkBinaryExpressionChildren",
+            "threaded": 1627050,
+            "switch": 2574,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 608,
+          "coverage": {
+            "id": 608,
+            "line": 5609,
+            "ops": 12,
+            "regs": 7,
+            "captures": 0,
+            "threaded": 2239392,
+            "switch": 747,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 618,
+          "coverage": {
+            "id": 618,
+            "line": 5693,
+            "ops": 44,
+            "regs": 12,
+            "captures": 0,
+            "threaded": 4649913,
+            "switch": 15657,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 636,
+          "coverage": {
+            "id": 636,
+            "line": 6381,
+            "ops": 409,
+            "regs": 40,
+            "captures": 0,
+            "threaded": 2912938,
+            "switch": 1488,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 644,
+          "coverage": {
+            "id": 644,
+            "line": 6560,
+            "ops": 333,
+            "regs": 66,
+            "captures": 0,
+            "threaded": 2406182,
+            "switch": 722,
+            "attempts": 43,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 645,
+          "coverage": {
+            "id": 645,
+            "line": 6638,
+            "ops": 99,
+            "regs": 48,
+            "captures": 0,
+            "threaded": 2897828,
+            "switch": 3562,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 748,
+          "coverage": {
+            "id": 748,
+            "line": 9253,
+            "ops": 995,
+            "regs": 60,
+            "captures": 0,
+            "threaded": 3816896,
+            "switch": 2199,
+            "attempts": 44789,
+            "warmup": 4294967294,
+            "retired": 3,
+            "active": 58,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 748,
+            "calls": 11,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 30612,
+            "hits": 44536,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 11,
+            "budget_exits": 0,
+            "id": 748,
+            "line": 9253,
+            "name": ""
+          }
+        },
+        {
+          "id": 750,
+          "coverage": {
+            "id": 750,
+            "line": 9520,
+            "ops": 524,
+            "regs": 80,
+            "captures": 0,
+            "threaded": 5561116,
+            "switch": 2640,
+            "attempts": 37844,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 56,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 750,
+            "calls": 41,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 29524,
+            "hits": 37493,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 41,
+            "budget_exits": 0,
+            "id": 750,
+            "line": 9520,
+            "name": ""
+          }
+        },
+        {
+          "id": 751,
+          "coverage": {
+            "id": 751,
+            "line": 9654,
+            "ops": 333,
+            "regs": 37,
+            "captures": 0,
+            "threaded": 1953235,
+            "switch": 1347,
+            "attempts": 88962,
+            "warmup": 4294967294,
+            "retired": 11,
+            "active": 159,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 751,
+            "calls": 7,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 333,
+            "bytes": 76124,
+            "hits": 88020,
+            "returns": 22265,
+            "stalled": 133,
+            "charged_edges": 28349,
+            "budget_exits": 27,
+            "id": 751,
+            "line": 9654,
+            "name": ""
+          }
+        },
+        {
+          "id": 758,
+          "coverage": {
+            "id": 758,
+            "line": 9881,
+            "ops": 2989,
+            "regs": 65,
+            "captures": 0,
+            "threaded": 3951952,
+            "switch": 105589,
+            "attempts": 340,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 63,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 758,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 31,
+            "ops": 128,
+            "bytes": 23288,
+            "hits": 279,
+            "returns": 0,
+            "stalled": 6,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 758,
+            "line": 9881,
+            "name": ""
+          }
+        },
+        {
+          "id": 760,
+          "coverage": {
+            "id": 760,
+            "line": 10629,
+            "ops": 180,
+            "regs": 53,
+            "captures": 0,
+            "threaded": 1431710,
+            "switch": 27368,
+            "attempts": 5623,
+            "warmup": 4294967295,
+            "retired": 7,
+            "active": 98,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 760,
+            "calls": 38,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 180,
+            "bytes": 50224,
+            "hits": 5564,
+            "returns": 5421,
+            "stalled": 27,
+            "charged_edges": 114,
+            "budget_exits": 0,
+            "id": 760,
+            "line": 10629,
+            "name": ""
+          }
+        },
+        {
+          "id": 842,
+          "coverage": {
+            "id": 842,
+            "line": 13274,
+            "ops": 17,
+            "regs": 10,
+            "captures": 0,
+            "threaded": 17060241,
+            "switch": 6035,
+            "attempts": 5321,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 9,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 842,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 17,
+            "bytes": 6424,
+            "hits": 9,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 842,
+            "line": 13274,
+            "name": ""
+          }
+        },
+        {
+          "id": 865,
+          "coverage": {
+            "id": 865,
+            "line": 13590,
+            "ops": 11,
+            "regs": 5,
+            "captures": 0,
+            "threaded": 12359042,
+            "switch": 1237258,
+            "attempts": 1235999,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 4,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 865,
+            "calls": 605,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 11,
+            "bytes": 3776,
+            "hits": 1230610,
+            "returns": 1230528,
+            "stalled": 0,
+            "charged_edges": 74,
+            "budget_exits": 0,
+            "id": 865,
+            "line": 13590,
+            "name": ""
+          }
+        },
+        {
+          "id": 868,
+          "coverage": {
+            "id": 868,
+            "line": 13665,
+            "ops": 18,
+            "regs": 8,
+            "captures": 0,
+            "threaded": 1295750,
+            "switch": 1558,
+            "attempts": 178169,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 8,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 868,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 18,
+            "bytes": 4892,
+            "hits": 177213,
+            "returns": 121447,
+            "stalled": 55758,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 868,
+            "line": 13665,
+            "name": ""
+          }
+        },
+        {
+          "id": 871,
+          "coverage": {
+            "id": 871,
+            "line": 13764,
+            "ops": 181,
+            "regs": 24,
+            "captures": 0,
+            "threaded": 2097721,
+            "switch": 31841,
+            "attempts": 764130,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 98,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 871,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 181,
+            "bytes": 62672,
+            "hits": 754717,
+            "returns": 51862,
+            "stalled": 51863,
+            "charged_edges": 553229,
+            "budget_exits": 549,
+            "id": 871,
+            "line": 13764,
+            "name": ""
+          }
+        },
+        {
+          "id": 872,
+          "coverage": {
+            "id": 872,
+            "line": 13807,
+            "ops": 1182,
+            "regs": 60,
+            "captures": 0,
+            "threaded": 17166201,
+            "switch": 80030,
+            "attempts": 429505,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 60,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 872,
+            "calls": 25,
+            "returns": 0
+          },
+          "native": {
+            "begin": 47,
+            "ops": 128,
+            "bytes": 32288,
+            "hits": 424655,
+            "returns": 0,
+            "stalled": 4,
+            "charged_edges": 347086,
+            "budget_exits": 321,
+            "id": 872,
+            "line": 13807,
+            "name": ""
+          }
+        },
+        {
+          "id": 886,
+          "coverage": {
+            "id": 886,
+            "line": 14547,
+            "ops": 83,
+            "regs": 39,
+            "captures": 1,
+            "name": "preAssignScopes",
+            "threaded": 7025264,
+            "switch": 10869,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 887,
+          "coverage": {
+            "id": 887,
+            "line": 14588,
+            "ops": 96,
+            "regs": 36,
+            "captures": 1,
+            "name": "postAssignScopes",
+            "threaded": 6104418,
+            "switch": 1668,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        },
+        {
+          "id": 959,
+          "coverage": {
+            "id": 959,
+            "line": 15171,
+            "ops": 212,
+            "regs": 30,
+            "captures": 0,
+            "threaded": 1671802,
+            "switch": 6049,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 1057,
+          "coverage": {
+            "id": 1057,
+            "line": 15799,
+            "ops": 100,
+            "regs": 23,
+            "captures": 0,
+            "threaded": 1223912,
+            "switch": 948,
+            "attempts": 42,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 1088,
+          "coverage": {
+            "id": 1088,
+            "line": 16109,
+            "ops": 102,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 1174631,
+            "switch": 239,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 1321,
+          "coverage": {
+            "id": 1321,
+            "line": 20118,
+            "ops": 169,
+            "regs": 36,
+            "captures": 0,
+            "threaded": 1823894,
+            "switch": 28883,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 1330,
+          "coverage": {
+            "id": 1330,
+            "line": 20313,
+            "ops": 281,
+            "regs": 30,
+            "captures": 0,
+            "threaded": 2057200,
+            "switch": 35926,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget",
+            "name": ""
+          }
+        },
+        {
+          "id": 1622,
+          "coverage": {
+            "id": 1622,
+            "line": 24639,
+            "ops": 72,
+            "regs": 39,
+            "captures": 0,
+            "name": "cleanASTType",
+            "threaded": 4512541,
+            "switch": 1796,
+            "attempts": 64,
+            "warmup": 4294967295,
+            "retired": 0,
+            "active": 0,
+            "rejection": "code budget"
+          }
+        }
+      ]
+    },
+    "large": {
+      "totals": {
+        "functions": 507,
+        "loops": 2,
+        "templates": 0,
+        "hits": 7558648,
+        "code_bytes": 8034184,
+        "native_calls": 1368007,
+        "native_returns": 720389
+      },
+      "threaded": 154520964,
+      "functions": [
+        {
+          "id": 43,
+          "coverage": {
+            "id": 43,
+            "line": 486,
+            "ops": 15,
+            "regs": 9,
+            "captures": 0,
+            "name": "Verify",
+            "threaded": 14912992,
+            "switch": 1167,
+            "attempts": 26028,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 7,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 43,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 15,
+            "bytes": 4424,
+            "hits": 24866,
+            "returns": 0,
+            "stalled": 8,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 43,
+            "line": 486,
+            "name": "Verify"
+          }
+        },
+        {
+          "id": 80,
+          "coverage": {
+            "id": 80,
+            "line": 1147,
+            "ops": 9,
+            "regs": 5,
+            "captures": 0,
+            "threaded": 1277590,
+            "switch": 174176,
+            "attempts": 80,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 3,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 80,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 9,
+            "bytes": 6780,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 80,
+            "line": 1147,
+            "name": ""
+          }
+        },
+        {
+          "id": 109,
+          "coverage": {
+            "id": 109,
+            "line": 1341,
+            "ops": 24,
+            "regs": 8,
+            "captures": 1,
+            "name": "AST",
+            "threaded": 3714888,
+            "switch": 808,
+            "attempts": 87,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 109,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 24,
+            "bytes": 9652,
+            "hits": 16,
+            "returns": 0,
+            "stalled": 8,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 109,
+            "line": 1341,
+            "name": "AST"
+          }
+        },
+        {
+          "id": 134,
+          "coverage": {
+            "id": 134,
+            "line": 1623,
+            "ops": 20,
+            "regs": 8,
+            "captures": 1,
+            "name": "Identifier",
+            "threaded": 1089224,
+            "switch": 754,
+            "attempts": 54482,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 134,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 20,
+            "bytes": 7316,
+            "hits": 54138,
+            "returns": 54122,
+            "stalled": 54130,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 134,
+            "line": 1623,
+            "name": "Identifier"
+          }
+        },
+        {
+          "id": 415,
+          "coverage": {
+            "id": 415,
+            "line": 4050,
+            "ops": 51,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 10353299,
+            "switch": 29371,
+            "attempts": 228648,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 20,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 415,
+            "calls": 8203,
+            "returns": 565
+          },
+          "native": {
+            "begin": 0,
+            "ops": 51,
+            "bytes": 16872,
+            "hits": 222345,
+            "returns": 220684,
+            "stalled": 0,
+            "charged_edges": 3630,
+            "budget_exits": 2,
+            "id": 415,
+            "line": 4050,
+            "name": ""
+          }
+        },
+        {
+          "id": 426,
+          "coverage": {
+            "id": 426,
+            "line": 4249,
+            "ops": 48,
+            "regs": 13,
+            "captures": 0,
+            "name": "walkBinaryExpressionChildren",
+            "threaded": 1563070,
+            "switch": 2665,
+            "attempts": 65098,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 35,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 426,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 48,
+            "bytes": 12932,
+            "hits": 63828,
+            "returns": 63812,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 426,
+            "line": 4249,
+            "name": "walkBinaryExpressionChildren"
+          }
+        },
+        {
+          "id": 608,
+          "coverage": {
+            "id": 608,
+            "line": 5609,
+            "ops": 12,
+            "regs": 7,
+            "captures": 0,
+            "threaded": 1120194,
+            "switch": 6,
+            "attempts": 45176,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 6,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 608,
+            "calls": 186417,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 12,
+            "bytes": 4096,
+            "hits": 45113,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 90166,
+            "budget_exits": 89,
+            "id": 608,
+            "line": 5609,
+            "name": ""
+          }
+        },
+        {
+          "id": 636,
+          "coverage": {
+            "id": 636,
+            "line": 6381,
+            "ops": 409,
+            "regs": 40,
+            "captures": 0,
+            "threaded": 1049484,
+            "switch": 498,
+            "attempts": 46063,
+            "warmup": 4294967294,
+            "retired": 8,
+            "active": 214,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 636,
+            "calls": 193879,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 409,
+            "bytes": 86600,
+            "hits": 46000,
+            "returns": 41801,
+            "stalled": 51,
+            "charged_edges": 95499,
+            "budget_exits": 98,
+            "id": 636,
+            "line": 6381,
+            "name": ""
+          }
+        },
+        {
+          "id": 644,
+          "coverage": {
+            "id": 644,
+            "line": 6560,
+            "ops": 333,
+            "regs": 66,
+            "captures": 0,
+            "threaded": 2214661,
+            "switch": 27041,
+            "attempts": 38220,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 65,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 644,
+            "calls": 441,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 36888,
+            "hits": 38201,
+            "returns": 1388,
+            "stalled": 1388,
+            "charged_edges": 617,
+            "budget_exits": 0,
+            "id": 644,
+            "line": 6560,
+            "name": ""
+          }
+        },
+        {
+          "id": 645,
+          "coverage": {
+            "id": 645,
+            "line": 6638,
+            "ops": 99,
+            "regs": 48,
+            "captures": 0,
+            "threaded": 2210828,
+            "switch": 756,
+            "attempts": 99838,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 56,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 645,
+            "calls": 7879,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 99,
+            "bytes": 31556,
+            "hits": 99775,
+            "returns": 91864,
+            "stalled": 7878,
+            "charged_edges": 23622,
+            "budget_exits": 18,
+            "id": 645,
+            "line": 6638,
+            "name": ""
+          }
+        },
+        {
+          "id": 748,
+          "coverage": {
+            "id": 748,
+            "line": 9253,
+            "ops": 995,
+            "regs": 60,
+            "captures": 0,
+            "threaded": 3817097,
+            "switch": 2264,
+            "attempts": 44793,
+            "warmup": 4294967294,
+            "retired": 3,
+            "active": 58,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 748,
+            "calls": 11,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 30612,
+            "hits": 44528,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 11,
+            "budget_exits": 0,
+            "id": 748,
+            "line": 9253,
+            "name": ""
+          }
+        },
+        {
+          "id": 750,
+          "coverage": {
+            "id": 750,
+            "line": 9520,
+            "ops": 524,
+            "regs": 80,
+            "captures": 0,
+            "threaded": 5561215,
+            "switch": 2791,
+            "attempts": 37846,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 56,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 750,
+            "calls": 41,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 29524,
+            "hits": 37483,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 41,
+            "budget_exits": 0,
+            "id": 750,
+            "line": 9520,
+            "name": ""
+          }
+        },
+        {
+          "id": 751,
+          "coverage": {
+            "id": 751,
+            "line": 9654,
+            "ops": 333,
+            "regs": 37,
+            "captures": 0,
+            "threaded": 1953444,
+            "switch": 1398,
+            "attempts": 88978,
+            "warmup": 4294967294,
+            "retired": 11,
+            "active": 159,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 751,
+            "calls": 7,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 333,
+            "bytes": 76120,
+            "hits": 88003,
+            "returns": 22262,
+            "stalled": 133,
+            "charged_edges": 28344,
+            "budget_exits": 24,
+            "id": 751,
+            "line": 9654,
+            "name": ""
+          }
+        },
+        {
+          "id": 758,
+          "coverage": {
+            "id": 758,
+            "line": 9881,
+            "ops": 2989,
+            "regs": 65,
+            "captures": 0,
+            "threaded": 3951947,
+            "switch": 105545,
+            "attempts": 342,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 63,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 758,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 31,
+            "ops": 128,
+            "bytes": 23288,
+            "hits": 279,
+            "returns": 0,
+            "stalled": 6,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 758,
+            "line": 9881,
+            "name": ""
+          }
+        },
+        {
+          "id": 760,
+          "coverage": {
+            "id": 760,
+            "line": 10629,
+            "ops": 180,
+            "regs": 53,
+            "captures": 0,
+            "threaded": 1431714,
+            "switch": 27361,
+            "attempts": 5623,
+            "warmup": 4294967295,
+            "retired": 7,
+            "active": 98,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 760,
+            "calls": 38,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 180,
+            "bytes": 50228,
+            "hits": 5565,
+            "returns": 5420,
+            "stalled": 29,
+            "charged_edges": 114,
+            "budget_exits": 0,
+            "id": 760,
+            "line": 10629,
+            "name": ""
+          }
+        },
+        {
+          "id": 842,
+          "coverage": {
+            "id": 842,
+            "line": 13274,
+            "ops": 17,
+            "regs": 10,
+            "captures": 0,
+            "threaded": 17060241,
+            "switch": 5986,
+            "attempts": 5268,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 9,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 842,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 17,
+            "bytes": 6424,
+            "hits": 9,
+            "returns": 1,
+            "stalled": 1,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 842,
+            "line": 13274,
+            "name": ""
+          }
+        },
+        {
+          "id": 865,
+          "coverage": {
+            "id": 865,
+            "line": 13590,
+            "ops": 11,
+            "regs": 5,
+            "captures": 0,
+            "threaded": 12359025,
+            "switch": 1237203,
+            "attempts": 1236000,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 4,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 865,
+            "calls": 605,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 11,
+            "bytes": 3776,
+            "hits": 1230627,
+            "returns": 1230545,
+            "stalled": 0,
+            "charged_edges": 74,
+            "budget_exits": 0,
+            "id": 865,
+            "line": 13590,
+            "name": ""
+          }
+        },
+        {
+          "id": 868,
+          "coverage": {
+            "id": 868,
+            "line": 13665,
+            "ops": 18,
+            "regs": 8,
+            "captures": 0,
+            "threaded": 1295722,
+            "switch": 1535,
+            "attempts": 178169,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 8,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 868,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 18,
+            "bytes": 4892,
+            "hits": 177226,
+            "returns": 121454,
+            "stalled": 55764,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 868,
+            "line": 13665,
+            "name": ""
+          }
+        },
+        {
+          "id": 871,
+          "coverage": {
+            "id": 871,
+            "line": 13764,
+            "ops": 181,
+            "regs": 24,
+            "captures": 0,
+            "threaded": 2097931,
+            "switch": 31762,
+            "attempts": 764235,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 98,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 871,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 181,
+            "bytes": 62672,
+            "hits": 754672,
+            "returns": 51867,
+            "stalled": 51868,
+            "charged_edges": 553165,
+            "budget_exits": 568,
+            "id": 871,
+            "line": 13764,
+            "name": ""
+          }
+        },
+        {
+          "id": 872,
+          "coverage": {
+            "id": 872,
+            "line": 13807,
+            "ops": 1182,
+            "regs": 60,
+            "captures": 0,
+            "threaded": 17166779,
+            "switch": 80094,
+            "attempts": 429698,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 60,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 872,
+            "calls": 25,
+            "returns": 0
+          },
+          "native": {
+            "begin": 47,
+            "ops": 128,
+            "bytes": 32288,
+            "hits": 424562,
+            "returns": 0,
+            "stalled": 4,
+            "charged_edges": 346990,
+            "budget_exits": 336,
+            "id": 872,
+            "line": 13807,
+            "name": ""
+          }
+        },
+        {
+          "id": 959,
+          "coverage": {
+            "id": 959,
+            "line": 15171,
+            "ops": 212,
+            "regs": 30,
+            "captures": 0,
+            "threaded": 1179701,
+            "switch": 5632,
+            "attempts": 28282,
+            "warmup": 4294967295,
+            "retired": 9,
+            "active": 101,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 959,
+            "calls": 24261,
+            "returns": 17
+          },
+          "native": {
+            "begin": 0,
+            "ops": 212,
+            "bytes": 55936,
+            "hits": 28201,
+            "returns": 27386,
+            "stalled": 227,
+            "charged_edges": 25981,
+            "budget_exits": 29,
+            "id": 959,
+            "line": 15171,
+            "name": ""
+          }
+        },
+        {
+          "id": 1088,
+          "coverage": {
+            "id": 1088,
+            "line": 16109,
+            "ops": 102,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 1172572,
+            "switch": 244,
+            "attempts": 10294,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 58,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 1088,
+            "calls": 1,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 102,
+            "bytes": 34252,
+            "hits": 10213,
+            "returns": 10152,
+            "stalled": 9902,
+            "charged_edges": 1,
+            "budget_exits": 0,
+            "id": 1088,
+            "line": 16109,
+            "name": ""
+          }
+        },
+        {
+          "id": 1321,
+          "coverage": {
+            "id": 1321,
+            "line": 20118,
+            "ops": 169,
+            "regs": 36,
+            "captures": 0,
+            "threaded": 1023195,
+            "switch": 26191,
+            "attempts": 48570,
+            "warmup": 4294967295,
+            "retired": 10,
+            "active": 88,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 1321,
+            "calls": 15145,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 169,
+            "bytes": 42172,
+            "hits": 48506,
+            "returns": 1521,
+            "stalled": 1251,
+            "charged_edges": 15145,
+            "budget_exits": 16,
+            "id": 1321,
+            "line": 20118,
+            "name": ""
+          }
+        },
+        {
+          "id": 1330,
+          "coverage": {
+            "id": 1330,
+            "line": 20313,
+            "ops": 281,
+            "regs": 30,
+            "captures": 0,
+            "threaded": 1390985,
+            "switch": 28717,
+            "attempts": 43712,
+            "warmup": 4294967295,
+            "retired": 9,
+            "active": 138,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 1330,
+            "calls": 482,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 281,
+            "bytes": 64304,
+            "hits": 43649,
+            "returns": 21822,
+            "stalled": 91,
+            "charged_edges": 486,
+            "budget_exits": 0,
+            "id": 1330,
+            "line": 20313,
+            "name": ""
+          }
+        },
+        {
+          "id": 1622,
+          "coverage": {
+            "id": 1622,
+            "line": 24639,
+            "ops": 72,
+            "regs": 39,
+            "captures": 0,
+            "name": "cleanASTType",
+            "threaded": 4511950,
+            "switch": 1803,
+            "attempts": 101,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 30,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1622,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 72,
+            "bytes": 26628,
+            "hits": 38,
+            "returns": 17,
+            "stalled": 9,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1622,
+            "line": 24639,
+            "name": "cleanASTType"
+          }
+        }
+      ]
+    },
+    "guards": {
+      "totals": {
+        "functions": 510,
+        "loops": 2,
+        "templates": 0,
+        "hits": 7569285,
+        "code_bytes": 8397304,
+        "native_calls": 1377954,
+        "native_returns": 725423
+      },
+      "threaded": 154171671,
+      "functions": [
+        {
+          "id": 43,
+          "coverage": {
+            "id": 43,
+            "line": 486,
+            "ops": 15,
+            "regs": 9,
+            "captures": 0,
+            "name": "Verify",
+            "threaded": 14912992,
+            "switch": 1131,
+            "attempts": 26010,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 7,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 43,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 15,
+            "bytes": 4424,
+            "hits": 24884,
+            "returns": 0,
+            "stalled": 8,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 43,
+            "line": 486,
+            "name": "Verify"
+          }
+        },
+        {
+          "id": 80,
+          "coverage": {
+            "id": 80,
+            "line": 1147,
+            "ops": 9,
+            "regs": 5,
+            "captures": 0,
+            "threaded": 1277590,
+            "switch": 174185,
+            "attempts": 79,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 3,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 80,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 9,
+            "bytes": 6780,
+            "hits": 8,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 80,
+            "line": 1147,
+            "name": ""
+          }
+        },
+        {
+          "id": 109,
+          "coverage": {
+            "id": 109,
+            "line": 1341,
+            "ops": 24,
+            "regs": 8,
+            "captures": 1,
+            "name": "AST",
+            "threaded": 3714888,
+            "switch": 824,
+            "attempts": 87,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 109,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 24,
+            "bytes": 9648,
+            "hits": 16,
+            "returns": 0,
+            "stalled": 8,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 109,
+            "line": 1341,
+            "name": "AST"
+          }
+        },
+        {
+          "id": 134,
+          "coverage": {
+            "id": 134,
+            "line": 1623,
+            "ops": 20,
+            "regs": 8,
+            "captures": 1,
+            "name": "Identifier",
+            "threaded": 1089224,
+            "switch": 739,
+            "attempts": 54483,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 5,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 134,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 20,
+            "bytes": 7316,
+            "hits": 54140,
+            "returns": 54124,
+            "stalled": 54132,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 134,
+            "line": 1623,
+            "name": "Identifier"
+          }
+        },
+        {
+          "id": 415,
+          "coverage": {
+            "id": 415,
+            "line": 4050,
+            "ops": 51,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 10353514,
+            "switch": 28857,
+            "attempts": 228643,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 20,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 415,
+            "calls": 8200,
+            "returns": 565
+          },
+          "native": {
+            "begin": 0,
+            "ops": 51,
+            "bytes": 16872,
+            "hits": 222261,
+            "returns": 220606,
+            "stalled": 0,
+            "charged_edges": 3628,
+            "budget_exits": 1,
+            "id": 415,
+            "line": 4050,
+            "name": ""
+          }
+        },
+        {
+          "id": 426,
+          "coverage": {
+            "id": 426,
+            "line": 4249,
+            "ops": 48,
+            "regs": 13,
+            "captures": 0,
+            "name": "walkBinaryExpressionChildren",
+            "threaded": 1563080,
+            "switch": 2437,
+            "attempts": 65112,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 35,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 426,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 48,
+            "bytes": 12932,
+            "hits": 63818,
+            "returns": 63802,
+            "stalled": 0,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 426,
+            "line": 4249,
+            "name": "walkBinaryExpressionChildren"
+          }
+        },
+        {
+          "id": 608,
+          "coverage": {
+            "id": 608,
+            "line": 5609,
+            "ops": 12,
+            "regs": 7,
+            "captures": 0,
+            "threaded": 1120178,
+            "switch": 5,
+            "attempts": 45181,
+            "warmup": 4294967294,
+            "retired": 1,
+            "active": 6,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 608,
+            "calls": 186433,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 12,
+            "bytes": 4096,
+            "hits": 45118,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 90174,
+            "budget_exits": 91,
+            "id": 608,
+            "line": 5609,
+            "name": ""
+          }
+        },
+        {
+          "id": 636,
+          "coverage": {
+            "id": 636,
+            "line": 6381,
+            "ops": 409,
+            "regs": 40,
+            "captures": 0,
+            "threaded": 1049468,
+            "switch": 492,
+            "attempts": 46046,
+            "warmup": 4294967294,
+            "retired": 8,
+            "active": 214,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 636,
+            "calls": 193895,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 409,
+            "bytes": 86600,
+            "hits": 45983,
+            "returns": 41801,
+            "stalled": 50,
+            "charged_edges": 95485,
+            "budget_exits": 88,
+            "id": 636,
+            "line": 6381,
+            "name": ""
+          }
+        },
+        {
+          "id": 644,
+          "coverage": {
+            "id": 644,
+            "line": 6560,
+            "ops": 333,
+            "regs": 66,
+            "captures": 0,
+            "threaded": 2214661,
+            "switch": 27046,
+            "attempts": 38221,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 65,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 644,
+            "calls": 441,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 36888,
+            "hits": 38201,
+            "returns": 1388,
+            "stalled": 1388,
+            "charged_edges": 617,
+            "budget_exits": 0,
+            "id": 644,
+            "line": 6560,
+            "name": ""
+          }
+        },
+        {
+          "id": 645,
+          "coverage": {
+            "id": 645,
+            "line": 6638,
+            "ops": 99,
+            "regs": 48,
+            "captures": 0,
+            "threaded": 2210817,
+            "switch": 750,
+            "attempts": 99839,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 56,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 645,
+            "calls": 7879,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 99,
+            "bytes": 31556,
+            "hits": 99776,
+            "returns": 91865,
+            "stalled": 7878,
+            "charged_edges": 23615,
+            "budget_exits": 27,
+            "id": 645,
+            "line": 6638,
+            "name": ""
+          }
+        },
+        {
+          "id": 748,
+          "coverage": {
+            "id": 748,
+            "line": 9253,
+            "ops": 995,
+            "regs": 60,
+            "captures": 0,
+            "threaded": 3816867,
+            "switch": 2261,
+            "attempts": 44792,
+            "warmup": 4294967294,
+            "retired": 3,
+            "active": 58,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 748,
+            "calls": 11,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 30612,
+            "hits": 44534,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 11,
+            "budget_exits": 0,
+            "id": 748,
+            "line": 9253,
+            "name": ""
+          }
+        },
+        {
+          "id": 750,
+          "coverage": {
+            "id": 750,
+            "line": 9520,
+            "ops": 524,
+            "regs": 80,
+            "captures": 0,
+            "threaded": 5561175,
+            "switch": 2782,
+            "attempts": 37843,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 56,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 750,
+            "calls": 41,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 128,
+            "bytes": 29536,
+            "hits": 37487,
+            "returns": 0,
+            "stalled": 0,
+            "charged_edges": 41,
+            "budget_exits": 0,
+            "id": 750,
+            "line": 9520,
+            "name": ""
+          }
+        },
+        {
+          "id": 751,
+          "coverage": {
+            "id": 751,
+            "line": 9654,
+            "ops": 333,
+            "regs": 37,
+            "captures": 0,
+            "threaded": 1953326,
+            "switch": 1402,
+            "attempts": 88971,
+            "warmup": 4294967294,
+            "retired": 11,
+            "active": 159,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 751,
+            "calls": 7,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 333,
+            "bytes": 76124,
+            "hits": 88012,
+            "returns": 22262,
+            "stalled": 133,
+            "charged_edges": 28346,
+            "budget_exits": 27,
+            "id": 751,
+            "line": 9654,
+            "name": ""
+          }
+        },
+        {
+          "id": 758,
+          "coverage": {
+            "id": 758,
+            "line": 9881,
+            "ops": 2989,
+            "regs": 65,
+            "captures": 0,
+            "threaded": 3951947,
+            "switch": 105583,
+            "attempts": 342,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 63,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 758,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 31,
+            "ops": 128,
+            "bytes": 23288,
+            "hits": 279,
+            "returns": 0,
+            "stalled": 6,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 758,
+            "line": 9881,
+            "name": ""
+          }
+        },
+        {
+          "id": 760,
+          "coverage": {
+            "id": 760,
+            "line": 10629,
+            "ops": 180,
+            "regs": 53,
+            "captures": 0,
+            "threaded": 1431724,
+            "switch": 27352,
+            "attempts": 5624,
+            "warmup": 4294967295,
+            "retired": 7,
+            "active": 98,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 760,
+            "calls": 38,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 180,
+            "bytes": 50228,
+            "hits": 5563,
+            "returns": 5418,
+            "stalled": 29,
+            "charged_edges": 114,
+            "budget_exits": 0,
+            "id": 760,
+            "line": 10629,
+            "name": ""
+          }
+        },
+        {
+          "id": 842,
+          "coverage": {
+            "id": 842,
+            "line": 13274,
+            "ops": 17,
+            "regs": 10,
+            "captures": 0,
+            "threaded": 17060241,
+            "switch": 5900,
+            "attempts": 5182,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 9,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 842,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 17,
+            "bytes": 6424,
+            "hits": 10,
+            "returns": 2,
+            "stalled": 2,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 842,
+            "line": 13274,
+            "name": ""
+          }
+        },
+        {
+          "id": 865,
+          "coverage": {
+            "id": 865,
+            "line": 13590,
+            "ops": 11,
+            "regs": 5,
+            "captures": 0,
+            "threaded": 12359030,
+            "switch": 1237283,
+            "attempts": 1235999,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 4,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 865,
+            "calls": 605,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 11,
+            "bytes": 3776,
+            "hits": 1230622,
+            "returns": 1230540,
+            "stalled": 0,
+            "charged_edges": 74,
+            "budget_exits": 0,
+            "id": 865,
+            "line": 13590,
+            "name": ""
+          }
+        },
+        {
+          "id": 868,
+          "coverage": {
+            "id": 868,
+            "line": 13665,
+            "ops": 18,
+            "regs": 8,
+            "captures": 0,
+            "threaded": 1295698,
+            "switch": 1570,
+            "attempts": 178169,
+            "warmup": 4294967295,
+            "retired": 1,
+            "active": 8,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 868,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 18,
+            "bytes": 4892,
+            "hits": 177234,
+            "returns": 121460,
+            "stalled": 55766,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 868,
+            "line": 13665,
+            "name": ""
+          }
+        },
+        {
+          "id": 871,
+          "coverage": {
+            "id": 871,
+            "line": 13764,
+            "ops": 181,
+            "regs": 24,
+            "captures": 0,
+            "threaded": 2097599,
+            "switch": 31710,
+            "attempts": 764190,
+            "warmup": 4294967294,
+            "retired": 0,
+            "active": 98,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 871,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 181,
+            "bytes": 62672,
+            "hits": 754706,
+            "returns": 51870,
+            "stalled": 51871,
+            "charged_edges": 553190,
+            "budget_exits": 586,
+            "id": 871,
+            "line": 13764,
+            "name": ""
+          }
+        },
+        {
+          "id": 872,
+          "coverage": {
+            "id": 872,
+            "line": 13807,
+            "ops": 1182,
+            "regs": 60,
+            "captures": 0,
+            "threaded": 17166831,
+            "switch": 80051,
+            "attempts": 429727,
+            "warmup": 4294967295,
+            "retired": 4,
+            "active": 60,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 872,
+            "calls": 25,
+            "returns": 0
+          },
+          "native": {
+            "begin": 47,
+            "ops": 128,
+            "bytes": 32288,
+            "hits": 424548,
+            "returns": 0,
+            "stalled": 4,
+            "charged_edges": 346972,
+            "budget_exits": 328,
+            "id": 872,
+            "line": 13807,
+            "name": ""
+          }
+        },
+        {
+          "id": 959,
+          "coverage": {
+            "id": 959,
+            "line": 15171,
+            "ops": 212,
+            "regs": 30,
+            "captures": 0,
+            "threaded": 1179760,
+            "switch": 5714,
+            "attempts": 28284,
+            "warmup": 4294967295,
+            "retired": 9,
+            "active": 101,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 959,
+            "calls": 24261,
+            "returns": 17
+          },
+          "native": {
+            "begin": 0,
+            "ops": 212,
+            "bytes": 55936,
+            "hits": 28200,
+            "returns": 27385,
+            "stalled": 226,
+            "charged_edges": 25982,
+            "budget_exits": 18,
+            "id": 959,
+            "line": 15171,
+            "name": ""
+          }
+        },
+        {
+          "id": 1088,
+          "coverage": {
+            "id": 1088,
+            "line": 16109,
+            "ops": 102,
+            "regs": 15,
+            "captures": 0,
+            "threaded": 1172572,
+            "switch": 238,
+            "attempts": 10293,
+            "warmup": 4294967295,
+            "retired": 3,
+            "active": 58,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 1088,
+            "calls": 1,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 102,
+            "bytes": 34252,
+            "hits": 10212,
+            "returns": 10151,
+            "stalled": 9901,
+            "charged_edges": 1,
+            "budget_exits": 0,
+            "id": 1088,
+            "line": 16109,
+            "name": ""
+          }
+        },
+        {
+          "id": 1321,
+          "coverage": {
+            "id": 1321,
+            "line": 20118,
+            "ops": 169,
+            "regs": 36,
+            "captures": 0,
+            "threaded": 1023123,
+            "switch": 26228,
+            "attempts": 48589,
+            "warmup": 4294967295,
+            "retired": 10,
+            "active": 88,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 1321,
+            "calls": 15145,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 169,
+            "bytes": 42172,
+            "hits": 48525,
+            "returns": 1525,
+            "stalled": 1251,
+            "charged_edges": 15145,
+            "budget_exits": 19,
+            "id": 1321,
+            "line": 20118,
+            "name": ""
+          }
+        },
+        {
+          "id": 1330,
+          "coverage": {
+            "id": 1330,
+            "line": 20313,
+            "ops": 281,
+            "regs": 30,
+            "captures": 0,
+            "threaded": 1390993,
+            "switch": 28726,
+            "attempts": 43712,
+            "warmup": 4294967295,
+            "retired": 9,
+            "active": 138,
+            "rejection": "compiled",
+            "name": ""
+          },
+          "edges": {
+            "id": 1330,
+            "calls": 482,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 281,
+            "bytes": 64304,
+            "hits": 43649,
+            "returns": 21822,
+            "stalled": 91,
+            "charged_edges": 486,
+            "budget_exits": 1,
+            "id": 1330,
+            "line": 20313,
+            "name": ""
+          }
+        },
+        {
+          "id": 1622,
+          "coverage": {
+            "id": 1622,
+            "line": 24639,
+            "ops": 72,
+            "regs": 39,
+            "captures": 0,
+            "name": "cleanASTType",
+            "threaded": 4511949,
+            "switch": 1801,
+            "attempts": 101,
+            "warmup": 4294967295,
+            "retired": 2,
+            "active": 30,
+            "rejection": "compiled"
+          },
+          "edges": {
+            "id": 1622,
+            "calls": 0,
+            "returns": 0
+          },
+          "native": {
+            "begin": 0,
+            "ops": 72,
+            "bytes": 26628,
+            "hits": 38,
+            "returns": 17,
+            "stalled": 9,
+            "charged_edges": 0,
+            "budget_exits": 0,
+            "id": 1622,
+            "line": 24639,
+            "name": "cleanASTType"
+          }
+        }
+      ]
+    }
+  }
+]
