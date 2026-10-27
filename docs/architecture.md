@@ -251,6 +251,11 @@ function therefore snapshots its private-name table into
 
 The fusion drivers check jump targets and register liveness before replacing a
 sequence. A branch cannot land inside a sequence whose producer was removed.
+Move elimination can retarget fused named-property reads (`GETPROPC`,
+`GETPROPC_CACHED`, `GETTHISC`) directly into a following copy's destination.
+It uses the same source/destination liveness, alias, jump-target and protected
+region checks as ordinary producers; getter order and throwing assignments
+remain observable in their original order.
 
 `gen_module_slots` gives a module's top-level `var` a register when resolution
 finds no capture, dynamic scope or export that requires an environment binding.
