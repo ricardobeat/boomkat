@@ -105,6 +105,7 @@ fn int stop_after_polls(void* runtime, void* opaque) {
 }
 
 fn void main() {
+    check_native_convention();
     JsRuntime first, second;
     @check(!first.set_jit());
     first.create()!!;

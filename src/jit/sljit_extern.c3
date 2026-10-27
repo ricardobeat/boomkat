@@ -4,6 +4,7 @@ module boomkat::jit;
 extern fn void* sljit_create_compiler(void* allocator_data);
 extern fn void sljit_free_compiler(void* compiler);
 extern fn long sljit_emit_enter(void* compiler, int options, int arg_types, int scratches, int saveds, int local_size);
+extern fn int sljit_set_context(void* compiler, int options, int arg_types, int scratches, int saveds, int local_size);
 extern fn long sljit_emit_op0(void* compiler, int op);
 extern fn long sljit_emit_op1(void* compiler, int op, int dst, long dstw, int src, long srcw);
 extern fn long sljit_emit_op2(void* compiler, int op, int dst, long dstw, int src1, long src1w, int src2, long src2w);
@@ -13,15 +14,22 @@ extern fn int sljit_emit_fcopy(void* compiler, int op, int freg, int reg);
 extern fn void* sljit_emit_fcmp(void* compiler, int op, int left, long lw, int right, long rw);
 extern fn void* sljit_emit_label(void* compiler);
 extern fn void* sljit_emit_jump(void* compiler, int type);
+extern fn void* sljit_emit_call(void* compiler, int type, int arg_types);
 extern fn void* sljit_emit_cmp(void* compiler, int type, int src1, long src1w, int src2, long src2w);
 extern fn void sljit_set_label(void* jump, void* label);
+extern fn void sljit_set_target(void* jump, usz target);
+extern fn void sljit_set_jump_addr(usz addr, usz new_target, long executable_offset);
 extern fn long sljit_emit_return(void* compiler, int op, int src, long srcw);
+extern fn int sljit_emit_return_void(void* compiler);
+extern fn int sljit_emit_return_to(void* compiler, int src, long srcw);
 extern fn void* sljit_generate_code(void* compiler, int options, void* exec_allocator_data);
 extern fn void sljit_free_code(void* code, void* exec_allocator_data);
 extern fn int sljit_shim_sqrt_f64(void* compiler, int freg);
 extern fn int sljit_shim_info(int key);
 extern fn usz sljit_shim_code_size(void* compiler);
 extern fn usz sljit_shim_label_addr(void* label);
+extern fn usz sljit_shim_jump_addr(void* jump);
+extern fn long sljit_shim_executable_offset(void* compiler);
 extern fn int sljit_emit_ijump(void* compiler, int type, int src, long sw);
 extern fn int sljit_emit_icall(void* compiler, int type, int arg_types, int src, long sw);
 
@@ -56,11 +64,23 @@ const int SLJIT_SIG_GREATER       = 8;
 const int SLJIT_SIG_LESS_EQUAL    = 9;
 const int SLJIT_JUMP              = 36;
 const int SLJIT_CALL              = 38;
+// Internal calls use scratch arguments and may share S0..S2. KEEP(n) is
+// encoded as n, and is valid only together with ENTER_REG_ARG (1 <= n <= 3).
+const int SLJIT_ENTER_REG_ARG     = 0x4;
+const int SLJIT_CALL_REG_ARG      = 39;
+const int SLJIT_REWRITABLE_JUMP   = 0x10000;
+const int SLJIT_ARGS1WW           = 0x11;
+const int SLJIT_ARGS1WW_R         = 0x91;
+const int SLJIT_ARGS2WWW_R        = 0x991;
 const int SLJIT_ARGS2WWW          = 0x111;
 const int SLJIT_ARGS3WWW          = 0x1111;
 
 fn int reg_r(int i) @inline => 1 + i;
 fn int reg_s(int i) @inline => sljit_shim_info(0) - i;
+fn int enter_keep(int count) @inline {
+    assert(count >= 1 && count <= 3);
+    return count;
+}
 
 fn bool bind_sljit_runtime() {
     return sljit_shim_info(0) >= 13 && sljit_shim_info(1) >= 5;

@@ -734,7 +734,8 @@
       "type": "executable",
       "sources": [
         "src",
-        "test/capi/jit.c3"
+        "test/capi/jit.c3",
+        "test/capi/jit_abi.c3"
       ],
       "features": [
         "THREADED_DISPATCH",
