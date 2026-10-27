@@ -1248,6 +1248,17 @@ fn bool FunctionEmitter.capture(&self, CompiledFunction* cf, Activation* act, He
 // Emit only on the taken path: an exhausted budget resumes at the branch
 // instruction, so the interpreter rechecks its condition and owns the poll.
 fn void FunctionEmitter.branch_target(&self, uint pc, uint target) @feat(SLJIT) {
+    // Prefer an already compiled SSA kernel over a generic boxed backedge.
+    // Return at the branch, so the interpreter charges and dispatches the edge
+    // exactly once, and can safely retire or replace the loop specialization.
+    if (target <= pc && self.depth == 0 && ssa_comparison_op(self.cf.code[pc].op)) {
+        for (LoopPlan* loop = self.cf.sljit_loops; loop != null; loop = loop.next) {
+            if (loop.ssa && loop.memory_count > 0 && loop.begin == target + self.plan.begin && loop.end == pc + self.plan.begin) {
+                self.out.link(jit::sljit_emit_jump(self.out.e.compiler, jit::SLJIT_JUMP), pc, true);
+                return;
+            }
+        }
+    }
     if (target <= pc && target < self.cf.code_count) {
         FunctionRun layout;
         int r0  = jit::reg_r(0);

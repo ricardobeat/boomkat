@@ -666,6 +666,11 @@ with identical recovery frames and bytecode PCs share an exit stub. Unsupported 
 the straight-line loop compiler. `SLJIT_NO_SSA` disables this tier for comparison;
 `SLJIT_STATS` reports its actual entries and iterations separately from fallback.
 
+When a function region overlaps an existing SSA memory loop, its taken comparison
+backedge returns to the interpreter at that branch. Ordinary edge dispatch then
+selects the loop specialization, preventing generic boxed code from displacing
+the optimized kernel. Scalar-only loops keep native function backedges.
+
 Native exits carry an instruction offset, updated registers, and a remaining
 backedge budget. Completed stores remain committed. The VM retains incoming
 refcounted values before replacing registers, publishes dirty slots, and charges
