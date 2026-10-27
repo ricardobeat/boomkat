@@ -322,8 +322,7 @@ fn void ays_return_from_body(Dispatch* ds, GeneratorState* gs, TVal value) {
     // still route through an enclosing finally.
     Catcher* cat = find_and_unlink_finally_catcher(ds.vm, ds.act);
     if (cat != null && cat.finally_pc != null) {
-        cat.return_val = value;
-        ds.vm.heap.shade_root_tval(cat.return_val);
+        catcher_set_return(ds.vm.heap, cat, value);
         if (!(cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
             cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
             ds.curr_pc = cat.finally_pc;
@@ -537,7 +536,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         return (TVal){};
                     }
                     if (irw == InjectedReturnWalk.IRW_FINALLY) {
-                        ret_cat3.return_val = ret_val_raw;
+                        catcher_set_return(vm.heap, ret_cat3, ret_val_raw);
                         // If the suspended yield point is already inside this
                         // catcher's finally body (e.g. `try {} finally { yield;
                         // }`), do not re-enter finally_pc; jump to
@@ -944,8 +943,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     // of completing unconditionally.
                     Catcher* yield_ret_cat = find_and_unlink_finally_catcher(vm, gen_act);
                     if (yield_ret_cat != null && yield_ret_cat.finally_pc != null) {
-                        yield_ret_cat.return_val = gs.return_value;
-                        vm.heap.shade_root_tval(yield_ret_cat.return_val);
+                        catcher_set_return(vm.heap, yield_ret_cat, gs.return_value);
                         if (!(yield_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                             yield_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                             if ((yield_ret_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
@@ -1339,8 +1337,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // route through an enclosing finally.
                         Catcher* no_ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
                         if (no_ret_cat != null && no_ret_cat.finally_pc != null) {
-                            no_ret_cat.return_val = no_ret_val;
-                            vm.heap.shade_root_tval(no_ret_cat.return_val);
+                            catcher_set_return(vm.heap, no_ret_cat, no_ret_val);
                             if (!(no_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                                 no_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                                 ds.curr_pc = no_ret_cat.finally_pc;
@@ -1438,8 +1435,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // route through an enclosing finally.
                         Catcher* ys_ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
                         if (ys_ret_cat != null && ys_ret_cat.finally_pc != null) {
-                            ys_ret_cat.return_val = rv2;
-                            vm.heap.shade_root_tval(ys_ret_cat.return_val);
+                            catcher_set_return(vm.heap, ys_ret_cat, rv2);
                             if (!(ys_ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                                 ys_ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                                 ds.curr_pc = ys_ret_cat.finally_pc;

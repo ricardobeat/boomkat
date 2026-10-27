@@ -435,6 +435,7 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
             }
         }
         h.decref_tval(&gs.this_binding);
+        h.decref_tval(&gs.return_value);
         if (gs.persistent_async) {
             h.decref_tval(&gs.resume_value);
             h.decref_tval(&gs.throw_value);

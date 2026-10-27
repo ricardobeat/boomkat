@@ -143,6 +143,8 @@ fn bool Heap.gc_release_generator_step(&self, uint budget) {
                     }
                     self.decref_tval(&gs.this_binding);
                     gs.this_binding.set_undefined();
+                    self.decref_tval(&gs.return_value);
+                    gs.return_value.set_undefined();
                     if (gs.persistent_async) {
                         self.decref_tval(&gs.resume_value);
                         gs.resume_value.set_undefined();
@@ -170,6 +172,7 @@ fn bool Heap.gc_release_generator_step(&self, uint budget) {
                 if (cat == null) { c.stage++; continue; }
                 gs.cat = cat.parent;
                 self.decref_tval(&cat.thrown_val);
+                self.decref_tval(&cat.return_val);
                 self.free_scanned(cat, Catcher::size);
             case 3:
                 AsyncGenRequest* req = gs.agr_head;

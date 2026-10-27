@@ -158,10 +158,23 @@ fn Catcher* catcher_acquire(heap::Heap* h) @inline {
         h.catcher_pool_len--;
         return c;
     }
-    return (Catcher*)heap::alloc_scanned_checked(Catcher, h);
+    c = (Catcher*)heap::alloc_scanned_checked(Catcher, h);
+    if (c != null) c.return_val.set_undefined();
+    return c;
 }
 
+// The catcher owns the value a pending `return` carries through its finally:
+// the register it was read from can be reused by the finally body.
+fn void catcher_set_return(heap::Heap* h, Catcher* c, TVal value) @inline {
+    h.tval_copy_ref(&c.return_val, &value);
+    h.shade_root_tval(c.return_val);
+}
+
+// Releases the catcher and the pending return value it owns. The caller has
+// already dealt with `thrown_val`.
 fn void catcher_release(heap::Heap* h, Catcher* c) @inline {
+    h.decref_tval(&c.return_val);
+    c.return_val.set_undefined();
     root_catcher_removed(h, c);
     if (h.catcher_pool_len < CATCHER_POOL_MAX) {
         h.gc_before_catcher_free(c);
@@ -778,8 +791,7 @@ fn void free_catcher_chain(Vm* vm, Activation* act) @inline {
 // Mark or free a Catcher chain given only its head, with no owning Activation.
 //
 // The single place that knows what a Catcher owns (`thrown_val`, by
-// tval_copy_ref) and what it merely borrows (`return_val`, a raw copy from RET,
-// which is GC-marked but never decref'd). free_catcher_chain and the heap's
+// tval_copy_ref) and `return_val`, a pending return's value. free_catcher_chain and the heap's
 // suspended-generator hook both route here so the two cannot drift apart.
 //
 // `mode` is one of heap::CATCHER_CHAIN_MARK / _FREE / _FREE_NODES_ONLY. The
@@ -797,7 +809,11 @@ fn void catcher_chain_walk(heap::Heap* h, void* head, int mode) {
                 // it; while suspended it is held only here and must be traced.
                 h.mark_env_chain(c.saved_lex_env);
             default:
-                if (mode == heap::CATCHER_CHAIN_FREE) { h.decref_tval(&c.thrown_val); }
+                if (mode == heap::CATCHER_CHAIN_FREE) {
+                    h.decref_tval(&c.thrown_val);
+                } else {
+                    c.return_val.set_undefined();
+                }
                 catcher_release(h, c);
         }
         c = parent;
