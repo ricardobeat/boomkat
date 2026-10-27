@@ -1100,6 +1100,7 @@ struct Heap {
     bool                jit_enabled @if($feat(SLJIT));
     bool                jit_stress @if($feat(SLJIT));
     usz                 jit_code_bytes @if($feat(SLJIT));
+    ulong               jit_resumed_pushes @if($feat(SLJIT) && $feat(SLJIT_STATS));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
     // the host keeps the heap alive until every watchdog has stopped.
@@ -2288,6 +2289,7 @@ fn void Heap.free_compiled_funcs(&self) {
             cf.src_ptr = null;
         }
         self.free_func(self.heap_udata, cf);
+        self.compiled_funcs[i] = null;
     }
 }
 

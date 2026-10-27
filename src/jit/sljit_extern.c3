@@ -13,6 +13,7 @@ extern fn int sljit_emit_fop2(void* compiler, int op, int dst, long dw, int left
 extern fn int sljit_emit_fcopy(void* compiler, int op, int freg, int reg);
 extern fn void* sljit_emit_fcmp(void* compiler, int op, int left, long lw, int right, long rw);
 extern fn void* sljit_emit_label(void* compiler);
+extern fn void* sljit_emit_op_addr(void* compiler, int op, int dst, long dstw);
 extern fn void* sljit_emit_jump(void* compiler, int type);
 extern fn void* sljit_emit_call(void* compiler, int type, int arg_types);
 extern fn void* sljit_emit_cmp(void* compiler, int type, int src1, long src1w, int src2, long src2w);

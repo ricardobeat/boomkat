@@ -71,7 +71,7 @@ fn bool function_float_op(Opcode op) @feat(SLJIT) {
 fn void FunctionEmitter.flow_publish(&self, uint slot, uint reg) @feat(SLJIT) {
     self.out.float_bits((int)slot + 3, jit::reg_r(0));
     int cached = self.out.cached(reg);
-    self.out.e.mov(cached != 0 ? cached : jit::SLJIT_MEM | jit::reg_s(0),
+    self.out.e.mov(cached != 0 ? cached : jit::SLJIT_MEM | self.out.state_base(),
         cached != 0 ? 0 : loop_value_offset(reg), jit::reg_r(0), 0);
 }
 fn void FunctionEmitter.flow_exit(&self, ulong state) @feat(SLJIT) {
@@ -120,6 +120,7 @@ fn int FunctionEmitter.flow_slot(&self, uint reg, uint pc) @feat(SLJIT) {
 // A dirty FP definition replaces only a non-string value. This allows the
 // native spill/exit to publish a number without invoking string destruction.
 fn void FunctionEmitter.flow_destination(&self, uint reg, uint pc) @feat(SLJIT) {
+    if (self.out.raw_store) return;
     if (self.flow.registers[reg] != 0) return;
     int r1 = jit::reg_r(1); int r3 = jit::reg_r(3);
     self.out.load(reg, r1);
@@ -167,5 +168,6 @@ fn void FunctionEmitter.flow_numeric(&self, Instruction ins, uint pc) @feat(SLJI
 // Paths that temporarily disable flow must first expose every canonical lane.
 fn void FunctionEmitter.flow_materialize(&self) @feat(SLJIT) {
     self.flow_exit(self.flow.snapshot());
+    self.flow.dirty = 0;
     self.flow_flush();
 }

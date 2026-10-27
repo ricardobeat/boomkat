@@ -10,6 +10,9 @@ const String FUNCTION_SOURCE = $embed("../sljit_function.js");
 const String REGION_SOURCE   = $embed("../sljit_regions.js");
 const String LOOP_SOURCE     = $embed("../sljit_loop.js");
 const String NATIVE_SOURCE   = $embed("../jit_native_calls.js");
+const String RECOVERY_SOURCE = $embed("../jit_inline_recovery.js");
+const String ALLOCATION_SOURCE = $embed("../jit_alloc_continuations.js");
+const String LINK_SOURCE = $embed("../jit_linked_calls.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
 const String RUN             = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
 
@@ -40,6 +43,25 @@ fn ulong native_edges(JsRuntime* rt, String name, bool returns = false) {
         }
     $endif
     return 0;
+}
+
+fn ulong inline_recoveries(JsRuntime* rt) {
+    ulong count;
+    $if $feat(SLJIT) && $feat(SLJIT_STATS):
+        for (uint i = 0; i < rt.rt.heap.compiled_func_count; i++) {
+            CompiledFunction* cf = (CompiledFunction*)rt.rt.heap.compiled_funcs[i];
+            if (cf != null && cf.sljit_function != null) count += ((FunctionPlan*)cf.sljit_function).inline_recoveries;
+        }
+    $endif
+    return count;
+}
+
+fn CompiledFunction* named_function(JsRuntime* rt, String name) {
+    for (uint i = 0; i < rt.rt.heap.compiled_func_count; i++) {
+        CompiledFunction* cf = rt.rt.heap.compiled_funcs[i];
+        if (cf != null && (String)cf.get_name() == name) return cf;
+    }
+    return null;
 }
 
 // Separate sites read the same shape/key: the second is answered from the
@@ -181,6 +203,46 @@ fn void main() {
         eval(&a, NATIVE_SOURCE);
         @check(native_edges(&first, "jitNativeDrive") > 0);
         @check(native_edges(&first, "jitNativeStep", true) > 0);
+        ulong recovered = inline_recoveries(&first);
+        eval(&a, RECOVERY_SOURCE);
+        @check(inline_recoveries(&first) > recovered);
+        uint inline_polls;
+        recovered = inline_recoveries(&first);
+        first.set_interrupt(&stop_after_polls, &inline_polls);
+        bool inline_interrupted;
+        if (catch err = a.eval("recoveryLoopDrive(recoveryLoopHolder,1000000000);")) inline_interrupted = true;
+        @check(inline_interrupted && inline_polls == 3 && inline_recoveries(&first) > recovered);
+        first.set_interrupt(null);
+        JsValue inline_exception = a.get_exception()!!;
+        a.release(inline_exception);
+        // A fresh realm has an untouched indexed prototype chain. The fixture
+        // later invalidates it deliberately, retiring its compiled append plan.
+        JsContext allocation_context;
+        allocation_context.create(&first)!!;
+        defer allocation_context.destroy();
+        eval(&allocation_context, "var console={log:function(){}};");
+        ulong pushes = first.rt.heap.jit_resumed_pushes;
+        eval(&allocation_context, ALLOCATION_SOURCE);
+        CompiledFunction* allocator = named_function(&first, "resumeAllocate");
+        @check(allocator != null && allocator.sljit_function != null);
+        @check(((FunctionPlan*)allocator.sljit_function).resumed_allocations > 0);
+        @check(first.rt.heap.jit_resumed_pushes > pushes);
+        // Request collection during native allocation. Completion must resume
+        // after that operation, with the new object rooted in its VM slot.
+        first.rt.heap.gc_trigger_counter = 1;
+        eval(&allocation_context, "resumeAssert(resumeAllocate(2000),4006000);");
+        first.rt.heap.mark_and_sweep(true, true);
+        eval(&allocation_context, "resumeAssert(resumeAllocate(200),40600);");
+        eval(&a, LINK_SOURCE);
+        CompiledFunction* driver = named_function(&first, "jitLinkDrive");
+        CompiledFunction* linked = named_function(&first, "jitLinkTarget");
+        @check(driver != null && linked != null && driver.sljit_function != null);
+        @check(((FunctionPlan*)driver.sljit_function).calls != null);
+        // Exercise incoming unlinking while the caller remains compiled.
+        vm::sljit_function_free(first.rt.heap, linked);
+        linked.sljit_function_calls = 0;
+        eval(&a, "for(var linkWarm=0;linkWarm<80;linkWarm++)if(jitLinkDrive(jitLinkObject,100)!==5250)throw 'relink';");
+        @check(linked.sljit_function != null);
         eval(&a, FUNCTION_SOURCE);
         first.rt.heap.mark_and_sweep(true, true);
         for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function';");

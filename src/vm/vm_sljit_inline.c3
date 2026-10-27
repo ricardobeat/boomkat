@@ -235,7 +235,7 @@ fn CompiledFunction* function_inline_method(CompiledFunction* cf, uint pc, Heap*
         ICEntry* ic = (ICEntry*)cf.ic_entries + (back - 1);
         // An inherited read is either a one-link snapshot or an epoch-guarded
         // owner; both name the object holding the method.
-        bool epoch = ic.chain_len == hobject::IC_CHAIN_EPOCH;
+        bool epoch = ic.chain_len == hobject::IC_CHAIN_EPOCH || ic.chain_len == hobject::IC_CHAIN_PROTO;
         if (ic.key.borrow() != cf.constants[ins.c].get_heapptr() || (!epoch && ic.chain_len != 1)
             || ic.prop_flags.is_accessor
             || !ic.has_proto
@@ -363,7 +363,7 @@ fn void FunctionEmitter.inline_call(&self, CompiledFunction* cf, uint pc, Heap* 
     CompiledFunction* target = function_inline_candidate(cf, pc, h);
     if (target == null) {
         if (self.inline_general(cf, pc, h)) return;
-        if (self.native_call(cf, pc)) return;
+        if (self.native_call(cf, pc, h)) return;
         $if $feat(SLJIT_STATS):
         {
             TemplateEmitter* se = &self.out.e;
@@ -532,10 +532,8 @@ fn void FunctionEmitter.inline_call(&self, CompiledFunction* cf, uint pc, Heap* 
         e.mov(mem | r3, 0, r1, 0);
     $endif
 }
-// A small read-only leaf body: property reads of `this` and of values derived
-// from arguments, arithmetic and comparisons, ending in one or more returns.
-// Writes are excluded because a guard that fires after a partial inline run
-// resumes at the call site, which would repeat the write.
+// A bounded forward body with explicit recovery at every guard. Stores may
+// precede later guards because exits resume the exact expanded instruction.
 fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap* h, uint depth) @feat(SLJIT) {
     if (target == null || target.lazy_paren != 0 || target.code_count == 0 || target.code_count > 48
         || target.num_regs > 24
@@ -547,28 +545,18 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
         || target.flags.has_direct_eval
         || target.mapped_arguments()
         || target.capture_count != 0
+        || !target.call_flags.lean_call || target.arguments_in_reg() || target.call_flags.rest_length_only
         || target.ic_entries == null) return false;
     uint returns;
-    // A guard that fires part way through an expanded callee exits at the call
-    // site, where the interpreter runs the callee again from its first
-    // instruction. A store the native run already made would then execute
-    // twice. Replay is safe when a store's value never depends on a property
-    // read: the second run recomputes the same value. So a read-dependent
-    // store may not be followed by any guard that can still exit.
-    bool pending_write;
-    bool[32] depends;
     for (uint i = 0; i < target.code_count; i++) {
         Instruction ins = target.code[i];
         int branch      = loop_target(ins, i);
-        // Only forward control flow: the inlined body is emitted in bytecode
-        // order, and a loop would also break the single-entry assumption.
-        if (branch >= 0 && (branch <= (int)i || branch > (int)target.code_count)) return false;
-        if (function_inline_guard_op(ins.op) && pending_write) return false;
+        if (branch > (int)target.code_count) return false;
         switch (ins.op) {
             case NOP:
                 continue;
             case LDREG:
-                depends[ins.a] = depends[ins.b];
+
                 if (ins.a >= 24 || ins.b >= 24) return false;
                 continue;
             case LDINT:
@@ -579,7 +567,7 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
             case LDUNDEF:
             case VOID:
             case LDTHIS:
-                depends[ins.a] = false;
+
                 if (ins.a >= 24 && branch < 0 && ins.op != LDINT && ins.op != LDCONST && ins.op != LDTRUE
                     && ins.op != LDFALSE
                     && ins.op != LDNULL
@@ -593,7 +581,7 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
             case GETPROP_CACHE:
             case GETVAR:
             case GETGLOBAL:
-                depends[ins.a] = true;
+
                 if (ins.a >= 24 && branch < 0) return false;
                 continue;
             case ADD:
@@ -624,7 +612,7 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
             case NEQ:
             case SEQ:
             case SNEQ:
-                depends[ins.a] = depends[ins.b] || depends[ins.c];
+
                 if (ins.a >= 24 && branch < 0) return false;
                 continue;
             case BNOT:
@@ -635,7 +623,7 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
             case INC_LT:
             case DEC:
             case LNOT:
-                depends[ins.a] = depends[ins.b];
+
                 if (ins.a >= 24 && branch < 0) return false;
                 continue;
             case CALL:
@@ -644,15 +632,11 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
             case CALL_UNDEF_THIS:
 
                 {
-                    // A callee that calls another method can be expanded when
-                    // that callee is itself a general body. Its result could be
-                    // any value, so it counts as a read, and a nested store
-                    // makes any later guard a replay hazard.
+                    // Every nested call must have a recoverable expansion.
                     if (depth + 1 >= INLINE_DEPTH) return false;
                     CompiledFunction* inner = function_inline_general_candidate(target, i, h, depth + 1);
                     if (inner == null) return false;
-                    depends[ins.a] = true;
-                    if (function_inline_stores(inner)) pending_write = true;
+
                     continue;
                 }
             case PUTTHISC:
@@ -663,7 +647,7 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
                     uint value = ins.op == Opcode.PUTTHISC ? ins.a
                         : ins.op == Opcode.PUTPROP ? ins.c
                         : ins.b;
-                    if (value >= 24 || depends[value]) pending_write = true;
+                    if (value >= 24) return false;
                     continue;
                 }
             case IF_TRUE:
@@ -677,9 +661,7 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
             case JMP_NEQ:
             case JMP_NULL:
             case JMP_NNULL:
-                // The expanded body's condition emitter carries the numeric
-                // relations only, so the equality and null branches stay out.
-                return false;
+                continue;
             case RET:
             case RETUNDEF:
                 returns++;
@@ -692,36 +674,6 @@ fn bool function_inline_general_body(CompiledFunction* target, uint nargs, Heap*
         }
     }
     return returns > 0;
-}
-// A nested callee's stores can be replayed with the outer expansion, so the
-// caller has to know whether one exists before allowing a later guard.
-fn bool function_inline_stores(CompiledFunction* target) @feat(SLJIT) {
-    for (uint i = 0; i < target.code_count; i++) {
-        Opcode op = target.code[i].op;
-        if (op == Opcode.PUTTHISC || op == Opcode.PUTPROPC || op == Opcode.PUTPROP) return true;
-    }
-    return false;
-}
-// True for an instruction whose emitted form can leave the native run part
-// way through the body.
-fn bool function_inline_guard_op(Opcode op) @feat(SLJIT) {
-    switch (op) {
-        case NOP:
-        case LDREG:
-        case LDINT:
-        case LDCONST:
-        case LDTRUE:
-        case LDFALSE:
-        case LDNULL:
-        case LDUNDEF:
-        case VOID:
-        case LDTHIS:
-        case RET:
-        case RETUNDEF:
-        case JUMP:
-            return false;
-        default: return true;
-    }
 }
 // A straight-line leaf that only computes from its arguments and fields of
 // `this` can be expanded into the loop tier's flat SSA form. Reads of `this`
@@ -822,11 +774,9 @@ fn bool function_call_inlineable(CompiledFunction* cf, uint pc, Heap* h) @feat(S
     return function_inline_candidate(cf, pc, h) != null || function_inline_general_candidate(cf, pc, h) != null;
 }
 
-// Inline a read-only leaf callee with its own register window in the run
-// block. The window only holds borrowed values, so the body never touches
-// reference counts; the returned value is transferred to the caller with
-// ownership at the call site. Any guard leaves at the CALL, where the
-// interpreter reruns the callee from the start.
+// Inline into a virtual register window. Counted values leave before being
+// stored there; inert/traced values remain live without collection. Each
+// guard carries the exact virtual frame and PC for reconstruction on escape.
 fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
     if (self.depth + 1 >= INLINE_DEPTH) return false;
     CompiledFunction* target = function_inline_general_candidate(cf, pc, h, self.depth + 1);
@@ -839,7 +789,6 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     uint base        = fused ? call.a : call.b;
     uint nargs       = fused ? call.b : call.c;
     if ((usz)out.link_count + (usz)target.code_count + 8 >= out.links.len) return false;
-    int this_reg = jit::reg_s(3);
     int window   = jit::reg_s(5);
     int imm       = jit::SLJIT_IMM;
     int mem       = jit::SLJIT_MEM;
@@ -847,32 +796,73 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     int r1        = jit::reg_r(1);
     int r2        = jit::reg_r(2);
     int r3        = jit::reg_r(3);
+    self.flow_materialize();
     self.inline_guards(cf, pc, target, h, base);
-    ulong flow_state   = out.flow != null ? out.flow.snapshot() : 0;
     TemplateEmitter* e = &out.e;
-    // Point a saved register at the callee's private window. The body keeps
-    // its receiver in the window's spare slot, so no saved register has to
-    // survive the expansion and nested bodies can each own one.
-    e.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0, imm, function_inline_window(self.depth + 1));
+    if (self.plan.inline_count == 128) { e.failed = true; return false; }
+    FunctionInlineFrame* frame = h.alloc_func(h.heap_udata, FunctionInlineFrame::size);
+    if (frame == null) { e.failed = true; return false; }
+    *frame = { .id = ++self.plan.inline_count, .next = self.plan.inline_frames, .parent = out.inline_frame, .target = target,
+        .call_pc = cf.code + pc, .depth = self.depth + 1,
+        .bottom_offset = (out.inline_frame != null ? out.inline_frame.bottom_offset : 0) + base + 2 };
+    self.plan.inline_frames = frame;
+    int run = jit::reg_s(2);
+    long offset = function_inline_window(frame.depth);
+    // inline_guards leaves the live function object in R0.
+    e.op(jit::SLJIT_OR, r0, r0, 0, imm, (long)((ulong)types::TAG_OBJECT << 48));
+    e.mov(mem | run, offset + loop_value_offset(INLINE_CALLEE_SLOT), r0, 0);
+    HObject function_layout;
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    e.mov(r1, 0, mem | r0, (char*)&function_layout.extra.func.var_env - (char*)&function_layout);
+    out.guard(jit::SLJIT_EQUAL, r1, 0, imm, 0, pc);
+    e.mov(r1, 0, mem | r0, (char*)&function_layout.extra.func.lex_env - (char*)&function_layout);
+    void* no_lex = e.cmp(jit::SLJIT_EQUAL, r1, 0, imm, 0);
+    e.mov(r1, 0, mem | r1, $reflect(EnvRecord.flags).offset, jit::SLJIT_MOV_U8);
+    e.op(jit::SLJIT_AND, r1, r1, 0, imm, 4);
+    out.guard(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0, pc);
+    e.bind(no_lex);
+    e.mov(r1, 0, mem | jit::reg_s(1), $reflect(ColdCtx.heap).offset);
+    e.mov(r1, 0, mem | r1, $reflect(Heap.realm).offset);
+    out.guard(jit::SLJIT_NOT_EQUAL, r1, 0, imm, (long)target.realm, pc);
+    // Reserve recovery space before any observable effect. The virtual calls
+    // cannot allocate or change the VM stack while this expansion is active.
+    e.mov(r0, 0, mem | jit::reg_s(1), $reflect(ColdCtx.vm).offset);
+    e.mov(r1, 0, mem | r0, $reflect(Vm.activation_count).offset, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_ADD, r1, r1, 0, imm, frame.depth);
+    e.mov(r2, 0, mem | r0, $reflect(Vm.activation_capacity).offset, jit::SLJIT_MOV_U32);
+    out.guard(jit::SLJIT_GREATER, r1, 0, r2, 0, pc);
+    e.mov(r1, 0, mem | r0, $reflect(Vm.valstack_end).offset);
+    e.op(jit::SLJIT_ADD, r2, jit::reg_s(0), 0, imm,
+        loop_value_offset(frame.bottom_offset + target.num_regs + FRAME_SCRATCH_SLOTS));
+    out.guard(jit::SLJIT_GREATER, r2, 0, r1, 0, pc);
+    // The result can be assigned without a late ownership guard after stores.
+    out.load(call.a, r0);
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING, pc);
     if (!target.call_flags.ignores_this) {
         out.load(base + 1, r0);
-    } else if (self.this_in_window) {
-        out.load(INLINE_THIS_SLOT, r0);
+        e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+        out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
+        e.op(jit::SLJIT_AND, r3, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+        out.guard(jit::SLJIT_EQUAL, r3, 0, imm, 0, pc);
     } else {
-        e.mov(r0, 0, this_reg, 0);
+        TVal ignored; ignored.set_undefined();
+        e.mov(r0, 0, imm, (long)loop_bits(ignored));
     }
-    e.mov(mem | window, loop_value_offset(INLINE_THIS_SLOT), r0, 0);
+    e.mov(mem | run, offset + loop_value_offset(INLINE_THIS_SLOT), r0, 0);
     for (uint i = 0; i < nargs; i++) {
         out.load(base + 2 + i, r0);
-        e.mov(mem | window, loop_value_offset(i), r0, 0);
+        e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+        out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING, pc);
+        e.mov(mem | run, offset + loop_value_offset(i), r0, 0);
     }
+    e.op(jit::SLJIT_ADD, window, run, 0, imm, offset);
     TVal undef;
     undef.set_undefined();
     for (uint i = nargs; i < target.num_regs; i++) {
         e.mov(mem | window, loop_value_offset(i), imm, (long)loop_bits(undef));
     }
 
-    FunctionPlan inner_plan;
     LoopPlan inner_loop;
     FunctionEmitter inner;
     inner.out.e.compiler = out.e.compiler;
@@ -880,7 +870,15 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     inner.out.function_mode = true;
     inner.out.raw_store = true;
     inner.out.state_reg = window;
-    inner.plan = &inner_plan;
+    inner.plan = self.plan;
+    inner.out.inline_frame = frame;
+    inner.out.flow = &inner.flow;
+    inner.blocks[0] = true;
+    for (uint i = 0; i < target.code_count; i++) {
+        int destination = loop_target(target.code[i], i);
+        if (destination >= 0 && destination < (int)target.code_count) inner.blocks[destination] = true;
+        if ((destination >= 0 || function_call_op(target.code[i].op)) && i + 1 < target.code_count) inner.blocks[i + 1] = true;
+    }
     inner.cf = target;
     inner.depth = self.depth + 1;
     inner.this_in_window = true;
@@ -890,6 +888,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     uint[64] pending_target;
     uint pending_count;
     for (uint i = 0; i <= target.code_count; i++) {
+        if (i < target.code_count && inner.blocks[i]) inner.flow_flush();
         labels[i] = ie.label();
         for (uint j = 0; j < pending_count; j++) {
             if (pending_target[j] != i) continue;
@@ -900,13 +899,14 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
         Instruction ins = target.code[i];
         int branch      = loop_target(ins, i);
         if (branch >= 0) {
+            inner.flow_materialize();
             if (ins.op == Opcode.JUMP) {
-                pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
+                pending[pending_count] = inner.inline_jump(i, (uint)branch);
                 pending_target[pending_count++] = (uint)branch;
             } else if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) {
                 inner.truth(ins.a, i);
                 void* skip = ie.cmp(ins.op == Opcode.IF_TRUE ? jit::SLJIT_EQUAL : jit::SLJIT_NOT_EQUAL, r0, 0, imm, 0);
-                pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
+                pending[pending_count] = inner.inline_jump(i, (uint)branch);
                 pending_target[pending_count++] = (uint)branch;
                 ie.bind(skip);
             } else if (ins.op == Opcode.JMP_SEQ || ins.op == Opcode.JMP_SNEQ || ins.op == Opcode.JMP_SEQI
@@ -918,12 +918,24 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
                     i
                 );
                 void* skip = ie.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
-                pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
+                pending[pending_count] = inner.inline_jump(i, (uint)branch);
+                pending_target[pending_count++] = (uint)branch;
+                ie.bind(skip);
+            } else if (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ) {
+                inner.loose_equal(ins, ins.op == Opcode.JMP_NEQ, i);
+                void* skip = ie.cmp(jit::SLJIT_EQUAL, r0, 0, imm, (long)types::TAG_BOOLEAN << 48);
+                pending[pending_count] = inner.inline_jump(i, (uint)branch);
+                pending_target[pending_count++] = (uint)branch;
+                ie.bind(skip);
+            } else if (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL) {
+                inner.null_check(ins, ins.op == Opcode.JMP_NNULL, i);
+                void* skip = ie.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
+                pending[pending_count] = inner.inline_jump(i, (uint)branch);
                 pending_target[pending_count++] = (uint)branch;
                 ie.bind(skip);
             } else {
                 void*[2] skips = inner.out.condition(ins, i);
-                pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
+                pending[pending_count] = inner.inline_jump(i, (uint)branch);
                 pending_target[pending_count++] = (uint)branch;
                 void* next = ie.label();
                 foreach (jump : skips) if (jump != null) inner.out.bind_to(jump, next);
@@ -932,8 +944,18 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
         }
         switch (ins.op) {
             case NOP: continue;
-            case LDREG: inner.out.load(ins.b, r0); inner.store(ins.a, i); continue;
-            case LDTHIS: inner.out.load(INLINE_THIS_SLOT, r0); inner.store(ins.a, i); continue;
+            case LDREG: {
+                uint token = inner.flow.token(ins.b, false);
+                uint shape = inner.flow.shapes[ins.b];
+                inner.out.load(ins.b, r0); inner.store(ins.a, i);
+                inner.flow.same_value(ins.a, token, shape);
+                continue;
+            }
+            case LDTHIS: {
+                inner.out.load(INLINE_THIS_SLOT, r0); inner.store(ins.a, i);
+                inner.flow.same_value(ins.a, FLOW_THIS, inner.flow.this_shape);
+                continue;
+            }
             case LDINT: { TVal v; v.set_fastint(ins.get_sbc()); ie.mov(r0, 0, imm, (long)loop_bits(v)); }
             case LDCONST: ie.mov(r0, 0, imm, (long)loop_bits(target.constants[ins.get_bc()]));
             case LDTRUE:
@@ -971,12 +993,22 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
                 {
                     VarICEntry* vic = (VarICEntry*)target.var_ic_entries + i;
                     VarICEntry view;
-                    Activation activation;
                     Heap heap_view;
                     ie.mov(r2, 0, imm, (long)vic);
                     if (ins.op == Opcode.GETVAR) {
-                        ie.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(1));
-                        ie.mov(r3, 0, mem | r3, (char*)&activation.lex_env - (char*)&activation);
+                        // The virtual callee can close over a different scope
+                        // from its real caller, even when both share bytecode.
+                        ie.mov(r0, 0, mem | window, loop_value_offset(INLINE_CALLEE_SLOT));
+                        ie.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+                        ie.mov(r3, 0, mem | r0, (char*)&function_layout.extra.func.var_env - (char*)&function_layout);
+                        ie.mov(r1, 0, mem | r0, (char*)&function_layout.extra.func.lex_env - (char*)&function_layout);
+                        void* same_env = ie.cmp(jit::SLJIT_EQUAL, r1, 0, imm, 0);
+                        ie.mov(r0, 0, mem | r1, $reflect(EnvRecord.flags).offset, jit::SLJIT_MOV_U8);
+                        ie.op(jit::SLJIT_AND, r0, r0, 0, imm, 1);
+                        void* object_env = ie.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
+                        ie.mov(r3, 0, r1, 0);
+                        ie.bind(same_env);
+                        ie.bind(object_env);
                         inner.out.guard(
                             jit::SLJIT_NOT_EQUAL,
                             r3,
@@ -1013,7 +1045,8 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
             case MUL:
             case MULI:
             case DIV:
-                inner.out.numeric(ins, i);
+                if (function_float_op(ins.op)) { inner.flow_numeric(ins, i); }
+                else { inner.out.numeric(ins, i); }
                 continue;
             case BAND:
             case BOR:
@@ -1085,37 +1118,26 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
                 continue;
             case EQ:
             case NEQ:
-
-                {
-                    // Loose equality of two integer-valued numbers is integer
-                    // equality; anything else leaves to the interpreter.
-                    inner.out.int32(ins.b, r0, i);
-                    inner.out.int32(ins.c, r1, i);
-                    void* different = ie.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, r1, 0);
-                    ie.mov(r2, 0, imm, (long)(((long)types::TAG_BOOLEAN << 48) | (long)(ins.op == Opcode.EQ ? 1 : 0)));
-                    void* done = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
-                    ie.bind(different);
-                    ie.mov(r2, 0, imm, (long)(((long)types::TAG_BOOLEAN << 48) | (long)(ins.op == Opcode.EQ ? 0 : 1)));
-                    ie.bind(done);
-                    ie.mov(r0, 0, r2, 0);
-                    inner.store(ins.a, i);
-                    continue;
-                }
+                inner.loose_equal(ins, ins.op == Opcode.NEQ, i);
+                inner.store(ins.a, i);
+                continue;
             case RET:
+                inner.flow_materialize();
                 inner.out.load(ins.a, r0);
                 // A nested body's result belongs to its caller's window.
                 // Restore that base before storing, not just at the join.
                 if (self.depth > 0) ie.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0,
                     imm, function_inline_window(self.depth));
-                function_store(out, call.a, r0, pc, false);
+                e.mov(mem | out.state_base(), loop_value_offset(call.a), r0, 0);
                 pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
                 pending_target[pending_count++] = target.code_count;
                 continue;
             case RETUNDEF:
+                inner.flow_materialize();
                 ie.mov(r0, 0, imm, (long)loop_bits(undef));
                 if (self.depth > 0) ie.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0,
                     imm, function_inline_window(self.depth));
-                function_store(out, call.a, r0, pc, false);
+                e.mov(mem | out.state_base(), loop_value_offset(call.a), r0, 0);
                 pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
                 pending_target[pending_count++] = target.code_count;
                 continue;
@@ -1132,12 +1154,13 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
         }
         inner.store(ins.a, i);
     }
+    // Backward edges name labels emitted before the branch was encountered.
+    for (uint j = 0; j < pending_count; j++) {
+        if (pending[j] != null) jit::sljit_set_label(pending[j], labels[pending_target[j]]);
+    }
     // A nested expansion used reg_s(5) for its own window; point it back at
     // this level's window before the caller's body continues.
     if (self.depth > 0) e.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0, imm, function_inline_window(self.depth));
-    for (uint i = 0; i < inner_plan.shape_count; i++) {
-        if (!self.shape(inner_plan.shapes[i], h)) out.e.failed = true;
-    }
     if (inner.out.e.failed) out.e.failed = true;
     $if $feat(SLJIT_STATS):
     {
@@ -1156,10 +1179,23 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
             break;
         }
         LoopLink link = inner.out.links[i];
-        link.target = pc;
         link.exit = true;
-        link.flow = flow_state;
         out.links[out.link_count++] = link;
     }
     return true;
+}
+
+// Poll only on taken backward edges. Recovery publishes the virtual loop's
+// induction variables before the interpreter owns the GC/interrupt poll.
+fn void* FunctionEmitter.inline_jump(&self, uint pc, uint target) @feat(SLJIT) {
+    TemplateEmitter* e = &self.out.e;
+    if (target <= pc) {
+        int r0 = jit::reg_r(0);
+        int run = jit::reg_s(2);
+        e.mov(r0, 0, jit::SLJIT_MEM | run, $reflect(FunctionRun.budget).offset);
+        self.out.guard(jit::SLJIT_LESS_EQUAL, r0, 0, jit::SLJIT_IMM, 1, pc);
+        e.op(jit::SLJIT_SUB, r0, r0, 0, jit::SLJIT_IMM, 1);
+        e.mov(jit::SLJIT_MEM | run, $reflect(FunctionRun.budget).offset, r0, 0);
+    }
+    return jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
 }

@@ -96,6 +96,7 @@ struct LoopLink @feat(SLJIT) {
     void* jump;
     uint target;
     bool exit;
+    ushort inline_id;
     ulong flow;
 }
 struct LoopEmitter @feat(SLJIT) {
@@ -108,6 +109,7 @@ struct LoopEmitter @feat(SLJIT) {
     // Inlined callees keep their registers in a private scratch window, so the
     // emitter needs a second base pointer and must not touch reference counts.
     bool raw_store;
+    FunctionInlineFrame* inline_frame;
     int state_reg;
     FunctionFlow* flow;
 }
@@ -865,7 +867,9 @@ fn void LoopEmitter.link(&self, void* jump, uint target, bool exit) @feat(SLJIT)
         self.e.failed = true;
         return;
     }
-    self.links[self.link_count++] = { jump, target, exit, self.flow != null && exit ? self.flow.snapshot() : 0 };
+    self.links[self.link_count++] = { .jump = jump, .target = target, .exit = exit,
+        .inline_id = exit && self.inline_frame != null ? self.inline_frame.id : 0,
+        .flow = self.flow != null && exit ? self.flow.snapshot() : 0 };
 }
 fn void LoopEmitter.bind_to(&self, void* jump, void* label) @feat(SLJIT) {
     if (jump != null && label != null) {
