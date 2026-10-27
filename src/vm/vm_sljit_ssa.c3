@@ -2911,7 +2911,7 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     e.compiler = jit::sljit_create_compiler(null);
     if (e.compiler == null) return null;
     defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW, 8 | (10 << 8), 9, 0) != 0) return null;
+    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW_R, 8 | (10 << 8), 9, 0) != 0) return null;
     int r0 = jit::reg_r(0);
     self.state = jit::reg_s(0);
     self.budget = jit::reg_s(1);

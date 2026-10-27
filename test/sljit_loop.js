@@ -135,4 +135,35 @@ for (var i = 0; i < edges.length; i++) {
     same(classes[i], value < 0 ? 1 : value >= 0 ? 2 : 3, 'numeric branches');
 }
 
+// A this-property loop bound must be loaded as a field, including a native
+// exit at the poll budget. GETTHISC is not a generic integer operation.
+function shiftDense(n, result) {
+    var source = this.array, dest = result.array;
+    for (var i = n; i < this.limit; ++i) dest[i - n] = source[i];
+    result.limit = Math.max(this.limit - n, 0);
+}
+for (var sample = 0; sample < 100; sample++) {
+    var count = sample % 50 + 1;
+    var shifting = { array: [], limit: count * 2 };
+    for (var i = 0; i < shifting.limit; i++) shifting.array[i] = i < count ? 0 : i * 10017;
+    shiftDense.call(shifting, count, shifting);
+    for (var i = 0; i < count; i++) same(shifting.array[i], (count + i) * 10017, 'this bound and overlap');
+}
+
+// Eval forces environment lookup instead of a direct capture. A compiled
+// loop and its bytecode IC are shared, but these closures own different slots.
+function makeLoopBinding(value) {
+    eval('');
+    return function (n) {
+        for (var i = 0; i < 3; i++) n += value;
+        return n;
+    };
+}
+var loopBindingA = { run: makeLoopBinding(2) };
+var loopBindingB = { run: makeLoopBinding(7) };
+for (var i = 0; i < 200; i++) {
+    same(loopBindingA.run(1), 7, 'first closure binding');
+    same(loopBindingB.run(1), 22, 'second closure binding');
+}
+
 console.log('SLJIT loops: PASS');

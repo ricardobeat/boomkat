@@ -155,7 +155,11 @@ fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) 
             return !env::is_tdz_sentinel(result);
         }
     } else {
-        hobject::VarICEntry* ic = pc.op == Opcode.GETGLOBAL ? th_global_ic_hit(pc, cold) : th_var_ic_hit(pc, cold);
+        // The bytecode IC is shared by every closure of this function. The
+        // threaded GETVAR handler checks the environment head before using
+        // its cached slot; a loop entry must make the same check.
+        hobject::VarICEntry* ic = pc.op == Opcode.GETGLOBAL ? th_global_ic_hit(pc, cold)
+            : (!th_var_ic_moved(pc, cold) ? th_var_ic_hit(pc, cold) : null);
         if (ic != null && !ic.prop_flags.is_accessor) {
             *result = ic.slot_ptr.get();
             return !env::is_tdz_sentinel(result);
@@ -1222,7 +1226,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
     TemplateEmitter* e = &out.e;
     if (!e.compiler) return null;
     defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW, 8 | (6 << 8), 5, 0) != 0) return null;
+    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW_R, 8 | (6 << 8), 5, 0) != 0) return null;
     int r0     = jit::reg_r(0);
     int r1     = jit::reg_r(1);
     int r2     = jit::reg_r(2);
@@ -1304,6 +1308,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
                     long offset = (char*)&layout.bindings[id] - (char*)&layout;
                     e.mov(r0, 0, mem | state, offset);
                 }
+            case GETTHISC:
             case GETPROPC:
             case GETPROPC_CACHED:
                 if (plan.memory[memory].kind == SHAPE_FIELD) {
@@ -1462,8 +1467,8 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
             case DIV:
                 out.numeric(ins, pos);
                 continue;
-            default:
-
+            case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+            case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
                 {
                     out.int32(ins.b, r0, pos);
                     bool immediate = ins.op == Opcode.BANDI || ins.op == Opcode.BORI || ins.op == Opcode.BXORI
@@ -1500,6 +1505,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
                     }
                     out.box(r0);
                 }
+            default: return null;
         }
         out.store(ins.a, r0, pos);
     }
