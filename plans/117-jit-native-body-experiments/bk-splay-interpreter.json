@@ -1,0 +1,44 @@
+[
+  {
+    "pair": 0,
+    "mode": "before",
+    "rc": 0,
+    "stdout": "Splay: 8793\nSplayLatency: 21493\n----\nScore (version 9): 13747\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "mode": "after",
+    "rc": 0,
+    "stdout": "Splay: 7350\nSplayLatency: 18368\n----\nScore (version 9): 11619\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "mode": "after",
+    "rc": 0,
+    "stdout": "Splay: 7994\nSplayLatency: 20654\n----\nScore (version 9): 12850\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "mode": "before",
+    "rc": 0,
+    "stdout": "Splay: 7456\nSplayLatency: 17659\n----\nScore (version 9): 11475\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "mode": "before",
+    "rc": 0,
+    "stdout": "Splay: 8059\nSplayLatency: 20582\n----\nScore (version 9): 12880\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "mode": "after",
+    "rc": 0,
+    "stdout": "Splay: 7905\nSplayLatency: 20868\n----\nScore (version 9): 12843\n",
+    "stderr": ""
+  }
+]

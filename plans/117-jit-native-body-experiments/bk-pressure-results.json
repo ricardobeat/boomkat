@@ -1,0 +1,674 @@
+[
+  {
+    "pair": 0,
+    "bench": "navier-stokes",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "82"
+      ],
+      [
+        "DeltaBlue",
+        "115"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "147"
+      ],
+      [
+        "NavierStokes",
+        "369"
+      ]
+    ],
+    "last_ms": 369
+  },
+  {
+    "pair": 0,
+    "bench": "navier-stokes",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "86"
+      ],
+      [
+        "DeltaBlue",
+        "120"
+      ],
+      [
+        "Encrypt",
+        "11"
+      ],
+      [
+        "Decrypt",
+        "165"
+      ],
+      [
+        "NavierStokes",
+        "374"
+      ]
+    ],
+    "last_ms": 374
+  },
+  {
+    "pair": 0,
+    "bench": "mandreel",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "119"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "150"
+      ],
+      [
+        "Mandreel",
+        "874"
+      ]
+    ],
+    "last_ms": 874
+  },
+  {
+    "pair": 0,
+    "bench": "mandreel",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "85"
+      ],
+      [
+        "DeltaBlue",
+        "120"
+      ],
+      [
+        "Encrypt",
+        "9"
+      ],
+      [
+        "Decrypt",
+        "152"
+      ],
+      [
+        "Mandreel",
+        "821"
+      ]
+    ],
+    "last_ms": 821
+  },
+  {
+    "pair": 0,
+    "bench": "pdfjs",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "118"
+      ],
+      [
+        "Encrypt",
+        "11"
+      ],
+      [
+        "Decrypt",
+        "148"
+      ],
+      [
+        "PdfJS",
+        "359"
+      ]
+    ],
+    "last_ms": 359
+  },
+  {
+    "pair": 0,
+    "bench": "pdfjs",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "82"
+      ],
+      [
+        "DeltaBlue",
+        "118"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "148"
+      ],
+      [
+        "PdfJS",
+        "355"
+      ]
+    ],
+    "last_ms": 355
+  },
+  {
+    "pair": 0,
+    "bench": "box2d",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "115"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "149"
+      ],
+      [
+        "Box2D",
+        "247"
+      ]
+    ],
+    "last_ms": 247
+  },
+  {
+    "pair": 0,
+    "bench": "box2d",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "85"
+      ],
+      [
+        "DeltaBlue",
+        "119"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "151"
+      ],
+      [
+        "Box2D",
+        "226"
+      ]
+    ],
+    "last_ms": 226
+  },
+  {
+    "pair": 1,
+    "bench": "navier-stokes",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "85"
+      ],
+      [
+        "DeltaBlue",
+        "117"
+      ],
+      [
+        "Encrypt",
+        "11"
+      ],
+      [
+        "Decrypt",
+        "154"
+      ],
+      [
+        "NavierStokes",
+        "385"
+      ]
+    ],
+    "last_ms": 385
+  },
+  {
+    "pair": 1,
+    "bench": "navier-stokes",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "84"
+      ],
+      [
+        "DeltaBlue",
+        "119"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "147"
+      ],
+      [
+        "NavierStokes",
+        "382"
+      ]
+    ],
+    "last_ms": 382
+  },
+  {
+    "pair": 1,
+    "bench": "mandreel",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "82"
+      ],
+      [
+        "DeltaBlue",
+        "119"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "146"
+      ],
+      [
+        "Mandreel",
+        "826"
+      ]
+    ],
+    "last_ms": 826
+  },
+  {
+    "pair": 1,
+    "bench": "mandreel",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "120"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "151"
+      ],
+      [
+        "Mandreel",
+        "864"
+      ]
+    ],
+    "last_ms": 864
+  },
+  {
+    "pair": 1,
+    "bench": "pdfjs",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "84"
+      ],
+      [
+        "DeltaBlue",
+        "119"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "150"
+      ],
+      [
+        "PdfJS",
+        "348"
+      ]
+    ],
+    "last_ms": 348
+  },
+  {
+    "pair": 1,
+    "bench": "pdfjs",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "85"
+      ],
+      [
+        "DeltaBlue",
+        "124"
+      ],
+      [
+        "Encrypt",
+        "11"
+      ],
+      [
+        "Decrypt",
+        "155"
+      ],
+      [
+        "PdfJS",
+        "373"
+      ]
+    ],
+    "last_ms": 373
+  },
+  {
+    "pair": 1,
+    "bench": "box2d",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "119"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "148"
+      ],
+      [
+        "Box2D",
+        "219"
+      ]
+    ],
+    "last_ms": 219
+  },
+  {
+    "pair": 1,
+    "bench": "box2d",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "94"
+      ],
+      [
+        "DeltaBlue",
+        "128"
+      ],
+      [
+        "Encrypt",
+        "11"
+      ],
+      [
+        "Decrypt",
+        "151"
+      ],
+      [
+        "Box2D",
+        "236"
+      ]
+    ],
+    "last_ms": 236
+  },
+  {
+    "pair": 2,
+    "bench": "navier-stokes",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "87"
+      ],
+      [
+        "DeltaBlue",
+        "117"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "148"
+      ],
+      [
+        "NavierStokes",
+        "378"
+      ]
+    ],
+    "last_ms": 378
+  },
+  {
+    "pair": 2,
+    "bench": "navier-stokes",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "82"
+      ],
+      [
+        "DeltaBlue",
+        "115"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "148"
+      ],
+      [
+        "NavierStokes",
+        "372"
+      ]
+    ],
+    "last_ms": 372
+  },
+  {
+    "pair": 2,
+    "bench": "mandreel",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "84"
+      ],
+      [
+        "DeltaBlue",
+        "121"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "151"
+      ],
+      [
+        "Mandreel",
+        "854"
+      ]
+    ],
+    "last_ms": 854
+  },
+  {
+    "pair": 2,
+    "bench": "mandreel",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "117"
+      ],
+      [
+        "Encrypt",
+        "9"
+      ],
+      [
+        "Decrypt",
+        "146"
+      ],
+      [
+        "Mandreel",
+        "823"
+      ]
+    ],
+    "last_ms": 823
+  },
+  {
+    "pair": 2,
+    "bench": "pdfjs",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "85"
+      ],
+      [
+        "DeltaBlue",
+        "121"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "151"
+      ],
+      [
+        "PdfJS",
+        "364"
+      ]
+    ],
+    "last_ms": 364
+  },
+  {
+    "pair": 2,
+    "bench": "pdfjs",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "117"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "148"
+      ],
+      [
+        "PdfJS",
+        "352"
+      ]
+    ],
+    "last_ms": 352
+  },
+  {
+    "pair": 2,
+    "bench": "box2d",
+    "mode": "before",
+    "phases": [
+      [
+        "Richards",
+        "83"
+      ],
+      [
+        "DeltaBlue",
+        "116"
+      ],
+      [
+        "Encrypt",
+        "10"
+      ],
+      [
+        "Decrypt",
+        "147"
+      ],
+      [
+        "Box2D",
+        "235"
+      ]
+    ],
+    "last_ms": 235
+  },
+  {
+    "pair": 2,
+    "bench": "box2d",
+    "mode": "after",
+    "phases": [
+      [
+        "Richards",
+        "84"
+      ],
+      [
+        "DeltaBlue",
+        "117"
+      ],
+      [
+        "Encrypt",
+        "9"
+      ],
+      [
+        "Decrypt",
+        "147"
+      ],
+      [
+        "Box2D",
+        "219"
+      ]
+    ],
+    "last_ms": 219
+  }
+]

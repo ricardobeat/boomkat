@@ -1,0 +1,2 @@
+SSA bindings: PASS
+NavierStokes: 221 ms

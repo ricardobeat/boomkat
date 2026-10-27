@@ -1,0 +1,44 @@
+{'repeat': 0, 'bench': 'navier-stokes', 'mode': 'before', 'ms': 209}
+{'repeat': 0, 'bench': 'navier-stokes', 'mode': 'after', 'ms': 198}
+{'repeat': 0, 'bench': 'crypto', 'mode': 'before', 'ms': 158}
+{'repeat': 0, 'bench': 'crypto', 'mode': 'after', 'ms': 158}
+{'repeat': 0, 'bench': 'richards', 'mode': 'before', 'ms': 82}
+{'repeat': 0, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 0, 'bench': 'deltablue', 'mode': 'before', 'ms': 122}
+{'repeat': 0, 'bench': 'deltablue', 'mode': 'after', 'ms': 114}
+{'repeat': 1, 'bench': 'navier-stokes', 'mode': 'after', 'ms': 199}
+{'repeat': 1, 'bench': 'navier-stokes', 'mode': 'before', 'ms': 207}
+{'repeat': 1, 'bench': 'crypto', 'mode': 'after', 'ms': 159}
+{'repeat': 1, 'bench': 'crypto', 'mode': 'before', 'ms': 157}
+{'repeat': 1, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 1, 'bench': 'richards', 'mode': 'before', 'ms': 85}
+{'repeat': 1, 'bench': 'deltablue', 'mode': 'after', 'ms': 117}
+{'repeat': 1, 'bench': 'deltablue', 'mode': 'before', 'ms': 118}
+{'repeat': 2, 'bench': 'navier-stokes', 'mode': 'before', 'ms': 207}
+{'repeat': 2, 'bench': 'navier-stokes', 'mode': 'after', 'ms': 202}
+{'repeat': 2, 'bench': 'crypto', 'mode': 'before', 'ms': 159}
+{'repeat': 2, 'bench': 'crypto', 'mode': 'after', 'ms': 159}
+{'repeat': 2, 'bench': 'richards', 'mode': 'before', 'ms': 83}
+{'repeat': 2, 'bench': 'richards', 'mode': 'after', 'ms': 84}
+{'repeat': 2, 'bench': 'deltablue', 'mode': 'before', 'ms': 119}
+{'repeat': 2, 'bench': 'deltablue', 'mode': 'after', 'ms': 116}
+{'repeat': 3, 'bench': 'navier-stokes', 'mode': 'after', 'ms': 201}
+{'repeat': 3, 'bench': 'navier-stokes', 'mode': 'before', 'ms': 207}
+{'repeat': 3, 'bench': 'crypto', 'mode': 'after', 'ms': 162}
+{'repeat': 3, 'bench': 'crypto', 'mode': 'before', 'ms': 162}
+{'repeat': 3, 'bench': 'richards', 'mode': 'after', 'ms': 83}
+{'repeat': 3, 'bench': 'richards', 'mode': 'before', 'ms': 83}
+{'repeat': 3, 'bench': 'deltablue', 'mode': 'after', 'ms': 115}
+{'repeat': 3, 'bench': 'deltablue', 'mode': 'before', 'ms': 115}
+{'repeat': 4, 'bench': 'navier-stokes', 'mode': 'before', 'ms': 206}
+{'repeat': 4, 'bench': 'navier-stokes', 'mode': 'after', 'ms': 205}
+{'repeat': 4, 'bench': 'crypto', 'mode': 'before', 'ms': 157}
+{'repeat': 4, 'bench': 'crypto', 'mode': 'after', 'ms': 158}
+{'repeat': 4, 'bench': 'richards', 'mode': 'before', 'ms': 82}
+{'repeat': 4, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 4, 'bench': 'deltablue', 'mode': 'before', 'ms': 116}
+{'repeat': 4, 'bench': 'deltablue', 'mode': 'after', 'ms': 115}
+navier-stokes {'before': 207, 'after': 201}
+crypto {'before': 158, 'after': 159}
+richards {'before': 83, 'after': 82}
+deltablue {'before': 118, 'after': 115}

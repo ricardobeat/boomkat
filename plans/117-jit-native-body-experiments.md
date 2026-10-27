@@ -32,3 +32,31 @@ Fused named property reads now use the existing producer-retarget liveness proof
 ## Full-suite milestone, 72a3e3de versus f5bb66df
 
 Two sequential alternating pairs using unchanged bundle SHA256 ef4c74d25100e6308436fb19b14eaefd5b4b690f30a799b60bc9bccbcefdce8e, no overlapping builds/tests. All four runs pass. Baseline scores 5365, 5468; current 5483, 5446. Median 5416.5→5464.5 (+0.89%). Pair changes disagree in sign; this does not establish a reliable aggregate speedup. Richards and Crypto improve, but later-suite variation and regressions dilute them. Only two pairs were collected, below the three-pair acceptance protocol from plan 113; no broad performance acceptance claimed. 50K remains unachieved. Raw per-suite scores and the runner are archived alongside this report.
+
+## Splay isolation and cold result feedback (9ba74af8)
+
+Restored Octane's original measurement loop in the standalone Splay harness, without changing the workload. Three alternating pairs: old SSA baseline versus 72a3e3de yields JIT Splay 7994→8638 (+8.1%), but interpreter-only 8059→7905 (−1.9%). The full-suite decline therefore does not reproduce with a fresh JIT arena.
+
+Moved named-result sampling from every threaded publication to cache fills/shared-cache misses, retaining a guarded hint after the first cold observation. Against 72a3e3de, three interpreter-only pairs yield Splay 8337→9160 (+9.9%) and latency 21337→22244. JIT minis: Richards83→83, DeltaBlue115→116, Crypto158→158, Splay115→111, RayTrace161→160. Focused/embedding/targeted ASan checks pass; broad differential matches (local status 1, Rosetta/modules 0). No full-suite acceptance claimed yet.
+
+
+## SSA binding snapshots and recovery inputs (6e4741bb)
+
+Rejection tracing found every sampled Navier numeric loop blocked on GETCAP.
+SSA now reuses the validated binding snapshots already prepared by the loop tier.
+Recovery-only header inputs remain boxed: requiring overwritten temporaries to be
+numeric caused immediate SSA retirement. Integer inference now uses shared
+register may-write effects instead of two incomplete opcode lists.
+
+Five alternating mini pairs against 9ba74af8: Navier 207→201 ms, Crypto 158→159,
+Richards 83→82, DeltaBlue 118→115. An earlier run regressed DeltaBlue; the latest
+run did not reproduce it. These are modest mini gains, not evidence of a large
+aggregate improvement. No full Octane rerun. Focused three-mode fixtures,
+embedding tests, binding/Navier ASan checks pass; broader differential matches
+(local status 1, Rosetta/modules 0). Stats show millions of lin_solve SSA
+iterations after fixing recovery-only entry guards. Indexed-load guards and
+unsupported operations still limit coverage.
+
+The preceding optional 256 KiB SSA reserve experiment admitted no Mandreel loops
+and only about 2 KiB additional code in the pressure harness. Removed rather than
+claiming its timing changes demonstrated the intended benefit.
