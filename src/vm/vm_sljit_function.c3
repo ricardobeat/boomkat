@@ -1913,6 +1913,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             || ins.op == Opcode.DEC
             || ins.op == Opcode.TONUMERIC
             || ins.op == Opcode.LNOT
+            || ins.op == Opcode.EQ
+            || ins.op == Opcode.NEQ
             || ins.op == Opcode.SEQ
             || ins.op == Opcode.SNEQ
             || (ins.op >= Opcode.LT && ins.op <= Opcode.GE)
