@@ -777,15 +777,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             );
         }
     }
-    if (receiver_this) {
-        if (self.this_in_window) {
-            self.out.load(INLINE_THIS_SLOT, r0);
-        } else {
-            e.mov(r0, 0, jit::reg_s(3), 0);
-        }
-    } else {
-        self.out.load(write ? ins.a : ins.b, r0);
-    }
+    self.property_receiver(base_reg, receiver_this);
     // A store that adds a property the receiver and its whole prototype chain
     // lack: the absent-property cache names the shape the append moves the
     // receiver to, so the store needs no lookup of the key or of the
@@ -859,11 +851,12 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             // Every extra shape is a receiver this site has already read the
             // key from as an own data slot.
             ICPolySet* set = &ic.chain.poly;
-            usable = index < 0 && set.count > 0 && set.count <= hobject::IC_POLY_MAX;
+            usable = index == (int)ic.prop_idx && !flags.is_accessor
+                && set.count > 0 && set.count <= hobject::IC_POLY_MAX;
             for (uint i = 0; usable && i < set.count; i++) {
                 Shape* extra = h.get_shape(set.shapes[i]);
                 usable = extra != null && !extra.dict && self.shape(set.shapes[i], h)
-                    && function_shape_slot(extra, key, &flags) == (int)set.prop_idx[i];
+                    && function_shape_slot(extra, key, &flags) == (int)set.prop_idx[i] && !flags.is_accessor;
             }
         } else if (proto_chain) {
             // The entry's own receiver resolves the read through its recorded
@@ -916,7 +909,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         for (uint i = 0; i <= set.count; i++) {
             uint shape_id = i == 0 ? ic.shape_id : set.shapes[i - 1];
             uint slot     = i == 0 ? ic.prop_idx : set.prop_idx[i - 1];
-            self.out.load(base_reg, r0);
+            self.property_receiver(base_reg, receiver_this);
             e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
             e.mov(r1, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
             void* other = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, shape_id);
@@ -953,7 +946,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             uint     slot     = i == 0 ? ic.prop_idx : set.arms[i - 1].prop_idx;
             HObject* first    = i == 0 ? set.primary.first : set.arms[i - 1].first;
             HObject* owner    = i == 0 ? set.primary.owner : set.arms[i - 1].owner;
-            self.out.load(base_reg, r0);
+            self.property_receiver(base_reg, receiver_this);
             e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
             e.mov(r1, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
             void* other = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, shape_id);
@@ -2500,4 +2493,11 @@ fn void sljit_stats_dump(Heap* h) {
             sljit_code_limit(h), h.jit_native_work, h.jit_evictions);
         $if $feat(SLJIT_STATS) && $feat(OP_PROFILE): opprof_dump(); $endif
     $endif
+}
+
+// Every polymorphic arm reloads the same receiver source as the initial guard.
+fn void FunctionEmitter.property_receiver(&self, uint reg, bool receiver_this) @feat(SLJIT) {
+    if (!receiver_this) { self.out.load(reg, jit::reg_r(0)); }
+    else if (self.this_in_window) { self.out.load(INLINE_THIS_SLOT, jit::reg_r(0)); }
+    else { self.out.e.mov(jit::reg_r(0), 0, jit::reg_s(3), 0); }
 }
