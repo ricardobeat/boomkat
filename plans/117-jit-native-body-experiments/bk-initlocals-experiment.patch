@@ -1,0 +1,119 @@
+diff --git a/src/vm/vm_sljit_ir.c3 b/src/vm/vm_sljit_ir.c3
+index 760be43a..1d142e89 100644
+--- a/src/vm/vm_sljit_ir.c3
++++ b/src/vm/vm_sljit_ir.c3
+@@ -2,6 +2,8 @@ module boomkat::vm;
+ 
+ import boomkat::bytecode;
+ import boomkat::jit;
++import boomkat::types;
++import std::io;
+ import boomkat::compiler;
+ 
+ // A deliberately small typed IR: canonical F64 homes, selected by a backwards
+@@ -9,6 +11,7 @@ import boomkat::compiler;
+ // unsupported definitions exclude a register instead of requiring phi moves.
+ struct FunctionNumericIR @feat(SLJIT) {
+     char[3] owners;
++    uint[3] initializers;
+     uint count;
+ }
+ fn bool function_ir_def(Instruction ins) @feat(SLJIT) {
+@@ -21,9 +24,21 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat
+     // Reserve cross-block homes only for compact, supported regions. Mixed
+     // regions otherwise spend their scarce FP lanes on values spanning exits.
+     if (cf.code_count > FUNCTION_REGION_OPS) return ir;
++    bool calls;
+     for (uint pc = 0; pc < cf.code_count; pc++) {
+         Opcode op = cf.code[pc].op;
+         if (!function_op(op) && !function_call_op(op)) return ir;
++        if (function_call_op(op)) calls = true;
++    }
++    // Only an initial sequence of effect-free numeric constants may seed
++    // fresh-call homes. It cannot read a local, throw, or expose its old value.
++    uint[256] initializers;
++    for (uint pc = 0; whole && pc < cf.code_count; pc++) {
++        Instruction ins = cf.code[pc];
++        if (ins.op == Opcode.NOP) continue;
++        if (ins.op != Opcode.LDINT && (ins.op != Opcode.LDCONST
++            || !cf.constants[ins.get_bc()].is_numeric())) break;
++        if (initializers[ins.a] == 0) initializers[ins.a] = pc + 1;
+     }
+     ulong[4][FUNCTION_OPS + 1] live;
+     bool[256] excluded;
+@@ -82,12 +97,13 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat
+         for (uint reg = 0; reg < cf.num_regs && reg < 256; reg++) {
+             // Fresh native calls must not refuse entry on undefined locals.
+             // Region entries can guard already initialized local values.
+-            if (whole && reg >= cf.num_formals) continue;
++            if (whole && reg >= cf.num_formals && (initializers[reg] == 0 || calls)) continue;
+             if (!excluded[reg] && (carried[reg >> 6] & (1UL << (reg & 63))) != 0 && weight[reg] > score) {
+                 best = reg; score = weight[reg];
+             }
+         }
+         if (score == 0) break;
++        ir.initializers[ir.count] = best >= cf.num_formals ? initializers[best] : 0;
+         ir.owners[ir.count++] = (char)best; excluded[best] = true;
+     }
+     return ir;
+@@ -95,11 +111,32 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat
+ fn void FunctionEmitter.flow_prepare(&self) @feat(SLJIT) {
+     if (self.out.flow == null) return;
+     FunctionNumericIR ir = function_numeric_ir(self.cf, self.plan.begin == 0);
++    $if $feat(SLJIT_STATS):
++        for (uint i = 0; i < ir.count; i++) {
++            io::printfn("SLJIT numeric_home name=%s line=%d reg=%d initializer=%d",
++                (String)self.cf.get_name(), self.cf.get_line(0), ir.owners[i], ir.initializers[i]);
++        }
++    $endif
+     // No lane is dirty until every entry guard has succeeded. Prologue bailouts
+     // therefore never materialize an uninitialized FP register.
+     for (uint i = 0; i < ir.count; i++) {
+         uint reg = ir.owners[i];
++        void* ready;
++        if (ir.initializers[i] != 0) {
++            self.out.e.mov(jit::reg_r(0), 0, jit::SLJIT_MEM | jit::reg_s(2),
++                $reflect(FunctionRun.start).offset);
++            void* resume = self.out.e.cmp(jit::SLJIT_NOT_EQUAL, jit::reg_r(0), 0,
++                jit::SLJIT_IMM, (long)self.cf.code);
++            Instruction ins = self.cf.code[ir.initializers[i] - 1];
++            TVal value;
++            if (ins.op == Opcode.LDINT) { value.set_fastint(ins.get_sbc()); }
++            else { value = self.cf.constants[ins.get_bc()]; }
++            self.out.e.mov(jit::reg_r(0), 0, jit::SLJIT_IMM, (long)loop_bits(value));
++            ready = jit::sljit_emit_jump(self.out.e.compiler, jit::SLJIT_JUMP);
++            self.out.e.bind(resume);
++        }
+         self.out.load(reg, jit::reg_r(0));
++        if (ready != null) self.out.e.bind(ready);
+         self.out.number(jit::reg_r(0), (int)i + 3, FUNCTION_BAIL);
+     }
+     for (uint i = 0; i < ir.count; i++) {
+diff --git a/test/jit_numeric_locals.js b/test/jit_numeric_locals.js
+index eee93b9f..379f61fc 100644
+--- a/test/jit_numeric_locals.js
++++ b/test/jit_numeric_locals.js
+@@ -29,3 +29,23 @@ var calls = 0;
+ if (sum(3, { valueOf: function () { calls++; return 4; } }, -1) !== 7 || calls !== 1)
+     throw Error("coercion recovery");
+ print("numeric locals ok");
++
++// A fresh call can initialize a canonical home from the numeric prefix.
++// Property misses and type changes must still recover the live accumulator.
++function initializedLocal(n, item) {
++    var total = 0.5;
++    for (var i = 0; i < n; i++) {
++        if (i & 1) total = total + item.x;
++        else total = total + item.y;
++    }
++    return total;
++}
++for (var warm = 0; warm < 200; warm++) {
++    if (initializedLocal(100, {x: 1.5, y: 2.5}) !== 200.5)
++        throw Error("initialized home");
++}
++calls = 0;
++var changing = {x: {valueOf: function () { calls++; return 3; }}, y: 2};
++if (initializedLocal(4, changing) !== 10.5 || calls !== 2)
++    throw Error("initialized home recovery");
++if (initializedLocal(0, changing) !== 0.5) throw Error("zero trip home");

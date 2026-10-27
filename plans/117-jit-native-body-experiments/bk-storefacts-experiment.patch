@@ -1,0 +1,68 @@
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index c4238773..9f248309 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -267,19 +267,21 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
+         e.mov(mem | out.state_base(), loop_value_offset(reg), r0, 0);
+         return;
+     }
+-    out.load(reg, r1);
+     HeapHeader header;
+     long refs = (char*)&header.refcount - (char*)&header;
+-    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+-    void* old_unowned = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
+-    e.op(jit::SLJIT_AND, r2, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+-    void* old_null = e.cmp(jit::SLJIT_EQUAL, r2, 0, imm, 0);
+-    void* same     = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
+-    e.mov(r3, 0, mem | r2, refs, jit::SLJIT_MOV_U32);
+-    out.guard(jit::SLJIT_LESS_EQUAL, r3, 0, imm, 1, pc);
+-    e.bind(same);
+-    e.bind(old_null);
+-    e.bind(old_unowned);
++    if (!old_inert) {
++        out.load(reg, r1);
++        e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
++        void* old_unowned = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
++        e.op(jit::SLJIT_AND, r2, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
++        void* old_null = e.cmp(jit::SLJIT_EQUAL, r2, 0, imm, 0);
++        void* same     = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
++        e.mov(r3, 0, mem | r2, refs, jit::SLJIT_MOV_U32);
++        out.guard(jit::SLJIT_LESS_EQUAL, r3, 0, imm, 1, pc);
++        e.bind(same);
++        e.bind(old_null);
++        e.bind(old_unowned);
++    }
+     if (!inert) {
+         e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+         void* new_inert = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
+@@ -293,17 +295,19 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
+         e.bind(new_null);
+         e.bind(new_inert);
+     }
+-    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+-    void* release_inert = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
+-    e.op(jit::SLJIT_AND, r2, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+-    void* release_null = e.cmp(jit::SLJIT_EQUAL, r2, 0, imm, 0);
+-    e.mov(r3, 0, mem | r2, refs, jit::SLJIT_MOV_U32);
+-    void* release_pinned = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, types::STRING_PINNED_REFCOUNT);
+-    e.op(jit::SLJIT_SUB, r3, r3, 0, imm, 1);
+-    e.mov(mem | r2, refs, r3, 0, jit::SLJIT_MOV_U32);
+-    e.bind(release_pinned);
+-    e.bind(release_null);
+-    e.bind(release_inert);
++    if (!old_inert) {
++        e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
++        void* release_inert = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
++        e.op(jit::SLJIT_AND, r2, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
++        void* release_null = e.cmp(jit::SLJIT_EQUAL, r2, 0, imm, 0);
++        e.mov(r3, 0, mem | r2, refs, jit::SLJIT_MOV_U32);
++        void* release_pinned = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, types::STRING_PINNED_REFCOUNT);
++        e.op(jit::SLJIT_SUB, r3, r3, 0, imm, 1);
++        e.mov(mem | r2, refs, r3, 0, jit::SLJIT_MOV_U32);
++        e.bind(release_pinned);
++        e.bind(release_null);
++        e.bind(release_inert);
++    }
+     int cached = out.cached(reg);
+     e.mov(cached != 0 ? cached : mem | out.state_base(), cached != 0 ? 0 : loop_value_offset(reg), r0, 0);
+ }

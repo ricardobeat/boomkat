@@ -1,0 +1,123 @@
+diff --git a/src/bytecode.c3 b/src/bytecode.c3
+index 30d9c580..8d362e7d 100644
+--- a/src/bytecode.c3
++++ b/src/bytecode.c3
+@@ -1911,6 +1911,7 @@ struct CompiledFunction {
+     void*           sljit_function @if($feat(SLJIT));
+     uint            sljit_function_calls @if($feat(SLJIT));
+     bool            sljit_budget_wait @if($feat(SLJIT));
++    char            sljit_read_refreshes @if($feat(SLJIT));
+     ulong           sljit_loop_budget_wait @if($feat(SLJIT));
+     ulong           sljit_loop_rejected @if($feat(SLJIT));
+     uint            sljit_template_calls @if($feat(SLJIT));
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index c4238773..5ae41275 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -47,6 +47,8 @@ struct FunctionPlan @feat(SLJIT) {
+     void* resume_fragment;
+     usz resume_bytes;
+     uint numeric_homes;
++    uint read_coverage;
++    uint read_misses;
+     ulong last_use;
+     void*[FUNCTION_OPS + 1] map_pcs @if($feat(SLJIT_MAP));
+     void* map_calls @if($feat(SLJIT_MAP));
+@@ -2229,6 +2231,16 @@ fn Instruction* sljit_function_entry(
+     ) != 0) return pc;
+     uint offset        = (uint)(pc - cf.code);
+     FunctionPlan* plan = cf.sljit_function;
++    if (plan != null && cf.sljit_read_refreshes < 2 && plan.read_misses >= 64
++        && sljit_read_feedback_changed(cf, plan)) {
++        cf.sljit_read_refreshes++;
++        $if $feat(SLJIT_STATS):
++            io::printfn("SLJIT refresh line=%d name=%s round=%d", cf.get_line(0), (String)cf.get_name(), cf.sljit_read_refreshes);
++        $endif
++        sljit_function_free(h, cf);
++        cf.sljit_function_calls = sljit_warmup(h);
++        plan = null;
++    }
+     if (plan == null) {
+         if (cf.sljit_function_calls == uint::max) return pc;
+         // Every function size warms on taken backedges as well as calls. A
+@@ -2241,6 +2253,7 @@ fn Instruction* sljit_function_entry(
+         // entry. Otherwise callers can never enter that callee natively.
+         plan = sljit_function_compile(cf, cold, cf.code_count <= FUNCTION_OPS ? 0 : offset);
+         if (plan == null) return pc;
++        plan.read_coverage = sljit_read_coverage(cf);
+     }
+     if (!sljit_function_resumes(pc, cf)) return pc;
+     uint local = offset - plan.begin;
+@@ -2501,3 +2514,4 @@ fn void FunctionEmitter.property_receiver(&self, uint reg, bool receiver_this) @
+     else if (self.this_in_window) { self.out.load(INLINE_THIS_SLOT, jit::reg_r(0)); }
+     else { self.out.e.mov(jit::reg_r(0), 0, jit::reg_s(3), 0); }
+ }
++
+diff --git a/src/vm/vm_sljit_native.c3 b/src/vm/vm_sljit_native.c3
+index 6a163e56..fc654a7f 100644
+--- a/src/vm/vm_sljit_native.c3
++++ b/src/vm/vm_sljit_native.c3
+@@ -33,6 +33,8 @@ fn bool native_data_object(HObject* object, HString* key, Heap* h) @feat(SLJIT)
+ // the native run. This helper never invokes accessors, allocates or mutates
+ // objects. Anything with observable slow semantics escapes before the read.
+ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
++    FunctionPlan* plan = cold.vm.current_func.sljit_function;
++    if (plan != null && plan.read_misses < 64) plan.read_misses++;
+     Instruction ins = cold.vm.current_func.code[offset];
+     TVal* regs = cold.act.bottom;
+     TVal base = ins.op == Opcode.GETTHISC ? cold.act.this_binding : regs[ins.b];
+diff --git a/src/vm/vm_sljit_feedback.c3 b/src/vm/vm_sljit_feedback.c3
+new file mode 100644
+--- /dev/null
++++ b/src/vm/vm_sljit_feedback.c3
+@@ -0,0 +1,25 @@
++module boomkat::vm;
++
++import boomkat::bytecode;
++import boomkat::heap;
++import boomkat::hobject;
++
++// Refresh only when feedback gains receiver coverage. Mere shape/generation
++// churn is handled by ordinary invalidation and does not justify recompiling.
++fn uint sljit_read_coverage(CompiledFunction* cf) @feat(SLJIT) {
++    uint coverage;
++    for (uint pc = 0; pc < cf.code_count; pc++) {
++        if (!function_read_op(cf.code[pc].op)) continue;
++        ICEntry* ic = (ICEntry*)cf.ic_entries + pc;
++        if (ic.shape_id == heap::SHAPE_NONE || ic.key.borrow() == null) continue;
++        coverage++;
++        if (ic.chain_len == hobject::IC_CHAIN_POLY) coverage += ic.chain.poly.count;
++        if (ic.chain_len == hobject::IC_CHAIN_PROTO) coverage += ic.chain.proto.count;
++    }
++    return coverage;
++}
++
++fn bool sljit_read_feedback_changed(CompiledFunction* cf, FunctionPlan* plan) @feat(SLJIT) {
++    plan.read_misses = 0;
++    return sljit_read_coverage(cf) > plan.read_coverage;
++}
+diff --git a/test/jit_read_refresh.js b/test/jit_read_refresh.js
+new file mode 100644
+--- /dev/null
++++ b/test/jit_read_refresh.js
+@@ -0,0 +1,20 @@
++// Learn new receiver shapes after native code has already warmed, including
++// a linked caller. Refresh must preserve values and observable getter calls.
++function lateRead(o) { return o.value + 1; }
++function lateDrive(o) { return lateRead(o) + lateRead(o); }
++var shapes = [{value: 1}, {pad: 9, value: 2}, {other: 7, pad: 8, value: 3}];
++for (var phase = 0; phase < shapes.length; phase++) {
++    for (var i = 0; i < 1000; i++) {
++        if (lateDrive(shapes[phase]) !== (phase + 2) * 2) throw Error("late shape");
++    }
++}
++var count = 0;
++Object.defineProperty(shapes[1], "value", {get: function () {
++    count++;
++    return lateRead(shapes[0]);
++}});
++for (var j = 0; j < 1000; j++) {
++    if (lateDrive(shapes[1]) !== 6) throw Error("refresh accessor");
++}
++if (count !== 2000) throw Error("refresh effects");
++print("read refresh ok");

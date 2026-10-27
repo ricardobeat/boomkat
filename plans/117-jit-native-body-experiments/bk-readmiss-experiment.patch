@@ -1,0 +1,211 @@
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index c4238773..9b780fef 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -44,6 +44,7 @@ struct FunctionPlan @feat(SLJIT) {
+     FunctionNative native;
+     void* call_entry;
+     FunctionCallLink* calls;
++    FunctionReadCache* read_caches;
+     void* resume_fragment;
+     usz resume_bytes;
+     uint numeric_homes;
+@@ -2006,6 +2007,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+         }
+         if (link.target < cf.code_count && function_read_op(cf.code[link.target].op)
+             && link.target + 1 < cf.code_count) {
++            Instruction read = cf.code[link.target];
++            f.cached_own_read(link.target, read.b, read.op == Opcode.GETTHISC, h);
+             e.mov(r0, 0, jit::reg_s(1), 0);
+             e.mov(r1, 0, imm, (long)(plan.begin + link.target));
+             if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
+@@ -2099,6 +2102,7 @@ fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
+     if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
+     sljit_inline_frames_free(h, plan);
+     sljit_call_links_free(h, plan);
++    sljit_read_caches_free(h, plan);
+     h.jit_code_bytes -= plan.code_bytes;
+     h.free_func(h.heap_udata, plan);
+     cf.sljit_function = null;
+@@ -2185,6 +2189,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+         if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
+         sljit_inline_frames_free(h, plan);
+         sljit_call_links_free(h, plan);
++        sljit_read_caches_free(h, plan);
+         h.free_func(h.heap_udata, plan);
+         return null;
+     }
+diff --git a/src/vm/vm_sljit_native.c3 b/src/vm/vm_sljit_native.c3
+index 6a163e56..17140821 100644
+--- a/src/vm/vm_sljit_native.c3
++++ b/src/vm/vm_sljit_native.c3
+@@ -87,6 +87,15 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
+         break;
+     }
+     if (slot == null) return 0;
++    FunctionPlan* plan = cold.vm.current_func.sljit_function;
++    FunctionReadCache* cache = plan != null ? sljit_read_cache(plan, offset) : null;
++    if (cache != null) {
++        PropFlags flags;
++        int own = function_shape_slot(receiver.get_shape(cold.heap), key, &flags);
++        if (own >= 0 && !flags.is_accessor && slot == &receiver.prop_values()[own]) {
++            cache.record(cold.heap, receiver, (uint)own);
++        }
++    }
+     TVal value = slot.get();
+     TVal* dest = regs + ins.a;
+     if (!th_can_publish(cold.heap, value) || !th_can_release(dest)) return 0;
+diff --git a/src/vm/vm_sljit_read_cache.c3 b/src/vm/vm_sljit_read_cache.c3
+new file mode 100644
+--- /dev/null
++++ b/src/vm/vm_sljit_read_cache.c3
+@@ -0,0 +1,124 @@
++module boomkat::vm;
++
++import boomkat::heap;
++import boomkat::hobject;
++import boomkat::jit;
++import boomkat::types;
++
++// Plan-owned data, never executable memory. No object pointers are retained:
++// generation/recycle clocks invalidate slot hypotheses before a shape ID can
++// acquire a different layout. The receiver keeps the actual value alive.
++struct FunctionReadCache @feat(SLJIT) {
++    FunctionReadCache* next;
++    uint pc;
++    uint clock;
++    uint epoch;
++    uint[2] shapes;
++    uint[2] slots;
++    uint count;
++    uint replace;
++}
++fn FunctionReadCache* sljit_read_cache(FunctionPlan* plan, uint pc) @feat(SLJIT) {
++    for (FunctionReadCache* cache = plan.read_caches; cache != null; cache = cache.next) {
++        if (cache.pc == pc) return cache;
++    }
++    return null;
++}
++fn void sljit_read_caches_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
++    while (plan.read_caches != null) {
++        FunctionReadCache* cache = plan.read_caches;
++        plan.read_caches = cache.next;
++        h.free_func(h.heap_udata, cache);
++    }
++}
++fn void FunctionReadCache.record(&self, Heap* h, HObject* receiver, uint slot) @feat(SLJIT) {
++    Shape* shape = receiver.get_shape(h);
++    if (shape == null || shape.dict || receiver.get_class() != ObjClass.OBJECT
++        || receiver.flags.exotic_array || receiver.flags.exotic_stringobj
++        || receiver.flags.exotic_arguments || receiver.is_proxy()
++        || receiver.flags.exotic_module_ns || receiver.flags.exotic_deferred_ns) return;
++    if (self.clock != h.shape_gen_clock || self.epoch != h.shape_recycle_epoch) self.count = 0;
++    self.clock = h.shape_gen_clock;
++    self.epoch = h.shape_recycle_epoch;
++    for (uint i = 0; i < self.count; i++) {
++        if (self.shapes[i] == receiver.shape_id) { self.slots[i] = slot; return; }
++    }
++    uint index = self.count < 2 ? self.count++ : self.replace++ % 2;
++    self.shapes[index] = receiver.shape_id;
++    self.slots[index] = slot;
++}
++
++fn bool FunctionEmitter.cached_own_read(&self, uint pc, uint base, bool receiver_this, Heap* h) @feat(SLJIT) {
++    FunctionReadCache* cache = sljit_read_cache(self.plan, self.plan.begin + pc);
++    if (cache == null) {
++        cache = h.alloc_func(h.heap_udata, FunctionReadCache::size);
++        if (cache == null) return false;
++        *cache = {};
++        cache.pc = self.plan.begin + pc;
++        cache.next = self.plan.read_caches;
++        self.plan.read_caches = cache;
++    }
++    // The parent exit has already published its snapshot. Local failure
++    // guards join the existing helper, rather than creating more side exits.
++    uint first_link = self.out.link_count;
++    FunctionFlow* saved = self.out.flow;
++    self.out.flow = null;
++    defer self.out.flow = saved;
++    HObject layout;
++    TemplateEmitter* e = &self.out.e;
++    int r0 = jit::reg_r(0); int r1 = jit::reg_r(1);
++    int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
++    int imm = jit::SLJIT_IMM; int mem = jit::SLJIT_MEM;
++    self.property_receiver(base, receiver_this);
++    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
++    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
++    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
++    self.out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
++    ObjFlags forbidden;
++    forbidden.exotic_array = true;
++    forbidden.exotic_stringobj = true;
++    forbidden.exotic_arguments = true;
++    forbidden.exotic_proxyobj = true;
++    forbidden.exotic_module_ns = true;
++    forbidden.exotic_deferred_ns = true;
++    ObjFlags ordinary;
++    ordinary.obj_class = OBJECT;
++    e.mov(r3, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
++    e.op(jit::SLJIT_AND, r3, r3, 0, imm, 0x003F0000U | (uint)forbidden);
++    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (uint)ordinary, pc);
++    e.mov(r1, 0, imm, (long)cache);
++    e.mov(r2, 0, mem | jit::reg_s(1), function_cold_offset(0));
++    e.mov(r3, 0, mem | r2, $reflect(Heap.shape_gen_clock).offset, jit::SLJIT_MOV_U32);
++    self.out.guard(jit::SLJIT_NOT_EQUAL | jit::SLJIT_32, r3, 0, mem | r1, $reflect(FunctionReadCache.clock).offset, pc);
++    e.mov(r3, 0, mem | r2, $reflect(Heap.shape_recycle_epoch).offset, jit::SLJIT_MOV_U32);
++    self.out.guard(jit::SLJIT_NOT_EQUAL | jit::SLJIT_32, r3, 0, mem | r1, $reflect(FunctionReadCache.epoch).offset, pc);
++    e.mov(r2, 0, mem | r0, (char*)&layout.shape_id - (char*)&layout, jit::SLJIT_MOV_U32);
++    void*[2] done;
++    for (uint arm = 0; arm < 2; arm++) {
++        e.mov(r3, 0, mem | r1, $reflect(FunctionReadCache.count).offset, jit::SLJIT_MOV_U32);
++        self.out.guard(jit::SLJIT_LESS_EQUAL, r3, 0, imm, arm, pc);
++        e.mov(r3, 0, mem | r1, $reflect(FunctionReadCache.shapes).offset + (long)arm * 4, jit::SLJIT_MOV_U32);
++        void* other = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, r3, 0);
++        e.mov(r3, 0, mem | r1, $reflect(FunctionReadCache.slots).offset + (long)arm * 4, jit::SLJIT_MOV_U32);
++        e.op(jit::SLJIT_SHL, r3, r3, 0, imm, 3);
++        e.mov(r2, 0, mem | r0, (char*)&layout.prop_alloc - (char*)&layout);
++        void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
++        e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
++        e.bind(allocated);
++        e.op(jit::SLJIT_ADD, r2, r2, 0, r3, 0);
++        e.mov(r0, 0, mem | r2, 0);
++        self.store(self.cf.code[pc].a, pc);
++        done[arm] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
++        e.bind(other);
++    }
++    self.out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, true);
++    for (uint arm = 0; arm < 2; arm++) e.bind(done[arm]);
++    if (self.plan.numeric_homes != 0) self.flow_reload(pc + 1);
++    self.out.bind_to(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), self.out.labels[pc + 1]);
++    void* miss = e.label();
++    for (uint i = first_link; i < self.out.link_count; i++) {
++        self.out.bind_to(self.out.link_at(i).jump, miss);
++    }
++    self.out.link_count = first_link;
++    return true;
++}
+diff --git a/test/jit_read_cache.js b/test/jit_read_cache.js
+new file mode 100644
+--- /dev/null
++++ b/test/jit_read_cache.js
+@@ -0,0 +1,20 @@
++function cachedRead(o) { return o.x; }
++var a = {x: 1}, b = {pad: 9, x: 2};
++for (var i = 0; i < 2000; i++) {
++    if (cachedRead(i & 1 ? a : b) !== (i & 1 ? 1 : 2)) throw Error('shape');
++}
++var calls = 0;
++Object.defineProperty(a, 'x', {get: function () { calls++; return 7; }, configurable: true});
++for (var j = 0; j < 100; j++) if (cachedRead(a) !== 7) throw Error('accessor');
++if (calls !== 100) throw Error('getter count');
++delete b.x;
++Object.setPrototypeOf(b, {x: 13});
++if (cachedRead(b) !== 13) throw Error('inherited');
++var proxy = new Proxy({x: 1}, {get: function (o, key) { calls++; return 17; }});
++if (cachedRead(proxy) !== 17 || calls !== 101) throw Error('proxy');
++for (var k = 0; k < 200; k++) {
++    var o = {x: k};
++    for (var n = 0; n < 20; n++) o['p' + n] = n;
++    if (cachedRead(o) !== k) throw Error('storage growth');
++}
++print('read cache ok');

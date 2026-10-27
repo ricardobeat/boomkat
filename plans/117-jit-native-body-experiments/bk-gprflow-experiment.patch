@@ -1,0 +1,125 @@
+diff --git a/src/vm/vm_sljit_flow.c3 b/src/vm/vm_sljit_flow.c3
+index 707246c9..8c295e06 100644
+--- a/src/vm/vm_sljit_flow.c3
++++ b/src/vm/vm_sljit_flow.c3
+@@ -3,6 +3,7 @@ module boomkat::vm;
+ import boomkat::bytecode;
+ import boomkat::types;
+ import boomkat::jit;
++import boomkat::compiler;
+ 
+ const bool FUNCTION_DATAFLOW = true;
+ const bool FUNCTION_OBJECT_FLOW = true;
+@@ -20,6 +21,8 @@ struct FunctionFlow @feat(SLJIT) {
+     uint used;
+     uint dirty;
+     uint pinned;
++    uint[2] gpr_owners;
++    uint gpr_valid;
+     uint[256] shapes;
+     uint[256] versions;
+     uint next_version;
+@@ -28,6 +31,7 @@ struct FunctionFlow @feat(SLJIT) {
+     uint next_load;
+ }
+ fn void FunctionFlow.forget(&self, uint reg) @feat(SLJIT) {
++    for (uint lane = 0; lane < 2; lane++) if (self.gpr_owners[lane] == reg + 1) self.gpr_valid &= ~(1U << lane);
+     self.unowned[reg] = false;
+     self.shapes[reg] = 0;
+     self.versions[reg] = ++self.next_version;
+@@ -84,6 +88,8 @@ fn void FunctionEmitter.flow_exit(&self, ulong state) @feat(SLJIT) {
+     }
+ }
+ fn void FunctionEmitter.flow_flush(&self) @feat(SLJIT) {
++    self.flow.gpr_valid = 0;
++    self.flow.gpr_owners = {};
+     ulong state = self.flow.snapshot();
+     state &= ~((ulong)self.flow.pinned << 32);
+     self.flow_exit(state);
+@@ -200,3 +206,25 @@ fn void FunctionEmitter.flow_reload(&self, uint pc) @feat(SLJIT) {
+     reload.e.bind(done);
+     if (reload.e.failed) self.out.e.failed = true;
+ }
++
++fn void FunctionEmitter.flow_select_gprs(&self, uint pc) @feat(SLJIT) {
++    if (!compiler::moveelim_roles_ready) compiler::moveelim_init_roles();
++    uint[256] uses;
++    for (uint at = pc; at < self.cf.code_count && (at == pc || !self.blocks[at]); at++) {
++        uint[8] words;
++        compiler::RegSet read = { .words = &words[0], .word_count = 8 };
++        compiler::moveelim_add_uses(self.cf.code[at], &read, true);
++        for (uint reg = 0; reg < self.cf.num_regs && reg < 256; reg++) if (read.test(reg)) uses[reg]++;
++    }
++    self.flow.gpr_valid = 0;
++    self.flow.gpr_owners = {};
++    for (uint lane = 0; lane < 2; lane++) {
++        uint best; uint count = 1;
++        for (uint reg = 0; reg < self.cf.num_regs && reg < 256; reg++) {
++            if (uses[reg] > count) { best = reg; count = uses[reg]; }
++        }
++        if (count <= 1) break;
++        self.flow.gpr_owners[lane] = best + 1;
++        uses[best] = 0;
++    }
++}
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index a06637b4..4914ad10 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -228,6 +228,13 @@ fn long function_cold_offset(uint field) @feat(SLJIT) {
+     return field == 0 ? (char*)&cold.heap - (char*)&cold : (char*)&cold.act - (char*)&cold;
+ }
+ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool inert = false) @feat(SLJIT) {
++    // Releasing the previous value can itself load this slot. Do not leave
++    // that old value in the read cache after the final store.
++    defer if (out.flow != null) {
++        for (uint lane = 0; lane < 2; lane++) {
++            if (out.flow.gpr_owners[lane] == reg + 1) out.flow.gpr_valid &= ~(1U << lane);
++        }
++    }
+     TemplateEmitter* e = &out.e;
+     bool old_inert = out.flow != null && out.flow.unowned[reg];
+     if (out.flow != null) {
+@@ -1533,7 +1540,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+     bool[FUNCTION_OPS] supported;
+     for (uint pos = 0; pos < cf.code_count; pos++) {
+         Instruction ins = cf.code[pos];
+-        if (out.flow != null && f.blocks[pos]) f.flow_flush();
++        if (out.flow != null && f.blocks[pos]) { f.flow_flush(); f.flow_select_gprs(pos); }
+         out.labels[pos] = e.label();
+         bool active = function_op(
+             ins.op
+diff --git a/src/vm/vm_sljit_loop.c3 b/src/vm/vm_sljit_loop.c3
+index f74be99a..5152ba5a 100644
+--- a/src/vm/vm_sljit_loop.c3
++++ b/src/vm/vm_sljit_loop.c3
+@@ -840,6 +840,18 @@ fn void LoopEmitter.load(&self, uint reg, int dst) @feat(SLJIT) {
+         self.float_bits(self.float_cached(reg), dst);
+         return;
+     }
++    int home;
++    uint lane;
++    if (self.flow != null) {
++        for (uint i = 0; i < 2; i++) if (self.flow.gpr_owners[i] == reg + 1) {
++            home = jit::reg_r((int)i + 5); lane = i;
++            if ((self.flow.gpr_valid & (1U << i)) != 0) {
++                if (dst != home) self.e.mov(dst, 0, home, 0);
++                return;
++            }
++            break;
++        }
++    }
+     int cached = self.cached(reg);
+     self.e.mov(
+         dst,
+@@ -847,6 +859,10 @@ fn void LoopEmitter.load(&self, uint reg, int dst) @feat(SLJIT) {
+         cached != 0 ? cached : jit::SLJIT_MEM | self.state_base(),
+         cached != 0 ? 0 : loop_value_offset(reg)
+     );
++    if (home != 0) {
++        if (home != dst) self.e.mov(home, 0, dst, 0);
++        self.flow.gpr_valid |= 1U << lane;
++    }
+ }
+ fn void LoopEmitter.store(&self, uint reg, int src, uint pc) @feat(SLJIT) {
+     if (self.function_mode) {
