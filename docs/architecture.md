@@ -722,6 +722,11 @@ Function regions keep authoritative values in VM slots. Within a basic block, fo
 retain proven numbers, with next-use-based spills and snapshots of
 dirty values at each guard exit. Compact supported regions use CFG liveness to
 reserve up to three canonical FP homes across branches and native iterations.
+Operand reads come from the compiler's liveness metadata. Numeric-home admission
+uses the separate `register_may_writes` query: destructive inputs and implicit
+call windows invalidate homes, while unknown opcodes conservatively invalidate
+all registers. These may-write effects are not liveness kills; move elimination
+retains its narrower set of definite, retargetable destinations.
 Whole-function entry selects only arguments; region entry may guard live locals.
 Every entry converts those slots before entering a continuation. Calls and
 helpers publish canonical homes before clobbering FP registers and reload them

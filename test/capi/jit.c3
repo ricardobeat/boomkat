@@ -2,6 +2,7 @@ module jit_test;
 
 import boomkat;
 import boomkat::bytecode;
+import boomkat::compiler;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::vm;
@@ -219,7 +220,29 @@ fn void check_ic_gc_roots() {
     h.mark_and_sweep(true, true);
 }
 
+// MAY-write effects must include destructive inputs and implicit call windows,
+// while branch offsets and property receivers are not register destinations.
+fn void check_register_effects() {
+    uint[8] words;
+    compiler::RegSet writes = { .words = &words[0], .word_count = 8 };
+    compiler::register_may_writes(bytecode::make_abc(Opcode.PUTCAP, 7, 0, 0), &writes);
+    @check(writes.test(7) && !writes.test(0));
+    writes.clear();
+    compiler::register_may_writes(bytecode::make_abc(Opcode.INC_LT, 4, 0, 0), &writes);
+    @check(writes.test(4));
+    writes.clear();
+    compiler::register_may_writes(bytecode::make_abc(Opcode.CALL_UNDEF_THIS, 2, 10, 3), &writes);
+    @check(writes.test(2) && writes.test(11) && writes.test(14) && !writes.test(9));
+    writes.clear();
+    compiler::register_may_writes(bytecode::make_abc(Opcode.JMP_NLT, 20, 2, 3), &writes);
+    compiler::register_may_writes(bytecode::make_abc(Opcode.PUTPROPC, 5, 6, 7), &writes);
+    for (uint i = 0; i < 256; i++) @check(!writes.test(i));
+    compiler::register_may_writes(bytecode::make_abc(Opcode.WIDE, 0, 0, 0), &writes);
+    @check(writes.test(0) && writes.test(255));
+}
+
 fn void main() {
+    check_register_effects();
     check_native_convention();
     check_ic_gc_roots();
     JsRuntime first, second;

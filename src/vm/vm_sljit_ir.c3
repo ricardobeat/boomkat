@@ -2,6 +2,7 @@ module boomkat::vm;
 
 import boomkat::bytecode;
 import boomkat::jit;
+import boomkat::compiler;
 
 // A deliberately small typed IR: canonical F64 homes, selected by a backwards
 // live-in fixed point. Every incoming native edge has the same representation;
@@ -10,16 +11,13 @@ struct FunctionNumericIR @feat(SLJIT) {
     char[3] owners;
     uint count;
 }
-fn bool function_ir_def(Instruction ins, uint pc) @feat(SLJIT) {
-    if (loop_target(ins, pc) >= 0) return false;
-    switch (ins.op) {
-        case NOP: case RET: case RETUNDEF: case PUTPROP: case PUTPROPC: case PUTTHISC:
-            return false;
-        default: return true;
-    }
+fn bool function_ir_def(Instruction ins) @feat(SLJIT) {
+    uint reg;
+    return compiler::moveelim_get_def(ins, &reg);
 }
 fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat(SLJIT) {
     FunctionNumericIR ir;
+    if (!compiler::moveelim_roles_ready) compiler::moveelim_init_roles();
     // Reserve cross-block homes only for compact, supported regions. Mixed
     // regions otherwise spend their scarce FP lanes on values spanning exits.
     if (cf.code_count > FUNCTION_REGION_OPS) return ir;
@@ -33,10 +31,14 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat
     for (uint pc = 0; pc < cf.code_count; pc++) {
         Instruction ins = cf.code[pc];
         if (function_float_op(ins.op)) { weight[ins.a] += 2; weight[ins.b]++; weight[ins.c]++; }
-        if (!function_ir_def(ins, pc)) continue;
         bool numeric = function_float_op(ins.op) || ins.op == Opcode.LDREG || ins.op == Opcode.LDINT;
         if (ins.op == Opcode.LDCONST) numeric = cf.constants[ins.get_bc()].is_numeric();
-        if (!numeric) excluded[ins.a] = true;
+        if (!numeric) {
+            uint[8] words;
+            compiler::RegSet writes = { .words = &words[0], .word_count = 8 };
+            compiler::register_may_writes(ins, &writes);
+            for (uint reg = 0; reg < 256; reg++) if (writes.test(reg)) excluded[reg] = true;
+        }
     }
     // Copies connect accumulator homes to arithmetic temporaries.
     for (uint pc = 0; pc < cf.code_count; pc++) {
@@ -50,18 +52,18 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat
             uint pc = reverse - 1; Instruction ins = cf.code[pc];
             ulong[4] incoming = live[pc + 1];
             int target = loop_target(ins, pc);
-            if (ins.op == Opcode.JUMP) incoming = {};
+            if (ins.op == Opcode.JUMP || ins.op == Opcode.RET || ins.op == Opcode.RETUNDEF) incoming = {};
             if (target >= 0 && target < (int)cf.code_count) {
                 for (uint word = 0; word < 4; word++) incoming[word] |= live[target][word];
             }
-            if (function_ir_def(ins, pc)) incoming[ins.a >> 6] &= ~(1UL << (ins.a & 63));
-            // Exact reads for numeric/copy definitions; conservative reads for
-            // other opcodes can retain extra lanes but cannot lose a live one.
-            if (ins.op == Opcode.LDREG) { incoming[ins.b >> 6] |= 1UL << (ins.b & 63); }
-            else if (ins.op != Opcode.LDINT && ins.op != Opcode.LDCONST && ins.op != Opcode.NOP) {
-                incoming[ins.b >> 6] |= 1UL << (ins.b & 63);
-                incoming[ins.c >> 6] |= 1UL << (ins.c & 63);
-                if (!function_ir_def(ins, pc)) incoming[ins.a >> 6] |= 1UL << (ins.a & 63);
+            if (function_ir_def(ins)) incoming[ins.a >> 6] &= ~(1UL << (ins.a & 63));
+            // Use the compiler's operand roles, including call windows. Bytecode
+            // immediates and constant indices must not become phantom live values.
+            uint[8] words;
+            compiler::RegSet reads = { .words = &words[0], .word_count = 8 };
+            compiler::moveelim_add_uses(ins, &reads, true);
+            for (uint word = 0; word < 4; word++) {
+                incoming[word] |= (ulong)words[word * 2] | ((ulong)words[word * 2 + 1] << 32);
             }
             for (uint word = 0; word < 4; word++) if (live[pc][word] != incoming[word]) {
                 live[pc][word] = incoming[word]; changed = true;
@@ -78,8 +80,8 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat
     for (uint lane = 0; lane < 3; lane++) {
         uint best; uint score;
         for (uint reg = 0; reg < cf.num_regs && reg < 256; reg++) {
-            // Locals are undefined at a fresh call. Region entries may guard
-            // live locals; whole-function entries select only arguments.
+            // Fresh native calls must not refuse entry on undefined locals.
+            // Region entries can guard already initialized local values.
             if (whole && reg >= cf.num_formals) continue;
             if (!excluded[reg] && (carried[reg >> 6] & (1UL << (reg & 63))) != 0 && weight[reg] > score) {
                 best = reg; score = weight[reg];
