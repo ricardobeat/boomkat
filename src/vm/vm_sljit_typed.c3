@@ -178,7 +178,7 @@ fn bool FunctionEmitter.indexed(&self, CompiledFunction* cf, uint pc, bool write
     FunctionFlow* saved_flow = self.out.flow;
     if (saved_flow != null) { self.flow_materialize(); self.out.flow = null; }
     defer self.out.flow = saved_flow;
-    void* dense = !write ? self.array_read(cf, pc) : null;
+    void* dense = self.dense_element(cf, pc, write);
     TemplateEmitter* e = &self.out.e;
     Instruction ins = cf.code[pc];
     int r1 = jit::reg_r(1); int r3 = jit::reg_r(3);

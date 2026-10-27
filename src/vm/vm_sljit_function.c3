@@ -24,34 +24,33 @@ const uint INLINE_DEPTH = 4;
 struct FunctionRun {
     void* entry;
     long budget;
+    Activation* root;
+    uint depth;
+    Instruction* start;
     FunctionTypedCache[2] typed;
     double[32 * INLINE_DEPTH] inline_values;
 }
-alias FunctionNative = fn uint(TVal* regs, ColdCtx* cold, FunctionRun* run);
+alias FunctionNative = fn Instruction*(TVal* regs, ColdCtx* cold, FunctionRun* run);
 
-// VM registers own every published value. Calls, allocation and exceptional
-// operations return to the interpreter; native backedges consume a bounded
-// invocation budget before returning to an interpreter safepoint.
+// VM registers own every published value. Generated lean calls share the run;
+// operations that may allocate, invoke unknown code or throw escape with all
+// live activations published. Calls and backedges bound native progress.
 struct FunctionPlan @feat(SLJIT) {
     FunctionNative native;
+    void* call_entry;
     uint begin;
     uint count;
     uint min_span;
     void** entries;
     char* short_runs;
     uint capture_writes;
-    char[LOOP_REGS] cache;
     uint heap_regs;
-    char[4] cached_regs;
-    uint cache_count;
     uint[32] shapes;
     uint[32] generations;
     uint shape_count;
     uint shape_clock;
     uint shape_epoch;
     bool receiver;
-    // Sites the region calls out of natively (see function_native_call).
-    bool native_calls;
     usz code_bytes;
     ulong typed_reads @if($feat(SLJIT_STATS));
     ulong typed_writes @if($feat(SLJIT_STATS));
@@ -62,12 +61,15 @@ struct FunctionPlan @feat(SLJIT) {
     ulong bail_calls @if($feat(SLJIT_STATS));
     ulong bail_ops @if($feat(SLJIT_STATS));
     ulong general_inlines @if($feat(SLJIT_STATS));
-    ulong[512] exit_pcs;
-    ulong hits;
-    ulong completed;
-    ulong stalled;
-    ulong backedges;
-    ulong budget_exits;
+    ulong[512] exit_pcs @if($feat(SLJIT_STATS));
+    ulong hits @if($feat(SLJIT_STATS));
+    ulong completed @if($feat(SLJIT_STATS));
+    ulong direct_calls @if($feat(SLJIT_STATS));
+    ulong direct_returns @if($feat(SLJIT_STATS));
+    ulong stalled @if($feat(SLJIT_STATS));
+    // Calls plus backward branches across the native run.
+    ulong charged_edges @if($feat(SLJIT_STATS));
+    ulong budget_exits @if($feat(SLJIT_STATS));
 }
 struct FunctionEmitter @feat(SLJIT) {
     LoopEmitter out;
@@ -83,6 +85,8 @@ struct FunctionEmitter @feat(SLJIT) {
 
 fn bool function_op(Opcode op) @feat(SLJIT) {
     switch (op) {
+        case RET:
+        case RETUNDEF:
         case NOP:
         case LDREG:
         case LDTHIS:
@@ -172,12 +176,7 @@ fn int function_capture_index(CompiledFunction* cf, Instruction ins) @feat(SLJIT
 fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @feat(SLJIT) {
     $if $feat(SLJIT_STATS): cf.sljit_rejection = "function eligibility"; $endif
     if (cf.code_count > FUNCTION_OPS || cf.flags.is_generator || cf.flags.is_async || cf.flags.has_direct_eval
-        || cf.mapped_arguments()
-        || cf.sljit_loops != null) return false;
-    uint useful;
-    bool calls;
-    uint call_regs;
-    uint[LOOP_REGS] frequency;
+        || cf.mapped_arguments()) return false;
     for (uint pos = 0; pos < cf.code_count; pos++) {
         Instruction ins = cf.code[pos];
         // WIDE payloads cannot be decoded independently on a native resume.
@@ -185,88 +184,18 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
             $if $feat(SLJIT_STATS): cf.sljit_rejection = "WIDE"; $endif
             return false;
         }
-        if (function_math_candidate(
-            cf,
-            pos
-        ) >= 0 || function_parseint_candidate(cf, pos) || function_inline_candidate(cf, pos, h) != null) {
-            plan.min_span = FUNCTION_MIN_SPAN;
-            useful += 2;
-            continue;
-        }
-        if (function_call_inlineable(cf, pos, h)) {
-            // A general inline replaces a call but still ends the native run at
-            // the callee's own guards, so it does not need the long span the
-            // numeric inliner reserves.
-            useful += 2;
-            continue;
-        }
-        // A call neither tier can expand still runs through the native call
-        // entry, which hands its result to the caller with a reference of its
-        // own: the result register stays below the tracked watermark.
-        if (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS) {
-            calls = true;
-            if (ins.a + 1 > call_regs) call_regs = ins.a + 1;
-        }
-        if (!function_op(ins.op)) continue;
-        int backedge = loop_target(ins, pos);
-        if (backedge >= 0 && backedge <= (int)pos) useful += 2;
-        // Keep the established admission policy for ordinary callback chunks.
-        // Expanded integer/indexed/call coverage needs a longer native span.
-        if ((ins.op >= Opcode.BANDI && ins.op <= Opcode.USHRI) || (ins.op >= Opcode.UNP && ins.op <= Opcode.BNOT)
-            || (ins.op >= Opcode.BAND && ins.op <= Opcode.USHR)) plan.min_span = FUNCTION_MIN_SPAN;
-        if (ins.op == Opcode.GETPROP || ins.op == Opcode.GETPROP_CACHE || ins.op == Opcode.PUTPROP) {
-            TVal* key = function_key_literal(cf, pos, ins.op == Opcode.PUTPROP ? ins.b : ins.c);
-            if (key == null || !key.is_string()) plan.min_span = FUNCTION_MIN_SPAN;
-        }
-        if (ins.a < LOOP_REGS) frequency[ins.a]++;
-        if (ins.b < LOOP_REGS) frequency[ins.b]++;
-        if (ins.c < LOOP_REGS) frequency[ins.c]++;
-        if (ins.op == Opcode.GETCAP || ins.op == Opcode.GETVAR || ins.op == Opcode.GETGLOBAL || ins.op == Opcode.LDREG
-            || ins.op == Opcode.LDCONST
-            || ins.op == Opcode.GETPROPC
-            || ins.op == Opcode.GETPROPC_CACHED
-            || ins.op == Opcode.LDTHIS
-            || ins.op == Opcode.TYPEOF
-            || ins.op == Opcode.GETPROP
-            || ins.op == Opcode.GETPROP_CACHE
-            || ins.op == Opcode.GETTHISC) {
-            if (ins.a + 1 > plan.heap_regs) plan.heap_regs = (uint)ins.a + 1;
-        }
-        if (ins.op == Opcode.GETCAP || ins.op == Opcode.PUTCAP || ins.op == Opcode.INC_VAR
-            || ins.op == Opcode.DEC_VAR) {
+        if (ins.op == Opcode.PUTCAP || ins.op == Opcode.INC_VAR || ins.op == Opcode.DEC_VAR) {
             int cap = function_capture_index(cf, ins);
-            if (cap < 0) continue;
-            if (ins.op != Opcode.GETCAP) plan.capture_writes |= 1U << cap;
+            if (cap >= 0) plan.capture_writes |= 1U << cap;
         }
-
         if (ins.op == Opcode.LDTHIS || ins.op == Opcode.GETTHISC || ins.op == Opcode.PUTTHISC) plan.receiver = true;
-        if (ins.op == Opcode.GETPROPC || ins.op == Opcode.GETPROPC_CACHED || ins.op == Opcode.INC_VAR
-            || ins.op == Opcode.PUTCAP
-            || ins.op == Opcode.PUTPROPC
-            || ins.op == Opcode.GETTHISC
-            || ins.op == Opcode.PUTTHISC
-            || ins.op == Opcode.GETPROP
-            || ins.op == Opcode.GETPROP_CACHE
-            || ins.op == Opcode.PUTPROP) useful++;
     }
-    // A native call only pays for its own entry and exit once the region runs
-    // long enough around it, which in practice means a taken backedge: a
-    // straight-line leaf that wraps a call is the interpreter's own work.
-    for (uint pos = 0; calls && !plan.native_calls && pos < cf.code_count; pos++) {
-        int target = loop_target(cf.code[pos], pos);
-        if (target >= 0 && target <= (int)pos) plan.native_calls = true;
-    }
-    if (plan.native_calls && plan.heap_regs < call_regs) plan.heap_regs = call_regs;
-    for (uint i = 0; i < 4; i++) {
-        uint best;
-        for (uint j = 1; j < cf.num_regs && j < LOOP_REGS; j++) if (frequency[j] > frequency[best]) best = j;
-        if (frequency[best] < 2) break;
-        plan.cache[best] = (char)jit::reg_r((int)i + 4);
-        frequency[best] = 0;
-        plan.cached_regs[plan.cache_count++] = (char)best;
-    }
-    $if $feat(SLJIT_STATS): cf.sljit_rejection = useful >= 2 ? null : "too few useful operations"; $endif
-    return useful >= 2;
+    // Baseline slots own their values at every call and side exit. The old
+    // borrowed scratch cache cannot survive nested execution or allocation.
+    plan.heap_regs = cf.num_regs;
+    plan.min_span = 1;
+    $if $feat(SLJIT_STATS): cf.sljit_rejection = null; $endif
+    return true;
 }
 fn long function_cold_offset(uint field) @feat(SLJIT) {
     ColdCtx cold;
@@ -426,6 +355,18 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
     self.out.load(ins.c, r1);
     e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+    void* nonnumber_left = e.cmp(jit::SLJIT_GREATER, r2, 0, imm, (long)types::TAG_FASTINT);
+    void* nonnumber_right = e.cmp(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_FASTINT);
+    self.out.number(r0, 1, pc);
+    self.out.number(r1, 2, pc);
+    void* number_equal = self.out.fcmp(jit::SLJIT_ORDERED_EQUAL, 1, 2);
+    e.mov(r0, 0, imm, (long)(types::TAG_BOOLEAN << 48) | (negate ? 1 : 0));
+    void* number_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(number_equal);
+    e.mov(r0, 0, imm, (long)(types::TAG_BOOLEAN << 48) | (negate ? 0 : 1));
+    void* number_equal_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(nonnumber_left);
+    e.bind(nonnumber_right);
     // Null and undefined are equal to each other and to the document.all
     // sentinel, and to nothing else, which is the `x == null` idiom. Their
     // tags are adjacent, so a shifted difference is 0 or 1 for exactly those
@@ -476,6 +417,8 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
     e.bind(same);
     e.mov(r0, 0, imm, negate ? ((long)types::TAG_BOOLEAN << 48) : (((long)types::TAG_BOOLEAN << 48) | 1));
     e.bind(finish);
+    e.bind(number_done);
+    e.bind(number_equal_done);
 }
 // A branch on `x == null` or `x != null`, which never coerces: the operand is
 // nullish when it is null or undefined, or the one object the language treats
@@ -1273,62 +1216,157 @@ fn void FunctionEmitter.branch_target(&self, uint pc, uint target) @feat(SLJIT) 
     }
     self.out.link(jit::sljit_emit_jump(self.out.e.compiler, jit::SLJIT_JUMP), target, target >= self.cf.code_count);
 }
-// A call whose callee neither inliner expands nor the analysis reserved for
-// the native call entry.
+// Calls with an explicit callee/window can use the shared native convention.
 fn bool function_native_call(CompiledFunction* cf, uint pc, FunctionPlan* plan) @feat(SLJIT) {
     Instruction ins = cf.code[pc];
-    return plan.native_calls && (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS)
+    return (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS)
         && ins.a + 1 <= plan.heap_regs;
 }
 
-// A call the inliner could not expand still need not end the native run: a C
-// entry runs a lean compiled callee and hands back its value, so the region
-// resumes where it left off. The register cache lives in scratch registers the
-// C ABI clobbers, so it is written back before the call and reloaded after,
-// exactly as the exits do (its values are borrowed either way).
+// CALL_REG_ARG shares the active window, cold context and run through S0..S2.
+// A generated callee entry publishes the VM frame before entering its body.
+// A non-null result is a side exit in the deepest live VM frame; unwind the
+// machine continuations without replaying calls or popping VM activations.
 fn bool FunctionEmitter.native_call(&self, CompiledFunction* cf, uint pc) @feat(SLJIT) {
     if (!function_native_call(cf, pc, self.plan)) return false;
     LoopEmitter* out = &self.out;
-    if ((usz)out.link_count + 2 >= out.links.len) return false;
-    // The C call clobbers every scratch register, the numeric lanes included.
     if (out.flow != null) {
         if (out.flow.pinned != 0) return false;
         self.flow_materialize();
     }
     TemplateEmitter* e = &out.e;
-    int r0        = jit::reg_r(0);
-    int r1        = jit::reg_r(1);
-    int r2        = jit::reg_r(2);
-    int imm       = jit::SLJIT_IMM;
-    int mem       = jit::SLJIT_MEM;
-    Activation layout;
-    for (uint j = 0; j < cf.num_regs && j < LOOP_REGS; j++) if (self.plan.cache[j] != 0) {
-        e.mov(mem | jit::reg_s(0), loop_value_offset(j), self.plan.cache[j], 0);
-    }
-    e.mov(r0, 0, jit::reg_s(1), 0);
-    e.mov(r1, 0, mem | jit::reg_s(1), function_cold_offset(1));
-    e.mov(r1, 0, mem | r1, (char*)&layout.bottom - (char*)&layout);
-    e.mov(r2, 0, imm, (long)(self.plan.begin + pc));
-    if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW,
-                              jit::SLJIT_IMM, (long)&sljit_native_call) != 0) return false;
-    // The call clobbered every scratch register, so the cache comes back from
-    // the register file on both paths: an exit stub flushes the cache again,
-    // and it must write the values the slots already hold. The callee's frame
-    // may also have moved the value stack, so the base is re-read first.
-    e.mov(jit::reg_s(0), 0, mem | jit::reg_s(1), function_cold_offset(1));
-    e.mov(jit::reg_s(0), 0, mem | jit::reg_s(0), (char*)&layout.bottom - (char*)&layout);
-    for (uint j = 0; j < cf.num_regs && j < LOOP_REGS; j++) if (self.plan.cache[j] != 0) {
-        e.mov(self.plan.cache[j], 0, mem | jit::reg_s(0), loop_value_offset(j));
-    }
-    // Zero leaves the call to the interpreter, as the tier's own exit does.
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    int r2 = jit::reg_r(2);
+    int r3 = jit::reg_r(3);
+    int target = jit::reg_r(4);
+    int mem = jit::SLJIT_MEM;
+    int imm = jit::SLJIT_IMM;
+    Instruction ins = cf.code[pc];
+    out.load(ins.b, r0);
+    e.op(jit::SLJIT_LSHR, r1, r0, 0, imm, 48);
+    out.guard(jit::SLJIT_NOT_EQUAL, r1, 0, imm, (long)types::TAG_OBJECT, pc);
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
     out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
+    ObjFlags wanted;
+    wanted.callable = true;
+    wanted.obj_class = FUNCTION;
+    ObjFlags forbidden;
+    forbidden.is_bound = true;
+    forbidden.exotic_proxyobj = true;
+    e.mov(r1, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_AND, r1, r1, 0, imm, 0x003F0000U | (uint)wanted | (uint)forbidden);
+    out.guard(jit::SLJIT_NOT_EQUAL, r1, 0, imm, (uint)wanted, pc);
+    HObject object;
+    e.mov(r1, 0, mem | r0, (char*)&object.extra.func.comp_func - (char*)&object);
+    out.guard(jit::SLJIT_EQUAL, r1, 0, imm, 0, pc);
+    if (ins.op == Opcode.CALL_UNDEF_THIS) {
+        e.mov(r2, 0, mem | r1, $reflect(CompiledFunction.call_flags).offset, jit::SLJIT_MOV_U16);
+        e.op(jit::SLJIT_AND, r2, r2, 0, imm, 1 << 3); // lean_plain
+        out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
+    }
+    e.mov(r1, 0, mem | r1, $reflect(CompiledFunction.sljit_function).offset);
+    out.guard(jit::SLJIT_EQUAL, r1, 0, imm, 0, pc);
+    e.mov(target, 0, mem | r1, $reflect(FunctionPlan.call_entry).offset);
+    out.guard(jit::SLJIT_EQUAL, target, 0, imm, 0, pc);
+    e.mov(mem | jit::reg_s(2), $reflect(FunctionRun.start).offset, imm, (long)(cf.code + pc));
+    e.op(jit::SLJIT_ADD, r1, jit::reg_s(0), 0, imm, loop_value_offset(ins.b + 2));
+    e.op(jit::SLJIT_ADD, r2, jit::reg_s(0), 0, imm, loop_value_offset(ins.a));
+    e.mov(r3, 0, imm, ins.c | (ins.op == Opcode.CALL_UNDEF_THIS ? 256 : 0));
+    if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL_REG_ARG, jit::SLJIT_ARGS4WWWW, target, 0) != 0) return false;
+    void* completed = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
+    if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
+    e.bind(completed);
     return true;
+}
+
+fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
+    self.flow_materialize();
+    TemplateEmitter* e = &self.out.e;
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    int r2 = jit::reg_r(2);
+    int r3 = jit::reg_r(3);
+    int regs = jit::reg_s(0);
+    int cold = jit::reg_s(1);
+    int run = jit::reg_s(2);
+    int mem = jit::SLJIT_MEM;
+    int imm = jit::SLJIT_IMM;
+    Activation act;
+    ColdCtx ctx;
+    FunctionRun state;
+    CompiledFunction cf;
+    TVal undef;
+    undef.set_undefined();
+    // Every non-root frame was published by the generated call entry. It is a lean,
+    // same-realm frame, and no native helper allocates or enters a catcher.
+    // Counted values leave at RET before any cleanup has taken effect.
+    e.mov(r1, 0, mem | cold, (char*)&ctx.act - (char*)&ctx);
+    e.mov(r2, 0, mem | run, (char*)&state.root - (char*)&state);
+    self.out.guard(jit::SLJIT_EQUAL, r1, 0, r2, 0, pc);
+    if (self.cf.code[pc].op == Opcode.RET) { self.out.load(self.cf.code[pc].a, r0); }
+    else { e.mov(r0, 0, imm, (long)loop_bits(undef)); }
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    void* inert = e.cmp(jit::SLJIT_LESS, r3, 0, imm, (long)types::TAG_STRING);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
+    e.op(jit::SLJIT_AND, r2, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    self.out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
+    e.bind(inert);
+    for (uint i = 0; i < self.cf.num_regs; i++) {
+        e.mov(r2, 0, mem | regs, loop_value_offset(i));
+        e.op(jit::SLJIT_LSHR, r2, r2, 0, imm, 48);
+        self.out.guard(jit::SLJIT_EQUAL, r2, 0, imm, (long)types::TAG_STRING, pc);
+    }
+    e.mov(r2, 0, mem | r1, (char*)&act.retval - (char*)&act);
+    e.mov(r3, 0, mem | r2, 0);
+    e.op(jit::SLJIT_LSHR, r3, r3, 0, imm, 48);
+    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING, pc);
+    // No exits after this point. The caller's watermark covers its entire
+    // baseline window, including the result destination and overlapping args.
+    for (uint i = 0; i < self.cf.num_regs; i++) e.mov(mem | regs, loop_value_offset(i), imm, (long)loop_bits(undef));
+    e.mov(mem | r2, 0, r0, 0);
+    e.mov(r3, 0, mem | r1, (char*)&act.parent - (char*)&act);
+    e.mov(r2, 0, mem | cold, (char*)&ctx.vm - (char*)&ctx);
+    e.mov(r0, 0, mem | r1, (char*)&act.caller_valstack_top - (char*)&act);
+    e.mov(mem | r2, $reflect(Vm.valstack_top).offset, r0, 0);
+    e.mov(r0, 0, mem | r2, $reflect(Vm.activation_count).offset, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_SUB, r0, r0, 0, imm, 1);
+    e.mov(mem | r2, $reflect(Vm.activation_count).offset, r0, 0, jit::SLJIT_MOV_U32);
+    e.mov(mem | cold, (char*)&ctx.act - (char*)&ctx, r3, 0);
+    e.mov(regs, 0, mem | r3, (char*)&act.bottom - (char*)&act);
+    e.mov(mem | r2, $reflect(Vm.valstack_bottom).offset, regs, 0);
+    e.mov(r0, 0, mem | r3, (char*)&act.func - (char*)&act);
+    e.mov(mem | r2, $reflect(Vm.current_func).offset, r0, 0);
+    e.mov(r1, 0, mem | r0, (char*)&cf.code - (char*)&cf);
+    e.op(jit::SLJIT_MUL, r1, r1, 0, imm, (long)TH_IC_SCALE);
+    e.mov(r2, 0, mem | r0, (char*)&cf.ic_entries - (char*)&cf);
+    e.op(jit::SLJIT_SUB, r2, r2, 0, r1, 0);
+    e.mov(mem | cold, (char*)&ctx.ic_bias - (char*)&ctx, r2, 0);
+    e.mov(r1, 0, mem | r0, (char*)&cf.code - (char*)&cf);
+    e.op(jit::SLJIT_MUL, r1, r1, 0, imm, (long)TH_VAR_IC_SCALE);
+    e.mov(r2, 0, mem | r0, (char*)&cf.var_ic_entries - (char*)&cf);
+    e.op(jit::SLJIT_SUB, r2, r2, 0, r1, 0);
+    e.mov(mem | cold, (char*)&ctx.var_ic_bias - (char*)&ctx, r2, 0);
+    e.mov(r2, 0, mem | cold, (char*)&ctx.regs_base_ptr - (char*)&ctx);
+    e.mov(mem | r2, 0, regs, 0);
+    e.mov(r0, 0, mem | run, (char*)&state.depth - (char*)&state, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_SUB, r0, r0, 0, imm, 1);
+    e.mov(mem | run, (char*)&state.depth - (char*)&state, r0, 0, jit::SLJIT_MOV_U32);
+    e.mov(mem | run, (char*)&state.typed[0].receiver - (char*)&state, imm, 0);
+    e.mov(mem | run, (char*)&state.typed[1].receiver - (char*)&state, imm, 0);
+    $if $feat(SLJIT_STATS):
+    e.mov(r1, 0, imm, (long)&self.plan.direct_returns);
+    e.mov(r0, 0, mem | r1, 0);
+    e.op(jit::SLJIT_ADD, r0, r0, 0, imm, 1);
+    e.mov(mem | r1, 0, r0, 0);
+    $endif
+    e.mov(r0, 0, imm, 0);
+    if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;
 }
 
 fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act) @feat(SLJIT) {
     $if $feat(SLJIT_STATS): cf.sljit_rejection = "emission failed"; $endif
     LoopPlan layout_plan;
-    layout_plan.cache = plan.cache;
     FunctionEmitter emitter = {
         .out = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = &layout_plan },
         .plan = plan
@@ -1341,6 +1379,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     f.blocks[0] = true;
     for (uint i = 0; i < cf.code_count; i++) {
         int target = loop_target(cf.code[i], i);
+        if ((function_call_op(cf.code[i].op) || function_read_op(cf.code[i].op))
+            && i + 1 < cf.code_count) f.blocks[i + 1] = true;
         if (target >= 0 && target < (int)cf.code_count) f.blocks[target] = true;
         if (((!function_op(
             cf.code[i].op
@@ -1357,8 +1397,10 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     if (e.compiler == null) return false;
     defer jit::sljit_free_compiler(e.compiler);
     // s0..s4 are the state, cold context, run block, `this` and captures;
-    // inlining also keeps an inline window base and a saved `this`.
-    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS3WWW, 8 | (6 << 8), 7, 0) != 0) return false;
+    // inlining also keeps an inline window base.
+    // Only the outer gateway follows the C ABI. Internal calls keep the
+    // register window, ColdCtx and shared run in S0..S2.
+    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS3WWW_R, 3, 3, 0) != 0) return false;
     int r0  = jit::reg_r(0);
     int r1  = jit::reg_r(1);
     int r2  = jit::reg_r(2);
@@ -1368,9 +1410,13 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     e.mov(jit::reg_s(0), 0, r0, 0);
     e.mov(jit::reg_s(1), 0, r1, 0);
     e.mov(jit::reg_s(2), 0, r2, 0);
-    for (uint i = 0; i < cf.num_regs && i < LOOP_REGS; i++) if (plan.cache[i] != 0) {
-        e.mov(plan.cache[i], 0, mem | jit::reg_s(0), loop_value_offset(i));
-    }
+    void* gateway = jit::sljit_emit_call(e.compiler, jit::SLJIT_CALL_REG_ARG, 1);
+    if (gateway == null || jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
+    void* internal = e.label();
+    jit::sljit_set_label(gateway, internal);
+    if (jit::sljit_emit_enter(e.compiler, jit::SLJIT_ENTER_REG_ARG | jit::enter_keep(3),
+            1, 7 | (6 << 8), 6, 0) != 0) return false;
+    void* body = e.label();
     if (plan.receiver) {
         Activation layout;
         e.mov(r0, 0, mem | jit::reg_s(1), function_cold_offset(1));
@@ -1380,7 +1426,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         e.mov(jit::reg_s(3), 0, mem | r0, (char*)&layout.this_binding - (char*)&layout);
     }
     if (!f.capture(cf, act, h)) return false;
-    if (out.flow != null) f.flow_prepare();
+    // Calls and resumable helpers invalidate FP homes. Block-local flow
+    // remains enabled; cross-block homes need representation-aware entries.
     FunctionRun run_layout;
     e.mov(r0, 0, mem | jit::reg_s(2), (char*)&run_layout.entry - (char*)&run_layout);
     if (jit::sljit_emit_ijump(e.compiler, jit::SLJIT_JUMP, r0, 0) != 0) return false;
@@ -1477,6 +1524,10 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             continue;
         }
         switch (ins.op) {
+            case RET:
+            case RETUNDEF:
+                f.native_return(pos);
+                continue;
             case CALL:
             case CALL_UNDEF_THIS:
             case CALL_VAR:
@@ -1487,6 +1538,30 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
                     f.math_call(cf, pos);
                 } else if (function_array_candidate(cf, pos) >= 0) {
                     f.array_call(cf, pos);
+                } else if (function_native_call(cf, pos, plan) && function_call_inlineable(cf, pos, h)) {
+                    // Materialize before choosing either implementation. Both
+                    // outcomes join with authoritative VM slots and no flow facts.
+                    f.flow_materialize();
+                    FunctionFlow* saved = out.flow;
+                    out.flow = null;
+                    uint first = out.link_count;
+                    f.inline_call(cf, pos, h);
+                    uint last = out.link_count;
+                    void* done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+                    void* fallback = e.label();
+                    uint keep = first;
+                    for (uint i = first; i < last; i++) {
+                        LoopLink link = out.links[i];
+                        if (link.exit && link.target == pos) {
+                            out.bind_to(link.jump, fallback);
+                        } else {
+                            out.links[keep++] = link;
+                        }
+                    }
+                    out.link_count = keep;
+                    if (!f.native_call(cf, pos)) return false;
+                    e.bind(done);
+                    out.flow = saved;
                 } else {
                     f.inline_call(cf, pos, h);
                 }
@@ -1766,19 +1841,27 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         flow_exits[i] = label;
         out.bind_to(link.jump, label);
         f.flow_exit(link.flow);
-        for (uint j = 0; j < cf.num_regs && j < LOOP_REGS; j++) if (plan.cache[j] != 0) {
-            e.mov(mem | jit::reg_s(0), loop_value_offset(j), plan.cache[j], 0);
+        if (link.target < cf.code_count && function_read_op(cf.code[link.target].op)
+            && link.target + 1 < cf.code_count) {
+            e.mov(r0, 0, jit::reg_s(1), 0);
+            e.mov(r1, 0, imm, (long)(plan.begin + link.target));
+            if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
+                    imm, (long)&sljit_native_read) != 0) return false;
+            void* resumed = e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, imm, 0);
+            out.bind_to(resumed, out.labels[link.target + 1]);
         }
         if (link.target == FUNCTION_BAIL) {
-            e.mov(r0, 0, imm, uint::max);
+            e.mov(r0, 0, mem | jit::reg_s(2), (char*)&run_layout.start - (char*)&run_layout);
         } else {
-            e.mov(r0, 0, imm, link.target);
+            e.mov(r0, 0, imm, (long)(cf.code + link.target));
         }
         if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;
     }
+    void* call_entry = f.emit_call_entry(body);
     if (e.failed) return false;
     plan.native = (FunctionNative)jit::sljit_generate_code(e.compiler, 0, null);
     if (plan.native == null) return false;
+    if (call_entry != null) plan.call_entry = (void*)jit::sljit_shim_label_addr(call_entry);
     plan.code_bytes = jit::sljit_shim_code_size(e.compiler);
     uint entries;
     bool[FUNCTION_OPS] loop_headers;
@@ -1818,11 +1901,11 @@ fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     if (plan == null) return;
     $if $feat(SLJIT_STATS):
         io::eprintfn(
-            "SLJIT function %s hits=%d returns=%d backedges=%d budget_exits=%d code_bytes=%d",
+            "SLJIT function %s hits=%d returns=%d charged_edges=%d budget_exits=%d code_bytes=%d",
             (String)cf.get_name(),
             plan.hits,
             plan.completed,
-            plan.backedges,
+            plan.charged_edges,
             plan.budget_exits,
             plan.code_bytes
         );
@@ -1958,7 +2041,9 @@ fn Instruction* sljit_function_entry(
             if (++cf.sljit_function_calls < sljit_warmup(h)) return pc;
         } else if (!region || cf.sljit_function_calls < sljit_warmup(h)) return pc;
         cf.sljit_function_calls = uint::max;
-        plan = sljit_function_compile(cf, cold, offset);
+        // A hot backedge in an ordinary function must also produce its call
+        // entry. Otherwise callers can never enter that callee natively.
+        plan = sljit_function_compile(cf, cold, cf.code_count <= FUNCTION_OPS ? 0 : offset);
         if (plan == null) return pc;
     }
     if (!sljit_function_resumes(pc, cf)) return pc;
@@ -1976,8 +2061,10 @@ fn Instruction* sljit_function_entry(
         plan.shape_epoch = h.shape_recycle_epoch;
     }
     if (cold.act.heap_reg_count < plan.heap_regs) cold.act.heap_reg_count = plan.heap_regs;
-    TVal[4] previous @noinit;
-    for (uint i = 0; i < plan.cache_count; i++) previous[i] = regs[plan.cached_regs[i]];
+    // Native calls consume the run's progress budget too. A call-only graph
+    // can exhaust it without ever taking an interpreter backward branch to
+    // replenish it. With no pending collection, that poll is a no-op.
+    if (h.bwd_gc_budget <= 1 && !h.gc_pending) h.bwd_gc_budget = heap::BWD_GC_INTERVAL;
     long budget     = h.bwd_gc_budget;
     bool interrupts = h.capi_runtime != null || h.capi_interrupt_fn != null;
     if (interrupts && (long)h.interrupt_budget < budget) budget = h.interrupt_budget;
@@ -1988,31 +2075,41 @@ fn Instruction* sljit_function_entry(
     // on every native entry. Only metadata-cache keys require initialization.
     FunctionRun run @noinit;
     run.entry = plan.entries[local];
+    run.root = cold.act;
+    run.depth = 0;
+    run.start = pc;
     run.budget = budget;
     run.typed[0].receiver = null;
     run.typed[1].receiver = null;
-    uint next     = plan.native(regs, cold, &run);
+    Instruction* resume = plan.native(regs, cold, &run);
     uint consumed = (uint)(budget - run.budget);
     h.bwd_gc_budget -= consumed;
     if (interrupts) h.interrupt_budget -= consumed;
-    // Native exit publishes the borrowed cache. Retain every new string before
-    // releasing any old one: values can move between cached registers.
-    for (uint i = 0; i < plan.cache_count; i++) {
-        TVal value = regs[plan.cached_regs[i]];
-        if (!value.same_bits(&previous[i]) && value.is_refcounted() && value.get_heapptr() != null) {
-            ((HeapHeader*)value.get_heapptr()).incref();
-        }
+    $if $feat(SLJIT_STATS):
+    plan.charged_edges += consumed;
+    if (run.budget <= 1 && consumed != 0) plan.budget_exits++;
+    $endif
+    if (cold.act != run.root) {
+        $if $feat(SLJIT_STATS):
+        // Charge the exit to the function containing its resume PC, including
+        // callees entered entirely from generated code.
+        CompiledFunction* active = cold.vm.current_func;
+        FunctionPlan* active_plan = active.sljit_function;
+        uint exited = (uint)(resume - active.code);
+        if (active_plan != null && exited < active.code_count && exited < 512) active_plan.exit_pcs[exited]++;
+        plan.hits++;
+        $endif
+        return resume;
     }
-    for (uint i = 0; i < plan.cache_count; i++) {
-        if (!regs[plan.cached_regs[i]].same_bits(&previous[i])) h.decref_tval(&previous[i]);
-    }
-    next = next == uint::max ? offset : plan.begin + next;
+    uint next = (uint)(resume - cf.code);
     // A run that stops at the same unexpandable call without completing a
     // backedge repeats the same prefix on every entry loop iteration. Let the
     // interpreter own the function once that is clearly never going to pay.
     bool at_call = next < cf.code_count && function_call_op(cf.code[next].op);
-    bool stuck = consumed == 0 && next >= offset
-        && (next - offset < plan.min_span || at_call);
+    bool returned = next < cf.code_count
+        && (cf.code[next].op == Opcode.RET || cf.code[next].op == Opcode.RETUNDEF);
+    bool stuck = consumed == 0 && next >= offset && !returned
+        && (next - offset < 6 || at_call);
     if (stuck) {
         if (!h.jit_stress && ++plan.short_runs[local] >= 8) {
             plan.entries[local] = null;
@@ -2021,13 +2118,13 @@ fn Instruction* sljit_function_entry(
     } else {
         plan.short_runs[local] = 0;
     }
+    $if $feat(SLJIT_STATS):
     plan.hits++;
-    plan.backedges += consumed;
     if (next < cf.code_count && next < 512) plan.exit_pcs[next]++;
-    if (run.budget <= 1 && consumed != 0) plan.budget_exits++;
     if (next == offset) plan.stalled++;
     if (next < cf.code_count
         && (cf.code[next].op == Opcode.RET || cf.code[next].op == Opcode.RETUNDEF)) plan.completed++;
+    $endif
     return cf.code + next;
 }
 // Large functions warm a bounded region at a taken loop header. Native
@@ -2049,8 +2146,10 @@ fn Instruction* sljit_function_dispatch(
     TVal* regs,
     ColdCtx* cold
 ) @feat(SLJIT) @noinline {
-    return th_next(sljit_function_entry(pc, regs, cold), handlers, regs, cold);
-}// Report the counters the native tiers keep: what compiled, how often it ran,
+    pc = sljit_function_entry(pc, regs, cold);
+    return th_next(pc, handlers, cold.act.bottom, cold);
+}
+// Report the counters the native tiers keep: what compiled, how often it ran,
 // where each run ended, and the totals. Driven by the CLI's --stats.
 fn void sljit_stats_dump(Heap* h) {
     $if $feat(SLJIT):
@@ -2089,9 +2188,11 @@ fn void sljit_stats_dump(Heap* h) {
             $endif
             if (plan != null) {
                 functions++;
+                $if $feat(SLJIT_STATS):
                 hits += plan.hits;
+                io::printfn("SLJIT native id=%d calls=%d returns=%d", i, plan.direct_calls, plan.direct_returns);
                 io::printfn(
-                    "SLJIT function %s begin=%d ops=%d bytes=%d hits=%d returns=%d stalled=%d backedges=%d budget_exits=%d id=%d line=%d",
+                    "SLJIT function %s begin=%d ops=%d bytes=%d hits=%d returns=%d stalled=%d charged_edges=%d budget_exits=%d id=%d line=%d",
                     (String)cf.get_name(),
                     plan.begin,
                     plan.count,
@@ -2099,7 +2200,7 @@ fn void sljit_stats_dump(Heap* h) {
                     plan.hits,
                     plan.completed,
                     plan.stalled,
-                    plan.backedges,
+                    plan.charged_edges,
                     plan.budget_exits,
                     i,
                     cf.get_line(0)
@@ -2118,6 +2219,10 @@ fn void sljit_stats_dump(Heap* h) {
                         (ZString)(pc < cf.code_count ? bytecode::get_opcode_name(cf.code[pc].op) : "end")
                     );
                 }
+                $else
+                io::printfn("SLJIT function %s begin=%d ops=%d bytes=%d id=%d line=%d",
+                    (String)cf.get_name(), plan.begin, plan.count, plan.code_bytes, i, cf.get_line(0));
+                $endif
             }
             for (LoopPlan* lp = cf.sljit_loops; lp != null; lp = lp.next) {
                 loops++;
@@ -2136,6 +2241,7 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT template %s hits=%d misses=%d", (String)cf.get_name(), tp.hits, tp.misses);
             }
         }
+        $if $feat(SLJIT_STATS):
         io::printfn(
             "SLJIT totals functions=%d loops=%d templates=%d hits=%d code_bytes=%d",
             functions,
@@ -2144,6 +2250,10 @@ fn void sljit_stats_dump(Heap* h) {
             hits,
             h.jit_code_bytes
         );
+        $else
+        io::printfn("SLJIT totals functions=%d loops=%d templates=%d code_bytes=%d",
+            functions, loops, templates, h.jit_code_bytes);
+        $endif
         $if $feat(SLJIT_STATS) && $feat(OP_PROFILE): opprof_dump(); $endif
     $endif
 }

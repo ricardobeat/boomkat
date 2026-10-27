@@ -85,4 +85,26 @@ check("grown length", bag.len(), 21);
 frozen.set(0, "y");
 check("frozen element", frozen.get(0), "x");
 
+// The same warmed store must leave before a descriptor or a hole changes
+// ordinary assignment into an accessor, a read-only write or a prototype set.
+function replaceDense(a, index, value) { a[index] = value; return a[index]; }
+var replaceValues = [1, 2, 3];
+for (var round = 0; round < 200; round++) check("replace dense", replaceDense(replaceValues, 1, round), round);
+Object.defineProperty(replaceValues, "1", { value: 33, writable: false });
+check("promoted readonly index", replaceDense(replaceValues, 1, 99), 33);
+var intercepted = 0;
+var inherited = [4, 5];
+Object.setPrototypeOf(inherited, Object.create(Array.prototype, {
+    "1": { get: function () { return 71; }, set: function (value) { intercepted += value; } }
+}));
+delete inherited[1];
+check("hole setter", replaceDense(inherited, 1, 9), 71);
+check("setter count", intercepted, 9);
+var undefinedSlot = [1];
+check("undefined element", replaceDense(undefinedSlot, 0, undefined), undefined);
+check("restore undefined element", replaceDense(undefinedSlot, 0, 8), 8);
+var escapedObject = { answer: 42 };
+check("object element", replaceDense(undefinedSlot, 0, escapedObject), escapedObject);
+check("counted element", replaceDense(undefinedSlot, 0, "counted"), "counted");
+
 if (failures == 0) print("ok");

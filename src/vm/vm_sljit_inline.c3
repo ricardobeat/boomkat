@@ -1103,12 +1103,18 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
                 }
             case RET:
                 inner.out.load(ins.a, r0);
+                // A nested body's result belongs to its caller's window.
+                // Restore that base before storing, not just at the join.
+                if (self.depth > 0) ie.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0,
+                    imm, function_inline_window(self.depth));
                 function_store(out, call.a, r0, pc, false);
                 pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
                 pending_target[pending_count++] = target.code_count;
                 continue;
             case RETUNDEF:
                 ie.mov(r0, 0, imm, (long)loop_bits(undef));
+                if (self.depth > 0) ie.op(jit::SLJIT_ADD, window, jit::reg_s(2), 0,
+                    imm, function_inline_window(self.depth));
                 function_store(out, call.a, r0, pc, false);
                 pending[pending_count] = jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP);
                 pending_target[pending_count++] = target.code_count;

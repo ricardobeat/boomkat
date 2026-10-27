@@ -74,6 +74,9 @@ const int SLJIT_ARGS1WW_R         = 0x91;
 const int SLJIT_ARGS2WWW_R        = 0x991;
 const int SLJIT_ARGS2WWW          = 0x111;
 const int SLJIT_ARGS3WWW          = 0x1111;
+const int SLJIT_ARGS3WWW_R        = 0x9991;
+const int SLJIT_ARGS4WWWW         = 0x11111;
+const int SLJIT_ARGS4WWWW_R       = 0x99991;
 
 fn int reg_r(int i) @inline => 1 + i;
 fn int reg_s(int i) @inline => sljit_shim_info(0) - i;

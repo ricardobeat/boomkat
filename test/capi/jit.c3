@@ -9,6 +9,7 @@ import libc;
 const String FUNCTION_SOURCE = $embed("../sljit_function.js");
 const String REGION_SOURCE   = $embed("../sljit_regions.js");
 const String LOOP_SOURCE     = $embed("../sljit_loop.js");
+const String NATIVE_SOURCE   = $embed("../jit_native_calls.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
 const String RUN             = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
 
@@ -20,8 +21,25 @@ macro void @check(#condition) {
 }
 
 fn void eval(JsContext* ctx, String source) {
-    JsValue value = ctx.eval(source)!!;
+    JsValue? value = ctx.eval(source);
+    if (catch err = value) {
+        io::eprintfn("embedding JIT exception at %d: %s", ctx.last_error_line(), ctx.last_error());
+        libc::exit(1);
+        return;
+    }
     ctx.release(value);
+}
+
+fn ulong native_edges(JsRuntime* rt, String name, bool returns = false) {
+    $if $feat(SLJIT) && $feat(SLJIT_STATS):
+        for (uint i = 0; i < rt.rt.heap.compiled_func_count; i++) {
+            CompiledFunction* cf = (CompiledFunction*)rt.rt.heap.compiled_funcs[i];
+            if (cf == null || (String)cf.get_name() != name || cf.sljit_function == null) continue;
+            FunctionPlan* plan = cf.sljit_function;
+            return returns ? plan.direct_returns : plan.direct_calls;
+        }
+    $endif
+    return 0;
 }
 
 // Separate sites read the same shape/key: the second is answered from the
@@ -90,7 +108,7 @@ fn ulong region_work(JsRuntime* rt, String name, bool calls = false) {
                 return ((FunctionPlan*)cf.sljit_function).inline_calls;
             }
             ulong work = 0;
-            if (cf.sljit_function != null) work += ((FunctionPlan*)cf.sljit_function).backedges;
+            if (cf.sljit_function != null) work += ((FunctionPlan*)cf.sljit_function).charged_edges;
             for (LoopPlan* plan = cf.sljit_loops; plan != null; plan = plan.next) work += plan.hits;
             return work;
         }
@@ -160,6 +178,9 @@ fn void main() {
         @check(first.set_jit());
         eval(&a, "for(var j=0;j<64;j++)if(hash(bytes)!==expectedHash)throw 'cached loop';");
         @check(native_hits(&first) > before);
+        eval(&a, NATIVE_SOURCE);
+        @check(native_edges(&first, "jitNativeDrive") > 0);
+        @check(native_edges(&first, "jitNativeStep", true) > 0);
         eval(&a, FUNCTION_SOURCE);
         first.rt.heap.mark_and_sweep(true, true);
         for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function';");
@@ -175,6 +196,9 @@ fn void main() {
             "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function after GC';"
         );
         @check(function_hits(&first, "functionFields") > 0);
+        // Call-only native runs must not strand an exhausted backward-edge
+        // budget: with no pending GC, subsequent callbacks can run natively.
+        first.rt.heap.bwd_gc_budget = 1;
         before = native_hits(&first);
         @check(first.set_jit(false));
         eval(&a, "jitFunctionRecord.left=6;if(jitFunctionWork(jitFunctionRecord)!==22)throw 'disabled function';");

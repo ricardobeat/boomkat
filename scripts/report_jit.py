@@ -35,12 +35,18 @@ def parse(text):
             fields['name'] = line.split(' name=', 1)[1].split(' threaded=', 1)[0]
             fields['rejection'] = line.split(' rejection=', 1)[1]
             row['coverage'] = fields
+        elif line.startswith('SLJIT native '):
+            row['edges'] = fields
         elif line.startswith('SLJIT function '):
             fields['name'] = line[len('SLJIT function '):].split(' begin=', 1)[0]
             row['native'] = fields
         elif line.startswith('SLJIT exit '):
             fields['name'] = line[len('SLJIT exit '):].split(' begin=', 1)[0]
             exits.append(fields)
+    edges = [f['edges'] for f in functions.values() if 'edges' in f]
+    if edges:
+        totals['native_calls'] = sum(e['calls'] for e in edges)
+        totals['native_returns'] = sum(e['returns'] for e in edges)
     return {'functions': list(functions.values()), 'exits': exits, 'totals': totals}
 
 

@@ -3526,6 +3526,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
             if ((pc != cf.code && sljit_function_resumes(pc, cf))
                 || (pc == cf.code && cf.sljit_function_calls != uint::max)) {
                 pc = sljit_function_entry(pc, regs, cold);
+                regs = cold.act.bottom;
             }
         }
     $endif

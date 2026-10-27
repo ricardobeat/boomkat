@@ -2543,6 +2543,7 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
         }
         if (offset < 0 && ds.vm.heap.jit_enabled && !ds.needs_restart) {
             ds.curr_pc = sljit_function_region(ds.curr_pc, ds.regs_base, &ds.cold);
+            ds.sync_code();
         }
     $endif
     return true;
