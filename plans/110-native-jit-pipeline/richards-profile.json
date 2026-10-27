@@ -1,0 +1,1219 @@
+{
+  "functions": [
+    {
+      "id": 0,
+      "coverage": {
+        "id": 0,
+        "line": 69,
+        "threaded": 1,
+        "switch": 0,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 1,
+      "coverage": {
+        "id": 1,
+        "line": 70,
+        "threaded": 1,
+        "switch": 0,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 2,
+      "coverage": {
+        "id": 2,
+        "line": 64,
+        "name": "Benchmark",
+        "threaded": 23,
+        "switch": 11,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 4,
+      "coverage": {
+        "id": 4,
+        "line": 99,
+        "name": "BenchmarkSuite",
+        "threaded": 11,
+        "switch": 6,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 5,
+      "coverage": {
+        "id": 5,
+        "line": 450,
+        "name": "runRichards",
+        "threaded": 9604,
+        "switch": 69,
+        "attempts": 285,
+        "warmup": 4294967295,
+        "retired": 5,
+        "active": 8,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 122,
+        "bytes": 17684,
+        "hits": 220,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 5,
+        "line": 450,
+        "name": "runRichards"
+      }
+    },
+    {
+      "id": 6,
+      "coverage": {
+        "id": 6,
+        "line": 503,
+        "name": "Scheduler",
+        "threaded": 1532,
+        "switch": 110,
+        "attempts": 80,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 15,
+        "bytes": 3556,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 8,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 6,
+        "line": 503,
+        "name": "Scheduler"
+      }
+    },
+    {
+      "id": 7,
+      "coverage": {
+        "id": 7,
+        "line": 664,
+        "name": "TaskControlBlock",
+        "threaded": 5400,
+        "switch": 10,
+        "attempts": 77,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 12,
+        "bytes": 4092,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 8,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 7,
+        "line": 664,
+        "name": "TaskControlBlock"
+      }
+    },
+    {
+      "id": 8,
+      "coverage": {
+        "id": 8,
+        "line": 772,
+        "name": "IdleTask",
+        "threaded": 8,
+        "switch": 3,
+        "attempts": 2,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 9,
+      "coverage": {
+        "id": 9,
+        "line": 800,
+        "name": "DeviceTask",
+        "threaded": 800,
+        "switch": 2,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span"
+      }
+    },
+    {
+      "id": 10,
+      "coverage": {
+        "id": 10,
+        "line": 828,
+        "name": "WorkerTask",
+        "threaded": 8,
+        "switch": 3,
+        "attempts": 2,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 11,
+      "coverage": {
+        "id": 11,
+        "line": 863,
+        "name": "HandlerTask",
+        "threaded": 1200,
+        "switch": 4,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span"
+      }
+    },
+    {
+      "id": 12,
+      "coverage": {
+        "id": 12,
+        "line": 919,
+        "name": "Packet",
+        "threaded": 8000,
+        "switch": 811,
+        "attempts": 79,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 10,
+        "bytes": 3328,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 8,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 12,
+        "line": 919,
+        "name": "Packet"
+      }
+    },
+    {
+      "id": 16,
+      "coverage": {
+        "id": 16,
+        "line": 45,
+        "threaded": 22,
+        "switch": 12,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 20,
+      "coverage": {
+        "id": 20,
+        "line": 133,
+        "threaded": 8,
+        "switch": 2,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 21,
+      "coverage": {
+        "id": 21,
+        "line": 133,
+        "threaded": 5,
+        "switch": 4,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 39,
+      "coverage": {
+        "id": 39,
+        "line": 530,
+        "threaded": 1300,
+        "switch": 6,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 40,
+      "coverage": {
+        "id": 40,
+        "line": 540,
+        "threaded": 1300,
+        "switch": 8,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 41,
+      "coverage": {
+        "id": 41,
+        "line": 550,
+        "threaded": 2200,
+        "switch": 6,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 42,
+      "coverage": {
+        "id": 42,
+        "line": 560,
+        "threaded": 2200,
+        "switch": 6,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 43,
+      "coverage": {
+        "id": 43,
+        "line": 571,
+        "threaded": 1252,
+        "switch": 5,
+        "attempts": 72,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 13,
+        "bytes": 2488,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 43,
+        "line": 571,
+        "name": ""
+      }
+    },
+    {
+      "id": 44,
+      "coverage": {
+        "id": 44,
+        "line": 583,
+        "threaded": 9600,
+        "switch": 118,
+        "attempts": 70,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 45,
+      "coverage": {
+        "id": 45,
+        "line": 592,
+        "threaded": 2556,
+        "switch": 1118,
+        "attempts": 1101,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 3,
+        "ops": 22,
+        "bytes": 4868,
+        "hits": 1100,
+        "returns": 100,
+        "stalled": 0,
+        "backedges": 1065937,
+        "budget_exits": 1000,
+        "id": 45,
+        "line": 592,
+        "name": ""
+      }
+    },
+    {
+      "id": 46,
+      "coverage": {
+        "id": 46,
+        "line": 608,
+        "threaded": 1098900,
+        "switch": 4,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 47,
+      "coverage": {
+        "id": 47,
+        "line": 624,
+        "threaded": 93430,
+        "switch": 6,
+        "attempts": 92800,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 11,
+        "bytes": 1888,
+        "hits": 92737,
+        "returns": 92737,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 47,
+        "line": 624,
+        "name": ""
+      }
+    },
+    {
+      "id": 48,
+      "coverage": {
+        "id": 48,
+        "line": 634,
+        "threaded": 232796,
+        "switch": 6,
+        "attempts": 232400,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 7,
+        "bytes": 1824,
+        "hits": 232334,
+        "returns": 232334,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 48,
+        "line": 634,
+        "name": ""
+      }
+    },
+    {
+      "id": 49,
+      "coverage": {
+        "id": 49,
+        "line": 645,
+        "threaded": 4876048,
+        "switch": 10,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 22,
+        "bytes": 4696,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 49,
+        "line": 645,
+        "name": ""
+      }
+    },
+    {
+      "id": 50,
+      "coverage": {
+        "id": 50,
+        "line": 701,
+        "threaded": 300,
+        "switch": 3,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 51,
+      "coverage": {
+        "id": 51,
+        "line": 705,
+        "threaded": 499500,
+        "switch": 3,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 52,
+      "coverage": {
+        "id": 52,
+        "line": 709,
+        "threaded": 315,
+        "switch": 3,
+        "attempts": 63,
+        "warmup": 63,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 53,
+      "coverage": {
+        "id": 53,
+        "line": 713,
+        "threaded": 621,
+        "switch": 6,
+        "attempts": 63,
+        "warmup": 56,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 54,
+      "coverage": {
+        "id": 54,
+        "line": 717,
+        "threaded": 330,
+        "switch": 3,
+        "attempts": 66,
+        "warmup": 63,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 55,
+      "coverage": {
+        "id": 55,
+        "line": 721,
+        "threaded": 220,
+        "switch": 3,
+        "attempts": 44,
+        "warmup": 44,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 56,
+      "coverage": {
+        "id": 56,
+        "line": 727,
+        "threaded": 10321079,
+        "switch": 23,
+        "attempts": 75,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 5,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 25,
+        "bytes": 3712,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 56,
+        "line": 727,
+        "name": ""
+      }
+    },
+    {
+      "id": 57,
+      "coverage": {
+        "id": 57,
+        "line": 749,
+        "threaded": 401326,
+        "switch": 7,
+        "attempts": 232200,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 19,
+        "bytes": 3628,
+        "hits": 232137,
+        "returns": 147856,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 57,
+        "line": 749,
+        "name": ""
+      }
+    },
+    {
+      "id": 59,
+      "coverage": {
+        "id": 59,
+        "line": 778,
+        "threaded": 2098561,
+        "switch": 15,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 40,
+        "bytes": 5656,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 59,
+        "line": 778,
+        "name": ""
+      }
+    },
+    {
+      "id": 61,
+      "coverage": {
+        "id": 61,
+        "line": 805,
+        "threaded": 2869038,
+        "switch": 9,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 29,
+        "bytes": 4056,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 61,
+        "line": 805,
+        "name": ""
+      }
+    },
+    {
+      "id": 63,
+      "coverage": {
+        "id": 63,
+        "line": 834,
+        "threaded": 1820638,
+        "switch": 228,
+        "attempts": 29,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 24,
+        "ops": 22,
+        "bytes": 5400,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 63,
+        "line": 834,
+        "name": ""
+      }
+    },
+    {
+      "id": 65,
+      "coverage": {
+        "id": 65,
+        "line": 868,
+        "threaded": 6207093,
+        "switch": 28,
+        "attempts": 90,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 4,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 65,
+        "bytes": 14600,
+        "hits": 24,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 65,
+        "line": 868,
+        "name": ""
+      }
+    },
+    {
+      "id": 67,
+      "coverage": {
+        "id": 67,
+        "line": 931,
+        "threaded": 201262,
+        "switch": 3,
+        "attempts": 200800,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 14,
+        "bytes": 1812,
+        "hits": 200738,
+        "returns": 200738,
+        "stalled": 0,
+        "backedges": 3596,
+        "budget_exits": 0,
+        "id": 67,
+        "line": 931,
+        "name": ""
+      }
+    },
+    {
+      "id": 69,
+      "coverage": {
+        "id": 69,
+        "line": 1014,
+        "threaded": 306,
+        "switch": 28,
+        "attempts": 3,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 33,
+        "ops": 31,
+        "bytes": 4468,
+        "hits": 2,
+        "returns": 0,
+        "stalled": 1,
+        "backedges": 39,
+        "budget_exits": 0,
+        "id": 69,
+        "line": 1014,
+        "name": ""
+      }
+    },
+    {
+      "id": 70,
+      "coverage": {
+        "id": 70,
+        "line": 1,
+        "threaded": 405,
+        "switch": 321,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    }
+  ],
+  "exits": [
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 61,
+      "count": 8,
+      "id": 5,
+      "line": 452,
+      "opcode": "CALL",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 23,
+      "op": 63,
+      "count": 36,
+      "id": 5,
+      "line": 455,
+      "opcode": "NEW_OBJ",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 30,
+      "op": 61,
+      "count": 8,
+      "id": 5,
+      "line": 456,
+      "opcode": "CALL",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 43,
+      "op": 63,
+      "count": 36,
+      "id": 5,
+      "line": 459,
+      "opcode": "NEW_OBJ",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 50,
+      "op": 63,
+      "count": 36,
+      "id": 5,
+      "line": 460,
+      "opcode": "NEW_OBJ",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 57,
+      "op": 61,
+      "count": 8,
+      "id": 5,
+      "line": 461,
+      "opcode": "CALL",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 70,
+      "op": 63,
+      "count": 36,
+      "id": 5,
+      "line": 464,
+      "opcode": "NEW_OBJ",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 77,
+      "op": 63,
+      "count": 36,
+      "id": 5,
+      "line": 465,
+      "opcode": "NEW_OBJ",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 84,
+      "op": 61,
+      "count": 8,
+      "id": 5,
+      "line": 466,
+      "opcode": "CALL",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 102,
+      "op": 38,
+      "count": 8,
+      "id": 5,
+      "line": 474,
+      "opcode": "NEQ",
+      "name": "runRichards"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 232,
+      "count": 8,
+      "id": 6,
+      "line": 503,
+      "opcode": "PUTTHISC",
+      "name": "Scheduler"
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 232,
+      "count": 8,
+      "id": 6,
+      "line": 505,
+      "opcode": "PUTTHISC",
+      "name": "Scheduler"
+    },
+    {
+      "begin": 0,
+      "pc": 0,
+      "op": 232,
+      "count": 8,
+      "id": 7,
+      "line": 664,
+      "opcode": "PUTTHISC",
+      "name": "TaskControlBlock"
+    },
+    {
+      "begin": 0,
+      "pc": 0,
+      "op": 232,
+      "count": 8,
+      "id": 12,
+      "line": 919,
+      "opcode": "PUTTHISC",
+      "name": "Packet"
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 61,
+      "count": 8,
+      "id": 43,
+      "line": 571,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 3,
+      "pc": 23,
+      "op": 179,
+      "count": 1000,
+      "id": 45,
+      "line": 593,
+      "opcode": "JMP_NNULL",
+      "name": ""
+    },
+    {
+      "begin": 3,
+      "pc": 24,
+      "op": 66,
+      "count": 100,
+      "id": 45,
+      "line": 601,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 65,
+      "count": 92737,
+      "id": 47,
+      "line": 626,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 65,
+      "count": 232334,
+      "id": 48,
+      "line": 635,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 20,
+      "op": 61,
+      "count": 8,
+      "id": 49,
+      "line": 650,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 177,
+      "count": 8,
+      "id": 56,
+      "line": 729,
+      "opcode": "JMP_NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 65,
+      "count": 32184,
+      "id": 57,
+      "line": 752,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 65,
+      "count": 115672,
+      "id": 57,
+      "line": 753,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 61,
+      "count": 84281,
+      "id": 57,
+      "line": 754,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 177,
+      "count": 8,
+      "id": 59,
+      "line": 779,
+      "opcode": "JMP_NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 2,
+      "id": 61,
+      "line": 806,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 18,
+      "op": 61,
+      "count": 2,
+      "id": 61,
+      "line": 809,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 26,
+      "op": 61,
+      "count": 4,
+      "id": 61,
+      "line": 812,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 24,
+      "pc": 34,
+      "op": 53,
+      "count": 8,
+      "id": 63,
+      "line": 847,
+      "opcode": "PUTPROP",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 177,
+      "count": 4,
+      "id": 65,
+      "line": 870,
+      "opcode": "JMP_NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 44,
+      "op": 61,
+      "count": 9,
+      "id": 65,
+      "line": 885,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 57,
+      "op": 61,
+      "count": 1,
+      "id": 65,
+      "line": 890,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 63,
+      "op": 61,
+      "count": 10,
+      "id": 65,
+      "line": 893,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 65,
+      "count": 99671,
+      "id": 67,
+      "line": 932,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 13,
+      "op": 65,
+      "count": 101067,
+      "id": 67,
+      "line": 937,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 33,
+      "pc": 38,
+      "op": 77,
+      "count": 1,
+      "id": 69,
+      "line": 1025,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 33,
+      "pc": 48,
+      "op": 1,
+      "count": 1,
+      "id": 69,
+      "line": 1026,
+      "opcode": "LDCONST",
+      "name": ""
+    }
+  ],
+  "totals": {
+    "functions": 17,
+    "loops": 0,
+    "templates": 0,
+    "hits": 759372,
+    "code_bytes": 87756
+  }
+}

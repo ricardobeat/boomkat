@@ -1,0 +1,37 @@
+Hottest interpreted functions (handler entries include retries):
+    threaded  share    switch retired  function / admission
+  10,321,079  33.5%        23       1  TaskControlBlock.prototype.run:727 [id=56] / compiled
+   6,207,093  20.2%        28       3  HandlerTask.prototype.run:868 [id=65] / compiled
+   4,876,048  15.8%        10       1  Scheduler.prototype.queue:645 [id=49] / compiled
+   2,869,038   9.3%         9       1  DeviceTask.prototype.run:805 [id=61] / compiled
+   2,098,561   6.8%        15       1  IdleTask.prototype.run:778 [id=59] / compiled
+   1,820,638   5.9%       228       1  WorkerTask.prototype.run:834 [id=63] / compiled
+   1,098,900   3.6%         4       0  Scheduler.prototype.release:608 [id=46] / no entry reaches minimum span
+     499,500   1.6%         3       0  TaskControlBlock.prototype.markAsNotHeld:705 [id=51] / no entry reaches minimum span
+     401,326   1.3%         7       0  TaskControlBlock.prototype.checkPriorityAdd:749 [id=57] / compiled
+     232,796   0.8%         6       0  Scheduler.prototype.suspendCurrent:634 [id=48] / compiled
+     201,262   0.7%         3       0  Packet.prototype.addTo:931 [id=67] / compiled
+      93,430   0.3%         6       0  Scheduler.prototype.holdCurrent:624 [id=47] / compiled
+       9,604   0.0%        69       5  runRichards:450 [id=5] / compiled
+       9,600   0.0%       118       0  Scheduler.prototype.addTask:583 [id=44] / no entry reaches minimum span
+       8,000   0.0%       811       1  Packet:919 [id=12] / compiled
+Total threaded entries: 30,769,199; switch instructions: 3,023
+
+Most frequent native exits:
+     232,334  RET              Scheduler.prototype.suspendCurrent:635 [id=48] pc=6
+     115,672  RET              TaskControlBlock.prototype.checkPriorityAdd:753 [id=57] pc=11
+     101,067  RET              Packet.prototype.addTo:937 [id=67] pc=13
+      99,671  RET              Packet.prototype.addTo:932 [id=67] pc=4
+      92,737  RET              Scheduler.prototype.holdCurrent:626 [id=47] pc=10
+      84,281  CALL             TaskControlBlock.prototype.checkPriorityAdd:754 [id=57] pc=16
+      32,184  RET              TaskControlBlock.prototype.checkPriorityAdd:752 [id=57] pc=10
+       1,000  JMP_NNULL        Scheduler.prototype.schedule:593 [id=45] pc=23
+         100  RETUNDEF         Scheduler.prototype.schedule:601 [id=45] pc=24
+          36  NEW_OBJ          runRichards:455 [id=5] pc=23
+          36  NEW_OBJ          runRichards:459 [id=5] pc=43
+          36  NEW_OBJ          runRichards:460 [id=5] pc=50
+          36  NEW_OBJ          runRichards:464 [id=5] pc=70
+          36  NEW_OBJ          runRichards:465 [id=5] pc=77
+          10  CALL             <anonymous>:893 [id=65] pc=63
+
+Native totals: functions=17, loops=0, templates=0, hits=759,372, code_bytes=87,756

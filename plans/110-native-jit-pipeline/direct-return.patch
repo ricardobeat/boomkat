@@ -1,0 +1,28 @@
+diff --git a/src/vm/vm_execute.c3 b/src/vm/vm_execute.c3
+index 785f088b..668df611 100644
+--- a/src/vm/vm_execute.c3
++++ b/src/vm/vm_execute.c3
+@@ -617,7 +617,22 @@ $if $feat(THREADED_DISPATCH):
+         ds.load_frame();
+         ds.needs_restart = false;
+         vm.run_depth++;
+-        ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
++        $if $feat(SLJIT):
++            if (vm.heap.jit_enabled && sljit_function_resumes(ds.curr_pc, vm.current_func)) {
++                ds.curr_pc = sljit_function_entry(ds.curr_pc, ds.regs_base, &ds.cold);
++                if (ds.curr_pc.op == Opcode.RET || ds.curr_pc.op == Opcode.RETUNDEF) {
++                    TVal value;
++                    value.set_undefined();
++                    if (ds.curr_pc.op == Opcode.RET) value = ds.regs_base[ds.curr_pc.a];
++                    th_return_entry(ds.curr_pc, &ds.cold, value, ds.curr_pc.op == Opcode.RETUNDEF);
++                }
++                if (!ds.needs_restart) ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
++            } else {
++                ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
++            }
++        $else
++            ds.curr_pc = run_threaded_burst(ds.curr_pc, ds.code_end, ds.regs_base, &ds.cold);
++        $endif
+         vm.run_depth--;
+         if (ds.needs_restart && vm.activation_count == 0) return vm.return_val;
+         if (!ds.needs_restart) ds.act.curr_pc = ds.curr_pc;

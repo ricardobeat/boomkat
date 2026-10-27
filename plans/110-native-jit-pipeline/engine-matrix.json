@@ -1,0 +1,1622 @@
+[
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 224,
+    "wall_ms": 228.9474590215832,
+    "rc": 0,
+    "out": "Richards: 224 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 164,
+    "wall_ms": 168.6094580218196,
+    "rc": 0,
+    "out": "Richards: 164 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 238,
+    "wall_ms": 241.7911251541227,
+    "rc": 0,
+    "out": "Richards: 238 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 289,
+    "wall_ms": 297.28545807302,
+    "rc": 0,
+    "out": "Richards: 289 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 120.80879206769168,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 12,
+    "wall_ms": 26.19950007647276,
+    "rc": 0,
+    "out": "Richards: 12 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 253,
+    "wall_ms": 258.613915881142,
+    "rc": 0,
+    "out": "DeltaBlue: 253 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 245,
+    "wall_ms": 249.93383302353323,
+    "rc": 0,
+    "out": "DeltaBlue: 245 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 263,
+    "wall_ms": 266.85466687195003,
+    "rc": 0,
+    "out": "DeltaBlue: 263 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 292,
+    "wall_ms": 296.4331249240786,
+    "rc": 0,
+    "out": "DeltaBlue: 292 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 9,
+    "wall_ms": 99.0582921076566,
+    "rc": 0,
+    "out": "DeltaBlue: 9 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 20.600292133167386,
+    "rc": 0,
+    "out": "DeltaBlue: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 108,
+    "wall_ms": 196.40541612170637,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 108,
+    "wall_ms": 198.85212485678494,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 107,
+    "wall_ms": 315.836250083521,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 134,
+    "wall_ms": 382.60079198516905,
+    "rc": 0,
+    "out": "Splay: 134 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 12,
+    "wall_ms": 126.4185409527272,
+    "rc": 0,
+    "out": "Splay: 12 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 13,
+    "wall_ms": 33.29912503249943,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 19.81212478131056,
+    "rc": 0,
+    "out": "Richards: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 97.73449995554984,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 291,
+    "wall_ms": 294.8507498949766,
+    "rc": 0,
+    "out": "Richards: 291 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 239,
+    "wall_ms": 242.74299992248416,
+    "rc": 0,
+    "out": "Richards: 239 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 164,
+    "wall_ms": 169.19862502254546,
+    "rc": 0,
+    "out": "Richards: 164 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 226,
+    "wall_ms": 231.0344169382006,
+    "rc": 0,
+    "out": "Richards: 226 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 20.58479213155806,
+    "rc": 0,
+    "out": "DeltaBlue: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 9,
+    "wall_ms": 102.17775008641183,
+    "rc": 0,
+    "out": "DeltaBlue: 9 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 293,
+    "wall_ms": 297.4955840036273,
+    "rc": 0,
+    "out": "DeltaBlue: 293 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 254,
+    "wall_ms": 258.5073751397431,
+    "rc": 0,
+    "out": "DeltaBlue: 254 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 246,
+    "wall_ms": 250.54983305744827,
+    "rc": 0,
+    "out": "DeltaBlue: 246 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 253,
+    "wall_ms": 258.7693331297487,
+    "rc": 0,
+    "out": "DeltaBlue: 253 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 13,
+    "wall_ms": 33.56816596351564,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 12,
+    "wall_ms": 125.56249997578561,
+    "rc": 0,
+    "out": "Splay: 12 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 134,
+    "wall_ms": 393.253416987136,
+    "rc": 0,
+    "out": "Splay: 134 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 105,
+    "wall_ms": 317.31750001199543,
+    "rc": 0,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 108,
+    "wall_ms": 197.70808308385313,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 107,
+    "wall_ms": 194.34220786206424,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 227,
+    "wall_ms": 231.25954112038016,
+    "rc": 0,
+    "out": "Richards: 227 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 164,
+    "wall_ms": 168.8552920240909,
+    "rc": 0,
+    "out": "Richards: 164 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 238,
+    "wall_ms": 241.80245795287192,
+    "rc": 0,
+    "out": "Richards: 238 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 289,
+    "wall_ms": 295.19504215568304,
+    "rc": 0,
+    "out": "Richards: 289 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 105.66441714763641,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 22.310583852231503,
+    "rc": 0,
+    "out": "Richards: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 252,
+    "wall_ms": 257.6082500163466,
+    "rc": 0,
+    "out": "DeltaBlue: 252 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 245,
+    "wall_ms": 250.04650000482798,
+    "rc": 0,
+    "out": "DeltaBlue: 245 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 257,
+    "wall_ms": 260.3359578642994,
+    "rc": 0,
+    "out": "DeltaBlue: 257 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 292,
+    "wall_ms": 296.92745907232165,
+    "rc": 0,
+    "out": "DeltaBlue: 292 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 9,
+    "wall_ms": 99.58341717720032,
+    "rc": 0,
+    "out": "DeltaBlue: 9 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 21.802375093102455,
+    "rc": 0,
+    "out": "DeltaBlue: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 108,
+    "wall_ms": 196.58900005742908,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 109,
+    "wall_ms": 197.73687492124736,
+    "rc": 0,
+    "out": "Splay: 109 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 105,
+    "wall_ms": 317.22025014460087,
+    "rc": 0,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 134,
+    "wall_ms": 387.8816249780357,
+    "rc": 0,
+    "out": "Splay: 134 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 13,
+    "wall_ms": 130.31587516888976,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 14,
+    "wall_ms": 33.369958866387606,
+    "rc": 0,
+    "out": "Splay: 14 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.13566710613668,
+    "rc": 0,
+    "out": "Richards: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 99.69916683621705,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 291,
+    "wall_ms": 294.88487518392503,
+    "rc": 0,
+    "out": "Richards: 291 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 237,
+    "wall_ms": 240.89383310638368,
+    "rc": 0,
+    "out": "Richards: 237 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 168,
+    "wall_ms": 172.93629213236272,
+    "rc": 0,
+    "out": "Richards: 168 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 229,
+    "wall_ms": 232.75654204189777,
+    "rc": 0,
+    "out": "Richards: 229 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.615999983623624,
+    "rc": 0,
+    "out": "DeltaBlue: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 9,
+    "wall_ms": 99.92845822125673,
+    "rc": 0,
+    "out": "DeltaBlue: 9 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 291,
+    "wall_ms": 295.8139160182327,
+    "rc": 0,
+    "out": "DeltaBlue: 291 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 256,
+    "wall_ms": 259.6453749574721,
+    "rc": 0,
+    "out": "DeltaBlue: 256 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 243,
+    "wall_ms": 248.21475008502603,
+    "rc": 0,
+    "out": "DeltaBlue: 243 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 251,
+    "wall_ms": 256.1541248578578,
+    "rc": 0,
+    "out": "DeltaBlue: 251 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 13,
+    "wall_ms": 33.73674978502095,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 13,
+    "wall_ms": 127.05929204821587,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 134,
+    "wall_ms": 384.1507500037551,
+    "rc": 0,
+    "out": "Splay: 134 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 107,
+    "wall_ms": 321.38033281080425,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 107,
+    "wall_ms": 196.42054196447134,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 108,
+    "wall_ms": 196.6808750294149,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 225,
+    "wall_ms": 228.82962506264448,
+    "rc": 0,
+    "out": "Richards: 225 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 164,
+    "wall_ms": 168.41954202391207,
+    "rc": 0,
+    "out": "Richards: 164 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 238,
+    "wall_ms": 241.7792920023203,
+    "rc": 0,
+    "out": "Richards: 238 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 290,
+    "wall_ms": 293.9796668943018,
+    "rc": 0,
+    "out": "Richards: 290 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 99.1497088689357,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.884166868403554,
+    "rc": 0,
+    "out": "Richards: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 257,
+    "wall_ms": 261.82412495836616,
+    "rc": 0,
+    "out": "DeltaBlue: 257 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 246,
+    "wall_ms": 251.74075015820563,
+    "rc": 0,
+    "out": "DeltaBlue: 246 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 256,
+    "wall_ms": 259.61504108272493,
+    "rc": 0,
+    "out": "DeltaBlue: 256 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 291,
+    "wall_ms": 295.43233290314674,
+    "rc": 0,
+    "out": "DeltaBlue: 291 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 101.36825009249151,
+    "rc": 0,
+    "out": "DeltaBlue: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.510290913283825,
+    "rc": 0,
+    "out": "DeltaBlue: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 107,
+    "wall_ms": 196.53387507423759,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 108,
+    "wall_ms": 196.83975004591048,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 105,
+    "wall_ms": 319.48491698130965,
+    "rc": 0,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 135,
+    "wall_ms": 387.6059160102159,
+    "rc": 0,
+    "out": "Splay: 135 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 12,
+    "wall_ms": 127.3982918355614,
+    "rc": 0,
+    "out": "Splay: 12 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 13,
+    "wall_ms": 34.214874962344766,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 20.642457995563745,
+    "rc": 0,
+    "out": "Richards: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 98.16850000061095,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 289,
+    "wall_ms": 293.5954581480473,
+    "rc": 0,
+    "out": "Richards: 289 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 239,
+    "wall_ms": 243.21441701613367,
+    "rc": 0,
+    "out": "Richards: 239 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 165,
+    "wall_ms": 169.201125157997,
+    "rc": 0,
+    "out": "Richards: 165 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 225,
+    "wall_ms": 229.84887496568263,
+    "rc": 0,
+    "out": "Richards: 225 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 21.350083174183965,
+    "rc": 0,
+    "out": "DeltaBlue: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 99.9379160348326,
+    "rc": 0,
+    "out": "DeltaBlue: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 293,
+    "wall_ms": 297.1333749592304,
+    "rc": 0,
+    "out": "DeltaBlue: 293 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 262,
+    "wall_ms": 265.94316586852074,
+    "rc": 0,
+    "out": "DeltaBlue: 262 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 245,
+    "wall_ms": 250.41266600601375,
+    "rc": 0,
+    "out": "DeltaBlue: 245 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 254,
+    "wall_ms": 258.30170791596174,
+    "rc": 0,
+    "out": "DeltaBlue: 254 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 14,
+    "wall_ms": 34.31158303283155,
+    "rc": 0,
+    "out": "Splay: 14 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 12,
+    "wall_ms": 127.11074994876981,
+    "rc": 0,
+    "out": "Splay: 12 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 134,
+    "wall_ms": 382.9126670025289,
+    "rc": 0,
+    "out": "Splay: 134 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 107,
+    "wall_ms": 318.8717500306666,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 108,
+    "wall_ms": 198.01404094323516,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 106,
+    "wall_ms": 194.23054112121463,
+    "rc": 0,
+    "out": "Splay: 106 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 224,
+    "wall_ms": 228.51983294822276,
+    "rc": 0,
+    "out": "Richards: 224 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 167,
+    "wall_ms": 171.2448748294264,
+    "rc": 0,
+    "out": "Richards: 167 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 238,
+    "wall_ms": 241.7024578899145,
+    "rc": 0,
+    "out": "Richards: 238 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 291,
+    "wall_ms": 295.07866594940424,
+    "rc": 0,
+    "out": "Richards: 291 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 98.52083399891853,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.427457919344306,
+    "rc": 0,
+    "out": "Richards: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 252,
+    "wall_ms": 257.2683747857809,
+    "rc": 0,
+    "out": "DeltaBlue: 252 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 243,
+    "wall_ms": 247.9190828744322,
+    "rc": 0,
+    "out": "DeltaBlue: 243 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 263,
+    "wall_ms": 266.6937499307096,
+    "rc": 0,
+    "out": "DeltaBlue: 263 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 293,
+    "wall_ms": 297.5752498023212,
+    "rc": 0,
+    "out": "DeltaBlue: 293 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 9,
+    "wall_ms": 99.94308394379914,
+    "rc": 0,
+    "out": "DeltaBlue: 9 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 21.657458040863276,
+    "rc": 0,
+    "out": "DeltaBlue: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 107,
+    "wall_ms": 194.0499998163432,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 109,
+    "wall_ms": 198.30295909196138,
+    "rc": 0,
+    "out": "Splay: 109 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 105,
+    "wall_ms": 315.77549991197884,
+    "rc": 0,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 134,
+    "wall_ms": 384.92454099468887,
+    "rc": 0,
+    "out": "Splay: 134 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 12,
+    "wall_ms": 126.66308297775686,
+    "rc": 0,
+    "out": "Splay: 12 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 13,
+    "wall_ms": 34.17399991303682,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.244541043415666,
+    "rc": 0,
+    "out": "Richards: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 100.05229199305177,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 289,
+    "wall_ms": 293.24320890009403,
+    "rc": 0,
+    "out": "Richards: 289 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 238,
+    "wall_ms": 242.05204099416733,
+    "rc": 0,
+    "out": "Richards: 238 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 167,
+    "wall_ms": 171.71204183250666,
+    "rc": 0,
+    "out": "Richards: 167 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 226,
+    "wall_ms": 230.58574995957315,
+    "rc": 0,
+    "out": "Richards: 226 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 10,
+    "wall_ms": 21.70383301563561,
+    "rc": 0,
+    "out": "DeltaBlue: 10 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 99.5120839215815,
+    "rc": 0,
+    "out": "DeltaBlue: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 287,
+    "wall_ms": 292.04270895570517,
+    "rc": 0,
+    "out": "DeltaBlue: 287 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 257,
+    "wall_ms": 260.42512501589954,
+    "rc": 0,
+    "out": "DeltaBlue: 257 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 245,
+    "wall_ms": 249.83349977992475,
+    "rc": 0,
+    "out": "DeltaBlue: 245 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 252,
+    "wall_ms": 257.5149170588702,
+    "rc": 0,
+    "out": "DeltaBlue: 252 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 13,
+    "wall_ms": 33.5850000847131,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 12,
+    "wall_ms": 126.99970812536776,
+    "rc": 0,
+    "out": "Splay: 12 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 135,
+    "wall_ms": 387.3217918444425,
+    "rc": 0,
+    "out": "Splay: 135 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 107,
+    "wall_ms": 319.5081250742078,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 109,
+    "wall_ms": 199.1611251141876,
+    "rc": 0,
+    "out": "Splay: 109 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 106,
+    "wall_ms": 195.00958314165473,
+    "rc": 0,
+    "out": "Splay: 106 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "interp",
+    "ms": 226,
+    "wall_ms": 230.14562507160008,
+    "rc": 0,
+    "out": "Richards: 226 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "jit",
+    "ms": 165,
+    "wall_ms": 169.03691715560853,
+    "rc": 0,
+    "out": "Richards: 165 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "quickjs",
+    "ms": 237,
+    "wall_ms": 241.17983388714492,
+    "rc": 0,
+    "out": "Richards: 237 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "quickjs-ng",
+    "ms": 290,
+    "wall_ms": 294.4087078794837,
+    "rc": 0,
+    "out": "Richards: 290 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 98.84337498806417,
+    "rc": 0,
+    "out": "Richards: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.553499856963754,
+    "rc": 0,
+    "out": "Richards: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "interp",
+    "ms": 250,
+    "wall_ms": 255.23624988272786,
+    "rc": 0,
+    "out": "DeltaBlue: 250 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "jit",
+    "ms": 245,
+    "wall_ms": 249.5976248756051,
+    "rc": 0,
+    "out": "DeltaBlue: 245 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "quickjs",
+    "ms": 261,
+    "wall_ms": 264.5454169251025,
+    "rc": 0,
+    "out": "DeltaBlue: 261 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "quickjs-ng",
+    "ms": 290,
+    "wall_ms": 294.85958395525813,
+    "rc": 0,
+    "out": "DeltaBlue: 290 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "v8",
+    "ms": 8,
+    "wall_ms": 99.55004206858575,
+    "rc": 0,
+    "out": "DeltaBlue: 8 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "jsc",
+    "ms": 11,
+    "wall_ms": 21.102917147800326,
+    "rc": 0,
+    "out": "DeltaBlue: 11 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "interp",
+    "ms": 107,
+    "wall_ms": 195.1600001193583,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "jit",
+    "ms": 108,
+    "wall_ms": 199.0880409721285,
+    "rc": 0,
+    "out": "Splay: 108 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "quickjs",
+    "ms": 107,
+    "wall_ms": 321.9695407897234,
+    "rc": 0,
+    "out": "Splay: 107 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "quickjs-ng",
+    "ms": 136,
+    "wall_ms": 390.0800838600844,
+    "rc": 0,
+    "out": "Splay: 136 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "v8",
+    "ms": 13,
+    "wall_ms": 128.57729219831526,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "jsc",
+    "ms": 13,
+    "wall_ms": 34.39325001090765,
+    "rc": 0,
+    "out": "Splay: 13 ms\n",
+    "err": ""
+  }
+]

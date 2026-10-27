@@ -1,0 +1,442 @@
+Analysis of sampling baseline (pid 83958) every 1 millisecond
+Process:         baseline [83958]
+Path:            /private/tmp/*/baseline
+Load Address:    0x104d0c000
+Identifier:      baseline
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [83948]
+Target Type:     live task
+
+Date/Time:       2026-10-27 01:56:18.272 +0100
+Launch Time:     2026-10-27 01:56:18.236 +0100
+OS Version:      macOS 27.0 (26A5425a)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         7616K
+Physical footprint (peak):  7616K
+Idle exit:                  untracked
+----
+
+Call graph:
+    2587 Thread_36127508   DispatchQueue_1: com.apple.main-thread  (serial)
+      2587 boomkat.vm.sljit_function_entry  (in baseline) + 532  [0x104de7710]
+        2579 boomkat.vm.sljit_function_entry  (in baseline) + 532  [0x104de7710]
+        + 1384 boomkat.vm.vm_call_lean  (in baseline) + 1388  [0x104df70e4]
+        + ! 279 boomkat.vm.th_call  (in baseline) + 28,1164,...  [0x104e2c0b8,0x104e2c528,...]
+        + ! 246 boomkat.vm.th_getthisc  (in baseline) + 836,60,...  [0x104e33c70,0x104e33968,...]
+        + ! 217 boomkat.vm.th_try_fast_return  (in baseline) + 144,228,...  [0x104e384a8,0x104e384fc,...]
+        + ! 168 boomkat.vm.th_getpropc_cached  (in baseline) + 56,8,...  [0x104e32ddc,0x104e32dac,...]
+        + ! 163 boomkat.vm.th_ldreg  (in baseline) + 280,16,...  [0x104e27f6c,0x104e27e64,...]
+        + ! 97 boomkat.vm.th_resume_caller  (in baseline) + 144,16,...  [0x104e386dc,0x104e3865c,...]
+        + ! 31 boomkat.vm.th_getglobal  (in baseline) + 20,32,...  [0x104e2f584,0x104e2f590,...]
+        + ! 22 boomkat.vm.th_getprop_array  (in baseline) + 0,64,...  [0x104e324d4,0x104e32514,...]
+        + ! 19 boomkat.vm.th_jmp_null  (in baseline) + 0,24  [0x104e29ee0,0x104e29ef8]
+        + ! 19 boomkat.vm.th_putthisc  (in baseline) + 12,32,...  [0x104e341e8,0x104e341fc,...]
+        + ! 15 boomkat.vm.th_putpropc  (in baseline) + 16,0  [0x104e33664,0x104e33654]
+        + ! 13 boomkat.vm.th_get_other_shape  (in baseline) + 128,12,...  [0x104e35bfc,0x104e35b88,...]
+        + ! 12 boomkat.vm.run_threaded_burst  (in baseline) + 8,20,...  [0x104dc95fc,0x104dc9608,...]
+        + ! 12 boomkat.vm.th_incdec  (in baseline) + 52,0,...  [0x104e295f4,0x104e295c0,...]
+        + ! 12 boomkat.vm.th_ldundef  (in baseline) + 4,40  [0x104e31ca8,0x104e31ccc]
+        + ! 11 boomkat.vm.th_ldnull  (in baseline) + 4,0,...  [0x104e31d08,0x104e31d04,...]
+        + ! 8 boomkat.vm.th_jump  (in baseline) + 0,20,...  [0x104e30a1c,0x104e30a30,...]
+        + ! 8 boomkat.vm.th_ldint  (in baseline) + 12,64,...  [0x104e28424,0x104e28458,...]
+        + ! 7 boomkat.vm.sljit_function_dispatch  (in baseline) + 0,8,...  [0x104e355e0,0x104e355e8,...]
+        + ! 4 boomkat.vm.th_jmp_eq  (in baseline) + 0,32  [0x104e29d18,0x104e29d38]
+        + ! 4 boomkat.vm.th_return_slow  (in baseline) + 0,20  [0x104e38794,0x104e387a8]
+        + ! 4 boomkat.vm.th_store_slot_ref_next  (in baseline) + 12,0  [0x104e353b4,0x104e353a8]
+        + ! 2 boomkat.vm.th_addi  (in baseline) + 0,60  [0x104e27db8,0x104e27df4]
+        + ! 2 boomkat.vm.th_band  (in baseline) + 0,16  [0x104e31454,0x104e31464]
+        + ! 2 boomkat.vm.th_eq  (in baseline) + 16  [0x104e28ae0]
+        + ! 2 boomkat.vm.th_jmp_nlt  (in baseline) + 0,32  [0x104e2a974,0x104e2a994]
+        + ! 1 boomkat.vm.th_bandi  (in baseline) + 8  [0x104e314f8]
+        + ! 1 boomkat.vm.th_get_shared  (in baseline) + 20  [0x104e36024]
+        + ! 1 boomkat.vm.th_jmp_ngti  (in baseline) + 0  [0x104e2bcdc]
+        + ! 1 boomkat.vm.th_putprop  (in baseline) + 20  [0x104e33170]
+        + ! 1 boomkat.vm.th_shri  (in baseline) + 8  [0x104e319a4]
+        + 155 boomkat.vm.sljit_function_entry  (in baseline) + 712,612,...  [0x104de77c4,0x104de7760,...]
+        + 109 boomkat.vm.sljit_function_entry  (in baseline) + 532  [0x104de7710]
+        + ! 6 ???  (in <unknown binary>)  [0x105364c84]
+        + ! 4 ???  (in <unknown binary>)  [0x105364934]
+        + ! 3 ???  (in <unknown binary>)  [0x1053648d0]
+        + ! 3 ???  (in <unknown binary>)  [0x1053648ec]
+        + ! 3 ???  (in <unknown binary>)  [0x105364bfc]
+        + ! 2 ???  (in <unknown binary>)  [0x105360d14]
+        + ! 2 ???  (in <unknown binary>)  [0x105360d94]
+        + ! 2 ???  (in <unknown binary>)  [0x105360e68]
+        + ! 2 ???  (in <unknown binary>)  [0x105363df8]
+        + ! 2 ???  (in <unknown binary>)  [0x105363e04]
+        + ! 2 ???  (in <unknown binary>)  [0x105363e80]
+        + ! 2 ???  (in <unknown binary>)  [0x105363ee8]
+        + ! 2 ???  (in <unknown binary>)  [0x105364048]
+        + ! 2 ???  (in <unknown binary>)  [0x1053640e4]
+        + ! 2 ???  (in <unknown binary>)  [0x1053644f8]
+        + ! 2 ???  (in <unknown binary>)  [0x10536464c]
+        + ! 2 ???  (in <unknown binary>)  [0x105364754]
+        + ! 2 ???  (in <unknown binary>)  [0x1053647b0]
+        + ! 2 ???  (in <unknown binary>)  [0x105364818]
+        + ! 2 ???  (in <unknown binary>)  [0x10536507c]
+        + ! 2 ???  (in <unknown binary>)  [0x1053651b0]
+        + ! 2 ???  (in <unknown binary>)  [0x105365220]
+        + ! 1 ???  (in <unknown binary>)  [0x105360df8]
+        + ! 1 ???  (in <unknown binary>)  [0x105360e0c]
+        + ! 1 ???  (in <unknown binary>)  [0x105360e84]
+        + ! 1 ???  (in <unknown binary>)  [0x105360e8c]
+        + ! 1 ???  (in <unknown binary>)  [0x105360f00]
+        + ! 1 ???  (in <unknown binary>)  [0x10536102c]
+        + ! 1 ???  (in <unknown binary>)  [0x105361094]
+        + ! 1 ???  (in <unknown binary>)  [0x105363ec8]
+        + ! 1 ???  (in <unknown binary>)  [0x105363f64]
+        + ! 1 ???  (in <unknown binary>)  [0x105363f90]
+        + ! 1 ???  (in <unknown binary>)  [0x105363fa0]
+        + ! 1 ???  (in <unknown binary>)  [0x105363fac]
+        + ! 1 ???  (in <unknown binary>)  [0x105363fb0]
+        + ! 1 ???  (in <unknown binary>)  [0x10536405c]
+        + ! 1 ???  (in <unknown binary>)  [0x105364078]
+        + ! 1 ???  (in <unknown binary>)  [0x1053640c4]
+        + ! 1 ???  (in <unknown binary>)  [0x1053641dc]
+        + ! 1 ???  (in <unknown binary>)  [0x105364224]
+        + ! 1 ???  (in <unknown binary>)  [0x1053644fc]
+        + ! 1 ???  (in <unknown binary>)  [0x105364514]
+        + ! 1 ???  (in <unknown binary>)  [0x10536452c]
+        + ! 1 ???  (in <unknown binary>)  [0x105364550]
+        + ! 1 ???  (in <unknown binary>)  [0x10536455c]
+        + ! 1 ???  (in <unknown binary>)  [0x1053646b4]
+        + ! 1 ???  (in <unknown binary>)  [0x105364738]
+        + ! 1 ???  (in <unknown binary>)  [0x10536474c]
+        + ! 1 ???  (in <unknown binary>)  [0x1053647a4]
+        + ! 1 ???  (in <unknown binary>)  [0x1053647e4]
+        + ! 1 ???  (in <unknown binary>)  [0x105364830]
+        + ! 1 ???  (in <unknown binary>)  [0x105364910]
+        + ! 1 ???  (in <unknown binary>)  [0x105364954]
+        + ! 1 ???  (in <unknown binary>)  [0x1053649a0]
+        + ! 1 ???  (in <unknown binary>)  [0x105364a00]
+        + ! 1 ???  (in <unknown binary>)  [0x105364bf8]
+        + ! 1 ???  (in <unknown binary>)  [0x105364c3c]
+        + ! 1 ???  (in <unknown binary>)  [0x105364c54]
+        + ! 1 ???  (in <unknown binary>)  [0x105364c94]
+        + ! 1 ???  (in <unknown binary>)  [0x105364cc4]
+        + ! 1 ???  (in <unknown binary>)  [0x105364ce0]
+        + ! 1 ???  (in <unknown binary>)  [0x105364d54]
+        + ! 1 ???  (in <unknown binary>)  [0x105364e20]
+        + ! 1 ???  (in <unknown binary>)  [0x105364e7c]
+        + ! 1 ???  (in <unknown binary>)  [0x105364ebc]
+        + ! 1 ???  (in <unknown binary>)  [0x105364ee4]
+        + ! 1 ???  (in <unknown binary>)  [0x105364f48]
+        + ! 1 ???  (in <unknown binary>)  [0x105364fa8]
+        + ! 1 ???  (in <unknown binary>)  [0x105365000]
+        + ! 1 ???  (in <unknown binary>)  [0x105365194]
+        + ! 1 ???  (in <unknown binary>)  [0x105365278]
+        + ! 1 ???  (in <unknown binary>)  [0x105365294]
+        + ! 1 ???  (in <unknown binary>)  [0x10536531c]
+        + ! 1 ???  (in <unknown binary>)  [0x105365384]
+        + ! 1 ???  (in <unknown binary>)  [0x105365498]
+        + ! 1 ???  (in <unknown binary>)  [0x105365500]
+        + ! 1 ???  (in <unknown binary>)  [0x105365560]
+        + ! 1 ???  (in <unknown binary>)  [0x1053657bc]
+        + 104 boomkat.vm.vm_call_lean  (in baseline) + 564,1136,...  [0x104df6dac,0x104df6fe8,...]
+        + 85 boomkat.vm.th_return_entry  (in baseline) + 256,296,...  [0x104e38d60,0x104e38d88,...]
+        + 61 boomkat.vm.th_putthisc  (in baseline) + 280,116,...  [0x104e342f4,0x104e34250,...]
+        + 57 boomkat.vm.th_jmp_eq  (in baseline) + 148,108,...  [0x104e29dac,0x104e29d84,...]
+        + 49 boomkat.vm.sljit_native_call  (in baseline) + 180,248,...  [0x104df6984,0x104df69c8,...]
+        + 47 boomkat.vm.th_jmp_null  (in baseline) + 204,48,...  [0x104e29fac,0x104e29f10,...]
+        + 36 boomkat.vm.th_jmp_eq  (in baseline) + 72  [0x104e29d60]
+        + ! 27 boomkat.vm.th_loose_order  (in baseline) + 36,180,...  [0x104e39098,0x104e39128,...]
+        + ! 9 boomkat.vm.th_strict_order  (in baseline) + 4,28  [0x104e39154,0x104e3916c]
+        + 23 boomkat.vm.th_store_slot_ref  (in baseline) + 296,56,...  [0x104e3552c,0x104e3543c,...]
+        + 22 boomkat.vm.th_putpropc  (in baseline) + 120,36,...  [0x104e336cc,0x104e33678,...]
+        + 11 boomkat.vm.sljit_template_entry  (in baseline) + 1020,56,...  [0x104e0665c,0x104e06298,...]
+        + 11 boomkat.vm.th_eq  (in baseline) + 44,216,...  [0x104e28afc,0x104e28ba8,...]
+        + 11 boomkat.vm.th_return_slow  (in baseline) + 48  [0x104e387c4]
+        + ! 7 boomkat.vm.th_return_entry  (in baseline) + 32,12  [0x104e38c80,0x104e38c6c]
+        + ! 4 boomkat.vm.th_return_outermost  (in baseline) + 24  [0x104e387fc]
+        + 10 boomkat.vm.run_threaded_burst  (in baseline) + 260,96,...  [0x104dc96f8,0x104dc9654,...]
+        + 10 boomkat.vm.th_get_shared  (in baseline) + 272,100,...  [0x104e36120,0x104e36074,...]
+        + 9 boomkat.vm.th_eq  (in baseline) + 92  [0x104e28b2c]
+        + ! 9 boomkat.vm.th_loose_order  (in baseline) + 88,36,...  [0x104e390cc,0x104e39098,...]
+        + 8 ???  (in <unknown binary>)  [0x10535c650]
+        + 8 ???  (in <unknown binary>)  [0x10535c65c]
+        + 8 ???  (in <unknown binary>)  [0x10535c770]
+        + 7 ???  (in <unknown binary>)  [0x10535c0d4]
+        + 7 ???  (in <unknown binary>)  [0x10535c344]
+        + 7 ???  (in <unknown binary>)  [0x10535c66c]
+        + 7 ???  (in <unknown binary>)  [0x10535c6cc]
+        + 7 boomkat.vm.sljit_function_dispatch  (in baseline) + 72,68  [0x104e35628,0x104e35624]
+        + 7 boomkat.vm.th_get_shared  (in baseline) + 456  [0x104e361d8]
+        + ! 7 boomkat.hobject.ic_proto_add  (in baseline) + 52,144,...  [0x104e57f24,0x104e57f80,...]
+        + 7 boomkat.vm.th_if  (in baseline) + 48,208,...  [0x104e30bd4,0x104e30c74,...]
+        + 7 boomkat.vm.th_jmp_lt  (in baseline) + 204,452,...  [0x104e2a1a0,0x104e2a298,...]
+        + 7 boomkat.vm.th_jmp_nlt  (in baseline) + 52,256,...  [0x104e2a9a8,0x104e2aa74,...]
+        + 7 boomkat.vm.th_store_slot_ref_next  (in baseline) + 52  [0x104e353dc]
+        + ! 7 boomkat.vm.th_store_slot_ref  (in baseline) + 28,12,...  [0x104e35420,0x104e35410,...]
+        + 6 ???  (in <unknown binary>)  [0x10535c274]
+        + 6 ???  (in <unknown binary>)  [0x10535c304]
+        + 6 ???  (in <unknown binary>)  [0x10535c3d0]
+        + 6 ???  (in <unknown binary>)  [0x10535c4a0]
+        + 6 ???  (in <unknown binary>)  [0x10535cdb8]
+        + 5 ???  (in <unknown binary>)  [0x10535c06c]
+        + 5 ???  (in <unknown binary>)  [0x10535c0ac]
+        + 5 ???  (in <unknown binary>)  [0x10535c0f4]
+        + 5 ???  (in <unknown binary>)  [0x10535c210]
+        + 5 ???  (in <unknown binary>)  [0x10535c2b8]
+        + 5 ???  (in <unknown binary>)  [0x10535c4b4]
+        + 5 ???  (in <unknown binary>)  [0x10535c5b0]
+        + 5 ???  (in <unknown binary>)  [0x10535c60c]
+        + 5 ???  (in <unknown binary>)  [0x10535c704]
+        + 5 ???  (in <unknown binary>)  [0x10535c880]
+        + 5 ???  (in <unknown binary>)  [0x10535cbf8]
+        + 5 ???  (in <unknown binary>)  [0x10535ce78]
+        + 5 boomkat.vm.sljit_function_dispatch  (in baseline) + 40  [0x104e35608]
+        + ! 5 boomkat.vm.sljit_function_entry  (in baseline) + 24,8,...  [0x104de7514,0x104de7504,...]
+        + 5 boomkat.vm.sljit_native_call  (in baseline) + 208  [0x104df69a0]
+        + ! 5 boomkat.bytecode.CompiledFunction.classify_lean_call  (in baseline) + 0  [0x104d14038]
+        + 4 ???  (in <unknown binary>)  [0x10535cc80]
+        + ! 4 boomkat.vm.sljit_native_call  (in baseline) + 4,32  [0x104df68d4,0x104df68f0]
+        + 4 ???  (in <unknown binary>)  [0x10535c2a8]
+        + 4 ???  (in <unknown binary>)  [0x10535c384]
+        + 4 ???  (in <unknown binary>)  [0x10535c42c]
+        + 4 ???  (in <unknown binary>)  [0x10535c4c4]
+        + 4 ???  (in <unknown binary>)  [0x10535c69c]
+        + 4 ???  (in <unknown binary>)  [0x10535c7e8]
+        + 4 ???  (in <unknown binary>)  [0x10535ca04]
+        + 4 ???  (in <unknown binary>)  [0x10535ca2c]
+        + 4 ???  (in <unknown binary>)  [0x10535cc28]
+        + 4 ???  (in <unknown binary>)  [0x10535cd7c]
+        + 4 ???  (in <unknown binary>)  [0x10535cd84]
+        + 4 ???  (in <unknown binary>)  [0x10535cd9c]
+        + 4 ???  (in <unknown binary>)  [0x10535ce18]
+        + 4 boomkat.vm.th_jump  (in baseline) + 384  [0x104e30b9c]
+        + 4 boomkat.vm.th_store_slot_ref_next  (in baseline) + 84  [0x104e353fc]
+        + 3 ???  (in <unknown binary>)  [0x10535c11c]
+        + 3 ???  (in <unknown binary>)  [0x10535c240]
+        + 3 ???  (in <unknown binary>)  [0x10535c300]
+        + 3 ???  (in <unknown binary>)  [0x10535c320]
+        + 3 ???  (in <unknown binary>)  [0x10535c4ac]
+        + 3 ???  (in <unknown binary>)  [0x10535c530]
+        + 3 ???  (in <unknown binary>)  [0x10535c574]
+        + 3 ???  (in <unknown binary>)  [0x10535c5c0]
+        + 3 ???  (in <unknown binary>)  [0x10535c780]
+        + 3 ???  (in <unknown binary>)  [0x10535c79c]
+        + 3 ???  (in <unknown binary>)  [0x10535c808]
+        + 3 ???  (in <unknown binary>)  [0x10535c8c0]
+        + 3 ???  (in <unknown binary>)  [0x10535c900]
+        + 3 ???  (in <unknown binary>)  [0x10535c9b4]
+        + 3 ???  (in <unknown binary>)  [0x10535cbc8]
+        + 3 ???  (in <unknown binary>)  [0x10535ccec]
+        + 3 ???  (in <unknown binary>)  [0x105364bb8]
+        + 3 boomkat.vm.sljit_native_call  (in baseline) + 436  [0x104df6a84]
+        + ! 3 boomkat.vm.vm_call_lean  (in baseline) + 12  [0x104df6b84]
+        + 3 boomkat.vm.th_putprop  (in baseline) + 68,592,...  [0x104e331a0,0x104e333ac,...]
+        + 2 ???  (in <unknown binary>)  [0x10535c090]
+        + 2 ???  (in <unknown binary>)  [0x10535c370]
+        + 2 ???  (in <unknown binary>)  [0x10535c468]
+        + 2 ???  (in <unknown binary>)  [0x10535c660]
+        + 2 ???  (in <unknown binary>)  [0x10535c928]
+        + 2 ???  (in <unknown binary>)  [0x10535c948]
+        + 2 ???  (in <unknown binary>)  [0x10535c970]
+        + 2 ???  (in <unknown binary>)  [0x10535c994]
+        + 2 ???  (in <unknown binary>)  [0x10535ca4c]
+        + 2 ???  (in <unknown binary>)  [0x10535ca74]
+        + 2 ???  (in <unknown binary>)  [0x10535caf8]
+        + 2 ???  (in <unknown binary>)  [0x10535cc94]
+        + 2 ???  (in <unknown binary>)  [0x10535cd48]
+        + 2 ???  (in <unknown binary>)  [0x10535cd68]
+        + 2 ???  (in <unknown binary>)  [0x10535ce9c]
+        + 2 ???  (in <unknown binary>)  [0x105364b70]
+        + 2 ???  (in <unknown binary>)  [0x105364bc8]
+        + 2 boomkat.bytecode.CompiledFunction.classify_lean_call  (in baseline) + 288  [0x104d14158]
+        + 2 boomkat.vm.th_jmp_lt  (in baseline) + 308  [0x104e2a208]
+        + ! 2 boomkat.vm.loop_target  (in baseline) + 56  [0x104de7d24]
+        + 2 boomkat.vm.th_return_slow  (in baseline) + 56  [0x104e387cc]
+        + 1 ???  (in <unknown binary>)  [0x10535c148]
+        + 1 ???  (in <unknown binary>)  [0x10535c14c]
+        + 1 ???  (in <unknown binary>)  [0x10535c1a8]
+        + 1 ???  (in <unknown binary>)  [0x10535c2b0]
+        + 1 ???  (in <unknown binary>)  [0x10535c324]
+        + 1 ???  (in <unknown binary>)  [0x10535c36c]
+        + 1 ???  (in <unknown binary>)  [0x10535c4cc]
+        + 1 ???  (in <unknown binary>)  [0x10535c4d8]
+        + 1 ???  (in <unknown binary>)  [0x10535c540]
+        + 1 ???  (in <unknown binary>)  [0x10535c668]
+        + 1 ???  (in <unknown binary>)  [0x10535c7c0]
+        + 1 ???  (in <unknown binary>)  [0x10535c860]
+        + 1 ???  (in <unknown binary>)  [0x10535ca88]
+        + 1 ???  (in <unknown binary>)  [0x10535ca98]
+        + 1 ???  (in <unknown binary>)  [0x10535cac8]
+        + 1 ???  (in <unknown binary>)  [0x10535cb60]
+        + 1 ???  (in <unknown binary>)  [0x10535cb90]
+        + 1 ???  (in <unknown binary>)  [0x10535cc74]
+        + 1 ???  (in <unknown binary>)  [0x10535ccb0]
+        + 1 ???  (in <unknown binary>)  [0x10535ccd8]
+        + 1 ???  (in <unknown binary>)  [0x10535cda8]
+        + 1 ???  (in <unknown binary>)  [0x10535ce4c]
+        + 1 ???  (in <unknown binary>)  [0x105360cd0]
+        + 1 ???  (in <unknown binary>)  [0x105363dc0]
+        + 1 ???  (in <unknown binary>)  [0x105363dd0]
+        + 1 ???  (in <unknown binary>)  [0x105364464]
+        + 1 ???  (in <unknown binary>)  [0x105364b68]
+        + 1 ???  (in <unknown binary>)  [0x1053657e0]
+        + 1 boomkat.hobject.HObject.find_prop_idx  (in baseline) + 468  [0x104e51c8c]
+        + 1 boomkat.vm.run_threaded_burst  (in baseline) + 120  [0x104dc966c]
+        +   1 boomkat.vm.sljit_template_entry  (in baseline) + 28  [0x104e0627c]
+        5 boomkat.vm.vm_dispatch  (in baseline) + 124  [0x104db2f98]
+        + 1 boomkat.vm.th_call  (in baseline) + 1676  [0x104e2c728]
+        + 1 boomkat.vm.th_getglobal  (in baseline) + 32  [0x104e2f590]
+        + 1 boomkat.vm.th_ldint  (in baseline) + 0  [0x104e28418]
+        + 1 boomkat.vm.th_ldreg  (in baseline) + 28  [0x104e27e70]
+        + 1 boomkat.vm.th_resume_caller  (in baseline) + 304  [0x104e3877c]
+        1 boomkat.vm.sljit_function_entry  (in baseline) + 364  [0x104de7668]
+        1 boomkat.vm.th_return_general  (in baseline) + 260  [0x104e38a2c]
+        1 boomkat.vm.vm_dispatch  (in baseline) + 200  [0x104db2fe4]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        boomkat.vm.th_call  (in baseline)        280
+        boomkat.vm.th_getthisc  (in baseline)        246
+        boomkat.vm.th_try_fast_return  (in baseline)        217
+        boomkat.vm.th_getpropc_cached  (in baseline)        168
+        boomkat.vm.th_ldreg  (in baseline)        164
+        boomkat.vm.sljit_function_entry  (in baseline)        161
+        boomkat.vm.vm_call_lean  (in baseline)        107
+        boomkat.vm.th_resume_caller  (in baseline)        98
+        boomkat.vm.th_return_entry  (in baseline)        92
+        boomkat.vm.th_putthisc  (in baseline)        80
+        boomkat.vm.th_jmp_null  (in baseline)        66
+        boomkat.vm.th_jmp_eq  (in baseline)        61
+        boomkat.vm.sljit_native_call  (in baseline)        53
+        boomkat.vm.th_putpropc  (in baseline)        37
+        boomkat.vm.th_loose_order  (in baseline)        36
+        boomkat.vm.th_getglobal  (in baseline)        32
+        boomkat.vm.th_store_slot_ref  (in baseline)        30
+        boomkat.vm.run_threaded_burst  (in baseline)        22
+        boomkat.vm.th_getprop_array  (in baseline)        22
+        boomkat.vm.sljit_function_dispatch  (in baseline)        14
+        boomkat.vm.th_eq  (in baseline)        13
+        boomkat.vm.th_get_other_shape  (in baseline)        13
+        boomkat.vm.sljit_template_entry  (in baseline)        12
+        boomkat.vm.th_incdec  (in baseline)        12
+        boomkat.vm.th_jump  (in baseline)        12
+        boomkat.vm.th_ldundef  (in baseline)        12
+        boomkat.vm.th_get_shared  (in baseline)        11
+        boomkat.vm.th_ldnull  (in baseline)        11
+        boomkat.vm.th_jmp_nlt  (in baseline)        9
+        boomkat.vm.th_ldint  (in baseline)        9
+        boomkat.vm.th_strict_order  (in baseline)        9
+        ???  (in <unknown binary>)  [0x10535c650]        8
+        ???  (in <unknown binary>)  [0x10535c65c]        8
+        ???  (in <unknown binary>)  [0x10535c770]        8
+        boomkat.vm.th_store_slot_ref_next  (in baseline)        8
+        ???  (in <unknown binary>)  [0x10535c0d4]        7
+        ???  (in <unknown binary>)  [0x10535c344]        7
+        ???  (in <unknown binary>)  [0x10535c66c]        7
+        ???  (in <unknown binary>)  [0x10535c6cc]        7
+        boomkat.bytecode.CompiledFunction.classify_lean_call  (in baseline)        7
+        boomkat.hobject.ic_proto_add  (in baseline)        7
+        boomkat.vm.th_if  (in baseline)        7
+        boomkat.vm.th_jmp_lt  (in baseline)        7
+        ???  (in <unknown binary>)  [0x10535c274]        6
+        ???  (in <unknown binary>)  [0x10535c304]        6
+        ???  (in <unknown binary>)  [0x10535c3d0]        6
+        ???  (in <unknown binary>)  [0x10535c4a0]        6
+        ???  (in <unknown binary>)  [0x10535cdb8]        6
+        ???  (in <unknown binary>)  [0x105364c84]        6
+        boomkat.vm.th_return_slow  (in baseline)        6
+        ???  (in <unknown binary>)  [0x10535c06c]        5
+        ???  (in <unknown binary>)  [0x10535c0ac]        5
+        ???  (in <unknown binary>)  [0x10535c0f4]        5
+        ???  (in <unknown binary>)  [0x10535c210]        5
+        ???  (in <unknown binary>)  [0x10535c2b8]        5
+        ???  (in <unknown binary>)  [0x10535c4b4]        5
+        ???  (in <unknown binary>)  [0x10535c5b0]        5
+        ???  (in <unknown binary>)  [0x10535c60c]        5
+        ???  (in <unknown binary>)  [0x10535c704]        5
+        ???  (in <unknown binary>)  [0x10535c880]        5
+        ???  (in <unknown binary>)  [0x10535cbf8]        5
+        ???  (in <unknown binary>)  [0x10535ce78]        5
+
+Binary Images:
+       0x104d0c000 -        0x104eef187 +baseline (0) <FB993255-8AA8-36C6-AF3C-E004CF344FC5> /tmp/*/baseline
+       0x19c440000 -        0x19c48f527  libobjc.A.dylib (973.1) <220ABA7C-1B27-3461-AD64-F0C02DA55A5B> /usr/lib/libobjc.A.dylib
+       0x19c490000 -        0x19c49a23f  libsharedcache.dylib (0) <10B20858-73AC-3AB6-AEE8-B6E7243D386E> /usr/lib/libsharedcache.dylib
+       0x19c49b000 -        0x19c4c1ceb  libdyld.dylib (27062) <2DE7C10A-5A74-3F3F-93B6-5ABA1D64F9B7> /usr/lib/system/libdyld.dylib
+       0x19c4c2000 -        0x19c58166f  dyld (1.0.0 - 27062) <B6C0F697-046B-3606-96F7-042154B70AB9> /usr/lib/dyld
+       0x19c582000 -        0x19c58501f  libsystem_blocks.dylib (98.1) <426419BE-A433-3D7A-AE2A-39F3519571B4> /usr/lib/system/libsystem_blocks.dylib
+       0x19c586000 -        0x19c5db07f  libxpc.dylib (3298.1.1) <4173B9B6-71E5-3A85-A1C8-798693A94EDB> /usr/lib/system/libxpc.dylib
+       0x19c5dc000 -        0x19c5fbc03  libsystem_trace.dylib (1966.1.1) <9649346D-1AA0-3844-8401-1F2BEF5DEC12> /usr/lib/system/libsystem_trace.dylib
+       0x19c5fc000 -        0x19c6b0e47  libcorecrypto.dylib (2109.0.22) <4747DEC8-74F6-3C3C-9CFA-958D749E55D4> /usr/lib/system/libcorecrypto.dylib
+       0x19c6b1000 -        0x19c706a07  libsystem_malloc.dylib (886.0.8) <5F121E9F-0046-36C7-B614-BD8EDA4252AA> /usr/lib/system/libsystem_malloc.dylib
+       0x19c707000 -        0x19c74d13f  libdispatch.dylib (1605.0.2) <35B1D5C9-46F5-3E6C-88EB-9FEF218B3F6A> /usr/lib/system/libdispatch.dylib
+       0x19c74e000 -        0x19c750d2b  libsystem_featureflags.dylib (108) <20C1CAB2-1F13-3426-8146-9CAE9FF2A33D> /usr/lib/system/libsystem_featureflags.dylib
+       0x19c751000 -        0x19c7d3bdb  libsystem_c.dylib (1786.0.3) <B9578568-B137-3A96-A8C8-096F0B6F95CD> /usr/lib/system/libsystem_c.dylib
+       0x19c7d4000 -        0x19c869033  libc++.1.dylib (2200.27) <D69543EE-E165-3242-9281-5DAB86D55340> /usr/lib/libc++.1.dylib
+       0x19c86a000 -        0x19c883eff  libc++abi.dylib (2200.27) <6FBE4525-E708-3750-AE43-FC9D7327E8F5> /usr/lib/libc++abi.dylib
+       0x19c884000 -        0x19c8c29ab  libsystem_kernel.dylib (13432.1.9) <1D409488-002C-3663-9BA9-37C334D384C1> /usr/lib/system/libsystem_kernel.dylib
+       0x19c8c3000 -        0x19c8cf91b  libsystem_pthread.dylib (553.0.1) <A55DAC52-24D5-3CB7-9310-0C7C029498C5> /usr/lib/system/libsystem_pthread.dylib
+       0x19c8d0000 -        0x19c8d94f3  libsystem_platform.dylib (402.0.1.0.1) <97CB8000-7DFC-398B-B919-D525467BBF92> /usr/lib/system/libsystem_platform.dylib
+       0x19c8da000 -        0x19c9088f3  libsystem_info.dylib (603) <3E847D64-2B41-3505-AAE8-918B10DC3253> /usr/lib/system/libsystem_info.dylib
+       0x1a0a2a000 -        0x1a0a33ac3  libsystem_darwin.dylib (1786.0.3) <0270D881-5511-3056-8ABC-B62A1C4DEDF2> /usr/lib/system/libsystem_darwin.dylib
+       0x1a0e84000 -        0x1a0e95b8b  libsystem_notify.dylib (368) <BC2014EB-9569-3142-9B01-4ECD8ADD164E> /usr/lib/system/libsystem_notify.dylib
+       0x1a2fde000 -        0x1a2ff8da3  libsystem_networkextension.dylib (2340.1.2) <FC8BD562-14AD-34BD-8DA8-5CB1DBF4F9FD> /usr/lib/system/libsystem_networkextension.dylib
+       0x1a3085000 -        0x1a309c247  libsystem_asl.dylib (409) <0B8B1F14-A7FB-302F-B56B-AD113BB71055> /usr/lib/system/libsystem_asl.dylib
+       0x1a403c000 -        0x1a403cf2f  libobjcMsgSend.dylib (973.1) <41179EDE-DC97-3BBE-8848-6400D12C1436> /usr/lib/objc/libobjcMsgSend.dylib
+       0x1a516b000 -        0x1a5172edf  libsystem_symptoms.dylib (2394.0.4) <AEAE80CC-C6AE-344D-BBFC-E7A9DC4382D0> /usr/lib/system/libsystem_symptoms.dylib
+       0x1a94e0000 -        0x1a951aadb  libsystem_containermanager.dylib (833.0.8.0.1) <B33F2B09-4BE9-32C5-954C-9233E1D5BB94> /usr/lib/system/libsystem_containermanager.dylib
+       0x1aab29000 -        0x1aab2d317  libsystem_configuration.dylib (1446) <08EDCD0E-34BC-39E2-8B6C-4E5366461D75> /usr/lib/system/libsystem_configuration.dylib
+       0x1aab2e000 -        0x1aab34e03  libsystem_sandbox.dylib (3051.0.52) <1E892B56-092E-3832-BDE3-DCE356D7A4FA> /usr/lib/system/libsystem_sandbox.dylib
+       0x1ac03c000 -        0x1ac03cf2f  libobjcMsgSend1.dylib (973.1) <B40D9B2A-E1EE-37ED-8004-711A1F263DE1> /usr/lib/objc/libobjcMsgSend1.dylib
+       0x1ac706000 -        0x1ac708f93  libquarantine.dylib (217.0.4) <7FD4AE22-86EF-382B-83F5-ADF9336C1160> /usr/lib/system/libquarantine.dylib
+       0x1ace04000 -        0x1ace0a1e7  libsystem_coreservices.dylib (203) <7E74C917-CE45-393A-90B9-571B7BA0C9CF> /usr/lib/system/libsystem_coreservices.dylib
+       0x1ad3cc000 -        0x1ad409b27  libsystem_m.dylib (3326.0.1) <0F33CC3F-E56C-3322-90FC-D2DE78A8E2CC> /usr/lib/system/libsystem_m.dylib
+       0x1ad40b000 -        0x1ad40e4d7  libmacho.dylib (27062) <10767E82-A76D-335D-A289-B977D5507577> /usr/lib/system/libmacho.dylib
+       0x1ad428000 -        0x1ad4346ff  libcommonCrypto.dylib (600041) <215316D1-CCCC-3F21-B1A7-7AAA28C067BC> /usr/lib/system/libcommonCrypto.dylib
+       0x1ad435000 -        0x1ad43ec87  libunwind.dylib (2200.5) <12EC4D5E-7B70-3B75-B2F1-8060243A4BD3> /usr/lib/system/libunwind.dylib
+       0x1ad446000 -        0x1ad4507eb  libcopyfile.dylib (260.0.3) <52634F6F-1CEF-3F45-8F03-2807039C051C> /usr/lib/system/libcopyfile.dylib
+       0x1ad451000 -        0x1ad4548af  libcompiler_rt.dylib (103.4) <58DF4E26-8BF1-3A31-94D7-B837B76359A1> /usr/lib/system/libcompiler_rt.dylib
+       0x1ad455000 -        0x1ad45a087  libsystem_collections.dylib (1786.0.3) <31B75E6B-F7E4-352D-A1A3-716D667F8C7F> /usr/lib/system/libsystem_collections.dylib
+       0x1ad45b000 -        0x1ad45df1f  libsystem_secinit.dylib (182) <DE037464-4C5D-3E96-A33F-2A4557CC6A20> /usr/lib/system/libsystem_secinit.dylib
+       0x1ad45e000 -        0x1ad46097f  libremovefile.dylib (96) <E6E6DFCF-6B2C-3F30-A59D-816CAB1190CE> /usr/lib/system/libremovefile.dylib
+       0x1ad461000 -        0x1ad461e27  libkeymgr.dylib (31) <5EC997EF-3ADA-360B-9FCD-5F940C83FA4E> /usr/lib/system/libkeymgr.dylib
+       0x1ad462000 -        0x1ad46aaf7  libsystem_dnssd.dylib (3111.0.5.0.1) <CFEEC9C2-091A-32AE-8771-967374AE1994> /usr/lib/system/libsystem_dnssd.dylib
+       0x1ad46b000 -        0x1ad46ff1b  libcache.dylib (95) <83E81326-A587-374F-ABC1-BAE48D0FEE0D> /usr/lib/system/libcache.dylib
+       0x1ad470000 -        0x1ad4718f3  libSystem.B.dylib (1359) <4FDC9AA6-B344-37FE-B8C6-A4C94A038F57> /usr/lib/libSystem.B.dylib
+       0x1b403c000 -        0x1b403cf2f  libobjcMsgSend2.dylib (973.1) <BD27A84B-C9AE-3282-BBEA-3B6119837B5A> /usr/lib/objc/libobjcMsgSend2.dylib
+       0x1bc03c000 -        0x1bc03cf2f  libobjcMsgSend3.dylib (973.1) <C0860D68-DDFC-3BD7-8B06-DB0645CBBED4> /usr/lib/objc/libobjcMsgSend3.dylib
+       0x1c403c000 -        0x1c403cf2f  libobjcMsgSend4.dylib (973.1) <A6153BF5-622B-3B01-81B6-F64A365EF613> /usr/lib/objc/libobjcMsgSend4.dylib
+       0x1cc03c000 -        0x1cc03cf2f  libobjcMsgSend5.dylib (973.1) <3913A71C-B29A-3AEA-820B-BEC40AC1861A> /usr/lib/objc/libobjcMsgSend5.dylib
+       0x1d403c000 -        0x1d403cf2f  libobjcMsgSend6.dylib (973.1) <9BC523A3-E167-3F6C-8CAE-0F3EBA671791> /usr/lib/objc/libobjcMsgSend6.dylib
+       0x1dc03c000 -        0x1dc03cf2f  libobjcMsgSend7.dylib (973.1) <248B7BCE-5B4C-34C7-A340-43D5228628C5> /usr/lib/objc/libobjcMsgSend7.dylib
+       0x1e403c000 -        0x1e403cf2f  libobjcMsgSend8.dylib (973.1) <3E041BAD-A8E8-3069-B741-78CD1A45B176> /usr/lib/objc/libobjcMsgSend8.dylib
+       0x1ec03c000 -        0x1ec03cf2f  libobjcMsgSend9.dylib (973.1) <34A67969-21A0-39D6-BB81-8FDA5A2409DB> /usr/lib/objc/libobjcMsgSend9.dylib
+       0x1f403c000 -        0x1f403cf2f  libobjcMsgSend10.dylib (973.1) <678186C0-8EAD-3B35-8CBB-00285B41E4A0> /usr/lib/objc/libobjcMsgSend10.dylib
+       0x1fc03c000 -        0x1fc03cf2f  libobjcMsgSend11.dylib (973.1) <E05CB08C-E956-36FA-8967-AE8E346A8D2C> /usr/lib/objc/libobjcMsgSend11.dylib
+       0x22403c000 -        0x22403cf2f  libobjcMsgSend12.dylib (973.1) <10AB03AA-FF1F-3FDC-9DFB-BFC40042C501> /usr/lib/objc/libobjcMsgSend12.dylib
+       0x22c03c000 -        0x22c03cf2f  libobjcMsgSend13.dylib (973.1) <ABF53427-FA6F-3D0D-8F9D-7AD795CA5C92> /usr/lib/objc/libobjcMsgSend13.dylib
+       0x23403c000 -        0x23403cf2f  libobjcMsgSend14.dylib (973.1) <9A844C46-A6DA-34D4-8EBF-2AD775C30684> /usr/lib/objc/libobjcMsgSend14.dylib
+       0x23c03c000 -        0x23c03cf2f  libobjcMsgSend15.dylib (973.1) <7C995666-2B2D-3284-AA0A-EBF7C922838E> /usr/lib/objc/libobjcMsgSend15.dylib
+       0x24403c000 -        0x24403cf2f  libobjcMsgSend16.dylib (973.1) <B6C0E14B-53AE-3E22-9ED5-1729C49F46F2> /usr/lib/objc/libobjcMsgSend16.dylib
+       0x24c03c000 -        0x24c03cf2f  libobjcMsgSend17.dylib (973.1) <07B4CF85-251B-301B-832B-20B315A59E19> /usr/lib/objc/libobjcMsgSend17.dylib
+       0x25403c000 -        0x25403cf2f  libobjcMsgSend18.dylib (973.1) <43E575B7-04DB-3999-A633-1A3B638BA6E3> /usr/lib/objc/libobjcMsgSend18.dylib
+       0x25c03c000 -        0x25c03cf2f  libobjcMsgSend19.dylib (973.1) <736F4D85-76F7-3B28-8D87-C07E8F7A0EF4> /usr/lib/objc/libobjcMsgSend19.dylib
+       0x26403c000 -        0x26403cf2f  libobjcMsgSend20.dylib (973.1) <74E67C8B-6BCA-3184-A18E-A97F370052C6> /usr/lib/objc/libobjcMsgSend20.dylib
+       0x26c03c000 -        0x26c03cf2f  libobjcMsgSend21.dylib (973.1) <CC0D732F-98E7-3888-9E15-70984DA2FB04> /usr/lib/objc/libobjcMsgSend21.dylib
+       0x27403c000 -        0x27403cf2f  libobjcMsgSend22.dylib (973.1) <85A60286-5DE3-32BA-B18C-2A498B065C88> /usr/lib/objc/libobjcMsgSend22.dylib
+       0x27c03c000 -        0x27c03cf2f  libobjcMsgSend23.dylib (973.1) <5452A0D2-6B19-39BE-ADDD-80B7BCDE3A98> /usr/lib/objc/libobjcMsgSend23.dylib
+       0x28403c000 -        0x28403cf2f  libobjcMsgSend24.dylib (973.1) <94BBF2D6-722B-350D-8557-4D25A8E8D53A> /usr/lib/objc/libobjcMsgSend24.dylib
+       0x28c03c000 -        0x28c03cf2f  libobjcMsgSend25.dylib (973.1) <35481387-5A8E-3AE4-86A6-94CEB3CC8726> /usr/lib/objc/libobjcMsgSend25.dylib
+       0x2ac03c000 -        0x2ac03cf2f  libobjcMsgSend26.dylib (973.1) <9E0C8664-E7F4-39D1-AAFC-BD92B255E4E8> /usr/lib/objc/libobjcMsgSend26.dylib
+       0x2b403c000 -        0x2b403cf2f  libobjcMsgSend27.dylib (973.1) <FD424935-55A9-3650-955A-EED3441A1D19> /usr/lib/objc/libobjcMsgSend27.dylib
+       0x2bc03c000 -        0x2bc03cf2f  libobjcMsgSend28.dylib (973.1) <09BA7B97-7DF7-3C7F-932A-B6847662FC49> /usr/lib/objc/libobjcMsgSend28.dylib
+       0x2c403c000 -        0x2c403cf2f  libobjcMsgSend29.dylib (973.1) <36D5BA3F-2139-30B0-8558-556764BE9813> /usr/lib/objc/libobjcMsgSend29.dylib
+       0x2cc03c000 -        0x2cc03cf2f  libobjcMsgSend30.dylib (973.1) <9F05564A-9D12-372C-98FC-E9F0E6BE4F04> /usr/lib/objc/libobjcMsgSend30.dylib
+       0x2ce856000 -        0x2ce85cfe5  libRosetta.dylib (385) <88E33EA4-A20E-3ED1-AD7D-8D029E4E08BC> /usr/lib/libRosetta.dylib
+       0x2cf243000 -        0x2cf24675b  libsystem_darwindirectory.dylib (129.0.1) <61264923-2AA5-3658-B8C4-550C71E9D4B3> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x2cf247000 -        0x2cf251d9b  libsystem_eligibility.dylib (446.1.3) <EDDE8E9C-A2CF-3931-BBB3-321CB852EB30> /usr/lib/system/libsystem_eligibility.dylib
+       0x2cf252000 -        0x2cf25b42b  libsystem_sanitizers.dylib (32) <447BAA25-4DFF-3A23-976A-4B96AF067112> /usr/lib/system/libsystem_sanitizers.dylib
+       0x2cf25c000 -        0x2cf25ca13  libsystem_trial.dylib (511) <6AE48824-EC44-3A8C-B501-BE57DBE892E7> /usr/lib/system/libsystem_trial.dylib
+       0x2d403c000 -        0x2d403cf2f  libobjcMsgSend31.dylib (973.1) <0985E20F-78C3-3466-A2B2-DBB95F7104A3> /usr/lib/objc/libobjcMsgSend31.dylib
+       0x2dc03c000 -        0x2dc03cf2f  libobjcMsgSend32.dylib (973.1) <0D309D58-D576-3E5D-AD4B-6D55AB491702> /usr/lib/objc/libobjcMsgSend32.dylib
+       0x2e403c000 -        0x2e403cf2f  libobjcMsgSend33.dylib (973.1) <346E0484-48FA-369B-8A64-93B5F5341CFE> /usr/lib/objc/libobjcMsgSend33.dylib
+       0x2ec03c000 -        0x2ec03cf2f  libobjcMsgSend34.dylib (973.1) <6A31F809-BCBE-3E01-A367-E91FDACCE324> /usr/lib/objc/libobjcMsgSend34.dylib

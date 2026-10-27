@@ -1,0 +1,604 @@
+Analysis of sampling baseline (pid 83973) every 1 millisecond
+Process:         baseline [83973]
+Path:            /private/tmp/*/baseline
+Load Address:    0x100e44000
+Identifier:      baseline
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [83948]
+Target Type:     live task
+
+Date/Time:       2026-10-27 01:56:28.189 +0100
+Launch Time:     2026-10-27 01:56:28.159 +0100
+OS Version:      macOS 27.0 (26A5425a)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         8944K
+Physical footprint (peak):  8944K
+Idle exit:                  untracked
+----
+
+Call graph:
+    2570 Thread_36127689   DispatchQueue_1: com.apple.main-thread  (serial)
+      2442 boomkat.vm.sljit_function_entry  (in baseline) + 532  [0x100f1f710]
+      + 1228 boomkat.vm.vm_dispatch  (in baseline) + 124  [0x100eeaf98]
+      + ! 294 boomkat.vm.th_call  (in baseline) + 28,1080,...  [0x100f640b8,0x100f644d4,...]
+      + ! 240 boomkat.vm.th_try_fast_return  (in baseline) + 144,344,...  [0x100f704a8,0x100f70570,...]
+      + ! 207 boomkat.vm.th_getpropc_cached  (in baseline) + 0,216,...  [0x100f6ada4,0x100f6ae7c,...]
+      + ! 106 boomkat.vm.th_resume_caller  (in baseline) + 16,144,...  [0x100f7065c,0x100f706dc,...]
+      + ! 99 boomkat.vm.th_getthisc  (in baseline) + 32,60,...  [0x100f6b94c,0x100f6b968,...]
+      + ! 98 boomkat.vm.th_ldreg  (in baseline) + 16,280,...  [0x100f5fe64,0x100f5ff6c,...]
+      + ! 82 boomkat.vm.th_ldthis  (in baseline) + 0,36,...  [0x100f602b8,0x100f602dc,...]
+      + ! 27 boomkat.vm.th_getglobal  (in baseline) + 308,32,...  [0x100f676a4,0x100f67590,...]
+      + ! 26 boomkat.vm.th_get_other_shape  (in baseline) + 28,92,...  [0x100f6db98,0x100f6dbd8,...]
+      + ! 12 boomkat.vm.th_incdec  (in baseline) + 8,0,...  [0x100f615c8,0x100f615c0,...]
+      + ! 7 boomkat.vm.th_putpropc  (in baseline) + 16,0  [0x100f6b664,0x100f6b654]
+      + ! 6 boomkat.vm.sljit_function_dispatch  (in baseline) + 8,0  [0x100f6d5e8,0x100f6d5e0]
+      + ! 6 boomkat.vm.th_jmp_eq  (in baseline) + 0,24  [0x100f61d18,0x100f61d30]
+      + ! 5 boomkat.vm.th_jmp_lt  (in baseline) + 0,24  [0x100f620d4,0x100f620ec]
+      + ! 4 boomkat.vm.th_ret  (in baseline) + 0  [0x100f64074]
+      + ! 3 boomkat.vm.th_getpropc  (in baseline) + 20,0  [0x100f6a804,0x100f6a7f0]
+      + ! 2 boomkat.vm.th_putthisc  (in baseline) + 0,12  [0x100f6c1dc,0x100f6c1e8]
+      + ! 1 boomkat.vm.th_add  (in baseline) + 80  [0x100f60690]
+      + ! 1 boomkat.vm.th_jmp_gti  (in baseline) + 24  [0x100f635c4]
+      + ! 1 boomkat.vm.th_ldint  (in baseline) + 12  [0x100f60424]
+      + ! 1 boomkat.vm.th_relational  (in baseline) + 244  [0x100f60cdc]
+      + 708 boomkat.vm.sljit_function_entry  (in baseline) + 532  [0x100f1f710]
+      + ! 176 boomkat.vm.vm_call_lean  (in baseline) + 1388  [0x100f2f0e4]
+      + ! : 41 boomkat.vm.th_call  (in baseline) + 1044,124,...  [0x100f644b0,0x100f64118,...]
+      + ! : 39 boomkat.vm.th_getpropc_cached  (in baseline) + 44,396,...  [0x100f6add0,0x100f6af30,...]
+      + ! : 32 boomkat.vm.th_try_fast_return  (in baseline) + 344,304,...  [0x100f70570,0x100f70548,...]
+      + ! : 19 boomkat.vm.th_ldreg  (in baseline) + 0,16,...  [0x100f5fe54,0x100f5fe64,...]
+      + ! : 12 boomkat.vm.th_getthisc  (in baseline) + 836,4,...  [0x100f6bc70,0x100f6b930,...]
+      + ! : 9 boomkat.vm.th_resume_caller  (in baseline) + 16,124,...  [0x100f7065c,0x100f706c8,...]
+      + ! : 4 boomkat.vm.th_ldthis  (in baseline) + 36,168  [0x100f602dc,0x100f60360]
+      + ! : 3 boomkat.vm.th_get_other_shape  (in baseline) + 228,484,...  [0x100f6dc60,0x100f6dd60,...]
+      + ! : 3 boomkat.vm.th_getglobal  (in baseline) + 20,92  [0x100f67584,0x100f675cc]
+      + ! : 2 boomkat.vm.th_getprop_array  (in baseline) + 720  [0x100f6a7a4]
+      + ! : 2 boomkat.vm.th_getpropc  (in baseline) + 32  [0x100f6a810]
+      + ! : 2 boomkat.vm.th_mul  (in baseline) + 20,72  [0x100f690b0,0x100f690e4]
+      + ! : 2 boomkat.vm.th_putpropc  (in baseline) + 0,16  [0x100f6b654,0x100f6b664]
+      + ! : 1 boomkat.vm.run_threaded_burst  (in baseline) + 32  [0x100f01614]
+      + ! : 1 boomkat.vm.th_add  (in baseline) + 20  [0x100f60654]
+      + ! : 1 boomkat.vm.th_incdec  (in baseline) + 52  [0x100f615f4]
+      + ! : 1 boomkat.vm.th_jmp_lt  (in baseline) + 0  [0x100f620d4]
+      + ! : 1 boomkat.vm.th_putthisc  (in baseline) + 32  [0x100f6c1fc]
+      + ! : 1 boomkat.vm.th_ret  (in baseline) + 0  [0x100f64074]
+      + ! 122 boomkat.vm.sljit_function_entry  (in baseline) + 532  [0x100f1f710]
+      + ! : 30 boomkat.vm.vm_call_lean  (in baseline) + 1388  [0x100f2f0e4]
+      + ! : | 10 boomkat.vm.th_getpropc_cached  (in baseline) + 44,216,...  [0x100f6add0,0x100f6ae7c,...]
+      + ! : | 4 boomkat.vm.th_ldthis  (in baseline) + 0,168  [0x100f602b8,0x100f60360]
+      + ! : | 3 boomkat.vm.th_getthisc  (in baseline) + 4,80,...  [0x100f6b930,0x100f6b97c,...]
+      + ! : | 2 boomkat.vm.th_add  (in baseline) + 20  [0x100f60654]
+      + ! : | 2 boomkat.vm.th_call  (in baseline) + 1044,1240  [0x100f644b0,0x100f64574]
+      + ! : | 2 boomkat.vm.th_getglobal  (in baseline) + 0,20  [0x100f67570,0x100f67584]
+      + ! : | 2 boomkat.vm.th_ldreg  (in baseline) + 16,76  [0x100f5fe64,0x100f5fea0]
+      + ! : | 2 boomkat.vm.th_try_fast_return  (in baseline) + 128,268  [0x100f70498,0x100f70524]
+      + ! : | 1 boomkat.vm.run_threaded_burst  (in baseline) + 20  [0x100f01608]
+      + ! : | 1 boomkat.vm.th_get_other_shape  (in baseline) + 620  [0x100f6dde8]
+      + ! : | 1 boomkat.vm.th_resume_caller  (in baseline) + 268  [0x100f70758]
+      + ! : 15 boomkat.vm.vm_call_lean  (in baseline) + 1504,564,...  [0x100f2f158,0x100f2edac,...]
+      + ! : 10 boomkat.vm.th_return_entry  (in baseline) + 556,692,...  [0x100f70e8c,0x100f70f14,...]
+      + ! : 5 boomkat.vm.th_if  (in baseline) + 152,48,...  [0x100f68c3c,0x100f68bd4,...]
+      + ! : 3 ???  (in <unknown binary>)  [0x1010aafb4]
+      + ! : 3 boomkat.builtins.builtin_array_proto_push  (in baseline) + 124,208,...  [0x100e6823c,0x100e68290,...]
+      + ! : 3 boomkat.vm.sljit_native_call  (in baseline) + 180,276,...  [0x100f2e984,0x100f2e9e4,...]
+      + ! : 3 boomkat.vm.th_call_native  (in baseline) + 384,652  [0x100f6fbc4,0x100f6fcd0]
+      + ! : 2 ???  (in <unknown binary>)  [0x10109a5c4]
+      + ! : 2 ???  (in <unknown binary>)  [0x1010aaf84]
+      + ! : 2 ???  (in <unknown binary>)  [0x1010ab070]
+      + ! : 2 boomkat.builtins.array_get_length_raw  (in baseline) + 44,784  [0x100ebd0fc,0x100ebd3e0]
+      + ! : 2 boomkat.hobject.HObject.find_prop_idx  (in baseline) + 68,460  [0x100f89afc,0x100f89c84]
+      + ! : 2 boomkat.vm.run_threaded_burst  (in baseline) + 204,260  [0x100f016c0,0x100f016f8]
+      + ! : 2 boomkat.vm.th_call_native  (in baseline) + 568  [0x100f6fc7c]
+      + ! : | 2 boomkat.builtins.dispatch_builtin  (in baseline) + 0,32  [0x100ed33c4,0x100ed33e4]
+      + ! : 2 boomkat.vm.th_call_native  (in baseline) + 844  [0x100f6fd90]
+      + ! : | 1 boomkat.vm.th_ret  (in baseline) + 0  [0x100f64074]
+      + ! : | 1 boomkat.vm.th_try_fast_return  (in baseline) + 0  [0x100f70418]
+      + ! : 1 ???  (in <unknown binary>)  [0x101099b80]
+      + ! : 1 ???  (in <unknown binary>)  [0x101099f18]
+      + ! : 1 ???  (in <unknown binary>)  [0x10109a524]
+      + ! : 1 ???  (in <unknown binary>)  [0x10109a608]
+      + ! : 1 ???  (in <unknown binary>)  [0x10109af2c]
+      + ! : 1 ???  (in <unknown binary>)  [0x10109b13c]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010aad94]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010aadd0]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010aaddc]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010aaf1c]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ab08c]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ab0e4]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ab100]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ab158]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ac06c]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ac08c]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ac9d4]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010acb00]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010acbe0]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010acda8]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ace98]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010acf18]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ad398]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ad978]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010ad9f8]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010adab0]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010adb54]
+      + ! : 1 ???  (in <unknown binary>)  [0x1010adb88]
+      + ! : 1 boomkat.builtins.builtin_array_proto_pop  (in baseline) + 28  [0x100e67e10]
+      + ! : | 1 boomkat.builtins.array_proto_get_this  (in baseline) + 32  [0x100ece2c4]
+      + ! : 1 boomkat.vm.sljit_template_entry  (in baseline) + 68  [0x100f3e2a4]
+      + ! : 1 boomkat.vm.th_eq  (in baseline) + 92  [0x100f60b2c]
+      + ! : | 1 boomkat.vm.th_strict_order  (in baseline) + 28  [0x100f7116c]
+      + ! : 1 boomkat.vm.th_eq  (in baseline) + 128  [0x100f60b50]
+      + ! : 1 boomkat.vm.th_jmp_eq  (in baseline) + 72  [0x100f61d60]
+      + ! : | 1 boomkat.vm.th_loose_order  (in baseline) + 108  [0x100f710e0]
+      + ! : 1 boomkat.vm.th_return_slow  (in baseline) + 56  [0x100f707cc]
+      + ! 119 boomkat.vm.vm_dispatch  (in baseline) + 124  [0x100eeaf98]
+      + ! : 33 boomkat.vm.th_call  (in baseline) + 0,160,...  [0x100f6409c,0x100f6413c,...]
+      + ! : 18 boomkat.vm.th_getpropc_cached  (in baseline) + 44,420,...  [0x100f6add0,0x100f6af48,...]
+      + ! : 18 boomkat.vm.th_try_fast_return  (in baseline) + 144,8,...  [0x100f704a8,0x100f70420,...]
+      + ! : 17 boomkat.vm.th_getthisc  (in baseline) + 4,836,...  [0x100f6b930,0x100f6bc70,...]
+      + ! : 10 boomkat.vm.th_ldreg  (in baseline) + 280,16,...  [0x100f5ff6c,0x100f5fe64,...]
+      + ! : 7 boomkat.vm.th_resume_caller  (in baseline) + 224,268,...  [0x100f7072c,0x100f70758,...]
+      + ! : 4 boomkat.vm.th_ldthis  (in baseline) + 0,112,...  [0x100f602b8,0x100f60328,...]
+      + ! : 3 boomkat.vm.th_get_other_shape  (in baseline) + 648,92  [0x100f6de04,0x100f6dbd8]
+      + ! : 2 boomkat.vm.th_getglobal  (in baseline) + 168,308  [0x100f67618,0x100f676a4]
+      + ! : 2 boomkat.vm.th_mul  (in baseline) + 0,108  [0x100f6909c,0x100f69108]
+      + ! : 1 boomkat.vm.th_getpropc  (in baseline) + 0  [0x100f6a7f0]
+      + ! : 1 boomkat.vm.th_if  (in baseline) + 0  [0x100f68ba4]
+      + ! : 1 boomkat.vm.th_lnot  (in baseline) + 16  [0x100f60d28]
+      + ! : 1 boomkat.vm.th_putpropc  (in baseline) + 0  [0x100f6b654]
+      + ! : 1 boomkat.vm.th_return_slow  (in baseline) + 20  [0x100f707a8]
+      + ! 88 boomkat.vm.th_call_native  (in baseline) + 844  [0x100f6fd90]
+      + ! : 24 boomkat.vm.th_call  (in baseline) + 28,72,...  [0x100f640b8,0x100f640e4,...]
+      + ! : 16 boomkat.vm.th_try_fast_return  (in baseline) + 344,8,...  [0x100f70570,0x100f70420,...]
+      + ! : 12 boomkat.vm.th_resume_caller  (in baseline) + 236,144,...  [0x100f70738,0x100f706dc,...]
+      + ! : 11 boomkat.vm.th_getpropc_cached  (in baseline) + 0,44,...  [0x100f6ada4,0x100f6add0,...]
+      + ! : 8 boomkat.vm.th_ldreg  (in baseline) + 16,248,...  [0x100f5fe64,0x100f5ff4c,...]
+      + ! : 6 boomkat.vm.th_get_other_shape  (in baseline) + 28,204,...  [0x100f6db98,0x100f6dc48,...]
+      + ! : 3 boomkat.vm.th_getthisc  (in baseline) + 672,80  [0x100f6bbcc,0x100f6b97c]
+      + ! : 2 boomkat.vm.th_ldthis  (in baseline) + 36,280  [0x100f602dc,0x100f603d0]
+      + ! : 1 boomkat.vm.th_getglobal  (in baseline) + 140  [0x100f675fc]
+      + ! : 1 boomkat.vm.th_getpropc  (in baseline) + 0  [0x100f6a7f0]
+      + ! : 1 boomkat.vm.th_jmp_eq  (in baseline) + 0  [0x100f61d18]
+      + ! : 1 boomkat.vm.th_ldint  (in baseline) + 0  [0x100f60418]
+      + ! : 1 boomkat.vm.th_putpropc  (in baseline) + 0  [0x100f6b654]
+      + ! : 1 boomkat.vm.th_return_slow  (in baseline) + 0  [0x100f70794]
+      + ! 24 boomkat.vm.sljit_function_entry  (in baseline) + 612,1052,...  [0x100f1f760,0x100f1f918,...]
+      + ! 12 boomkat.vm.th_jmp_eq  (in baseline) + 72  [0x100f61d60]
+      + ! : 6 boomkat.vm.th_loose_order  (in baseline) + 8,32,...  [0x100f7107c,0x100f71094,...]
+      + ! : 6 boomkat.vm.th_strict_order  (in baseline) + 4,28,...  [0x100f71154,0x100f7116c,...]
+      + ! 8 boomkat.vm.vm_call_lean  (in baseline) + 128,284,...  [0x100f2ebf8,0x100f2ec94,...]
+      + ! 7 boomkat.vm.th_call_native  (in baseline) + 488,844,...  [0x100f6fc2c,0x100f6fd90,...]
+      + ! 6 boomkat.hobject.HObject.set_array_idx  (in baseline) + 504,252,...  [0x100f89fe8,0x100f89eec,...]
+      + ! 6 boomkat.vm.th_getpropc  (in baseline) + 72,60,...  [0x100f6a838,0x100f6a82c,...]
+      + ! 5 ???  (in <unknown binary>)  [0x1010ab08c]
+      + ! 5 boomkat.vm.th_jmp_eq  (in baseline) + 108,148,...  [0x100f61d84,0x100f61dac,...]
+      + ! 4 ???  (in <unknown binary>)  [0x1010aafb4]
+      + ! 4 ???  (in <unknown binary>)  [0x1010ab100]
+      + ! 4 boomkat.vm.th_eq  (in baseline) + 92  [0x100f60b2c]
+      + ! : 3 boomkat.vm.th_strict_order  (in baseline) + 4,28  [0x100f71154,0x100f7116c]
+      + ! : 1 boomkat.vm.th_loose_order  (in baseline) + 36  [0x100f71098]
+      + ! 4 boomkat.vm.th_new_obj  (in baseline) + 40,160,...  [0x100f6c98c,0x100f6ca04,...]
+      + ! 3 ???  (in <unknown binary>)  [0x1010aad4c]
+      + ! 3 ???  (in <unknown binary>)  [0x1010aaeec]
+      + ! 3 ???  (in <unknown binary>)  [0x1010aafe8]
+      + ! 3 ???  (in <unknown binary>)  [0x1010ab0c8]
+      + ! 3 boomkat.hobject.HObject.grow_array  (in baseline) + 252,232  [0x100f8ab58,0x100f8ab44]
+      + ! 3 boomkat.hobject.hobject_free_step  (in baseline) + 220,280,...  [0x100f8fc38,0x100f8fc74,...]
+      + ! 3 boomkat.vm.run_threaded_burst  (in baseline) + 76,260  [0x100f01640,0x100f016f8]
+      + ! 3 boomkat.vm.sljit_template_entry  (in baseline) + 1020  [0x100f3e65c]
+      + ! 3 boomkat.vm.th_eq  (in baseline) + 60,216,...  [0x100f60b0c,0x100f60ba8,...]
+      + ! 3 boomkat.vm.th_putpropc  (in baseline) + 120,152,...  [0x100f6b6cc,0x100f6b6ec,...]
+      + ! 3 boomkat.vm.th_return_entry  (in baseline) + 364,64  [0x100f70dcc,0x100f70ca0]
+      + ! 2 ???  (in <unknown binary>)  [0x101099b38]
+      + ! 2 ???  (in <unknown binary>)  [0x1010aad64]
+      + ! 2 ???  (in <unknown binary>)  [0x1010ab024]
+      + ! 2 ???  (in <unknown binary>)  [0x1010ab120]
+      + ! 2 ???  (in <unknown binary>)  [0x1010ab158]
+      + ! 2 ???  (in <unknown binary>)  [0x1010ab1b8]
+      + ! 2 boomkat.builtins.array_get_length_raw  (in baseline) + 56,784  [0x100ebd108,0x100ebd3e0]
+      + ! 2 boomkat.builtins.builtin_array_proto_push  (in baseline) + 356,916  [0x100e68324,0x100e68554]
+      + ! 2 boomkat.pagepool.PagePool.alloc  (in baseline) + 112  [0x100e58310]
+      + ! : 1 DYLD-STUB$$bzero  (in baseline) + 4  [0x100fea798]
+      + ! : 1 __bzero  (in libsystem_platform.dylib) + 24  [0x19c8d3a48]
+      + ! 2 boomkat.vm.sljit_native_call  (in baseline) + 596,648  [0x100f2eb24,0x100f2eb58]
+      + ! 2 boomkat.vm.th_call_native  (in baseline) + 568  [0x100f6fc7c]
+      + ! : 2 boomkat.builtins.dispatch_builtin  (in baseline) + 32  [0x100ed33e4]
+      + ! 2 boomkat.vm.th_jmp_gti  (in baseline) + 216  [0x100f63684]
+      + ! : 2 boomkat.vm.loop_target  (in baseline) + 56  [0x100f1fd24]
+      + ! 2 boomkat.vm.th_putthisc  (in baseline) + 264,528  [0x100f6c2e4,0x100f6c3ec]
+      + ! 2 boomkat.vm.th_store_slot_ref  (in baseline) + 296  [0x100f6d52c]
+      + ! 2 boomkat.vm.vm_dispatch  (in baseline) + 88,156  [0x100eeaf74,0x100eeafb8]
+      + ! 2 boomkat.vm.vm_relational_compare  (in baseline) + 52,144  [0x100f3bc78,0x100f3bcd4]
+      + ! 1 ???  (in <unknown binary>)  [0x101094d14]
+      + ! 1 ???  (in <unknown binary>)  [0x101099dc4]
+      + ! 1 ???  (in <unknown binary>)  [0x101099ea4]
+      + ! 1 ???  (in <unknown binary>)  [0x101099ed8]
+      + ! 1 ???  (in <unknown binary>)  [0x101099ef4]
+      + ! 1 ???  (in <unknown binary>)  [0x101099f44]
+      + ! 1 ???  (in <unknown binary>)  [0x101099fcc]
+      + ! 1 ???  (in <unknown binary>)  [0x10109a13c]
+      + ! 1 ???  (in <unknown binary>)  [0x10109a59c]
+      + ! 1 ???  (in <unknown binary>)  [0x10109ae20]
+      + ! 1 ???  (in <unknown binary>)  [0x10109af5c]
+      + ! 1 ???  (in <unknown binary>)  [0x10109af90]
+      + ! 1 ???  (in <unknown binary>)  [0x10109afac]
+      + ! 1 ???  (in <unknown binary>)  [0x10109b770]
+      + ! 1 ???  (in <unknown binary>)  [0x10109b91c]
+      + ! 1 ???  (in <unknown binary>)  [0x10109bc30]
+      + ! 1 ???  (in <unknown binary>)  [0x1010a5fe8]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aad28]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aad5c]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aad88]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aad94]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aadb0]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aadd0]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aaf1c]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aaf54]
+      + ! 1 ???  (in <unknown binary>)  [0x1010aaffc]
+      + ! 1 ???  (in <unknown binary>)  [0x1010ab0e4]
+      + ! 1 ???  (in <unknown binary>)  [0x1010ab348]
+      + ! 1 ???  (in <unknown binary>)  [0x1010ac9dc]
+      + ! 1 ???  (in <unknown binary>)  [0x1010ba640]
+      + ! 1 boomkat.builtins.array_proto_get_this  (in baseline) + 452  [0x100ece468]
+      + ! 1 boomkat.builtins.array_set_elem_ulong_set  (in baseline) + 456  [0x100ee4664]
+      + ! : 1 boomkat.hobject.HObject.find_index_holder  (in baseline) + 32  [0x100f8d080]
+      + ! 1 boomkat.builtins.array_set_elem_ulong_set  (in baseline) + 260  [0x100ee45a0]
+      + ! 1 boomkat.builtins.array_set_length  (in baseline) + 52  [0x100ebcf08]
+      + ! 1 boomkat.builtins.array_to_length  (in baseline) + 20  [0x100ece498]
+      + ! : 1 boomkat.builtins.array_get_length_raw  (in baseline) + 8  [0x100ebd0d8]
+      + ! 1 boomkat.builtins.builtin_proto_from_new_target  (in baseline) + 36  [0x100eb4700]
+      + ! 1 boomkat.builtins.dispatch_builtin  (in baseline) + 292  [0x100ed34e8]
+      + ! 1 boomkat.heap.Heap.gc_sweep_objects_step  (in baseline) + 80  [0x100e5069c]
+      + ! 1 boomkat.heap.Heap.pool_alloc  (in baseline) + 48  [0x100e55d54]
+      + ! 1 boomkat.hobject.HObject.find_prop_idx  (in baseline) + 384  [0x100f89c38]
+      + ! 1 boomkat.vm.Vm.run  (in baseline) + 96  [0x100eeac58]
+      + ! 1 boomkat.vm.dispatch_calls  (in baseline) + 4356  [0x100efbd94]
+      + ! : 1 boomkat.builtins.dispatch_builtin  (in baseline) + 4  [0x100ed33c8]
+      + ! 1 boomkat.vm.th_append_ref_next  (in baseline) + 336  [0x100f6db0c]
+      + ! 1 boomkat.vm.th_jmp_gti  (in baseline) + 180  [0x100f63660]
+      + ! 1 boomkat.vm.th_jmp_lt  (in baseline) + 272  [0x100f621e4]
+      + ! 1 boomkat.vm.th_return_slow  (in baseline) + 48  [0x100f707c4]
+      + ! : 1 boomkat.vm.th_return_entry  (in baseline) + 32  [0x100f70c80]
+      + ! 1 boomkat.vm.th_store_slot_ref_next  (in baseline) + 52  [0x100f6d3dc]
+      + ! : 1 boomkat.vm.th_store_slot_ref  (in baseline) + 28  [0x100f6d420]
+      + ! 1 boomkat.vm.vm_call_lean  (in baseline) + 1460  [0x100f2f12c]
+      + ! : 1 boomkat.vm.Vm.run  (in baseline) + 0  [0x100eeabf8]
+      + ! 1 boomkat.vm.vm_dispatch  (in baseline) + 11900  [0x100eedd98]
+      + !   1 boomkat.vm.vm_relational_compare  (in baseline) + 20  [0x100f3bc58]
+      + 122 boomkat.vm.th_call_native  (in baseline) + 844  [0x100f6fd90]
+      + ! 37 boomkat.vm.th_call  (in baseline) + 0,96,...  [0x100f6409c,0x100f640fc,...]
+      + ! 17 boomkat.vm.th_getpropc_cached  (in baseline) + 228,64,...  [0x100f6ae88,0x100f6ade4,...]
+      + ! 16 boomkat.vm.th_try_fast_return  (in baseline) + 144,228,...  [0x100f704a8,0x100f704fc,...]
+      + ! 10 boomkat.vm.th_ldreg  (in baseline) + 160,280,...  [0x100f5fef4,0x100f5ff6c,...]
+      + ! 8 boomkat.vm.th_getthisc  (in baseline) + 60,924,...  [0x100f6b968,0x100f6bcc8,...]
+      + ! 8 boomkat.vm.th_resume_caller  (in baseline) + 16,124,...  [0x100f7065c,0x100f706c8,...]
+      + ! 6 boomkat.vm.th_get_other_shape  (in baseline) + 176,52,...  [0x100f6dc2c,0x100f6dbb0,...]
+      + ! 6 boomkat.vm.th_ldthis  (in baseline) + 0,36,...  [0x100f602b8,0x100f602dc,...]
+      + ! 3 boomkat.vm.th_putpropc  (in baseline) + 0,16  [0x100f6b654,0x100f6b664]
+      + ! 2 boomkat.vm.th_getglobal  (in baseline) + 108,200  [0x100f675dc,0x100f67638]
+      + ! 2 boomkat.vm.th_if  (in baseline) + 0,20  [0x100f68ba4,0x100f68bb8]
+      + ! 1 boomkat.vm.th_incdec  (in baseline) + 36  [0x100f615e4]
+      + ! 1 boomkat.vm.th_jmp_eq  (in baseline) + 0  [0x100f61d18]
+      + ! 1 boomkat.vm.th_jmp_gti  (in baseline) + 32  [0x100f635cc]
+      + ! 1 boomkat.vm.th_ldint  (in baseline) + 12  [0x100f60424]
+      + ! 1 boomkat.vm.th_ldundef  (in baseline) + 4  [0x100f69ca8]
+      + ! 1 boomkat.vm.th_relational  (in baseline) + 0  [0x100f60be8]
+      + ! 1 boomkat.vm.th_retundef  (in baseline) + 0  [0x100f6408c]
+      + 69 boomkat.vm.sljit_function_entry  (in baseline) + 712,164,...  [0x100f1f7c4,0x100f1f5a0,...]
+      + 41 boomkat.vm.th_jmp_eq  (in baseline) + 72  [0x100f61d60]
+      + ! 23 boomkat.vm.th_loose_order  (in baseline) + 32,36,...  [0x100f71094,0x100f71098,...]
+      + ! 18 boomkat.vm.th_strict_order  (in baseline) + 4,28  [0x100f71154,0x100f7116c]
+      + 35 boomkat.vm.th_call_native  (in baseline) + 648  [0x100f6fccc]
+      + ! 10 boomkat.vm.th_call  (in baseline) + 1164,28,...  [0x100f64528,0x100f640b8,...]
+      + ! 7 boomkat.vm.th_getpropc_cached  (in baseline) + 372,0,...  [0x100f6af18,0x100f6ada4,...]
+      + ! 6 boomkat.vm.th_ldreg  (in baseline) + 48,280,...  [0x100f5fe84,0x100f5ff6c,...]
+      + ! 4 boomkat.vm.th_try_fast_return  (in baseline) + 144,156,...  [0x100f704a8,0x100f704b4,...]
+      + ! 3 boomkat.vm.th_get_other_shape  (in baseline) + 620,456  [0x100f6dde8,0x100f6dd44]
+      + ! 1 boomkat.vm.th_call_native  (in baseline) + 0  [0x100f6fa44]
+      + ! 1 boomkat.vm.th_getglobal  (in baseline) + 112  [0x100f675e0]
+      + ! 1 boomkat.vm.th_getthisc  (in baseline) + 400  [0x100f6babc]
+      + ! 1 boomkat.vm.th_putthisc  (in baseline) + 0  [0x100f6c1dc]
+      + ! 1 boomkat.vm.th_retundef  (in baseline) + 0  [0x100f6408c]
+      + 20 boomkat.vm.th_jmp_eq  (in baseline) + 108,192,...  [0x100f61d84,0x100f61dd8,...]
+      + 16 boomkat.vm.th_putpropc  (in baseline) + 120,220,...  [0x100f6b6cc,0x100f6b730,...]
+      + 15 boomkat.vm.th_putthisc  (in baseline) + 116,448,...  [0x100f6c250,0x100f6c39c,...]
+      + 13 boomkat.vm.th_getpropc  (in baseline) + 172,72,...  [0x100f6a89c,0x100f6a838,...]
+      + 13 boomkat.vm.th_jmp_lt  (in baseline) + 452,52,...  [0x100f62298,0x100f62108,...]
+      + 11 boomkat.vm.th_return_general  (in baseline) + 540,152,...  [0x100f70b44,0x100f709c0,...]
+      + 9 boomkat.vm.th_jmp_lt  (in baseline) + 308  [0x100f62208]
+      + ! 9 boomkat.vm.loop_target  (in baseline) + 56  [0x100f1fd24]
+      + 9 boomkat.vm.th_new_obj  (in baseline) + 40,496,...  [0x100f6c98c,0x100f6cb54,...]
+      + 9 boomkat.vm.vm_call_lean  (in baseline) + 1388  [0x100f2f0e4]
+      + ! 3 boomkat.vm.th_getthisc  (in baseline) + 60,376,...  [0x100f6b968,0x100f6baa4,...]
+      + ! 2 boomkat.vm.th_call  (in baseline) + 980,1148  [0x100f64470,0x100f64518]
+      + ! 2 boomkat.vm.th_ldreg  (in baseline) + 248,280  [0x100f5ff4c,0x100f5ff6c]
+      + ! 1 boomkat.vm.th_resume_caller  (in baseline) + 144  [0x100f706dc]
+      + ! 1 boomkat.vm.th_try_fast_return  (in baseline) + 84  [0x100f7046c]
+      + 8 boomkat.heap.Heap.gc_sweep_objects_step  (in baseline) + 156,196,...  [0x100e506e8,0x100e50710,...]
+      + 7 boomkat.vm.th_call_native  (in baseline) + 96,152,...  [0x100f6faa4,0x100f6fadc,...]
+      + 7 boomkat.vm.th_call_redispatched  (in baseline) + 68,152,...  [0x100f6fe28,0x100f6fe7c,...]
+      + 6 boomkat.hobject.HObject.find_prop_idx  (in baseline) + 60,512,...  [0x100f89af4,0x100f89cb8,...]
+      + 6 boomkat.hobject.hobject_free_step  (in baseline) + 168,208,...  [0x100f8fc04,0x100f8fc2c,...]
+      + 6 boomkat.vm.sljit_function_dispatch  (in baseline) + 68,72  [0x100f6d624,0x100f6d628]
+      + 5 boomkat.vm.th_if  (in baseline) + 48,68,...  [0x100f68bd4,0x100f68be8,...]
+      + 4 boomkat.vm.dispatch_calls  (in baseline) + 5772,10436,...  [0x100efc31c,0x100efd554,...]
+      + 4 boomkat.vm.vm_dispatch  (in baseline) + 84,224,...  [0x100eeaf70,0x100eeaffc,...]
+      + 3 boomkat.builtins.builtin_array_proto_push  (in baseline) + 284,524,...  [0x100e682dc,0x100e683cc,...]
+      + 3 boomkat.hobject.HObject.grow_array  (in baseline) + 252,288  [0x100f8ab58,0x100f8ab7c]
+      + 3 boomkat.hobject.hobject_free_impl  (in baseline) + 132,1180,...  [0x100f8f530,0x100f8f948,...]
+      + 3 boomkat.vm.run_threaded_burst  (in baseline) + 76,212,...  [0x100f01640,0x100f016c8,...]
+      + 2 ???  (in <unknown binary>)  [0x1010ab34c]
+      + 2 boomkat.heap.Heap.alloc_plain_object  (in baseline) + 376,628  [0x100e56118,0x100e56214]
+      + 2 boomkat.heap.Heap.gc_scan_whole_object  (in baseline) + 260  [0x100e53104]
+      + ! 2 boomkat.heap.Heap.mark_traced_value  (in baseline) + 0,104  [0x100e53734,0x100e5379c]
+      + 2 boomkat.hobject.HObject.reserve_props  (in baseline) + 128  [0x100f8d988]
+      + ! 1 __bzero  (in libsystem_platform.dylib) + 0  [0x19c8d3a30]
+      + ! 1 _platform_memset  (in libsystem_platform.dylib) + 108  [0x19c8d3afc]
+      + 2 boomkat.hobject.hobject_free_impl  (in baseline) + 1368  [0x100f8fa04]
+      + ! 2 boomkat.pagepool.PagePool.dealloc  (in baseline) + 20,84  [0x100e58458,0x100e58498]
+      + 2 boomkat.pagepool.PagePool.alloc  (in baseline) + 92,196  [0x100e582fc,0x100e58364]
+      + 2 boomkat.vm.th_put_lookup  (in baseline) + 228,376  [0x100f6d710,0x100f6d7a4]
+      + 2 boomkat.vm.th_store_slot_ref  (in baseline) + 56,296  [0x100f6d43c,0x100f6d52c]
+      + 2 boomkat.vm.vm_concat  (in baseline) + 156  [0x100f08648]
+      + ! 2 boomkat.vm.vm_concat_accumulate  (in baseline) + 16,36  [0x100f3c810,0x100f3c824]
+      + 2 std.time.os.native_clock  (in baseline) + 32  [0x100fcfc10]
+      + ! 2 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x19c8850f8]
+      + 1 ???  (in <unknown binary>)  [0x1010a5d18]
+      + 1 ???  (in <unknown binary>)  [0x1010aad48]
+      + 1 ???  (in <unknown binary>)  [0x1010aadb0]
+      + 1 ???  (in <unknown binary>)  [0x1010aaf1c]
+      + 1 ???  (in <unknown binary>)  [0x1010aafb4]
+      + 1 ???  (in <unknown binary>)  [0x1010ab0e4]
+      + 1 ???  (in <unknown binary>)  [0x1010ab1b8]
+      + 1 ???  (in <unknown binary>)  [0x1010ab348]
+      + 1 boomkat.builtins.arr_set_length_or_throw  (in baseline) + 596  [0x100ed8ad0]
+      + 1 boomkat.builtins.array_set_elem_ulong_set  (in baseline) + 456  [0x100ee4664]
+      + ! 1 boomkat.hobject.HObject.find_index_holder  (in baseline) + 32  [0x100f8d080]
+      + 1 boomkat.builtins.array_to_length  (in baseline) + 128  [0x100ece504]
+      + 1 boomkat.builtins.builtin_array_proto_push  (in baseline) + 540  [0x100e683dc]
+      + ! 1 boomkat.hobject.proto_chain_index_free  (in baseline) + 8  [0x100f8f100]
+      + 1 boomkat.builtins.dispatch_builtin  (in baseline) + 184  [0x100ed347c]
+      + ! 1 boomkat.builtins.builtin_array  (in baseline) + 16  [0x100e64288]
+      + 1 boomkat.builtins.dispatch_builtin  (in baseline) + 332  [0x100ed3510]
+      + 1 boomkat.heap.Heap.alloc_concat_string_parts  (in baseline) + 140  [0x100e5712c]
+      + ! 1 boomkat.hstring.hstring_alloc_concat_cap  (in baseline) + 48  [0x100e59000]
+      + 1 boomkat.heap.Heap.alloc_concat_string_parts  (in baseline) + 144  [0x100e57130]
+      + 1 boomkat.heap.Heap.gc_scan_compiled_slot  (in baseline) + 60  [0x100e52acc]
+      + 1 boomkat.heap.Heap.gc_sweep_objects_step  (in baseline) + 108  [0x100e506b8]
+      + ! 1 boomkat.hobject.hobject_free_step  (in baseline) + 24  [0x100f8fb74]
+      + 1 boomkat.heap.Heap.transition_shape_new_flags  (in baseline) + 200  [0x100e549ec]
+      + ! 1 boomkat.heap.Heap.lookup_transition  (in baseline) + 24  [0x100e543b4]
+      + 1 boomkat.hobject.HObject.find_index_holder  (in baseline) + 88  [0x100f8d0b8]
+      + ! 1 boomkat.hobject.HObject.own_index  (in baseline) + 40  [0x100f8cf30]
+      + 1 boomkat.hobject.HObject.get_prop_or_accessor_proto  (in baseline) + 852  [0x100f8dfcc]
+      + 1 boomkat.hobject.HObject.grow_array  (in baseline) + 328  [0x100f8aba4]
+      + ! 1 _platform_memmove  (in libsystem_platform.dylib) + 428  [0x19c8d3f0c]
+      + 1 boomkat.hstring.HString.finish_data  (in baseline) + 152  [0x100e58c34]
+      + ! 1 boomkat.hstring.is_valid_array_index  (in baseline) + 12  [0x100e586ec]
+      + 1 boomkat.hstring.HString.finish_data  (in baseline) + 92  [0x100e58bf8]
+      + 1 boomkat.hstring.hstring_alloc_concat_cap  (in baseline) + 96  [0x100e59030]
+      + ! 1 boomkat.hstring.hstring_alloc_concat_cap  (in baseline) + 224  [0x100e590b0]
+      + 1 boomkat.hstring.hstring_alloc_storage  (in baseline) + 72  [0x100e58f74]
+      + ! 1 boomkat.hstring.hstring_alloc_storage  (in baseline) + 88  [0x100e58f84]
+      + 1 boomkat.vm.builtin_fn_is_constructor  (in baseline) + 80  [0x100ec2cc0]
+      + ! 1 boomkat.vm.lightfunc_get_proto  (in baseline) + 468  [0x100ec2ed4]
+      + 1 boomkat.vm.dispatch_calls  (in baseline) + 4224  [0x100efbd10]
+      + ! 1 boomkat.vm.builtin_fn_is_constructor  (in baseline) + 4  [0x100ec2c74]
+      + 1 boomkat.vm.sljit_function_dispatch  (in baseline) + 40  [0x100f6d608]
+      + ! 1 boomkat.vm.sljit_function_entry  (in baseline) + 20  [0x100f1f510]
+      + 1 boomkat.vm.sljit_template_entry  (in baseline) + 80  [0x100f3e2b0]
+      + 1 boomkat.vm.th_add_concat_slow  (in baseline) + 176  [0x100f7147c]
+      + 1 boomkat.vm.th_append_ref_next  (in baseline) + 432  [0x100f6db6c]
+      + 1 boomkat.vm.th_eq  (in baseline) + 92  [0x100f60b2c]
+      + ! 1 boomkat.vm.th_loose_order  (in baseline) + 36  [0x100f71098]
+      + 1 boomkat.vm.th_eq  (in baseline) + 128  [0x100f60b50]
+      + 1 boomkat.vm.th_put_lookup  (in baseline) + 268  [0x100f6d738]
+      + ! 1 boomkat.hobject.HObject.find_prop_idx  (in baseline) + 0  [0x100f89ab8]
+      + 1 boomkat.vm.th_return_general  (in baseline) + 500  [0x100f70b1c]
+      + ! 1 boomkat.vm.record_constructor_capacity  (in baseline) + 0  [0x100f10050]
+      + 1 boomkat.vm.th_store_slot_ref_next  (in baseline) + 52  [0x100f6d3dc]
+      + ! 1 boomkat.vm.th_store_slot_ref  (in baseline) + 0  [0x100f6d404]
+      + 1 boomkat.vm.vm_concat_add  (in baseline) + 352  [0x100f08304]
+      + 1 boomkat.vm.vm_dispatch  (in baseline) + 31512  [0x100ef2a34]
+      +   1 boomkat.vm.dispatch_calls  (in baseline) + 20  [0x100efaca4]
+      91 boomkat.vm.vm_dispatch  (in baseline) + 124  [0x100eeaf98]
+      + 23 boomkat.vm.th_getpropc_cached  (in baseline) + 0,8,...  [0x100f6ada4,0x100f6adac,...]
+      + 20 boomkat.vm.th_call  (in baseline) + 28,124,...  [0x100f640b8,0x100f64118,...]
+      + 15 boomkat.vm.th_try_fast_return  (in baseline) + 32,536,...  [0x100f70438,0x100f70630,...]
+      + 9 boomkat.vm.th_ldreg  (in baseline) + 248,280,...  [0x100f5ff4c,0x100f5ff6c,...]
+      + 9 boomkat.vm.th_resume_caller  (in baseline) + 268,0,...  [0x100f70758,0x100f7064c,...]
+      + 4 boomkat.vm.th_ldthis  (in baseline) + 0,76,...  [0x100f602b8,0x100f60304,...]
+      + 3 boomkat.vm.th_getthisc  (in baseline) + 424,436,...  [0x100f6bad4,0x100f6bae0,...]
+      + 2 boomkat.vm.th_get_other_shape  (in baseline) + 28,92  [0x100f6db98,0x100f6dbd8]
+      + 2 boomkat.vm.th_getglobal  (in baseline) + 44,308  [0x100f6759c,0x100f676a4]
+      + 1 boomkat.vm.th_getpropc  (in baseline) + 0  [0x100f6a7f0]
+      + 1 boomkat.vm.th_incdec  (in baseline) + 52  [0x100f615f4]
+      + 1 boomkat.vm.th_putpropc  (in baseline) + 16  [0x100f6b664]
+      + 1 boomkat.vm.th_relational  (in baseline) + 16  [0x100f60bf8]
+      11 boomkat.vm.th_call_native  (in baseline) + 844  [0x100f6fd90]
+      + 3 boomkat.vm.th_getpropc_cached  (in baseline) + 356,692,...  [0x100f6af08,0x100f6b058,...]
+      + 2 boomkat.vm.th_call  (in baseline) + 160,400  [0x100f6413c,0x100f6422c]
+      + 1 boomkat.vm.th_get_other_shape  (in baseline) + 12  [0x100f6db88]
+      + 1 boomkat.vm.th_getthisc  (in baseline) + 376  [0x100f6baa4]
+      + 1 boomkat.vm.th_ldreg  (in baseline) + 160  [0x100f5fef4]
+      + 1 boomkat.vm.th_ldundef  (in baseline) + 0  [0x100f69ca4]
+      + 1 boomkat.vm.th_resume_caller  (in baseline) + 268  [0x100f70758]
+      + 1 boomkat.vm.th_try_fast_return  (in baseline) + 228  [0x100f704fc]
+      7 boomkat.vm.th_call_native  (in baseline) + 648  [0x100f6fccc]
+      + 2 boomkat.vm.th_call  (in baseline) + 124,1676  [0x100f64118,0x100f64728]
+      + 1 boomkat.vm.th_getpropc_cached  (in baseline) + 0  [0x100f6ada4]
+      + 1 boomkat.vm.th_ldreg  (in baseline) + 280  [0x100f5ff6c]
+      + 1 boomkat.vm.th_ldthis  (in baseline) + 36  [0x100f602dc]
+      + 1 boomkat.vm.th_resume_caller  (in baseline) + 316  [0x100f70788]
+      + 1 boomkat.vm.th_try_fast_return  (in baseline) + 228  [0x100f704fc]
+      6 boomkat.vm.sljit_function_entry  (in baseline) + 72,364,...  [0x100f1f544,0x100f1f668,...]
+      3 boomkat.vm.th_return_general  (in baseline) + 84,148,...  [0x100f7097c,0x100f709bc,...]
+      1 ???  (in <unknown binary>)  [0x1010ab348]
+      1 boomkat.heap.Heap.gc_sweep_strings_step  (in baseline) + 68  [0x100e50a88]
+      1 boomkat.hobject.HObject.find_prop_idx  (in baseline) + 332  [0x100f89c04]
+      1 boomkat.vm.sljit_function_dispatch  (in baseline) + 40  [0x100f6d608]
+      + 1 boomkat.vm.sljit_function_entry  (in baseline) + 0  [0x100f1f4fc]
+      1 boomkat.vm.th_call_native  (in baseline) + 488  [0x100f6fc2c]
+      1 boomkat.vm.th_call_redispatched  (in baseline) + 1416  [0x100f7036c]
+      1 boomkat.vm.th_getpropc  (in baseline) + 636  [0x100f6aa6c]
+      1 boomkat.vm.th_if  (in baseline) + 208  [0x100f68c74]
+      1 boomkat.vm.th_jmp_eq  (in baseline) + 72  [0x100f61d60]
+      + 1 boomkat.vm.th_loose_order  (in baseline) + 148  [0x100f71108]
+      1 boomkat.vm.th_putpropc  (in baseline) + 220  [0x100f6b730]
+
+Total number in stack (recursive counted multiple, when >=5):
+        12       boomkat.vm.th_try_fast_return  (in baseline) + 0  [0x100f70418]
+        11       boomkat.vm.th_call  (in baseline) + 0  [0x100f6409c]
+        11       boomkat.vm.th_ldreg  (in baseline) + 0  [0x100f5fe54]
+        10       boomkat.vm.th_getpropc_cached  (in baseline) + 0  [0x100f6ada4]
+        10       boomkat.vm.th_getthisc  (in baseline) + 0  [0x100f6b92c]
+        10       boomkat.vm.th_resume_caller  (in baseline) + 0  [0x100f7064c]
+        9       boomkat.vm.th_get_other_shape  (in baseline) + 0  [0x100f6db7c]
+        9       boomkat.vm.th_putpropc  (in baseline) + 0  [0x100f6b654]
+        8       boomkat.vm.th_getglobal  (in baseline) + 0  [0x100f67570]
+        8       boomkat.vm.th_getpropc  (in baseline) + 0  [0x100f6a7f0]
+        8       boomkat.vm.th_ldthis  (in baseline) + 0  [0x100f602b8]
+        6       boomkat.vm.th_loose_order  (in baseline) + 0  [0x100f71074]
+        5       boomkat.builtins.dispatch_builtin  (in baseline) + 0  [0x100ed33c4]
+        5       boomkat.hobject.HObject.find_prop_idx  (in baseline) + 0  [0x100f89ab8]
+        5       boomkat.vm.run_threaded_burst  (in baseline) + 0  [0x100f015f4]
+        5       boomkat.vm.sljit_function_entry  (in baseline) + 0  [0x100f1f4fc]
+        5       boomkat.vm.th_call_native  (in baseline) + 0  [0x100f6fa44]
+        5       boomkat.vm.th_if  (in baseline) + 0  [0x100f68ba4]
+        5       boomkat.vm.th_jmp_eq  (in baseline) + 0  [0x100f61d18]
+        5       boomkat.vm.th_putthisc  (in baseline) + 0  [0x100f6c1dc]
+
+Sort by top of stack, same collapsed (when >= 5):
+        boomkat.vm.th_call  (in baseline)        467
+        boomkat.vm.th_try_fast_return  (in baseline)        347
+        boomkat.vm.th_getpropc_cached  (in baseline)        336
+        boomkat.vm.th_ldreg  (in baseline)        166
+        boomkat.vm.th_resume_caller  (in baseline)        155
+        boomkat.vm.th_getthisc  (in baseline)        150
+        boomkat.vm.th_ldthis  (in baseline)        107
+        boomkat.vm.sljit_function_entry  (in baseline)        101
+        boomkat.vm.th_get_other_shape  (in baseline)        51
+        boomkat.vm.th_getglobal  (in baseline)        40
+        boomkat.vm.th_putpropc  (in baseline)        35
+        boomkat.vm.th_jmp_eq  (in baseline)        33
+        boomkat.vm.th_loose_order  (in baseline)        33
+        boomkat.vm.th_getpropc  (in baseline)        28
+        boomkat.vm.th_strict_order  (in baseline)        28
+        boomkat.vm.vm_call_lean  (in baseline)        23
+        boomkat.vm.th_putthisc  (in baseline)        21
+        boomkat.vm.th_jmp_lt  (in baseline)        20
+        boomkat.vm.th_call_native  (in baseline)        19
+        boomkat.vm.th_incdec  (in baseline)        15
+        boomkat.vm.th_if  (in baseline)        14
+        boomkat.vm.th_return_entry  (in baseline)        14
+        boomkat.vm.th_return_general  (in baseline)        14
+        boomkat.vm.th_new_obj  (in baseline)        13
+        boomkat.vm.sljit_function_dispatch  (in baseline)        12
+        boomkat.hobject.HObject.find_prop_idx  (in baseline)        11
+        boomkat.vm.loop_target  (in baseline)        11
+        boomkat.hobject.hobject_free_step  (in baseline)        10
+        boomkat.vm.run_threaded_burst  (in baseline)        10
+        boomkat.heap.Heap.gc_sweep_objects_step  (in baseline)        9
+        ???  (in <unknown binary>)  [0x1010aafb4]        8
+        boomkat.builtins.builtin_array_proto_push  (in baseline)        8
+        boomkat.vm.th_call_redispatched  (in baseline)        8
+        boomkat.builtins.dispatch_builtin  (in baseline)        7
+        ???  (in <unknown binary>)  [0x1010ab08c]        6
+        boomkat.hobject.HObject.grow_array  (in baseline)        6
+        boomkat.hobject.HObject.set_array_idx  (in baseline)        6
+        boomkat.vm.th_ret  (in baseline)        6
+        boomkat.vm.th_store_slot_ref  (in baseline)        6
+        boomkat.vm.vm_dispatch  (in baseline)        6
+        ???  (in <unknown binary>)  [0x1010ab100]        5
+        boomkat.builtins.array_get_length_raw  (in baseline)        5
+        boomkat.vm.dispatch_calls  (in baseline)        5
+        boomkat.vm.sljit_native_call  (in baseline)        5
+        boomkat.vm.sljit_template_entry  (in baseline)        5
+        boomkat.vm.th_eq  (in baseline)        5
+
+Binary Images:
+       0x100e44000 -        0x101027187 +baseline (0) <FB993255-8AA8-36C6-AF3C-E004CF344FC5> /tmp/*/baseline
+       0x19c440000 -        0x19c48f527  libobjc.A.dylib (973.1) <220ABA7C-1B27-3461-AD64-F0C02DA55A5B> /usr/lib/libobjc.A.dylib
+       0x19c490000 -        0x19c49a23f  libsharedcache.dylib (0) <10B20858-73AC-3AB6-AEE8-B6E7243D386E> /usr/lib/libsharedcache.dylib
+       0x19c49b000 -        0x19c4c1ceb  libdyld.dylib (27062) <2DE7C10A-5A74-3F3F-93B6-5ABA1D64F9B7> /usr/lib/system/libdyld.dylib
+       0x19c4c2000 -        0x19c58166f  dyld (1.0.0 - 27062) <B6C0F697-046B-3606-96F7-042154B70AB9> /usr/lib/dyld
+       0x19c582000 -        0x19c58501f  libsystem_blocks.dylib (98.1) <426419BE-A433-3D7A-AE2A-39F3519571B4> /usr/lib/system/libsystem_blocks.dylib
+       0x19c586000 -        0x19c5db07f  libxpc.dylib (3298.1.1) <4173B9B6-71E5-3A85-A1C8-798693A94EDB> /usr/lib/system/libxpc.dylib
+       0x19c5dc000 -        0x19c5fbc03  libsystem_trace.dylib (1966.1.1) <9649346D-1AA0-3844-8401-1F2BEF5DEC12> /usr/lib/system/libsystem_trace.dylib
+       0x19c5fc000 -        0x19c6b0e47  libcorecrypto.dylib (2109.0.22) <4747DEC8-74F6-3C3C-9CFA-958D749E55D4> /usr/lib/system/libcorecrypto.dylib
+       0x19c6b1000 -        0x19c706a07  libsystem_malloc.dylib (886.0.8) <5F121E9F-0046-36C7-B614-BD8EDA4252AA> /usr/lib/system/libsystem_malloc.dylib
+       0x19c707000 -        0x19c74d13f  libdispatch.dylib (1605.0.2) <35B1D5C9-46F5-3E6C-88EB-9FEF218B3F6A> /usr/lib/system/libdispatch.dylib
+       0x19c74e000 -        0x19c750d2b  libsystem_featureflags.dylib (108) <20C1CAB2-1F13-3426-8146-9CAE9FF2A33D> /usr/lib/system/libsystem_featureflags.dylib
+       0x19c751000 -        0x19c7d3bdb  libsystem_c.dylib (1786.0.3) <B9578568-B137-3A96-A8C8-096F0B6F95CD> /usr/lib/system/libsystem_c.dylib
+       0x19c7d4000 -        0x19c869033  libc++.1.dylib (2200.27) <D69543EE-E165-3242-9281-5DAB86D55340> /usr/lib/libc++.1.dylib
+       0x19c86a000 -        0x19c883eff  libc++abi.dylib (2200.27) <6FBE4525-E708-3750-AE43-FC9D7327E8F5> /usr/lib/libc++abi.dylib
+       0x19c884000 -        0x19c8c29ab  libsystem_kernel.dylib (13432.1.9) <1D409488-002C-3663-9BA9-37C334D384C1> /usr/lib/system/libsystem_kernel.dylib
+       0x19c8c3000 -        0x19c8cf91b  libsystem_pthread.dylib (553.0.1) <A55DAC52-24D5-3CB7-9310-0C7C029498C5> /usr/lib/system/libsystem_pthread.dylib
+       0x19c8d0000 -        0x19c8d94f3  libsystem_platform.dylib (402.0.1.0.1) <97CB8000-7DFC-398B-B919-D525467BBF92> /usr/lib/system/libsystem_platform.dylib
+       0x19c8da000 -        0x19c9088f3  libsystem_info.dylib (603) <3E847D64-2B41-3505-AAE8-918B10DC3253> /usr/lib/system/libsystem_info.dylib
+       0x1a0a2a000 -        0x1a0a33ac3  libsystem_darwin.dylib (1786.0.3) <0270D881-5511-3056-8ABC-B62A1C4DEDF2> /usr/lib/system/libsystem_darwin.dylib
+       0x1a0e84000 -        0x1a0e95b8b  libsystem_notify.dylib (368) <BC2014EB-9569-3142-9B01-4ECD8ADD164E> /usr/lib/system/libsystem_notify.dylib
+       0x1a2fde000 -        0x1a2ff8da3  libsystem_networkextension.dylib (2340.1.2) <FC8BD562-14AD-34BD-8DA8-5CB1DBF4F9FD> /usr/lib/system/libsystem_networkextension.dylib
+       0x1a3085000 -        0x1a309c247  libsystem_asl.dylib (409) <0B8B1F14-A7FB-302F-B56B-AD113BB71055> /usr/lib/system/libsystem_asl.dylib
+       0x1a403c000 -        0x1a403cf2f  libobjcMsgSend.dylib (973.1) <41179EDE-DC97-3BBE-8848-6400D12C1436> /usr/lib/objc/libobjcMsgSend.dylib
+       0x1a516b000 -        0x1a5172edf  libsystem_symptoms.dylib (2394.0.4) <AEAE80CC-C6AE-344D-BBFC-E7A9DC4382D0> /usr/lib/system/libsystem_symptoms.dylib
+       0x1a94e0000 -        0x1a951aadb  libsystem_containermanager.dylib (833.0.8.0.1) <B33F2B09-4BE9-32C5-954C-9233E1D5BB94> /usr/lib/system/libsystem_containermanager.dylib
+       0x1aab29000 -        0x1aab2d317  libsystem_configuration.dylib (1446) <08EDCD0E-34BC-39E2-8B6C-4E5366461D75> /usr/lib/system/libsystem_configuration.dylib
+       0x1aab2e000 -        0x1aab34e03  libsystem_sandbox.dylib (3051.0.52) <1E892B56-092E-3832-BDE3-DCE356D7A4FA> /usr/lib/system/libsystem_sandbox.dylib
+       0x1ac03c000 -        0x1ac03cf2f  libobjcMsgSend1.dylib (973.1) <B40D9B2A-E1EE-37ED-8004-711A1F263DE1> /usr/lib/objc/libobjcMsgSend1.dylib
+       0x1ac706000 -        0x1ac708f93  libquarantine.dylib (217.0.4) <7FD4AE22-86EF-382B-83F5-ADF9336C1160> /usr/lib/system/libquarantine.dylib
+       0x1ace04000 -        0x1ace0a1e7  libsystem_coreservices.dylib (203) <7E74C917-CE45-393A-90B9-571B7BA0C9CF> /usr/lib/system/libsystem_coreservices.dylib
+       0x1ad3cc000 -        0x1ad409b27  libsystem_m.dylib (3326.0.1) <0F33CC3F-E56C-3322-90FC-D2DE78A8E2CC> /usr/lib/system/libsystem_m.dylib
+       0x1ad40b000 -        0x1ad40e4d7  libmacho.dylib (27062) <10767E82-A76D-335D-A289-B977D5507577> /usr/lib/system/libmacho.dylib
+       0x1ad428000 -        0x1ad4346ff  libcommonCrypto.dylib (600041) <215316D1-CCCC-3F21-B1A7-7AAA28C067BC> /usr/lib/system/libcommonCrypto.dylib
+       0x1ad435000 -        0x1ad43ec87  libunwind.dylib (2200.5) <12EC4D5E-7B70-3B75-B2F1-8060243A4BD3> /usr/lib/system/libunwind.dylib
+       0x1ad446000 -        0x1ad4507eb  libcopyfile.dylib (260.0.3) <52634F6F-1CEF-3F45-8F03-2807039C051C> /usr/lib/system/libcopyfile.dylib
+       0x1ad451000 -        0x1ad4548af  libcompiler_rt.dylib (103.4) <58DF4E26-8BF1-3A31-94D7-B837B76359A1> /usr/lib/system/libcompiler_rt.dylib
+       0x1ad455000 -        0x1ad45a087  libsystem_collections.dylib (1786.0.3) <31B75E6B-F7E4-352D-A1A3-716D667F8C7F> /usr/lib/system/libsystem_collections.dylib
+       0x1ad45b000 -        0x1ad45df1f  libsystem_secinit.dylib (182) <DE037464-4C5D-3E96-A33F-2A4557CC6A20> /usr/lib/system/libsystem_secinit.dylib
+       0x1ad45e000 -        0x1ad46097f  libremovefile.dylib (96) <E6E6DFCF-6B2C-3F30-A59D-816CAB1190CE> /usr/lib/system/libremovefile.dylib
+       0x1ad461000 -        0x1ad461e27  libkeymgr.dylib (31) <5EC997EF-3ADA-360B-9FCD-5F940C83FA4E> /usr/lib/system/libkeymgr.dylib
+       0x1ad462000 -        0x1ad46aaf7  libsystem_dnssd.dylib (3111.0.5.0.1) <CFEEC9C2-091A-32AE-8771-967374AE1994> /usr/lib/system/libsystem_dnssd.dylib
+       0x1ad46b000 -        0x1ad46ff1b  libcache.dylib (95) <83E81326-A587-374F-ABC1-BAE48D0FEE0D> /usr/lib/system/libcache.dylib
+       0x1ad470000 -        0x1ad4718f3  libSystem.B.dylib (1359) <4FDC9AA6-B344-37FE-B8C6-A4C94A038F57> /usr/lib/libSystem.B.dylib
+       0x1b403c000 -        0x1b403cf2f  libobjcMsgSend2.dylib (973.1) <BD27A84B-C9AE-3282-BBEA-3B6119837B5A> /usr/lib/objc/libobjcMsgSend2.dylib
+       0x1bc03c000 -        0x1bc03cf2f  libobjcMsgSend3.dylib (973.1) <C0860D68-DDFC-3BD7-8B06-DB0645CBBED4> /usr/lib/objc/libobjcMsgSend3.dylib
+       0x1c403c000 -        0x1c403cf2f  libobjcMsgSend4.dylib (973.1) <A6153BF5-622B-3B01-81B6-F64A365EF613> /usr/lib/objc/libobjcMsgSend4.dylib
+       0x1cc03c000 -        0x1cc03cf2f  libobjcMsgSend5.dylib (973.1) <3913A71C-B29A-3AEA-820B-BEC40AC1861A> /usr/lib/objc/libobjcMsgSend5.dylib
+       0x1d403c000 -        0x1d403cf2f  libobjcMsgSend6.dylib (973.1) <9BC523A3-E167-3F6C-8CAE-0F3EBA671791> /usr/lib/objc/libobjcMsgSend6.dylib
+       0x1dc03c000 -        0x1dc03cf2f  libobjcMsgSend7.dylib (973.1) <248B7BCE-5B4C-34C7-A340-43D5228628C5> /usr/lib/objc/libobjcMsgSend7.dylib
+       0x1e403c000 -        0x1e403cf2f  libobjcMsgSend8.dylib (973.1) <3E041BAD-A8E8-3069-B741-78CD1A45B176> /usr/lib/objc/libobjcMsgSend8.dylib
+       0x1ec03c000 -        0x1ec03cf2f  libobjcMsgSend9.dylib (973.1) <34A67969-21A0-39D6-BB81-8FDA5A2409DB> /usr/lib/objc/libobjcMsgSend9.dylib
+       0x1f403c000 -        0x1f403cf2f  libobjcMsgSend10.dylib (973.1) <678186C0-8EAD-3B35-8CBB-00285B41E4A0> /usr/lib/objc/libobjcMsgSend10.dylib
+       0x1fc03c000 -        0x1fc03cf2f  libobjcMsgSend11.dylib (973.1) <E05CB08C-E956-36FA-8967-AE8E346A8D2C> /usr/lib/objc/libobjcMsgSend11.dylib
+       0x22403c000 -        0x22403cf2f  libobjcMsgSend12.dylib (973.1) <10AB03AA-FF1F-3FDC-9DFB-BFC40042C501> /usr/lib/objc/libobjcMsgSend12.dylib
+       0x22c03c000 -        0x22c03cf2f  libobjcMsgSend13.dylib (973.1) <ABF53427-FA6F-3D0D-8F9D-7AD795CA5C92> /usr/lib/objc/libobjcMsgSend13.dylib
+       0x23403c000 -        0x23403cf2f  libobjcMsgSend14.dylib (973.1) <9A844C46-A6DA-34D4-8EBF-2AD775C30684> /usr/lib/objc/libobjcMsgSend14.dylib
+       0x23c03c000 -        0x23c03cf2f  libobjcMsgSend15.dylib (973.1) <7C995666-2B2D-3284-AA0A-EBF7C922838E> /usr/lib/objc/libobjcMsgSend15.dylib
+       0x24403c000 -        0x24403cf2f  libobjcMsgSend16.dylib (973.1) <B6C0E14B-53AE-3E22-9ED5-1729C49F46F2> /usr/lib/objc/libobjcMsgSend16.dylib
+       0x24c03c000 -        0x24c03cf2f  libobjcMsgSend17.dylib (973.1) <07B4CF85-251B-301B-832B-20B315A59E19> /usr/lib/objc/libobjcMsgSend17.dylib
+       0x25403c000 -        0x25403cf2f  libobjcMsgSend18.dylib (973.1) <43E575B7-04DB-3999-A633-1A3B638BA6E3> /usr/lib/objc/libobjcMsgSend18.dylib
+       0x25c03c000 -        0x25c03cf2f  libobjcMsgSend19.dylib (973.1) <736F4D85-76F7-3B28-8D87-C07E8F7A0EF4> /usr/lib/objc/libobjcMsgSend19.dylib
+       0x26403c000 -        0x26403cf2f  libobjcMsgSend20.dylib (973.1) <74E67C8B-6BCA-3184-A18E-A97F370052C6> /usr/lib/objc/libobjcMsgSend20.dylib
+       0x26c03c000 -        0x26c03cf2f  libobjcMsgSend21.dylib (973.1) <CC0D732F-98E7-3888-9E15-70984DA2FB04> /usr/lib/objc/libobjcMsgSend21.dylib
+       0x27403c000 -        0x27403cf2f  libobjcMsgSend22.dylib (973.1) <85A60286-5DE3-32BA-B18C-2A498B065C88> /usr/lib/objc/libobjcMsgSend22.dylib
+       0x27c03c000 -        0x27c03cf2f  libobjcMsgSend23.dylib (973.1) <5452A0D2-6B19-39BE-ADDD-80B7BCDE3A98> /usr/lib/objc/libobjcMsgSend23.dylib
+       0x28403c000 -        0x28403cf2f  libobjcMsgSend24.dylib (973.1) <94BBF2D6-722B-350D-8557-4D25A8E8D53A> /usr/lib/objc/libobjcMsgSend24.dylib
+       0x28c03c000 -        0x28c03cf2f  libobjcMsgSend25.dylib (973.1) <35481387-5A8E-3AE4-86A6-94CEB3CC8726> /usr/lib/objc/libobjcMsgSend25.dylib
+       0x2ac03c000 -        0x2ac03cf2f  libobjcMsgSend26.dylib (973.1) <9E0C8664-E7F4-39D1-AAFC-BD92B255E4E8> /usr/lib/objc/libobjcMsgSend26.dylib
+       0x2b403c000 -        0x2b403cf2f  libobjcMsgSend27.dylib (973.1) <FD424935-55A9-3650-955A-EED3441A1D19> /usr/lib/objc/libobjcMsgSend27.dylib
+       0x2bc03c000 -        0x2bc03cf2f  libobjcMsgSend28.dylib (973.1) <09BA7B97-7DF7-3C7F-932A-B6847662FC49> /usr/lib/objc/libobjcMsgSend28.dylib
+       0x2c403c000 -        0x2c403cf2f  libobjcMsgSend29.dylib (973.1) <36D5BA3F-2139-30B0-8558-556764BE9813> /usr/lib/objc/libobjcMsgSend29.dylib
+       0x2cc03c000 -        0x2cc03cf2f  libobjcMsgSend30.dylib (973.1) <9F05564A-9D12-372C-98FC-E9F0E6BE4F04> /usr/lib/objc/libobjcMsgSend30.dylib
+       0x2ce856000 -        0x2ce85cfe5  libRosetta.dylib (385) <88E33EA4-A20E-3ED1-AD7D-8D029E4E08BC> /usr/lib/libRosetta.dylib
+       0x2cf243000 -        0x2cf24675b  libsystem_darwindirectory.dylib (129.0.1) <61264923-2AA5-3658-B8C4-550C71E9D4B3> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x2cf247000 -        0x2cf251d9b  libsystem_eligibility.dylib (446.1.3) <EDDE8E9C-A2CF-3931-BBB3-321CB852EB30> /usr/lib/system/libsystem_eligibility.dylib
+       0x2cf252000 -        0x2cf25b42b  libsystem_sanitizers.dylib (32) <447BAA25-4DFF-3A23-976A-4B96AF067112> /usr/lib/system/libsystem_sanitizers.dylib
+       0x2cf25c000 -        0x2cf25ca13  libsystem_trial.dylib (511) <6AE48824-EC44-3A8C-B501-BE57DBE892E7> /usr/lib/system/libsystem_trial.dylib
+       0x2d403c000 -        0x2d403cf2f  libobjcMsgSend31.dylib (973.1) <0985E20F-78C3-3466-A2B2-DBB95F7104A3> /usr/lib/objc/libobjcMsgSend31.dylib
+       0x2dc03c000 -        0x2dc03cf2f  libobjcMsgSend32.dylib (973.1) <0D309D58-D576-3E5D-AD4B-6D55AB491702> /usr/lib/objc/libobjcMsgSend32.dylib
+       0x2e403c000 -        0x2e403cf2f  libobjcMsgSend33.dylib (973.1) <346E0484-48FA-369B-8A64-93B5F5341CFE> /usr/lib/objc/libobjcMsgSend33.dylib
+       0x2ec03c000 -        0x2ec03cf2f  libobjcMsgSend34.dylib (973.1) <6A31F809-BCBE-3E01-A367-E91FDACCE324> /usr/lib/objc/libobjcMsgSend34.dylib

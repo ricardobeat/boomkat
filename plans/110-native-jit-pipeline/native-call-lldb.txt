@@ -1,0 +1,47 @@
+(lldb) target create "/tmp/boomkat-jit-pipeline/baseline"
+Current executable set to '/tmp/boomkat-jit-pipeline/baseline' (arm64).
+(lldb) breakpoint set -n boomkat.vm.vm_call_lean
+Breakpoint 1: where = baseline`boomkat.vm.vm_call_lean, address = 0x00000001000eab78
+(lldb) run --jit --script bench/mini/richards.js
+Process 86619 launched: '/tmp/boomkat-jit-pipeline/baseline' (arm64)
+Process 86619 stopped
+* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1
+       frame #0: 0x00000001000eab78 baseline`boomkat.vm.vm_call_lean
+baseline`boomkat.vm.vm_call_lean:
+->  0x1000eab78 <+0>:  sub    sp, sp, #0x1b0
+    0x1000eab7c <+4>:  stp    x28, x27, [sp, #0x150]
+    0x1000eab80 <+8>:  stp    x26, x25, [sp, #0x160]
+    0x1000eab84 <+12>: stp    x24, x23, [sp, #0x170]
+Target 0: (baseline) stopped.
+(lldb) register read x0 x1 x2 x3 sp
+      x0 = 0x00000074bc830000
+      x1 = 0x00000074bc984710
+      x2 = 0x00000074bd0d96c0
+      x3 = 0xfff90074bc984710
+      sp = 0x000000016fdfb4c0
+(lldb) bt
+* thread #1, queue = 'com.apple.main-thread', stop reason = breakpoint 1.1
+   * frame #0: 0x00000001000eab78 baseline`boomkat.vm.vm_call_lean
+     frame #1: 0x00000001000eaa84 baseline`boomkat.vm.sljit_native_call + 436
+     frame #2: 0x0000000100240c80 
+(lldb) disassemble --frame --count 16
+baseline`boomkat.vm.vm_call_lean:
+->  0x1000eab78 <+0>:  sub    sp, sp, #0x1b0
+    0x1000eab7c <+4>:  stp    x28, x27, [sp, #0x150]
+    0x1000eab80 <+8>:  stp    x26, x25, [sp, #0x160]
+    0x1000eab84 <+12>: stp    x24, x23, [sp, #0x170]
+    0x1000eab88 <+16>: stp    x22, x21, [sp, #0x180]
+    0x1000eab8c <+20>: stp    x20, x19, [sp, #0x190]
+    0x1000eab90 <+24>: stp    x29, x30, [sp, #0x1a0]
+    0x1000eab94 <+28>: add    x21, x0, #0x80, lsl #12   ; =0x80000 
+    0x1000eab98 <+32>: ldr    x10, [x0, #0x40]
+    0x1000eab9c <+36>: ldrh   w26, [x2, #0xbc]
+    0x1000eaba0 <+40>: ldr    w28, [x21, #0x6c]
+    0x1000eaba4 <+44>: mov    x22, x7
+    0x1000eaba8 <+48>: mov    x19, x0
+    0x1000eabac <+52>: mov    x24, x2
+    0x1000eabb0 <+56>: mov    x23, x4
+    0x1000eabb4 <+60>: mov    x27, x10
+(lldb) process kill
+Process 86619 exited with status = 9 (0x00000009) killed
+(lldb) quit

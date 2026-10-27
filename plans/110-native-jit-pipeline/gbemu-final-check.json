@@ -1,0 +1,5 @@
+{
+  "bench": "gbemu",
+  "rc": "timeout",
+  "timeout_s": 45
+}

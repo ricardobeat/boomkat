@@ -1,0 +1,2259 @@
+{
+  "functions": [
+    {
+      "id": 0,
+      "coverage": {
+        "id": 0,
+        "line": 69,
+        "threaded": 1,
+        "switch": 1,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 1,
+      "coverage": {
+        "id": 1,
+        "line": 70,
+        "threaded": 1,
+        "switch": 0,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 2,
+      "coverage": {
+        "id": 2,
+        "line": 64,
+        "name": "Benchmark",
+        "threaded": 23,
+        "switch": 11,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 4,
+      "coverage": {
+        "id": 4,
+        "line": 99,
+        "name": "BenchmarkSuite",
+        "threaded": 11,
+        "switch": 6,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 5,
+      "coverage": {
+        "id": 5,
+        "line": 463,
+        "name": "OrderedCollection",
+        "threaded": 212491,
+        "switch": 50237,
+        "attempts": 68,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations"
+      }
+    },
+    {
+      "id": 6,
+      "coverage": {
+        "id": 6,
+        "line": 508,
+        "name": "Strength",
+        "threaded": 21,
+        "switch": 3,
+        "attempts": 7,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 7,
+      "coverage": {
+        "id": 7,
+        "line": 560,
+        "name": "Constraint",
+        "threaded": 36720,
+        "switch": 43,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations"
+      }
+    },
+    {
+      "id": 8,
+      "coverage": {
+        "id": 8,
+        "line": 619,
+        "name": "UnaryConstraint",
+        "threaded": 95631,
+        "switch": 569,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 15,
+        "bytes": 3172,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 8,
+        "line": 619,
+        "name": "UnaryConstraint"
+      }
+    },
+    {
+      "id": 9,
+      "coverage": {
+        "id": 9,
+        "line": 700,
+        "name": "StayConstraint",
+        "threaded": 60592,
+        "switch": 9,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 10,
+        "bytes": 1804,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 9,
+        "line": 700,
+        "name": "StayConstraint"
+      }
+    },
+    {
+      "id": 10,
+      "coverage": {
+        "id": 10,
+        "line": 718,
+        "name": "EditConstraint",
+        "threaded": 2992,
+        "switch": 4,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 10,
+        "bytes": 1804,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 10,
+        "line": 718,
+        "name": "EditConstraint"
+      }
+    },
+    {
+      "id": 11,
+      "coverage": {
+        "id": 11,
+        "line": 748,
+        "name": "BinaryConstraint",
+        "threaded": 203993,
+        "switch": 127,
+        "attempts": 81,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 17,
+        "bytes": 4180,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 8,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 11,
+        "line": 748,
+        "name": "BinaryConstraint"
+      }
+    },
+    {
+      "id": 12,
+      "coverage": {
+        "id": 12,
+        "line": 862,
+        "name": "ScaleConstraint",
+        "threaded": 95984,
+        "switch": 58,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 3984,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 12,
+        "line": 862,
+        "name": "ScaleConstraint"
+      }
+    },
+    {
+      "id": 13,
+      "coverage": {
+        "id": 13,
+        "line": 921,
+        "name": "EqualityConstraint",
+        "threaded": 65992,
+        "switch": 9,
+        "attempts": 73,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 11,
+        "bytes": 2004,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 13,
+        "line": 921,
+        "name": "EqualityConstraint"
+      }
+    },
+    {
+      "id": 14,
+      "coverage": {
+        "id": 14,
+        "line": 944,
+        "name": "Variable",
+        "threaded": 315240,
+        "switch": 198,
+        "attempts": 75,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 0,
+        "ops": 18,
+        "bytes": 4348,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 8,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 14,
+        "line": 944,
+        "name": "Variable"
+      }
+    },
+    {
+      "id": 15,
+      "coverage": {
+        "id": 15,
+        "line": 977,
+        "name": "Planner",
+        "threaded": 360,
+        "switch": 1,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations"
+      }
+    },
+    {
+      "id": 16,
+      "coverage": {
+        "id": 16,
+        "line": 1164,
+        "name": "Plan",
+        "threaded": 1200,
+        "switch": 6,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations"
+      }
+    },
+    {
+      "id": 17,
+      "coverage": {
+        "id": 17,
+        "line": 1204,
+        "name": "chainTest",
+        "threaded": 135916,
+        "switch": 138,
+        "attempts": 6008,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 7,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 10,
+        "ops": 62,
+        "bytes": 9152,
+        "hits": 5944,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 1,
+        "budget_exits": 0,
+        "id": 17,
+        "line": 1204,
+        "name": "chainTest"
+      }
+    },
+    {
+      "id": 18,
+      "coverage": {
+        "id": 18,
+        "line": 1237,
+        "name": "projectionTest",
+        "threaded": 273112,
+        "switch": 198,
+        "attempts": 11938,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 5,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 23,
+        "ops": 93,
+        "bytes": 14060,
+        "hits": 11838,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 60,
+        "budget_exits": 0,
+        "id": 18,
+        "line": 1237,
+        "name": "projectionTest"
+      }
+    },
+    {
+      "id": 19,
+      "coverage": {
+        "id": 19,
+        "line": 1268,
+        "name": "change",
+        "threaded": 6353,
+        "switch": 268,
+        "attempts": 260,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled"
+      },
+      "native": {
+        "begin": 23,
+        "ops": 10,
+        "bytes": 2076,
+        "hits": 234,
+        "returns": 234,
+        "stalled": 0,
+        "backedges": 2099,
+        "budget_exits": 0,
+        "id": 19,
+        "line": 1268,
+        "name": "change"
+      }
+    },
+    {
+      "id": 20,
+      "coverage": {
+        "id": 20,
+        "line": 1284,
+        "name": "deltaBlue",
+        "threaded": 480,
+        "switch": 6,
+        "attempts": 60,
+        "warmup": 59,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 24,
+      "coverage": {
+        "id": 24,
+        "line": 45,
+        "threaded": 22,
+        "switch": 12,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 28,
+      "coverage": {
+        "id": 28,
+        "line": 133,
+        "threaded": 8,
+        "switch": 2,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 29,
+      "coverage": {
+        "id": 29,
+        "line": 133,
+        "threaded": 5,
+        "switch": 4,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 47,
+      "coverage": {
+        "id": 47,
+        "line": 455,
+        "name": "Inheriter",
+        "threaded": 6,
+        "switch": 1,
+        "attempts": 6,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 48,
+      "coverage": {
+        "id": 48,
+        "line": 454,
+        "name": "value",
+        "threaded": 57,
+        "switch": 44,
+        "attempts": 6,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 49,
+      "coverage": {
+        "id": 49,
+        "line": 467,
+        "threaded": 984061,
+        "switch": 190,
+        "attempts": 68,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 50,
+      "coverage": {
+        "id": 50,
+        "line": 471,
+        "threaded": 38403,
+        "switch": 31,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 51,
+      "coverage": {
+        "id": 51,
+        "line": 475,
+        "threaded": 2568000,
+        "switch": 166,
+        "attempts": 68,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 52,
+      "coverage": {
+        "id": 52,
+        "line": 479,
+        "threaded": 439560,
+        "switch": 210,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 53,
+      "coverage": {
+        "id": 53,
+        "line": 483,
+        "threaded": 152117,
+        "switch": 21,
+        "attempts": 19,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 4,
+        "ops": 23,
+        "bytes": 8792,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 53,
+        "line": 483,
+        "name": ""
+      }
+    },
+    {
+      "id": 54,
+      "coverage": {
+        "id": 54,
+        "line": 513,
+        "threaded": 169940,
+        "switch": 37,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 55,
+      "coverage": {
+        "id": 55,
+        "line": 517,
+        "threaded": 289200,
+        "switch": 75,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 56,
+      "coverage": {
+        "id": 56,
+        "line": 521,
+        "threaded": 337680,
+        "switch": 119,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 58,
+      "coverage": {
+        "id": 58,
+        "line": 529,
+        "threaded": 1176,
+        "switch": 3,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 31,
+        "bytes": 3132,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 58,
+        "line": 529,
+        "name": ""
+      }
+    },
+    {
+      "id": 59,
+      "coverage": {
+        "id": 59,
+        "line": 567,
+        "threaded": 220620,
+        "switch": 833,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 60,
+      "coverage": {
+        "id": 60,
+        "line": 578,
+        "threaded": 983580,
+        "switch": 5245,
+        "attempts": 89,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 44,
+        "bytes": 5808,
+        "hits": 24,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 60,
+        "line": 578,
+        "name": ""
+      }
+    },
+    {
+      "id": 61,
+      "coverage": {
+        "id": 61,
+        "line": 597,
+        "threaded": 2568,
+        "switch": 5,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 15,
+        "bytes": 1764,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 61,
+        "line": 597,
+        "name": ""
+      }
+    },
+    {
+      "id": 62,
+      "coverage": {
+        "id": 62,
+        "line": 607,
+        "threaded": 226,
+        "switch": 4,
+        "attempts": 113,
+        "warmup": 62,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 63,
+      "coverage": {
+        "id": 63,
+        "line": 631,
+        "threaded": 57240,
+        "switch": 66,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 64,
+      "coverage": {
+        "id": 64,
+        "line": 640,
+        "threaded": 96104,
+        "switch": 77,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 15,
+        "bytes": 2680,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 64,
+        "line": 640,
+        "name": ""
+      }
+    },
+    {
+      "id": 65,
+      "coverage": {
+        "id": 65,
+        "line": 648,
+        "threaded": 15646,
+        "switch": 2,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 66,
+      "coverage": {
+        "id": 66,
+        "line": 653,
+        "threaded": 27,
+        "switch": 0,
+        "attempts": 27,
+        "warmup": 24,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 67,
+      "coverage": {
+        "id": 67,
+        "line": 659,
+        "threaded": 40440,
+        "switch": 4,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 68,
+      "coverage": {
+        "id": 68,
+        "line": 668,
+        "threaded": 10174,
+        "switch": 31,
+        "attempts": 6360,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 2912,
+        "hits": 6244,
+        "returns": 5947,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 68,
+        "line": 668,
+        "name": ""
+      }
+    },
+    {
+      "id": 69,
+      "coverage": {
+        "id": 69,
+        "line": 677,
+        "threaded": 1080,
+        "switch": 1,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 70,
+      "coverage": {
+        "id": 70,
+        "line": 681,
+        "threaded": 600,
+        "switch": 0,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 71,
+      "coverage": {
+        "id": 71,
+        "line": 685,
+        "threaded": 2584,
+        "switch": 6,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 11,
+        "bytes": 1548,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 71,
+        "line": 685,
+        "name": ""
+      }
+    },
+    {
+      "id": 72,
+      "coverage": {
+        "id": 72,
+        "line": 707,
+        "threaded": 6,
+        "switch": 0,
+        "attempts": 6,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 73,
+      "coverage": {
+        "id": 73,
+        "line": 727,
+        "threaded": 662,
+        "switch": 1,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "too few useful operations",
+        "name": ""
+      }
+    },
+    {
+      "id": 74,
+      "coverage": {
+        "id": 74,
+        "line": 732,
+        "threaded": 35,
+        "switch": 0,
+        "attempts": 35,
+        "warmup": 29,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 75,
+      "coverage": {
+        "id": 75,
+        "line": 763,
+        "threaded": 868223,
+        "switch": 216,
+        "attempts": 24054,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 7,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 98,
+        "bytes": 16408,
+        "hits": 23844,
+        "returns": 11855,
+        "stalled": 1,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 75,
+        "line": 763,
+        "name": ""
+      }
+    },
+    {
+      "id": 76,
+      "coverage": {
+        "id": 76,
+        "line": 788,
+        "threaded": 192000,
+        "switch": 122,
+        "attempts": 66,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 77,
+      "coverage": {
+        "id": 77,
+        "line": 797,
+        "threaded": 513261,
+        "switch": 56,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 78,
+      "coverage": {
+        "id": 78,
+        "line": 804,
+        "threaded": 120301,
+        "switch": 118,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 79,
+      "coverage": {
+        "id": 79,
+        "line": 811,
+        "threaded": 4214520,
+        "switch": 130,
+        "attempts": 67,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 80,
+      "coverage": {
+        "id": 80,
+        "line": 818,
+        "threaded": 4938120,
+        "switch": 107,
+        "attempts": 69,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 81,
+      "coverage": {
+        "id": 81,
+        "line": 826,
+        "threaded": 413929,
+        "switch": 270,
+        "attempts": 81,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 24,
+        "bytes": 3296,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 81,
+        "line": 826,
+        "name": ""
+      }
+    },
+    {
+      "id": 82,
+      "coverage": {
+        "id": 82,
+        "line": 837,
+        "threaded": 48240,
+        "switch": 27,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 83,
+      "coverage": {
+        "id": 83,
+        "line": 841,
+        "threaded": 187081,
+        "switch": 10,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 85,
+      "coverage": {
+        "id": 85,
+        "line": 874,
+        "threaded": 131992,
+        "switch": 68,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 22,
+        "bytes": 3032,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 85,
+        "line": 874,
+        "name": ""
+      }
+    },
+    {
+      "id": 87,
+      "coverage": {
+        "id": 87,
+        "line": 886,
+        "threaded": 96952,
+        "switch": 14,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 2780,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 87,
+        "line": 886,
+        "name": ""
+      }
+    },
+    {
+      "id": 88,
+      "coverage": {
+        "id": 88,
+        "line": 894,
+        "threaded": 2089776,
+        "switch": 19,
+        "attempts": 71,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 26,
+        "bytes": 5144,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 88,
+        "line": 894,
+        "name": ""
+      }
+    },
+    {
+      "id": 89,
+      "coverage": {
+        "id": 89,
+        "line": 906,
+        "threaded": 942696,
+        "switch": 325,
+        "attempts": 80,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 33,
+        "bytes": 4968,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 89,
+        "line": 906,
+        "name": ""
+      }
+    },
+    {
+      "id": 90,
+      "coverage": {
+        "id": 90,
+        "line": 930,
+        "threaded": 6732000,
+        "switch": 4769,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 91,
+      "coverage": {
+        "id": 91,
+        "line": 958,
+        "threaded": 296520,
+        "switch": 347,
+        "attempts": 67,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 92,
+      "coverage": {
+        "id": 92,
+        "line": 965,
+        "threaded": 2640,
+        "switch": 5,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 93,
+      "coverage": {
+        "id": 93,
+        "line": 995,
+        "threaded": 221435,
+        "switch": 1161,
+        "attempts": 564,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 17,
+        "bytes": 2400,
+        "hits": 465,
+        "returns": 96,
+        "stalled": 361,
+        "backedges": 11923,
+        "budget_exits": 0,
+        "id": 93,
+        "line": 995,
+        "name": ""
+      }
+    },
+    {
+      "id": 94,
+      "coverage": {
+        "id": 94,
+        "line": 1013,
+        "threaded": 10688,
+        "switch": 20,
+        "attempts": 40,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 21,
+        "ops": 24,
+        "bytes": 5484,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 94,
+        "line": 1013,
+        "name": ""
+      }
+    },
+    {
+      "id": 95,
+      "coverage": {
+        "id": 95,
+        "line": 1032,
+        "threaded": 74464,
+        "switch": 4,
+        "attempts": 65,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 96,
+      "coverage": {
+        "id": 96,
+        "line": 1055,
+        "threaded": 648533,
+        "switch": 653,
+        "attempts": 54,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 9,
+        "ops": 36,
+        "bytes": 7148,
+        "hits": 53,
+        "returns": 0,
+        "stalled": 1,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 96,
+        "line": 1055,
+        "name": ""
+      }
+    },
+    {
+      "id": 97,
+      "coverage": {
+        "id": 97,
+        "line": 1074,
+        "threaded": 1955,
+        "switch": 9,
+        "attempts": 302,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 7,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 33,
+        "bytes": 5132,
+        "hits": 269,
+        "returns": 269,
+        "stalled": 0,
+        "backedges": 269,
+        "budget_exits": 0,
+        "id": 97,
+        "line": 1074,
+        "name": ""
+      }
+    },
+    {
+      "id": 98,
+      "coverage": {
+        "id": 98,
+        "line": 1098,
+        "threaded": 908215,
+        "switch": 3666,
+        "attempts": 30848,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 39,
+        "bytes": 5124,
+        "hits": 30571,
+        "returns": 177,
+        "stalled": 240,
+        "backedges": 30146,
+        "budget_exits": 0,
+        "id": 98,
+        "line": 1098,
+        "name": ""
+      }
+    },
+    {
+      "id": 99,
+      "coverage": {
+        "id": 99,
+        "line": 1119,
+        "threaded": 142696,
+        "switch": 12386,
+        "attempts": 12371,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 10,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 25,
+        "ops": 53,
+        "bytes": 9956,
+        "hits": 12354,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 36545,
+        "budget_exits": 0,
+        "id": 99,
+        "line": 1119,
+        "name": ""
+      }
+    },
+    {
+      "id": 100,
+      "coverage": {
+        "id": 100,
+        "line": 1145,
+        "threaded": 618921,
+        "switch": 31857,
+        "attempts": 92539,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 5,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 28,
+        "bytes": 4320,
+        "hits": 91244,
+        "returns": 48588,
+        "stalled": 0,
+        "backedges": 72556,
+        "budget_exits": 0,
+        "id": 100,
+        "line": 1145,
+        "name": ""
+      }
+    },
+    {
+      "id": 101,
+      "coverage": {
+        "id": 101,
+        "line": 1168,
+        "threaded": 128940,
+        "switch": 174,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 102,
+      "coverage": {
+        "id": 102,
+        "line": 1172,
+        "threaded": 4428000,
+        "switch": 2425,
+        "attempts": 64,
+        "warmup": 4294967295,
+        "retired": 0,
+        "active": 0,
+        "rejection": "no entry reaches minimum span",
+        "name": ""
+      }
+    },
+    {
+      "id": 103,
+      "coverage": {
+        "id": 103,
+        "line": 1176,
+        "threaded": 730098,
+        "switch": 13,
+        "attempts": 729600,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 0,
+        "ops": 7,
+        "bytes": 1732,
+        "hits": 729517,
+        "returns": 729517,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 103,
+        "line": 1176,
+        "name": ""
+      }
+    },
+    {
+      "id": 104,
+      "coverage": {
+        "id": 104,
+        "line": 1179,
+        "threaded": 9561557,
+        "switch": 7215,
+        "attempts": 9,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "native": {
+        "begin": 4,
+        "ops": 14,
+        "bytes": 3264,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "backedges": 0,
+        "budget_exits": 0,
+        "id": 104,
+        "line": 1179,
+        "name": ""
+      }
+    },
+    {
+      "id": 105,
+      "coverage": {
+        "id": 105,
+        "line": 1358,
+        "threaded": 306,
+        "switch": 27,
+        "attempts": 1,
+        "warmup": 62,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 106,
+      "coverage": {
+        "id": 106,
+        "line": 1,
+        "threaded": 537,
+        "switch": 456,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    }
+  ],
+  "exits": [
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 190,
+      "count": 8,
+      "id": 8,
+      "line": 619,
+      "opcode": "GETPROPC_CACHED",
+      "name": "UnaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 190,
+      "count": 8,
+      "id": 9,
+      "line": 700,
+      "opcode": "GETPROPC_CACHED",
+      "name": "StayConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 190,
+      "count": 8,
+      "id": 10,
+      "line": 718,
+      "opcode": "GETPROPC_CACHED",
+      "name": "EditConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 190,
+      "count": 8,
+      "id": 11,
+      "line": 748,
+      "opcode": "GETPROPC_CACHED",
+      "name": "BinaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 232,
+      "count": 8,
+      "id": 11,
+      "line": 749,
+      "opcode": "PUTTHISC",
+      "name": "BinaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 232,
+      "count": 8,
+      "id": 12,
+      "line": 862,
+      "opcode": "PUTTHISC",
+      "name": "ScaleConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 190,
+      "count": 8,
+      "id": 13,
+      "line": 921,
+      "opcode": "GETPROPC_CACHED",
+      "name": "EqualityConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 232,
+      "count": 8,
+      "id": 14,
+      "line": 945,
+      "opcode": "PUTTHISC",
+      "name": "Variable"
+    },
+    {
+      "begin": 10,
+      "pc": 17,
+      "op": 77,
+      "count": 1,
+      "id": 17,
+      "line": 1212,
+      "opcode": "GETGLOBAL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 10,
+      "pc": 21,
+      "op": 190,
+      "count": 5875,
+      "id": 17,
+      "line": 1212,
+      "opcode": "GETPROPC_CACHED",
+      "name": "chainTest"
+    },
+    {
+      "begin": 10,
+      "pc": 25,
+      "op": 177,
+      "count": 67,
+      "id": 17,
+      "line": 1213,
+      "opcode": "JMP_NEQ",
+      "name": "chainTest"
+    },
+    {
+      "begin": 10,
+      "pc": 60,
+      "op": 230,
+      "count": 1,
+      "id": 17,
+      "line": 1224,
+      "opcode": "PUTPROPC",
+      "name": "chainTest"
+    },
+    {
+      "begin": 23,
+      "pc": 43,
+      "op": 190,
+      "count": 5890,
+      "id": 18,
+      "line": 1248,
+      "opcode": "GETPROPC_CACHED",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 23,
+      "pc": 52,
+      "op": 190,
+      "count": 5888,
+      "id": 18,
+      "line": 1249,
+      "opcode": "GETPROPC_CACHED",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 23,
+      "pc": 82,
+      "op": 190,
+      "count": 60,
+      "id": 18,
+      "line": 1258,
+      "opcode": "GETPROPC_CACHED",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 23,
+      "pc": 32,
+      "op": 66,
+      "count": 234,
+      "id": 19,
+      "line": 1278,
+      "opcode": "RETUNDEF",
+      "name": "change"
+    },
+    {
+      "begin": 4,
+      "pc": 9,
+      "op": 53,
+      "count": 8,
+      "id": 53,
+      "line": 487,
+      "opcode": "PUTPROP",
+      "name": ""
+    },
+    {
+      "begin": 4,
+      "pc": 20,
+      "op": 190,
+      "count": 8,
+      "id": 53,
+      "line": 494,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 190,
+      "count": 8,
+      "id": 58,
+      "line": 530,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 20,
+      "op": 61,
+      "count": 8,
+      "id": 60,
+      "line": 585,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 33,
+      "op": 77,
+      "count": 1,
+      "id": 60,
+      "line": 590,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 37,
+      "op": 61,
+      "count": 15,
+      "id": 60,
+      "line": 590,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 61,
+      "count": 8,
+      "id": 61,
+      "line": 597,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 38,
+      "count": 8,
+      "id": 64,
+      "line": 640,
+      "opcode": "NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 190,
+      "count": 297,
+      "id": 68,
+      "line": 669,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 66,
+      "count": 5947,
+      "id": 68,
+      "line": 671,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 8,
+      "id": 71,
+      "line": 685,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 177,
+      "count": 8,
+      "id": 75,
+      "line": 763,
+      "opcode": "JMP_NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 18,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 765,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 232,
+      "count": 5981,
+      "id": 75,
+      "line": 766,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 28,
+      "op": 177,
+      "count": 1,
+      "id": 75,
+      "line": 768,
+      "opcode": "JMP_NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 51,
+      "op": 77,
+      "count": 1,
+      "id": 75,
+      "line": 773,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 62,
+      "op": 77,
+      "count": 1,
+      "id": 75,
+      "line": 774,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 63,
+      "op": 190,
+      "count": 7,
+      "id": 75,
+      "line": 774,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 81,
+      "op": 190,
+      "count": 36,
+      "id": 75,
+      "line": 778,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 89,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 779,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 96,
+      "op": 232,
+      "count": 5950,
+      "id": 75,
+      "line": 780,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 97,
+      "op": 66,
+      "count": 11855,
+      "id": 75,
+      "line": 782,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 190,
+      "count": 8,
+      "id": 81,
+      "line": 828,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 22,
+      "op": 61,
+      "count": 8,
+      "id": 81,
+      "line": 830,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 190,
+      "count": 8,
+      "id": 85,
+      "line": 874,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 190,
+      "count": 8,
+      "id": 87,
+      "line": 886,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 177,
+      "count": 8,
+      "id": 88,
+      "line": 894,
+      "opcode": "JMP_NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 190,
+      "count": 8,
+      "id": 89,
+      "line": 908,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 31,
+      "op": 61,
+      "count": 8,
+      "id": 89,
+      "line": 910,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 190,
+      "count": 8,
+      "id": 93,
+      "line": 996,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 190,
+      "count": 361,
+      "id": 93,
+      "line": 998,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 66,
+      "count": 96,
+      "id": 93,
+      "line": 999,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 21,
+      "pc": 39,
+      "op": 61,
+      "count": 8,
+      "id": 94,
+      "line": 1024,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 9,
+      "pc": 13,
+      "op": 190,
+      "count": 10,
+      "id": 96,
+      "line": 1060,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 9,
+      "pc": 17,
+      "op": 38,
+      "count": 42,
+      "id": 96,
+      "line": 1060,
+      "opcode": "NEQ",
+      "name": ""
+    },
+    {
+      "begin": 9,
+      "pc": 19,
+      "op": 190,
+      "count": 1,
+      "id": 96,
+      "line": 1060,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 65,
+      "count": 269,
+      "id": 97,
+      "line": 1081,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 12,
+      "op": 190,
+      "count": 12330,
+      "id": 98,
+      "line": 1102,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 177,
+      "count": 17824,
+      "id": 98,
+      "line": 1102,
+      "opcode": "JMP_NEQ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 23,
+      "op": 190,
+      "count": 240,
+      "id": 98,
+      "line": 1106,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 38,
+      "op": 65,
+      "count": 177,
+      "id": 98,
+      "line": 1109,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 25,
+      "pc": 76,
+      "op": 186,
+      "count": 12354,
+      "id": 99,
+      "line": 1125,
+      "opcode": "JMP_GTI",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 13,
+      "op": 190,
+      "count": 42655,
+      "id": 100,
+      "line": 1149,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 18,
+      "op": 190,
+      "count": 1,
+      "id": 100,
+      "line": 1150,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 27,
+      "op": 66,
+      "count": 48588,
+      "id": 100,
+      "line": 1152,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 65,
+      "count": 729517,
+      "id": 103,
+      "line": 1176,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 4,
+      "pc": 7,
+      "op": 61,
+      "count": 8,
+      "id": 104,
+      "line": 1181,
+      "opcode": "CALL",
+      "name": ""
+    }
+  ],
+  "totals": {
+    "functions": 32,
+    "loops": 0,
+    "templates": 0,
+    "hits": 912785,
+    "code_bytes": 153408
+  }
+}

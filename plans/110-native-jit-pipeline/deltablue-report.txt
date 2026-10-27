@@ -1,0 +1,37 @@
+Hottest interpreted functions (handler entries include retries):
+    threaded  share    switch retired  function / admission
+   9,561,557  20.3%     7,215       1  Plan.prototype.execute:1179 [id=104] / compiled
+   6,732,000  14.3%     4,769       0  EqualityConstraint.prototype.execute:930 [id=90] / no entry reaches minimum span
+   4,938,120  10.5%       107       0  BinaryConstraint.prototype.output:818 [id=80] / no entry reaches minimum span
+   4,428,000   9.4%     2,425       0  Plan.prototype.size:1172 [id=102] / no entry reaches minimum span
+   4,214,520   8.9%       130       0  BinaryConstraint.prototype.input:811 [id=79] / no entry reaches minimum span
+   2,568,000   5.4%       166       0  OrderedCollection.prototype.size:475 [id=51] / no entry reaches minimum span
+   2,089,776   4.4%        19       1  ScaleConstraint.prototype.execute:894 [id=88] / compiled
+     984,061   2.1%       190       0  OrderedCollection.prototype.add:467 [id=49] / no entry reaches minimum span
+     983,580   2.1%     5,245       3  Constraint.prototype.satisfy:578 [id=60] / compiled
+     942,696   2.0%       325       2  ScaleConstraint.prototype.recalculate:906 [id=89] / compiled
+     908,215   1.9%     3,666       1  Planner.prototype.addPropagate:1098 [id=98] / compiled
+     868,223   1.8%       216       2  BinaryConstraint.prototype.chooseMethod:763 [id=75] / compiled
+     730,098   1.5%        13       0  Plan.prototype.constraintAt:1176 [id=103] / compiled
+     648,533   1.4%       653       1  Planner.prototype.makePlan:1055 [id=96] / compiled
+     618,921   1.3%    31,857       0  Planner.prototype.addConstraintsConsumingTo:1145 [id=100] / compiled
+Total threaded entries: 47,183,536; switch instructions: 125,751
+
+Most frequent native exits:
+     729,517  RET              Plan.prototype.constraintAt:1176 [id=103] pc=6
+      48,588  RETUNDEF         Planner.prototype.addConstraintsConsumingTo:1152 [id=100] pc=27
+      42,655  GETPROPC_CACHED  Planner.prototype.addConstraintsConsumingTo:1149 [id=100] pc=13
+      17,824  JMP_NEQ          Planner.prototype.addPropagate:1102 [id=98] pc=16
+      12,354  JMP_GTI          Planner.prototype.removePropagateFrom:1125 [id=99] pc=76
+      12,330  GETPROPC_CACHED  Planner.prototype.addPropagate:1102 [id=98] pc=12
+      11,855  RETUNDEF         <anonymous>:782 [id=75] pc=97
+       5,981  PUTTHISC         BinaryConstraint.prototype.chooseMethod:766 [id=75] pc=25
+       5,950  PUTTHISC         <anonymous>:780 [id=75] pc=96
+       5,947  RETUNDEF         UnaryConstraint.prototype.recalculate:671 [id=68] pc=15
+       5,890  GETPROPC_CACHED  projectionTest:1248 [id=18] pc=43
+       5,888  GETPROPC_CACHED  projectionTest:1249 [id=18] pc=52
+       5,875  GETPROPC_CACHED  chainTest:1212 [id=17] pc=21
+         361  GETPROPC_CACHED  Planner.prototype.incrementalAdd:998 [id=93] pc=10
+         297  GETPROPC_CACHED  UnaryConstraint.prototype.recalculate:669 [id=68] pc=5
+
+Native totals: functions=32, loops=0, templates=0, hits=912,785, code_bytes=153,408

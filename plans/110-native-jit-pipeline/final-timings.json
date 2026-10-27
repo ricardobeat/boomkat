@@ -1,0 +1,242 @@
+[
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 167.0,
+    "wall_ms": 176.3410831335932,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "final",
+    "ms": 168.0,
+    "wall_ms": 173.10491693206131,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 246.0,
+    "wall_ms": 251.82383391074836,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "final",
+    "ms": 245.0,
+    "wall_ms": 250.46075019054115,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 107.0,
+    "wall_ms": 197.2932501230389,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "final",
+    "ms": 109.0,
+    "wall_ms": 199.87462484277785,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "final",
+    "ms": 165.0,
+    "wall_ms": 169.5603330153972,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 167.0,
+    "wall_ms": 171.15133395418525,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "final",
+    "ms": 246.0,
+    "wall_ms": 251.72529183328152,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 247.0,
+    "wall_ms": 251.56866619363427,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "final",
+    "ms": 108.0,
+    "wall_ms": 197.77754205279052,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 108.0,
+    "wall_ms": 198.20550014264882,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 165.0,
+    "wall_ms": 169.82887499034405,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "final",
+    "ms": 166.0,
+    "wall_ms": 169.92370900698006,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 245.0,
+    "wall_ms": 250.66479109227657,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "final",
+    "ms": 246.0,
+    "wall_ms": 250.61999983154237,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 110.0,
+    "wall_ms": 199.8970420099795,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "final",
+    "ms": 113.0,
+    "wall_ms": 202.87183299660683,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "final",
+    "ms": 169.0,
+    "wall_ms": 173.03700000047684,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 167.0,
+    "wall_ms": 171.91270785406232,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "final",
+    "ms": 246.0,
+    "wall_ms": 251.5237918123603,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 248.0,
+    "wall_ms": 252.89266603067517,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "final",
+    "ms": 110.0,
+    "wall_ms": 198.7323339562863,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 110.0,
+    "wall_ms": 199.12679214030504,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 166.0,
+    "wall_ms": 171.17279209196568,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "final",
+    "ms": 166.0,
+    "wall_ms": 170.88483297266066,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 246.0,
+    "wall_ms": 252.0025409758091,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "final",
+    "ms": 248.0,
+    "wall_ms": 253.38895781897008,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 110.0,
+    "wall_ms": 198.60050012357533,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "final",
+    "ms": 112.0,
+    "wall_ms": 202.50595803372562,
+    "rc": 0
+  }
+]

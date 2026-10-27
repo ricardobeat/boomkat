@@ -1,0 +1,182 @@
+[
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 157
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "transfers-v2",
+    "ms": 183
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 234
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "transfers-v2",
+    "ms": 276
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 104
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "transfers-v2",
+    "ms": 104
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "transfers-v2",
+    "ms": 162
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 162
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "transfers-v2",
+    "ms": 283
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 243
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "transfers-v2",
+    "ms": 105
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 104
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 167
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "transfers-v2",
+    "ms": 167
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 245
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "transfers-v2",
+    "ms": 283
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 105
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "transfers-v2",
+    "ms": 106
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "transfers-v2",
+    "ms": 168
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 166
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "transfers-v2",
+    "ms": 285
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 247
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "transfers-v2",
+    "ms": 106
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 105
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 167
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "transfers-v2",
+    "ms": 166
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 244
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "transfers-v2",
+    "ms": 283
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 104
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "transfers-v2",
+    "ms": 105
+  }
+]

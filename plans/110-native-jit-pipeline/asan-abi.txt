@@ -1,0 +1,161 @@
+SLJIT template compiled render: parts=5 code_bytes=912 plan_bytes=320
+SLJIT region attempt ops=24 regs=7 begin=8 budget_used=0
+SLJIT region result  ops=24 analyzed=1 emitted=1 code_bytes=2044 budget_used=0 limit=1048576
+SLJIT function compiled  pc=8..24 function_ops=24 regs=7 code_bytes=2044 plan_bytes=4752
+SLJIT template compiled render: parts=5 code_bytes=912 plan_bytes=320
+SLJIT region attempt ops=24 regs=7 begin=8 budget_used=2044
+SLJIT region result  ops=24 analyzed=1 emitted=1 code_bytes=2044 budget_used=2044 limit=1048576
+SLJIT function compiled  pc=8..24 function_ops=24 regs=7 code_bytes=2044 plan_bytes=4752
+SLJIT region attempt ops=24 regs=7 begin=8 budget_used=4088
+SLJIT region result  ops=24 analyzed=1 emitted=1 code_bytes=2044 budget_used=4088 limit=1048576
+SLJIT function compiled  pc=8..24 function_ops=24 regs=7 code_bytes=2044 plan_bytes=4752
+SLJIT region attempt ops=1323 regs=13 begin=201 budget_used=6132
+SLJIT region result  ops=1323 analyzed=1 emitted=1 code_bytes=31632 budget_used=6132 limit=1048576
+SLJIT function compiled  pc=201..329 function_ops=1323 regs=13 code_bytes=31632 plan_bytes=5760
+SLJIT loop compiled  pc=3..6 code_bytes=832 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=38596
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=38596 limit=1048576
+SLJIT region attempt ops=10 regs=7 begin=3 budget_used=38596
+SLJIT region result reference ops=10 analyzed=1 emitted=1 code_bytes=2320 budget_used=38596 limit=1048576
+SLJIT function compiled reference pc=3..10 function_ops=10 regs=7 code_bytes=2320 plan_bytes=4671
+SLJIT loop compiled  pc=2..9 code_bytes=1404 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=42320
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=42320 limit=1048576
+SLJIT loop compiled  pc=3..6 code_bytes=832 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=43152
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=43152 limit=1048576
+SLJIT loop compiled  pc=2..9 code_bytes=1404 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=44556
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=44556 limit=1048576
+SLJIT loop compiled  pc=3..6 code_bytes=836 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=45392
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=45392 limit=1048576
+SLJIT loop compiled  pc=2..9 code_bytes=1412 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=46804
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=46804 limit=1048576
+SLJIT loop compiled  pc=3..6 code_bytes=836 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=47640
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=47640 limit=1048576
+SLJIT loop compiled  pc=2..9 code_bytes=1412 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=49052
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=49052 limit=1048576
+SLJIT loop compiled  pc=3..6 code_bytes=836 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=49888
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=49888 limit=1048576
+SLJIT loop compiled  pc=2..9 code_bytes=1412 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=51300
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=51300 limit=1048576
+SLJIT loop compiled  pc=3..6 code_bytes=820 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=52120
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=52120 limit=1048576
+SLJIT loop compiled  pc=2..9 code_bytes=1284 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=6 budget_used=53404
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=53404 limit=1048576
+SLJIT loop compiled  pc=3..6 code_bytes=836 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=54240
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=54240 limit=1048576
+SLJIT loop compiled  pc=2..9 code_bytes=1296 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=55536
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=55536 limit=1048576
+SLJIT loop compiled  pc=3..6 code_bytes=832 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=56368
+SLJIT region result  ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=56368 limit=1048576
+SLJIT loop compiled  pc=2..9 code_bytes=1416 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=57784
+SLJIT region result  ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=57784 limit=1048576
+SLJIT loop compiled sum pc=3..6 code_bytes=836 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=8 regs=5 begin=6 budget_used=58620
+SLJIT region result sum ops=8 analyzed=0 emitted=0 code_bytes=0 budget_used=58620 limit=1048576
+SLJIT loop compiled blend pc=2..12 code_bytes=1584 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=14 regs=12 begin=12 budget_used=60204
+SLJIT region result blend ops=14 analyzed=0 emitted=0 code_bytes=0 budget_used=60204 limit=1048576
+SLJIT loop compiled sum pc=3..6 code_bytes=824 plan_bytes=944 ssa=0 mem=1
+SLJIT loop compiled  pc=2..12 code_bytes=1612 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=14 regs=12 begin=12 budget_used=62640
+SLJIT region result  ops=14 analyzed=0 emitted=0 code_bytes=0 budget_used=62640 limit=1048576
+SLJIT loop compiled transform pc=2..9 code_bytes=1404 plan_bytes=944 ssa=0 mem=2
+SLJIT region attempt ops=11 regs=10 begin=9 budget_used=64044
+SLJIT region result transform ops=11 analyzed=0 emitted=0 code_bytes=0 budget_used=64044 limit=1048576
+SLJIT loop compiled ascii pc=3..12 code_bytes=1376 plan_bytes=944 ssa=0 mem=1
+SLJIT region attempt ops=14 regs=8 begin=3 budget_used=65420
+SLJIT region result ascii ops=14 analyzed=0 emitted=0 code_bytes=0 budget_used=65420 limit=1048576
+=================================================================
+==14646==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x00016b5d4770 at pc 0x000104bf8618 bp 0x00016b5d3a30 sp 0x00016b5d3a28
+READ of size 4 at 0x00016b5d4770 thread T0
+==14646==WARNING: external symbolizer didn't start up correctly!
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104bf8614"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104bb4f08"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104ae91c4"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104ad371c"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104ce8ba4"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104dbc520"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104dbb898"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104f314c4"
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104f372e4"
+    #0 0x000104bf8614 in boomkat.vm.loop_analyze+0x2af8 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x1003d4614)
+    #1 0x000104bb4f08 in boomkat.vm.sljit_loop_entry+0x6d8 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x100390f08)
+    #2 0x000104ae91c4 in boomkat.vm.vm_dispatch+0x14710 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x1002c51c4)
+    #3 0x000104ad371c in boomkat.vm.Vm.run+0x6d0 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x1002af71c)
+    #4 0x000104ce8ba4 in boomkat.vm.Vm.execute+0x4d8 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x1004c4ba4)
+    #5 0x000104dbc520 in boomkat.embed.eval_source+0x8e0 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x100598520)
+    #6 0x000104dbb898 in boomkat.JsContext.eval+0x17c (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x100597898)
+    #7 0x000104f314c4 in jit_test.main+0x1288 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x10070d4c4)
+    #8 0x000104f372e4 in main+0x4 (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x1007132e4)
+
+Address 0x00016b5d4770 is located in stack of thread T0 at offset 2992 in frame
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104bf5b28"
+    #0 0x000104bf5b28 in boomkat.vm.loop_analyze+0xc (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x1003d1b28)
+
+  This frame has 5 object(s):
+    [32, 1968) ''
+    [2096, 2352) ''
+    [2416, 2672) ''
+    [2736, 2992) '' <== Memory access at offset 2992 overflows this variable
+    [3056, 3120) ''
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism, swapcontext or vfork
+      (longjmp and C++ exceptions *are* supported)
+==14646==WARNING: Can't read from symbolizer at fd 3
+==14646==WARNING: atos failed to symbolize address "0x104bf8614"
+SUMMARY: AddressSanitizer: stack-buffer-overflow (/private/tmp/boomkat-jit-pipeline/asan-abi/embedding_jit:arm64+0x1003d4614) in boomkat.vm.loop_analyze+0x2af8
+Shadow bytes around the buggy address:
+  0x00016b5d4480: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 f2 f2
+  0x00016b5d4500: f2 f2 f2 f2 f2 f2 00 00 00 00 00 00 00 00 00 00
+  0x00016b5d4580: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016b5d4600: 00 00 00 00 00 00 f2 f2 f2 f2 f2 f2 f2 f2 00 00
+  0x00016b5d4680: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x00016b5d4700: 00 00 00 00 00 00 00 00 00 00 00 00 00 00[f2]f2
+  0x00016b5d4780: f2 f2 f2 f2 f2 f2 00 00 00 00 00 00 00 00 f3 f3
+  0x00016b5d4800: f3 f3 f3 f3 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016b5d4880: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x00016b5d4900: 00 00 00 00 00 00 00 00 00 00 00 00 f1 f1 f1 f1
+  0x00016b5d4980: 00 f2 f2 f2 00 00 00 00 00 00 00 00 00 00 00 00
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==14646==ABORTING

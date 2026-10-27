@@ -1,0 +1,61 @@
+{
+  "direct-return-timings.json": {
+    "deltablue": {
+      "baseline": 246,
+      "direct-return": 248,
+      "qjs": 291
+    },
+    "richards": {
+      "baseline": 167,
+      "direct-return": 170,
+      "qjs": 290
+    },
+    "splay": {
+      "baseline": 109,
+      "direct-return": 108,
+      "qjs": 135
+    }
+  },
+  "transfers-v2-timings.json": {
+    "deltablue": {
+      "baseline": 244,
+      "transfers-v2": 283
+    },
+    "richards": {
+      "baseline": 166,
+      "transfers-v2": 167
+    },
+    "splay": {
+      "baseline": 104,
+      "transfers-v2": 105
+    }
+  },
+  "numeric-equality-timings.json": {
+    "deltablue": {
+      "baseline": 243,
+      "numeric-equality": 246
+    },
+    "richards": {
+      "baseline": 166,
+      "numeric-equality": 167
+    },
+    "splay": {
+      "baseline": 108,
+      "numeric-equality": 109
+    }
+  },
+  "transfers-numeric-timings.json": {
+    "deltablue": {
+      "baseline": 245,
+      "transfers-numeric": 285
+    },
+    "richards": {
+      "baseline": 166,
+      "transfers-numeric": 159
+    },
+    "splay": {
+      "baseline": 108,
+      "transfers-numeric": 108
+    }
+  }
+}

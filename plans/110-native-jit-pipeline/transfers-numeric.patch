@@ -1,0 +1,518 @@
+diff --git a/src/bytecode.c3 b/src/bytecode.c3
+index d70b207f..f3fa9acc 100644
+--- a/src/bytecode.c3
++++ b/src/bytecode.c3
+@@ -1913,6 +1913,13 @@ struct CompiledFunction {
+     ulong           sljit_loop_rejected @if($feat(SLJIT));
+     uint            sljit_template_calls @if($feat(SLJIT));
+     uint            sljit_loop_ready @if($feat(SLJIT));
++    // Diagnostic builds count dispatch attempts separately from native runs.
++    // A threaded refusal can be retried by the switch, so these are not added
++    // together as an executed-bytecode count.
++    ulong           sljit_threaded_entries @if($feat(SLJIT_STATS));
++    ulong           sljit_switch_ops @if($feat(SLJIT_STATS));
++    ulong           sljit_entry_attempts @if($feat(SLJIT_STATS));
++    char*           sljit_rejection @if($feat(SLJIT_STATS));
+ 
+     // Constant pool holding the literal values, such as numbers and strings,
+     // by LDCONST and friends.
+diff --git a/src/vm/vm_execute.c3 b/src/vm/vm_execute.c3
+index 785f088b..959cde29 100644
+--- a/src/vm/vm_execute.c3
++++ b/src/vm/vm_execute.c3
+@@ -2543,6 +2543,7 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
+         }
+         if (offset < 0 && ds.vm.heap.jit_enabled && !ds.needs_restart) {
+             ds.curr_pc = sljit_function_region(ds.curr_pc, ds.regs_base, &ds.cold);
++            ds.sync_code();
+         }
+     $endif
+     return true;
+@@ -3015,6 +3016,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
+         }
+ 
+         Opcode op = insn.op;
++        $if $feat(SLJIT_STATS): vm.current_func.sljit_switch_ops++; $endif
+ 
+         TVal* ra = ds.regs_base + insn.a;
+         TVal* rb = ds.regs_base + insn.b;
+diff --git a/src/vm/vm_execute_threaded.c3 b/src/vm/vm_execute_threaded.c3
+index 1ae212ee..33ac0532 100644
+--- a/src/vm/vm_execute_threaded.c3
++++ b/src/vm/vm_execute_threaded.c3
+@@ -216,6 +216,7 @@ fn Instruction* th_bailout(Instruction* pc, HandlerTable* handlers, TVal* regs,
+ // check, since only a return can be last.
+ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+     Instruction next = *pc;
++    $if $feat(SLJIT_STATS): cold.vm.current_func.sljit_threaded_entries++; $endif
+     $if $feat(OP_PROFILE):
+         opprof_thread_complete();
+         opprof_thread_begin(next.op);
+@@ -708,7 +709,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
+                               uint callee_reg, uint result_reg, uint nargs,
+                               bool borrowed, bool clear_this,
+                               TVal this_value, bool this_valid,
+-                              HObject* new_target = null) @private @inline {
++                              HObject* new_target = null, bool native_transfer = false) @private @inline {
+     Vm* vm = cold.vm;
+     Activation* caller = cold.act;
+     HObject* function = (HObject*)regs[callee_reg].get_heapptr();
+@@ -790,6 +791,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
+         vm.current_func = target;
+         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
+     }
++    if (native_transfer) return target.code;
+     // The object is built once the frame is published, since building it can
+     // run a collection step that scans the frame.
+     if (@unlikely(target.arguments_in_reg())) {
+@@ -3525,10 +3527,12 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
+             if ((pc != cf.code && sljit_function_resumes(pc, cf))
+                 || (pc == cf.code && cf.sljit_function_calls != uint::max)) {
+                 pc = sljit_function_entry(pc, regs, cold);
++                regs = cold.act.bottom;
+             }
+         }
+     $endif
+     Instruction first = *pc;
++    $if $feat(SLJIT_STATS): cold.vm.current_func.sljit_threaded_entries++; $endif
+     opprof_th_record(first.op);
+     $if $feat(OP_PROFILE):
+         Opcode saved_op = opprof_pending_op;
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index 1320c30a..16125c55 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -65,6 +65,8 @@ struct FunctionPlan @feat(SLJIT) {
+     ulong[512] exit_pcs;
+     ulong hits;
+     ulong completed;
++    ulong native_call_transfers;
++    ulong native_return_transfers;
+     ulong stalled;
+     ulong backedges;
+     ulong budget_exits;
+@@ -83,6 +85,8 @@ struct FunctionEmitter @feat(SLJIT) {
+ 
+ fn bool function_op(Opcode op) @feat(SLJIT) {
+     switch (op) {
++        case RET:
++        case RETUNDEF:
+         case NOP:
+         case LDREG:
+         case LDTHIS:
+@@ -170,6 +174,7 @@ fn int function_capture_index(CompiledFunction* cf, Instruction ins) @feat(SLJIT
+     return index >= 0 && index < (int)cf.capture_count && index < (int)FUNCTION_CAPTURES ? index : -1;
+ }
+ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @feat(SLJIT) {
++    $if $feat(SLJIT_STATS): cf.sljit_rejection = "function eligibility"; $endif
+     if (cf.code_count > FUNCTION_OPS || cf.flags.is_generator || cf.flags.is_async || cf.flags.has_direct_eval
+         || cf.mapped_arguments()
+         || cf.sljit_loops != null) return false;
+@@ -180,7 +185,17 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
+     for (uint pos = 0; pos < cf.code_count; pos++) {
+         Instruction ins = cf.code[pos];
+         // WIDE payloads cannot be decoded independently on a native resume.
+-        if (ins.op == Opcode.WIDE) return false;
++        if (ins.op == Opcode.WIDE) {
++            $if $feat(SLJIT_STATS): cf.sljit_rejection = "WIDE"; $endif
++            return false;
++        }
++        // A call neither tier can expand still runs through the native call
++        // entry, which hands its result to the caller with a reference of its
++        // own: the result register stays below the tracked watermark.
++        if (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS) {
++            calls = true;
++            if (ins.a + 1 > call_regs) call_regs = ins.a + 1;
++        }
+         if (function_math_candidate(
+             cf,
+             pos
+@@ -196,13 +211,6 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
+             useful += 2;
+             continue;
+         }
+-        // A call neither tier can expand still runs through the native call
+-        // entry, which hands its result to the caller with a reference of its
+-        // own: the result register stays below the tracked watermark.
+-        if (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS) {
+-            calls = true;
+-            if (ins.a + 1 > call_regs) call_regs = ins.a + 1;
+-        }
+         if (!function_op(ins.op)) continue;
+         int backedge = loop_target(ins, pos);
+         if (backedge >= 0 && backedge <= (int)pos) useful += 2;
+@@ -245,13 +253,7 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
+             || ins.op == Opcode.GETPROP_CACHE
+             || ins.op == Opcode.PUTPROP) useful++;
+     }
+-    // A native call only pays for its own entry and exit once the region runs
+-    // long enough around it, which in practice means a taken backedge: a
+-    // straight-line leaf that wraps a call is the interpreter's own work.
+-    for (uint pos = 0; calls && !plan.native_calls && pos < cf.code_count; pos++) {
+-        int target = loop_target(cf.code[pos], pos);
+-        if (target >= 0 && target <= (int)pos) plan.native_calls = true;
+-    }
++    plan.native_calls = calls;
+     if (plan.native_calls && plan.heap_regs < call_regs) plan.heap_regs = call_regs;
+     for (uint i = 0; i < 4; i++) {
+         uint best;
+@@ -261,6 +263,7 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
+         frequency[best] = 0;
+         plan.cached_regs[plan.cache_count++] = (char)best;
+     }
++    $if $feat(SLJIT_STATS): cf.sljit_rejection = useful >= 2 ? null : "too few useful operations"; $endif
+     return useful >= 2;
+ }
+ fn long function_cold_offset(uint field) @feat(SLJIT) {
+@@ -405,10 +408,9 @@ fn void FunctionEmitter.equal(&self, Instruction ins, bool immediate, bool negat
+     e.mov(r0, 0, imm, negate ? 0 : 1);
+     e.bind(done);
+ }
+-// Loose equality keeps two cases native: null and undefined compare equal to
+-// each other and to nothing else, and two objects compare by reference. Any
+-// other pairing (a string, a BigInt, one object and one primitive) still needs
+-// the interpreter's abstract equality.
++// Number pairs compare numerically, including mixed fast integers and doubles.
++// Nullish values and object identity are handled below; coercing comparisons
++// still use the interpreter's abstract equality.
+ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc) @feat(SLJIT) {
+     TemplateEmitter* e = &self.out.e;
+     int r0             = jit::reg_r(0);
+@@ -421,6 +423,18 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
+     self.out.load(ins.c, r1);
+     e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
+     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
++    void* nonnumber_left = e.cmp(jit::SLJIT_GREATER, r2, 0, imm, (long)types::TAG_FASTINT);
++    void* nonnumber_right = e.cmp(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_FASTINT);
++    self.out.number(r0, 1, pc);
++    self.out.number(r1, 2, pc);
++    void* number_equal = self.out.fcmp(jit::SLJIT_ORDERED_EQUAL, 1, 2);
++    e.mov(r0, 0, imm, (long)(types::TAG_BOOLEAN << 48) | (negate ? 1 : 0));
++    void* number_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
++    e.bind(number_equal);
++    e.mov(r0, 0, imm, (long)(types::TAG_BOOLEAN << 48) | (negate ? 0 : 1));
++    void* number_equal_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
++    e.bind(nonnumber_left);
++    e.bind(nonnumber_right);
+     // Null and undefined are equal to each other and to the document.all
+     // sentinel, and to nothing else, which is the `x == null` idiom. Their
+     // tags are adjacent, so a shifted difference is 0 or 1 for exactly those
+@@ -471,6 +485,8 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
+     e.bind(same);
+     e.mov(r0, 0, imm, negate ? ((long)types::TAG_BOOLEAN << 48) : (((long)types::TAG_BOOLEAN << 48) | 1));
+     e.bind(finish);
++    e.bind(number_done);
++    e.bind(number_equal_done);
+ }
+ // A branch on `x == null` or `x != null`, which never coerces: the operand is
+ // nullish when it is null or undefined, or the one object the language treats
+@@ -1283,40 +1299,8 @@ fn bool function_native_call(CompiledFunction* cf, uint pc, FunctionPlan* plan)
+ // exactly as the exits do (its values are borrowed either way).
+ fn bool FunctionEmitter.native_call(&self, CompiledFunction* cf, uint pc) @feat(SLJIT) {
+     if (!function_native_call(cf, pc, self.plan)) return false;
+-    LoopEmitter* out = &self.out;
+-    if ((usz)out.link_count + 2 >= out.links.len) return false;
+-    // The C call clobbers every scratch register, the numeric lanes included.
+-    if (out.flow != null) {
+-        if (out.flow.pinned != 0) return false;
+-        self.flow_materialize();
+-    }
+-    TemplateEmitter* e = &out.e;
+-    int r0        = jit::reg_r(0);
+-    int r1        = jit::reg_r(1);
+-    int r2        = jit::reg_r(2);
+-    int imm       = jit::SLJIT_IMM;
+-    int mem       = jit::SLJIT_MEM;
+-    Activation layout;
+-    for (uint j = 0; j < cf.num_regs && j < LOOP_REGS; j++) if (self.plan.cache[j] != 0) {
+-        e.mov(mem | jit::reg_s(0), loop_value_offset(j), self.plan.cache[j], 0);
+-    }
+-    e.mov(r0, 0, jit::reg_s(1), 0);
+-    e.mov(r1, 0, mem | jit::reg_s(1), function_cold_offset(1));
+-    e.mov(r1, 0, mem | r1, (char*)&layout.bottom - (char*)&layout);
+-    e.mov(r2, 0, imm, (long)(self.plan.begin + pc));
+-    if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW,
+-                              jit::SLJIT_IMM, (long)&sljit_native_call) != 0) return false;
+-    // The call clobbered every scratch register, so the cache comes back from
+-    // the register file on both paths: an exit stub flushes the cache again,
+-    // and it must write the values the slots already hold. The callee's frame
+-    // may also have moved the value stack, so the base is re-read first.
+-    e.mov(jit::reg_s(0), 0, mem | jit::reg_s(1), function_cold_offset(1));
+-    e.mov(jit::reg_s(0), 0, mem | jit::reg_s(0), (char*)&layout.bottom - (char*)&layout);
+-    for (uint j = 0; j < cf.num_regs && j < LOOP_REGS; j++) if (self.plan.cache[j] != 0) {
+-        e.mov(self.plan.cache[j], 0, mem | jit::reg_s(0), loop_value_offset(j));
+-    }
+-    // Zero leaves the call to the interpreter, as the tier's own exit does.
+-    out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
++    if (self.out.flow != null) self.flow_flush();
++    self.out.link(jit::sljit_emit_jump(self.out.e.compiler, jit::SLJIT_JUMP), pc, true);
+     return true;
+ }
+ 
+@@ -1335,6 +1319,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+     f.blocks[0] = true;
+     for (uint i = 0; i < cf.code_count; i++) {
+         int target = loop_target(cf.code[i], i);
++        if (function_call_op(cf.code[i].op) && i + 1 < cf.code_count) f.blocks[i + 1] = true;
+         if (target >= 0 && target < (int)cf.code_count) f.blocks[target] = true;
+         if (((!function_op(
+             cf.code[i].op
+@@ -1471,6 +1456,11 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+             continue;
+         }
+         switch (ins.op) {
++            case RET:
++            case RETUNDEF:
++                if (out.flow != null) f.flow_flush();
++                out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pos, true);
++                continue;
+             case CALL:
+             case CALL_UNDEF_THIS:
+             case CALL_VAR:
+@@ -1794,7 +1784,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+         int target     = loop_target(cf.code[i], i);
+         if (target > (int)i && target < (int)cf.code_count && span[target] > following) following = span[target];
+         span[i] = following + 1;
+-        if ((span[i] >= plan.min_span || loop_headers[i]) && (!FUNCTION_DATAFLOW || f.blocks[i])) {
++        bool continuation = i > 0 && function_call_op(cf.code[i - 1].op);
++        if ((span[i] >= plan.min_span || loop_headers[i] || continuation) && (!FUNCTION_DATAFLOW || f.blocks[i])) {
+             plan.entries[i] = (void*)jit::sljit_shim_label_addr(out.labels[i]);
+             entries++;
+         }
+@@ -1842,7 +1833,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+             h.jit_code_bytes
+         );
+     $endif
+-    if (begin >= cf.code_count || h.jit_code_bytes >= LOOP_CODE_LIMIT) return null;
++    if (begin >= cf.code_count || h.jit_code_bytes >= LOOP_CODE_LIMIT) {
++        $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
++        return null;
++    }
+     // The view borrows the original bytecode, constants and site caches. Only
+     // the region's instruction window consumes compiler tables/code budget.
+     CompiledFunction region = *cf;
+@@ -1869,7 +1863,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+     region.var_ic_entries = (VarICEntry*)cf.var_ic_entries + begin;
+     usz bytes          = FunctionPlan::size + region.code_count * (void*::size + 1);
+     FunctionPlan* plan = (FunctionPlan*)h.alloc_func(h.heap_udata, bytes);
+-    if (plan == null) return null;
++    if (plan == null) {
++        $if $feat(SLJIT_STATS): cf.sljit_rejection = "plan allocation"; $endif
++        return null;
++    }
+     mem::clear(plan, (sz)bytes);
+     plan.begin = begin;
+     plan.count = region.code_count;
+@@ -1878,6 +1875,9 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+     plan.short_runs = (char*)(plan.entries + plan.count);
+     bool analyzed = function_analyze(&region, plan, h);
+     bool emitted  = analyzed && function_emit(plan, &region, h, cold.act);
++    $if $feat(SLJIT_STATS):
++        cf.sljit_rejection = analyzed ? (emitted ? null : "emission or entry span") : region.sljit_rejection;
++    $endif
+     $if $feat(SLJIT_STATS):
+         if (begin != 0) io::eprintfn(
+             "SLJIT region result %s ops=%d analyzed=%d emitted=%d code_bytes=%d budget_used=%d limit=%d",
+@@ -1891,6 +1891,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+         );
+     $endif
+     if (!emitted || h.jit_code_bytes + plan.code_bytes > LOOP_CODE_LIMIT) {
++        $if $feat(SLJIT_STATS): if (emitted) cf.sljit_rejection = "code budget"; $endif
+         if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
+         h.free_func(h.heap_udata, plan);
+         return null;
+@@ -1917,14 +1918,16 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+ // Calls a function must see before the tier compiles it. The differential
+ // test setting compiles on the first call instead.
+ fn uint sljit_warmup(Heap* h) @feat(SLJIT) @inline => h.jit_stress ? 1 : 64;
+-fn Instruction* sljit_function_entry(
++fn Instruction* sljit_function_run(
+     Instruction* pc,
+     TVal* regs,
+     ColdCtx* cold,
+-    bool region = false
++    bool region = false,
++    bool* ran = null
+ ) @feat(SLJIT) @noinline {
+     Heap* h              = cold.heap;
+     CompiledFunction* cf = cold.vm.current_func;
++    $if $feat(SLJIT_STATS): cf.sljit_entry_attempts++; $endif
+     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || h.gc_phase != heap::GcPhase.IDLE
+         || h.uncatchable_throw
+         || std::core::mem::@atomic_load(
+@@ -1973,6 +1976,7 @@ fn Instruction* sljit_function_entry(
+     run.budget = budget;
+     run.typed[0].receiver = null;
+     run.typed[1].receiver = null;
++    if (ran != null) *ran = true;
+     uint next     = plan.native(regs, cold, &run);
+     uint consumed = (uint)(budget - run.budget);
+     h.bwd_gc_budget -= consumed;
+@@ -1993,8 +1997,9 @@ fn Instruction* sljit_function_entry(
+     // backedge repeats the same prefix on every entry loop iteration. Let the
+     // interpreter own the function once that is clearly never going to pay.
+     bool at_call = next < cf.code_count && function_call_op(cf.code[next].op);
+-    bool stuck = consumed == 0 && next >= offset
+-        && (next - offset < plan.min_span || at_call);
++    bool stuck = consumed == 0 && next >= offset && next < cf.code_count && !at_call
++        && next - offset < plan.min_span
++        && cf.code[next].op != Opcode.RET && cf.code[next].op != Opcode.RETUNDEF;
+     if (stuck) {
+         if (!h.jit_stress && ++plan.short_runs[local] >= 8) {
+             plan.entries[local] = null;
+@@ -2031,7 +2036,8 @@ fn Instruction* sljit_function_dispatch(
+     TVal* regs,
+     ColdCtx* cold
+ ) @feat(SLJIT) @noinline {
+-    return th_next(sljit_function_entry(pc, regs, cold), handlers, regs, cold);
++    pc = sljit_function_entry(pc, regs, cold);
++    return th_next(pc, handlers, cold.act.bottom, cold);
+ }// Report the counters the native tiers keep: what compiled, how often it ran,
+ // where each run ended, and the totals. Driven by the CLI's --stats.
+ fn void sljit_stats_dump(Heap* h) {
+@@ -2044,11 +2050,21 @@ fn void sljit_stats_dump(Heap* h) {
+             CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[i];
+             if (cf == null) continue;
+             FunctionPlan* plan = cf.sljit_function;
++            $if $feat(SLJIT_STATS):
++                if (cf.sljit_threaded_entries != 0 || cf.sljit_switch_ops != 0 || cf.sljit_entry_attempts != 0) {
++                    uint retired;
++                    if (plan != null) for (uint j = 0; j < plan.count; j++) if (plan.short_runs[j] >= 8) retired++;
++                    io::printfn("SLJIT coverage id=%d line=%d name=%s threaded=%d switch=%d attempts=%d warmup=%d retired=%d rejection=%s",
++                        i, cf.get_line(0), (String)cf.get_name(), cf.sljit_threaded_entries, cf.sljit_switch_ops,
++                        cf.sljit_entry_attempts, cf.sljit_function_calls, retired,
++                        (ZString)(plan != null ? "compiled" : cf.sljit_rejection != null ? cf.sljit_rejection : "not attempted"));
++                }
++            $endif
+             if (plan != null) {
+                 functions++;
+                 hits += plan.hits;
+                 io::printfn(
+-                    "SLJIT function %s begin=%d ops=%d bytes=%d hits=%d returns=%d stalled=%d backedges=%d budget_exits=%d",
++                    "SLJIT function %s begin=%d ops=%d bytes=%d hits=%d returns=%d stalled=%d backedges=%d budget_exits=%d id=%d line=%d",
+                     (String)cf.get_name(),
+                     plan.begin,
+                     plan.count,
+@@ -2057,17 +2073,22 @@ fn void sljit_stats_dump(Heap* h) {
+                     plan.completed,
+                     plan.stalled,
+                     plan.backedges,
+-                    plan.budget_exits
++                    plan.budget_exits,
++                    i,
++                    cf.get_line(0)
+                 );
+                 for (uint pc = 0; pc < 512; pc++) {
+                     if (plan.exit_pcs[pc] == 0) continue;
+                     io::printfn(
+-                        "SLJIT exit %s begin=%d pc=%d op=%d count=%d",
++                        "SLJIT exit %s begin=%d pc=%d op=%d count=%d id=%d line=%d opcode=%s",
+                         (String)cf.get_name(),
+                         plan.begin,
+                         pc,
+                         pc < cf.code_count ? (int)cf.code[pc].op : -1,
+-                        plan.exit_pcs[pc]
++                        plan.exit_pcs[pc],
++                        i,
++                        cf.get_line(pc),
++                        (ZString)(pc < cf.code_count ? bytecode::get_opcode_name(cf.code[pc].op) : "end")
+                     );
+                 }
+             }
+diff --git a/src/vm/vm_sljit_dispatch.c3 b/src/vm/vm_sljit_dispatch.c3
+new file mode 100644
+index 00000000..296321fb
+--- /dev/null
++++ b/src/vm/vm_sljit_dispatch.c3
+@@ -0,0 +1,91 @@
++module boomkat::vm;
++
++import boomkat::bytecode;
++import boomkat::types;
++import boomkat::heap;
++import boomkat::hobject;
++
++// Experimental baseline dispatcher: native code publishes registers before
++// transferring a call or return. Every live JS frame remains an ordinary VM
++// activation, so a guard failure can resume the interpreter without replay.
++fn Instruction* sljit_function_entry(Instruction* pc, TVal* regs, ColdCtx* cold,
++                                      bool region = false) @feat(SLJIT) @noinline {
++    Vm* vm = cold.vm;
++    for (uint transfers = 0; transfers < 1024; transfers++) {
++        Instruction* next = pc;
++        if (pc.op != Opcode.RET && pc.op != Opcode.RETUNDEF) {
++            bool ran;
++            next = sljit_function_run(pc, regs, cold, region, &ran);
++            if (!ran) return pc;
++            pc = next;
++        }
++        region = false;
++        if (cold.heap.gc_phase != GcPhase.IDLE || cold.heap.interrupt_due
++            || cold.heap.uncatchable_throw
++            || std::core::mem::@atomic_load(cold.heap.interrupt_requested) != 0) return pc;
++        if (pc.op == Opcode.CALL || pc.op == Opcode.CALL_UNDEF_THIS) {
++            Instruction call = *pc;
++            bool plain = call.op == Opcode.CALL_UNDEF_THIS;
++            CompiledFunction* target = th_lean_target(vm, regs[call.b], regs + call.b + 2, plain);
++            if (target == null || target.arguments_in_reg()) return pc;
++            if (target.sljit_function_calls == uint::max
++                || (target.sljit_function != null && !sljit_function_resumes(target.code, target))) return pc;
++            TVal receiver = th_undefined();
++            bool this_valid;
++            if (!plain) {
++                TVal value = regs[call.b + 1];
++                if (value.is_heap_allocated()) {
++                    if (!value.is_object() || value.get_heapptr() == null
++                        || call.b + 1 >= vm.current_func.num_regs
++                        || cold.act.heap_reg_count <= call.b + 1) return pc;
++                    if (!target.call_flags.ignores_this) {
++                        receiver = value;
++                        this_valid = true;
++                    }
++                } else if (!target.call_flags.ignores_this) return pc;
++            }
++            if (th_call_gate(cold)) return pc;
++            FunctionPlan* caller_plan = vm.current_func.sljit_function;
++            next = th_enter_lean(pc, &g_threaded_table, regs, cold, target,
++                                 call.b, call.a, call.c, false, plain,
++                                 receiver, this_valid, null, true);
++            if (next == pc) return pc;
++            caller_plan.native_call_transfers++;
++            pc = next;
++            regs = cold.act.bottom;
++            continue;
++        }
++        if (pc.op == Opcode.RET || pc.op == Opcode.RETUNDEF) {
++            Activation* act = cold.act;
++            if (!th_frame_is_replaceable(vm, act) || !th_tracked_regs_uncounted(act)
++                || cold.heap.gc_safepoint_due(false)) return pc;
++            Activation* caller = &vm.activations[vm.activation_count - 2];
++            CompiledFunction* cf = (CompiledFunction*)caller.func;
++            if (cf == null || cf.realm != cold.heap.realm || cf.ic_entries == null) return pc;
++            TVal value = th_undefined();
++            if (pc.op == Opcode.RET) value = regs[pc.a];
++            if (value.is_refcounted() || act.retval.is_refcounted()) return pc;
++            if (value.is_heap_allocated() && (!value.is_object() || value.get_heapptr() == null
++                || act.retval < caller.bottom || act.retval >= caller.bottom + cf.num_regs)) return pc;
++            if (vm.current_func.sljit_function != null) ((FunctionPlan*)vm.current_func.sljit_function).native_return_transfers++;
++            th_clear_tracked_regs(act);
++            *act.retval = value;
++            if (value.is_heap_allocated()) track_heap_store(caller, act.retval, (uint)(act.retval - caller.bottom));
++            vm.valstack_top = act.caller_valstack_top;
++            act.release_callee(cold.heap);
++            vm.activation_count--;
++            vm.gc_root_frame_count_changed();
++            cold.act = caller;
++            vm.current_func = cf;
++            vm.valstack_bottom = caller.bottom;
++            *cold.regs_base_ptr = caller.bottom;
++            th_bind_ic_bias(cold, cf.code, cf.ic_entries, cf.var_ic_entries);
++            pc = caller.curr_pc;
++            regs = caller.bottom;
++            if (!sljit_function_resumes(pc, cf)) return pc;
++            continue;
++        }
++        return pc;
++    }
++    return pc;
++}

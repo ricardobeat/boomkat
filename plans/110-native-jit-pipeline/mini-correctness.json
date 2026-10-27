@@ -1,0 +1,239 @@
+[
+  {
+    "bench": "box2d",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Box2D: 218 ms\n",
+    "err": "",
+    "normalized": "Box2D: N ms\n"
+  },
+  {
+    "bench": "box2d",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Box2D: 211 ms\n",
+    "err": "",
+    "normalized": "Box2D: N ms\n"
+  },
+  {
+    "bench": "code-load",
+    "mode": "interp",
+    "rc": 0,
+    "out": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 143 ms\n",
+    "err": "",
+    "normalized": "CodeLoadClosure: N ms\nCodeLoadJQuery: N ms\n"
+  },
+  {
+    "bench": "code-load",
+    "mode": "jit",
+    "rc": 0,
+    "out": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 145 ms\n",
+    "err": "",
+    "normalized": "CodeLoadClosure: N ms\nCodeLoadJQuery: N ms\n"
+  },
+  {
+    "bench": "crypto",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Encrypt: 14 ms\nDecrypt: 265 ms\n",
+    "err": "",
+    "normalized": "Encrypt: N ms\nDecrypt: N ms\n"
+  },
+  {
+    "bench": "crypto",
+    "mode": "jit",
+    "rc": 1,
+    "out": "Encrypt: 13 ms\n",
+    "err": "Uncaught Error: Crypto operation failed\n",
+    "normalized": "Encrypt: N ms\n"
+  },
+  {
+    "bench": "deltablue",
+    "mode": "interp",
+    "rc": 0,
+    "out": "DeltaBlue: 251 ms\n",
+    "err": "",
+    "normalized": "DeltaBlue: N ms\n"
+  },
+  {
+    "bench": "deltablue",
+    "mode": "jit",
+    "rc": 0,
+    "out": "DeltaBlue: 246 ms\n",
+    "err": "",
+    "normalized": "DeltaBlue: N ms\n"
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Earley: 19 ms\nBoyer: 155 ms\n",
+    "err": "",
+    "normalized": "Earley: N ms\nBoyer: N ms\n"
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Earley: 20 ms\nBoyer: 160 ms\n",
+    "err": "",
+    "normalized": "Earley: N ms\nBoyer: N ms\n"
+  },
+  {
+    "bench": "gbemu",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Gameboy: 246 ms\n",
+    "err": "",
+    "normalized": "Gameboy: N ms\n"
+  },
+  {
+    "bench": "gbemu",
+    "mode": "jit",
+    "rc": "timeout"
+  },
+  {
+    "bench": "mandreel",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Mandreel: 785 ms\n",
+    "err": "",
+    "normalized": "Mandreel: N ms\n"
+  },
+  {
+    "bench": "mandreel",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Mandreel: 874 ms\n",
+    "err": "",
+    "normalized": "Mandreel: N ms\n"
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "interp",
+    "rc": 0,
+    "out": "NavierStokes: 350 ms\n",
+    "err": "",
+    "normalized": "NavierStokes: N ms\n"
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "jit",
+    "rc": 0,
+    "out": "NavierStokes: 208 ms\n",
+    "err": "",
+    "normalized": "NavierStokes: N ms\n"
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "interp",
+    "rc": 0,
+    "out": "PdfJS: 346 ms\n",
+    "err": "",
+    "normalized": "PdfJS: N ms\n"
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "jit",
+    "rc": 0,
+    "out": "PdfJS: 384 ms\n",
+    "err": "",
+    "normalized": "PdfJS: N ms\n"
+  },
+  {
+    "bench": "raytrace",
+    "mode": "interp",
+    "rc": 0,
+    "out": "RayTrace: 162 ms\n",
+    "err": "",
+    "normalized": "RayTrace: N ms\n"
+  },
+  {
+    "bench": "raytrace",
+    "mode": "jit",
+    "rc": 0,
+    "out": "RayTrace: 162 ms\n",
+    "err": "",
+    "normalized": "RayTrace: N ms\n"
+  },
+  {
+    "bench": "regexp",
+    "mode": "interp",
+    "rc": 0,
+    "out": "RegExp: 343 ms\n",
+    "err": "",
+    "normalized": "RegExp: N ms\n"
+  },
+  {
+    "bench": "regexp",
+    "mode": "jit",
+    "rc": 0,
+    "out": "RegExp: 343 ms\n",
+    "err": "",
+    "normalized": "RegExp: N ms\n"
+  },
+  {
+    "bench": "richards",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Richards: 226 ms\n",
+    "err": "",
+    "normalized": "Richards: N ms\n"
+  },
+  {
+    "bench": "richards",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Richards: 167 ms\n",
+    "err": "",
+    "normalized": "Richards: N ms\n"
+  },
+  {
+    "bench": "splay",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Splay: 113 ms\n",
+    "err": "",
+    "normalized": "Splay: N ms\n"
+  },
+  {
+    "bench": "splay",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Splay: 109 ms\n",
+    "err": "",
+    "normalized": "Splay: N ms\n"
+  },
+  {
+    "bench": "typescript",
+    "mode": "interp",
+    "rc": 0,
+    "out": "Typescript: 1140 ms\n",
+    "err": "",
+    "normalized": "Typescript: N ms\n"
+  },
+  {
+    "bench": "typescript",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Typescript: 1202 ms\n",
+    "err": "",
+    "normalized": "Typescript: N ms\n"
+  },
+  {
+    "bench": "zlib",
+    "mode": "interp",
+    "rc": 0,
+    "out": "zlib: 5279 ms\n",
+    "err": "",
+    "normalized": "zlib: N ms\n"
+  },
+  {
+    "bench": "zlib",
+    "mode": "jit",
+    "rc": 0,
+    "out": "zlib: 4970 ms\n",
+    "err": "",
+    "normalized": "zlib: N ms\n"
+  }
+]

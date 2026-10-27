@@ -1,0 +1,35 @@
+Hottest interpreted functions (handler entries include retries):
+    threaded  share    switch retired  function / admission
+  13,584,005  54.5%    59,638       0  GeneratePayloadTree:454 [id=5] / too few useful operations
+   7,999,235  32.1%     8,709       0  SplayTree.prototype.splay_:725 [id=48] / no entry reaches minimum span
+   1,152,032   4.6%    96,192       0  BenchmarkSuite.ResetRNG:137 [id=20] / too few useful operations
+     520,149   2.1%     1,766       1  SplayTree.prototype.insert:592 [id=41] / compiled
+     314,337   1.3%     1,101       0  SplayTree.prototype.isEmpty:580 [id=40] / too few useful operations
+     264,720   1.1%    19,485       1  InsertNewNode:488 [id=9] / compiled
+     239,873   1.0%     1,478       1  SplayTree.prototype.remove:625 [id=42] / compiled
+     207,994   0.8%     1,854       0  SplayTree.prototype.find:657 [id=43] / no entry reaches minimum span
+     167,914   0.7%     1,439       1  SplayTree.prototype.findGreatestLessThan:685 [id=45] / compiled
+     104,381   0.4%        59       0  SplayTree.Node.prototype.traverse_:819 [id=50] / compiled
+      96,000   0.4%       956       0  GenerateKey:471 [id=6] / too few useful operations
+      82,021   0.3%       505       0  SplaySetup:500 [id=10] / compiled
+      56,020   0.2%        19       0  SplayTearDown:518 [id=11] / no entry reaches minimum span
+      40,000   0.2%         1       0  SplayTree.prototype.exportKeys:709 [id=46] / no entry reaches minimum span
+      35,639   0.1%     1,360       0  SplayRun:543 [id=12] / compiled
+Total threaded entries: 24,902,475; switch instructions: 195,415
+
+Most frequent native exits:
+      14,742  RET              InsertNewNode:496 [id=9] pc=22
+       7,184  GETPROPC_CACHED  SplayRun:549 [id=12] pc=19
+       7,183  GETPROPC_CACHED  SplayTree.prototype.findMax:673 [id=44] pc=14
+       7,102  CALL_GLOBAL      SplayRun:546 [id=12] pc=4
+          90  GETPROPC_CACHED  SplayRun:551 [id=12] pc=27
+           8  CALL_GLOBAL      InsertNewNode:494 [id=9] pc=14
+           8  CALL             SplayTree.prototype.insert:599 [id=41] pc=16
+           8  CALL             SplayTree.prototype.remove:629 [id=42] pc=13
+           8  CALL             SplayTree.prototype.findGreatestLessThan:690 [id=45] pc=9
+           1  GETGLOBAL        SplayRun:548 [id=12] pc=12
+           1  GETGLOBAL        SplayRun:551 [id=12] pc=25
+           1  GETGLOBAL        BenchmarkSuite.RunSuites:909 [id=51] pc=38
+           1  LDCONST          <anonymous>:910 [id=51] pc=48
+
+Native totals: functions=9, loops=0, templates=0, hits=36,337, code_bytes=38,076

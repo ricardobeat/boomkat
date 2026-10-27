@@ -1,0 +1,6 @@
+{
+  "bench": "crypto",
+  "rc": 1,
+  "out": "Encrypt: 12 ms\n",
+  "err": "Uncaught Error: Crypto operation failed\n"
+}

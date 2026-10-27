@@ -1,0 +1,20 @@
+[
+  {
+    "bench": "richards",
+    "rc": 0,
+    "out": "Richards: 329 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "rc": 0,
+    "out": "DeltaBlue: 544 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "rc": 0,
+    "out": "Splay: 235 ms\n",
+    "err": ""
+  }
+]

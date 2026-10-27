@@ -1,0 +1,12 @@
+[
+  {
+    "bench": "crypto",
+    "rc": 0,
+    "out": "Encrypt: 40 ms\nDecrypt: 415 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "rc": "timeout"
+  }
+]

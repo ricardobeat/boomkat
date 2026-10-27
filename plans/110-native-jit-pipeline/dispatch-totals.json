@@ -1,0 +1,50 @@
+{
+  "richards": {
+    "interp": {
+      "total_dispatches": 65342861,
+      "executed_bytecodes": 65342961,
+      "threaded_dispatches": 65324004,
+      "switch_dispatches": 18857,
+      "fused_bytecodes": 100
+    },
+    "jit": {
+      "total_dispatches": 30768957,
+      "executed_bytecodes": 30769016,
+      "threaded_dispatches": 30765934,
+      "switch_dispatches": 3023,
+      "fused_bytecodes": 59
+    }
+  },
+  "deltablue": {
+    "interp": {
+      "total_dispatches": 58466686,
+      "executed_bytecodes": 58475378,
+      "threaded_dispatches": 58375371,
+      "switch_dispatches": 91315,
+      "fused_bytecodes": 8692
+    },
+    "jit": {
+      "total_dispatches": 47169520,
+      "executed_bytecodes": 47175877,
+      "threaded_dispatches": 47043769,
+      "switch_dispatches": 125751,
+      "fused_bytecodes": 6357
+    }
+  },
+  "splay": {
+    "interp": {
+      "total_dispatches": 25178748,
+      "executed_bytecodes": 25178848,
+      "threaded_dispatches": 24979107,
+      "switch_dispatches": 199641,
+      "fused_bytecodes": 100
+    },
+    "jit": {
+      "total_dispatches": 24902384,
+      "executed_bytecodes": 24902443,
+      "threaded_dispatches": 24706969,
+      "switch_dispatches": 195415,
+      "fused_bytecodes": 59
+    }
+  }
+}
