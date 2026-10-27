@@ -1,0 +1,180 @@
+0 box2d {'Box2D': 221} {'Box2D': 226}
+0 code-load {'CodeLoadClosure': 7, 'CodeLoadJQuery': 149} {'CodeLoadClosure': 7, 'CodeLoadJQuery': 149}
+0 crypto {'Encrypt': 14, 'Decrypt': 229} {'Encrypt': 13, 'Decrypt': 198}
+0 deltablue {'DeltaBlue': 120} {'DeltaBlue': 120}
+0 earley-boyer {'Earley': 21, 'Boyer': 154} {'Earley': 20, 'Boyer': 156}
+0 gbemu {'Gameboy': 292} {'Gameboy': 290}
+0 mandreel {'Mandreel': 685} {'Mandreel': 692}
+0 navier-stokes {'NavierStokes': 207} {'NavierStokes': 207}
+0 pdfjs {'PdfJS': 370} {'PdfJS': 362}
+0 raytrace {'RayTrace': 166} {'RayTrace': 167}
+0 regexp {'RegExp': 339} {'RegExp': 339}
+0 richards {'Richards': 89} {'Richards': 88}
+0 splay {'Splay': 112} {'Splay': 112}
+0 typescript {'Typescript': 1237} {'Typescript': 1221}
+0 zlib {'zlib': 4244} {'zlib': 4322}
+1 box2d {'Box2D': 224} {'Box2D': 224}
+1 code-load {'CodeLoadClosure': 7, 'CodeLoadJQuery': 153} {'CodeLoadClosure': 7, 'CodeLoadJQuery': 152}
+1 crypto {'Encrypt': 13, 'Decrypt': 197} {'Encrypt': 15, 'Decrypt': 232}
+1 deltablue {'DeltaBlue': 120} {'DeltaBlue': 120}
+1 earley-boyer {'Earley': 20, 'Boyer': 155} {'Earley': 20, 'Boyer': 155}
+1 gbemu {'Gameboy': 290} {'Gameboy': 293}
+1 mandreel {'Mandreel': 693} {'Mandreel': 683}
+1 navier-stokes {'NavierStokes': 207} {'NavierStokes': 207}
+1 pdfjs {'PdfJS': 361} {'PdfJS': 368}
+1 raytrace {'RayTrace': 167} {'RayTrace': 168}
+1 regexp {'RegExp': 337} {'RegExp': 338}
+1 richards {'Richards': 89} {'Richards': 89}
+1 splay {'Splay': 112} {'Splay': 112}
+1 typescript {'Typescript': 1224} {'Typescript': 1239}
+1 zlib {'zlib': 4312} {'zlib': 4252}
+2 box2d {'Box2D': 223} {'Box2D': 224}
+2 code-load {'CodeLoadClosure': 6, 'CodeLoadJQuery': 153} {'CodeLoadClosure': 7, 'CodeLoadJQuery': 152}
+2 crypto {'Encrypt': 15, 'Decrypt': 228} {'Encrypt': 14, 'Decrypt': 197}
+2 deltablue {'DeltaBlue': 120} {'DeltaBlue': 120}
+2 earley-boyer {'Earley': 21, 'Boyer': 153} {'Earley': 21, 'Boyer': 155}
+2 gbemu {'Gameboy': 292} {'Gameboy': 290}
+2 mandreel {'Mandreel': 685} {'Mandreel': 693}
+2 navier-stokes {'NavierStokes': 207} {'NavierStokes': 207}
+2 pdfjs {'PdfJS': 367} {'PdfJS': 362}
+2 raytrace {'RayTrace': 166} {'RayTrace': 165}
+2 regexp {'RegExp': 336} {'RegExp': 334}
+2 richards {'Richards': 88} {'Richards': 88}
+2 splay {'Splay': 112} {'Splay': 112}
+2 typescript {'Typescript': 1231} {'Typescript': 1223}
+2 zlib {'zlib': 4254} {'zlib': 4328}
+box2d {'baseline': 223, 'ssa': 224} 0.4
+code-load {'baseline': 159, 'ssa': 159} 0.0
+crypto {'baseline': 243, 'ssa': 211} -13.2
+deltablue {'baseline': 120, 'ssa': 120} 0.0
+earley-boyer {'baseline': 175, 'ssa': 176} 0.6
+gbemu {'baseline': 292, 'ssa': 290} -0.7
+mandreel {'baseline': 685, 'ssa': 693} 1.2
+navier-stokes {'baseline': 207, 'ssa': 207} 0.0
+pdfjs {'baseline': 368, 'ssa': 362} -1.6
+raytrace {'baseline': 166, 'ssa': 167} 0.6
+regexp {'baseline': 338, 'ssa': 337} -0.3
+richards {'baseline': 89, 'ssa': 88} -1.1
+splay {'baseline': 112, 'ssa': 112} 0.0
+typescript {'baseline': 1237, 'ssa': 1223} -1.1
+zlib {'baseline': 4252, 'ssa': 4322} 1.6
+FULL 0 baseline 0 Richards: 3993
+DeltaBlue: 2926
+Crypto: 3070
+RayTrace: 3083
+EarleyBoyer: 3079
+RegExp: 777
+Splay: 9200
+SplayLatency: 21808
+NavierStokes: 3940
+PdfJS: 5802
+Mandreel: 1917
+MandreelLatency: 11103
+Gameboy: 12204
+CodeLoad: 28064
+Box2D: 6993
+zlib: 2893
+Typescript: 21216
+----
+Score (version 9): 5495
+
+FULL 0 ssa 0 Richards: 4000
+DeltaBlue: 2936
+Crypto: 3597
+RayTrace: 3086
+EarleyBoyer: 3106
+RegExp: 778
+Splay: 8540
+SplayLatency: 21646
+NavierStokes: 3875
+PdfJS: 7168
+Mandreel: 1920
+MandreelLatency: 11103
+Gameboy: 12204
+CodeLoad: 28182
+Box2D: 5876
+zlib: 2852
+Typescript: 21950
+----
+Score (version 9): 5540
+
+FULL 1 ssa 0 Richards: 3989
+DeltaBlue: 2939
+Crypto: 3590
+RayTrace: 3080
+EarleyBoyer: 3082
+RegExp: 775
+Splay: 9274
+SplayLatency: 22626
+NavierStokes: 3898
+PdfJS: 5548
+Mandreel: 1908
+MandreelLatency: 11029
+Gameboy: 11993
+CodeLoad: 28303
+Box2D: 6857
+zlib: 2833
+Typescript: 21811
+----
+Score (version 9): 5532
+
+FULL 1 baseline 0 Richards: 3986
+DeltaBlue: 2924
+Crypto: 3079
+RayTrace: 3083
+EarleyBoyer: 3083
+RegExp: 778
+Splay: 8548
+SplayLatency: 21841
+NavierStokes: 3963
+PdfJS: 7059
+Mandreel: 1924
+MandreelLatency: 10909
+Gameboy: 12159
+CodeLoad: 28505
+Box2D: 6707
+zlib: 2890
+Typescript: 21640
+----
+Score (version 9): 5530
+
+FULL 2 baseline 0 Richards: 3986
+DeltaBlue: 2936
+Crypto: 3075
+RayTrace: 3080
+EarleyBoyer: 3085
+RegExp: 772
+Splay: 9257
+SplayLatency: 22413
+NavierStokes: 3932
+PdfJS: 5651
+Mandreel: 1921
+MandreelLatency: 11128
+Gameboy: 12159
+CodeLoad: 28275
+Box2D: 6986
+zlib: 2895
+Typescript: 21354
+----
+Score (version 9): 5500
+
+FULL 2 ssa 0 Richards: 3986
+DeltaBlue: 2927
+Crypto: 3602
+RayTrace: 3083
+EarleyBoyer: 3091
+RegExp: 775
+Splay: 9062
+SplayLatency: 22291
+NavierStokes: 3905
+PdfJS: 5901
+Mandreel: 1920
+MandreelLatency: 11054
+Gameboy: 12126
+CodeLoad: 28435
+Box2D: 6931
+zlib: 2852
+Typescript: 21180
+----
+Score (version 9): 5545
+

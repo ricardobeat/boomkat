@@ -1,0 +1,10 @@
+SLJIT loop compiled  pc=8..12 code_bytes=1100 plan_bytes=944 ssa=0 mem=2
+SLJIT loop compiled  pc=16..21 code_bytes=2236 plan_bytes=944 ssa=1 mem=1
+Uncaught Error: shift 6: 0,1,1,2,3
+SLJIT coverage id=0 line=1 ops=4 regs=6 captures=0 name=B threaded=8 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1 line=3 ops=28 regs=11 captures=0 name= threaded=603 switch=19 attempts=17 warmup=67 retired=0 active=0 rejection=not attempted
+SLJIT loop  begin=16 end=21 hits=2 iterations=0
+SLJIT loop  begin=8 end=12 hits=2 iterations=0
+SLJIT coverage id=2 line=1 ops=103 regs=15 captures=0 name= threaded=350 switch=74 attempts=1 warmup=8 retired=0 active=0 rejection=not attempted
+SLJIT totals functions=0 loops=2 templates=0 hits=0 code_bytes=1920
+SLJIT budget bytes=1920 limit=1048576 native_work=0 evictions=0

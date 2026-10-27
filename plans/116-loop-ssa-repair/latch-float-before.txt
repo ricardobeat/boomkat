@@ -1,0 +1,15 @@
+SLJIT loop compiled latchFloat pc=3..9 code_bytes=1884 plan_bytes=960 ssa=1 mem=1
+SLJIT function compiled latchFloat pc=0..11 function_ops=11 regs=6 code_bytes=3468 plan_bytes=4731
+Uncaught Error: latch result
+SLJIT coverage id=0 line=2 ops=11 regs=6 captures=0 name=latchFloat threaded=377 switch=1 attempts=3 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=0 calls=0 returns=0
+SLJIT pipeline id=0 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=0 homes=0
+SLJIT code id=0 start=0x10449b260 bytes=3468 fragment=0 fragment_bytes=0
+SLJIT function latchFloat begin=0 ops=11 bytes=3468 hits=2 returns=2 stalled=2 charged_edges=0 budget_exits=0 id=0 line=2
+SLJIT exit latchFloat begin=0 pc=10 op=65 count=2 id=0 line=4 opcode=RET
+SLJIT loop latchFloat begin=3 end=9 hits=1 iterations=2
+SLJIT ssa name=latchFloat begin=3 end=9 hits=1 iterations=2
+SLJIT coverage id=1 line=1 ops=67 regs=12 captures=0 name= threaded=34 switch=19 attempts=1 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT totals functions=1 loops=1 templates=0 hits=2 code_bytes=5352
+SLJIT budget bytes=5352 limit=1048576 native_work=0 evictions=0

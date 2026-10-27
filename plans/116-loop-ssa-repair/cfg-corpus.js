@@ -1,0 +1,74 @@
+var outcomes=[];
+function kernel0(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+4;}else{p=x-(-1);q=y*3;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel0(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel1(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+1;}else{p=x-0.5;q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel1(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel2(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+1;}else{p=x-(-1);q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel2(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel3(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+1;}else{p=x-(-1);q=y*2;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel3(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel4(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+-2;}else{p=x-0.5;q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel4(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel5(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+1;}else{p=x-(-1);q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel5(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel6(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*3;q=y+4;}else{p=x-1;q=y*2;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel6(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel7(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*3;q=y+1;}else{p=x-(-1);q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel7(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel8(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+1;}else{p=x-1;q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel8(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel9(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*3;q=y+0.25;}else{p=x-0.5;q=y*3;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel9(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel10(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+-2;}else{p=x-(-1);q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel10(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel11(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+0.25;}else{p=x-1;q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel11(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel12(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+1;}else{p=x-(-1);q=y*2;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel12(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel13(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+1;}else{p=x-1;q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel13(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel14(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+0.25;}else{p=x-1;q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel14(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel15(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+-2;}else{p=x-(-1);q=y*2;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel15(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel16(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*3;q=y+1;}else{p=x-1;q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel16(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel17(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+4;}else{p=x-(-1);q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel17(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel18(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+4;}else{p=x-(-1);q=y*2;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel18(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel19(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+4;}else{p=x-1;q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel19(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel20(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+4;}else{p=x-1;q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel20(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel21(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+-2;}else{p=x-1;q=y*3;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel21(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel22(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+4;}else{p=x-1;q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel22(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel23(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+0.25;}else{p=x-1;q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel23(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel24(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+0.25;}else{p=x-(-1);q=y*-4;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel24(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel25(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+1;}else{p=x-0.5;q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel25(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel26(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+1;}else{p=x-0.5;q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel26(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel27(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*1;q=y+0.25;}else{p=x-(-1);q=y*2;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel27(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel28(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+1;}else{p=x-1;q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel28(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel29(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+-2;}else{p=x-1;q=y*2;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel29(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel30(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+-2;}else{p=x-0.5;q=y*2;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel30(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel31(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+-2;}else{p=x-0.5;q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel31(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel32(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+4;}else{p=x-(-1);q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel32(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel33(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*3;q=y+-2;}else{p=x-1;q=y*-4;}if(i&2){p=p+q;}else{q=q-p;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel33(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel34(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*2;q=y+1;}else{p=x-1;q=y*3;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Float64Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel34(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+function kernel35(a,b,n){var s=0,p=0,q=0;for(var i=0;i<n;i++){var x=a[i],y=a[(i+1)&31];if(i&1){p=x*-1;q=y+-2;}else{p=x-(-1);q=y*-4;}b[i]=p+q;s+=b[i];}return s;}
+for(var r=0;r<24;r++){var a=new Int32Array(32),b=new Float64Array(32);for(var i=0;i<32;i++)a[i]=((i*37+r)%101)-50;var s=kernel35(a,r%2?a:b,32);if(r===23)outcomes.push([s,Array.prototype.join.call(a,','),Array.prototype.join.call(b,',')]);}
+print(JSON.stringify(outcomes));

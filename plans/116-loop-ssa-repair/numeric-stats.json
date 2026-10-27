@@ -1,0 +1,122 @@
+[
+  {
+    "file": "test/sljit_ssa_cfg.js",
+    "hits": 420,
+    "iterations": 9342
+  },
+  {
+    "file": "test/sljit_ssa_comparisons.js",
+    "hits": 35,
+    "iterations": 1027
+  },
+  {
+    "file": "test/sljit_ssa_dense.js",
+    "hits": 30,
+    "iterations": 993
+  },
+  {
+    "file": "test/sljit_ssa_latch.js",
+    "hits": 199,
+    "iterations": 12222
+  },
+  {
+    "file": "test/sljit_ssa_numbers.js",
+    "hits": 7,
+    "iterations": 133
+  },
+  {
+    "file": "test/sljit_ssa_postfix.js",
+    "hits": 190,
+    "iterations": 4330
+  },
+  {
+    "file": "test/sljit_ssa_recovery.js",
+    "hits": 1,
+    "iterations": 0
+  },
+  {
+    "file": "test/sljit_ssa_spills.js",
+    "hits": 52,
+    "iterations": 6082
+  },
+  {
+    "file": "/tmp/boomkat-ssa-repair/cfg-corpus.js",
+    "hits": 191,
+    "iterations": 4622
+  },
+  {
+    "file": "bench/mini/box2d.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/code-load.js",
+    "hits": 1,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/crypto.js",
+    "hits": 140709,
+    "iterations": 1590299
+  },
+  {
+    "file": "bench/mini/deltablue.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/earley-boyer.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/gbemu.js",
+    "hits": 210,
+    "iterations": 209897
+  },
+  {
+    "file": "bench/mini/mandreel.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/navier-stokes.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/pdfjs.js",
+    "hits": 11644,
+    "iterations": 603674
+  },
+  {
+    "file": "bench/mini/raytrace.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/regexp.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/richards.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/splay.js",
+    "hits": 0,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/typescript.js",
+    "hits": 2,
+    "iterations": 0
+  },
+  {
+    "file": "bench/mini/zlib.js",
+    "hits": 0,
+    "iterations": 0
+  }
+]

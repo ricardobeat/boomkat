@@ -1,0 +1,3 @@
+SLJIT function compiled  pc=0..91 function_ops=91 regs=11 code_bytes=19304 plan_bytes=5451
+SLJIT loop compiled ssaPostfix pc=1..8 code_bytes=2932 plan_bytes=960 ssa=1 mem=1
+Uncaught Error: postfix frame 11

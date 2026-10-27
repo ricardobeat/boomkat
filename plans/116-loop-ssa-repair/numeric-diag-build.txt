@@ -1,0 +1,8 @@
+ 81:     return self.alloc_cleared(0);
+ 82: }
+ 83: 
+ 84: macro void* PagePool.alloc_cleared(&self, sz clear_bytes) @private {
+                                                               ^^^^^^^^
+/Users/rtomasi/cousas/boomkat/.worktrees/rat/src/pagepool.c3:84:59: warning: '@private' modifiers are ignored for method declarations.
+
+Program linked to executable '/tmp/boomkat-ssa-repair/numeric-diag/boomkat'.

@@ -1,0 +1,4 @@
+SLJIT loop compiled ssaUnsigned pc=2..7 code_bytes=2516 plan_bytes=944 ssa=1 mem=2
+SLJIT function compiled ssaUnsigned pc=0..9 function_ops=9 regs=10 code_bytes=4248 plan_bytes=4713
+SLJIT function compiled  pc=0..202 function_ops=202 regs=10 code_bytes=46092 plan_bytes=6450
+Uncaught Error: unsigned result narrowed at 62: -1

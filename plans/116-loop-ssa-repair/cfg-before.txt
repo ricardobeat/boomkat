@@ -1,0 +1,3 @@
+SLJIT loop compiled ssaAlias pc=3..11 code_bytes=2984 plan_bytes=944 ssa=1 mem=2
+SLJIT function compiled ssaAlias pc=0..13 function_ops=13 regs=11 code_bytes=5980 plan_bytes=4749
+Uncaught Error: aliased load/store: 525 != 528

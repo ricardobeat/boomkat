@@ -1,0 +1,3 @@
+test-local: match (status 0)
+rosetta: match (status 0)
+modules: match (status 0)

@@ -1,0 +1,34 @@
+shift PASS
+SLJIT coverage id=0 line=1 ops=4 regs=6 captures=0 name=B threaded=8 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1 line=3 ops=28 regs=11 captures=0 name= threaded=21915 switch=6159 attempts=4068 warmup=4294967294 retired=0 active=12 rejection=compiled
+SLJIT native id=1 calls=0 returns=0
+SLJIT pipeline id=1 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1 homes=1
+SLJIT code id=1 start=0x10324bab8 bytes=15828 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=28 bytes=15828 hits=1121 returns=536 stalled=0 charged_edges=585 budget_exits=0 id=1 line=3
+SLJIT exit  begin=0 pc=9 op=50 count=438 id=1 line=6 opcode=GETPROP
+SLJIT exit  begin=0 pc=10 op=53 count=536 id=1 line=6 opcode=PUTPROP
+SLJIT exit  begin=0 pc=18 op=53 count=49 id=1 line=7 opcode=PUTPROP
+SLJIT exit  begin=0 pc=27 op=66 count=536 id=1 line=10 opcode=RETUNDEF
+SLJIT loop  begin=8 end=12 hits=1967 iterations=14
+SLJIT loop  begin=16 end=21 hits=1433 iterations=494
+SLJIT loop  begin=8 end=12 hits=2 iterations=0
+SLJIT coverage id=2 line=1 ops=103 regs=15 captures=0 name= threaded=15546 switch=1503 attempts=1332 warmup=4294967295 retired=2 active=37 rejection=compiled
+SLJIT native id=2 calls=0 returns=0
+SLJIT pipeline id=2 inlined=0 recoveries=438 allocations=1752 pushes=0 links=2
+SLJIT numeric id=2 homes=0
+SLJIT code id=2 start=0x103244a28 bytes=28456 fragment=0x10324ba60 fragment_bytes=56
+SLJIT inline_exit id=2 frame=1 depth=1 target_line=3 pc=9 opcode=GETPROP count=438
+SLJIT function  begin=0 ops=103 bytes=28512 hits=1331 returns=1 stalled=1 charged_edges=438 budget_exits=0 id=2 line=1
+SLJIT exit  begin=0 pc=28 op=70 count=438 id=2 line=12 opcode=PUTVAR
+SLJIT exit  begin=0 pc=35 op=70 count=438 id=2 line=12 opcode=PUTVAR
+SLJIT exit  begin=0 pc=47 op=61 count=8 id=2 line=14 opcode=CALL
+SLJIT exit  begin=0 pc=77 op=61 count=8 id=2 line=16 opcode=CALL
+SLJIT exit  begin=0 pc=102 op=66 count=1 id=2 line=18 opcode=RETUNDEF
+SLJIT totals functions=2 loops=3 templates=0 hits=2452 code_bytes=47220
+SLJIT budget bytes=47220 limit=1048576 native_work=0 evictions=0
+SLJIT loop compiled  pc=8..12 code_bytes=1100 plan_bytes=944 ssa=0 mem=2
+SLJIT loop compiled  pc=16..21 code_bytes=2356 plan_bytes=944 ssa=1 mem=1
+SLJIT loop compiled  pc=8..12 code_bytes=960 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..28 function_ops=28 regs=11 code_bytes=15828 plan_bytes=4884
+SLJIT function compiled  pc=0..103 function_ops=103 regs=15 code_bytes=28512 plan_bytes=5559
