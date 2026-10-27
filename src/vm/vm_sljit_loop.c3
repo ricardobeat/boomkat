@@ -17,6 +17,8 @@ const uint LOOP_OPS       = 128;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
 const uint LOOP_THIS      = LOOP_REGS + LOOP_BINDINGS;
+const uint LOOP_LINK_LIMIT = 8192;
+const uint LOOP_LINK_BLOCK = usz::size == 8 ? 4 : 2;
 
 alias LoopNative = fn uint(void* state, long budget);
 enum LoopMemoryKind : char {
@@ -97,13 +99,17 @@ struct LoopLink @feat(SLJIT) {
     bool exit;
     ushort inline_id;
     ulong flow;
+    void* resolved;
 }
 struct LoopEmitter @feat(SLJIT) {
     TemplateEmitter e;
     LoopPlan* plan;
     void*[512] labels;
-    LoopLink[2048] links;
+    // Small chunks belong to the SLJIT compiler arena. Nested emitters keep
+    // only this index on the stack; unused fixup capacity allocates nothing.
+    LoopLink*[LOOP_LINK_LIMIT / LOOP_LINK_BLOCK] link_blocks;
     uint link_count;
+    uint link_limit;
     bool link_limit_reached @if($feat(SLJIT_STATS));
     bool function_mode;
     // Inlined callees keep their registers in a private scratch window, so the
@@ -863,16 +869,29 @@ fn void LoopEmitter.mark(&self, uint reg) @feat(SLJIT) {
     self.e.op(jit::SLJIT_OR, jit::reg_s(2), jit::reg_s(2), 0, jit::SLJIT_IMM, (long)(1UL << reg));
 }
 fn void LoopEmitter.link(&self, void* jump, uint target, bool exit) @feat(SLJIT) {
+    self.add_link({ .jump = jump, .target = target, .exit = exit,
+        .inline_id = exit && self.inline_frame != null ? self.inline_frame.id : 0,
+        .flow = self.flow != null && exit ? self.flow.snapshot() : 0 });
+}
+fn LoopLink* LoopEmitter.link_at(&self, uint index) @feat(SLJIT) {
+    return self.link_blocks[index / LOOP_LINK_BLOCK] + index % LOOP_LINK_BLOCK;
+}
+fn uint LoopEmitter.link_capacity(&self) @feat(SLJIT) => self.link_limit != 0 ? self.link_limit : 2048;
+fn void LoopEmitter.add_link(&self, LoopLink link) @feat(SLJIT) {
     $if $feat(SLJIT_STATS):
-        if (self.link_count == self.links.len) self.link_limit_reached = true;
+        if (self.link_count == self.link_capacity()) self.link_limit_reached = true;
     $endif
-    if (jump == null || self.link_count == self.links.len) {
+    if (link.jump == null || self.link_count == self.link_capacity()) {
         self.e.failed = true;
         return;
     }
-    self.links[self.link_count++] = { .jump = jump, .target = target, .exit = exit,
-        .inline_id = exit && self.inline_frame != null ? self.inline_frame.id : 0,
-        .flow = self.flow != null && exit ? self.flow.snapshot() : 0 };
+    uint block = self.link_count / LOOP_LINK_BLOCK;
+    if (self.link_blocks[block] == null) {
+        self.link_blocks[block] = (LoopLink*)jit::sljit_alloc_memory(self.e.compiler,
+            (int)(LOOP_LINK_BLOCK * LoopLink::size));
+        if (self.link_blocks[block] == null) { self.e.failed = true; return; }
+    }
+    *self.link_at(self.link_count++) = link;
 }
 fn void LoopEmitter.bind_to(&self, void* jump, void* label) @feat(SLJIT) {
     if (jump != null && label != null) {
@@ -1524,7 +1543,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
     void*[512] epilog_jumps;
     uint exit_count;
     for (uint i = 0; i < out.link_count; i++) {
-        LoopLink link = out.links[i];
+        LoopLink link = *out.link_at(i);
         if (!link.exit) {
             out.bind_to(link.jump, out.labels[link.target - plan.begin]);
             continue;

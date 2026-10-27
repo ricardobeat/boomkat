@@ -36,26 +36,65 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
     Instruction ins = cold.vm.current_func.code[offset];
     TVal* regs = cold.act.bottom;
     TVal base = ins.op == Opcode.GETTHISC ? cold.act.this_binding : regs[ins.b];
-    if (!base.is_object() || base.get_heapptr() == null) return 0;
-    HObject* object = base.get_heapptr();
     HString* key = cold.vm.current_func.constants[ins.c].get_heapptr();
-    if (key == null || !native_data_object(object, key, cold.heap)) return 0;
-    for (uint depth = 0; object != null && depth < 64; depth++, object = object.prototype) {
+    if (key == null) return 0;
+    HObject* object;
+    if (base.is_object()) {
+        object = base.get_heapptr();
+    } else {
+        HString* string = plain_string_of(&base);
+        if (string == null || key.flags.is_arridx) return 0;
+        if (key == cold.heap.str(heap::BuiltinStr.LENGTH)) {
+            TVal* dest = regs + ins.a;
+            if (!th_can_release(dest)) return 0;
+            uint length = string.char_length();
+            th_do_release(dest);
+            dest.set_fastint(length);
+            return 1;
+        }
+        object = cold.heap.string_proto;
+    }
+    if (!native_data_object(object, key, cold.heap)) return 0;
+    HObject* receiver = object;
+    bool cacheable = receiver.mega_cacheable(key, cold.heap);
+    PropValue* slot;
+    ICEntry* ic = (ICEntry*)cold.vm.current_func.ic_entries + offset;
+    // Own slots remain usable on dictionary objects, even when the emitter
+    // cannot embed that layout. Read current storage after validating the
+    // site's generation, rather than searching the shape on every miss.
+    if (ic.key.borrow() == key && ic.shape_id == receiver.shape_id
+        && ic.shape_gen == receiver.shape_generation(cold.heap)
+        && !ic.has_proto && !ic.prop_flags.is_accessor && ic.prop_idx < receiver.prop_count) {
+        slot = &receiver.prop_values()[ic.prop_idx];
+    }
+    if (slot == null && cacheable) {
+        MegamorphicEntry* entry;
+        slot = hobject::mega_cache_lookup(cold.heap, receiver, key, &entry);
+        if (slot != null && (entry.is_accessor || (entry.proto != null
+            && !native_data_object((HObject*)entry.proto, key, cold.heap)))) return 0;
+    }
+    if (slot == null) for (uint depth = 0; object != null && depth < 64; depth++, object = object.prototype) {
         if (!native_data_object(object, key, cold.heap)) return 0;
         PropFlags flags;
         int index = function_shape_slot(object.get_shape(cold.heap), key, &flags);
         if (index < 0) continue;
         if (flags.is_accessor) return 0;
-        TVal value = object.prop_values()[index].get();
-        TVal* dest = regs + ins.a;
-        if (!th_can_publish(cold.heap, value) || !th_can_release(dest)) return 0;
-        th_do_retain(&value);
-        th_do_release(dest);
-        *dest = value;
-        if (value.is_heap_allocated()) track_heap_store(cold.act, dest, ins.a);
-        return 1;
+        slot = &object.prop_values()[index];
+        // Reuse the bounded shared cache, including its shape-recycle and
+        // prototype checks. Do not retarget a site's IC: existing generated
+        // code may still embed the owners that entry keeps alive.
+        if (cacheable) hobject::mega_cache_store(cold.heap, receiver, key, object, index, false);
+        break;
     }
-    return 0;
+    if (slot == null) return 0;
+    TVal value = slot.get();
+    TVal* dest = regs + ins.a;
+    if (!th_can_publish(cold.heap, value) || !th_can_release(dest)) return 0;
+    th_do_retain(&value);
+    th_do_release(dest);
+    *dest = value;
+    if (value.is_heap_allocated()) track_heap_store(cold.act, dest, ins.a);
+    return 1;
 }
 
 // R0=function object, R1=argument window, R2=result slot, R3=arity plus
@@ -237,7 +276,7 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     e.mov(mem | run, (char*)&state.typed[1].receiver - (char*)&state, imm, 0);
     jit::sljit_set_label(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), body);
     void* failed = e.label();
-    for (uint i = 0; i < guards.link_count; i++) guards.bind_to(guards.links[i].jump, failed);
+    for (uint i = 0; i < guards.link_count; i++) guards.bind_to(guards.link_at(i).jump, failed);
     e.mov(r0, 0, mem | run, $reflect(FunctionRun.start).offset);
     if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0 || guards.e.failed) e.failed = true;
     return entry;

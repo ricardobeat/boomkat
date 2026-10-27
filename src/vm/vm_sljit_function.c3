@@ -229,7 +229,11 @@ fn long function_cold_offset(uint field) @feat(SLJIT) {
 }
 fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool inert = false) @feat(SLJIT) {
     TemplateEmitter* e = &out.e;
-    if (out.flow != null) out.flow.drop(reg);
+    bool old_inert = out.flow != null && out.flow.unowned[reg];
+    if (out.flow != null) {
+        out.flow.drop(reg);
+        out.flow.unowned[reg] = inert;
+    }
     int r0  = jit::reg_r(0);
     int r1  = jit::reg_r(1);
     int r2  = jit::reg_r(2);
@@ -256,11 +260,18 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
         e.mov(out.cached(reg), 0, r0, 0);
         return;
     }
+    // Both values are proven to need no refcount change in this block. No reference count
+    // can change, and no release guard is needed. Calls and entries clear
+    // these facts; a later string definition restores the owning store.
+    if (old_inert && inert) {
+        e.mov(mem | out.state_base(), loop_value_offset(reg), r0, 0);
+        return;
+    }
     out.load(reg, r1);
     HeapHeader header;
     long refs = (char*)&header.refcount - (char*)&header;
     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
-    void* old_inert = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
+    void* old_unowned = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
     e.op(jit::SLJIT_AND, r2, r1, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
     void* old_null = e.cmp(jit::SLJIT_EQUAL, r2, 0, imm, 0);
     void* same     = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
@@ -268,7 +279,7 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
     out.guard(jit::SLJIT_LESS_EQUAL, r3, 0, imm, 1, pc);
     e.bind(same);
     e.bind(old_null);
-    e.bind(old_inert);
+    e.bind(old_unowned);
     if (!inert) {
         e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
         void* new_inert = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
@@ -1415,6 +1426,23 @@ fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
     if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;
 }
 
+// Larger generic bodies can displace the tighter loop tier without reducing
+// runtime work. Reserve extra fixups for regions dominated by sampled typed
+// memory accesses, whose buffer guards account for much of their code size.
+fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
+    uint typed;
+    uint named;
+    for (uint i = 0; i < cf.code_count; i++) {
+        Opcode op = cf.code[i].op;
+        if (op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED || op == Opcode.GETTHISC
+            || op == Opcode.PUTPROPC || op == Opcode.PUTTHISC) named++;
+        if (op != Opcode.GETPROP && op != Opcode.GETPROP_CACHE && op != Opcode.PUTPROP) continue;
+        ICEntry* ic = (ICEntry*)cf.ic_entries + i;
+        if (ic.typed_kind != 0 && ic.typed_kind != 255) typed++;
+    }
+    return typed >= 8 && typed > named ? LOOP_LINK_LIMIT : 2048;
+}
+
 fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act) @feat(SLJIT) {
     $if $feat(SLJIT_STATS): cf.sljit_rejection = "emission failed"; $endif
     LoopPlan layout_plan;
@@ -1424,13 +1452,15 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     };
     FunctionEmitter* f = &emitter;
     LoopEmitter* out   = &f.out;
+    out.link_limit = function_link_limit(cf);
     out.function_mode = true;
     f.cf = cf;
     if (FUNCTION_DATAFLOW) out.flow = &f.flow;
     f.blocks[0] = true;
     for (uint i = 0; i < cf.code_count; i++) {
         int target = loop_target(cf.code[i], i);
-        if ((function_call_op(cf.code[i].op) || function_read_op(cf.code[i].op) || function_alloc_op(cf.code[i].op))
+        if ((function_call_op(cf.code[i].op) || function_read_op(cf.code[i].op) || function_alloc_op(cf.code[i].op)
+            || function_string_add_candidate(cf, i))
             && i + 1 < cf.code_count) f.blocks[i + 1] = true;
         if (target >= 0 && target < (int)cf.code_count) f.blocks[target] = true;
         if (((!function_op(
@@ -1581,12 +1611,17 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             }
             continue;
         }
+        if (function_string_add_candidate(cf, pos)) {
+            f.allocating_operation(pos);
+            continue;
+        }
         switch (ins.op) {
             case NEWOBJ:
             case NEWOBJ_SHAPE:
             case NEWARR:
             case NEWARR_CONST:
             case NEW_OBJ:
+            case INIT_SLOT:
                 f.allocating_operation(pos);
                 continue;
             case RET:
@@ -1597,6 +1632,10 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             case CALL_UNDEF_THIS:
             case CALL_VAR:
             case CALL_GLOBAL:
+                if (function_charcode_candidate(cf, pos)) {
+                    f.allocating_operation(pos);
+                    continue;
+                }
                 if (plan.numeric_homes != 0) {
                     f.flow_materialize();
                     if (function_math_candidate(cf, pos) >= 0) { f.math_call(cf, pos); f.flow_reload(pos + 1); }
@@ -1624,11 +1663,11 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
                     void* fallback = e.label();
                     uint keep = first;
                     for (uint i = first; i < last; i++) {
-                        LoopLink link = out.links[i];
+                        LoopLink link = *out.link_at(i);
                         if (link.exit && link.inline_id == 0 && link.target == pos) {
                             out.bind_to(link.jump, fallback);
                         } else {
-                            out.links[keep++] = link;
+                            *out.link_at(keep++) = link;
                         }
                     }
                     out.link_count = keep;
@@ -1861,6 +1900,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
                 continue;
         }
         bool known = ins.op == Opcode.LDINT || ins.op == Opcode.LDTRUE || ins.op == Opcode.LDFALSE
+            || (ins.op == Opcode.LDREG && out.flow != null && out.flow.unowned[ins.b])
             || ins.op == Opcode.LDNULL
             || ins.op == Opcode.LDUNDEF
             || ins.op == Opcode.VOID
@@ -1892,9 +1932,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         return false;
     }
     void*[FUNCTION_OPS + 1] exits;
-    void*[2048] flow_exits;
     for (uint i = 0; i < out.link_count; i++) {
-        LoopLink link = out.links[i];
+        LoopLink link = *out.link_at(i);
         if (!link.exit) {
             out.bind_to(link.jump, out.labels[link.target]);
             continue;
@@ -1904,21 +1943,21 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             existing = exits[link.target];
         } else {
             for (uint j = 0; j < i; j++) {
-                if (out.links[j].exit && out.links[j].target == link.target && out.links[j].flow == link.flow
-                    && out.links[j].inline_id == link.inline_id) {
-                    existing = flow_exits[j];
+                if (out.link_at(j).exit && out.link_at(j).target == link.target && out.link_at(j).flow == link.flow
+                    && out.link_at(j).inline_id == link.inline_id) {
+                    existing = out.link_at(j).resolved;
                     if (existing != null) break;
                 }
             }
         }
         if (existing != null) {
-            flow_exits[i] = existing;
+            out.link_at(i).resolved = existing;
             out.bind_to(link.jump, existing);
             continue;
         }
         void* label = e.label();
         if (link.inline_id == 0 && link.flow == 0 && link.target <= FUNCTION_OPS) exits[link.target] = label;
-        flow_exits[i] = label;
+        out.link_at(i).resolved = label;
         out.bind_to(link.jump, label);
         if (link.inline_id != 0) {
             FunctionInlineFrame* frame = sljit_inline_frame(plan, link.inline_id);

@@ -3,6 +3,7 @@ module boomkat::jit;
 
 extern fn void* sljit_create_compiler(void* allocator_data);
 extern fn void sljit_free_compiler(void* compiler);
+extern fn void* sljit_alloc_memory(void* compiler, int size);
 extern fn long sljit_emit_enter(void* compiler, int options, int arg_types, int scratches, int saveds, int local_size);
 extern fn int sljit_set_context(void* compiler, int options, int arg_types, int scratches, int saveds, int local_size);
 extern fn long sljit_emit_op0(void* compiler, int op);

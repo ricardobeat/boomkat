@@ -788,7 +788,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     bool fused       = call.op == Opcode.CALL_VAR || call.op == Opcode.CALL_GLOBAL;
     uint base        = fused ? call.a : call.b;
     uint nargs       = fused ? call.b : call.c;
-    if ((usz)out.link_count + (usz)target.code_count + 8 >= out.links.len) return false;
+    if ((usz)out.link_count + (usz)target.code_count + 8 >= out.link_capacity()) return false;
     int window   = jit::reg_s(5);
     int imm       = jit::SLJIT_IMM;
     int mem       = jit::SLJIT_MEM;
@@ -1175,13 +1175,9 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     }
     $endif
     for (uint i = 0; i < inner.out.link_count; i++) {
-        if (out.link_count == out.links.len) {
-            out.e.failed = true;
-            break;
-        }
-        LoopLink link = inner.out.links[i];
+        LoopLink link = *inner.out.link_at(i);
         link.exit = true;
-        out.links[out.link_count++] = link;
+        out.add_link(link);
     }
     return true;
 }

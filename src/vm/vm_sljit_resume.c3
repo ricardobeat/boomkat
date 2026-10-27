@@ -4,12 +4,49 @@ import boomkat::bytecode;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hstring;
 import boomkat::builtins;
 import boomkat::jit;
 
+// A nearby string literal selects concatenation, but the helper validates
+// the live operands. It never performs observable ToPrimitive coercion.
+fn bool function_string_add_candidate(CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    Instruction add = cf.code[pc];
+    if (add.op != Opcode.ADD) return false;
+    for (uint operand = 0; operand < 2; operand++) {
+        uint reg = operand == 0 ? add.b : add.c;
+        for (uint back = pc; back > 0 && pc - back < 8; back--) {
+            Instruction ins = cf.code[back - 1];
+            if (loop_target(ins, back - 1) >= 0 || function_call_op(ins.op)) break;
+            if (ins.a != reg) continue;
+            if (ins.op == Opcode.LDREG) { reg = ins.b; continue; }
+            if (ins.op == Opcode.LDCONST && ins.get_bc() < cf.const_count
+                && plain_string_of(&cf.constants[ins.get_bc()]) != null) return true;
+            break;
+        }
+    }
+    return false;
+}
+
+fn bool function_charcode_candidate(CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    Instruction call = cf.code[pc];
+    if (call.op != Opcode.CALL || call.c != 1 || (uint)call.b + 2 >= cf.num_regs) return false;
+    uint reg = call.b;
+    for (uint back = pc; back > 0; back--) {
+        Instruction ins = cf.code[back - 1];
+        if (ins.a != reg) continue;
+        if (ins.op == Opcode.LDREG) { reg = ins.b; continue; }
+        if ((ins.op != Opcode.GETPROPC && ins.op != Opcode.GETPROPC_CACHED)
+            || ins.c >= cf.const_count) return false;
+        HString* key = plain_string_of(&cf.constants[ins.c]);
+        return key != null && key.equals("charCodeAt");
+    }
+    return false;
+}
+
 fn bool function_alloc_op(Opcode op) @feat(SLJIT) {
     return op == Opcode.NEWOBJ || op == Opcode.NEWOBJ_SHAPE || op == Opcode.NEWARR
-        || op == Opcode.NEWARR_CONST || op == Opcode.NEW_OBJ;
+        || op == Opcode.NEWARR_CONST || op == Opcode.NEW_OBJ || op == Opcode.INIT_SLOT;
 }
 
 // Single-operation continuation contract: 0 means no observable effect, 1
@@ -24,12 +61,33 @@ fn long sljit_native_operation(ColdCtx* cold, uint offset) @feat(SLJIT) @noinlin
     Instruction ins = *pc;
     TVal* regs = cold.act.bottom;
     TVal* dest = regs + ins.a;
-    if (!th_can_release(dest)) return 0;
+    if (ins.op != Opcode.ADD && !th_can_release(dest)) return 0;
     uint clock = h.shape_gen_clock;
     uint epoch = h.shape_recycle_epoch;
     cold.act.curr_pc = pc;
     HObject* object;
     switch (ins.op) {
+        case ADD:
+            {
+                ConcatStatus status = vm_concat_add(cold.vm, cold.act, dest, regs + ins.b, regs + ins.c,
+                    ins.a, pc + 1, cf.code + cf.code_count);
+                if (status != ConcatStatus.DONE) return 0;
+                return h.gc_pending || clock != h.shape_gen_clock || epoch != h.shape_recycle_epoch ? 2 : 1;
+            }
+        case INIT_SLOT:
+            {
+                if (!dest.is_object() || dest.get_heapptr() == null) return 0;
+                object = dest.get_heapptr();
+                if (object.is_proxy() || object.get_class() != ObjClass.OBJECT
+                    || ins.b >= object.prop_count) return 0;
+                PropValue* slots = object.prop_values();
+                if (slots == null || !slots[ins.b].get().is_undefined()) return 0;
+                // Empty fixed-layout slots need neither a lookup nor a
+                // release. Use the ordinary ownership/barrier operation;
+                // it cannot call JS or collect, including for string values.
+                h.store_slot_ref(object, &slots[ins.b], regs + ins.c);
+                return h.gc_pending || clock != h.shape_gen_clock || epoch != h.shape_recycle_epoch ? 2 : 1;
+            }
         case NEWOBJ:
         case NEWOBJ_SHAPE:
             object = ins.op == Opcode.NEWOBJ_SHAPE ? h.alloc_shaped_object(ins.get_bc()) ?? null
@@ -77,6 +135,18 @@ fn long sljit_native_operation(ColdCtx* cold, uint offset) @feat(SLJIT) @noinlin
                     if (function.is_callable() && function.callable_kind() == CallableKind.BUILTIN_FN) {
                         index = function.extra.func.builtin_fn_index;
                     }
+                }
+                if (index == (int)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal) {
+                    HString* string = plain_string_of(regs + ins.b + 1);
+                    TVal position = regs[ins.b + 2];
+                    if (string == null || !position.is_fastint()) return 0;
+                    long at = position.get_fastint();
+                    TVal value;
+                    if (at < 0 || at >= string.char_length()) { value.set_number(double::nan); }
+                    else { value.set_fastint(string.char_at_unchecked((uint)at)); }
+                    th_do_release(dest);
+                    *dest = value;
+                    return 1;
                 }
                 if (index != (int)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal) return 0;
                 TVal receiver = regs[ins.b + 1];
