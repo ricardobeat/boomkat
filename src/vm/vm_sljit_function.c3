@@ -2504,7 +2504,7 @@ fn void FunctionEmitter.property_receiver(&self, uint reg, bool receiver_this) @
 
 // Feedback chooses a guarded representation; it never proves a future value.
 fn void FunctionEmitter.property_store(&self, uint reg, uint pc, ICEntry* ic) @feat(SLJIT) {
-    bool uncounted = ic.read_kind == 1 && ic.read_samples >= 4;
+    bool uncounted = ic.read_kind == 1 && ic.read_samples != 0;
     if (uncounted) {
         self.out.e.op(jit::SLJIT_LSHR, jit::reg_r(3), jit::reg_r(0), 0, jit::SLJIT_IMM, 48);
         self.out.guard(jit::SLJIT_EQUAL, jit::reg_r(3), 0, jit::SLJIT_IMM, (long)types::TAG_STRING, pc);

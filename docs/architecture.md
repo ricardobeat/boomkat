@@ -741,8 +741,9 @@ This is a restricted representation analysis, not a general SSA optimizer;
 integer induction remains boxed. Mixed or larger regions keep block-local FP
 allocation. Pending numeric definitions replace only non-string values, so
 publication does not need string destruction. Named-read ICs also sample up to
-16 result values during threaded execution. Sites observed at least four times
-without strings may emit a non-string result guard, then use uncounted stores
+16 result values at property-cache fills and shared-cache misses. Ordinary
+interpreter cache hits do not sample. Sites observed without strings may emit
+a non-string result guard, then use uncounted stores
 and propagate that ownership fact through copies. Feedback only selects the
 guard: a later string leaves before publication and uses the existing read
 continuation, preserving reference counts and accessor semantics.

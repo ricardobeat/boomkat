@@ -2819,6 +2819,7 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
         ic.prop_flags = me.flags;
         ic.has_proto = false;
     }
+    $if $feat(SLJIT): sljit_read_observe(ic, slot.get()); $endif
     return th_publish_read(pc, handlers, regs, cold, slot.get());
 }
 
@@ -2851,14 +2852,6 @@ fn void th_fill_from_mega(Instruction* pc, heap::Heap* h, hobject::ICEntry* ic, 
 // Copy a borrowed value into the instruction's destination register.
 fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                 TVal ic_val) @private @inline {
-    $if $feat(SLJIT):
-        hobject::ICEntry* feedback = th_ic_at(cold, pc);
-        if (feedback.read_samples < 16) {
-            feedback.read_samples++;
-            if (ic_val.is_string()) { feedback.read_kind = 2; }
-            else if (feedback.read_kind == 0) { feedback.read_kind = 1; }
-        }
-    $endif
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     TVal* ra = regs + insn.a;

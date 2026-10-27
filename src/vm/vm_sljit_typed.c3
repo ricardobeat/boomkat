@@ -259,3 +259,12 @@ fn bool FunctionEmitter.typed_length(&self, CompiledFunction* cf, uint pc, ICEnt
     self.typed_cases(cf.code[pc], pc, false, true);
     return true;
 }
+
+// Cold property-cache paths supply a guarded hint without taxing every
+// interpreter cache hit. A later string is handled by the generated guard.
+fn void sljit_read_observe(ICEntry* ic, TVal value) @feat(SLJIT) @inline {
+    if (ic.read_samples >= 16) return;
+    ic.read_samples++;
+    if (value.is_string()) { ic.read_kind = 2; }
+    else if (ic.read_kind == 0) { ic.read_kind = 1; }
+}

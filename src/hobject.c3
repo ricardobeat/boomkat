@@ -3599,6 +3599,7 @@ struct ICEntry {
     // Zero is unseen, class ordinal + 1 is monomorphic, 255 is mixed.
     char typed_kind @if($feat(SLJIT));
     char typed_samples @if($feat(SLJIT));
+    // Cold named-read cache paths sample result ownership, never hot hits.
     char read_samples @if($feat(SLJIT));
     // 1: observed non-string values only; 2: a string was observed.
     char read_kind @if($feat(SLJIT));

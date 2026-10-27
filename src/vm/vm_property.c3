@@ -105,6 +105,11 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
     }
     int owner_idx = owner.find_prop_idx(key, vm.heap);
     if (owner_idx < 0) return false;
+    $if $feat(SLJIT):
+        if (!owner.get_prop_flags((uint)owner_idx, vm.heap).is_accessor) {
+            sljit_read_observe(ic, owner.prop_values()[owner_idx].get());
+        }
+    $endif
     // Ordinary named chains can share one mutation token, which also covers
     // dictionary-mode prototypes: their indexes move only through epoch-bumping
     // layout changes. The receiver's immediate prototype still needs an
