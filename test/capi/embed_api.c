@@ -248,6 +248,91 @@ static void test_delete(bk_ctx rt) {
     bk_free_value(rt, obj);
 }
 
+static bk_value eval_global(bk_ctx rt, const char *src) {
+    return bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+}
+
+/* Deletion goes through each object's [[Delete]]: array elements, typed
+ * array indices, and proxy traps are not entries in the property table. */
+static void test_delete_exotic(bk_ctx rt) {
+    int out = -1;
+    bk_value arr = expect_val(eval_global(rt, "[1,2,3]"), rt, "eval array");
+    if (arr) {
+        if (bk_delete_property(rt, arr, "1", 1, &out) != BK_OK || out != 1) {
+            printf("FAIL: delete array element (out=%d)\n", out); failures++;
+        }
+        bk_value hole = bk_get_property_uint32(rt, arr, 1);
+        if (!hole || !bk_is_undefined(rt, hole)) fail("deleted array element still present");
+        bk_free_value(rt, hole);
+        out = -1;
+        if (bk_delete_property(rt, arr, "7", 1, &out) != BK_OK || out != 0) {
+            printf("FAIL: delete absent array element (out=%d)\n", out); failures++;
+        }
+        bk_free_value(rt, arr);
+    }
+    bk_value ta = expect_val(eval_global(rt, "new Uint8Array(4)"), rt, "eval typed array");
+    if (ta) {
+        if (bk_delete_property(rt, ta, "1", 1, &out) != BK_ERR_THROW) {
+            fail("delete typed array index should throw");
+        }
+        out = -1;
+        if (bk_delete_property(rt, ta, "9", 1, &out) != BK_OK || out != 0) {
+            printf("FAIL: delete out-of-range typed array index (out=%d)\n", out); failures++;
+        }
+        bk_free_value(rt, ta);
+    }
+    bk_value px = expect_val(eval_global(rt,
+        "var trapped = []; new Proxy({}, { deleteProperty(t, k) { trapped.push(k); return true; } })"),
+        rt, "eval delete proxy");
+    if (px) {
+        out = -1;
+        if (bk_delete_property(rt, px, "x", 1, &out) != BK_OK || out != 1) {
+            printf("FAIL: proxy delete (out=%d)\n", out); failures++;
+        }
+        bk_value seen = eval_global(rt, "trapped.join()");
+        char buf[8];
+        size_t len = 0;
+        if (!seen || bk_read_string(rt, seen, buf, sizeof buf, &len) != BK_OK || strcmp(buf, "x") != 0) {
+            fail("proxy deleteProperty trap not called");
+        }
+        bk_free_value(rt, seen);
+        bk_free_value(rt, px);
+    }
+}
+
+/* Property reads on primitives box the base and keep it as the receiver. */
+static void test_get_primitive(bk_ctx rt) {
+    bk_value s = bk_str(rt, "abc");
+    bk_value len = bk_get_property(rt, s, "length", 6);
+    double n = 0;
+    if (!len || bk_read_number(rt, len, &n) != BK_OK || n != 3) {
+        printf("FAIL: \"abc\".length: %s\n", bk_get_error_message(rt)); failures++;
+    }
+    bk_value ch = bk_get_property_uint32(rt, s, 1);
+    char buf[4];
+    size_t blen = 0;
+    if (!ch || bk_read_string(rt, ch, buf, sizeof buf, &blen) != BK_OK || strcmp(buf, "b") != 0) {
+        printf("FAIL: \"abc\"[1]: %s\n", bk_get_error_message(rt)); failures++;
+    }
+    bk_value num = bk_new_number(rt, 1.5);
+    bk_value fixed = bk_get_property(rt, num, "toFixed", 7);
+    if (!fixed || !bk_is_function(rt, fixed)) fail("(1.5).toFixed is not a function");
+    bk_value getter = eval_global(rt,
+        "Object.defineProperty(Number.prototype, 'self', { get() { 'use strict'; return typeof this; }, configurable: true })");
+    bk_value self = bk_get_property(rt, num, "self", 4);
+    char type[16];
+    if (!self || bk_read_string(rt, self, type, sizeof type, &blen) != BK_OK || strcmp(type, "number") != 0) {
+        fail("primitive getter receiver is not the primitive");
+    }
+    bk_value undef = bk_new_undefined(rt);
+    if (bk_get_property(rt, undef, "x", 1) || bk_get_error_code(rt) != BK_ERR_TYPE) {
+        fail("reading a property of undefined should fail with BK_ERR_TYPE");
+    }
+    bk_free_value(rt, s); bk_free_value(rt, len); bk_free_value(rt, ch);
+    bk_free_value(rt, num); bk_free_value(rt, fixed); bk_free_value(rt, getter);
+    bk_free_value(rt, self); bk_free_value(rt, undef);
+}
+
 /* Enumeration: an own non-enumerable key appears alongside own enumerable. */
 static void test_enumeration(bk_ctx rt) {
     bk_value obj = 0, keys = 0, k = 0;
@@ -442,6 +527,8 @@ int main(void) {
     test_interrupt(rt);
     test_config(rt);
     test_delete(rt);
+    test_delete_exotic(rt);
+    test_get_primitive(rt);
     test_enumeration(rt);
     test_call_rt(rt);
     test_locations(rt);

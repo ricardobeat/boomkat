@@ -589,13 +589,28 @@ fn int vm_fault(Runtime* rt) {
     return BK_ERR_THROW;
 }
 
-// Shared by the named and indexed getters.
+// Shared by the named and indexed getters. A primitive base reads through its
+// wrapper with the primitive as receiver (GetV, ECMA-262 §7.3.3).
 fn ulong get_key(void* ctxp, ulong obj_id, HString* k) {
     Runtime* rt = rt_of(ctxp);
     TVal ov;
-    HObject* obj = as_object(ctxp, obj_id, &ov);
-    if (obj == null) return 0;
+    if (!resolve(ctxp, obj_id, &ov)) return bad_handle(rt);
+    if (ov.is_undefined() || ov.is_null()) {
+        fail(rt, BK_ERR_TYPE, "cannot read properties of null or undefined");
+        return 0;
+    }
     if (k == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+    HObject* obj = builtins::to_object_for_lookup(rt.heap, ov);
+    if (obj == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+    // A fresh wrapper is unreachable from JS; hold it while getters run.
+    ulong wrapper = 0;
+    if (!ov.is_object()) {
+        TVal wv;
+        wv.set_object(obj);
+        wrapper = store(rt, wv);
+        if (wrapper == 0) return 0;
+    }
+    defer if (wrapper != 0) embed::slot_release(rt, wrapper);
     TVal got;
     if (!builtins::js_get_with_receiver((void*)rt.vm, rt.heap, obj, k, ov, &got)) {
         vm_fault(rt);
@@ -677,16 +692,18 @@ fn int bk_delete_property(void* ctxp, ulong obj_id, char* key, usz key_len, int*
     if (obj == null) return rt.errcode;
     HString* k = rt.heap.str_intern(key[:key_len]);
     if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
-    // Absent own property: report 0 and succeed, mirroring the header.
-    if (obj.find_prop_idx((void*)k, rt.heap) < 0) { *out = 0; return BK_OK; }
-    bool res;
-    if (obj.is_proxy()) {
-        if (!builtins::proxy_mop_delete((void*)rt.vm, rt.heap, obj, k, &res)) return vm_fault(rt);
-    } else if (obj.flags.exotic_module_ns) {
-        res = false;
-    } else {
-        res = obj.es_delete_prop((void*)k, rt.heap);
+    // Absent own property: report 0 and succeed. A proxy reports its trap's
+    // answer, since only the trap knows whether the key existed.
+    // A module namespace is probed by key so a TDZ export does not throw.
+    if (obj.flags.exotic_module_ns) {
+        if (obj.find_prop_idx((void*)k, rt.heap) < 0) { *out = 0; return BK_OK; }
+    } else if (!obj.is_proxy()) {
+        builtins::ProxyDesc own;
+        builtins::ordinary_own_desc(rt.heap, obj, k, &own);
+        if (!own.found) { *out = 0; return BK_OK; }
     }
+    bool res;
+    if (!builtins::object_mop_delete((void*)rt.vm, rt.heap, obj, k, &res)) return vm_fault(rt);
     // Strict-only engine: deleting a non-configurable property throws.
     if (!res) return fail(rt, BK_ERR_THROW, "Cannot delete property");
     *out = 1;
