@@ -1,12 +1,14 @@
 # 115: An idiomatic C++ embedding API (`bk::`)
 
 Status: planned, 2026-10-27. Nothing implemented. Baseline: `main` at
-`59c4146d`.
+`e018e76e`.
 
 Boomkat gets a C++ layer, `include/boomkat.hpp`: header-only, in namespace
-`bk::`, written only against the C ABI in `include/boomkat.h`. The C ABI stays
-the stable contract. The C++ header exports no symbols and relies on no C++ ABI,
-and a C embedder never includes it. The design is Boomkat's own and does not
+`bk::`, written only against the C ABI in `include/boomkat.h`. The C++ header
+exports no symbols and relies on no C++ ABI, and a C embedder never includes it.
+Before 1.0 the C API has no compatibility constraint: a better call replaces the
+old one outright, and the header, `docs/embedding.md`, the C++ header and every
+binding under `bindings/` change in the same commit. The design is Boomkat's own and does not
 copy LibJS, V8 or JSI types, though it borrows two ideas: V8's handle scopes and
 JSI's value-carries-its-runtime ergonomics.
 
@@ -105,7 +107,9 @@ Gaps that matter for C++:
 
 ### 1.3 Bugs found during the survey
 
-Reproduced against `out/boomkat.a` with a scratch C program:
+Fixed on `main` in `f4fe3657`, `3aa590db` and `e018e76e`, with tests in
+`test/capi/embed_api.c` and `test/reflect_delete_typed_array.js`. Recorded here
+because they shaped C1.
 
 1. `bk_delete_property` returns success with `*out == 0` and deletes nothing
    for array elements and for every Proxy, without calling `deleteProperty`.
@@ -118,13 +122,16 @@ Reproduced against `out/boomkat.a` with a scratch C program:
    handle (`src/capi.c3:936-943`), while the call scope already holds it at
    `HOST_SCOPE_NEW_TARGET`.
 
-Phase 0 fixes all three.
+Fixing the first exposed a fourth: `Reflect.deleteProperty` and a trapless
+Proxy deleted TypedArray integer indices through `es_delete_prop`, which
+ignores §10.4.5.6. All four now share `object_mop_delete`
+(`src/builtins/proxy.c3`).
 
 ## 2. Constraints
 
-- **The C ABI is the contract.** `boomkat.hpp` only includes `boomkat.h`.
-  Inline functions and templates may change between releases. The C ABI follows
-  the existing `make check-abi` discipline (`Makefile:171-175`).
+- **The C ABI is the only dependency.** `boomkat.hpp` only includes
+  `boomkat.h`. Both change together until 1.0; `make check-abi`
+  (`Makefile:171-175`) keeps the header and the exported symbols in step.
 - **No exceptions required.** Godot (godot-cpp), Unreal and most game engines
   build with exceptions off. Every fallible call returns `bk::Result<T>`.
   Exceptions are an opt-in mode.
@@ -136,8 +143,8 @@ Phase 0 fixes all three.
   (§6).
 - **Nothing unwinds through C3.** Every trampoline catches in exceptions mode.
   Engine frames are not unwind-safe.
-- **C stays first-class.** Each C addition is optional to use, keeps the
-  `char*` conveniences, and must make sense on an ESP32. Heavy features
+- **C stays first-class.** Every call must make sense from plain C on an
+  ESP32, and the `char*` property conveniences stay. Heavy features
   (promises, binary data, weak handles, exotic hooks) are feature-gated in the
   tiny build and return `BK_ERR_UNSUPPORTED` when compiled out.
 - **Strings stay representation-agnostic.** Everything goes through plan 114's
@@ -145,7 +152,7 @@ Phase 0 fixes all three.
 
 ## 3. Use cases
 
-Requirement IDs (C1–C23) refer to the C API changes in §4. S refers to plan
+Requirement IDs (C1–C24) refer to the C API changes in §4. S refers to plan
 114's string API.
 
 ### 3.1 Godot (GDExtension module)
@@ -507,73 +514,60 @@ Requirements:
 
 ## 4. Proposed C API changes
 
-Additive means existing programs compile and behave the same. Soft-breaking
-means the signature is unchanged but a documented behavior changes; each one
-lists its migration. New option structs start with `size_t struct_size` so they
-can grow. New status: `BK_ERR_UNSUPPORTED = -10` (plan 114 takes -9 for
-`BK_ERR_ENCODING`).
+Kind is "new" for calls that did not exist, or "replaces" for a change that
+removes or redefines an existing call. Replacements carry no shims or
+deprecation period; the commit updates every caller in `test/`, `bindings/`
+and `docs/`. Option structs have no `struct_size` field before 1.0; the ABI
+versioning scheme is a 1.0 decision. New status: `BK_ERR_UNSUPPORTED = -10`
+(plan 114 takes -9 for `BK_ERR_ENCODING`).
 
 | ID | Change | Kind | Enables in C++ | Phase |
 |---|---|---|---|---|
-| C1 | Fix delete, GetV on primitives, borrowed `new.target` | bug fix / soft-breaking | correct `Object::remove`, `Value::get` | 0 |
-| C2 | `BK_ERR_UNSUPPORTED`, `struct_size` convention | additive | `Errc::unsupported`, option structs | 0 |
-| C3 | Immediate handles for `undefined`/`null`/`true`/`false` | additive | free constants, cheaper results | 1 |
-| C4 | Local scopes and scope-handle returns | additive | `bk::Scope`, `bk::Value` locals | 1 |
-| C5 | `bk_new_runtime_ex`, runtime allocator access | additive | `RuntimeOptions`, allocator-aware boxes | 1 |
-| C6 | Embedder data slots | additive | per-context C++ state without stealing `opaque` | 1 |
-| C7 | Atoms and atom-keyed property calls | additive | `bk::Atom`, symbol keys, fast keys | 1 |
-| C8 | Property descriptors | additive | accessors, `defineProperty`, class builder | 3 |
-| C9 | Object model: construct, prototypes, equality, type enum | additive / soft-breaking | `Function::construct`, `instanceof`, `Type` | 1 |
-| C10 | Intrinsics, symbols, BigInt | additive | `bk::Symbol`, `bk::BigInt`, `cx.intrinsic()` | 4 |
-| C11 | Error values, non-reentrant describe, extended error info | additive | `bk::Error` diagnostics | 1 |
-| C12 | Closures with finalizers | additive | lambdas as JS functions | 3 |
-| C13 | Host classes in the C ABI | additive | `bk::Class<T>`, ownership policies | 3 |
-| C14 | Traced slots, tracer, root tracer | additive | `bk::Traced<T>`, cycle-safe payloads | 3 |
-| C15 | Weak handles | additive | `bk::Weak<T>`, identity caches | 8 |
-| C16 | Promises | additive | `bk::Promise`, `bk::Resolver` | 5 |
-| C17 | Job hook, wait and wake | additive | event-loop adapters | 5 |
-| C18 | Module loader, native modules, invalidation | additive | `bk::ModuleLoader`, native modules, hot reload | 6 |
-| C19 | ArrayBuffer, typed arrays, external and shared buffers | additive | `bk::TypedArray<T>`, `bk::SharedBlock` | 7 |
-| C20 | GC control, external memory, heap limit without abort | additive; deprecates `bk_set_memory_limit` | `Runtime::gc_*`, limits | 8 |
-| C21 | Context options | additive | `rt.new_context({...})` | 8 |
-| C22 | Exotic hooks and Proxy creation | additive | indexed/named getters | 9 |
-| C23 | Compiled scripts | additive | `bk::Script`, reload without reparse | 6 |
-| S | Plan 114 string API | additive | `bk::String` | 4 |
+| C1 | Fix delete, GetV on primitives, borrowed `new.target` | done | correct `Object::remove`, `Value::get` | 0 |
+| C2 | `BK_ERR_UNSUPPORTED` | new | `Errc::unsupported` | 0 |
+| C3 | Immediate handles for `undefined`/`null`/`true`/`false` | replaces `bk_new_undefined`, `bk_new_null`, `bk_new_bool` | free constants, cheaper results | 1 |
+| C4 | Local scopes; callback results are locals | replaces callback result ownership | `bk::Scope`, `bk::Value` locals | 1 |
+| C5 | Runtime options and allocator access | replaces `bk_new_runtime()` | `RuntimeOptions`, allocator-aware boxes | 1 |
+| C6 | Embedder data slots | replaces the four opaque calls | per-context C++ state beside C state | 1 |
+| C7 | Atoms and atom-keyed property calls | new; replaces `bk_get_own_property_names` | `bk::Atom`, symbol keys, fast keys | 1 |
+| C8 | Property descriptors | new | accessors, `defineProperty`, class builder | 3 |
+| C9 | Object model: construct, prototypes, equality, type enum | new; replaces `BK_TYPE_OTHER` | `Function::construct`, `instanceof`, `Type` | 1 |
+| C10 | Intrinsics, symbols, BigInt | new | `bk::Symbol`, `bk::BigInt`, `cx.intrinsic()` | 4 |
+| C11 | Error values, non-reentrant describe, stack in error info | new; replaces `bk_error_info` | `bk::Error` diagnostics | 1 |
+| C12 | Finalizers on C functions | replaces `bk_new_c_function` | lambdas as JS functions | 3 |
+| C13 | Host classes in the C ABI | new; the add-on ABI moves onto it | `bk::Class<T>`, ownership policies | 3 |
+| C14 | Traced slots, tracer, root tracer | new | `bk::Traced<T>`, cycle-safe payloads | 3 |
+| C15 | Weak handles | new | `bk::Weak<T>`, identity caches | 8 |
+| C16 | Promises | new | `bk::Promise`, `bk::Resolver` | 5 |
+| C17 | Job hook, wait and wake | new | event-loop adapters | 5 |
+| C18 | Module loader, native modules, invalidation | new | `bk::ModuleLoader`, native modules, hot reload | 6 |
+| C19 | ArrayBuffer, typed arrays, external and shared buffers | new | `bk::TypedArray<T>`, `bk::SharedBlock` | 7 |
+| C20 | GC control, external memory, heap limit without abort | new; removes `bk_set_memory_limit` | `Runtime::gc_*`, limits | 8 |
+| C21 | Context options | replaces `bk_new_context` | `rt.new_context({...})` | 8 |
+| C22 | Exotic hooks and Proxy creation | new | indexed/named getters | 9 |
+| C23 | Compiled scripts | new | `bk::Script`, reload without reparse | 6 |
+| C24 | One callback style | removes `bk_host_fn`, `bk_return`; `bk_register_fn` takes `bk_c_function` | one trampoline shape | 1 |
+| S | Plan 114 string API | new | `bk::String` | 4 |
 
 ### C1. Bug fixes and borrowed `new.target`
 
-No new signatures.
+Done (§1.3). `bk_delete_property` probes the own property through
+`ordinary_own_desc` (by key for module namespaces, so a TDZ export does not
+throw) and deletes through `object_mop_delete`; a proxy reports its trap's
+answer. `bk_get_property` and `bk_get_property_uint32` read primitives through
+their `ToObject` wrapper with the primitive as receiver, keeping the wrapper
+registered while getters run. `bk_get_new_target` returns the scope handle at
+`HOST_SCOPE_NEW_TARGET`; the Python, Rust and Zig bindings no longer free it.
 
-- `bk_delete_property` calls `[[Delete]]` through the Proxy-aware path for
-  every object and drops the own-table pre-check at `src/capi.c3:681`. Arrays,
-  typed arrays (non-deletable indices) and module namespaces go through the
-  same routine as `delete o[k]`.
-- `bk_get_property`, `bk_get_property_uint32` and `bk_has_property` accept
-  primitives with GetV semantics: `ToObject` for the prototype lookup, the
-  primitive as receiver. Setters and `bk_delete_property` keep requiring an
-  object. Callers that relied on `BK_ERR_TYPE` from the getters check
-  `bk_get_type` first. **Soft-breaking** for that reason.
-- `bk_get_new_target` returns the scope handle at `HOST_SCOPE_NEW_TARGET`
-  (`src/heap.c3:3042`), like `bk_this`. **Soft-breaking:** freeing it remains
-  a no-op-safe call (`src/embed.c3:517`), so existing code keeps working.
-  Code that keeps it past the callback must `bk_dup_value` it, as for `argv`.
+Still open: `bk_has_property` rejects primitives. `in` throws on primitives in
+JS, so that matches the language; the C++ `has` keeps the same rule.
 
-Internals: `proxy_mop_delete` (`src/builtins/proxy.c3:714`) and the ordinary
-delete used by the `delete` operator; ToObject as in `builtin_to_object`
-(`src/builtins/object.c3:23`); `js_get_with_receiver` already takes a separate
-receiver (`src/builtins/proxy.c3:337`).
-
-### C2. Unsupported status and option struct convention
+### C2. Unsupported status
 
 ```c
 /* src/embed/abi.c3 [abi:status], appended */
 BK_ERR_UNSUPPORTED = -10  /* feature compiled out of this build */
 ```
-
-Every new options or info struct begins with `size_t struct_size`, set by the
-caller to `sizeof(struct)`. The engine reads only the fields that fit. This is
-how `bk_error_info` should have been shaped; it stays as is, and C11 adds an
-extended form.
 
 ### C3. Immediate handles
 
@@ -582,18 +576,19 @@ extended form.
 #define BK_NULL      ((bk_value)2)
 #define BK_TRUE      ((bk_value)3)
 #define BK_FALSE     ((bk_value)4)
+#define BK_BOOL(b)   ((b) ? BK_TRUE : BK_FALSE)
 ```
 
 These are handles with runtime id 0, valid with any context, never freed
-(`bk_free_value` ignores them). `bk_new_undefined`, `bk_new_null` and
-`bk_new_bool` return them, and so does every value-returning call whose result
-is one of those four values. `bk_call(fn, BK_UNDEFINED, ...)` is the same as
-`this_value == 0`.
+(`bk_free_value` ignores them). Every value-returning call whose result is one
+of those four values returns the constant. `bk_call(fn, BK_UNDEFINED, ...)` is
+the same as `this_value == 0`. `bk_new_undefined`, `bk_new_null` and
+`bk_new_bool` are removed.
 
 - C++: `bk::undefined(cx)` and friends are constants. Most setters and calls
   that return `undefined` stop allocating.
-- Kind: additive. The four `bk_new_*` calls still return a value that must be
-  "freed", and freeing is a no-op. `bk_dup_value` of an immediate returns it.
+- Kind: replaces. Bindings that wrapped the removed calls (Python, Ruby, Rust,
+  Zig) use the constants. `bk_dup_value` of an immediate returns it.
 - Internals: `resolve_handle` (`src/embed.c3:588`) gains a branch for runtime
   id 0 before the registry lookup. Runtime ids skip 0 already
   (`src/embed.c3:220`).
@@ -619,18 +614,22 @@ BK_API bk_value bk_scope_local(bk_ctx ctx, bk_value value);
 BK_API bk_scope bk_scope_current(bk_ctx ctx);
 ```
 
-`bk_dup_value` of a scope handle still returns a registry root. That is the
-escape hatch, the same as for callback arguments today. `bk_c_function`
-callbacks may return a scope handle from the enclosing call scope or from an
-open local scope; the trampoline copies the value before popping.
+Inside a host callback the call's own scope is a local scope: every value a
+callback creates is a local that dies when the callback returns, like its
+`argv`. One rule then covers arguments and results. `bk_dup_value` of a scope
+handle returns a registry root; that is the only way a value outlives its
+scope. Callbacks return a local (or an immediate) and the trampoline copies it
+before popping. Top-level code outside any scope still gets registry roots, so
+a simple C embedder that never opens a scope sees today's behavior.
 
 - C++: `bk::Scope` (RAII), `bk::Value` and typed locals at 16 bytes each with
   no registry traffic, `Global<T>::get(cx)` through `bk_scope_local`, and
   trampolines that return locals.
-- Kind: additive. Results change only inside a scope the caller opened.
-  Callbacks keep registry results unless they open a scope, because existing
-  C callbacks may store results in globals. The callback return relaxation
-  only accepts something that is rejected today (`src/embed.c3:733-736`).
+- Kind: replaces. Callback code that stores a created value past the call
+  must `bk_dup_value` it. Callbacks no longer free what they create, so most
+  callback bodies get shorter. The trampoline's check that rejects scope-handle
+  returns (`src/embed.c3:733-736`) inverts. Every `bindings/` callback adapter
+  and the `test/capi` callbacks change in the same commit.
 - Internals:
   - `Heap.host_scope_push` (`src/heap.c3:3047`) already allocates a scope of
     `count` slots. Add `host_scope_append(TVal) -> long index` for the
@@ -645,15 +644,13 @@ open local scope; the trampoline copies the value before popping.
   - The handle's index field is 17 bits (`src/embed.c3:577`). A scope holds
     at most 131,070 locals; overflow returns `BK_ERR_FULL`. The C++ header
     documents opening nested scopes inside large loops.
-- Interim: until C4 lands, `bk::Scope` can be registry-backed, recording
-  handles and freeing them at close, as the C3 `@scope` does. The C++ API does
-  not change when C4 replaces it.
+- Ordering: C4 lands in Phase 1, before any C++ exists, so `bk::Scope` is
+  never registry-backed.
 
 ### C5. Runtime options and allocator access
 
 ```c
 typedef struct {
-    size_t struct_size;
     void *(*alloc)(void *opaque, size_t size);
     void *(*realloc)(void *opaque, void *ptr, size_t size);
     void  (*free)(void *opaque, void *ptr);
@@ -663,7 +660,7 @@ typedef struct {
     unsigned flags;           /* BK_RUNTIME_* */
 } bk_runtime_options;
 
-BK_API bk_runtime bk_new_runtime_ex(const bk_runtime_options *options);
+BK_API bk_runtime bk_new_runtime(const bk_runtime_options *options);  /* NULL = defaults */
 BK_API void *bk_alloc(bk_runtime runtime, size_t size);
 BK_API void *bk_realloc(bk_runtime runtime, void *ptr, size_t size);
 BK_API void  bk_free_memory(bk_runtime runtime, void *ptr);
@@ -671,7 +668,8 @@ BK_API void  bk_free_memory(bk_runtime runtime, void *ptr);
 
 - C++: `bk::RuntimeOptions`. Closure and class boxes allocate with `bk_alloc`,
   so a host allocator sees the wrapper's memory too.
-- Kind: additive. `bk_new_runtime()` is `bk_new_runtime_ex(NULL)`.
+- Kind: replaces. `bk_new_runtime()` gains the options argument; existing
+  callers pass `NULL`. `bk_create()` stays as the one-call convenience.
 - Internals: `heap::create(a, r, f, udata, fatal)` (`src/heap.c3:1575`) takes
   these today; `embed::create` passes nulls (`src/embed.c3:192`). The add-on
   ABI exposes the same allocator (`src/addon.c3:377-385`). Engine paths that
@@ -682,7 +680,7 @@ BK_API void  bk_free_memory(bk_runtime runtime, void *ptr);
 ### C6. Embedder data slots
 
 ```c
-#define BK_DATA_SLOTS 4      /* slot 0 is reserved for boomkat.hpp */
+#define BK_DATA_SLOTS 4      /* slot 3 is reserved for boomkat.hpp */
 BK_API void  bk_set_context_data(bk_ctx ctx, unsigned slot, void *data);
 BK_API void *bk_get_context_data(bk_ctx ctx, unsigned slot);
 BK_API void  bk_set_runtime_data(bk_runtime runtime, unsigned slot, void *data);
@@ -690,9 +688,11 @@ BK_API void *bk_get_runtime_data(bk_runtime runtime, unsigned slot);
 ```
 
 - C++: the class registry (C++ type tag to `bk_class` per context) and the
-  atom cache live in slot 0. The user's `opaque` stays the user's, so a C++
-  host and a C library can share a context.
-- Kind: additive. The existing opaque calls are unchanged.
+  atom cache live in slot 3. Slots 0-2 belong to the host, so a C++ host and a
+  C library can share a context.
+- Kind: replaces `bk_set_context_opaque`, `bk_get_context_opaque`,
+  `bk_set_runtime_opaque` and `bk_get_runtime_opaque`; their callers use
+  slot 0.
 - Internals: `ContextState` (`src/embed.c3:119-132`) holds `context_opaque`;
   the slots go beside it. `Runtime.opaque` (`src/embed.c3:156`) likewise.
 
@@ -726,8 +726,9 @@ at `src/capi.c3:618`).
 - C++: `bk::Atom` (RAII), `bk::atoms` static tables per binding, symbol keys,
   `obj.get<T>(atom)`. Generated bindings (WebIDL, Godot `StringName`, UE
   `FName`) intern names once.
-- Kind: additive. The `char*` calls stay, and on an ESP32 they remain the
-  simple path. An ESP32 host that wants speed precomputes atoms.
+- Kind: new, and `bk_get_own_property_keys` replaces
+  `bk_get_own_property_names`. The `char*` property calls stay as the simple
+  path; an ESP32 host that wants speed precomputes atoms.
 - Internals: `Heap.str_intern` (`src/heap.c3:5545`); pinning through
   `HeapHeader.is_pinned` (checked at `src/embed.c3:550`); `ordinary_own_keys`
   and `proxy_mop_own_keys` (`src/builtins/proxy.c3:1294`, `:1365`) for the
@@ -743,7 +744,6 @@ enum {
     BK_PROP_HAS_WRITABLE = 64, BK_PROP_HAS_ENUMERABLE = 128, BK_PROP_HAS_CONFIGURABLE = 256
 };
 typedef struct {
-    size_t   struct_size;
     unsigned flags;
     bk_value value, get, set;   /* borrowed on input; owned or local on output */
 } bk_property_descriptor;
@@ -756,7 +756,7 @@ BK_API bk_status bk_get_own_property(bk_ctx ctx, bk_value object, bk_atom key,
 
 - C++: `obj.define(atom, bk::accessor(getter, setter))`, `bk::data(value,
   bk::enumerable)`, the class builder's accessors and statics.
-- Kind: additive.
+- Kind: new.
 - Internals: `ProxyDesc` (`src/builtins/proxy.c3:68-83`) has the same
   presence bits; `object_define_own` (`:1159`) and `own_property_desc`
   (`:208`).
@@ -777,18 +777,16 @@ BK_API bk_status bk_get_length(bk_ctx ctx, bk_value object, uint64_t *out);  /* 
 BK_API bk_value  bk_json_parse(bk_ctx ctx, const char *utf8, size_t length);
 BK_API bk_value  bk_json_stringify(bk_ctx ctx, bk_value value);
 
-/* [abi:type], appended */
-BK_TYPE_SYMBOL = 8, BK_TYPE_BIGINT = 9
+/* [abi:type]: OTHER is removed */
+BK_TYPE_SYMBOL = 7, BK_TYPE_BIGINT = 8
 ```
 
 - C++: `Function::construct`, `Object::create(cx, proto)`,
   `value.instance_of(ctor)`, `operator==` as strict equality,
   `bk::Type::symbol`/`bigint`, `bk::json::parse`.
-- Kind: additive, except the type enum. Appending `SYMBOL` and `BIGINT` means
-  `bk_get_type` stops returning `BK_TYPE_OTHER` for them. **Soft-breaking:** a
-  C `switch` with a `default:` arm sees them there, as before. Code that tests
-  `== BK_TYPE_OTHER` to detect symbols must add the new cases. `OTHER` stays
-  reserved for future kinds.
+- Kind: new calls; the type enum replaces `BK_TYPE_OTHER` with `SYMBOL` and
+  `BIGINT`, which are the only kinds it covered. A new kind gets its own
+  value.
 - Internals: `vm_construct_fn_impl` (`src/vm/vm_execute.c3:1532`);
   `object_get_proto` (`src/builtins/proxy.c3:275`) and `Heap.set_prototype`;
   `classify` (`src/embed.c3:615`) already separates symbols from strings;
@@ -822,7 +820,7 @@ BK_API bk_status bk_read_bigint_words(bk_ctx ctx, bk_value value, int *negative,
 
 - C++: `cx.intrinsic(bk::Intrinsic::array_prototype)`, `bk::Symbol`,
   `bk::BigInt`, `Convert<int64_t>` that accepts BigInt.
-- Kind: additive. `BK_ERR_UNSUPPORTED` in builds without BigInt
+- Kind: new. `BK_ERR_UNSUPPORTED` in builds without BigInt
   (`src/hbigint_disabled.c3`).
 - Internals: `RealmState` prototypes (`src/heap.c3:627-700`), resolved
   through the context's realm. `create_symbol_string`, `symbol_registry_get`,
@@ -837,41 +835,45 @@ BK_API bk_value bk_new_error(bk_ctx ctx, bk_error_kind kind, const char *message
  * traps, no toString. Same contract as bk_read_string for sizing. */
 BK_API bk_status bk_describe(bk_ctx ctx, bk_value value, char *buffer, size_t capacity, size_t *length);
 
+/* bk_error_info gains the stack; no separate extended form. */
 typedef struct {
-    size_t struct_size;
     bk_status code;
     int line, col;
     const char *script_name;
     const char *stack;        /* context-owned, may be NULL */
-} bk_error_info_ex;
-BK_API bk_status bk_get_error_info_ex(bk_ctx ctx, bk_error_info_ex *out);
+} bk_error_info;
+BK_API bk_status bk_get_error_info(bk_ctx ctx, bk_error_info *out);
 ```
 
 - C++: `bk::Error::describe()` reads the exception after later engine calls
   have overwritten the context's diagnostics. `bk::type_error(cx, "...")`
   builds errors without throwing.
-- Kind: additive. `bk_error_info` stays.
+- Kind: new calls; `bk_error_info` is redefined in place. Read the current
+  struct (`include/boomkat.h`) when implementing; keep its existing fields and
+  add `stack`.
 - Internals: `describe_error` (`src/embed.c3:418`) formats into the context
   buffer and also replaces the pending exception. `bk_describe` factors out the
   formatting half. The stack is in `HObjectError` (`src/hobject.c3:739-743`).
 
-### C12. Closures with finalizers
+### C12. Finalizers on C functions
 
 ```c
 typedef void (*bk_finalizer)(void *data, void *opaque);
-BK_API bk_value bk_new_c_closure(bk_ctx ctx, bk_c_function callback, const char *name,
-                                 int arity, unsigned flags, void *data,
-                                 bk_finalizer finalize, void *finalize_opaque);
+BK_API bk_value bk_new_c_function(bk_ctx ctx, bk_c_function callback, const char *name,
+                                  int arity, unsigned flags, void *data,
+                                  bk_finalizer finalize, void *finalize_opaque);
 ```
 
-The callback receives `data` as its `opaque`. `finalize` runs once when the
-function object is collected or the runtime is destroyed, under the same rules
-as host class finalizers (C13).
+There is one constructor for C functions. The callback receives `data` as its
+`opaque`. `finalize` runs once when the function object is collected or the
+runtime is destroyed, under the same rules as host class finalizers (C13).
+`finalize == NULL` gives today's behavior: `data` is borrowed for the
+runtime's lifetime. `bk_fn_def` gains the same two fields.
 
 - C++: `bk::closure(cx, name, lambda)` with captures, `std::function`
   adapters, signal connections that clean up.
-- Kind: additive. `bk_new_c_function` keeps its "opaque lives for the runtime"
-  contract.
+- Kind: replaces `bk_new_c_function`; callers that need no cleanup pass
+  `NULL, NULL`.
 - Internals: host function slots are permanent (`src/heap.c3:2929-2934`), so a
   closure must not take a slot per instance. One slot per distinct
   `callback` pointer, cached in a small table on the runtime. The per-closure
@@ -891,7 +893,6 @@ typedef void (*bk_trace_fn)(void *payload, bk_tracer *tracer, void *opaque);
 enum { BK_CLASS_DEFER_FINALIZE = 1 };
 
 typedef struct {
-    size_t        struct_size;
     const char   *name;
     bk_class      parent;          /* 0 = none; brand checks accept subclasses */
     bk_finalizer  finalize;        /* payload, opaque; must not call the engine */
@@ -928,8 +929,9 @@ extra.
 - C++: `bk::Class<T>`, `bk::DynamicClass`, the `owned`, `borrowed`, `shared`
   and custom ownership policies, `bk::unwrap<T>(value)`, detach. Deferred
   finalizers give Unreal and Godot a safe place to destroy native objects.
-- Kind: additive. The add-on ABI keeps its own entry points over the same
-  heap machinery.
+- Kind: new. The add-on ABI (`include/boomkat_addon.h:63-110`) registers its
+  classes through the same `bk_class_def`, so there is one host-class model;
+  its separate registration entry points are removed.
 - Internals:
   - `register_host_class` and `HostClassEntry` (`src/heap.c3:2968`, `:516`)
     gain `parent`, `trace` (replacing `gc_mark`'s `Heap*` argument with a
@@ -971,7 +973,7 @@ Registry roots cannot do that.
 
 - C++: `bk::Traced<T>` members, `bk::Tracer::trace`, `T::trace(bk::Tracer&)`
   detected by the class builder.
-- Kind: additive.
+- Kind: new.
 - Internals: `api_handle_store`, `api_value_init`, `api_value_clear`,
   `api_mark_value` (`src/addon.c3:341-375`) are the add-on versions. Two
   corrections for the incremental collector: `bk_slot_set` shades the stored
@@ -992,7 +994,7 @@ BK_API void     bk_free_weak(bk_ctx ctx, bk_weak weak);
 
 - C++: `bk::Weak<T>`, wrapper identity caches (Godot `Object*`, `UObject*`,
   DOM nodes, `QObject*`).
-- Kind: additive.
+- Kind: new.
 - Internals: the engine has no weak references at all
   (`src/builtins/weakref.c3:1-9`). A weak table on the runtime is cleared in
   two places: `gc_prune_weak_step` (`src/gc/gc_roots.c3:258`) after marking
@@ -1021,7 +1023,7 @@ spec's resolve procedure, thenable adoption included.
 - C++: `auto [promise, resolver] = bk::Promise::create(cx)`,
   `resolver.resolve(value)`, `promise.then(cx, lambda, lambda)` over C12
   closures, and a C++20 coroutine adapter.
-- Kind: additive.
+- Kind: new.
 - Internals: `promise_create` and `promise_new_capability`
   (`src/builtins/promise.c3:583`, `:524`), `promise_get_state` (`:39`),
   `promise_get_result` (`:64`), `promise_mark_handled` (`:780`),
@@ -1045,7 +1047,7 @@ BK_API void bk_wake(bk_runtime runtime);
 - C++: `rt.on_job_enqueued(f)`, `rt.wait_events(deadline)`, a thread-safe
   `bk::Waker` handle, and loop adapters for Qt, libuv and a minimal reference
   loop.
-- Kind: additive.
+- Kind: new.
 - Internals: `Heap.enqueue_microtask` (`src/heap.c3:5648`) calls the hook on
   the empty-to-non-empty transition. `bk_wait_events` and `bk_wake` are
   `agent::wait_events` (`src/agent.c3:505`) and `port_post_event`
@@ -1058,7 +1060,6 @@ BK_API void bk_wake(bk_runtime runtime);
 typedef struct bk_module_request bk_module_request;   /* engine-owned, valid until answered */
 
 typedef struct {
-    size_t struct_size;
     /* Resolve `specifier` against `referrer` into a canonical name, written with
      * bk_module_set_name. Return BK_OK, or a failure status. */
     bk_status (*resolve)(bk_ctx ctx, const char *referrer, const char *specifier,
@@ -1087,7 +1088,8 @@ BK_API bk_value  bk_import(bk_ctx ctx, const char *specifier, size_t length);  /
 - C++: a `bk::ModuleLoader` interface with `resolve`/`load` virtuals or
   lambdas, `cx.define_module("engine:math", exports)`, `cx.import(name)`,
   `bk::sandbox_loader`, hot reload.
-- Kind: additive. `bk_define_module` stays.
+- Kind: new. `bk_define_module` stays: it is the simple path for one
+  in-memory module.
 - Internals: `ModuleHostHooks` (`src/module.c3:136-147`) takes C3 slices and
   "borrows the buffer for the runtime's lifetime"
   (`src/embedding.c3:138-141`). The C wrapper copies into heap-owned storage
@@ -1113,7 +1115,6 @@ BK_API bk_status bk_detach_array_buffer(bk_ctx ctx, bk_value buffer);
 BK_API bk_value  bk_new_typed_array(bk_ctx ctx, bk_element_type type, bk_value buffer,
                                     size_t byte_offset, size_t length);
 typedef struct {
-    size_t struct_size;
     bk_element_type type;
     void  *data;          /* buffer data + byte offset; NULL when detached */
     size_t length;        /* elements */
@@ -1134,7 +1135,7 @@ The C++ docs repeat that for `std::span` views.
 - C++: `bk::ArrayBuffer`, `bk::TypedArray<float>` and friends with
   `data()`/`length()`/`span()`, `bk::SharedArrayBuffer`, `bk::SharedBlock`
   (RAII retain/release; safe on an audio thread).
-- Kind: additive. `BK_ERR_UNSUPPORTED` when typed arrays or shared memory are
+- Kind: new. `BK_ERR_UNSUPPORTED` when typed arrays or shared memory are
   compiled out (`NO_SHARED_MEMORY`, plan 109).
 - Internals:
   - `HObjectArrayBuffer` (`src/hobject.c3:919-927`) frees `data` through
@@ -1163,16 +1164,16 @@ BK_API void     bk_add_external_memory(bk_runtime runtime, int64_t delta_bytes);
 /* Bytes allocated through the runtime allocator. Exceeding it raises an
  * uncatchable termination reported as BK_ERR_NOMEM; the runtime stays usable. */
 BK_API void     bk_set_heap_limit(bk_runtime runtime, uint64_t bytes);
-typedef struct { size_t struct_size; uint64_t heap_bytes, external_bytes, heap_limit;
+typedef struct { uint64_t heap_bytes, external_bytes, heap_limit;
                  uint32_t live_handles, gc_cycles; } bk_heap_stats;
 BK_API bk_status bk_get_heap_stats(bk_runtime runtime, bk_heap_stats *out);
 ```
 
 - C++: `rt.gc_step(std::chrono::microseconds(300))`, `bk::GcInhibitor`
   (RAII), `rt.add_external_memory(n)`, `RuntimeOptions::heap_limit`.
-- Kind: additive. `bk_set_memory_limit` (process RSS, fatal on excess,
-  `src/capi.c3:1000`, `src/heap.c3:1472-1475`) is deprecated but keeps its
-  behavior.
+- Kind: new; `bk_set_memory_limit` (process RSS, fatal on excess,
+  `src/capi.c3:1000`, `src/heap.c3:1472-1475`) is removed. The Rust binding
+  and `test/capi/embed_api.c`'s memory-limit test move to `bk_set_heap_limit`.
 - Internals: `Heap.gc_step` (`src/gc/gc_incremental.c3:266`);
   `gc_trigger_counter` for external pressure; the uncatchable-throw path that
   interrupts use (`Heap.uncatchable_throw`, `finish_interrupt` at
@@ -1186,16 +1187,15 @@ BK_API bk_status bk_get_heap_stats(bk_runtime runtime, bk_heap_stats *out);
 
 ```c
 typedef struct {
-    size_t   struct_size;
     unsigned flags;          /* BK_CONTEXT_NO_EVAL, BK_CONTEXT_CANNOT_BLOCK, BK_CONTEXT_NO_INTL, ... */
     bk_class global_class;   /* 0 = ordinary global object */
     void    *global_payload;
 } bk_context_options;
-BK_API bk_ctx bk_new_context_ex(bk_runtime runtime, const bk_context_options *options);
+BK_API bk_ctx bk_new_context(bk_runtime runtime, const bk_context_options *options);  /* NULL = defaults */
 ```
 
 - C++: `rt.new_context({.allow_eval = false, .global_class = window})`.
-- Kind: additive.
+- Kind: replaces `bk_new_context(runtime)`; existing callers pass `NULL`.
 - Internals: `new_context` and `create_realm` (`src/embed.c3:244`,
   `src/realm.c3:36`). `CANNOT_BLOCK` is the `CanBlockIsFalse` agent property
   (plan 109). `NO_EVAL` checks direct and indirect eval and `Function`
@@ -1209,7 +1209,6 @@ BK_API bk_ctx bk_new_context_ex(bk_runtime runtime, const bk_context_options *op
 BK_API bk_value bk_new_proxy(bk_ctx ctx, bk_value target, bk_value handler);
 
 typedef struct bk_exotic_hooks {
-    size_t struct_size;
     /* Return 1 when handled (result in *desc, *ok or *keys_out), 0 to fall
      * through to the ordinary behavior, or -1 after bk_throw/bk_throw_error. */
     int (*get_own)(bk_ctx, bk_value self, bk_atom key, bk_property_descriptor *desc, void *opaque);
@@ -1225,7 +1224,7 @@ algorithms, so the hooks stay small and the invariants hold.
 
 - C++: `indexed_getter`, `named_getter`, `named_setter`, `legacy_caller` on
   the class builder; `bk::Proxy::create` for prototypes and tests.
-- Kind: additive.
+- Kind: new.
 - Internals: there are 149 `is_proxy()` checks under `src/`. Most route
   through the MOP functions in `src/builtins/proxy.c3` (`proxy_mop_get` at
   `:607` through `proxy_mop_own_keys` at `:1365`). The plan is one
@@ -1245,7 +1244,7 @@ BK_API bk_value bk_run_script(bk_ctx ctx, bk_value script);
 
 - C++: `bk::Script`, re-run without reparsing (CAD regeneration, per-request
   handlers).
-- Kind: additive. Bytecode caching across processes builds on
+- Kind: new. Bytecode caching across processes builds on
   `src/bytecode_image.c3` later and is not part of this plan.
 - Internals: `eval_source` (`src/embed.c3:804-878`) splits into compile and
   execute. The compiled function is tracked by the heap already.
@@ -1259,13 +1258,34 @@ BK_API bk_value bk_run_script(bk_ctx ctx, bk_value script);
 follows plan 114's C API Phase 2. `bk::String::view()` waits for plan 114's
 Phase 3.
 
+### C24. One callback style
+
+Today a host function is either a `bk_c_function` (arguments in, owned handle
+out) or a `bk_host_fn` that reads its call through `bk_argc`/`bk_arg` and
+answers with `bk_return`. Every binding and the C++ layer use `bk_c_function`;
+`bk_host_fn` appears only in `bindings/c/`, `docs/embedding.md` and
+`test/capi/dozen_lines.c`. Keep one:
+
+```c
+/* Install `fn` on `target` (0 = global). */
+BK_API bk_status bk_register_fn(bk_ctx ctx, bk_value target, const char *name,
+                                bk_c_function fn, int arity, unsigned flags, void *data);
+```
+
+- Kind: removes `bk_host_fn` and `bk_return`. `bk_register_fn` takes a
+  `bk_c_function`. `bk_argc`, `bk_arg`, `bk_this` and `bk_get_new_target`
+  stay; they read the current call from any depth, which helpers called from a
+  callback use. With C4 the two styles would differ only in how the result is
+  returned, so one trampoline shape is enough.
+- Internals: the `bk_host_fn` trampoline beside `dispatch_c_function`
+  (`src/embed.c3:733-753`) and `Ctx.host_return` (`src/capi.c3:912-924`) go
+  away.
+
 ### Deliberately not changed
 
-- The two callback styles (`bk_c_function` and `bk_host_fn` + `bk_return`)
-  stay. C++ uses `bk_c_function` only.
 - `char*` property calls stay as the simple C path.
 - `bk_value` stays a plain 64-bit integer, which keeps the C, Rust, Zig,
-  Python and Ruby bindings unchanged.
+  Python and Ruby bindings simple.
 
 ## 5. The `bk::` API
 
@@ -1497,7 +1517,7 @@ and an upcast thunk, `static_cast<Base*>(static_cast<T*>(p))`, stored in the
 class record. `bk::unwrap<Base>(v)` finds the instance's class through
 `bk_get_instance_class` and walks the recorded thunks. Each class gets a
 static tag (`&detail::class_tag<T>`) mapped to its `bk_class` per context in
-embedder slot 0 (C6). `bk::DynamicClass` is the same machinery built at run
+embedder slot 3 (C6). `bk::DynamicClass` is the same machinery built at run
 time from names and callables (Qt meta-objects, Godot `ClassDB`).
 
 Tracing: if `T` has `void trace(bk::Tracer&) const`, the builder installs it
@@ -1700,8 +1720,10 @@ gains that are mostly diagnostics. Errors under C++17 are kept usable with
   `-std=c99 -Wall -Wextra -pedantic`, including the three Phase 0 repros.
   The C API stays testable without C++.
 - **ABI hygiene:** `make check-abi` passes after each phase; `nm` on the
-  shared library shows no C++ symbols; `test/capi/dozen_lines.c` still
-  compiles unchanged.
+  shared library shows no C++ symbols; `test/capi/dozen_lines.c` stays a
+  dozen lines after each replacement.
+- **Bindings:** each C API replacement runs the Python example, the Rust
+  tests and the Zig and Ruby builds where their toolchains are installed.
 - **NaN-boxing:** the C++ tests also run against `just build-nonanbox`,
   because `bk_slot` is sized for the larger representation.
 - **Demos** under `bindings/cpp/examples/`, each built by `make cpp-examples`:
@@ -1720,15 +1742,18 @@ also pass the stress build and `just build-nonanbox`. A phase that changes
 engine paths shared with JS (C1, C13, C22) runs a narrow test262 directory
 for the area plus one full run before landing.
 
-**Phase 0: survey fixes and conventions.** C1, C2. Acceptance: the three
-repros in §1.3 are C tests that pass; `bk_delete_property` calls the Proxy
-`deleteProperty` trap and deletes array elements; `bk_get(ctx, "abc",
-"length")` returns 3.
+**Phase 0: survey fixes.** C1 is done (§1.3). C2 lands with the first
+feature-gated call.
 
-**Phase 1: C foundations.** C3, C4, C5, C6, C7, C9, C11. Acceptance:
+**Phase 1: C foundations.** C3, C4, C5, C6, C7, C9, C11, C24. Each
+replacement updates `test/capi`, `bindings/` and `docs/embedding.md` in its
+own commit. Acceptance:
 - A C test opens a scope, makes 100,000 values, closes it, and the registry's
   live count is unchanged.
-- An immediate-handle test shows `bk_new_undefined` allocates no slot.
+- An immediate-handle test shows that a call returning `undefined` allocates
+  no slot.
+- A callback that creates 1,000 values leaves the registry's live count
+  unchanged.
 - A custom allocator counts every byte of a runtime's heap allocations made
   through `heap::create` (the documented libc gaps excepted).
 - Atom-keyed access matches `char*` access for strings, indices and symbols.
@@ -1842,6 +1867,6 @@ engine items (classes, GC control, exotic hooks).
 - **Locals carry `bk_ctx`.** That doubles a local to 16 bytes. JSI and V8
   locals are one word. The context is needed for every call; measure whether
   passing `Context` explicitly is worth the ergonomic cost.
-- **`bk_c_function` vs `bk_host_fn`.** C++ uses only the former. Should the
-  C header mark the latter as the "simple" style in docs only, or is there a
-  case for deprecating one of them?
+- **ABI versioning at 1.0.** Option structs drop `struct_size` for now.
+  Before 1.0, decide between size-prefixed structs, versioned entry points or
+  a single ABI version check at runtime creation.
