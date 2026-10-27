@@ -951,12 +951,8 @@ fn int bk_set_global_property(void* ctxp, char* name, usz name_len, ulong val_id
 }
 
 fn ulong bk_get_new_target(void* ctxp) @export("bk_get_new_target") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return 0;
-    TVal value;
-    if (bctx_of(ctxp) == null) { value.set_undefined(); }
-    else { value = builtins::host_new_target((builtins::BuiltinContext*)bctx_of(ctxp)); }
-    return store(rt, value);
+    if (bctx_of(ctxp) == null) return 0;
+    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_NEW_TARGET);
 }
 
 fn int bk_is_constructor_call(void* ctxp) @export("bk_is_constructor_call") {

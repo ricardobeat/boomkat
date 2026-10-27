@@ -839,12 +839,8 @@ impl<'a> Ctx<'a> {
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn new_target(&self) -> HostValue<'a> {
-        // SAFETY: live context.
-        {
-            let value = unsafe { sys::bk_get_new_target(self.raw) };
-            self.kept.borrow_mut().push(value);
-            HostValue::handle(self.raw, value)
-        }
+        // SAFETY: live context; the handle borrows the current call.
+        HostValue::handle(self.raw, unsafe { sys::bk_get_new_target(self.raw) })
     }
 
     /// Whether this invocation came through `new` or `super()`.

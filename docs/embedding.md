@@ -133,7 +133,7 @@ normal undefined result. Returning a borrowed argument requires duplication.
 uncatchable across native reentry.
 
 `bk_set_function_list` installs a `bk_fn_def` table terminated by `BK_FN_END`.
-`BK_CTOR` allows construction; `bk_get_new_target` returns owned `new.target`,
+`BK_CTOR` allows construction; `bk_get_new_target` returns borrowed `new.target`,
 and `bk_is_constructor_call` identifies a constructor call. Opaque user pointers
 are borrowed for the runtime's lifetime. Runtime and context opaque data have
 separate setters/getters.

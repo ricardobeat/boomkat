@@ -179,8 +179,9 @@ typedef void (*bk_host_fn)(bk_ctx ctx, void *opaque);
 /* target 0 installs the function as a global. */
 BK_API bk_status bk_register_fn(bk_ctx ctx, bk_value target, const char *name,
                                 bk_host_fn fn, int arity, unsigned flags, void *opaque);
-/* Call accessors work in either callback kind and borrow the current call.
- * Arguments past argc read as undefined; outside a callback they return 0. */
+/* Call accessors (argc, arg, this, new.target) work in either callback kind and
+ * borrow the current call. Arguments past argc read as undefined; outside a
+ * callback they return 0. */
 BK_API unsigned bk_argc(bk_ctx ctx);
 BK_API bk_value bk_arg(bk_ctx ctx, unsigned index);
 BK_API bk_value bk_this(bk_ctx ctx);
