@@ -1719,7 +1719,6 @@ struct SsaEmitter @feat(SLJIT) {
     int addr_value;
     int addr_reg;
     bool addr_numeric_load;
-    bool addr_read_double;
     // The label of each block, and the jumps that reach them.
     void*[SSA_BLOCKS] block_label;
     void*[64] pending_jump;
@@ -2624,7 +2623,6 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
         if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, r0) != 0) self.e.failed = true;
         if (self.g.values[dst_value].home == 0) self.store_fpr(dst_value, dst);
         self.addr_numeric_load = true;
-        self.addr_read_double = true;
     } else if (spec.kind == DENSE) {
         int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
         self.e.mov(dst, 0, jit::SLJIT_MEM | r2, 0);
@@ -2686,13 +2684,13 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) 
     int r3       = jit::reg_r(3);
     SsaValue src = self.g.values[value];
     if (spec.doubles) {
-        // The element being replaced must also be an ordinary double: checking
+        // The element being replaced must also be numeric: checking
         // that is both the reference-release test and the invariant guard. An
         // earlier numeric read of this exact slot already proved it.
-        if (!self.addr_read_double) {
+        if (!self.addr_numeric_load) {
             self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
-            self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+            self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
         }
         self.load_fpr(value, 1);
         self.bits_fpr(1, r0);
