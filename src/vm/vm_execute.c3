@@ -4334,8 +4334,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
         if (ret_cat != null && ret_cat.finally_pc != null) {
             // Save return value
-            ret_cat.return_val = val;
-            vm.heap.shade_root_tval(ret_cat.return_val);
+            catcher_set_return(vm.heap, ret_cat, val);
             // If PENDING_RETURN is already set, we're inside the finally
             // block that was entered due to an earlier return.  Just update
             // the return value and let execution continue normally, since

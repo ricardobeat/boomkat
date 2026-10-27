@@ -136,8 +136,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             // catcher may be a catch-only try (no finally_pc).
             Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat != null && ret_cat.finally_pc != null) {
-                ret_cat.return_val = ra[0];
-                vm.heap.shade_root_tval(ret_cat.return_val);
+                catcher_set_return(vm.heap, ret_cat, ra[0]);
                 if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                     // Don't jump to finally_pc if we're already inside the
@@ -170,7 +169,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             // catcher may be a catch-only try (no finally_pc).
             Catcher* ret_cat2 = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat2 != null && ret_cat2.finally_pc != null) {
-                ret_cat2.return_val = undef_val;
+                catcher_set_return(vm.heap, ret_cat2, undef_val);
                 if (!(ret_cat2.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat2.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                     if ((ret_cat2.flags & CATCHER_FLAG_IN_FINALLY) == 0) {

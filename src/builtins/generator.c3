@@ -270,9 +270,10 @@ fn void builtin_generator_proto_return(BuiltinContext* ctx) {
 
     // Set the return value to inject
     if (ctx.argc >= 1) {
-        gs.return_value = ctx.regs[ctx.base_reg];
+        ctx.heap.tval_copy_ref(&gs.return_value, &ctx.regs[ctx.base_reg]);
         ctx.heap.shade_root_tval(gs.return_value);
     } else {
+        ctx.heap.decref_tval(&gs.return_value);
         gs.return_value.set_undefined();
     }
     gs.resume_kind = RETURN;

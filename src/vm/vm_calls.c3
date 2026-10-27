@@ -2872,8 +2872,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             ret_fin_cat = (Catcher*)ret_fin_cat.parent;
                         }
                         if (ret_fin_cat != null && ret_fin_cat.finally_pc != null) {
-                            ret_fin_cat.return_val = ret_raw;
-                            vm.heap.shade_root_tval(ret_fin_cat.return_val);
+                            catcher_set_return(vm.heap, ret_fin_cat, ret_raw);
                             if (!(ret_fin_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                                 ret_fin_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                                 ds.curr_pc = ret_fin_cat.finally_pc;

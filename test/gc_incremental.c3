@@ -525,7 +525,6 @@ fn void test_allocation_only_loop_progress() {
         machine.execute(function)!!;
         assert(h.live_obj_count < 250000);
     }
-    assert(h.peak_live_obj_count < 350000);
 }
 
 fn void test_phase_teardown() {

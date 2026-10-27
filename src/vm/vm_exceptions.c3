@@ -207,7 +207,10 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 TVal pending_exc_val = cat.thrown_val;
                 bool has_pending_ret = (cat.flags & CATCHER_FLAG_PENDING_RETURN) != 0;
                 bool has_pending_ret_gen = (cat.flags & CATCHER_FLAG_PENDING_RETURN_GEN) != 0;
+                // The pending return's reference moves from the catcher to the
+                // completion below.
                 TVal saved_ret_val = cat.return_val;
+                cat.return_val.set_undefined();
                 bool has_pending_break = (cat.flags & CATCHER_FLAG_PENDING_BREAK) != 0;
                 bool has_pending_continue = (cat.flags & CATCHER_FLAG_PENDING_CONTINUE) != 0;
                 Instruction* saved_pending_pc = cat.pending_pc;
@@ -215,14 +218,17 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
 
                 ds.act.cat = (void*)parent_cat;
                 catcher_release(vm.heap, cat);
+                if (!has_pending_ret) vm.heap.decref_tval(&saved_ret_val);
 
                 if (has_pending_ret) {
                     // When the parent catcher also has a finally,
                     // propagate the pending return through it before completing.
                     if (parent_cat != null && parent_cat.finally_pc != null
                         && (parent_cat.flags & CATCHER_FLAG_FINALLY_ENABLED) != 0) {
+                        TVal replaced = parent_cat.return_val;
                         parent_cat.return_val = saved_ret_val;
                         vm.heap.shade_root_tval(parent_cat.return_val);
+                        vm.heap.decref_tval(&replaced);
                         parent_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
                         if (has_pending_ret_gen) parent_cat.flags |= CATCHER_FLAG_PENDING_RETURN_GEN;
                         // If the parent's finally is already running, jumping to it
@@ -238,6 +244,7 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         // or a .return()/.throw() injected via LOAD_RESUME).
                         TVal gval = saved_ret_val;
                         vm_complete_generator_return(ds, &gval);
+                        vm.heap.decref_tval(&gval);
                         return (TVal){};
                     }
                     TVal val = saved_ret_val;
@@ -245,11 +252,9 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                     TVal* callee_result = callee_act.retval;
                     if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
 
-                    bool val_pinned = false;
-                    if (val.is_heap_allocated() && val.get_heapptr() != null) {
-                        ((HeapHeader*)val.get_heapptr()).incref();
-                        val_pinned = true;
-                    }
+                    // The completion owns the value's reference, which protects it
+                    // while decref_callee_regs releases the frame.
+                    bool val_pinned = val.is_heap_allocated() && val.get_heapptr() != null;
 
                     free_catcher_chain(vm, callee_act);
                     decref_callee_regs(vm, callee_act);
