@@ -18,14 +18,14 @@ fn bool function_ir_def(Instruction ins, uint pc) @feat(SLJIT) {
         default: return true;
     }
 }
-fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf) @feat(SLJIT) {
+fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat(SLJIT) {
     FunctionNumericIR ir;
     // Reserve cross-block homes only for compact, supported regions. Mixed
     // regions otherwise spend their scarce FP lanes on values spanning exits.
-    if (cf.code_count > 64) return ir;
+    if (cf.code_count > FUNCTION_REGION_OPS) return ir;
     for (uint pc = 0; pc < cf.code_count; pc++) {
         Opcode op = cf.code[pc].op;
-        if (!function_op(op) && op != Opcode.RET && op != Opcode.RETUNDEF) return ir;
+        if (!function_op(op) && !function_call_op(op)) return ir;
     }
     ulong[4][FUNCTION_OPS + 1] live;
     bool[256] excluded;
@@ -78,6 +78,9 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf) @feat(SLJIT) {
     for (uint lane = 0; lane < 3; lane++) {
         uint best; uint score;
         for (uint reg = 0; reg < cf.num_regs && reg < 256; reg++) {
+            // Locals are undefined at a fresh call. Region entries may guard
+            // live locals; whole-function entries select only arguments.
+            if (whole && reg >= cf.num_formals) continue;
             if (!excluded[reg] && (carried[reg >> 6] & (1UL << (reg & 63))) != 0 && weight[reg] > score) {
                 best = reg; score = weight[reg];
             }
@@ -89,7 +92,7 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf) @feat(SLJIT) {
 }
 fn void FunctionEmitter.flow_prepare(&self) @feat(SLJIT) {
     if (self.out.flow == null) return;
-    FunctionNumericIR ir = function_numeric_ir(self.cf);
+    FunctionNumericIR ir = function_numeric_ir(self.cf, self.plan.begin == 0);
     // No lane is dirty until every entry guard has succeeded. Prologue bailouts
     // therefore never materialize an uninitialized FP register.
     for (uint i = 0; i < ir.count; i++) {

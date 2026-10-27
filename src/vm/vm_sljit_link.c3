@@ -63,6 +63,7 @@ fn void sljit_calls_generated(FunctionPlan* plan, void* compiler, void* fallback
         link.jump = null;
         link.fallback = (void*)jit::sljit_shim_label_addr(fallback);
         link.executable_offset = jit::sljit_shim_executable_offset(compiler);
-        sljit_link_target(link);
+        // Keep the fallback until publication: the code-budget check may
+        // retire a destination while this caller is still unpublished.
     }
 }

@@ -31,6 +31,7 @@ struct FunctionRun {
     uint recover_pc;
     void* helper_continuation;
     Instruction* helper_pc;
+    ulong clock;
     FunctionTypedCache[2] typed;
     double[32 * INLINE_DEPTH] inline_values;
 }
@@ -45,6 +46,10 @@ struct FunctionPlan @feat(SLJIT) {
     FunctionCallLink* calls;
     void* resume_fragment;
     usz resume_bytes;
+    uint numeric_homes;
+    ulong last_use;
+    void*[FUNCTION_OPS + 1] map_pcs @if($feat(SLJIT_MAP));
+    void* map_calls @if($feat(SLJIT_MAP));
     FunctionInlineFrame* inline_frames;
     ushort inline_count;
     uint begin;
@@ -1250,7 +1255,6 @@ fn bool FunctionEmitter.native_call(&self, CompiledFunction* cf, uint pc, Heap* 
     if (!function_native_call(cf, pc, self.plan)) return false;
     LoopEmitter* out = &self.out;
     if (out.flow != null) {
-        if (out.flow.pinned != 0) return false;
         self.flow_materialize();
     }
     TemplateEmitter* e = &out.e;
@@ -1315,6 +1319,7 @@ fn bool FunctionEmitter.native_call(&self, CompiledFunction* cf, uint pc, Heap* 
     void* completed = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
     if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
     e.bind(completed);
+    self.flow_reload(pc + 1);
     return true;
 }
 
@@ -1337,7 +1342,7 @@ fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
     TVal undef;
     undef.set_undefined();
     // Every non-root frame was published by the generated call entry. It is a lean,
-    // same-realm frame, and no native helper allocates or enters a catcher.
+    // same-realm frame, and no native helper collects or enters a catcher.
     // Counted values leave at RET before any cleanup has taken effect.
     e.mov(r1, 0, mem | cold, (char*)&ctx.act - (char*)&ctx);
     e.mov(r2, 0, mem | run, (char*)&state.root - (char*)&state);
@@ -1464,8 +1469,12 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         e.mov(jit::reg_s(3), 0, mem | r0, (char*)&layout.this_binding - (char*)&layout);
     }
     if (!f.capture(cf, act, h)) return false;
-    // Calls and resumable helpers invalidate FP homes. Block-local flow
-    // remains enabled; cross-block homes need representation-aware entries.
+    // The C gateway guards canonical FP homes before entering a continuation.
+    // Calls and helpers materialize them before leaving generated code, then
+    // reload them before resuming. Native callee entries publish their own
+    // start PC before these guards, so an entry refusal recovers that frame.
+    f.flow_prepare();
+    plan.numeric_homes = f.flow.pinned;
     FunctionRun run_layout;
     e.mov(r0, 0, mem | jit::reg_s(2), (char*)&run_layout.entry - (char*)&run_layout);
     if (jit::sljit_emit_ijump(e.compiler, jit::SLJIT_JUMP, r0, 0) != 0) return false;
@@ -1577,6 +1586,14 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             case CALL_UNDEF_THIS:
             case CALL_VAR:
             case CALL_GLOBAL:
+                if (plan.numeric_homes != 0) {
+                    f.flow_materialize();
+                    if (function_math_candidate(cf, pos) >= 0) { f.math_call(cf, pos); f.flow_reload(pos + 1); }
+                    else if (function_array_candidate(cf, pos) >= 0) { f.array_call(cf, pos); f.flow_reload(pos + 1); }
+                    else if (function_parseint_candidate(cf, pos)) { f.parseint_call(cf, pos); f.flow_reload(pos + 1); }
+                    else if (!f.native_call(cf, pos, h)) out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pos, true);
+                    continue;
+                }
                 if (function_parseint_candidate(cf, pos)) {
                     f.parseint_call(cf, pos);
                 } else if (function_math_candidate(cf, pos) >= 0) {
@@ -1855,6 +1872,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             f.flow.same_value(ins.a, copy_token, copy_shape);
         }
     }
+    $if $feat(SLJIT_MAP): plan.map_pcs[cf.code_count] = e.label(); $endif
     out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), cf.code_count, true);
     if (e.failed) return false;
     void*[FUNCTION_OPS + 1] exits;
@@ -1914,8 +1932,14 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             e.mov(r1, 0, imm, (long)(plan.begin + link.target));
             if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
                     imm, (long)&sljit_native_operation) != 0) return false;
-            void* resumed = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 1);
-            out.bind_to(resumed, out.labels[link.target + 1]);
+            if (plan.numeric_homes == 0) {
+                out.bind_to(e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 1), out.labels[link.target + 1]);
+            } else {
+                void* incomplete = e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, imm, 1);
+                f.flow_reload(link.target + 1);
+                out.bind_to(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), out.labels[link.target + 1]);
+                e.bind(incomplete);
+            }
             void* refused = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
             e.mov(r0, 0, imm, (long)(cf.code + link.target + 1));
             if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
@@ -1927,8 +1951,14 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             e.mov(r1, 0, imm, (long)(plan.begin + link.target));
             if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
                     imm, (long)&sljit_native_read) != 0) return false;
-            void* resumed = e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, imm, 0);
-            out.bind_to(resumed, out.labels[link.target + 1]);
+            if (plan.numeric_homes == 0) {
+                out.bind_to(e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, imm, 0), out.labels[link.target + 1]);
+            } else {
+                void* refused = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
+                f.flow_reload(link.target + 1);
+                out.bind_to(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), out.labels[link.target + 1]);
+                e.bind(refused);
+            }
         }
         if (link.target == FUNCTION_BAIL) {
             e.mov(r0, 0, mem | jit::reg_s(2), (char*)&run_layout.start - (char*)&run_layout);
@@ -1943,6 +1973,16 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     plan.native = (FunctionNative)jit::sljit_generate_code(e.compiler, 0, null);
     if (plan.native == null) return false;
     sljit_calls_generated(plan, e.compiler, fallback);
+    $if $feat(SLJIT_MAP):
+        for (uint pc = 0; pc < cf.code_count; pc++) plan.map_pcs[pc] = (void*)jit::sljit_shim_label_addr(out.labels[pc]);
+        plan.map_pcs[cf.code_count] = (void*)jit::sljit_shim_label_addr(plan.map_pcs[cf.code_count]);
+        plan.map_calls = call_entry != null ? (void*)jit::sljit_shim_label_addr(call_entry) : null;
+        for (FunctionInlineFrame* frame = plan.inline_frames; frame != null; frame = frame.next) {
+            for (uint pc = 0; pc <= frame.target.code_count; pc++) {
+                frame.map_pcs[pc] = (void*)jit::sljit_shim_label_addr(frame.map_pcs[pc]);
+            }
+        }
+    $endif
     if (call_entry != null) plan.call_entry = (void*)jit::sljit_shim_label_addr(call_entry);
     plan.code_bytes = jit::sljit_shim_code_size(e.compiler) + plan.resume_bytes;
     uint entries;
@@ -2018,7 +2058,8 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
             h.jit_code_bytes
         );
     $endif
-    if (begin >= cf.code_count || h.jit_code_bytes >= LOOP_CODE_LIMIT) {
+    if (begin >= cf.code_count || !sljit_code_room(h, 0)) {
+        cf.sljit_budget_wait = begin < cf.code_count;
         $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
         return null;
     }
@@ -2072,10 +2113,11 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
             emitted,
             plan.code_bytes,
             h.jit_code_bytes,
-            LOOP_CODE_LIMIT
+            sljit_code_limit(h)
         );
     $endif
-    if (!emitted || h.jit_code_bytes + plan.code_bytes > LOOP_CODE_LIMIT) {
+    if (!emitted || !sljit_code_room(h, plan.code_bytes)) {
+        cf.sljit_budget_wait = emitted;
         $if $feat(SLJIT_STATS): if (emitted) cf.sljit_rejection = "code budget"; $endif
         if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
         if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
@@ -2085,6 +2127,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         return null;
     }
     cf.sljit_function = plan;
+    for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_link_target(link);
     sljit_relink_calls(h, cf);
     h.jit_code_bytes += plan.code_bytes;
     plan.shape_clock = h.shape_gen_clock;
@@ -2114,6 +2157,7 @@ fn Instruction* sljit_function_entry(
     bool region = false
 ) @feat(SLJIT) @noinline {
     Heap* h              = cold.heap;
+    $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
     CompiledFunction* cf = cold.vm.current_func;
     $if $feat(SLJIT_STATS): cf.sljit_entry_attempts++; $endif
     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || h.gc_phase != heap::GcPhase.IDLE
@@ -2166,6 +2210,10 @@ fn Instruction* sljit_function_entry(
     FunctionRun run @noinit;
     run.entry = plan.entries[local];
     run.root = cold.act;
+    $if $feat(SLJIT_ADAPTIVE):
+        run.clock = h.jit_clock;
+        plan.last_use = h.jit_clock;
+    $endif
     run.depth = 0;
     run.start = pc;
     run.recover_frame = null;
@@ -2178,6 +2226,9 @@ fn Instruction* sljit_function_entry(
         resume = sljit_inline_recover(cold, &run);
     }
     uint consumed = (uint)(budget - run.budget);
+    uint progress = consumed;
+    if (cold.act == run.root && resume - pc >= 6) progress += 16;
+    sljit_budget_progress(h, progress);
     h.bwd_gc_budget -= consumed;
     if (interrupts) h.interrupt_budget -= consumed;
     $if $feat(SLJIT_STATS):
@@ -2290,8 +2341,10 @@ fn void sljit_stats_dump(Heap* h) {
                 for (FunctionCallLink* link = plan.calls; link != null; link = link.next) links++;
                 io::printfn("SLJIT pipeline id=%d inlined=%d recoveries=%d allocations=%d pushes=%d links=%d",
                     i, plan.general_inlines, plan.inline_recoveries, plan.resumed_allocations, plan.resumed_pushes, links);
+                io::printfn("SLJIT numeric id=%d homes=%d", i, plan.numeric_homes);
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes, plan.resume_fragment, plan.resume_bytes);
+                $if $feat(SLJIT_MAP): sljit_address_map(plan, cf, i); $endif
                 for (FunctionInlineFrame* frame = plan.inline_frames; frame != null; frame = frame.next) {
                     for (uint pc = 0; pc < frame.target.code_count; pc++) {
                         if (frame.exits[pc] == 0) continue;
@@ -2363,6 +2416,8 @@ fn void sljit_stats_dump(Heap* h) {
         io::printfn("SLJIT totals functions=%d loops=%d templates=%d code_bytes=%d",
             functions, loops, templates, h.jit_code_bytes);
         $endif
+        io::printfn("SLJIT budget bytes=%d limit=%d native_work=%d evictions=%d", h.jit_code_bytes,
+            sljit_code_limit(h), h.jit_native_work, h.jit_evictions);
         $if $feat(SLJIT_STATS) && $feat(OP_PROFILE): opprof_dump(); $endif
     $endif
 }

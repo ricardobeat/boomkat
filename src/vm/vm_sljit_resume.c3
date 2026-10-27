@@ -125,6 +125,7 @@ fn void FunctionEmitter.allocating_operation(&self, uint pc) @feat(SLJIT) {
     if (continuation == null || jit::sljit_emit_ijump(e.compiler, jit::SLJIT_JUMP,
             imm, (long)self.plan.resume_fragment) != 0) { e.failed = true; return; }
     jit::sljit_set_label(continuation, e.label());
+    self.flow_reload(pc + 1);
 }
 
 // A separately compiled fragment inherits the body's complete register/stack

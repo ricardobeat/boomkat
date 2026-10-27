@@ -13,6 +13,7 @@ const String NATIVE_SOURCE   = $embed("../jit_native_calls.js");
 const String RECOVERY_SOURCE = $embed("../jit_inline_recovery.js");
 const String ALLOCATION_SOURCE = $embed("../jit_alloc_continuations.js");
 const String LINK_SOURCE = $embed("../jit_linked_calls.js");
+const String CFG_SOURCE = $embed("../jit_cfg_numbers.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
 const String RUN             = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
 
@@ -144,6 +145,30 @@ fn int stop_after_polls(void* runtime, void* opaque) {
     return *polls >= 3 ? 1 : 0;
 }
 
+fn void check_numeric_pipeline() @feat(SLJIT) {
+    // Earlier fixtures deliberately poison indexed prototypes. Use a fresh
+    // runtime so this check requires successful compiled push continuations.
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    eval(&context, "var console={log:function(){}};");
+    eval(&context, CFG_SOURCE);
+    CompiledFunction* numeric = named_function(&runtime, "jitCfgNumbers");
+    @check(numeric != null && numeric.sljit_function != null);
+    @check(((FunctionPlan*)numeric.sljit_function).numeric_homes != 0);
+    CompiledFunction* calls = named_function(&runtime, "jitCfgCalls");
+    @check(calls != null && calls.sljit_function != null);
+    FunctionPlan* plan = calls.sljit_function;
+    @check(plan.numeric_homes != 0);
+    @check(plan.direct_calls != 0);
+    @check(plan.direct_returns != 0);
+    @check(plan.resumed_allocations != 0 && runtime.rt.heap.jit_resumed_pushes != 0);
+}
+
 fn void main() {
     check_native_convention();
     JsRuntime first, second;
@@ -243,6 +268,30 @@ fn void main() {
         linked.sljit_function_calls = 0;
         eval(&a, "for(var linkWarm=0;linkWarm<80;linkWarm++)if(jitLinkDrive(jitLinkObject,100)!==5250)throw 'relink';");
         @check(linked.sljit_function != null);
+        $if $feat(SLJIT_ADAPTIVE):
+        // Exercise the real cache reclaimer with a live linked caller. Make
+        // every plan recent except this target, then force one eviction.
+        FunctionPlan* target_plan = linked.sljit_function;
+        target_plan.last_use = 0;
+        eval(&a, "if(jitLinkDrive(jitLinkObject,100)!==5250)throw 'native use';");
+        @check(target_plan.last_use != 0);
+        first.rt.heap.jit_clock += 65537;
+        for (uint index = 0; index < first.rt.heap.compiled_func_count; index++) {
+            CompiledFunction* candidate = first.rt.heap.compiled_funcs[index];
+            if (candidate != null && candidate.sljit_function != null) {
+                ((FunctionPlan*)candidate.sljit_function).last_use = first.rt.heap.jit_clock;
+            }
+        }
+        target_plan.last_use = 1;
+        usz saved_limit = vm::sljit_code_limit(first.rt.heap);
+        first.rt.heap.jit_code_limit = first.rt.heap.jit_code_bytes + 1;
+        @check(vm::sljit_code_room(first.rt.heap, 2));
+        first.rt.heap.jit_code_limit = saved_limit;
+        @check(linked.sljit_function == null && driver.sljit_function != null);
+        eval(&a, "for(var linkAgain=0;linkAgain<80;linkAgain++)if(jitLinkDrive(jitLinkObject,100)!==5250)throw 'cache relink';");
+        @check(linked.sljit_function != null);
+        $endif
+        check_numeric_pipeline();
         eval(&a, FUNCTION_SOURCE);
         first.rt.heap.mark_and_sweep(true, true);
         for (uint i = 0; i < 128; i++) eval(&a, "if(jitFunctionWork(jitFunctionRecord)!==18)throw 'function';");

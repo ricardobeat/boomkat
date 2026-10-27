@@ -675,20 +675,40 @@ sixteen instructions. Repeated short guard exits disable that entry.
 Native backward branches consume an invocation-local budget bounded by the
 heap's GC and interrupt budgets and 1024 edges. Before exhaustion they publish
 state and resume at the original branch, whose interpreter handler performs the
-poll. There is no allocation, collection, or JS callback inside a native run.
+poll. Collection and arbitrary JS callbacks run after generated machine frames
+unwind. Allocation helpers may request collection; they publish the completed
+result and leave at the following instruction before that collection runs.
 
 Regions combine ordinary data-property accesses, captured integer counters,
 bitwise operations, dense-array reads and fixed typed-array loads/stores. Guarded
-Math min/max/abs/sqrt/imul calls execute without entering JS. Small straight-line
-numeric JS helpers can also be inlined from warmed binding sites: live binding,
-callee identity and argument guards precede evaluation in private scratch space.
-Unsupported calls, allocations and exceptional operations return to the
-interpreter; eligible continuations resume after a call returns.
+Math min/max/abs/sqrt/imul calls execute without entering JS. Generated callees
+share the register window, cold context and invocation budget through SLJIT's
+register-argument convention. Entry publishes an ordinary VM activation; return
+restores the caller and continues natively. A side exit unwinds machine frames
+while preserving VM activations for the interpreter.
+
+Bounded inlining records virtual frames and exact exit PCs, including branches,
+loops and completed stores. Recovery constructs the interpreter activations
+without replaying effects. Allocating object/array operations and dense-array
+growth use helpers with explicit refused/completed/completed-and-exit status.
+A separately compiled SLJIT context fragment resumes the native continuation.
+VM slots own GC roots and refcounted values across these transitions. Unsupported
+operations, callbacks and exceptions retain interpreter handling.
+
+Monomorphic calls use rewritable native links with a generic call fallback.
+Incoming links are patched before a target is freed. Compilation, relinking and
+retirement occur only after generated frames unwind; targets remain in the
+compiled-function registry until heap teardown.
 
 Four general registers cache boxed values. Within a basic block, four FP
 registers retain proven numbers, with next-use-based spills and snapshots of
 dirty values at each guard exit. Compact supported regions use CFG liveness to
 reserve up to three canonical FP homes across branches and native iterations.
+Whole-function entry selects only arguments; region entry may guard live locals.
+Every entry converts those slots before entering a continuation. Calls and
+helpers publish canonical homes before clobbering FP registers and reload them
+after successful completion. A failed reload resumes after the completed
+operation with authoritative VM slots.
 This is a restricted representation analysis, not a general SSA optimizer;
 integer induction remains boxed. Mixed or larger regions keep block-local FP
 allocation. Pending numeric definitions replace only non-string values, so

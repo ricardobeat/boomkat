@@ -17,7 +17,6 @@ const uint LOOP_OPS       = 128;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
 const uint LOOP_THIS      = LOOP_REGS + LOOP_BINDINGS;
-const usz LOOP_CODE_LIMIT = 1024 * 1024;
 
 alias LoopNative = fn uint(void* state, long budget);
 enum LoopMemoryKind : char {
@@ -1594,6 +1593,7 @@ fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @in
 }
 fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
     Heap* h              = cold.heap;
+    $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
     CompiledFunction* cf = cold.vm.current_func;
     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || cf.num_regs > LOOP_REGS || h.uncatchable_throw
         || std::core::mem::@atomic_load(
@@ -1624,7 +1624,8 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         cf.sljit_loop_ready &= ~(1U << (offset & 31));
         int target = loop_target(*pc, offset);
         if (target < 0 || target >= (int)offset || (cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return body;
-        if (plans >= 4 || h.jit_code_bytes >= LOOP_CODE_LIMIT) {
+        if (plans >= 4 || !sljit_code_room(h, 0)) {
+            if (plans < 4) cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
@@ -1643,7 +1644,8 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
-        if (h.jit_code_bytes + draft.code_bytes > LOOP_CODE_LIMIT) {
+        if (!sljit_code_room(h, draft.code_bytes)) {
+            cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
             jit::sljit_free_code((void*)draft.native, null);
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
@@ -1738,6 +1740,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         cf.sljit_loop_ready |= ready;
     }
     h.bwd_gc_budget -= consumed;
+    sljit_budget_progress(h, consumed);
     if (interrupts) h.interrupt_budget -= consumed;
     // Retain every incoming string before releasing any overwritten register;
     // a native permutation can move its last reference between slots.

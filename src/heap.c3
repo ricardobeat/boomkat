@@ -1100,6 +1100,10 @@ struct Heap {
     bool                jit_enabled @if($feat(SLJIT));
     bool                jit_stress @if($feat(SLJIT));
     usz                 jit_code_bytes @if($feat(SLJIT));
+    usz                 jit_code_limit @if($feat(SLJIT));
+    ulong               jit_native_work @if($feat(SLJIT));
+    ulong               jit_clock @if($feat(SLJIT));
+    uint                jit_evictions @if($feat(SLJIT));
     ulong               jit_resumed_pushes @if($feat(SLJIT) && $feat(SLJIT_STATS));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
@@ -2570,6 +2574,12 @@ fn void Heap.reset(&self) {
 
     self.free_compiled_funcs();
     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
+    $if $feat(SLJIT_ADAPTIVE):
+        self.jit_code_limit = 0;
+        self.jit_native_work = 0;
+        self.jit_clock = 0;
+        self.jit_evictions = 0;
+    $endif
 
     // Large strings are in neither str_table nor the object vectors, so the registry
     // is the only list that can reach them. Skipping this pass would leave them

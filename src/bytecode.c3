@@ -1910,6 +1910,8 @@ struct CompiledFunction {
     void*           sljit_loops @if($feat(SLJIT));
     void*           sljit_function @if($feat(SLJIT));
     uint            sljit_function_calls @if($feat(SLJIT));
+    bool            sljit_budget_wait @if($feat(SLJIT));
+    ulong           sljit_loop_budget_wait @if($feat(SLJIT));
     ulong           sljit_loop_rejected @if($feat(SLJIT));
     uint            sljit_template_calls @if($feat(SLJIT));
     uint            sljit_loop_ready @if($feat(SLJIT));

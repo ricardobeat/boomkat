@@ -171,3 +171,24 @@ fn void FunctionEmitter.flow_materialize(&self) @feat(SLJIT) {
     self.flow.dirty = 0;
     self.flow_flush();
 }
+
+// Reload the canonical representation after a completed operation that may
+// clobber FP registers. Slots are already authoritative; a failed conversion
+// exits at the following bytecode without publishing partially reloaded lanes.
+fn void FunctionEmitter.flow_reload(&self, uint pc) @feat(SLJIT) {
+    if (self.flow.pinned == 0) return;
+    LoopEmitter reload = { .e = self.out.e };
+    for (uint lane = 0; lane < 4; lane++) {
+        if ((self.flow.pinned & (1U << lane)) == 0) continue;
+        reload.e.mov(jit::reg_r(0), 0, jit::SLJIT_MEM | self.out.state_base(),
+            loop_value_offset(self.flow.owners[lane]));
+        reload.number(jit::reg_r(0), (int)lane + 3, pc);
+    }
+    void* done = jit::sljit_emit_jump(reload.e.compiler, jit::SLJIT_JUMP);
+    void* failed = reload.e.label();
+    for (uint i = 0; i < reload.link_count; i++) reload.bind_to(reload.links[i].jump, failed);
+    reload.e.mov(jit::reg_r(0), 0, jit::SLJIT_IMM, (long)(self.cf.code + pc));
+    if (jit::sljit_emit_return(reload.e.compiler, jit::SLJIT_MOV, jit::reg_r(0), 0) != 0) reload.e.failed = true;
+    reload.e.bind(done);
+    if (reload.e.failed) self.out.e.failed = true;
+}

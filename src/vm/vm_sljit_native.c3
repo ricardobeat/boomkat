@@ -153,6 +153,10 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     }
     // All refusals precede the first mutation. There are no allocations,
     // callbacks or safepoints between publication and a body side exit.
+    $if $feat(SLJIT_ADAPTIVE):
+        e.mov(r0, 0, mem | run, $reflect(FunctionRun.clock).offset);
+        e.mov(mem, (long)&self.plan.last_use, r0, 0);
+    $endif
     e.mov(r0, 0, mem | vm, $reflect(Vm.activation_count).offset, jit::SLJIT_MOV_U32);
     e.op(jit::SLJIT_MUL, r1, r0, 0, imm, Activation::size);
     e.mov(act, 0, mem | vm, $reflect(Vm.activations).offset);

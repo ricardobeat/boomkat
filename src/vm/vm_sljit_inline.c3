@@ -890,6 +890,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     for (uint i = 0; i <= target.code_count; i++) {
         if (i < target.code_count && inner.blocks[i]) inner.flow_flush();
         labels[i] = ie.label();
+        $if $feat(SLJIT_MAP): frame.map_pcs[i] = labels[i]; $endif
         for (uint j = 0; j < pending_count; j++) {
             if (pending_target[j] != i) continue;
             jit::sljit_set_label(pending[j], labels[i]);

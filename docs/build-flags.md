@@ -65,8 +65,10 @@ Each region contains at most 128 instructions and uses at most 64 VM registers,
 eight memory sources, and sixteen invariant bindings. Compiled functions cache
 up to four regions or input specializations. Generated loop and function code share a
 1 MiB cap per runtime; metadata is allocated only for compiled regions. Native
-chunks stop at the interpreter's GC and interrupt budgets. No allocation, JS
-callback, or collection runs inside a native chunk.
+chunks stop at the interpreter's GC and interrupt budgets. Numeric loop chunks
+cannot allocate, call JS, or collect. Function regions support guarded allocation
+helpers and native callees; collection and arbitrary callbacks require unwinding
+generated frames first.
 
 The function compiler combines property accesses, primitive stores, integer
 capture updates, arithmetic, bitwise operations and native backward branches.
@@ -86,8 +88,10 @@ individual sites; invocation-local metadata caches reuse validated buffer state.
 Small pure numeric JS helpers can be guarded and inlined at warmed binding calls. Native sqrt emission currently targets
 arm64 and x86-64; other backends use the interpreter. Strings requiring coercion and unsupported
 array representations use the interpreter. Shape, prototype, capture and value
-guards preserve completed updates on fallback. Calls into JS and allocations
-remain interpreted. Generators, async functions, direct eval and mapped
+guards preserve completed updates on fallback. Eligible JS callees share a native
+calling convention; bounded effectful inlining recovers exact virtual frames.
+Object/array allocation and dense-array growth can resume compiled continuations.
+Generators, async functions, direct eval and mapped
 arguments stay interpreted. Plans store at most 32 guarded shapes and one mutable
 capture; repeated short guard exits disable the affected native entry. Metadata
 scales with the selected instruction window and is released with generated code.
@@ -97,3 +101,16 @@ from the standard builds. Generated code shares each compiled function's lifetim
 the executable allocator packs functions into shared chunks. Template functions
 with custom interrupt callbacks use the interpreter; numeric loops preserve the
 ordinary interrupt polling cadence.
+
+`SLJIT_MAP`, together with `SLJIT_STATS`, adds generated address ranges for
+bytecodes, inlined frames, entry/return machinery and helper fragments. Run with
+`--jit --stats`, sample that same process, then use
+`python3 scripts/profile_sljit_sample.py <stats-log> <macOS-sample-log>` to
+attribute CPU self samples. Addresses from different processes cannot be mixed.
+
+`SLJIT_ADAPTIVE` is an experimental cache policy. It starts at 256 KiB, grows
+toward the existing 1 MiB cap as completed native work accumulates, and reclaims
+cold function plans at compilation safepoints. Linked callees record use, and
+incoming calls are unlinked before reclamation. The standard build retains the
+fixed cap: the adaptive policy regressed several mini benchmarks and is not yet
+the default. Heap reset clears its usage history.
