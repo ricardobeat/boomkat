@@ -5625,6 +5625,22 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     return null;
 }
 
+// The string of the units `[from, to)` of `s`. Both bounds must lie within the
+// string; an empty range yields the empty string.
+fn HString* Heap.str_slice(&self, HString* s, uint from, uint to) {
+    if (from >= to) return self.str(BuiltinStr.EMPTY);
+    uint byte_from = s.char_offset_to_byte_offset(from);
+    uint byte_to = s.char_offset_to_byte_offset(to);
+    return self.str_intern_normalized(s.get_data()[byte_from:byte_to - byte_from]);
+}
+
+// The one-unit string holding `unit`, which may be a lone surrogate.
+fn HString* Heap.str_from_unit(&self, uint unit) {
+    char[3] buf;
+    uint n = hstring::encode_codepoint(unit, buf[:3]);
+    return self.str_intern_normalized(buf[:n]);
+}
+
 // Intern an engine slot name as a hidden symbol. A hidden symbol shares the
 // table with ordinary strings but never matches one, so no script string can
 // spell a slot name. Enumeration paths skip hidden symbols.

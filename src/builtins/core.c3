@@ -143,6 +143,26 @@ fn bool StrBuf.append_bytes(&self, char[] bytes) {
     return true;
 }
 
+// Append the whole string.
+fn bool StrBuf.append_hstring(&self, HString* s) {
+    return self.append_bytes(s.get_data());
+}
+
+// Append the units `[from, to)` of `s`.
+fn bool StrBuf.append_hstring_range(&self, HString* s, uint from, uint to) {
+    if (from >= to) return true;
+    uint byte_from = s.char_offset_to_byte_offset(from);
+    uint byte_to = s.char_offset_to_byte_offset(to);
+    return self.append_bytes(s.get_data()[byte_from:byte_to - byte_from]);
+}
+
+// Append one UTF-16 code unit, which may be a lone surrogate.
+fn bool StrBuf.append_unit(&self, uint unit) {
+    char[3] buf;
+    uint n = hstring::encode_codepoint(unit, buf[:3]);
+    return self.append_bytes(buf[:n]);
+}
+
 fn bool StrBuf.append_char(&self, char c) {
     if (!self.reserve(1)) return false;
     self.data[self.len++] = c;
@@ -1231,7 +1251,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
-        len_tv.set_fastint((long)prim_str.char_length());
+        len_tv.set_fastint((long)prim_str.unit_len());
         obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, heap);
         return obj;
     }

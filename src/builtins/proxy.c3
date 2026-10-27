@@ -151,8 +151,8 @@ fn void ordinary_own_desc(Heap* heap, HObject* obj, HString* key, ProxyDesc* out
         && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         uint ci = key.array_index();
-        if (prim != null && ci < prim.char_length()) {
-            uint cp = prim.char_at_unchecked(ci);
+        if (prim != null && ci < prim.unit_len()) {
+            uint cp = prim.unit_at(ci);
             char[4] cbuf;
             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch = heap.str_intern(cbuf[:cblen]);
@@ -1320,7 +1320,7 @@ fn uint ordinary_own_keys(Heap* heap, HObject* obj, HString*** buf_out) {
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
-            uint clen = prim.char_length();
+            uint clen = prim.unit_len();
             if (cap < clen + obj.prop_count + 4) {
                 heap.free_func(heap.heap_udata, buf);
                 cap = clen + obj.prop_count + 4;

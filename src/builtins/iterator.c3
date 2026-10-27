@@ -592,7 +592,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
             // still well-defined there (it just adds 1), so guard against
             // clamped byte-offset round-tripping past the string's end.
             long next_index;
-            if ((ulong)this_index >= (ulong)s_hstr.char_length()) {
+            if ((ulong)this_index >= (ulong)s_hstr.unit_len()) {
                 next_index = this_index + 1;
             } else {
                 char* input = s_hstr.get_cstr();

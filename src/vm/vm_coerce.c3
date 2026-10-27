@@ -94,7 +94,7 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
         HString* sx = (HString*)px.get_heapptr();
         HString* sy = (HString*)py.get_heapptr();
         if (!(sx != null && sx.is_symbol()) && !(sy != null && sy.is_symbol())) {
-            int c = hstring::hstring_compare(sx, sy);
+            int c = hstring::units_compare(sx, sy);
             return c < 0 ? -1 : (c > 0 ? 1 : 0);
         }
     }

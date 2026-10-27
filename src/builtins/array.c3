@@ -1909,7 +1909,7 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
             return 0;
         }
         HString* b_str = b_str_raw ?? builtin_to_string(ctx.heap, &b);
-        cmp = hstring::hstring_compare(a_str, b_str);
+        cmp = hstring::units_compare(a_str, b_str);
     }
     return cmp;
 }
@@ -3468,7 +3468,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     ulong len = 0;
     if (is_string_prim) {
-        len = str_val.char_length();
+        len = str_val.unit_len();
     } else if (len_key != null) {
         TVal? len_opt = builtins_generic_get(array_like, len_key, ctx);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -3524,7 +3524,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             // This array-like fallback is incomplete for strings: Array.from(str)
             // should go through @@iterator, codepoint by codepoint. Reaching here
             // means that path was not taken.
-            uint cp = str_val.char_at_unchecked((uint)k);
+            uint cp = str_val.unit_at((uint)k);
             char[4] cbuf;
             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch_str = builtin_intern_string(heap, cbuf[:cblen]);
@@ -3666,7 +3666,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
-            len_tv.set_fastint((long)prim_str.char_length());
+            len_tv.set_fastint((long)prim_str.unit_len());
             obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, heap);
             // Indexed character properties are served lazily via the exotic_stringobj flag;
             // no per-character own properties are materialised at construction time.
@@ -3799,7 +3799,7 @@ fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
     // STRING exotic: integer indices [0, char_length) are own properties served lazily
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        return prim != null && (long)key < prim.char_length();
+        return prim != null && (long)key < prim.unit_len();
     }
     // TypedArray: integer indices in [0, length) are own data properties served
     // from the backing buffer (they never appear in the named-property table).
@@ -4261,7 +4261,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     // falls through to silently defining a NEW own property instead.
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && idx < (ulong)prim.char_length()) {
+        if (prim != null && idx < (ulong)prim.unit_len()) {
             arr_throw_type_error(ctx, "Cannot assign to read-only property of String");
             return false;
         }
@@ -4445,7 +4445,7 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     // STRING exotic: serve indexed character properties lazily
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && (long)key < prim.char_length()) {
+        if (prim != null && (long)key < prim.unit_len()) {
             char[] data = prim.get_data();
             usz byte_start = (usz)prim.char_offset_to_byte_offset(key);
             usz byte_end = (usz)prim.char_offset_to_byte_offset(key + 1);
@@ -4575,7 +4575,7 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     // STRING exotic: serve indexed character properties lazily
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && (long)key < prim.char_length()) {
+        if (prim != null && (long)key < prim.unit_len()) {
             char[] data = prim.get_data();
             usz byte_start = (usz)prim.char_offset_to_byte_offset((uint)key);
             usz byte_end = (usz)prim.char_offset_to_byte_offset((uint)key + 1);

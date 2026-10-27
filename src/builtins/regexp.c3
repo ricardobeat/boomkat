@@ -956,7 +956,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
             // this first, since char_offset_to_byte_offset clamps to blen and
             // would otherwise silently lose indices past the string's end.
             long next_index;
-            if ((ulong)this_index >= (ulong)s_hstr.char_length()) {
+            if ((ulong)this_index >= (ulong)s_hstr.unit_len()) {
                 next_index = this_index + 1;
             } else {
                 char* input = s_hstr.get_cstr();
@@ -1591,7 +1591,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                         if (li_d2 > max53) li_d2 = max53;
                         long this_li = (long)li_d2;
                         long next_li2;
-                        long str_charlen2 = (long)s_hstr.char_length();
+                        long str_charlen2 = (long)s_hstr.unit_len();
                         if (this_li >= str_charlen2) {
                             // AdvanceStringIndex: if thisIndex >= length, return thisIndex + 1.
                             next_li2 = this_li + 1;
@@ -1676,7 +1676,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         double pos_d = builtin_to_integer_vm(ctx, &idx_raw);
         if (ctx.should_throw) return;
         if (pos_d < 0.0) pos_d = 0.0;
-        double str_charlen_d = (double)s_hstr.char_length();
+        double str_charlen_d = (double)s_hstr.unit_len();
         if (pos_d > str_charlen_d) pos_d = str_charlen_d;
         int out_start = (int)s_hstr.char_offset_to_byte_offset((uint)pos_d);
         // Step 14.h: endOfLastMatch is position + the match's length in code
@@ -1685,7 +1685,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         // the match spans -- adding it to a byte offset into `input` lands
         // mid-character whenever the two differ in encoding, and with an exec
         // override `matched` need not occur in the input at all.
-        double end_charunit = pos_d + (double)matched_hstr.char_length();
+        double end_charunit = pos_d + (double)matched_hstr.unit_len();
         if (end_charunit > str_charlen_d) end_charunit = str_charlen_d;
         int out_end = (int)s_hstr.char_offset_to_byte_offset((uint)end_charunit);
 
@@ -1776,7 +1776,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                             HString* str_len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
                             TVal str_len_tv;
                             HString* s_hs = (HString*)named_captures_tv.get_heapptr();
-                            str_len_tv.set_fastint((long)s_hs.char_length());
+                            str_len_tv.set_fastint((long)s_hs.unit_len());
                             box.put_prop(str_len_key, str_len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
                             named_captures_tv.set_object(box);
                         }
@@ -2718,7 +2718,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         // lastIndex is a UTF-16 code unit count; convert to CESU-8 byte
         // offset for re_run. Bounds-check against char-unit length.
         long li_charunit = (long)li_d;
-        uint str_charlen = s_hstr.char_length();
+        uint str_charlen = s_hstr.unit_len();
         if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
             TVal zero_tv; zero_tv.set_fastint(0);
             if (!regexp_set_last_index(ctx, rx, li_key, zero_tv)) return;
