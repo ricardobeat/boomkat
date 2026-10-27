@@ -678,8 +678,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         if (sidx >= 0) {
                             HString* prim_str = (HString*)(*hobj.extra_ptr()).prim.primitive_value.get_heapptr();
-                            if (sidx < (long)prim_str.char_length()) {
-                                uint cp = prim_str.char_at_unchecked((uint)sidx);
+                            if (sidx < (long)prim_str.unit_len()) {
+                                uint cp = prim_str.unit_at((uint)sidx);
                                 char[4] sbuf;
                                 uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                 HString* interned = intern_string(vm, sbuf[:sblen]);
@@ -796,8 +796,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             str_idx = (long)key_prim.array_index();
                         }
                     }
-                    if (str_idx >= 0 && str_idx < (long)str_prim.char_length()) {
-                        uint cp = str_prim.char_at_unchecked((uint)str_idx);
+                    if (str_idx >= 0 && str_idx < (long)str_prim.unit_len()) {
+                        uint cp = str_prim.unit_at((uint)str_idx);
                         char[4] cbuf;
                         uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                         HString* interned = intern_string(vm, cbuf[:cblen]);
@@ -813,7 +813,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (key != null) {
                         // Fast path: .length → string character count
                         if (key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
-                            vm.heap.set_reg_fastint(ra, (long)h_str.char_length());
+                            vm.heap.set_reg_fastint(ra, (long)h_str.unit_len());
                             return (TVal){};
                         }
                         // A String exotic object's own properties include its
@@ -825,8 +825,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // patterns do.
                         uint sidx = key.array_index();
                         if (sidx != hstring::ARRIDX_NONE
-                                && sidx < str_prim.char_length()) {
-                            uint cp = str_prim.char_at_unchecked(sidx);
+                                && sidx < str_prim.unit_len()) {
+                            uint cp = str_prim.unit_at(sidx);
                             char[4] cbuf;
                             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                             HString* interned = intern_string(vm, cbuf[:cblen]);
@@ -1002,8 +1002,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (key_hstr != null && key_hstr.is_arridx()) {
                                 long sidx = (long)key_hstr.array_index();
                                 HString* prim_str = (HString*)(*hobj.extra_ptr()).prim.primitive_value.get_heapptr();
-                                if (sidx < (long)prim_str.char_length()) {
-                                    uint cp = prim_str.char_at_unchecked((uint)sidx);
+                                if (sidx < (long)prim_str.unit_len()) {
+                                    uint cp = prim_str.unit_at((uint)sidx);
                                     char[4] sbuf;
                                     uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                     HString* interned = intern_string(vm, sbuf[:sblen]);
@@ -1136,8 +1136,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // slots are still found.
                         if (key_hstr != null && key_hstr.is_arridx()) {
                             long sidx = (long)key_hstr.array_index();
-                            if (sidx < (long)h_str.char_length()) {
-                                uint cp = h_str.char_at_unchecked((uint)sidx);
+                            if (sidx < (long)h_str.unit_len()) {
+                                uint cp = h_str.unit_at((uint)sidx);
                                 char[4] sbuf;
                                 uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                 HString* interned = intern_string(vm, sbuf[:sblen]);
@@ -1152,7 +1152,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (key_hstr != null) {
                             // Fast path: .length → string character count
                             if ((void*)key_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
-                                vm.heap.set_reg_fastint(ra, (long)h_str.char_length());
+                                vm.heap.set_reg_fastint(ra, (long)h_str.unit_len());
                                 return (TVal){};
                             }
                             // A String exotic's own properties include its indices
@@ -1161,8 +1161,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // arrives interned, which the numeric fast path misses:
                             // `{0: c} = "x"` compiles to this opcode.
                             uint cidx = key_hstr.array_index();
-                            if (cidx != hstring::ARRIDX_NONE && cidx < h_str.char_length()) {
-                                uint ccp = h_str.char_at_unchecked(cidx);
+                            if (cidx != hstring::ARRIDX_NONE && cidx < h_str.unit_len()) {
+                                uint ccp = h_str.unit_at(cidx);
                                 char[4] cbuf;
                                 uint cblen = hstring::encode_codepoint(ccp, cbuf[:4]);
                                 HString* cinterned = intern_string(vm, cbuf[:cblen]);
@@ -1649,7 +1649,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 // only strict PutValue turns it into a TypeError.
                                 if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
                                     HString* nm = (HString*)key;
-                                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
                                     }
                                 }
@@ -2559,7 +2559,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HString* key = get_prop_key(vm, rc);
                 if (key != null && base_str != null) {
                     bool non_configurable = key.is_arridx()
-                        ? key.array_index() < base_str.char_length()
+                        ? key.array_index() < base_str.unit_len()
                         : key.equals("length");
                     if (non_configurable) {
                         vm.heap.set_reg_boolean(ra, false);

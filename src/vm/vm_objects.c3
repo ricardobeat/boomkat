@@ -365,10 +365,10 @@ fn void? copy_data_properties_into(Vm* vm, Dispatch* ds, HObject* target, TVal s
     if (source.flags.exotic_stringobj) {
         HString* prim = (HString*)(*source.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
-            for (uint ci = 0; ci < prim.char_length(); ci++) {
+            for (uint ci = 0; ci < prim.unit_len(); ci++) {
                 HString* ik = vm.heap.int_to_hstring((long)ci);
                 if (ik == null || key_is_excluded((void*)ik, excluded)) continue;
-                uint cp = prim.char_at_unchecked(ci);
+                uint cp = prim.unit_at(ci);
                 char[4] cbuf;
                 uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                 HString* ch_str = intern_string(vm, cbuf[:cblen]);
@@ -786,7 +786,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
             if (!has_method) {
                 HString* type_str = iterable_value_desc(vm, &src_tv);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not iterable", type_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return (TVal){};
@@ -1012,7 +1012,7 @@ fn TVal? dispatch_objects(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc,
             }
             if (!has_method) {
                 HString* type_str = iterable_value_desc(vm, &src_tv);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not iterable", type_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return (TVal){};

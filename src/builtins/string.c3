@@ -71,7 +71,7 @@ fn void builtin_string(BuiltinContext* ctx) {
         // Set.length own property, non-writable, non-enumerable, non-configurable
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
-        len_tv.set_fastint((long)s.char_length());
+        len_tv.set_fastint((long)s.unit_len());
         obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
@@ -492,7 +492,7 @@ fn void builtin_string_proto_charAt(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
     double pos = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (pos < 0 || pos >= (double)clen) {
@@ -501,7 +501,7 @@ fn void builtin_string_proto_charAt(BuiltinContext* ctx) {
         return;
     }
     uint idx = (uint)(long)pos;
-    uint cp = s_hstr.char_at_unchecked(idx);
+    uint cp = s_hstr.unit_at(idx);
     char[4] buf;
     uint blen = hstring::encode_codepoint(cp, buf[:4]);
     HString* result = builtin_intern_string(ctx.heap, buf[:blen]);
@@ -520,7 +520,7 @@ fn void builtin_string_proto_charCodeAt(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
     double pos = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     if (pos < 0 || pos >= (double)clen) {
@@ -528,7 +528,7 @@ fn void builtin_string_proto_charCodeAt(BuiltinContext* ctx) {
         return;
     }
     uint idx = (uint)(long)pos;
-    ctx.result_fastint((long)s_hstr.char_at_unchecked(idx));
+    ctx.result_fastint((long)s_hstr.unit_at(idx));
 }
 
 // String.prototype.indexOf(searchString, position)
@@ -545,7 +545,7 @@ fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
     // Indexed by UTF-16 code unit for the argument/result; byte search
     // itself is safe on CESU-8-canonical data (a byte match can't straddle
     // a code-unit boundary), so only pos/result need unit<->byte conversion.
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
 
     // Get search string
     HString* search_hstr;
@@ -615,7 +615,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
         return;
     }
     // Indexed by UTF-16 code unit (char_length), not raw byte.
-    uint len = s_hstr.char_length();
+    uint len = s_hstr.unit_len();
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -675,7 +675,7 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
         return;
     }
     // Indexed by UTF-16 code unit (char_length), not raw byte.
-    uint len = s_hstr.char_length();
+    uint len = s_hstr.unit_len();
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -725,7 +725,7 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
         return;
     }
     // Indexed by UTF-16 code unit (char_length), not raw byte.
-    uint len = s_hstr.char_length();
+    uint len = s_hstr.unit_len();
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -1614,7 +1614,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     // T is a String of length 1 containing element q of S, where S is
     // indexed by UTF-16 code unit, not Unicode codepoint or byte).
     if (sep_len == 0) {
-        uint clen = s_hstr.char_length();
+        uint clen = s_hstr.unit_len();
         uint count = clen < limit ? clen : limit;
         HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         TVal len_val;
@@ -2178,7 +2178,7 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
     // position argument is in code units; convert to byte offset before
     // searching. Byte-level substring matching itself stays correct on
     // CESU-8-canonical data (a match can't straddle a code-unit boundary).
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
     double pos_d = (ctx.argc > 1) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     uint pos_units;
@@ -2226,7 +2226,7 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
     if (search_hstr == null) { ctx.result_boolean(false); return; }
 
     // position argument is in code units; convert to byte offset.
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
     double pos_d = (ctx.argc > 1) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     uint pos_units;
@@ -2274,7 +2274,7 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
     if (search_hstr == null) { ctx.result_boolean(false); return; }
 
     // endPosition argument is in code units; convert to byte offset.
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
     double end_d = (ctx.argc > 1) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]) : (double)clen;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
     uint end_units;
@@ -2415,7 +2415,7 @@ fn void builtin_string_proto_codePointAt(BuiltinContext* ctx) {
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
 
     double pos_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -2427,9 +2427,9 @@ fn void builtin_string_proto_codePointAt(BuiltinContext* ctx) {
     }
     uint pos = (uint)(long)pos_d;
 
-    uint first = s_hstr.char_at_unchecked(pos);
+    uint first = s_hstr.unit_at(pos);
     if (hstring::is_high_surrogate(first) && pos + 1 < clen) {
-        uint second = s_hstr.char_at_unchecked(pos + 1);
+        uint second = s_hstr.unit_at(pos + 1);
         if (hstring::is_low_surrogate(second)) {
             ctx.result_fastint((long)hstring::surrogates_to_codepoint(first, second));
             return;
@@ -2447,7 +2447,7 @@ fn void builtin_string_proto_at(BuiltinContext* ctx) {
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
 
     // Step 4: ToIntegerOrInfinity(index), coerces via valueOf/toString, NaN→0.
     double idx_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
@@ -2457,7 +2457,7 @@ fn void builtin_string_proto_at(BuiltinContext* ctx) {
     if (idx < 0) { idx = (long)clen + idx; }
     if (idx < 0 || idx >= (long)clen) { ctx.result_undefined(); return; }
 
-    uint cp = s_hstr.char_at_unchecked((uint)idx);
+    uint cp = s_hstr.unit_at((uint)idx);
     char[4] cbuf;
     uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
     HString* result = builtin_intern_string(ctx.heap, cbuf[:cblen]);
@@ -2475,7 +2475,7 @@ macro void @string_pad(BuiltinContext* ctx, $at_start) {
     if (math::is_nan(max_len_d) || max_len_d < 0) { max_len_d = 0; }
     uint max_len = (uint)(long)max_len_d;
 
-    uint str_units = s_hstr.char_length();
+    uint str_units = s_hstr.unit_len();
     if (str_units >= max_len) {
         ctx.result_string(s_hstr); return;
     }
@@ -2543,7 +2543,7 @@ fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {
     char* data = s_hstr.get_cstr();
     uint len = s_hstr.blen;
     // Indexed by UTF-16 code unit for the argument/result.
-    uint clen = s_hstr.char_length();
+    uint clen = s_hstr.unit_len();
 
     HString* search_hstr;
     if (ctx.argc > 0) {

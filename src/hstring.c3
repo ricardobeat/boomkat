@@ -234,12 +234,9 @@ fn int byte_compare(char* a, char* b, usz n) @local {
     return 0;
 }
 
-// Lexicographic comparison of two HStrings.
-//
-// Returns -1 if a < b, 0 if a == b, 1 if a > b, comparing by
-// UTF-8 byte value (which matches code-point ordering for well-formed
-// UTF-8).
-fn int hstring_compare(HString* a, HString* b) {
+// Lexicographic comparison of two HStrings by UTF-16 code unit, as the ECMAScript
+// relational operators define it. Returns -1 if a < b, 0 if a == b, 1 if a > b.
+fn int units_compare(HString* a, HString* b) {
     int min_len = (int)(a.blen < b.blen ? a.blen : b.blen);
     int cmp = byte_compare(a.get_cstr(), b.get_cstr(), (usz)min_len);
     if (cmp != 0) return cmp;
@@ -267,7 +264,7 @@ fn bool HString.is_interned(&self)           { return self.flags.is_interned; }
 // Character length, computed on demand. For an ASCII string this is `blen`.
 // Multi-byte UTF-8 is walked once to count codepoints, then cached, which is
 // safe because the string is immutable.
-fn uint HString.char_length(&self) {
+fn uint HString.unit_len(&self) {
     if (self.flags.is_ascii) return self.blen;
     if (self.cached_charlen != CHARLEN_NONE) return self.cached_charlen;
     uint clen = compute_charlen(self.get_data());
@@ -292,22 +289,10 @@ fn uint HString.array_index(&self) {
 // HString: Unicode helpers
 // ============================================================================
 
-// Returns the Unicode codepoint at character index `char_idx`.
-//
-// For pure-ASCII strings the operation is O(1).  For multi-byte strings
-// the function scans from the beginning in O(n) where n = char_idx.
-// Returns `UNICODE_REPLACEMENT` if `char_idx >= char_length()`.
-fn uint HString.char_at(&self, uint char_idx) {
-    if (char_idx >= self.char_length()) {
-        return UNICODE_REPLACEMENT;
-    }
-    return self.char_at_unchecked(char_idx);
-}
-
 // `char_at` without the bounds check, for callers that have already
 // established `char_idx < char_length()`. It saves a `char_length()` call that
 // can itself be O(n). An unchecked index may walk past the end of the string.
-fn uint HString.char_at_unchecked(&self, uint char_idx) {
+fn uint HString.unit_at(&self, uint char_idx) {
     char[] data = self.get_data();
 
     // Fast path for ASCII strings.
@@ -354,7 +339,7 @@ fn uint HString.char_offset_to_byte_offset(&self, uint char_offset) {
     uint blen = self.blen;
 
     // A cold cache is (0, 0), which behaves like scanning from the start.
-    uint char_length = self.char_length();
+    uint char_length = self.unit_len();
 
     // Out-of-range: clamp to end.
     if (char_offset >= char_length) {
@@ -1018,6 +1003,60 @@ fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn, void* udata = nu
         }
         i += seq_len;
     }
+}
+
+// ============================================================================
+// Width-neutral accessors
+//
+// Builtins read strings through these and never see the stored width. A string
+// is a sequence of `unit_len()` UTF-16 code units; `unit_at(i)` reads one. The
+// sequence may hold lone surrogates, and an astral character is two units.
+// ============================================================================
+
+// The characters of an ASCII string as bytes, which are also valid UTF-8. Only
+// meaningful when `is_ascii()` holds; callers branch on that for their fast path.
+fn char[] HString.ascii_bytes(&self) @inline {
+    assert(self.flags.is_ascii);
+    return self.get_data();
+}
+
+// Index of the first occurrence of `needle` in `hay` at or after unit `from`,
+// or -1. `from` must not exceed `hay.unit_len()`.
+fn int find_units(HString* hay, HString* needle, uint from) {
+    uint from_byte = hay.char_offset_to_byte_offset(from);
+    int hit = find_bytes(hay.get_data(), needle.get_data(), from_byte);
+    if (hit < 0 || hay.flags.is_ascii) return hit;
+    return (int)hay.byte_offset_to_char_offset((uint)hit);
+}
+
+// Index of the last occurrence of `needle` in `hay` that starts at or before
+// unit `from`, or -1. `from` must not exceed `hay.unit_len()`.
+fn int rfind_units(HString* hay, HString* needle, uint from) {
+    uint from_byte = hay.char_offset_to_byte_offset(from);
+    int hit = rfind_bytes(hay.get_data(), needle.get_data(), from_byte);
+    if (hit < 0 || hay.flags.is_ascii) return hit;
+    return (int)hay.byte_offset_to_char_offset((uint)hit);
+}
+
+// True when `needle` occurs in this string starting at unit `pos`.
+fn bool HString.matches_at(&self, uint pos, HString* needle) {
+    uint byte_pos = self.char_offset_to_byte_offset(pos);
+    if ((ulong)byte_pos + needle.blen > self.blen) return false;
+    return mem::equals(self.get_cstr() + byte_pos, needle.get_cstr(), needle.blen);
+}
+
+// Copy the string into `dst` as CESU-8 text, always NUL-terminated, truncated at
+// a unit boundary when it does not fit. Returns the bytes written before the NUL.
+// `dst` must hold at least one byte.
+fn usz HString.write_cesu8(&self, char[] dst) {
+    usz n = self.blen;
+    if (n > dst.len - 1) {
+        n = dst.len - 1;
+        while (n > 0 && ((uint)self.get_cstr()[n] & 0xC0) == 0x80) n--;
+    }
+    mem::copy(dst.ptr, self.get_cstr(), (sz)n);
+    dst[n] = 0;
+    return n;
 }
 
 // ============================================================================

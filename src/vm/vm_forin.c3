@@ -253,7 +253,7 @@ fn bool forin_key_still_exists(HObject* target, HString* key, Heap* h) {
     if (target.flags.exotic_stringobj && (*target.extra_ptr()).prim.primitive_value.is_string()) {
         if (key.is_arridx()) {
             HString* prim = (HString*)(*target.extra_ptr()).prim.primitive_value.get_heapptr();
-            return prim != null && (uint)key.array_index() < prim.char_length();
+            return prim != null && (uint)key.array_index() < prim.unit_len();
         }
     }
 
@@ -355,7 +355,7 @@ fn ForInState* collect_forin_keys(Vm* vm, HObject* obj) {
         if (cur.flags.exotic_stringobj && (*cur.extra_ptr()).prim.primitive_value.is_string()) {
             HString* prim = (HString*)(*cur.extra_ptr()).prim.primitive_value.get_heapptr();
             if (prim != null) {
-                for (uint i = 0; i < prim.char_length(); i++) {
+                for (uint i = 0; i < prim.unit_len(); i++) {
                     HString* k = vm.heap.int_to_hstring((long)i);
                     if (k == null) {
                         hstring::free_string_refs(h, keys[:count]);

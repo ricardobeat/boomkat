@@ -90,7 +90,7 @@ fn bool builtin_to_object(BuiltinContext* ctx, TVal val) {
         // Set .length own property (ECMA-262 §15.5.5.1), non-writable, non-enumerable, non-configurable
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
-        len_tv.set_fastint((long)prim_str.char_length());
+        len_tv.set_fastint((long)prim_str.unit_len());
         obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
@@ -261,7 +261,7 @@ fn void builtin_object(BuiltinContext* ctx) {
         // Set .length own property (ECMA-262 §15.5.5.1)
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
-        len_tv.set_fastint((long)prim_str.char_length());
+        len_tv.set_fastint((long)prim_str.unit_len());
         obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
         // Indexed character properties are served lazily via the exotic_stringobj flag;
         // no per-character own properties are materialised at construction time.
@@ -309,7 +309,7 @@ fn uint own_key_buf_capacity(HObject* obj) {
     uint max_keys = obj.prop_count + obj.array_size + 32;
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null) max_keys += prim.char_length();
+        if (prim != null) max_keys += prim.unit_len();
     }
     if (is_typed_array_class(obj.get_class())) {
         max_keys += ta_element_count(obj);
@@ -326,7 +326,7 @@ fn uint own_key_buf_capacity(HObject* obj) {
 fn bool own_has_enum_string_key(Heap* heap, HObject* obj) {
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && prim.char_length() > 0) return true;
+        if (prim != null && prim.unit_len() > 0) return true;
     }
     if (is_typed_array_class(obj.get_class()) && ta_element_count(obj) > 0) return true;
     if (obj.flags.exotic_array || obj.flags.exotic_arguments) {
@@ -347,7 +347,7 @@ fn uint collect_own_enum_string_keys(Heap* heap, HObject* obj, HString** key_buf
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
-            for (uint i = 0; i < prim.char_length(); i++) {
+            for (uint i = 0; i < prim.unit_len(); i++) {
                 HString* k = heap.int_to_hstring((long)i);
                 if (k == null) return key_count;
                 key_buf[key_count++] = k;
@@ -758,7 +758,7 @@ fn void builtin_object_getOwnPropertyNames(BuiltinContext* ctx) {
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
-            for (uint i = 0; i < prim.char_length(); i++) {
+            for (uint i = 0; i < prim.unit_len(); i++) {
                 HString* k = ctx.heap.int_to_hstring((long)i);
                 if (k == null) { ctx.result_undefined(); return; }
                 key_buf[key_count++] = k;
@@ -1039,7 +1039,7 @@ fn void builtin_reflect_ownKeys(BuiltinContext* ctx) {
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
-            for (uint i = 0; i < prim.char_length(); i++) {
+            for (uint i = 0; i < prim.unit_len(); i++) {
                 HString* k = ctx.heap.int_to_hstring((long)i);
                 if (k == null) { ctx.result_undefined(); return; }
                 key_buf[key_count++] = k;
@@ -2047,8 +2047,8 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             (*obj.extra_ptr()).prim.primitive_value.is_string() &&
             is_numeric && kd.len > 0 && kd.len <= 10) {
             HString* prim_str = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-            if (arr_idx < (ulong)prim_str.char_length()) {
-                uint cp = prim_str.char_at_unchecked((uint)arr_idx);
+            if (arr_idx < (ulong)prim_str.unit_len()) {
+                uint cp = prim_str.unit_at((uint)arr_idx);
                 char[4] cbuf;
                 uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                 HString* char_str = ctx.heap.str_intern(cbuf[:cblen]);
@@ -2237,7 +2237,7 @@ fn void builtin_object_getOwnPropertyDescriptors(BuiltinContext* ctx) {
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
-            for (uint i = 0; i < prim.char_length() && kn < cap; i++) {
+            for (uint i = 0; i < prim.unit_len() && kn < cap; i++) {
                 HString* k = ctx.heap.int_to_hstring((long)i);
                 if (k != null) keys[kn++] = k;
             }
@@ -2372,7 +2372,7 @@ fn bool desc_get_enum(BuiltinContext* ctx, HObject* obj, hstring::HString* key, 
         && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         uint ci = key.array_index();
-        if (prim != null && ci < prim.char_length()) {
+        if (prim != null && ci < prim.unit_len()) {
             uint bstart = prim.char_offset_to_byte_offset(ci);
             uint bend = prim.char_offset_to_byte_offset(ci + 1);
             char[] data = prim.get_data();
@@ -2435,7 +2435,7 @@ fn bool obj_assign_set(BuiltinContext* ctx, HObject* obj, hstring::HString* key,
     if (obj.flags.exotic_stringobj && key.is_arridx()
         && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && (ulong)key.array_index() < (ulong)prim.char_length()) {
+        if (prim != null && (ulong)key.array_index() < (ulong)prim.unit_len()) {
             builtin_throw_no_result_change(ctx, ctx.heap.type_err_proto, "Cannot assign to read only property");
             return false;
         }
@@ -3347,7 +3347,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
     if (props.flags.exotic_stringobj && (*props.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*props.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null) {
-            for (uint i = 0; i < prim.char_length() && keys_count < 256; i++) {
+            for (uint i = 0; i < prim.unit_len() && keys_count < 256; i++) {
                 HString* pk = ctx.heap.int_to_hstring((long)i);
                 if (pk != null) keys_arr[keys_count++] = pk;
             }
@@ -4222,7 +4222,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         (*downstream.extra_ptr()).prim.primitive_value.set_string(prim_str);
         HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
-        len_tv.set_fastint((long)prim_str.char_length());
+        len_tv.set_fastint((long)prim_str.unit_len());
         downstream.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
     } else if (downstream_val.is_number() || downstream_val.is_fastint()) {
         HObject*? obj_raw = ctx.heap.alloc_object(hobject::ObjClass.NUMBER);
@@ -4263,7 +4263,7 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
             (*src_obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)ctx.heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
-            len_tv.set_fastint((long)prim_str.char_length());
+            len_tv.set_fastint((long)prim_str.unit_len());
             src_obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ctx.heap);
         } else {
             // Number, Boolean, Symbol, BigInt, no enumerable own properties
@@ -4353,11 +4353,11 @@ fn void builtin_object_assign(BuiltinContext* ctx) {
         if (src_obj.flags.exotic_stringobj && (*src_obj.extra_ptr()).prim.primitive_value.is_string()) {
             HString* prim = (HString*)(*src_obj.extra_ptr()).prim.primitive_value.get_heapptr();
             if (prim != null) {
-                for (uint ci = 0; ci < prim.char_length(); ci++) {
+                for (uint ci = 0; ci < prim.unit_len(); ci++) {
                     HString* ik = ctx.heap.int_to_hstring((long)ci);
                     if (ik == null) continue;
                     // Character properties are always writable, enumerable, configurable
-                    uint cp = prim.char_at_unchecked(ci);
+                    uint cp = prim.unit_at(ci);
                     char[4] cbuf;
                     uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                     HString* ch_str = ctx.heap.str_intern(cbuf[:cblen]);
@@ -4597,8 +4597,8 @@ fn TVal from_entries_get_index(BuiltinContext* ctx, HObject* pair, uint idx) {
     // primitive value (they are not materialised as own properties).
     if (pair.flags.exotic_stringobj && (*pair.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*pair.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && idx < prim.char_length()) {
-            uint cp = prim.char_at_unchecked(idx);
+        if (prim != null && idx < prim.unit_len()) {
+            uint cp = prim.unit_at(idx);
             char[4] cbuf;
             uint clen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch = builtin_intern_string(ctx.heap, cbuf[:clen]);
@@ -5204,7 +5204,7 @@ fn bool object_has_own_property(BuiltinContext* ctx, HObject* obj, HString* key,
     // STRING exotic: integer indices [0, clen) are own properties served lazily.
     if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        *out = prim != null && key.array_index() < prim.char_length();
+        *out = prim != null && key.array_index() < prim.unit_len();
         return true;
     }
 
@@ -5499,7 +5499,7 @@ fn void builtin_object_proto_propertyIsEnumerable(BuiltinContext* ctx) {
     if (obj.flags.exotic_stringobj && key.is_arridx() && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         // Indices in [0, clen) are enumerable per ECMA-262 §15.5.5.1
-        ctx.result_boolean(prim != null && key.array_index() < prim.char_length());
+        ctx.result_boolean(prim != null && key.array_index() < prim.unit_len());
         return;
     }
     // Integer-Indexed exotic: an in-bounds index is an enumerable own data

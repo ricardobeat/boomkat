@@ -1464,7 +1464,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (iter_sym == null) iter_sym = builtins::ensure_iterator_symbol(vm.heap);
                 if (iter_sym == null) {
                     HString* tstr = iterable_value_desc(vm, &iterable_val);
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", tstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not iterable", tstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     ds.needs_restart = true; break;
@@ -1509,7 +1509,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 }
                 if (!has_method) {
                     HString* tstr2 = iterable_value_desc(vm, &iterable_val);
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable", tstr2.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not iterable", tstr2, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     ds.needs_restart = true; break;

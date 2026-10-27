@@ -752,7 +752,7 @@ fn ulong bk_get_own_property_names(void* ctxp, ulong obj_id) @export("bk_get_own
     // Dense array / string-exotic / typed-array indices plus named integer keys.
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null) for (uint i = 0; i < prim.char_length() && key_count < max_keys; i++) {
+        if (prim != null) for (uint i = 0; i < prim.unit_len() && key_count < max_keys; i++) {
             key_buf[key_count++] = h.int_to_hstring((long)i);
         }
     }

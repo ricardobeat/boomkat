@@ -3814,7 +3814,7 @@ struct B64DecodeResult {
 
 // Index of the first non-whitespace codepoint at or after `pos`.
 fn uint b64_skip_ws(HString* s, uint pos, uint len, char alphabet) @inline {
-    while (pos < len && b64_decode_char(s.char_at_unchecked(pos), alphabet) == B64_K_WS) pos++;
+    while (pos < len && b64_decode_char(s.unit_at(pos), alphabet) == B64_K_WS) pos++;
     return pos;
 }
 
@@ -3852,10 +3852,10 @@ fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_l
         if (count == 0) {
             // Bulk loop: four alphabet characters in a row make three bytes.
             while (pos + 4 <= src_len && out + 3 <= max_len) {
-                char a = b64_decode_char(src.char_at_unchecked(pos), alphabet);
-                char b = b64_decode_char(src.char_at_unchecked(pos + 1), alphabet);
-                char c = b64_decode_char(src.char_at_unchecked(pos + 2), alphabet);
-                char d = b64_decode_char(src.char_at_unchecked(pos + 3), alphabet);
+                char a = b64_decode_char(src.unit_at(pos), alphabet);
+                char b = b64_decode_char(src.unit_at(pos + 1), alphabet);
+                char c = b64_decode_char(src.unit_at(pos + 2), alphabet);
+                char d = b64_decode_char(src.unit_at(pos + 3), alphabet);
                 if ((a | b | c | d) >= 64) break;
                 uint word = ((uint)a << 18) | ((uint)b << 12) | ((uint)c << 6) | (uint)d;
                 dst[out] = (char)(word >> 16);
@@ -3887,7 +3887,7 @@ fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_l
             break;
         }
 
-        uint cp = src.char_at_unchecked(pos++);
+        uint cp = src.unit_at(pos++);
         if (cp == '=') {
             // Padding ends the input: "xx==" or "xxx=", with whitespace
             // allowed anywhere around the pad characters.
@@ -3898,7 +3898,7 @@ fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_l
                     if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) break;
                     return { .err = true };
                 }
-                if (src.char_at_unchecked(pos) != '=') return { .err = true };
+                if (src.unit_at(pos) != '=') return { .err = true };
                 pos = b64_skip_ws(src, pos + 1, src_len, alphabet);
             }
             if (pos != src_len) return { .err = true };
@@ -3942,8 +3942,8 @@ fn B64DecodeResult from_hex(HString* src, uint src_len, char* dst, uint max_len)
     uint written = 0;
     uint i = 0;
     while (i < src_len && written < max_len) {
-        int hi = hex_decode_char(src.char_at_unchecked(i));
-        int lo = hex_decode_char(src.char_at_unchecked(i + 1));
+        int hi = hex_decode_char(src.unit_at(i));
+        int lo = hex_decode_char(src.unit_at(i + 1));
         if (hi < 0 || lo < 0) { r.err = true; return r; }
         dst[written++] = (char)((hi << 4) | lo);
         i += 2;
@@ -4069,7 +4069,7 @@ fn void builtin_uint8array_from_base64(BuiltinContext* ctx) {
     char last_chunk = b64_get_last_chunk_option(ctx, opts);
     if (ctx.should_throw) return;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     uint out_cap = (str_len / 4) * 3 + 3;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(out_cap == 0 ? 1 : out_cap));
     if (buf == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
@@ -4096,7 +4096,7 @@ fn void builtin_uint8array_from_hex(BuiltinContext* ctx) {
     HString* str = b64_require_string_arg(ctx);
     if (str == null) return;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     uint out_cap = str_len / 2 + 1;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)out_cap);
     if (buf == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
@@ -4231,7 +4231,7 @@ fn void builtin_uint8array_proto_set_from_base64(BuiltinContext* ctx) {
     uint len = (*obj.extra_ptr()).view.byte_length;
     char* data = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     B64DecodeResult res = from_base64(str, str_len, data, len, alphabet, last_chunk);
     if (res.err) {
         builtin_throw(ctx, ctx.heap.syntax_err_proto, "invalid base64 string");
@@ -4256,7 +4256,7 @@ fn void builtin_uint8array_proto_set_from_hex(BuiltinContext* ctx) {
     uint len = (*obj.extra_ptr()).view.byte_length;
     char* data = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     B64DecodeResult res = from_hex(str, str_len, data, len);
     if (res.err) {
         builtin_throw(ctx, ctx.heap.syntax_err_proto, "invalid hex string");

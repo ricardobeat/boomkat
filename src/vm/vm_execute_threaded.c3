@@ -2653,7 +2653,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         if (key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
             TVal* destination = regs + insn.a;
             if (!th_can_release(destination)) return pc;
-            long length = (long)str.char_length();
+            long length = (long)str.unit_len();
             th_do_release(destination);
             destination.set_fastint(length);
             return th_next(pc + 1, handlers, regs, cold);

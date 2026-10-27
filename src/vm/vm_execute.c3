@@ -204,11 +204,11 @@ fn int vm_bareword_put(Vm* vm, Dispatch* ds, void* key, TVal val) {
         }
         HString* name = (HString*)key;
         bool raised = gres == 2
-            ? vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                "Cannot assign to read only property '%s'", name.get_cstr(),
+            ? vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                "Cannot assign to read only property '%s'", name,
                 ds.act, &ds.curr_pc, &ds.needs_restart)
-            : vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                "'%s' is not defined", name.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+            : vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                "'%s' is not defined", name, ds.act, &ds.curr_pc, &ds.needs_restart);
         return raised ? 0 : -1;
     }
     if (!vm_global_bareword_store(vm, key, val)) {
@@ -2610,8 +2610,8 @@ fn bool? vm_write_with_binding(Dispatch* ds, HObject* base, HString* key, TVal v
         // through to [[Set]], which re-creates the property with the
         // new value (ECMA-262 §10.2.1.2.4's create-when-absent step).
         HString* name_hstr = (HString*)key;
-        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                "%s is not defined", name_hstr.get_cstr(),
+        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                "%s is not defined", name_hstr,
                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
             return VM_ERROR~;
         }
@@ -2691,7 +2691,7 @@ fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TV
     if (!builtins::js_has_property(vm, vm.heap, env.bindings, (HString*)key, &has_hit) || !has_hit) {
         if (((CompiledFunction*)ds.act.func).is_strict()) {
             HString* name_hstr = (HString*)key;
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(),
+            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr,
                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 return VM_ERROR~;
             }
@@ -2816,8 +2816,8 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
             TVal v = env.bindings.prop_values()[idx].get();
             if (env::is_tdz_sentinel(&v)) {
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization",
-                        name_hstr.get_cstr(), act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization",
+                        name_hstr, act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return BindingRead.THREW;
@@ -3340,7 +3340,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             } else {
                 HString* part = (HString*)part_val.get_heapptr();
                 total64 += (ulong)part.blen;
-                if (insn.op == Opcode.STRJOIN_LENGTH) char_length += part.char_length();
+                if (insn.op == Opcode.STRJOIN_LENGTH) char_length += part.unit_len();
             }
         }
         if (hstring::length_exceeds_max(total64)) {
@@ -3991,7 +3991,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 HString* key_hstr = (HString*)key;
                 if (key_hstr != null && key_hstr.is_arridx()) {
                     HString* prim_str = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-                    if (prim_str != null && key_hstr.array_index() < prim_str.char_length()) {
+                    if (prim_str != null && key_hstr.array_index() < prim_str.unit_len()) {
                         vm.heap.set_reg_boolean(ra, true);
                         continue;
                     }
@@ -4709,14 +4709,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (ra.is_envref() && ra.get_heapptr() != null) { continue; }
         if (((CompiledFunction*)ds.act.func).is_strict()) {
             uint bc = insn.get_bc();
-            char* nm = (char*)"";
+            HString* nm = vm.heap.str(heap::BuiltinStr.EMPTY);
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
                 if (name_val.is_string()) {
-                    nm = ((HString*)name_val.get_heapptr()).get_cstr();
+                    nm = (HString*)name_val.get_heapptr();
                 }
             }
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "'%s' is not defined", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 return VM_ERROR~;
             }
         }
@@ -4778,7 +4778,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 track_heap_store(ds.act, ra, (uint)insn.a);
             case BindingRead.UNRESOLVABLE:
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(),
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr,
                         ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
@@ -4801,7 +4801,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                 if (put_result == -1) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -4813,7 +4813,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (strict_a) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                     }
@@ -4821,7 +4821,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     break;
                 } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -4888,7 +4888,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // a strict binding before the immutable check
                     // (ECMA-262 §9.1.1.1.5 steps 2 and 5.2).
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -4897,7 +4897,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // sloppy silently drops, strict throws.
                     if (((CompiledFunction*)ds.act.func).is_strict()) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         break;
@@ -4996,8 +4996,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     bool is_strict_act = ds.act.func != null
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (is_strict_act) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                "%s is not defined", name_hstr.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5022,8 +5022,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     bool is_strict_act = ds.act.func != null
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (is_strict_act) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                "%s is not defined", name_hstr.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5038,7 +5038,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // §9.1.1.1.5 step 2 promotes strict for strict
                     // bindings before the immutable check.
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -5049,7 +5049,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (strict_b) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                     }
@@ -5058,7 +5058,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     break;
                 } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -5178,8 +5178,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         // RESOLVEVAR found it (§9.1.1.2.5 step 4).
                         if (is_strict_act) {
                             HString* name_hstr = (HString*)key;
-                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                    "%s is not defined", name_hstr.get_cstr(),
+                            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                                    "%s is not defined", name_hstr,
                                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
@@ -5187,13 +5187,13 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         }
                     } else if (put_result == -2) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         continue;
                     } else if (put_result == -1 || (put_result == -4 && is_strict_act)) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         continue;
@@ -5247,8 +5247,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 if (is_global_fn_env && is_eval_fn) {
                     if (!env::env_can_declare_global_func(ds.act.var_env, fdecl_key)) {
                         HString* type_str = typeof_string(vm, (TVal*)&fdecl_name);
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                                "Cannot declare global function '%s'", type_str.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                                "Cannot declare global function '%s'", type_str,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5502,8 +5502,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && !globals.get_prop_flags((uint)gidx, vm.heap).configurable;
                     if (has_lex || restricted) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.syntax_err_proto,
-                            "Identifier '%s' has already been declared", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.syntax_err_proto,
+                            "Identifier '%s' has already been declared", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5516,8 +5516,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // extensible and has no matching own property).
                     if (has_lex) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.syntax_err_proto,
-                            "Identifier '%s' has already been declared", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.syntax_err_proto,
+                            "Identifier '%s' has already been declared", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5525,8 +5525,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     }
                     if (!has_global && !globals.is_extensible()) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                            "Cannot declare global variable '%s'", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                            "Cannot declare global variable '%s'", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5542,8 +5542,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // TypeError.
                     if (has_lex) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.syntax_err_proto,
-                            "Identifier '%s' has already been declared", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.syntax_err_proto,
+                            "Identifier '%s' has already been declared", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5559,8 +5559,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     }
                     if (!definable) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                            "Cannot declare global function '%s'", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                            "Cannot declare global function '%s'", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5698,7 +5698,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
         if (is_strict_d && !found) {
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 return VM_ERROR~;
             }
             continue;
@@ -5804,7 +5804,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
-            len_tv.set_fastint((long)prim_str.char_length());
+            len_tv.set_fastint((long)prim_str.unit_len());
             obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, vm.heap);
         } else if (obj_val.is_number() || obj_val.is_fastint()) {
             HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
@@ -5974,7 +5974,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 TVal v_raw = cur.bindings.prop_values()[idx].get();
                 if (env::is_tdz_sentinel(&v_raw)) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw_pending = true;
@@ -6027,7 +6027,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 TVal v_raw = vcur.bindings.prop_values()[vidx].get();
                 if (env::is_tdz_sentinel(&v_raw)) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw_pending = true;
@@ -6067,7 +6067,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     && ((CompiledFunction*)ds.act.func).is_strict();
                 if (is_strict_act) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     continue;
@@ -6190,19 +6190,19 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 int put_result = env::env_try_put_lex(senv, key, *ra, true);
                 if (put_result == -1 || (put_result == -4 && senv_strict)) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
                 } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
                 } else if (put_result == -3 && senv_strict) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
@@ -6218,7 +6218,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                 if (put_result == -1) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
@@ -6229,14 +6229,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (strict_c) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         threw = true;
                     }
                 } else if (put_result == -2) {
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 threw = true;

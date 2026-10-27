@@ -4418,7 +4418,7 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
             TVal prim = (*self.extra_ptr()).prim.primitive_value;
             if (prim.is_string()) {
                 HString* pstr = (HString*)prim.get_heapptr();
-                if (pstr != null && skey.array_index() < (ulong)pstr.char_length()) {
+                if (pstr != null && skey.array_index() < (ulong)pstr.unit_len()) {
                     return false;
                 }
             }

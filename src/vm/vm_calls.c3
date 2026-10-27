@@ -82,7 +82,7 @@ fn TVal build_rest_parameter(heap::Heap* heap, CompiledFunction* target, TVal* a
 // eleven throw sites share one body.
 fn TVal? not_constructor_throw(Vm* vm, Dispatch* ds, TVal* val) @noinline @local {
     HString* type_str = typeof_string(vm, val);
-    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not a constructor", type_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
         return VM_ERROR~;
     }
     return (TVal){};
@@ -1056,7 +1056,7 @@ fn void? resolve_call_proto_fallback(Dispatch* ds, void* key, TVal* ra, uint cal
         return;
     }
     HString* name_hstr = (HString*)key;
-    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
         return VM_ERROR~;
     }
     return;
@@ -1162,8 +1162,8 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
             if (!still_hit) {
                 if (((CompiledFunction*)ds.act.func).is_strict()) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                            "%s is not defined", name_hstr.get_cstr(),
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                            "%s is not defined", name_hstr,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
@@ -1222,7 +1222,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
             TVal v_raw = cur.bindings.prop_values()[idx].get();
             if (env::is_tdz_sentinel(&v_raw)) {
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 found = true; // prevent duplicate error
@@ -1383,7 +1383,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
             TVal v_raw = cur.bindings.prop_values()[idx].get();
             if (env::is_tdz_sentinel(&v_raw)) {
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 found = true;
@@ -2434,7 +2434,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (!func_val.is_object()) {
                 // TypeError: value is not a function
                 HString* type_str = typeof_string(vm, &func_val);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a function", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not a function", type_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return (TVal){};
@@ -2445,7 +2445,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (hobj == null || !hobj.is_callable()) {
                 // TypeError: object is not callable (e.g., a non-function object)
                 HString* type_str = typeof_string(vm, &func_val);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a function", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not a function", type_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return (TVal){};
@@ -2657,7 +2657,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 } else {
                     // Callable object with no compiled function and no builtin index: error
                     HString* type_str = typeof_string(vm, &func_val);
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a function", type_str.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not a function", type_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     return (TVal){};
