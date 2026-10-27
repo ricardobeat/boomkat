@@ -31,6 +31,7 @@ OUT = ROOT / "out"
 BLOCKS = {
     "status": "bk_status",
     "type": "bk_type",
+    "utf8_mode": "bk_utf8_mode",
     "errkind": "bk_error_kind",
 }
 

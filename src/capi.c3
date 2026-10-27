@@ -27,6 +27,10 @@ const int BK_ERR_INVALID   = embed::BK_ERR_INVALID;
 const int BK_ERR_TYPE      = embed::BK_ERR_TYPE;
 const int BK_ERR_FULL      = embed::BK_ERR_FULL;
 const int BK_ERR_INTERRUPT = embed::BK_ERR_INTERRUPT;
+const int BK_ERR_ENCODING  = embed::BK_ERR_ENCODING;
+
+const int BK_UTF8_REPLACE = 0;
+const int BK_UTF8_STRICT  = 1;
 
 const int BK_TYPE_UNDEFINED = embed::BK_TYPE_UNDEFINED;
 const int BK_TYPE_OTHER     = embed::BK_TYPE_OTHER;
@@ -336,25 +340,52 @@ fn int bk_read_bool(void* ctxp, ulong id, int* out) @export("bk_read_bool") {
     return BK_OK;
 }
 
+// The string behind `id`, or null with the failure recorded.
+fn HString* string_of(Runtime* rt, void* ctxp, ulong id) {
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { fail(rt, BK_ERR_INVALID, "invalid or freed value handle"); return null; }
+    if (!v.is_string()) { fail(rt, BK_ERR_TYPE, "value is not a string"); return null; }
+    HString* hs = (HString*)v.get_heapptr();
+    // Symbols share the string tag but have no text; JS forbids implicit conversion too.
+    if (hs.is_symbol()) { fail(rt, BK_ERR_TYPE, "value is a symbol"); return null; }
+    return hs;
+}
+
 fn int bk_read_string(void* ctxp, ulong id, char* buf, usz cap, usz* out_len)
         @export("bk_read_string") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return BK_ERR_INVALID;
-    embed::clear_err(rt);
-    TVal v;
-    if (!resolve(ctxp, id, &v)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    if (!v.is_string()) return fail(rt, BK_ERR_TYPE, "value is not a string");
-    HString* hs = (HString*)v.get_heapptr();
-    // Symbols share the string tag but carry no meaningful text; copying their
-    // bytes out would yield invalid UTF-8. JS forbids implicit conversion too.
-    if (hs != null && hs.is_symbol()) return fail(rt, BK_ERR_TYPE, "value is a symbol");
+    HString* hs = string_of(rt, ctxp, id);
+    return hs == null ? rt.errcode : embed::read_utf8(rt, hs, false, buf, cap, out_len);
+}
 
-    usz need = embed::utf8_write(hs, buf, buf == null ? 0 : cap);
-    if (out_len != null) *out_len = need;
-    if (buf == null) return BK_OK;
-    if (need + 1 > cap) return fail(rt, BK_ERR_FULL, "buffer too small for string");
-    buf[need] = 0;
-    return BK_OK;
+fn int bk_read_string_utf8(void* ctxp, ulong id, int mode, char* buf, usz cap, usz* out_len)
+        @export("bk_read_string_utf8") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    if (mode != BK_UTF8_REPLACE && mode != BK_UTF8_STRICT) {
+        return fail(rt, BK_ERR_INVALID, "unknown UTF-8 mode");
+    }
+    HString* hs = string_of(rt, ctxp, id);
+    return hs == null ? rt.errcode : embed::read_utf8(rt, hs, mode == BK_UTF8_STRICT, buf, cap, out_len);
+}
+
+fn int bk_read_string_utf16(void* ctxp, ulong id, ushort* buf, usz cap, usz* out_len)
+        @export("bk_read_string_utf16") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    HString* hs = string_of(rt, ctxp, id);
+    return hs == null ? rt.errcode : embed::read_utf16(rt, hs, buf, cap, out_len);
+}
+
+// The length in UTF-16 code units, or 0 with the failure recorded when `id` is
+// not a string.
+fn usz bk_string_length(void* ctxp, ulong id) @export("bk_string_length") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    HString* hs = string_of(rt, ctxp, id);
+    return hs == null ? 0 : hs.unit_len();
 }
 
 // ============================================================================
@@ -487,14 +518,31 @@ fn ulong bk_new_undefined(void* ctxp) @export("bk_new_undefined") {
     return store(rt, v);
 }
 
-fn ulong bk_new_string(void* ctxp, char* utf8, usz len) @export("bk_new_string") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null || utf8 == null) return 0;
-    embed::clear_err(rt);
-    HString* s = rt.heap.str_intern(utf8[:len]);
-    if (s == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+fn ulong store_string(Runtime* rt, HString* s) {
+    if (s == null) return 0;
     TVal v; v.set_string_borrowed(s);
     return store(rt, v);
+}
+
+fn ulong bk_new_string(void* ctxp, char* utf8, usz len) @export("bk_new_string") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || (utf8 == null && len != 0)) return 0;
+    embed::clear_err(rt);
+    return store_string(rt, embed::string_from_utf8(rt, utf8[:len]));
+}
+
+fn ulong bk_new_string_latin1(void* ctxp, char* chars, usz len) @export("bk_new_string_latin1") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || (chars == null && len != 0)) return 0;
+    embed::clear_err(rt);
+    return store_string(rt, embed::string_from_latin1(rt, chars[:len]));
+}
+
+fn ulong bk_new_string_utf16(void* ctxp, ushort* units, usz len) @export("bk_new_string_utf16") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || (units == null && len != 0)) return 0;
+    embed::clear_err(rt);
+    return store_string(rt, embed::string_from_utf16(rt, units[:len]));
 }
 
 fn ulong bk_new_object(void* ctxp) @export("bk_new_object") {

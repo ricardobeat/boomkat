@@ -371,6 +371,15 @@ out/runtime_hooks: test/capi/runtime_hooks.c include/boomkat.h out/boomkat.a
 test-runtime-hooks: out/runtime_hooks
 	./out/runtime_hooks
 
+# String creators and readers: Latin-1, UTF-16, UTF-8 and lone surrogates.
+out/strings: test/capi/strings.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -pthread -Iinclude test/capi/strings.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/strings
+
+.PHONY: test-strings-api
+test-strings-api: out/strings
+	./out/strings
+
 .PHONY: test-api-lifecycle
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle

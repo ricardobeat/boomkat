@@ -40,6 +40,8 @@ pub const Error = error{
     Full,
     /// Aborted by the runtime's interrupt handler.
     Interrupt,
+    /// Invalid UTF-8 input, or a lone surrogate read in strict mode.
+    Encoding,
 };
 
 fn check(status: c_int) Error!void {
@@ -52,6 +54,7 @@ fn check(status: c_int) Error!void {
         c.BK_ERR_TYPE => Error.WrongType,
         c.BK_ERR_FULL => Error.Full,
         c.BK_ERR_INTERRUPT => Error.Interrupt,
+        c.BK_ERR_ENCODING => Error.Encoding,
         else => Error.Internal,
     };
 }

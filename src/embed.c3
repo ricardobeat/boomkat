@@ -32,6 +32,10 @@ const int BK_ERR_INVALID   = abi::BK_ERR_INVALID;
 const int BK_ERR_TYPE      = abi::BK_ERR_TYPE;
 const int BK_ERR_FULL      = abi::BK_ERR_FULL;
 const int BK_ERR_INTERRUPT = abi::BK_ERR_INTERRUPT;
+const int BK_ERR_ENCODING  = abi::BK_ERR_ENCODING;
+
+const int BK_UTF8_REPLACE = abi::BK_UTF8_REPLACE;
+const int BK_UTF8_STRICT  = abi::BK_UTF8_STRICT;
 
 const int BK_TYPE_UNDEFINED = abi::BK_TYPE_UNDEFINED;
 const int BK_TYPE_NULL      = abi::BK_TYPE_NULL;
@@ -422,8 +426,9 @@ fn void describe_error(Runtime* rt, TVal* ev) {
         rt.exception = held;
     }
     if (ev.is_string()) {
+        char[ERRBUF] sbuf;
         HString* s = (HString*)ev.get_heapptr();
-        set_err(rt, BK_ERR_THROW, s.get_data());
+        set_err(rt, BK_ERR_THROW, sbuf[:s.utf8_copy_truncated(sbuf[..])]);
         return;
     }
     if (ev.is_undefined()) { set_err(rt, BK_ERR_THROW, "undefined"); return; }
@@ -447,17 +452,19 @@ fn void describe_error(Runtime* rt, TVal* ev) {
         if (name != null && msg != null && msg.unit_len() != 0) {
             char[ERRBUF] buf;
             usz pos = 0;
-            char[] np = name.get_data();
-            char[] mp = msg.get_data();
-            for (usz i = 0; i < np.len && pos < ERRBUF - 3; i++) buf[pos++] = np[i];
+            pos += name.utf8_copy_truncated(buf[:ERRBUF - 3]);
             buf[pos++] = ':';
             buf[pos++] = ' ';
-            for (usz i = 0; i < mp.len && pos < ERRBUF - 1; i++) buf[pos++] = mp[i];
+            pos += msg.utf8_copy_truncated(buf[pos:ERRBUF - pos]);
             set_err(rt, BK_ERR_THROW, buf[:pos]);
             return;
         }
-        if (msg != null && msg.unit_len() != 0) { set_err(rt, BK_ERR_THROW, msg.get_data()); return; }
-        if (name != null && name.unit_len() != 0) { set_err(rt, BK_ERR_THROW, name.get_data()); return; }
+        char[ERRBUF] tbuf;
+        HString* only = msg != null && msg.unit_len() != 0 ? msg : name;
+        if (only != null && only.unit_len() != 0) {
+            set_err(rt, BK_ERR_THROW, tbuf[:only.utf8_copy_truncated(tbuf[..])]);
+            return;
+        }
         set_err(rt, BK_ERR_THROW, "uncaught exception (object)");
         return;
     }
@@ -635,39 +642,117 @@ fn int classify(TVal v) {
 // String marshalling
 // ============================================================================
 
-// Sink for CESU-8 to UTF-8 conversion. Tracks total required length in `len`
-// even when output exceeds `cap` or `buf` is null.
-struct StringSink {
-    char* buf;
-    usz   len;
-    usz   cap;
-}
-
-fn void sink_put(char c, void* udata) {
-    StringSink* sink = (StringSink*)udata;
-    if (sink.len + 1 < sink.cap) { sink.buf[sink.len] = c; }
-    sink.len++;
-}
-
-// Returns the byte length of `s` converted to standard UTF-8, excluding NUL.
+// Returns the byte length of `s` as standard UTF-8, excluding NUL.
 fn usz utf8_len(HString* s) {
-    if (s.flags.is_ascii) return (usz)s.blen;
-    return utf8_write(s, null, 0);
+    return s.utf8_len();
 }
 
-// Converts `s` from internal CESU-8 to standard UTF-8 in `buf`. Returns total
-// required bytes. Pass buf == null or cap == 0 to measure length only.
+// Writes `s` as standard UTF-8 into `buf`, truncated to leave room for the NUL
+// the caller appends, and returns the bytes the complete text needs. Pass
+// buf == null or cap == 0 to measure.
 fn usz utf8_write(HString* s, char* buf, usz cap) {
-    if (s.flags.is_ascii) {
-        usz length = (usz)s.blen;
-        if (buf != null && cap > 1) {
-            mem::copy(buf, s.get_data().ptr, (sz)min(length, cap - 1));
+    usz need = s.utf8_len();
+    if (buf != null && cap > 1) {
+        if (need < cap) {
+            s.copy_utf8(buf);
+        } else {
+            s.utf8_copy_truncated(buf[:cap - 1]);
         }
-        return length;
     }
-    StringSink sink = { .buf = buf, .len = 0, .cap = (buf == null) ? 0 : cap };
-    s.write_utf8(&sink_put, &sink);
-    return sink.len;
+    return need;
+}
+
+// Reads `s` as UTF-8 for the C API, NUL-terminated on success. Sets `*length` to
+// the byte count the complete text needs. A lone surrogate becomes U+FFFD, or
+// fails with BK_ERR_ENCODING in strict mode.
+fn int read_utf8(Runtime* rt, HString* s, bool strict, char* buf, usz cap, usz* length) {
+    if (strict && !s.is_well_formed()) {
+        set_err(rt, BK_ERR_ENCODING, "string holds a lone surrogate");
+        return BK_ERR_ENCODING;
+    }
+    usz need = utf8_write(s, buf, buf == null ? 0 : cap);
+    if (length != null) *length = need;
+    if (buf == null) return BK_OK;
+    if (need + 1 > cap) {
+        set_err(rt, BK_ERR_FULL, "buffer too small for string");
+        return BK_ERR_FULL;
+    }
+    buf[need] = 0;
+    return BK_OK;
+}
+
+// Reads the code units of `s` into `buf`, with no terminator. Sets `*length` to
+// the unit count, and fails with BK_ERR_FULL when `cap` is smaller.
+fn int read_utf16(Runtime* rt, HString* s, ushort* buf, usz cap, usz* length) {
+    uint n = s.unit_len();
+    if (length != null) *length = n;
+    if (buf == null) return BK_OK;
+    if (n > cap) {
+        set_err(rt, BK_ERR_FULL, "buffer too small for string");
+        return BK_ERR_FULL;
+    }
+    s.copy_utf16(buf);
+    return BK_OK;
+}
+
+// Builds a string from UTF-8 text. Invalid UTF-8 (overlong forms, surrogates,
+// values past U+10FFFF, truncation) fails with BK_ERR_ENCODING.
+fn HString* string_from_utf8(Runtime* rt, char[] utf8) {
+    bool ascii = true;
+    foreach (c : utf8) if (c >= 0x80) { ascii = false; break; }
+    if (ascii) return intern_or_fail(rt, utf8);
+    if (!hstring::utf8_valid(utf8)) {
+        set_err(rt, BK_ERR_ENCODING, "invalid UTF-8");
+        return null;
+    }
+    builtins::StrBuf sb;
+    sb.init(rt.heap);
+    defer sb.free();
+    usz i = 0;
+    while (i < utf8.len) {
+        uint b0 = (uint)utf8[i];
+        uint cp = b0;
+        uint extra = 0;
+        if (b0 >= 0xF0)      { cp = b0 & 0x07; extra = 3; }
+        else if (b0 >= 0xE0) { cp = b0 & 0x0F; extra = 2; }
+        else if (b0 >= 0xC0) { cp = b0 & 0x1F; extra = 1; }
+        for (uint k = 1; k <= extra; k++) cp = (cp << 6) | ((uint)utf8[i + (usz)k] & 0x3F);
+        sb.append_codepoint(cp);
+        i += (usz)extra + 1;
+    }
+    return intern_builder(rt, &sb);
+}
+
+// Builds a string from ISO 8859-1 bytes, each byte being the code point of the same value.
+fn HString* string_from_latin1(Runtime* rt, char[] chars) {
+    bool ascii = true;
+    foreach (c : chars) if (c >= 0x80) { ascii = false; break; }
+    if (ascii) return intern_or_fail(rt, chars);
+    builtins::StrBuf sb;
+    sb.init(rt.heap);
+    defer sb.free();
+    foreach (c : chars) sb.append_unit((uint)c);
+    return intern_builder(rt, &sb);
+}
+
+// Builds a string from UTF-16 code units, which may hold lone surrogates.
+fn HString* string_from_utf16(Runtime* rt, ushort[] units) {
+    builtins::StrBuf sb;
+    sb.init(rt.heap);
+    defer sb.free();
+    foreach (u : units) sb.append_unit((uint)u);
+    return intern_builder(rt, &sb);
+}
+
+fn HString* intern_or_fail(Runtime* rt, char[] text) {
+    HString* s = rt.heap.str_intern(text);
+    if (s == null) set_err(rt, BK_ERR_NOMEM, "out of memory");
+    return s;
+}
+
+fn HString* intern_builder(Runtime* rt, builtins::StrBuf* sb) {
+    if (sb.failed) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
+    return intern_or_fail(rt, sb.bytes());
 }
 
 // ============================================================================
@@ -1017,6 +1102,7 @@ fn char* status_name(int status) {
         case BK_ERR_TYPE:      return "TYPE";
         case BK_ERR_FULL:      return "FULL";
         case BK_ERR_INTERRUPT: return "INTERRUPT";
+        case BK_ERR_ENCODING:  return "ENCODING";
         default:               return "UNKNOWN";
     }
 }

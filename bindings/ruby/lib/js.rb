@@ -36,6 +36,7 @@ module JS
     TYPE       = -6
     FULL       = -7
     INTERRUPT  = -8
+    ENCODING   = -9
   end
 
   # Error constructors bk_throw_error can raise, from bk_error_kind.
@@ -190,6 +191,9 @@ module JS
       'int bk_read_number(void*, unsigned long long, double*)',
       'int bk_read_bool(void*, unsigned long long, int*)',
       'int bk_read_string(void*, unsigned long long, char*, size_t, size_t*)',
+      'int bk_read_string_utf8(void*, unsigned long long, int, char*, size_t, size_t*)',
+      'int bk_read_string_utf16(void*, unsigned long long, void*, size_t, size_t*)',
+      'size_t bk_string_length(void*, unsigned long long)',
       'const char* bk_get_error_message(void*)',
       'int bk_get_error_code(void*)',
       'int bk_run_jobs(void*)',
@@ -210,7 +214,9 @@ module JS
       'unsigned long long bk_new_number(void*, double)',
       'unsigned long long bk_new_undefined(void*)',
       'unsigned long long bk_new_bool(void*, int)',
-      'unsigned long long bk_new_string(void*, const char*, size_t)'
+      'unsigned long long bk_new_string(void*, const char*, size_t)',
+      'unsigned long long bk_new_string_latin1(void*, const char*, size_t)',
+      'unsigned long long bk_new_string_utf16(void*, const void*, size_t)'
     ].freeze
 
     class << self

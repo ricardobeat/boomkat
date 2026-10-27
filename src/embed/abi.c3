@@ -20,6 +20,7 @@ const int BK_ERR_INVALID   = -5;  // null/bad argument, or a handle from elsewhe
 const int BK_ERR_TYPE      = -6;  // value is not of the requested type
 const int BK_ERR_FULL      = -7;  // buffer too small, or the registry is full
 const int BK_ERR_INTERRUPT = -8;  // aborted by the interrupt handler
+const int BK_ERR_ENCODING  = -9;  // invalid UTF-8 input, or a lone surrogate in strict mode
 
 // [abi:type]
 const int BK_TYPE_UNDEFINED = 0;
@@ -30,6 +31,10 @@ const int BK_TYPE_STRING    = 4;
 const int BK_TYPE_OBJECT    = 5;
 const int BK_TYPE_FUNCTION  = 6;
 const int BK_TYPE_OTHER     = 7;  // symbol, bigint, etc.
+
+// [abi:utf8_mode]
+const int BK_UTF8_REPLACE = 0;  // lone surrogates become U+FFFD
+const int BK_UTF8_STRICT  = 1;  // lone surrogates fail with BK_ERR_ENCODING
 
 // [abi:errkind]
 const int BK_ERROR           = 0;

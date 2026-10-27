@@ -77,6 +77,14 @@ pub const BK_ERR_TYPE: c_int = -6;
 pub const BK_ERR_FULL: c_int = -7;
 /// Aborted by the interrupt handler.
 pub const BK_ERR_INTERRUPT: c_int = -8;
+/// Invalid UTF-8 input, or a lone surrogate read in strict mode.
+pub const BK_ERR_ENCODING: c_int = -9;
+
+// `bk_utf8_mode` values for `bk_read_string_utf8`.
+/// A lone surrogate becomes U+FFFD.
+pub const BK_UTF8_REPLACE: c_int = 0;
+/// A lone surrogate fails with `BK_ERR_ENCODING`.
+pub const BK_UTF8_STRICT: c_int = 1;
 
 // Value types as reported by `bk_get_type`.
 pub const BK_TYPE_UNDEFINED: c_int = 0;
@@ -165,6 +173,22 @@ extern "C" {
         capacity: usize,
         length: *mut usize,
     ) -> c_int;
+    pub fn bk_read_string_utf8(
+        ctx: bk_ctx,
+        value: bk_value,
+        mode: c_int,
+        buffer: *mut c_char,
+        capacity: usize,
+        length: *mut usize,
+    ) -> c_int;
+    pub fn bk_read_string_utf16(
+        ctx: bk_ctx,
+        value: bk_value,
+        buffer: *mut u16,
+        capacity: usize,
+        length: *mut usize,
+    ) -> c_int;
+    pub fn bk_string_length(ctx: bk_ctx, value: bk_value) -> usize;
     pub fn bk_to_number(ctx: bk_ctx, value: bk_value) -> c_double;
     pub fn bk_to_bool(ctx: bk_ctx, value: bk_value) -> c_int;
     pub fn bk_to_string(ctx: bk_ctx, value: bk_value) -> bk_value;
@@ -175,6 +199,8 @@ extern "C" {
     pub fn bk_new_null(ctx: bk_ctx) -> bk_value;
     pub fn bk_new_undefined(ctx: bk_ctx) -> bk_value;
     pub fn bk_new_string(ctx: bk_ctx, utf8: *const c_char, length: usize) -> bk_value;
+    pub fn bk_new_string_latin1(ctx: bk_ctx, chars: *const u8, length: usize) -> bk_value;
+    pub fn bk_new_string_utf16(ctx: bk_ctx, units: *const u16, length: usize) -> bk_value;
     pub fn bk_new_object(ctx: bk_ctx) -> bk_value;
     pub fn bk_new_array(ctx: bk_ctx) -> bk_value;
     pub fn bk_new_array_from(ctx: bk_ctx, elements: *const bk_value, count: c_uint) -> bk_value;

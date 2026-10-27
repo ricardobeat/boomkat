@@ -1106,6 +1106,59 @@ fn void HString.copy_utf8(&self, char* dst, bool keep_lone = false) {
     self.write_utf8(&utf8_cursor_put, &cur, keep_lone);
 }
 
+// Write `unit_len()` UTF-16 code units to `dst`, with no terminator.
+fn void HString.copy_utf16(&self, ushort* dst) {
+    uint n = self.unit_len();
+    for (uint i = 0; i < n; i++) dst[i] = (ushort)self.unit_at(i);
+}
+
+// True when `data` is well-formed UTF-8: no overlong forms, no surrogates, no
+// code point above U+10FFFF, and no truncated sequence.
+fn bool utf8_valid(char[] data) {
+    usz i = 0;
+    while (i < data.len) {
+        uint b0 = (uint)data[i];
+        if (b0 < 0x80) { i++; continue; }
+        uint extra;
+        uint min_cp;
+        uint cp;
+        if ((b0 & 0xE0) == 0xC0)      { extra = 1; min_cp = 0x80;    cp = b0 & 0x1F; }
+        else if ((b0 & 0xF0) == 0xE0) { extra = 2; min_cp = 0x800;   cp = b0 & 0x0F; }
+        else if ((b0 & 0xF8) == 0xF0) { extra = 3; min_cp = 0x10000; cp = b0 & 0x07; }
+        else { return false; }
+        if (i + (usz)extra >= data.len) return false;
+        for (uint k = 1; k <= extra; k++) {
+            uint b = (uint)data[i + (usz)k];
+            if ((b & 0xC0) != 0x80) return false;
+            cp = (cp << 6) | (b & 0x3F);
+        }
+        if (cp < min_cp || cp > 0x10FFFF || is_surrogate(cp)) return false;
+        i += (usz)extra + 1;
+    }
+    return true;
+}
+
+struct Utf8Fill @private {
+    char[] dst;
+    usz    n;
+    usz    fit;   // the last character boundary within `dst`
+}
+
+fn void utf8_fill_put(char c, void* udata) @private {
+    Utf8Fill* fill = (Utf8Fill*)udata;
+    if (((uint)c & 0xC0) != 0x80 && fill.n <= fill.dst.len) fill.fit = fill.n;
+    if (fill.n < fill.dst.len) fill.dst[fill.n] = c;
+    fill.n++;
+}
+
+// Write as much of the string's UTF-8 text into `dst` as fits without splitting
+// a character, with no terminator. Returns the bytes written.
+fn usz HString.utf8_copy_truncated(&self, char[] dst) {
+    Utf8Fill fill = { .dst = dst };
+    self.write_utf8(&utf8_fill_put, &fill);
+    return fill.n <= dst.len ? fill.n : fill.fit;
+}
+
 // `write_utf8` for the units `[from, to)`, which must not split a surrogate pair.
 fn void HString.write_utf8_range(&self, uint from, uint to, PutByteFn put_byte_fn, void* udata = null) {
     uint byte_from = self.char_offset_to_byte_offset(from);
