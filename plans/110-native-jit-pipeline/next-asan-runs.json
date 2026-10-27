@@ -1,0 +1,152 @@
+[
+  [
+    "test/jit_alloc_continuations.js",
+    0,
+    "JIT allocation continuations: PASS\n",
+    ""
+  ],
+  [
+    "test/jit_append_property.js",
+    0,
+    "2012 passed, 0 failed\n",
+    ""
+  ],
+  [
+    "test/jit_array_element_access.js",
+    0,
+    "ok\n",
+    ""
+  ],
+  [
+    "test/jit_inline_branches.js",
+    0,
+    "ok\n",
+    ""
+  ],
+  [
+    "test/jit_inline_property_write.js",
+    0,
+    "ok\n",
+    ""
+  ],
+  [
+    "test/jit_inline_recovery.js",
+    0,
+    "JIT inline recovery: PASS\n",
+    ""
+  ],
+  [
+    "test/jit_linked_calls.js",
+    0,
+    "JIT linked calls: PASS\n",
+    ""
+  ],
+  [
+    "test/jit_loop_arms.js",
+    0,
+    "ok\n",
+    ""
+  ],
+  [
+    "test/jit_loose_equality.js",
+    0,
+    "ok\n",
+    ""
+  ],
+  [
+    "test/jit_native_call.js",
+    0,
+    "jit_native_call: PASS\n",
+    ""
+  ],
+  [
+    "test/jit_native_calls.js",
+    0,
+    "JIT native calls: PASS\n",
+    ""
+  ],
+  [
+    "test/jit_nested_inline.js",
+    0,
+    "ok\n",
+    ""
+  ],
+  [
+    "test/jit_proto_read_shapes.js",
+    0,
+    "jit_proto_read_shapes: PASS\n",
+    ""
+  ],
+  [
+    "test/sljit_function.js",
+    0,
+    "SLJIT functions: PASS\n",
+    ""
+  ],
+  [
+    "test/sljit_inline_clamp.js",
+    0,
+    "sljit inline clamp: PASS\n",
+    ""
+  ],
+  [
+    "test/sljit_loop.js",
+    0,
+    "SLJIT loops: PASS\n",
+    ""
+  ],
+  [
+    "test/sljit_parseint.js",
+    0,
+    "sljit parseInt: PASS\n",
+    ""
+  ],
+  [
+    "test/sljit_regions.js",
+    0,
+    "SLJIT regions: PASS\n",
+    ""
+  ],
+  [
+    "test/sljit_smallfunc.js",
+    0,
+    "smallfunc: 40 ms result=Infinity\n",
+    ""
+  ],
+  [
+    "test/sljit_ssa.js",
+    0,
+    "sljit SSA: PASS\n",
+    ""
+  ],
+  [
+    "test/sljit_template.js",
+    0,
+    "SLJIT template: PASS\n",
+    ""
+  ],
+  [
+    "bench/mini/richards.js",
+    0,
+    "Richards: 98 ms\n",
+    ""
+  ],
+  [
+    "bench/mini/deltablue.js",
+    0,
+    "DeltaBlue: 188 ms\n",
+    ""
+  ],
+  [
+    "bench/mini/splay.js",
+    0,
+    "Splay: 242 ms\n",
+    ""
+  ],
+  [
+    "bench/mini/crypto.js",
+    0,
+    "Encrypt: 20 ms\nDecrypt: 301 ms\n",
+    ""
+  ]
+]

@@ -1,0 +1,722 @@
+[
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 0,
+    "rc": 0,
+    "ms": 118,
+    "wall": 0.33754249988123775,
+    "stdout": "Richards: 118 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 0,
+    "rc": 0,
+    "ms": 91,
+    "wall": 0.10224570822902024,
+    "stdout": "Richards: 91 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 1,
+    "rc": 0,
+    "ms": 90,
+    "wall": 0.09551416710019112,
+    "stdout": "Richards: 90 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 1,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.11332291597500443,
+    "stdout": "Richards: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 2,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.11390504101291299,
+    "stdout": "Richards: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 2,
+    "rc": 0,
+    "ms": 90,
+    "wall": 0.09399845800362527,
+    "stdout": "Richards: 90 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 3,
+    "rc": 0,
+    "ms": 89,
+    "wall": 0.09343250002712011,
+    "stdout": "Richards: 89 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 3,
+    "rc": 0,
+    "ms": 107,
+    "wall": 0.1119776249397546,
+    "stdout": "Richards: 107 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 4,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.11367941601201892,
+    "stdout": "Richards: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 4,
+    "rc": 0,
+    "ms": 90,
+    "wall": 0.0939944579731673,
+    "stdout": "Richards: 90 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 5,
+    "rc": 0,
+    "ms": 89,
+    "wall": 0.09407904092222452,
+    "stdout": "Richards: 89 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 5,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.11294995807111263,
+    "stdout": "Richards: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 6,
+    "rc": 0,
+    "ms": 108,
+    "wall": 0.11215916695073247,
+    "stdout": "Richards: 108 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 6,
+    "rc": 0,
+    "ms": 89,
+    "wall": 0.09405774995684624,
+    "stdout": "Richards: 89 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 7,
+    "rc": 0,
+    "ms": 89,
+    "wall": 0.09404154191724956,
+    "stdout": "Richards: 89 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 7,
+    "rc": 0,
+    "ms": 108,
+    "wall": 0.11305104102939367,
+    "stdout": "Richards: 108 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "base",
+    "pair": 8,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.11401637503877282,
+    "stdout": "Richards: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "next",
+    "pair": 8,
+    "rc": 0,
+    "ms": 89,
+    "wall": 0.0937844158615917,
+    "stdout": "Richards: 89 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 0,
+    "rc": 0,
+    "ms": 160,
+    "wall": 0.16593937505967915,
+    "stdout": "DeltaBlue: 160 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 0,
+    "rc": 0,
+    "ms": 122,
+    "wall": 0.12783245812170208,
+    "stdout": "DeltaBlue: 122 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 1,
+    "rc": 0,
+    "ms": 121,
+    "wall": 0.12635695794597268,
+    "stdout": "DeltaBlue: 121 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 1,
+    "rc": 0,
+    "ms": 160,
+    "wall": 0.16466129198670387,
+    "stdout": "DeltaBlue: 160 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 2,
+    "rc": 0,
+    "ms": 161,
+    "wall": 0.16662233299575746,
+    "stdout": "DeltaBlue: 161 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 2,
+    "rc": 0,
+    "ms": 122,
+    "wall": 0.12725349981337786,
+    "stdout": "DeltaBlue: 122 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 3,
+    "rc": 0,
+    "ms": 121,
+    "wall": 0.12603420903906226,
+    "stdout": "DeltaBlue: 121 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 3,
+    "rc": 0,
+    "ms": 160,
+    "wall": 0.16484199999831617,
+    "stdout": "DeltaBlue: 160 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 4,
+    "rc": 0,
+    "ms": 159,
+    "wall": 0.1647137498948723,
+    "stdout": "DeltaBlue: 159 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 4,
+    "rc": 0,
+    "ms": 121,
+    "wall": 0.12603170797228813,
+    "stdout": "DeltaBlue: 121 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 5,
+    "rc": 0,
+    "ms": 121,
+    "wall": 0.12550887488760054,
+    "stdout": "DeltaBlue: 121 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 5,
+    "rc": 0,
+    "ms": 160,
+    "wall": 0.16487562493421137,
+    "stdout": "DeltaBlue: 160 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 6,
+    "rc": 0,
+    "ms": 158,
+    "wall": 0.16307979193516076,
+    "stdout": "DeltaBlue: 158 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 6,
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12527983402833343,
+    "stdout": "DeltaBlue: 120 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 7,
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12548274989239872,
+    "stdout": "DeltaBlue: 120 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 7,
+    "rc": 0,
+    "ms": 160,
+    "wall": 0.16547112492844462,
+    "stdout": "DeltaBlue: 160 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "base",
+    "pair": 8,
+    "rc": 0,
+    "ms": 161,
+    "wall": 0.16555945901200175,
+    "stdout": "DeltaBlue: 161 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "next",
+    "pair": 8,
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.1257902910001576,
+    "stdout": "DeltaBlue: 120 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 0,
+    "rc": 0,
+    "ms": 112,
+    "wall": 0.2057350839022547,
+    "stdout": "Splay: 112 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 0,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.19833633303642273,
+    "stdout": "Splay: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 1,
+    "rc": 0,
+    "ms": 111,
+    "wall": 0.19966020807623863,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 1,
+    "rc": 0,
+    "ms": 113,
+    "wall": 0.20607808278873563,
+    "stdout": "Splay: 113 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 2,
+    "rc": 0,
+    "ms": 110,
+    "wall": 0.2024769999552518,
+    "stdout": "Splay: 110 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 2,
+    "rc": 0,
+    "ms": 108,
+    "wall": 0.19807141600176692,
+    "stdout": "Splay: 108 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 3,
+    "rc": 0,
+    "ms": 108,
+    "wall": 0.19654191588051617,
+    "stdout": "Splay: 108 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 3,
+    "rc": 0,
+    "ms": 111,
+    "wall": 0.2032039170153439,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 4,
+    "rc": 0,
+    "ms": 111,
+    "wall": 0.2027704999782145,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 4,
+    "rc": 0,
+    "ms": 108,
+    "wall": 0.1984756668098271,
+    "stdout": "Splay: 108 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 5,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.1984900829847902,
+    "stdout": "Splay: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 5,
+    "rc": 0,
+    "ms": 111,
+    "wall": 0.2029194578062743,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 6,
+    "rc": 0,
+    "ms": 111,
+    "wall": 0.2029718749690801,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 6,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.1983611669857055,
+    "stdout": "Splay: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 7,
+    "rc": 0,
+    "ms": 108,
+    "wall": 0.19718383299186826,
+    "stdout": "Splay: 108 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 7,
+    "rc": 0,
+    "ms": 111,
+    "wall": 0.20306258299387991,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "base",
+    "pair": 8,
+    "rc": 0,
+    "ms": 111,
+    "wall": 0.20244550006464124,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "next",
+    "pair": 8,
+    "rc": 0,
+    "ms": 109,
+    "wall": 0.1985195418819785,
+    "stdout": "Splay: 109 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "box2d",
+    "mode": "base",
+    "pair": 0,
+    "rc": 0,
+    "ms": 225,
+    "wall": 0.24852470913901925,
+    "stdout": "Box2D: 225 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "box2d",
+    "mode": "next",
+    "pair": 0,
+    "rc": 0,
+    "ms": 227,
+    "wall": 0.24942066613584757,
+    "stdout": "Box2D: 227 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "box2d",
+    "mode": "next",
+    "pair": 1,
+    "rc": 0,
+    "ms": 227,
+    "wall": 0.24909483292140067,
+    "stdout": "Box2D: 227 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "box2d",
+    "mode": "base",
+    "pair": 1,
+    "rc": 0,
+    "ms": 228,
+    "wall": 0.2505861660465598,
+    "stdout": "Box2D: 228 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "box2d",
+    "mode": "base",
+    "pair": 2,
+    "rc": 0,
+    "ms": 226,
+    "wall": 0.24893491598777473,
+    "stdout": "Box2D: 226 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "box2d",
+    "mode": "next",
+    "pair": 2,
+    "rc": 0,
+    "ms": 227,
+    "wall": 0.24987929197959602,
+    "stdout": "Box2D: 227 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "base",
+    "pair": 0,
+    "rc": 0,
+    "ms": 824,
+    "wall": 1.7166205840185285,
+    "stdout": "Mandreel: 824 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "next",
+    "pair": 0,
+    "rc": 0,
+    "ms": 816,
+    "wall": 1.6930932910181582,
+    "stdout": "Mandreel: 816 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "next",
+    "pair": 1,
+    "rc": 0,
+    "ms": 819,
+    "wall": 1.7019666670821607,
+    "stdout": "Mandreel: 819 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "base",
+    "pair": 1,
+    "rc": 0,
+    "ms": 824,
+    "wall": 1.7067677499726415,
+    "stdout": "Mandreel: 824 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "base",
+    "pair": 2,
+    "rc": 0,
+    "ms": 824,
+    "wall": 1.7055880830157548,
+    "stdout": "Mandreel: 824 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "next",
+    "pair": 2,
+    "rc": 0,
+    "ms": 819,
+    "wall": 1.696119625121355,
+    "stdout": "Mandreel: 819 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "base",
+    "pair": 0,
+    "rc": 0,
+    "ms": 306,
+    "wall": 0.34350949991494417,
+    "stdout": "Gameboy: 306 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "next",
+    "pair": 0,
+    "rc": 0,
+    "ms": 307,
+    "wall": 0.34442141582258046,
+    "stdout": "Gameboy: 307 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "next",
+    "pair": 1,
+    "rc": 0,
+    "ms": 307,
+    "wall": 0.34376075002364814,
+    "stdout": "Gameboy: 307 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "base",
+    "pair": 1,
+    "rc": 0,
+    "ms": 308,
+    "wall": 0.34385441709309816,
+    "stdout": "Gameboy: 308 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "base",
+    "pair": 2,
+    "rc": 0,
+    "ms": 306,
+    "wall": 0.3418940408155322,
+    "stdout": "Gameboy: 306 ms\n",
+    "stderr": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "next",
+    "pair": 2,
+    "rc": 0,
+    "ms": 308,
+    "wall": 0.34439583285711706,
+    "stdout": "Gameboy: 308 ms\n",
+    "stderr": ""
+  }
+]

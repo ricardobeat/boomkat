@@ -1,0 +1,47 @@
+{
+  "richards": {
+    "calls": 1313789,
+    "returns": 1311675,
+    "inlined": 2729511,
+    "recoveries": 0,
+    "allocations": 72,
+    "pushes": 0,
+    "links": 30,
+    "total_dispatches": 55186,
+    "executed_bytecodes": 55245,
+    "threaded_dispatches": 51807,
+    "switch_dispatches": 3379,
+    "fused_bytecodes": 59,
+    "totals": "SLJIT totals functions=21 loops=0 templates=0 hits=8615 code_bytes=246268"
+  },
+  "deltablue": {
+    "calls": 1497975,
+    "returns": 1406727,
+    "inlined": 4806074,
+    "recoveries": 147119,
+    "allocations": 0,
+    "pushes": 52199,
+    "links": 86,
+    "total_dispatches": 3522983,
+    "executed_bytecodes": 3529317,
+    "threaded_dispatches": 3461846,
+    "switch_dispatches": 61137,
+    "fused_bytecodes": 6334,
+    "totals": "SLJIT totals functions=60 loops=0 templates=0 hits=548045 code_bytes=405876"
+  },
+  "splay": {
+    "calls": 115715,
+    "returns": 10989,
+    "inlined": 102510,
+    "recoveries": 7192,
+    "allocations": 66207,
+    "pushes": 7,
+    "links": 22,
+    "total_dispatches": 22007747,
+    "executed_bytecodes": 22007806,
+    "threaded_dispatches": 21810131,
+    "switch_dispatches": 197616,
+    "fused_bytecodes": 59,
+    "totals": "SLJIT totals functions=17 loops=0 templates=0 hits=153849 code_bytes=152032"
+  }
+}

@@ -1,0 +1,1355 @@
+SLJIT function compiled  pc=0..25 function_ops=25 regs=11 code_bytes=9564 plan_bytes=8969
+SLJIT function compiled  pc=0..25 function_ops=25 regs=8 code_bytes=7160 plan_bytes=8969
+SLJIT function compiled  pc=0..29 function_ops=29 regs=9 code_bytes=25020 plan_bytes=9005
+SLJIT function compiled  pc=0..65 function_ops=65 regs=13 code_bytes=47552 plan_bytes=9329
+SLJIT function compiled  pc=0..46 function_ops=46 regs=9 code_bytes=27360 plan_bytes=9158
+SLJIT function compiled  pc=0..40 function_ops=40 regs=8 code_bytes=18556 plan_bytes=9104
+SLJIT function compiled  pc=0..22 function_ops=22 regs=7 code_bytes=15900 plan_bytes=8942
+SLJIT function compiled Packet pc=0..10 function_ops=10 regs=10 code_bytes=4732 plan_bytes=8834
+SLJIT function compiled  pc=0..16 function_ops=16 regs=15 code_bytes=7172 plan_bytes=8888
+SLJIT function compiled TaskControlBlock pc=0..12 function_ops=12 regs=11 code_bytes=6148 plan_bytes=8852
+SLJIT function compiled  pc=0..11 function_ops=11 regs=12 code_bytes=3820 plan_bytes=8843
+SLJIT function compiled HandlerTask pc=0..6 function_ops=6 regs=6 code_bytes=3144 plan_bytes=8798
+SLJIT function compiled  pc=0..11 function_ops=11 regs=12 code_bytes=3832 plan_bytes=8843
+SLJIT function compiled DeviceTask pc=0..4 function_ops=4 regs=6 code_bytes=2540 plan_bytes=8780
+SLJIT function compiled  pc=0..11 function_ops=11 regs=5 code_bytes=5052 plan_bytes=8843
+SLJIT function compiled  pc=0..64 function_ops=64 regs=15 code_bytes=19892 plan_bytes=9320
+SLJIT function compiled runRichards pc=0..122 function_ops=122 regs=13 code_bytes=27408 plan_bytes=9842
+SLJIT function compiled Scheduler pc=0..15 function_ops=15 regs=7 code_bytes=5656 plan_bytes=8879
+SLJIT function compiled  pc=0..13 function_ops=13 regs=15 code_bytes=4284 plan_bytes=8861
+SLJIT function compiled  pc=0..13 function_ops=13 regs=10 code_bytes=5132 plan_bytes=8861
+SLJIT function compiled  pc=0..13 function_ops=13 regs=14 code_bytes=4332 plan_bytes=8861
+SLJIT function compiled  pc=0..14 function_ops=14 regs=8 code_bytes=4160 plan_bytes=8870
+SLJIT function compiled  pc=0..16 function_ops=16 regs=8 code_bytes=10128 plan_bytes=8888
+Richards: 5280 ms
+SLJIT coverage id=0 line=69 name= threaded=1 switch=0 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1 line=70 name= threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=2 line=64 name=Benchmark threaded=23 switch=11 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=4 line=99 name=BenchmarkSuite threaded=11 switch=6 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=5 line=450 name=runRichards threaded=167082 switch=346 attempts=77267 warmup=4294967295 retired=4 active=28 rejection=compiled
+SLJIT native id=5 calls=41510 returns=0
+SLJIT pipeline id=5 inlined=0 recoveries=0 allocations=0 pushes=0 links=7
+SLJIT numeric id=5 homes=0
+SLJIT code id=5 start=0x1046dd3c0 bytes=27352 fragment=0x1046e3fa8 fragment_bytes=56
+SLJIT map id=5 kind=entry start=0x1046dd3c0 end=0x1046dd40c
+SLJIT map id=5 kind=exit start=0x1046e2a18 end=0x1046e3a74
+SLJIT map id=5 kind=call_entry start=0x1046e3a74 end=0x1046e3e98
+SLJIT map id=5 kind=helper_fragment start=0x1046e3fa8 end=0x1046e3fe0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=0 opcode=LDUNDEF start=0x1046dd40c end=0x1046dd474
+SLJIT map id=5 kind=body depth=0 frame=0 pc=1 opcode=GETGLOBAL start=0x1046dd474 end=0x1046dd55c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=2 opcode=NEW_OBJ start=0x1046dd55c end=0x1046dd580
+SLJIT map id=5 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046dd580 end=0x1046dd618
+SLJIT map id=5 kind=body depth=0 frame=0 pc=4 opcode=GETPROPC_CACHED start=0x1046dd618 end=0x1046dd72c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046dd72c end=0x1046dd7c4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=6 opcode=GETGLOBAL start=0x1046dd7c4 end=0x1046dd8ac
+SLJIT map id=5 kind=body depth=0 frame=0 pc=7 opcode=LDINT start=0x1046dd8ac end=0x1046dd914
+SLJIT map id=5 kind=body depth=0 frame=0 pc=8 opcode=LDNULL start=0x1046dd914 end=0x1046dd97c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=9 opcode=GETGLOBAL start=0x1046dd97c end=0x1046dda64
+SLJIT map id=5 kind=body depth=0 frame=0 pc=10 opcode=CALL start=0x1046dda64 end=0x1046ddb38
+SLJIT map id=5 kind=body depth=0 frame=0 pc=11 opcode=GETGLOBAL start=0x1046ddb38 end=0x1046ddc20
+SLJIT map id=5 kind=body depth=0 frame=0 pc=12 opcode=LDREG start=0x1046ddc20 end=0x1046ddcb8
+SLJIT map id=5 kind=body depth=0 frame=0 pc=13 opcode=LDNULL start=0x1046ddcb8 end=0x1046ddd20
+SLJIT map id=5 kind=body depth=0 frame=0 pc=14 opcode=GETGLOBAL start=0x1046ddd20 end=0x1046dde08
+SLJIT map id=5 kind=body depth=0 frame=0 pc=15 opcode=GETGLOBAL start=0x1046dde08 end=0x1046ddef0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=16 opcode=NEW_OBJ start=0x1046ddef0 end=0x1046ddf14
+SLJIT map id=5 kind=body depth=0 frame=0 pc=17 opcode=LDREG start=0x1046ddf14 end=0x1046ddfac
+SLJIT map id=5 kind=body depth=0 frame=0 pc=18 opcode=GETGLOBAL start=0x1046ddfac end=0x1046de094
+SLJIT map id=5 kind=body depth=0 frame=0 pc=19 opcode=LDREG start=0x1046de094 end=0x1046de12c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=20 opcode=LDREG start=0x1046de12c end=0x1046de1c4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=21 opcode=GETGLOBAL start=0x1046de1c4 end=0x1046de2ac
+SLJIT map id=5 kind=body depth=0 frame=0 pc=22 opcode=GETGLOBAL start=0x1046de2ac end=0x1046de394
+SLJIT map id=5 kind=body depth=0 frame=0 pc=23 opcode=NEW_OBJ start=0x1046de394 end=0x1046de3b8
+SLJIT map id=5 kind=body depth=0 frame=0 pc=24 opcode=LDREG start=0x1046de3b8 end=0x1046de450
+SLJIT map id=5 kind=body depth=0 frame=0 pc=25 opcode=GETPROPC_CACHED start=0x1046de450 end=0x1046de564
+SLJIT map id=5 kind=body depth=0 frame=0 pc=26 opcode=LDREG start=0x1046de564 end=0x1046de5fc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=27 opcode=GETGLOBAL start=0x1046de5fc end=0x1046de6e4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=28 opcode=LDINT start=0x1046de6e4 end=0x1046de750
+SLJIT map id=5 kind=body depth=0 frame=0 pc=29 opcode=LDREG start=0x1046de750 end=0x1046de7e8
+SLJIT map id=5 kind=body depth=0 frame=0 pc=30 opcode=CALL start=0x1046de7e8 end=0x1046de8bc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=31 opcode=GETGLOBAL start=0x1046de8bc end=0x1046de9a4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=32 opcode=LDREG start=0x1046de9a4 end=0x1046dea3c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=33 opcode=LDNULL start=0x1046dea3c end=0x1046deaa4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=34 opcode=GETGLOBAL start=0x1046deaa4 end=0x1046deb8c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=35 opcode=GETGLOBAL start=0x1046deb8c end=0x1046dec74
+SLJIT map id=5 kind=body depth=0 frame=0 pc=36 opcode=NEW_OBJ start=0x1046dec74 end=0x1046dec98
+SLJIT map id=5 kind=body depth=0 frame=0 pc=37 opcode=LDREG start=0x1046dec98 end=0x1046ded30
+SLJIT map id=5 kind=body depth=0 frame=0 pc=38 opcode=GETGLOBAL start=0x1046ded30 end=0x1046dee18
+SLJIT map id=5 kind=body depth=0 frame=0 pc=39 opcode=LDREG start=0x1046dee18 end=0x1046deeb0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=40 opcode=LDREG start=0x1046deeb0 end=0x1046def48
+SLJIT map id=5 kind=body depth=0 frame=0 pc=41 opcode=GETGLOBAL start=0x1046def48 end=0x1046df030
+SLJIT map id=5 kind=body depth=0 frame=0 pc=42 opcode=GETGLOBAL start=0x1046df030 end=0x1046df118
+SLJIT map id=5 kind=body depth=0 frame=0 pc=43 opcode=NEW_OBJ start=0x1046df118 end=0x1046df13c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=44 opcode=LDREG start=0x1046df13c end=0x1046df1d4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=45 opcode=GETGLOBAL start=0x1046df1d4 end=0x1046df2bc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=46 opcode=LDREG start=0x1046df2bc end=0x1046df354
+SLJIT map id=5 kind=body depth=0 frame=0 pc=47 opcode=LDREG start=0x1046df354 end=0x1046df3ec
+SLJIT map id=5 kind=body depth=0 frame=0 pc=48 opcode=GETGLOBAL start=0x1046df3ec end=0x1046df4d4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=49 opcode=GETGLOBAL start=0x1046df4d4 end=0x1046df5bc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=50 opcode=NEW_OBJ start=0x1046df5bc end=0x1046df5e0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=51 opcode=LDREG start=0x1046df5e0 end=0x1046df678
+SLJIT map id=5 kind=body depth=0 frame=0 pc=52 opcode=GETPROPC_CACHED start=0x1046df678 end=0x1046df78c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=53 opcode=LDREG start=0x1046df78c end=0x1046df824
+SLJIT map id=5 kind=body depth=0 frame=0 pc=54 opcode=GETGLOBAL start=0x1046df824 end=0x1046df90c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=55 opcode=LDINT start=0x1046df90c end=0x1046df978
+SLJIT map id=5 kind=body depth=0 frame=0 pc=56 opcode=LDREG start=0x1046df978 end=0x1046dfa10
+SLJIT map id=5 kind=body depth=0 frame=0 pc=57 opcode=CALL start=0x1046dfa10 end=0x1046dfae4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=58 opcode=GETGLOBAL start=0x1046dfae4 end=0x1046dfbcc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=59 opcode=LDREG start=0x1046dfbcc end=0x1046dfc64
+SLJIT map id=5 kind=body depth=0 frame=0 pc=60 opcode=LDNULL start=0x1046dfc64 end=0x1046dfccc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=61 opcode=GETGLOBAL start=0x1046dfccc end=0x1046dfdb4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=62 opcode=GETGLOBAL start=0x1046dfdb4 end=0x1046dfe9c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=63 opcode=NEW_OBJ start=0x1046dfe9c end=0x1046dfec0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=64 opcode=LDREG start=0x1046dfec0 end=0x1046dff58
+SLJIT map id=5 kind=body depth=0 frame=0 pc=65 opcode=GETGLOBAL start=0x1046dff58 end=0x1046e0040
+SLJIT map id=5 kind=body depth=0 frame=0 pc=66 opcode=LDREG start=0x1046e0040 end=0x1046e00d8
+SLJIT map id=5 kind=body depth=0 frame=0 pc=67 opcode=LDREG start=0x1046e00d8 end=0x1046e0170
+SLJIT map id=5 kind=body depth=0 frame=0 pc=68 opcode=GETGLOBAL start=0x1046e0170 end=0x1046e0258
+SLJIT map id=5 kind=body depth=0 frame=0 pc=69 opcode=GETGLOBAL start=0x1046e0258 end=0x1046e0340
+SLJIT map id=5 kind=body depth=0 frame=0 pc=70 opcode=NEW_OBJ start=0x1046e0340 end=0x1046e0364
+SLJIT map id=5 kind=body depth=0 frame=0 pc=71 opcode=LDREG start=0x1046e0364 end=0x1046e03fc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=72 opcode=GETGLOBAL start=0x1046e03fc end=0x1046e04e4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=73 opcode=LDREG start=0x1046e04e4 end=0x1046e057c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=74 opcode=LDREG start=0x1046e057c end=0x1046e0614
+SLJIT map id=5 kind=body depth=0 frame=0 pc=75 opcode=GETGLOBAL start=0x1046e0614 end=0x1046e06fc
+SLJIT map id=5 kind=body depth=0 frame=0 pc=76 opcode=GETGLOBAL start=0x1046e06fc end=0x1046e07e4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=77 opcode=NEW_OBJ start=0x1046e07e4 end=0x1046e0808
+SLJIT map id=5 kind=body depth=0 frame=0 pc=78 opcode=LDREG start=0x1046e0808 end=0x1046e08a0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=79 opcode=GETPROPC_CACHED start=0x1046e08a0 end=0x1046e09c0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=80 opcode=LDREG start=0x1046e09c0 end=0x1046e0a58
+SLJIT map id=5 kind=body depth=0 frame=0 pc=81 opcode=GETGLOBAL start=0x1046e0a58 end=0x1046e0b40
+SLJIT map id=5 kind=body depth=0 frame=0 pc=82 opcode=LDINT start=0x1046e0b40 end=0x1046e0bac
+SLJIT map id=5 kind=body depth=0 frame=0 pc=83 opcode=LDREG start=0x1046e0bac end=0x1046e0c44
+SLJIT map id=5 kind=body depth=0 frame=0 pc=84 opcode=CALL start=0x1046e0c44 end=0x1046e0d18
+SLJIT map id=5 kind=body depth=0 frame=0 pc=85 opcode=GETPROPC_CACHED start=0x1046e0d18 end=0x1046e0e2c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=86 opcode=LDREG start=0x1046e0e2c end=0x1046e0ec4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=87 opcode=GETGLOBAL start=0x1046e0ec4 end=0x1046e0fac
+SLJIT map id=5 kind=body depth=0 frame=0 pc=88 opcode=LDINT start=0x1046e0fac end=0x1046e1018
+SLJIT map id=5 kind=body depth=0 frame=0 pc=89 opcode=LDNULL start=0x1046e1018 end=0x1046e1080
+SLJIT map id=5 kind=body depth=0 frame=0 pc=90 opcode=CALL start=0x1046e1080 end=0x1046e1154
+SLJIT map id=5 kind=body depth=0 frame=0 pc=91 opcode=GETPROPC_CACHED start=0x1046e1154 end=0x1046e1274
+SLJIT map id=5 kind=body depth=0 frame=0 pc=92 opcode=LDREG start=0x1046e1274 end=0x1046e130c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=93 opcode=GETGLOBAL start=0x1046e130c end=0x1046e13f4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=94 opcode=LDINT start=0x1046e13f4 end=0x1046e1460
+SLJIT map id=5 kind=body depth=0 frame=0 pc=95 opcode=LDNULL start=0x1046e1460 end=0x1046e14c8
+SLJIT map id=5 kind=body depth=0 frame=0 pc=96 opcode=CALL start=0x1046e14c8 end=0x1046e159c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=97 opcode=GETPROPC_CACHED start=0x1046e159c end=0x1046e16b0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=98 opcode=LDREG start=0x1046e16b0 end=0x1046e1748
+SLJIT map id=5 kind=body depth=0 frame=0 pc=99 opcode=CALL start=0x1046e1748 end=0x1046e181c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=100 opcode=GETPROPC_CACHED start=0x1046e181c end=0x1046e1900
+SLJIT map id=5 kind=body depth=0 frame=0 pc=101 opcode=GETGLOBAL start=0x1046e1900 end=0x1046e19e8
+SLJIT map id=5 kind=body depth=0 frame=0 pc=102 opcode=NEQ start=0x1046e19e8 end=0x1046e1bd4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=103 opcode=IF_TRUE start=0x1046e1bd4 end=0x1046e1c50
+SLJIT map id=5 kind=body depth=0 frame=0 pc=104 opcode=GETPROPC_CACHED start=0x1046e1c50 end=0x1046e1d34
+SLJIT map id=5 kind=body depth=0 frame=0 pc=105 opcode=GETGLOBAL start=0x1046e1d34 end=0x1046e1e1c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=106 opcode=NEQ start=0x1046e1e1c end=0x1046e2008
+SLJIT map id=5 kind=body depth=0 frame=0 pc=107 opcode=IF_FALSE start=0x1046e2008 end=0x1046e2084
+SLJIT map id=5 kind=body depth=0 frame=0 pc=108 opcode=LDCONST start=0x1046e2084 end=0x1046e2128
+SLJIT map id=5 kind=body depth=0 frame=0 pc=109 opcode=GETPROPC start=0x1046e2128 end=0x1046e220c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=110 opcode=ADD start=0x1046e220c end=0x1046e22b0
+SLJIT map id=5 kind=body depth=0 frame=0 pc=111 opcode=LDCONST start=0x1046e22b0 end=0x1046e22f4
+SLJIT map id=5 kind=body depth=0 frame=0 pc=112 opcode=ADD start=0x1046e22f4 end=0x1046e2330
+SLJIT map id=5 kind=body depth=0 frame=0 pc=113 opcode=GETPROPC start=0x1046e2330 end=0x1046e2468
+SLJIT map id=5 kind=body depth=0 frame=0 pc=114 opcode=ADD start=0x1046e2468 end=0x1046e250c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=115 opcode=LDCONST start=0x1046e250c end=0x1046e2550
+SLJIT map id=5 kind=body depth=0 frame=0 pc=116 opcode=ADD start=0x1046e2550 end=0x1046e258c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=117 opcode=GETGLOBAL start=0x1046e258c end=0x1046e2674
+SLJIT map id=5 kind=body depth=0 frame=0 pc=118 opcode=LDREG start=0x1046e2674 end=0x1046e2720
+SLJIT map id=5 kind=body depth=0 frame=0 pc=119 opcode=NEW_OBJ start=0x1046e2720 end=0x1046e277c
+SLJIT map id=5 kind=body depth=0 frame=0 pc=120 opcode=THROW start=0x1046e277c end=0x1046e2798
+SLJIT map id=5 kind=body depth=0 frame=0 pc=121 opcode=RETUNDEF start=0x1046e2798 end=0x1046e2a18
+SLJIT function runRichards begin=0 ops=122 bytes=27408 hits=77148 returns=5936 stalled=0 charged_edges=224131 budget_exits=119 id=5 line=450
+SLJIT exit runRichards begin=0 pc=2 op=63 count=175 id=5 line=451 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=10 op=61 count=1 id=5 line=452 opcode=CALL
+SLJIT exit runRichards begin=0 pc=16 op=63 count=8 id=5 line=454 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=23 op=63 count=5935 id=5 line=455 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=30 op=61 count=1 id=5 line=456 opcode=CALL
+SLJIT exit runRichards begin=0 pc=36 op=63 count=8 id=5 line=458 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=43 op=63 count=5933 id=5 line=459 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=50 op=63 count=5933 id=5 line=460 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=57 op=61 count=1 id=5 line=461 opcode=CALL
+SLJIT exit runRichards begin=0 pc=63 op=63 count=8 id=5 line=463 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=70 op=63 count=5931 id=5 line=464 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=77 op=63 count=5931 id=5 line=465 opcode=NEW_OBJ
+SLJIT exit runRichards begin=0 pc=84 op=61 count=2 id=5 line=466 opcode=CALL
+SLJIT exit runRichards begin=0 pc=96 op=61 count=1 id=5 line=470 opcode=CALL
+SLJIT exit runRichards begin=0 pc=99 op=61 count=1 id=5 line=472 opcode=CALL
+SLJIT exit runRichards begin=0 pc=121 op=66 count=5936 id=5 line=481 opcode=RETUNDEF
+SLJIT coverage id=6 line=503 name=Scheduler threaded=89992 switch=6010 attempts=80 warmup=4294967295 retired=2 active=0 rejection=compiled
+SLJIT native id=6 calls=0 returns=0
+SLJIT pipeline id=6 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=6 homes=0
+SLJIT code id=6 start=0x1046dbd68 bytes=5600 fragment=0x1046dd368 fragment_bytes=56
+SLJIT map id=6 kind=entry start=0x1046dbd68 end=0x1046dbdc8
+SLJIT map id=6 kind=exit start=0x1046dcdd0 end=0x1046dcfcc
+SLJIT map id=6 kind=call_entry start=0x1046dcfcc end=0x1046dd348
+SLJIT map id=6 kind=helper_fragment start=0x1046dd368 end=0x1046dd3a0
+SLJIT map id=6 kind=body depth=0 frame=0 pc=0 opcode=LDINT start=0x1046dbdc8 end=0x1046dbe30
+SLJIT map id=6 kind=body depth=0 frame=0 pc=1 opcode=PUTTHISC start=0x1046dbe30 end=0x1046dbfe0
+SLJIT map id=6 kind=body depth=0 frame=0 pc=2 opcode=LDINT start=0x1046dbfe0 end=0x1046dc048
+SLJIT map id=6 kind=body depth=0 frame=0 pc=3 opcode=PUTTHISC start=0x1046dc048 end=0x1046dc1fc
+SLJIT map id=6 kind=body depth=0 frame=0 pc=4 opcode=GETGLOBAL start=0x1046dc1fc end=0x1046dc2e4
+SLJIT map id=6 kind=body depth=0 frame=0 pc=5 opcode=GETGLOBAL start=0x1046dc2e4 end=0x1046dc3cc
+SLJIT map id=6 kind=body depth=0 frame=0 pc=6 opcode=NEW_OBJ start=0x1046dc3cc end=0x1046dc3f0
+SLJIT map id=6 kind=body depth=0 frame=0 pc=7 opcode=PUTTHISC start=0x1046dc3f0 end=0x1046dc5a4
+SLJIT map id=6 kind=body depth=0 frame=0 pc=8 opcode=LDNULL start=0x1046dc5a4 end=0x1046dc60c
+SLJIT map id=6 kind=body depth=0 frame=0 pc=9 opcode=PUTTHISC start=0x1046dc60c end=0x1046dc7c0
+SLJIT map id=6 kind=body depth=0 frame=0 pc=10 opcode=LDNULL start=0x1046dc7c0 end=0x1046dc828
+SLJIT map id=6 kind=body depth=0 frame=0 pc=11 opcode=PUTTHISC start=0x1046dc828 end=0x1046dc9dc
+SLJIT map id=6 kind=body depth=0 frame=0 pc=12 opcode=LDNULL start=0x1046dc9dc end=0x1046dca44
+SLJIT map id=6 kind=body depth=0 frame=0 pc=13 opcode=PUTTHISC start=0x1046dca44 end=0x1046dcbf8
+SLJIT map id=6 kind=body depth=0 frame=0 pc=14 opcode=RETUNDEF start=0x1046dcbf8 end=0x1046dcdd0
+SLJIT function Scheduler begin=0 ops=15 bytes=5656 hits=16 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=6 line=503
+SLJIT exit Scheduler begin=0 pc=1 op=232 count=8 id=6 line=503 opcode=PUTTHISC
+SLJIT exit Scheduler begin=0 pc=7 op=232 count=8 id=6 line=505 opcode=PUTTHISC
+SLJIT coverage id=7 line=664 name=TaskControlBlock threaded=324000 switch=13 attempts=77 warmup=4294967295 retired=1 active=2 rejection=compiled
+SLJIT native id=7 calls=0 returns=0
+SLJIT pipeline id=7 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=7 homes=0
+SLJIT code id=7 start=0x1046aa968 bytes=6148 fragment=0 fragment_bytes=0
+SLJIT map id=7 kind=entry start=0x1046aa968 end=0x1046aa9c8
+SLJIT map id=7 kind=exit start=0x1046abc6c end=0x1046abe08
+SLJIT map id=7 kind=call_entry start=0x1046abe08 end=0x1046ac16c
+SLJIT map id=7 kind=body depth=0 frame=0 pc=0 opcode=PUTTHISC start=0x1046aa9c8 end=0x1046aab78
+SLJIT map id=7 kind=body depth=0 frame=0 pc=1 opcode=PUTTHISC start=0x1046aab78 end=0x1046aad2c
+SLJIT map id=7 kind=body depth=0 frame=0 pc=2 opcode=PUTTHISC start=0x1046aad2c end=0x1046aaee0
+SLJIT map id=7 kind=body depth=0 frame=0 pc=3 opcode=PUTTHISC start=0x1046aaee0 end=0x1046ab094
+SLJIT map id=7 kind=body depth=0 frame=0 pc=4 opcode=PUTTHISC start=0x1046ab094 end=0x1046ab248
+SLJIT map id=7 kind=body depth=0 frame=0 pc=5 opcode=JMP_NNULL start=0x1046ab248 end=0x1046ab2a4
+SLJIT map id=7 kind=body depth=0 frame=0 pc=6 opcode=GETGLOBAL start=0x1046ab2a4 end=0x1046ab38c
+SLJIT map id=7 kind=body depth=0 frame=0 pc=7 opcode=PUTTHISC start=0x1046ab38c end=0x1046ab540
+SLJIT map id=7 kind=body depth=0 frame=0 pc=8 opcode=RETUNDEF start=0x1046ab540 end=0x1046ab788
+SLJIT map id=7 kind=body depth=0 frame=0 pc=9 opcode=GETGLOBAL start=0x1046ab788 end=0x1046ab870
+SLJIT map id=7 kind=body depth=0 frame=0 pc=10 opcode=PUTTHISC start=0x1046ab870 end=0x1046aba24
+SLJIT map id=7 kind=body depth=0 frame=0 pc=11 opcode=RETUNDEF start=0x1046aba24 end=0x1046abc6c
+SLJIT function TaskControlBlock begin=0 ops=12 bytes=6148 hits=8 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=7 line=664
+SLJIT exit TaskControlBlock begin=0 pc=0 op=232 count=8 id=7 line=664 opcode=PUTTHISC
+SLJIT coverage id=8 line=772 name=IdleTask threaded=8 switch=3 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=9 line=800 name=DeviceTask threaded=48000 switch=4 attempts=73 warmup=4294967295 retired=1 active=0 rejection=compiled
+SLJIT native id=9 calls=0 returns=0
+SLJIT pipeline id=9 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=9 homes=0
+SLJIT code id=9 start=0x1046cad18 bytes=2540 fragment=0 fragment_bytes=0
+SLJIT map id=9 kind=entry start=0x1046cad18 end=0x1046cad78
+SLJIT map id=9 kind=exit start=0x1046cb300 end=0x1046cb3bc
+SLJIT map id=9 kind=call_entry start=0x1046cb3bc end=0x1046cb704
+SLJIT map id=9 kind=body depth=0 frame=0 pc=0 opcode=PUTTHISC start=0x1046cad78 end=0x1046caf28
+SLJIT map id=9 kind=body depth=0 frame=0 pc=1 opcode=LDNULL start=0x1046caf28 end=0x1046caf90
+SLJIT map id=9 kind=body depth=0 frame=0 pc=2 opcode=PUTTHISC start=0x1046caf90 end=0x1046cb144
+SLJIT map id=9 kind=body depth=0 frame=0 pc=3 opcode=RETUNDEF start=0x1046cb144 end=0x1046cb300
+SLJIT function DeviceTask begin=0 ops=4 bytes=2540 hits=8 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=9 line=800
+SLJIT exit DeviceTask begin=0 pc=0 op=232 count=8 id=9 line=800 opcode=PUTTHISC
+SLJIT coverage id=10 line=828 name=WorkerTask threaded=8 switch=3 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=11 line=863 name=HandlerTask threaded=72000 switch=6 attempts=73 warmup=4294967295 retired=1 active=0 rejection=compiled
+SLJIT native id=11 calls=0 returns=0
+SLJIT pipeline id=11 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=11 homes=0
+SLJIT code id=11 start=0x1046a9d10 bytes=3144 fragment=0 fragment_bytes=0
+SLJIT map id=11 kind=entry start=0x1046a9d10 end=0x1046a9d70
+SLJIT map id=11 kind=exit start=0x1046aa514 end=0x1046aa610
+SLJIT map id=11 kind=call_entry start=0x1046aa610 end=0x1046aa958
+SLJIT map id=11 kind=body depth=0 frame=0 pc=0 opcode=PUTTHISC start=0x1046a9d70 end=0x1046a9f20
+SLJIT map id=11 kind=body depth=0 frame=0 pc=1 opcode=LDNULL start=0x1046a9f20 end=0x1046a9f88
+SLJIT map id=11 kind=body depth=0 frame=0 pc=2 opcode=PUTTHISC start=0x1046a9f88 end=0x1046aa13c
+SLJIT map id=11 kind=body depth=0 frame=0 pc=3 opcode=LDNULL start=0x1046aa13c end=0x1046aa1a4
+SLJIT map id=11 kind=body depth=0 frame=0 pc=4 opcode=PUTTHISC start=0x1046aa1a4 end=0x1046aa358
+SLJIT map id=11 kind=body depth=0 frame=0 pc=5 opcode=RETUNDEF start=0x1046aa358 end=0x1046aa514
+SLJIT function HandlerTask begin=0 ops=6 bytes=3144 hits=8 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=11 line=863
+SLJIT exit HandlerTask begin=0 pc=0 op=232 count=8 id=11 line=863 opcode=PUTTHISC
+SLJIT coverage id=12 line=919 name=Packet threaded=480000 switch=48027 attempts=87 warmup=4294967295 retired=2 active=0 rejection=compiled
+SLJIT native id=12 calls=0 returns=0
+SLJIT pipeline id=12 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=12 homes=0
+SLJIT code id=12 start=0x1046c2da0 bytes=4676 fragment=0x1046cb820 fragment_bytes=56
+SLJIT map id=12 kind=entry start=0x1046c2da0 end=0x1046c2e00
+SLJIT map id=12 kind=exit start=0x1046c3b08 end=0x1046c3c64
+SLJIT map id=12 kind=call_entry start=0x1046c3c64 end=0x1046c3fe4
+SLJIT map id=12 kind=helper_fragment start=0x1046cb820 end=0x1046cb858
+SLJIT map id=12 kind=body depth=0 frame=0 pc=0 opcode=PUTTHISC start=0x1046c2e00 end=0x1046c2fb0
+SLJIT map id=12 kind=body depth=0 frame=0 pc=1 opcode=PUTTHISC start=0x1046c2fb0 end=0x1046c3164
+SLJIT map id=12 kind=body depth=0 frame=0 pc=2 opcode=PUTTHISC start=0x1046c3164 end=0x1046c3318
+SLJIT map id=12 kind=body depth=0 frame=0 pc=3 opcode=LDINT start=0x1046c3318 end=0x1046c3380
+SLJIT map id=12 kind=body depth=0 frame=0 pc=4 opcode=PUTTHISC start=0x1046c3380 end=0x1046c3534
+SLJIT map id=12 kind=body depth=0 frame=0 pc=5 opcode=GETGLOBAL start=0x1046c3534 end=0x1046c361c
+SLJIT map id=12 kind=body depth=0 frame=0 pc=6 opcode=GETGLOBAL start=0x1046c361c end=0x1046c3704
+SLJIT map id=12 kind=body depth=0 frame=0 pc=7 opcode=NEW_OBJ start=0x1046c3704 end=0x1046c3728
+SLJIT map id=12 kind=body depth=0 frame=0 pc=8 opcode=PUTTHISC start=0x1046c3728 end=0x1046c38dc
+SLJIT map id=12 kind=body depth=0 frame=0 pc=9 opcode=RETUNDEF start=0x1046c38dc end=0x1046c3b08
+SLJIT function Packet begin=0 ops=10 bytes=4732 hits=16 returns=0 stalled=16 charged_edges=0 budget_exits=0 id=12 line=919
+SLJIT exit Packet begin=0 pc=0 op=232 count=8 id=12 line=919 opcode=PUTTHISC
+SLJIT exit Packet begin=0 pc=8 op=232 count=8 id=12 line=923 opcode=PUTTHISC
+SLJIT coverage id=16 line=45 name= threaded=22 switch=12 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=20 line=133 name= threaded=8 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=21 line=133 name= threaded=5 switch=4 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=39 line=530 name= threaded=6771 switch=6 attempts=6001 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=39 calls=5934 returns=0
+SLJIT pipeline id=39 inlined=0 recoveries=0 allocations=5936 pushes=0 links=1
+SLJIT numeric id=39 homes=0
+SLJIT code id=39 start=0x1046dac60 bytes=4228 fragment=0x1046dbd10 fragment_bytes=56
+SLJIT map id=39 kind=entry start=0x1046dac60 end=0x1046dacc0
+SLJIT map id=39 kind=exit start=0x1046db700 end=0x1046db8cc
+SLJIT map id=39 kind=call_entry start=0x1046db8cc end=0x1046dbce4
+SLJIT map id=39 kind=helper_fragment start=0x1046dbd10 end=0x1046dbd48
+SLJIT map id=39 kind=body depth=0 frame=0 pc=0 opcode=LDTHIS start=0x1046dacc0 end=0x1046dad58
+SLJIT map id=39 kind=body depth=0 frame=0 pc=1 opcode=GETPROPC_CACHED start=0x1046dad58 end=0x1046dae6c
+SLJIT map id=39 kind=body depth=0 frame=0 pc=2 opcode=LDREG start=0x1046dae6c end=0x1046daf04
+SLJIT map id=39 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046daf04 end=0x1046daf9c
+SLJIT map id=39 kind=body depth=0 frame=0 pc=4 opcode=LDREG start=0x1046daf9c end=0x1046db034
+SLJIT map id=39 kind=body depth=0 frame=0 pc=5 opcode=GETGLOBAL start=0x1046db034 end=0x1046db11c
+SLJIT map id=39 kind=body depth=0 frame=0 pc=6 opcode=LDTHIS start=0x1046db11c end=0x1046db1b4
+SLJIT map id=39 kind=body depth=0 frame=0 pc=7 opcode=LDINT start=0x1046db1b4 end=0x1046db220
+SLJIT map id=39 kind=body depth=0 frame=0 pc=8 opcode=LDREG start=0x1046db220 end=0x1046db2b8
+SLJIT map id=39 kind=body depth=0 frame=0 pc=9 opcode=NEW_OBJ start=0x1046db2b8 end=0x1046db2dc
+SLJIT map id=39 kind=body depth=0 frame=0 pc=10 opcode=LDREG start=0x1046db2dc end=0x1046db374
+SLJIT map id=39 kind=body depth=0 frame=0 pc=11 opcode=CALL start=0x1046db374 end=0x1046db448
+SLJIT map id=39 kind=body depth=0 frame=0 pc=12 opcode=RETUNDEF start=0x1046db448 end=0x1046db700
+SLJIT function  begin=0 ops=13 bytes=4284 hits=5937 returns=5936 stalled=5936 charged_edges=0 budget_exits=0 id=39 line=530
+SLJIT exit  begin=0 pc=10 op=0 count=1 id=39 line=530 opcode=LDREG
+SLJIT exit  begin=0 pc=11 op=61 count=1 id=39 line=530 opcode=CALL
+SLJIT exit  begin=0 pc=12 op=66 count=5936 id=39 line=531 opcode=RETUNDEF
+SLJIT coverage id=40 line=540 name= threaded=6807 switch=14 attempts=6004 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=40 calls=5930 returns=0
+SLJIT pipeline id=40 inlined=0 recoveries=0 allocations=5933 pushes=0 links=1
+SLJIT numeric id=40 homes=0
+SLJIT code id=40 start=0x1046a6940 bytes=4276 fragment=0x1046d97c8 fragment_bytes=56
+SLJIT map id=40 kind=entry start=0x1046a6940 end=0x1046a69a0
+SLJIT map id=40 kind=exit start=0x1046a7410 end=0x1046a75dc
+SLJIT map id=40 kind=call_entry start=0x1046a75dc end=0x1046a79f4
+SLJIT map id=40 kind=helper_fragment start=0x1046d97c8 end=0x1046d9800
+SLJIT map id=40 kind=body depth=0 frame=0 pc=0 opcode=LDTHIS start=0x1046a69a0 end=0x1046a6a38
+SLJIT map id=40 kind=body depth=0 frame=0 pc=1 opcode=GETPROPC_CACHED start=0x1046a6a38 end=0x1046a6b4c
+SLJIT map id=40 kind=body depth=0 frame=0 pc=2 opcode=LDREG start=0x1046a6b4c end=0x1046a6be4
+SLJIT map id=40 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046a6be4 end=0x1046a6c7c
+SLJIT map id=40 kind=body depth=0 frame=0 pc=4 opcode=LDREG start=0x1046a6c7c end=0x1046a6d14
+SLJIT map id=40 kind=body depth=0 frame=0 pc=5 opcode=GETGLOBAL start=0x1046a6d14 end=0x1046a6dfc
+SLJIT map id=40 kind=body depth=0 frame=0 pc=6 opcode=LDTHIS start=0x1046a6dfc end=0x1046a6e94
+SLJIT map id=40 kind=body depth=0 frame=0 pc=7 opcode=GETGLOBAL start=0x1046a6e94 end=0x1046a6f7c
+SLJIT map id=40 kind=body depth=0 frame=0 pc=8 opcode=LDINT start=0x1046a6f7c end=0x1046a6fe4
+SLJIT map id=40 kind=body depth=0 frame=0 pc=9 opcode=NEW_OBJ start=0x1046a6fe4 end=0x1046a7008
+SLJIT map id=40 kind=body depth=0 frame=0 pc=10 opcode=LDREG start=0x1046a7008 end=0x1046a70a0
+SLJIT map id=40 kind=body depth=0 frame=0 pc=11 opcode=CALL start=0x1046a70a0 end=0x1046a7174
+SLJIT map id=40 kind=body depth=0 frame=0 pc=12 opcode=RETUNDEF start=0x1046a7174 end=0x1046a7410
+SLJIT function  begin=0 ops=13 bytes=4332 hits=5934 returns=5933 stalled=5933 charged_edges=1 budget_exits=0 id=40 line=540
+SLJIT exit  begin=0 pc=11 op=61 count=3 id=40 line=540 opcode=CALL
+SLJIT exit  begin=0 pc=12 op=66 count=5933 id=40 line=541 opcode=RETUNDEF
+SLJIT coverage id=41 line=550 name= threaded=24671 switch=87 attempts=24011 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=41 calls=11923 returns=0
+SLJIT pipeline id=41 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=41 homes=0
+SLJIT code id=41 start=0x1046c02a8 bytes=3764 fragment=0x1046cb770 fragment_bytes=56
+SLJIT map id=41 kind=entry start=0x1046c02a8 end=0x1046c0308
+SLJIT map id=41 kind=exit start=0x1046c0bf0 end=0x1046c0d7c
+SLJIT map id=41 kind=call_entry start=0x1046c0d7c end=0x1046c115c
+SLJIT map id=41 kind=helper_fragment start=0x1046cb770 end=0x1046cb7a8
+SLJIT map id=41 kind=body depth=0 frame=0 pc=0 opcode=LDTHIS start=0x1046c0308 end=0x1046c03a0
+SLJIT map id=41 kind=body depth=0 frame=0 pc=1 opcode=GETPROPC_CACHED start=0x1046c03a0 end=0x1046c04b4
+SLJIT map id=41 kind=body depth=0 frame=0 pc=2 opcode=LDREG start=0x1046c04b4 end=0x1046c054c
+SLJIT map id=41 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046c054c end=0x1046c05e4
+SLJIT map id=41 kind=body depth=0 frame=0 pc=4 opcode=LDREG start=0x1046c05e4 end=0x1046c067c
+SLJIT map id=41 kind=body depth=0 frame=0 pc=5 opcode=GETGLOBAL start=0x1046c067c end=0x1046c0764
+SLJIT map id=41 kind=body depth=0 frame=0 pc=6 opcode=LDTHIS start=0x1046c0764 end=0x1046c07fc
+SLJIT map id=41 kind=body depth=0 frame=0 pc=7 opcode=NEW_OBJ start=0x1046c07fc end=0x1046c0820
+SLJIT map id=41 kind=body depth=0 frame=0 pc=8 opcode=LDREG start=0x1046c0820 end=0x1046c08b8
+SLJIT map id=41 kind=body depth=0 frame=0 pc=9 opcode=CALL start=0x1046c08b8 end=0x1046c098c
+SLJIT map id=41 kind=body depth=0 frame=0 pc=10 opcode=RETUNDEF start=0x1046c098c end=0x1046c0bf0
+SLJIT function  begin=0 ops=11 bytes=3820 hits=23913 returns=11923 stalled=11923 charged_edges=11923 budget_exits=1 id=41 line=550
+SLJIT exit  begin=0 pc=7 op=63 count=11926 id=41 line=550 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=9 op=61 count=1 id=41 line=550 opcode=CALL
+SLJIT exit  begin=0 pc=10 op=66 count=11923 id=41 line=551 opcode=RETUNDEF
+SLJIT coverage id=42 line=560 name= threaded=24715 switch=83 attempts=24013 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=42 calls=11918 returns=0
+SLJIT pipeline id=42 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=42 homes=0
+SLJIT code id=42 start=0x1046a8e28 bytes=3776 fragment=0x1046cb718 fragment_bytes=56
+SLJIT map id=42 kind=entry start=0x1046a8e28 end=0x1046a8e88
+SLJIT map id=42 kind=exit start=0x1046a977c end=0x1046a9908
+SLJIT map id=42 kind=call_entry start=0x1046a9908 end=0x1046a9ce8
+SLJIT map id=42 kind=helper_fragment start=0x1046cb718 end=0x1046cb750
+SLJIT map id=42 kind=body depth=0 frame=0 pc=0 opcode=LDTHIS start=0x1046a8e88 end=0x1046a8f20
+SLJIT map id=42 kind=body depth=0 frame=0 pc=1 opcode=GETPROPC_CACHED start=0x1046a8f20 end=0x1046a9040
+SLJIT map id=42 kind=body depth=0 frame=0 pc=2 opcode=LDREG start=0x1046a9040 end=0x1046a90d8
+SLJIT map id=42 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046a90d8 end=0x1046a9170
+SLJIT map id=42 kind=body depth=0 frame=0 pc=4 opcode=LDREG start=0x1046a9170 end=0x1046a9208
+SLJIT map id=42 kind=body depth=0 frame=0 pc=5 opcode=GETGLOBAL start=0x1046a9208 end=0x1046a92f0
+SLJIT map id=42 kind=body depth=0 frame=0 pc=6 opcode=LDTHIS start=0x1046a92f0 end=0x1046a9388
+SLJIT map id=42 kind=body depth=0 frame=0 pc=7 opcode=NEW_OBJ start=0x1046a9388 end=0x1046a93ac
+SLJIT map id=42 kind=body depth=0 frame=0 pc=8 opcode=LDREG start=0x1046a93ac end=0x1046a9444
+SLJIT map id=42 kind=body depth=0 frame=0 pc=9 opcode=CALL start=0x1046a9444 end=0x1046a9518
+SLJIT map id=42 kind=body depth=0 frame=0 pc=10 opcode=RETUNDEF start=0x1046a9518 end=0x1046a977c
+SLJIT function  begin=0 ops=11 bytes=3832 hits=23903 returns=11919 stalled=11919 charged_edges=11918 budget_exits=107 id=42 line=560
+SLJIT exit  begin=0 pc=7 op=63 count=11921 id=42 line=560 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=9 op=61 count=2 id=42 line=560 opcode=CALL
+SLJIT exit  begin=0 pc=10 op=66 count=11919 id=42 line=561 opcode=RETUNDEF
+SLJIT coverage id=43 line=571 name= threaded=6769 switch=5 attempts=6002 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=43 calls=5935 returns=0
+SLJIT pipeline id=43 inlined=5936 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=43 homes=0
+SLJIT code id=43 start=0x1046d9820 bytes=5132 fragment=0 fragment_bytes=0
+SLJIT map id=43 kind=entry start=0x1046d9820 end=0x1046d9880
+SLJIT map id=43 kind=exit start=0x1046da5ec end=0x1046da8a0
+SLJIT map id=43 kind=call_entry start=0x1046da8a0 end=0x1046dac2c
+SLJIT map id=43 kind=body depth=0 frame=0 pc=0 opcode=LDTHIS start=0x1046d9880 end=0x1046d9918
+SLJIT map id=43 kind=body depth=0 frame=0 pc=1 opcode=GETPROPC_CACHED start=0x1046d9918 end=0x1046d9a2c
+SLJIT map id=43 kind=body depth=0 frame=0 pc=2 opcode=LDREG start=0x1046d9a2c end=0x1046d9ac4
+SLJIT map id=43 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046d9ac4 end=0x1046d9b5c
+SLJIT map id=43 kind=body depth=0 frame=0 pc=4 opcode=LDREG start=0x1046d9b5c end=0x1046d9bf4
+SLJIT map id=43 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046d9bf4 end=0x1046d9c8c
+SLJIT map id=43 kind=body depth=0 frame=0 pc=6 opcode=CALL start=0x1046d9c8c end=0x1046d9d60
+SLJIT map id=43 kind=body depth=0 frame=0 pc=7 opcode=GETTHISC start=0x1046d9d60 end=0x1046d9e44
+SLJIT map id=43 kind=body depth=0 frame=0 pc=8 opcode=GETPROPC_CACHED start=0x1046d9e44 end=0x1046d9f58
+SLJIT map id=43 kind=body depth=0 frame=0 pc=9 opcode=LDREG start=0x1046d9f58 end=0x1046d9ff0
+SLJIT map id=43 kind=body depth=0 frame=0 pc=10 opcode=LDREG start=0x1046d9ff0 end=0x1046da088
+SLJIT map id=43 kind=body depth=0 frame=0 pc=11 opcode=CALL start=0x1046da088 end=0x1046da3c0
+SLJIT map id=43 kind=body depth=0 frame=0 pc=12 opcode=RETUNDEF start=0x1046da3c0 end=0x1046da5ec
+SLJIT map id=43 kind=body depth=1 frame=1 target_line=701 pc=0 opcode=GETGLOBAL start=0x1046da1ac end=0x1046da1f8
+SLJIT map id=43 kind=body depth=1 frame=1 target_line=701 pc=1 opcode=PUTTHISC start=0x1046da1f8 end=0x1046da2c4
+SLJIT map id=43 kind=body depth=1 frame=1 target_line=701 pc=2 opcode=RETUNDEF start=0x1046da2c4 end=0x1046da2d0
+SLJIT function  begin=0 ops=13 bytes=5132 hits=5938 returns=5936 stalled=0 charged_edges=1 budget_exits=0 id=43 line=571
+SLJIT exit  begin=0 pc=6 op=61 count=1 id=43 line=571 opcode=CALL
+SLJIT exit  begin=0 pc=12 op=66 count=5936 id=43 line=573 opcode=RETUNDEF
+SLJIT coverage id=44 line=583 name= threaded=109286 switch=6183 attempts=36227 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=44 calls=0 returns=0
+SLJIT pipeline id=44 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=44 homes=0
+SLJIT code id=44 start=0x1046c1188 bytes=7116 fragment=0x1046cb7c8 fragment_bytes=56
+SLJIT map id=44 kind=entry start=0x1046c1188 end=0x1046c11e8
+SLJIT map id=44 kind=exit start=0x1046c2708 end=0x1046c2964
+SLJIT map id=44 kind=call_entry start=0x1046c2964 end=0x1046c2d54
+SLJIT map id=44 kind=helper_fragment start=0x1046cb7c8 end=0x1046cb800
+SLJIT map id=44 kind=body depth=0 frame=0 pc=0 opcode=GETGLOBAL start=0x1046c11e8 end=0x1046c12d0
+SLJIT map id=44 kind=body depth=0 frame=0 pc=1 opcode=GETTHISC start=0x1046c12d0 end=0x1046c13b4
+SLJIT map id=44 kind=body depth=0 frame=0 pc=2 opcode=LDREG start=0x1046c13b4 end=0x1046c144c
+SLJIT map id=44 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046c144c end=0x1046c14e4
+SLJIT map id=44 kind=body depth=0 frame=0 pc=4 opcode=LDREG start=0x1046c14e4 end=0x1046c157c
+SLJIT map id=44 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046c157c end=0x1046c1614
+SLJIT map id=44 kind=body depth=0 frame=0 pc=6 opcode=LDREG start=0x1046c1614 end=0x1046c16ac
+SLJIT map id=44 kind=body depth=0 frame=0 pc=7 opcode=NEW_OBJ start=0x1046c16ac end=0x1046c16d0
+SLJIT map id=44 kind=body depth=0 frame=0 pc=8 opcode=PUTTHISC start=0x1046c16d0 end=0x1046c179c
+SLJIT map id=44 kind=body depth=0 frame=0 pc=9 opcode=GETTHISC start=0x1046c179c end=0x1046c1848
+SLJIT map id=44 kind=body depth=0 frame=0 pc=10 opcode=PUTTHISC start=0x1046c1848 end=0x1046c1914
+SLJIT map id=44 kind=body depth=0 frame=0 pc=11 opcode=GETTHISC start=0x1046c1914 end=0x1046c19c0
+SLJIT map id=44 kind=body depth=0 frame=0 pc=12 opcode=LDREG start=0x1046c19c0 end=0x1046c1a58
+SLJIT map id=44 kind=body depth=0 frame=0 pc=13 opcode=GETTHISC start=0x1046c1a58 end=0x1046c1b3c
+SLJIT map id=44 kind=body depth=0 frame=0 pc=14 opcode=PUTPROP start=0x1046c1b3c end=0x1046c2450
+SLJIT map id=44 kind=body depth=0 frame=0 pc=15 opcode=RETUNDEF start=0x1046c2450 end=0x1046c2708
+SLJIT function  begin=0 ops=16 bytes=7172 hits=36096 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=44 line=583
+SLJIT exit  begin=0 pc=7 op=63 count=35902 id=44 line=583 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=14 op=53 count=35900 id=44 line=585 opcode=PUTPROP
+SLJIT coverage id=45 line=592 name= threaded=120228 switch=45728 attempts=168117 warmup=4294967294 retired=0 active=18 rejection=compiled
+SLJIT native id=45 calls=39401292 returns=0
+SLJIT pipeline id=45 inlined=64023585 recoveries=547 allocations=0 pushes=0 links=2
+SLJIT numeric id=45 homes=0
+SLJIT code id=45 start=0x1046a4010 bytes=9564 fragment=0 fragment_bytes=0
+SLJIT map id=45 kind=entry start=0x1046a4010 end=0x1046a4070
+SLJIT map id=45 kind=exit start=0x1046a5aac end=0x1046a615c
+SLJIT map id=45 kind=call_entry start=0x1046a615c end=0x1046a656c
+SLJIT map id=45 kind=body depth=0 frame=0 pc=0 opcode=GETTHISC start=0x1046a4070 end=0x1046a4154
+SLJIT map id=45 kind=body depth=0 frame=0 pc=1 opcode=PUTTHISC start=0x1046a4154 end=0x1046a4220
+SLJIT map id=45 kind=body depth=0 frame=0 pc=2 opcode=JUMP start=0x1046a4220 end=0x1046a4224
+SLJIT map id=45 kind=body depth=0 frame=0 pc=3 opcode=GETTHISC start=0x1046a4224 end=0x1046a4308
+SLJIT map id=45 kind=body depth=0 frame=0 pc=4 opcode=GETPROPC_CACHED start=0x1046a4308 end=0x1046a441c
+SLJIT map id=45 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046a441c end=0x1046a44b4
+SLJIT map id=45 kind=body depth=0 frame=0 pc=6 opcode=LDREG start=0x1046a44b4 end=0x1046a454c
+SLJIT map id=45 kind=body depth=0 frame=0 pc=7 opcode=CALL start=0x1046a454c end=0x1046a4cd8
+SLJIT map id=45 kind=body depth=0 frame=0 pc=8 opcode=IF_FALSE start=0x1046a4cd8 end=0x1046a4d54
+SLJIT map id=45 kind=body depth=0 frame=0 pc=9 opcode=GETTHISC start=0x1046a4d54 end=0x1046a4e38
+SLJIT map id=45 kind=body depth=0 frame=0 pc=10 opcode=GETPROPC_CACHED start=0x1046a4e38 end=0x1046a4f1c
+SLJIT map id=45 kind=body depth=0 frame=0 pc=11 opcode=PUTTHISC start=0x1046a4f1c end=0x1046a4fe8
+SLJIT map id=45 kind=body depth=0 frame=0 pc=12 opcode=JUMP start=0x1046a4fe8 end=0x1046a4fec
+SLJIT map id=45 kind=body depth=0 frame=0 pc=13 opcode=GETTHISC start=0x1046a4fec end=0x1046a50d0
+SLJIT map id=45 kind=body depth=0 frame=0 pc=14 opcode=GETPROPC_CACHED start=0x1046a50d0 end=0x1046a51b4
+SLJIT map id=45 kind=body depth=0 frame=0 pc=15 opcode=PUTTHISC start=0x1046a51b4 end=0x1046a5280
+SLJIT map id=45 kind=body depth=0 frame=0 pc=16 opcode=GETTHISC start=0x1046a5280 end=0x1046a532c
+SLJIT map id=45 kind=body depth=0 frame=0 pc=17 opcode=GETPROPC_CACHED start=0x1046a532c end=0x1046a5440
+SLJIT map id=45 kind=body depth=0 frame=0 pc=18 opcode=LDREG start=0x1046a5440 end=0x1046a54d8
+SLJIT map id=45 kind=body depth=0 frame=0 pc=19 opcode=LDREG start=0x1046a54d8 end=0x1046a5570
+SLJIT map id=45 kind=body depth=0 frame=0 pc=20 opcode=CALL start=0x1046a5570 end=0x1046a5644
+SLJIT map id=45 kind=body depth=0 frame=0 pc=21 opcode=PUTTHISC start=0x1046a5644 end=0x1046a5710
+SLJIT map id=45 kind=body depth=0 frame=0 pc=22 opcode=GETTHISC start=0x1046a5710 end=0x1046a57f4
+SLJIT map id=45 kind=body depth=0 frame=0 pc=23 opcode=JMP_NNULL start=0x1046a57f4 end=0x1046a5864
+SLJIT map id=45 kind=body depth=0 frame=0 pc=24 opcode=RETUNDEF start=0x1046a5864 end=0x1046a5aac
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=0 opcode=GETTHISC start=0x1046a4670 end=0x1046a46d4
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=1 opcode=GETGLOBAL start=0x1046a46d4 end=0x1046a4720
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=2 opcode=BAND start=0x1046a4720 end=0x1046a47c0
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=3 opcode=LDINT start=0x1046a47c0 end=0x1046a47d8
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=4 opcode=NEQ start=0x1046a47d8 end=0x1046a4944
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=5 opcode=IF_TRUE start=0x1046a4944 end=0x1046a49c0
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=6 opcode=GETTHISC start=0x1046a49c0 end=0x1046a4a24
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=7 opcode=GETGLOBAL start=0x1046a4a24 end=0x1046a4a70
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=8 opcode=EQ start=0x1046a4a70 end=0x1046a4bdc
+SLJIT map id=45 kind=body depth=1 frame=1 target_line=713 pc=9 opcode=RET start=0x1046a4bdc end=0x1046a4be8
+SLJIT function  begin=0 ops=25 bytes=9564 hits=159614 returns=8223 stalled=9373 charged_edges=148345635 budget_exits=145117 id=45 line=592
+SLJIT exit  begin=0 pc=20 op=61 count=35225 id=45 line=598 opcode=CALL
+SLJIT exit  begin=0 pc=23 op=179 count=59634 id=45 line=593 opcode=JMP_NNULL
+SLJIT exit  begin=0 pc=24 op=66 count=8223 id=45 line=601 opcode=RETUNDEF
+SLJIT coverage id=46 line=608 name= threaded=2824 switch=52 attempts=394 warmup=4294967294 retired=0 active=11 rejection=compiled
+SLJIT native id=46 calls=0 returns=0
+SLJIT pipeline id=46 inlined=1 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=46 homes=0
+SLJIT code id=46 start=0x1046f1818 bytes=10128 fragment=0 fragment_bytes=0
+SLJIT map id=46 kind=entry start=0x1046f1818 end=0x1046f1878
+SLJIT map id=46 kind=exit start=0x1046f3834 end=0x1046f3c00
+SLJIT map id=46 kind=call_entry start=0x1046f3c00 end=0x1046f3fa8
+SLJIT map id=46 kind=body depth=0 frame=0 pc=0 opcode=GETTHISC start=0x1046f1878 end=0x1046f195c
+SLJIT map id=46 kind=body depth=0 frame=0 pc=1 opcode=GETPROP start=0x1046f195c end=0x1046f24e4
+SLJIT map id=46 kind=body depth=0 frame=0 pc=2 opcode=JMP_NNULL start=0x1046f24e4 end=0x1046f2540
+SLJIT map id=46 kind=body depth=0 frame=0 pc=3 opcode=RET start=0x1046f2540 end=0x1046f2734
+SLJIT map id=46 kind=body depth=0 frame=0 pc=4 opcode=GETPROPC_CACHED start=0x1046f2734 end=0x1046f2848
+SLJIT map id=46 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046f2848 end=0x1046f28e0
+SLJIT map id=46 kind=body depth=0 frame=0 pc=6 opcode=CALL start=0x1046f28e0 end=0x1046f2cec
+SLJIT map id=46 kind=body depth=0 frame=0 pc=7 opcode=GETPROPC_CACHED start=0x1046f2cec end=0x1046f2dd0
+SLJIT map id=46 kind=body depth=0 frame=0 pc=8 opcode=GETTHISC start=0x1046f2dd0 end=0x1046f2eb4
+SLJIT map id=46 kind=body depth=0 frame=0 pc=9 opcode=GETPROPC_CACHED start=0x1046f2eb4 end=0x1046f2f98
+SLJIT map id=46 kind=body depth=0 frame=0 pc=10 opcode=JMP_NGT start=0x1046f2f98 end=0x1046f3044
+SLJIT map id=46 kind=body depth=0 frame=0 pc=11 opcode=RET start=0x1046f3044 end=0x1046f3238
+SLJIT map id=46 kind=body depth=0 frame=0 pc=12 opcode=RETUNDEF start=0x1046f3238 end=0x1046f342c
+SLJIT map id=46 kind=body depth=0 frame=0 pc=13 opcode=GETTHISC start=0x1046f342c end=0x1046f344c
+SLJIT map id=46 kind=body depth=0 frame=0 pc=14 opcode=RET start=0x1046f344c end=0x1046f3640
+SLJIT map id=46 kind=body depth=0 frame=0 pc=15 opcode=RETUNDEF start=0x1046f3640 end=0x1046f3834
+SLJIT map id=46 kind=body depth=1 frame=1 target_line=705 pc=0 opcode=GETTHISC start=0x1046f2a0c end=0x1046f2a70
+SLJIT map id=46 kind=body depth=1 frame=1 target_line=705 pc=1 opcode=GETGLOBAL start=0x1046f2a70 end=0x1046f2abc
+SLJIT map id=46 kind=body depth=1 frame=1 target_line=705 pc=2 opcode=BAND start=0x1046f2abc end=0x1046f2b5c
+SLJIT map id=46 kind=body depth=1 frame=1 target_line=705 pc=3 opcode=PUTTHISC start=0x1046f2b5c end=0x1046f2bf0
+SLJIT map id=46 kind=body depth=1 frame=1 target_line=705 pc=4 opcode=RETUNDEF start=0x1046f2bf0 end=0x1046f2bfc
+SLJIT function  begin=0 ops=16 bytes=10128 hits=2 returns=2 stalled=0 charged_edges=0 budget_exits=0 id=46 line=608
+SLJIT exit  begin=0 pc=11 op=65 count=2 id=46 line=612 opcode=RET
+SLJIT coverage id=47 line=624 name= threaded=2762 switch=54 attempts=440 warmup=4294967294 retired=0 active=7 rejection=compiled
+SLJIT native id=47 calls=0 returns=5957
+SLJIT pipeline id=47 inlined=5958 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=47 homes=0
+SLJIT code id=47 start=0x1046a7a20 bytes=5052 fragment=0 fragment_bytes=0
+SLJIT map id=47 kind=entry start=0x1046a7a20 end=0x1046a7a80
+SLJIT map id=47 kind=exit start=0x1046a8734 end=0x1046a8a70
+SLJIT map id=47 kind=call_entry start=0x1046a8a70 end=0x1046a8ddc
+SLJIT map id=47 kind=body depth=0 frame=0 pc=0 opcode=GETTHISC start=0x1046a7a80 end=0x1046a7b64
+SLJIT map id=47 kind=body depth=0 frame=0 pc=1 opcode=INC start=0x1046a7b64 end=0x1046a7c04
+SLJIT map id=47 kind=body depth=0 frame=0 pc=2 opcode=PUTTHISC start=0x1046a7c04 end=0x1046a7cd0
+SLJIT map id=47 kind=body depth=0 frame=0 pc=3 opcode=GETTHISC start=0x1046a7cd0 end=0x1046a7d7c
+SLJIT map id=47 kind=body depth=0 frame=0 pc=4 opcode=GETPROPC_CACHED start=0x1046a7d7c end=0x1046a7e90
+SLJIT map id=47 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046a7e90 end=0x1046a7f28
+SLJIT map id=47 kind=body depth=0 frame=0 pc=6 opcode=LDREG start=0x1046a7f28 end=0x1046a7fc0
+SLJIT map id=47 kind=body depth=0 frame=0 pc=7 opcode=CALL start=0x1046a7fc0 end=0x1046a83cc
+SLJIT map id=47 kind=body depth=0 frame=0 pc=8 opcode=GETTHISC start=0x1046a83cc end=0x1046a84b0
+SLJIT map id=47 kind=body depth=0 frame=0 pc=9 opcode=GETPROPC_CACHED start=0x1046a84b0 end=0x1046a8594
+SLJIT map id=47 kind=body depth=0 frame=0 pc=10 opcode=RET start=0x1046a8594 end=0x1046a8734
+SLJIT map id=47 kind=body depth=1 frame=1 target_line=709 pc=0 opcode=GETTHISC start=0x1046a80ec end=0x1046a8150
+SLJIT map id=47 kind=body depth=1 frame=1 target_line=709 pc=1 opcode=GETGLOBAL start=0x1046a8150 end=0x1046a819c
+SLJIT map id=47 kind=body depth=1 frame=1 target_line=709 pc=2 opcode=BOR start=0x1046a819c end=0x1046a823c
+SLJIT map id=47 kind=body depth=1 frame=1 target_line=709 pc=3 opcode=PUTTHISC start=0x1046a823c end=0x1046a82d0
+SLJIT map id=47 kind=body depth=1 frame=1 target_line=709 pc=4 opcode=RETUNDEF start=0x1046a82d0 end=0x1046a82dc
+SLJIT function  begin=0 ops=11 bytes=5052 hits=1 returns=1 stalled=0 charged_edges=0 budget_exits=0 id=47 line=624
+SLJIT exit  begin=0 pc=10 op=65 count=1 id=47 line=626 opcode=RET
+SLJIT coverage id=48 line=634 name= threaded=4326 switch=190 attempts=618 warmup=62 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=49 line=645 name= threaded=23948 switch=148 attempts=13055 warmup=4294967294 retired=0 active=10 rejection=compiled
+SLJIT native id=49 calls=0 returns=0
+SLJIT pipeline id=49 inlined=23956 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=49 homes=0
+SLJIT code id=49 start=0x1046cb878 bytes=15900 fragment=0 fragment_bytes=0
+SLJIT map id=49 kind=entry start=0x1046cb878 end=0x1046cb8d8
+SLJIT map id=49 kind=exit start=0x1046ce628 end=0x1046cf308
+SLJIT map id=49 kind=call_entry start=0x1046cf308 end=0x1046cf694
+SLJIT map id=49 kind=body depth=0 frame=0 pc=0 opcode=GETTHISC start=0x1046cb8d8 end=0x1046cb9bc
+SLJIT map id=49 kind=body depth=0 frame=0 pc=1 opcode=GETPROPC_CACHED start=0x1046cb9bc end=0x1046cbaa0
+SLJIT map id=49 kind=body depth=0 frame=0 pc=2 opcode=GETPROP start=0x1046cbaa0 end=0x1046cc628
+SLJIT map id=49 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046cc628 end=0x1046cc6c0
+SLJIT map id=49 kind=body depth=0 frame=0 pc=4 opcode=LDNULL start=0x1046cc6c0 end=0x1046cc728
+SLJIT map id=49 kind=body depth=0 frame=0 pc=5 opcode=EQ start=0x1046cc728 end=0x1046cc914
+SLJIT map id=49 kind=body depth=0 frame=0 pc=6 opcode=IF_FALSE start=0x1046cc914 end=0x1046cc990
+SLJIT map id=49 kind=body depth=0 frame=0 pc=7 opcode=RET start=0x1046cc990 end=0x1046ccb68
+SLJIT map id=49 kind=body depth=0 frame=0 pc=8 opcode=GETTHISC start=0x1046ccb68 end=0x1046ccc4c
+SLJIT map id=49 kind=body depth=0 frame=0 pc=9 opcode=INC start=0x1046ccc4c end=0x1046cccec
+SLJIT map id=49 kind=body depth=0 frame=0 pc=10 opcode=PUTTHISC start=0x1046cccec end=0x1046ccdb8
+SLJIT map id=49 kind=body depth=0 frame=0 pc=11 opcode=LDNULL start=0x1046ccdb8 end=0x1046cce20
+SLJIT map id=49 kind=body depth=0 frame=0 pc=12 opcode=PUTPROPC start=0x1046cce20 end=0x1046cceec
+SLJIT map id=49 kind=body depth=0 frame=0 pc=13 opcode=GETTHISC start=0x1046cceec end=0x1046ccf98
+SLJIT map id=49 kind=body depth=0 frame=0 pc=14 opcode=PUTPROPC start=0x1046ccf98 end=0x1046cd064
+SLJIT map id=49 kind=body depth=0 frame=0 pc=15 opcode=GETPROPC_CACHED start=0x1046cd064 end=0x1046cd178
+SLJIT map id=49 kind=body depth=0 frame=0 pc=16 opcode=LDREG start=0x1046cd178 end=0x1046cd210
+SLJIT map id=49 kind=body depth=0 frame=0 pc=17 opcode=GETTHISC start=0x1046cd210 end=0x1046cd2f4
+SLJIT map id=49 kind=body depth=0 frame=0 pc=18 opcode=LDREG start=0x1046cd2f4 end=0x1046cd38c
+SLJIT map id=49 kind=body depth=0 frame=0 pc=19 opcode=LDREG start=0x1046cd38c end=0x1046cd424
+SLJIT map id=49 kind=body depth=0 frame=0 pc=20 opcode=CALL start=0x1046cd424 end=0x1046ce450
+SLJIT map id=49 kind=body depth=0 frame=0 pc=21 opcode=RET start=0x1046ce450 end=0x1046ce628
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=0 opcode=LDNULL start=0x1046cdef0 end=0x1046cdf08
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=1 opcode=PUTTHISC start=0x1046cdf08 end=0x1046cdfd4
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=2 opcode=JMP_NNULL start=0x1046cdfd4 end=0x1046ce030
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=3 opcode=LDTHIS start=0x1046ce030 end=0x1046ce048
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=4 opcode=RET start=0x1046ce048 end=0x1046ce058
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=5 opcode=LDREG start=0x1046ce058 end=0x1046ce070
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=6 opcode=JUMP start=0x1046ce070 end=0x1046ce074
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=7 opcode=LDREG start=0x1046ce074 end=0x1046ce08c
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=8 opcode=GETPROPC_CACHED start=0x1046ce08c end=0x1046ce0f0
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=9 opcode=LDREG start=0x1046ce0f0 end=0x1046ce108
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=10 opcode=JMP_NNULL start=0x1046ce108 end=0x1046ce178
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=11 opcode=LDTHIS start=0x1046ce178 end=0x1046ce190
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=12 opcode=PUTPROPC start=0x1046ce190 end=0x1046ce25c
+SLJIT map id=49 kind=body depth=2 frame=3 target_line=931 pc=13 opcode=RET start=0x1046ce25c end=0x1046ce26c
+SLJIT map id=49 kind=body depth=2 frame=2 target_line=721 pc=0 opcode=GETTHISC start=0x1046cd8bc end=0x1046cd920
+SLJIT map id=49 kind=body depth=2 frame=2 target_line=721 pc=1 opcode=GETGLOBAL start=0x1046cd920 end=0x1046cd96c
+SLJIT map id=49 kind=body depth=2 frame=2 target_line=721 pc=2 opcode=BOR start=0x1046cd96c end=0x1046cda0c
+SLJIT map id=49 kind=body depth=2 frame=2 target_line=721 pc=3 opcode=PUTTHISC start=0x1046cda0c end=0x1046cdaa0
+SLJIT map id=49 kind=body depth=2 frame=2 target_line=721 pc=4 opcode=RETUNDEF start=0x1046cdaa0 end=0x1046cdab0
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=0 opcode=GETTHISC start=0x1046cd590 end=0x1046cd5f4
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=1 opcode=JMP_NNULL start=0x1046cd5f4 end=0x1046cd650
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=2 opcode=PUTTHISC start=0x1046cd650 end=0x1046cd71c
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=3 opcode=LDTHIS start=0x1046cd71c end=0x1046cd734
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=4 opcode=GETPROPC_CACHED start=0x1046cd734 end=0x1046cd790
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=5 opcode=CALL start=0x1046cd790 end=0x1046cdacc
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=6 opcode=GETTHISC start=0x1046cdacc end=0x1046cdb30
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=7 opcode=GETPROPC_CACHED start=0x1046cdb30 end=0x1046cdb94
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=8 opcode=JMP_NGT start=0x1046cdb94 end=0x1046cdc40
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=9 opcode=LDTHIS start=0x1046cdc40 end=0x1046cdc58
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=10 opcode=RET start=0x1046cdc58 end=0x1046cdc64
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=11 opcode=RET start=0x1046cdc64 end=0x1046cdc70
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=12 opcode=GETPROPC_CACHED start=0x1046cdc70 end=0x1046cdd10
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=13 opcode=LDREG start=0x1046cdd10 end=0x1046cdd28
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=14 opcode=GETTHISC start=0x1046cdd28 end=0x1046cdd8c
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=15 opcode=LDREG start=0x1046cdd8c end=0x1046cdda4
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=16 opcode=CALL start=0x1046cdda4 end=0x1046ce288
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=17 opcode=PUTTHISC start=0x1046ce288 end=0x1046ce354
+SLJIT map id=49 kind=body depth=1 frame=1 target_line=749 pc=18 opcode=RET start=0x1046ce354 end=0x1046ce360
+SLJIT function  begin=0 ops=22 bytes=15900 hits=11978 returns=11978 stalled=0 charged_edges=0 budget_exits=0 id=49 line=645
+SLJIT exit  begin=0 pc=21 op=65 count=11978 id=49 line=650 opcode=RET
+SLJIT coverage id=50 line=701 name= threaded=192 switch=3 attempts=64 warmup=63 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=51 line=705 name= threaded=1285 switch=25 attempts=257 warmup=63 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=52 line=709 name= threaded=1255 switch=24 attempts=251 warmup=63 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=53 line=713 name= threaded=23931 switch=303 attempts=2415 warmup=58 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=54 line=717 name= threaded=3090 switch=70 attempts=618 warmup=62 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=55 line=721 name= threaded=2015 switch=44 attempts=403 warmup=45 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=56 line=727 name= threaded=165331 switch=606 attempts=100611 warmup=4294967294 retired=0 active=14 rejection=compiled
+SLJIT native id=56 calls=39392977 returns=39338834
+SLJIT pipeline id=56 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=56 homes=0
+SLJIT code id=56 start=0x1046b23b0 bytes=7160 fragment=0 fragment_bytes=0
+SLJIT map id=56 kind=entry start=0x1046b23b0 end=0x1046b2410
+SLJIT map id=56 kind=exit start=0x1046b388c end=0x1046b3be8
+SLJIT map id=56 kind=call_entry start=0x1046b3be8 end=0x1046b3fa8
+SLJIT map id=56 kind=body depth=0 frame=0 pc=0 opcode=LDUNDEF start=0x1046b2410 end=0x1046b2478
+SLJIT map id=56 kind=body depth=0 frame=0 pc=1 opcode=GETTHISC start=0x1046b2478 end=0x1046b255c
+SLJIT map id=56 kind=body depth=0 frame=0 pc=2 opcode=GETGLOBAL start=0x1046b255c end=0x1046b2644
+SLJIT map id=56 kind=body depth=0 frame=0 pc=3 opcode=JMP_NEQ start=0x1046b2644 end=0x1046b27ac
+SLJIT map id=56 kind=body depth=0 frame=0 pc=4 opcode=GETTHISC start=0x1046b27ac end=0x1046b2890
+SLJIT map id=56 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046b2890 end=0x1046b2928
+SLJIT map id=56 kind=body depth=0 frame=0 pc=6 opcode=GETPROPC_CACHED start=0x1046b2928 end=0x1046b2a0c
+SLJIT map id=56 kind=body depth=0 frame=0 pc=7 opcode=PUTTHISC start=0x1046b2a0c end=0x1046b2ad8
+SLJIT map id=56 kind=body depth=0 frame=0 pc=8 opcode=GETTHISC start=0x1046b2ad8 end=0x1046b2b84
+SLJIT map id=56 kind=body depth=0 frame=0 pc=9 opcode=JMP_NNULL start=0x1046b2b84 end=0x1046b2be0
+SLJIT map id=56 kind=body depth=0 frame=0 pc=10 opcode=GETGLOBAL start=0x1046b2be0 end=0x1046b2cc8
+SLJIT map id=56 kind=body depth=0 frame=0 pc=11 opcode=PUTTHISC start=0x1046b2cc8 end=0x1046b2d94
+SLJIT map id=56 kind=body depth=0 frame=0 pc=12 opcode=JUMP start=0x1046b2d94 end=0x1046b2d98
+SLJIT map id=56 kind=body depth=0 frame=0 pc=13 opcode=GETGLOBAL start=0x1046b2d98 end=0x1046b2e80
+SLJIT map id=56 kind=body depth=0 frame=0 pc=14 opcode=PUTTHISC start=0x1046b2e80 end=0x1046b2f4c
+SLJIT map id=56 kind=body depth=0 frame=0 pc=15 opcode=JUMP start=0x1046b2f4c end=0x1046b2f50
+SLJIT map id=56 kind=body depth=0 frame=0 pc=16 opcode=LDNULL start=0x1046b2f50 end=0x1046b2fb8
+SLJIT map id=56 kind=body depth=0 frame=0 pc=17 opcode=LDREG start=0x1046b2fb8 end=0x1046b3050
+SLJIT map id=56 kind=body depth=0 frame=0 pc=18 opcode=GETTHISC start=0x1046b3050 end=0x1046b3134
+SLJIT map id=56 kind=body depth=0 frame=0 pc=19 opcode=GETPROPC_CACHED start=0x1046b3134 end=0x1046b33fc
+SLJIT map id=56 kind=body depth=0 frame=0 pc=20 opcode=LDREG start=0x1046b33fc end=0x1046b3494
+SLJIT map id=56 kind=body depth=0 frame=0 pc=21 opcode=LDREG start=0x1046b3494 end=0x1046b352c
+SLJIT map id=56 kind=body depth=0 frame=0 pc=22 opcode=LDREG start=0x1046b352c end=0x1046b35c4
+SLJIT map id=56 kind=body depth=0 frame=0 pc=23 opcode=CALL start=0x1046b35c4 end=0x1046b3698
+SLJIT map id=56 kind=body depth=0 frame=0 pc=24 opcode=RET start=0x1046b3698 end=0x1046b388c
+SLJIT function  begin=0 ops=25 bytes=7160 hits=97661 returns=97659 stalled=62463 charged_edges=40703 budget_exits=0 id=56 line=727
+SLJIT exit  begin=0 pc=23 op=61 count=43513 id=56 line=740 opcode=CALL
+SLJIT exit  begin=0 pc=24 op=65 count=97659 id=56 line=740 opcode=RET
+SLJIT coverage id=57 line=749 name= threaded=5681 switch=141 attempts=570 warmup=63 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=59 line=778 name= threaded=11613 switch=64 attempts=6679 warmup=4294967294 retired=0 active=17 rejection=compiled
+SLJIT native id=59 calls=5957 returns=5993516
+SLJIT pipeline id=59 inlined=11987484 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=59 homes=0
+SLJIT code id=59 start=0x1046cf6f0 bytes=18556 fragment=0 fragment_bytes=0
+SLJIT map id=59 kind=entry start=0x1046cf6f0 end=0x1046cf750
+SLJIT map id=59 kind=exit start=0x1046d2ca8 end=0x1046d3bc4
+SLJIT map id=59 kind=call_entry start=0x1046d3bc4 end=0x1046d3f6c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=0 opcode=GETTHISC start=0x1046cf750 end=0x1046cf834
+SLJIT map id=59 kind=body depth=0 frame=0 pc=1 opcode=DEC start=0x1046cf834 end=0x1046cf8d4
+SLJIT map id=59 kind=body depth=0 frame=0 pc=2 opcode=PUTTHISC start=0x1046cf8d4 end=0x1046cf9a0
+SLJIT map id=59 kind=body depth=0 frame=0 pc=3 opcode=GETTHISC start=0x1046cf9a0 end=0x1046cfa4c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=4 opcode=LDINT start=0x1046cfa4c end=0x1046cfab4
+SLJIT map id=59 kind=body depth=0 frame=0 pc=5 opcode=JMP_NEQ start=0x1046cfab4 end=0x1046cfc1c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=6 opcode=GETTHISC start=0x1046cfc1c end=0x1046cfc3c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=7 opcode=GETPROPC start=0x1046cfc3c end=0x1046cfc5c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=8 opcode=LDREG start=0x1046cfc5c end=0x1046cfcf4
+SLJIT map id=59 kind=body depth=0 frame=0 pc=9 opcode=LDREG start=0x1046cfcf4 end=0x1046cfd8c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=10 opcode=CALL start=0x1046cfd8c end=0x1046cfe18
+SLJIT map id=59 kind=body depth=0 frame=0 pc=11 opcode=RET start=0x1046cfe18 end=0x1046d000c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=12 opcode=GETTHISC start=0x1046d000c end=0x1046d00f0
+SLJIT map id=59 kind=body depth=0 frame=0 pc=13 opcode=BANDI start=0x1046d00f0 end=0x1046d01a8
+SLJIT map id=59 kind=body depth=0 frame=0 pc=14 opcode=LDINT start=0x1046d01a8 end=0x1046d0210
+SLJIT map id=59 kind=body depth=0 frame=0 pc=15 opcode=JMP_NEQ start=0x1046d0210 end=0x1046d0378
+SLJIT map id=59 kind=body depth=0 frame=0 pc=16 opcode=GETTHISC start=0x1046d0378 end=0x1046d045c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=17 opcode=SHRI start=0x1046d045c end=0x1046d0518
+SLJIT map id=59 kind=body depth=0 frame=0 pc=18 opcode=PUTTHISC start=0x1046d0518 end=0x1046d05e4
+SLJIT map id=59 kind=body depth=0 frame=0 pc=19 opcode=GETTHISC start=0x1046d05e4 end=0x1046d0690
+SLJIT map id=59 kind=body depth=0 frame=0 pc=20 opcode=GETPROPC_CACHED start=0x1046d0690 end=0x1046d07b0
+SLJIT map id=59 kind=body depth=0 frame=0 pc=21 opcode=LDREG start=0x1046d07b0 end=0x1046d0848
+SLJIT map id=59 kind=body depth=0 frame=0 pc=22 opcode=LDREG start=0x1046d0848 end=0x1046d08e0
+SLJIT map id=59 kind=body depth=0 frame=0 pc=23 opcode=GETGLOBAL start=0x1046d08e0 end=0x1046d09c8
+SLJIT map id=59 kind=body depth=0 frame=0 pc=24 opcode=CALL start=0x1046d09c8 end=0x1046d1380
+SLJIT map id=59 kind=body depth=0 frame=0 pc=25 opcode=RET start=0x1046d1380 end=0x1046d1574
+SLJIT map id=59 kind=body depth=0 frame=0 pc=26 opcode=RETUNDEF start=0x1046d1574 end=0x1046d1768
+SLJIT map id=59 kind=body depth=0 frame=0 pc=27 opcode=GETTHISC start=0x1046d1768 end=0x1046d184c
+SLJIT map id=59 kind=body depth=0 frame=0 pc=28 opcode=SHRI start=0x1046d184c end=0x1046d1908
+SLJIT map id=59 kind=body depth=0 frame=0 pc=29 opcode=LDCONST start=0x1046d1908 end=0x1046d1974
+SLJIT map id=59 kind=body depth=0 frame=0 pc=30 opcode=BXOR start=0x1046d1974 end=0x1046d1a64
+SLJIT map id=59 kind=body depth=0 frame=0 pc=31 opcode=PUTTHISC start=0x1046d1a64 end=0x1046d1b30
+SLJIT map id=59 kind=body depth=0 frame=0 pc=32 opcode=GETTHISC start=0x1046d1b30 end=0x1046d1bdc
+SLJIT map id=59 kind=body depth=0 frame=0 pc=33 opcode=GETPROPC_CACHED start=0x1046d1bdc end=0x1046d1cf0
+SLJIT map id=59 kind=body depth=0 frame=0 pc=34 opcode=LDREG start=0x1046d1cf0 end=0x1046d1d88
+SLJIT map id=59 kind=body depth=0 frame=0 pc=35 opcode=LDREG start=0x1046d1d88 end=0x1046d1e20
+SLJIT map id=59 kind=body depth=0 frame=0 pc=36 opcode=GETGLOBAL start=0x1046d1e20 end=0x1046d1f08
+SLJIT map id=59 kind=body depth=0 frame=0 pc=37 opcode=CALL start=0x1046d1f08 end=0x1046d28c0
+SLJIT map id=59 kind=body depth=0 frame=0 pc=38 opcode=RET start=0x1046d28c0 end=0x1046d2ab4
+SLJIT map id=59 kind=body depth=0 frame=0 pc=39 opcode=RETUNDEF start=0x1046d2ab4 end=0x1046d2ca8
+SLJIT map id=59 kind=body depth=2 frame=4 target_line=705 pc=0 opcode=GETTHISC start=0x1046d2398 end=0x1046d23fc
+SLJIT map id=59 kind=body depth=2 frame=4 target_line=705 pc=1 opcode=GETGLOBAL start=0x1046d23fc end=0x1046d2448
+SLJIT map id=59 kind=body depth=2 frame=4 target_line=705 pc=2 opcode=BAND start=0x1046d2448 end=0x1046d24e8
+SLJIT map id=59 kind=body depth=2 frame=4 target_line=705 pc=3 opcode=PUTTHISC start=0x1046d24e8 end=0x1046d257c
+SLJIT map id=59 kind=body depth=2 frame=4 target_line=705 pc=4 opcode=RETUNDEF start=0x1046d257c end=0x1046d258c
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=0 opcode=GETTHISC start=0x1046d2054 end=0x1046d20b8
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=1 opcode=GETPROP start=0x1046d20b8 end=0x1046d2158
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=2 opcode=JMP_NNULL start=0x1046d2158 end=0x1046d21b4
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=3 opcode=RET start=0x1046d21b4 end=0x1046d21c0
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=4 opcode=GETPROPC_CACHED start=0x1046d21c0 end=0x1046d2254
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=5 opcode=LDREG start=0x1046d2254 end=0x1046d226c
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=6 opcode=CALL start=0x1046d226c end=0x1046d25a8
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=7 opcode=GETPROPC_CACHED start=0x1046d25a8 end=0x1046d260c
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=8 opcode=GETTHISC start=0x1046d260c end=0x1046d2670
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=9 opcode=GETPROPC_CACHED start=0x1046d2670 end=0x1046d26d4
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=10 opcode=JMP_NGT start=0x1046d26d4 end=0x1046d2780
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=11 opcode=RET start=0x1046d2780 end=0x1046d278c
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=12 opcode=RETUNDEF start=0x1046d278c end=0x1046d2798
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=13 opcode=GETTHISC start=0x1046d2798 end=0x1046d27b8
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=14 opcode=RET start=0x1046d27b8 end=0x1046d27c4
+SLJIT map id=59 kind=body depth=1 frame=3 target_line=608 pc=15 opcode=RETUNDEF start=0x1046d27c4 end=0x1046d27d0
+SLJIT map id=59 kind=body depth=2 frame=2 target_line=705 pc=0 opcode=GETTHISC start=0x1046d0e58 end=0x1046d0ebc
+SLJIT map id=59 kind=body depth=2 frame=2 target_line=705 pc=1 opcode=GETGLOBAL start=0x1046d0ebc end=0x1046d0f08
+SLJIT map id=59 kind=body depth=2 frame=2 target_line=705 pc=2 opcode=BAND start=0x1046d0f08 end=0x1046d0fa8
+SLJIT map id=59 kind=body depth=2 frame=2 target_line=705 pc=3 opcode=PUTTHISC start=0x1046d0fa8 end=0x1046d103c
+SLJIT map id=59 kind=body depth=2 frame=2 target_line=705 pc=4 opcode=RETUNDEF start=0x1046d103c end=0x1046d104c
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=0 opcode=GETTHISC start=0x1046d0b14 end=0x1046d0b78
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=1 opcode=GETPROP start=0x1046d0b78 end=0x1046d0c18
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=2 opcode=JMP_NNULL start=0x1046d0c18 end=0x1046d0c74
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=3 opcode=RET start=0x1046d0c74 end=0x1046d0c80
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=4 opcode=GETPROPC_CACHED start=0x1046d0c80 end=0x1046d0d14
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=5 opcode=LDREG start=0x1046d0d14 end=0x1046d0d2c
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=6 opcode=CALL start=0x1046d0d2c end=0x1046d1068
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=7 opcode=GETPROPC_CACHED start=0x1046d1068 end=0x1046d10cc
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=8 opcode=GETTHISC start=0x1046d10cc end=0x1046d1130
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=9 opcode=GETPROPC_CACHED start=0x1046d1130 end=0x1046d1194
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=10 opcode=JMP_NGT start=0x1046d1194 end=0x1046d1240
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=11 opcode=RET start=0x1046d1240 end=0x1046d124c
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=12 opcode=RETUNDEF start=0x1046d124c end=0x1046d1258
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=13 opcode=GETTHISC start=0x1046d1258 end=0x1046d1278
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=14 opcode=RET start=0x1046d1278 end=0x1046d1284
+SLJIT map id=59 kind=body depth=1 frame=1 target_line=608 pc=15 opcode=RETUNDEF start=0x1046d1284 end=0x1046d1290
+SLJIT function  begin=0 ops=40 bytes=18556 hits=6228 returns=6228 stalled=45 charged_edges=0 budget_exits=0 id=59 line=778
+SLJIT exit  begin=0 pc=10 op=61 count=43 id=59 line=779 opcode=CALL
+SLJIT exit  begin=0 pc=11 op=65 count=43 id=59 line=779 opcode=RET
+SLJIT exit  begin=0 pc=25 op=65 count=2931 id=59 line=782 opcode=RET
+SLJIT exit  begin=0 pc=38 op=65 count=3254 id=59 line=785 opcode=RET
+SLJIT coverage id=61 line=805 name= threaded=24502 switch=141 attempts=19404 warmup=4294967294 retired=0 active=16 rejection=compiled
+SLJIT native id=61 calls=0 returns=16643140
+SLJIT pipeline id=61 inlined=38872587 recoveries=0 allocations=0 pushes=0 links=3
+SLJIT numeric id=61 homes=0
+SLJIT code id=61 start=0x1046ac180 bytes=25020 fragment=0 fragment_bytes=0
+SLJIT map id=61 kind=entry start=0x1046ac180 end=0x1046ac1e0
+SLJIT map id=61 kind=exit start=0x1046b0368 end=0x1046b1f78
+SLJIT map id=61 kind=call_entry start=0x1046b1f78 end=0x1046b233c
+SLJIT map id=61 kind=body depth=0 frame=0 pc=0 opcode=JMP_NNULL start=0x1046ac1e0 end=0x1046ac23c
+SLJIT map id=61 kind=body depth=0 frame=0 pc=1 opcode=GETTHISC start=0x1046ac23c end=0x1046ac320
+SLJIT map id=61 kind=body depth=0 frame=0 pc=2 opcode=JMP_NNULL start=0x1046ac320 end=0x1046ac37c
+SLJIT map id=61 kind=body depth=0 frame=0 pc=3 opcode=GETTHISC start=0x1046ac37c end=0x1046ac460
+SLJIT map id=61 kind=body depth=0 frame=0 pc=4 opcode=GETPROPC_CACHED start=0x1046ac460 end=0x1046ac580
+SLJIT map id=61 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046ac580 end=0x1046ac618
+SLJIT map id=61 kind=body depth=0 frame=0 pc=6 opcode=LDREG start=0x1046ac618 end=0x1046ac6b0
+SLJIT map id=61 kind=body depth=0 frame=0 pc=7 opcode=CALL start=0x1046ac6b0 end=0x1046acd98
+SLJIT map id=61 kind=body depth=0 frame=0 pc=8 opcode=RET start=0x1046acd98 end=0x1046acfa8
+SLJIT map id=61 kind=body depth=0 frame=0 pc=9 opcode=GETTHISC start=0x1046acfa8 end=0x1046ad08c
+SLJIT map id=61 kind=body depth=0 frame=0 pc=10 opcode=LDREG start=0x1046ad08c end=0x1046ad124
+SLJIT map id=61 kind=body depth=0 frame=0 pc=11 opcode=LDNULL start=0x1046ad124 end=0x1046ad18c
+SLJIT map id=61 kind=body depth=0 frame=0 pc=12 opcode=PUTTHISC start=0x1046ad18c end=0x1046ad258
+SLJIT map id=61 kind=body depth=0 frame=0 pc=13 opcode=GETTHISC start=0x1046ad258 end=0x1046ad304
+SLJIT map id=61 kind=body depth=0 frame=0 pc=14 opcode=GETPROPC_CACHED start=0x1046ad304 end=0x1046ad424
+SLJIT map id=61 kind=body depth=0 frame=0 pc=15 opcode=LDREG start=0x1046ad424 end=0x1046ad4bc
+SLJIT map id=61 kind=body depth=0 frame=0 pc=16 opcode=LDREG start=0x1046ad4bc end=0x1046ad554
+SLJIT map id=61 kind=body depth=0 frame=0 pc=17 opcode=LDREG start=0x1046ad554 end=0x1046ad5ec
+SLJIT map id=61 kind=body depth=0 frame=0 pc=18 opcode=CALL start=0x1046ad5ec end=0x1046aef10
+SLJIT map id=61 kind=body depth=0 frame=0 pc=19 opcode=RET start=0x1046aef10 end=0x1046af120
+SLJIT map id=61 kind=body depth=0 frame=0 pc=20 opcode=RETUNDEF start=0x1046af120 end=0x1046af330
+SLJIT map id=61 kind=body depth=0 frame=0 pc=21 opcode=PUTTHISC start=0x1046af330 end=0x1046af3fc
+SLJIT map id=61 kind=body depth=0 frame=0 pc=22 opcode=GETTHISC start=0x1046af3fc end=0x1046af4a8
+SLJIT map id=61 kind=body depth=0 frame=0 pc=23 opcode=GETPROPC_CACHED start=0x1046af4a8 end=0x1046af5bc
+SLJIT map id=61 kind=body depth=0 frame=0 pc=24 opcode=LDREG start=0x1046af5bc end=0x1046af654
+SLJIT map id=61 kind=body depth=0 frame=0 pc=25 opcode=LDREG start=0x1046af654 end=0x1046af6ec
+SLJIT map id=61 kind=body depth=0 frame=0 pc=26 opcode=CALL start=0x1046af6ec end=0x1046aff48
+SLJIT map id=61 kind=body depth=0 frame=0 pc=27 opcode=RET start=0x1046aff48 end=0x1046b0158
+SLJIT map id=61 kind=body depth=0 frame=0 pc=28 opcode=RETUNDEF start=0x1046b0158 end=0x1046b0368
+SLJIT map id=61 kind=body depth=2 frame=8 target_line=709 pc=0 opcode=GETTHISC start=0x1046afb74 end=0x1046afbd8
+SLJIT map id=61 kind=body depth=2 frame=8 target_line=709 pc=1 opcode=GETGLOBAL start=0x1046afbd8 end=0x1046afc24
+SLJIT map id=61 kind=body depth=2 frame=8 target_line=709 pc=2 opcode=BOR start=0x1046afc24 end=0x1046afcc4
+SLJIT map id=61 kind=body depth=2 frame=8 target_line=709 pc=3 opcode=PUTTHISC start=0x1046afcc4 end=0x1046afd58
+SLJIT map id=61 kind=body depth=2 frame=8 target_line=709 pc=4 opcode=RETUNDEF start=0x1046afd58 end=0x1046afd68
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=0 opcode=GETTHISC start=0x1046af810 end=0x1046af874
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=1 opcode=INC start=0x1046af874 end=0x1046af8c4
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=2 opcode=PUTTHISC start=0x1046af8c4 end=0x1046af958
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=3 opcode=GETTHISC start=0x1046af958 end=0x1046af984
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=4 opcode=GETPROPC_CACHED start=0x1046af984 end=0x1046afa18
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=5 opcode=LDREG start=0x1046afa18 end=0x1046afa30
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=6 opcode=LDREG start=0x1046afa30 end=0x1046afa48
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=7 opcode=CALL start=0x1046afa48 end=0x1046afd84
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=8 opcode=GETTHISC start=0x1046afd84 end=0x1046afde8
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=9 opcode=GETPROPC_CACHED start=0x1046afde8 end=0x1046afe4c
+SLJIT map id=61 kind=body depth=1 frame=7 target_line=624 pc=10 opcode=RET start=0x1046afe4c end=0x1046afe58
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=0 opcode=LDNULL start=0x1046ae984 end=0x1046ae99c
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=1 opcode=PUTTHISC start=0x1046ae99c end=0x1046aea68
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=2 opcode=JMP_NNULL start=0x1046aea68 end=0x1046aeac4
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=3 opcode=LDTHIS start=0x1046aeac4 end=0x1046aeadc
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=4 opcode=RET start=0x1046aeadc end=0x1046aeaec
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=5 opcode=LDREG start=0x1046aeaec end=0x1046aeb04
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=6 opcode=JUMP start=0x1046aeb04 end=0x1046aeb08
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=7 opcode=LDREG start=0x1046aeb08 end=0x1046aeb20
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=8 opcode=GETPROPC_CACHED start=0x1046aeb20 end=0x1046aeb84
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=9 opcode=LDREG start=0x1046aeb84 end=0x1046aeb9c
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=10 opcode=JMP_NNULL start=0x1046aeb9c end=0x1046aec0c
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=11 opcode=LDTHIS start=0x1046aec0c end=0x1046aec24
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=12 opcode=PUTPROPC start=0x1046aec24 end=0x1046aecf0
+SLJIT map id=61 kind=body depth=3 frame=6 target_line=931 pc=13 opcode=RET start=0x1046aecf0 end=0x1046aed00
+SLJIT map id=61 kind=body depth=3 frame=5 target_line=721 pc=0 opcode=GETTHISC start=0x1046ae348 end=0x1046ae3ac
+SLJIT map id=61 kind=body depth=3 frame=5 target_line=721 pc=1 opcode=GETGLOBAL start=0x1046ae3ac end=0x1046ae3f8
+SLJIT map id=61 kind=body depth=3 frame=5 target_line=721 pc=2 opcode=BOR start=0x1046ae3f8 end=0x1046ae498
+SLJIT map id=61 kind=body depth=3 frame=5 target_line=721 pc=3 opcode=PUTTHISC start=0x1046ae498 end=0x1046ae52c
+SLJIT map id=61 kind=body depth=3 frame=5 target_line=721 pc=4 opcode=RETUNDEF start=0x1046ae52c end=0x1046ae53c
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=0 opcode=GETTHISC start=0x1046ae01c end=0x1046ae080
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=1 opcode=JMP_NNULL start=0x1046ae080 end=0x1046ae0dc
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=2 opcode=PUTTHISC start=0x1046ae0dc end=0x1046ae1a8
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=3 opcode=LDTHIS start=0x1046ae1a8 end=0x1046ae1c0
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=4 opcode=GETPROPC_CACHED start=0x1046ae1c0 end=0x1046ae21c
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=5 opcode=CALL start=0x1046ae21c end=0x1046ae558
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=6 opcode=GETTHISC start=0x1046ae558 end=0x1046ae5bc
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=7 opcode=GETPROPC_CACHED start=0x1046ae5bc end=0x1046ae620
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=8 opcode=JMP_NGT start=0x1046ae620 end=0x1046ae6cc
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=9 opcode=LDTHIS start=0x1046ae6cc end=0x1046ae6e4
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=10 opcode=RET start=0x1046ae6e4 end=0x1046ae6f4
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=11 opcode=RET start=0x1046ae6f4 end=0x1046ae704
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=12 opcode=GETPROPC_CACHED start=0x1046ae704 end=0x1046ae7a4
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=13 opcode=LDREG start=0x1046ae7a4 end=0x1046ae7bc
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=14 opcode=GETTHISC start=0x1046ae7bc end=0x1046ae820
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=15 opcode=LDREG start=0x1046ae820 end=0x1046ae838
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=16 opcode=CALL start=0x1046ae838 end=0x1046aed1c
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=17 opcode=PUTTHISC start=0x1046aed1c end=0x1046aede8
+SLJIT map id=61 kind=body depth=2 frame=4 target_line=749 pc=18 opcode=RET start=0x1046aede8 end=0x1046aedf8
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=0 opcode=GETTHISC start=0x1046ad730 end=0x1046ad794
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=1 opcode=GETPROPC_CACHED start=0x1046ad794 end=0x1046ad7f8
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=2 opcode=GETPROP start=0x1046ad7f8 end=0x1046ad898
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=3 opcode=LDREG start=0x1046ad898 end=0x1046ad8b0
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=4 opcode=LDNULL start=0x1046ad8b0 end=0x1046ad8c8
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=5 opcode=EQ start=0x1046ad8c8 end=0x1046ada34
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=6 opcode=IF_FALSE start=0x1046ada34 end=0x1046adab0
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=7 opcode=RET start=0x1046adab0 end=0x1046adabc
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=8 opcode=GETTHISC start=0x1046adabc end=0x1046adb20
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=9 opcode=INC start=0x1046adb20 end=0x1046adb70
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=10 opcode=PUTTHISC start=0x1046adb70 end=0x1046adc04
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=11 opcode=LDNULL start=0x1046adc04 end=0x1046adc1c
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=12 opcode=PUTPROPC start=0x1046adc1c end=0x1046adce8
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=13 opcode=GETTHISC start=0x1046adce8 end=0x1046add14
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=14 opcode=PUTPROPC start=0x1046add14 end=0x1046adda8
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=15 opcode=GETPROPC_CACHED start=0x1046adda8 end=0x1046ade3c
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=16 opcode=LDREG start=0x1046ade3c end=0x1046ade54
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=17 opcode=GETTHISC start=0x1046ade54 end=0x1046ade80
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=18 opcode=LDREG start=0x1046ade80 end=0x1046ade98
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=19 opcode=LDREG start=0x1046ade98 end=0x1046adeb0
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=20 opcode=CALL start=0x1046adeb0 end=0x1046aee14
+SLJIT map id=61 kind=body depth=1 frame=3 target_line=645 pc=21 opcode=RET start=0x1046aee14 end=0x1046aee20
+SLJIT map id=61 kind=body depth=2 frame=2 target_line=717 pc=0 opcode=GETTHISC start=0x1046aca28 end=0x1046aca8c
+SLJIT map id=61 kind=body depth=2 frame=2 target_line=717 pc=1 opcode=GETGLOBAL start=0x1046aca8c end=0x1046acad8
+SLJIT map id=61 kind=body depth=2 frame=2 target_line=717 pc=2 opcode=BOR start=0x1046acad8 end=0x1046acb78
+SLJIT map id=61 kind=body depth=2 frame=2 target_line=717 pc=3 opcode=PUTTHISC start=0x1046acb78 end=0x1046acc0c
+SLJIT map id=61 kind=body depth=2 frame=2 target_line=717 pc=4 opcode=RETUNDEF start=0x1046acc0c end=0x1046acc1c
+SLJIT map id=61 kind=body depth=1 frame=1 target_line=634 pc=0 opcode=GETTHISC start=0x1046ac7d4 end=0x1046ac838
+SLJIT map id=61 kind=body depth=1 frame=1 target_line=634 pc=1 opcode=GETPROPC_CACHED start=0x1046ac838 end=0x1046ac8cc
+SLJIT map id=61 kind=body depth=1 frame=1 target_line=634 pc=2 opcode=LDREG start=0x1046ac8cc end=0x1046ac8e4
+SLJIT map id=61 kind=body depth=1 frame=1 target_line=634 pc=3 opcode=LDREG start=0x1046ac8e4 end=0x1046ac8fc
+SLJIT map id=61 kind=body depth=1 frame=1 target_line=634 pc=4 opcode=CALL start=0x1046ac8fc end=0x1046acc38
+SLJIT map id=61 kind=body depth=1 frame=1 target_line=634 pc=5 opcode=GETTHISC start=0x1046acc38 end=0x1046acc9c
+SLJIT map id=61 kind=body depth=1 frame=1 target_line=634 pc=6 opcode=RET start=0x1046acc9c end=0x1046acca8
+SLJIT function  begin=0 ops=29 bytes=25020 hits=18253 returns=18253 stalled=0 charged_edges=0 budget_exits=0 id=61 line=805
+SLJIT exit  begin=0 pc=8 op=65 count=5237 id=61 line=806 opcode=RET
+SLJIT exit  begin=0 pc=19 op=65 count=7399 id=61 line=809 opcode=RET
+SLJIT exit  begin=0 pc=27 op=65 count=5617 id=61 line=812 opcode=RET
+SLJIT coverage id=63 line=834 name= threaded=297887 switch=54804 attempts=65021 warmup=4294967294 retired=1 active=22 rejection=compiled
+SLJIT native id=63 calls=0 returns=2786229
+SLJIT pipeline id=63 inlined=6983666 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=63 homes=0
+SLJIT code id=63 start=0x1046c4010 bytes=27360 fragment=0 fragment_bytes=0
+SLJIT map id=63 kind=entry start=0x1046c4010 end=0x1046c4070
+SLJIT map id=63 kind=exit start=0x1046c8d94 end=0x1046ca72c
+SLJIT map id=63 kind=call_entry start=0x1046ca72c end=0x1046caaf0
+SLJIT map id=63 kind=body depth=0 frame=0 pc=0 opcode=JMP_NNULL start=0x1046c4070 end=0x1046c40cc
+SLJIT map id=63 kind=body depth=0 frame=0 pc=1 opcode=GETTHISC start=0x1046c40cc end=0x1046c41b0
+SLJIT map id=63 kind=body depth=0 frame=0 pc=2 opcode=GETPROPC_CACHED start=0x1046c41b0 end=0x1046c42d0
+SLJIT map id=63 kind=body depth=0 frame=0 pc=3 opcode=LDREG start=0x1046c42d0 end=0x1046c4368
+SLJIT map id=63 kind=body depth=0 frame=0 pc=4 opcode=LDREG start=0x1046c4368 end=0x1046c4400
+SLJIT map id=63 kind=body depth=0 frame=0 pc=5 opcode=CALL start=0x1046c4400 end=0x1046c4ae8
+SLJIT map id=63 kind=body depth=0 frame=0 pc=6 opcode=RET start=0x1046c4ae8 end=0x1046c4cf8
+SLJIT map id=63 kind=body depth=0 frame=0 pc=7 opcode=RETUNDEF start=0x1046c4cf8 end=0x1046c4f08
+SLJIT map id=63 kind=body depth=0 frame=0 pc=8 opcode=GETTHISC start=0x1046c4f08 end=0x1046c4fec
+SLJIT map id=63 kind=body depth=0 frame=0 pc=9 opcode=GETGLOBAL start=0x1046c4fec end=0x1046c50d4
+SLJIT map id=63 kind=body depth=0 frame=0 pc=10 opcode=JMP_NEQ start=0x1046c50d4 end=0x1046c523c
+SLJIT map id=63 kind=body depth=0 frame=0 pc=11 opcode=GETGLOBAL start=0x1046c523c end=0x1046c5324
+SLJIT map id=63 kind=body depth=0 frame=0 pc=12 opcode=PUTTHISC start=0x1046c5324 end=0x1046c53f0
+SLJIT map id=63 kind=body depth=0 frame=0 pc=13 opcode=LDREG start=0x1046c53f0 end=0x1046c5488
+SLJIT map id=63 kind=body depth=0 frame=0 pc=14 opcode=JUMP start=0x1046c5488 end=0x1046c548c
+SLJIT map id=63 kind=body depth=0 frame=0 pc=15 opcode=GETGLOBAL start=0x1046c548c end=0x1046c5574
+SLJIT map id=63 kind=body depth=0 frame=0 pc=16 opcode=PUTTHISC start=0x1046c5574 end=0x1046c5640
+SLJIT map id=63 kind=body depth=0 frame=0 pc=17 opcode=LDREG start=0x1046c5640 end=0x1046c56d8
+SLJIT map id=63 kind=body depth=0 frame=0 pc=18 opcode=GETTHISC start=0x1046c56d8 end=0x1046c57bc
+SLJIT map id=63 kind=body depth=0 frame=0 pc=19 opcode=PUTPROPC start=0x1046c57bc end=0x1046c5888
+SLJIT map id=63 kind=body depth=0 frame=0 pc=20 opcode=LDINT start=0x1046c5888 end=0x1046c58f0
+SLJIT map id=63 kind=body depth=0 frame=0 pc=21 opcode=PUTPROPC start=0x1046c58f0 end=0x1046c5984
+SLJIT map id=63 kind=body depth=0 frame=0 pc=22 opcode=LDINT start=0x1046c5984 end=0x1046c59ec
+SLJIT map id=63 kind=body depth=0 frame=0 pc=23 opcode=JUMP start=0x1046c59ec end=0x1046c59f0
+SLJIT map id=63 kind=body depth=0 frame=0 pc=24 opcode=GETTHISC start=0x1046c59f0 end=0x1046c5ad4
+SLJIT map id=63 kind=body depth=0 frame=0 pc=25 opcode=INC start=0x1046c5ad4 end=0x1046c5b74
+SLJIT map id=63 kind=body depth=0 frame=0 pc=26 opcode=PUTTHISC start=0x1046c5b74 end=0x1046c5c40
+SLJIT map id=63 kind=body depth=0 frame=0 pc=27 opcode=GETTHISC start=0x1046c5c40 end=0x1046c5cec
+SLJIT map id=63 kind=body depth=0 frame=0 pc=28 opcode=JMP_NGTI start=0x1046c5cec end=0x1046c5d9c
+SLJIT map id=63 kind=body depth=0 frame=0 pc=29 opcode=LDINT start=0x1046c5d9c end=0x1046c5e08
+SLJIT map id=63 kind=body depth=0 frame=0 pc=30 opcode=PUTTHISC start=0x1046c5e08 end=0x1046c5ed4
+SLJIT map id=63 kind=body depth=0 frame=0 pc=31 opcode=GETPROPC_CACHED start=0x1046c5ed4 end=0x1046c5fb8
+SLJIT map id=63 kind=body depth=0 frame=0 pc=32 opcode=LDREG start=0x1046c5fb8 end=0x1046c6050
+SLJIT map id=63 kind=body depth=0 frame=0 pc=33 opcode=GETTHISC start=0x1046c6050 end=0x1046c6134
+SLJIT map id=63 kind=body depth=0 frame=0 pc=34 opcode=PUTPROP start=0x1046c6134 end=0x1046c6a48
+SLJIT map id=63 kind=body depth=0 frame=0 pc=35 opcode=INC start=0x1046c6a48 end=0x1046c6ae8
+SLJIT map id=63 kind=body depth=0 frame=0 pc=36 opcode=GETGLOBAL start=0x1046c6ae8 end=0x1046c6bd0
+SLJIT map id=63 kind=body depth=0 frame=0 pc=37 opcode=JMP_LT start=0x1046c6bd0 end=0x1046c6c90
+SLJIT map id=63 kind=body depth=0 frame=0 pc=38 opcode=GETTHISC start=0x1046c6c90 end=0x1046c6d74
+SLJIT map id=63 kind=body depth=0 frame=0 pc=39 opcode=GETPROPC_CACHED start=0x1046c6d74 end=0x1046c6e88
+SLJIT map id=63 kind=body depth=0 frame=0 pc=40 opcode=LDREG start=0x1046c6e88 end=0x1046c6f20
+SLJIT map id=63 kind=body depth=0 frame=0 pc=41 opcode=LDREG start=0x1046c6f20 end=0x1046c6fb8
+SLJIT map id=63 kind=body depth=0 frame=0 pc=42 opcode=LDREG start=0x1046c6fb8 end=0x1046c7050
+SLJIT map id=63 kind=body depth=0 frame=0 pc=43 opcode=CALL start=0x1046c7050 end=0x1046c8974
+SLJIT map id=63 kind=body depth=0 frame=0 pc=44 opcode=RET start=0x1046c8974 end=0x1046c8b84
+SLJIT map id=63 kind=body depth=0 frame=0 pc=45 opcode=RETUNDEF start=0x1046c8b84 end=0x1046c8d94
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=0 opcode=LDNULL start=0x1046c83e8 end=0x1046c8400
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=1 opcode=PUTTHISC start=0x1046c8400 end=0x1046c84cc
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=2 opcode=JMP_NNULL start=0x1046c84cc end=0x1046c8528
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=3 opcode=LDTHIS start=0x1046c8528 end=0x1046c8540
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=4 opcode=RET start=0x1046c8540 end=0x1046c8550
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=5 opcode=LDREG start=0x1046c8550 end=0x1046c8568
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=6 opcode=JUMP start=0x1046c8568 end=0x1046c856c
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=7 opcode=LDREG start=0x1046c856c end=0x1046c8584
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=8 opcode=GETPROPC_CACHED start=0x1046c8584 end=0x1046c85e8
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=9 opcode=LDREG start=0x1046c85e8 end=0x1046c8600
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=10 opcode=JMP_NNULL start=0x1046c8600 end=0x1046c8670
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=11 opcode=LDTHIS start=0x1046c8670 end=0x1046c8688
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=12 opcode=PUTPROPC start=0x1046c8688 end=0x1046c8754
+SLJIT map id=63 kind=body depth=3 frame=6 target_line=931 pc=13 opcode=RET start=0x1046c8754 end=0x1046c8764
+SLJIT map id=63 kind=body depth=3 frame=5 target_line=721 pc=0 opcode=GETTHISC start=0x1046c7dac end=0x1046c7e10
+SLJIT map id=63 kind=body depth=3 frame=5 target_line=721 pc=1 opcode=GETGLOBAL start=0x1046c7e10 end=0x1046c7e5c
+SLJIT map id=63 kind=body depth=3 frame=5 target_line=721 pc=2 opcode=BOR start=0x1046c7e5c end=0x1046c7efc
+SLJIT map id=63 kind=body depth=3 frame=5 target_line=721 pc=3 opcode=PUTTHISC start=0x1046c7efc end=0x1046c7f90
+SLJIT map id=63 kind=body depth=3 frame=5 target_line=721 pc=4 opcode=RETUNDEF start=0x1046c7f90 end=0x1046c7fa0
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=0 opcode=GETTHISC start=0x1046c7a80 end=0x1046c7ae4
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=1 opcode=JMP_NNULL start=0x1046c7ae4 end=0x1046c7b40
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=2 opcode=PUTTHISC start=0x1046c7b40 end=0x1046c7c0c
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=3 opcode=LDTHIS start=0x1046c7c0c end=0x1046c7c24
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=4 opcode=GETPROPC_CACHED start=0x1046c7c24 end=0x1046c7c80
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=5 opcode=CALL start=0x1046c7c80 end=0x1046c7fbc
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=6 opcode=GETTHISC start=0x1046c7fbc end=0x1046c8020
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=7 opcode=GETPROPC_CACHED start=0x1046c8020 end=0x1046c8084
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=8 opcode=JMP_NGT start=0x1046c8084 end=0x1046c8130
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=9 opcode=LDTHIS start=0x1046c8130 end=0x1046c8148
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=10 opcode=RET start=0x1046c8148 end=0x1046c8158
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=11 opcode=RET start=0x1046c8158 end=0x1046c8168
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=12 opcode=GETPROPC_CACHED start=0x1046c8168 end=0x1046c8208
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=13 opcode=LDREG start=0x1046c8208 end=0x1046c8220
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=14 opcode=GETTHISC start=0x1046c8220 end=0x1046c8284
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=15 opcode=LDREG start=0x1046c8284 end=0x1046c829c
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=16 opcode=CALL start=0x1046c829c end=0x1046c8780
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=17 opcode=PUTTHISC start=0x1046c8780 end=0x1046c884c
+SLJIT map id=63 kind=body depth=2 frame=4 target_line=749 pc=18 opcode=RET start=0x1046c884c end=0x1046c885c
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=0 opcode=GETTHISC start=0x1046c7194 end=0x1046c71f8
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=1 opcode=GETPROPC_CACHED start=0x1046c71f8 end=0x1046c725c
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=2 opcode=GETPROP start=0x1046c725c end=0x1046c72fc
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=3 opcode=LDREG start=0x1046c72fc end=0x1046c7314
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=4 opcode=LDNULL start=0x1046c7314 end=0x1046c732c
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=5 opcode=EQ start=0x1046c732c end=0x1046c7498
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=6 opcode=IF_FALSE start=0x1046c7498 end=0x1046c7514
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=7 opcode=RET start=0x1046c7514 end=0x1046c7520
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=8 opcode=GETTHISC start=0x1046c7520 end=0x1046c7584
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=9 opcode=INC start=0x1046c7584 end=0x1046c75d4
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=10 opcode=PUTTHISC start=0x1046c75d4 end=0x1046c7668
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=11 opcode=LDNULL start=0x1046c7668 end=0x1046c7680
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=12 opcode=PUTPROPC start=0x1046c7680 end=0x1046c774c
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=13 opcode=GETTHISC start=0x1046c774c end=0x1046c7778
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=14 opcode=PUTPROPC start=0x1046c7778 end=0x1046c780c
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=15 opcode=GETPROPC_CACHED start=0x1046c780c end=0x1046c78a0
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=16 opcode=LDREG start=0x1046c78a0 end=0x1046c78b8
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=17 opcode=GETTHISC start=0x1046c78b8 end=0x1046c78e4
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=18 opcode=LDREG start=0x1046c78e4 end=0x1046c78fc
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=19 opcode=LDREG start=0x1046c78fc end=0x1046c7914
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=20 opcode=CALL start=0x1046c7914 end=0x1046c8878
+SLJIT map id=63 kind=body depth=1 frame=3 target_line=645 pc=21 opcode=RET start=0x1046c8878 end=0x1046c8884
+SLJIT map id=63 kind=body depth=2 frame=2 target_line=717 pc=0 opcode=GETTHISC start=0x1046c4778 end=0x1046c47dc
+SLJIT map id=63 kind=body depth=2 frame=2 target_line=717 pc=1 opcode=GETGLOBAL start=0x1046c47dc end=0x1046c4828
+SLJIT map id=63 kind=body depth=2 frame=2 target_line=717 pc=2 opcode=BOR start=0x1046c4828 end=0x1046c48c8
+SLJIT map id=63 kind=body depth=2 frame=2 target_line=717 pc=3 opcode=PUTTHISC start=0x1046c48c8 end=0x1046c495c
+SLJIT map id=63 kind=body depth=2 frame=2 target_line=717 pc=4 opcode=RETUNDEF start=0x1046c495c end=0x1046c496c
+SLJIT map id=63 kind=body depth=1 frame=1 target_line=634 pc=0 opcode=GETTHISC start=0x1046c4524 end=0x1046c4588
+SLJIT map id=63 kind=body depth=1 frame=1 target_line=634 pc=1 opcode=GETPROPC_CACHED start=0x1046c4588 end=0x1046c461c
+SLJIT map id=63 kind=body depth=1 frame=1 target_line=634 pc=2 opcode=LDREG start=0x1046c461c end=0x1046c4634
+SLJIT map id=63 kind=body depth=1 frame=1 target_line=634 pc=3 opcode=LDREG start=0x1046c4634 end=0x1046c464c
+SLJIT map id=63 kind=body depth=1 frame=1 target_line=634 pc=4 opcode=CALL start=0x1046c464c end=0x1046c4988
+SLJIT map id=63 kind=body depth=1 frame=1 target_line=634 pc=5 opcode=GETTHISC start=0x1046c4988 end=0x1046c49ec
+SLJIT map id=63 kind=body depth=1 frame=1 target_line=634 pc=6 opcode=RET start=0x1046c49ec end=0x1046c49f8
+SLJIT function  begin=0 ops=46 bytes=27360 hits=64160 returns=28104 stalled=18479 charged_edges=18482 budget_exits=0 id=63 line=834
+SLJIT exit  begin=0 pc=6 op=65 count=1245 id=63 line=835 opcode=RET
+SLJIT exit  begin=0 pc=34 op=53 count=47920 id=63 line=847 opcode=PUTPROP
+SLJIT exit  begin=0 pc=37 op=170 count=6493 id=63 line=844 opcode=JMP_LT
+SLJIT exit  begin=0 pc=44 op=65 count=26859 id=63 line=849 opcode=RET
+SLJIT coverage id=65 line=868 name= threaded=32315 switch=305 attempts=17724 warmup=4294967294 retired=0 active=40 rejection=compiled
+SLJIT native id=65 calls=0 returns=13951145
+SLJIT pipeline id=65 inlined=41901562 recoveries=0 allocations=0 pushes=0 links=5
+SLJIT numeric id=65 homes=0
+SLJIT code id=65 start=0x1046b4010 bytes=47552 fragment=0 fragment_bytes=0
+SLJIT map id=65 kind=entry start=0x1046b4010 end=0x1046b4070
+SLJIT map id=65 kind=exit start=0x1046bc260 end=0x1046bf59c
+SLJIT map id=65 kind=call_entry start=0x1046bf59c end=0x1046bf9d0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=0 opcode=LDUNDEF start=0x1046b4070 end=0x1046b40d8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=1 opcode=JMP_NULL start=0x1046b40d8 end=0x1046b4134
+SLJIT map id=65 kind=body depth=0 frame=0 pc=2 opcode=GETPROPC_CACHED start=0x1046b4134 end=0x1046b4218
+SLJIT map id=65 kind=body depth=0 frame=0 pc=3 opcode=GETGLOBAL start=0x1046b4218 end=0x1046b4300
+SLJIT map id=65 kind=body depth=0 frame=0 pc=4 opcode=JMP_NEQ start=0x1046b4300 end=0x1046b4468
+SLJIT map id=65 kind=body depth=0 frame=0 pc=5 opcode=GETPROPC_CACHED start=0x1046b4468 end=0x1046b4588
+SLJIT map id=65 kind=body depth=0 frame=0 pc=6 opcode=LDREG start=0x1046b4588 end=0x1046b4620
+SLJIT map id=65 kind=body depth=0 frame=0 pc=7 opcode=GETTHISC start=0x1046b4620 end=0x1046b4704
+SLJIT map id=65 kind=body depth=0 frame=0 pc=8 opcode=LDREG start=0x1046b4704 end=0x1046b479c
+SLJIT map id=65 kind=body depth=0 frame=0 pc=9 opcode=CALL start=0x1046b479c end=0x1046b4d4c
+SLJIT map id=65 kind=body depth=0 frame=0 pc=10 opcode=PUTTHISC start=0x1046b4d4c end=0x1046b4e18
+SLJIT map id=65 kind=body depth=0 frame=0 pc=11 opcode=JUMP start=0x1046b4e18 end=0x1046b4e1c
+SLJIT map id=65 kind=body depth=0 frame=0 pc=12 opcode=GETPROPC_CACHED start=0x1046b4e1c end=0x1046b4f30
+SLJIT map id=65 kind=body depth=0 frame=0 pc=13 opcode=LDREG start=0x1046b4f30 end=0x1046b4fc8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=14 opcode=GETTHISC start=0x1046b4fc8 end=0x1046b50ac
+SLJIT map id=65 kind=body depth=0 frame=0 pc=15 opcode=LDREG start=0x1046b50ac end=0x1046b5144
+SLJIT map id=65 kind=body depth=0 frame=0 pc=16 opcode=CALL start=0x1046b5144 end=0x1046b56f4
+SLJIT map id=65 kind=body depth=0 frame=0 pc=17 opcode=PUTTHISC start=0x1046b56f4 end=0x1046b57c0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=18 opcode=GETTHISC start=0x1046b57c0 end=0x1046b58a4
+SLJIT map id=65 kind=body depth=0 frame=0 pc=19 opcode=JMP_NULL start=0x1046b58a4 end=0x1046b5900
+SLJIT map id=65 kind=body depth=0 frame=0 pc=20 opcode=GETTHISC start=0x1046b5900 end=0x1046b59e4
+SLJIT map id=65 kind=body depth=0 frame=0 pc=21 opcode=GETPROPC_CACHED start=0x1046b59e4 end=0x1046b5ac8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=22 opcode=LDREG start=0x1046b5ac8 end=0x1046b5b60
+SLJIT map id=65 kind=body depth=0 frame=0 pc=23 opcode=GETGLOBAL start=0x1046b5b60 end=0x1046b5c48
+SLJIT map id=65 kind=body depth=0 frame=0 pc=24 opcode=JMP_NLT start=0x1046b5c48 end=0x1046b5cf4
+SLJIT map id=65 kind=body depth=0 frame=0 pc=25 opcode=GETTHISC start=0x1046b5cf4 end=0x1046b5dd8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=26 opcode=JMP_NULL start=0x1046b5dd8 end=0x1046b5e34
+SLJIT map id=65 kind=body depth=0 frame=0 pc=27 opcode=GETTHISC start=0x1046b5e34 end=0x1046b5f18
+SLJIT map id=65 kind=body depth=0 frame=0 pc=28 opcode=LDREG start=0x1046b5f18 end=0x1046b5fb0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=29 opcode=GETTHISC start=0x1046b5fb0 end=0x1046b6094
+SLJIT map id=65 kind=body depth=0 frame=0 pc=30 opcode=GETPROPC_CACHED start=0x1046b6094 end=0x1046b6178
+SLJIT map id=65 kind=body depth=0 frame=0 pc=31 opcode=PUTTHISC start=0x1046b6178 end=0x1046b6244
+SLJIT map id=65 kind=body depth=0 frame=0 pc=32 opcode=GETTHISC start=0x1046b6244 end=0x1046b62f0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=33 opcode=GETPROPC_CACHED start=0x1046b62f0 end=0x1046b63d4
+SLJIT map id=65 kind=body depth=0 frame=0 pc=34 opcode=GETPROP start=0x1046b63d4 end=0x1046b6f5c
+SLJIT map id=65 kind=body depth=0 frame=0 pc=35 opcode=PUTPROPC start=0x1046b6f5c end=0x1046b7028
+SLJIT map id=65 kind=body depth=0 frame=0 pc=36 opcode=GETTHISC start=0x1046b7028 end=0x1046b710c
+SLJIT map id=65 kind=body depth=0 frame=0 pc=37 opcode=ADDI start=0x1046b710c end=0x1046b7248
+SLJIT map id=65 kind=body depth=0 frame=0 pc=38 opcode=PUTPROPC start=0x1046b7248 end=0x1046b7314
+SLJIT map id=65 kind=body depth=0 frame=0 pc=39 opcode=GETTHISC start=0x1046b7314 end=0x1046b73f8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=40 opcode=GETPROPC_CACHED start=0x1046b73f8 end=0x1046b7518
+SLJIT map id=65 kind=body depth=0 frame=0 pc=41 opcode=LDREG start=0x1046b7518 end=0x1046b75b0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=42 opcode=LDREG start=0x1046b75b0 end=0x1046b7648
+SLJIT map id=65 kind=body depth=0 frame=0 pc=43 opcode=LDREG start=0x1046b7648 end=0x1046b76e0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=44 opcode=CALL start=0x1046b76e0 end=0x1046b9004
+SLJIT map id=65 kind=body depth=0 frame=0 pc=45 opcode=RET start=0x1046b9004 end=0x1046b9284
+SLJIT map id=65 kind=body depth=0 frame=0 pc=46 opcode=JUMP start=0x1046b9284 end=0x1046b9288
+SLJIT map id=65 kind=body depth=0 frame=0 pc=47 opcode=GETTHISC start=0x1046b9288 end=0x1046b936c
+SLJIT map id=65 kind=body depth=0 frame=0 pc=48 opcode=LDREG start=0x1046b936c end=0x1046b9404
+SLJIT map id=65 kind=body depth=0 frame=0 pc=49 opcode=GETTHISC start=0x1046b9404 end=0x1046b94e8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=50 opcode=GETPROPC_CACHED start=0x1046b94e8 end=0x1046b95cc
+SLJIT map id=65 kind=body depth=0 frame=0 pc=51 opcode=PUTTHISC start=0x1046b95cc end=0x1046b9698
+SLJIT map id=65 kind=body depth=0 frame=0 pc=52 opcode=GETTHISC start=0x1046b9698 end=0x1046b9744
+SLJIT map id=65 kind=body depth=0 frame=0 pc=53 opcode=GETPROPC_CACHED start=0x1046b9744 end=0x1046b9864
+SLJIT map id=65 kind=body depth=0 frame=0 pc=54 opcode=LDREG start=0x1046b9864 end=0x1046b98fc
+SLJIT map id=65 kind=body depth=0 frame=0 pc=55 opcode=LDREG start=0x1046b98fc end=0x1046b9994
+SLJIT map id=65 kind=body depth=0 frame=0 pc=56 opcode=LDREG start=0x1046b9994 end=0x1046b9a2c
+SLJIT map id=65 kind=body depth=0 frame=0 pc=57 opcode=CALL start=0x1046b9a2c end=0x1046bb350
+SLJIT map id=65 kind=body depth=0 frame=0 pc=58 opcode=RET start=0x1046bb350 end=0x1046bb5d0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=59 opcode=GETTHISC start=0x1046bb5d0 end=0x1046bb6b4
+SLJIT map id=65 kind=body depth=0 frame=0 pc=60 opcode=GETPROPC_CACHED start=0x1046bb6b4 end=0x1046bb7c8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=61 opcode=LDREG start=0x1046bb7c8 end=0x1046bb860
+SLJIT map id=65 kind=body depth=0 frame=0 pc=62 opcode=LDREG start=0x1046bb860 end=0x1046bb8f8
+SLJIT map id=65 kind=body depth=0 frame=0 pc=63 opcode=CALL start=0x1046bb8f8 end=0x1046bbfe0
+SLJIT map id=65 kind=body depth=0 frame=0 pc=64 opcode=RET start=0x1046bbfe0 end=0x1046bc260
+SLJIT map id=65 kind=body depth=2 frame=12 target_line=717 pc=0 opcode=GETTHISC start=0x1046bbc70 end=0x1046bbcd4
+SLJIT map id=65 kind=body depth=2 frame=12 target_line=717 pc=1 opcode=GETGLOBAL start=0x1046bbcd4 end=0x1046bbd20
+SLJIT map id=65 kind=body depth=2 frame=12 target_line=717 pc=2 opcode=BOR start=0x1046bbd20 end=0x1046bbdc0
+SLJIT map id=65 kind=body depth=2 frame=12 target_line=717 pc=3 opcode=PUTTHISC start=0x1046bbdc0 end=0x1046bbe54
+SLJIT map id=65 kind=body depth=2 frame=12 target_line=717 pc=4 opcode=RETUNDEF start=0x1046bbe54 end=0x1046bbe64
+SLJIT map id=65 kind=body depth=1 frame=11 target_line=634 pc=0 opcode=GETTHISC start=0x1046bba1c end=0x1046bba80
+SLJIT map id=65 kind=body depth=1 frame=11 target_line=634 pc=1 opcode=GETPROPC_CACHED start=0x1046bba80 end=0x1046bbb14
+SLJIT map id=65 kind=body depth=1 frame=11 target_line=634 pc=2 opcode=LDREG start=0x1046bbb14 end=0x1046bbb2c
+SLJIT map id=65 kind=body depth=1 frame=11 target_line=634 pc=3 opcode=LDREG start=0x1046bbb2c end=0x1046bbb44
+SLJIT map id=65 kind=body depth=1 frame=11 target_line=634 pc=4 opcode=CALL start=0x1046bbb44 end=0x1046bbe80
+SLJIT map id=65 kind=body depth=1 frame=11 target_line=634 pc=5 opcode=GETTHISC start=0x1046bbe80 end=0x1046bbee4
+SLJIT map id=65 kind=body depth=1 frame=11 target_line=634 pc=6 opcode=RET start=0x1046bbee4 end=0x1046bbef0
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=0 opcode=LDNULL start=0x1046badc4 end=0x1046baddc
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=1 opcode=PUTTHISC start=0x1046baddc end=0x1046baea8
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=2 opcode=JMP_NNULL start=0x1046baea8 end=0x1046baf04
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=3 opcode=LDTHIS start=0x1046baf04 end=0x1046baf1c
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=4 opcode=RET start=0x1046baf1c end=0x1046baf2c
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=5 opcode=LDREG start=0x1046baf2c end=0x1046baf44
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=6 opcode=JUMP start=0x1046baf44 end=0x1046baf48
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=7 opcode=LDREG start=0x1046baf48 end=0x1046baf60
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=8 opcode=GETPROPC_CACHED start=0x1046baf60 end=0x1046bafc4
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=9 opcode=LDREG start=0x1046bafc4 end=0x1046bafdc
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=10 opcode=JMP_NNULL start=0x1046bafdc end=0x1046bb04c
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=11 opcode=LDTHIS start=0x1046bb04c end=0x1046bb064
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=12 opcode=PUTPROPC start=0x1046bb064 end=0x1046bb130
+SLJIT map id=65 kind=body depth=3 frame=10 target_line=931 pc=13 opcode=RET start=0x1046bb130 end=0x1046bb140
+SLJIT map id=65 kind=body depth=3 frame=9 target_line=721 pc=0 opcode=GETTHISC start=0x1046ba788 end=0x1046ba7ec
+SLJIT map id=65 kind=body depth=3 frame=9 target_line=721 pc=1 opcode=GETGLOBAL start=0x1046ba7ec end=0x1046ba838
+SLJIT map id=65 kind=body depth=3 frame=9 target_line=721 pc=2 opcode=BOR start=0x1046ba838 end=0x1046ba8d8
+SLJIT map id=65 kind=body depth=3 frame=9 target_line=721 pc=3 opcode=PUTTHISC start=0x1046ba8d8 end=0x1046ba96c
+SLJIT map id=65 kind=body depth=3 frame=9 target_line=721 pc=4 opcode=RETUNDEF start=0x1046ba96c end=0x1046ba97c
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=0 opcode=GETTHISC start=0x1046ba45c end=0x1046ba4c0
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=1 opcode=JMP_NNULL start=0x1046ba4c0 end=0x1046ba51c
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=2 opcode=PUTTHISC start=0x1046ba51c end=0x1046ba5e8
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=3 opcode=LDTHIS start=0x1046ba5e8 end=0x1046ba600
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=4 opcode=GETPROPC_CACHED start=0x1046ba600 end=0x1046ba65c
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=5 opcode=CALL start=0x1046ba65c end=0x1046ba998
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=6 opcode=GETTHISC start=0x1046ba998 end=0x1046ba9fc
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=7 opcode=GETPROPC_CACHED start=0x1046ba9fc end=0x1046baa60
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=8 opcode=JMP_NGT start=0x1046baa60 end=0x1046bab0c
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=9 opcode=LDTHIS start=0x1046bab0c end=0x1046bab24
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=10 opcode=RET start=0x1046bab24 end=0x1046bab34
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=11 opcode=RET start=0x1046bab34 end=0x1046bab44
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=12 opcode=GETPROPC_CACHED start=0x1046bab44 end=0x1046babe4
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=13 opcode=LDREG start=0x1046babe4 end=0x1046babfc
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=14 opcode=GETTHISC start=0x1046babfc end=0x1046bac60
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=15 opcode=LDREG start=0x1046bac60 end=0x1046bac78
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=16 opcode=CALL start=0x1046bac78 end=0x1046bb15c
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=17 opcode=PUTTHISC start=0x1046bb15c end=0x1046bb228
+SLJIT map id=65 kind=body depth=2 frame=8 target_line=749 pc=18 opcode=RET start=0x1046bb228 end=0x1046bb238
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=0 opcode=GETTHISC start=0x1046b9b70 end=0x1046b9bd4
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=1 opcode=GETPROPC_CACHED start=0x1046b9bd4 end=0x1046b9c38
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=2 opcode=GETPROP start=0x1046b9c38 end=0x1046b9cd8
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=3 opcode=LDREG start=0x1046b9cd8 end=0x1046b9cf0
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=4 opcode=LDNULL start=0x1046b9cf0 end=0x1046b9d08
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=5 opcode=EQ start=0x1046b9d08 end=0x1046b9e74
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=6 opcode=IF_FALSE start=0x1046b9e74 end=0x1046b9ef0
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=7 opcode=RET start=0x1046b9ef0 end=0x1046b9efc
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=8 opcode=GETTHISC start=0x1046b9efc end=0x1046b9f60
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=9 opcode=INC start=0x1046b9f60 end=0x1046b9fb0
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=10 opcode=PUTTHISC start=0x1046b9fb0 end=0x1046ba044
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=11 opcode=LDNULL start=0x1046ba044 end=0x1046ba05c
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=12 opcode=PUTPROPC start=0x1046ba05c end=0x1046ba128
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=13 opcode=GETTHISC start=0x1046ba128 end=0x1046ba154
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=14 opcode=PUTPROPC start=0x1046ba154 end=0x1046ba1e8
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=15 opcode=GETPROPC_CACHED start=0x1046ba1e8 end=0x1046ba27c
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=16 opcode=LDREG start=0x1046ba27c end=0x1046ba294
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=17 opcode=GETTHISC start=0x1046ba294 end=0x1046ba2c0
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=18 opcode=LDREG start=0x1046ba2c0 end=0x1046ba2d8
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=19 opcode=LDREG start=0x1046ba2d8 end=0x1046ba2f0
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=20 opcode=CALL start=0x1046ba2f0 end=0x1046bb254
+SLJIT map id=65 kind=body depth=1 frame=7 target_line=645 pc=21 opcode=RET start=0x1046bb254 end=0x1046bb260
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=0 opcode=LDNULL start=0x1046b8a78 end=0x1046b8a90
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=1 opcode=PUTTHISC start=0x1046b8a90 end=0x1046b8b5c
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=2 opcode=JMP_NNULL start=0x1046b8b5c end=0x1046b8bb8
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=3 opcode=LDTHIS start=0x1046b8bb8 end=0x1046b8bd0
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=4 opcode=RET start=0x1046b8bd0 end=0x1046b8be0
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=5 opcode=LDREG start=0x1046b8be0 end=0x1046b8bf8
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=6 opcode=JUMP start=0x1046b8bf8 end=0x1046b8bfc
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=7 opcode=LDREG start=0x1046b8bfc end=0x1046b8c14
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=8 opcode=GETPROPC_CACHED start=0x1046b8c14 end=0x1046b8c78
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=9 opcode=LDREG start=0x1046b8c78 end=0x1046b8c90
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=10 opcode=JMP_NNULL start=0x1046b8c90 end=0x1046b8d00
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=11 opcode=LDTHIS start=0x1046b8d00 end=0x1046b8d18
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=12 opcode=PUTPROPC start=0x1046b8d18 end=0x1046b8de4
+SLJIT map id=65 kind=body depth=3 frame=6 target_line=931 pc=13 opcode=RET start=0x1046b8de4 end=0x1046b8df4
+SLJIT map id=65 kind=body depth=3 frame=5 target_line=721 pc=0 opcode=GETTHISC start=0x1046b843c end=0x1046b84a0
+SLJIT map id=65 kind=body depth=3 frame=5 target_line=721 pc=1 opcode=GETGLOBAL start=0x1046b84a0 end=0x1046b84ec
+SLJIT map id=65 kind=body depth=3 frame=5 target_line=721 pc=2 opcode=BOR start=0x1046b84ec end=0x1046b858c
+SLJIT map id=65 kind=body depth=3 frame=5 target_line=721 pc=3 opcode=PUTTHISC start=0x1046b858c end=0x1046b8620
+SLJIT map id=65 kind=body depth=3 frame=5 target_line=721 pc=4 opcode=RETUNDEF start=0x1046b8620 end=0x1046b8630
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=0 opcode=GETTHISC start=0x1046b8110 end=0x1046b8174
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=1 opcode=JMP_NNULL start=0x1046b8174 end=0x1046b81d0
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=2 opcode=PUTTHISC start=0x1046b81d0 end=0x1046b829c
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=3 opcode=LDTHIS start=0x1046b829c end=0x1046b82b4
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=4 opcode=GETPROPC_CACHED start=0x1046b82b4 end=0x1046b8310
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=5 opcode=CALL start=0x1046b8310 end=0x1046b864c
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=6 opcode=GETTHISC start=0x1046b864c end=0x1046b86b0
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=7 opcode=GETPROPC_CACHED start=0x1046b86b0 end=0x1046b8714
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=8 opcode=JMP_NGT start=0x1046b8714 end=0x1046b87c0
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=9 opcode=LDTHIS start=0x1046b87c0 end=0x1046b87d8
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=10 opcode=RET start=0x1046b87d8 end=0x1046b87e8
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=11 opcode=RET start=0x1046b87e8 end=0x1046b87f8
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=12 opcode=GETPROPC_CACHED start=0x1046b87f8 end=0x1046b8898
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=13 opcode=LDREG start=0x1046b8898 end=0x1046b88b0
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=14 opcode=GETTHISC start=0x1046b88b0 end=0x1046b8914
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=15 opcode=LDREG start=0x1046b8914 end=0x1046b892c
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=16 opcode=CALL start=0x1046b892c end=0x1046b8e10
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=17 opcode=PUTTHISC start=0x1046b8e10 end=0x1046b8edc
+SLJIT map id=65 kind=body depth=2 frame=4 target_line=749 pc=18 opcode=RET start=0x1046b8edc end=0x1046b8eec
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=0 opcode=GETTHISC start=0x1046b7824 end=0x1046b7888
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=1 opcode=GETPROPC_CACHED start=0x1046b7888 end=0x1046b78ec
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=2 opcode=GETPROP start=0x1046b78ec end=0x1046b798c
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=3 opcode=LDREG start=0x1046b798c end=0x1046b79a4
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=4 opcode=LDNULL start=0x1046b79a4 end=0x1046b79bc
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=5 opcode=EQ start=0x1046b79bc end=0x1046b7b28
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=6 opcode=IF_FALSE start=0x1046b7b28 end=0x1046b7ba4
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=7 opcode=RET start=0x1046b7ba4 end=0x1046b7bb0
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=8 opcode=GETTHISC start=0x1046b7bb0 end=0x1046b7c14
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=9 opcode=INC start=0x1046b7c14 end=0x1046b7c64
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=10 opcode=PUTTHISC start=0x1046b7c64 end=0x1046b7cf8
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=11 opcode=LDNULL start=0x1046b7cf8 end=0x1046b7d10
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=12 opcode=PUTPROPC start=0x1046b7d10 end=0x1046b7ddc
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=13 opcode=GETTHISC start=0x1046b7ddc end=0x1046b7e08
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=14 opcode=PUTPROPC start=0x1046b7e08 end=0x1046b7e9c
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=15 opcode=GETPROPC_CACHED start=0x1046b7e9c end=0x1046b7f30
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=16 opcode=LDREG start=0x1046b7f30 end=0x1046b7f48
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=17 opcode=GETTHISC start=0x1046b7f48 end=0x1046b7f74
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=18 opcode=LDREG start=0x1046b7f74 end=0x1046b7f8c
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=19 opcode=LDREG start=0x1046b7f8c end=0x1046b7fa4
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=20 opcode=CALL start=0x1046b7fa4 end=0x1046b8f08
+SLJIT map id=65 kind=body depth=1 frame=3 target_line=645 pc=21 opcode=RET start=0x1046b8f08 end=0x1046b8f14
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=0 opcode=LDNULL start=0x1046b5290 end=0x1046b52a8
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=1 opcode=PUTTHISC start=0x1046b52a8 end=0x1046b5374
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=2 opcode=JMP_NNULL start=0x1046b5374 end=0x1046b53d0
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=3 opcode=LDTHIS start=0x1046b53d0 end=0x1046b53e8
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=4 opcode=RET start=0x1046b53e8 end=0x1046b53f4
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=5 opcode=LDREG start=0x1046b53f4 end=0x1046b540c
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=6 opcode=JUMP start=0x1046b540c end=0x1046b5410
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=7 opcode=LDREG start=0x1046b5410 end=0x1046b5428
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=8 opcode=GETPROPC_CACHED start=0x1046b5428 end=0x1046b548c
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=9 opcode=LDREG start=0x1046b548c end=0x1046b54a4
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=10 opcode=JMP_NNULL start=0x1046b54a4 end=0x1046b5514
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=11 opcode=LDTHIS start=0x1046b5514 end=0x1046b552c
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=12 opcode=PUTPROPC start=0x1046b552c end=0x1046b55f8
+SLJIT map id=65 kind=body depth=1 frame=2 target_line=931 pc=13 opcode=RET start=0x1046b55f8 end=0x1046b5604
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=0 opcode=LDNULL start=0x1046b48e8 end=0x1046b4900
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=1 opcode=PUTTHISC start=0x1046b4900 end=0x1046b49cc
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=2 opcode=JMP_NNULL start=0x1046b49cc end=0x1046b4a28
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=3 opcode=LDTHIS start=0x1046b4a28 end=0x1046b4a40
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=4 opcode=RET start=0x1046b4a40 end=0x1046b4a4c
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=5 opcode=LDREG start=0x1046b4a4c end=0x1046b4a64
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=6 opcode=JUMP start=0x1046b4a64 end=0x1046b4a68
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=7 opcode=LDREG start=0x1046b4a68 end=0x1046b4a80
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=8 opcode=GETPROPC_CACHED start=0x1046b4a80 end=0x1046b4ae4
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=9 opcode=LDREG start=0x1046b4ae4 end=0x1046b4afc
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=10 opcode=JMP_NNULL start=0x1046b4afc end=0x1046b4b6c
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=11 opcode=LDTHIS start=0x1046b4b6c end=0x1046b4b84
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=12 opcode=PUTPROPC start=0x1046b4b84 end=0x1046b4c50
+SLJIT map id=65 kind=body depth=1 frame=1 target_line=931 pc=13 opcode=RET start=0x1046b4c50 end=0x1046b4c5c
+SLJIT inline_exit id=65 frame=2 depth=1 target_line=931 pc=10 opcode=JMP_NNULL count=547
+SLJIT function  begin=0 ops=65 bytes=47552 hits=16225 returns=16225 stalled=0 charged_edges=223 budget_exits=0 id=65 line=868
+SLJIT exit  begin=0 pc=45 op=65 count=5480 id=65 line=885 opcode=RET
+SLJIT exit  begin=0 pc=58 op=65 count=1346 id=65 line=890 opcode=RET
+SLJIT exit  begin=0 pc=64 op=65 count=9399 id=65 line=893 opcode=RET
+SLJIT coverage id=67 line=931 name= threaded=5475 switch=646 attempts=1132 warmup=4294967294 retired=0 active=7 rejection=compiled
+SLJIT native id=67 calls=0 returns=0
+SLJIT pipeline id=67 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=67 homes=0
+SLJIT code id=67 start=0x1046e4010 bytes=4160 fragment=0 fragment_bytes=0
+SLJIT map id=67 kind=entry start=0x1046e4010 end=0x1046e4070
+SLJIT map id=67 kind=exit start=0x1046e4b04 end=0x1046e4cd0
+SLJIT map id=67 kind=call_entry start=0x1046e4cd0 end=0x1046e5050
+SLJIT map id=67 kind=body depth=0 frame=0 pc=0 opcode=LDNULL start=0x1046e4070 end=0x1046e40d8
+SLJIT map id=67 kind=body depth=0 frame=0 pc=1 opcode=PUTTHISC start=0x1046e40d8 end=0x1046e41a4
+SLJIT map id=67 kind=body depth=0 frame=0 pc=2 opcode=JMP_NNULL start=0x1046e41a4 end=0x1046e4200
+SLJIT map id=67 kind=body depth=0 frame=0 pc=3 opcode=LDTHIS start=0x1046e4200 end=0x1046e4298
+SLJIT map id=67 kind=body depth=0 frame=0 pc=4 opcode=RET start=0x1046e4298 end=0x1046e448c
+SLJIT map id=67 kind=body depth=0 frame=0 pc=5 opcode=LDREG start=0x1046e448c end=0x1046e4524
+SLJIT map id=67 kind=body depth=0 frame=0 pc=6 opcode=JUMP start=0x1046e4524 end=0x1046e4528
+SLJIT map id=67 kind=body depth=0 frame=0 pc=7 opcode=LDREG start=0x1046e4528 end=0x1046e45c0
+SLJIT map id=67 kind=body depth=0 frame=0 pc=8 opcode=GETPROPC_CACHED start=0x1046e45c0 end=0x1046e46a4
+SLJIT map id=67 kind=body depth=0 frame=0 pc=9 opcode=LDREG start=0x1046e46a4 end=0x1046e473c
+SLJIT map id=67 kind=body depth=0 frame=0 pc=10 opcode=JMP_NNULL start=0x1046e473c end=0x1046e47ac
+SLJIT map id=67 kind=body depth=0 frame=0 pc=11 opcode=LDTHIS start=0x1046e47ac end=0x1046e4844
+SLJIT map id=67 kind=body depth=0 frame=0 pc=12 opcode=PUTPROPC start=0x1046e4844 end=0x1046e4910
+SLJIT map id=67 kind=body depth=0 frame=0 pc=13 opcode=RET start=0x1046e4910 end=0x1046e4b04
+SLJIT function  begin=0 ops=14 bytes=4160 hits=543 returns=543 stalled=0 charged_edges=0 budget_exits=0 id=67 line=931
+SLJIT exit  begin=0 pc=10 op=179 count=542 id=67 line=934 opcode=JMP_NNULL
+SLJIT exit  begin=0 pc=13 op=65 count=543 id=67 line=937 opcode=RET
+SLJIT coverage id=69 line=1014 name= threaded=6073 switch=51 attempts=5947 warmup=4294967294 retired=0 active=37 rejection=compiled
+SLJIT native id=69 calls=167 returns=0
+SLJIT pipeline id=69 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=69 homes=0
+SLJIT code id=69 start=0x1046d4010 bytes=19892 fragment=0 fragment_bytes=0
+SLJIT map id=69 kind=entry start=0x1046d4010 end=0x1046d405c
+SLJIT map id=69 kind=exit start=0x1046d802c end=0x1046d8990
+SLJIT map id=69 kind=call_entry start=0x1046d8990 end=0x1046d8dc4
+SLJIT map id=69 kind=body depth=0 frame=0 pc=0 opcode=LDUNDEF start=0x1046d405c end=0x1046d40c4
+SLJIT map id=69 kind=body depth=0 frame=0 pc=1 opcode=LDINT start=0x1046d40c4 end=0x1046d412c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=2 opcode=LDINT start=0x1046d412c end=0x1046d4194
+SLJIT map id=69 kind=body depth=0 frame=0 pc=3 opcode=JUMP start=0x1046d4194 end=0x1046d4198
+SLJIT map id=69 kind=body depth=0 frame=0 pc=4 opcode=GETGLOBAL start=0x1046d4198 end=0x1046d4280
+SLJIT map id=69 kind=body depth=0 frame=0 pc=5 opcode=GETPROPC_CACHED start=0x1046d4280 end=0x1046d4364
+SLJIT map id=69 kind=body depth=0 frame=0 pc=6 opcode=GETPROP start=0x1046d4364 end=0x1046d4eec
+SLJIT map id=69 kind=body depth=0 frame=0 pc=7 opcode=LDINT start=0x1046d4eec end=0x1046d4f54
+SLJIT map id=69 kind=body depth=0 frame=0 pc=8 opcode=JUMP start=0x1046d4f54 end=0x1046d4f58
+SLJIT map id=69 kind=body depth=0 frame=0 pc=9 opcode=GETPROPC_CACHED start=0x1046d4f58 end=0x1046d503c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=10 opcode=GETPROP start=0x1046d503c end=0x1046d5bc4
+SLJIT map id=69 kind=body depth=0 frame=0 pc=11 opcode=GETPROPC_CACHED start=0x1046d5bc4 end=0x1046d5ca8
+SLJIT map id=69 kind=body depth=0 frame=0 pc=12 opcode=GETPROPC start=0x1046d5ca8 end=0x1046d5d8c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=13 opcode=LDCONST start=0x1046d5d8c end=0x1046d5e30
+SLJIT map id=69 kind=body depth=0 frame=0 pc=14 opcode=CALL start=0x1046d5e30 end=0x1046d5ebc
+SLJIT map id=69 kind=body depth=0 frame=0 pc=15 opcode=JMP_NGEI start=0x1046d5ebc end=0x1046d5f68
+SLJIT map id=69 kind=body depth=0 frame=0 pc=16 opcode=JUMP start=0x1046d5f68 end=0x1046d5f6c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=17 opcode=GETGLOBAL start=0x1046d5f6c end=0x1046d6054
+SLJIT map id=69 kind=body depth=0 frame=0 pc=18 opcode=GETPROPC_CACHED start=0x1046d6054 end=0x1046d6138
+SLJIT map id=69 kind=body depth=0 frame=0 pc=19 opcode=IF_FALSE start=0x1046d6138 end=0x1046d61b4
+SLJIT map id=69 kind=body depth=0 frame=0 pc=20 opcode=GETGLOBAL start=0x1046d61b4 end=0x1046d629c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=21 opcode=GETPROPC_CACHED start=0x1046d629c end=0x1046d6380
+SLJIT map id=69 kind=body depth=0 frame=0 pc=22 opcode=CALL start=0x1046d6380 end=0x1046d640c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=23 opcode=GETPROPC_CACHED start=0x1046d640c end=0x1046d64f0
+SLJIT map id=69 kind=body depth=0 frame=0 pc=24 opcode=LDREG start=0x1046d64f0 end=0x1046d6588
+SLJIT map id=69 kind=body depth=0 frame=0 pc=25 opcode=CALL start=0x1046d6588 end=0x1046d6614
+SLJIT map id=69 kind=body depth=0 frame=0 pc=26 opcode=GETGLOBAL start=0x1046d6614 end=0x1046d66fc
+SLJIT map id=69 kind=body depth=0 frame=0 pc=27 opcode=GETPROPC_CACHED start=0x1046d66fc end=0x1046d67e0
+SLJIT map id=69 kind=body depth=0 frame=0 pc=28 opcode=CALL start=0x1046d67e0 end=0x1046d686c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=29 opcode=LDREG start=0x1046d686c end=0x1046d6904
+SLJIT map id=69 kind=body depth=0 frame=0 pc=30 opcode=LDINT start=0x1046d6904 end=0x1046d696c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=31 opcode=LDINT start=0x1046d696c end=0x1046d69d8
+SLJIT map id=69 kind=body depth=0 frame=0 pc=32 opcode=JUMP start=0x1046d69d8 end=0x1046d69dc
+SLJIT map id=69 kind=body depth=0 frame=0 pc=33 opcode=GETPROPC_CACHED start=0x1046d69dc end=0x1046d6ac0
+SLJIT map id=69 kind=body depth=0 frame=0 pc=34 opcode=LDREG start=0x1046d6ac0 end=0x1046d6b58
+SLJIT map id=69 kind=body depth=0 frame=0 pc=35 opcode=CALL start=0x1046d6b58 end=0x1046d6be4
+SLJIT map id=69 kind=body depth=0 frame=0 pc=36 opcode=INC_LT start=0x1046d6be4 end=0x1046d6c84
+SLJIT map id=69 kind=body depth=0 frame=0 pc=37 opcode=JMP_LT start=0x1046d6c84 end=0x1046d6d44
+SLJIT map id=69 kind=body depth=0 frame=0 pc=38 opcode=GETGLOBAL start=0x1046d6d44 end=0x1046d6e2c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=39 opcode=GETPROPC_CACHED start=0x1046d6e2c end=0x1046d6f10
+SLJIT map id=69 kind=body depth=0 frame=0 pc=40 opcode=CALL start=0x1046d6f10 end=0x1046d6f9c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=41 opcode=SUB start=0x1046d6f9c end=0x1046d7040
+SLJIT map id=69 kind=body depth=0 frame=0 pc=42 opcode=ADD start=0x1046d7040 end=0x1046d70b0
+SLJIT map id=69 kind=body depth=0 frame=0 pc=43 opcode=GETPROPC_CACHED start=0x1046d70b0 end=0x1046d7108
+SLJIT map id=69 kind=body depth=0 frame=0 pc=44 opcode=LDREG start=0x1046d7108 end=0x1046d71a0
+SLJIT map id=69 kind=body depth=0 frame=0 pc=45 opcode=CALL start=0x1046d71a0 end=0x1046d722c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=46 opcode=GETGLOBAL start=0x1046d722c end=0x1046d7314
+SLJIT map id=69 kind=body depth=0 frame=0 pc=47 opcode=GETPROPC_CACHED start=0x1046d7314 end=0x1046d73f8
+SLJIT map id=69 kind=body depth=0 frame=0 pc=48 opcode=LDCONST start=0x1046d73f8 end=0x1046d7450
+SLJIT map id=69 kind=body depth=0 frame=0 pc=49 opcode=ADD_FUSED start=0x1046d7450 end=0x1046d74c0
+SLJIT map id=69 kind=body depth=0 frame=0 pc=50 opcode=ADD start=0x1046d74c0 end=0x1046d751c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=51 opcode=LDCONST start=0x1046d751c end=0x1046d7574
+SLJIT map id=69 kind=body depth=0 frame=0 pc=52 opcode=ADD start=0x1046d7574 end=0x1046d759c
+SLJIT map id=69 kind=body depth=0 frame=0 pc=53 opcode=CALL_UNDEF_THIS start=0x1046d759c end=0x1046d76a4
+SLJIT map id=69 kind=body depth=0 frame=0 pc=54 opcode=INC start=0x1046d76a4 end=0x1046d7744
+SLJIT map id=69 kind=body depth=0 frame=0 pc=55 opcode=GETPROPC_CACHED start=0x1046d7744 end=0x1046d7828
+SLJIT map id=69 kind=body depth=0 frame=0 pc=56 opcode=GETPROPC start=0x1046d7828 end=0x1046d78d8
+SLJIT map id=69 kind=body depth=0 frame=0 pc=57 opcode=JMP_LT start=0x1046d78d8 end=0x1046d7998
+SLJIT map id=69 kind=body depth=0 frame=0 pc=58 opcode=INC start=0x1046d7998 end=0x1046d7a38
+SLJIT map id=69 kind=body depth=0 frame=0 pc=59 opcode=GETGLOBAL start=0x1046d7a38 end=0x1046d7b20
+SLJIT map id=69 kind=body depth=0 frame=0 pc=60 opcode=GETPROPC_CACHED start=0x1046d7b20 end=0x1046d7c04
+SLJIT map id=69 kind=body depth=0 frame=0 pc=61 opcode=GETPROPC start=0x1046d7c04 end=0x1046d7cb4
+SLJIT map id=69 kind=body depth=0 frame=0 pc=62 opcode=JMP_LT start=0x1046d7cb4 end=0x1046d7d74
+SLJIT map id=69 kind=body depth=0 frame=0 pc=63 opcode=RETUNDEF start=0x1046d7d74 end=0x1046d802c
+SLJIT function  begin=0 ops=64 bytes=19892 hits=5946 returns=0 stalled=3 charged_edges=6106 budget_exits=7 id=69 line=1014
+SLJIT exit  begin=0 pc=35 op=61 count=5773 id=69 line=1024 opcode=CALL
+SLJIT exit  begin=0 pc=38 op=77 count=1 id=69 line=1025 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=40 op=61 count=1 id=69 line=1025 opcode=CALL
+SLJIT exit  begin=0 pc=45 op=61 count=1 id=69 line=1025 opcode=CALL
+SLJIT exit  begin=0 pc=46 op=77 count=1 id=69 line=1026 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=48 op=1 count=1 id=69 line=1026 opcode=LDCONST
+SLJIT exit  begin=0 pc=59 op=77 count=1 id=69 line=1018 opcode=GETGLOBAL
+SLJIT coverage id=70 line=1 name= threaded=405 switch=321 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT totals functions=23 loops=0 templates=0 hits=559536 code_bytes=268544
+SLJIT budget bytes=268544 limit=1048576 native_work=0 evictions=0

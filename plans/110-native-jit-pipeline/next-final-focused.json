@@ -1,0 +1,552 @@
+[
+  {
+    "file": "test/jit_alloc_continuations.js",
+    "flags": [],
+    "rc": 0,
+    "out": "JIT allocation continuations: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_alloc_continuations.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "JIT allocation continuations: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_alloc_continuations.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "JIT allocation continuations: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_append_property.js",
+    "flags": [],
+    "rc": 0,
+    "out": "2012 passed, 0 failed\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_append_property.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "2012 passed, 0 failed\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_append_property.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "2012 passed, 0 failed\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_array_element_access.js",
+    "flags": [],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_array_element_access.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_array_element_access.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_cfg_numbers.js",
+    "flags": [],
+    "rc": 0,
+    "out": "JIT CFG numbers: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_cfg_numbers.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "JIT CFG numbers: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_cfg_numbers.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "JIT CFG numbers: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_branches.js",
+    "flags": [],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_branches.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_branches.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_property_write.js",
+    "flags": [],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_property_write.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_property_write.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_recovery.js",
+    "flags": [],
+    "rc": 0,
+    "out": "JIT inline recovery: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_recovery.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "JIT inline recovery: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_recovery.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "JIT inline recovery: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_linked_calls.js",
+    "flags": [],
+    "rc": 0,
+    "out": "JIT linked calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_linked_calls.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "JIT linked calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_linked_calls.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "JIT linked calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loop_arms.js",
+    "flags": [],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loop_arms.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loop_arms.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loose_equality.js",
+    "flags": [],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loose_equality.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loose_equality.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_call.js",
+    "flags": [],
+    "rc": 0,
+    "out": "jit_native_call: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_call.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "jit_native_call: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_call.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "jit_native_call: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_calls.js",
+    "flags": [],
+    "rc": 0,
+    "out": "JIT native calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_calls.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "JIT native calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_calls.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "JIT native calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_nested_inline.js",
+    "flags": [],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_nested_inline.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_nested_inline.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_proto_read_shapes.js",
+    "flags": [],
+    "rc": 0,
+    "out": "jit_proto_read_shapes: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_proto_read_shapes.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "jit_proto_read_shapes: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_proto_read_shapes.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "jit_proto_read_shapes: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_function.js",
+    "flags": [],
+    "rc": 0,
+    "out": "SLJIT functions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_function.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "SLJIT functions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_function.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "SLJIT functions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_inline_clamp.js",
+    "flags": [],
+    "rc": 0,
+    "out": "sljit inline clamp: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_inline_clamp.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "sljit inline clamp: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_inline_clamp.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "sljit inline clamp: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_loop.js",
+    "flags": [],
+    "rc": 0,
+    "out": "SLJIT loops: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_loop.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "SLJIT loops: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_loop.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "SLJIT loops: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_parseint.js",
+    "flags": [],
+    "rc": 0,
+    "out": "sljit parseInt: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_parseint.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "sljit parseInt: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_parseint.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "sljit parseInt: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_regions.js",
+    "flags": [],
+    "rc": 0,
+    "out": "SLJIT regions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_regions.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "SLJIT regions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_regions.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "SLJIT regions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_smallfunc.js",
+    "flags": [],
+    "rc": 0,
+    "out": "smallfunc: 70 ms result=Infinity\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_smallfunc.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "smallfunc: 38 ms result=Infinity\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_smallfunc.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "smallfunc: 55 ms result=Infinity\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_ssa.js",
+    "flags": [],
+    "rc": 0,
+    "out": "sljit SSA: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_ssa.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "sljit SSA: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_ssa.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "sljit SSA: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_template.js",
+    "flags": [],
+    "rc": 0,
+    "out": "SLJIT template: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_template.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0,
+    "out": "SLJIT template: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_template.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0,
+    "out": "SLJIT template: PASS\n",
+    "err": ""
+  }
+]

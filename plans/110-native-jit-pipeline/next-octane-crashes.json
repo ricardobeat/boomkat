@@ -1,0 +1,44 @@
+[
+  {
+    "report": "base-2026-10-27-062403.ips",
+    "exception": {
+      "codes": "0x0000000000000001, 0x0000007f92232ec8",
+      "rawCodes": [
+        1,
+        547912625864
+      ],
+      "type": "EXC_BAD_ACCESS",
+      "signal": "SIGSEGV",
+      "subtype": "KERN_INVALID_ADDRESS at 0x0000007f92232ec8"
+    },
+    "frames": [
+      {
+        "imageOffset": 60200,
+        "symbol": "boomkat.heap.Heap.gc_scan_compiled_slot",
+        "symbolLocation": 152,
+        "imageIndex": 0
+      }
+    ]
+  },
+  {
+    "report": "boomkat-2026-10-27-062806.ips",
+    "exception": {
+      "codes": "0x0000000000000001, 0x000000811be32ec8",
+      "rawCodes": [
+        1,
+        554518654664
+      ],
+      "type": "EXC_BAD_ACCESS",
+      "signal": "SIGSEGV",
+      "subtype": "KERN_INVALID_ADDRESS at 0x000000811be32ec8"
+    },
+    "frames": [
+      {
+        "imageOffset": 64640,
+        "symbol": "boomkat.heap.Heap.gc_scan_compiled_slot",
+        "symbolLocation": 152,
+        "imageIndex": 0
+      }
+    ]
+  }
+]

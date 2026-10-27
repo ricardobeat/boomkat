@@ -1,0 +1,20 @@
+[
+  {
+    "bench": "richards",
+    "rc": 0,
+    "sample_rc": 0,
+    "features": [
+      "SLJIT_STATS",
+      "SLJIT_MAP"
+    ]
+  },
+  {
+    "bench": "deltablue",
+    "rc": 0,
+    "sample_rc": 0,
+    "features": [
+      "SLJIT_STATS",
+      "SLJIT_MAP"
+    ]
+  }
+]

@@ -1,0 +1,902 @@
+[
+  {
+    "bench": "richards",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 84,
+    "wall": 0.09416433307342231,
+    "out": "Richards: 84 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 83,
+    "wall": 0.09134983411058784,
+    "out": "Richards: 83 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 82,
+    "wall": 0.08611475001089275,
+    "out": "Richards: 82 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 84,
+    "wall": 0.08802816597744823,
+    "out": "Richards: 84 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 85,
+    "wall": 0.08841691608540714,
+    "out": "Richards: 85 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 84,
+    "wall": 0.08837833302095532,
+    "out": "Richards: 84 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 85,
+    "wall": 0.0884445421397686,
+    "out": "Richards: 85 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 86,
+    "wall": 0.08912254218012094,
+    "out": "Richards: 86 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 86,
+    "wall": 0.08893004199489951,
+    "out": "Richards: 86 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 86,
+    "wall": 0.08982574986293912,
+    "out": "Richards: 86 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 118,
+    "wall": 0.1227430000435561,
+    "out": "DeltaBlue: 118 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 119,
+    "wall": 0.12382033281028271,
+    "out": "DeltaBlue: 119 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 119,
+    "wall": 0.1237310420256108,
+    "out": "DeltaBlue: 119 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 118,
+    "wall": 0.1230391669087112,
+    "out": "DeltaBlue: 118 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 119,
+    "wall": 0.12343133287504315,
+    "out": "DeltaBlue: 119 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12418991606682539,
+    "out": "DeltaBlue: 120 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 119,
+    "wall": 0.12278854195028543,
+    "out": "DeltaBlue: 119 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 119,
+    "wall": 0.12305891700088978,
+    "out": "DeltaBlue: 119 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12404316593892872,
+    "out": "DeltaBlue: 120 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12425033305771649,
+    "out": "DeltaBlue: 120 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 104,
+    "wall": 0.18841950013302267,
+    "out": "Splay: 104 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 106,
+    "wall": 0.1909846670459956,
+    "out": "Splay: 106 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 106,
+    "wall": 0.1921115000732243,
+    "out": "Splay: 106 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 106,
+    "wall": 0.19110937509685755,
+    "out": "Splay: 106 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 106,
+    "wall": 0.19064079178497195,
+    "out": "Splay: 106 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 105,
+    "wall": 0.1908836669754237,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 105,
+    "wall": 0.190524083096534,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 105,
+    "wall": 0.1913516668137163,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 105,
+    "wall": 0.18981516687199473,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 105,
+    "wall": 0.1907565831206739,
+    "out": "Splay: 105 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 198,
+    "wall": 0.2053104171063751,
+    "out": "NavierStokes: 198 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 196,
+    "wall": 0.20231520803645253,
+    "out": "NavierStokes: 196 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 195,
+    "wall": 0.20262045809067786,
+    "out": "NavierStokes: 195 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 192,
+    "wall": 0.1990987090393901,
+    "out": "NavierStokes: 192 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 195,
+    "wall": 0.20235008304007351,
+    "out": "NavierStokes: 195 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 196,
+    "wall": 0.2025642499793321,
+    "out": "NavierStokes: 196 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 196,
+    "wall": 0.20311416708864272,
+    "out": "NavierStokes: 196 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 197,
+    "wall": 0.20470279082655907,
+    "out": "NavierStokes: 197 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 198,
+    "wall": 0.20495174988172948,
+    "out": "NavierStokes: 198 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 196,
+    "wall": 0.2036733329296112,
+    "out": "NavierStokes: 196 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 226,
+    "wall": 0.24641775013878942,
+    "out": "Box2D: 226 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 231,
+    "wall": 0.25177383283153176,
+    "out": "Box2D: 231 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 233,
+    "wall": 0.2539926669560373,
+    "out": "Box2D: 233 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 225,
+    "wall": 0.2457514579873532,
+    "out": "Box2D: 225 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 226,
+    "wall": 0.2467072498984635,
+    "out": "Box2D: 226 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 232,
+    "wall": 0.25309900008141994,
+    "out": "Box2D: 232 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 232,
+    "wall": 0.2533007909078151,
+    "out": "Box2D: 232 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 226,
+    "wall": 0.2466799160465598,
+    "out": "Box2D: 226 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 224,
+    "wall": 0.24505633302032948,
+    "out": "Box2D: 224 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 232,
+    "wall": 0.25339062488637865,
+    "out": "Box2D: 232 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 306,
+    "wall": 0.34094475000165403,
+    "out": "Gameboy: 306 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 306,
+    "wall": 0.3425945001654327,
+    "out": "Gameboy: 306 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 306,
+    "wall": 0.3411910419818014,
+    "out": "Gameboy: 306 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 304,
+    "wall": 0.33921004203148186,
+    "out": "Gameboy: 304 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 305,
+    "wall": 0.3404635419137776,
+    "out": "Gameboy: 305 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 305,
+    "wall": 0.341392207890749,
+    "out": "Gameboy: 305 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 308,
+    "wall": 0.343138791853562,
+    "out": "Gameboy: 308 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 307,
+    "wall": 0.34207983291707933,
+    "out": "Gameboy: 307 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 306,
+    "wall": 0.3417212499771267,
+    "out": "Gameboy: 306 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 307,
+    "wall": 0.34250541706569493,
+    "out": "Gameboy: 307 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 809,
+    "wall": 1.6728161671198905,
+    "out": "Mandreel: 809 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 818,
+    "wall": 1.6851417501457036,
+    "out": "Mandreel: 818 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 815,
+    "wall": 1.6808185409754515,
+    "out": "Mandreel: 815 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 812,
+    "wall": 1.6794810839928687,
+    "out": "Mandreel: 812 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 813,
+    "wall": 1.6792571658734232,
+    "out": "Mandreel: 813 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 817,
+    "wall": 1.6883718750905246,
+    "out": "Mandreel: 817 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 819,
+    "wall": 1.6887812500353903,
+    "out": "Mandreel: 819 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 810,
+    "wall": 1.6792076248675585,
+    "out": "Mandreel: 810 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 811,
+    "wall": 1.679651957936585,
+    "out": "Mandreel: 811 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 815,
+    "wall": 1.6859039578121156,
+    "out": "Mandreel: 815 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 1226,
+    "wall": 1.2845900829415768,
+    "out": "Typescript: 1226 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 1222,
+    "wall": 1.2802206659689546,
+    "out": "Typescript: 1222 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 1221,
+    "wall": 1.2789550828747451,
+    "out": "Typescript: 1221 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 1221,
+    "wall": 1.2784617498982698,
+    "out": "Typescript: 1221 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 1221,
+    "wall": 1.2781206658110023,
+    "out": "Typescript: 1221 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 1223,
+    "wall": 1.2806935410480946,
+    "out": "Typescript: 1223 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 1221,
+    "wall": 1.2778318331111223,
+    "out": "Typescript: 1221 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 1226,
+    "wall": 1.2835636660456657,
+    "out": "Typescript: 1226 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 1227,
+    "wall": 1.2852679169736803,
+    "out": "Typescript: 1227 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 1225,
+    "wall": 1.2822512919083238,
+    "out": "Typescript: 1225 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 0,
+    "mode": "base",
+    "rc": 0,
+    "ms": 130,
+    "wall": 0.134196458151564,
+    "out": "CFG: 130 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 0,
+    "mode": "next",
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12356279115192592,
+    "out": "CFG: 120 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 1,
+    "mode": "next",
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12329849996604025,
+    "out": "CFG: 120 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 1,
+    "mode": "base",
+    "rc": 0,
+    "ms": 130,
+    "wall": 0.13392650010064244,
+    "out": "CFG: 130 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 2,
+    "mode": "base",
+    "rc": 0,
+    "ms": 131,
+    "wall": 0.13399449991993606,
+    "out": "CFG: 131 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 2,
+    "mode": "next",
+    "rc": 0,
+    "ms": 120,
+    "wall": 0.12393533298745751,
+    "out": "CFG: 120 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 3,
+    "mode": "next",
+    "rc": 0,
+    "ms": 126,
+    "wall": 0.12864970811642706,
+    "out": "CFG: 126 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 3,
+    "mode": "base",
+    "rc": 0,
+    "ms": 130,
+    "wall": 0.13394645904190838,
+    "out": "CFG: 130 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 4,
+    "mode": "base",
+    "rc": 0,
+    "ms": 131,
+    "wall": 0.13454029196873307,
+    "out": "CFG: 131 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "cfg",
+    "pair": 4,
+    "mode": "next",
+    "rc": 0,
+    "ms": 119,
+    "wall": 0.12340425001457334,
+    "out": "CFG: 119 ms\n",
+    "err": ""
+  }
+]

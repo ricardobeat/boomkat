@@ -1,11 +1,11 @@
 # 110: A native execution convention, reliable baseline, and compact optimizer
 
-Status: native execution convention implemented and measured, 2026-10-27.
-`rat` now has generated frame entry/return, connected native call graphs and
-resumable ordinary data reads. Richards and DeltaBlue improve about 35% versus
-`a36d275b`; the compact optimizer and general allocating continuations remain
-future work. Sections 9–10 record the implementation, remaining regressions,
-and next experiments. This supersedes the ordering of plans 107–108.
+Status: recoverable inlining, allocating continuations, patchable native calls
+and guarded cross-block numeric homes implemented, 2026-10-27.
+Sections 11–12 record the new implementation, measurements, profiling and
+validation. The compact optimizer remains deliberately restricted; a general
+SSA optimizer and a further 10× gain are not established. This supersedes the
+ordering of plans 107–108.
 
 The target is between QuickJS/Hermes and V8/JSC. The useful unit of work is a
 connected native call graph with correct slow-path continuations. Adding
@@ -576,3 +576,242 @@ call counts, generated instructions, total CPU time and end-to-end timings.
 Separately, make one allocating operation resumable for Splay and measure it
 before broadening helper coverage. Retain only wins that survive the existing
 exception, GC, closure, arity, interrupt and cross-architecture gates.
+
+
+## 11. Recoverable inlining and allocating continuations (`3375f7ba`)
+
+The inliner now represents nested virtual frames, including effectful stores,
+prototype-read method targets and forward/backward control flow. A side exit
+reconstructs ordinary VM activations at the exact callee instruction without
+replaying completed effects. Inline loops charge the shared native budget.
+Windows reject refcounted string values before publication; VM slots and
+reconstructed frames own roots before collection is allowed.
+
+Single-operation helpers resume object/array allocation, eligible simple
+constructors and dense-array push growth. Their three statuses distinguish
+refusal before effects, completion, and completion followed by an interpreter
+poll. SLJIT `set_context` provides a separately compiled continuation fragment.
+Collection stays outside generated machine frames; allocation may schedule it.
+
+Monomorphic native calls use rewritable SLJIT links. Retirement scans and patches
+incoming calls before freeing a target. Unpublished callers retain a fallback
+until the final code-budget check, so reclamation during admission cannot leave
+a dangling target. Function registry entries are cleared as teardown frees them.
+
+Nine alternating fresh-process pairs, default non-instrumented CLI, compared
+with `1dd9aa75` (the previous native convention checkpoint):
+
+| mini | before | after | elapsed change |
+|---|---:|---:|---:|
+| Richards | 109 ms | 89 ms | −18.3% |
+| DeltaBlue | 160 ms | 121 ms | −24.4% |
+| Splay | 111 ms | 109 ms | −1.8% |
+
+Three-pair checks of Box2D (226→227), Mandreel (824→819) and Gameboy (306→307)
+were neutral. [Raw pairs](110-native-jit-pipeline/next-final-pairs.json).
+Diagnostic counts show Richards native calls falling from 2.40M to 1.31M and
+DeltaBlue from 4.32M to 1.50M, with 2.73M/4.81M inlined calls respectively.
+DeltaBlue recovers 147,119 inline frames and resumes 52,199 pushes; Splay resumes
+66,207 allocations. Splay's remaining string-heavy initialization still mostly
+executes in the interpreter. [Counts](110-native-jit-pipeline/next-counters.json).
+
+Validation at this commit: 63 focused fixture/mode runs; all 15 minis in both
+interpreter and normal JIT; ARM64 ASan and x86-64 SLJIT-assertion embedding;
+25 CLI ASan runs; local/Rosetta/modules differential matches and Test262
+expressions/statements/Array differential matches. Local status 1 is shared by
+the interpreter. Inline-loop interrupt, GC, unlink and relink checks exercise
+the actual paths, rather than only checking JavaScript results.
+
+## 12. Numeric representations, generated address maps and cache experiments (`c85033c4`)
+
+Compact supported regions now choose up to three numeric homes using backwards
+CFG liveness. Whole-function entries select arguments only; region entries can
+guard initialized locals. Every gateway converts all homes before marking any
+lane dirty. Calls, allocation fragments and successful read/push helpers publish
+those homes before clobbering FP registers and reload them before continuation.
+Reload failure leaves authoritative VM slots and resumes *after* the completed
+operation. Native callee entries set their own start PC before entry guards.
+Inlining is bypassed for plans with canonical homes until its separate virtual
+register convention can share this representation safely.
+
+`jit_cfg_numbers.js` checks diamonds, coercion, NaN, calls, allocation, array
+growth and native entry/return. The embedding check uses a fresh runtime because
+prior fixtures intentionally poison indexed prototypes; it requires numeric
+homes, successful native calls/returns and resumed allocation/growth counters.
+The targeted 20-million-iteration diamond improves 131→120 ms (five interleaved
+pairs), about 8.4%. This is a focused optimizer result, not an Octane-wide claim.
+[Pairs](110-native-jit-pipeline/next-final2-pairs.json).
+
+The proposed 256 KiB start is implemented behind `SLJIT_ADAPTIVE`. Completed
+native spans/edges allow doubling to the existing 1 MiB cap. Compiled callees
+stamp their use; compilation may reclaim old plans only after machine frames
+unwind, unlinking incoming calls first. Budget-refused functions/loops are
+reconsidered after growth/reclamation, and heap reset clears history.
+
+Several policies were measured and rejected as defaults. Increasing the cap to
+4 MiB, compiling large hot regions earlier, extending own-property flow across
+read continuations, and aggressive cold-plan eviction each regressed at least
+one important workload. Aggressive eviction worsened Box2D 226→365 ms and
+DeltaBlue 121→180 ms. A conservative 65,536-entry age still worsened Gameboy
+306→323 and TypeScript 1226→1304 in three paired runs. The standard build keeps
+the fixed 1 MiB policy; the experiment is explicit and opt-in.
+[Growth experiment](110-native-jit-pipeline/next-budget-pairs.json),
+[conservative reclamation](110-native-jit-pipeline/next-reclaim2-pairs.json).
+
+`SLJIT_MAP` adds bytecode and virtual-frame address ranges plus separate entry,
+call-entry, exit and helper-fragment ranges. `profile_sljit_sample.py` subtracts
+child samples to compute self counts, then resolves overlapping inline ranges
+to their deepest frame. It requires maps from the sampled process and reports
+unmapped generated addresses explicitly. Instrumented samples are diagnostic;
+all performance timings use the standard binary without those counters.
+
+
+Fresh three-second same-process samples, with `SLJIT_STATS`/`SLJIT_MAP` but
+**without** interpreter opcode counters:
+
+| category | Richards (2,316 self samples) | DeltaBlue (2,332) |
+|---|---:|---:|
+| generated body operations | 68.0% | 33.2% |
+| generated entry + callee entry | 13.1% | 13.5% |
+| generated call/return instructions | 15.2% | 15.7% |
+| generated exit stubs | 0.0% | 0.5% |
+| runtime/interpreter | 3.8% | 37.1% |
+
+Every sampled generated address mapped. In Richards, `GETTHISC` and cached
+property reads account for 26.7% of all samples; `LDREG` for 8.9%. The callee
+entry and return for source line 727 remain prominent. DeltaBlue's ordinary
+read helper alone accounts for 10.3%; interpreter returns/calls, inline recovery
+and allocation remain visible. These counters and sample windows are diagnostic,
+not uninstrumented CPU-share guarantees. In particular, the earlier experiment
+with `OP_PROFILE` added per-op TLS/counter overhead and overstated DeltaBlue's
+runtime fraction, so those samples were not used here.
+[Richards attribution](110-native-jit-pipeline/next-richards-mapped.json),
+[DeltaBlue attribution](110-native-jit-pipeline/next-deltablue-mapped.json).
+The corresponding raw same-process map `.txt` files and `.sample` logs are beside them.
+
+Final validation: 66 focused runs across interpreter/JIT/JIT-stress, 27 CLI ASan
+runs, ARM64 ASan embedding, x86-64/Rosetta embedding with SLJIT assertions, and
+adaptive-cache ASan embedding all pass. The latter forces eviction with live
+incoming links and verifies unlink/recompile/relink behavior. Local, Rosetta,
+modules and Test262 expressions/statements/Array differential results match.
+Local status 1 remains shared with the interpreter and the previous checkpoint.
+[Validation manifest](110-native-jit-pipeline/next-validation.json).
+
+
+The final nine-pair mini check of `c85033c4` versus `1dd9aa75` gives Richards
+106→88 ms (−17.0%), DeltaBlue 159→120 (−24.5%), Splay 109→107 (−1.8%) and
+Gameboy 306→310 (+1.3%). The numeric diamond versus `3375f7ba` gives 130→125 ms
+(−3.8%) in this final build. Earlier allocator/admission variants measured ~8%;
+the final result supersedes that microbenchmark number. The benefits are
+workload-dependent. [Final raw pairs](110-native-jit-pipeline/next-final-mini-pairs.json).
+
+### Full-suite validation exposed two cache/GC defects
+
+The complete upstream run first required declaring unavailable `read`/`require`
+shell bindings, as the mini harness does. With that adapter fixed, the original
+`1dd9aa75` baseline crashed after zlib, before TypeScript completed. `c85033c4`
+completed with score 5533, but the adaptive variant hit the same GC crash.
+Crash reports locate `Heap.gc_scan_compiled_slot`: shape retirement cleared the
+entry's chain length while leaving `has_proto` true, causing the cached-owner
+lookup to index a snapshot with unsigned −1.
+
+The fix clears that discriminator during invalidation and bounds the owner
+lookup. Review also found that the incremental root scanner marked only the
+primary prototype owner, whereas full GC marked every polymorphic arm. Both
+scanners now call the same bounded owner-marking helper. A direct embedding
+regression fails before the fix because secondary owners are unmarked; after
+the fix it checks all owner marks and retires a real private receiver shape
+before scanning the invalidated entry. ARM64 ASan passes the regression.
+[Crash evidence](110-native-jit-pipeline/next-octane-crashes.json),
+[GC-only patch](110-native-jit-pipeline/next-gc-only.diff).
+
+For a valid full-suite before/after comparison, an archived `1dd9aa75` checkout
+receives **only the identical GC correction**. Its JIT pipeline is unchanged.
+The original baseline crash cannot produce an aggregate Octane score.
+
+
+The GC correction is committed as `bd44daea`. After it, the complete upstream
+Octane run passes under ASan, including zlib followed by TypeScript. Its sanitizer
+score is deliberately excluded from performance comparisons. The new regression,
+66 focused runs, x86-64 SLJIT-assertion embedding, local/Rosetta/modules and the
+three Test262 differential groups also pass/match after the GC change.
+
+### Next work selected by these profiles
+
+- Richards: `TaskControlBlock.run` still pays a prominent generated entry/return
+  cost, while property operations and register copies dominate the body. Add
+  bounded polymorphic call targets where a nested `task.run` currently prevents
+  expansion, then value numbering and frame-state recipes that avoid copying
+  every virtual register through an inline window. Keep guard recovery exact.
+- DeltaBlue: `EqualityConstraint.execute` remains a large native-call target.
+  Specialize the bounded equality/scale execution alternatives at collection
+  call sites. Reduce repeated shape/owner loads across proven effect boundaries;
+  the ordinary read helper still takes about 10% of sampled CPU.
+- Splay: resumable allocation alone does not cover literal initialization,
+  string-valued fields or refcounted string construction. Extend completion/root
+  contracts to these operations before expecting a large allocation-workload win.
+- Cache policy: admission needs measured useful work per code byte and transition
+  cost, not just call frequency or age. The 256 KiB experiment can make room for
+  later numeric loops, but it can also spend the same budget on costly prefixes.
+  Keep startup, metadata memory and full-suite throughput in that decision.
+
+The restricted numeric IR is a foundation. It does not yet provide general SSA,
+integer range analysis, shape facts across arbitrary joins, or register allocation
+across inlined callees. Removing all measured frame costs alone cannot yield a
+further 10× on Richards; reducing body instructions and memory traffic is required.
+
+
+### Complete Octane results after the GC fix
+
+Original upstream suite settings and validation, all 15 suites plus Splay and
+Mandreel latency scores, in one process per build. Higher is better. These are
+one full-suite run per build; the mini results use nine alternating pairs.
+The comparator is `1dd9aa75` with only the identical GC correction. The final
+standard build is `bd44daea`; the experiment adds `SLJIT_ADAPTIVE`.
+
+| Octane result | before + GC fix | final | adaptive 256 KiB→1 MiB | final change |
+|---|---:|---:|---:|---:|
+| Richards | 3265 | 3926 | 3947 | +20.2% |
+| DeltaBlue | 2288 | 2886 | 2876 | +26.1% |
+| Crypto | 3091 | 3015 | 3008 | -2.5% |
+| RayTrace | 3068 | 3068 | 3010 | +0.0% |
+| EarleyBoyer | 3088 | 3065 | 3070 | -0.7% |
+| RegExp | 773 | 773 | 772 | +0.0% |
+| Splay | 8589 | 8605 | 8418 | +0.2% |
+| SplayLatency | 21834 | 21948 | 21684 | +0.5% |
+| NavierStokes | 3894 | 3948 | 7192 | +1.4% |
+| PdfJS | 6459 | 6174 | 6948 | -4.4% |
+| Mandreel | 1889 | 1925 | 1937 | +1.9% |
+| MandreelLatency | 10861 | 11178 | 12494 | +2.9% |
+| Gameboy | 12103 | 12171 | 12114 | +0.6% |
+| CodeLoad | 28458 | 28243 | 28203 | -0.8% |
+| Box2D | 6890 | 6904 | 2502 | +0.2% |
+| zlib | 2841 | 2884 | 3104 | +1.5% |
+| Typescript | 21681 | 21740 | 9733 | +0.3% |
+| Aggregate | 5348 | 5483 | 5179 | +2.5% |
+
+The standard aggregate improves **5348→5483 (+2.5%)**. The adaptive run scores
+**5179 (−5.5% versus the standard build)**: Navier–Stokes improves strongly, but
+Box2D and TypeScript regress heavily. This is why the adaptive policy remains
+opt-in. The suite is complete and validates successfully in all three runs.
+
+[Full raw results](110-native-jit-pipeline/next-octane-full-final-results.json),
+[source/adapter manifest](110-native-jit-pipeline/next-octane-manifest.json).
+The shell adapter concatenates the original `run.js` load list, declares
+`print = console.log` and unavailable `read`/`require` bindings, then executes
+the original callbacks and RunSuites configuration. It throws if any suite
+reports an error. The benchmark bodies, iteration counts and checks are unchanged.
+
+
+Final mini verification after `bd44daea`, versus `1dd9aa75` with the same GC
+fix: nine alternating fresh-process pairs, medians of the timed mini intervals.
+This is the final comparison, superseding the pre-GC-fix timing check above.
+
+| mini | before + GC fix | final | elapsed change |
+|---|---:|---:|---:|
+| richards | 104 ms | 86 ms | -17.3% |
+| deltablue | 160 ms | 120 ms | -25.0% |
+| splay | 108 ms | 107 ms | -0.9% |
+| gbemu | 307 ms | 308 ms | +0.3% |
+
+[Raw final mini pairs](110-native-jit-pipeline/next-gc-final-mini-pairs.json).

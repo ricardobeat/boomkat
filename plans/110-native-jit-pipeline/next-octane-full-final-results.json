@@ -1,0 +1,26 @@
+[
+  {
+    "mode": "before",
+    "exe": "/tmp/boomkat-jit-next/gc-baseline-bin/boomkat",
+    "revision": "1dd9aa75 + identical GC-only correction",
+    "rc": 0,
+    "wall_seconds": 93.91902204207145,
+    "output": "Richards: 3265\nDeltaBlue: 2288\nCrypto: 3091\nRayTrace: 3068\nEarleyBoyer: 3088\nRegExp: 773\nSplay: 8589\nSplayLatency: 21834\nNavierStokes: 3894\nPdfJS: 6459\nMandreel: 1889\nMandreelLatency: 10861\nGameboy: 12103\nCodeLoad: 28458\nBox2D: 6890\nzlib: 2841\nTypescript: 21681\n----\nScore (version 9): 5348\n"
+  },
+  {
+    "mode": "after",
+    "exe": "./out/boomkat",
+    "revision": "bd44daea",
+    "rc": 0,
+    "wall_seconds": 92.58313091704622,
+    "output": "Richards: 3926\nDeltaBlue: 2886\nCrypto: 3015\nRayTrace: 3068\nEarleyBoyer: 3065\nRegExp: 773\nSplay: 8605\nSplayLatency: 21948\nNavierStokes: 3948\nPdfJS: 6174\nMandreel: 1925\nMandreelLatency: 11178\nGameboy: 12171\nCodeLoad: 28243\nBox2D: 6904\nzlib: 2884\nTypescript: 21740\n----\nScore (version 9): 5483\n"
+  },
+  {
+    "mode": "adaptive",
+    "exe": "/tmp/boomkat-jit-next/adaptive-cli/boomkat",
+    "revision": "same sources as after + SLJIT_ADAPTIVE",
+    "rc": 0,
+    "wall_seconds": 97.35670987493359,
+    "output": "Richards: 3947\nDeltaBlue: 2876\nCrypto: 3008\nRayTrace: 3010\nEarleyBoyer: 3070\nRegExp: 772\nSplay: 8418\nSplayLatency: 21684\nNavierStokes: 7192\nPdfJS: 6948\nMandreel: 1937\nMandreelLatency: 12494\nGameboy: 12114\nCodeLoad: 28203\nBox2D: 2502\nzlib: 3104\nTypescript: 9733\n----\nScore (version 9): 5179\n"
+  }
+]

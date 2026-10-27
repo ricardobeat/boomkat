@@ -1,0 +1,26 @@
+[
+  {
+    "mode": "before",
+    "exe": "/tmp/boomkat-jit-next/base",
+    "args": [
+      "--jit"
+    ],
+    "rc": -11,
+    "wall_seconds": 92.8064572501462,
+    "output": "Richards: 3258\nDeltaBlue: 2329\nCrypto: 3092\nRayTrace: 3290\nEarleyBoyer: 3135\nRegExp: 785\nSplay: 9054\nSplayLatency: 22542\nNavierStokes: 3883\nPdfJS: 5242\nMandreel: 1906\nMandreelLatency: 10861\nGameboy: 12070\nCodeLoad: 28193\nBox2D: 7175\nzlib: 2849\n"
+  },
+  {
+    "mode": "after",
+    "exe": "./out/boomkat",
+    "rc": 0,
+    "wall_seconds": 92.21687762485817,
+    "output": "Richards: 3968\nDeltaBlue: 2959\nCrypto: 3036\nRayTrace: 3274\nEarleyBoyer: 3157\nRegExp: 782\nSplay: 9054\nSplayLatency: 22369\nNavierStokes: 3924\nPdfJS: 5933\nMandreel: 1927\nMandreelLatency: 10932\nGameboy: 12126\nCodeLoad: 28369\nBox2D: 6958\nzlib: 2895\nTypescript: 21553\n----\nScore (version 9): 5533\n"
+  },
+  {
+    "mode": "adaptive",
+    "exe": "/tmp/boomkat-jit-next/adaptive-cli/boomkat",
+    "rc": -11,
+    "wall_seconds": 89.96470220806077,
+    "output": "Richards: 3929\nDeltaBlue: 2953\nCrypto: 3042\nRayTrace: 3230\nEarleyBoyer: 3116\nRegExp: 781\nSplay: 9029\nSplayLatency: 23254\nNavierStokes: 7171\nPdfJS: 5057\nMandreel: 1820\nMandreelLatency: 11926\nGameboy: 12081\nCodeLoad: 26460\nBox2D: 3043\nzlib: 3152\n"
+  }
+]

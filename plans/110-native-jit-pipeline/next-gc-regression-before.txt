@@ -1,0 +1,1 @@
+embedding JIT check failed: ((HeapHeader*)cache.chain.proto.arms[i].owner).is_reachable()

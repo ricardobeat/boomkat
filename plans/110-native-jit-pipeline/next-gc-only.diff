@@ -1,0 +1,72 @@
+diff --git a/src/gc/gc_roots.c3 b/src/gc/gc_roots.c3
+index 8144ee1f..bcd53fde 100644
+--- a/src/gc/gc_roots.c3
++++ b/src/gc/gc_roots.c3
+@@ -5,6 +5,15 @@ import boomkat::hobject;
+ import boomkat::bytecode;
+ import boomkat::esm;
+ 
++// One IC owns a bounded set of prototype owners. Full and incremental scans
++// must trace the same set, including arms beyond the primary receiver shape.
++fn void Heap.mark_ic_owners(&self, hobject::ICEntry* ic) {
++    self.mark_hobject(hobject::ic_cached_proto(ic));
++    if (ic.has_proto && ic.chain != null && ic.chain_len == hobject::IC_CHAIN_PROTO) {
++        for (uint i = 0; i < ic.chain.proto.count; i++) self.mark_hobject(ic.chain.proto.arms[i].owner);
++    }
++}
++
+ // Scan one constant or inline-cache edge. The caller keeps only indices, so
+ // compiler array growth cannot leave a cursor pointing into old storage.
+ fn bool Heap.gc_scan_compiled_slot(&self, bytecode::CompiledFunction* cf, uint* index) {
+@@ -18,7 +27,7 @@ fn bool Heap.gc_scan_compiled_slot(&self, bytecode::CompiledFunction* cf, uint*
+     if (ic_index < cf.ic_count) {
+         if (cf.ic_entries != null) {
+             hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+-            self.mark_hobject(hobject::ic_cached_proto(&entries[ic_index]));
++            self.mark_ic_owners(&entries[ic_index]);
+         }
+         (*index)++;
+         return false;
+diff --git a/src/heap.c3 b/src/heap.c3
+index 2fad463a..d8e189a1 100644
+--- a/src/heap.c3
++++ b/src/heap.c3
+@@ -2014,6 +2014,7 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
+             if (!self.ic_names_live_shapes(&entries[i])) {
+                 entries[i].shape_id = SHAPE_NONE;
+                 entries[i].chain_len = 0;
++                entries[i].has_proto = false;
+             }
+         }
+     }
+@@ -4542,13 +4543,7 @@ fn void Heap.mark_roots(&self) {
+         if (cf.ic_entries != null && cf.ic_count > 0) {
+             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
+             for (uint ii = 0; ii < cf.ic_count; ii++) {
+-                hobject::ICEntry* ie = &ics[ii];
+-                self.mark_hobject(hobject::ic_cached_proto(ie));
+-                if (ie.chain != null && ie.chain_len == hobject::IC_CHAIN_PROTO) {
+-                    for (uint ai = 0; ai < ie.chain.proto.count; ai++) {
+-                        self.mark_hobject(ie.chain.proto.arms[ai].owner);
+-                    }
+-                }
++                self.mark_ic_owners(&ics[ii]);
+             }
+         }
+     }
+diff --git a/src/hobject.c3 b/src/hobject.c3
+index 72e2fe41..25f0f265 100644
+--- a/src/hobject.c3
++++ b/src/hobject.c3
+@@ -3733,9 +3733,10 @@ fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
+ }
+ 
+ fn HObject* ic_cached_proto(ICEntry* ic) {
+-    if (!ic.has_proto) return null;
++    if (!ic.has_proto || ic.chain == null || ic.chain_len == 0) return null;
+     if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
+     if (ic.chain_len == IC_CHAIN_PROTO) return ic.chain.proto.primary.owner;
++    if (ic.chain_len > IC_MAX_CHAIN) return null;
+     return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
+ }
+ // A read that proved absence through the complete chain, distinct from stores
