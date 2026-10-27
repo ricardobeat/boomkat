@@ -1913,6 +1913,13 @@ struct CompiledFunction {
     ulong           sljit_loop_rejected @if($feat(SLJIT));
     uint            sljit_template_calls @if($feat(SLJIT));
     uint            sljit_loop_ready @if($feat(SLJIT));
+    // Diagnostic builds count dispatch attempts separately from native runs.
+    // A threaded refusal can be retried by the switch, so these are not added
+    // together as an executed-bytecode count.
+    ulong           sljit_threaded_entries @if($feat(SLJIT_STATS));
+    ulong           sljit_switch_ops @if($feat(SLJIT_STATS));
+    ulong           sljit_entry_attempts @if($feat(SLJIT_STATS));
+    char*           sljit_rejection @if($feat(SLJIT_STATS));
 
     // Constant pool holding the literal values, such as numbers and strings,
     // by LDCONST and friends.

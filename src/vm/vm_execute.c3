@@ -3015,6 +3015,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         }
 
         Opcode op = insn.op;
+        $if $feat(SLJIT_STATS): vm.current_func.sljit_switch_ops++; $endif
 
         TVal* ra = ds.regs_base + insn.a;
         TVal* rb = ds.regs_base + insn.b;

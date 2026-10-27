@@ -216,6 +216,7 @@ fn Instruction* th_bailout(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 // check, since only a return can be last.
 macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction next = *pc;
+    $if $feat(SLJIT_STATS): cold.vm.current_func.sljit_threaded_entries++; $endif
     $if $feat(OP_PROFILE):
         opprof_thread_complete();
         opprof_thread_begin(next.op);
@@ -3529,6 +3530,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
         }
     $endif
     Instruction first = *pc;
+    $if $feat(SLJIT_STATS): cold.vm.current_func.sljit_threaded_entries++; $endif
     opprof_th_record(first.op);
     $if $feat(OP_PROFILE):
         Opcode saved_op = opprof_pending_op;

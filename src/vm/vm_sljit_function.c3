@@ -170,6 +170,7 @@ fn int function_capture_index(CompiledFunction* cf, Instruction ins) @feat(SLJIT
     return index >= 0 && index < (int)cf.capture_count && index < (int)FUNCTION_CAPTURES ? index : -1;
 }
 fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @feat(SLJIT) {
+    $if $feat(SLJIT_STATS): cf.sljit_rejection = "function eligibility"; $endif
     if (cf.code_count > FUNCTION_OPS || cf.flags.is_generator || cf.flags.is_async || cf.flags.has_direct_eval
         || cf.mapped_arguments()
         || cf.sljit_loops != null) return false;
@@ -180,7 +181,10 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
     for (uint pos = 0; pos < cf.code_count; pos++) {
         Instruction ins = cf.code[pos];
         // WIDE payloads cannot be decoded independently on a native resume.
-        if (ins.op == Opcode.WIDE) return false;
+        if (ins.op == Opcode.WIDE) {
+            $if $feat(SLJIT_STATS): cf.sljit_rejection = "WIDE"; $endif
+            return false;
+        }
         if (function_math_candidate(
             cf,
             pos
@@ -261,6 +265,7 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
         frequency[best] = 0;
         plan.cached_regs[plan.cache_count++] = (char)best;
     }
+    $if $feat(SLJIT_STATS): cf.sljit_rejection = useful >= 2 ? null : "too few useful operations"; $endif
     return useful >= 2;
 }
 fn long function_cold_offset(uint field) @feat(SLJIT) {
@@ -1321,6 +1326,7 @@ fn bool FunctionEmitter.native_call(&self, CompiledFunction* cf, uint pc) @feat(
 }
 
 fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act) @feat(SLJIT) {
+    $if $feat(SLJIT_STATS): cf.sljit_rejection = "emission failed"; $endif
     LoopPlan layout_plan;
     layout_plan.cache = plan.cache;
     FunctionEmitter emitter = {
@@ -1800,6 +1806,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         }
     }
     if (entries == 0) {
+        $if $feat(SLJIT_STATS): cf.sljit_rejection = "no entry reaches minimum span"; $endif
         jit::sljit_free_code((void*)plan.native, null);
         plan.native = null;
         return false;
@@ -1842,7 +1849,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
             h.jit_code_bytes
         );
     $endif
-    if (begin >= cf.code_count || h.jit_code_bytes >= LOOP_CODE_LIMIT) return null;
+    if (begin >= cf.code_count || h.jit_code_bytes >= LOOP_CODE_LIMIT) {
+        $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
+        return null;
+    }
     // The view borrows the original bytecode, constants and site caches. Only
     // the region's instruction window consumes compiler tables/code budget.
     CompiledFunction region = *cf;
@@ -1869,7 +1879,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     region.var_ic_entries = (VarICEntry*)cf.var_ic_entries + begin;
     usz bytes          = FunctionPlan::size + region.code_count * (void*::size + 1);
     FunctionPlan* plan = (FunctionPlan*)h.alloc_func(h.heap_udata, bytes);
-    if (plan == null) return null;
+    if (plan == null) {
+        $if $feat(SLJIT_STATS): cf.sljit_rejection = "plan allocation"; $endif
+        return null;
+    }
     mem::clear(plan, (sz)bytes);
     plan.begin = begin;
     plan.count = region.code_count;
@@ -1878,6 +1891,9 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     plan.short_runs = (char*)(plan.entries + plan.count);
     bool analyzed = function_analyze(&region, plan, h);
     bool emitted  = analyzed && function_emit(plan, &region, h, cold.act);
+    $if $feat(SLJIT_STATS):
+        cf.sljit_rejection = emitted ? null : region.sljit_rejection;
+    $endif
     $if $feat(SLJIT_STATS):
         if (begin != 0) io::eprintfn(
             "SLJIT region result %s ops=%d analyzed=%d emitted=%d code_bytes=%d budget_used=%d limit=%d",
@@ -1891,6 +1907,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         );
     $endif
     if (!emitted || h.jit_code_bytes + plan.code_bytes > LOOP_CODE_LIMIT) {
+        $if $feat(SLJIT_STATS): if (emitted) cf.sljit_rejection = "code budget"; $endif
         if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
         h.free_func(h.heap_udata, plan);
         return null;
@@ -1925,6 +1942,7 @@ fn Instruction* sljit_function_entry(
 ) @feat(SLJIT) @noinline {
     Heap* h              = cold.heap;
     CompiledFunction* cf = cold.vm.current_func;
+    $if $feat(SLJIT_STATS): cf.sljit_entry_attempts++; $endif
     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || h.gc_phase != heap::GcPhase.IDLE
         || h.uncatchable_throw
         || std::core::mem::@atomic_load(
@@ -2044,11 +2062,36 @@ fn void sljit_stats_dump(Heap* h) {
             CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[i];
             if (cf == null) continue;
             FunctionPlan* plan = cf.sljit_function;
+            $if $feat(SLJIT_STATS):
+                if (cf.sljit_threaded_entries != 0 || cf.sljit_switch_ops != 0 || cf.sljit_entry_attempts != 0) {
+                    uint retired;
+                    uint active;
+                    if (plan != null) for (uint j = 0; j < plan.count; j++) {
+                        if (plan.short_runs[j] >= 8) retired++;
+                        if (plan.entries[j] != null) active++;
+                    }
+                    io::printfn(
+                        "SLJIT coverage id=%d line=%d name=%s threaded=%d switch=%d attempts=%d warmup=%d retired=%d active=%d rejection=%s",
+                        i,
+                        cf.get_line(0),
+                        (String)cf.get_name(),
+                        cf.sljit_threaded_entries,
+                        cf.sljit_switch_ops,
+                        cf.sljit_entry_attempts,
+                        cf.sljit_function_calls,
+                        retired,
+                        active,
+                        (ZString)(plan != null ? "compiled"
+                            : cf.sljit_rejection != null ? cf.sljit_rejection
+                            : "not attempted")
+                    );
+                }
+            $endif
             if (plan != null) {
                 functions++;
                 hits += plan.hits;
                 io::printfn(
-                    "SLJIT function %s begin=%d ops=%d bytes=%d hits=%d returns=%d stalled=%d backedges=%d budget_exits=%d",
+                    "SLJIT function %s begin=%d ops=%d bytes=%d hits=%d returns=%d stalled=%d backedges=%d budget_exits=%d id=%d line=%d",
                     (String)cf.get_name(),
                     plan.begin,
                     plan.count,
@@ -2057,17 +2100,22 @@ fn void sljit_stats_dump(Heap* h) {
                     plan.completed,
                     plan.stalled,
                     plan.backedges,
-                    plan.budget_exits
+                    plan.budget_exits,
+                    i,
+                    cf.get_line(0)
                 );
                 for (uint pc = 0; pc < 512; pc++) {
                     if (plan.exit_pcs[pc] == 0) continue;
                     io::printfn(
-                        "SLJIT exit %s begin=%d pc=%d op=%d count=%d",
+                        "SLJIT exit %s begin=%d pc=%d op=%d count=%d id=%d line=%d opcode=%s",
                         (String)cf.get_name(),
                         plan.begin,
                         pc,
                         pc < cf.code_count ? (int)cf.code[pc].op : -1,
-                        plan.exit_pcs[pc]
+                        plan.exit_pcs[pc],
+                        i,
+                        cf.get_line(pc),
+                        (ZString)(pc < cf.code_count ? bytecode::get_opcode_name(cf.code[pc].op) : "end")
                     );
                 }
             }
@@ -2096,5 +2144,6 @@ fn void sljit_stats_dump(Heap* h) {
             hits,
             h.jit_code_bytes
         );
+        $if $feat(SLJIT_STATS) && $feat(OP_PROFILE): opprof_dump(); $endif
     $endif
 }
