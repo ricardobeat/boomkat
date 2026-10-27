@@ -1,0 +1,4679 @@
+{
+  "functions": [
+    {
+      "id": 0,
+      "coverage": {
+        "id": 0,
+        "line": 69,
+        "threaded": 1,
+        "switch": 1,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 1,
+      "coverage": {
+        "id": 1,
+        "line": 70,
+        "threaded": 1,
+        "switch": 0,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 2,
+      "coverage": {
+        "id": 2,
+        "line": 64,
+        "name": "Benchmark",
+        "threaded": 23,
+        "switch": 11,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 4,
+      "coverage": {
+        "id": 4,
+        "line": 99,
+        "name": "BenchmarkSuite",
+        "threaded": 11,
+        "switch": 6,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 5,
+      "coverage": {
+        "id": 5,
+        "line": 463,
+        "name": "OrderedCollection",
+        "threaded": 200152,
+        "switch": 50242,
+        "attempts": 83,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 5,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 4,
+        "bytes": 2284,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 8,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 5,
+        "line": 463,
+        "name": "OrderedCollection"
+      }
+    },
+    {
+      "id": 6,
+      "coverage": {
+        "id": 6,
+        "line": 508,
+        "name": "Strength",
+        "threaded": 21,
+        "switch": 3,
+        "attempts": 7,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 7,
+      "coverage": {
+        "id": 7,
+        "line": 560,
+        "name": "Constraint",
+        "threaded": 36720,
+        "switch": 46,
+        "attempts": 73,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 7,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 2,
+        "bytes": 1944,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 8,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 7,
+        "line": 560,
+        "name": "Constraint"
+      }
+    },
+    {
+      "id": 8,
+      "coverage": {
+        "id": 8,
+        "line": 619,
+        "name": "UnaryConstraint",
+        "threaded": 95583,
+        "switch": 574,
+        "attempts": 6384,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 3,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 8,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 15,
+        "bytes": 5332,
+        "hits": 6269,
+        "returns": 6245,
+        "stalled": 6261,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 8,
+        "line": 619,
+        "name": "UnaryConstraint"
+      }
+    },
+    {
+      "id": 9,
+      "coverage": {
+        "id": 9,
+        "line": 700,
+        "name": "StayConstraint",
+        "threaded": 60536,
+        "switch": 11,
+        "attempts": 6068,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 9,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 10,
+        "bytes": 3636,
+        "hits": 5954,
+        "returns": 5946,
+        "stalled": 5946,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 9,
+        "line": 700,
+        "name": "StayConstraint"
+      }
+    },
+    {
+      "id": 10,
+      "coverage": {
+        "id": 10,
+        "line": 718,
+        "name": "EditConstraint",
+        "threaded": 2936,
+        "switch": 5,
+        "attempts": 308,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 10,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 10,
+        "bytes": 3636,
+        "hits": 245,
+        "returns": 237,
+        "stalled": 237,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 10,
+        "line": 718,
+        "name": "EditConstraint"
+      }
+    },
+    {
+      "id": 11,
+      "coverage": {
+        "id": 11,
+        "line": 748,
+        "name": "BinaryConstraint",
+        "threaded": 203945,
+        "switch": 126,
+        "attempts": 12017,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 5,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 11,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 17,
+        "bytes": 6352,
+        "hits": 11842,
+        "returns": 11825,
+        "stalled": 11834,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 11,
+        "line": 748,
+        "name": "BinaryConstraint"
+      }
+    },
+    {
+      "id": 12,
+      "coverage": {
+        "id": 12,
+        "line": 862,
+        "name": "ScaleConstraint",
+        "threaded": 95984,
+        "switch": 58,
+        "attempts": 6010,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 4,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 12,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 6260,
+        "hits": 5897,
+        "returns": 5889,
+        "stalled": 5889,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 12,
+        "line": 862,
+        "name": "ScaleConstraint"
+      }
+    },
+    {
+      "id": 13,
+      "coverage": {
+        "id": 13,
+        "line": 921,
+        "name": "EqualityConstraint",
+        "threaded": 65928,
+        "switch": 9,
+        "attempts": 6008,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 13,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 11,
+        "bytes": 3904,
+        "hits": 5881,
+        "returns": 5873,
+        "stalled": 5873,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 13,
+        "line": 921,
+        "name": "EqualityConstraint"
+      }
+    },
+    {
+      "id": 14,
+      "coverage": {
+        "id": 14,
+        "line": 944,
+        "name": "Variable",
+        "threaded": 315219,
+        "switch": 209,
+        "attempts": 82,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 3,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 14,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 18,
+        "bytes": 6580,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 9,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 14,
+        "line": 944,
+        "name": "Variable"
+      }
+    },
+    {
+      "id": 15,
+      "coverage": {
+        "id": 15,
+        "line": 977,
+        "name": "Planner",
+        "threaded": 352,
+        "switch": 1,
+        "attempts": 72,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 15,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 3,
+        "bytes": 2040,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 15,
+        "line": 977,
+        "name": "Planner"
+      }
+    },
+    {
+      "id": 16,
+      "coverage": {
+        "id": 16,
+        "line": 1164,
+        "name": "Plan",
+        "threaded": 1192,
+        "switch": 5,
+        "attempts": 79,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 0,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 16,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 4,
+        "bytes": 2284,
+        "hits": 16,
+        "returns": 0,
+        "stalled": 8,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 16,
+        "line": 1164,
+        "name": "Plan"
+      }
+    },
+    {
+      "id": 17,
+      "coverage": {
+        "id": 17,
+        "line": 1204,
+        "name": "chainTest",
+        "threaded": 87791,
+        "switch": 141,
+        "attempts": 12054,
+        "warmup": 4294967295,
+        "retired": 5,
+        "active": 23,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 17,
+        "calls": 5,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 72,
+        "bytes": 14160,
+        "hits": 11923,
+        "returns": 0,
+        "stalled": 13,
+        "charged_edges": 5942,
+        "budget_exits": 8,
+        "id": 17,
+        "line": 1204,
+        "name": "chainTest"
+      }
+    },
+    {
+      "id": 18,
+      "coverage": {
+        "id": 18,
+        "line": 1237,
+        "name": "projectionTest",
+        "threaded": 148042,
+        "switch": 246,
+        "attempts": 12347,
+        "warmup": 4294967295,
+        "retired": 6,
+        "active": 31,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 18,
+        "calls": 10859,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 116,
+        "bytes": 22036,
+        "hits": 12146,
+        "returns": 47,
+        "stalled": 2,
+        "charged_edges": 27487,
+        "budget_exits": 29,
+        "id": 18,
+        "line": 1237,
+        "name": "projectionTest"
+      }
+    },
+    {
+      "id": 19,
+      "coverage": {
+        "id": 19,
+        "line": 1268,
+        "name": "change",
+        "threaded": 6654,
+        "switch": 2072,
+        "attempts": 2863,
+        "warmup": 4294967294,
+        "retired": 4,
+        "active": 11,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 19,
+        "calls": 2335,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 33,
+        "bytes": 8040,
+        "hits": 2834,
+        "returns": 234,
+        "stalled": 234,
+        "charged_edges": 9603,
+        "budget_exits": 16,
+        "id": 19,
+        "line": 1268,
+        "name": "change"
+      }
+    },
+    {
+      "id": 20,
+      "coverage": {
+        "id": 20,
+        "line": 1284,
+        "name": "deltaBlue",
+        "threaded": 480,
+        "switch": 6,
+        "attempts": 60,
+        "warmup": 59,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 24,
+      "coverage": {
+        "id": 24,
+        "line": 45,
+        "threaded": 22,
+        "switch": 12,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 28,
+      "coverage": {
+        "id": 28,
+        "line": 133,
+        "threaded": 8,
+        "switch": 2,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 29,
+      "coverage": {
+        "id": 29,
+        "line": 133,
+        "threaded": 5,
+        "switch": 4,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 47,
+      "coverage": {
+        "id": 47,
+        "line": 455,
+        "name": "Inheriter",
+        "threaded": 6,
+        "switch": 1,
+        "attempts": 6,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 48,
+      "coverage": {
+        "id": 48,
+        "line": 454,
+        "name": "value",
+        "threaded": 57,
+        "switch": 44,
+        "attempts": 6,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 49,
+      "coverage": {
+        "id": 49,
+        "line": 467,
+        "threaded": 952523,
+        "switch": 168,
+        "attempts": 385,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 49,
+        "calls": 0,
+        "returns": 2888
+      },
+      "native": {
+        "begin": 0,
+        "ops": 7,
+        "bytes": 3296,
+        "hits": 187,
+        "returns": 137,
+        "stalled": 1,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 49,
+        "line": 467,
+        "name": ""
+      }
+    },
+    {
+      "id": 50,
+      "coverage": {
+        "id": 50,
+        "line": 471,
+        "threaded": 2948,
+        "switch": 37,
+        "attempts": 1854,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 50,
+        "calls": 0,
+        "returns": 10721
+      },
+      "native": {
+        "begin": 0,
+        "ops": 3,
+        "bytes": 4620,
+        "hits": 1307,
+        "returns": 1307,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 50,
+        "line": 471,
+        "name": ""
+      }
+    },
+    {
+      "id": 51,
+      "coverage": {
+        "id": 51,
+        "line": 475,
+        "threaded": 4742,
+        "switch": 141,
+        "attempts": 2019,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 51,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 3,
+        "bytes": 1828,
+        "hits": 644,
+        "returns": 644,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 51,
+        "line": 475,
+        "name": ""
+      }
+    },
+    {
+      "id": 52,
+      "coverage": {
+        "id": 52,
+        "line": 479,
+        "threaded": 2211,
+        "switch": 212,
+        "attempts": 507,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 4,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 52,
+        "calls": 0,
+        "returns": 72784
+      },
+      "native": {
+        "begin": 0,
+        "ops": 6,
+        "bytes": 2916,
+        "hits": 129,
+        "returns": 129,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 52,
+        "line": 479,
+        "name": ""
+      }
+    },
+    {
+      "id": 53,
+      "coverage": {
+        "id": 53,
+        "line": 483,
+        "threaded": 10027,
+        "switch": 44,
+        "attempts": 125,
+        "warmup": 4294967294,
+        "retired": 1,
+        "active": 16,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 53,
+        "calls": 0,
+        "returns": 160
+      },
+      "native": {
+        "begin": 0,
+        "ops": 27,
+        "bytes": 11912,
+        "hits": 112,
+        "returns": 99,
+        "stalled": 22,
+        "charged_edges": 3256,
+        "budget_exits": 5,
+        "id": 53,
+        "line": 483,
+        "name": ""
+      }
+    },
+    {
+      "id": 54,
+      "coverage": {
+        "id": 54,
+        "line": 513,
+        "threaded": 1541,
+        "switch": 17,
+        "attempts": 455,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 54,
+        "calls": 0,
+        "returns": 42025
+      },
+      "native": {
+        "begin": 0,
+        "ops": 4,
+        "bytes": 2172,
+        "hits": 93,
+        "returns": 93,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 54,
+        "line": 513,
+        "name": ""
+      }
+    },
+    {
+      "id": 55,
+      "coverage": {
+        "id": 55,
+        "line": 517,
+        "threaded": 14018,
+        "switch": 69,
+        "attempts": 12590,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 55,
+        "calls": 0,
+        "returns": 59710
+      },
+      "native": {
+        "begin": 0,
+        "ops": 4,
+        "bytes": 2172,
+        "hits": 12114,
+        "returns": 12114,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 55,
+        "line": 517,
+        "name": ""
+      }
+    },
+    {
+      "id": 56,
+      "coverage": {
+        "id": 56,
+        "line": 521,
+        "threaded": 2296,
+        "switch": 34,
+        "attempts": 706,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 5,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 56,
+        "calls": 47890,
+        "returns": 47764
+      },
+      "native": {
+        "begin": 0,
+        "ops": 9,
+        "bytes": 3552,
+        "hits": 182,
+        "returns": 182,
+        "stalled": 0,
+        "charged_edges": 126,
+        "budget_exits": 1,
+        "id": 56,
+        "line": 521,
+        "name": ""
+      }
+    },
+    {
+      "id": 58,
+      "coverage": {
+        "id": 58,
+        "line": 529,
+        "threaded": 321,
+        "switch": 2,
+        "attempts": 65,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 20,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 58,
+        "calls": 0,
+        "returns": 175
+      },
+      "native": {
+        "begin": 0,
+        "ops": 31,
+        "bytes": 7272,
+        "hits": 1,
+        "returns": 1,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 58,
+        "line": 529,
+        "name": ""
+      }
+    },
+    {
+      "id": 59,
+      "coverage": {
+        "id": 59,
+        "line": 567,
+        "threaded": 111581,
+        "switch": 760,
+        "attempts": 36714,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 59,
+        "calls": 18178,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 12,
+        "bytes": 3800,
+        "hits": 36324,
+        "returns": 18133,
+        "stalled": 18136,
+        "charged_edges": 108017,
+        "budget_exits": 104,
+        "id": 59,
+        "line": 567,
+        "name": ""
+      }
+    },
+    {
+      "id": 60,
+      "coverage": {
+        "id": 60,
+        "line": 578,
+        "threaded": 228962,
+        "switch": 1081,
+        "attempts": 55494,
+        "warmup": 4294967294,
+        "retired": 3,
+        "active": 18,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 60,
+        "calls": 91940,
+        "returns": 118
+      },
+      "native": {
+        "begin": 0,
+        "ops": 44,
+        "bytes": 11208,
+        "hits": 54531,
+        "returns": 30126,
+        "stalled": 2,
+        "charged_edges": 55791,
+        "budget_exits": 37,
+        "id": 60,
+        "line": 578,
+        "name": ""
+      }
+    },
+    {
+      "id": 61,
+      "coverage": {
+        "id": 61,
+        "line": 597,
+        "threaded": 2536,
+        "switch": 7,
+        "attempts": 256,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 7,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 61,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 15,
+        "bytes": 4860,
+        "hits": 192,
+        "returns": 176,
+        "stalled": 176,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 61,
+        "line": 597,
+        "name": ""
+      }
+    },
+    {
+      "id": 62,
+      "coverage": {
+        "id": 62,
+        "line": 607,
+        "threaded": 226,
+        "switch": 0,
+        "attempts": 113,
+        "warmup": 62,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 63,
+      "coverage": {
+        "id": 63,
+        "line": 631,
+        "threaded": 42684,
+        "switch": 59,
+        "attempts": 6680,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 63,
+        "calls": 336,
+        "returns": 6
+      },
+      "native": {
+        "begin": 0,
+        "ops": 9,
+        "bytes": 3192,
+        "hits": 6567,
+        "returns": 6241,
+        "stalled": 0,
+        "charged_edges": 467,
+        "budget_exits": 2,
+        "id": 63,
+        "line": 631,
+        "name": ""
+      }
+    },
+    {
+      "id": 64,
+      "coverage": {
+        "id": 64,
+        "line": 640,
+        "threaded": 1707,
+        "switch": 50,
+        "attempts": 179,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 10,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 64,
+        "calls": 6243,
+        "returns": 6351
+      },
+      "native": {
+        "begin": 0,
+        "ops": 15,
+        "bytes": 5424,
+        "hits": 16,
+        "returns": 16,
+        "stalled": 0,
+        "charged_edges": 11,
+        "budget_exits": 0,
+        "id": 64,
+        "line": 640,
+        "name": ""
+      }
+    },
+    {
+      "id": 65,
+      "coverage": {
+        "id": 65,
+        "line": 648,
+        "threaded": 506,
+        "switch": 1,
+        "attempts": 388,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 65,
+        "calls": 0,
+        "returns": 7435
+      },
+      "native": {
+        "begin": 0,
+        "ops": 2,
+        "bytes": 1548,
+        "hits": 270,
+        "returns": 270,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 65,
+        "line": 648,
+        "name": ""
+      }
+    },
+    {
+      "id": 66,
+      "coverage": {
+        "id": 66,
+        "line": 653,
+        "threaded": 24,
+        "switch": 2,
+        "attempts": 24,
+        "warmup": 22,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 67,
+      "coverage": {
+        "id": 67,
+        "line": 659,
+        "threaded": 6719,
+        "switch": 9,
+        "attempts": 6499,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 67,
+        "calls": 0,
+        "returns": 13713
+      },
+      "native": {
+        "begin": 0,
+        "ops": 2,
+        "bytes": 1548,
+        "hits": 6279,
+        "returns": 6279,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 67,
+        "line": 659,
+        "name": ""
+      }
+    },
+    {
+      "id": 68,
+      "coverage": {
+        "id": 68,
+        "line": 668,
+        "threaded": 1927,
+        "switch": 31,
+        "attempts": 219,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 11,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 68,
+        "calls": 264,
+        "returns": 6200
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 5780,
+        "hits": 44,
+        "returns": 44,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 68,
+        "line": 668,
+        "name": ""
+      }
+    },
+    {
+      "id": 69,
+      "coverage": {
+        "id": 69,
+        "line": 677,
+        "threaded": 380,
+        "switch": 1,
+        "attempts": 252,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 69,
+        "calls": 0,
+        "returns": 92
+      },
+      "native": {
+        "begin": 0,
+        "ops": 3,
+        "bytes": 1812,
+        "hits": 188,
+        "returns": 188,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 69,
+        "line": 677,
+        "name": ""
+      }
+    },
+    {
+      "id": 70,
+      "coverage": {
+        "id": 70,
+        "line": 681,
+        "threaded": 364,
+        "switch": 0,
+        "attempts": 300,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 70,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 2,
+        "bytes": 1272,
+        "hits": 236,
+        "returns": 236,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 70,
+        "line": 681,
+        "name": ""
+      }
+    },
+    {
+      "id": 71,
+      "coverage": {
+        "id": 71,
+        "line": 685,
+        "threaded": 881,
+        "switch": 5,
+        "attempts": 258,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 6,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 71,
+        "calls": 175,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 11,
+        "bytes": 3616,
+        "hits": 193,
+        "returns": 176,
+        "stalled": 0,
+        "charged_edges": 8802,
+        "budget_exits": 11,
+        "id": 71,
+        "line": 685,
+        "name": ""
+      }
+    },
+    {
+      "id": 72,
+      "coverage": {
+        "id": 72,
+        "line": 707,
+        "threaded": 7,
+        "switch": 1,
+        "attempts": 7,
+        "warmup": 2,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 73,
+      "coverage": {
+        "id": 73,
+        "line": 727,
+        "threaded": 132,
+        "switch": 0,
+        "attempts": 67,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 73,
+        "calls": 0,
+        "returns": 264
+      },
+      "native": {
+        "begin": 0,
+        "ops": 2,
+        "bytes": 1272,
+        "hits": 2,
+        "returns": 2,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 73,
+        "line": 727,
+        "name": ""
+      }
+    },
+    {
+      "id": 74,
+      "coverage": {
+        "id": 74,
+        "line": 732,
+        "threaded": 43,
+        "switch": 0,
+        "attempts": 43,
+        "warmup": 36,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 75,
+      "coverage": {
+        "id": 75,
+        "line": 763,
+        "threaded": 188988,
+        "switch": 160,
+        "attempts": 12741,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 59,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 75,
+        "calls": 47602,
+        "returns": 5859
+      },
+      "native": {
+        "begin": 0,
+        "ops": 98,
+        "bytes": 22356,
+        "hits": 12065,
+        "returns": 5997,
+        "stalled": 2,
+        "charged_edges": 12040,
+        "budget_exits": 7,
+        "id": 75,
+        "line": 763,
+        "name": ""
+      }
+    },
+    {
+      "id": 76,
+      "coverage": {
+        "id": 76,
+        "line": 788,
+        "threaded": 183345,
+        "switch": 114,
+        "attempts": 1076,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 5,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 76,
+        "calls": 1416,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 4932,
+        "hits": 1009,
+        "returns": 35,
+        "stalled": 11,
+        "charged_edges": 2141,
+        "budget_exits": 3,
+        "id": 76,
+        "line": 788,
+        "name": ""
+      }
+    },
+    {
+      "id": 77,
+      "coverage": {
+        "id": 77,
+        "line": 797,
+        "threaded": 2227,
+        "switch": 41,
+        "attempts": 554,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 77,
+        "calls": 0,
+        "returns": 84301
+      },
+      "native": {
+        "begin": 0,
+        "ops": 5,
+        "bytes": 2720,
+        "hits": 138,
+        "returns": 135,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 77,
+        "line": 797,
+        "name": ""
+      }
+    },
+    {
+      "id": 78,
+      "coverage": {
+        "id": 78,
+        "line": 804,
+        "threaded": 7338,
+        "switch": 63,
+        "attempts": 6480,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 78,
+        "calls": 23780,
+        "returns": 17777
+      },
+      "native": {
+        "begin": 0,
+        "ops": 5,
+        "bytes": 2276,
+        "hits": 6058,
+        "returns": 6025,
+        "stalled": 31,
+        "charged_edges": 6003,
+        "budget_exits": 10,
+        "id": 78,
+        "line": 804,
+        "name": ""
+      }
+    },
+    {
+      "id": 79,
+      "coverage": {
+        "id": 79,
+        "line": 811,
+        "threaded": 4591,
+        "switch": 124,
+        "attempts": 1627,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 6,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 79,
+        "calls": 0,
+        "returns": 700796
+      },
+      "native": {
+        "begin": 0,
+        "ops": 9,
+        "bytes": 4124,
+        "hits": 1034,
+        "returns": 1031,
+        "stalled": 1,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 79,
+        "line": 811,
+        "name": ""
+      }
+    },
+    {
+      "id": 80,
+      "coverage": {
+        "id": 80,
+        "line": 818,
+        "threaded": 7454,
+        "switch": 115,
+        "attempts": 2179,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 6,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 80,
+        "calls": 0,
+        "returns": 820843
+      },
+      "native": {
+        "begin": 0,
+        "ops": 9,
+        "bytes": 4124,
+        "hits": 1126,
+        "returns": 1123,
+        "stalled": 2,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 80,
+        "line": 818,
+        "name": ""
+      }
+    },
+    {
+      "id": 81,
+      "coverage": {
+        "id": 81,
+        "line": 826,
+        "threaded": 4843,
+        "switch": 190,
+        "attempts": 852,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 14,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 81,
+        "calls": 65174,
+        "returns": 17666
+      },
+      "native": {
+        "begin": 0,
+        "ops": 24,
+        "bytes": 6724,
+        "hits": 145,
+        "returns": 139,
+        "stalled": 31,
+        "charged_edges": 458,
+        "budget_exits": 0,
+        "id": 81,
+        "line": 826,
+        "name": ""
+      }
+    },
+    {
+      "id": 82,
+      "coverage": {
+        "id": 82,
+        "line": 837,
+        "threaded": 42079,
+        "switch": 8,
+        "attempts": 72,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 1,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 82,
+        "calls": 0,
+        "returns": 1536
+      },
+      "native": {
+        "begin": 0,
+        "ops": 4,
+        "bytes": 2272,
+        "hits": 9,
+        "returns": 1,
+        "stalled": 1,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 82,
+        "line": 837,
+        "name": ""
+      }
+    },
+    {
+      "id": 83,
+      "coverage": {
+        "id": 83,
+        "line": 841,
+        "threaded": 637,
+        "switch": 4,
+        "attempts": 104,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 8,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 83,
+        "calls": 18034,
+        "returns": 18018
+      },
+      "native": {
+        "begin": 0,
+        "ops": 14,
+        "bytes": 4564,
+        "hits": 38,
+        "returns": 38,
+        "stalled": 0,
+        "charged_edges": 16,
+        "budget_exits": 0,
+        "id": 83,
+        "line": 841,
+        "name": ""
+      }
+    },
+    {
+      "id": 85,
+      "coverage": {
+        "id": 85,
+        "line": 874,
+        "threaded": 128124,
+        "switch": 70,
+        "attempts": 6391,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 9,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 85,
+        "calls": 630,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 22,
+        "bytes": 6420,
+        "hits": 6278,
+        "returns": 5887,
+        "stalled": 5755,
+        "charged_edges": 903,
+        "budget_exits": 2,
+        "id": 85,
+        "line": 874,
+        "name": ""
+      }
+    },
+    {
+      "id": 87,
+      "coverage": {
+        "id": 87,
+        "line": 886,
+        "threaded": 55324,
+        "switch": 16,
+        "attempts": 6114,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 8,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 87,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 5236,
+        "hits": 5953,
+        "returns": 5948,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 87,
+        "line": 886,
+        "name": ""
+      }
+    },
+    {
+      "id": 88,
+      "coverage": {
+        "id": 88,
+        "line": 894,
+        "threaded": 1966,
+        "switch": 17,
+        "attempts": 261,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 16,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 88,
+        "calls": 0,
+        "returns": 139062
+      },
+      "native": {
+        "begin": 0,
+        "ops": 26,
+        "bytes": 8592,
+        "hits": 136,
+        "returns": 136,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 88,
+        "line": 894,
+        "name": ""
+      }
+    },
+    {
+      "id": 89,
+      "coverage": {
+        "id": 89,
+        "line": 906,
+        "threaded": 5325,
+        "switch": 96,
+        "attempts": 696,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 22,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 89,
+        "calls": 108150,
+        "returns": 29891
+      },
+      "native": {
+        "begin": 0,
+        "ops": 33,
+        "bytes": 8860,
+        "hits": 188,
+        "returns": 187,
+        "stalled": 18,
+        "charged_edges": 420,
+        "budget_exits": 0,
+        "id": 89,
+        "line": 906,
+        "name": ""
+      }
+    },
+    {
+      "id": 90,
+      "coverage": {
+        "id": 90,
+        "line": 930,
+        "threaded": 5121,
+        "switch": 34,
+        "attempts": 2362,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 6,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 90,
+        "calls": 1222443,
+        "returns": 609868
+      },
+      "native": {
+        "begin": 0,
+        "ops": 11,
+        "bytes": 3848,
+        "hits": 1953,
+        "returns": 1953,
+        "stalled": 0,
+        "charged_edges": 2014,
+        "budget_exits": 1,
+        "id": 90,
+        "line": 930,
+        "name": ""
+      }
+    },
+    {
+      "id": 91,
+      "coverage": {
+        "id": 91,
+        "line": 958,
+        "threaded": 281035,
+        "switch": 354,
+        "attempts": 41778,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 91,
+        "calls": 1544,
+        "returns": 706
+      },
+      "native": {
+        "begin": 0,
+        "ops": 7,
+        "bytes": 2852,
+        "hits": 41323,
+        "returns": 41211,
+        "stalled": 41058,
+        "charged_edges": 255,
+        "budget_exits": 0,
+        "id": 91,
+        "line": 958,
+        "name": ""
+      }
+    },
+    {
+      "id": 92,
+      "coverage": {
+        "id": 92,
+        "line": 965,
+        "threaded": 721,
+        "switch": 5,
+        "attempts": 82,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 7,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 92,
+        "calls": 176,
+        "returns": 159
+      },
+      "native": {
+        "begin": 0,
+        "ops": 11,
+        "bytes": 3892,
+        "hits": 17,
+        "returns": 17,
+        "stalled": 0,
+        "charged_edges": 103,
+        "budget_exits": 0,
+        "id": 92,
+        "line": 965,
+        "name": ""
+      }
+    },
+    {
+      "id": 93,
+      "coverage": {
+        "id": 93,
+        "line": 995,
+        "threaded": 21309,
+        "switch": 121,
+        "attempts": 30895,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 10,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 93,
+        "calls": 30207,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 17,
+        "bytes": 5244,
+        "hits": 30131,
+        "returns": 18134,
+        "stalled": 0,
+        "charged_edges": 48359,
+        "budget_exits": 55,
+        "id": 93,
+        "line": 995,
+        "name": ""
+      }
+    },
+    {
+      "id": 94,
+      "coverage": {
+        "id": 94,
+        "line": 1013,
+        "threaded": 3640,
+        "switch": 18,
+        "attempts": 512,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 23,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 94,
+        "calls": 382,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 45,
+        "bytes": 15824,
+        "hits": 472,
+        "returns": 208,
+        "stalled": 0,
+        "charged_edges": 589,
+        "budget_exits": 0,
+        "id": 94,
+        "line": 1013,
+        "name": ""
+      }
+    },
+    {
+      "id": 95,
+      "coverage": {
+        "id": 95,
+        "line": 1032,
+        "threaded": 1203,
+        "switch": 4,
+        "attempts": 519,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 95,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 4,
+        "bytes": 2032,
+        "hits": 291,
+        "returns": 291,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 95,
+        "line": 1032,
+        "name": ""
+      }
+    },
+    {
+      "id": 96,
+      "coverage": {
+        "id": 96,
+        "line": 1055,
+        "threaded": 18603,
+        "switch": 122,
+        "attempts": 24418,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 23,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 96,
+        "calls": 115317,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 45,
+        "bytes": 13232,
+        "hits": 24390,
+        "returns": 299,
+        "stalled": 0,
+        "charged_edges": 183490,
+        "budget_exits": 181,
+        "id": 96,
+        "line": 1055,
+        "name": ""
+      }
+    },
+    {
+      "id": 97,
+      "coverage": {
+        "id": 97,
+        "line": 1074,
+        "threaded": 4545,
+        "switch": 16,
+        "attempts": 594,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 17,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 97,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 33,
+        "bytes": 9636,
+        "hits": 561,
+        "returns": 268,
+        "stalled": 268,
+        "charged_edges": 268,
+        "budget_exits": 0,
+        "id": 97,
+        "line": 1074,
+        "name": ""
+      }
+    },
+    {
+      "id": 98,
+      "coverage": {
+        "id": 98,
+        "line": 1098,
+        "threaded": 246449,
+        "switch": 859,
+        "attempts": 34839,
+        "warmup": 4294967295,
+        "retired": 3,
+        "active": 20,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 98,
+        "calls": 211615,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 39,
+        "bytes": 10188,
+        "hits": 32368,
+        "returns": 30157,
+        "stalled": 0,
+        "charged_edges": 504411,
+        "budget_exits": 491,
+        "id": 98,
+        "line": 1098,
+        "name": ""
+      }
+    },
+    {
+      "id": 99,
+      "coverage": {
+        "id": 99,
+        "line": 1119,
+        "threaded": 15507,
+        "switch": 130,
+        "attempts": 12502,
+        "warmup": 4294967294,
+        "retired": 3,
+        "active": 44,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 99,
+        "calls": 73698,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 78,
+        "bytes": 20940,
+        "hits": 12452,
+        "returns": 265,
+        "stalled": 36,
+        "charged_edges": 195272,
+        "budget_exits": 192,
+        "id": 99,
+        "line": 1119,
+        "name": ""
+      }
+    },
+    {
+      "id": 100,
+      "coverage": {
+        "id": 100,
+        "line": 1145,
+        "threaded": 46570,
+        "switch": 1023,
+        "attempts": 32102,
+        "warmup": 4294967294,
+        "retired": 1,
+        "active": 14,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 100,
+        "calls": 43630,
+        "returns": 54159
+      },
+      "native": {
+        "begin": 0,
+        "ops": 28,
+        "bytes": 7900,
+        "hits": 29435,
+        "returns": 6502,
+        "stalled": 77,
+        "charged_edges": 48592,
+        "budget_exits": 46,
+        "id": 100,
+        "line": 1145,
+        "name": ""
+      }
+    },
+    {
+      "id": 101,
+      "coverage": {
+        "id": 101,
+        "line": 1168,
+        "threaded": 99961,
+        "switch": 71,
+        "attempts": 17905,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 101,
+        "calls": 550,
+        "returns": 524
+      },
+      "native": {
+        "begin": 0,
+        "ops": 7,
+        "bytes": 2852,
+        "hits": 17840,
+        "returns": 17831,
+        "stalled": 17830,
+        "charged_edges": 2,
+        "budget_exits": 0,
+        "id": 101,
+        "line": 1168,
+        "name": ""
+      }
+    },
+    {
+      "id": 102,
+      "coverage": {
+        "id": 102,
+        "line": 1172,
+        "threaded": 9522,
+        "switch": 20,
+        "attempts": 9087,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 4,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 102,
+        "calls": 0,
+        "returns": 728943
+      },
+      "native": {
+        "begin": 0,
+        "ops": 6,
+        "bytes": 3068,
+        "hits": 8964,
+        "returns": 8964,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 102,
+        "line": 1172,
+        "name": ""
+      }
+    },
+    {
+      "id": 103,
+      "coverage": {
+        "id": 103,
+        "line": 1176,
+        "threaded": 1197,
+        "switch": 16,
+        "attempts": 719,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 4,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 103,
+        "calls": 0,
+        "returns": 728901
+      },
+      "native": {
+        "begin": 0,
+        "ops": 7,
+        "bytes": 3400,
+        "hits": 616,
+        "returns": 616,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 103,
+        "line": 1176,
+        "name": ""
+      }
+    },
+    {
+      "id": 104,
+      "coverage": {
+        "id": 104,
+        "line": 1179,
+        "threaded": 54179,
+        "switch": 939,
+        "attempts": 19351,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 10,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 104,
+        "calls": 2178172,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 18,
+        "bytes": 6788,
+        "hits": 19233,
+        "returns": 9173,
+        "stalled": 1564,
+        "charged_edges": 4096767,
+        "budget_exits": 3997,
+        "id": 104,
+        "line": 1179,
+        "name": ""
+      }
+    },
+    {
+      "id": 105,
+      "coverage": {
+        "id": 105,
+        "line": 1358,
+        "threaded": 306,
+        "switch": 27,
+        "attempts": 1,
+        "warmup": 62,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 106,
+      "coverage": {
+        "id": 106,
+        "line": 1,
+        "threaded": 537,
+        "switch": 456,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    }
+  ],
+  "exits": [
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 63,
+      "count": 8,
+      "id": 5,
+      "line": 463,
+      "opcode": "NEW_OBJ",
+      "name": "OrderedCollection"
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 232,
+      "count": 8,
+      "id": 5,
+      "line": 463,
+      "opcode": "PUTTHISC",
+      "name": "OrderedCollection"
+    },
+    {
+      "begin": 0,
+      "pc": 0,
+      "op": 232,
+      "count": 8,
+      "id": 7,
+      "line": 560,
+      "opcode": "PUTTHISC",
+      "name": "Constraint"
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 8,
+      "id": 8,
+      "line": 619,
+      "opcode": "CALL",
+      "name": "UnaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 232,
+      "count": 8,
+      "id": 8,
+      "line": 620,
+      "opcode": "PUTTHISC",
+      "name": "UnaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 13,
+      "op": 61,
+      "count": 8,
+      "id": 8,
+      "line": 622,
+      "opcode": "CALL",
+      "name": "UnaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 66,
+      "count": 6245,
+      "id": 8,
+      "line": 623,
+      "opcode": "RETUNDEF",
+      "name": "UnaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 61,
+      "count": 8,
+      "id": 9,
+      "line": 700,
+      "opcode": "CALL",
+      "name": "StayConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 66,
+      "count": 5946,
+      "id": 9,
+      "line": 701,
+      "opcode": "RETUNDEF",
+      "name": "StayConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 61,
+      "count": 8,
+      "id": 10,
+      "line": 718,
+      "opcode": "CALL",
+      "name": "EditConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 66,
+      "count": 237,
+      "id": 10,
+      "line": 719,
+      "opcode": "RETUNDEF",
+      "name": "EditConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 8,
+      "id": 11,
+      "line": 748,
+      "opcode": "CALL",
+      "name": "BinaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 232,
+      "count": 8,
+      "id": 11,
+      "line": 749,
+      "opcode": "PUTTHISC",
+      "name": "BinaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 61,
+      "count": 1,
+      "id": 11,
+      "line": 752,
+      "opcode": "CALL",
+      "name": "BinaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 66,
+      "count": 11825,
+      "id": 11,
+      "line": 753,
+      "opcode": "RETUNDEF",
+      "name": "BinaryConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 232,
+      "count": 8,
+      "id": 12,
+      "line": 862,
+      "opcode": "PUTTHISC",
+      "name": "ScaleConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 66,
+      "count": 5889,
+      "id": 12,
+      "line": 866,
+      "opcode": "RETUNDEF",
+      "name": "ScaleConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 61,
+      "count": 8,
+      "id": 13,
+      "line": 921,
+      "opcode": "CALL",
+      "name": "EqualityConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 66,
+      "count": 5873,
+      "id": 13,
+      "line": 922,
+      "opcode": "RETUNDEF",
+      "name": "EqualityConstraint"
+    },
+    {
+      "begin": 0,
+      "pc": 0,
+      "op": 0,
+      "count": 1,
+      "id": 14,
+      "line": 944,
+      "opcode": "LDREG",
+      "name": "Variable"
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 232,
+      "count": 7,
+      "id": 14,
+      "line": 944,
+      "opcode": "PUTTHISC",
+      "name": "Variable"
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 232,
+      "count": 8,
+      "id": 14,
+      "line": 945,
+      "opcode": "PUTTHISC",
+      "name": "Variable"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 232,
+      "count": 8,
+      "id": 15,
+      "line": 977,
+      "opcode": "PUTTHISC",
+      "name": "Planner"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 63,
+      "count": 8,
+      "id": 16,
+      "line": 1164,
+      "opcode": "NEW_OBJ",
+      "name": "Plan"
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 232,
+      "count": 8,
+      "id": 16,
+      "line": 1164,
+      "opcode": "PUTTHISC",
+      "name": "Plan"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 77,
+      "count": 1,
+      "id": 17,
+      "line": 1204,
+      "opcode": "GETGLOBAL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 1,
+      "count": 5884,
+      "id": 17,
+      "line": 1209,
+      "opcode": "LDCONST",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 17,
+      "op": 77,
+      "count": 1,
+      "id": 17,
+      "line": 1212,
+      "opcode": "GETGLOBAL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 23,
+      "op": 63,
+      "count": 5875,
+      "id": 17,
+      "line": 1212,
+      "opcode": "NEW_OBJ",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 77,
+      "count": 2,
+      "id": 17,
+      "line": 1218,
+      "opcode": "GETGLOBAL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 37,
+      "op": 63,
+      "count": 59,
+      "id": 17,
+      "line": 1218,
+      "opcode": "NEW_OBJ",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 38,
+      "op": 77,
+      "count": 2,
+      "id": 17,
+      "line": 1219,
+      "opcode": "GETGLOBAL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 43,
+      "op": 63,
+      "count": 7,
+      "id": 17,
+      "line": 1219,
+      "opcode": "NEW_OBJ",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 45,
+      "op": 77,
+      "count": 2,
+      "id": 17,
+      "line": 1220,
+      "opcode": "GETGLOBAL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 46,
+      "op": 63,
+      "count": 6,
+      "id": 17,
+      "line": 1220,
+      "opcode": "NEW_OBJ",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 51,
+      "op": 61,
+      "count": 8,
+      "id": 17,
+      "line": 1221,
+      "opcode": "CALL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 52,
+      "op": 77,
+      "count": 2,
+      "id": 17,
+      "line": 1222,
+      "opcode": "GETGLOBAL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 55,
+      "op": 61,
+      "count": 7,
+      "id": 17,
+      "line": 1222,
+      "opcode": "CALL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 60,
+      "op": 230,
+      "count": 61,
+      "id": 17,
+      "line": 1224,
+      "opcode": "PUTPROPC",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 63,
+      "op": 61,
+      "count": 1,
+      "id": 17,
+      "line": 1225,
+      "opcode": "CALL",
+      "name": "chainTest"
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 68,
+      "count": 8,
+      "id": 18,
+      "line": 1238,
+      "opcode": "RESOLVEVAR",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 77,
+      "count": 1,
+      "id": 18,
+      "line": 1238,
+      "opcode": "GETGLOBAL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 77,
+      "count": 1,
+      "id": 18,
+      "line": 1239,
+      "opcode": "GETGLOBAL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 77,
+      "count": 1,
+      "id": 18,
+      "line": 1240,
+      "opcode": "GETGLOBAL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 63,
+      "count": 7,
+      "id": 18,
+      "line": 1240,
+      "opcode": "NEW_OBJ",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 18,
+      "op": 77,
+      "count": 1,
+      "id": 18,
+      "line": 1243,
+      "opcode": "GETGLOBAL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 19,
+      "op": 63,
+      "count": 7,
+      "id": 18,
+      "line": 1243,
+      "opcode": "NEW_OBJ",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 1,
+      "count": 5890,
+      "id": 18,
+      "line": 1245,
+      "opcode": "LDCONST",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 31,
+      "op": 1,
+      "count": 8,
+      "id": 18,
+      "line": 1246,
+      "opcode": "LDCONST",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 39,
+      "op": 61,
+      "count": 8,
+      "id": 18,
+      "line": 1247,
+      "opcode": "CALL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 45,
+      "op": 63,
+      "count": 141,
+      "id": 18,
+      "line": 1248,
+      "opcode": "NEW_OBJ",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 54,
+      "op": 63,
+      "count": 5888,
+      "id": 18,
+      "line": 1249,
+      "opcode": "NEW_OBJ",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 60,
+      "op": 137,
+      "count": 60,
+      "id": 18,
+      "line": 1252,
+      "opcode": "CALL_GLOBAL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 85,
+      "op": 61,
+      "count": 11,
+      "id": 18,
+      "line": 1258,
+      "opcode": "CALL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 98,
+      "op": 137,
+      "count": 49,
+      "id": 18,
+      "line": 1261,
+      "opcode": "CALL_GLOBAL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 104,
+      "op": 61,
+      "count": 7,
+      "id": 18,
+      "line": 1263,
+      "opcode": "CALL",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 114,
+      "op": 170,
+      "count": 6,
+      "id": 18,
+      "line": 1262,
+      "opcode": "JMP_LT",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 115,
+      "op": 66,
+      "count": 47,
+      "id": 18,
+      "line": 1266,
+      "opcode": "RETUNDEF",
+      "name": "projectionTest"
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 63,
+      "count": 233,
+      "id": 19,
+      "line": 1269,
+      "opcode": "NEW_OBJ",
+      "name": "change"
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 63,
+      "count": 8,
+      "id": 19,
+      "line": 1270,
+      "opcode": "NEW_OBJ",
+      "name": "change"
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 61,
+      "count": 8,
+      "id": 19,
+      "line": 1271,
+      "opcode": "CALL",
+      "name": "change"
+    },
+    {
+      "begin": 0,
+      "pc": 18,
+      "op": 61,
+      "count": 8,
+      "id": 19,
+      "line": 1272,
+      "opcode": "CALL",
+      "name": "change"
+    },
+    {
+      "begin": 0,
+      "pc": 31,
+      "op": 61,
+      "count": 8,
+      "id": 19,
+      "line": 1277,
+      "opcode": "CALL",
+      "name": "change"
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 66,
+      "count": 234,
+      "id": 19,
+      "line": 1278,
+      "opcode": "RETUNDEF",
+      "name": "change"
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 61,
+      "count": 2101,
+      "id": 49,
+      "line": 467,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 66,
+      "count": 137,
+      "id": 49,
+      "line": 468,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 65,
+      "count": 1307,
+      "id": 50,
+      "line": 471,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 65,
+      "count": 644,
+      "id": 51,
+      "line": 475,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 65,
+      "count": 129,
+      "id": 52,
+      "line": 479,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 53,
+      "count": 14,
+      "id": 53,
+      "line": 487,
+      "opcode": "PUTPROP",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 170,
+      "count": 14,
+      "id": 53,
+      "line": 484,
+      "opcode": "JMP_LT",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 170,
+      "count": 1,
+      "id": 53,
+      "line": 493,
+      "opcode": "JMP_LT",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 26,
+      "op": 66,
+      "count": 99,
+      "id": 53,
+      "line": 495,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 65,
+      "count": 93,
+      "id": 54,
+      "line": 513,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 65,
+      "count": 12114,
+      "id": 55,
+      "line": 517,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 61,
+      "count": 56,
+      "id": 56,
+      "line": 521,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 65,
+      "count": 182,
+      "id": 56,
+      "line": 521,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 65,
+      "count": 1,
+      "id": 58,
+      "line": 530,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 61,
+      "count": 16,
+      "id": 59,
+      "line": 567,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 77,
+      "count": 3,
+      "id": 59,
+      "line": 568,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 66,
+      "count": 18133,
+      "id": 59,
+      "line": 569,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 61,
+      "count": 102,
+      "id": 60,
+      "line": 579,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 65,
+      "id": 60,
+      "line": 580,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 77,
+      "count": 2,
+      "id": 60,
+      "line": 581,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 65,
+      "count": 1,
+      "id": 60,
+      "line": 583,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 20,
+      "op": 61,
+      "count": 6331,
+      "id": 60,
+      "line": 585,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 23,
+      "op": 61,
+      "count": 21,
+      "id": 60,
+      "line": 586,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 30,
+      "op": 61,
+      "count": 10419,
+      "id": 60,
+      "line": 588,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 230,
+      "count": 4,
+      "id": 60,
+      "line": 589,
+      "opcode": "PUTPROPC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 33,
+      "op": 77,
+      "count": 3,
+      "id": 60,
+      "line": 590,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 37,
+      "op": 61,
+      "count": 13652,
+      "id": 60,
+      "line": 590,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 43,
+      "op": 65,
+      "count": 30125,
+      "id": 60,
+      "line": 593,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 61,
+      "count": 16,
+      "id": 61,
+      "line": 597,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 66,
+      "count": 176,
+      "id": 61,
+      "line": 598,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 61,
+      "count": 8,
+      "id": 63,
+      "line": 631,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 66,
+      "count": 6241,
+      "id": 63,
+      "line": 633,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 61,
+      "count": 5,
+      "id": 64,
+      "line": 641,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 66,
+      "count": 16,
+      "id": 64,
+      "line": 642,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 65,
+      "count": 270,
+      "id": 65,
+      "line": 648,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 65,
+      "count": 6279,
+      "id": 67,
+      "line": 659,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 61,
+      "count": 33,
+      "id": 68,
+      "line": 669,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 66,
+      "count": 44,
+      "id": 68,
+      "line": 671,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 66,
+      "count": 188,
+      "id": 69,
+      "line": 678,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 65,
+      "count": 236,
+      "id": 70,
+      "line": 681,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 1,
+      "id": 71,
+      "line": 685,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 66,
+      "count": 176,
+      "id": 71,
+      "line": 687,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 65,
+      "count": 2,
+      "id": 73,
+      "line": 727,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 764,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 61,
+      "count": 3,
+      "id": 75,
+      "line": 764,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 18,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 765,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 232,
+      "count": 5982,
+      "id": 75,
+      "line": 766,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 33,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 769,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 40,
+      "op": 61,
+      "count": 11,
+      "id": 75,
+      "line": 769,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 43,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 770,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 50,
+      "op": 232,
+      "count": 6008,
+      "id": 75,
+      "line": 771,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 51,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 773,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 60,
+      "op": 61,
+      "count": 5,
+      "id": 75,
+      "line": 773,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 62,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 774,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 71,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 775,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 78,
+      "op": 232,
+      "count": 6007,
+      "id": 75,
+      "line": 776,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 79,
+      "op": 66,
+      "count": 1,
+      "id": 75,
+      "line": 777,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 80,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 778,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 87,
+      "op": 61,
+      "count": 11,
+      "id": 75,
+      "line": 778,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 89,
+      "op": 77,
+      "count": 2,
+      "id": 75,
+      "line": 779,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 96,
+      "op": 232,
+      "count": 5950,
+      "id": 75,
+      "line": 780,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 97,
+      "op": 66,
+      "count": 5996,
+      "id": 75,
+      "line": 782,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 0,
+      "op": 231,
+      "count": 5,
+      "id": 76,
+      "line": 788,
+      "opcode": "GETTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 61,
+      "count": 4,
+      "id": 76,
+      "line": 788,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 231,
+      "count": 5,
+      "id": 76,
+      "line": 789,
+      "opcode": "GETTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 61,
+      "count": 4,
+      "id": 76,
+      "line": 789,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 12,
+      "op": 77,
+      "count": 1,
+      "id": 76,
+      "line": 790,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 232,
+      "count": 7,
+      "id": 76,
+      "line": 790,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 66,
+      "count": 35,
+      "id": 76,
+      "line": 791,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 77,
+      "count": 3,
+      "id": 77,
+      "line": 797,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 65,
+      "count": 135,
+      "id": 77,
+      "line": 797,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 0,
+      "op": 9,
+      "count": 15,
+      "id": 78,
+      "line": 804,
+      "opcode": "LDTHIS",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 61,
+      "count": 23,
+      "id": 78,
+      "line": 804,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 230,
+      "count": 15,
+      "id": 78,
+      "line": 804,
+      "opcode": "PUTPROPC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 66,
+      "count": 6025,
+      "id": 78,
+      "line": 805,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 77,
+      "count": 3,
+      "id": 79,
+      "line": 811,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 65,
+      "count": 1014,
+      "id": 79,
+      "line": 811,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 65,
+      "count": 17,
+      "id": 79,
+      "line": 811,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 77,
+      "count": 3,
+      "id": 80,
+      "line": 818,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 65,
+      "count": 1084,
+      "id": 80,
+      "line": 818,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 65,
+      "count": 39,
+      "id": 80,
+      "line": 818,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 61,
+      "count": 12,
+      "id": 81,
+      "line": 827,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 19,
+      "id": 81,
+      "line": 827,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 77,
+      "count": 2,
+      "id": 81,
+      "line": 828,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 61,
+      "count": 19,
+      "id": 81,
+      "line": 828,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 22,
+      "op": 61,
+      "count": 10,
+      "id": 81,
+      "line": 830,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 23,
+      "op": 66,
+      "count": 139,
+      "id": 81,
+      "line": 831,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 0,
+      "op": 77,
+      "count": 1,
+      "id": 82,
+      "line": 837,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 232,
+      "count": 7,
+      "id": 82,
+      "line": 837,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 66,
+      "count": 1,
+      "id": 82,
+      "line": 838,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 61,
+      "count": 22,
+      "id": 83,
+      "line": 841,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 13,
+      "op": 65,
+      "count": 38,
+      "id": 83,
+      "line": 842,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 190,
+      "count": 8,
+      "id": 85,
+      "line": 874,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 61,
+      "count": 8,
+      "id": 85,
+      "line": 875,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 20,
+      "op": 61,
+      "count": 8,
+      "id": 85,
+      "line": 876,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 21,
+      "op": 66,
+      "count": 5887,
+      "id": 85,
+      "line": 877,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 190,
+      "count": 5948,
+      "id": 87,
+      "line": 886,
+      "opcode": "GETPROPC_CACHED",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 66,
+      "count": 5948,
+      "id": 87,
+      "line": 888,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 66,
+      "count": 133,
+      "id": 88,
+      "line": 896,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 66,
+      "count": 3,
+      "id": 88,
+      "line": 899,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 61,
+      "count": 17,
+      "id": 89,
+      "line": 907,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 15,
+      "id": 89,
+      "line": 907,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 61,
+      "count": 42,
+      "id": 89,
+      "line": 908,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 31,
+      "op": 61,
+      "count": 18,
+      "id": 89,
+      "line": 910,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 66,
+      "count": 187,
+      "id": 89,
+      "line": 911,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 61,
+      "count": 506,
+      "id": 90,
+      "line": 930,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 693,
+      "id": 90,
+      "line": 930,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 66,
+      "count": 1953,
+      "id": 90,
+      "line": 931,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 61,
+      "count": 1103,
+      "id": 91,
+      "line": 958,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 66,
+      "count": 41211,
+      "id": 91,
+      "line": 959,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 66,
+      "count": 17,
+      "id": 92,
+      "line": 967,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 25,
+      "id": 93,
+      "line": 996,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 13,
+      "op": 61,
+      "count": 12,
+      "id": 93,
+      "line": 998,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 66,
+      "count": 18134,
+      "id": 93,
+      "line": 999,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 61,
+      "count": 24,
+      "id": 94,
+      "line": 1015,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 39,
+      "op": 61,
+      "count": 33,
+      "id": 94,
+      "line": 1024,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 44,
+      "op": 66,
+      "count": 208,
+      "id": 94,
+      "line": 1026,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 65,
+      "count": 291,
+      "id": 95,
+      "line": 1032,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 77,
+      "count": 1,
+      "id": 96,
+      "line": 1056,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 63,
+      "count": 15,
+      "id": 96,
+      "line": 1056,
+      "opcode": "NEW_OBJ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 61,
+      "count": 12,
+      "id": 96,
+      "line": 1059,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 61,
+      "count": 19,
+      "id": 96,
+      "line": 1060,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 22,
+      "op": 61,
+      "count": 316,
+      "id": 96,
+      "line": 1060,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 28,
+      "op": 61,
+      "count": 12563,
+      "id": 96,
+      "line": 1061,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 31,
+      "op": 61,
+      "count": 1,
+      "id": 96,
+      "line": 1062,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 37,
+      "op": 61,
+      "count": 18,
+      "id": 96,
+      "line": 1063,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 39,
+      "op": 61,
+      "count": 24,
+      "id": 96,
+      "line": 1063,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 43,
+      "op": 186,
+      "count": 11,
+      "id": 96,
+      "line": 1058,
+      "opcode": "JMP_GTI",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 44,
+      "op": 65,
+      "count": 299,
+      "id": 96,
+      "line": 1066,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 63,
+      "count": 10,
+      "id": 97,
+      "line": 1074,
+      "opcode": "NEW_OBJ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 22,
+      "op": 61,
+      "count": 269,
+      "id": 97,
+      "line": 1079,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 31,
+      "op": 61,
+      "count": 16,
+      "id": 97,
+      "line": 1081,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 65,
+      "count": 268,
+      "id": 97,
+      "line": 1081,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 1,
+      "op": 63,
+      "count": 8,
+      "id": 98,
+      "line": 1098,
+      "opcode": "NEW_OBJ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 61,
+      "count": 8,
+      "id": 98,
+      "line": 1099,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 61,
+      "count": 74,
+      "id": 98,
+      "line": 1101,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 61,
+      "count": 80,
+      "id": 98,
+      "line": 1102,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 61,
+      "count": 188,
+      "id": 98,
+      "line": 1106,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 30,
+      "op": 61,
+      "count": 55,
+      "id": 98,
+      "line": 1107,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 61,
+      "count": 47,
+      "id": 98,
+      "line": 1107,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 36,
+      "op": 186,
+      "count": 10,
+      "id": 98,
+      "line": 1100,
+      "opcode": "JMP_GTI",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 38,
+      "op": 65,
+      "count": 30157,
+      "id": 98,
+      "line": 1109,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 63,
+      "count": 236,
+      "id": 99,
+      "line": 1122,
+      "opcode": "NEW_OBJ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 12,
+      "op": 63,
+      "count": 8,
+      "id": 99,
+      "line": 1123,
+      "opcode": "NEW_OBJ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 17,
+      "op": 61,
+      "count": 8,
+      "id": 99,
+      "line": 1124,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 21,
+      "op": 61,
+      "count": 8,
+      "id": 99,
+      "line": 1126,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 32,
+      "op": 61,
+      "count": 36,
+      "id": 99,
+      "line": 1129,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 37,
+      "op": 61,
+      "count": 231,
+      "id": 99,
+      "line": 1130,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 42,
+      "op": 170,
+      "count": 26,
+      "id": 99,
+      "line": 1127,
+      "opcode": "JMP_LT",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 56,
+      "op": 61,
+      "count": 11,
+      "id": 99,
+      "line": 1135,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 61,
+      "op": 61,
+      "count": 18,
+      "id": 99,
+      "line": 1136,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 66,
+      "op": 61,
+      "count": 11,
+      "id": 99,
+      "line": 1137,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 67,
+      "op": 61,
+      "count": 11712,
+      "id": 99,
+      "line": 1137,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 72,
+      "op": 170,
+      "count": 10,
+      "id": 99,
+      "line": 1133,
+      "opcode": "JMP_LT",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 76,
+      "op": 186,
+      "count": 6,
+      "id": 99,
+      "line": 1125,
+      "opcode": "JMP_GTI",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 77,
+      "op": 65,
+      "count": 265,
+      "id": 99,
+      "line": 1141,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 61,
+      "count": 43,
+      "id": 100,
+      "line": 1149,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 21,
+      "op": 61,
+      "count": 29069,
+      "id": 100,
+      "line": 1150,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 26,
+      "op": 170,
+      "count": 89,
+      "id": 100,
+      "line": 1147,
+      "opcode": "JMP_LT",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 27,
+      "op": 66,
+      "count": 6502,
+      "id": 100,
+      "line": 1152,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 61,
+      "count": 5031,
+      "id": 101,
+      "line": 1168,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 66,
+      "count": 17831,
+      "id": 101,
+      "line": 1169,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 65,
+      "count": 8964,
+      "id": 102,
+      "line": 1172,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 6,
+      "op": 65,
+      "count": 616,
+      "id": 103,
+      "line": 1176,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 617,
+      "id": 104,
+      "line": 1181,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 61,
+      "count": 9190,
+      "id": 104,
+      "line": 1182,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 61,
+      "count": 617,
+      "id": 104,
+      "line": 1180,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 170,
+      "count": 791,
+      "id": 104,
+      "line": 1180,
+      "opcode": "JMP_LT",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 17,
+      "op": 66,
+      "count": 9173,
+      "id": 104,
+      "line": 1184,
+      "opcode": "RETUNDEF",
+      "name": ""
+    }
+  ],
+  "totals": {
+    "functions": 63,
+    "loops": 0,
+    "templates": 0,
+    "hits": 436889,
+    "code_bytes": 368456,
+    "native_calls": 4320745,
+    "native_returns": 4229415
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "revision": "1dd9aa75",
+  "loop_fix": "602413b0",
+  "baseline": "a36d275b",
+  "date": "2026-10-27",
+  "platform": "macOS 27 arm64",
+  "compiler": "C3 0.8.5 / LLVM 23.1.3",
+  "timings": {
+    "target_pairs": 9,
+    "other_pairs": 3,
+    "fresh_processes": true,
+    "alternating_order": true,
+    "build": "default O2 release, no SLJIT_STATS/OP_PROFILE",
+    "values": "mini internal milliseconds; wall times also stored",
+    "crypto_and_gameboy_comparator": "baseline interpreter: original JIT invalid/timeout"
+  },
+  "validation": {
+    "focused_modes": 54,
+    "focused_passed": 54,
+    "mini_modes": 30,
+    "mini_passed": 30,
+    "asan_cli_runs": 22,
+    "asan_cli_passed": 22,
+    "embedding_arm64_asan": "PASS, SLJIT_DEBUG=1",
+    "embedding_x64_rosetta": "PASS, SLJIT_DEBUG=1",
+    "local_rosetta_modules": "interpreter/JIT-stress match; local retains known default-profile failures",
+    "test262": "language/expressions, language/statements, built-ins/Array verdicts match"
+  },
+  "notes": [
+    "Diagnostic census uses SLJIT_STATS and OP_PROFILE; timings use neither.",
+    "Counters/histogram were made conditional after the diagnostic build; the SLJIT_STATS field layout and generated execution are unchanged.",
+    "ASan CLI and differential suites rerun after the final normal-build layout change.",
+    "The complete optimizer, allocating continuations, direct patched JS call sites and the 10x target are not implemented."
+  ],
+  "artifacts": [
+    "native-final-timings.json",
+    "native-final-other-minis.json",
+    "native-final-mini-correctness.json",
+    "native-fixtures-final.json",
+    "native-final-asan-cli.json",
+    "native-final-asan-run.txt",
+    "native-final-x64-run.txt",
+    "native-final-diff.txt",
+    "native-final-test262-diff.txt",
+    "closure-binding-repro.js",
+    "crypto-copy-repro.js",
+    "native-loop-repros.json",
+    "richards-native-final-profile.json",
+    "richards-native-final-profile.txt",
+    "richards-native-final-report.txt",
+    "deltablue-native-final-profile.json",
+    "deltablue-native-final-profile.txt",
+    "deltablue-native-final-report.txt",
+    "splay-native-final-profile.json",
+    "splay-native-final-profile.txt",
+    "splay-native-final-report.txt",
+    "native-sample-summary.json",
+    "richards-native-final.sample",
+    "richards-native-final-sample-run.txt",
+    "deltablue-native-final.sample",
+    "deltablue-native-final-sample-run.txt"
+  ]
+}

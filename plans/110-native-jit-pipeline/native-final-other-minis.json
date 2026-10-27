@@ -1,0 +1,944 @@
+[
+  {
+    "rep": 0,
+    "bench": "box2d",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Box2D": 215.0
+    },
+    "wall_ms": 237.95949993655086,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "box2d",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Box2D": 227.0
+    },
+    "wall_ms": 249.271625187248,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "code-load",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "CodeLoadClosure": 7.0,
+      "CodeLoadJQuery": 153.0
+    },
+    "wall_ms": 165.9799579065293,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "code-load",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "CodeLoadClosure": 7.0,
+      "CodeLoadJQuery": 154.0
+    },
+    "wall_ms": 165.45191616751254,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "crypto",
+    "mode": "baseline",
+    "flags": [],
+    "values": {
+      "Encrypt": 15.0,
+      "Decrypt": 265.0
+    },
+    "wall_ms": 288.35758310742676,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "crypto",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Encrypt": 14.0,
+      "Decrypt": 226.0
+    },
+    "wall_ms": 248.26204194687307,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "earley-boyer",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Earley": 20.0,
+      "Boyer": 159.0
+    },
+    "wall_ms": 193.09645891189575,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "earley-boyer",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Earley": 20.0,
+      "Boyer": 160.0
+    },
+    "wall_ms": 193.9007919281721,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "gbemu",
+    "mode": "baseline",
+    "flags": [],
+    "values": {
+      "Gameboy": 246.0
+    },
+    "wall_ms": 282.53612481057644,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "gbemu",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Gameboy": 308.0
+    },
+    "wall_ms": 343.84895907714963,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "mandreel",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Mandreel": 749.0
+    },
+    "wall_ms": 1573.2211670838296,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "mandreel",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Mandreel": 826.0
+    },
+    "wall_ms": 1707.6823331881315,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "navier-stokes",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "NavierStokes": 217.0
+    },
+    "wall_ms": 225.6531249731779,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "navier-stokes",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "NavierStokes": 210.0
+    },
+    "wall_ms": 217.6058751065284,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "pdfjs",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "PdfJS": 384.0
+    },
+    "wall_ms": 594.0022501163185,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "pdfjs",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "PdfJS": 369.0
+    },
+    "wall_ms": 576.1696249246597,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "raytrace",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RayTrace": 161.0
+    },
+    "wall_ms": 167.9768750909716,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "raytrace",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RayTrace": 164.0
+    },
+    "wall_ms": 169.29329093545675,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "regexp",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RegExp": 339.0
+    },
+    "wall_ms": 478.09212491847575,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "regexp",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RegExp": 337.0
+    },
+    "wall_ms": 476.3829158619046,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "typescript",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Typescript": 1203.0
+    },
+    "wall_ms": 1263.326457934454,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "typescript",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Typescript": 1230.0
+    },
+    "wall_ms": 1288.3184999227524,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "zlib",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "zlib": 4961.0
+    },
+    "wall_ms": 4968.631792115048,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "zlib",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "zlib": 4788.0
+    },
+    "wall_ms": 4794.400833081454,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "box2d",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Box2D": 226.0
+    },
+    "wall_ms": 247.92104098014534,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "box2d",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Box2D": 219.0
+    },
+    "wall_ms": 240.8804998267442,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "code-load",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "CodeLoadClosure": 7.0,
+      "CodeLoadJQuery": 155.0
+    },
+    "wall_ms": 167.93800005689263,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "code-load",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "CodeLoadClosure": 6.0,
+      "CodeLoadJQuery": 153.0
+    },
+    "wall_ms": 164.7059170063585,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "crypto",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Encrypt": 14.0,
+      "Decrypt": 228.0
+    },
+    "wall_ms": 249.386667041108,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "crypto",
+    "mode": "baseline",
+    "flags": [],
+    "values": {
+      "Encrypt": 15.0,
+      "Decrypt": 267.0
+    },
+    "wall_ms": 289.1963750589639,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "earley-boyer",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Earley": 21.0,
+      "Boyer": 160.0
+    },
+    "wall_ms": 194.035833934322,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "earley-boyer",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Earley": 20.0,
+      "Boyer": 160.0
+    },
+    "wall_ms": 192.7692499011755,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "gbemu",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Gameboy": 306.0
+    },
+    "wall_ms": 343.6437079217285,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "gbemu",
+    "mode": "baseline",
+    "flags": [],
+    "values": {
+      "Gameboy": 246.0
+    },
+    "wall_ms": 281.183916144073,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "mandreel",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Mandreel": 823.0
+    },
+    "wall_ms": 1702.6920840144157,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "mandreel",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Mandreel": 750.0
+    },
+    "wall_ms": 1571.133082965389,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "navier-stokes",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "NavierStokes": 209.0
+    },
+    "wall_ms": 217.12329098954797,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "navier-stokes",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "NavierStokes": 207.0
+    },
+    "wall_ms": 215.63233295455575,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "pdfjs",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "PdfJS": 368.0
+    },
+    "wall_ms": 576.3113750144839,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "pdfjs",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "PdfJS": 384.0
+    },
+    "wall_ms": 592.158499872312,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "raytrace",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RayTrace": 165.0
+    },
+    "wall_ms": 170.28583399951458,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "raytrace",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RayTrace": 162.0
+    },
+    "wall_ms": 167.4447909463197,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "regexp",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RegExp": 338.0
+    },
+    "wall_ms": 477.1035409066826,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "regexp",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RegExp": 337.0
+    },
+    "wall_ms": 474.813292035833,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "typescript",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Typescript": 1227.0
+    },
+    "wall_ms": 1285.5825410224497,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "typescript",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Typescript": 1199.0
+    },
+    "wall_ms": 1256.961332866922,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "zlib",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "zlib": 4799.0
+    },
+    "wall_ms": 4805.749583989382,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "zlib",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "zlib": 4966.0
+    },
+    "wall_ms": 4972.728499909863,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "box2d",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Box2D": 216.0
+    },
+    "wall_ms": 238.2155831437558,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "box2d",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Box2D": 226.0
+    },
+    "wall_ms": 248.49324999377131,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "code-load",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "CodeLoadClosure": 6.0,
+      "CodeLoadJQuery": 153.0
+    },
+    "wall_ms": 164.5677499473095,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "code-load",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "CodeLoadClosure": 7.0,
+      "CodeLoadJQuery": 154.0
+    },
+    "wall_ms": 166.07379098422825,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "crypto",
+    "mode": "baseline",
+    "flags": [],
+    "values": {
+      "Encrypt": 14.0,
+      "Decrypt": 266.0
+    },
+    "wall_ms": 288.2379998918623,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "crypto",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Encrypt": 15.0,
+      "Decrypt": 229.0
+    },
+    "wall_ms": 252.05245800316334,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "earley-boyer",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Earley": 19.0,
+      "Boyer": 160.0
+    },
+    "wall_ms": 192.83225014805794,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "earley-boyer",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Earley": 21.0,
+      "Boyer": 160.0
+    },
+    "wall_ms": 194.26516606472433,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "gbemu",
+    "mode": "baseline",
+    "flags": [],
+    "values": {
+      "Gameboy": 246.0
+    },
+    "wall_ms": 281.40012500807643,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "gbemu",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Gameboy": 307.0
+    },
+    "wall_ms": 343.4068749193102,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "mandreel",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Mandreel": 748.0
+    },
+    "wall_ms": 1566.9887920375913,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "mandreel",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Mandreel": 826.0
+    },
+    "wall_ms": 1711.5429579280317,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "navier-stokes",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "NavierStokes": 208.0
+    },
+    "wall_ms": 215.44795809313655,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "navier-stokes",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "NavierStokes": 210.0
+    },
+    "wall_ms": 217.39295800216496,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "pdfjs",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "PdfJS": 384.0
+    },
+    "wall_ms": 591.1622501444072,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "pdfjs",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "PdfJS": 368.0
+    },
+    "wall_ms": 575.1418340951204,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "raytrace",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RayTrace": 162.0
+    },
+    "wall_ms": 167.45362500660121,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "raytrace",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RayTrace": 165.0
+    },
+    "wall_ms": 170.342291938141,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "regexp",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RegExp": 338.0
+    },
+    "wall_ms": 476.1603749357164,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "regexp",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "RegExp": 338.0
+    },
+    "wall_ms": 476.42350010573864,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "typescript",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Typescript": 1200.0
+    },
+    "wall_ms": 1257.9326250124723,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "typescript",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "Typescript": 1227.0
+    },
+    "wall_ms": 1285.2712920866907,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "zlib",
+    "mode": "baseline",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "zlib": 4955.0
+    },
+    "wall_ms": 4961.649207863957,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "zlib",
+    "mode": "native-final",
+    "flags": [
+      "--jit"
+    ],
+    "values": {
+      "zlib": 4913.0
+    },
+    "wall_ms": 4920.014792121947,
+    "rc": 0
+  }
+]

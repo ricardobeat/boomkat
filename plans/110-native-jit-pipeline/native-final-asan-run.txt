@@ -1,0 +1,245 @@
+SLJIT template compiled render: parts=5 code_bytes=912 plan_bytes=320
+SLJIT function compiled  pc=0..24 function_ops=24 regs=7 code_bytes=4024 plan_bytes=4776
+SLJIT template compiled render: parts=5 code_bytes=912 plan_bytes=320
+SLJIT function compiled  pc=0..24 function_ops=24 regs=7 code_bytes=4024 plan_bytes=4776
+SLJIT function compiled  pc=0..24 function_ops=24 regs=7 code_bytes=4024 plan_bytes=4776
+SLJIT region attempt ops=1427 regs=13 begin=215 budget_used=12072
+SLJIT region result  ops=1427 analyzed=1 emitted=1 code_bytes=39624 budget_used=12072 limit=1048576
+SLJIT function compiled  pc=215..343 function_ops=1427 regs=13 code_bytes=39624 plan_bytes=5712
+SLJIT loop compiled  pc=3..6 code_bytes=824 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3208 plan_bytes=4632
+SLJIT function compiled reference pc=0..10 function_ops=10 regs=7 code_bytes=4064 plan_bytes=4650
+SLJIT loop compiled  pc=2..9 code_bytes=1396 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4932 plan_bytes=4659
+SLJIT function compiled same pc=0..14 function_ops=14 regs=10 code_bytes=4216 plan_bytes=4686
+SLJIT function compiled check pc=0..6 function_ops=6 regs=6 code_bytes=2056 plan_bytes=4614
+SLJIT loop compiled  pc=3..6 code_bytes=824 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3208 plan_bytes=4632
+SLJIT loop compiled  pc=2..9 code_bytes=1396 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4932 plan_bytes=4659
+SLJIT loop compiled  pc=3..6 code_bytes=828 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3212 plan_bytes=4632
+SLJIT loop compiled  pc=2..9 code_bytes=1404 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4940 plan_bytes=4659
+SLJIT loop compiled  pc=3..6 code_bytes=828 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3212 plan_bytes=4632
+SLJIT loop compiled  pc=2..9 code_bytes=1404 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4940 plan_bytes=4659
+SLJIT loop compiled  pc=3..6 code_bytes=828 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3212 plan_bytes=4632
+SLJIT loop compiled  pc=2..9 code_bytes=1404 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4940 plan_bytes=4659
+SLJIT loop compiled  pc=3..6 code_bytes=812 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3212 plan_bytes=4632
+SLJIT loop compiled  pc=2..9 code_bytes=1276 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4940 plan_bytes=4659
+SLJIT loop compiled  pc=3..6 code_bytes=828 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3228 plan_bytes=4632
+SLJIT loop compiled  pc=2..9 code_bytes=1288 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4952 plan_bytes=4659
+SLJIT loop compiled  pc=3..6 code_bytes=824 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3224 plan_bytes=4632
+SLJIT loop compiled  pc=2..9 code_bytes=1280 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=4944 plan_bytes=4659
+SLJIT loop compiled sum pc=3..6 code_bytes=828 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled sum pc=0..8 function_ops=8 regs=5 code_bytes=3212 plan_bytes=4632
+SLJIT loop compiled blend pc=2..12 code_bytes=1576 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled blend pc=0..14 function_ops=14 regs=12 code_bytes=11716 plan_bytes=4686
+SLJIT loop compiled sum pc=3..6 code_bytes=816 plan_bytes=944 ssa=0 mem=1
+SLJIT loop compiled  pc=2..12 code_bytes=1604 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..14 function_ops=14 regs=12 code_bytes=6180 plan_bytes=4686
+SLJIT loop compiled transform pc=2..9 code_bytes=1396 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled transform pc=0..11 function_ops=11 regs=10 code_bytes=4928 plan_bytes=4659
+SLJIT loop compiled ascii pc=3..12 code_bytes=1368 plan_bytes=944 ssa=0 mem=1
+SLJIT function compiled ascii pc=0..14 function_ops=14 regs=8 code_bytes=4100 plan_bytes=4686
+SLJIT loop compiled asciiBinding pc=4..14 code_bytes=1380 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled asciiBinding pc=0..16 function_ops=16 regs=7 code_bytes=4540 plan_bytes=4704
+SLJIT function compiled  pc=0..2 function_ops=2 regs=1 code_bytes=1260 plan_bytes=4578
+SLJIT loop compiled hash pc=3..13 code_bytes=1268 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled hash pc=0..15 function_ops=15 regs=7 code_bytes=6756 plan_bytes=4695
+SLJIT function compiled  pc=0..2 function_ops=2 regs=1 code_bytes=1260 plan_bytes=4578
+SLJIT loop compiled  pc=2..8 code_bytes=1144 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..10 function_ops=10 regs=8 code_bytes=6008 plan_bytes=4650
+SLJIT loop compiled numeric pc=2..15 code_bytes=1796 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled numeric pc=0..17 function_ops=17 regs=13 code_bytes=8076 plan_bytes=4713
+SLJIT function hash hits=490 returns=3 backedges=479 budget_exits=33 code_bytes=6756
+SLJIT loop compiled classify pc=2..19 code_bytes=2096 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled classify pc=0..21 function_ops=21 regs=11 code_bytes=12856 plan_bytes=4749
+SLJIT loop compiled shiftDense pc=6..11 code_bytes=1272 plan_bytes=944 ssa=0 mem=3
+SLJIT loop compiled shiftDense pc=6..11 code_bytes=1132 plan_bytes=944 ssa=0 mem=3
+SLJIT function compiled shiftDense pc=0..20 function_ops=20 regs=11 code_bytes=10920 plan_bytes=4740
+SLJIT function compiled hash pc=0..15 function_ops=15 regs=7 code_bytes=6756 plan_bytes=4695
+SLJIT function compiled  pc=0..22 function_ops=22 regs=6 code_bytes=3764 plan_bytes=4758
+SLJIT loop compiled jitNativeStep pc=7..10 code_bytes=740 plan_bytes=944 ssa=0 mem=0
+SLJIT function compiled jitNativeStep pc=0..14 function_ops=14 regs=6 code_bytes=4028 plan_bytes=4686
+SLJIT function compiled jitNativeDrive pc=0..11 function_ops=11 regs=7 code_bytes=3128 plan_bytes=4659
+SLJIT function compiled jitNativeRecurse pc=0..9 function_ops=9 regs=5 code_bytes=3488 plan_bytes=4641
+SLJIT function compiled  pc=0..333 function_ops=333 regs=9 code_bytes=50392 plan_bytes=7557
+SLJIT function compiled nativeCheck pc=0..15 function_ops=15 regs=9 code_bytes=4016 plan_bytes=4695
+SLJIT function compiled jitNativeSizes pc=0..11 function_ops=11 regs=6 code_bytes=3056 plan_bytes=4659
+SLJIT function compiled jitNativePlanSize pc=0..6 function_ops=6 regs=5 code_bytes=2500 plan_bytes=4614
+SLJIT function compiled jitNativeCollectionSize pc=0..3 function_ops=3 regs=3 code_bytes=1812 plan_bytes=4587
+SLJIT loop compiled nativeArity pc=4..6 code_bytes=720 plan_bytes=944 ssa=0 mem=0
+SLJIT function compiled nativeArity pc=0..10 function_ops=10 regs=7 code_bytes=2940 plan_bytes=4650
+SLJIT loop compiled  pc=3..6 code_bytes=748 plan_bytes=944 ssa=0 mem=0
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=2484 plan_bytes=4632
+SLJIT region attempt ops=1149 regs=63 begin=96 budget_used=328016
+SLJIT region result  ops=1149 analyzed=1 emitted=1 code_bytes=19940 budget_used=328016 limit=1048576
+SLJIT function compiled  pc=96..224 function_ops=1149 regs=63 code_bytes=19940 plan_bytes=5712
+SLJIT function compiled pull pc=0..14 function_ops=14 regs=5 code_bytes=4540 plan_bytes=4686
+SLJIT function compiled enqueue pc=0..11 function_ops=11 regs=7 code_bytes=5968 plan_bytes=4659
+SLJIT function compiled make pc=0..18 function_ops=18 regs=9 code_bytes=2588 plan_bytes=4722
+SLJIT function compiled Sink pc=0..9 function_ops=9 regs=5 code_bytes=2900 plan_bytes=4641
+SLJIT function compiled close pc=0..16 function_ops=16 regs=5 code_bytes=4196 plan_bytes=4704
+SLJIT function compiled _wake pc=0..11 function_ops=11 regs=6 code_bytes=3296 plan_bytes=4659
+SLJIT function compiled count pc=0..2 function_ops=2 regs=1 code_bytes=1440 plan_bytes=4578
+SLJIT function compiled check pc=0..6 function_ops=6 regs=6 code_bytes=2056 plan_bytes=4614
+SLJIT function compiled select pc=0..10 function_ops=10 regs=5 code_bytes=3984 plan_bytes=4650
+SLJIT function compiled compute pc=0..11 function_ops=11 regs=8 code_bytes=4168 plan_bytes=4659
+SLJIT function compiled setFields pc=0..6 function_ops=6 regs=6 code_bytes=2292 plan_bytes=4614
+SLJIT function compiled strictStore pc=0..6 function_ops=6 regs=6 code_bytes=2292 plan_bytes=4614
+SLJIT function compiled hasTypes pc=0..10 function_ops=10 regs=7 code_bytes=3912 plan_bytes=4650
+SLJIT function compiled responseStatus pc=0..24 function_ops=24 regs=10 code_bytes=6464 plan_bytes=4776
+SLJIT function compiled bounds pc=0..8 function_ops=8 regs=8 code_bytes=3356 plan_bytes=4632
+SLJIT function compiled serverPump pc=0..65 function_ops=65 regs=11 code_bytes=11724 plan_bytes=5145
+SLJIT function compiled pull pc=0..7 function_ops=7 regs=4 code_bytes=2752 plan_bytes=4623
+SLJIT function compiled functionFields pc=0..8 function_ops=8 regs=8 code_bytes=2468 plan_bytes=4632
+SLJIT loop compiled jitRegionFields pc=3..8 code_bytes=836 plan_bytes=944 ssa=0 mem=2
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1684 plan_bytes=944 ssa=0 mem=3
+SLJIT function compiled jitRegionCalls pc=0..11 function_ops=11 regs=7 code_bytes=3460 plan_bytes=4659
+SLJIT loop compiled jitRegionFields pc=3..8 code_bytes=772 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled jitRegionFields pc=0..10 function_ops=10 regs=6 code_bytes=3068 plan_bytes=4650
+SLJIT function compiled jitRegionTyped pc=0..16 function_ops=16 regs=12 code_bytes=6760 plan_bytes=4704
+SLJIT function compiled jitRegionCheck pc=0..16 function_ops=16 regs=11 code_bytes=4384 plan_bytes=4704
+SLJIT function compiled  pc=0..200 function_ops=200 regs=12 code_bytes=32892 plan_bytes=6360
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1672 plan_bytes=944 ssa=0 mem=3
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1672 plan_bytes=944 ssa=0 mem=3
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1684 plan_bytes=944 ssa=0 mem=3
+SLJIT function compiled get x pc=0..3 function_ops=3 regs=1 code_bytes=1336 plan_bytes=4587
+SLJIT function compiled jitRegionHelper pc=0..2 function_ops=2 regs=3 code_bytes=1452 plan_bytes=4578
+SLJIT function compiled jitRegionHelper pc=0..3 function_ops=3 regs=3 code_bytes=1512 plan_bytes=4587
+SLJIT loop compiled jitRegionPoll pc=3..8 code_bytes=836 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled jitRegionPoll pc=0..10 function_ops=10 regs=6 code_bytes=3068 plan_bytes=4650
+SLJIT loop compiled jitRegionPoll pc=3..8 code_bytes=772 plan_bytes=944 ssa=0 mem=2
+SLJIT function compiled  pc=0..20 function_ops=20 regs=7 code_bytes=3284 plan_bytes=4740
+SLJIT loop compiled spin pc=4..9 code_bytes=1020 plan_bytes=944 ssa=0 mem=1
+embedding JIT: PASS
+SLJIT template render hits=112 misses=0 parts=5
+SLJIT template render hits=48 misses=0 parts=5
+SLJIT function  hits=14 returns=1 backedges=5 budget_exits=0 code_bytes=4024
+SLJIT function  hits=14 returns=1 backedges=5 budget_exits=0 code_bytes=4024
+SLJIT function  hits=18 returns=1 backedges=7 budget_exits=1 code_bytes=4024
+SLJIT function check hits=9067 returns=9067 backedges=0 budget_exits=0 code_bytes=2056
+SLJIT function same hits=9073 returns=9065 backedges=0 budget_exits=0 code_bytes=4216
+SLJIT loop sum pc=3..6 hits=97 iterations=1406 code_bytes=816
+SLJIT loop sum pc=3..6 hits=32 iterations=467 code_bytes=828
+SLJIT function sum hits=23 returns=8 backedges=30 budget_exits=5 code_bytes=3212
+SLJIT loop transform pc=2..9 hits=33 iterations=471 code_bytes=1396
+SLJIT function transform hits=11 returns=2 backedges=1 budget_exits=0 code_bytes=4928
+SLJIT loop blend pc=2..12 hits=289 iterations=4241 code_bytes=1576
+SLJIT function blend hits=42 returns=18 backedges=118 budget_exits=15 code_bytes=11716
+SLJIT loop ascii pc=3..12 hits=197 iterations=168 code_bytes=1368
+SLJIT function ascii hits=18 returns=0 backedges=0 budget_exits=0 code_bytes=4100
+SLJIT loop asciiBinding pc=4..14 hits=224 iterations=204 code_bytes=1380
+SLJIT function asciiBinding hits=11 returns=2 backedges=0 budget_exits=0 code_bytes=4540
+SLJIT loop hash pc=3..13 hits=2080 iterations=30521 code_bytes=1268
+SLJIT function hash hits=201 returns=120 backedges=603 budget_exits=81 code_bytes=6756
+SLJIT function reference hits=56 returns=2 backedges=468 budget_exits=33 code_bytes=4064
+SLJIT loop numeric pc=2..15 hits=32 iterations=463 code_bytes=1796
+SLJIT function numeric hits=6 returns=1 backedges=9 budget_exits=1 code_bytes=8076
+SLJIT loop classify pc=2..19 hits=32 iterations=474 code_bytes=2096
+SLJIT function classify hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=12856
+SLJIT loop shiftDense pc=6..11 hits=239 iterations=2196 code_bytes=1132
+SLJIT loop shiftDense pc=6..11 hits=1 iterations=4 code_bytes=1272
+SLJIT function shiftDense hits=161 returns=81 backedges=80 budget_exits=7 code_bytes=10920
+SLJIT function  hits=419 returns=419 backedges=0 budget_exits=0 code_bytes=1260
+SLJIT function  hits=420 returns=420 backedges=0 budget_exits=0 code_bytes=1260
+SLJIT function  hits=12618 returns=0 backedges=11447 budget_exits=794 code_bytes=39624
+SLJIT loop  pc=3..6 hits=32 iterations=470 code_bytes=824
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=3208
+SLJIT loop  pc=2..9 hits=32 iterations=475 code_bytes=1396
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=4932
+SLJIT loop  pc=3..6 hits=32 iterations=471 code_bytes=824
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=3208
+SLJIT loop  pc=2..9 hits=32 iterations=474 code_bytes=1396
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=4932
+SLJIT loop  pc=3..6 hits=32 iterations=478 code_bytes=828
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=3212
+SLJIT loop  pc=2..9 hits=32 iterations=467 code_bytes=1404
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=4940
+SLJIT loop  pc=3..6 hits=32 iterations=471 code_bytes=828
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=3212
+SLJIT loop  pc=2..9 hits=32 iterations=475 code_bytes=1404
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=4940
+SLJIT loop  pc=3..6 hits=32 iterations=479 code_bytes=828
+SLJIT function  hits=0 returns=0 backedges=0 budget_exits=0 code_bytes=3212
+SLJIT loop  pc=2..9 hits=32 iterations=467 code_bytes=1404
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=4940
+SLJIT loop  pc=3..6 hits=32 iterations=471 code_bytes=812
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=3212
+SLJIT loop  pc=2..9 hits=96 iterations=357 code_bytes=1276
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=4940
+SLJIT loop  pc=3..6 hits=32 iterations=467 code_bytes=828
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=3228
+SLJIT loop  pc=2..9 hits=32 iterations=471 code_bytes=1288
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=4952
+SLJIT loop  pc=3..6 hits=32 iterations=475 code_bytes=824
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=3224
+SLJIT loop  pc=2..9 hits=32 iterations=479 code_bytes=1280
+SLJIT function  hits=0 returns=0 backedges=0 budget_exits=0 code_bytes=4944
+SLJIT loop  pc=2..12 hits=32 iterations=466 code_bytes=1604
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=6180
+SLJIT loop  pc=2..8 hits=33 iterations=477 code_bytes=1144
+SLJIT function  hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=6008
+SLJIT function  hits=13 returns=1 backedges=0 budget_exits=0 code_bytes=3764
+SLJIT function nativeCheck hits=2 returns=0 backedges=0 budget_exits=0 code_bytes=4016
+SLJIT loop jitNativeStep pc=7..10 hits=111 iterations=225 code_bytes=740
+SLJIT function jitNativeStep hits=139 returns=121 backedges=136 budget_exits=11 code_bytes=4028
+SLJIT function jitNativeDrive hits=175 returns=2 backedges=547 budget_exits=50 code_bytes=3128
+SLJIT function jitNativeRecurse hits=32 returns=0 backedges=0 budget_exits=0 code_bytes=3488
+SLJIT function jitNativeCollectionSize hits=9 returns=9 backedges=0 budget_exits=0 code_bytes=1812
+SLJIT function jitNativePlanSize hits=16 returns=15 backedges=6 budget_exits=0 code_bytes=2500
+SLJIT function jitNativeSizes hits=1726 returns=50 backedges=24755 budget_exits=1650 code_bytes=3056
+SLJIT loop nativeArity pc=4..6 hits=52 iterations=59 code_bytes=720
+SLJIT function nativeArity hits=51 returns=49 backedges=9 budget_exits=0 code_bytes=2940
+SLJIT loop  pc=3..6 hits=265 iterations=397 code_bytes=748
+SLJIT function  hits=518 returns=518 backedges=0 budget_exits=0 code_bytes=2484
+SLJIT function  hits=1076 returns=0 backedges=90 budget_exits=72 code_bytes=50392
+SLJIT function check hits=4657 returns=4657 backedges=0 budget_exits=0 code_bytes=2056
+SLJIT function pull hits=6734 returns=6710 backedges=2 budget_exits=0 code_bytes=4540
+SLJIT function count hits=8 returns=0 backedges=0 budget_exits=0 code_bytes=1440
+SLJIT function make hits=960 returns=944 backedges=0 budget_exits=0 code_bytes=2588
+SLJIT function select hits=874 returns=874 backedges=0 budget_exits=0 code_bytes=3984
+SLJIT function compute hits=514 returns=504 backedges=0 budget_exits=0 code_bytes=4168
+SLJIT function setFields hits=130 returns=129 backedges=0 budget_exits=0 code_bytes=2292
+SLJIT function strictStore hits=129 returns=128 backedges=0 budget_exits=0 code_bytes=2292
+SLJIT function hasTypes hits=1072 returns=1060 backedges=0 budget_exits=0 code_bytes=3912
+SLJIT function responseStatus hits=224 returns=222 backedges=0 budget_exits=0 code_bytes=6464
+SLJIT function bounds hits=131 returns=131 backedges=0 budget_exits=0 code_bytes=3356
+SLJIT function serverPump hits=254 returns=249 backedges=246 budget_exits=0 code_bytes=11724
+SLJIT function Sink hits=8 returns=0 backedges=0 budget_exits=0 code_bytes=2900
+SLJIT function enqueue hits=6665 returns=6657 backedges=0 budget_exits=0 code_bytes=5968
+SLJIT function close hits=10 returns=7 backedges=3 budget_exits=0 code_bytes=4196
+SLJIT function _wake hits=4 returns=4 backedges=0 budget_exits=0 code_bytes=3296
+SLJIT function pull hits=2 returns=2 backedges=0 budget_exits=0 code_bytes=2752
+SLJIT function functionFields hits=194 returns=194 backedges=0 budget_exits=0 code_bytes=2468
+SLJIT function  hits=9401 returns=0 backedges=3796 budget_exits=1304 code_bytes=19940
+SLJIT function jitRegionCheck hits=8 returns=0 backedges=0 budget_exits=0 code_bytes=4384
+SLJIT loop jitRegionFields pc=3..8 hits=2693 iterations=39378 code_bytes=772
+SLJIT loop jitRegionFields pc=3..8 hits=8 iterations=93 code_bytes=836
+SLJIT function jitRegionFields hits=2144 returns=178 backedges=2580 budget_exits=225 code_bytes=3068
+SLJIT loop jitRegionTyped pc=3..14 hits=4 iterations=59 code_bytes=1684
+SLJIT loop jitRegionTyped pc=3..14 hits=4 iterations=58 code_bytes=1672
+SLJIT loop jitRegionTyped pc=3..14 hits=5 iterations=58 code_bytes=1672
+SLJIT loop jitRegionTyped pc=3..14 hits=114 iterations=912 code_bytes=1684
+SLJIT function jitRegionTyped hits=266 returns=170 backedges=633 budget_exits=83 code_bytes=6760
+SLJIT function jitRegionCalls hits=3529 returns=193 backedges=23540 budget_exits=1604 code_bytes=3460
+SLJIT function get x hits=1809 returns=1809 backedges=0 budget_exits=0 code_bytes=1336
+SLJIT function jitRegionHelper hits=874 returns=874 backedges=0 budget_exits=0 code_bytes=1452
+SLJIT function jitRegionHelper hits=0 returns=0 backedges=0 budget_exits=0 code_bytes=1512
+SLJIT function  hits=145 returns=0 backedges=6 budget_exits=1 code_bytes=32892
+SLJIT loop jitRegionPoll pc=3..8 hits=184 iterations=2097 code_bytes=772
+SLJIT loop jitRegionPoll pc=3..8 hits=19 iterations=217 code_bytes=836
+SLJIT function jitRegionPoll hits=224 returns=174 backedges=389 budget_exits=50 code_bytes=3068
+SLJIT function  hits=51 returns=1 backedges=0 budget_exits=0 code_bytes=3284
+SLJIT loop spin pc=4..9 hits=2 iterations=29 code_bytes=1020

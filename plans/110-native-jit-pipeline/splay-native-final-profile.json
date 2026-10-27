@@ -1,0 +1,1254 @@
+{
+  "functions": [
+    {
+      "id": 2,
+      "coverage": {
+        "id": 2,
+        "line": 64,
+        "name": "Benchmark",
+        "threaded": 23,
+        "switch": 9,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 4,
+      "coverage": {
+        "id": 4,
+        "line": 99,
+        "name": "BenchmarkSuite",
+        "threaded": 11,
+        "switch": 6,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 5,
+      "coverage": {
+        "id": 5,
+        "line": 454,
+        "name": "GeneratePayloadTree",
+        "threaded": 10780977,
+        "switch": 62568,
+        "attempts": 993230,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 6,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 5,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 26,
+        "bytes": 7056,
+        "hits": 919571,
+        "returns": 0,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 5,
+        "line": 454,
+        "name": "GeneratePayloadTree"
+      }
+    },
+    {
+      "id": 6,
+      "coverage": {
+        "id": 6,
+        "line": 471,
+        "name": "GenerateKey",
+        "threaded": 22156,
+        "switch": 920,
+        "attempts": 31940,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 6,
+        "calls": 14768,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 6,
+        "bytes": 2380,
+        "hits": 29538,
+        "returns": 14769,
+        "stalled": 14769,
+        "charged_edges": 14768,
+        "budget_exits": 13,
+        "id": 6,
+        "line": 471,
+        "name": "GenerateKey"
+      }
+    },
+    {
+      "id": 8,
+      "coverage": {
+        "id": 8,
+        "line": 482,
+        "name": "SplayUpdateStats",
+        "threaded": 6976,
+        "switch": 56,
+        "attempts": 94,
+        "warmup": 4294967295,
+        "retired": 1,
+        "active": 4,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 8,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 14,
+        "bytes": 3188,
+        "hits": 8,
+        "returns": 0,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 8,
+        "line": 482,
+        "name": "SplayUpdateStats"
+      }
+    },
+    {
+      "id": 9,
+      "coverage": {
+        "id": 9,
+        "line": 488,
+        "name": "InsertNewNode",
+        "threaded": 190716,
+        "switch": 19410,
+        "attempts": 63824,
+        "warmup": 4294967295,
+        "retired": 2,
+        "active": 7,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 9,
+        "calls": 44306,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 23,
+        "bytes": 6504,
+        "hits": 59091,
+        "returns": 14768,
+        "stalled": 14768,
+        "charged_edges": 88554,
+        "budget_exits": 70,
+        "id": 9,
+        "line": 488,
+        "name": "InsertNewNode"
+      }
+    },
+    {
+      "id": 10,
+      "coverage": {
+        "id": 10,
+        "line": 500,
+        "name": "SplaySetup",
+        "threaded": 80501,
+        "switch": 471,
+        "attempts": 428,
+        "warmup": 4294967294,
+        "retired": 1,
+        "active": 14,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 10,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 35,
+        "bytes": 7284,
+        "hits": 384,
+        "returns": 0,
+        "stalled": 0,
+        "charged_edges": 376,
+        "budget_exits": 0,
+        "id": 10,
+        "line": 500,
+        "name": "SplaySetup"
+      }
+    },
+    {
+      "id": 11,
+      "coverage": {
+        "id": 11,
+        "line": 518,
+        "name": "SplayTearDown",
+        "threaded": 469,
+        "switch": 19,
+        "attempts": 11,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 15,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 11,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 40,
+        "bytes": 13548,
+        "hits": 10,
+        "returns": 2,
+        "stalled": 1,
+        "charged_edges": 7928,
+        "budget_exits": 8,
+        "id": 11,
+        "line": 518,
+        "name": "SplayTearDown"
+      }
+    },
+    {
+      "id": 12,
+      "coverage": {
+        "id": 12,
+        "line": 543,
+        "name": "SplayRun",
+        "threaded": 20333,
+        "switch": 1323,
+        "attempts": 23991,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 15,
+        "rejection": "compiled"
+      },
+      "edges": {
+        "id": 12,
+        "calls": 14405,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 31,
+        "bytes": 7044,
+        "hits": 21765,
+        "returns": 91,
+        "stalled": 91,
+        "charged_edges": 35965,
+        "budget_exits": 41,
+        "id": 12,
+        "line": 543,
+        "name": "SplayRun"
+      }
+    },
+    {
+      "id": 13,
+      "coverage": {
+        "id": 13,
+        "line": 564,
+        "name": "SplayTree",
+        "threaded": 1,
+        "switch": 0,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted"
+      }
+    },
+    {
+      "id": 17,
+      "coverage": {
+        "id": 17,
+        "line": 45,
+        "threaded": 22,
+        "switch": 12,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 20,
+      "coverage": {
+        "id": 20,
+        "line": 137,
+        "threaded": 1018944,
+        "switch": 96045,
+        "attempts": 1232,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 7,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 20,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 72,
+        "bytes": 14812,
+        "hits": 1,
+        "returns": 0,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 20,
+        "line": 137,
+        "name": ""
+      }
+    },
+    {
+      "id": 21,
+      "coverage": {
+        "id": 21,
+        "line": 133,
+        "threaded": 8,
+        "switch": 2,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 22,
+      "coverage": {
+        "id": 22,
+        "line": 133,
+        "threaded": 5,
+        "switch": 4,
+        "attempts": 1,
+        "warmup": 0,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 40,
+      "coverage": {
+        "id": 40,
+        "line": 580,
+        "threaded": 27695,
+        "switch": 1103,
+        "attempts": 9432,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 2,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 40,
+        "calls": 0,
+        "returns": 14754
+      },
+      "native": {
+        "begin": 0,
+        "ops": 3,
+        "bytes": 1872,
+        "hits": 299,
+        "returns": 299,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 40,
+        "line": 580,
+        "name": ""
+      }
+    },
+    {
+      "id": 41,
+      "coverage": {
+        "id": 41,
+        "line": 592,
+        "threaded": 269148,
+        "switch": 1758,
+        "attempts": 18337,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 24,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 41,
+        "calls": 14756,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 50,
+        "bytes": 14372,
+        "hits": 14770,
+        "returns": 0,
+        "stalled": 0,
+        "charged_edges": 1,
+        "budget_exits": 0,
+        "id": 41,
+        "line": 592,
+        "name": ""
+      }
+    },
+    {
+      "id": 42,
+      "coverage": {
+        "id": 42,
+        "line": 625,
+        "threaded": 71564,
+        "switch": 1420,
+        "attempts": 9506,
+        "warmup": 4294967294,
+        "retired": 1,
+        "active": 18,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 42,
+        "calls": 9169,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 44,
+        "bytes": 11012,
+        "hits": 7244,
+        "returns": 9,
+        "stalled": 1,
+        "charged_edges": 1976,
+        "budget_exits": 1,
+        "id": 42,
+        "line": 625,
+        "name": ""
+      }
+    },
+    {
+      "id": 43,
+      "coverage": {
+        "id": 43,
+        "line": 657,
+        "threaded": 30794,
+        "switch": 1732,
+        "attempts": 18350,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 10,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 43,
+        "calls": 29510,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 18,
+        "bytes": 6048,
+        "hits": 14785,
+        "returns": 14769,
+        "stalled": 0,
+        "charged_edges": 17,
+        "budget_exits": 0,
+        "id": 43,
+        "line": 657,
+        "name": ""
+      }
+    },
+    {
+      "id": 44,
+      "coverage": {
+        "id": 44,
+        "line": 669,
+        "threaded": 8757,
+        "switch": 505,
+        "attempts": 1530,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 10,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 44,
+        "calls": 0,
+        "returns": 7197
+      },
+      "native": {
+        "begin": 0,
+        "ops": 17,
+        "bytes": 4696,
+        "hits": 1,
+        "returns": 1,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 44,
+        "line": 669,
+        "name": ""
+      }
+    },
+    {
+      "id": 45,
+      "coverage": {
+        "id": 45,
+        "line": 685,
+        "threaded": 23930,
+        "switch": 1447,
+        "attempts": 10201,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 16,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 45,
+        "calls": 14392,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 30,
+        "bytes": 10128,
+        "hits": 7206,
+        "returns": 7204,
+        "stalled": 1,
+        "charged_edges": 7198,
+        "budget_exits": 13,
+        "id": 45,
+        "line": 685,
+        "name": ""
+      }
+    },
+    {
+      "id": 46,
+      "coverage": {
+        "id": 46,
+        "line": 709,
+        "threaded": 917,
+        "switch": 1,
+        "attempts": 652,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 3,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 46,
+        "calls": 0,
+        "returns": 7342
+      },
+      "native": {
+        "begin": 0,
+        "ops": 5,
+        "bytes": 2616,
+        "hits": 589,
+        "returns": 588,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 46,
+        "line": 709,
+        "name": ""
+      }
+    },
+    {
+      "id": 47,
+      "coverage": {
+        "id": 47,
+        "line": 706,
+        "threaded": 18,
+        "switch": 5,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 48,
+      "coverage": {
+        "id": 48,
+        "line": 725,
+        "threaded": 7484927,
+        "switch": 8475,
+        "attempts": 18038,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 34,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 48,
+        "calls": 0,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 73,
+        "bytes": 14056,
+        "hits": 5550,
+        "returns": 0,
+        "stalled": 0,
+        "charged_edges": 0,
+        "budget_exits": 0,
+        "id": 48,
+        "line": 725,
+        "name": ""
+      }
+    },
+    {
+      "id": 49,
+      "coverage": {
+        "id": 49,
+        "line": 794,
+        "threaded": 9,
+        "switch": 2,
+        "attempts": 3,
+        "warmup": 3,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    },
+    {
+      "id": 50,
+      "coverage": {
+        "id": 50,
+        "line": 819,
+        "threaded": 6940,
+        "switch": 13,
+        "attempts": 302,
+        "warmup": 4294967294,
+        "retired": 1,
+        "active": 7,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 50,
+        "calls": 11108,
+        "returns": 3592
+      },
+      "native": {
+        "begin": 0,
+        "ops": 16,
+        "bytes": 4148,
+        "hits": 268,
+        "returns": 226,
+        "stalled": 0,
+        "charged_edges": 18647,
+        "budget_exits": 19,
+        "id": 50,
+        "line": 819,
+        "name": ""
+      }
+    },
+    {
+      "id": 51,
+      "coverage": {
+        "id": 51,
+        "line": 898,
+        "threaded": 336,
+        "switch": 40,
+        "attempts": 64,
+        "warmup": 4294967294,
+        "retired": 0,
+        "active": 37,
+        "rejection": "compiled",
+        "name": ""
+      },
+      "edges": {
+        "id": 51,
+        "calls": 31,
+        "returns": 0
+      },
+      "native": {
+        "begin": 0,
+        "ops": 64,
+        "bytes": 20004,
+        "hits": 36,
+        "returns": 0,
+        "stalled": 2,
+        "charged_edges": 92,
+        "budget_exits": 0,
+        "id": 51,
+        "line": 898,
+        "name": ""
+      }
+    },
+    {
+      "id": 52,
+      "coverage": {
+        "id": 52,
+        "line": 1,
+        "threaded": 282,
+        "switch": 224,
+        "attempts": 1,
+        "warmup": 1,
+        "retired": 0,
+        "active": 0,
+        "rejection": "not attempted",
+        "name": ""
+      }
+    }
+  ],
+  "exits": [
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 228,
+      "count": 474584,
+      "id": 5,
+      "line": 455,
+      "opcode": "NEWOBJ_SHAPE",
+      "name": "GeneratePayloadTree"
+    },
+    {
+      "begin": 0,
+      "pc": 13,
+      "op": 228,
+      "count": 459757,
+      "id": 5,
+      "line": 460,
+      "opcode": "NEWOBJ_SHAPE",
+      "name": "GeneratePayloadTree"
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 61,
+      "count": 1,
+      "id": 6,
+      "line": 471,
+      "opcode": "CALL",
+      "name": "GenerateKey"
+    },
+    {
+      "begin": 0,
+      "pc": 5,
+      "op": 65,
+      "count": 14769,
+      "id": 6,
+      "line": 471,
+      "opcode": "RET",
+      "name": "GenerateKey"
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 68,
+      "count": 8,
+      "id": 8,
+      "line": 483,
+      "opcode": "RESOLVEVAR",
+      "name": "SplayUpdateStats"
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 137,
+      "count": 8,
+      "id": 9,
+      "line": 492,
+      "opcode": "CALL_GLOBAL",
+      "name": "InsertNewNode"
+    },
+    {
+      "begin": 0,
+      "pc": 7,
+      "op": 61,
+      "count": 1,
+      "id": 9,
+      "line": 493,
+      "opcode": "CALL",
+      "name": "InsertNewNode"
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 137,
+      "count": 8,
+      "id": 9,
+      "line": 494,
+      "opcode": "CALL_GLOBAL",
+      "name": "InsertNewNode"
+    },
+    {
+      "begin": 0,
+      "pc": 22,
+      "op": 65,
+      "count": 14768,
+      "id": 9,
+      "line": 496,
+      "opcode": "RET",
+      "name": "InsertNewNode"
+    },
+    {
+      "begin": 0,
+      "pc": 19,
+      "op": 137,
+      "count": 376,
+      "id": 10,
+      "line": 510,
+      "opcode": "CALL_GLOBAL",
+      "name": "SplaySetup"
+    },
+    {
+      "begin": 0,
+      "pc": 22,
+      "op": 14,
+      "count": 8,
+      "id": 10,
+      "line": 511,
+      "opcode": "MOD",
+      "name": "SplaySetup"
+    },
+    {
+      "begin": 0,
+      "pc": 38,
+      "op": 170,
+      "count": 8,
+      "id": 11,
+      "line": 535,
+      "opcode": "JMP_LT",
+      "name": "SplayTearDown"
+    },
+    {
+      "begin": 0,
+      "pc": 39,
+      "op": 66,
+      "count": 2,
+      "id": 11,
+      "line": 540,
+      "opcode": "RETUNDEF",
+      "name": "SplayTearDown"
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 137,
+      "count": 7204,
+      "id": 12,
+      "line": 546,
+      "opcode": "CALL_GLOBAL",
+      "name": "SplayRun"
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 61,
+      "count": 2,
+      "id": 12,
+      "line": 547,
+      "opcode": "CALL",
+      "name": "SplayRun"
+    },
+    {
+      "begin": 0,
+      "pc": 12,
+      "op": 77,
+      "count": 1,
+      "id": 12,
+      "line": 548,
+      "opcode": "GETGLOBAL",
+      "name": "SplayRun"
+    },
+    {
+      "begin": 0,
+      "pc": 20,
+      "op": 61,
+      "count": 2,
+      "id": 12,
+      "line": 549,
+      "opcode": "CALL",
+      "name": "SplayRun"
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 77,
+      "count": 1,
+      "id": 12,
+      "line": 551,
+      "opcode": "GETGLOBAL",
+      "name": "SplayRun"
+    },
+    {
+      "begin": 0,
+      "pc": 28,
+      "op": 61,
+      "count": 90,
+      "id": 12,
+      "line": 551,
+      "opcode": "CALL",
+      "name": "SplayRun"
+    },
+    {
+      "begin": 0,
+      "pc": 30,
+      "op": 66,
+      "count": 91,
+      "id": 12,
+      "line": 552,
+      "opcode": "RETUNDEF",
+      "name": "SplayRun"
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 31,
+      "count": 7317,
+      "id": 20,
+      "line": 137,
+      "opcode": "BAND",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 10,
+      "op": 223,
+      "count": 7452,
+      "id": 20,
+      "line": 137,
+      "opcode": "PUTCAP_SNAP",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 65,
+      "count": 299,
+      "id": 40,
+      "line": 580,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 61,
+      "count": 13,
+      "id": 41,
+      "line": 599,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 26,
+      "op": 63,
+      "count": 14769,
+      "id": 41,
+      "line": 603,
+      "opcode": "NEW_OBJ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 13,
+      "op": 61,
+      "count": 9,
+      "id": 42,
+      "line": 629,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 29,
+      "op": 232,
+      "count": 7,
+      "id": 42,
+      "line": 635,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 30,
+      "op": 65,
+      "count": 1,
+      "id": 42,
+      "line": 636,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 36,
+      "op": 232,
+      "count": 5223,
+      "id": 42,
+      "line": 638,
+      "opcode": "PUTTHISC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 42,
+      "op": 230,
+      "count": 29,
+      "id": 42,
+      "line": 643,
+      "opcode": "PUTPROPC",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 43,
+      "op": 65,
+      "count": 8,
+      "id": 42,
+      "line": 645,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 2,
+      "op": 61,
+      "count": 15,
+      "id": 43,
+      "line": 657,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 61,
+      "count": 13,
+      "id": 43,
+      "line": 660,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 65,
+      "count": 14769,
+      "id": 43,
+      "line": 661,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 16,
+      "op": 65,
+      "count": 1,
+      "id": 44,
+      "line": 676,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 9,
+      "op": 61,
+      "count": 9,
+      "id": 45,
+      "line": 690,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 24,
+      "op": 61,
+      "count": 1,
+      "id": 45,
+      "line": 696,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 25,
+      "op": 65,
+      "count": 7198,
+      "id": 45,
+      "line": 696,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 28,
+      "op": 65,
+      "count": 6,
+      "id": 45,
+      "line": 698,
+      "opcode": "RET",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 3,
+      "op": 61,
+      "count": 7,
+      "id": 46,
+      "line": 709,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 4,
+      "op": 66,
+      "count": 588,
+      "id": 46,
+      "line": 709,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 63,
+      "count": 51426,
+      "id": 48,
+      "line": 735,
+      "opcode": "NEW_OBJ",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 8,
+      "op": 61,
+      "count": 5,
+      "id": 50,
+      "line": 822,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 11,
+      "op": 135,
+      "count": 26,
+      "id": 50,
+      "line": 823,
+      "opcode": "CALL_UNDEF_THIS",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 14,
+      "op": 48,
+      "count": 5,
+      "id": 50,
+      "line": 820,
+      "opcode": "IF_TRUE",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 15,
+      "op": 66,
+      "count": 226,
+      "id": 50,
+      "line": 826,
+      "opcode": "RETUNDEF",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 38,
+      "op": 77,
+      "count": 1,
+      "id": 51,
+      "line": 909,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 45,
+      "op": 61,
+      "count": 1,
+      "id": 51,
+      "line": 909,
+      "opcode": "CALL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 46,
+      "op": 77,
+      "count": 1,
+      "id": 51,
+      "line": 910,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 48,
+      "op": 1,
+      "count": 1,
+      "id": 51,
+      "line": 910,
+      "opcode": "LDCONST",
+      "name": ""
+    },
+    {
+      "begin": 0,
+      "pc": 59,
+      "op": 77,
+      "count": 1,
+      "id": 51,
+      "line": 902,
+      "opcode": "GETGLOBAL",
+      "name": ""
+    }
+  ],
+  "totals": {
+    "functions": 18,
+    "loops": 0,
+    "templates": 0,
+    "hits": 1081116,
+    "code_bytes": 150768,
+    "native_calls": 152445,
+    "native_returns": 32885
+  }
+}

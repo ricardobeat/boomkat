@@ -1,0 +1,37 @@
+Hottest interpreted functions (handler entries include retries):
+    threaded  share    switch retired  function / admission
+       8,000  13.2%       811       2  Packet:919 [id=12] / compiled
+       7,758  12.8%        74       3  runRichards:450 [id=5] / compiled
+       5,702   9.4%       899       1  WorkerTask.prototype.run:834 [id=63] / compiled
+       5,400   8.9%        10       1  TaskControlBlock:664 [id=7] / compiled
+       4,786   7.9%        26       0  TaskControlBlock.prototype.run:727 [id=56] / compiled
+       2,818   4.7%        29       0  HandlerTask.prototype.run:868 [id=65] / compiled
+       2,697   4.5%       116       0  Scheduler.prototype.addTask:583 [id=44] / compiled
+       2,489   4.1%       795       0  Scheduler.prototype.schedule:592 [id=45] / compiled
+       2,259   3.7%        11       0  Scheduler.prototype.queue:645 [id=49] / compiled
+       1,722   2.9%        10       0  DeviceTask.prototype.run:805 [id=61] / compiled
+       1,619   2.7%        14       0  IdleTask.prototype.run:778 [id=59] / compiled
+       1,492   2.5%       110       2  Scheduler:503 [id=6] / compiled
+       1,200   2.0%         4       1  HandlerTask:863 [id=11] / compiled
+       1,044   1.7%         8       0  TaskControlBlock.prototype.checkPriorityAdd:749 [id=57] / compiled
+         985   1.6%         6       0  Scheduler.prototype.addHandlerTask:550 [id=41] / compiled
+Total threaded entries: 60,410; switch instructions: 3,382
+
+Most frequent native exits:
+       2,871  RET              <anonymous>:740 [id=56] pc=24
+       1,009  JMP_NNULL        Scheduler.prototype.schedule:593 [id=45] pc=23
+         828  CALL             <anonymous>:740 [id=56] pc=23
+         800  PUTPROP          <anonymous>:847 [id=63] pc=34
+         716  RET              Scheduler.prototype.queue:650 [id=49] pc=21
+         656  CALL             Scheduler.prototype.schedule:598 [id=45] pc=20
+         531  NEW_OBJ          Scheduler.prototype.addTask:583 [id=44] pc=7
+         531  PUTPROP          Scheduler.prototype.addTask:585 [id=44] pc=14
+         443  RET              <anonymous>:849 [id=63] pc=44
+         410  RET              <anonymous>:885 [id=65] pc=45
+         277  RET              DeviceTask.prototype.run:809 [id=61] pc=19
+         275  RET              DeviceTask.prototype.run:812 [id=61] pc=27
+         266  RET              <anonymous>:893 [id=65] pc=64
+         220  CALL             Scheduler.prototype.queue:650 [id=49] pc=20
+         193  RET              Scheduler.prototype.suspendCurrent:635 [id=48] pc=6
+
+Native totals: functions=25, loops=0, templates=0, hits=13,520, code_bytes=205,480, native_calls=2,402,231, native_returns=2,397,567

@@ -1,0 +1,37 @@
+Hottest interpreted functions (handler entries include retries):
+    threaded  share    switch retired  function / admission
+     952,523  22.9%       168       1  OrderedCollection.prototype.add:467 [id=49] / compiled
+     315,219   7.6%       209       2  Variable:944 [id=14] / compiled
+     281,035   6.8%       354       1  Variable.prototype.addConstraint:958 [id=91] / compiled
+     246,449   5.9%       859       3  Planner.prototype.addPropagate:1098 [id=98] / compiled
+     228,962   5.5%     1,081       3  Constraint.prototype.satisfy:578 [id=60] / compiled
+     203,945   4.9%       126       2  BinaryConstraint:748 [id=11] / compiled
+     200,152   4.8%    50,242       2  OrderedCollection:463 [id=5] / compiled
+     188,988   4.5%       160       0  BinaryConstraint.prototype.chooseMethod:763 [id=75] / compiled
+     183,345   4.4%       114       3  BinaryConstraint.prototype.addToGraph:788 [id=76] / compiled
+     148,042   3.6%       246       6  projectionTest:1237 [id=18] / compiled
+     128,124   3.1%        70       3  ScaleConstraint.prototype.addToGraph:874 [id=85] / compiled
+     111,581   2.7%       760       2  Constraint.prototype.addConstraint:567 [id=59] / compiled
+      99,961   2.4%        71       1  Plan.prototype.addConstraint:1168 [id=101] / compiled
+      95,984   2.3%        58       1  ScaleConstraint:862 [id=12] / compiled
+      95,583   2.3%       574       3  UnaryConstraint:619 [id=8] / compiled
+Total threaded entries: 4,153,621; switch instructions: 61,799
+
+Most frequent native exits:
+      41,211  RETUNDEF         Variable.prototype.addConstraint:959 [id=91] pc=6
+      30,157  RET              <anonymous>:1109 [id=98] pc=38
+      30,125  RET              <anonymous>:593 [id=60] pc=43
+      29,069  CALL             Planner.prototype.addConstraintsConsumingTo:1150 [id=100] pc=21
+      18,134  RETUNDEF         Planner.prototype.incrementalAdd:999 [id=93] pc=16
+      18,133  RETUNDEF         Constraint.prototype.addConstraint:569 [id=59] pc=11
+      17,831  RETUNDEF         Plan.prototype.addConstraint:1169 [id=101] pc=6
+      13,652  CALL             <anonymous>:590 [id=60] pc=37
+      12,563  CALL             Planner.prototype.makePlan:1061 [id=96] pc=28
+      12,114  RET              Strength.weaker:517 [id=55] pc=3
+      11,825  RETUNDEF         BinaryConstraint:753 [id=11] pc=16
+      11,712  CALL             <anonymous>:1137 [id=99] pc=67
+      10,419  CALL             Constraint.prototype.satisfy:588 [id=60] pc=30
+       9,190  CALL             Plan.prototype.execute:1182 [id=104] pc=11
+       9,173  RETUNDEF         Plan.prototype.execute:1184 [id=104] pc=17
+
+Native totals: functions=63, loops=0, templates=0, hits=436,889, code_bytes=368,456, native_calls=4,320,745, native_returns=4,229,415

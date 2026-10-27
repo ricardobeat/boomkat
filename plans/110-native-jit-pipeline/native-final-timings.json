@@ -1,0 +1,434 @@
+[
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 166.0,
+    "wall_ms": 176.30945798009634,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 109.0,
+    "wall_ms": 146.0606660693884,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 244.0,
+    "wall_ms": 250.13624993152916,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 161.0,
+    "wall_ms": 169.1869581118226,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 108.0,
+    "wall_ms": 199.05549986287951,
+    "rc": 0
+  },
+  {
+    "rep": 0,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 112.0,
+    "wall_ms": 202.71095796488225,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 109.0,
+    "wall_ms": 113.72054205276072,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 166.0,
+    "wall_ms": 170.2021670062095,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 159.0,
+    "wall_ms": 163.85020804591477,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 247.0,
+    "wall_ms": 251.7531248740852,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 110.0,
+    "wall_ms": 201.78704196587205,
+    "rc": 0
+  },
+  {
+    "rep": 1,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 109.0,
+    "wall_ms": 198.7019998487085,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 165.0,
+    "wall_ms": 170.11133302003145,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 108.0,
+    "wall_ms": 112.85458295606077,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 247.0,
+    "wall_ms": 252.26929201744497,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 159.0,
+    "wall_ms": 165.0692499242723,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 109.0,
+    "wall_ms": 197.7635829243809,
+    "rc": 0
+  },
+  {
+    "rep": 2,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 110.0,
+    "wall_ms": 202.48658303171396,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 109.0,
+    "wall_ms": 113.58704091981053,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 165.0,
+    "wall_ms": 170.09437503293157,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 158.0,
+    "wall_ms": 162.86112507805228,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 248.0,
+    "wall_ms": 252.36870790831745,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 111.0,
+    "wall_ms": 202.73374998942018,
+    "rc": 0
+  },
+  {
+    "rep": 3,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 109.0,
+    "wall_ms": 198.28845793381333,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 168.0,
+    "wall_ms": 172.25337494164705,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 109.0,
+    "wall_ms": 112.69562505185604,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 243.0,
+    "wall_ms": 248.25674993917346,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 160.0,
+    "wall_ms": 165.13475007377565,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 108.0,
+    "wall_ms": 196.84979203157127,
+    "rc": 0
+  },
+  {
+    "rep": 4,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 110.0,
+    "wall_ms": 202.9378330335021,
+    "rc": 0
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 108.0,
+    "wall_ms": 112.58649989031255,
+    "rc": 0
+  },
+  {
+    "rep": 5,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 167.0,
+    "wall_ms": 171.56587494537234,
+    "rc": 0
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 159.0,
+    "wall_ms": 164.58658291958272,
+    "rc": 0
+  },
+  {
+    "rep": 5,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 245.0,
+    "wall_ms": 250.203707953915,
+    "rc": 0
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 112.0,
+    "wall_ms": 205.01454104669392,
+    "rc": 0
+  },
+  {
+    "rep": 5,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 110.0,
+    "wall_ms": 198.4875409398228,
+    "rc": 0
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 165.0,
+    "wall_ms": 169.81074982322752,
+    "rc": 0
+  },
+  {
+    "rep": 6,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 109.0,
+    "wall_ms": 113.25312498956919,
+    "rc": 0
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 245.0,
+    "wall_ms": 249.37720806337893,
+    "rc": 0
+  },
+  {
+    "rep": 6,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 159.0,
+    "wall_ms": 164.6551671437919,
+    "rc": 0
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 108.0,
+    "wall_ms": 197.30704091489315,
+    "rc": 0
+  },
+  {
+    "rep": 6,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 111.0,
+    "wall_ms": 202.4360408540815,
+    "rc": 0
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 108.0,
+    "wall_ms": 112.55354201421142,
+    "rc": 0
+  },
+  {
+    "rep": 7,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 166.0,
+    "wall_ms": 170.17762502655387,
+    "rc": 0
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 159.0,
+    "wall_ms": 164.34754082001746,
+    "rc": 0
+  },
+  {
+    "rep": 7,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 245.0,
+    "wall_ms": 250.16245897859335,
+    "rc": 0
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 110.0,
+    "wall_ms": 202.11712503805757,
+    "rc": 0
+  },
+  {
+    "rep": 7,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 109.0,
+    "wall_ms": 197.67195801250637,
+    "rc": 0
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "baseline",
+    "ms": 166.0,
+    "wall_ms": 170.97820807248354,
+    "rc": 0
+  },
+  {
+    "rep": 8,
+    "bench": "richards",
+    "mode": "native-final",
+    "ms": 109.0,
+    "wall_ms": 113.04325005039573,
+    "rc": 0
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "baseline",
+    "ms": 243.0,
+    "wall_ms": 247.70904192700982,
+    "rc": 0
+  },
+  {
+    "rep": 8,
+    "bench": "deltablue",
+    "mode": "native-final",
+    "ms": 158.0,
+    "wall_ms": 163.25679211877286,
+    "rc": 0
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "baseline",
+    "ms": 107.0,
+    "wall_ms": 196.86616701073945,
+    "rc": 0
+  },
+  {
+    "rep": 8,
+    "bench": "splay",
+    "mode": "native-final",
+    "ms": 111.0,
+    "wall_ms": 202.64558400958776,
+    "rc": 0
+  }
+]

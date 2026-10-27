@@ -1,0 +1,429 @@
+SLJIT function compiled GeneratePayloadTree pc=0..26 function_ops=26 regs=9 code_bytes=7056 plan_bytes=4794
+SLJIT function compiled  pc=0..73 function_ops=73 regs=14 code_bytes=14056 plan_bytes=5217
+SLJIT function compiled  pc=0..3 function_ops=3 regs=3 code_bytes=1872 plan_bytes=4587
+SLJIT function compiled SplaySetup pc=0..35 function_ops=35 regs=6 code_bytes=7284 plan_bytes=4875
+SLJIT function compiled  pc=0..50 function_ops=50 regs=12 code_bytes=14372 plan_bytes=5010
+SLJIT function compiled InsertNewNode pc=0..23 function_ops=23 regs=8 code_bytes=6504 plan_bytes=4767
+SLJIT function compiled GenerateKey pc=0..6 function_ops=6 regs=4 code_bytes=2380 plan_bytes=4614
+SLJIT function compiled  pc=0..72 function_ops=72 regs=5 code_bytes=14812 plan_bytes=5208
+SLJIT function compiled  pc=0..18 function_ops=18 regs=7 code_bytes=6048 plan_bytes=4722
+SLJIT function compiled SplayUpdateStats pc=0..14 function_ops=14 regs=5 code_bytes=3188 plan_bytes=4686
+SLJIT function compiled SplayRun pc=0..31 function_ops=31 regs=7 code_bytes=7044 plan_bytes=4839
+SLJIT function compiled  pc=0..30 function_ops=30 regs=10 code_bytes=10128 plan_bytes=4830
+SLJIT function compiled  pc=0..17 function_ops=17 regs=5 code_bytes=4696 plan_bytes=4713
+SLJIT function compiled  pc=0..44 function_ops=44 regs=13 code_bytes=11012 plan_bytes=4956
+SLJIT function compiled  pc=0..64 function_ops=64 regs=15 code_bytes=20004 plan_bytes=5136
+SLJIT function compiled  pc=0..16 function_ops=16 regs=6 code_bytes=4148 plan_bytes=4704
+SLJIT function compiled  pc=0..5 function_ops=5 regs=4 code_bytes=2616 plan_bytes=4605
+SLJIT function compiled SplayTearDown pc=0..40 function_ops=40 regs=11 code_bytes=13548 plan_bytes=4920
+Splay: 197 ms
+SLJIT coverage id=2 line=64 name=Benchmark threaded=23 switch=9 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=4 line=99 name=BenchmarkSuite threaded=11 switch=6 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=5 line=454 name=GeneratePayloadTree threaded=10780977 switch=62568 attempts=993230 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=5 calls=0 returns=0
+SLJIT function GeneratePayloadTree begin=0 ops=26 bytes=7056 hits=919571 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=5 line=454
+SLJIT exit GeneratePayloadTree begin=0 pc=3 op=228 count=474584 id=5 line=455 opcode=NEWOBJ_SHAPE
+SLJIT exit GeneratePayloadTree begin=0 pc=13 op=228 count=459757 id=5 line=460 opcode=NEWOBJ_SHAPE
+SLJIT coverage id=6 line=471 name=GenerateKey threaded=22156 switch=920 attempts=31940 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=6 calls=14768 returns=0
+SLJIT function GenerateKey begin=0 ops=6 bytes=2380 hits=29538 returns=14769 stalled=14769 charged_edges=14768 budget_exits=13 id=6 line=471
+SLJIT exit GenerateKey begin=0 pc=4 op=61 count=1 id=6 line=471 opcode=CALL
+SLJIT exit GenerateKey begin=0 pc=5 op=65 count=14769 id=6 line=471 opcode=RET
+SLJIT coverage id=8 line=482 name=SplayUpdateStats threaded=6976 switch=56 attempts=94 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=8 calls=0 returns=0
+SLJIT function SplayUpdateStats begin=0 ops=14 bytes=3188 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=8 line=482
+SLJIT exit SplayUpdateStats begin=0 pc=3 op=68 count=8 id=8 line=483 opcode=RESOLVEVAR
+SLJIT coverage id=9 line=488 name=InsertNewNode threaded=190716 switch=19410 attempts=63824 warmup=4294967295 retired=2 active=7 rejection=compiled
+SLJIT native id=9 calls=44306 returns=0
+SLJIT function InsertNewNode begin=0 ops=23 bytes=6504 hits=59091 returns=14768 stalled=14768 charged_edges=88554 budget_exits=70 id=9 line=488
+SLJIT exit InsertNewNode begin=0 pc=2 op=137 count=8 id=9 line=492 opcode=CALL_GLOBAL
+SLJIT exit InsertNewNode begin=0 pc=7 op=61 count=1 id=9 line=493 opcode=CALL
+SLJIT exit InsertNewNode begin=0 pc=14 op=137 count=8 id=9 line=494 opcode=CALL_GLOBAL
+SLJIT exit InsertNewNode begin=0 pc=22 op=65 count=14768 id=9 line=496 opcode=RET
+SLJIT coverage id=10 line=500 name=SplaySetup threaded=80501 switch=471 attempts=428 warmup=4294967294 retired=1 active=14 rejection=compiled
+SLJIT native id=10 calls=0 returns=0
+SLJIT function SplaySetup begin=0 ops=35 bytes=7284 hits=384 returns=0 stalled=0 charged_edges=376 budget_exits=0 id=10 line=500
+SLJIT exit SplaySetup begin=0 pc=19 op=137 count=376 id=10 line=510 opcode=CALL_GLOBAL
+SLJIT exit SplaySetup begin=0 pc=22 op=14 count=8 id=10 line=511 opcode=MOD
+SLJIT coverage id=11 line=518 name=SplayTearDown threaded=469 switch=19 attempts=11 warmup=4294967294 retired=0 active=15 rejection=compiled
+SLJIT native id=11 calls=0 returns=0
+SLJIT function SplayTearDown begin=0 ops=40 bytes=13548 hits=10 returns=2 stalled=1 charged_edges=7928 budget_exits=8 id=11 line=518
+SLJIT exit SplayTearDown begin=0 pc=38 op=170 count=8 id=11 line=535 opcode=JMP_LT
+SLJIT exit SplayTearDown begin=0 pc=39 op=66 count=2 id=11 line=540 opcode=RETUNDEF
+SLJIT coverage id=12 line=543 name=SplayRun threaded=20333 switch=1323 attempts=23991 warmup=4294967294 retired=0 active=15 rejection=compiled
+SLJIT native id=12 calls=14405 returns=0
+SLJIT function SplayRun begin=0 ops=31 bytes=7044 hits=21765 returns=91 stalled=91 charged_edges=35965 budget_exits=41 id=12 line=543
+SLJIT exit SplayRun begin=0 pc=4 op=137 count=7204 id=12 line=546 opcode=CALL_GLOBAL
+SLJIT exit SplayRun begin=0 pc=9 op=61 count=2 id=12 line=547 opcode=CALL
+SLJIT exit SplayRun begin=0 pc=12 op=77 count=1 id=12 line=548 opcode=GETGLOBAL
+SLJIT exit SplayRun begin=0 pc=20 op=61 count=2 id=12 line=549 opcode=CALL
+SLJIT exit SplayRun begin=0 pc=25 op=77 count=1 id=12 line=551 opcode=GETGLOBAL
+SLJIT exit SplayRun begin=0 pc=28 op=61 count=90 id=12 line=551 opcode=CALL
+SLJIT exit SplayRun begin=0 pc=30 op=66 count=91 id=12 line=552 opcode=RETUNDEF
+SLJIT coverage id=13 line=564 name=SplayTree threaded=1 switch=0 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=17 line=45 name= threaded=22 switch=12 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=20 line=137 name= threaded=1018944 switch=96045 attempts=1232 warmup=4294967294 retired=0 active=7 rejection=compiled
+SLJIT native id=20 calls=0 returns=0
+SLJIT function  begin=0 ops=72 bytes=14812 hits=1 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=20 line=137
+SLJIT exit  begin=0 pc=8 op=31 count=7317 id=20 line=137 opcode=BAND
+SLJIT exit  begin=0 pc=10 op=223 count=7452 id=20 line=137 opcode=PUTCAP_SNAP
+SLJIT coverage id=21 line=133 name= threaded=8 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=22 line=133 name= threaded=5 switch=4 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=40 line=580 name= threaded=27695 switch=1103 attempts=9432 warmup=4294967294 retired=0 active=2 rejection=compiled
+SLJIT native id=40 calls=0 returns=14754
+SLJIT function  begin=0 ops=3 bytes=1872 hits=299 returns=299 stalled=0 charged_edges=0 budget_exits=0 id=40 line=580
+SLJIT exit  begin=0 pc=2 op=65 count=299 id=40 line=580 opcode=RET
+SLJIT coverage id=41 line=592 name= threaded=269148 switch=1758 attempts=18337 warmup=4294967294 retired=0 active=24 rejection=compiled
+SLJIT native id=41 calls=14756 returns=0
+SLJIT function  begin=0 ops=50 bytes=14372 hits=14770 returns=0 stalled=0 charged_edges=1 budget_exits=0 id=41 line=592
+SLJIT exit  begin=0 pc=16 op=61 count=13 id=41 line=599 opcode=CALL
+SLJIT exit  begin=0 pc=26 op=63 count=14769 id=41 line=603 opcode=NEW_OBJ
+SLJIT coverage id=42 line=625 name= threaded=71564 switch=1420 attempts=9506 warmup=4294967294 retired=1 active=18 rejection=compiled
+SLJIT native id=42 calls=9169 returns=0
+SLJIT function  begin=0 ops=44 bytes=11012 hits=7244 returns=9 stalled=1 charged_edges=1976 budget_exits=1 id=42 line=625
+SLJIT exit  begin=0 pc=13 op=61 count=9 id=42 line=629 opcode=CALL
+SLJIT exit  begin=0 pc=29 op=232 count=7 id=42 line=635 opcode=PUTTHISC
+SLJIT exit  begin=0 pc=30 op=65 count=1 id=42 line=636 opcode=RET
+SLJIT exit  begin=0 pc=36 op=232 count=5223 id=42 line=638 opcode=PUTTHISC
+SLJIT exit  begin=0 pc=42 op=230 count=29 id=42 line=643 opcode=PUTPROPC
+SLJIT exit  begin=0 pc=43 op=65 count=8 id=42 line=645 opcode=RET
+SLJIT coverage id=43 line=657 name= threaded=30794 switch=1732 attempts=18350 warmup=4294967294 retired=0 active=10 rejection=compiled
+SLJIT native id=43 calls=29510 returns=0
+SLJIT function  begin=0 ops=18 bytes=6048 hits=14785 returns=14769 stalled=0 charged_edges=17 budget_exits=0 id=43 line=657
+SLJIT exit  begin=0 pc=2 op=61 count=15 id=43 line=657 opcode=CALL
+SLJIT exit  begin=0 pc=9 op=61 count=13 id=43 line=660 opcode=CALL
+SLJIT exit  begin=0 pc=16 op=65 count=14769 id=43 line=661 opcode=RET
+SLJIT coverage id=44 line=669 name= threaded=8757 switch=505 attempts=1530 warmup=4294967294 retired=0 active=10 rejection=compiled
+SLJIT native id=44 calls=0 returns=7197
+SLJIT function  begin=0 ops=17 bytes=4696 hits=1 returns=1 stalled=0 charged_edges=0 budget_exits=0 id=44 line=669
+SLJIT exit  begin=0 pc=16 op=65 count=1 id=44 line=676 opcode=RET
+SLJIT coverage id=45 line=685 name= threaded=23930 switch=1447 attempts=10201 warmup=4294967294 retired=0 active=16 rejection=compiled
+SLJIT native id=45 calls=14392 returns=0
+SLJIT function  begin=0 ops=30 bytes=10128 hits=7206 returns=7204 stalled=1 charged_edges=7198 budget_exits=13 id=45 line=685
+SLJIT exit  begin=0 pc=9 op=61 count=9 id=45 line=690 opcode=CALL
+SLJIT exit  begin=0 pc=24 op=61 count=1 id=45 line=696 opcode=CALL
+SLJIT exit  begin=0 pc=25 op=65 count=7198 id=45 line=696 opcode=RET
+SLJIT exit  begin=0 pc=28 op=65 count=6 id=45 line=698 opcode=RET
+SLJIT coverage id=46 line=709 name= threaded=917 switch=1 attempts=652 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=46 calls=0 returns=7342
+SLJIT function  begin=0 ops=5 bytes=2616 hits=589 returns=588 stalled=0 charged_edges=0 budget_exits=0 id=46 line=709
+SLJIT exit  begin=0 pc=3 op=61 count=7 id=46 line=709 opcode=CALL
+SLJIT exit  begin=0 pc=4 op=66 count=588 id=46 line=709 opcode=RETUNDEF
+SLJIT coverage id=47 line=706 name= threaded=18 switch=5 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=48 line=725 name= threaded=7484927 switch=8475 attempts=18038 warmup=4294967294 retired=0 active=34 rejection=compiled
+SLJIT native id=48 calls=0 returns=0
+SLJIT function  begin=0 ops=73 bytes=14056 hits=5550 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=48 line=725
+SLJIT exit  begin=0 pc=11 op=63 count=51426 id=48 line=735 opcode=NEW_OBJ
+SLJIT coverage id=49 line=794 name= threaded=9 switch=2 attempts=3 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=50 line=819 name= threaded=6940 switch=13 attempts=302 warmup=4294967294 retired=1 active=7 rejection=compiled
+SLJIT native id=50 calls=11108 returns=3592
+SLJIT function  begin=0 ops=16 bytes=4148 hits=268 returns=226 stalled=0 charged_edges=18647 budget_exits=19 id=50 line=819
+SLJIT exit  begin=0 pc=8 op=61 count=5 id=50 line=822 opcode=CALL
+SLJIT exit  begin=0 pc=11 op=135 count=26 id=50 line=823 opcode=CALL_UNDEF_THIS
+SLJIT exit  begin=0 pc=14 op=48 count=5 id=50 line=820 opcode=IF_TRUE
+SLJIT exit  begin=0 pc=15 op=66 count=226 id=50 line=826 opcode=RETUNDEF
+SLJIT coverage id=51 line=898 name= threaded=336 switch=40 attempts=64 warmup=4294967294 retired=0 active=37 rejection=compiled
+SLJIT native id=51 calls=31 returns=0
+SLJIT function  begin=0 ops=64 bytes=20004 hits=36 returns=0 stalled=2 charged_edges=92 budget_exits=0 id=51 line=898
+SLJIT exit  begin=0 pc=38 op=77 count=1 id=51 line=909 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=45 op=61 count=1 id=51 line=909 opcode=CALL
+SLJIT exit  begin=0 pc=46 op=77 count=1 id=51 line=910 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=48 op=1 count=1 id=51 line=910 opcode=LDCONST
+SLJIT exit  begin=0 pc=59 op=77 count=1 id=51 line=902 opcode=GETGLOBAL
+SLJIT coverage id=52 line=1 name= threaded=282 switch=224 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT totals functions=18 loops=0 templates=0 hits=1081116 code_bytes=150768
+## epoch bumps: shape_reuse=69 compact=1 layout_moved=0
+## shape sites: private=12 delete=0 dict=1 free_private=32981
+##   private class 1: 8
+##   private class 2: 1
+##   private class 3: 1
+##   private class 6: 1
+##   private class 13: 1
+## switch name reads (count no_entry head_miss other op name)
+1	1	0	0	TYPEOFIDENT	print
+13	11	0	2	GETGLOBAL	performance
+3	3	0	0	GETGLOBAL	Date
+1	1	0	0	GETGLOBAL	BenchmarkResult
+27	26	0	1	GETGLOBAL	BenchmarkSuite
+4	4	0	0	GETGLOBAL	undefined
+1	1	0	0	GETGLOBAL	Benchmark
+1	1	0	0	GETGLOBAL	SplayRun
+1	1	0	0	GETGLOBAL	SplaySetup
+1	1	0	0	GETGLOBAL	SplayTearDown
+1	1	0	0	GETGLOBAL	SplayRMS
+18	17	0	1	GETGLOBAL	SplayTree
+1	1	0	0	GETGLOBAL	PrintResult
+1	1	0	0	GETGLOBAL	PrintError
+1	1	0	0	GETGLOBAL	PrintScore
+6	2	0	4	GETGLOBAL	Math
+4	2	0	2	GETGLOBAL	kSplayTreeSize
+11	6	0	5	GETGLOBAL	splayTree
+6	3	0	3	GETGLOBAL	GeneratePayloadTree
+2	1	0	1	GETGLOBAL	kSplayTreePayloadDepth
+4	2	0	2	GETGLOBAL	SplayUpdateStats
+1	1	0	0	GETGLOBAL	splaySampleTimeStart
+1	1	0	0	GETGLOBAL	splaySumOfSquaredPauses
+1	1	0	0	GETGLOBAL	kSplayTreeModifications
+1	1	0	0	GETGLOBAL	print
+## threaded call bails (count reason)
+22	not_lean_fn
+65016	gate_gc
+3919	gate_burst
+15700	not_compiled
+15	native_kind
+26	native_gate
+# OP_PROFILE total_dispatches=20046469 executed_bytecodes=20046528 threaded_dispatches=19848899 switch_dispatches=197570 fused_bytecodes=59
+## switch singles (instructions the switch ran)
+7317	BAND
+1686	GETPROPC
+12441	CALL
+11398	RET
+88548	NOP
+53911	CALL_UNDEF_THIS
+17758	CALL_GLOBAL
+3119	GETPROPC_CACHED
+## dynamic singles
+2860724	GETPROPC_CACHED
+2349652	LDREG
+2016005	INIT_SLOT
+1218471	LDCONST
+1106965	ADD
+1098231	RET
+1045377	GETGLOBAL
+1029145	PUTPROPC
+1008002	NEWOBJ_SHAPE
+994385	CALL_UNDEF_THIS
+992063	SUBI
+695447	JUMP
+599679	IF_TRUE
+529605	JMP_NLT
+512001	NEWARR_CONST
+395093	JMP_NGT
+178525	GETCAP
+145904	GETTHISC
+119845	LDUNDEF
+104548	BAND
+96000	PUTCAP_SNAP
+89678	LDINT
+88548	NOP
+84338	IF_FALSE
+80000	BXOR
+78035	PUTTHISC
+73716	RETUNDEF
+73660	EQ
+71994	NEW_OBJ
+49231	SHLI
+48000	CALL_GLOBAL
+42357	LDNULL
+32000	USHRI
+26571	CALL
+20312	LDTHIS
+16000	DIV
+15992	NEQ
+10460	JMP_NEQ
+9132	LNOT
+8481	INC
+## dynamic pairs
+1073232	LDCONST -> ADD
+1008000	INIT_SLOT -> RET
+992626	LDREG -> CALL_UNDEF_THIS
+992000	GETGLOBAL -> SUBI
+992000	RET -> INIT_SLOT
+992000	SUBI -> LDREG
+919571	CALL_UNDEF_THIS -> NEWOBJ_SHAPE
+805148	LDREG -> GETPROPC_CACHED
+572566	GETPROPC_CACHED -> IF_TRUE
+555572	GETPROPC_CACHED -> LDREG
+545232	ADD -> LDCONST
+532182	PUTPROPC -> LDREG
+529601	GETPROPC_CACHED -> JMP_NLT
+512000	ADD -> INIT_SLOT
+512000	INIT_SLOT -> LDCONST
+512000	NEWOBJ_SHAPE -> NEWARR_CONST
+512000	NEWARR_CONST -> INIT_SLOT
+496003	INIT_SLOT -> GETGLOBAL
+496002	NEWOBJ_SHAPE -> GETGLOBAL
+467424	JMP_NLT -> GETPROPC_CACHED
+456516	GETPROPC_CACHED -> PUTPROPC
+395090	GETPROPC_CACHED -> JMP_NGT
+371979	JUMP -> GETPROPC_CACHED
+333449	GETPROPC_CACHED -> GETPROPC_CACHED
+333053	IF_TRUE -> GETPROPC_CACHED
+315994	LDREG -> JUMP
+315194	JUMP -> JUMP
+308864	JMP_NGT -> GETPROPC_CACHED
+216985	PUTPROPC -> PUTPROPC
+199584	IF_TRUE -> PUTPROPC
+167970	PUTPROPC -> GETPROPC_CACHED
+117818	LDREG -> LDREG
+97231	GETCAP -> LDCONST
+97231	LDCONST -> BAND
+88548	NOP -> PUTCAP_SNAP
+88548	BAND -> NOP
+81231	LDUNDEF -> GETCAP
+80000	PUTCAP_SNAP -> LDUNDEF
+73660	EQ -> IF_FALSE
+73659	LDINT -> EQ
+73659	CALL_UNDEF_THIS -> LDINT
+73659	IF_FALSE -> NEWOBJ_SHAPE
+73582	LDREG -> GETTHISC
+71995	PUTTHISC -> RETUNDEF
+71988	NEW_OBJ -> LDREG
+63764	PUTPROPC -> PUTTHISC
+61382	JMP_NLT -> PUTPROPC
+56787	GETTHISC -> LDREG
+54228	JMP_NGT -> PUTPROPC
+49231	GETCAP -> SHLI
+49231	ADD -> GETCAP
+48000	BXOR -> LDCONST
+43897	RET -> NEW_OBJ
+40018	GETTHISC -> GETPROPC_CACHED
+39991	IF_TRUE -> JUMP
+37980	RETUNDEF -> RET
+33231	SHLI -> ADD
+32000	USHRI -> BXOR
+32000	LDCONST -> BXOR
+32000	BXOR -> GETCAP
+32000	GETCAP -> USHRI
+31998	PUTPROPC -> GETTHISC
+23955	GETTHISC -> PUTPROPC
+20270	LDTHIS -> GETPROPC_CACHED
+16797	RET -> RET
+16743	RETUNDEF -> NEW_OBJ
+16405	GETGLOBAL -> GETGLOBAL
+16006	IF_TRUE -> GETGLOBAL
+16002	LDNULL -> PUTPROPC
+16002	LDUNDEF -> LDUNDEF
+16000	LDCONST -> DIV
+16000	SHLI -> BXOR
+16000	BAND -> LDCONST
+16000	JMP_NGT -> JUMP
+16000	DIV -> RET
+16000	PUTCAP_SNAP -> GETCAP
+15999	GETTHISC -> LDNULL
+15999	JMP_NGT -> GETTHISC
+15992	GETGLOBAL -> LDREG
+15992	RET -> LDNULL
+# OP_PROFILE threaded_entries=20046459 (bailed entries are counted again above)
+## threaded singles
+2860724	GETPROPC_CACHED
+2349652	LDREG
+2016005	INIT_SLOT
+1218471	LDCONST
+1106965	ADD
+1098231	RET
+1045377	GETGLOBAL
+1029145	PUTPROPC
+1008002	NEWOBJ_SHAPE
+994385	CALL_UNDEF_THIS
+992063	SUBI
+695447	JUMP
+599679	IF_TRUE
+529605	JMP_NLT
+512001	NEWARR_CONST
+395093	JMP_NGT
+178525	GETCAP
+145904	GETTHISC
+119845	LDUNDEF
+104548	BAND
+96000	PUTCAP_SNAP
+89678	LDINT
+88548	NOP
+84338	IF_FALSE
+80000	BXOR
+78035	PUTTHISC
+73716	RETUNDEF
+73660	EQ
+71994	NEW_OBJ
+49231	SHLI
+48000	CALL_GLOBAL
+42357	LDNULL
+32000	USHRI
+26571	CALL
+20312	LDTHIS
+16000	DIV
+15992	NEQ
+10460	JMP_NEQ
+9132	LNOT
+8481	INC
+## threaded pairs
+1073232	LDCONST -> ADD
+1008000	INIT_SLOT -> RET
+992626	LDREG -> CALL_UNDEF_THIS
+992000	GETGLOBAL -> SUBI
+992000	RET -> INIT_SLOT
+992000	SUBI -> LDREG
+919571	CALL_UNDEF_THIS -> NEWOBJ_SHAPE
+805148	LDREG -> GETPROPC_CACHED
+572566	GETPROPC_CACHED -> IF_TRUE
+555572	GETPROPC_CACHED -> LDREG
+545232	ADD -> LDCONST
+532182	PUTPROPC -> LDREG
+529601	GETPROPC_CACHED -> JMP_NLT
+512000	ADD -> INIT_SLOT
+512000	INIT_SLOT -> LDCONST
+512000	NEWOBJ_SHAPE -> NEWARR_CONST
+512000	NEWARR_CONST -> INIT_SLOT
+496003	INIT_SLOT -> GETGLOBAL
+496002	NEWOBJ_SHAPE -> GETGLOBAL
+467424	JMP_NLT -> GETPROPC_CACHED
+456516	GETPROPC_CACHED -> PUTPROPC
+395090	GETPROPC_CACHED -> JMP_NGT
+371979	JUMP -> GETPROPC_CACHED
+333449	GETPROPC_CACHED -> GETPROPC_CACHED
+333053	IF_TRUE -> GETPROPC_CACHED
+315994	LDREG -> JUMP
+315194	JUMP -> JUMP
+308864	JMP_NGT -> GETPROPC_CACHED
+216985	PUTPROPC -> PUTPROPC
+199584	IF_TRUE -> PUTPROPC
+167970	PUTPROPC -> GETPROPC_CACHED
+117818	LDREG -> LDREG
+97231	GETCAP -> LDCONST
+97231	LDCONST -> BAND
+88548	NOP -> PUTCAP_SNAP
+88548	BAND -> NOP
+81231	LDUNDEF -> GETCAP
+80000	PUTCAP_SNAP -> LDUNDEF
+73660	EQ -> IF_FALSE
+73659	LDINT -> EQ
+73659	CALL_UNDEF_THIS -> LDINT
+73659	IF_FALSE -> NEWOBJ_SHAPE
+73582	LDREG -> GETTHISC
+71995	PUTTHISC -> RETUNDEF
+71988	NEW_OBJ -> LDREG
+63764	PUTPROPC -> PUTTHISC
+61382	JMP_NLT -> PUTPROPC
+56787	GETTHISC -> LDREG
+54228	JMP_NGT -> PUTPROPC
+49231	GETCAP -> SHLI
+49231	ADD -> GETCAP
+48000	BXOR -> LDCONST
+43897	RET -> NEW_OBJ
+40018	GETTHISC -> GETPROPC_CACHED
+39991	IF_TRUE -> JUMP
+37980	RETUNDEF -> RET
+33231	SHLI -> ADD
+32000	USHRI -> BXOR
+32000	LDCONST -> BXOR
+32000	BXOR -> GETCAP
+32000	GETCAP -> USHRI
+31998	PUTPROPC -> GETTHISC
+23955	GETTHISC -> PUTPROPC
+20270	LDTHIS -> GETPROPC_CACHED
+16797	RET -> RET
+16743	RETUNDEF -> NEW_OBJ
+16405	GETGLOBAL -> GETGLOBAL
+16006	IF_TRUE -> GETGLOBAL
+16002	LDNULL -> PUTPROPC
+16002	LDUNDEF -> LDUNDEF
+16000	LDCONST -> DIV
+16000	SHLI -> BXOR
+16000	BAND -> LDCONST
+16000	JMP_NGT -> JUMP
+16000	DIV -> RET
+16000	PUTCAP_SNAP -> GETCAP
+15999	GETTHISC -> LDNULL
+15999	JMP_NGT -> GETTHISC
+15992	GETGLOBAL -> LDREG
+15992	LDUNDEF -> CALL_GLOBAL

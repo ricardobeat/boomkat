@@ -1,0 +1,98 @@
+[
+  {
+    "repro": "closure-binding-repro.js",
+    "binary": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "out": "closure binding PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "closure-binding-repro.js",
+    "binary": "baseline",
+    "mode": "jit",
+    "rc": 1,
+    "out": "",
+    "err": "Uncaught Error: second closure at 10\n"
+  },
+  {
+    "repro": "closure-binding-repro.js",
+    "binary": "baseline",
+    "mode": "stress",
+    "rc": 0,
+    "out": "closure binding PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "closure-binding-repro.js",
+    "binary": "native-final",
+    "mode": "off",
+    "rc": 0,
+    "out": "closure binding PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "closure-binding-repro.js",
+    "binary": "native-final",
+    "mode": "jit",
+    "rc": 0,
+    "out": "closure binding PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "closure-binding-repro.js",
+    "binary": "native-final",
+    "mode": "stress",
+    "rc": 0,
+    "out": "closure binding PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "crypto-copy-repro.js",
+    "binary": "baseline",
+    "mode": "off",
+    "rc": 0,
+    "out": "copy PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "crypto-copy-repro.js",
+    "binary": "baseline",
+    "mode": "jit",
+    "rc": 1,
+    "out": "",
+    "err": "Uncaught Error: 10:8:0 != 190323\n"
+  },
+  {
+    "repro": "crypto-copy-repro.js",
+    "binary": "baseline",
+    "mode": "stress",
+    "rc": 1,
+    "out": "",
+    "err": "Uncaught Error: 44:1:0 != 460782\n"
+  },
+  {
+    "repro": "crypto-copy-repro.js",
+    "binary": "native-final",
+    "mode": "off",
+    "rc": 0,
+    "out": "copy PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "crypto-copy-repro.js",
+    "binary": "native-final",
+    "mode": "jit",
+    "rc": 0,
+    "out": "copy PASS\n",
+    "err": ""
+  },
+  {
+    "repro": "crypto-copy-repro.js",
+    "binary": "native-final",
+    "mode": "stress",
+    "rc": 0,
+    "out": "copy PASS\n",
+    "err": ""
+  }
+]

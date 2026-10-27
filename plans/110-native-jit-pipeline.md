@@ -1,13 +1,15 @@
 # 110: A native execution convention, reliable baseline, and compact optimizer
 
-Status: investigated and designed, 2026-10-27. Runtime performance experiments
-were rejected; SLJIT binding tests and coverage diagnostics are implemented on
-`rat`. This is a proposed engine architecture, not a claim that the engine has
-reached its performance target. It supersedes the ordering of plans 107–108.
+Status: native execution convention implemented and measured, 2026-10-27.
+`rat` now has generated frame entry/return, connected native call graphs and
+resumable ordinary data reads. Richards and DeltaBlue improve about 35% versus
+`a36d275b`; the compact optimizer and general allocating continuations remain
+future work. Sections 9–10 record the implementation, remaining regressions,
+and next experiments. This supersedes the ordering of plans 107–108.
 
-The target is between QuickJS/Hermes and V8/JSC. The useful next unit of work is
-a connected native call graph with correct slow-path continuations. Adding
-another speculative opcode to the current region tier does not establish that.
+The target is between QuickJS/Hermes and V8/JSC. The useful unit of work is a
+connected native call graph with correct slow-path continuations. Adding
+another speculative opcode to a region tier does not establish that.
 
 ## 1. What is actually happening
 
@@ -193,26 +195,27 @@ S0 and callee mutations of S1/S2, a C helper, an independently compiled same-con
 fragment, and repatched calls and branches after compiler objects are freed.
 The complete embedding test passes on arm64, including under ASan. An isolated
 run of the same ABI test also passes with `SLJIT_DEBUG=1` on arm64 and x86-64
-(Rosetta). This validates the building blocks; it does not yet execute JS
-using the new convention.
+(Rosetta). This initially validated the building blocks; section 9 records
+their use for actual JS calls and returns.
 
-### Proposed ABI
+### Implemented ABI
 
 One outer C-compatible gateway enters a native run. Internal generated
 functions use `ENTER_REG_ARG | ENTER_KEEP(3)`:
 
 | location | meaning |
 |---|---|
-| S0 | `NativeRun*`: VM/heap, shared budgets, exit status, code-lifetime records |
-| S1 | current `Activation*` |
-| S2 | current activation's register window |
-| R0 on return | normal/escape status; the JS result already owns its VM destination slot |
+| S0 | current activation's register window |
+| S1 | `ColdCtx*`, including the current VM and activation |
+| S2 | `FunctionRun*`, including root activation, depth and shared budget |
+| R0 on return | null for a completed native return; otherwise the exact absolute resume PC in the deepest live VM activation |
 | other scratch registers | temporary values, clobbered by calls |
 | additional saved registers | per-function allocation under SLJIT's preservation rules |
 
-Define the ABI once in C3, with one context descriptor used by normal entries,
-resume entries and fragments. Do not distribute register numbers and stack
-sizes through the individual emitters.
+The gateway uses the C ABI; the shared body and call entry use seven scratch
+GPRs, six saved GPRs and six scratch FP registers. Consolidating this context
+description before adding separately compiled operation fragments remains
+follow-up work.
 
 **Frame ownership.** Reuse the sliding register-window layout and ordinary
 `Activation` stack. Arguments transfer ownership as in `th_enter_lean`; do not
@@ -382,7 +385,7 @@ was a guarded prefix; the workloads' unit of work is a connected graph of tiny
 methods. The new convention and baseline make that graph executable natively;
 the compact optimizer then removes the repeated work inside it.
 
-## 8. Delivered changes and validation
+## 8. Foundation-only changes and validation
 
 Local commits on `rat`, based on `a36d275b`:
 
@@ -392,8 +395,8 @@ Local commits on `rat`, based on `a36d275b`:
 - `e081bcd1`: add opt-in function coverage/admission diagnostics and
   `scripts/report_jit.py`.
 
-The retained changes do not implement the proposed JS calling convention or
-claim a throughput improvement. Five final interleaved pairs against the
+At this foundation-only checkpoint the changes did not implement the JS
+calling convention or improve throughput. Five interleaved pairs against the
 baseline are neutral: Richards 167 → 166 ms, DeltaBlue 246 → 246 ms, Splay
 110 → 110 ms. [Final timings](110-native-jit-pipeline/final-timings.json).
 
@@ -423,3 +426,153 @@ test with `c3c build embedding_jit --sanitize=address` in a separate build and
 output directory to reproduce the sanitizer check. The standalone x86-64 ABI
 check explicitly compiled its C sources with `-arch x86_64`; C3's `--target`
 alone left those C objects at the host architecture in this setup.
+
+## 9. Native execution implementation and measured result
+
+Committed on `rat`:
+
+- `602413b0`: correct loop environment identity, `GETTHISC` emission and the
+  scratch-argument ABI. Crypto's wrong result reduced to an overlapping copy
+  with a `this` property as its loop bound. An unhandled `GETTHISC` had fallen
+  through to shift emission. Alternating closures also exposed an existing
+  loop-entry use of a variable IC belonging to another environment.
+- `1dd9aa75`: generated native call entry/return, ordinary data-read helpers,
+  whole-function/tiny-callee admission, numeric loose equality, present dense
+  element replacement, nested inline window correction and regressions.
+
+Normal compiled calls no longer use `vm_call_lean` or `vm_run_entry`. Generated
+entry checks exact arity, lean-call eligibility, realm, frame/value-stack space,
+shape epoch, collection state, budget and depth before publishing an ordinary
+activation. Both native calls and backward branches consume the shared budget;
+machine depth is capped at 64. A normal return clears the callee window,
+publishes its result and resumes the caller directly. An escape unwinds machine
+frames without popping VM frames; dispatch reloads the deepest activation's
+code and register window. The interpreter owns exceptions and counted-value
+cleanup. Missing/surplus arguments, strings requiring cleanup and other
+unsupported cases escape before the associated effects.
+
+All VM registers remain authoritative roots. The only resumable C helper
+performs ordinary named data reads, with a nonallocating shape-chain lookup.
+Accessors, proxies, exotic/lazy fields and allocating semantics escape before
+execution. General allocating/reentrant helpers are not implemented yet.
+Existing block-local flow remains; cross-block numeric homes are disabled
+until their entry representations and call clobbers are modeled correctly.
+Native call/exit counters, including the 4 KiB per-function exit histogram,
+now exist only with `SLJIT_STATS`.
+
+Nine interleaved pairs, fresh processes, default O2 release binary, same
+machine and minis as section 1. No concurrent engine builds/tests during the
+timing run. Internal timed intervals, including warmup:
+
+| mini | `a36d275b` JIT | `1dd9aa75` JIT | change |
+|---|---:|---:|---:|
+| Richards | 166 ms | 109 ms | −34.3% |
+| DeltaBlue | 245 ms | 159 ms | −35.1% |
+| Splay | 109 ms | 111 ms | +1.8% |
+
+[Raw pairs and process times](110-native-jit-pipeline/native-final-timings.json).
+A three-pair sweep of the other minis found Box2D +4.6% and Mandreel +10.3%,
+which remain regressions to address. CodeLoad, Earley/Boyer, NavierStokes,
+Raytrace and TypeScript changed by +1–2.2%; RegExp was unchanged; PDFJS and
+zlib improved about 4.2% and 3.3%. Crypto and Gameboy now produce valid results;
+their original JIT results were invalid/timeout, so the sweep uses the original
+**interpreter** as their comparator. Crypto improves 13.6%; Gameboy remains
+24.8% slower than that interpreter. Do not present those two as JIT-to-JIT
+speedups. [Other-mini pairs](110-native-jit-pipeline/native-final-other-minis.json).
+
+The final diagnostic census is separate from timing. It uses the same native
+implementation with counters enabled; counter storage remains present in that
+build:
+
+| mini | original JIT interpreted bytecodes | new interpreted bytecodes | direct native calls | direct native returns |
+|---|---:|---:|---:|---:|
+| Richards | 30,769,016 | 60,470 | 2,402,231 | 2,397,567 |
+| DeltaBlue | 47,175,877 | 4,161,769 | 4,320,745 | 4,229,415 |
+| Splay | 24,902,443 | 20,046,528 | 152,445 | 32,885 |
+
+This is dispatch coverage, not CPU-time attribution. Native code sizes in the
+instrumented build are 205,480 / 368,456 / 150,768 bytes respectively.
+[Richards](110-native-jit-pipeline/richards-native-final-report.txt),
+[DeltaBlue](110-native-jit-pipeline/deltablue-native-final-report.txt),
+[Splay](110-native-jit-pipeline/splay-native-final-report.txt).
+
+Fresh three-second CPU samples of the committed, uninstrumented binary on
+6,000-iteration variants put 2,262/2,334 Richards leaf samples (96.9%) and
+1,607/2,317 DeltaBlue samples (69.4%) in unresolved generated-code addresses.
+The ordinary data-read helper accounts for 61 and 196 samples respectively
+(2.6% and 8.5%). DeltaBlue still samples interpreted calls, returns, property
+accesses, array growth and GC. These native addresses do not yet have a JS
+function/operation map, so the samples establish where execution moved but
+do not quantify how much generated time is frame setup versus guards or body
+instructions. Add that map for the next optimizer experiment.
+[Sample summary](110-native-jit-pipeline/native-sample-summary.json),
+[Richards sample](110-native-jit-pipeline/richards-native-final.sample),
+[DeltaBlue sample](110-native-jit-pipeline/deltablue-native-final.sample).
+
+All 15 minis pass in interpreter and normal JIT modes. All 54 focused
+fixture/mode runs pass. The embedding suite passes on arm64 with ASan and on
+x86-64/Rosetta, both with SLJIT assertions enabled. The CLI ASan build passes
+all 18 focused fixtures plus Richards, DeltaBlue, Splay and Crypto under JIT.
+Local, Rosetta and module interpreter/JIT-stress outputs match; the local
+suite retains its known default-profile failures. Test262 differential
+verdicts match over language/expressions, language/statements and built-ins/Array.
+See [validation manifest](110-native-jit-pipeline/native-validation.json).
+
+## 10. Next levers, and what a further 10× would require
+
+A further 10× from this checkpoint means roughly 11 ms Richards and 16 ms
+DeltaBlue, approaching the measured top-tier engines on these minis. The
+earlier proposed 45–60 ms intermediate target requires about another 2–3.5×.
+Neither is established by the current measurements.
+
+1. **Remove hot call frames with guarded, recoverable inlining.** DeltaBlue's
+   `Plan.execute` makes 2.18M native calls; `EqualityConstraint.execute` makes
+   another 1.22M. Richards' `Scheduler.schedule` and `TaskControlBlock.run`
+   each make about 656k. Even a cheap native ABI still repeats callee checks,
+   activation publication, local initialization and cleanup. Start with the
+   tiny `size`/`constraintAt`/`input`/`output` accessors and the equality/scale
+   execution chain, then the scheduler/task graph. Use bounded polymorphic
+   call targets and receiver-shape feedback. Effectful inlining requires a
+   recoverable inline frame at every exit, so a completed store or call is
+   never replayed. The existing replay-limited inliner is not that system.
+
+2. **Make a compact C3 CFG/IR eliminate work inside that larger unit.** Track
+   value identity, types, shapes and effects through joins; remove redundant
+   property loads and guards; keep integers/doubles unboxed; allocate registers
+   across blocks and loops. Model every call's clobbers and every resume
+   entry's representation. The old canonical-lane assumptions cannot simply
+   be reenabled at a whole-function entry. Richards has very little dispatch
+   left to remove, making generated instruction count and frame traffic the
+   priority hypotheses to test with instruction-level profiling.
+
+3. **Resume allocation and collection operations inside baseline code.**
+   DeltaBlue's largest remaining interpreted function is
+   `OrderedCollection.add` (952,523 handler entries). Splay has about 934k
+   `NEWOBJ_SHAPE` exits in `GeneratePayloadTree`, and 51k `NEW_OBJ` exits in
+   `splay_`; those two functions account for over 90% of its remaining handler
+   entries. Add single-operation helpers with explicit completion status,
+   exact continuation PCs, root publication and post-helper stack reloads.
+   Code containing live return addresses must survive GC/invalidation. Measure
+   allocation/initialization/GC costs once transition overhead is removed.
+
+4. **Use the newly bound SLJIT linking and fragment APIs under those contracts.**
+   Patch monomorphic calls/IC targets with rewritable calls/jumps; retain stable
+   entry stubs or track incoming links before retiring code. `set_context`
+   allows separately compiled miss/continuation fragments with the same
+   register/stack context, avoiding unnecessary C-ABI transitions. Shared
+   register calls are already in use. Patching removes target lookup overhead;
+   it does not remove VM frame work, guards, boxing or allocations. A 10× gain
+   cannot be inferred from exposing or using these APIs alone.
+
+5. **Repair admission/retirement regressions while scaling coverage.** Profile
+   Mandreel and Box2D before expanding whole-function compilation further.
+   Repeated short prefixes, unsupported operations and code-budget use need
+   separate policy from optimization misses. Keep the measured regression
+   matrix, native code/metadata sizes and startup costs in every comparison.
+
+The next implementation experiment should specialize the DeltaBlue execution
+chain with recoverable state and a small type/shape IR, then compare native
+call counts, generated instructions, total CPU time and end-to-end timings.
+Separately, make one allocating operation resumable for Splay and measure it
+before broadening helper coverage. Retain only wins that survive the existing
+exception, GC, closure, arity, interrupt and cross-architecture gates.

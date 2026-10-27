@@ -1,0 +1,380 @@
+[
+  {
+    "file": "test/jit_append_property.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "2012 passed, 0 failed\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_append_property.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "2012 passed, 0 failed\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_append_property.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "2012 passed, 0 failed\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_array_element_access.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_array_element_access.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_array_element_access.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_branches.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_branches.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_branches.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_property_write.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_property_write.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_inline_property_write.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loop_arms.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loop_arms.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loop_arms.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loose_equality.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loose_equality.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_loose_equality.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_call.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "jit_native_call: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_call.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "jit_native_call: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_call.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "jit_native_call: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_calls.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "JIT native calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_calls.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "JIT native calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_native_calls.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "JIT native calls: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_nested_inline.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_nested_inline.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_nested_inline.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "ok\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_proto_read_shapes.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "jit_proto_read_shapes: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_proto_read_shapes.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "jit_proto_read_shapes: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/jit_proto_read_shapes.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "jit_proto_read_shapes: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_function.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "SLJIT functions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_function.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "SLJIT functions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_function.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "SLJIT functions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_inline_clamp.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "sljit inline clamp: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_inline_clamp.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "sljit inline clamp: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_inline_clamp.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "sljit inline clamp: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_loop.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "SLJIT loops: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_loop.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "SLJIT loops: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_loop.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "SLJIT loops: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_parseint.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "sljit parseInt: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_parseint.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "sljit parseInt: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_parseint.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "sljit parseInt: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_regions.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "SLJIT regions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_regions.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "SLJIT regions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_regions.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "SLJIT regions: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_smallfunc.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "smallfunc: 72 ms result=Infinity\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_smallfunc.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "smallfunc: 39 ms result=Infinity\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_smallfunc.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "smallfunc: 55 ms result=Infinity\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_ssa.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "sljit SSA: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_ssa.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "sljit SSA: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_ssa.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "sljit SSA: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_template.js",
+    "mode": "off",
+    "rc": 0,
+    "out": "SLJIT template: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_template.js",
+    "mode": "jit",
+    "rc": 0,
+    "out": "SLJIT template: PASS\n",
+    "err": ""
+  },
+  {
+    "file": "test/sljit_template.js",
+    "mode": "stress",
+    "rc": 0,
+    "out": "SLJIT template: PASS\n",
+    "err": ""
+  }
+]

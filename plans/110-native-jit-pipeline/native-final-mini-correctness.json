@@ -1,0 +1,212 @@
+[
+  {
+    "bench": "box2d",
+    "mode": "off",
+    "rc": 0,
+    "out": "Box2D: 240 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "box2d",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Box2D: 242 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "code-load",
+    "mode": "off",
+    "rc": 0,
+    "out": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 166 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "code-load",
+    "mode": "jit",
+    "rc": 0,
+    "out": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 171 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "crypto",
+    "mode": "off",
+    "rc": 0,
+    "out": "Encrypt: 15 ms\nDecrypt: 281 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "crypto",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Encrypt: 15 ms\nDecrypt: 242 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "off",
+    "rc": 0,
+    "out": "DeltaBlue: 272 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "deltablue",
+    "mode": "jit",
+    "rc": 0,
+    "out": "DeltaBlue: 173 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "off",
+    "rc": 0,
+    "out": "Earley: 20 ms\nBoyer: 163 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Earley: 22 ms\nBoyer: 167 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "off",
+    "rc": 0,
+    "out": "Gameboy: 260 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "gbemu",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Gameboy: 322 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "off",
+    "rc": 0,
+    "out": "Mandreel: 842 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "mandreel",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Mandreel: 889 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "off",
+    "rc": 0,
+    "out": "NavierStokes: 372 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "jit",
+    "rc": 0,
+    "out": "NavierStokes: 220 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "off",
+    "rc": 0,
+    "out": "PdfJS: 375 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "jit",
+    "rc": 0,
+    "out": "PdfJS: 404 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "raytrace",
+    "mode": "off",
+    "rc": 0,
+    "out": "RayTrace: 174 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "raytrace",
+    "mode": "jit",
+    "rc": 0,
+    "out": "RayTrace: 179 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "regexp",
+    "mode": "off",
+    "rc": 0,
+    "out": "RegExp: 357 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "regexp",
+    "mode": "jit",
+    "rc": 0,
+    "out": "RegExp: 358 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "off",
+    "rc": 0,
+    "out": "Richards: 248 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "richards",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Richards: 117 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "off",
+    "rc": 0,
+    "out": "Splay: 125 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "splay",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Splay: 123 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "mode": "off",
+    "rc": 0,
+    "out": "Typescript: 1246 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "typescript",
+    "mode": "jit",
+    "rc": 0,
+    "out": "Typescript: 1320 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "zlib",
+    "mode": "off",
+    "rc": 0,
+    "out": "zlib: 5691 ms\n",
+    "err": ""
+  },
+  {
+    "bench": "zlib",
+    "mode": "jit",
+    "rc": 0,
+    "out": "zlib: 6366 ms\n",
+    "err": ""
+  }
+]

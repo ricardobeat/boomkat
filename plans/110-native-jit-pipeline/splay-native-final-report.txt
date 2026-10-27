@@ -1,0 +1,37 @@
+Hottest interpreted functions (handler entries include retries):
+    threaded  share    switch retired  function / admission
+  10,780,977  53.8%    62,568       0  GeneratePayloadTree:454 [id=5] / compiled
+   7,484,927  37.3%     8,475       0  SplayTree.prototype.splay_:725 [id=48] / compiled
+   1,018,944   5.1%    96,045       0  BenchmarkSuite.ResetRNG:137 [id=20] / compiled
+     269,148   1.3%     1,758       0  SplayTree.prototype.insert:592 [id=41] / compiled
+     190,716   1.0%    19,410       2  InsertNewNode:488 [id=9] / compiled
+      80,501   0.4%       471       1  SplaySetup:500 [id=10] / compiled
+      71,564   0.4%     1,420       1  SplayTree.prototype.remove:625 [id=42] / compiled
+      30,794   0.2%     1,732       0  SplayTree.prototype.find:657 [id=43] / compiled
+      27,695   0.1%     1,103       0  SplayTree.prototype.isEmpty:580 [id=40] / compiled
+      23,930   0.1%     1,447       0  SplayTree.prototype.findGreatestLessThan:685 [id=45] / compiled
+      22,156   0.1%       920       0  GenerateKey:471 [id=6] / compiled
+      20,333   0.1%     1,323       0  SplayRun:543 [id=12] / compiled
+       8,757   0.0%       505       0  SplayTree.prototype.findMax:669 [id=44] / compiled
+       6,976   0.0%        56       1  SplayUpdateStats:482 [id=8] / compiled
+       6,940   0.0%        13       1  SplayTree.Node.prototype.traverse_:819 [id=50] / compiled
+Total threaded entries: 20,046,459; switch instructions: 197,570
+
+Most frequent native exits:
+     474,584  NEWOBJ_SHAPE     GeneratePayloadTree:455 [id=5] pc=3
+     459,757  NEWOBJ_SHAPE     GeneratePayloadTree:460 [id=5] pc=13
+      51,426  NEW_OBJ          SplayTree.prototype.splay_:735 [id=48] pc=11
+      14,769  RET              GenerateKey:471 [id=6] pc=5
+      14,769  NEW_OBJ          SplayTree.prototype.insert:603 [id=41] pc=26
+      14,769  RET              SplayTree.prototype.find:661 [id=43] pc=16
+      14,768  RET              InsertNewNode:496 [id=9] pc=22
+       7,452  PUTCAP_SNAP      BenchmarkSuite.ResetRNG:137 [id=20] pc=10
+       7,317  BAND             BenchmarkSuite.ResetRNG:137 [id=20] pc=8
+       7,204  CALL_GLOBAL      SplayRun:546 [id=12] pc=4
+       7,198  RET              <anonymous>:696 [id=45] pc=25
+       5,223  PUTTHISC         <anonymous>:638 [id=42] pc=36
+         588  RETUNDEF         SplayTree.prototype.exportKeys:709 [id=46] pc=4
+         376  CALL_GLOBAL      SplaySetup:510 [id=10] pc=19
+         299  RET              SplayTree.prototype.isEmpty:580 [id=40] pc=2
+
+Native totals: functions=18, loops=0, templates=0, hits=1,081,116, code_bytes=150,768, native_calls=152,445, native_returns=32,885
