@@ -1201,20 +1201,6 @@ struct Heap {
     RejectionTrackerFn   rejection_tracker_fn;
     void*                rejection_tracker_udata;
 
-    // Parked Atomics.waitAsync waiters: one slot per pending Promise, with
-    // free slots left in place. Entries act as GC roots. The slots are indexed
-    // by the waiter table's nodes, so a settled slot is reused, not compacted.
-    AtomicsWaiter* async_waiters;
-    uint      async_waiter_count;      // high-water mark of used slots
-    uint      async_waiter_capacity;
-    // This agent's mailbox (agent::Port*), created the first time the heap
-    // waits on shared memory. Null for a heap that never does, which is what
-    // keeps the drain loop's poll to a single comparison.
-    void*          agent_port;
-    AgentPollFn    agent_poll_fn;
-    // AgentCanSuspend(): when set, Atomics.wait throws instead of blocking.
-    bool           agent_no_block;
-
     // Shapes (hidden classes) backing the inline caches.
     hobject::Shape**    shapes;    // each element points to one shape allocation
     uint                shape_count;
@@ -1325,6 +1311,20 @@ struct Heap {
     void*       defined_modules;
     uint        defined_module_count;
     uint        defined_module_cap;
+
+    // Parked Atomics.waitAsync waiters: one slot per pending Promise, with
+    // free slots left in place. Entries act as GC roots. The slots are indexed
+    // by the waiter table's nodes, so a settled slot is reused, not compacted.
+    AtomicsWaiter* async_waiters;
+    uint      async_waiter_count;      // high-water mark of used slots
+    uint      async_waiter_capacity;
+    // This agent's mailbox (agent::Port*), created the first time the heap
+    // waits on shared memory. Null for a heap that never does, which is what
+    // keeps the drain loop's poll to a single comparison.
+    void*          agent_port;
+    AgentPollFn    agent_poll_fn;
+    // AgentCanSuspend(): when set, Atomics.wait throws instead of blocking.
+    bool           agent_no_block;
 }
 
 // ============================================================================
