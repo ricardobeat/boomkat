@@ -224,32 +224,30 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     hobject::PropValue* name_slot = &fn_obj.prop_values()[name_idx];
     if (!name_slot.get().is_string()) return;
     HString* cur_name = (HString*)name_slot.get().get_heapptr();
-    if (cur_name == null || cur_name.blen != 0) return;  // non-empty: already set
+    if (cur_name == null || cur_name.unit_len() != 0) return;  // non-empty: already set
 
-    // Build "prefix + key_desc" in a stack buffer.
-    char[256] buf;
-    usz pos = 0;
-    for (usz i = 0; i < prefix.len && pos < 255; i++) buf[pos++] = prefix[i];
+    // Build "prefix + key_desc".
+    builtins::StrBuf name;
+    name.init(vm.heap);
+    defer name.free();
+    name.append_bytes(prefix);
 
     if (key_tval.is_string()) {
         HString* key_hstr = (HString*)key_tval.get_heapptr();
         if (key_hstr != null && key_hstr.is_symbol()) {
             // Symbol key: append "[description]" or "" for anonymous symbols.
             if (builtins::symbol_has_description(key_hstr)) {
-                char[] desc = builtins::symbol_description(key_hstr);
-                buf[pos++] = '[';
-                for (uint i = 0; i < desc.len && pos < 254; i++) buf[pos++] = desc[i];
-                if (pos < 255) buf[pos++] = ']';
+                name.append_char('[');
+                name.append_hstring(key_hstr);
+                name.append_char(']');
             }
             // anonymous Symbol(): name stays just prefix (e.g. "get ")
         } else if (key_hstr != null) {
-            // Plain string key
-            char* kstr = key_hstr.get_cstr();
-            for (uint i = 0; i < key_hstr.blen && pos < 255; i++) buf[pos++] = kstr[i];
+            name.append_hstring(key_hstr);
         }
     }
 
-    HString* new_name = intern_string(vm, buf[:pos]);
+    HString* new_name = intern_string(vm, name.bytes());
     if (new_name != null) {
         TVal new_tv;
         new_tv.set_string_borrowed(new_name);
@@ -2269,13 +2267,10 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // instruction (each class evaluation creates a fresh
             // PrivateEnvironment).
             uint bc = insn.get_bc();
-            char[] desc = {};
+            HString* desc = vm.heap.str(heap::BuiltinStr.EMPTY);
             if (bc < vm.current_func.const_count) {
                 TVal desc_tv = ds.constants[bc];
-                if (desc_tv.is_string()) {
-                    HString* desc_hs = (HString*)desc_tv.get_heapptr();
-                    desc = desc_hs.get_data();
-                }
+                if (desc_tv.is_string()) desc = (HString*)desc_tv.get_heapptr();
             }
             HString* sym = builtins::create_hidden_symbol(vm.heap, desc);
             if (sym == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
@@ -2316,22 +2311,15 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 }
             }
             if (!ok) {
-                char[] priv_name = "?";
+                HString* priv_name = vm.heap.str_intern("?");
                 uint c = insn.c;
                 if (c != 0xFF && c < vm.current_func.const_count) {
                     TVal name_tv = ds.constants[c];
-                    if (name_tv.is_string()) {
-                        HString* name_hs = (HString*)name_tv.get_heapptr();
-                        priv_name = name_hs.get_data();
-                    }
+                    if (name_tv.is_string()) priv_name = (HString*)name_tv.get_heapptr();
                 }
-                char[160] msg_buf;
-                int len = (int)(io::bprintf(&msg_buf,
-                    "Cannot access private member #%s from an object whose class did not declare it",
-                    (String)priv_name) ?? msg_buf[:0]).len;
-                char[] msg = len > 0 && (usz)len < msg_buf.len ? msg_buf[:(usz)len] : (char[])"Cannot access private member from an object whose class did not declare it";
-                if (!vm_throw_error(vm, vm.heap.type_err_proto, msg,
-                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                        "Cannot access private member #%s from an object whose class did not declare it",
+                        priv_name, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
             }

@@ -27,6 +27,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 TESTS=(
   test/test_async_loops.js
+  test/finally_return_value_lifetime.js
   test/gc_construct_this_slot.js
   test/shape_id_recycle_ic.js
   test/async_persistent_frame.js

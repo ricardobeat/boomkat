@@ -1979,20 +1979,10 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             }
         }
         HString* key_str = (HString*)key;
-        char[] kd = key_str.get_data();
-        bool is_numeric = true;
-        uint arr_idx = 0;
-        for (usz i = 0; i < kd.len; i++) {
-            if (kd[i] < '0' || kd[i] > '9') {
-                is_numeric = false;
-                break;
-            }
-            arr_idx = arr_idx * 10 + (uint)(kd[i] - '0');
-        }
-        if (is_numeric && kd.len > 0 && kd.len <= 10 && arr_idx < obj.array_size
+        if (key_str.is_arridx() && key_str.array_index() < obj.array_size
             && !(obj.get_class() == hobject::ObjClass.ARGUMENTS
                  && obj.find_prop_idx(key, ctx.heap) >= 0)) {
-            TVal av = obj.array_part()[arr_idx].get();
+            TVal av = obj.array_part()[key_str.array_index()].get();
             if (av.is_undefined()) {
                 ctx.result_undefined();
                 return;
@@ -2010,13 +2000,13 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
             TVal vt;
             vt.set_string_borrowed(key_str);
             // Actually set the array element value as the descriptor value
-            TVal array_val = obj.array_part()[arr_idx].get();
+            TVal array_val = obj.array_part()[key_str.array_index()].get();
             // Sloppy mapped `arguments` (§10.4.4.2 [[GetOwnProperty]] step 2):
             // a mapped index reports the parameter's current value, not the
             // stored copy.
             if (obj.get_class() == hobject::ObjClass.ARGUMENTS) {
                 TVal mapped_v;
-                if (vm::mapped_args_read(ctx.vm, obj, arr_idx, &mapped_v)) {
+                if (vm::mapped_args_read(ctx.vm, obj, key_str.array_index(), &mapped_v)) {
                     array_val = mapped_v;
                 }
             }
@@ -2045,13 +2035,10 @@ fn void builtin_object_getOwnPropertyDescriptor(BuiltinContext* ctx) {
         // String indexed properties are non-writable, enumerable, non-configurable.
         if (obj.get_class() == hobject::ObjClass.STRING &&
             (*obj.extra_ptr()).prim.primitive_value.is_string() &&
-            is_numeric && kd.len > 0 && kd.len <= 10) {
+            key_str.is_arridx()) {
             HString* prim_str = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-            if (arr_idx < (ulong)prim_str.unit_len()) {
-                uint cp = prim_str.unit_at((uint)arr_idx);
-                char[4] cbuf;
-                uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
-                HString* char_str = ctx.heap.str_intern(cbuf[:cblen]);
+            if (key_str.array_index() < prim_str.unit_len()) {
+                HString* char_str = ctx.heap.str_from_unit(prim_str.unit_at(key_str.array_index()));
                 if (char_str != null) {
                     TVal char_tv; char_tv.set_string_borrowed(char_str);
                     HObject* desc;
@@ -2373,11 +2360,8 @@ fn bool desc_get_enum(BuiltinContext* ctx, HObject* obj, hstring::HString* key, 
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         uint ci = key.array_index();
         if (prim != null && ci < prim.unit_len()) {
-            uint bstart = prim.char_offset_to_byte_offset(ci);
-            uint bend = prim.char_offset_to_byte_offset(ci + 1);
-            char[] data = prim.get_data();
-            HString*? ch = builtin_intern_string(ctx.heap, data[bstart:bend - bstart]);
-            if (try c = ch) { out.set_string_borrowed(c); return true; }
+            HString* ch = ctx.heap.str_from_unit(prim.unit_at(ci));
+            if (ch != null) { out.set_string_borrowed(ch); return true; }
             out.set_undefined();
             return true;
         }
@@ -3372,9 +3356,13 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
             // ToPropertyDescriptor(desc_obj)
             if (!desc_obj_val.is_object()) {
                 // TypeError, property descriptor must be an object
-                char[128] msg_buf;
-                int msg_len = (int)(io::bprintf(&msg_buf, "Property descriptor for '%s' must be an object", (String)p_key.get_data()) ?? msg_buf[:0]).len;
-                builtin_throw(ctx, ctx.heap.type_err_proto, msg_buf[:msg_len]);
+                StrBuf msg;
+                msg.init(ctx.heap);
+                defer msg.free();
+                msg.append_bytes("Property descriptor for '");
+                msg.append_hstring(p_key);
+                msg.append_bytes("' must be an object");
+                builtin_throw(ctx, ctx.heap.type_err_proto, msg.bytes());
                 return;
             }
             HObject* desc_obj = (HObject*)desc_obj_val.get_heapptr();
@@ -4877,6 +4865,17 @@ fn void builtin_object_groupBy(BuiltinContext* ctx) {
 
 // Convert a TVal to a property key (HString*) for use in Object.fromEntries.
 // Per ECMA-262 §19.1.2.5, this performs ToPropertyKey on the entry's "0" element.
+// The result "[object <tag>]" of Object.prototype.toString for a string tag.
+fn void object_tag_result(BuiltinContext* ctx, HString* tag) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    out.append_bytes("[object ");
+    out.append_hstring(tag);
+    out.append_char(']');
+    out.finish(ctx);
+}
+
 // Uses builtin_to_string_vm for object values (calls toString/valueOf via ToPrimitive),
 // and builtin_to_string for primitives.
 fn HString* builtin_to_property_key(BuiltinContext* ctx, TVal key_val) {
@@ -4888,7 +4887,7 @@ fn HString* builtin_to_property_key(BuiltinContext* ctx, TVal key_val) {
         // table, so put_prop's pointer-identity property lookup would never
         // match it again from a literal (test262 fromEntries/evaluation-order.js).
         if (s != null && !s.is_symbol() && !s.is_interned()) {
-            return builtin_intern_string(ctx.heap, s.get_data());
+            return ctx.heap.ensure_interned(s);
         }
         return s;
     }
@@ -4913,7 +4912,7 @@ fn HString* builtin_to_property_key(BuiltinContext* ctx, TVal key_val) {
         // it here, same rationale as the is_string() branch above.
         HString* ts = builtin_to_string_vm(ctx, &key_val);
         if (ts != null && !ts.is_symbol() && !ts.is_interned()) {
-            return builtin_intern_string(ctx.heap, ts.get_data());
+            return ctx.heap.ensure_interned(ts);
         }
         return ts;
     }
@@ -4959,15 +4958,8 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
                     if (tv.is_string()) {
                         HString* tag_str = (HString*)tv.get_heapptr();
                         if (tag_str != null && !tag_str.is_symbol()) {
-                            char[] tag_bytes = tag_str.get_data();
-                            int tag_len = (int)tag_bytes.len;
-                            if (tag_len > 0 && tag_len < 62) {
-                                buf[0] = '['; buf[1] = 'o'; buf[2] = 'b'; buf[3] = 'j';
-                                buf[4] = 'e'; buf[5] = 'c'; buf[6] = 't'; buf[7] = ' ';
-                                int pos = 8;
-                                for (int i = 0; i < tag_len && pos < 62; i++) { buf[pos++] = tag_bytes[i]; }
-                                buf[pos++] = ']';
-                                ctx.result_string(builtin_intern_string(ctx.heap, buf[:pos]));
+                            if (tag_str.unit_len() > 0) {
+                                object_tag_result(ctx, tag_str);
                                 return;
                             }
                         }
@@ -5022,15 +5014,8 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
                 if (tv.is_string()) {
                     HString* tag_str = (HString*)tv.get_heapptr();
                     if (tag_str != null && !tag_str.is_symbol()) {
-                        char[] tag_bytes = tag_str.get_data();
-                        int tag_len = (int)tag_bytes.len;
-                        if (tag_len > 0 && tag_len < 62) {
-                            buf[0] = '['; buf[1] = 'o'; buf[2] = 'b'; buf[3] = 'j';
-                            buf[4] = 'e'; buf[5] = 'c'; buf[6] = 't'; buf[7] = ' ';
-                            int pos = 8;
-                            for (int i = 0; i < tag_len && pos < 62; i++) { buf[pos++] = tag_bytes[i]; }
-                            buf[pos++] = ']';
-                            ctx.result_string(builtin_intern_string(ctx.heap, buf[:pos]));
+                        if (tag_str.unit_len() > 0) {
+                            object_tag_result(ctx, tag_str);
                             return;
                         }
                     }
@@ -5046,15 +5031,8 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
                     if (tag_result.is_string()) {
                         HString* tag_str = (HString*)tag_result.get_heapptr();
                         if (tag_str != null && !tag_str.is_symbol()) {
-                            char[] tag_bytes = tag_str.get_data();
-                            int tag_len = (int)tag_bytes.len;
-                            if (tag_len > 0 && tag_len < 62) {
-                                buf[0] = '['; buf[1] = 'o'; buf[2] = 'b'; buf[3] = 'j';
-                                buf[4] = 'e'; buf[5] = 'c'; buf[6] = 't'; buf[7] = ' ';
-                                int pos = 8;
-                                for (int i = 0; i < tag_len && pos < 62; i++) { buf[pos++] = tag_bytes[i]; }
-                                buf[pos++] = ']';
-                                ctx.result_string(builtin_intern_string(ctx.heap, buf[:pos]));
+                            if (tag_str.unit_len() > 0) {
+                                object_tag_result(ctx, tag_str);
                                 return;
                             }
                         }
@@ -5124,15 +5102,8 @@ fn void builtin_object_proto_toString(BuiltinContext* ctx) {
                 if (tv.is_string()) {
                     HString* tag_str = (HString*)tv.get_heapptr();
                     if (tag_str != null && !tag_str.is_symbol()) {
-                        char[] tag_bytes = tag_str.get_data();
-                        int tag_len = (int)tag_bytes.len;
-                        if (tag_len > 0 && tag_len < 62) {
-                            buf[0] = '['; buf[1] = 'o'; buf[2] = 'b'; buf[3] = 'j';
-                            buf[4] = 'e'; buf[5] = 'c'; buf[6] = 't'; buf[7] = ' ';
-                            int pos = 8;
-                            for (int i = 0; i < tag_len && pos < 62; i++) { buf[pos++] = tag_bytes[i]; }
-                            buf[pos++] = ']';
-                            ctx.result_string(builtin_intern_string(ctx.heap, buf[:pos]));
+                        if (tag_str.unit_len() > 0) {
+                            object_tag_result(ctx, tag_str);
                             return;
                         }
                     }

@@ -13,6 +13,10 @@ import std::io;
 // but prints nothing; use `just build-trace` (boomkat_debug) for the trace.
 // ============================================================================
 
+fn void trace_put_byte(char c, void* udata) {
+    io::eprintf("%c", c);
+}
+
 // Print a TVal to stderr (for --trace-vm debugging).
 fn void trace_print_tval(TVal* v) {
 $if $feat(TRACE_VM):
@@ -25,9 +29,8 @@ $if $feat(TRACE_VM):
         case types::TValTag.STRING: {
             HString* s = (HString*)v.get_heapptr();
             if (s != null) {
-                char[] d = s.get_data();
                 io::eprintf("\"");
-                for (usz i = 0; i < d.len; i++) { io::eprintf("%c", d[i]); }
+                s.write_utf8(&trace_put_byte);
                 io::eprintf("\"");
             } else { io::eprintf("(null)"); }
             break;

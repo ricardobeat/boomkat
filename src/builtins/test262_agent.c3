@@ -96,13 +96,14 @@ fn void builtin_agent_start(BuiltinContext* ctx) {
 
     AgentGroup* group = agent_group();
     AgentRecord* rec = (AgentRecord*)libc::calloc(1, AgentRecord::size);
-    char* text = (char*)libc::malloc((usz)source.blen + 1);
+    usz source_len = source.utf8_len(true);
+    char* text = (char*)libc::malloc(source_len + 1);
     if (rec == null || text == null) abort("out of memory starting an agent");
-    mem::copy(text, source.get_cstr(), (sz)source.blen);
-    text[source.blen] = 0;
+    source.copy_utf8(text, true);
+    text[source_len] = 0;
     rec.group = group;
     rec.source = text;
-    rec.source_len = source.blen;
+    rec.source_len = (uint)source_len;
 
     group.lock.lock();
     rec.next = group.agents;
@@ -277,11 +278,13 @@ fn void builtin_agent_report(BuiltinContext* ctx) {
     }
 
     AgentReport* report = (AgentReport*)libc::calloc(1, AgentReport::size);
-    char* copy = (char*)libc::malloc((usz)text.blen + 1);
+    usz text_len = text.utf8_len(true);
+    char* copy = (char*)libc::malloc(text_len + 1);
     if (report == null || copy == null) abort("out of memory queuing an agent report");
-    mem::copy(copy, text.get_cstr(), (sz)text.blen);
+    text.copy_utf8(copy, true);
+    copy[text_len] = 0;
     report.text = copy;
-    report.len = text.blen;
+    report.len = (uint)text_len;
 
     AgentGroup* group = t_self.group;
     group.lock.lock();

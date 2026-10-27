@@ -188,7 +188,7 @@ fn bool to_temporal_datetime(BuiltinContext* ctx, TVal* item, temporal::CivilDat
     }
     // TemporalDateTimeString[~Zoned] has no Z designator; a numeric offset is dropped.
     temporal::ParsedIsoDateTime p;
-    if (!temporal::parse_iso_date_string(s.get_cstr()[:s.blen], &p) || p.offset_kind == temporal::OffsetKind.Z) {
+    if (!temporal::parse_iso_date_string(s.token_text(), &p) || p.offset_kind == temporal::OffsetKind.Z) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date-time string");
         return false;
     }
@@ -328,7 +328,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
 
         // Validate in any order.
         if (cn_s != null) {
-            char[] v = cn_s.get_cstr()[:cn_s.blen];
+            char[] v = cn_s.token_text();
             if (v == "auto") { show = AUTO; }
             else if (v == "always") { show = ALWAYS; }
             else if (v == "critical") { show = CRITICAL; }
@@ -344,7 +344,7 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
             }
             ns_digits = (int)dv;
         } else if (fd_s != null) {
-            char[] v = fd_s.get_cstr()[:fd_s.blen];
+            char[] v = fd_s.token_text();
             if (v == "auto") { ns_digits = -1; }
             else {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
@@ -352,14 +352,14 @@ fn void builtin_temporal_plain_datetime_proto_toString(BuiltinContext* ctx) {
             }
         }
         if (rm_s != null) {
-            char[] v = rm_s.get_cstr()[:rm_s.blen];
+            char[] v = rm_s.token_text();
             if (!temporal::parse_rm_str(v, &rm)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
         }
         if (su_s != null) {
-            char[] v = su_s.get_cstr()[:su_s.blen];
+            char[] v = su_s.token_text();
             // smallestUnit wins over fractionalSecondDigits when both are
             // given (ToSecondsStringPrecisionRecord keeps the unit's own
             // precision).
@@ -564,7 +564,7 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         if (round_to.is_string() || (round_to.is_object() && round_to.get_heapptr() != null && !((HObject*)round_to.get_heapptr()).flags.callable)) {
             HString* s = builtin_to_string_vm(ctx, round_to);
             if (ctx.should_throw) return;
-            char[] str = s.get_cstr()[:s.blen];
+            char[] str = s.token_text();
             if (!temporal::parse_unit_str(str, &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
@@ -605,7 +605,7 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         if (!rm_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return;
-            if (!temporal::parse_rm_str(s.get_cstr()[:s.blen], &rounding_mode)) {
+            if (!temporal::parse_rm_str(s.token_text(), &rounding_mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -615,7 +615,7 @@ fn void builtin_temporal_plain_datetime_proto_round(BuiltinContext* ctx) {
         if (!su_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &su_v);
             if (ctx.should_throw) return;
-            if (!temporal::parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
+            if (!temporal::parse_unit_str(s.token_text(), &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }

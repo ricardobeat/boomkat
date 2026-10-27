@@ -148,6 +148,13 @@ fn bool StrBuf.append_hstring(&self, HString* s) {
     return self.append_bytes(s.get_data());
 }
 
+// Append "Symbol(description)"; an anonymous symbol has an empty description.
+fn bool StrBuf.append_symbol(&self, HString* sym) {
+    if (!self.append_bytes("Symbol(")) return false;
+    if (symbol_has_description(sym) && !self.append_hstring(sym)) return false;
+    return self.append_char(')');
+}
+
 // Append the units `[from, to)` of `s`.
 fn bool StrBuf.append_hstring_range(&self, HString* s, uint from, uint to) {
     if (from >= to) return true;
@@ -223,6 +230,25 @@ fn HString* StrBuf.to_hstring(&self, BuiltinContext* ctx) {
     }
     if (result == null) builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
     return result;
+}
+
+// The pieces of `strs` joined by `sep`, or null after throwing a RangeError
+// when the result is too long.
+fn HString* join_hstrings(BuiltinContext* ctx, HString*[] strs, HString* sep) {
+    ulong total = (ulong)sep.unit_len() * (strs.len > 1 ? strs.len - 1 : 0);
+    foreach (piece : strs) total += piece.unit_len();
+    if (hstring::length_exceeds_max(total)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return null;
+    }
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    foreach (i, piece : strs) {
+        if (i > 0) out.append_hstring(sep);
+        out.append_hstring(piece);
+    }
+    return out.to_hstring(ctx);
 }
 
 // Make the accumulated string the builtin's result, or throw as `to_hstring` does.
@@ -1361,31 +1387,9 @@ fn void print_tval(Heap* heap, TVal* val) {
     }
 }
 
-fn double string_to_double(TVal* val) {
-    if (val.is_fastint()) return (double)val.get_fastint();
-    if (val.is_number()) return val.get_number();
-    if (val.is_string()) {
-        HString* h = (HString*)val.get_heapptr();
-        if (h == null || h.blen == 0) return double::nan;
-        char* end;
-        double r = dtoa_bindings::atod_strtod_compat((ZString)h.get_cstr(), &end);
-        if (end == h.get_cstr()) return double::nan;
-        return r;
-    }
-    return double::nan;
-}
-
 // ============================================================================
 // ECMAScript whitespace check
 // ============================================================================
-
-// ECMAScript whitespace (ASCII subset: Tab, VT, FF, Space, NBSP, LF, CR).
-// Used by ToNumber which only needs ASCII whitespace.
-fn bool is_ecma_whitespace(char c) @inline {
-    return c == 0x09 || c == 0x0B || c == 0x0C
-        || c == 0x20 || c == 0xA0
-        || c == 0x0A || c == 0x0D;
-}
 
 // ECMAScript whitespace check at the Unicode codepoint level (ECMA-262 §7.2 + §7.3).
 // Handles the full Unicode range including Zs (Space_Separator) characters.
@@ -2695,24 +2699,11 @@ fn HString* builtin_to_string(Heap* heap, TVal* val) {
             HString* s = (HString*)val.get_heapptr();
             // Symbols need special handling: ToString(symbol) = "Symbol(description)"
             if (s != null && s.is_symbol()) {
-                // Build "Symbol(description)" string
-                char[] desc = symbol_description(s);
-                char[512] result_buf;
-                result_buf[0] = 'S';
-                result_buf[1] = 'y';
-                result_buf[2] = 'm';
-                result_buf[3] = 'b';
-                result_buf[4] = 'o';
-                result_buf[5] = 'l';
-                result_buf[6] = '(';
-                int pos = 7;
-                for (int i = 0; i < desc.len && pos < 510; i++) {
-                    result_buf[pos] = desc[i];
-                    pos++;
-                }
-                result_buf[pos] = ')';
-                pos++;
-                return builtin_intern_string(heap, result_buf[:(uint)pos]);
+                StrBuf out;
+                out.init(heap);
+                defer out.free();
+                out.append_symbol(s);
+                return builtin_intern_string(heap, out.bytes());
             }
             return s;
         }
@@ -3420,7 +3411,8 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
     if (try err = err_raw) {
         ctx.heap.set_prototype(err, ctx.heap.ref_err_proto);
         char[256] buf;
-        int len = (int)(io::bprintf(&buf, "Cannot access '%s' before initialization", (ZString)name.get_cstr()) ?? buf[:0]).len;
+        char[256] name_text;
+        int len = (int)(io::bprintf(&buf, "Cannot access '%s' before initialization", name.cesu8_zstr(name_text[..])) ?? buf[:0]).len;
         char[] msg = len > 0 && len < 256 ? buf[:len] : buf[:0];
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {

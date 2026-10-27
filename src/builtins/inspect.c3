@@ -76,7 +76,7 @@ fn bool inspect_root(Heap* heap, void* vm, TVal* val, StrBuf* out) @feat(!NO_INS
         // A Symbol is tagged STRING but is not a string: it renders as
         // Symbol(desc) at the root just as it does when nested.
         if (s != null && !s.is_symbol()) {
-            return out.append_bytes(s.get_data());
+            return out.append_hstring(s);
         }
     }
     return inspect_nested(heap, vm, val, out);
@@ -142,7 +142,7 @@ fn bool inspect_value(InspectCtx* ctx, TVal* val, int depth, StrBuf* out) {
             HString* s = (HString*)val.get_heapptr();
             if (s == null) return out.append_bytes("''");
             if (s.is_symbol()) return inspect_append_symbol(out, s);
-            return inspect_append_quoted(out, s.get_data());
+            return inspect_append_quoted_hstring(out, s);
         }
         case LIGHTFUNC:
             return out.append_bytes("[Function (anonymous)]");
@@ -176,17 +176,21 @@ fn bool inspect_append_number(StrBuf* out, double d) {
     return out.append_bytes(buf[:len]);
 }
 
-// "Symbol(desc)". The raw HString bytes carry the 0xFF prefix and description
-// marker, so they cannot be emitted directly.
+// "Symbol(desc)".
 fn bool inspect_append_symbol(StrBuf* out, HString* sym) {
-    if (!out.append_bytes("Symbol(")) return false;
-    if (symbol_has_description(sym) && !out.append_bytes(symbol_description(sym))) return false;
-    return out.append_char(')');
+    return out.append_symbol(sym);
 }
 
 // Quote a string: single quotes normally, double quotes when
 // the content contains a single quote, backticks when it contains both. The
 // chosen quote is then the only one that needs escaping.
+fn bool inspect_append_quoted_hstring(StrBuf* out, HString* s) {
+    StrBuf tmp;
+    tmp.init(out.heap);
+    defer tmp.free();
+    return inspect_append_quoted(out, cesu8_text(&tmp, s));
+}
+
 fn bool inspect_append_quoted(StrBuf* out, char[] data) {
     bool has_single = false;
     bool has_double = false;
@@ -686,7 +690,10 @@ fn bool inspect_append_key(StrBuf* b, HString* key) {
         // A symbol key prints as its bare Symbol(desc) form, unquoted.
         return inspect_append_symbol(b, key);
     }
-    char[] data = key.get_data();
+    StrBuf tmp;
+    tmp.init(b.heap);
+    defer tmp.free();
+    char[] data = cesu8_text(&tmp, key);
     if (inspect_is_identifier(data)) return b.append_bytes(data);
     return inspect_append_quoted(b, data);
 }
@@ -937,10 +944,10 @@ fn bool inspect_function(InspectCtx* ctx, HObject* obj, int depth, StrBuf* out) 
     bool is_class = inspect_is_class_ctor(obj);
     if (!out.append_bytes(is_class ? "[class " : "[Function")) return false;
 
-    char[] name = inspect_function_name(ctx, obj);
-    if (name.len > 0) {
+    HString* name = inspect_function_name(ctx, obj);
+    if (name != null) {
         if (!is_class && !out.append_bytes(": ")) return false;
-        if (!out.append_bytes(name)) return false;
+        if (!out.append_hstring(name)) return false;
     } else {
         if (!out.append_bytes(is_class ? "(anonymous)" : " (anonymous)")) return false;
     }
@@ -983,17 +990,17 @@ fn bool inspect_is_class_ctor(HObject* obj) {
 
 // The function's own "name" property, or "" when absent or empty. Read as a
 // plain own data property so an exotic "name" accessor is not invoked.
-fn char[] inspect_function_name(InspectCtx* ctx, HObject* obj) {
+fn HString* inspect_function_name(InspectCtx* ctx, HObject* obj) {
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
-    if (name_key == null) return "";
+    if (name_key == null) return null;
     int idx = obj.find_prop_idx(name_key, ctx.heap);
-    if (idx < 0) return "";
-    if (obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) return "";
+    if (idx < 0) return null;
+    if (obj.get_prop_flags((uint)idx, ctx.heap).is_accessor) return null;
     TVal v = obj.prop_values()[idx].get();
-    if (!v.is_string()) return "";
+    if (!v.is_string()) return null;
     HString* s = (HString*)v.get_heapptr();
-    if (s == null || s.is_symbol()) return "";
-    return s.get_data();
+    if (s == null || s.is_symbol() || s.unit_len() == 0) return null;
+    return s;
 }
 
 // An Error prints its stack, which already carries the "Type: message" header.
@@ -1006,8 +1013,11 @@ fn bool inspect_error(InspectCtx* ctx, HObject* obj, StrBuf* out) {
             TVal v = obj.prop_values()[idx].get();
             if (v.is_string()) {
                 HString* s = (HString*)v.get_heapptr();
-                if (s != null && !s.is_symbol() && s.blen > 0) {
-                    return inspect_append_indented_block(out, s.get_data(), ctx.indent);
+                if (s != null && !s.is_symbol() && s.unit_len() > 0) {
+                    StrBuf tmp;
+                    tmp.init(out.heap);
+                    defer tmp.free();
+                    return inspect_append_indented_block(out, cesu8_text(&tmp, s), ctx.indent);
                 }
             }
         }
@@ -1039,7 +1049,7 @@ fn bool inspect_via_tostring(InspectCtx* ctx, HObject* obj, StrBuf* out) {
         s = inspect_call_method(ctx, obj, "toString");
     }
     if (s == null) return out.append_bytes("[Object]");
-    return out.append_bytes(s.get_data());
+    return out.append_hstring(s);
 }
 
 // Call `obj[method]()` and return the resulting HString, or null if there is

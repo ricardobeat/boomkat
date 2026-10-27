@@ -519,13 +519,6 @@ fn HString*? vm_to_string(Vm* vm, TVal* val) {
     }
 }
 
-// ECMAScript white-space and line terminators within ASCII: TAB, VT, FF, SP, NBSP, LF, CR.
-fn bool is_ecma_whitespace(char c) @inline {
-    return c == 0x09 || c == 0x0B || c == 0x0C
-        || c == 0x20 || c == 0xA0
-        || c == 0x0A || c == 0x0D;
-}
-
 // ECMA-262 StringToNumber: https://tc39.es/ecma262/#sec-stringtonumber
 // A symbol has no numeric value.
 fn double hstring_to_number(HString* hstr) {

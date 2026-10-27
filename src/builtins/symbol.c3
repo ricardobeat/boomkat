@@ -21,7 +21,7 @@ import boomkat::hobject;
 // `has_desc` distinguishes `Symbol()` (no description, ES2019 §19.4.3.5
 // returns undefined) from `Symbol("")` (an explicit empty-string description);
 // the `has_desc` flag records which.
-fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) {
+fn HString* create_symbol_string(Heap* heap, HString* desc, bool has_desc = true) {
     HString* s = alloc_unique_symbol(heap, desc);
     if (s != null) {
         s.flags.has_desc = has_desc;
@@ -32,7 +32,7 @@ fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) 
 // Create a new hidden Symbol HString. Hidden symbols back private class
 // members, and enumeration paths filter them out. NOT inserted into the string
 // table (unique).
-fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
+fn HString* create_hidden_symbol(Heap* heap, HString* desc) {
     HString* s = alloc_unique_symbol(heap, desc);
     if (s != null) {
         s.flags.is_hidden = true;
@@ -43,11 +43,11 @@ fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
 // Allocate a non-interned string holding `desc` with a unique hash. It needs an
 // owner, so it goes on the large-string registry: that is the list
 // reset()/destroy() walk to release non-interned strings.
-fn HString* alloc_unique_symbol(Heap* heap, char[] desc) {
+fn HString* alloc_unique_symbol(Heap* heap, HString* desc) {
     uint counter = heap.symbol_counter;
     heap.symbol_counter++;
     uint hash = heap.hash_seed ^ counter;
-    HString*? sym = hstring::hstring_alloc(heap, desc, hash);
+    HString*? sym = hstring::hstring_alloc(heap, desc.get_data(), hash);
     if (try s = sym) {
         s.flags.is_symbol = true;
         s.flags.is_arridx = false;
@@ -69,32 +69,21 @@ fn bool is_symbol_val(TVal val) {
 // no description at all.
 fn bool symbol_has_description(HString* sym) => sym.flags.has_desc;
 
-// The description bytes of a Symbol.
-fn char[] symbol_description(HString* sym) => sym.get_data();
-
 // ============================================================================
 // Symbol global registry (Symbol.for / Symbol.keyFor)
 // ============================================================================
 
 // Look up a key in the global symbol registry.
 // Returns the registered symbol HString*, or null if not found.
-fn HString* symbol_registry_get(Heap* heap, char[] key) {
+fn HString* symbol_registry_get(Heap* heap, HString* key) {
     for (uint i = 0; i < heap.symbol_registry_count; i++) {
-        HString* reg_key = heap.symbol_registry_keys[i];
-        if (reg_key.blen == (uint)key.len) {
-            char* reg_data = reg_key.get_cstr();
-            bool match = true;
-            for (int j = 0; j < key.len; j++) {
-                if (reg_data[j] != key[j]) { match = false; break; }
-            }
-            if (match) return heap.symbol_registry_syms[i];
-        }
+        if (hstring::units_equal(heap.symbol_registry_keys[i], key)) return heap.symbol_registry_syms[i];
     }
     return null;
 }
 
 // Register a key→symbol pair in the global registry.
-fn bool symbol_registry_put(Heap* heap, char[] key, HString* sym) {
+fn bool symbol_registry_put(Heap* heap, HString* key, HString* sym) {
     uint count = heap.symbol_registry_count;
     uint cap = heap.symbol_registry_cap;
 
@@ -126,7 +115,7 @@ fn bool symbol_registry_put(Heap* heap, char[] key, HString* sym) {
     }
 
     // Allocate a key HString (interned)
-    HString* key_str = heap.str_intern(key);
+    HString* key_str = heap.ensure_interned(key);
     if (key_str == null) return false;
 
     heap.symbol_registry_keys[count] = key_str;
@@ -155,7 +144,7 @@ fn HString* symbol_registry_get_key(Heap* heap, HString* sym) {
 // unique across the engine.
 fn HString* ensure_cached_symbol(Heap* heap, HString** slot, char[] desc) {
     if (*slot != null) return *slot;
-    HString* sym = create_symbol_string(heap, desc);
+    HString* sym = create_symbol_string(heap, heap.str_intern(desc));
     if (sym == null) return null;
     *slot = sym;
     ((types::HeapHeader*)sym).set_pinned();
@@ -236,15 +225,13 @@ fn void builtin_symbol(BuiltinContext* ctx) {
     // ToString(symbol) must throw TypeError (desc-to-string-symbol.js), so use
     // the VM-aware variant which honors that and also routes object→ToPrimitive
     // through the VM so toString/valueOf can throw or return primitives.
-    char[] desc = "";
+    HString* desc = ctx.heap.str(heap::BuiltinStr.EMPTY);
     bool has_desc = false;
     if (ctx.argc >= 1 && !ctx.regs[ctx.base_reg].is_undefined()) {
         TVal arg = ctx.regs[ctx.base_reg];
         HString* desc_str = builtin_to_string_vm(ctx, &arg);
         if (ctx.should_throw) return;  // ToString threw (e.g. Symbol arg)
-        if (desc_str != null) {
-            desc = desc_str.get_data();
-        }
+        if (desc_str != null) desc = desc_str;
         has_desc = true;
     }
 
@@ -273,23 +260,21 @@ fn void builtin_symbol_for(BuiltinContext* ctx) {
         return;
     }
 
-    char[] key_bytes = key_str.get_data();
-
     // Check registry
-    HString* existing = symbol_registry_get(ctx.heap, key_bytes);
+    HString* existing = symbol_registry_get(ctx.heap, key_str);
     if (existing != null) {
         ctx.result_string(existing);
         return;
     }
 
     // Create new global symbol
-    HString* sym = create_symbol_string(ctx.heap, key_bytes);
+    HString* sym = create_symbol_string(ctx.heap, key_str);
     if (sym == null) {
         ctx.result_undefined();
         return;
     }
 
-    symbol_registry_put(ctx.heap, key_bytes, sym);
+    symbol_registry_put(ctx.heap, key_str, sym);
 
     ctx.result_string(sym);
 }
@@ -348,8 +333,7 @@ fn void builtin_symbol_proto_description_get(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    char[] desc = symbol_description(sym);
-    HString* result = ctx.heap.str_intern(desc);
+    HString* result = ctx.heap.str_slice(sym, 0, sym.unit_len());
     if (result == null) {
         ctx.result_undefined();
         return;
@@ -390,27 +374,15 @@ fn void builtin_symbol_proto_toString(BuiltinContext* ctx) {
     }
 
     // Build "Symbol(description)" string
-    char[] desc = symbol_description(sym);
-    char[512] result_buf;
-    result_buf[0] = 'S';
-    result_buf[1] = 'y';
-    result_buf[2] = 'm';
-    result_buf[3] = 'b';
-    result_buf[4] = 'o';
-    result_buf[5] = 'l';
-    result_buf[6] = '(';
-    int pos = 7;
-    for (int i = 0; i < desc.len && pos < 510; i++) {
-        result_buf[pos] = desc[i];
-        pos++;
-    }
-    result_buf[pos] = ')';
-    pos++;
-    result_buf[pos] = 0;
-
-    HString* result = builtin_intern_string(ctx.heap, result_buf[:(uint)pos]);
-    ctx.result_string(result);
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    out.append_bytes("Symbol(");
+    out.append_hstring(sym);
+    out.append_char(')');
+    out.finish(ctx);
 }
+
 
 // ============================================================================
 // Symbol.prototype.data.valueOf(), ES6 §19.4.3.3
