@@ -1,4 +1,7 @@
-<div align="center"><img width="240" alt="" src="https://github.com/user-attachments/assets/d32200ca-e5ce-4de8-8450-2b93f22ce07b" /></div>
+<div align="center"><img width="360" alt="boomkat" src="https://github.com/user-attachments/assets/bbe5a2f2-9d08-42cf-9bf9-cb42c7d0f388" />
+
+
+</div>
 
 # boomkat
 
