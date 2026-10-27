@@ -333,6 +333,31 @@ static void test_get_primitive(bk_ctx rt) {
     bk_free_value(rt, self); bk_free_value(rt, undef);
 }
 
+/* new.target is a borrowed call handle: a constructor returns it without
+ * freeing it, and a plain call sees undefined. */
+static bk_value new_target_fn(bk_ctx ctx, bk_value this_value, unsigned argc,
+                              const bk_value *argv, void *opaque) {
+    (void)this_value; (void)argc; (void)argv; (void)opaque;
+    bk_value nt = bk_get_new_target(ctx);
+    if (!nt) return bk_throw_error(ctx, BK_ERROR_TYPE, "no new.target handle");
+    if (bk_is_undefined(ctx, nt)) return bk_str(ctx, "plain");
+    return bk_dup_value(ctx, nt);
+}
+
+static void test_new_target(bk_ctx rt) {
+    bk_value fn = expect_val(bk_new_c_function(rt, new_target_fn, "NT", 0, BK_CTOR, NULL), rt, "new NT fn");
+    if (!fn) return;
+    if (!expect_ok(bk_set_global_property(rt, "NT", 2, fn), rt, "install NT")) { bk_free_value(rt, fn); return; }
+    bk_value r = eval_global(rt, "new NT() === NT && NT() === 'plain' && Reflect.construct(NT, [], Array) === Array");
+    int ok = 0;
+    if (!r || bk_read_bool(rt, r, &ok) != BK_OK || !ok) {
+        printf("FAIL: new.target handle: %s\n", bk_get_error_message(rt)); failures++;
+    }
+    if (bk_get_new_target(rt) != 0) fail("bk_get_new_target outside a callback should be 0");
+    bk_free_value(rt, r);
+    bk_free_value(rt, fn);
+}
+
 /* Enumeration: an own non-enumerable key appears alongside own enumerable. */
 static void test_enumeration(bk_ctx rt) {
     bk_value obj = 0, keys = 0, k = 0;
@@ -529,6 +554,7 @@ int main(void) {
     test_delete(rt);
     test_delete_exotic(rt);
     test_get_primitive(rt);
+    test_new_target(rt);
     test_enumeration(rt);
     test_call_rt(rt);
     test_locations(rt);

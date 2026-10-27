@@ -213,7 +213,7 @@ pub const Ctx = struct {
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn newTarget(self: Ctx) Value {
-        return .{ .owner = self.raw, .handle = c.bk_get_new_target(self.raw), .owned = true };
+        return .{ .owner = self.raw, .handle = c.bk_get_new_target(self.raw), .owned = false };
     }
 
     /// True when invoked through `new` or `super()`.

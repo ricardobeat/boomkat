@@ -302,11 +302,7 @@ class Call:
     @property
     def new_target(self):
         """new.target, or None on a plain call."""
-        handle = self._lib.bk_get_new_target(self._ctx)
-        try:
-            return self.reader.to_python(handle)
-        finally:
-            self._lib.bk_free_value(self._ctx, handle)
+        return self.reader.to_python(self._lib.bk_get_new_target(self._ctx))
 
     @property
     def runtime(self):
@@ -388,8 +384,8 @@ class _Reader:
     """The ABI's readers, bound to the context that resolves handles.
 
     v2 has one context type: the runtime's own context at top level, the
-    callback's context inside a host function. Both resolve registry handles,
-    bk_get_new_target return.
+    callback's context inside a host function. Both resolve registry handles
+    and the borrowed call handles (arguments, this, new.target).
     """
 
     __slots__ = ("_owner", "type_of", "_read_bool", "_read_number", "_read_string")
