@@ -1,0 +1,22 @@
+JIT kernel fixups: PASS
+test/jit_kernel_links.js: status 0
+JIT read miss cache: PASS
+test/jit_read_miss_cache.js: status 0
+JIT string continuations: PASS
+test/jit_string_continuations.js: status 0
+Richards: 102 ms
+bench/mini/richards.js: status 0
+DeltaBlue: 181 ms
+bench/mini/deltablue.js: status 0
+Splay: 314 ms
+bench/mini/splay.js: status 0
+Gameboy: 689 ms
+bench/mini/gbemu.js: status 0
+Mandreel: 1758 ms
+bench/mini/mandreel.js: status 0
+zlib: 8283 ms
+bench/mini/zlib.js: status 0
+Typescript: 2941 ms
+bench/mini/typescript.js: status 0
+PdfJS: 963 ms
+bench/mini/pdfjs.js: status 0

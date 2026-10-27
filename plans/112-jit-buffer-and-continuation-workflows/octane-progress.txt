@@ -1,0 +1,40 @@
+baseline 0 Richards: 3947
+DeltaBlue: 2867
+Crypto: 3043
+RayTrace: 3022
+EarleyBoyer: 3064
+RegExp: 775
+Splay: 8891
+SplayLatency: 22525
+NavierStokes: 3940
+PdfJS: 5197
+Mandreel: 1924
+MandreelLatency: 10909
+Gameboy: 12171
+CodeLoad: 27947
+Box2D: 7264
+zlib: 2892
+Typescript: 21415
+----
+Score (version 9): 5445
+
+selected 0 Richards: 3986
+DeltaBlue: 2926
+Crypto: 3059
+RayTrace: 3065
+EarleyBoyer: 3077
+RegExp: 774
+Splay: 9111
+SplayLatency: 22052
+NavierStokes: 3948
+PdfJS: 5973
+Mandreel: 1920
+MandreelLatency: 11128
+Gameboy: 11982
+CodeLoad: 28398
+Box2D: 6811
+zlib: 2882
+Typescript: 21600
+----
+Score (version 9): 5495
+

@@ -1,0 +1,52 @@
+0 richards {'Richards': 89} {'Richards': 88}
+0 deltablue {'DeltaBlue': 121} {'DeltaBlue': 120}
+0 splay {'Splay': 109} {'Splay': 112}
+0 gbemu {'Gameboy': 310} {'Gameboy': 291}
+0 navier-stokes {'NavierStokes': 207} {'NavierStokes': 206}
+0 mandreel {'Mandreel': 800} {'Mandreel': 686}
+0 zlib {'zlib': 4779} {'zlib': 4247}
+0 typescript {'Typescript': 1240} {'Typescript': 1233}
+0 pdfjs {'PdfJS': 371} {'PdfJS': 368}
+0 raytrace {'RayTrace': 169} {'RayTrace': 166}
+0 crypto {'Encrypt': 15, 'Decrypt': 231} {'Encrypt': 15, 'Decrypt': 231}
+0 earley-boyer {'Earley': 20, 'Boyer': 157} {'Earley': 21, 'Boyer': 153}
+0 box2d {'Box2D': 226} {'Box2D': 224}
+1 richards {'Richards': 88} {'Richards': 89}
+1 deltablue {'DeltaBlue': 120} {'DeltaBlue': 121}
+1 splay {'Splay': 112} {'Splay': 109}
+1 gbemu {'Gameboy': 291} {'Gameboy': 310}
+1 navier-stokes {'NavierStokes': 207} {'NavierStokes': 207}
+1 mandreel {'Mandreel': 686} {'Mandreel': 801}
+1 zlib {'zlib': 4268} {'zlib': 4793}
+1 typescript {'Typescript': 1229} {'Typescript': 1241}
+1 pdfjs {'PdfJS': 366} {'PdfJS': 371}
+1 raytrace {'RayTrace': 166} {'RayTrace': 170}
+1 crypto {'Encrypt': 15, 'Decrypt': 229} {'Encrypt': 15, 'Decrypt': 231}
+1 earley-boyer {'Earley': 20, 'Boyer': 155} {'Earley': 20, 'Boyer': 156}
+1 box2d {'Box2D': 224} {'Box2D': 224}
+2 richards {'Richards': 89} {'Richards': 88}
+2 deltablue {'DeltaBlue': 121} {'DeltaBlue': 120}
+2 splay {'Splay': 109} {'Splay': 112}
+2 gbemu {'Gameboy': 308} {'Gameboy': 292}
+2 navier-stokes {'NavierStokes': 206} {'NavierStokes': 206}
+2 mandreel {'Mandreel': 800} {'Mandreel': 682}
+2 zlib {'zlib': 4781} {'zlib': 4259}
+2 typescript {'Typescript': 1240} {'Typescript': 1233}
+2 pdfjs {'PdfJS': 368} {'PdfJS': 367}
+2 raytrace {'RayTrace': 169} {'RayTrace': 166}
+2 crypto {'Encrypt': 15, 'Decrypt': 232} {'Encrypt': 15, 'Decrypt': 231}
+2 earley-boyer {'Earley': 21, 'Boyer': 155} {'Earley': 20, 'Boyer': 154}
+2 box2d {'Box2D': 225} {'Box2D': 223}
+box2d {'baseline': 225, 'selected': 224} -0.4
+crypto {'baseline': 246, 'selected': 246} 0.0
+deltablue {'baseline': 121, 'selected': 120} -0.8
+earley-boyer {'baseline': 176, 'selected': 174} -1.1
+gbemu {'baseline': 310, 'selected': 291} -6.1
+mandreel {'baseline': 800, 'selected': 686} -14.2
+navier-stokes {'baseline': 207, 'selected': 206} -0.5
+pdfjs {'baseline': 371, 'selected': 367} -1.1
+raytrace {'baseline': 169, 'selected': 166} -1.8
+richards {'baseline': 89, 'selected': 88} -1.1
+splay {'baseline': 109, 'selected': 112} 2.8
+typescript {'baseline': 1240, 'selected': 1233} -0.6
+zlib {'baseline': 4781, 'selected': 4259} -10.9

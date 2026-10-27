@@ -1,0 +1,16 @@
+[
+  {
+    "mode": "baseline",
+    "status": 0,
+    "seconds": 92.59942224994302,
+    "stdout": "Richards: 3947\nDeltaBlue: 2867\nCrypto: 3043\nRayTrace: 3022\nEarleyBoyer: 3064\nRegExp: 775\nSplay: 8891\nSplayLatency: 22525\nNavierStokes: 3940\nPdfJS: 5197\nMandreel: 1924\nMandreelLatency: 10909\nGameboy: 12171\nCodeLoad: 27947\nBox2D: 7264\nzlib: 2892\nTypescript: 21415\n----\nScore (version 9): 5445\n",
+    "stderr": ""
+  },
+  {
+    "mode": "selected",
+    "status": 0,
+    "seconds": 92.80115958303213,
+    "stdout": "Richards: 3986\nDeltaBlue: 2926\nCrypto: 3059\nRayTrace: 3065\nEarleyBoyer: 3077\nRegExp: 774\nSplay: 9111\nSplayLatency: 22052\nNavierStokes: 3948\nPdfJS: 5973\nMandreel: 1920\nMandreelLatency: 11128\nGameboy: 11982\nCodeLoad: 28398\nBox2D: 6811\nzlib: 2882\nTypescript: 21600\n----\nScore (version 9): 5495\n",
+    "stderr": ""
+  }
+]

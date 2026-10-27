@@ -1,0 +1,638 @@
+[
+  {
+    "bench": "richards",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Richards": 89
+    }
+  },
+  {
+    "bench": "richards",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Richards": 88
+    }
+  },
+  {
+    "bench": "deltablue",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "DeltaBlue": 121
+    }
+  },
+  {
+    "bench": "deltablue",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "DeltaBlue": 120
+    }
+  },
+  {
+    "bench": "splay",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Splay": 109
+    }
+  },
+  {
+    "bench": "splay",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Splay": 112
+    }
+  },
+  {
+    "bench": "gbemu",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Gameboy": 310
+    }
+  },
+  {
+    "bench": "gbemu",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Gameboy": 291
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "NavierStokes": 207
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "NavierStokes": 206
+    }
+  },
+  {
+    "bench": "mandreel",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Mandreel": 800
+    }
+  },
+  {
+    "bench": "mandreel",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Mandreel": 686
+    }
+  },
+  {
+    "bench": "zlib",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "zlib": 4779
+    }
+  },
+  {
+    "bench": "zlib",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "zlib": 4247
+    }
+  },
+  {
+    "bench": "typescript",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Typescript": 1240
+    }
+  },
+  {
+    "bench": "typescript",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Typescript": 1233
+    }
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "PdfJS": 371
+    }
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "PdfJS": 368
+    }
+  },
+  {
+    "bench": "raytrace",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "RayTrace": 169
+    }
+  },
+  {
+    "bench": "raytrace",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "RayTrace": 166
+    }
+  },
+  {
+    "bench": "crypto",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Encrypt": 15,
+      "Decrypt": 231
+    }
+  },
+  {
+    "bench": "crypto",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Encrypt": 15,
+      "Decrypt": 231
+    }
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Earley": 20,
+      "Boyer": 157
+    }
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Earley": 21,
+      "Boyer": 153
+    }
+  },
+  {
+    "bench": "box2d",
+    "mode": "baseline",
+    "repeat": 0,
+    "phases": {
+      "Box2D": 226
+    }
+  },
+  {
+    "bench": "box2d",
+    "mode": "selected",
+    "repeat": 0,
+    "phases": {
+      "Box2D": 224
+    }
+  },
+  {
+    "bench": "richards",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Richards": 88
+    }
+  },
+  {
+    "bench": "richards",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Richards": 89
+    }
+  },
+  {
+    "bench": "deltablue",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "DeltaBlue": 120
+    }
+  },
+  {
+    "bench": "deltablue",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "DeltaBlue": 121
+    }
+  },
+  {
+    "bench": "splay",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Splay": 112
+    }
+  },
+  {
+    "bench": "splay",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Splay": 109
+    }
+  },
+  {
+    "bench": "gbemu",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Gameboy": 291
+    }
+  },
+  {
+    "bench": "gbemu",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Gameboy": 310
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "NavierStokes": 207
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "NavierStokes": 207
+    }
+  },
+  {
+    "bench": "mandreel",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Mandreel": 686
+    }
+  },
+  {
+    "bench": "mandreel",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Mandreel": 801
+    }
+  },
+  {
+    "bench": "zlib",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "zlib": 4268
+    }
+  },
+  {
+    "bench": "zlib",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "zlib": 4793
+    }
+  },
+  {
+    "bench": "typescript",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Typescript": 1229
+    }
+  },
+  {
+    "bench": "typescript",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Typescript": 1241
+    }
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "PdfJS": 366
+    }
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "PdfJS": 371
+    }
+  },
+  {
+    "bench": "raytrace",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "RayTrace": 166
+    }
+  },
+  {
+    "bench": "raytrace",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "RayTrace": 170
+    }
+  },
+  {
+    "bench": "crypto",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Encrypt": 15,
+      "Decrypt": 229
+    }
+  },
+  {
+    "bench": "crypto",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Encrypt": 15,
+      "Decrypt": 231
+    }
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Earley": 20,
+      "Boyer": 155
+    }
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Earley": 20,
+      "Boyer": 156
+    }
+  },
+  {
+    "bench": "box2d",
+    "mode": "selected",
+    "repeat": 1,
+    "phases": {
+      "Box2D": 224
+    }
+  },
+  {
+    "bench": "box2d",
+    "mode": "baseline",
+    "repeat": 1,
+    "phases": {
+      "Box2D": 224
+    }
+  },
+  {
+    "bench": "richards",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Richards": 89
+    }
+  },
+  {
+    "bench": "richards",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Richards": 88
+    }
+  },
+  {
+    "bench": "deltablue",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "DeltaBlue": 121
+    }
+  },
+  {
+    "bench": "deltablue",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "DeltaBlue": 120
+    }
+  },
+  {
+    "bench": "splay",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Splay": 109
+    }
+  },
+  {
+    "bench": "splay",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Splay": 112
+    }
+  },
+  {
+    "bench": "gbemu",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Gameboy": 308
+    }
+  },
+  {
+    "bench": "gbemu",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Gameboy": 292
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "NavierStokes": 206
+    }
+  },
+  {
+    "bench": "navier-stokes",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "NavierStokes": 206
+    }
+  },
+  {
+    "bench": "mandreel",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Mandreel": 800
+    }
+  },
+  {
+    "bench": "mandreel",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Mandreel": 682
+    }
+  },
+  {
+    "bench": "zlib",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "zlib": 4781
+    }
+  },
+  {
+    "bench": "zlib",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "zlib": 4259
+    }
+  },
+  {
+    "bench": "typescript",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Typescript": 1240
+    }
+  },
+  {
+    "bench": "typescript",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Typescript": 1233
+    }
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "PdfJS": 368
+    }
+  },
+  {
+    "bench": "pdfjs",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "PdfJS": 367
+    }
+  },
+  {
+    "bench": "raytrace",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "RayTrace": 169
+    }
+  },
+  {
+    "bench": "raytrace",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "RayTrace": 166
+    }
+  },
+  {
+    "bench": "crypto",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Encrypt": 15,
+      "Decrypt": 232
+    }
+  },
+  {
+    "bench": "crypto",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Encrypt": 15,
+      "Decrypt": 231
+    }
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Earley": 21,
+      "Boyer": 155
+    }
+  },
+  {
+    "bench": "earley-boyer",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Earley": 20,
+      "Boyer": 154
+    }
+  },
+  {
+    "bench": "box2d",
+    "mode": "baseline",
+    "repeat": 2,
+    "phases": {
+      "Box2D": 225
+    }
+  },
+  {
+    "bench": "box2d",
+    "mode": "selected",
+    "repeat": 2,
+    "phases": {
+      "Box2D": 223
+    }
+  }
+]

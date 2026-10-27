@@ -1,0 +1,16 @@
+{
+  "baseline": {
+    "sha256": "2fbcfee078a3357e0b0da8d5d142317193c2b97b9f74dc0d4c2b30284d2d611a",
+    "bytes": 2640600
+  },
+  "selected/boomkat": {
+    "sha256": "6bf6de706ca0ad1b0a794dad858e5f3409137b56e1efe92e2973ce1858c16b4d",
+    "bytes": 2641048
+  },
+  "octane": {
+    "path": "/tmp/boomkat-jit-next/octane-full.js",
+    "sha256": "ef4c74d25100e6308436fb19b14eaefd5b4b690f30a799b60bc9bccbcefdce8e"
+  },
+  "head": "d569b9ed7c14c3324efdea999fa35045f8de38b6",
+  "build": "c3c build boomkat --macos-min-version 27.0 (O2, optsize small, default 1 MiB budget)"
+}

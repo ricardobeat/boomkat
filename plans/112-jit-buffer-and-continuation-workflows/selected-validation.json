@@ -1,0 +1,477 @@
+[
+  {
+    "test": "test/jit_alloc_continuations.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_alloc_continuations.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_alloc_continuations.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_append_property.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_append_property.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_append_property.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_array_element_access.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_array_element_access.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_array_element_access.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_cfg_numbers.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_cfg_numbers.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_cfg_numbers.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_branches.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_branches.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_branches.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_property_write.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_property_write.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_property_write.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_recovery.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_recovery.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_inline_recovery.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_kernel_links.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_kernel_links.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_kernel_links.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_linked_calls.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_linked_calls.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_linked_calls.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_loop_arms.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_loop_arms.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_loop_arms.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_loose_equality.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_loose_equality.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_loose_equality.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_native_call.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_native_call.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_native_call.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_native_calls.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_native_calls.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_native_calls.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_nested_inline.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_nested_inline.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_nested_inline.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_proto_read_shapes.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_proto_read_shapes.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_proto_read_shapes.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_read_miss_cache.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_read_miss_cache.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_read_miss_cache.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_string_continuations.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_string_continuations.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/jit_string_continuations.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_function.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_function.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_function.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_inline_clamp.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_inline_clamp.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_inline_clamp.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_loop.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_loop.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_loop.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_parseint.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_parseint.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_parseint.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_regions.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_regions.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_regions.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_smallfunc.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_smallfunc.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_smallfunc.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_ssa.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_ssa.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_ssa.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_template.js",
+    "flags": [],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_template.js",
+    "flags": [
+      "--jit"
+    ],
+    "rc": 0
+  },
+  {
+    "test": "test/sljit_template.js",
+    "flags": [
+      "--jit-stress"
+    ],
+    "rc": 0
+  }
+]
