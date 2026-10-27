@@ -39,7 +39,7 @@ fn void? CompilerContext.note_arguments_reference_by_index(&self, uint name_idx)
     if (!kv.is_string()) return;
     HString* hs = (HString*)kv.get_heapptr();
     if (hs == null) return;
-    return self.note_arguments_reference(hs.get_data());
+    return self.note_arguments_reference(self.name_text(hs));
 }
 
 fn void? CompilerContext.note_arguments_reference(&self, char[] name) {

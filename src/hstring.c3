@@ -968,12 +968,13 @@ alias PutByteFn = fn void(char, void*);
 // `normalize_to_cesu8`. Surrogate pairs recombine into their astral codepoint
 // and re-encode as one 4-byte sequence, and everything else passes through.
 // Unpaired surrogates become U+FFFD, which standard UTF-8 has no way to
-// represent.
+// represent, unless `keep_lone` writes each as its own 3-byte sequence (WTF-8)
+// for a consumer that must see the exact code units.
 //
 // Every host-visible text boundary goes through here, including print,
 // console.log, and file I/O, so nothing outside the engine sees a raw
 // surrogate-half sequence.
-fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn, void* udata = null) {
+fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn, void* udata = null, bool keep_lone = false) {
     uint len = (uint)data.len;
     uint i = 0;
     while (i < len) {
@@ -991,7 +992,7 @@ fn void write_cesu8_as_utf8(char[] data, PutByteFn put_byte_fn, void* udata = nu
                 continue;
             }
         }
-        if (is_surrogate(cp)) {
+        if (is_surrogate(cp) && !keep_lone) {
             char[4] obuf;
             uint n = encode_codepoint(UNICODE_REPLACEMENT, obuf[:4]);
             for (uint k = 0; k < n; k++) put_byte_fn(obuf[k], udata);
@@ -1036,6 +1037,65 @@ fn int rfind_units(HString* hay, HString* needle, uint from) {
     int hit = rfind_bytes(hay.get_data(), needle.get_data(), from_byte);
     if (hit < 0 || hay.flags.is_ascii) return hit;
     return (int)hay.byte_offset_to_char_offset((uint)hit);
+}
+
+// True when the string holds no lone surrogate unit.
+fn bool HString.is_well_formed(&self) {
+    if (self.flags.is_ascii) return true;
+    uint n = self.unit_len();
+    for (uint i = 0; i < n; i++) {
+        uint u = self.unit_at(i);
+        if (is_high_surrogate(u) && i + 1 < n && is_low_surrogate(self.unit_at(i + 1))) {
+            i++;
+        } else if (is_surrogate(u)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// True when both strings hold the same code units. Symbols compare by content
+// here; use `equals_hstring` for identity-aware equality.
+fn bool units_equal(HString* a, HString* b) {
+    return a == b || (a.blen == b.blen && mem::equals(a.get_cstr(), b.get_cstr(), (usz)a.blen));
+}
+
+// Write the string to a byte sink as standard UTF-8, with a lone surrogate
+// written as U+FFFD, or as its own 3-byte sequence when `keep_lone` is set.
+fn void HString.write_utf8(&self, PutByteFn put_byte_fn, void* udata = null, bool keep_lone = false) {
+    write_cesu8_as_utf8(self.get_data(), put_byte_fn, udata, keep_lone);
+}
+
+struct Utf8Cursor @private {
+    char* dst;
+    usz   n;
+}
+
+fn void utf8_cursor_put(char c, void* udata) @private {
+    Utf8Cursor* cur = (Utf8Cursor*)udata;
+    if (cur.dst != null) cur.dst[cur.n] = c;
+    cur.n++;
+}
+
+// The number of bytes `write_utf8` produces for this string with the same `keep_lone`.
+fn usz HString.utf8_len(&self, bool keep_lone = false) {
+    if (self.flags.is_ascii) return self.blen;
+    Utf8Cursor cur = {};
+    self.write_utf8(&utf8_cursor_put, &cur, keep_lone);
+    return cur.n;
+}
+
+// Write `utf8_len(keep_lone)` bytes of UTF-8 text to `dst`, with no terminator.
+fn void HString.copy_utf8(&self, char* dst, bool keep_lone = false) {
+    Utf8Cursor cur = { .dst = dst };
+    self.write_utf8(&utf8_cursor_put, &cur, keep_lone);
+}
+
+// `write_utf8` for the units `[from, to)`, which must not split a surrogate pair.
+fn void HString.write_utf8_range(&self, uint from, uint to, PutByteFn put_byte_fn, void* udata = null) {
+    uint byte_from = self.char_offset_to_byte_offset(from);
+    uint byte_to = self.char_offset_to_byte_offset(to);
+    write_cesu8_as_utf8(self.get_data()[byte_from:byte_to - byte_from], put_byte_fn, udata);
 }
 
 // True when `needle` occurs in this string starting at unit `pos`.

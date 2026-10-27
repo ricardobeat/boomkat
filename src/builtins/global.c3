@@ -33,7 +33,7 @@ fn void print_tval_ctx(BuiltinContext* ctx, TVal* val) {
                     if (str_result.is_string()) {
                         HString* s = (HString*)str_result.get_heapptr();
                         if (s != null) {
-                            hstring::write_cesu8_as_utf8(s.get_data(), &putc_out);
+                            s.write_utf8(&putc_out);
                             return;
                         }
                     }
@@ -175,8 +175,13 @@ fn void ConsoleSink.put(&self, char c) {
     if (self.use_stderr) { eputc(c, null); } else { io::putchar(c); }
 }
 
+// Write CESU-8 text, as an inspect or format buffer holds it.
 fn void ConsoleSink.write(&self, char[] bytes) {
     hstring::write_cesu8_as_utf8(bytes, self.use_stderr ? &eputc : &putc_out);
+}
+
+fn void ConsoleSink.write_units(&self, HString* s, uint from, uint to) {
+    s.write_utf8_range(from, to, self.use_stderr ? &eputc : &putc_out);
 }
 
 // Emit one value the way console renders it outside any specifier: the
@@ -218,18 +223,17 @@ fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) 
     ushort next = (ushort)(first + 1);
     if (substituting) {
         HString* fs = (HString*)fmt_val.get_heapptr();
-        char[] f = fs.get_data();
-        usz i = 0;
-        // Run of literal bytes pending emission, flushed as CESU-8 so that
-        // non-ASCII in the format string survives unmangled.
-        usz lit_start = 0;
-        while (i < f.len) {
-            if (f[i] != '%' || i + 1 >= f.len) { i++; continue; }
-            char spec = f[i + 1];
+        uint flen = fs.unit_len();
+        uint i = 0;
+        // Run of literal units pending emission.
+        uint lit_start = 0;
+        while (i < flen) {
+            if (fs.unit_at(i) != '%' || i + 1 >= flen) { i++; continue; }
+            uint spec = fs.unit_at(i + 1);
             if (spec == '%') {
                 // Collapse "%%" to a single "%": flush through the first one and
                 // resume past the second.
-                hstring::write_cesu8_as_utf8(f[lit_start:i + 1 - lit_start], sink.use_stderr ? &eputc : &putc_out);
+                sink.write_units(fs, lit_start, i + 1);
                 i += 2;
                 lit_start = i;
                 continue;
@@ -239,17 +243,15 @@ fn void console_format_args(BuiltinContext* ctx, bool use_stderr, ushort first) 
             // Gate 2: an exhausted argument list leaves the specifier literal.
             if (!known || next >= ctx.argc) { i++; continue; }
 
-            hstring::write_cesu8_as_utf8(f[lit_start:i - lit_start], sink.use_stderr ? &eputc : &putc_out);
+            sink.write_units(fs, lit_start, i);
             TVal* arg = &ctx.regs[ctx.base_reg + next];
             next++;
-            console_emit_specifier(ctx, sink, spec, arg);
+            console_emit_specifier(ctx, sink, (char)spec, arg);
             if (ctx.should_throw) return;
             i += 2;
             lit_start = i;
         }
-        if (lit_start < f.len) {
-            hstring::write_cesu8_as_utf8(f[lit_start:f.len - lit_start], sink.use_stderr ? &eputc : &putc_out);
-        }
+        if (lit_start < flen) sink.write_units(fs, lit_start, flen);
     } else {
         console_emit_value(ctx, sink, fmt_val);
         if (ctx.should_throw) return;
@@ -297,7 +299,7 @@ fn void console_emit_string_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* ar
             console_emit_symbol(sink, s);
             return;
         }
-        hstring::write_cesu8_as_utf8(s.get_data(), sink.use_stderr ? &eputc : &putc_out);
+        s.write_utf8(sink.use_stderr ? &eputc : &putc_out);
         return;
     }
     // An object carrying a toString of its own is rendered by it, since that is
@@ -344,7 +346,7 @@ fn void console_emit_inspect_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* a
 fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
     sink.write("Symbol(");
     if (symbol_has_description(sym)) {
-        hstring::write_cesu8_as_utf8(symbol_description(sym), sink.use_stderr ? &eputc : &putc_out);
+        sink.write(symbol_description(sym));
     }
     sink.write(")");
 }
@@ -486,7 +488,7 @@ fn void print_tval_err_ctx(BuiltinContext* ctx, TVal* val) {
                     if (str_result.is_string()) {
                         HString* s = (HString*)str_result.get_heapptr();
                         if (s != null) {
-                            hstring::write_cesu8_as_utf8(s.get_data(), &eputc);
+                            s.write_utf8(&eputc);
                             return;
                         }
                     }
@@ -514,8 +516,7 @@ fn void print_tval_err(TVal* val) {
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
             if (s != null) {
-                char[] d = s.get_data();
-                for (usz i = 0; i < d.len; i++) { io::eprintf("%c", d[i]); }
+                s.write_utf8(&eputc);
             }
         }
         case NUMBER: {
@@ -551,7 +552,7 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         h = builtin_to_string_vm(ctx, arg);
         if (ctx.should_throw) return;
     }
-    if (h == null || h.blen == 0) {
+    if (h == null || h.unit_len() == 0) {
         ctx.result_number(double::nan);
         return;
     }
@@ -564,8 +565,12 @@ fn void builtin_parse_int(BuiltinContext* ctx) {
         radix = (int)double_to_int32(r);
     }
 
-    char* cstr = h.get_cstr();
-    usz blen = h.blen;
+    StrBuf tmp;
+    tmp.init(ctx.heap);
+    defer tmp.free();
+    char[] text = utf8_text(&tmp, h);
+    char* cstr = text.ptr;
+    usz blen = text.len;
     usz i = 0;
 
     // Step 2: strip leading StrWhiteSpace (WhiteSpace + LineTerminator).
@@ -702,13 +707,17 @@ fn void builtin_parse_float(BuiltinContext* ctx) {
         h = builtin_to_string_vm(ctx, arg);
         if (ctx.should_throw) return;
     }
-    if (h == null || h.blen == 0) {
+    if (h == null || h.unit_len() == 0) {
         ctx.result_number(double::nan);
         return;
     }
 
-    char* cstr = h.get_cstr();
-    usz blen = h.blen;
+    StrBuf tmp;
+    tmp.init(ctx.heap);
+    defer tmp.free();
+    char[] text = utf8_text(&tmp, h);
+    char* cstr = text.ptr;
+    usz blen = text.len;
     usz i = 0;
 
     // Strip leading StrWhiteSpace (WhiteSpace + LineTerminator).
@@ -875,8 +884,10 @@ fn void builtin_eval(BuiltinContext* ctx) {
     }
 
     HString* source = (HString*)arg.get_heapptr();
-    char* src_cstr = source.get_cstr();
-    usz src_len = source.blen;
+    StrBuf src_tmp;
+    src_tmp.init(ctx.heap);
+    defer src_tmp.free();
+    char[] src_text = utf8_text(&src_tmp, source, true);
 
     // Direct eval shares the caller's lexical environment (checked again,
     // and used to pick env_for_eval, below), including any `__super__`
@@ -1010,15 +1021,15 @@ fn void builtin_eval(BuiltinContext* ctx) {
                 // to match the actual env chain entry, not the literal "__super__".
                 if (caller_cf.super_binding_name != null) {
                     HString* super_hstr = (HString*)caller_cf.super_binding_name;
-                    parent_super_name = super_hstr.get_data();
+                    parent_super_name = super_hstr.ascii_bytes();
                 }
                 if (caller_cf.static_super_binding_name != null) {
                     HString* static_super_hstr = (HString*)caller_cf.static_super_binding_name;
-                    parent_static_super_name = static_super_hstr.get_data();
+                    parent_static_super_name = static_super_hstr.ascii_bytes();
                 }
                 if (caller_cf.home_object_binding_name != null) {
                     HString* home_object_hstr = (HString*)caller_cf.home_object_binding_name;
-                    parent_home_object_name = home_object_hstr.get_data();
+                    parent_home_object_name = home_object_hstr.ascii_bytes();
                 } else if (caller_cf.super_binding_name != null) {
                     // A method with a __super__ binding but no
                     // __home_object__ binding is an object-literal concise
@@ -1048,7 +1059,7 @@ fn void builtin_eval(BuiltinContext* ctx) {
     }
 
     // Compile the source string as eval code
-    Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
+    Lexer lex = lexer::lexer_init(src_text, ctx.heap);
     defer lex.free_arena();
     lex.skip_hashbang();
     CompiledFunction*? cf = compiler::compile_eval(&lex, ctx.heap, caller_eval_allows_super,
@@ -1342,10 +1353,12 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     }
 
     HString* source = (HString*)arg.get_heapptr();
-    char* src_cstr = source.get_cstr();
-    usz src_len = source.blen;
+    StrBuf src_tmp;
+    src_tmp.init(ctx.heap);
+    defer src_tmp.free();
+    char[] src_text = utf8_text(&src_tmp, source, true);
 
-    Lexer lex = lexer::lexer_init(src_cstr[:src_len], ctx.heap);
+    Lexer lex = lexer::lexer_init(src_text, ctx.heap);
     defer lex.free_arena();
     lex.skip_hashbang();
     // want_completion: ScriptEvaluation's result is the Script's completion
@@ -1417,11 +1430,10 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     $endif
 }
 
-fn void uri_encode_byte(char* out, usz* offset, char b) {
-    out[*offset] = '%';
-    out[*offset + 1] = "0123456789ABCDEF"[b >> 4];
-    out[*offset + 2] = "0123456789ABCDEF"[b & 0x0F];
-    *offset += 3;
+fn void uri_encode_byte(StrBuf* out, char b) {
+    out.append_char('%');
+    out.append_char("0123456789ABCDEF"[b >> 4]);
+    out.append_char("0123456789ABCDEF"[b & 0x0F]);
 }
 
 fn bool uri_is_unreserved(char c) {
@@ -1434,7 +1446,7 @@ fn bool uri_is_unreserved(char c) {
     return false;
 }
 
-fn int hex_digit_val(char c) {
+fn int hex_digit_val(uint c) {
     if (c >= '0' && c <= '9') return (int)c - '0';
     if (c >= 'A' && c <= 'F') return (int)c - 'A' + 10;
     if (c >= 'a' && c <= 'f') return (int)c - 'a' + 10;
@@ -1445,54 +1457,33 @@ alias UriExtraUnreservedFn = fn bool(char);
 
 // Shared Encode (ES §19.2.6.5) body driving both encodeURI and
 // encodeURIComponent, they differ only in which ASCII punctuation passes
-// through unescaped (`extra_unreserved`). Walks `str` by UTF-16 code unit
-// (internal storage is CESU-8: every surrogate half is its own 3-byte
-// sequence, see hstring's CESU-8 utilities), pairs surrogates back into
-// astral codepoints, UTF-8-encodes each codepoint's bytes as %XX triplets,
-// and throws URIError on any lone (unpaired) surrogate, Encode is defined
-// over Unicode code points, and a lone surrogate is not one.
+// through unescaped (`extra_unreserved`). Walks `str` by UTF-16 code unit,
+// pairs surrogates back into astral codepoints, UTF-8-encodes each
+// codepoint's bytes as %XX triplets, and throws URIError on any lone
+// (unpaired) surrogate, Encode is defined over Unicode code points, and a lone
+// surrogate is not one.
 fn void uri_encode(BuiltinContext* ctx, HString* str, UriExtraUnreservedFn extra_unreserved) {
-    char[] data = str.get_data();
-    uint len = str.blen;
-    char[65536] out;
-    usz offset = 0;
-    uint i = 0;
-    while (i < len && offset < 65500) {
-        char c = data[i];
-        if (c < 0x80 && (uri_is_unreserved(c) || extra_unreserved(c))) {
-            out[offset++] = c;
-            i++;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    uint len = str.unit_len();
+    for (uint i = 0; i < len; i++) {
+        uint cp = str.unit_at(i);
+        if (cp < 0x80 && (uri_is_unreserved((char)cp) || extra_unreserved((char)cp))) {
+            out.append_char((char)cp);
             continue;
         }
-        uint seq_len = hstring::utf16_unit_byte_len(data, i);
-        uint cp = hstring::decode_codepoint(data, i);
-        if (hstring::is_high_surrogate(cp)) {
-            if (i + seq_len < len) {
-                uint next_len = hstring::utf16_unit_byte_len(data, i + seq_len);
-                uint low = hstring::decode_codepoint(data, i + seq_len);
-                if (hstring::is_low_surrogate(low)) {
-                    uint astral = hstring::surrogates_to_codepoint(cp, low);
-                    char[4] obuf;
-                    uint n = hstring::encode_codepoint(astral, obuf[:4]);
-                    for (uint k = 0; k < n; k++) uri_encode_byte(&out, &offset, obuf[k]);
-                    i += seq_len + next_len;
-                    continue;
-                }
-            }
-            builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
-            return;
-        }
-        if (hstring::is_low_surrogate(cp)) {
+        if (hstring::is_high_surrogate(cp) && i + 1 < len && hstring::is_low_surrogate(str.unit_at(i + 1))) {
+            cp = hstring::surrogates_to_codepoint(cp, str.unit_at(++i));
+        } else if (hstring::is_surrogate(cp)) {
             builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
             return;
         }
         char[4] obuf;
         uint n = hstring::encode_codepoint(cp, obuf[:4]);
-        for (uint k = 0; k < n; k++) uri_encode_byte(&out, &offset, obuf[k]);
-        i += seq_len;
+        for (uint k = 0; k < n; k++) uri_encode_byte(&out, obuf[k]);
     }
-    HString* result = builtin_intern_string(ctx.heap, out[:offset]);
-    ctx.result_string(result);
+    out.finish(ctx);
 }
 
 fn bool uri_extra_reserved(char c) {
@@ -1535,18 +1526,18 @@ fn void builtin_encode_uri_component(BuiltinContext* ctx) {
     uri_encode(ctx, str, &uri_extra_none);
 }
 
-// Decode a single %XX-escaped UTF-8 sequence starting at `data[i]` (which
-// must be '%') into a Unicode code point. Validates continuation bytes,
+// Decode a single %XX-escaped UTF-8 sequence starting at unit `i` of `str`
+// (which must be '%') into a Unicode code point. Validates continuation bytes,
 // rejects overlong encodings, out-of-range code points (> U+10FFFF), and
 // lone surrogates (a valid code point can never be a surrogate half, RFC
 // 3629 / ES §19.2.6.6 Decode step 7.f-g). On success, sets `*cp` and
-// `*consumed` (number of source bytes eaten, i.e. 3 * byte-sequence-length)
+// `*consumed` (number of source units eaten, i.e. 3 * byte-sequence-length)
 // and returns true. On any malformed input returns false and leaves the
 // outputs unspecified, the caller throws URIError.
-fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consumed) {
+fn bool uri_decode_sequence(HString* str, uint i, uint len, uint* cp, uint* consumed) {
     if (i + 2 >= len) return false;
-    int d1 = hex_digit_val(data[i + 1]);
-    int d2 = hex_digit_val(data[i + 2]);
+    int d1 = hex_digit_val(str.unit_at(i + 1));
+    int d2 = hex_digit_val(str.unit_at(i + 2));
     if (d1 < 0 || d2 < 0) return false;
     uint first = (uint)((d1 << 4) | d2);
     if (first < 0x80) {
@@ -1563,20 +1554,16 @@ fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consu
     char[4] bytes;
     bytes[0] = (char)first;
     for (uint j = 1; j < seq_len; j++) {
-        if (data[i + 3 * j] != '%') return false;
-        int h1 = hex_digit_val(data[i + 3 * j + 1]);
-        int h2 = hex_digit_val(data[i + 3 * j + 2]);
+        if (str.unit_at(i + 3 * j) != '%') return false;
+        int h1 = hex_digit_val(str.unit_at(i + 3 * j + 1));
+        int h2 = hex_digit_val(str.unit_at(i + 3 * j + 2));
         if (h1 < 0 || h2 < 0) return false;
         char b = (char)((h1 << 4) | h2);
         if (b < 0x80 || b > 0xBF) return false;
         bytes[j] = b;
     }
-    // Continuation bytes are already structurally valid at this point, so
-    // decode_codepoint can only differ from a genuine decode by rejecting an
-    // overlong encoding (which it also reports as UNICODE_REPLACEMENT, the
-    // same sentinel a *legitimately* decoded U+FFFD would produce). Detect
-    // overlong directly instead of relying on that sentinel, so decoding an
-    // actual "%EF%BF%BD" (U+FFFD) is not mistaken for malformed input.
+    // Continuation bytes are already structurally valid at this point, so only
+    // an overlong or out-of-range encoding can still be malformed.
     uint decoded = ((first & (0xFF >> seq_len)) << (6 * (seq_len - 1)));
     for (uint j = 1; j < seq_len; j++) {
         decoded |= ((uint)bytes[j] & 0x3F) << (6 * (seq_len - 1 - j));
@@ -1589,28 +1576,19 @@ fn bool uri_decode_sequence(char[] data, uint i, uint len, uint* cp, uint* consu
     return true;
 }
 
-// Write `cp` into `out` at `*offset` as a CESU-8-canonical UTF-16 code-unit
-// sequence: astral code points split into a surrogate pair (each half its
-// own 3-byte sequence), everything else via plain UTF-8, matching the
-// storage format every interned HString must be in.
-fn void uri_decode_emit(char* out, usz* offset, uint cp) {
-    char[6] buf;
-    uint n = hstring::encode_codepoint_cesu8(cp, buf[:6]);
-    for (uint k = 0; k < n; k++) out[(*offset)++] = buf[k];
-}
-
 // Shared Decode (ES §19.2.6.6) body for decodeURI/decodeURIComponent. They
 // differ only in which percent-triplets are left un-decoded (reserved URI
 // characters, decodeURI only).
 fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
-    char[] data = str.get_data();
-    uint len = str.blen;
-    char[65536] out;
-    usz offset = 0;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    uint len = str.unit_len();
     uint i = 0;
-    while (i < len && offset < 65500) {
-        if (data[i] != '%') {
-            out[offset++] = data[i];
+    while (i < len) {
+        uint unit = str.unit_at(i);
+        if (unit != '%') {
+            out.append_unit(unit);
             i++;
             continue;
         }
@@ -1619,16 +1597,14 @@ fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
             // decide whether this triplet is a reserved URI character that
             // decodeURI must leave un-decoded (as literal "%XX" text).
             if (i + 2 < len) {
-                int d1 = hex_digit_val(data[i + 1]);
-                int d2 = hex_digit_val(data[i + 2]);
+                int d1 = hex_digit_val(str.unit_at(i + 1));
+                int d2 = hex_digit_val(str.unit_at(i + 2));
                 if (d1 >= 0 && d2 >= 0) {
                     uint raw = (uint)((d1 << 4) | d2);
                     if (raw == 0x23 || raw == 0x24 || raw == 0x26 || raw == 0x2B ||
                         raw == 0x2C || raw == 0x2F || raw == 0x3A || raw == 0x3B ||
                         raw == 0x3D || raw == 0x3F || raw == 0x40) {
-                        out[offset++] = '%';
-                        out[offset++] = data[i + 1];
-                        out[offset++] = data[i + 2];
+                        out.append_hstring_range(str, i, i + 3);
                         i += 3;
                         continue;
                     }
@@ -1637,15 +1613,14 @@ fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
         }
         uint cp;
         uint consumed;
-        if (!uri_decode_sequence(data, i, len, &cp, &consumed)) {
+        if (!uri_decode_sequence(str, i, len, &cp, &consumed)) {
             builtin_throw_no_result_change(ctx, ctx.heap.uri_err_proto, "URI malformed");
             return;
         }
-        uri_decode_emit(&out, &offset, cp);
+        out.append_codepoint(cp);
         i += consumed;
     }
-    HString* result = builtin_intern_string(ctx.heap, out[:offset]);
-    ctx.result_string(result);
+    out.finish(ctx);
 }
 
 // decodeURI (ES §19.2.6.6)
@@ -1675,18 +1650,16 @@ fn bool escape_is_unescaped(uint unit) {
            unit == '-' || unit == '.' || unit == '/';
 }
 
-fn void escape_emit_hex(char* out, usz* offset, uint value, uint digits) {
+fn void escape_emit_hex(StrBuf* out, uint value, uint digits) {
     for (uint shift = digits * 4; shift > 0; shift -= 4) {
-        out[(*offset)++] = "0123456789ABCDEF"[(value >> (shift - 4)) & 0x0F];
+        out.append_char("0123456789ABCDEF"[(value >> (shift - 4)) & 0x0F]);
     }
 }
 
 // escape (Annex B §B.2.1.1). Operates per UTF-16 code unit, so — unlike
 // encodeURI — surrogate pairs are never recombined: each half is emitted on
 // its own as `%uD83D%uDE00`, and a lone surrogate is legal rather than a
-// URIError. Internal storage is CESU-8, where every code unit (surrogate
-// halves included) is already its own byte sequence, so a plain walk of the
-// sequences yields exactly the code units the spec iterates.
+// URIError.
 fn void builtin_escape(BuiltinContext* ctx) {
     if (ctx.argc < 1) {
         ctx.result_string(ctx.heap.str(heap::BuiltinStr.UNDEFINED));
@@ -1698,27 +1671,24 @@ fn void builtin_escape(BuiltinContext* ctx) {
         ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
-    char[] data = str.get_data();
-    uint len = str.blen;
-    char[65536] out;
-    usz offset = 0;
-    uint i = 0;
-    while (i < len && offset < 65500) {
-        uint seq_len = hstring::utf16_unit_byte_len(data, i);
-        uint unit = hstring::decode_codepoint(data, i);
-        i += seq_len;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    uint len = str.unit_len();
+    for (uint i = 0; i < len; i++) {
+        uint unit = str.unit_at(i);
         if (escape_is_unescaped(unit)) {
-            out[offset++] = (char)unit;
+            out.append_char((char)unit);
         } else if (unit < 256) {
-            out[offset++] = '%';
-            escape_emit_hex(&out, &offset, unit, 2);
+            out.append_char('%');
+            escape_emit_hex(&out, unit, 2);
         } else {
-            out[offset++] = '%';
-            out[offset++] = 'u';
-            escape_emit_hex(&out, &offset, unit, 4);
+            out.append_char('%');
+            out.append_char('u');
+            escape_emit_hex(&out, unit, 4);
         }
     }
-    ctx.result_string(builtin_intern_string(ctx.heap, out[:offset]));
+    out.finish(ctx);
 }
 
 // unescape (Annex B §B.2.1.2). Recognises `%uXXXX` and `%XX`; any `%` not
@@ -1735,43 +1705,42 @@ fn void builtin_unescape(BuiltinContext* ctx) {
         ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
-    char[] data = str.get_data();
-    uint len = str.blen;
-    char[65536] out;
-    usz offset = 0;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    uint len = str.unit_len();
     uint i = 0;
-    while (i < len && offset < 65500) {
-        if (data[i] != '%') {
-            uint seq_len = hstring::utf16_unit_byte_len(data, i);
-            for (uint k = 0; k < seq_len; k++) out[offset++] = data[i + k];
-            i += seq_len;
+    while (i < len) {
+        uint unit = str.unit_at(i);
+        if (unit != '%') {
+            out.append_unit(unit);
+            i++;
             continue;
         }
         // A `%` is only consumed as an escape when the full form is present and
         // every digit is hex; otherwise it stands for itself.
-        if (i + 5 < len && data[i + 1] == 'u') {
-            int d1 = hex_digit_val(data[i + 2]);
-            int d2 = hex_digit_val(data[i + 3]);
-            int d3 = hex_digit_val(data[i + 4]);
-            int d4 = hex_digit_val(data[i + 5]);
+        if (i + 5 < len && str.unit_at(i + 1) == 'u') {
+            int d1 = hex_digit_val(str.unit_at(i + 2));
+            int d2 = hex_digit_val(str.unit_at(i + 3));
+            int d3 = hex_digit_val(str.unit_at(i + 4));
+            int d4 = hex_digit_val(str.unit_at(i + 5));
             if (d1 >= 0 && d2 >= 0 && d3 >= 0 && d4 >= 0) {
-                uint unit = (uint)((d1 << 12) | (d2 << 8) | (d3 << 4) | d4);
-                uri_decode_emit(&out, &offset, unit);
+                out.append_unit((uint)((d1 << 12) | (d2 << 8) | (d3 << 4) | d4));
                 i += 6;
                 continue;
             }
         }
         if (i + 2 < len) {
-            int d1 = hex_digit_val(data[i + 1]);
-            int d2 = hex_digit_val(data[i + 2]);
+            int d1 = hex_digit_val(str.unit_at(i + 1));
+            int d2 = hex_digit_val(str.unit_at(i + 2));
             if (d1 >= 0 && d2 >= 0) {
-                uri_decode_emit(&out, &offset, (uint)((d1 << 4) | d2));
+                out.append_unit((uint)((d1 << 4) | d2));
                 i += 3;
                 continue;
             }
         }
-        out[offset++] = '%';
+        out.append_char('%');
         i++;
     }
-    ctx.result_string(builtin_intern_string(ctx.heap, out[:offset]));
+    out.finish(ctx);
 }

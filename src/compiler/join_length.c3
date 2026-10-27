@@ -32,7 +32,7 @@ fn void eliminate_join_allocation(CompilerContext* ctx, bool* targets, bool* in_
         if (length.op != Opcode.GETPROPC || length.b != source
             || length.c >= ctx.const_count || !ctx.constants[length.c].is_string()) continue;
         HString* key = (HString*)ctx.constants[length.c].get_heapptr();
-        if (key.is_symbol() || !str_eq(key.get_data(), "length")) continue;
+        if (key.is_symbol() || !key.equals("length")) continue;
         if (live_out[j].test(join.a) || live_out[j].test(source)
             || length.a == join.a || length.a == source) continue;
         ctx.code[i] = bytecode::make_abc(Opcode.STRJOIN_LENGTH, length.a, join.b, join.c);

@@ -762,10 +762,9 @@ fn void builtin_intl_collator_resolved(BuiltinContext* ctx) @feat(INTL_COLLATOR)
 
 // The NFD code points of `s` in a buffer the caller frees. Canonically
 // equivalent strings collate equal, so each operand is decomposed first.
-// Strings are CESU-8, so surrogate pairs are combined while decoding.
 fn uint* coll_decode_nfd(HString* s, int* out_len) @feat(INTL_COLLATOR) {
     uint n = 0;
-    uint* cps = cesu8_to_codepoints(s.get_cstr(), s.blen, &n);
+    uint* cps = string_codepoints(s, &n);
     if (cps == null) return null;
     if (n == 0) {
         *out_len = 0;

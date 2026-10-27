@@ -691,7 +691,7 @@ fn void utf8_put(char c, void* udata) {
 fn String utf8_of(HString* s, Allocator allocator) {
     if (s == null) return "";
     DString buf = dstring::temp_with_capacity(s.get_data().len + 4);
-    hstring::write_cesu8_as_utf8(s.get_data(), &utf8_put, &buf);
+    s.write_utf8(&utf8_put, &buf);
     return buf.copy_str(allocator);
 }
 

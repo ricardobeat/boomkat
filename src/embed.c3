@@ -666,7 +666,7 @@ fn usz utf8_write(HString* s, char* buf, usz cap) {
         return length;
     }
     StringSink sink = { .buf = buf, .len = 0, .cap = (buf == null) ? 0 : cap };
-    hstring::write_cesu8_as_utf8(s.get_data(), &sink_put, &sink);
+    s.write_utf8(&sink_put, &sink);
     return sink.len;
 }
 

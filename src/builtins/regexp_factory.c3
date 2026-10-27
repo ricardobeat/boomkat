@@ -10,7 +10,7 @@ import boomkat::re_bindings;
 // Helper: create a RegExp HObject from a pattern string with JS flags.
 // Used by matchAll for the non-RegExp arg path.
 // Returns null on failure (allocation or compile error).
-fn HObject* create_regexp_from_string(Heap* heap, char[] pattern, int js_flags) {
+fn HObject* create_regexp_from_string(Heap* heap, HString* pattern, int js_flags) {
     // Compute engine flags from js_flags (only i, m, s, u, y, d, v affect compilation)
     int engine_flags = 0;
     if (js_flags & 2)   engine_flags |= re_bindings::RE_FLAG_IGNORECASE;
@@ -24,7 +24,7 @@ fn HObject* create_regexp_from_string(Heap* heap, char[] pattern, int js_flags) 
     // Compile the regexp
     char[128] error_buf;
     void* compiled = re_bindings::re_compile(
-        (char*)pattern.ptr, pattern.len,
+        pattern.get_cstr(), pattern.blen,
         engine_flags, &error_buf, 128
     );
     if (compiled == null) return null;
@@ -41,10 +41,7 @@ fn HObject* create_regexp_from_string(Heap* heap, char[] pattern, int js_flags) 
     (*obj.extra_ptr()).regexp.flags = js_flags;
 
     // Store pattern string as primitive_value
-    HString* pattern_hs = builtin_intern_string(heap, pattern);
-    if (pattern_hs != null) {
-        (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
-    }
+    (*obj.extra_ptr()).prim.primitive_value.set_string(pattern);
 
     // Set lastIndex to 0
     HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);

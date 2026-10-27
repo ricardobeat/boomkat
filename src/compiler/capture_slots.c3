@@ -101,7 +101,7 @@ fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* chil
 fn bool CompilerContext.declares_hoisted_name(&self, TVal name) {
     ast::AstIndex* idx = ast::index_state;
     if (idx == null || !idx.use || idx.unknown_outer || self.func_ast_scope == 0) return false;
-    uint atom = idx.tree.atoms.find(((HString*)name.get_heapptr()).get_data());
+    uint atom = idx.tree.atoms.find(self.name_text((HString*)name.get_heapptr()));
     if (atom == 0) return false;
     uint b = idx.res.lookup(self.func_ast_scope, atom);
     if (b == 0) return false;

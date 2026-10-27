@@ -163,6 +163,43 @@ fn bool StrBuf.append_unit(&self, uint unit) {
     return self.append_bytes(buf[:n]);
 }
 
+// Append one code point, an astral one as its surrogate pair.
+fn bool StrBuf.append_codepoint(&self, uint cp) {
+    if (cp < hstring::ASTRAL_START) return self.append_unit(cp);
+    uint high; uint low;
+    hstring::codepoint_to_surrogates(cp, &high, &low);
+    return self.append_unit(high) && self.append_unit(low);
+}
+
+fn void strbuf_put_byte(char c, void* udata) {
+    ((StrBuf*)udata).append_char(c);
+}
+
+// The string as UTF-8 text, a lone surrogate as U+FFFD, or kept as its own
+// 3-byte sequence when `keep_lone` is set. An ASCII string is returned in
+// place; any other is written into `tmp`, which owns the bytes until it is
+// freed or appended to. Both forms are NUL-terminated.
+fn char[] utf8_text(StrBuf* tmp, HString* s, bool keep_lone = false) {
+    if (s.is_ascii()) return s.ascii_bytes();
+    s.write_utf8(&strbuf_put_byte, tmp, keep_lone);
+    // NUL-terminate for C consumers without counting the terminator.
+    tmp.append_char(0);
+    tmp.len--;
+    return tmp.bytes();
+}
+
+// The string as CESU-8 text, the form a StrBuf holds. An ASCII string is
+// returned in place; any other is appended to `tmp`, which owns the bytes
+// until it is freed or appended to again. Both forms are NUL-terminated.
+fn char[] cesu8_text(StrBuf* tmp, HString* s) {
+    if (s.is_ascii()) return s.ascii_bytes();
+    tmp.len = 0;
+    tmp.append_hstring(s);
+    tmp.append_char(0);
+    tmp.len--;
+    return tmp.bytes();
+}
+
 fn bool StrBuf.append_char(&self, char c) {
     if (!self.reserve(1)) return false;
     self.data[self.len++] = c;
@@ -1305,7 +1342,7 @@ fn void print_tval(Heap* heap, TVal* val) {
         case STRING:
             HString* s = (HString*)val.get_heapptr();
             if (s != null) {
-                hstring::write_cesu8_as_utf8(s.get_data(), &putc_stdout);
+                s.write_utf8(&putc_stdout);
             } else {
                 io::printf("[null string]");
             }
@@ -1375,41 +1412,15 @@ fn bool is_ecma_ws_codepoint(uint cp) @inline {
     return false;
 }
 
-// Decode a UTF-8 codepoint starting at `data[off]`. Returns the codepoint
-// and sets `*seq_len` to the number of bytes consumed (1-4). Returns 0 on
-// invalid/truncated input.
-fn uint decode_codepoint_at(char* data, uint off, uint total_len, uint* seq_len) {
-    if (off >= total_len) { *seq_len = 0; return 0; }
-    uint b0 = (uint)data[off];
-    // 1-byte (ASCII)
-    if (b0 < 0x80) { *seq_len = 1; return b0; }
-    // 2-byte: 110xxxxx 10xxxxxx
-    if ((b0 & 0xE0) == 0xC0) {
-        if (off + 1 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        *seq_len = 2;
-        return ((b0 & 0x1F) << 6) | (b1 & 0x3F);
-    }
-    // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
-    if ((b0 & 0xF0) == 0xE0) {
-        if (off + 2 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        uint b2 = (uint)data[off + 2];
-        *seq_len = 3;
-        return ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
-    }
-    // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
-    if ((b0 & 0xF8) == 0xF0) {
-        if (off + 3 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        uint b2 = (uint)data[off + 2];
-        uint b3 = (uint)data[off + 3];
-        *seq_len = 4;
-        return ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
-    }
-    // Invalid lead byte, skip one byte
-    *seq_len = 1;
-    return 0;
+// The unit range `[*start, *end)` of `s` left after removing ECMAScript
+// whitespace from the front (`lead`) and the back (`trail`).
+fn void ws_trim_bounds(HString* s, uint* start, uint* end, bool lead = true, bool trail = true) {
+    uint lo = 0;
+    uint hi = s.unit_len();
+    if (lead) while (lo < hi && is_ecma_ws_codepoint(s.unit_at(lo))) lo++;
+    if (trail) while (hi > lo && is_ecma_ws_codepoint(s.unit_at(hi - 1))) hi--;
+    *start = lo;
+    *end = hi;
 }
 
 // The value of digit `c` in a radix up to 36, or -1 if `c` is not a digit.
@@ -1452,48 +1463,44 @@ fn double Pow2Digits.value(&self) {
 // parsing numeric literals (decimal, hex, Infinity).  Returns NaN when
 // the string does not represent a valid numeric literal.
 fn double builtin_string_to_number(HString* hstr) {
-    char* cstr = hstr.get_cstr();
-    uint blen = hstr.blen;
-
-    // --- skip leading ECMAScript whitespace (CESU-8 aware) ---
-    uint start = 0;
-    while (start < blen) {
-        uint seq_len = 0;
-        uint cp = decode_codepoint_at(cstr, start, blen, &seq_len);
-        if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) break;
-        start += seq_len;
-    }
-
+    uint lo; uint hi;
+    ws_trim_bounds(hstr, &lo, &hi);
     // Empty or all-whitespace -> +0
-    if (start == blen) {
-        return 0.0;
-    }
+    if (lo == hi) return 0.0;
 
-    char* p = cstr + start;
-
-    // --- Infinity / -Infinity / +Infinity (trailing ECMAScript whitespace ok) ---
-    {
-        char* q = p;
-        double inf_sign = 1.0;
-        if (*q == '+') { q++; }
-        else if (*q == '-') { inf_sign = -1.0; q++; }
-        if (mem::equals(q, (char*)"Infinity", 8)) {
-            uint rest = (uint)(q - cstr) + 8;
-            uint tail = rest;
-            bool only_ws = true;
-            while (tail < blen) {
-                uint seq_len2 = 0;
-                uint cp2 = decode_codepoint_at(cstr, tail, blen, &seq_len2);
-                if (seq_len2 == 0 || !is_ecma_ws_codepoint(cp2)) { only_ws = false; break; }
-                tail += seq_len2;
-            }
-            if (only_ws) return inf_sign * double::inf;
+    // The literal grammar is ASCII. An ASCII string is parsed in place: the
+    // byte after the trimmed run is whitespace or the terminator, where
+    // strtod stops. Any other string is copied out after checking its units.
+    usz n = (usz)(hi - lo);
+    char[128] stack;
+    char* heap_copy = null;
+    defer if (heap_copy != null) mem::free(heap_copy);
+    char* p;
+    if (hstr.is_ascii()) {
+        p = hstr.ascii_bytes().ptr + lo;
+    } else {
+        p = &stack[0];
+        if (n >= stack.len) {
+            heap_copy = (char*)alloc::malloc_try(mem, (sz)(n + 1)) ?? null;
+            if (heap_copy == null) return double::nan;
+            p = heap_copy;
         }
+        for (usz i = 0; i < n; i++) {
+            uint u = hstr.unit_at(lo + (uint)i);
+            if (u >= 0x80) return double::nan;
+            p[i] = (char)u;
+        }
+        p[n] = 0;
     }
+    char[] text = p[:n];
+
+    // --- Infinity / -Infinity / +Infinity ---
+    if (text == "Infinity" || text == "+Infinity") return double::inf;
+    if (text == "-Infinity") return -double::inf;
 
     // --- Reject sign-prefixed hex/binary/octal literals ---
     // ECMA-262 §7.1.3.1: +0x... / -0x... etc. are not valid StringNumericLiterals.
-    if ((p[0] == '+' || p[0] == '-')) {
+    if (p[0] == '+' || p[0] == '-') {
         char* q = p + 1;
         if (q[0] == '0' && (q[1] == 'x' || q[1] == 'X')) return double::nan;
         if (q[0] == '0' && (q[1] == 'b' || q[1] == 'B')) return double::nan;
@@ -1504,7 +1511,7 @@ fn double builtin_string_to_number(HString* hstr) {
     // Unlike parseInt, ToNumber(String) accepts these prefixes, but no sign and
     // no trailing radix.
     int shift = 0;
-    if (p[0] == '0') {
+    if (n > 1 && p[0] == '0') {
         switch (p[1]) {
             case 'x': case 'X': shift = 4;
             case 'b': case 'B': shift = 1;
@@ -1513,57 +1520,27 @@ fn double builtin_string_to_number(HString* hstr) {
     }
     if (shift != 0) {
         Pow2Digits digits;
-        uint j = 2;
-        for (int d; (d = radix_digit_value(p[j])) >= 0 && d < (1 << shift); j++) digits.add(d, shift);
-        if (j == 2) return double::nan;   // at least one digit is required
-        // Trailing must be whitespace (codepoint-aware)
-        uint trail_pos = (uint)((p + j) - cstr);
-        while (trail_pos < blen) {
-            uint seq_len = 0;
-            uint cp = decode_codepoint_at(cstr, trail_pos, blen, &seq_len);
-            if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) return double::nan;
-            trail_pos += seq_len;
-        }
+        usz j = 2;
+        for (int d; j < n && (d = radix_digit_value(p[j])) >= 0 && d < (1 << shift); j++) digits.add(d, shift);
+        if (j == 2 || j != n) return double::nan;   // at least one digit, and nothing after
         return digits.value();
     }
 
-    // --- Decimal via libc::strtod ---
+    // --- Decimal via strtod ---
     char* endptr;
     double result = dtoa_bindings::atod_strtod_compat(p, &endptr);
 
-    // Nothing was consumed -> NaN
-    if (endptr == p) {
-        return double::nan;
-    }
+    // The whole trimmed run must be consumed.
+    if (endptr != p + n) return double::nan;
 
     // strtod accepts case-insensitive "infinity" text, but ES only allows the
-    // exact "Infinity" spelling. Distinguish text-Infinity from numeric overflow
-    // (e.g. "10e10000" legitimately overflows to Infinity): overflow input
-    // begins with a digit or '.', whereas Infinity text begins with a letter
-    // after the optional sign. Only reject a wrong-case Infinity *spelling*.
+    // exact "Infinity" spelling, handled above. Numeric overflow (e.g.
+    // "10e10000") legitimately gives Infinity and begins with a digit or '.'.
     if (result == double::inf || result == -double::inf) {
         char* q = p;
         if (q[0] == '+' || q[0] == '-') q++;
-        bool is_inf_text = (q[0] == 'i' || q[0] == 'I');
-        if (is_inf_text &&
-            (ZString)p != (ZString)"Infinity" &&
-            (ZString)p != (ZString)"+Infinity" &&
-            (ZString)p != (ZString)"-Infinity") {
-            return double::nan;
-        }
+        if (q[0] == 'i' || q[0] == 'I') return double::nan;
     }
-
-    // Trailing characters must be whitespace only (codepoint-aware for multi-byte Unicode ws)
-    uint trail_pos = (uint)(endptr - cstr);
-    while (trail_pos < blen) {
-        uint seq_len = 0;
-        uint cp = decode_codepoint_at(cstr, trail_pos, blen, &seq_len);
-        if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) {
-            return double::nan;
-        }
-        trail_pos += seq_len;
-    }
-
     return result;
 }
 

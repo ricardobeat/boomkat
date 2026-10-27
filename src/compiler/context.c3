@@ -746,6 +746,18 @@ fn char[] CompilerContext.keep_name(&self, char[] name) {
     return self.lexer.arena_dup(name.ptr, name.len);
 }
 
+// The UTF-8 text of an interned name, stable for the compile: an ASCII name is
+// read in place, any other is copied into the lexer's arena. A lone surrogate
+// keeps its own 3-byte form, as in source text.
+fn char[] CompilerContext.name_text(&self, HString* name) {
+    if (name.is_ascii()) return name.ascii_bytes();
+    usz n = name.utf8_len(true);
+    char[] buf = self.lexer.arena_alloc(n + 1);
+    name.copy_utf8(buf.ptr, true);
+    buf[n] = 0;
+    return buf[:n];
+}
+
 // Bracket the parser's inferred-name slot across a NamedEvaluation scope. Use:
 //
 //   NameEvalFrame _nef = self.save_name_eval();
@@ -1048,7 +1060,7 @@ fn void CompilerContext.record_b33_hoist(&self, char[] var_name, uint var_reg, u
         self.b33_hoisted_cap = new_cap;
     }
     HString* hs = ((Heap*)self.heap).str_intern(var_name);
-    self.b33_hoisted_names[self.b33_hoisted_count] = hs.get_data();
+    self.b33_hoisted_names[self.b33_hoisted_count] = self.name_text(hs);
     self.b33_hoisted_regs[self.b33_hoisted_count] = (ushort)var_reg;
     self.b33_hoisted_pcs[self.b33_hoisted_count] = hoist_pc;
     self.b33_hoisted_count++;
