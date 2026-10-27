@@ -34,7 +34,7 @@ bool gen_trace;            // report each generated function on stderr
 fn char[] CompilerContext.gen_name(&self, uint atom) {
     char[] raw = ast::index_state.tree.atoms.get(atom);
     if (self.fuse != null && self.fuse.renaming) return self.fuse_name(raw);
-    return ((Heap*)self.heap).str_intern(raw).get_data();
+    return self.name_text(((Heap*)self.heap).str_intern(raw));
 }
 
 // Attribute emitted instructions to an original-source token.

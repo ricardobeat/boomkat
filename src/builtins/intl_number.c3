@@ -38,17 +38,11 @@ fn bool intl_decimal(BuiltinContext* ctx, TVal input, IntlDecimal* out, bool plu
         out.negative = math::signbit(n) != 0;
         if (!plural && input.is_string() && !math::is_nan(n)) {
             HString* raw = (HString*)input.get_heapptr();
-            uint start = 0;
-            uint end = 0;
-            for (uint i = 0; i < raw.blen;) {
-                uint width;
-                uint cp = decode_codepoint_at(raw.get_cstr(), i, raw.blen, &width);
-                if (width == 0) break;
-                if (!is_ecma_ws_codepoint(cp)) { if (end == 0) start = i; end = i + width; }
-                i += width;
-            }
-            if (end > start) {
-                char[] candidate = raw.get_cstr()[start:end - start];
+            uint start; uint end;
+            ws_trim_bounds(raw, &start, &end);
+            HString* trimmed = ctx.heap.str_slice(raw, start, end);
+            if (end > start && trimmed.is_ascii()) {
+                char[] candidate = trimmed.ascii_bytes();
                 bool decimal = true;
                 foreach (c : candidate) {
                     if (!locale_is_digit(c) && c != '.' && c != 'e' && c != 'E' && c != '+' && c != '-') decimal = false;
@@ -62,7 +56,7 @@ fn bool intl_decimal(BuiltinContext* ctx, TVal input, IntlDecimal* out, bool plu
         text = builtin_number_to_hstring(ctx.heap, math::abs(n));
     }
     if (ctx.should_throw || text == null) return false;
-    char[] source = exact.len > 0 ? exact : text.get_cstr()[:text.blen];
+    char[] source = exact.len > 0 ? exact : text.get_data();
     usz i = 0;
     if (source.len > 0 && (source[0] == '-' || source[0] == '+')) { out.negative = source[0] == '-'; i++; }
     bool fractional = false;

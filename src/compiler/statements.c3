@@ -354,7 +354,7 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
         if (name_idx < self.const_count) {
             HString* hs = (HString*)self.constants[name_idx].get_heapptr();
             if (hs != null) {
-                char[] bname = hs.get_data();
+                char[] bname = self.name_text(hs);
                 for (uint i = self.scope_depth; i > 0; i--) {
                     uint idx = i - 1;
                     if (self.scope_stack[idx].kind == SCOPEMARK) continue;
@@ -878,7 +878,7 @@ fn bool CompilerContext.forof_head_is_captured(&self, ForOfHead head) {
     switch (head.kind) {
         case IDENT:
             HString* hs = (HString*)self.constants[head.id_name_idx].get_heapptr();
-            return self.is_captured_name(hs.get_data());
+            return self.is_captured_name(self.name_text(hs));
         case DESTRUCTURE:
             // Any captured leaf forces the env for the whole head: the binds
             // share one iteration, so they share its lifetime.

@@ -84,24 +84,25 @@ fn uint CompilerContext.add_constant(&self, TVal val) {
     return idx;
 }
 
-// Add a string constant: intern the string and add a STRING TVal to the pool.
+// Add a string constant: intern the text and add a STRING TVal to the pool.
 fn uint CompilerContext.add_string_constant(&self, char[] str) {
     // Intern via Heap.str_intern so raw 4-byte UTF-8 astral sequences are
-    // normalized to CESU-8. Otherwise a literal emoji and the same character
-    // written as `\u{...}` would intern under different encodings and fail `===`.
+    // normalized to the stored form. Otherwise a literal emoji and the same
+    // character written as `\u{...}` would intern under different encodings and
+    // fail `===`.
+    return self.add_string_constant_hstr(((Heap*)self.heap).str_intern(str));
+}
+
+// Add the string `hstr` to the pool, once per distinct string.
+fn uint CompilerContext.add_string_constant_hstr(&self, HString* hstr) {
     Heap* hp = (Heap*)self.heap;
-    HString* hstr = hp.str_intern(str);
     // str_intern leaves strings over MAX_INTERN_BYTES un-interned, but names
     // are matched by pointer, so canonicalize them as runtime property keys are.
     // The fresh copy this may drop is freed via the large-string registry.
     if (hstr != null) hstr = hp.ensure_interned(hstr);
 
     TVal tv;
-    if (hstr != null) {
-        tv.set_string_borrowed(hstr);
-    } else {
-        tv.set_string_borrowed(null);
-    }
+    tv.set_string_borrowed(hstr);
 
     ulong val_bits = tv.get_raw_bits();
 

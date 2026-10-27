@@ -111,28 +111,16 @@ fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
         ctx.result_string(empty);
         return;
     }
-    // Build string from code units. Worst case 3 bytes per unit, so size the
-    // buffer off argc, apply() can pass thousands of arguments.
-    usz cc_cap = (usz)ctx.argc * 3;
-    char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, cc_cap);
-    if (buf == null) { ctx.result_undefined(); return; }
-    usz offset = 0;
-    ushort max_args = ctx.argc;
-    for (ushort i = 0; i < max_args; i++) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    for (ushort i = 0; i < ctx.argc; i++) {
         uint cu = to_uint16(ctx, &ctx.regs[ctx.base_reg + i]);
-        if (cu < 128) {
-            buf[offset++] = (char)cu;
-        } else if (cu < 2048) {
-            buf[offset++] = (char)(0xC0 | (cu >> 6));
-            buf[offset++] = (char)(0x80 | (cu & 0x3F));
-        } else {
-            buf[offset++] = (char)(0xE0 | (cu >> 12));
-            buf[offset++] = (char)(0x80 | ((cu >> 6) & 0x3F));
-            buf[offset++] = (char)(0x80 | (cu & 0x3F));
-        }
+        if (ctx.should_throw) return;
+        out.append_unit(cu);
     }
-    HString* result = builtin_intern_string(ctx.heap, buf[:offset]);
-    ctx.heap.free_func(ctx.heap.heap_udata, buf);
+    HString* result = builtin_intern_string(ctx.heap, out.bytes());
+    if (result == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length"); return; }
     ctx.result_string(result);
 }
 
@@ -143,16 +131,10 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
         ctx.result_string(empty);
         return;
     }
-    // Build string from code points (supporting supplementary plane via UTF-8).
-    // Worst case 6 bytes per argument (supplementary plane surrogate pair in
-    // CESU-8), so size the buffer off argc, callers like
-    // String.fromCodePoint.apply(null, hugeArray) pass thousands of args.
-    usz buf_cap = (usz)ctx.argc * 6;
-    char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, buf_cap);
-    if (buf == null) { ctx.result_undefined(); return; }
-    usz offset = 0;
-    ushort max_args = ctx.argc;
-    for (ushort i = 0; i < max_args; i++) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    for (ushort i = 0; i < ctx.argc; i++) {
         TVal* arg = &ctx.regs[ctx.base_reg + i];
         double d;
         if (arg.is_fastint()) {
@@ -165,45 +147,25 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
             d = 0.0;
         } else {
             d = builtin_to_number_vm(ctx, arg);
-            if (ctx.should_throw) {
-                ctx.heap.free_func(ctx.heap.heap_udata, buf);
-                return;
-            }
+            if (ctx.should_throw) return;
         }
         // Check: must be integral Number in [0, 0x10FFFF]
         if (math::is_nan(d) || math::is_inf(d) || d != math::trunc(d) || d < 0 || d > 0x10FFFF) {
-            // Throw RangeError
-            ctx.heap.free_func(ctx.heap.heap_udata, buf);
             builtin_throw_no_result_change(ctx, ctx.heap.range_err_proto, "Invalid code point value");
             return;
         }
         uint ucp = (uint)(long)d;
-        if (ucp < 0x80) {
-            buf[offset++] = (char)ucp;
-        } else if (ucp < 0x800) {
-            buf[offset++] = (char)(0xC0 | (ucp >> 6));
-            buf[offset++] = (char)(0x80 | (ucp & 0x3F));
-        } else if (ucp < 0x10000) {
-            buf[offset++] = (char)(0xE0 | (ucp >> 12));
-            buf[offset++] = (char)(0x80 | ((ucp >> 6) & 0x3F));
-            buf[offset++] = (char)(0x80 | (ucp & 0x3F));
+        if (ucp < hstring::ASTRAL_START) {
+            out.append_unit(ucp);
         } else {
-            // Supplementary plane: ECMAScript strings are UTF-16 code unit
-            // sequences, so encode as a surrogate pair (CESU-8 storage,
-            // each half gets its own 3-byte UTF-8 sequence) rather than a
-            // single 4-byte UTF-8 sequence, so `.length` reports 2.
             uint high; uint low;
             hstring::codepoint_to_surrogates(ucp, &high, &low);
-            buf[offset++] = (char)(0xE0 | (high >> 12));
-            buf[offset++] = (char)(0x80 | ((high >> 6) & 0x3F));
-            buf[offset++] = (char)(0x80 | (high & 0x3F));
-            buf[offset++] = (char)(0xE0 | (low >> 12));
-            buf[offset++] = (char)(0x80 | ((low >> 6) & 0x3F));
-            buf[offset++] = (char)(0x80 | (low & 0x3F));
+            out.append_unit(high);
+            out.append_unit(low);
         }
     }
-    HString* result_str = builtin_intern_string(ctx.heap, buf[:offset]);
-    ctx.heap.free_func(ctx.heap.heap_udata, buf);
+    HString* result_str = builtin_intern_string(ctx.heap, out.bytes());
+    if (result_str == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length"); return; }
     ctx.result_string(result_str);
 }
 
@@ -281,20 +243,17 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
         return;
     }
 
-    // Step 12+: Accumulate in a heap-allocated growable buffer.
-    usz buf_cap = 256;
-    usz buf_len = 0;
-    char* buf = (char*)heap.alloc_func(heap.heap_udata, buf_cap);
-    if (buf == null) { ctx.result_undefined(); return; }
+    // Step 12+: Accumulate the interleaved segments.
+    StrBuf out;
+    out.init(heap);
+    defer out.free();
 
-    // Helper macro-like inline: append bytes to buf, growing as needed.
-    // Returns false and sets result to undefined on allocation failure.
     for (long next_index = 0; next_index < literal_segments; next_index++) {
         // Step 12.b: nextSeg = ToString(Get(raw, nextKey)).
         HString* idx_key = heap.int_to_hstring(next_index);
-        if (idx_key == null) { heap.free_func(heap.heap_udata, buf); ctx.result_undefined(); return; }
+        if (idx_key == null) { ctx.result_undefined(); return; }
         TVal? seg_opt = builtins_generic_get(raw_obj, idx_key, ctx);
-        if (ctx.should_throw) { heap.free_func(heap.heap_udata, buf); ctx.result_undefined(); return; }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
         TVal seg_tv;
         if (try sv = seg_opt) {
             seg_tv = sv;
@@ -302,25 +261,12 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
             seg_tv.set_undefined();
         }
         if (is_symbol_val(seg_tv)) {
-            heap.free_func(heap.heap_udata, buf);
             builtin_throw(ctx, heap.type_err_proto, "Cannot convert a Symbol value to a string");
             return;
         }
         HString* seg_str = builtin_to_string_vm(ctx, &seg_tv);
-        if (ctx.should_throw) { heap.free_func(heap.heap_udata, buf); ctx.result_undefined(); return; }
-        if (seg_str != null && seg_str.blen > 0) {
-            usz need = buf_len + (usz)seg_str.blen;
-            if (need > buf_cap) {
-                usz new_cap = buf_cap * 2;
-                if (new_cap < need) new_cap = need + 64;
-                char* new_buf = (char*)alloc::realloc_try(mem, buf, (sz)(new_cap)) ?? null;
-                if (new_buf == null) { heap.free_func(heap.heap_udata, buf); ctx.result_undefined(); return; }
-                buf = new_buf;
-                buf_cap = new_cap;
-            }
-            mem::copy(&buf[buf_len], seg_str.get_cstr(), (sz)(seg_str.blen));
-            buf_len += (usz)seg_str.blen;
-        }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
+        if (seg_str != null) out.append_hstring(seg_str);
 
         // Step 12.e: If nextIndex + 1 = literalSegments, finished, exit loop.
         if (next_index + 1 == literal_segments) break;
@@ -331,32 +277,15 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
         if (next_index < sub_argc) {
             TVal sub_tv = ctx.regs[ctx.base_reg + 1 + (uint)next_index];
             if (is_symbol_val(sub_tv)) {
-                heap.free_func(heap.heap_udata, buf);
                 builtin_throw(ctx, heap.type_err_proto, "Cannot convert a Symbol value to a string");
                 return;
             }
             HString* sub_str = builtin_to_string_vm(ctx, &sub_tv);
-            if (ctx.should_throw) { heap.free_func(heap.heap_udata, buf); ctx.result_undefined(); return; }
-            if (sub_str != null && sub_str.blen > 0) {
-                usz need = buf_len + (usz)sub_str.blen;
-                if (need > buf_cap) {
-                    usz new_cap = buf_cap * 2;
-                    if (new_cap < need) new_cap = need + 64;
-                    char* new_buf = (char*)alloc::realloc_try(mem, buf, (sz)(new_cap)) ?? null;
-                    if (new_buf == null) { heap.free_func(heap.heap_udata, buf); ctx.result_undefined(); return; }
-                    buf = new_buf;
-                    buf_cap = new_cap;
-                }
-                mem::copy(&buf[buf_len], sub_str.get_cstr(), (sz)(sub_str.blen));
-                buf_len += (usz)sub_str.blen;
-            }
+            if (ctx.should_throw) { ctx.result_undefined(); return; }
+            if (sub_str != null) out.append_hstring(sub_str);
         }
     }
-
-    HString* result = heap.str_intern(buf[:buf_len]);
-    heap.free_func(heap.heap_udata, buf);
-    if (result == null) { ctx.result_undefined(); return; }
-    ctx.result_string(result);
+    out.finish(ctx);
 }
 
 // String.prototype.toString, returns the wrapped string value
@@ -501,17 +430,13 @@ fn void builtin_string_proto_charAt(BuiltinContext* ctx) {
         return;
     }
     uint idx = (uint)(long)pos;
-    uint cp = s_hstr.unit_at(idx);
-    char[4] buf;
-    uint blen = hstring::encode_codepoint(cp, buf[:4]);
-    HString* result = builtin_intern_string(ctx.heap, buf[:blen]);
-    ctx.result_string(result);
+    ctx.result_string(ctx.heap.str_from_unit(s_hstr.unit_at(idx)));
 }
 
 // String.prototype.charCodeAt(pos)
 //
 // Returns the UTF-16 code unit at `pos` (a surrogate half for astral
-// characters, never combined), indexed by `char_length()`, not `blen`.
+// characters, never combined).
 fn void builtin_string_proto_charCodeAt(BuiltinContext* ctx) {
     HString* s_hstr = string_proto_get_this(ctx);
     StringRef receiver = hstring::string_ref(s_hstr);
@@ -540,11 +465,6 @@ fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-    // Indexed by UTF-16 code unit for the argument/result; byte search
-    // itself is safe on CESU-8-canonical data (a byte match can't straddle
-    // a code-unit boundary), so only pos/result need unit<->byte conversion.
     uint clen = s_hstr.unit_len();
 
     // Get search string
@@ -571,38 +491,7 @@ fn void builtin_string_proto_indexOf(BuiltinContext* ctx) {
     } else {
         pos_units = (uint)(long)pos_d;
     }
-    uint pos = s_hstr.char_offset_to_byte_offset(pos_units);
-
-    char* search_data = search_hstr.get_cstr();
-    uint search_len = search_hstr.blen;
-
-    // Search for occurrence
-    if (search_len == 0) {
-        ctx.result_fastint((long)pos_units);
-        return;
-    }
-
-    int result = hstring::find_bytes(s_hstr.get_data(), search_hstr.get_data(), pos);
-    if (result >= 0) {
-        if (s_hstr.flags.is_ascii) {
-            ctx.result_fastint((long)result);
-        } else {
-            uint unit_idx = 0;
-            uint byte_off = 0;
-            if ((uint)result >= pos) {
-                unit_idx = pos_units;
-                byte_off = pos;
-            }
-            char[] data_slice = s_hstr.get_data();
-            while (byte_off < (uint)result) {
-                byte_off += hstring::utf16_unit_byte_len(data_slice, byte_off);
-                unit_idx++;
-            }
-            ctx.result_fastint((long)unit_idx);
-        }
-    } else {
-        ctx.result_fastint(-1);
-    }
+    ctx.result_fastint((long)hstring::find_units(s_hstr, search_hstr, pos_units));
 }
 
 // String.prototype.slice(start, end)
@@ -614,7 +503,6 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    // Indexed by UTF-16 code unit (char_length), not raw byte.
     uint len = s_hstr.unit_len();
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
@@ -658,11 +546,7 @@ fn void builtin_string_proto_slice(BuiltinContext* ctx) {
         return;
     }
 
-    uint byte_start = s_hstr.char_offset_to_byte_offset((uint)start_i);
-    uint byte_end = s_hstr.char_offset_to_byte_offset((uint)end_i);
-    char[] data = s_hstr.get_data();
-    HString* result = builtin_intern_slice(ctx.heap, data[byte_start..byte_end-1]);
-    ctx.result_string(result);
+    ctx.result_string(ctx.heap.str_slice(s_hstr, (uint)start_i, (uint)end_i));
 }
 
 // String.prototype.substring(start, end)
@@ -674,7 +558,6 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    // Indexed by UTF-16 code unit (char_length), not raw byte.
     uint len = s_hstr.unit_len();
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
@@ -704,11 +587,7 @@ fn void builtin_string_proto_substring(BuiltinContext* ctx) {
         return;
     }
 
-    uint byte_from = s_hstr.char_offset_to_byte_offset(from);
-    uint byte_to = s_hstr.char_offset_to_byte_offset(to);
-    char[] data = s_hstr.get_data();
-    HString* result = builtin_intern_slice(ctx.heap, data[byte_from..byte_to-1]);
-    ctx.result_string(result);
+    ctx.result_string(ctx.heap.str_slice(s_hstr, from, to));
 }
 
 // String.prototype.substr(start, length)
@@ -724,7 +603,6 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    // Indexed by UTF-16 code unit (char_length), not raw byte.
     uint len = s_hstr.unit_len();
 
     double start_d = (ctx.argc > 0) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
@@ -773,134 +651,44 @@ fn void builtin_string_proto_substr(BuiltinContext* ctx) {
         return;
     }
 
-    uint byte_start = s_hstr.char_offset_to_byte_offset((uint)start_i);
-    uint byte_end = s_hstr.char_offset_to_byte_offset((uint)(start_i + length_i));
-    char[] data = s_hstr.get_data();
-    HString* result = builtin_intern_slice(ctx.heap, data[byte_start..byte_end-1]);
-    ctx.result_string(result);
+    ctx.result_string(ctx.heap.str_slice(s_hstr, (uint)start_i, (uint)(start_i + length_i)));
 }
 
 // ============================================================================
 // Unicode case conversion helpers
 // ============================================================================
 
-// Decode a single Unicode codepoint from a CESU-8 string.
-// CESU-8 stores astral codepoints as surrogate pairs, each encoded as a
-// standalone 3-byte UTF-8 sequence.  When a high surrogate is immediately
-// followed by a low surrogate, they are combined into the astral codepoint.
-// Returns the codepoint and writes the byte sequence length to *seq_len.
-fn uint cesu8_decode_codepoint(char* data, uint off, uint total_len, uint* seq_len) {
-    if (off >= total_len) { *seq_len = 0; return 0; }
-    uint b0 = (uint)data[off];
-
-    // 1-byte ASCII fast path
-    if (b0 < 0x80) { *seq_len = 1; return b0; }
-
-    // 2-byte: 110xxxxx 10xxxxxx
-    if ((b0 & 0xE0) == 0xC0) {
-        if (off + 1 >= total_len) { *seq_len = 1; return b0 & 0x1F; }
-        *seq_len = 2;
-        return ((b0 & 0x1F) << 6) | ((uint)data[off + 1] & 0x3F);
-    }
-
-    // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
-    if ((b0 & 0xF0) == 0xE0) {
-        if (off + 2 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        uint b2 = (uint)data[off + 2];
-        uint cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
-
-        // Check for surrogate pair (CESU-8 astral encoding)
-        if (cp >= 0xD800 && cp <= 0xDBFF) {
-            // High surrogate, try to find a trailing low surrogate
-            uint off2 = off + 3;
-            if (off2 + 2 < total_len) {
-                uint c0 = (uint)data[off2];
-                if ((c0 & 0xF0) == 0xE0) {
-                    uint c1 = (uint)data[off2 + 1];
-                    uint c2 = (uint)data[off2 + 2];
-                    uint cp2 = ((c0 & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
-                    if (cp2 >= 0xDC00 && cp2 <= 0xDFFF) {
-                        // Valid surrogate pair → astral codepoint
-                        *seq_len = 6;
-                        return 0x10000 + ((cp - 0xD800) << 10) + (cp2 - 0xDC00);
-                    }
-                }
-            }
-        }
-
-        *seq_len = 3;
-        return cp;
-    }
-
-    // 4-byte (standard UTF-8, shouldn't normally appear in CESU-8 but handle defensively)
-    if ((b0 & 0xF8) == 0xF0) {
-        if (off + 3 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        uint b2 = (uint)data[off + 2];
-        uint b3 = (uint)data[off + 3];
-        *seq_len = 4;
-        return ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
-    }
-
-    *seq_len = 1;
-    return 0;
-}
-
-// Encode a codepoint to CESU-8 into buf, returning bytes written.
-// Astral codepoints (>= U+10000) are encoded as surrogate pairs,
-// each as an independent 3-byte UTF-8 sequence.
-fn uint cesu8_encode_codepoint(uint cp, char* buf, uint buf_remaining) {
-    if (cp < 0x80) {
-        if (buf_remaining < 1) return 0;
-        buf[0] = (char)cp;
-        return 1;
-    }
-    if (cp < 0x800) {
-        if (buf_remaining < 2) return 0;
-        buf[0] = (char)(0xC0 | (cp >> 6));
-        buf[1] = (char)(0x80 | (cp & 0x3F));
-        return 2;
-    }
-    if (cp < 0x10000) {
-        if (buf_remaining < 3) return 0;
-        buf[0] = (char)(0xE0 | (cp >> 12));
-        buf[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
-        buf[2] = (char)(0x80 | (cp & 0x3F));
-        return 3;
-    }
-    // Astral: encode as surrogate pair in CESU-8
-    if (buf_remaining < 6) return 0;
-    uint high = 0xD800 + ((cp - 0x10000) >> 10);
-    uint low  = 0xDC00 + ((cp - 0x10000) & 0x3FF);
-    buf[0] = (char)(0xE0 | (high >> 12));
-    buf[1] = (char)(0x80 | ((high >> 6) & 0x3F));
-    buf[2] = (char)(0x80 | (high & 0x3F));
-    buf[3] = (char)(0xE0 | (low >> 12));
-    buf[4] = (char)(0x80 | ((low >> 6) & 0x3F));
-    buf[5] = (char)(0x80 | (low & 0x3F));
-    return 6;
-}
-
-// Decode the entire CESU-8 string into a heap-allocated uint[] of codepoints.
-// Returns pointer to allocated array (caller must mem::free) and sets *out_n.
-fn uint* cesu8_to_codepoints(char* data, uint blen, uint* out_n) {
-    if (blen == 0) { *out_n = 0; return (uint*)alloc::malloc_try(mem, (sz)(4)) ?? null; }
-    // Upper bound: each codepoint is at least 1 byte
-    uint* cps = (uint*)alloc::malloc_try(mem, (sz)((usz)blen * 4)) ?? null;
+// The code points of `s` in a malloc'd array the caller frees; a surrogate pair
+// becomes one code point and a lone surrogate stays itself. Null on OOM.
+fn uint* string_codepoints(HString* s, uint* out_n) {
+    uint len = s.unit_len();
+    uint* cps = (uint*)alloc::malloc_try(mem, (sz)(((usz)len + 1) * 4)) ?? null;
     if (cps == null) { *out_n = 0; return null; }
     uint n = 0;
-    uint i = 0;
-    while (i < blen) {
-        uint seq_len;
-        uint cp = cesu8_decode_codepoint(data, i, blen, &seq_len);
-        if (seq_len == 0) break;
-        cps[n] = cp;
-        n++;
-        i += seq_len;
+    for (uint i = 0; i < len; i++) {
+        uint cp = s.unit_at(i);
+        if (hstring::is_high_surrogate(cp) && i + 1 < len) {
+            uint low = s.unit_at(i + 1);
+            if (hstring::is_low_surrogate(low)) {
+                cp = hstring::surrogates_to_codepoint(cp, low);
+                i++;
+            }
+        }
+        cps[n++] = cp;
     }
     *out_n = n;
     return cps;
+}
+
+// The string of the code points `cps[0:n]`, interned when short. Null on OOM or
+// when the result would be too long.
+fn HString* codepoints_to_hstring(Heap* heap, uint* cps, uint n) {
+    StrBuf out;
+    out.init(heap);
+    defer out.free();
+    for (uint i = 0; i < n; i++) out.append_codepoint(cps[i]);
+    if (out.failed) return null;
+    return builtin_intern_string(heap, out.bytes());
 }
 
 // GREEK CAPITAL LETTER SIGMA codepoint, has Final_Sigma conditional mapping.
@@ -1059,38 +847,32 @@ fn int case_language_map(CaseLanguage lang, int conv_type, uint* cps, uint n, ui
 // mappings of `lang` (toLocaleLowerCase / toLocaleUpperCase).
 // conv_type: 1 = lowercase, 0 = uppercase.
 // Returns a newly interned HString*, or null on OOM.
-fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv_type, CaseLanguage lang = ROOT) {
-    if (blen == 0) {
+fn HString* unicode_case_convert_str(Heap* heap, HString* s, int conv_type, CaseLanguage lang = ROOT) {
+    if (s.unit_len() == 0) {
         return heap.str(heap::BuiltinStr.EMPTY);
     }
 
     // Fast path: ASCII-only string. Turkic maps the ASCII i and I differently.
-    if (lang != TURKIC) {
-        bool all_ascii = true;
-        for (uint ai = 0; ai < blen; ai++) {
-            if ((uint)data[ai] >= 0x80) { all_ascii = false; break; }
-        }
-        if (all_ascii) {
-            char* out_buf = (char*)alloc::malloc_try(mem, (sz)((usz)blen + 1)) ?? null;
-            if (out_buf == null) return null;
-            for (uint ai = 0; ai < blen; ai++) {
-                char c = data[ai];
-                if (conv_type == 1) { // lowercase
-                    if (c >= 'A' && c <= 'Z') c = (char)((uint)c + 32);
-                } else { // uppercase
-                    if (c >= 'a' && c <= 'z') c = (char)((uint)c - 32);
-                }
-                out_buf[ai] = c;
+    if (lang != TURKIC && s.is_ascii()) {
+        char[] data = s.ascii_bytes();
+        char* out_buf = (char*)alloc::malloc_try(mem, (sz)data.len) ?? null;
+        if (out_buf == null) return null;
+        for (usz ai = 0; ai < data.len; ai++) {
+            char c = data[ai];
+            if (conv_type == 1) { // lowercase
+                if (c >= 'A' && c <= 'Z') c = (char)((uint)c + 32);
+            } else { // uppercase
+                if (c >= 'a' && c <= 'z') c = (char)((uint)c - 32);
             }
-            HString* result = builtin_intern_string(heap, out_buf[:blen]);
-            mem::free(out_buf);
-            return result;
+            out_buf[ai] = c;
         }
+        HString* result = builtin_intern_string(heap, out_buf[:data.len]);
+        mem::free(out_buf);
+        return result;
     }
 
-    // Decode CESU-8 to codepoint array
     uint num_cps;
-    uint* cps = cesu8_to_codepoints(data, blen, &num_cps);
+    uint* cps = string_codepoints(s, &num_cps);
     if (cps == null) return null;
 
     // Apply case mapping: each input codepoint can expand to up to 3 output codepoints
@@ -1125,25 +907,8 @@ fn HString* unicode_case_convert_str(Heap* heap, char* data, uint blen, int conv
     }
     mem::free(cps);
 
-    // Encode output codepoints back to CESU-8
-    // Worst case: 6 bytes per codepoint
-    usz out_bytes_max = (usz)out_n * 6 + 1;
-    char* out_bytes = (char*)alloc::malloc_try(mem, (sz)(out_bytes_max)) ?? null;
-    if (out_bytes == null) {
-        mem::free(out_cps);
-        return null;
-    }
-
-    uint byte_off = 0;
-    for (uint i = 0; i < out_n; i++) {
-        uint written = cesu8_encode_codepoint(out_cps[i], out_bytes + byte_off,
-                                              (uint)(out_bytes_max - byte_off));
-        byte_off += written;
-    }
+    HString* result = codepoints_to_hstring(heap, out_cps, out_n);
     mem::free(out_cps);
-
-    HString* result = builtin_intern_string(heap, out_bytes[:byte_off]);
-    mem::free(out_bytes);
     return result;
 }
 
@@ -1156,9 +921,7 @@ fn void builtin_string_proto_toLowerCase(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-    HString* result = unicode_case_convert_str(ctx.heap, data, len, 1);
+    HString* result = unicode_case_convert_str(ctx.heap, s_hstr, 1);
     if (result == null) {
         ctx.result_undefined();
         return;
@@ -1175,9 +938,7 @@ fn void builtin_string_proto_toUpperCase(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-    HString* result = unicode_case_convert_str(ctx.heap, data, len, 0);
+    HString* result = unicode_case_convert_str(ctx.heap, s_hstr, 0);
     if (result == null) {
         ctx.result_undefined();
         return;
@@ -1203,18 +964,20 @@ $if $feat(INTL):
     TVal? first = requested.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
     if (try tag = first) {
         HString* t = (HString*)tag.get_heapptr();
-        char[] text = t.get_cstr()[:t.blen];
-        usz end = 0;
-        while (end < text.len && text[end] != '-') end++;
-        char[] language = text[:end];
-        if (mem_eq_bytes(language, "tr") || mem_eq_bytes(language, "az")) {
-            lang = TURKIC;
-        } else if (mem_eq_bytes(language, "lt")) {
-            lang = LITHUANIAN;
+        if (t.is_ascii()) {
+            char[] text = t.ascii_bytes();
+            usz end = 0;
+            while (end < text.len && text[end] != '-') end++;
+            char[] language = text[:end];
+            if (mem_eq_bytes(language, "tr") || mem_eq_bytes(language, "az")) {
+                lang = TURKIC;
+            } else if (mem_eq_bytes(language, "lt")) {
+                lang = LITHUANIAN;
+            }
         }
     }
 $endif
-    HString* result = unicode_case_convert_str(ctx.heap, s_hstr.get_cstr(), s_hstr.blen, conv_type, lang);
+    HString* result = unicode_case_convert_str(ctx.heap, s_hstr, conv_type, lang);
     if (result == null) {
         ctx.result_undefined();
         return;
@@ -1267,65 +1030,30 @@ $else
     // but codepoints are equivalent after normalization. Short-circuit
     // byte-equal strings: most compare() calls (localeSort, Intl.Collator
     // fast path, etc.) are on pre-normalized ASCII.
-    if (s_hstr == that_hstr ||
-            (s_hstr.blen == that_hstr.blen &&
-             mem::equals(s_hstr.get_cstr(), that_hstr.get_cstr(), (usz)s_hstr.blen))) {
+    if (hstring::units_equal(s_hstr, that_hstr)) {
         ctx.result_number(0.0);
         return;
     }
 
-    char* a = s_hstr.get_cstr();
-    uint a_len = s_hstr.blen;
-    char* b = that_hstr.get_cstr();
-    uint b_len = that_hstr.blen;
-
-    // Decode both strings to UTF-32 codepoints
-    uint[4096] a_cp_buf;
-    uint[4096] b_cp_buf;
-    uint* a_src = &a_cp_buf[0];
-    uint* b_src = &b_cp_buf[0];
-    int a_cap = 4096;
-    int b_cap = 4096;
-    bool a_heap = false;
-    bool b_heap = false;
-
-    // First pass: estimate codepoint count and decide on storage.
-    int a_n = (int)utf8_codepoint_count(a, a_len);
-    int b_n = (int)utf8_codepoint_count(b, b_len);
-    if (a_n > 4096) {
-        a_src = (uint*)alloc::malloc_try(mem, (sz)(a_n * 4)) ?? null;
-        if (a_src == null) { a_src = &a_cp_buf[0]; a_n = 4096; } else { a_heap = true; a_cap = a_n; }
-    }
-    if (b_n > 4096) {
-        b_src = (uint*)alloc::malloc_try(mem, (sz)(b_n * 4)) ?? null;
-        if (b_src == null) { b_src = &b_cp_buf[0]; b_n = 4096; } else { b_heap = true; b_cap = b_n; }
-    }
-    a_n = utf8_decode(a_src, a_cap, a, (uint)a_len);
-    b_n = utf8_decode(b_src, b_cap, b, (uint)b_len);
-
-    // NFC normalize both
+    uint a_n; uint b_n;
+    uint* a_src = string_codepoints(s_hstr, &a_n);
+    uint* b_src = string_codepoints(that_hstr, &b_n);
     int a_norm_len = 0;
     int b_norm_len = 0;
-    uint* a_norm = unicode_bindings::unicode_normalize_simple(a_src, a_n, unicode_bindings::UNICODE_NFC, &a_norm_len);
-    uint* b_norm = unicode_bindings::unicode_normalize_simple(b_src, b_n, unicode_bindings::UNICODE_NFC, &b_norm_len);
+    uint* a_norm = a_src == null ? null
+        : unicode_bindings::unicode_normalize_simple(a_src, (int)a_n, unicode_bindings::UNICODE_NFC, &a_norm_len);
+    uint* b_norm = b_src == null ? null
+        : unicode_bindings::unicode_normalize_simple(b_src, (int)b_n, unicode_bindings::UNICODE_NFC, &b_norm_len);
     defer {
-        if (a_heap) mem::free(a_src);
-        if (b_heap) mem::free(b_src);
+        if (a_src != null) mem::free(a_src);
+        if (b_src != null) mem::free(b_src);
         if (a_norm != null) mem::free(a_norm);
         if (b_norm != null) mem::free(b_norm);
     }
 
-    // If normalization failed, fall back to byte compare.
+    // If normalization failed, fall back to comparing the code units.
     if (a_norm == null || b_norm == null) {
-        usz min_len = a_len < b_len ? (usz)a_len : (usz)b_len;
-        for (usz i = 0; i < min_len; i++) {
-            int diff = (int)(char)a[i] - (int)(char)b[i];
-            if (diff != 0) {
-                ctx.result_number((double)diff);
-                return;
-            }
-        }
-        ctx.result_number((double)((int)a_len - (int)b_len));
+        ctx.result_number((double)hstring::units_compare(s_hstr, that_hstr));
         return;
     }
 
@@ -1339,61 +1067,6 @@ $else
     }
     ctx.result_number((double)(a_norm_len - b_norm_len));
 $endif
-}
-
-// Decode a UTF-8 byte sequence into uint32_t codepoints. Returns the
-// number of codepoints decoded. Invalid sequences are replaced with
-// U+FFFD (replacement character). `out` must have capacity >= byte count.
-fn int utf8_decode(uint* out, int out_cap, char* s, uint len) {
-    int n = 0;
-    uint i = 0;
-    while (i < len && n < out_cap) {
-        char c = s[i];
-        uint cp;
-        if ((c & 0x80) == 0) {
-            cp = (uint)c;
-            i += 1;
-        } else if ((c & 0xE0) == 0xC0) {
-            if (i + 1 >= len) { cp = 0xFFFD; i = len; }
-            else {
-                cp = ((uint)(c & 0x1F) << 6) | (uint)(s[i+1] & 0x3F);
-                i += 2;
-            }
-        } else if ((c & 0xF0) == 0xE0) {
-            if (i + 2 >= len) { cp = 0xFFFD; i = len; }
-            else {
-                cp = ((uint)(c & 0x0F) << 12) |
-                     ((uint)(s[i+1] & 0x3F) << 6) |
-                     (uint)(s[i+2] & 0x3F);
-                i += 3;
-            }
-        } else if ((c & 0xF8) == 0xF0) {
-            if (i + 3 >= len) { cp = 0xFFFD; i = len; }
-            else {
-                cp = ((uint)(c & 0x07) << 18) |
-                     ((uint)(s[i+1] & 0x3F) << 12) |
-                     ((uint)(s[i+2] & 0x3F) << 6) |
-                     (uint)(s[i+3] & 0x3F);
-                i += 4;
-            }
-        } else {
-            cp = 0xFFFD;
-            i += 1;
-        }
-        out[n++] = cp;
-    }
-    return n;
-}
-
-// Estimate the number of UTF-32 codepoints in a UTF-8 byte sequence.
-// Overestimates for multi-byte sequences (1 byte → 1 cp minimum).
-fn uint utf8_codepoint_count(char* s, uint len) {
-    uint n = 0;
-    for (uint i = 0; i < len; i++) {
-        char c = s[i];
-        if ((c & 0xC0) != 0x80) n++;  // not a continuation byte
-    }
-    return n;
 }
 
 // String.prototype.trim()
@@ -1410,46 +1083,9 @@ fn void builtin_string_proto_trim(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-
-    // Trim leading whitespace (by codepoint).
-    uint start = 0;
-    while (start < len) {
-        uint seq_len;
-        uint cp = decode_codepoint_at(data, start, len, &seq_len);
-        if (!is_ecma_ws_codepoint(cp)) break;
-        start += seq_len;
-    }
-
-    // All whitespace
-    if (start >= len) {
-        ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
-        return;
-    }
-
-    // Trim trailing whitespace (by codepoint).
-    uint end = len;
-    while (end > start) {
-        // Walk backward to find the lead byte of the last codepoint
-        uint lead = end - 1;
-        while (lead > start && ((uint)data[lead] & 0xC0) == 0x80) {
-            lead--;
-        }
-        uint seq_len;
-        uint cp = decode_codepoint_at(data, lead, end, &seq_len);
-        if (!is_ecma_ws_codepoint(cp)) break;
-        end = lead;
-    }
-
-    // Interned straight out of `data`: the trimmed run is contiguous, so a
-    // fixed staging buffer could only clamp and silently drop the tail of any
-    // string over 255 bytes.
-    uint substr_len = end - start;
-    HString* result = substr_len == 0
-        ? ctx.heap.str(heap::BuiltinStr.EMPTY)
-        : builtin_intern_slice(ctx.heap, data[start : substr_len]);
-    ctx.result_string(result);
+    uint start; uint end;
+    ws_trim_bounds(s_hstr, &start, &end);
+    ctx.result_string(ctx.heap.str_slice(s_hstr, start, end));
 }
 
 // String.prototype.split(separator, limit)
@@ -1514,8 +1150,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         ctx.result_undefined();
         return;
     }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
+    uint len = s_hstr.unit_len();
 
     // Create result array
     HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -1607,28 +1242,21 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         return;
     }
 
-    char* sep_data = sep_hstr.get_cstr();
-    uint sep_len = sep_hstr.blen;
+    uint sep_len = sep_hstr.unit_len();
 
     // Empty separator: split by UTF-16 code unit (ECMA-262 §15.5.4.14 step 11,
     // T is a String of length 1 containing element q of S, where S is
     // indexed by UTF-16 code unit, not Unicode codepoint or byte).
     if (sep_len == 0) {
-        uint clen = s_hstr.unit_len();
-        uint count = clen < limit ? clen : limit;
+        uint count = len < limit ? len : limit;
         HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
         TVal len_val;
         len_val.set_fastint((long)count);
         arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, ctx.heap);
-        char[] cdata = s_hstr.get_data();
-        uint byte_off = 0;
         for (uint i = 0; i < count; i++) {
-            uint unit_len = hstring::utf16_unit_byte_len(cdata, byte_off);
-            HString* ch_str = builtin_intern_slice(ctx.heap, cdata[byte_off : unit_len]);
             TVal elem;
-            elem.set_string_borrowed(ch_str);
+            elem.set_string_borrowed(ctx.heap.str_from_unit(s_hstr.unit_at(i)));
             arr.put_prop(ctx.heap.int_to_hstring((long)i), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
-            byte_off += unit_len;
         }
         ctx.result_object(arr);
         return;
@@ -1640,30 +1268,10 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
     HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
 
     while (search_pos + sep_len <= len && arr_idx < limit) {
-        int found_pos = -1;
-        for (uint i = search_pos; i + sep_len <= len; i++) {
-            bool match = true;
-            for (uint j = 0; j < sep_len; j++) {
-                if (data[i + j] != sep_data[j]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) { found_pos = (int)i; break; }
-        }
-
+        int found_pos = hstring::find_units(s_hstr, sep_hstr, search_pos);
         if (found_pos < 0) break;
 
-        uint substr_len = (uint)found_pos - search_pos;
-        HString* substr;
-        if (substr_len == 0) {
-            substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
-        } else {
-            // Interned straight out of `data`: the piece is already contiguous,
-            // so a fixed staging buffer would only be able to clamp a long piece
-            // and silently drop the rest of it.
-            substr = builtin_intern_slice(ctx.heap, data[search_pos : substr_len]);
-        }
+        HString* substr = ctx.heap.str_slice(s_hstr, search_pos, (uint)found_pos);
 
         TVal elem;
         elem.set_string_borrowed(substr);
@@ -1675,16 +1283,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
 
     // Add remaining part if not at limit
     if (arr_idx < limit) {
-        uint substr_len = len - search_pos;
-        HString* substr;
-        if (substr_len == 0) {
-            substr = ctx.heap.str(heap::BuiltinStr.EMPTY);
-        } else {
-            // Same as the per-match piece above: intern the tail in place. This
-            // is the no-match case too (`"...".split(absent)` yields the whole
-            // string), where a clamp truncated every string over 255 bytes.
-            substr = builtin_intern_slice(ctx.heap, data[search_pos : substr_len]);
-        }
+        HString* substr = ctx.heap.str_slice(s_hstr, search_pos, len);
         TVal elem;
         elem.set_string_borrowed(substr);
         arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -1708,66 +1307,40 @@ fn void builtin_string_proto_concat(BuiltinContext* ctx) {
         return;
     }
 
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-
-    // Concatenate all into a buffer. First, coerce and collect all argument strings.
-    usz max_args = ctx.argc < 256 ? (usz)ctx.argc : 256;
-    HString*[256] arg_strs;
-    // Accumulated in 64 bits: 256 arguments each near the cap sum past 2^32,
-    // and a wrapped total would undersize the buffer the copies below fill.
-    ulong total64 = (ulong)len;
-    for (usz i = 0; i < max_args; i++) {
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    out.append_hstring(s_hstr);
+    // Coerce each argument in order, as a later argument's conversion may have
+    // side effects.
+    for (usz i = 0; i < ctx.argc; i++) {
         HString* arg_str = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg + i]);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
-        arg_strs[i] = arg_str;
-        if (arg_str != null) total64 += (ulong)arg_str.blen;
+        if (arg_str != null) out.append_hstring(arg_str);
     }
-    if (hstring::length_exceeds_max(total64)) {
-        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
-        return;
-    }
-    uint total_len = (uint)total64;
-
-    // Allocate output buffer and copy.
-    char* out_buf = (char*)alloc::malloc_try(mem, (sz)((usz)total_len + 1)) ?? null;
-    if (out_buf == null) { ctx.result_string(s_hstr); return; }
-    defer mem::free(out_buf);
-
-    usz offset = 0;
-    for (usz i = 0; i < (usz)len; i++) out_buf[offset++] = data[i];
-    for (usz i = 0; i < max_args; i++) {
-        HString* arg_str = arg_strs[i];
-        if (arg_str == null) continue;
-        char* arg_data = arg_str.get_cstr();
-        uint arg_len = arg_str.blen;
-        for (usz j = 0; j < (usz)arg_len; j++) out_buf[offset++] = arg_data[j];
-    }
-    out_buf[offset] = 0;
-
-    HString* result = builtin_intern_string(ctx.heap, out_buf[:offset]);
-    ctx.result_string(result);
+    out.finish(ctx);
 }
 
 // Append GetSubstitution(`rep`) to `out` for the match
 // input[match_start..match_end) of a string search value. That match has no
 // captures, so only `$$`, `$&`, `` $` `` and `$'` are special.
-fn void string_get_substitution(StrBuf* out, char[] rep, char[] input,
-                                usz match_start, usz match_end) {
-    usz i = 0;
-    while (i < rep.len && !out.failed) {
-        usz lit = i;
-        while (lit < rep.len && rep[lit] != '$') lit++;
+fn void string_get_substitution(StrBuf* out, HString* rep, HString* input,
+                                uint match_start, uint match_end) {
+    uint n = rep.unit_len();
+    uint i = 0;
+    while (i < n && !out.failed) {
+        uint lit = i;
+        while (lit < n && rep.unit_at(lit) != '$') lit++;
         if (lit > i) {
-            out.append_bytes(rep[i : lit - i]);
+            out.append_hstring_range(rep, i, lit);
             i = lit;
             continue;
         }
-        switch (i + 1 < rep.len ? rep[i + 1] : 0) {
+        switch (i + 1 < n ? rep.unit_at(i + 1) : 0) {
             case '$': out.append_char('$');
-            case '&': out.append_bytes(input[match_start : match_end - match_start]);
-            case '`': out.append_bytes(input[:match_start]);
-            case '\'': out.append_bytes(input[match_end..]);
+            case '&': out.append_hstring_range(input, match_start, match_end);
+            case '`': out.append_hstring_range(input, 0, match_start);
+            case '\'': out.append_hstring_range(input, match_end, input.unit_len());
             default:
                 out.append_char('$');
                 i++;
@@ -1792,8 +1365,6 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     }
 
     TVal* search_val = &ctx.regs[ctx.base_reg];
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
 
     // Check for @@replace protocol (ECMA-262 §21.1.3.14 step 2).
     // Step 2: If searchValue is neither undefined nor null, GetMethod(searchValue, @@replace).
@@ -1870,10 +1441,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     }
 
     // Step 8: Search for first occurrence of searchString.
-    char* search_data = search_hstr.get_cstr();
-    uint search_len = search_hstr.blen;
-
-    int found_pos = hstring::find_bytes(input[:input_len], search_hstr.get_data());
+    int found_pos = hstring::find_units(s_hstr, search_hstr, 0);
 
     if (found_pos < 0) {
         ctx.result_string(s_hstr);
@@ -1883,16 +1451,13 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     StrBuf out;
     out.init(ctx.heap);
     defer out.free();
-    usz match_end = (usz)found_pos + search_len;
-    out.append_bytes(input[0 : found_pos]);
+    uint match_end = (uint)found_pos + search_hstr.unit_len();
+    out.append_hstring_range(s_hstr, 0, (uint)found_pos);
+    HString* replace_str = replace_str_precomp;
     if (str_replace_is_fn && ctx.heap.call_fn != null && ctx.vm != null) {
         TVal[3] fn_args;
-        HString* match_str = builtin_intern_slice(ctx.heap, input[found_pos : (usz)search_len]);
-        if (match_str == null) match_str = ctx.heap.str(heap::BuiltinStr.EMPTY);
-        fn_args[0].set_string_borrowed(match_str);
-        // position argument is the UTF-16 code-unit index, not the CESU-8
-        // byte offset (found_pos) used for slicing `input`.
-        fn_args[1].set_fastint((long)s_hstr.byte_offset_to_char_offset((uint)found_pos));
+        fn_args[0].set_string_borrowed(ctx.heap.str_slice(s_hstr, (uint)found_pos, match_end));
+        fn_args[1].set_fastint((long)found_pos);
         fn_args[2].set_string_borrowed(s_hstr);
         TVal this_val; this_val.set_undefined();
         TVal res = ctx.heap.call_fn(ctx.vm, replace_val_str, &fn_args[0], 3, this_val);
@@ -1902,14 +1467,12 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
             ctx.heap.has_error = false;
             return;
         }
-        HString* replace_str = builtin_to_string_vm(ctx, &res);
+        replace_str = builtin_to_string_vm(ctx, &res);
         if (ctx.should_throw) return;
         if (replace_str == null) replace_str = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
-        string_get_substitution(&out, replace_str.get_data(), s_hstr.get_data(), match_end - search_len, match_end);
-    } else {
-        string_get_substitution(&out, replace_str_precomp.get_data(), s_hstr.get_data(), match_end - search_len, match_end);
     }
-    out.append_bytes(s_hstr.get_data()[match_end..]);
+    string_get_substitution(&out, replace_str, s_hstr, (uint)found_pos, match_end);
+    out.append_hstring_range(s_hstr, match_end, s_hstr.unit_len());
     out.finish(ctx);
 }
 
@@ -1996,10 +1559,9 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
             }
             // Step 2.b.iii: flags must contain "g".
             bool has_g = false;
-            char* flags_cstr = flags_hstr.get_cstr();
-            usz flags_len = flags_hstr.blen;
-            for (usz i = 0; i < flags_len; i++) {
-                if (flags_cstr[i] == 'g') { has_g = true; break; }
+            uint flags_len = flags_hstr.unit_len();
+            for (uint i = 0; i < flags_len; i++) {
+                if (flags_hstr.unit_at(i) == 'g') { has_g = true; break; }
             }
             if (!has_g) {
                 arr_throw_type_error(ctx, "String.prototype.replaceAll called with a non-global regular expression");
@@ -2048,8 +1610,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
     HString* s_hstr = builtin_to_string_vm(ctx, &this_tv);
     if (ctx.should_throw) return;
     if (s_hstr == null) return;
-    char* input = s_hstr.get_cstr();
-    uint input_len = s_hstr.blen;
+    uint input_len = s_hstr.unit_len();
 
     // Step 4: searchString = ToString(searchValue).
     if (is_symbol_val(search_val)) {
@@ -2059,8 +1620,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
     HString* search_hstr = builtin_to_string_vm(ctx, &search_val);
     if (ctx.should_throw) return;
     if (search_hstr == null) return;
-    char* search_data = search_hstr.get_cstr();
-    uint search_len = search_hstr.blen;
+    uint search_len = search_hstr.unit_len();
 
     // Step 5/6: functionalReplace = IsCallable(replaceValue); otherwise
     // ToString(replaceValue).
@@ -2078,33 +1638,31 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
         if (replace_hstr == null) return;
     }
 
-    // Nonempty searches advance by their byte length; empty matches advance one code unit.
+    // Nonempty searches advance by their length; empty matches advance one code unit.
     uint advance_by = search_len == 0 ? 1 : search_len;
 
-    // Steps 8-11: find all match positions via a (byte-based) StringIndexOf
-    // loop, matching left-to-right, non-overlapping, advancing by
-    // advanceBy on every step (including empty-string matches).
+    // Steps 8-11: find all match positions via a StringIndexOf loop, matching
+    // left-to-right, non-overlapping, advancing by advanceBy on every step
+    // (including empty-string matches).
     StrBuf out;
     out.init(ctx.heap);
     defer out.free();
-    int pos = 0;
-    int last_end = 0;
-    int ilen = (int)input_len;
+    uint pos = 0;
+    uint last_end = 0;
 
-    while (!out.failed) {
-        pos = hstring::find_bytes(input[:input_len], search_hstr.get_data(), (uint)pos);
-        if (pos < 0) break;
+    while (!out.failed && pos <= input_len) {
+        int found = hstring::find_units(s_hstr, search_hstr, pos);
+        if (found < 0) break;
+        pos = (uint)found;
 
         // Copy the unmatched prefix since the previous match.
-        out.append_bytes(input[last_end : pos - last_end]);
+        out.append_hstring_range(s_hstr, last_end, pos);
 
         // Step 14: compute replacement for this match position.
         if (functional_replace) {
             TVal[3] fn_args;
             fn_args[0].set_string_borrowed(search_hstr);
-            // position argument is the UTF-16 code-unit index, not the
-            // CESU-8 byte offset (pos) used for slicing `input`.
-            fn_args[1].set_fastint((long)s_hstr.byte_offset_to_char_offset((uint)pos));
+            fn_args[1].set_fastint((long)pos);
             fn_args[2].set_string_borrowed(s_hstr);
             TVal this_val; this_val.set_undefined();
             TVal res = ctx.heap.call_fn(ctx.vm, replace_val, &fn_args[0], 3, this_val);
@@ -2121,27 +1679,20 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
             HString* replacement_str = builtin_to_string_vm(ctx, &res);
             if (ctx.should_throw) return;
             if (replacement_str == null) return;
-            out.append_bytes(replacement_str.get_data());
+            out.append_hstring(replacement_str);
         } else {
             // GetSubstitution with an always-empty captures list: only
             // $$, $&, $`, and $' are recognized; $N/$NN/$<...> stay literal
             // since there are no captures (num_caps == 0).
-            string_get_substitution(&out, replace_hstr.get_data(), s_hstr.get_data(),
-                (usz)pos, (usz)pos + search_len);
+            string_get_substitution(&out, replace_hstr, s_hstr, pos, pos + search_len);
         }
 
-        last_end = pos + (int)search_len;
-        if (search_len == 0 && pos < ilen) {
-            // CESU-8 encodes each UTF-16 code unit in one to three bytes.
-            char lead = input[(uint)pos];
-            pos += lead < 0x80 ? 1 : lead < 0xE0 ? 2 : 3;
-        } else {
-            pos += (int)advance_by;
-        }
+        last_end = pos + search_len;
+        pos += advance_by;
     }
 
     // Copy remaining characters after the last match.
-    out.append_bytes(input[last_end : ilen - last_end]);
+    out.append_hstring_range(s_hstr, last_end, input_len);
     out.finish(ctx);
 }
 
@@ -2155,8 +1706,6 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
 
     HString* search_hstr;
     if (ctx.argc > 0) {
@@ -2175,9 +1724,6 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
     }
     if (search_hstr == null) { ctx.result_boolean(false); return; }
 
-    // position argument is in code units; convert to byte offset before
-    // searching. Byte-level substring matching itself stays correct on
-    // CESU-8-canonical data (a match can't straddle a code-unit boundary).
     uint clen = s_hstr.unit_len();
     double pos_d = (ctx.argc > 1) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -2189,14 +1735,7 @@ fn void builtin_string_proto_includes(BuiltinContext* ctx) {
     } else {
         pos_units = (uint)(long)pos_d;
     }
-    uint pos = s_hstr.char_offset_to_byte_offset(pos_units);
-
-    char* search_data = search_hstr.get_cstr();
-    uint search_len = search_hstr.blen;
-
-    if (search_len == 0) { ctx.result_boolean(true); return; }
-
-    ctx.result_boolean(hstring::find_bytes(s_hstr.get_data(), search_hstr.get_data(), pos) >= 0);
+    ctx.result_boolean(hstring::find_units(s_hstr, search_hstr, pos_units) >= 0);
 }
 
 // String.prototype.startsWith(searchString, position)
@@ -2205,8 +1744,6 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
 
     HString* search_hstr;
     if (ctx.argc > 0) {
@@ -2225,7 +1762,6 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
     }
     if (search_hstr == null) { ctx.result_boolean(false); return; }
 
-    // position argument is in code units; convert to byte offset.
     uint clen = s_hstr.unit_len();
     double pos_d = (ctx.argc > 1) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]) : 0.0;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -2237,14 +1773,7 @@ fn void builtin_string_proto_startsWith(BuiltinContext* ctx) {
     } else {
         pos_units = (uint)(long)pos_d;
     }
-    uint pos = s_hstr.char_offset_to_byte_offset(pos_units);
-
-    char* search_data = search_hstr.get_cstr();
-    uint search_len = search_hstr.blen;
-
-    if (pos + search_len > len) { ctx.result_boolean(false); return; }
-
-    ctx.result_boolean(data[pos : search_len] == search_data[:search_len]);
+    ctx.result_boolean(s_hstr.matches_at(pos_units, search_hstr));
 }
 
 // String.prototype.endsWith(searchString, endPosition)
@@ -2253,8 +1782,6 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
 
     HString* search_hstr;
     if (ctx.argc > 0) {
@@ -2273,7 +1800,6 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
     }
     if (search_hstr == null) { ctx.result_boolean(false); return; }
 
-    // endPosition argument is in code units; convert to byte offset.
     uint clen = s_hstr.unit_len();
     double end_d = (ctx.argc > 1) ? builtin_to_integer_vm(ctx, &ctx.regs[ctx.base_reg + 1]) : (double)clen;
     if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -2285,15 +1811,9 @@ fn void builtin_string_proto_endsWith(BuiltinContext* ctx) {
     } else {
         end_units = (uint)(long)end_d;
     }
-    uint end_pos = s_hstr.char_offset_to_byte_offset(end_units);
-
-    char* search_data = search_hstr.get_cstr();
-    uint search_len = search_hstr.blen;
-
-    if (search_len > end_pos) { ctx.result_boolean(false); return; }
-
-    uint start = end_pos - search_len;
-    ctx.result_boolean(data[start : search_len] == search_data[:search_len]);
+    uint search_len = search_hstr.unit_len();
+    if (search_len > end_units) { ctx.result_boolean(false); return; }
+    ctx.result_boolean(s_hstr.matches_at(end_units - search_len, search_hstr));
 }
 
 // String.prototype.repeat(count)
@@ -2318,7 +1838,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     // a representable result for every finite count, so `"".repeat(2**32)` is
     // "" and not a RangeError. The count stays a double until here, since
     // narrowing it first is what let 2**32 wrap to 0 and 1e10 to 1410065408.
-    if (count_d == 0 || s_hstr.blen == 0) {
+    if (count_d == 0 || s_hstr.unit_len() == 0) {
         HString* empty = ctx.heap.str(heap::BuiltinStr.EMPTY);
         ctx.result_string(empty);
         return;
@@ -2327,86 +1847,48 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     // The product is formed in double, which represents every finite count
     // exactly up to 2^53 and saturates rather than wrapping above that, so a
     // count of 2^32 or 1e10 is compared at its true magnitude.
-    double total_d = (double)s_hstr.blen * count_d;
+    double total_d = (double)s_hstr.unit_len() * count_d;
     if (total_d > (double)hstring::MAX_STRING_BYTES) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
         return;
     }
     ulong count64 = (ulong)count_d;
 
-    // Build repeated string
-    usz total = (usz)s_hstr.blen * (usz)count64;
-    char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, total + 1);
-    if (buf == null) { ctx.result_undefined(); return; }
-    char* src = s_hstr.get_cstr();
-    for (ulong i = 0; i < count64; i++) {
-        mem::copy(&buf[i * (ulong)s_hstr.blen], src, (sz)(s_hstr.blen));
-    }
-    buf[total] = 0;
-
-    HString* result = ctx.heap.str_intern(buf[:total]);
-    if (result != null) {
-        ctx.result_string(result);
-    } else { ctx.result_undefined(); }
-    ctx.heap.free_func(ctx.heap.heap_udata, buf);
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    for (ulong i = 0; i < count64 && !out.failed; i++) out.append_hstring(s_hstr);
+    out.finish(ctx);
 }
 
 // String.prototype.trimStart()
 fn void builtin_string_proto_trimStart(BuiltinContext* ctx) {
-    HString* s_hstr = string_proto_get_this(ctx);
-    StringRef receiver = hstring::string_ref(s_hstr);
-    defer receiver.release(ctx.heap);
-    if (s_hstr == null) { ctx.result_undefined(); return; }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-    uint start = 0;
-    while (start < len) {
-        uint seq_len;
-        uint cp = decode_codepoint_at(data, start, len, &seq_len);
-        if (!is_ecma_ws_codepoint(cp)) break;
-        start += seq_len;
-    }
-    if (start == 0) {
-        ctx.result_string(s_hstr); return;
-    }
-    HString* result = ctx.heap.str_intern(data[start:len - start]);
-    if (result != null) {
-        ctx.result_string(result);
-    } else { ctx.result_undefined(); }
+    string_trim_side(ctx, true);
 }
 
 // String.prototype.trimEnd()
 fn void builtin_string_proto_trimEnd(BuiltinContext* ctx) {
+    string_trim_side(ctx, false);
+}
+
+// trimStart (`lead`) or trimEnd: the string itself when nothing is removed.
+fn void string_trim_side(BuiltinContext* ctx, bool lead) {
     HString* s_hstr = string_proto_get_this(ctx);
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-    uint end = len;
-    while (end > 0) {
-        // Walk backward to find the lead byte of the last codepoint
-        uint lead = end - 1;
-        while (lead > 0 && ((uint)data[lead] & 0xC0) == 0x80) {
-            lead--;
-        }
-        uint seq_len;
-        uint cp = decode_codepoint_at(data, lead, end, &seq_len);
-        if (!is_ecma_ws_codepoint(cp)) break;
-        end = lead;
+    uint start; uint end;
+    ws_trim_bounds(s_hstr, &start, &end, lead, !lead);
+    if (start == 0 && end == s_hstr.unit_len()) {
+        ctx.result_string(s_hstr);
+        return;
     }
-    if (end == len) {
-        ctx.result_string(s_hstr); return;
-    }
-    HString* result = ctx.heap.str_intern(data[0:end]);
-    if (result != null) {
-        ctx.result_string(result);
-    } else { ctx.result_undefined(); }
+    ctx.result_string(ctx.heap.str_slice(s_hstr, start, end));
 }
 
 // String.prototype.codePointAt(pos)
 //
-// Indexed by UTF-16 code unit (`char_length()`). If the unit at `pos` is a
+// Indexed by UTF-16 code unit. If the unit at `pos` is a
 // high surrogate and `pos+1` is a low surrogate, combine them into the
 // astral codepoint; otherwise return the code unit as-is (matches
 // CharCodeAt semantics for non-surrogate / lone-surrogate positions).
@@ -2457,11 +1939,7 @@ fn void builtin_string_proto_at(BuiltinContext* ctx) {
     if (idx < 0) { idx = (long)clen + idx; }
     if (idx < 0 || idx >= (long)clen) { ctx.result_undefined(); return; }
 
-    uint cp = s_hstr.unit_at((uint)idx);
-    char[4] cbuf;
-    uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
-    HString* result = builtin_intern_string(ctx.heap, cbuf[:cblen]);
-    ctx.result_string(result);
+    ctx.result_string(ctx.heap.str_from_unit(s_hstr.unit_at((uint)idx)));
 }
 
 // Truncate fills at UTF-16 code-unit boundaries, preserving lone surrogates.
@@ -2473,6 +1951,7 @@ macro void @string_pad(BuiltinContext* ctx, $at_start) {
 
     double max_len_d = (ctx.argc > 0) ? builtin_to_number_vm(ctx, &ctx.regs[ctx.base_reg]) : 0.0;
     if (math::is_nan(max_len_d) || max_len_d < 0) { max_len_d = 0; }
+    if (max_len_d > 4294967295.0) max_len_d = 4294967295.0;
     uint max_len = (uint)(long)max_len_d;
 
     uint str_units = s_hstr.unit_len();
@@ -2486,49 +1965,29 @@ macro void @string_pad(BuiltinContext* ctx, $at_start) {
     } else {
         fill_hstr = builtin_intern_string(ctx.heap, " ");
     }
-    if (fill_hstr == null || fill_hstr.blen == 0) {
+    if (fill_hstr == null || fill_hstr.unit_len() == 0) {
         ctx.result_string(s_hstr); return;
     }
 
-    uint pad_units = max_len - str_units;
-    char[] fill_data = fill_hstr.get_data();
-    char[] src = s_hstr.get_data();
-
-    // Worst case every pad unit is a 4-byte codepoint. Checked in 64 bits
-    // against the cap before allocating: maxLength is caller-controlled up to
-    // 2^32, which would otherwise reserve gigabytes for one padded string.
-    ulong cap64 = (ulong)pad_units * 4 + (ulong)src.len + 1;
-    if (hstring::length_exceeds_max(cap64)) {
+    // maxLength is caller-controlled up to 2^32, so check it against the cap
+    // before building anything.
+    if (hstring::length_exceeds_max((ulong)max_len)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
         return;
     }
-    usz cap = (usz)cap64;
-    char* buf_ptr = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, cap);
-    if (buf_ptr == null) { ctx.result_undefined(); return; }
-
-    usz off = 0;
-    if (!$at_start) {
-        if (src.len > 0) mem::copy(buf_ptr, src.ptr, (sz)src.len);
-        off = src.len;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    if (!$at_start) out.append_hstring(s_hstr);
+    uint fill_len = fill_hstr.unit_len();
+    uint remaining = max_len - str_units;
+    while (remaining >= fill_len && !out.failed) {
+        out.append_hstring(fill_hstr);
+        remaining -= fill_len;
     }
-    uint fill_byte_off = 0;
-    for (uint i = 0; i < pad_units; i++) {
-        if (fill_byte_off >= fill_hstr.blen) { fill_byte_off = 0; }
-        uint ulen = hstring::utf16_unit_byte_len(fill_data, fill_byte_off);
-        for (uint k = 0; k < ulen; k++) { buf_ptr[off + k] = fill_data[fill_byte_off + k]; }
-        off += ulen;
-        fill_byte_off += ulen;
-    }
-    if ($at_start) {
-        if (src.len > 0) mem::copy(&buf_ptr[off], src.ptr, (sz)src.len);
-        off += src.len;
-    }
-
-    HString* result = ctx.heap.str_intern(buf_ptr[:off]);
-    ctx.heap.free_func(ctx.heap.heap_udata, buf_ptr);
-    if (result != null) {
-        ctx.result_string(result);
-    } else { ctx.result_undefined(); }
+    out.append_hstring_range(fill_hstr, 0, remaining);
+    if ($at_start) out.append_hstring(s_hstr);
+    out.finish(ctx);
 }
 
 fn void builtin_string_proto_padStart(BuiltinContext* ctx) => @string_pad(ctx, true);
@@ -2540,9 +1999,6 @@ fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {
     StringRef receiver = hstring::string_ref(s_hstr);
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
-    char* data = s_hstr.get_cstr();
-    uint len = s_hstr.blen;
-    // Indexed by UTF-16 code unit for the argument/result.
     uint clen = s_hstr.unit_len();
 
     HString* search_hstr;
@@ -2570,32 +2026,7 @@ fn void builtin_string_proto_lastIndexOf(BuiltinContext* ctx) {
     // For lastIndexOf, search from min(pos, clen) backwards, in code units.
     int start_units = (int)(long)pos_d;
     if (start_units > (int)clen) start_units = (int)clen;
-    int start = (int)s_hstr.char_offset_to_byte_offset((uint)start_units);
-
-    char* search_data = search_hstr.get_cstr();
-    uint search_len = search_hstr.blen;
-
-    if (search_len == 0) { ctx.result_fastint((long)(start_units < 0 ? 0 : (long)start_units)); return; }
-    if (search_len > len) { ctx.result_fastint(-1); return; }
-    if (start > (int)(len - search_len)) start = (int)(len - search_len);
-
-    int result = hstring::rfind_bytes(s_hstr.get_data(), search_hstr.get_data(), (uint)start);
-    if (result >= 0) {
-        if (s_hstr.flags.is_ascii) {
-            ctx.result_fastint((long)result);
-        } else {
-            uint unit_idx = 0;
-            uint byte_off = 0;
-            char[] data_slice = s_hstr.get_data();
-            while (byte_off < (uint)result) {
-                byte_off += hstring::utf16_unit_byte_len(data_slice, byte_off);
-                unit_idx++;
-            }
-            ctx.result_fastint((long)unit_idx);
-        }
-    } else {
-        ctx.result_fastint(-1);
-    }
+    ctx.result_fastint((long)hstring::rfind_units(s_hstr, search_hstr, (uint)start_units));
 }
 
 // Helper: invoke @@match on an HObject `rx` with string argument `s_hstr`.
@@ -2679,14 +2110,12 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
 
     // Steps 3-4: Let rx = RegExpCreate(regexp, undefined); return Invoke(rx, @@match, [S]).
     // ToString the pattern: null → "null", undefined/missing → "", anything else → ToString.
-    char[16] pat_buf;
-    int pat_len = 0;
     if (!arg_nullish) {
         if (regexp_arg.is_string()) {
             HString* ps = (HString*)regexp_arg.get_heapptr();
             if (ps != null && !ps.is_symbol()) {
                 // Use the string directly as the pattern.
-                HObject* rx = create_regexp_from_string(ctx.heap, ps.get_data(), 0);
+                HObject* rx = create_regexp_from_string(ctx.heap, ps, 0);
                 if (rx == null) { ctx.result_null(); return; }
                 if (!invoke_regexp_match(ctx, rx, s_hstr)) { ctx.result_null(); }
                 return;
@@ -2702,18 +2131,15 @@ fn void builtin_string_proto_match(BuiltinContext* ctx) {
             pat_str = builtin_to_string(ctx.heap, regexp_arg);
         }
         if (pat_str == null) { ctx.result_null(); return; }
-        HObject* rx = create_regexp_from_string(ctx.heap, pat_str.get_data(), 0);
+        HObject* rx = create_regexp_from_string(ctx.heap, pat_str, 0);
         if (rx == null) { ctx.result_null(); return; }
         if (!invoke_regexp_match(ctx, rx, s_hstr)) { ctx.result_null(); }
         return;
     } else {
         // arg is missing/null/undefined → RegExpCreate("" or "null") then @@match.
-        if (regexp_arg != null && regexp_arg.is_null()) {
-            char[] s = "null";
-            pat_len = s.len;
-            mem::copy(&pat_buf[0], s.ptr, (sz)(s.len));
-        }
-        HObject* rx = create_regexp_from_string(ctx.heap, pat_buf[:pat_len], 0);
+        bool is_null_arg = regexp_arg != null && regexp_arg.is_null();
+        HString* empty_pat = is_null_arg ? ctx.heap.str_intern("null") : ctx.heap.str(heap::BuiltinStr.EMPTY);
+        HObject* rx = create_regexp_from_string(ctx.heap, empty_pat, 0);
         if (rx == null) { ctx.result_null(); return; }
         if (!invoke_regexp_match(ctx, rx, s_hstr)) { ctx.result_null(); }
         return;
@@ -2825,10 +2251,9 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
             // Check that flags string contains "g".
             bool has_g = false;
             if (flags_hstr != null) {
-                char* fc = flags_hstr.get_cstr();
-                usz flen = flags_hstr.blen;
-                for (usz i = 0; i < flen; i++) {
-                    if (fc[i] == 'g') { has_g = true; break; }
+                uint flen = flags_hstr.unit_len();
+                for (uint i = 0; i < flen; i++) {
+                    if (flags_hstr.unit_at(i) == 'g') { has_g = true; break; }
                 }
             }
             if (!has_g) {
@@ -2876,13 +2301,11 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
     //            Return Invoke(rx, @@matchAll, [S]).
     // Pattern: null → "null", missing/undefined → "" (empty), string → use directly,
     //          non-string non-null non-undefined → ToString.
-    char[16] pat_buf;
-    int pat_len = 0;
     if (!arg_nullish) {
         if (regexp_arg.is_string()) {
             HString* ps = (HString*)regexp_arg.get_heapptr();
             if (ps != null && !ps.is_symbol()) {
-                HObject* rx = create_regexp_from_string(heap, ps.get_data(), 1);
+                HObject* rx = create_regexp_from_string(heap, ps, 1);
                 if (rx == null) { ctx.result_undefined(); return; }
                 invoke_regexp_matchall(ctx, rx, s_hstr);
                 return;
@@ -2897,18 +2320,15 @@ fn void builtin_string_proto_matchAll(BuiltinContext* ctx) {
             pat_str = builtin_to_string(heap, regexp_arg);
         }
         if (pat_str == null) { ctx.result_undefined(); return; }
-        HObject* rx = create_regexp_from_string(heap, pat_str.get_data(), 1);
+        HObject* rx = create_regexp_from_string(heap, pat_str, 1);
         if (rx == null) { ctx.result_undefined(); return; }
         invoke_regexp_matchall(ctx, rx, s_hstr);
         return;
     } else {
         // arg is null → pattern "null"; arg is missing/undefined → pattern "".
-        if (regexp_arg != null && regexp_arg.is_null()) {
-            char[] s = "null";
-            pat_len = (int)s.len;
-            mem::copy(&pat_buf[0], s.ptr, (sz)(s.len));
-        }
-        HObject* rx = create_regexp_from_string(heap, pat_buf[:pat_len], 1);
+        bool is_null_arg = regexp_arg != null && regexp_arg.is_null();
+        HString* empty_pat = is_null_arg ? heap.str_intern("null") : heap.str(heap::BuiltinStr.EMPTY);
+        HObject* rx = create_regexp_from_string(heap, empty_pat, 1);
         if (rx == null) { ctx.result_undefined(); return; }
         invoke_regexp_matchall(ctx, rx, s_hstr);
         return;
@@ -2933,28 +2353,18 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         HString* form = builtin_to_string_vm(ctx, &ctx.regs[ctx.base_reg]);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (form != null) {
-            char* f = form.get_cstr();
-            uint flen = form.blen;
-
-            // Map form string to enum value (case-insensitive)
-            bool valid = false;
-            if (flen == 3) {
-                char c0 = f[0] | 0x20;
-                char c1 = f[1] | 0x20;
-                char c2 = f[2] | 0x20;
-                if (c0 == 'n' && c1 == 'f') {
-                    if (c2 == 'c') { n_type = unicode_bindings::UNICODE_NFC; valid = true; }
-                    else if (c2 == 'd') { n_type = unicode_bindings::UNICODE_NFD; valid = true; }
-                }
-            } else if (flen == 4) {
-                char c0 = f[0] | 0x20;
-                char c1 = f[1] | 0x20;
-                char c2 = f[2] | 0x20;
-                char c3 = f[3] | 0x20;
-                if (c0 == 'n' && c1 == 'f' && c2 == 'k') {
-                    if (c3 == 'c') { n_type = unicode_bindings::UNICODE_NFKC; valid = true; }
-                    else if (c3 == 'd') { n_type = unicode_bindings::UNICODE_NFKD; valid = true; }
-                }
+            bool valid = form.is_ascii();
+            char[] f = valid ? form.ascii_bytes() : (char[])"";
+            if (f == "NFC") {
+                n_type = unicode_bindings::UNICODE_NFC;
+            } else if (f == "NFD") {
+                n_type = unicode_bindings::UNICODE_NFD;
+            } else if (f == "NFKC") {
+                n_type = unicode_bindings::UNICODE_NFKC;
+            } else if (f == "NFKD") {
+                n_type = unicode_bindings::UNICODE_NFKD;
+            } else {
+                valid = false;
             }
             if (!valid) {
                 // Throw RangeError for invalid form
@@ -2965,23 +2375,18 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
     }
 
     // Empty string fast path
-    if (s_hstr.blen == 0) {
+    if (s_hstr.unit_len() == 0) {
         ctx.result_string(s_hstr);
         return;
     }
 
-    // Step 1: Decode CESU-8 → Unicode codepoints (reassembling surrogate pairs).
-    char* raw_data = s_hstr.get_cstr();
-    uint blen = s_hstr.blen;
-
     uint num_cps;
-    uint* src_cps = cesu8_to_codepoints(raw_data, blen, &num_cps);
+    uint* src_cps = string_codepoints(s_hstr, &num_cps);
     if (src_cps == null) {
         ctx.result_string(s_hstr);
         return;
     }
 
-    // Step 2: Run Unicode normalization via libunicode.
     int out_len = 0;
     uint* result_cps = unicode_bindings::unicode_normalize_simple(src_cps,
                         (int)num_cps, n_type, &out_len);
@@ -2993,58 +2398,20 @@ fn void builtin_string_proto_normalize(BuiltinContext* ctx) {
         return;
     }
 
-    // Handle empty result
-    if (out_len == 0) {
-        mem::free(result_cps);
-        ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
-        return;
-    }
-
-    // Step 3: Encode normalized codepoints back to CESU-8.
-    // Worst case: 6 bytes per codepoint (astral in CESU-8)
-    usz out_bytes_max = (usz)out_len * 6 + 1;
-    char* out_buf = (char*)alloc::malloc_try(mem, (sz)(out_bytes_max)) ?? null;
-    if (out_buf == null) {
-        mem::free(result_cps);
-        ctx.result_string(s_hstr);
-        return;
-    }
-
-    uint out_off = 0;
-    for (int i = 0; i < out_len; i++) {
-        uint written = cesu8_encode_codepoint(result_cps[i], out_buf + out_off,
-                                              (uint)(out_bytes_max - out_off));
-        out_off += written;
-    }
+    HString* result_hstr = codepoints_to_hstring(ctx.heap, result_cps, (uint)out_len);
     mem::free(result_cps);
-
-    // Step 4: Create HString from CESU-8 bytes.
-    HString* result_hstr = ctx.heap.str_intern(out_buf[:out_off]);
-    mem::free(out_buf);
-
-    if (result_hstr != null) {
-        ctx.result_string(result_hstr);
-    } else {
-        ctx.result_string(s_hstr);
-    }
+    ctx.result_string(result_hstr != null ? result_hstr : s_hstr);
 }
 
 // ============================================================================
 // String.prototype.isWellFormed / toWellFormed
 // ============================================================================
 //
-// Both methods operate on the UTF-16 code-unit view of the string.  Because
-// internal storage is CESU-8, every code unit (including surrogate halves) is
-// represented as an independent 1-3 byte UTF-8-shaped sequence.  We scan by
-// decoding each sequence; a lone surrogate is:
+// Both methods operate on the UTF-16 code-unit view of the string. A lone
+// surrogate is:
 //   - a high surrogate (0xD800-0xDBFF) NOT immediately followed by a low
 //     surrogate (0xDC00-0xDFFF), OR
 //   - a low surrogate that is not the second unit of such a pair.
-//
-// isWellFormed: O(n) scan, returns boolean, no allocation.
-// toWellFormed: O(n) scan + allocation of worst-case same byte length (every
-// non-surrogate code unit is already well-formed; lone surrogates are replaced
-// by U+FFFD which encodes to exactly 3 bytes, same as the surrogate itself).
 
 // String.prototype.isWellFormed()
 // Returns true iff the string's UTF-16 code-unit sequence contains no lone
@@ -3055,7 +2422,7 @@ fn void builtin_string_proto_isWellFormed(BuiltinContext* ctx) {
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
 
-    ctx.result_boolean(hstring::is_well_formed_unicode(s_hstr.get_data()));
+    ctx.result_boolean(s_hstr.is_well_formed());
 }
 
 // String.prototype.toWellFormed()
@@ -3067,65 +2434,25 @@ fn void builtin_string_proto_toWellFormed(BuiltinContext* ctx) {
     defer receiver.release(ctx.heap);
     if (s_hstr == null) { ctx.result_undefined(); return; }
 
-    char[] data = s_hstr.get_data();
-    uint len = (uint)data.len;
-
-    // Fast path: empty string.
-    if (len == 0) {
+    if (s_hstr.is_well_formed()) {
         ctx.result_string(s_hstr);
         return;
     }
-
-    // Allocate output buffer.  Lone surrogates encode as 3 bytes in CESU-8
-    // and U+FFFD also encodes as 3 bytes, so the output length is at most
-    // the input length.  We use the same heap allocator as other methods.
-    char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)len);
-    if (buf == null) { ctx.result_string(s_hstr); return; }
-
-    uint i = 0;
-    uint o = 0;
-    while (i < len) {
-        uint seq_len = hstring::utf8_seq_len(data[i]);
-        uint cp = hstring::decode_codepoint(data, i);
-
-        if (hstring::is_high_surrogate(cp)) {
-            uint next_off = i + seq_len;
-            if (next_off < len) {
-                uint next_cp = hstring::decode_codepoint(data, next_off);
-                if (hstring::is_low_surrogate(next_cp)) {
-                    // Valid surrogate pair: copy both code units verbatim.
-                    uint low_len = hstring::utf8_seq_len(data[next_off]);
-                    for (uint k = 0; k < seq_len; k++) buf[o++] = data[i + k];
-                    for (uint k = 0; k < low_len; k++) buf[o++] = data[next_off + k];
-                    i = next_off + low_len;
-                    continue;
-                }
-            }
-            // Lone high surrogate, emit U+FFFD (3 bytes: EF BF BD).
-            buf[o++] = (char)0xEF;
-            buf[o++] = (char)0xBF;
-            buf[o++] = (char)0xBD;
-            i += seq_len;
-        } else if (hstring::is_low_surrogate(cp)) {
-            // Lone low surrogate, emit U+FFFD.
-            buf[o++] = (char)0xEF;
-            buf[o++] = (char)0xBF;
-            buf[o++] = (char)0xBD;
-            i += seq_len;
-        } else {
-            // Non-surrogate code unit: copy bytes verbatim.
-            for (uint k = 0; k < seq_len; k++) buf[o++] = data[i + k];
-            i += seq_len;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
+    uint len = s_hstr.unit_len();
+    for (uint i = 0; i < len; i++) {
+        uint u = s_hstr.unit_at(i);
+        if (hstring::is_high_surrogate(u) && i + 1 < len && hstring::is_low_surrogate(s_hstr.unit_at(i + 1))) {
+            out.append_unit(u);
+            u = s_hstr.unit_at(++i);
+        } else if (hstring::is_surrogate(u)) {
+            u = hstring::UNICODE_REPLACEMENT;
         }
+        out.append_unit(u);
     }
-
-    HString* result = builtin_intern_string(ctx.heap, buf[:o]);
-    ctx.heap.free_func(ctx.heap.heap_udata, buf);
-    if (result != null) {
-        ctx.result_string(result);
-    } else {
-        ctx.result_string(s_hstr);
-    }
+    out.finish(ctx);
 }
 
 // Helper: invoke @@search on `rx` with string `s_hstr` as argument.
@@ -3208,13 +2535,11 @@ fn void builtin_string_proto_search(BuiltinContext* ctx) {
 
     // Steps 3-4: RegExpCreate(regexp, undefined) then Invoke(rx, @@search, [S]).
     // For missing/null/undefined arg use empty pattern string (undefined) or "null".
-    char[16] pat_buf;
-    int pat_len = 0;
     if (!arg_nullish) {
         if (regexp_arg.is_string()) {
             HString* ps = (HString*)regexp_arg.get_heapptr();
             if (ps != null && !ps.is_symbol()) {
-                HObject* rx = create_regexp_from_string(ctx.heap, ps.get_data(), 0);
+                HObject* rx = create_regexp_from_string(ctx.heap, ps, 0);
                 if (rx == null) { ctx.result_fastint(-1); return; }
                 if (!invoke_regexp_search(ctx, rx, s_hstr)) { ctx.result_fastint(-1); }
                 return;
@@ -3229,18 +2554,15 @@ fn void builtin_string_proto_search(BuiltinContext* ctx) {
             pat_str = builtin_to_string(ctx.heap, regexp_arg);
         }
         if (pat_str == null) { ctx.result_fastint(-1); return; }
-        HObject* rx = create_regexp_from_string(ctx.heap, pat_str.get_data(), 0);
+        HObject* rx = create_regexp_from_string(ctx.heap, pat_str, 0);
         if (rx == null) { ctx.result_fastint(-1); return; }
         if (!invoke_regexp_search(ctx, rx, s_hstr)) { ctx.result_fastint(-1); }
         return;
     } else {
         // arg is missing/null/undefined → pattern "" or "null"
-        if (regexp_arg != null && regexp_arg.is_null()) {
-            char[] s = "null";
-            pat_len = s.len;
-            mem::copy(&pat_buf[0], s.ptr, (sz)(s.len));
-        }
-        HObject* rx = create_regexp_from_string(ctx.heap, pat_buf[:pat_len], 0);
+        bool is_null_arg = regexp_arg != null && regexp_arg.is_null();
+        HString* empty_pat = is_null_arg ? ctx.heap.str_intern("null") : ctx.heap.str(heap::BuiltinStr.EMPTY);
+        HObject* rx = create_regexp_from_string(ctx.heap, empty_pat, 0);
         if (rx == null) { ctx.result_fastint(-1); return; }
         if (!invoke_regexp_search(ctx, rx, s_hstr)) { ctx.result_fastint(-1); }
         return;

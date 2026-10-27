@@ -936,8 +936,12 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 
     StringRef text_owner = hstring::string_ref(text_str);
     defer text_owner.release(ctx.heap);
-    char* src = text_str.get_cstr();
-    uint len = text_str.blen;
+    StrBuf text_tmp;
+    text_tmp.init(ctx.heap);
+    defer text_tmp.free();
+    char[] text = cesu8_text(&text_tmp, text_str);
+    char* src = text.ptr;
+    uint len = (uint)text.len;
 
     // Determine whether a callable reviver is present. If so, record source
     // spans (json-parse-with-source) so the reviver's context.source works.
@@ -1170,6 +1174,14 @@ fn uint json_safe_span(char* src, uint len) @inline {
 
 // Reserve for each span's actual output. ASCII text needs its own length,
 // while an escaped control or Unicode unit fits in the small scratch buffer.
+fn bool json_escape_hstring_to(StrBuf* out, HString* s) {
+    StrBuf tmp;
+    tmp.init(out.heap);
+    defer tmp.free();
+    char[] text = cesu8_text(&tmp, s);
+    return json_escape_string_to(out, text.ptr, (uint)text.len);
+}
+
 fn bool json_escape_string_to(StrBuf* out, char* src, uint len) {
     uint first_span = json_safe_span(src, len);
     if (first_span == len) {
@@ -1575,7 +1587,7 @@ fn JsonShapePlan* json_shape_plan(Heap* heap, HObject* obj) {
         entry.key.set(heap, keys[i]);
         entry.slot = (uint)slot;
         entry.quoted_offset = (uint)quoted.len;
-        if (!json_escape_string_to(&quoted, keys[i].get_cstr(), keys[i].blen) || !quoted.append_char(':')) {
+        if (!json_escape_hstring_to(&quoted, keys[i]) || !quoted.append_char(':')) {
             hobject::json_shape_plan_release(plan, heap);
             return null;
         }
@@ -1671,9 +1683,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             }
 
             // Key
-            char* key_data = key_hstr.get_cstr();
-            uint key_len = key_hstr.blen;
-            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
+            if (!json_escape_hstring_to(jctx.out, key_hstr)) return -1;
 
             if (!jctx.out.append_char(':')) return -1;
             if (jctx.gap_len > 0) {
@@ -1728,9 +1738,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
             }
 
             // Key
-            char* key_data = key_hstr.get_cstr();
-            uint key_len = key_hstr.blen;
-            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
+            if (!json_escape_hstring_to(jctx.out, key_hstr)) return -1;
 
             if (!jctx.out.append_char(':')) return -1;
             if (jctx.gap_len > 0) {
@@ -1840,7 +1848,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
                     plan.quoted_keys + entry.quoted_offset, entry.quoted_length);
                 jctx.out.len += entry.quoted_length;
             } else {
-                if (!json_escape_string_to(jctx.out, key_hstr.get_cstr(), key_hstr.blen)) return -1;
+                if (!json_escape_hstring_to(jctx.out, key_hstr)) return -1;
                 if (!jctx.out.append_char(':')) return -1;
             }
             if (jctx.gap_len > 0) {
@@ -2072,9 +2080,7 @@ fn int json_serialize_scalar(JsonSerializeCtx* jctx, TVal* val) @inline {
         }
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
-            char* data = s.get_cstr();
-            uint slen = s.blen;
-            if (!json_escape_string_to(jctx.out, data, slen)) return -1;
+            if (!json_escape_hstring_to(jctx.out, s)) return -1;
             return 0;
         }
         default: return 1;
@@ -2103,9 +2109,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
                 if (try raw_v = raw_opt) {
                     if (raw_v.is_string() && raw_v.get_heapptr() != null) {
                         HString* rs = (HString*)raw_v.get_heapptr();
-                        char* rd = rs.get_cstr();
-                        uint rl = rs.blen;
-                        if (!jctx.out.append_bytes(rd[:rl])) return -1;
+                        if (!jctx.out.append_hstring(rs)) return -1;
                         return 0;
                     }
                 }
@@ -2324,7 +2328,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 
     // Check space parameter, unwrap Number/String wrappers
     uint space_num = 0;
-    char[16] gap_buf;
+    char[32] gap_buf;
     usz gap_len = 0;
 
     if (ctx.argc > 2) {
@@ -2416,26 +2420,24 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
             space_num = (uint)si;
         } else if (space_arg.is_string()) {
             HString* s = (HString*)space_arg.get_heapptr();
-            char* data = s.get_cstr();
-            uint slen = s.blen;
-            if (slen > 10) slen = 10;
-            for (uint i = 0; i < slen; i++) {
-                gap_buf[i] = data[i];
+            uint units = s.unit_len();
+            if (units > 10) units = 10;
+            for (uint i = 0; i < units; i++) {
+                gap_len += hstring::encode_codepoint(s.unit_at(i), gap_buf[gap_len:3]);
             }
-            gap_len = slen;
         }
     }
 
     // Build gap string
-    char[16] gap_str;
+    char[32] gap_str;
     if (space_num > 0) {
         gap_len = space_num;
-        for (uint i = 0; i < gap_len && i < 16; i++) {
+        for (uint i = 0; i < gap_len && i < 32; i++) {
             gap_str[i] = ' ';
         }
     } else if (gap_len > 0) {
         // String gap: copy from gap_buf to gap_str
-        for (usz i = 0; i < gap_len && i < 16; i++) {
+        for (usz i = 0; i < gap_len && i < 32; i++) {
             gap_str[i] = gap_buf[i];
         }
     }
@@ -2558,8 +2560,12 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
         if (json_str == null) { json_throw_syntax_error(ctx, "Invalid raw JSON"); return; }
     }
 
-    char* src = json_str.get_cstr();
-    uint len = json_str.blen;
+    StrBuf text_tmp;
+    text_tmp.init(ctx.heap);
+    defer text_tmp.free();
+    char[] text = cesu8_text(&text_tmp, json_str);
+    char* src = text.ptr;
+    uint len = (uint)text.len;
 
     // Step 2: SyntaxError if empty, or first/last code unit is whitespace
     // (0x09, 0x0A, 0x0D, 0x20).

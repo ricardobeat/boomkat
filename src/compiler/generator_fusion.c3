@@ -48,9 +48,9 @@ fn char[] CompilerContext.fuse_name(&self, char[] raw) {
         buf[0] = '\x01';
         buf[1] = self.fuse.depth;
         buf[2 : raw.len] = raw[..];
-        return h.str_intern(buf[:raw.len + 2]).get_data();
+        return self.name_text(h.str_intern(buf[:raw.len + 2]));
     }
-    return h.str_intern(raw).get_data();
+    return self.name_text(h.str_intern(raw));
 }
 
 // The FUNC_DECL of the generator every call of `name` in this unit reaches,

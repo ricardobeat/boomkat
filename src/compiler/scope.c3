@@ -141,7 +141,7 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
     // (class.c3 builds `__super__N` etc. into `char[32]` locals), and a dangling
     // slice in scope_stack would later compare equal to unrelated names.
     HString* name_hs = ((Heap*)self.heap).str_intern(name);
-    char[] stable_name = name_hs == null ? name : name_hs.get_data();
+    char[] stable_name = name_hs == null ? name : self.name_text(name_hs);
     // Push all lexical declarations, even at global scope, to detect duplicates.
     // A global var needs no entry, but a global parameter (a top-level catch
     // clause's) does, so a body `let` can see it.
@@ -304,7 +304,7 @@ fn bool CompilerContext.is_slot_global_name_index(&self, uint name_idx) {
 // to resolve_slot_global, so block-shadowing is honored identically.
 fn ushort? CompilerContext.resolve_slot_global_by_index(&self, uint name_idx) {
     HString* name_hstr = (HString*)self.constants[name_idx].get_heapptr();
-    return self.resolve_slot_global(name_hstr.get_data());
+    return self.resolve_slot_global(self.name_text(name_hstr));
 }
 // Defaults to false (treated as `var`) if the name isn't found in the
 // scope stack, such as a top-level `function` declaration promoted straight

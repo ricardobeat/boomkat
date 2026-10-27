@@ -527,87 +527,10 @@ fn bool is_ecma_whitespace(char c) @inline {
 }
 
 // ECMA-262 StringToNumber: https://tc39.es/ecma262/#sec-stringtonumber
-// Trims white-space, then parses a decimal, hex or Infinity literal. Returns NaN otherwise.
+// A symbol has no numeric value.
 fn double hstring_to_number(HString* hstr) {
     if (hstr.is_symbol()) return double::nan;
-    char* cstr = hstr.get_cstr();
-    uint blen = hstr.blen;
-
-    // --- skip leading white-space (CESU-8 aware) ---
-    uint start = 0;
-    while (start < blen) {
-        uint seq_len = 0;
-        uint cp = builtins::decode_codepoint_at(cstr, start, blen, &seq_len);
-        if (seq_len == 0 || !builtins::is_ecma_ws_codepoint(cp)) break;
-        start += seq_len;
-    }
-
-    // Empty or all-whitespace -> +0
-    if (start == blen) {
-        return 0.0;
-    }
-
-    char* p = cstr + start;
-
-    // --- Infinity / -Infinity / +Infinity ---
-    if ((ZString)p == (ZString)"Infinity")   return double::inf;
-    if ((ZString)p == (ZString)"+Infinity")  return double::inf;
-    if ((ZString)p == (ZString)"-Infinity")  return -double::inf;
-
-    // --- Hex integer literal (0x...) ---
-    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
-        uint j = 2;
-        // At least one hex digit is required
-        if (p[j] == 0 || !((p[j] >= '0' && p[j] <= '9') || (p[j] >= 'a' && p[j] <= 'f') || (p[j] >= 'A' && p[j] <= 'F'))) {
-            return double::nan;
-        }
-        ulong val = 0;
-        while (p[j] != 0) {
-            char c = p[j];
-            uint digit;
-            if      (c >= '0' && c <= '9') { digit = (uint)(c - '0'); }
-            else if (c >= 'a' && c <= 'f') { digit = (uint)(c - 'a' + 10); }
-            else if (c >= 'A' && c <= 'F') { digit = (uint)(c - 'A' + 10); }
-            else { break; }   // non-hex terminates the literal
-
-            val = (val << 4) | digit;
-            j++;
-        }
-        // Trailing must be whitespace
-        while (p[j] != 0) {
-            if (!is_ecma_whitespace(p[j])) return double::nan;
-            j++;
-        }
-        return (double)val;
-    }
-
-    // --- Decimal via libc::strtod ---
-    char* endptr;
-    double result = dtoa_bindings::atod_strtod_compat(p, &endptr);
-
-    // Nothing was consumed -> NaN
-    if (endptr == p) {
-        return double::nan;
-    }
-
-    // strtod accepts case-insensitive "infinity" but ES requires exact case
-    if (result == double::inf || result == -double::inf) {
-        if ((ZString)p != (ZString)"Infinity" &&
-            (ZString)p != (ZString)"+Infinity" &&
-            (ZString)p != (ZString)"-Infinity") {
-            return double::nan;
-        }
-    }
-
-    // Trailing characters must be whitespace only
-    while (*endptr != 0) {
-        if (!is_ecma_whitespace(*endptr)) {
-            return double::nan;
-        }
-        endptr++;
-    }
-
-    return result;
+    return builtins::builtin_string_to_number(hstr);
 }
 
 // Extract [[PrimitiveValue]] from Boolean/Number/String wrapper objects.

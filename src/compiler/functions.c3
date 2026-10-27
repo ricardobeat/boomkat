@@ -166,7 +166,7 @@ fn void free_destruct_binds(DestructBinds* binds) {
 // The name a leaf bind declares or assigns. It lives in the constant pool of
 // the context that collected the pattern, interned and stable for the compile.
 fn char[] CompilerContext.bind_name(&self, DestructBind* b) {
-    return ((HString*)self.constants[b.name_idx].get_heapptr()).get_data();
+    return self.name_text((HString*)self.constants[b.name_idx].get_heapptr());
 }
 
 fn void CompilerContext.declare_param_pattern(&self, DestructBind[] binds) {
@@ -520,7 +520,7 @@ fn void CompilerContext.emit_destruct_default(&self, uint func_idx, ushort dest_
                         // Each compiled pool owns its reference after the
                         // default thunk's literal is copied into this pool.
                         HString* string_value = (HString*)value.get_heapptr();
-                        constant_idx = self.add_string_constant(string_value.get_data());
+                        constant_idx = self.add_string_constant_hstr(string_value);
                     } else {
                         constant_idx = self.add_constant(value);
                     }
@@ -1126,7 +1126,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
 // removed (EvalDeclarationInstantiation).
 fn void CompilerContext.record_eval_var_name(&self, char[] raw_name) {
     HString* hs = ((Heap*)self.heap).str_intern(raw_name);
-    uint ni = self.add_string_constant(hs.get_data());
+    uint ni = self.add_string_constant_hstr(hs);
     for (uint k = 0; k < self.eval_var_coll_count; k++) {
         if (self.eval_var_coll_idxs[k] == ni) return;
     }
@@ -1145,7 +1145,7 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     if (self.eval_mode) { self.record_eval_var_name(raw_name); }
     // Intern the name so every later use shares one canonical copy.
     HString* var_hstr = ((Heap*)self.heap).str_intern(raw_name);
-    char[] var_name = var_hstr.get_data();
+    char[] var_name = self.name_text(var_hstr);
     // A var whose name is a parameter is NOT re-initialized: only names absent
     // from parameterNames get `undefined` (FunctionDeclarationInstantiation), so
     // the argument survives `function f(p){ if (false) { var p = 1; } return p; }`.
@@ -1310,7 +1310,7 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
             self.ensure_hoisted_defer_cap();
             if (self.hoisted_defer_count < self.hoisted_defer_cap) {
                 HString* dup_hstr = ((Heap*)self.heap).str_intern(fn_name);
-                self.hoisted_defer_names[self.hoisted_defer_count] = dup_hstr.get_data();
+                self.hoisted_defer_names[self.hoisted_defer_count] = self.name_text(dup_hstr);
                 self.hoisted_defer_count++;
             }
         }
@@ -1620,7 +1620,7 @@ fn void CompilerContext.push_param_default(&self, ushort param_reg, uint name_id
                 if (tv.is_string()) {
                     HString* hstr = (HString*)tv.get_heapptr();
                     load = bytecode::make_a_bc(Opcode.LDCONST, 0,
-                                               self.add_string_constant(hstr.get_data()));
+                                               self.add_string_constant_hstr(hstr));
                     literal = true;
                 } else if (tv.get_tag() == TValTag.NUMBER || tv.get_tag() == TValTag.FASTINT) {
                     load = bytecode::make_a_bc(Opcode.LDCONST, 0, self.add_constant(tv));
@@ -1679,15 +1679,15 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     def_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
-        def_ctx.super_name_idx = def_ctx.add_string_constant(super_hstr.get_data());
+        def_ctx.super_name_idx = def_ctx.add_string_constant_hstr(super_hstr);
     }
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
-        def_ctx.static_super_name_idx = def_ctx.add_string_constant(static_super_hstr.get_data());
+        def_ctx.static_super_name_idx = def_ctx.add_string_constant_hstr(static_super_hstr);
     }
     if (self.home_object_name_idx != 0xFFFFFFFF) {
         HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
-        def_ctx.home_object_name_idx = def_ctx.add_string_constant(home_object_hstr.get_data());
+        def_ctx.home_object_name_idx = def_ctx.add_string_constant_hstr(home_object_hstr);
     }
     def_ctx.adopt_private_names(self);
     // A parameter default belongs to the enclosing function's definition, not to
@@ -1815,7 +1815,7 @@ fn void CompilerContext.mark_default_expr_captures(&self, CompiledFunction* func
         if (!kv.is_string()) continue;
         HString* hs = (HString*)kv.get_heapptr();
         if (hs == null) continue;
-        self.add_captured_name(hs.get_data());
+        self.add_captured_name(self.name_text(hs));
     }
     // Enclosing bindings are already declared, so publish their capture marks.
     for (uint i = 0; i < self.scope_depth; i++) {
@@ -1854,15 +1854,15 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self, uint ast_node 
     block_ctx.super_is_static_method = true;
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
-        block_ctx.super_name_idx = block_ctx.add_string_constant(super_hstr.get_data());
+        block_ctx.super_name_idx = block_ctx.add_string_constant_hstr(super_hstr);
     }
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
-        block_ctx.static_super_name_idx = block_ctx.add_string_constant(static_super_hstr.get_data());
+        block_ctx.static_super_name_idx = block_ctx.add_string_constant_hstr(static_super_hstr);
     }
     if (self.home_object_name_idx != 0xFFFFFFFF) {
         HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
-        block_ctx.home_object_name_idx = block_ctx.add_string_constant(home_object_hstr.get_data());
+        block_ctx.home_object_name_idx = block_ctx.add_string_constant_hstr(home_object_hstr);
     }
     // super() is forbidden (HasDirectSuper early error), same mechanism
     // field/static initializers use to reject it.
@@ -2028,7 +2028,7 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         inner_ctx.super_is_home_object = true;
         inner_ctx.super_home_is_object_literal = true;
         HString* home = (HString*)self.constants[object_home].get_heapptr();
-        inner_ctx.super_name_idx = inner_ctx.add_string_constant(home.get_data());
+        inner_ctx.super_name_idx = inner_ctx.add_string_constant_hstr(home);
     } else if (is_method_body) {
         inner_ctx.in_class_body = self.in_class_body;
         inner_ctx.has_super_binding = self.has_super_binding;
@@ -2037,19 +2037,19 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
         inner_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
         if (self.super_name_idx != 0xFFFFFFFF) {
             HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
-            inner_ctx.super_name_idx = inner_ctx.add_string_constant(super_hstr.get_data());
+            inner_ctx.super_name_idx = inner_ctx.add_string_constant_hstr(super_hstr);
         } else {
             inner_ctx.super_name_idx = 0xFFFFFFFF;
         }
         if (self.static_super_name_idx != 0xFFFFFFFF) {
             HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
-            inner_ctx.static_super_name_idx = inner_ctx.add_string_constant(static_super_hstr.get_data());
+            inner_ctx.static_super_name_idx = inner_ctx.add_string_constant_hstr(static_super_hstr);
         } else {
             inner_ctx.static_super_name_idx = 0xFFFFFFFF;
         }
         if (self.home_object_name_idx != 0xFFFFFFFF) {
             HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
-            inner_ctx.home_object_name_idx = inner_ctx.add_string_constant(home_object_hstr.get_data());
+            inner_ctx.home_object_name_idx = inner_ctx.add_string_constant_hstr(home_object_hstr);
         } else {
             inner_ctx.home_object_name_idx = 0xFFFFFFFF;
         }
@@ -2095,15 +2095,15 @@ fn void CompilerContext.init_arrow_context(&self, CompilerContext* arrow_ctx, bo
     arrow_ctx.super_home_is_object_literal = self.super_home_is_object_literal;
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* name = (HString*)self.constants[self.super_name_idx].get_heapptr();
-        arrow_ctx.super_name_idx = arrow_ctx.add_string_constant(name.get_data());
+        arrow_ctx.super_name_idx = arrow_ctx.add_string_constant_hstr(name);
     }
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* name = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
-        arrow_ctx.static_super_name_idx = arrow_ctx.add_string_constant(name.get_data());
+        arrow_ctx.static_super_name_idx = arrow_ctx.add_string_constant_hstr(name);
     }
     if (self.home_object_name_idx != 0xFFFFFFFF) {
         HString* name = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
-        arrow_ctx.home_object_name_idx = arrow_ctx.add_string_constant(name.get_data());
+        arrow_ctx.home_object_name_idx = arrow_ctx.add_string_constant_hstr(name);
     }
     arrow_ctx.is_constructable = self.is_constructable;
     arrow_ctx.adopt_private_names(self);
