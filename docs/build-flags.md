@@ -78,7 +78,8 @@ contains at most 512 instructions, with high VM registers accessed directly.
 Ordinary callback spans need six supported instructions; regions using expanded
 integer, indexed or intrinsic-call coverage need sixteen.
 
-Four boxed registers and four FP registers carry values between operations.
+Numeric loops cache four boxed registers; function regions use VM slots and
+four FP registers to carry proven numbers between operations.
 Compact supported regions reserve up to three FP homes across control flow;
 other regions keep block-local allocation. Native backedges consume a bounded
 GC/interrupt budget and return to the interpreter before a poll is due. Guarded native operations cover dense-array reads, fixed attached

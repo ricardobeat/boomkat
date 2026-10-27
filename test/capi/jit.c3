@@ -2,6 +2,8 @@ module jit_test;
 
 import boomkat;
 import boomkat::bytecode;
+import boomkat::heap;
+import boomkat::hobject;
 import boomkat::vm;
 import std::io;
 import libc;
@@ -169,8 +171,57 @@ fn void check_numeric_pipeline() @feat(SLJIT) {
     @check(plan.resumed_allocations != 0 && runtime.rt.heap.jit_resumed_pushes != 0);
 }
 
+fn void check_ic_gc_roots() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    eval(&context,
+        "function gcRead(o){return o.value;}"
+        "var gcP0={value:11},gcP1={value:22},gcP2={value:33};"
+        "var gcR0=Object.create(gcP0),gcR1=Object.create(gcP1),gcR2=Object.create(gcP2);"
+        "gcR0.a=1;gcR1.a=1;gcR1.b=2;gcR2.a=1;gcR2.b=2;gcR2.c=3;"
+        "for(var g=0;g<10;g++){if(gcRead(gcR0)!==11||gcRead(gcR1)!==22||gcRead(gcR2)!==33)throw 'cache';}");
+    CompiledFunction* cf = named_function(&runtime, "gcRead");
+    @check(cf != null && cf.ic_entries != null);
+    hobject::ICEntry* entries = cf.ic_entries;
+    hobject::ICEntry* cache;
+    uint slot;
+    for (uint i = 0; i < cf.ic_count; i++) if (entries[i].chain_len == hobject::IC_CHAIN_PROTO) {
+        cache = &entries[i]; slot = i; break;
+    }
+    @check(cache != null && cache.chain.proto.count == 2);
+    Heap* h = runtime.rt.heap;
+    h.mark_and_sweep(true, true);
+    h.gc_begin_cycle(true);
+    uint cursor = cf.const_count + slot;
+    @check(!h.gc_scan_compiled_slot(cf, &cursor));
+    @check(((HeapHeader*)cache.chain.proto.primary.owner).is_reachable());
+    for (uint i = 0; i < cache.chain.proto.count; i++) {
+        @check(((HeapHeader*)cache.chain.proto.arms[i].owner).is_reachable());
+    }
+    h.mark_and_sweep(true, true);
+
+    // Point the entry at a real private receiver shape, then retire that shape.
+    // Invalidation must clear the owner discriminator before a root scan can
+    // interpret a zero chain length as a snapshot index of UINT_MAX.
+    hobject::HObject* receiver = h.alloc_plain_object()!!;
+    receiver.make_shape_private(h);
+    cache.shape_id = receiver.shape_id;
+    receiver.make_shape_private(h);
+    h.purge_retired_shapes();
+    @check(cache.shape_id == heap::SHAPE_NONE && cache.chain_len == 0 && !cache.has_proto);
+    @check(hobject::ic_cached_proto(cache) == null);
+    cursor = cf.const_count + slot;
+    @check(!h.gc_scan_compiled_slot(cf, &cursor));
+    h.mark_and_sweep(true, true);
+}
+
 fn void main() {
     check_native_convention();
+    check_ic_gc_roots();
     JsRuntime first, second;
     @check(!first.set_jit());
     first.create()!!;

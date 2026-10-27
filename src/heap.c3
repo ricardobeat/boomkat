@@ -2014,6 +2014,7 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
             if (!self.ic_names_live_shapes(&entries[i])) {
                 entries[i].shape_id = SHAPE_NONE;
                 entries[i].chain_len = 0;
+                entries[i].has_proto = false;
             }
         }
     }
@@ -4542,13 +4543,7 @@ fn void Heap.mark_roots(&self) {
         if (cf.ic_entries != null && cf.ic_count > 0) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
-                hobject::ICEntry* ie = &ics[ii];
-                self.mark_hobject(hobject::ic_cached_proto(ie));
-                if (ie.chain != null && ie.chain_len == hobject::IC_CHAIN_PROTO) {
-                    for (uint ai = 0; ai < ie.chain.proto.count; ai++) {
-                        self.mark_hobject(ie.chain.proto.arms[ai].owner);
-                    }
-                }
+                self.mark_ic_owners(&ics[ii]);
             }
         }
     }

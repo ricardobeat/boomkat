@@ -3733,9 +3733,10 @@ fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
 }
 
 fn HObject* ic_cached_proto(ICEntry* ic) {
-    if (!ic.has_proto) return null;
+    if (!ic.has_proto || ic.chain == null || ic.chain_len == 0) return null;
     if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
     if (ic.chain_len == IC_CHAIN_PROTO) return ic.chain.proto.primary.owner;
+    if (ic.chain_len > IC_MAX_CHAIN) return null;
     return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
 }
 // A read that proved absence through the complete chain, distinct from stores

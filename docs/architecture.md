@@ -700,8 +700,9 @@ Incoming links are patched before a target is freed. Compilation, relinking and
 retirement occur only after generated frames unwind; targets remain in the
 compiled-function registry until heap teardown.
 
-Four general registers cache boxed values. Within a basic block, four FP
-registers retain proven numbers, with next-use-based spills and snapshots of
+Numeric loops cache boxed values in four general registers. Function regions
+keep authoritative values in VM slots. Within a basic block, four FP registers
+retain proven numbers, with next-use-based spills and snapshots of
 dirty values at each guard exit. Compact supported regions use CFG liveness to
 reserve up to three canonical FP homes across branches and native iterations.
 Whole-function entry selects only arguments; region entry may guard live locals.
