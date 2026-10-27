@@ -47,7 +47,7 @@ const uint DISPOSABLE_RECORD_SIZE = 4;
 // ============================================================================
 
 fn HObject* disposable_resources(Heap* heap, HObject* obj) {
-    HString* key = builtin_intern_string(heap, "\xFFresources");
+    HString* key = heap.str_intern_hidden("resources");
     if (key == null) return null;
     if (try rv = obj.get_prop(key, heap)) {
         if (rv.is_object() && rv.get_heapptr() != null) return (HObject*)rv.get_heapptr();
@@ -56,7 +56,7 @@ fn HObject* disposable_resources(Heap* heap, HObject* obj) {
 }
 
 fn uint disposable_kind(Heap* heap, HObject* obj) {
-    HString* key = builtin_intern_string(heap, "\xFFkind");
+    HString* key = heap.str_intern_hidden("kind");
     if (key == null) return DISPOSABLE_KIND_SYNC;
     if (try kv = obj.get_prop(key, heap)) {
         if (kv.is_fastint()) return (uint)kv.get_fastint();
@@ -65,21 +65,21 @@ fn uint disposable_kind(Heap* heap, HObject* obj) {
 }
 
 fn void disposable_set_kind(Heap* heap, HObject* obj, uint kind) {
-    HString* key = builtin_intern_string(heap, "\xFFkind");
+    HString* key = heap.str_intern_hidden("kind");
     if (key == null) return;
     TVal tv; tv.set_fastint((long)kind);
     obj.put_prop(key, tv, hobject::PROP_FLAGS_WEC, heap);
 }
 
 fn void disposable_set_resources(Heap* heap, HObject* obj, HObject* records) {
-    HString* key = builtin_intern_string(heap, "\xFFresources");
+    HString* key = heap.str_intern_hidden("resources");
     if (key == null) return;
     TVal tv; tv.set_object(records);
     obj.put_prop(key, tv, hobject::PROP_FLAGS_WEC, heap);
 }
 
 fn bool disposable_disposed(Heap* heap, HObject* obj) {
-    HString* key = builtin_intern_string(heap, "\xFFdisposed");
+    HString* key = heap.str_intern_hidden("disposed");
     if (key == null) return false;
     if (try dv = obj.get_prop(key, heap)) {
         return dv.is_boolean() && dv.get_boolean();
@@ -88,7 +88,7 @@ fn bool disposable_disposed(Heap* heap, HObject* obj) {
 }
 
 fn void disposable_set_disposed(Heap* heap, HObject* obj, bool disposed) {
-    HString* key = builtin_intern_string(heap, "\xFFdisposed");
+    HString* key = heap.str_intern_hidden("disposed");
     if (key == null) return;
     TVal tv; tv.set_boolean(disposed);
     obj.put_prop(key, tv, hobject::PROP_FLAGS_WEC, heap);
@@ -434,7 +434,7 @@ fn HObject*? disposable_async_adapter_fn(Heap* heap, TVal method) {
     adapter.flags.callable = true;
     adapter.flags.constructable = false;
     heap.set_prototype(adapter, heap.function_proto);
-    HString* key = builtin_intern_string(heap, "\xFFmethod");
+    HString* key = heap.str_intern_hidden("method");
     if (key == null) return null;
     adapter.put_prop(key, method, hobject::PROP_FLAGS_WEC, heap);
     return adapter;
@@ -444,7 +444,7 @@ fn void builtin_disposable_async_adapter(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     TVal method; method.set_undefined();
     if (ctx.callee_obj != null) {
-        HString* key = builtin_intern_string(heap, "\xFFmethod");
+        HString* key = heap.str_intern_hidden("method");
         if (key != null) {
             if (try m = ctx.callee_obj.get_prop(key, heap)) method = m;
         }
@@ -501,7 +501,7 @@ fn HObject*? disposable_async_step_fn(Heap* heap, uint builtin_index, HObject* s
     step.flags.callable = true;
     step.flags.constructable = false;
     heap.set_prototype(step, heap.function_proto);
-    HString* key = builtin_intern_string(heap, "\xFFstate");
+    HString* key = heap.str_intern_hidden("state");
     if (key != null) {
         TVal st; st.set_object(state);
         step.put_prop(key, st, hobject::PROP_FLAGS_WEC, heap);
@@ -511,14 +511,14 @@ fn HObject*? disposable_async_step_fn(Heap* heap, uint builtin_index, HObject* s
 
 fn TVal disposable_state_get(Heap* heap, HObject* state, char[] name) {
     TVal out; out.set_undefined();
-    HString* key = builtin_intern_string(heap, name);
+    HString* key = heap.str_intern_hidden(name);
     if (key == null) return out;
     if (try v = state.get_prop(key, heap)) out = v;
     return out;
 }
 
 fn void disposable_state_set(Heap* heap, HObject* state, char[] name, TVal value) {
-    HString* key = builtin_intern_string(heap, name);
+    HString* key = heap.str_intern_hidden(name);
     if (key == null) return;
     state.put_prop(key, value, hobject::PROP_FLAGS_WEC, heap);
 }
@@ -550,8 +550,8 @@ fn void disposable_async_await(BuiltinContext* ctx, HObject* state, TVal result)
     HObject*? wrapper_raw = promise_resolve_default_ctor(heap, ctx.vm, result);
     if (catch err_w = wrapper_raw) return;
     HObject* wrapper = wrapper_raw;
-    TVal step_tv = disposable_state_get(heap, state, "\xFFstep");
-    TVal step_reject_tv = disposable_state_get(heap, state, "\xFFstepReject");
+    TVal step_tv = disposable_state_get(heap, state, "step");
+    TVal step_reject_tv = disposable_state_get(heap, state, "stepReject");
     HObject*? reaction_raw = promise_create_reaction(heap);
     if (catch err_r = reaction_raw) return;
     HObject* reaction = reaction_raw;
@@ -570,13 +570,13 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
     Heap* heap = ctx.heap;
     HObject* state = state_arg;
     if (state == null && ctx.callee_obj != null) {
-        TVal st = disposable_state_get(heap, ctx.callee_obj, "\xFFstate");
+        TVal st = disposable_state_get(heap, ctx.callee_obj, "state");
         if (st.is_object() && st.get_heapptr() != null) state = (HObject*)st.get_heapptr();
     }
     if (state == null) return;
 
-    bool has_error = disposable_state_bool(heap, state, "\xFFhasError");
-    TVal pending = disposable_state_get(heap, state, "\xFFpending");
+    bool has_error = disposable_state_bool(heap, state, "hasError");
+    TVal pending = disposable_state_get(heap, state, "pending");
     if (rejected) {
         // The awaited disposer rejected: the reason becomes the pending
         // failure, folded into an earlier one.
@@ -584,23 +584,23 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
         if (ctx.argc >= 1) reason = ctx.regs[ctx.base_reg];
         pending = has_error ? error_new_suppressed(heap, reason, pending) : reason;
         has_error = true;
-        disposable_state_set(heap, state, "\xFFpending", pending);
-        disposable_state_set_bool(heap, state, "\xFFhasError", true);
+        disposable_state_set(heap, state, "pending", pending);
+        disposable_state_set_bool(heap, state, "hasError", true);
         heap.shade_root_tval(pending);
     }
 
-    TVal records_tv = disposable_state_get(heap, state, "\xFFrecords");
+    TVal records_tv = disposable_state_get(heap, state, "records");
     if (!records_tv.is_object() || records_tv.get_heapptr() == null) return;
     HObject* records = (HObject*)records_tv.get_heapptr();
 
-    bool needs_await = disposable_state_bool(heap, state, "\xFFneedsAwait");
-    bool has_awaited = disposable_state_bool(heap, state, "\xFFhasAwaited");
+    bool needs_await = disposable_state_bool(heap, state, "needsAwait");
+    bool has_awaited = disposable_state_bool(heap, state, "hasAwaited");
     long phase = 0;
-    TVal phase_tv = disposable_state_get(heap, state, "\xFFphase");
+    TVal phase_tv = disposable_state_get(heap, state, "phase");
     if (phase_tv.is_fastint()) phase = phase_tv.get_fastint();
 
     while (true) {
-        TVal index_tv = disposable_state_get(heap, state, "\xFFindex");
+        TVal index_tv = disposable_state_get(heap, state, "index");
         long remaining = index_tv.is_fastint() ? index_tv.get_fastint() : 0;
         if (remaining <= 0) break;
         uint base = (uint)(remaining - 1) * DISPOSABLE_RECORD_SIZE;
@@ -623,9 +623,9 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
             if (hint == DISPOSABLE_HINT_SYNC && needs_await && !has_awaited) {
                 needs_await = false;
                 phase = DISPOSABLE_PHASE_CONTINUE;
-                disposable_state_set_bool(heap, state, "\xFFneedsAwait", false);
+                disposable_state_set_bool(heap, state, "needsAwait", false);
                 TVal phase_save; phase_save.set_fastint(phase);
-                disposable_state_set(heap, state, "\xFFphase", phase_save);
+                disposable_state_set(heap, state, "phase", phase_save);
                 TVal undef; undef.set_undefined();
                 disposable_async_await(ctx, state, undef);
                 return;
@@ -633,7 +633,7 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
         } else {
             phase = DISPOSABLE_PHASE_RECORD;
             TVal phase_save; phase_save.set_fastint(phase);
-            disposable_state_set(heap, state, "\xFFphase", phase_save);
+            disposable_state_set(heap, state, "phase", phase_save);
         }
 
         if (is_callable_tval(method)) {
@@ -642,15 +642,15 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
                 bool threw = has_error;
                 disposable_fold_error(heap, ctx.vm, &pending, &threw);
                 has_error = threw;
-                disposable_state_set(heap, state, "\xFFpending", pending);
-                disposable_state_set_bool(heap, state, "\xFFhasError", true);
+                disposable_state_set(heap, state, "pending", pending);
+                disposable_state_set_bool(heap, state, "hasError", true);
             } else if (hint == DISPOSABLE_HINT_ASYNC) {
                 // An async disposer: await its result before the next
                 // resource.
                 has_awaited = true;
-                disposable_state_set_bool(heap, state, "\xFFhasAwaited", true);
+                disposable_state_set_bool(heap, state, "hasAwaited", true);
                 TVal index_save; index_save.set_fastint(remaining - 1);
-                disposable_state_set(heap, state, "\xFFindex", index_save);
+                disposable_state_set(heap, state, "index", index_save);
                 disposable_async_await(ctx, state, result);
                 return;
             }
@@ -658,11 +658,11 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
             // A methodless record still costs an await: an async stack awaits
             // even when the resource was null or undefined.
             needs_await = true;
-            disposable_state_set_bool(heap, state, "\xFFneedsAwait", true);
+            disposable_state_set_bool(heap, state, "needsAwait", true);
         }
 
         TVal index_save; index_save.set_fastint(remaining - 1);
-        disposable_state_set(heap, state, "\xFFindex", index_save);
+        disposable_state_set(heap, state, "index", index_save);
     }
 
     // The stack is empty. A stack that only held methodless resources still
@@ -670,7 +670,7 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
     // already queued.
     if (needs_await && !has_awaited) {
         needs_await = false;
-        disposable_state_set_bool(heap, state, "\xFFneedsAwait", false);
+        disposable_state_set_bool(heap, state, "needsAwait", false);
         TVal undef; undef.set_undefined();
         disposable_async_await(ctx, state, undef);
         return;
@@ -680,7 +680,7 @@ fn void disposable_async_run(BuiltinContext* ctx, HObject* state_arg, bool rejec
     // disposal resolves it with undefined.
     array_set_length(records, 0, heap);
     TVal undef; undef.set_undefined();
-    TVal p_tv = disposable_state_get(heap, state, "\xFFpromise");
+    TVal p_tv = disposable_state_get(heap, state, "promise");
     if (!p_tv.is_object() || p_tv.get_heapptr() == null) return;
     HObject* p = (HObject*)p_tv.get_heapptr();
     if (has_error) {
@@ -735,26 +735,26 @@ fn void disposable_dispose_async(BuiltinContext* ctx, HObject* p, HObject* recor
     HObject* state = state_raw;
     heap.set_prototype(state, heap.object_proto);
     TVal records_tv; records_tv.set_object(records);
-    disposable_state_set(heap, state, "\xFFrecords", records_tv);
+    disposable_state_set(heap, state, "records", records_tv);
     TVal index_tv; index_tv.set_fastint((long)(*records.array_len_ptr() / DISPOSABLE_RECORD_SIZE));
-    disposable_state_set(heap, state, "\xFFindex", index_tv);
-    disposable_state_set(heap, state, "\xFFpending", pending);
-    disposable_state_set_bool(heap, state, "\xFFhasError", has_error);
-    disposable_state_set_bool(heap, state, "\xFFneedsAwait", false);
-    disposable_state_set_bool(heap, state, "\xFFhasAwaited", false);
+    disposable_state_set(heap, state, "index", index_tv);
+    disposable_state_set(heap, state, "pending", pending);
+    disposable_state_set_bool(heap, state, "hasError", has_error);
+    disposable_state_set_bool(heap, state, "needsAwait", false);
+    disposable_state_set_bool(heap, state, "hasAwaited", false);
     TVal phase_tv; phase_tv.set_fastint(DISPOSABLE_PHASE_RECORD);
-    disposable_state_set(heap, state, "\xFFphase", phase_tv);
+    disposable_state_set(heap, state, "phase", phase_tv);
     TVal p_tv; p_tv.set_object(p);
-    disposable_state_set(heap, state, "\xFFpromise", p_tv);
+    disposable_state_set(heap, state, "promise", p_tv);
 
     HObject*? step_raw = disposable_async_step_fn(heap, Builtin.DISPOSABLE_ASYNC_STEP.ordinal, state);
     if (catch err_st = step_raw) { promise_reject_with_channel(p, heap, ctx.vm); return; }
     HObject*? step_reject_raw = disposable_async_step_fn(heap, Builtin.DISPOSABLE_ASYNC_STEP_REJECT.ordinal, state);
     if (catch err_sr = step_reject_raw) { promise_reject_with_channel(p, heap, ctx.vm); return; }
     TVal step_tv; step_tv.set_object(step_raw);
-    disposable_state_set(heap, state, "\xFFstep", step_tv);
+    disposable_state_set(heap, state, "step", step_tv);
     TVal step_reject_tv; step_reject_tv.set_object(step_reject_raw);
-    disposable_state_set(heap, state, "\xFFstepReject", step_reject_tv);
+    disposable_state_set(heap, state, "stepReject", step_reject_tv);
 
     disposable_async_run(ctx, state, false);
 }

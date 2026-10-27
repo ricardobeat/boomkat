@@ -15,25 +15,25 @@ import boomkat::hobject;
 // object. There is no dedicated ObjClass/HObjectExtra member for this
 // adapter (it would need a new union member + GC-mark case for a single
 // TVal), so, following the same convention as Promise capability state
-// and Promise.all element callbacks (see promise.c3's "\xFFcap_*" /
-// "\xFFstate" hidden props), the sync iterator is stashed as a TVal behind
+// and Promise.all element callbacks (see promise.c3's "cap_*" /
+// "state" hidden props), the sync iterator is stashed as a TVal behind
 // a hidden, unprintable-prefixed property key that user code cannot spell.
-const char[] ASYNC_FROM_SYNC_ITERATOR_SLOT = "\xFFsyncIterator";
+const char[] ASYNC_FROM_SYNC_ITERATOR_SLOT = "syncIterator";
 // Cached sync [[NextMethod]] (§27.1.4.1: the wrapped syncIteratorRecord caches
 // `next` once; every %AsyncFromSyncIteratorPrototype%.next reuses it rather than
 // re-reading iterator.next, an accessor `next` getter fires exactly once).
-const char[] ASYNC_FROM_SYNC_NEXT_SLOT = "\xFFsyncNext";
+const char[] ASYNC_FROM_SYNC_NEXT_SLOT = "syncNext";
 
 // Hidden-prop keys on the native value-unwrap/reject-forward reaction
 // closures (mirrors promise.c3's promise_create_element_callback pattern).
-const char[] ASYNC_FROM_SYNC_DONE_SLOT  = "\xFFdone";
-const char[] ASYNC_FROM_SYNC_OUTER_SLOT = "\xFFouter";
+const char[] ASYNC_FROM_SYNC_DONE_SLOT  = "done";
+const char[] ASYNC_FROM_SYNC_OUTER_SLOT = "outer";
 
 // Slots on the reject-forward closure carrying the sync iterator to close and
 // a flag marking whether it should be closed (§27.1.4.4 step 13: the onRejected
 // reaction closes the iterator when the yielded "value" is a rejected promise
 // and `done` is false).
-const char[] ASYNC_FROM_SYNC_CLOSEITER_SLOT = "\xFFcloseIter";
+const char[] ASYNC_FROM_SYNC_CLOSEITER_SLOT = "closeIter";
 
 // Create %AsyncFromSyncIteratorPrototype%: a plain object
 // (inherits directly from %ObjectPrototype%, not %IteratorPrototype%) with
@@ -67,7 +67,7 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
     HObject* adapter = adapter_raw;
     heap.set_prototype(adapter, heap.async_from_sync_iter_proto);
 
-    HString* slot_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_ITERATOR_SLOT);
+    HString* slot_key = heap.str_intern_hidden(ASYNC_FROM_SYNC_ITERATOR_SLOT);
     if (slot_key == null) return null;
     TVal sync_tv;
     sync_tv.set_object(syncIter);
@@ -89,7 +89,7 @@ fn HObject*? async_from_sync_iterator(Heap* heap, HObject* syncIter, void* vm) {
             next_method = heap.call_fn(vm, nl.acc.accessor_fn, null, 0, this_tv);
             if (heap.has_error) return null; // getter threw, propagate
         }
-        HString* next_slot = builtin_intern_string(heap, ASYNC_FROM_SYNC_NEXT_SLOT);
+        HString* next_slot = heap.str_intern_hidden(ASYNC_FROM_SYNC_NEXT_SLOT);
         if (next_slot != null) adapter.put_prop(next_slot, next_method, hobject::PROP_FLAGS_WEC, heap);
     }
 
@@ -102,7 +102,7 @@ fn HObject* async_from_sync_get_wrapped(BuiltinContext* ctx) {
     if (!ctx.this_val.is_object()) return null;
     HObject* adapter = (HObject*)ctx.this_val.get_heapptr();
     if (adapter == null) return null;
-    HString* slot_key = builtin_intern_string(ctx.heap, ASYNC_FROM_SYNC_ITERATOR_SLOT);
+    HString* slot_key = ctx.heap.str_intern_hidden(ASYNC_FROM_SYNC_ITERATOR_SLOT);
     if (slot_key == null) return null;
     TVal? sync_opt = adapter.get_prop(slot_key, ctx.heap);
     if (try sv = sync_opt) {
@@ -162,8 +162,8 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
     reject_fn.flags.constructable = false;
     heap.set_prototype(reject_fn, heap.function_proto);
 
-    HString* done_key  = builtin_intern_string(heap, ASYNC_FROM_SYNC_DONE_SLOT);
-    HString* outer_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_OUTER_SLOT);
+    HString* done_key  = heap.str_intern_hidden(ASYNC_FROM_SYNC_DONE_SLOT);
+    HString* outer_key = heap.str_intern_hidden(ASYNC_FROM_SYNC_OUTER_SLOT);
     if (done_key == null || outer_key == null) return null;
 
     TVal done_tv; done_tv.set_boolean(done);
@@ -176,7 +176,7 @@ fn HObject*? async_from_sync_continuation(Heap* heap, void* vm, HObject* sync_it
     // onRejected reaction must close the sync iterator (with a throw completion
     // carrying the rejection reason) before forwarding it to the outer promise.
     if (!done && close_on_rejection && sync_iter != null) {
-        HString* closeiter_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_CLOSEITER_SLOT);
+        HString* closeiter_key = heap.str_intern_hidden(ASYNC_FROM_SYNC_CLOSEITER_SLOT);
         if (closeiter_key != null) {
             TVal si_tv; si_tv.set_object(sync_iter);
             reject_fn.put_prop(closeiter_key, si_tv, hobject::PROP_FLAGS_WEC, heap);
@@ -196,8 +196,8 @@ fn void builtin_async_from_sync_value_unwrap(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return;
     Heap* heap = ctx.heap;
 
-    HString* done_key  = builtin_intern_string(heap, ASYNC_FROM_SYNC_DONE_SLOT);
-    HString* outer_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_OUTER_SLOT);
+    HString* done_key  = heap.str_intern_hidden(ASYNC_FROM_SYNC_DONE_SLOT);
+    HString* outer_key = heap.str_intern_hidden(ASYNC_FROM_SYNC_OUTER_SLOT);
     if (done_key == null || outer_key == null) return;
 
     bool done = false;
@@ -245,7 +245,7 @@ fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return;
     Heap* heap = ctx.heap;
 
-    HString* outer_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_OUTER_SLOT);
+    HString* outer_key = heap.str_intern_hidden(ASYNC_FROM_SYNC_OUTER_SLOT);
     if (outer_key == null) return;
     HObject* outer = null;
     if (try ov = ctx.callee_obj.get_prop(outer_key, ctx.heap)) {
@@ -261,7 +261,7 @@ fn void builtin_async_from_sync_reject_forward(BuiltinContext* ctx) {
     // false and closeOnRejection true), close it with a throw completion. Since
     // the completion is already a throw, IteratorClose keeps the original reason
     // unless closing itself throws, in which case that error becomes the reason.
-    HString* closeiter_key = builtin_intern_string(heap, ASYNC_FROM_SYNC_CLOSEITER_SLOT);
+    HString* closeiter_key = heap.str_intern_hidden(ASYNC_FROM_SYNC_CLOSEITER_SLOT);
     if (closeiter_key != null) {
         if (try si = ctx.callee_obj.get_prop(closeiter_key, ctx.heap)) {
             if (si.is_object() && si.get_heapptr() != null) {
@@ -421,7 +421,7 @@ fn void builtin_async_from_sync_next(BuiltinContext* ctx) {
     // §27.1.4.2 step 5: use the cached [[NextMethod]] read once at wrapping
     // time (see async_from_sync_iterator), not a fresh iterator.next read.
     HObject* adapter = (HObject*)ctx.this_val.get_heapptr();
-    HString* next_slot = builtin_intern_string(heap, ASYNC_FROM_SYNC_NEXT_SLOT);
+    HString* next_slot = heap.str_intern_hidden(ASYNC_FROM_SYNC_NEXT_SLOT);
     TVal next_method; next_method.set_undefined();
     if (next_slot != null && adapter != null) {
         if (try nm = adapter.get_prop(next_slot, ctx.heap)) next_method = nm;

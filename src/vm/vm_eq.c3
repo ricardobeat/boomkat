@@ -90,7 +90,7 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
 // Compare a BigInt with a string via StringToBigInt. A string that fails to
 // parse compares unequal.
 fn bool bigint_string_eq(Heap* hp, hbigint::HBigInt* big, HString* s) {
-    if (s == null) return false;
+    if (s == null || s.is_symbol()) return false;
     hbigint::HBigInt*? parsed = string_to_bigint(hp, s.get_data());
     if (catch parsed) return false;
     return hbigint::hbigint_eq(parsed, big);

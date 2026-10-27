@@ -1501,7 +1501,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
     if (ctx.argc < 1) { builtin_throw(ctx, ctx.heap.type_err_proto, "round requires an options argument"); return; }
     TVal* arg = arg_at(ctx, 0);
     HObject* opts;
-    if (arg.is_string()) {
+    if (arg.is_string() && !((HString*)arg.get_heapptr()).is_symbol()) {
         // String shorthand: round(string) is equivalent to round({ smallestUnit: string }).
         HString* hstr = (HString*)arg.get_heapptr();
         if (hstr == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "round string shorthand is invalid"); return; }

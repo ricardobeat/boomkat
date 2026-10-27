@@ -1660,7 +1660,7 @@ fn bool builtin_to_boolean(TVal* val, Heap* h = null) {
             return !val.get_bigint().is_zero();   // ToBoolean(0n) = false
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
-            return s != null && s.blen > 0;
+            return s != null && s.is_truthy();
         }
         case OBJECT:
             if (h != null && h.htmldda_obj != null
@@ -3455,8 +3455,8 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
 fn void builtin_module_binding_getter(BuiltinContext* ctx) {
     ctx.result_undefined();
     if (ctx.callee_obj == null) return;
-    HString* env_slot_key = ctx.heap.str_intern(MODULE_BINDING_ENV_SLOT);
-    HString* key_slot_key = ctx.heap.str_intern(MODULE_BINDING_KEY_SLOT);
+    HString* env_slot_key = ctx.heap.str_intern_hidden(MODULE_BINDING_ENV_SLOT);
+    HString* key_slot_key = ctx.heap.str_intern_hidden(MODULE_BINDING_KEY_SLOT);
     if (env_slot_key == null || key_slot_key == null) return;
 
     int env_idx = ctx.callee_obj.find_prop_idx((void*)env_slot_key, ctx.heap);
@@ -3506,8 +3506,8 @@ fn TVal make_module_binding_accessor(Heap* heap, HObject* source_bindings, HStri
     func_obj.flags.constructable = false;
     heap.set_prototype(func_obj, heap.function_proto);
 
-    HString* env_slot_key = heap.str_intern(MODULE_BINDING_ENV_SLOT);
-    HString* key_slot_key = heap.str_intern(MODULE_BINDING_KEY_SLOT);
+    HString* env_slot_key = heap.str_intern_hidden(MODULE_BINDING_ENV_SLOT);
+    HString* key_slot_key = heap.str_intern_hidden(MODULE_BINDING_KEY_SLOT);
     if (env_slot_key == null || key_slot_key == null) return undef_result;
     hobject::module_getter_index = (int)Builtin.MODULE_BINDING_GETTER.ordinal;
 

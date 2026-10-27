@@ -142,7 +142,7 @@ $if types::USE_NANBOX:
     }
     if (tag == types::TAG_STRING) {
         HString* s = (HString*)(val.bits & types::NANBOX_PAYLOAD_MASK);
-        return s.blen > 0;
+        return s.is_truthy();
     }
     return true;
 $else
@@ -152,7 +152,7 @@ $else
         case BOOLEAN:   return val.get_boolean();
         case NUMBER:    return val.get_number() != 0.0 && !math::is_nan(val.get_number());
         case FASTINT:   return val.get_fastint() != 0;
-        case STRING:    return ((HString*)val.get_heapptr()).blen > 0;
+        case STRING:    return ((HString*)val.get_heapptr()).is_truthy();
         case OBJECT:    return true;
         case LIGHTFUNC: return true;
         default:        return true;
@@ -529,6 +529,7 @@ fn bool is_ecma_whitespace(char c) @inline {
 // ECMA-262 StringToNumber: https://tc39.es/ecma262/#sec-stringtonumber
 // Trims white-space, then parses a decimal, hex or Infinity literal. Returns NaN otherwise.
 fn double hstring_to_number(HString* hstr) {
+    if (hstr.is_symbol()) return double::nan;
     char* cstr = hstr.get_cstr();
     uint blen = hstr.blen;
 

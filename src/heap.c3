@@ -1389,17 +1389,18 @@ enum BuiltinStr : uint {
     ON_FULFILLED,  // "onFulfilled"
     ON_REJECTED,   // "onRejected"
     DOWNSTREAM,    // "downstream"
-    CAP_RESOLVE,   // "\xFFcap_resolve_tv"
-    CAP_REJECT,    // "\xFFcap_reject_tv"
-    CAP_PROMISE,   // "\xFFcap_promise_tv"
     THEN,          // "then"
     RESOLVE,       // "resolve"
     REJECT,        // "reject"
-    // Hidden slots; the leading \xFF cannot be spelled in a source literal.
-    REACTION_NEXT,    // "\xFFpromise_reaction_next"
-    HIDDEN_PROMISE,   // "\xFFpromise"
-    CAP_CELL,         // "\xFFcap_cell"
-    ALREADY_RESOLVED, // "\xFFalreadyResolved"
+    // Hidden slots: interned as hidden symbols, so no script string can equal
+    // one. `CAP_RESOLVE` is the first, and every entry after it is hidden.
+    CAP_RESOLVE,      // "cap_resolve_tv"
+    CAP_REJECT,       // "cap_reject_tv"
+    CAP_PROMISE,      // "cap_promise_tv"
+    REACTION_NEXT,    // "promise_reaction_next"
+    HIDDEN_PROMISE,   // "promise"
+    CAP_CELL,         // "cap_cell"
+    ALREADY_RESOLVED, // "alreadyResolved"
 }
 
 // The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
@@ -1416,9 +1417,9 @@ const String[] BUILTIN_STR_LITERALS = {
     "unicode", "unicodeSets", "sticky", "hasIndices", "indices",
     "next", "return", "throw",
     "onFulfilled", "onRejected", "downstream",
-    "\xFFcap_resolve_tv", "\xFFcap_reject_tv", "\xFFcap_promise_tv",
     "then", "resolve", "reject",
-    "\xFFpromise_reaction_next", "\xFFpromise", "\xFFcap_cell", "\xFFalreadyResolved",
+    "cap_resolve_tv", "cap_reject_tv", "cap_promise_tv",
+    "promise_reaction_next", "promise", "cap_cell", "alreadyResolved",
 };
 
 $assert BUILTIN_STR_LITERALS.len == BuiltinStr::len :
@@ -1733,7 +1734,8 @@ fn HString* Heap.str(&self, BuiltinStr which) @inline {
 // repeat calls are harmless.
 fn void Heap.init_builtin_strs(&self) {
     foreach (i, lit : BUILTIN_STR_LITERALS) {
-        HString* s = self.str_intern((char[])lit);
+        HString* s = i >= BuiltinStr.CAP_RESOLVE.ordinal
+            ? self.str_intern_hidden((char[])lit) : self.str_intern((char[])lit);
         self.strs[i] = s;
         // Pinning keeps these alive through refcounting and sweep, and makes
         // every incref and decref against them a no-op. See HeapHeader.set_pinned.
@@ -5295,7 +5297,7 @@ fn void Heap.str_table_shrink(&self) {
  * Look up an interned string by byte content and precomputed hash, returning
  * null when the table does not hold it.
  */
-fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
+fn HString* Heap.str_table_lookup(&self, char[] data, uint hash, bool hidden = false) {
     long lookup_start = gcprofile::gcprof_now();
     defer gcprofile::gcprof_phase(35, &lookup_start);
     if (self.str_table_size == 0) return null;
@@ -5308,7 +5310,8 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
         if (slot == 0) return null;  // an empty slot ends the probe chain; a tombstone does not
         if (slot == tag) {
             HString* entry = self.str_table[idx];
-            if (entry.blen == (uint)data.len && entry.equals(data)) return entry;
+            if (entry.flags.is_hidden == hidden && entry.blen == (uint)data.len
+                && entry.equals_chars(data)) return entry;
         }
         idx = (idx + 1) & mask;
     }
@@ -5507,7 +5510,7 @@ fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length) {
 // failing that this string is inserted. Property lookup calls this when a
 // non-interned concatenation result is used as a key.
 fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
-    if (s.flags.is_interned) return s;
+    if (s.flags.is_interned || s.flags.is_symbol) return s;
     // A large concat result reaches here with its hash still deferred, and the
     // table both probes and stores by hash, so materialize it first.
     HString* existing = self.str_table_lookup(s.get_data(), self.content_hash(s));
@@ -5620,6 +5623,23 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
         return s;
     }
     return null;
+}
+
+// Intern an engine slot name as a hidden symbol. A hidden symbol shares the
+// table with ordinary strings but never matches one, so no script string can
+// spell a slot name. Enumeration paths skip hidden symbols.
+fn HString* Heap.str_intern_hidden(&self, char[] name) {
+    uint hash = self.hash_string(name);
+    HString* existing = self.str_table_lookup(name, hash, true);
+    if (existing != null) return existing;
+    HString*? new_s = hstring::hstring_alloc(self, name, hash);
+    if (catch err = new_s) return null;
+    HString* s = new_s;
+    s.flags.is_symbol = true;
+    s.flags.is_hidden = true;
+    s.flags.is_arridx = false;
+    if (!self.str_table_insert(s)) { self.large_string_register(s); }
+    return s;
 }
 
 // ============================================================================

@@ -137,6 +137,7 @@ fn char[] ta_class_name(hobject::ObjClass cls) {
 // "1.5", "NaN", "Infinity"). Plain array-index integer strings ("0", "1",
 // ...) are handled separately via HString.is_arridx() and never reach here.
 fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
+    if (s.is_symbol()) return false;
     char[] bytes = s.get_data();
     if (bytes.len == 2 && bytes[0] == '-' && bytes[1] == '0') {
         *out = -0.0;
