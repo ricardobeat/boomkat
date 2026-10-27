@@ -4,6 +4,7 @@ import boomkat::ast;
 import boomkat::lexer;
 import boomkat::types;
 import boomkat::bytecode;
+import boomkat::vm;
 
 // Bound both recursion and repeated probes of overlapping subtrees. Failure
 // leaves ordinary generation in charge, including all coercions and effects.
@@ -25,6 +26,7 @@ fn bool fold_number(ast::Ast* tree, uint n, uint* budget, TVal* result) {
             case PLUS: result.set_number(a);
             case MINUS: result.set_number(-a);
             case LOG_NOT: result.set_boolean(a == 0.0 || a != a);
+            case BIT_NOT: result.set_number((double)~vm::toint32(a));
             default: return false;
         }
         return true;
@@ -39,6 +41,12 @@ fn bool fold_number(ast::Ast* tree, uint n, uint* budget, TVal* result) {
         case STAR: result.set_number(a * b);
         case SLASH: result.set_number(a / b);
         case PERCENT: result.set_number(a % b);
+        case BIT_AND: result.set_number((double)(vm::toint32(a) & vm::toint32(b)));
+        case BIT_OR: result.set_number((double)(vm::toint32(a) | vm::toint32(b)));
+        case BIT_XOR: result.set_number((double)(vm::toint32(a) ^ vm::toint32(b)));
+        case SHL: result.set_number((double)(int)((uint)vm::toint32(a) << ((uint)vm::toint32(b) & 31)));
+        case SHR: result.set_number((double)(vm::toint32(a) >> ((uint)vm::toint32(b) & 31)));
+        case USHR: result.set_number((double)((uint)vm::toint32(a) >> ((uint)vm::toint32(b) & 31)));
         case LT: result.set_boolean(a < b);
         case LE: result.set_boolean(a <= b);
         case GT: result.set_boolean(a > b);
