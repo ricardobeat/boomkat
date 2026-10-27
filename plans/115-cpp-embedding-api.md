@@ -1,6 +1,6 @@
 # 115: An idiomatic C++ embedding API (`bk::`)
 
-Status: planned, 2026-10-27. Nothing implemented. Baseline: `main` at
+Status: planned, 2026-10-27. C1 implemented. Baseline: `main` at
 `e018e76e`.
 
 Boomkat gets a C++ layer, `include/boomkat.hpp`: header-only, in namespace
