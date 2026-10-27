@@ -58,7 +58,7 @@ fn CompiledFunction* dynamic_function_compile(BuiltinContext* ctx, String prefix
         if (text == null) continue;
         StrBuf* dst = i + 1 < ctx.argc ? &params : &body;
         if (i > 0 && dst == &params) params.append_char(',');
-        dst.append_bytes(text.get_data());
+        dst.append_hstring(text);
     }
 
     // The parameter text must parse as FormalParameters on its own. The
@@ -936,7 +936,7 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
     // propagate any abrupt completion (throw) before creating the bound fn.
     HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
     // A non-string targetName (or a Symbol) leaves nothing after "bound ".
-    char[] target_name = "";
+    HString* target_name = null;
     if (downstream.is_object()) {
         HObject* tobj = (HObject*)downstream.get_heapptr();
         if (tobj != null) {
@@ -951,17 +951,17 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
                     HString* tn_str = (HString*)tn.get_heapptr();
                     // Symbols are stored as HString with is_symbol flag;
                     // per spec Type(targetName) must be String (not Symbol).
-                    if (!tn_str.is_symbol()) target_name = tn_str.get_cstr()[:tn_str.blen];
+                    if (!tn_str.is_symbol()) target_name = tn_str;
                 }
             }
         }
     }
-    char[] prefix = "bound ";
-    char[] name_buf = mem::alloc_array(char, prefix.len + target_name.len);
-    defer mem::free(name_buf.ptr);
-    name_buf[:prefix.len] = prefix[..];
-    name_buf[prefix.len..] = target_name[..];
-    HString* bound_name = builtin_intern_string(ctx.heap, name_buf);
+    StrBuf bound;
+    bound.init(ctx.heap);
+    defer bound.free();
+    bound.append_bytes("bound ");
+    if (target_name != null) bound.append_hstring(target_name);
+    HString* bound_name = bound.failed ? null : builtin_intern_string(ctx.heap, bound.bytes());
     if (bound_name != null) {
         TVal name_tv; name_tv.set_string_borrowed(bound_name);
         bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
@@ -1067,41 +1067,29 @@ fn void builtin_function_proto_toString(BuiltinContext* ctx) {
 
             // For function objects, try to get the name from the function's .name property
             HString* name_key = ctx.heap.str(heap::BuiltinStr.NAME);
-            char* name_ptr = "anonymous";
-            usz name_len = 9;
+            HString* name_str = null;
 
             TVal? name_val = obj.get_prop_proto(name_key, ctx.heap);
             if (try nv = name_val) {
-                if (nv.is_string() && nv.get_heapptr() != null) {
-                    HString* name_str = (HString*)nv.get_heapptr();
-                    name_ptr = name_str.get_cstr();
-                    name_len = name_str.blen;
-                }
+                if (nv.is_string() && nv.get_heapptr() != null) name_str = (HString*)nv.get_heapptr();
             }
 
             // For compiled functions without retained source, fall back to the
-            // native placeholder text.
-            char[256] buf;
-            // Build "function name() { [native code] }"
-            buf[0] = 'f'; buf[1] = 'u'; buf[2] = 'n'; buf[3] = 'c'; buf[4] = 't'; buf[5] = 'i'; buf[6] = 'o'; buf[7] = 'n';
-            buf[8] = ' ';
-            int pos = 9;
-            if (is_native_property_name(name_ptr, name_len)) {
-                for (usz i = 0; i < name_len && pos < 250; i++) {
-                    buf[pos++] = name_ptr[i];
-                }
-            } else {
-                pos = 8;
+            // native placeholder text "function name() { [native code] }".
+            StrBuf text;
+            text.init(ctx.heap);
+            defer text.free();
+            text.append_bytes("function");
+            StrBuf name_tmp;
+            name_tmp.init(ctx.heap);
+            defer name_tmp.free();
+            char[] name = name_str != null ? cesu8_text(&name_tmp, name_str) : (char[])"anonymous";
+            if (is_native_property_name(name.ptr, name.len)) {
+                text.append_char(' ');
+                text.append_bytes(name);
             }
-            // Add "() { [native code] }"
-            char[] suffix = "() { [native code] }";
-            for (usz i = 0; i < suffix.len && pos < 255; i++) {
-                buf[pos++] = suffix[i];
-            }
-            buf[pos] = 0;
-
-            HString* result = builtin_intern_string(ctx.heap, buf[:pos]);
-            ctx.result_string(result);
+            text.append_bytes("() { [native code] }");
+            text.finish(ctx);
         } else {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Function.prototype.toString called on non-callable");
         }

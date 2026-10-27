@@ -592,7 +592,7 @@ fn bool coll_initialize(BuiltinContext* ctx, TVal locales, TVal options, IntlCol
     if (!collation.is_undefined()) {
         HString* cs = builtin_to_string_vm(ctx, &collation);
         if (ctx.should_throw || cs == null) return false;
-        char[] text = cs.get_cstr()[:cs.blen];
+        char[] text = cs.token_text();
         if (!coll_type_valid(text)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid collation");
             return false;
@@ -615,7 +615,7 @@ fn bool coll_initialize(BuiltinContext* ctx, TVal locales, TVal options, IntlCol
         TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
         if (try v = first) {
             HString* s = (HString*)v.get_heapptr();
-            tag = s.get_cstr()[:s.blen];
+            tag = s.token_text();
         }
     }
     LocaleId locale_id;

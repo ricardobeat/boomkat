@@ -290,27 +290,19 @@ fn bool builtin_iterator_step_value(Heap* heap, HObject* iter, TVal* value, bool
             if (str == null) return false;
 
             uint idx = (*iter.extra_ptr()).str_iter.index;
-            char[] data = str.get_data();
-            if (idx >= data.len) {
+            uint len = str.unit_len();
+            if (idx >= len) {
                 *done = true;
                 return true;
             }
 
-            uint seq_len = hstring::utf8_seq_len(data[idx]);
-            usz remain = (usz)(data.len - (long)idx);
-            if ((usz)seq_len > remain) seq_len = (uint)remain;
-            uint first_cp = hstring::decode_codepoint(data, idx);
-            if (hstring::is_high_surrogate(first_cp) &&
-                (usz)(idx + seq_len) < data.len) {
-                uint next_seq_len = hstring::utf8_seq_len(data[idx + seq_len]);
-                uint second_cp = hstring::decode_codepoint(data, idx + seq_len);
-                if (hstring::is_low_surrogate(second_cp)) seq_len += next_seq_len;
-            }
-
-            HString* cp_str = heap.str_intern(data[idx : seq_len]);
+            uint units = 1;
+            if (hstring::is_high_surrogate(str.unit_at(idx)) && idx + 1 < len
+                && hstring::is_low_surrogate(str.unit_at(idx + 1))) units = 2;
+            HString* cp_str = heap.str_slice(str, idx, idx + units);
             if (cp_str == null) return false;
             value.set_string(cp_str);
-            (*iter.extra_ptr()).str_iter.index = idx + seq_len;
+            (*iter.extra_ptr()).str_iter.index = idx + units;
             return true;
         }
         default: return false;
@@ -574,7 +566,7 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
         if (match_str == null) match_str = heap.str(heap::BuiltinStr.UNDEFINED);
 
         // a.ii. If matchStr is the empty String, then
-        if (match_str.blen == 0) {
+        if (match_str.unit_len() == 0) {
             // 1. Let thisIndex be ? ToLength(? Get(R, "lastIndex")).
             HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);
             TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
@@ -587,21 +579,13 @@ fn void builtin_regexp_string_iterator_next(BuiltinContext* ctx) {
             long this_index = (long)this_d;
 
             // 2. Let nextIndex be ! AdvanceStringIndex(S, thisIndex, fullUnicode).
-            // thisIndex may be >= the string's char length (e.g. a custom
-            // `exec` set a `lastIndex` beyond S), AdvanceStringIndex is
-            // still well-defined there (it just adds 1), so guard against
-            // clamped byte-offset round-tripping past the string's end.
+            // thisIndex may be >= the string's length (e.g. a custom `exec` set
+            // a `lastIndex` beyond S); AdvanceStringIndex then just adds 1.
             long next_index;
             if ((ulong)this_index >= (ulong)s_hstr.unit_len()) {
                 next_index = this_index + 1;
             } else {
-                char* input = s_hstr.get_cstr();
-                int input_len = (int)s_hstr.blen;
-                uint byte_off = s_hstr.char_offset_to_byte_offset((uint)this_index);
-                int adv_bytes = (int)hstring::advance_string_index_byte_len(
-                    input[:input_len], byte_off, unicode_flag);
-                uint new_byte_off = byte_off + (uint)adv_bytes;
-                next_index = (long)s_hstr.byte_offset_to_char_offset(new_byte_off);
+                next_index = (long)hstring::advance_string_index(s_hstr, (uint)this_index, unicode_flag);
             }
             TVal next_tv; next_tv.set_fastint(next_index);
 
@@ -2825,14 +2809,9 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
     TVal next_method;
     if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
-    // Grow one byte buffer as pieces arrive, then intern once at the end.
-    const usz INIT_CAP = 64;
-    char* buf = (char*)heap.alloc_func(heap.heap_udata, INIT_CAP);
-    if (buf == null) { ctx.result_undefined(); return; }
-    defer heap.free_func(heap.heap_udata, buf);
-    usz used = 0;
-    usz cap = INIT_CAP;
-    ulong total64 = 0;
+    StrBuf out;
+    out.init(heap);
+    defer out.free();
 
     bool first = true;
     while (true) {
@@ -2846,27 +2825,7 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
         if (!first) {
             // Append the separator between every pair of iterated values,
             // even when the value itself contributes no text.
-            if (sep_str != null) {
-                uint slen = sep_str.blen;
-                if (used + (usz)slen > cap) {
-                    usz new_cap = cap;
-                    while (new_cap < used + (usz)slen) new_cap *= 2;
-                    char* nb = (char*)heap.realloc_func(heap.heap_udata, buf, new_cap);
-                    // OOM is an abrupt completion: close the open iterator and
-                    // seed the result, never leave the callee slot in place.
-                    if (nb == null) {
-                        builtin_throw(ctx, heap.range_err_proto, "Out of memory");
-                        iterhelper_iterator_close(ctx, obj, true);
-                        ctx.result_undefined();
-                        return;
-                    }
-                    buf = nb;
-                    cap = new_cap;
-                }
-                char* sep_data = sep_str.get_cstr();
-                for (usz i = 0; i < (usz)slen; i++) buf[used + i] = sep_data[i];
-                used += (usz)slen;
-            }
+            if (sep_str != null) out.append_hstring(sep_str);
         }
         first = false;
         if (!value.is_undefined() && !value.is_null()) {
@@ -2876,37 +2835,23 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
                 ctx.result_undefined();
                 return;
             }
-            if (vs != null) {
-                uint vlen = vs.blen;
-                if (used + (usz)vlen > cap) {
-                    usz new_cap = cap;
-                    while (new_cap < used + (usz)vlen) new_cap *= 2;
-                    char* nb = (char*)heap.realloc_func(heap.heap_udata, buf, new_cap);
-                    // OOM is an abrupt completion: close the open iterator and
-                    // seed the result, never leave the callee slot in place.
-                    if (nb == null) {
-                        builtin_throw(ctx, heap.range_err_proto, "Out of memory");
-                        iterhelper_iterator_close(ctx, obj, true);
-                        ctx.result_undefined();
-                        return;
-                    }
-                    buf = nb;
-                    cap = new_cap;
-                }
-                char* vdata = vs.get_cstr();
-                for (usz i = 0; i < (usz)vlen; i++) buf[used + i] = vdata[i];
-                used += (usz)vlen;
-            }
+            if (vs != null) out.append_hstring(vs);
         }
-        total64 = (ulong)used;
-        if (hstring::length_exceeds_max(total64)) {
+        // OOM is an abrupt completion: close the open iterator and seed the
+        // result, never leave the callee slot in place.
+        if (out.failed) {
+            builtin_throw(ctx, heap.range_err_proto, "Out of memory");
+            iterhelper_iterator_close(ctx, obj, true);
+            ctx.result_undefined();
+            return;
+        }
+        if (hstring::length_exceeds_max((ulong)out.len)) {
             builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
             ctx.result_undefined();
             return;
         }
     }
-    HString* result = builtin_intern_string(heap, buf[:used]);
-    ctx.result_string(result);
+    out.finish(ctx);
 }
 
 // Iterator.prototype.chunks(chunkSize), proposal-iterator-chunking: a lazy

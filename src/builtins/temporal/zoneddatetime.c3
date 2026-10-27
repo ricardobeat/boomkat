@@ -80,7 +80,7 @@ fn void builtin_temporal_zoneddatetime_ctor(BuiltinContext* ctx) {
         // Symbols are string-tagged but cannot be a timezone.
         HString* tzs_str = builtin_to_string_vm(ctx, tzarg);
         if (ctx.should_throw) return;
-        String s = tzs_str != null ? (String)tzs_str.get_cstr()[:tzs_str.blen] : (String)"";
+        String s = tzs_str != null ? (String)tzs_str.token_text() : (String)"";
         // A bare timezone identifier is an offset or an IANA name. An ISO
         // date-time string is valid input to `Temporal.ZonedDateTime.from`
         // (extracting the offset/bracket zone) but not as a constructor
@@ -217,7 +217,7 @@ fn HObject*? to_temporal_tz(BuiltinContext* ctx, TVal* arg) {
         // Symbols are string-tagged but cannot be converted via get_cstr().
         HString* s_str = builtin_to_string_vm(ctx, arg);
         if (ctx.should_throw) return null;
-        String s = s_str != null ? (String)s_str.get_cstr()[:s_str.blen] : (String)"";
+        String s = s_str != null ? (String)s_str.token_text() : (String)"";
         HObject* tz = resolve_tz_from_string(ctx, s);
         if (tz == null) return null;
         return tz;
@@ -245,7 +245,7 @@ fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* ou
     if (!dv.is_undefined()) {
         HString* ds = builtin_to_string_vm(ctx, &dv);
         if (ctx.should_throw) return -1;
-        char[] dstr = ds.get_cstr()[:ds.blen];
+        char[] dstr = ds.token_text();
         if (dstr != "compatible" && dstr != "earlier" && dstr != "later" && dstr != "reject") {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid disambiguation");
             return -1;
@@ -258,7 +258,7 @@ fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* ou
     if (!offv.is_undefined()) {
         HString* os = builtin_to_string_vm(ctx, &offv);
         if (ctx.should_throw) return -1;
-        char[] ostr = os.get_cstr()[:os.blen];
+        char[] ostr = os.token_text();
         if (ostr == "use") { offset_mode = 1; }
         else if (ostr == "ignore") { offset_mode = 2; }
         else if (ostr == "prefer") { offset_mode = 3; }
@@ -273,7 +273,7 @@ fn int validate_zdt_from_options(BuiltinContext* ctx, temporal::OverflowKind* ou
     if (!ofv.is_undefined()) {
         HString* os2 = builtin_to_string_vm(ctx, &ofv);
         if (ctx.should_throw) return -1;
-        char[] ostr2 = os2.get_cstr()[:os2.blen];
+        char[] ostr2 = os2.token_text();
         if (ostr2 != "constrain" && ostr2 != "reject") {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid overflow option");
             return -1;
@@ -350,7 +350,7 @@ fn bool to_temporal_zoned_datetime(BuiltinContext* ctx, TVal* arg, int128* ns, H
     } else if (arg.is_string() && !((HString*)arg.get_heapptr()).is_symbol()) {
         HString* s = (HString*)arg.get_heapptr();
         if (s == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid string"); return false; }
-        char[] text = s.get_cstr()[:s.blen];
+        char[] text = s.token_text();
         temporal::ParsedIsoZonedDateTime p = { .year = 0, .month = 0, .day = 0, .hour = 0, .minute = 0, .second = 0, .nanos = 0, .offset_seconds = 0, .has_offset = false, .is_z = false };
         if (!temporal::parse_iso_zoneddatetime_string(text, &p)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "Temporal.ZonedDateTime.from: invalid ISO string");
@@ -640,7 +640,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
         // this list because the ZDT.toString spec doesn't accept a `timeZone`
         // option (the zone is the receiver's).
         if (cal_s != null) {
-            char[] v = cal_s.get_cstr()[:cal_s.blen];
+            char[] v = cal_s.token_text();
             if (v != "auto" && v != "always" && v != "never" && v != "critical") {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendarName");
                 return;
@@ -662,7 +662,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
             }
             digits = (int)dv;
         } else if (fd_s != null) {
-            char[] v = fd_s.get_cstr()[:fd_s.blen];
+            char[] v = fd_s.token_text();
             if (v == "auto") { digits = -1; }
             else {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0..9 or \"auto\"");
@@ -670,7 +670,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
             }
         }
         if (off_s != null) {
-            char[] v = off_s.get_cstr()[:off_s.blen];
+            char[] v = off_s.token_text();
             if (v != "auto" && v != "never") {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset option");
                 return;
@@ -678,7 +678,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
             show_offset = (v == "auto") ? 1 : 0;
         }
         if (rm_str != null) {
-            char[] v = rm_str.get_cstr()[:rm_str.blen];
+            char[] v = rm_str.token_text();
             if (v != "ceil" && v != "floor" && v != "expand" && v != "trunc"
                 && v != "halfCeil" && v != "halfFloor" && v != "halfExpand"
                 && v != "halfTrunc" && v != "halfEven") {
@@ -698,7 +698,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
             else if (v == "halfEven") { rm = temporal::TemporalRoundMode.HALF_EVEN; }
         }
         if (su_s != null) {
-            char[] v = su_s.get_cstr()[:su_s.blen];
+            char[] v = su_s.token_text();
             // Sentinel -10: round to minute, no fractional part.
             if (v == "minute" || v == "minutes") { digits = -10; }
             else if (v == "second" || v == "seconds") { digits = 0; }
@@ -711,7 +711,7 @@ fn void builtin_temporal_zoneddatetime_proto_toString(BuiltinContext* ctx) {
             }
         }
         if (tzn_s != null) {
-            char[] v = tzn_s.get_cstr()[:tzn_s.blen];
+            char[] v = tzn_s.token_text();
             if (v != "auto" && v != "never" && v != "critical") {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid timeZoneName option");
                 return;
@@ -1219,7 +1219,7 @@ fn void builtin_temporal_zoneddatetime_proto_getTimeZoneTransition(BuiltinContex
             builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert a Symbol value to a string");
             return;
         }
-        if (ds != null) dir = (String)ds.get_cstr()[:ds.blen];
+        if (ds != null) dir = (String)ds.token_text();
     } else if (dir_arg.is_object() && dir_arg.get_heapptr() != null) {
         HObject* dbag = (HObject*)dir_arg.get_heapptr();
         dir_tv = prop_or_undefined_pa(ctx, dbag, "direction");
@@ -1234,7 +1234,7 @@ fn void builtin_temporal_zoneddatetime_proto_getTimeZoneTransition(BuiltinContex
             builtin_throw(ctx, ctx.heap.type_err_proto, "direction must be a string");
             return;
         }
-        dir = (String)ds.get_cstr()[:ds.blen];
+        dir = (String)ds.token_text();
     } else {
         builtin_throw(ctx, ctx.heap.type_err_proto, "direction must be a string or object");
         return;
@@ -1304,7 +1304,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
     if (arg.is_string()) {
         HString* s = builtin_to_string_vm(ctx, arg);
         if (ctx.should_throw) return;
-        if (!temporal::parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
+        if (!temporal::parse_unit_str(s.token_text(), &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
             return;
         }
@@ -1332,7 +1332,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         if (!rm_v.is_undefined()) {
             HString* rm_str = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return;
-            if (!temporal::parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
+            if (!temporal::parse_rm_str(rm_str.token_text(), &rounding_mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -1343,7 +1343,7 @@ fn void builtin_temporal_zoneddatetime_proto_round(BuiltinContext* ctx) {
         if (su_v.is_undefined()) { builtin_throw(ctx, ctx.heap.range_err_proto, "round requires a smallestUnit option"); return; }
         HString* su_str = builtin_to_string_vm(ctx, &su_v);
         if (ctx.should_throw) return;
-        if (!temporal::parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
+        if (!temporal::parse_unit_str(su_str.token_text(), &smallest_unit) || smallest_unit < temporal::TemporalUnit.DAY) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for round");
             return;
         }

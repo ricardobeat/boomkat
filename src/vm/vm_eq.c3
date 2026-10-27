@@ -4,6 +4,7 @@ import boomkat::types;
 import boomkat::hstring;
 import boomkat::hbigint;
 import boomkat::heap;
+import boomkat::builtins;
 import std::math;
 
 fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
@@ -91,7 +92,7 @@ fn bool abstract_eq(Vm* vm, TVal* a, TVal* b) {
 // parse compares unequal.
 fn bool bigint_string_eq(Heap* hp, hbigint::HBigInt* big, HString* s) {
     if (s == null || s.is_symbol()) return false;
-    hbigint::HBigInt*? parsed = string_to_bigint(hp, s.get_data());
+    hbigint::HBigInt*? parsed = string_to_bigint(hp, s);
     if (catch parsed) return false;
     return hbigint::hbigint_eq(parsed, big);
 }
@@ -99,13 +100,14 @@ fn bool bigint_string_eq(Heap* hp, hbigint::HBigInt* big, HString* s) {
 // StringToBigInt (ECMA-262): trims ECMAScript whitespace, accepts a sign for
 // decimal only, or a `0x`/`0o`/`0b` prefix. The empty string is 0n. Faults on
 // any invalid character or overflow.
-fn hbigint::HBigInt*? string_to_bigint(Heap* hp, char[] raw) {
-    usz lo = 0;
-    usz hi = raw.len;
-    while (lo < hi && is_ecma_whitespace(raw[lo])) lo++;
-    while (hi > lo && is_ecma_whitespace(raw[hi - 1])) hi--;
+fn hbigint::HBigInt*? string_to_bigint(Heap* hp, HString* s) {
+    uint lo;
+    uint hi;
+    builtins::ws_trim_bounds(s, &lo, &hi);
     if (lo == hi) return hbigint::hbigint_from_slimb(hp, 0);   // empty → 0n
-    char[] t = raw[lo..hi - 1];
+    HString* body = hp.str_slice(s, lo, hi);
+    if (body == null || !body.is_ascii()) return hbigint::BIGINT_SYNTAX~;
+    char[] t = body.ascii_bytes();
 
     bool neg = false;
     usz i = 0;

@@ -111,7 +111,7 @@ fn void builtin_temporal_plain_time_from(BuiltinContext* ctx) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "Temporal.PlainTime.from: symbol cannot be converted");
             return;
         }
-        char[] text = s.get_cstr()[:s.blen];
+        char[] text = s.token_text();
         // Time-only inputs use parse_iso_time_string; full date-time strings
         // are accepted too and the date portion is discarded.
         temporal::ParsedIsoDateTime p;
@@ -375,7 +375,7 @@ fn HObject*? plain_time_from_arg(BuiltinContext* ctx, TVal* arg) {
             builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to a PlainTime");
             return null;
         }
-        char[] text = s.get_cstr()[:s.blen];
+        char[] text = s.token_text();
         // PlainTime accepts both time-only strings (`12:34`, `T12:34:56`)
         // and date-time strings whose date portion is silently dropped.
         // Try the time-only parser first; fall back to the date-time parser.
@@ -574,7 +574,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         if (round_to.is_string() || (round_to.is_object() && round_to.get_heapptr() != null && !((HObject*)round_to.get_heapptr()).flags.callable)) {
             HString* s = builtin_to_string_vm(ctx, round_to);
             if (ctx.should_throw) return;
-            char[] str = s.get_cstr()[:s.blen];
+            char[] str = s.token_text();
             if (!temporal::parse_unit_str(str, &smallest_unit) || smallest_unit < temporal::TemporalUnit.HOUR) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
@@ -607,7 +607,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         if (!rm_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return;
-            if (!temporal::parse_rm_str(s.get_cstr()[:s.blen], &rounding_mode)) {
+            if (!temporal::parse_rm_str(s.token_text(), &rounding_mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return;
             }
@@ -617,7 +617,7 @@ fn void builtin_temporal_plain_time_proto_round(BuiltinContext* ctx) {
         if (!su_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &su_v);
             if (ctx.should_throw) return;
-            if (!temporal::parse_unit_str(s.get_cstr()[:s.blen], &smallest_unit) || smallest_unit < temporal::TemporalUnit.HOUR) {
+            if (!temporal::parse_unit_str(s.token_text(), &smallest_unit) || smallest_unit < temporal::TemporalUnit.HOUR) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit");
                 return;
             }

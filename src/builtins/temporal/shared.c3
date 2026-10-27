@@ -349,7 +349,7 @@ fn bool read_overflow(BuiltinContext* ctx, TVal* options, temporal::OverflowKind
     // test logs expect.
     HString* str = builtin_to_string_vm(ctx, &val);
     if (ctx.should_throw) return false;
-    char[] v = str.get_cstr()[:str.blen];
+    char[] v = str.token_text();
     if (v == "constrain") return true;
     if (v == "reject")    { *out = temporal::OverflowKind.REJECT; return true; }
     builtin_throw(ctx, ctx.heap.range_err_proto, "overflow option must be \"constrain\" or \"reject\"");
@@ -371,7 +371,7 @@ fn bool read_disambiguation(BuiltinContext* ctx, TVal* options, int* out) {
     if (val.is_undefined()) return true;
     HString* str = builtin_to_string_vm(ctx, &val);
     if (ctx.should_throw) return false;
-    switch (str.get_cstr()[:str.blen]) {
+    switch (str.token_text()) {
         case "compatible": return true;
         case "earlier": *out = 1;
         case "later": *out = 2;
@@ -598,7 +598,7 @@ fn bool duration_record_from_arg(BuiltinContext* ctx, TVal* arg, temporal::Durat
             builtin_throw(ctx, ctx.heap.type_err_proto, "Duration: symbol cannot be converted");
             return false;
         }
-        if (!temporal::parse_duration(s.get_cstr()[:s.blen], out)) {
+        if (!temporal::parse_duration(s.token_text(), out)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid duration string");
             return false;
         }

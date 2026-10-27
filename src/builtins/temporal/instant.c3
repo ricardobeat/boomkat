@@ -550,7 +550,7 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
                 builtin_throw(ctx, ctx.heap.type_err_proto, "fractionalSecondDigits must be a number or \"auto\"");
                 return false;
             }
-            char[] v = f_s.get_cstr()[:f_s.blen];
+            char[] v = f_s.token_text();
             if (v == "auto") { *digits = -1; }
             else {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "fractionalSecondDigits must be an integer 0 to 9");
@@ -565,7 +565,7 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
         HString* rm_s = builtin_to_string_vm(ctx, &rmv);
         if (ctx.should_throw) return false;
         if (rm_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "roundingMode must be a string"); return false; }
-        char[] v = rm_s.get_cstr()[:rm_s.blen];
+        char[] v = rm_s.token_text();
         if (v == "ceil") { *rm = temporal::TemporalRoundMode.CEIL; }
         else if (v == "floor") { *rm = temporal::TemporalRoundMode.FLOOR; }
         else if (v == "expand") { *rm = temporal::TemporalRoundMode.EXPAND; }
@@ -585,7 +585,7 @@ fn bool to_string_precision(BuiltinContext* ctx, int options_index, int* digits,
         HString* su_s = builtin_to_string_vm(ctx, &su);
         if (ctx.should_throw) return false;
         if (su_s == null) { builtin_throw(ctx, ctx.heap.type_err_proto, "smallestUnit option must be a string"); return false; }
-        char[] v = su_s.get_cstr()[:su_s.blen];
+        char[] v = su_s.token_text();
         // Sentinel -10: round to minute, no fractional part. Both singular
         // and plural spellings are accepted for every unit.
         if (v == "minute" || v == "minutes") { *digits = -10; }
@@ -953,7 +953,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
         if (!lu_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &lu_v);
             if (ctx.should_throw) return false;
-            char[] str = s.get_cstr()[:s.blen];
+            char[] str = s.token_text();
             if (str != "auto") {
                 if (!temporal::parse_unit_str(str, &out.largest)) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "largestUnit is not a valid value");
@@ -987,7 +987,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
         if (!rm_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &rm_v);
             if (ctx.should_throw) return false;
-            if (!temporal::parse_rm_str(s.get_cstr()[:s.blen], &out.mode)) {
+            if (!temporal::parse_rm_str(s.token_text(), &out.mode)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
                 return false;
             }
@@ -998,7 +998,7 @@ fn bool read_diff_settings(BuiltinContext* ctx, int options_index,
         if (!su_v.is_undefined()) {
             HString* s = builtin_to_string_vm(ctx, &su_v);
             if (ctx.should_throw) return false;
-            char[] str = s.get_cstr()[:s.blen];
+            char[] str = s.token_text();
             if (str != "auto") {
                 if (!temporal::parse_unit_str(str, &out.smallest)) {
                     builtin_throw(ctx, ctx.heap.range_err_proto, "smallestUnit is not a valid value");
@@ -1202,7 +1202,7 @@ fn bool read_instant_largest_unit_ns(BuiltinContext* ctx, int options_index, lon
         return false;
     }
     HString* s = (HString*)val.get_heapptr();
-    String str = s ? (String)s.get_cstr()[:s.blen] : "";
+    String str = s ? (String)s.token_text() : "";
     if (temporal::ci_eq(str, "hour") || temporal::ci_eq(str, "hours"))         { *out = temporal::NS_PER_HOUR; return true; }
     if (temporal::ci_eq(str, "minute") || temporal::ci_eq(str, "minutes"))     { *out = temporal::NS_PER_MIN; return true; }
     if (temporal::ci_eq(str, "second") || temporal::ci_eq(str, "seconds"))     { *out = temporal::NS_PER_SEC; return true; }
@@ -1313,7 +1313,7 @@ fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** o
         }
         if (prim.is_string() && prim.get_heapptr() != null) {
             HString* s = (HString*)prim.get_heapptr();
-            String str = (String)s.get_cstr()[:s.blen];
+            String str = (String)s.token_text();
             return instant_from_iso_string(ctx, str, out);
         }
         builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to an Instant");
@@ -1332,7 +1332,7 @@ fn bool to_temporal_instant(BuiltinContext* ctx, TVal* arg, hbigint::HBigInt** o
             builtin_throw(ctx, ctx.heap.type_err_proto, "value cannot be converted to an Instant");
             return false;
         }
-        String str = (String)s.get_cstr()[:s.blen];
+        String str = (String)s.token_text();
         return instant_from_iso_string(ctx, str, out);
     }
     // Symbol and other primitives (number, boolean, null, undefined, bigint):
@@ -1509,7 +1509,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
         if (catch err = bag_o) { builtin_throw(ctx, ctx.heap.err_proto, "alloc failed"); return; }
         HObject* bag = bag_o;
         HString* su_key = builtin_intern_string(ctx.heap, "smallestUnit");
-        HString* su_copy = builtin_intern_string(ctx.heap, (String)hstr.get_cstr()[:hstr.blen]);
+        HString* su_copy = builtin_intern_string(ctx.heap, (String)hstr.token_text());
         TVal su_tv;
         su_tv.set_string_borrowed(su_copy);
         PropFlags pf;
@@ -1554,7 +1554,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
 
     // Algorithmic validation now that all props have been observed.
     temporal::TemporalUnit smallest_unit;
-    if (!temporal::parse_unit_str(su_str.get_cstr()[:su_str.blen], &smallest_unit)
+    if (!temporal::parse_unit_str(su_str.token_text(), &smallest_unit)
         || smallest_unit < temporal::TemporalUnit.HOUR) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid smallestUnit for Instant.round");
         return;
@@ -1589,7 +1589,7 @@ fn void builtin_temporal_instant_proto_round(BuiltinContext* ctx) {
 
     temporal::TemporalRoundMode rounding_mode = temporal::TemporalRoundMode.HALF_EXPAND;
     if (rm_str != null) {
-        if (!temporal::parse_rm_str(rm_str.get_cstr()[:rm_str.blen], &rounding_mode)) {
+        if (!temporal::parse_rm_str(rm_str.token_text(), &rounding_mode)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid roundingMode");
             return;
         }

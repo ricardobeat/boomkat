@@ -43,7 +43,7 @@ fn bool calendar_ctor_arg(BuiltinContext* ctx, TVal* tv, temporal::CalendarId* o
     *out = ISO8601;
     if (tv.is_undefined()) return true;
     HString* s = calendar_string_arg(ctx, tv);
-    return s != null && calendar_canonicalize(ctx, s.get_cstr()[:s.blen], out);
+    return s != null && calendar_canonicalize(ctx, s.token_text(), out);
 }
 
 // ToTemporalCalendarIdentifier: a Temporal object's calendar, the calendar an ISO 8601 string
@@ -55,7 +55,7 @@ fn bool calendar_from_arg(BuiltinContext* ctx, TVal* tv, temporal::CalendarId* o
     }
     HString* s = calendar_string_arg(ctx, tv);
     if (s == null) return false;
-    char[] text = s.get_cstr()[:s.blen];
+    char[] text = s.token_text();
     temporal::ParsedIsoDateTime p;
     if (temporal::parse_iso_date_string(text, &p) || temporal::parse_iso_yearmonth_string(text, &p)
         || temporal::parse_iso_monthday_string(text, &p) || temporal::parse_iso_time_string(text, &p)) {
@@ -200,7 +200,7 @@ fn bool read_show_calendar(BuiltinContext* ctx, HObject* opts, ShowCalendar* out
     if (v.is_undefined()) return true;
     HString* s = builtin_to_string_vm(ctx, &v);
     if (ctx.should_throw) return false;
-    switch (s.get_cstr()[:s.blen]) {
+    switch (s.token_text()) {
         case "auto": return true;
         case "always": *out = ALWAYS;
         case "never": *out = NEVER;

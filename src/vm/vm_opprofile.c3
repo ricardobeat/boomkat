@@ -120,8 +120,8 @@ fn void opprof_name(Opcode op, void* key, hobject::VarICEntry* vic, void* lex_en
         if (n.key == null) {
             // The exit dump runs after heap teardown, so it owns the bytes.
             hstring::HString* text = (hstring::HString*)key;
-            char[] name = mem::new_array(char, text.blen);
-            mem::copy(name.ptr, text.get_cstr(), (sz)text.blen);
+            char[] name = mem::new_array(char, (sz)text.utf8_len());
+            text.copy_utf8(name.ptr);
             *n = { .key = key, .name = name, .op = op };
             slot = n;
             break;

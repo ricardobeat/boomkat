@@ -32,7 +32,7 @@ fn HObject*? alloc_timezone(Heap* hp, String zone_name) {
 fn String timezone_name(HObject* obj) {
     HString* str = obj.extra.temporal.identifier.borrow();
     if (str == null) return "";
-    return (String)str.get_cstr()[:str.blen];
+    return (String)str.token_text();
 }
 
 // Find the next (or previous) offset transition in `zone` relative to

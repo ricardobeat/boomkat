@@ -126,7 +126,7 @@ fn void builtin_intl_duration_format(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HString* numbering = date_get_raw_string_option(ctx, opts, "numberingSystem");
     if (ctx.should_throw) return;
-    if (numbering != null && !date_is_unicode_type_subtag(numbering.get_cstr()[:numbering.blen])) {
+    if (numbering != null && !date_is_unicode_type_subtag(numbering.token_text())) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numbering system");
         return;
     }
@@ -135,13 +135,13 @@ fn void builtin_intl_duration_format(BuiltinContext* ctx) {
     settings.locale = 0;
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
-        first_tag = tag.get_cstr()[:tag.blen];
-        settings.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
+        first_tag = tag.token_text();
+        settings.us_locale = locale_is_us(tag.token_text());
         int row = intl_row_for_tag(first_tag);
         settings.locale = row < 0 ? 0 : row;
         settings.label_mode = intl_label_mode(first_tag, row);
     }
-    IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+    IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.token_text(), numbering != null);
     settings.numbering = intl_numbering_store(resolved.index);
     settings.numbering_ext = resolved.keep_extension;
     settings.style = intl_choice(ctx, opts, "style", {"long", "short", "narrow", "digital"}, 1);

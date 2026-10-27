@@ -435,12 +435,11 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
         hstring::HString* source = (*iterator.extra_ptr()).str_iter.string.borrow();
         if (source == null) return pc;
         uint index = (*iterator.extra_ptr()).str_iter.index;
-        char[] data = source.get_data();
-        if (index >= data.len) return th_next(pc + 2, handlers, regs, cold);
+        if (index >= source.unit_len()) return th_next(pc + 2, handlers, regs, cold);
 
-        uint byte = (uint)data[index];
-        if (byte >= heap::ASCII_CHAR_CACHE_SIZE) return pc;
-        hstring::HString* character = cold.heap.ascii_char_strs[byte];
+        uint unit = source.unit_at(index);
+        if (unit >= heap::ASCII_CHAR_CACHE_SIZE) return pc;
+        hstring::HString* character = cold.heap.ascii_char_strs[unit];
         if (character == null || !((types::HeapHeader*)character).is_pinned()) return pc;
 
         TVal* dest = regs + insn.a;
@@ -603,8 +602,8 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
         if (text != null && text.is_ascii() && index.is_fastint()) {
             long offset = index.get_fastint();
             TVal* dest = regs + result_reg;
-            if (offset >= 0 && offset < (long)text.blen && th_can_release(dest)) {
-                uint code = text.get_cstr()[offset];
+            if (offset >= 0 && offset < (long)text.unit_len() && th_can_release(dest)) {
+                uint code = text.unit_at((uint)offset);
                 th_do_release(dest);
                 dest.set_fastint((long)code);
                 return th_next(pc + 1, handlers, regs, cold);

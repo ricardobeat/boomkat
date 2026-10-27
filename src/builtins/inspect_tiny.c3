@@ -50,7 +50,7 @@ const usz TINY_MAX_ENTRIES = 32;
 fn bool tiny_root(Heap* heap, void* vm, TVal* val, StrBuf* out) {
     if (val.is_string()) {
         HString* s = (HString*)val.get_heapptr();
-        if (s != null && !s.is_symbol()) return out.append_bytes(s.get_data());
+        if (s != null && !s.is_symbol()) return out.append_hstring(s);
     }
     return tiny_value(heap, val, 0, out);
 }
@@ -81,13 +81,12 @@ fn bool tiny_value(Heap* heap, TVal* val, int depth, StrBuf* out) {
             if (s == null) return out.append_bytes("''");
             // A Symbol is tagged STRING but renders as Symbol(desc).
             if (s.is_symbol()) {
-                if (!out.append_bytes("Symbol(")) return false;
-                if (symbol_has_description(s) && !out.append_bytes(symbol_description(s))) {
-                    return false;
-                }
-                return out.append_char(')');
+                return out.append_symbol(s);
             }
-            return tiny_quoted(out, s.get_data());
+            StrBuf tmp;
+            tmp.init(out.heap);
+            defer tmp.free();
+            return tiny_quoted(out, cesu8_text(&tmp, s));
         }
         default:
             break;
@@ -206,9 +205,9 @@ fn bool tiny_function(Heap* heap, HObject* obj, StrBuf* out) {
             TVal nv = obj.prop_values()[idx].get();
             if (nv.is_string()) {
                 HString* n = (HString*)nv.get_heapptr();
-                if (n != null && !n.is_symbol() && n.get_data().len > 0) {
+                if (n != null && !n.is_symbol() && n.unit_len() > 0) {
                     if (!out.append_bytes("[Function: ")) return false;
-                    if (!out.append_bytes(n.get_data())) return false;
+                    if (!out.append_hstring(n)) return false;
                     return out.append_char(']');
                 }
             }
@@ -270,11 +269,12 @@ fn bool tiny_number(StrBuf* out, double d) {
 // `{ a: 1 }` does not become `{ 'a': 1 }`.
 fn bool tiny_key(StrBuf* out, HString* key) {
     if (key.is_symbol()) {
-        if (!out.append_bytes("[Symbol(")) return false;
-        if (symbol_has_description(key) && !out.append_bytes(symbol_description(key))) return false;
-        return out.append_bytes(")]");
+        return out.append_char('[') && out.append_symbol(key) && out.append_char(']');
     }
-    char[] d = key.get_data();
+    StrBuf tmp;
+    tmp.init(out.heap);
+    defer tmp.free();
+    char[] d = cesu8_text(&tmp, key);
     bool bare = d.len > 0;
     for (usz i = 0; i < d.len; i++) {
         char c = d[i];

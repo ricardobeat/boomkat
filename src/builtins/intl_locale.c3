@@ -63,13 +63,13 @@ fn bool intl_locale_option(BuiltinContext* ctx, HObject* opts, char[] key, char[
     if (ctx.should_throw || v.is_undefined()) return false;
     HString* s = builtin_to_string_vm(ctx, &v);
     if (ctx.should_throw || s == null) return false;
-    if (s.blen > buf.len) {
+    char[] bytes = s.token_text();
+    if (bytes.len > buf.len) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid Intl.Locale option");
         return false;
     }
-    char* bytes = s.get_cstr();
-    for (usz i = 0; i < s.blen; i++) buf[i] = bytes[i];
-    *len = s.blen;
+    for (usz i = 0; i < bytes.len; i++) buf[i] = bytes[i];
+    *len = bytes.len;
     return true;
 }
 
@@ -210,9 +210,9 @@ fn void builtin_intl_locale(BuiltinContext* ctx) {
     } else {
         HString* s = builtin_to_string_vm(ctx, &tag);
         if (ctx.should_throw || s == null) return;
-        if (s.blen > 120) { intl_locale_fail(ctx); return; }
-        text_len = s.blen;
-        char* bytes = s.get_cstr();
+        char[] bytes = s.token_text();
+        if (bytes.len > 120) { intl_locale_fail(ctx); return; }
+        text_len = bytes.len;
         for (usz i = 0; i < text_len; i++) text_buf[i] = bytes[i];
     }
     HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));

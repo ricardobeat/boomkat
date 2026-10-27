@@ -58,7 +58,7 @@ fn void builtin_intl_display_names(BuiltinContext* ctx) {
     TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
-        settings.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
+        settings.us_locale = locale_is_us(tag.token_text());
     }
     settings.style = intl_choice(ctx, opts, "style", {"narrow", "short", "long"}, 2);
     if (ctx.should_throw) return;
@@ -254,7 +254,7 @@ fn void builtin_intl_names_of(BuiltinContext* ctx) {
     TVal code_arg = builtin_arg(ctx, 0);
     HString* code_str = builtin_to_string_vm(ctx, &code_arg);
     if (ctx.should_throw || code_str == null) return;
-    char[] code = code_str.get_cstr()[:code_str.blen];
+    char[] code = code_str.token_text();
     StrBuf result; result.init(ctx.heap);
     defer result.free();
     char[64] canonical;

@@ -91,12 +91,12 @@ fn HString* error_build_stack_string(BuiltinContext* ctx, HString* name_str, HSt
     out.init(ctx.heap);
     defer out.free();
 
-    if (name_str != null && name_str.blen > 0) {
-        out.append_bytes(name_str.get_cstr()[:name_str.blen]);
+    if (name_str != null && name_str.unit_len() > 0) {
+        out.append_hstring(name_str);
     }
     out.append_bytes(": ");
-    if (msg_str != null && msg_str.blen > 0) {
-        out.append_bytes(msg_str.get_cstr()[:msg_str.blen]);
+    if (msg_str != null && msg_str.unit_len() > 0) {
+        out.append_hstring(msg_str);
     }
 
     error_append_stack_frames(&out, ctx.vm);
@@ -123,7 +123,7 @@ fn void error_capture_vm_stack(HObject* err, Heap* heap, void* vm_ptr, char[] ms
         if (try nv = nm) {
             if (nv.is_string()) {
                 HString* ns = (HString*)nv.get_heapptr();
-                if (ns != null && ns.blen > 0) out.append_bytes(ns.get_cstr()[:ns.blen]);
+                if (ns != null && ns.unit_len() > 0) out.append_hstring(ns);
             }
         }
     }
@@ -576,17 +576,17 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
             }
         }
     }
-    if (name_str.blen == 0) {
+    if (name_str.unit_len() == 0) {
         ctx.result_string(msg_str);
-    } else if (msg_str.blen == 0) {
+    } else if (msg_str.unit_len() == 0) {
         ctx.result_string(name_str);
     } else {
         StrBuf out;
         out.init(ctx.heap);
         defer out.free();
-        out.append_bytes(name_str.get_data());
+        out.append_hstring(name_str);
         out.append_bytes(": ");
-        out.append_bytes(msg_str.get_data());
+        out.append_hstring(msg_str);
         out.finish(ctx);
     }
 }

@@ -880,6 +880,14 @@ fn uint utf16_unit_byte_len(char[] data, uint offset) @inline {
     return utf8_seq_len(data[offset]);
 }
 
+// AdvanceStringIndex over units: the index after the character at `index`,
+// which is a surrogate pair's two units when `unicode` is set.
+fn uint advance_string_index(HString* s, uint index, bool unicode) {
+    if (unicode && index + 1 < s.unit_len() && is_high_surrogate(s.unit_at(index))
+        && is_low_surrogate(s.unit_at(index + 1))) return index + 2;
+    return index + 1;
+}
+
 // ES `AdvanceStringIndex(S, index, unicode)`: the byte width to advance past
 // a zero-length match at `data[offset]`. Under `unicode`, if the code unit
 // at `offset` is a high surrogate immediately followed by a low surrogate,
@@ -1021,6 +1029,13 @@ fn char[] HString.ascii_bytes(&self) @inline {
     return self.get_data();
 }
 
+// Text to match against ASCII tokens such as option values, unit names and
+// language tags. A string with any non-ASCII unit yields a lone 0xFF byte, which
+// is not UTF-8 and equals no token.
+fn char[] HString.token_text(&self) @inline {
+    return self.flags.is_ascii ? self.get_data() : (char[])"\xFF";
+}
+
 // Index of the first occurrence of `needle` in `hay` at or after unit `from`,
 // or -1. `from` must not exceed `hay.unit_len()`.
 fn int find_units(HString* hay, HString* needle, uint from) {
@@ -1103,6 +1118,12 @@ fn bool HString.matches_at(&self, uint pos, HString* needle) {
     uint byte_pos = self.char_offset_to_byte_offset(pos);
     if ((ulong)byte_pos + needle.blen > self.blen) return false;
     return mem::equals(self.get_cstr() + byte_pos, needle.get_cstr(), needle.blen);
+}
+
+// The string as a C string for a message, built in `buf` as `write_cesu8` does.
+fn ZString HString.cesu8_zstr(&self, char[] buf) {
+    self.write_cesu8(buf);
+    return (ZString)buf.ptr;
 }
 
 // Copy the string into `dst` as CESU-8 text, always NUL-terminated, truncated at

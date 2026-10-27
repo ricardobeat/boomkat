@@ -84,7 +84,7 @@ fn long intl_class_named(Heap* hp, char[] name) {
         HObject* intrinsic = hp.named_intrinsic(name);
         if (intrinsic != null && entry.proto != intrinsic) continue;
         HString* s = entry.name.borrow();
-        if (s != null && mem_eq_bytes(s.get_cstr()[:s.blen], name)) return (long)i;
+        if (s != null && mem_eq_bytes(s.token_text(), name)) return (long)i;
     }
     return -1;
 }
@@ -94,7 +94,7 @@ fn bool intl_has_brand(Heap* hp, HObject* object, char[] name) {
     HostClassEntry* entry = hp.host_class_at((*object.extra_ptr()).host.class_id);
     if (entry == null || entry.finalizer != (void*)&intl_finalize) return false;
     HString* brand = entry.name.borrow();
-    return brand != null && mem_eq_bytes(brand.get_data(), name);
+    return brand != null && mem_eq_bytes(brand.token_text(), name);
 }
 
 fn IntlNumberState* intl_receiver(BuiltinContext* ctx, bool plural, bool legacy = false, HObject** receiver = null) {
@@ -173,7 +173,7 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, IntlLocaleFilter fil
         } else {
             HString* tag = builtin_to_string_vm(ctx, &value);
             if (ctx.should_throw || tag == null) return out;
-            text = tag.get_cstr()[:tag.blen];
+            text = tag.token_text();
         }
         if (!locale_is_well_formed(text)) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
@@ -241,7 +241,7 @@ fn int intl_choice(BuiltinContext* ctx, HObject* opts, char[] key, char[][] valu
     HString* s = date_get_raw_string_option(ctx, opts, key);
     if (ctx.should_throw || s == null) return fallback;
     foreach (i, value : values) {
-        if (mem_eq_bytes(s.get_cstr()[:s.blen], value)) return (int)i;
+        if (mem_eq_bytes(s.token_text(), value)) return (int)i;
     }
     builtin_throw(ctx, ctx.heap.range_err_proto, "invalid Intl option");
     return fallback;
@@ -323,8 +323,8 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
         TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
         if (try v = first) {
             HString* tag = (HString*)v.get_heapptr();
-            first_tag = tag.get_cstr()[:tag.blen];
-            state.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
+            first_tag = tag.token_text();
+            state.us_locale = locale_is_us(tag.token_text());
             state.locale = math::max(intl_row_for_tag(first_tag), 0);
             state.label_mode = intl_label_mode(first_tag, state.locale);
         }
@@ -339,11 +339,11 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
     } else {
         HString* numbering = date_get_raw_string_option(ctx, opts, "numberingSystem");
         if (ctx.should_throw) return false;
-        if (numbering != null && !date_is_unicode_type_subtag(numbering.get_cstr()[:numbering.blen])) {
+        if (numbering != null && !date_is_unicode_type_subtag(numbering.token_text())) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numbering system");
             return false;
         }
-        IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+        IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.token_text(), numbering != null);
         state.numbering = intl_numbering_store(resolved.index);
         state.numbering_ext = resolved.keep_extension;
         state.style = intl_choice(ctx, opts, "style", {"decimal", "percent", "currency", "unit"});
@@ -351,7 +351,7 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
         HString* currency = date_get_raw_string_option(ctx, opts, "currency");
         if (ctx.should_throw) return false;
         if (currency != null) {
-            char[] code = currency.get_cstr()[:currency.blen];
+            char[] code = currency.token_text();
             if (code.len != 3 || !locale_all_alpha(code)) {
                 builtin_throw(ctx, ctx.heap.range_err_proto, "invalid currency code");
                 return false;
@@ -370,7 +370,7 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
         state.unit = -1;
         state.denominator = -1;
         if (unit != null) {
-            char[] text = unit.get_cstr()[:unit.blen];
+            char[] text = unit.token_text();
             usz per = text.len;
             for (usz i = 0; i + 5 <= text.len; i++) {
                 if (mem_eq_bytes(text[i:5], "-per-")) { per = i; break; }
@@ -458,7 +458,7 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
             else {
                 HString* s = builtin_to_string_vm(ctx, &grouping);
                 if (ctx.should_throw) return false;
-                char[] text = s.get_cstr()[:s.blen];
+                char[] text = s.token_text();
                 if (mem_eq_bytes(text, "auto")) { state.grouping = 1; }
                 else if (mem_eq_bytes(text, "always")) { state.grouping = 2; }
                 else if (mem_eq_bytes(text, "min2")) { state.grouping = 3; }

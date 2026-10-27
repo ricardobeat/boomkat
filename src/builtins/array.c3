@@ -1124,7 +1124,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
 
     // Get separator, §23.1.3.16 step 3: if undefined (or absent), use ",".
     HString* sep_str = null;
-    char[] sep = ",";
+    HString* sep = builtin_intern_string(ctx.heap, ",");
     if (ctx.argc > 0 && !ctx.regs[ctx.base_reg].is_undefined()) {
         TVal sep_val = ctx.regs[ctx.base_reg];
         // Use full ToString/ToPrimitive so custom valueOf/toString on objects wins.
@@ -1132,7 +1132,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (sep_str != null) {
             ((types::HeapHeader*)sep_str).incref();
-            sep = sep_str.get_data();
+            sep = sep_str;
         }
     }
 
@@ -1194,7 +1194,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         elem_strs = elem_strs_heap[:len];
     }
 
-    usz total_len = 0;
+    ulong total_len = 0;
     for (uint i = 0; i < len; i++) {
         TVal elem;
         bool present = arr_get_elem_vm(obj, (ulong)i, ctx.heap, ctx, &elem);
@@ -1220,15 +1220,14 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         }
         ((types::HeapHeader*)elem_str).incref();
         elem_strs[i] = elem_str;
-        total_len += elem_str.blen;
+        total_len += elem_str.unit_len();
     }
     if (len > 1) {
-        total_len += sep.len * (usz)(len - 1);
+        total_len += (ulong)sep.unit_len() * (ulong)(len - 1);
     }
 
-    // PASS 2: Allocate a single buffer and copy all pieces using memcpy.
-    // When total_len is 0 (all elements are empty strings and separator is ""),
-    // skip the alloc and return "" directly to avoid a null-from-alloc(0) path.
+    // PASS 2: Build the result. When total_len is 0 (all elements are empty
+    // strings and separator is ""), return "" directly.
     if (total_len == 0) {
         if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
         for (uint i = 0; i < len; i++) {
@@ -1242,9 +1241,9 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
     }
 
     // A join whose pieces sum past the string cap can never produce a value, so
-    // refuse before reserving the buffer. total_len is already 64-bit, so the
+    // refuse before building the buffer. total_len is already 64-bit, so the
     // sum above is exact; only the result is out of range.
-    if (hstring::length_exceeds_max((ulong)total_len)) {
+    if (hstring::length_exceeds_max(total_len)) {
         if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
         for (uint i = 0; i < len; i++) {
             ctx.heap.decref((types::HeapHeader*)elem_strs[i]);
@@ -1254,36 +1253,14 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         return;
     }
 
-    char* result_buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, total_len);
-    if (result_buf == null) {
-        if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
-        for (uint i = 0; i < len; i++) {
-            ctx.heap.decref((types::HeapHeader*)elem_strs[i]);
-        }
-        if (elem_strs_heap != null) ctx.heap.free_func(ctx.heap.heap_udata, elem_strs_heap);
-        ctx.result_undefined();
-        return;
-    }
-
-    usz offset = 0;
+    StrBuf out;
+    out.init(ctx.heap);
+    defer out.free();
     for (uint i = 0; i < len; i++) {
-        if (i > 0 && sep.len > 0) {
-            // Guard sep.len > 0: an empty separator (e.g. join("")) makes `sep`
-            // a zero-length slice, and &sep[0] traps under bounds-checked builds
-            // even though the copy would move zero bytes.
-            mem::copy(&result_buf[offset], &sep[0], (sz)(sep.len));
-            offset += sep.len;
-        }
-        HString* elem_str = elem_strs[i];
-        char[] elem_data = elem_str.get_data();
-        if (elem_data.len > 0) {
-            mem::copy(&result_buf[offset], &elem_data[0], (sz)(elem_data.len));
-            offset += elem_data.len;
-        }
+        if (i > 0) out.append_hstring(sep);
+        out.append_hstring(elem_strs[i]);
     }
-
-    HString* result = builtin_intern_string(ctx.heap, result_buf[:total_len]);
-    ctx.heap.free_func(ctx.heap.heap_udata, result_buf);
+    HString* result = out.to_hstring(ctx);
     if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
     for (uint i = 0; i < len; i++) {
         ctx.heap.decref((types::HeapHeader*)elem_strs[i]);
@@ -1400,7 +1377,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
         // Pin across the append: the interned result is only weakly held and a
         // GC triggered by the buffer growth would otherwise reclaim it.
         ((types::HeapHeader*)s).incref();
-        bool ok = out.append_bytes(s.get_data());
+        bool ok = out.append_hstring(s);
         ctx.heap.decref((types::HeapHeader*)s);
         if (!ok) {
             arr_throw_range_error(ctx, "Array.prototype.toLocaleString out of memory");
@@ -4446,18 +4423,8 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null && (long)key < prim.unit_len()) {
-            char[] data = prim.get_data();
-            usz byte_start = (usz)prim.char_offset_to_byte_offset(key);
-            usz byte_end = (usz)prim.char_offset_to_byte_offset(key + 1);
-            if (byte_start < byte_end) {
-                char[8] one;
-                usz copy_len = byte_end - byte_start;
-                if (copy_len >= one.len) copy_len = one.len - 1;
-                for (usz j = 0; j < copy_len; j++) { one[j] = data[byte_start + j]; }
-                one[copy_len] = 0;
-                HString*? ch_raw = builtin_intern_string(heap, one[:copy_len]);
-                if (try ch = ch_raw) { out.set_string_borrowed(ch); return true; }
-            }
+            HString* ch = heap.str_from_unit(prim.unit_at((uint)key));
+            if (ch != null) { out.set_string_borrowed(ch); return true; }
             return false;
         }
         return false;
@@ -4576,18 +4543,8 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
         if (prim != null && (long)key < prim.unit_len()) {
-            char[] data = prim.get_data();
-            usz byte_start = (usz)prim.char_offset_to_byte_offset((uint)key);
-            usz byte_end = (usz)prim.char_offset_to_byte_offset((uint)key + 1);
-            if (byte_start < byte_end) {
-                char[8] one;
-                usz copy_len = byte_end - byte_start;
-                if (copy_len >= one.len) copy_len = one.len - 1;
-                for (usz j = 0; j < copy_len; j++) { one[j] = data[byte_start + j]; }
-                one[copy_len] = 0;
-                HString*? ch_raw = builtin_intern_string(heap, one[:copy_len]);
-                if (try ch = ch_raw) { out.set_string_borrowed(ch); return true; }
-            }
+            HString* ch = heap.str_from_unit(prim.unit_at((uint)key));
+            if (ch != null) { out.set_string_borrowed(ch); return true; }
             return false;
         }
         return false;

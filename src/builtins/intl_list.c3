@@ -87,10 +87,10 @@ fn void builtin_intl_list_format(BuiltinContext* ctx) {
     settings.locale = 0;
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
-        settings.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
-        int row = intl_row_for_tag(tag.get_cstr()[:tag.blen]);
+        settings.us_locale = locale_is_us(tag.token_text());
+        int row = intl_row_for_tag(tag.token_text());
         settings.locale = row < 0 ? 0 : row;
-        settings.label_mode = intl_label_mode(tag.get_cstr()[:tag.blen], row);
+        settings.label_mode = intl_label_mode(tag.token_text(), row);
     }
     settings.type = intl_choice(ctx, opts, "type", {"conjunction", "disjunction", "unit"});
     if (ctx.should_throw) return;
@@ -148,10 +148,14 @@ fn bool intl_list_collect(BuiltinContext* ctx, TVal iterable, StrBuf* store, uin
             return false;
         }
         HString* s = (HString*)value.get_heapptr();
-        uint len = s.blen;
+        StrBuf item;
+        item.init(ctx.heap);
+        defer item.free();
+        item.append_hstring(s);
+        uint len = (uint)item.len;
         char[4] prefix = { (char)len, (char)(len >> 8), (char)(len >> 16), (char)(len >> 24) };
         store.append_bytes(prefix[..]);
-        store.append_bytes(s.get_cstr()[:len]);
+        store.append_bytes(item.bytes());
         (*count)++;
     }
 }

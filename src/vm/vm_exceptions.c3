@@ -97,10 +97,11 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // Format: A=unused, B=msg_const_idx (A_BC encoding).
             uint bc = insn.get_bc();
             TVal msg_tv = ds.constants[bc];
+            char[types::ERROR_MSG_BUF] msg_buf;
             char[] msg_str = "Cannot delete a super property";
             if (msg_tv.is_string()) {
                 hstring::HString* hs = (hstring::HString*)msg_tv.get_heapptr();
-                msg_str = hs.get_data();
+                msg_str = msg_buf[:hs.write_cesu8(msg_buf[..])];
             }
             if (!vm_throw_error(vm, vm.heap.ref_err_proto, msg_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 vm.has_error = true;
@@ -118,10 +119,11 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
             // colliding with a restricted global name.
             uint bc = insn.get_bc();
             TVal msg_tv = ds.constants[bc];
+            char[types::ERROR_MSG_BUF] msg_buf;
             char[] msg_str = "Invalid or unexpected token";
             if (msg_tv.is_string()) {
                 hstring::HString* hs = (hstring::HString*)msg_tv.get_heapptr();
-                msg_str = hs.get_data();
+                msg_str = msg_buf[:hs.write_cesu8(msg_buf[..])];
             }
             if (!vm_throw_error(vm, vm.heap.syntax_err_proto, msg_str, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 vm.has_error = true;

@@ -340,13 +340,11 @@ fn void console_emit_inspect_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* a
     console_emit_value(ctx, sink, arg);
 }
 
-// Render a Symbol as "Symbol(desc)". The raw HString bytes carry the 0xFF
-// prefix and description marker, so emitting them directly (as the generic
-// primitive path does) would write the marker bytes into the output.
+// Render a Symbol as "Symbol(desc)".
 fn void console_emit_symbol(ConsoleSink sink, HString* sym) {
     sink.write("Symbol(");
     if (symbol_has_description(sym)) {
-        sink.write(symbol_description(sym));
+        sink.write_units(sym, 0, sym.unit_len());
     }
     sink.write(")");
 }

@@ -444,7 +444,7 @@ fn void describe_error(Runtime* rt, TVal* ev) {
         HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE], rt.heap);
         HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME], rt.heap);
 
-        if (name != null && msg != null && msg.blen != 0) {
+        if (name != null && msg != null && msg.unit_len() != 0) {
             char[ERRBUF] buf;
             usz pos = 0;
             char[] np = name.get_data();
@@ -456,8 +456,8 @@ fn void describe_error(Runtime* rt, TVal* ev) {
             set_err(rt, BK_ERR_THROW, buf[:pos]);
             return;
         }
-        if (msg != null && msg.blen != 0) { set_err(rt, BK_ERR_THROW, msg.get_data()); return; }
-        if (name != null && name.blen != 0) { set_err(rt, BK_ERR_THROW, name.get_data()); return; }
+        if (msg != null && msg.unit_len() != 0) { set_err(rt, BK_ERR_THROW, msg.get_data()); return; }
+        if (name != null && name.unit_len() != 0) { set_err(rt, BK_ERR_THROW, name.get_data()); return; }
         set_err(rt, BK_ERR_THROW, "uncaught exception (object)");
         return;
     }

@@ -56,7 +56,7 @@ fn hbigint::HBigInt* builtin_to_bigint(BuiltinContext* ctx, TVal* val, bool* ok)
                 return null;
             }
             // StringToBigInt (§7.1.14): whitespace-trimmed integer literal.
-            hbigint::HBigInt*? r = vm::string_to_bigint(ctx.heap, s.get_data());
+            hbigint::HBigInt*? r = vm::string_to_bigint(ctx.heap, s);
             if (catch r) {
                 *ok = false;
                 builtin_throw(ctx, ctx.heap.syntax_err_proto, "Cannot convert string to a BigInt");

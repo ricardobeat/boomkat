@@ -61,7 +61,7 @@ fn bool to_temporal_partial_date(BuiltinContext* ctx, temporal::FieldsType type,
         builtin_throw(ctx, ctx.heap.type_err_proto, "a PlainYearMonth or PlainMonthDay needs a string or an object");
         return false;
     }
-    char[] text = s.get_cstr()[:s.blen];
+    char[] text = s.token_text();
     temporal::ParsedIsoDateTime p;
     bool parsed = type == YEAR_MONTH ? temporal::parse_iso_yearmonth_string(text, &p)
         : temporal::parse_iso_monthday_string(text, &p) || temporal::parse_iso_date_string(text, &p);

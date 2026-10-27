@@ -138,15 +138,14 @@ fn char[] ta_class_name(hobject::ObjClass cls) {
 // ...) are handled separately via HString.is_arridx() and never reach here.
 fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
     if (s.is_symbol()) return false;
-    char[] bytes = s.get_data();
-    if (bytes.len == 2 && bytes[0] == '-' && bytes[1] == '0') {
+    if (s.unit_len() == 2 && s.unit_at(0) == '-' && s.unit_at(1) == '0') {
         *out = -0.0;
         return true;
     }
     double d = vm::hstring_to_number(s);
     if (d != d) {
         // NaN parses only when the source text was literally "NaN".
-        if (bytes.len == 3 && bytes[0] == 'N' && bytes[1] == 'a' && bytes[2] == 'N') {
+        if (s.unit_len() == 3 && s.unit_at(0) == 'N' && s.unit_at(1) == 'a' && s.unit_at(2) == 'N') {
             *out = d;
             return true;
         }
@@ -154,8 +153,7 @@ fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
     }
     HString* restr = builtin_number_to_hstring(heap, d);
     if (restr == null) return false;
-    if (restr.blen != s.blen) return false;
-    if (!mem::equals(restr.get_cstr(), s.get_cstr(), s.blen)) return false;
+    if (!hstring::units_equal(restr, s)) return false;
     *out = d;
     return true;
 }
@@ -1443,17 +1441,8 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
         TVal elem; elem.set_undefined();
         if (src_is_string_exotic && src_prim_str != null) {
             // Serve char at index i from the underlying string.
-            char[] data = src_prim_str.get_data();
-            usz byte_start = (usz)src_prim_str.char_offset_to_byte_offset(i);
-            usz byte_end = (usz)src_prim_str.char_offset_to_byte_offset(i + 1);
-            if (byte_start < byte_end) {
-                usz copy_len = byte_end - byte_start;
-                char[8] one;
-                if (copy_len >= one.len) copy_len = one.len - 1;
-                for (usz j = 0; j < copy_len; j++) { one[j] = data[byte_start + j]; }
-                HString*? ch_raw = builtin_intern_string(heap, one[:copy_len]);
-                if (try ch = ch_raw) { elem.set_string_borrowed(ch); }
-            }
+            HString* ch = heap.str_from_unit(src_prim_str.unit_at(i));
+            if (ch != null) elem.set_string_borrowed(ch);
         } else {
             HString* idx_key = heap.int_to_hstring((long)i);
             if (idx_key != null) {
@@ -2211,7 +2200,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     char* base = (*buf.extra_ptr()).ab.data + byte_off;
 
     // Separator, ToString(separator) per spec, must propagate errors (e.g., throwing object).
-    char[] sep = ",";
+    HString* sep = builtin_intern_string(heap, ",");
     HString* sep_hs = null;
     if (ctx.argc >= 1) {
         TVal sep_arg = ctx.regs[ctx.base_reg];
@@ -2220,7 +2209,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
             if (ctx.should_throw) { ctx.result_undefined(); return; }
             if (sep_hs != null) {
                 ((types::HeapHeader*)sep_hs).incref();
-                sep = sep_hs.get_data();
+                sep = sep_hs;
             }
         }
     }
@@ -2248,7 +2237,6 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         elem_strs = heap_strs[:len];
     }
 
-    usz total_len = 0;
     for (uint i = 0; i < len; i++) {
         // Iterate the ORIGINAL length (spec §23.2.3.16 step 4). A separator
         // coercion may have shrunk the buffer; indices now out of bounds read
@@ -2267,45 +2255,14 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         if (es == null) es = (HString*)heap.strs[heap::BuiltinStr.EMPTY];
         ((types::HeapHeader*)es).incref();
         elem_strs[i] = es;
-        total_len += es.blen;
-    }
-    if (len > 1) total_len += sep.len * (usz)(len - 1);
-
-    char* rbuf = (char*)heap.alloc_func(heap.heap_udata, total_len > 0 ? total_len : 1);
-    if (rbuf == null) {
-        if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
-        for (uint i = 0; i < len; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
-        if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-        ctx.result_undefined();
-        return;
     }
 
-    usz off = 0;
-    for (uint i = 0; i < len; i++) {
-        if (i > 0 && sep.len > 0) {
-            mem::copy(&rbuf[off], &sep[0], (sz)(sep.len));
-            off += sep.len;
-        }
-        char[] ed = elem_strs[i].get_data();
-        if (ed.len > 0) { mem::copy(&rbuf[off], &ed[0], (sz)(ed.len)); off += ed.len; }
-        heap.decref((types::HeapHeader*)elem_strs[i]);
-    }
+    HString* joined = join_hstrings(ctx, elem_strs, sep);
+    for (uint i = 0; i < len; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
     if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
     if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-
-    uint hash = heap.hash_string(rbuf[:total_len]);
-    HString*? hs_raw = hstring::hstring_alloc(heap, rbuf[:total_len], hash);
-    heap.free_func(heap.heap_udata, rbuf);
-    if (catch err = hs_raw) { ctx.result_undefined(); return; }
-    HString* hs = hs_raw;
-    // Return the join result as a transient (non-interned) string. It must NOT
-    // be inserted into the string table without also taking the table's owning
-    // incref + setting is_interned; a bare insert leaves a table entry backed by
-    // no reference, so the result register's later decref frees it while it is
-    // still in the table, double-freeing at heap reset. String === compares by
-    // content (equals_hstring), so interning is not required for correctness;
-    // store_builtin_result handles the refcount-1 transient.
-    ctx.result_string(hs);
+    if (joined == null) { ctx.result_undefined(); return; }
+    ctx.result_string(joined);
 }
 
 // %TypedArray%.prototype.forEach(callbackFn, thisArg?), §23.2.3.12.
@@ -3213,7 +3170,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
 
     HString* toloc_key = builtin_intern_string(heap, "toLocaleString");
     HString* sep_hs = null;
-    char[] sep = ",";
+    HString* sep = builtin_intern_string(heap, ",");
 
     // Collect the element strings by invoking toLocaleString on each numeric value.
     HString*[64] stack_strs;
@@ -3305,38 +3262,12 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
         done++;
     }
 
-    // Compute the total length of all element strings plus separators.
-    usz total_len = 0;
-    for (uint i = 0; i < done; i++) total_len += elem_strs[i].blen;
-    if (done > 1) total_len += sep.len * (usz)(done - 1);
-
-    char* rbuf = (char*)heap.alloc_func(heap.heap_udata, total_len > 0 ? total_len : 1);
-    if (rbuf == null) {
-        for (uint i = 0; i < done; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
-        if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-        ctx.result_undefined();
-        return;
-    }
-
-    usz off = 0;
-    for (uint i = 0; i < done; i++) {
-        if (i > 0 && sep.len > 0) {
-            mem::copy(&rbuf[off], &sep[0], (sz)(sep.len));
-            off += sep.len;
-        }
-        char[] ed = elem_strs[i].get_data();
-        if (ed.len > 0) { mem::copy(&rbuf[off], &ed[0], (sz)(ed.len)); off += ed.len; }
-        heap.decref((types::HeapHeader*)elem_strs[i]);
-    }
+    HString* joined = join_hstrings(ctx, elem_strs[:done], sep);
+    for (uint i = 0; i < done; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
     if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
     if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-
-    uint hash = heap.hash_string(rbuf[:total_len]);
-    HString*? hs_raw = hstring::hstring_alloc(heap, rbuf[:total_len], hash);
-    heap.free_func(heap.heap_udata, rbuf);
-    if (catch err2 = hs_raw) { ctx.result_undefined(); return; }
-    HString* result_hs = hs_raw;
-    ctx.result_string(result_hs);
+    if (joined == null) { ctx.result_undefined(); return; }
+    ctx.result_string(joined);
 }
 
 // ---- %TypedArray% intrinsic abstract constructor ----

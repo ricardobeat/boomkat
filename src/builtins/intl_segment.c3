@@ -16,8 +16,8 @@ struct IntlSegmentState {
     uint count;
     uint next;
 }
-struct SegmentPoint { uint byte_offset; uint index; bool word; }
-struct SegmentChar { uint cp; uint g; uint w; uint s; uint indic; bool emoji; uint byte_offset; uint index; uint grapheme_ri; uint word_ri; }
+struct SegmentPoint { uint index; bool word; }
+struct SegmentChar { uint cp; uint g; uint w; uint s; uint indic; bool emoji; uint index; uint grapheme_ri; uint word_ri; }
 
 fn uint segment_property(uint cp, SegmentRange[] table) {
     usz lo = 0; usz hi = table.len;
@@ -171,7 +171,7 @@ fn HObject* intl_segment_locales(BuiltinContext* ctx) {
         TVal? entry = requested.get_prop(ctx.heap.int_to_hstring(i), ctx.heap);
         if (catch entry) break;
         HString* tag = (HString*)entry.get_heapptr();
-        LocaleId id; id.parse(tag.get_cstr()[:tag.blen]);
+        LocaleId id; id.parse(tag.token_text());
         if (segment_locale_supported(&id)) array_set_elem(result, count++, entry, ctx.heap);
     }
     array_set_length(result, count, ctx.heap);
@@ -202,7 +202,7 @@ fn void builtin_intl_segmenter(BuiltinContext* ctx) {
     TVal? first = locales.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
-        LocaleId id; id.parse(tag.get_cstr()[:tag.blen]);
+        LocaleId id; id.parse(tag.token_text());
         id.ext_len = 0; id.variant_count = 0;
         LocaleBuf buffer = {settings.locale_tag[..], 0, false}; id.write(&buffer);
         settings.locale_len = (uint)buffer.len;
@@ -239,7 +239,10 @@ fn void builtin_intl_segment_call(BuiltinContext* ctx) {
     HObject* holder = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
     if (holder == null) { builtin_throw(ctx, ctx.heap.err_proto, "Segmenter allocation failed"); return; }
     TVal value; value.set_string_borrowed(input); intl_put(ctx.heap, holder, "input", value);
-    char[] bytes = input.get_cstr()[:input.blen];
+    StrBuf text;
+    text.init(ctx.heap);
+    defer text.free();
+    char[] bytes = cesu8_text(&text, input);
     uint n = 0; uint offset = 0;
     while (offset < bytes.len) { offset += hstring::advance_string_index_byte_len(bytes, offset, true); n++; }
     SegmentChar* raw = (SegmentChar*)ctx.heap.alloc_func(ctx.heap.heap_udata, ((usz)n + 1) * SegmentChar::size);
@@ -254,7 +257,7 @@ fn void builtin_intl_segment_call(BuiltinContext* ctx) {
         uint g = segment_property(cp, SEG_G_RANGES[..]);
         if (cp >= 0xAC00 && cp <= 0xD7A3) g = (cp - 0xAC00) % 28 == 0 ? SEG_G_LV : SEG_G_LVT;
         chars[i] = {cp, g, segment_property(cp, SEG_W_RANGES[..]), segment_property(cp, SEG_S_RANGES[..]),
-                    segment_property(cp, SEG_I_RANGES[..]), segment_property(cp, SEG_E_RANGES[..]) != 0, offset, index, 0, 0};
+                    segment_property(cp, SEG_I_RANGES[..]), segment_property(cp, SEG_E_RANGES[..]) != 0, index, 0, 0};
         chars[i].grapheme_ri = g == SEG_G_REGIONAL_INDICATOR ? (i > 0 ? chars[i - 1].grapheme_ri : 0) + 1 : 0;
         uint previous_ri = i > 0 ? chars[i - 1].word_ri : 0;
         chars[i].word_ri = chars[i].w == SEG_W_REGIONAL_INDICATOR ? previous_ri + 1 : segment_word_ignore(chars[i].w) ? previous_ri : 0;
@@ -276,13 +279,13 @@ fn void builtin_intl_segment_call(BuiltinContext* ctx) {
     for (uint i = 0; i < n; i++) {
         bool boundary = i > 0 && (state.granularity == 0 ? segment_grapheme_break(chars, i) :
                         state.granularity == 1 ? segment_word_break(chars, i) : segment_sentence_break(chars, i));
-        if (boundary) { current++; points[current] = {chars[i].byte_offset, chars[i].index, false}; }
+        if (boundary) { current++; points[current] = {chars[i].index, false}; }
         uint w = chars[i].w; uint cp = chars[i].cp;
         // These scripts have letters outside the Word_Break ALetter class.
         if (segment_word_letter(w) || w == SEG_W_NUMERIC || w == SEG_W_KATAKANA ||
             (cp >= 128 && unicode_bindings::unicode_is_identifier_start(cp) != 0)) points[current].word = true;
     }
-    points[count] = {(uint)bytes.len, index, false};
+    points[count] = {index, false};
     ctx.result_object(obj);
 }
 fn HObject* intl_segment_data(BuiltinContext* ctx, IntlSegmentState* state, uint i) {
@@ -290,8 +293,9 @@ fn HObject* intl_segment_data(BuiltinContext* ctx, IntlSegmentState* state, uint
     HObject* obj = ctx.heap.alloc_object(ObjClass.OBJECT) ?? null;
     if (obj == null) { builtin_throw(ctx, ctx.heap.err_proto, "Segmenter allocation failed"); return null; }
     ctx.heap.set_prototype(obj, ctx.heap.object_proto);
-    uint start = points[i].byte_offset; uint end = points[i + 1].byte_offset;
-    intl_put_string(ctx.heap, obj, "segment", state.input.get_cstr()[start:end - start]);
+    HString* segment = ctx.heap.str_slice(state.input, points[i].index, points[i + 1].index);
+    if (segment == null) { builtin_throw(ctx, ctx.heap.err_proto, "Segmenter allocation failed"); return null; }
+    TVal sv; sv.set_string_borrowed(segment); intl_put(ctx.heap, obj, "segment", sv);
     intl_put_int(ctx.heap, obj, "index", (int)points[i].index);
     TVal v; v.set_string_borrowed(state.input); intl_put(ctx.heap, obj, "input", v);
     if (state.granularity == 1) { v.set_boolean(points[i].word); intl_put(ctx.heap, obj, "isWordLike", v); }
