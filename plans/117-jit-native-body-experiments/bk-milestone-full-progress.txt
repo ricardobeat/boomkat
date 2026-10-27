@@ -1,0 +1,88 @@
+START 0 before
+{'pair': 0, 'mode': 'before', 'rc': 0, 'seconds': 95.3229098750744, 'log': '/tmp/bk-milestone-full-0-before.txt'}
+Richards: 3915
+DeltaBlue: 2850
+Crypto: 3564
+RayTrace: 3004
+EarleyBoyer: 2990
+RegExp: 737
+Splay: 8214
+SplayLatency: 20548
+NavierStokes: 3879
+PdfJS: 7031
+Mandreel: 1891
+MandreelLatency: 10861
+Gameboy: 12037
+CodeLoad: 28691
+Box2D: 5713
+zlib: 2800
+Typescript: 18415
+----
+Score (version 9): 5365
+
+START 0 after
+{'pair': 0, 'mode': 'after', 'rc': 0, 'seconds': 94.31063620909117, 'log': '/tmp/bk-milestone-full-0-after.txt'}
+Richards: 4212
+DeltaBlue: 2827
+Crypto: 4733
+RayTrace: 2960
+EarleyBoyer: 2990
+RegExp: 763
+Splay: 8385
+SplayLatency: 20806
+NavierStokes: 3913
+PdfJS: 7143
+Mandreel: 1882
+MandreelLatency: 10956
+Gameboy: 11611
+CodeLoad: 27317
+Box2D: 5358
+zlib: 2789
+Typescript: 20197
+----
+Score (version 9): 5483
+
+START 1 after
+{'pair': 1, 'mode': 'after', 'rc': 0, 'seconds': 93.10659804195166, 'log': '/tmp/bk-milestone-full-1-after.txt'}
+Richards: 4229
+DeltaBlue: 2980
+Crypto: 5013
+RayTrace: 3047
+EarleyBoyer: 3025
+RegExp: 767
+Splay: 7057
+SplayLatency: 17461
+NavierStokes: 3924
+PdfJS: 5508
+Mandreel: 1870
+MandreelLatency: 10981
+Gameboy: 11778
+CodeLoad: 27597
+Box2D: 7007
+zlib: 2826
+Typescript: 20770
+----
+Score (version 9): 5446
+
+START 1 before
+{'pair': 1, 'mode': 'before', 'rc': 0, 'seconds': 94.79625179199502, 'log': '/tmp/bk-milestone-full-1-before.txt'}
+Richards: 3929
+DeltaBlue: 2850
+Crypto: 3601
+RayTrace: 3007
+EarleyBoyer: 3030
+RegExp: 766
+Splay: 8948
+SplayLatency: 22757
+NavierStokes: 3886
+PdfJS: 5764
+Mandreel: 1907
+MandreelLatency: 10814
+Gameboy: 12148
+CodeLoad: 28177
+Box2D: 6817
+zlib: 2797
+Typescript: 20204
+----
+Score (version 9): 5468
+

@@ -1,0 +1,42 @@
+{
+  "before": {
+    "Richards": 3922.0,
+    "DeltaBlue": 2850.0,
+    "Crypto": 3582.5,
+    "RayTrace": 3005.5,
+    "EarleyBoyer": 3010.0,
+    "RegExp": 751.5,
+    "Splay": 8581.0,
+    "SplayLatency": 21652.5,
+    "NavierStokes": 3882.5,
+    "PdfJS": 6397.5,
+    "Mandreel": 1899.0,
+    "MandreelLatency": 10837.5,
+    "Gameboy": 12092.5,
+    "CodeLoad": 28434.0,
+    "Box2D": 6265.0,
+    "zlib": 2798.5,
+    "Typescript": 19309.5,
+    "Score (version 9)": 5416.5
+  },
+  "after": {
+    "Richards": 4220.5,
+    "DeltaBlue": 2903.5,
+    "Crypto": 4873.0,
+    "RayTrace": 3003.5,
+    "EarleyBoyer": 3007.5,
+    "RegExp": 765.0,
+    "Splay": 7721.0,
+    "SplayLatency": 19133.5,
+    "NavierStokes": 3918.5,
+    "PdfJS": 6325.5,
+    "Mandreel": 1876.0,
+    "MandreelLatency": 10968.5,
+    "Gameboy": 11694.5,
+    "CodeLoad": 27457.0,
+    "Box2D": 6182.5,
+    "zlib": 2807.5,
+    "Typescript": 20483.5,
+    "Score (version 9)": 5464.5
+  }
+}

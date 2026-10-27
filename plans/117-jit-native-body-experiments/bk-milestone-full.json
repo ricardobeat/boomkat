@@ -1,0 +1,30 @@
+[
+  {
+    "pair": 0,
+    "mode": "before",
+    "rc": 0,
+    "seconds": 95.3229098750744,
+    "log": "/tmp/bk-milestone-full-0-before.txt"
+  },
+  {
+    "pair": 0,
+    "mode": "after",
+    "rc": 0,
+    "seconds": 94.31063620909117,
+    "log": "/tmp/bk-milestone-full-0-after.txt"
+  },
+  {
+    "pair": 1,
+    "mode": "after",
+    "rc": 0,
+    "seconds": 93.10659804195166,
+    "log": "/tmp/bk-milestone-full-1-after.txt"
+  },
+  {
+    "pair": 1,
+    "mode": "before",
+    "rc": 0,
+    "seconds": 94.79625179199502,
+    "log": "/tmp/bk-milestone-full-1-before.txt"
+  }
+]

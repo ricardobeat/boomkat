@@ -24,3 +24,11 @@ Same-process SLJIT_MAP attribution of five-second macOS samples, current committ
 Threaded warmup samples at most 16 results. Four non-string observations allow a generated non-string guard and uncounted store, preserving string fallback. First pairs: Richards 88 to 85 ms; confirmation 89 to 85. Other minis mostly neutral; initial RayTrace gain did not repeat. Focused three-mode tests, embedding and targeted ASan pass. Broader differential validation: local status 1 matches in both modes; Rosetta/modules match at status 0. Local failures in this feature-limited build are not a clean suite pass. Committed as dcdaf730.
 
 Full Octane should be run for a meaningful validated candidate, not each experiment. Retired-plan exit counters must not be compared as aggregate totals when evaluating refresh.
+
+## Landed 72a3e3de: named-read producer retargeting
+
+Fused named property reads now use the existing producer-retarget liveness proof, removing a redundant copy without introducing a new pass. Duplicate fused-load classification was removed. Tests cover getters, throwing assignments, receiver aliasing, branches and this reads. Two five-pair mini runs showed small gains; confirmation: Richards 84→82, DeltaBlue 118→116, Crypto 160→158, Splay 115→112, RayTrace 164→160, EarleyBoyer 176→174 ms. Focused three-mode, baseline/candidate interpreter comparisons, embedding and targeted interpreter/JIT ASan checks passed. Broader differential results match (local status 1, Rosetta/modules 0). Full-suite milestone comparison is in progress; mini timings are not an aggregate score.
+
+## Full-suite milestone, 72a3e3de versus f5bb66df
+
+Two sequential alternating pairs using unchanged bundle SHA256 ef4c74d25100e6308436fb19b14eaefd5b4b690f30a799b60bc9bccbcefdce8e, no overlapping builds/tests. All four runs pass. Baseline scores 5365, 5468; current 5483, 5446. Median 5416.5→5464.5 (+0.89%). Pair changes disagree in sign; this does not establish a reliable aggregate speedup. Richards and Crypto improve, but later-suite variation and regressions dilute them. Only two pairs were collected, below the three-pair acceptance protocol from plan 113; no broad performance acceptance claimed. 50K remains unachieved. Raw per-suite scores and the runner are archived alongside this report.

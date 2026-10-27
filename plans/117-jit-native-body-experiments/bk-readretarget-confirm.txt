@@ -1,0 +1,66 @@
+{'repeat': 0, 'bench': 'richards', 'mode': 'before', 'ms': 85}
+{'repeat': 0, 'bench': 'richards', 'mode': 'after', 'ms': 85}
+{'repeat': 0, 'bench': 'deltablue', 'mode': 'before', 'ms': 118}
+{'repeat': 0, 'bench': 'deltablue', 'mode': 'after', 'ms': 115}
+{'repeat': 0, 'bench': 'crypto', 'mode': 'before', 'ms': 165}
+{'repeat': 0, 'bench': 'crypto', 'mode': 'after', 'ms': 164}
+{'repeat': 0, 'bench': 'splay', 'mode': 'before', 'ms': 115}
+{'repeat': 0, 'bench': 'splay', 'mode': 'after', 'ms': 123}
+{'repeat': 0, 'bench': 'raytrace', 'mode': 'before', 'ms': 163}
+{'repeat': 0, 'bench': 'raytrace', 'mode': 'after', 'ms': 159}
+{'repeat': 0, 'bench': 'earley-boyer', 'mode': 'before', 'ms': 175}
+{'repeat': 0, 'bench': 'earley-boyer', 'mode': 'after', 'ms': 173}
+{'repeat': 1, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 1, 'bench': 'richards', 'mode': 'before', 'ms': 84}
+{'repeat': 1, 'bench': 'deltablue', 'mode': 'after', 'ms': 116}
+{'repeat': 1, 'bench': 'deltablue', 'mode': 'before', 'ms': 121}
+{'repeat': 1, 'bench': 'crypto', 'mode': 'after', 'ms': 158}
+{'repeat': 1, 'bench': 'crypto', 'mode': 'before', 'ms': 160}
+{'repeat': 1, 'bench': 'splay', 'mode': 'after', 'ms': 110}
+{'repeat': 1, 'bench': 'splay', 'mode': 'before', 'ms': 111}
+{'repeat': 1, 'bench': 'raytrace', 'mode': 'after', 'ms': 160}
+{'repeat': 1, 'bench': 'raytrace', 'mode': 'before', 'ms': 162}
+{'repeat': 1, 'bench': 'earley-boyer', 'mode': 'after', 'ms': 174}
+{'repeat': 1, 'bench': 'earley-boyer', 'mode': 'before', 'ms': 176}
+{'repeat': 2, 'bench': 'richards', 'mode': 'before', 'ms': 84}
+{'repeat': 2, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 2, 'bench': 'deltablue', 'mode': 'before', 'ms': 116}
+{'repeat': 2, 'bench': 'deltablue', 'mode': 'after', 'ms': 116}
+{'repeat': 2, 'bench': 'crypto', 'mode': 'before', 'ms': 159}
+{'repeat': 2, 'bench': 'crypto', 'mode': 'after', 'ms': 157}
+{'repeat': 2, 'bench': 'splay', 'mode': 'before', 'ms': 116}
+{'repeat': 2, 'bench': 'splay', 'mode': 'after', 'ms': 112}
+{'repeat': 2, 'bench': 'raytrace', 'mode': 'before', 'ms': 164}
+{'repeat': 2, 'bench': 'raytrace', 'mode': 'after', 'ms': 160}
+{'repeat': 2, 'bench': 'earley-boyer', 'mode': 'before', 'ms': 176}
+{'repeat': 2, 'bench': 'earley-boyer', 'mode': 'after', 'ms': 175}
+{'repeat': 3, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 3, 'bench': 'richards', 'mode': 'before', 'ms': 84}
+{'repeat': 3, 'bench': 'deltablue', 'mode': 'after', 'ms': 115}
+{'repeat': 3, 'bench': 'deltablue', 'mode': 'before', 'ms': 116}
+{'repeat': 3, 'bench': 'crypto', 'mode': 'after', 'ms': 160}
+{'repeat': 3, 'bench': 'crypto', 'mode': 'before', 'ms': 160}
+{'repeat': 3, 'bench': 'splay', 'mode': 'after', 'ms': 115}
+{'repeat': 3, 'bench': 'splay', 'mode': 'before', 'ms': 115}
+{'repeat': 3, 'bench': 'raytrace', 'mode': 'after', 'ms': 164}
+{'repeat': 3, 'bench': 'raytrace', 'mode': 'before', 'ms': 164}
+{'repeat': 3, 'bench': 'earley-boyer', 'mode': 'after', 'ms': 178}
+{'repeat': 3, 'bench': 'earley-boyer', 'mode': 'before', 'ms': 177}
+{'repeat': 4, 'bench': 'richards', 'mode': 'before', 'ms': 85}
+{'repeat': 4, 'bench': 'richards', 'mode': 'after', 'ms': 83}
+{'repeat': 4, 'bench': 'deltablue', 'mode': 'before', 'ms': 119}
+{'repeat': 4, 'bench': 'deltablue', 'mode': 'after', 'ms': 116}
+{'repeat': 4, 'bench': 'crypto', 'mode': 'before', 'ms': 160}
+{'repeat': 4, 'bench': 'crypto', 'mode': 'after', 'ms': 157}
+{'repeat': 4, 'bench': 'splay', 'mode': 'before', 'ms': 113}
+{'repeat': 4, 'bench': 'splay', 'mode': 'after', 'ms': 109}
+{'repeat': 4, 'bench': 'raytrace', 'mode': 'before', 'ms': 169}
+{'repeat': 4, 'bench': 'raytrace', 'mode': 'after', 'ms': 161}
+{'repeat': 4, 'bench': 'earley-boyer', 'mode': 'before', 'ms': 176}
+{'repeat': 4, 'bench': 'earley-boyer', 'mode': 'after', 'ms': 173}
+richards {'before': 84, 'after': 82}
+deltablue {'before': 118, 'after': 116}
+crypto {'before': 160, 'after': 158}
+splay {'before': 115, 'after': 112}
+raytrace {'before': 164, 'after': 160}
+earley-boyer {'before': 176, 'after': 174}
