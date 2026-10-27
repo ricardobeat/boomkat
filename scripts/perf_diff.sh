@@ -103,7 +103,10 @@ for d in quickjs libregexp duktape test/libcorpus; do
 done
 
 echo -n "building baseline... "
-( cd "$WT" && c3c build boomkat >/dev/null 2>&1 ) || { echo "FAILED"; exit 1; }
+# Build through make, as `just build` does: a bare `c3c build` skips the
+# Makefile's link flags (Darwin export list, dead-stripping), which changes the
+# binary enough to show a ~10% gap against an identical tree.
+( cd "$WT" && make out/boomkat >/dev/null 2>&1 ) || { echo "FAILED"; exit 1; }
 echo "ok"
 
 BASE_BIN="$WT/out/boomkat"
