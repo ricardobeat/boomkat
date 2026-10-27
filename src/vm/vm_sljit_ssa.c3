@@ -1,6 +1,7 @@
 module boomkat::vm;
 
 import boomkat::bytecode;
+import boomkat::compiler;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
@@ -33,6 +34,7 @@ enum SsaRep : char {
 enum SsaOp : char {
     ARG,
     PHI,
+    BINDING,
     CONST_I,
     CONST_F,
     COPY,
@@ -406,6 +408,11 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             continue;
         }
         switch (ins.op) {
+            case GETCAP:
+            case GETVAR:
+            case GETGLOBAL:
+                if (plan.binding_at[pos - plan.begin] == 0) return false;
+                continue;
             case LDREG:
             case LDINT:
             case LDCONST:
@@ -509,6 +516,9 @@ fn void ssa_infer(
                 (*value_read)[ins.b] = true;
                 if (!assigned[ins.b]) (*live_in)[ins.b] = true;
                 break;
+            case GETCAP:
+            case GETVAR:
+            case GETGLOBAL:
             case LDINT:
             case LDCONST:
                 break;
@@ -690,96 +700,31 @@ fn bool ssa_op_is_int(SsaGraph* g, Instruction ins, uint pos, bool[LOOP_REGS]* i
 }
 fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
     CompiledFunction* cf = g.cf;
-    LoopPlan* plan       = g.plan;
+    LoopPlan* plan = g.plan;
     bool[LOOP_REGS] assigned;
     bool[LOOP_REGS] int_reg;
     for (uint i = 0; i < LOOP_REGS; i++) int_reg[i] = true;
-    for (uint pos = plan.begin; pos <= plan.end; pos++) {
-        Instruction ins = cf.code[pos];
-        if (loop_target(ins, pos) >= 0) continue;
-        if (ins.op == Opcode.PUTPROP) continue;
-        bool writes = true;
-        switch (ins.op) {
-            case LDREG:
-            case LDINT:
-            case LDCONST:
-            case TONUMERIC:
-            case INC:
-            case INC_LT:
-            case DEC:
-            case ADD:
-            case ADD_FUSED:
-            case ADDI:
-            case SUB:
-            case SUBI:
-            case MUL:
-            case MULI:
-            case DIV:
-            case BAND:
-            case BOR:
-            case BXOR:
-            case SHL:
-            case SHR:
-            case USHR:
-            case BNOT:
-            case BANDI:
-            case BORI:
-            case BXORI:
-            case SHLI:
-            case SHRI:
-            case USHRI:
-            case GETPROP:
-            case GETPROP_CACHE: break;
-            default: writes = false; break;
-        }
-        if (!writes) continue;
-        assigned[ins.a] = true;
-        if (!ssa_op_is_int(g, ins, pos, &int_reg)) int_reg[ins.a] = false;
-    }
-    for (uint i = 0; i < LOOP_REGS; i++) if (!assigned[i]) int_reg[i] = false;
     bool changed = true;
     while (changed) {
         changed = false;
         for (uint pos = plan.begin; pos <= plan.end; pos++) {
             Instruction ins = cf.code[pos];
-            if (loop_target(ins, pos) >= 0) continue;
-            bool writes = true;
-            switch (ins.op) {
-                case LDREG:
-                case LDINT:
-                case LDCONST:
-                case TONUMERIC:
-                case INC:
-                case INC_LT:
-                case DEC:
-                case ADD:
-                case ADD_FUSED:
-                case ADDI:
-                case SUB:
-                case SUBI:
-                case MUL:
-                case MULI:
-                case DIV:
-                case BAND:
-                case BOR:
-                case BXOR:
-                case SHL:
-                case SHR:
-                case USHR:
-                case BNOT:
-                case BANDI:
-                case BORI:
-                case BXORI:
-                case SHLI:
-                case SHRI:
-                case USHRI:
-                case GETPROP:
-                case GETPROP_CACHE: break;
-                default: writes = false; break;
+            uint[8] words;
+            compiler::RegSet writes = { .words = &words[0], .word_count = 8 };
+            compiler::register_may_writes(ins, &writes);
+            bool integer = ssa_op_is_int(g, ins, pos, &int_reg);
+            for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                if (!writes.test(reg)) continue;
+                assigned[reg] = true;
+                if (int_reg[reg] && (reg != ins.a || !integer)) {
+                    int_reg[reg] = false;
+                    changed = true;
+                }
             }
-            if (!writes) continue;
-            if (int_reg[ins.a] && !ssa_op_is_int(g, ins, pos, &int_reg)) {
-                int_reg[ins.a] = false;
+        }
+        for (uint reg = 0; reg < LOOP_REGS; reg++) {
+            if (!assigned[reg] && int_reg[reg]) {
+                int_reg[reg] = false;
                 changed = true;
             }
         }
@@ -949,7 +894,11 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     g.current_pc = plan.begin;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
         if (written[reg] && (live_in[reg] || exit_live[reg])) {
-            int phi = ssa_value(g, PHI, g.rep[reg], -1, 0, 0);
+            // Recovery-only inputs can hold any value on entry. Their old
+            // contents are overwritten before use, so imposing the body's
+            // numeric representation here creates a spurious entry guard.
+            SsaRep rep = live_in[reg] ? g.rep[reg] : BOXED;
+            int phi = ssa_value(g, PHI, rep, -1, 0, 0);
             g.phi[reg] = phi;
             g.values[phi].arg_reg = (int)reg;
             g.current[reg] = phi;
@@ -1034,6 +983,16 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     int copy = ssa_value(g, COPY, g.values[src].rep, src, 0, 0);
                     ssa_result(g, copy, ins.a, pos);
                     g.current[ins.a] = copy;
+                    break;
+                }
+            case GETCAP:
+            case GETVAR:
+            case GETGLOBAL:
+                {
+                    int binding = (int)plan.binding_at[pos - plan.begin] - 1;
+                    int value = ssa_value(g, BINDING, BOXED, -1, -1, binding);
+                    ssa_result(g, value, ins.a, pos);
+                    g.current[ins.a] = value;
                     break;
                 }
             case LDINT:
@@ -1552,7 +1511,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             g.failed = true;
         return false;
         }
-        if (g.values[value].rep == F64 && g.values[g.phi[reg]].rep != F64) g.force_f64 |= 1UL << reg;
+        if (live_in[reg] && g.values[value].rep == F64 && g.values[g.phi[reg]].rep != F64) g.force_f64 |= 1UL << reg;
         value = ssa_convert(g, value, g.values[g.phi[reg]].rep, false);
         g.values[g.phi[reg]].a = value;
         ssa_use(g, value);
@@ -2031,6 +1990,15 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
         switch (v.op) {
             case ARG:
             case PHI: break;
+            case BINDING:
+                {
+                    // loop_prepare snapshots bindings before entering native code.
+                    LoopState layout;
+                    long offset = (char*)&layout.bindings[(uint)v.imm] - (char*)&layout;
+                    self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, offset);
+                    self.store_gpr((int)i, r0);
+                    break;
+                }
             case COPY:
 
                 {

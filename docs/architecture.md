@@ -663,7 +663,11 @@ Eligible numeric loops first use a bounded SSA compiler, with int32, F64 and
 tagged representations, forward branch blocks and phi joins. Its register
 intervals include interpreter recovery uses; each guard reconstructs the frame
 before its bytecode instruction. Join intervals begin at incoming edge copies,
-and loop-carried register and spill values move in parallel. Postfix branch
+and loop-carried register and spill values move in parallel. Recovery-only
+header values remain tagged, avoiding numeric entry guards on overwritten
+temporaries. Captured and lexical/global binding reads reuse the loop entry's
+validated binding snapshots; integer inference uses the compiler's shared
+conservative register-write effects. Postfix branch
 operands survive those copies. Load elimination requires dominance and discards
 cached loads across potentially aliased writes. Dense loads guarded as numbers
 may remain live across numeric stores without retaining heap references. Guards

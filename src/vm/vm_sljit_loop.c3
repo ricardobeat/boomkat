@@ -1711,6 +1711,10 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     // exact. Anything else falls back to the straight-line loop tier instead
     // of retrying the same speculation at every safepoint.
     if (plan.ssa && resume_pc >= plan.begin && resume_pc < plan.end) {
+        $if $feat(SLJIT_STATS):
+            io::eprintfn("SLJIT ssa fallback name=%s begin=%d pc=%d opcode=%s iterations=%d",
+                (String)cf.get_name(), plan.begin, resume_pc, cf.code[resume_pc].op, consumed);
+        $endif
         jit::sljit_free_code((void*)plan.native, null);
         h.jit_code_bytes -= plan.code_bytes;
         plan.native = null;
