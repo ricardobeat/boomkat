@@ -171,6 +171,9 @@ def _declare(lib):
         ("bk_read_bool", [ctx, val, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
         ("bk_read_string", [ctx, val, ctypes.c_char_p, ctypes.c_size_t,
                              ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
+        ("bk_read_string_utf16", [ctx, val, ctypes.POINTER(ctypes.c_uint16),
+                                  ctypes.c_size_t,
+                                  ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
 
         ("bk_get_error_message", [ctx], ctypes.c_char_p),
         ("bk_get_error_code", [ctx], ctypes.c_int),
@@ -193,6 +196,8 @@ def _declare(lib):
         ("bk_new_null", [ctx], val),
         ("bk_new_undefined", [ctx], val),
         ("bk_new_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
+        ("bk_new_string_utf16", [ctx, ctypes.POINTER(ctypes.c_uint16),
+                                 ctypes.c_size_t], val),
         ("bk_dup_value", [ctx, val], val),
         ("bk_call", [ctx, val, val, ctypes.POINTER(val), ctypes.c_uint], val),
     ]
@@ -388,14 +393,14 @@ class _Reader:
     and the borrowed call handles (arguments, this, new.target).
     """
 
-    __slots__ = ("_owner", "type_of", "_read_bool", "_read_number", "_read_string")
+    __slots__ = ("_owner", "type_of", "_read_bool", "_read_number", "_read_string_utf16")
 
     def __init__(self, lib, owner):
         self._owner = owner
         self.type_of = _bind(lib, "bk_get_type", owner)
         self._read_bool = _bind(lib, "bk_read_bool", owner)
         self._read_number = _bind(lib, "bk_read_number", owner)
-        self._read_string = _bind(lib, "bk_read_string", owner)
+        self._read_string_utf16 = _bind(lib, "bk_read_string_utf16", owner)
 
     def to_python(self, handle, type_id=None):
         """Convert a handle to a plain Python value."""
@@ -414,14 +419,16 @@ class _Reader:
                 return JsObject(type_id)
             return out.value
         if type_id == _STRING:
+            # UTF-16 round-trips a lone surrogate, which Python str can hold.
             size = ctypes.c_size_t(0)
-            if self._read_string(handle, None, 0, ctypes.byref(size)) != _OK:
+            if self._read_string_utf16(handle, None, 0, ctypes.byref(size)) != _OK:
                 return JsObject(type_id)
-            buffer = ctypes.create_string_buffer(size.value + 1)
-            if self._read_string(handle, buffer, size.value + 1,
-                                 ctypes.byref(size)) != _OK:
+            buffer = (ctypes.c_uint16 * size.value)()
+            if self._read_string_utf16(handle, buffer, size.value,
+                                       ctypes.byref(size)) != _OK:
                 return JsObject(type_id)
-            return buffer.raw[:size.value].decode("utf-8")
+            return bytes(memoryview(buffer).cast("B")).decode(
+                "utf-16-le", "surrogatepass")
         return JsObject(type_id)
 
 
@@ -593,8 +600,9 @@ class Runtime:
         elif isinstance(result, (int, float)):
             handle = lib.bk_new_number(ctx, float(result))
         elif isinstance(result, str):
-            encoded = result.encode("utf-8")
-            handle = lib.bk_new_string(ctx, encoded, len(encoded))
+            encoded = result.encode("utf-16-le", "surrogatepass")
+            units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
+            handle = lib.bk_new_string_utf16(ctx, units, len(units))
         elif isinstance(result, JsValue):
             # Returning an argument straight back, or the result of a callback.
             return lib.bk_dup_value(ctx, result._handle)

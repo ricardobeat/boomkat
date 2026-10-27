@@ -153,6 +153,7 @@ impl Kind {
             sys::BK_ERR_INVALID => Kind::Invalid,
             sys::BK_ERR_TYPE => Kind::Type,
             sys::BK_ERR_FULL => Kind::Full,
+            sys::BK_ERR_ENCODING => Kind::Encoding,
             other => Kind::Unknown(other),
         }
     }

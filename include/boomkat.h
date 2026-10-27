@@ -38,7 +38,8 @@ typedef enum {
     BK_ERR_INVALID   = -5,  /* null/bad argument, or a handle from elsewhere */
     BK_ERR_TYPE      = -6,  /* value is not of the requested type */
     BK_ERR_FULL      = -7,  /* buffer too small, or the registry is full */
-    BK_ERR_INTERRUPT = -8   /* aborted by the interrupt handler */
+    BK_ERR_INTERRUPT = -8,  /* aborted by the interrupt handler */
+    BK_ERR_ENCODING  = -9   /* invalid UTF-8 input, or a lone surrogate in strict mode */
 } bk_status;
 /* END GENERATED status */
 
@@ -54,6 +55,13 @@ typedef enum {
     BK_TYPE_OTHER     = 7   /* symbol, bigint, etc. */
 } bk_type;
 /* END GENERATED type */
+
+/* BEGIN GENERATED utf8_mode (scripts/gen_abi_header.py) */
+typedef enum {
+    BK_UTF8_REPLACE = 0,  /* lone surrogates become U+FFFD */
+    BK_UTF8_STRICT  = 1   /* lone surrogates fail with BK_ERR_ENCODING */
+} bk_utf8_mode;
+/* END GENERATED utf8_mode */
 
 /* BEGIN GENERATED errkind (scripts/gen_abi_header.py) */
 typedef enum {
@@ -124,8 +132,18 @@ BK_API const char *bk_type_str(bk_type type);
 BK_API bk_type bk_get_type(bk_ctx ctx, bk_value value);
 BK_API bk_status bk_read_number(bk_ctx ctx, bk_value value, double *out);
 BK_API bk_status bk_read_bool(bk_ctx ctx, bk_value value, int *out);
-/* Measure with buffer=NULL; length excludes NUL. Fill needs length+1 bytes. */
+/* UTF-8 with the lone-surrogate policy of BK_UTF8_REPLACE. Measure with buffer=NULL;
+ * length excludes NUL and, on BK_ERR_FULL, reports the size needed. Fill needs
+ * length+1 bytes. */
 BK_API bk_status bk_read_string(bk_ctx ctx, bk_value value, char *buffer, size_t capacity, size_t *length);
+BK_API bk_status bk_read_string_utf8(bk_ctx ctx, bk_value value, bk_utf8_mode mode,
+                                     char *buffer, size_t capacity, size_t *length);
+/* UTF-16 code units, lone surrogates kept, no terminator. Capacity and length
+ * count units; on BK_ERR_FULL, length reports the units needed. */
+BK_API bk_status bk_read_string_utf16(bk_ctx ctx, bk_value value, uint16_t *buffer,
+                                      size_t capacity, size_t *length);
+/* Length in UTF-16 code units; 0 when value is not a string. */
+BK_API size_t bk_string_length(bk_ctx ctx, bk_value value);
 BK_API double bk_to_number(bk_ctx ctx, bk_value value);
 BK_API int bk_to_bool(bk_ctx ctx, bk_value value);
 BK_API bk_value bk_to_string(bk_ctx ctx, bk_value value);
@@ -140,7 +158,12 @@ BK_API bk_value bk_new_number(bk_ctx ctx, double value);
 BK_API bk_value bk_new_bool(bk_ctx ctx, int value);
 BK_API bk_value bk_new_null(bk_ctx ctx);
 BK_API bk_value bk_new_undefined(bk_ctx ctx);
+/* Fails with BK_ERR_ENCODING and returns BK_EXCEPTION on invalid UTF-8. */
 BK_API bk_value bk_new_string(bk_ctx ctx, const char *utf8, size_t length);
+/* Each byte is the code point of the same value. */
+BK_API bk_value bk_new_string_latin1(bk_ctx ctx, const uint8_t *chars, size_t length);
+/* Lone surrogates are kept as given. */
+BK_API bk_value bk_new_string_utf16(bk_ctx ctx, const uint16_t *units, size_t length);
 BK_API bk_value bk_new_object(bk_ctx ctx);
 BK_API bk_value bk_new_array(bk_ctx ctx);
 BK_API bk_value bk_new_array_from(bk_ctx ctx, const bk_value *elements, unsigned count);

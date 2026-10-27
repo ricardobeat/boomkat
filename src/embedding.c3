@@ -47,6 +47,7 @@ faultdef
     JS_EXCEPTION,         // script threw; see last_error()
     INTERNAL_ERROR,       // VM fault with no JS error attached
     INTERRUPTED,          // aborted by the interrupt handler
+    ENCODING_ERROR,       // invalid UTF-8 input
     WRONG_TYPE,           // as_number() on a string, etc.
     STALE_VALUE,          // value was released, or belongs to another runtime
     VALUE_TABLE_FULL,     // registry exhausted
@@ -82,6 +83,7 @@ macro fault_of(int code) {
         case embed::BK_ERR_SYNTAX:    return SYNTAX_ERROR;
         case embed::BK_ERR_THROW:     return JS_EXCEPTION;
         case embed::BK_ERR_INTERRUPT: return INTERRUPTED;
+        case embed::BK_ERR_ENCODING:  return ENCODING_ERROR;
         case embed::BK_ERR_FULL:      return VALUE_TABLE_FULL;
         case embed::BK_ERR_TYPE:      return WRONG_TYPE;
         case embed::BK_ERR_INVALID:   return STALE_VALUE;
@@ -690,7 +692,7 @@ fn void utf8_put(char c, void* udata) {
 
 fn String utf8_of(HString* s, Allocator allocator) {
     if (s == null) return "";
-    DString buf = dstring::temp_with_capacity(s.get_data().len + 4);
+    DString buf = dstring::temp_with_capacity((sz)(s.utf8_len() + 4));
     s.write_utf8(&utf8_put, &buf);
     return buf.copy_str(allocator);
 }

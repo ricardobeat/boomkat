@@ -75,8 +75,30 @@ context-local diagnostics without executing getters, Proxy traps, or user
 string conversion. `bk_to_cstring` performs JS string coercion and returns UTF-8
 storage, including a trailing NUL. Its optional length includes embedded NUL
 bytes and excludes the terminator. Release it with `bk_free_cstring`.
-`bk_read_string` measures or copies a string into a caller-provided buffer
-without allocating or coercing.
+## Strings
+
+A JS string is a sequence of UTF-16 code units and may hold lone surrogates.
+Each encoding has its own creator and reader; UTF-8 is the default.
+
+| Direction | UTF-8 | Latin-1 | UTF-16 |
+|---|---|---|---|
+| Create | `bk_new_string` | `bk_new_string_latin1` | `bk_new_string_utf16` |
+| Read | `bk_read_string`, `bk_read_string_utf8` | | `bk_read_string_utf16` |
+
+`bk_new_string` rejects invalid UTF-8 (overlong forms, encoded surrogates, values
+above U+10FFFF, truncated sequences) with `BK_ERR_ENCODING` and returns
+`BK_EXCEPTION`; nothing is stored. Latin-1 bytes are the code points
+U+0000..U+00FF. `bk_new_string_utf16` keeps lone surrogates as given.
+
+`bk_read_string` and `bk_read_string_utf8` measure or copy a string into a
+caller-provided buffer without allocating or coercing. A lone surrogate has no
+UTF-8 form, so the mode chooses: `BK_UTF8_REPLACE` writes U+FFFD (the behavior of
+`bk_read_string`), and `BK_UTF8_STRICT` fails with `BK_ERR_ENCODING`.
+`bk_read_string_utf16` copies code units, lone surrogates intact, with no
+terminator. Every reader returns `BK_ERR_FULL` when the buffer is too small and
+leaves the size it needs in `*length`, so a caller sizes a buffer in two calls
+with a `NULL` buffer first. UTF-8 lengths are in bytes and exclude the NUL;
+UTF-16 lengths count code units. `bk_string_length` returns the UTF-16 length.
 
 ## Evaluation and jobs
 
