@@ -104,6 +104,7 @@ struct LoopEmitter @feat(SLJIT) {
     void*[512] labels;
     LoopLink[2048] links;
     uint link_count;
+    bool link_limit_reached @if($feat(SLJIT_STATS));
     bool function_mode;
     // Inlined callees keep their registers in a private scratch window, so the
     // emitter needs a second base pointer and must not touch reference counts.
@@ -862,6 +863,9 @@ fn void LoopEmitter.mark(&self, uint reg) @feat(SLJIT) {
     self.e.op(jit::SLJIT_OR, jit::reg_s(2), jit::reg_s(2), 0, jit::SLJIT_IMM, (long)(1UL << reg));
 }
 fn void LoopEmitter.link(&self, void* jump, uint target, bool exit) @feat(SLJIT) {
+    $if $feat(SLJIT_STATS):
+        if (self.link_count == self.links.len) self.link_limit_reached = true;
+    $endif
     if (jump == null || self.link_count == self.links.len) {
         self.e.failed = true;
         return;

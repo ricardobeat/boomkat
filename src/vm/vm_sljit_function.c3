@@ -194,7 +194,15 @@ fn int function_capture_index(CompiledFunction* cf, Instruction ins) @feat(SLJIT
 fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @feat(SLJIT) {
     $if $feat(SLJIT_STATS): cf.sljit_rejection = "function eligibility"; $endif
     if (cf.code_count > FUNCTION_OPS || cf.flags.is_generator || cf.flags.is_async || cf.flags.has_direct_eval
-        || cf.mapped_arguments()) return false;
+        || cf.mapped_arguments()) {
+        $if $feat(SLJIT_STATS):
+            cf.sljit_rejection = cf.code_count > FUNCTION_OPS ? "region size"
+                : cf.flags.is_generator ? "generator"
+                : cf.flags.is_async ? "async"
+                : cf.flags.has_direct_eval ? "direct eval" : "mapped arguments";
+        $endif
+        return false;
+    }
     for (uint pos = 0; pos < cf.code_count; pos++) {
         Instruction ins = cf.code[pos];
         // WIDE payloads cannot be decoded independently on a native resume.
@@ -1468,7 +1476,10 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         out.guard(jit::SLJIT_EQUAL, r1, 0, imm, 0, FUNCTION_BAIL);
         e.mov(jit::reg_s(3), 0, mem | r0, (char*)&layout.this_binding - (char*)&layout);
     }
-    if (!f.capture(cf, act, h)) return false;
+    if (!f.capture(cf, act, h)) {
+        $if $feat(SLJIT_STATS): cf.sljit_rejection = "capture specialization"; $endif
+        return false;
+    }
     // The C gateway guards canonical FP homes before entering a continuation.
     // Calls and helpers materialize them before leaving generated code, then
     // reload them before resuming. Native callee entries publish their own
@@ -1874,7 +1885,12 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     }
     $if $feat(SLJIT_MAP): plan.map_pcs[cf.code_count] = e.label(); $endif
     out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), cf.code_count, true);
-    if (e.failed) return false;
+    if (e.failed) {
+        $if $feat(SLJIT_STATS):
+            cf.sljit_rejection = out.link_limit_reached ? "guard/link capacity" : "body emission";
+        $endif
+        return false;
+    }
     void*[FUNCTION_OPS + 1] exits;
     void*[2048] flow_exits;
     for (uint i = 0; i < out.link_count; i++) {
@@ -1969,7 +1985,10 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     }
     void* call_entry = f.emit_call_entry(body);
     void* fallback = f.call_fallback();
-    if (e.failed) return false;
+    if (e.failed) {
+        $if $feat(SLJIT_STATS): cf.sljit_rejection = "exit emission"; $endif
+        return false;
+    }
     plan.native = (FunctionNative)jit::sljit_generate_code(e.compiler, 0, null);
     if (plan.native == null) return false;
     sljit_calls_generated(plan, e.compiler, fallback);
@@ -2316,9 +2335,12 @@ fn void sljit_stats_dump(Heap* h) {
                         if (plan.entries[j] != null) active++;
                     }
                     io::printfn(
-                        "SLJIT coverage id=%d line=%d name=%s threaded=%d switch=%d attempts=%d warmup=%d retired=%d active=%d rejection=%s",
+                        "SLJIT coverage id=%d line=%d ops=%d regs=%d captures=%d name=%s threaded=%d switch=%d attempts=%d warmup=%d retired=%d active=%d rejection=%s",
                         i,
                         cf.get_line(0),
+                        cf.code_count,
+                        cf.num_regs,
+                        cf.capture_count,
                         (String)cf.get_name(),
                         cf.sljit_threaded_entries,
                         cf.sljit_switch_ops,
@@ -2388,6 +2410,10 @@ fn void sljit_stats_dump(Heap* h) {
             }
             for (LoopPlan* lp = cf.sljit_loops; lp != null; lp = lp.next) {
                 loops++;
+                $if $feat(SLJIT_MAP):
+                    io::printfn("SLJIT map id=%d kind=loop pc=%d start=%p end=%p", i, lp.begin,
+                        lp.native, (char*)(void*)lp.native + (sz)lp.code_bytes);
+                $endif
                 io::printfn(
                     "SLJIT loop %s begin=%d end=%d hits=%d iterations=%d",
                     (String)cf.get_name(),

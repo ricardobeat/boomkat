@@ -4,6 +4,7 @@
 Build with -D SLJIT_STATS -D SLJIT_MAP and run with --jit --stats. Addresses
 must come from the sampled process. Inlining creates overlapping ranges;
 the deepest frame wins. Unknown/retired code remains explicitly unmapped.
+Loop-tier ranges are attributed as whole loops, without per-opcode detail.
 """
 import argparse
 from collections import Counter
