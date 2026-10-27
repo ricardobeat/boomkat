@@ -5,6 +5,7 @@ function sum(a, n) { var x = 0; for (var i = 0; i < n; i++) x += a[i]; return x;
 function transform(dst, src, n) { for (var i = 0; i < n; i++) dst[i] = (src[i] * 3 + 17) ^ 91; }
 function blend(dst, src, n) { for (var i = 0; i < n; i++) dst[i] = src[i] * .75 + dst[i] * .25; }
 function ascii(s) { var x = 0; for (var i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; }
+function asciiBinding() { var x = 0; for (var i = 0; i < text.length; i++) x = (x * 31 + text.charCodeAt(i)) | 0; return x; }
 function hash(a) { var x = 1; for (var i = 0; i < a.length; i++) x = Math.imul(x, 31) + a[i] | 0; return x; }
 function reference(a, n) { var x = 0; for (var i = 0; i < n; i++) x += identity(a[i]); return x; }
 
@@ -50,9 +51,12 @@ for (var i = 0; i < alias.length; i++) same(alias[i], mirror[i], 'alias');
 var text = 'abc0123456789'.repeat(128), h = 0;
 for (var i = 0; i < text.length; i++) h = (h * 31 + identity(text.charCodeAt(i))) | 0;
 same(ascii(text), h, 'ASCII');
+// Intrinsic receivers loaded from bindings are not VM register indices.
+same(asciiBinding(), h, 'ASCII binding');
 text += '\u00e9\ud83d\ude00'; h = 0;
 for (var i = 0; i < text.length; i++) h = (h * 31 + identity(text.charCodeAt(i))) | 0;
 same(ascii(text), h, 'Unicode fallback');
+same(asciiBinding(), h, 'Unicode binding fallback');
 var oldChar = String.prototype.charCodeAt;
 String.prototype.charCodeAt = function () { return 7; };
 h = 0; for (var i = 0; i < 512; i++) h = (h * 31 + identity(7)) | 0;

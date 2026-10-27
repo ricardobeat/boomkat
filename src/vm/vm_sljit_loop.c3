@@ -419,6 +419,8 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         origin[i] = (int)i;
         method[i] = -1;
     }
+    // Only VM registers participate in allocation; binding/this sources use
+    // indices beyond LOOP_REGS and must not index this array.
     uint[LOOP_REGS] frequency;
     // Over-approximation of the registers any instruction may write; a field
     // read off a register that the loop rewrites needs a per-access guard.
@@ -569,7 +571,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                             plan.memory_at[at] = (char)(memory + 1);
                             origin[ins.a] = -1;
                             method[ins.a] = memory;
-                            frequency[source]++;
+                            if (source < (int)LOOP_REGS) frequency[(uint)source]++;
                             continue;
                         } else {
                             memory = -1;
@@ -587,7 +589,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                             plan.memory_at[at] = (char)(memory + 1);
                             origin[ins.a] = -1;
                             method[ins.a] = memory;
-                            frequency[source]++;
+                            if (source < (int)LOOP_REGS) frequency[(uint)source]++;
                             continue;
                         }
                         memory = -1;
