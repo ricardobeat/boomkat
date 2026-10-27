@@ -163,7 +163,7 @@ fn bool tval_to_boolean(TVal v) {
         case BOOLEAN:   return v.get_boolean();
         case NUMBER:    return v.get_number() != 0.0 && !math::is_nan(v.get_number());
         case FASTINT:   return v.get_fastint() != 0;
-        case STRING:    return ((HString*)v.get_heapptr()).blen > 0;
+        case STRING:    return ((HString*)v.get_heapptr()).is_truthy();
         default:        return true;  // objects, bigints, symbols
     }
 }

@@ -105,10 +105,15 @@ bitstruct HStringFlags : uint {
     bool  is_ascii          : 7;
     // The string is a valid array index ("0" .. "4294967294").
     bool  is_arridx         : 8;
-    // ECMA-262 Symbol value (internal or well-known).
+    // ECMA-262 Symbol value (internal or well-known). Set at creation, never
+    // inferred from the stored characters.
     bool  is_symbol         : 9;
-    // Hidden Symbol (\xFF prefix).
+    // Hidden Symbol: a private class member key or an engine slot name. Also
+    // set at creation; implies `is_symbol`.
     bool  is_hidden         : 10;
+    // A user-visible Symbol created with a description, possibly empty.
+    // `Symbol()` has none, and the stored characters are the description.
+    bool  has_desc          : 12;
     // String data lives in an external buffer, not inline.
     bool  has_extdata       : 13;
     // String has been inserted into the heap's string table.
@@ -188,6 +193,11 @@ macro char* HString.get_cstr(&self) {
 // Compare this string's raw bytes with `data`. Callers holding two HString
 // pointers should use `equals_hstring`, which can compare by pointer.
 fn bool HString.equals(&self, char[] data) {
+    return !self.flags.is_symbol && self.equals_chars(data);
+}
+
+// The stored characters equal `data`, whatever kind of string this is.
+fn bool HString.equals_chars(&self, char[] data) {
     if (self.blen != (uint)data.len) {
         return false;
     }
@@ -200,9 +210,10 @@ fn bool HString.equals(&self, char[] data) {
 // Compare two HStrings. The string table guarantees uniqueness, so two
 // interned strings are equal exactly when their pointers match. If either is
 // non-interned, such as a concatenation temporary, the comparison falls back
-// to content, with the hash as a fast reject.
+// to content, with the hash as a fast reject. A symbol is equal only to itself.
 fn bool HString.equals_hstring(&self, HString* other) {
     if (self == other) return true;
+    if (self.flags.is_symbol || other.flags.is_symbol) return false;
     if (!self.flags.is_interned || !other.flags.is_interned) {
         if (self.blen != other.blen) return false;
         // The hash is only a fast reject here, so a deferred one on either side
@@ -241,6 +252,8 @@ fn int hstring_compare(HString* a, HString* b) {
 // ============================================================================
 
 fn bool HString.is_ascii(&self)              { return self.flags.is_ascii; }
+// ToBoolean of a string value: a symbol is always truthy, even with no description.
+fn bool HString.is_truthy(&self)             { return self.blen > 0 || self.flags.is_symbol; }
 fn bool HString.is_arridx(&self)             { return self.flags.is_arridx; }
 fn bool HString.is_symbol(&self)             { return self.flags.is_symbol; }
 fn bool HString.is_hidden(&self)             { return self.flags.is_hidden; }
@@ -515,8 +528,6 @@ fn void HString.finish_data(&self) {
     if (data.len == 1 && self.flags.is_ascii) gcprofile::gcprof_ascii_char_alloc();
     uint idx;
     self.flags.is_arridx = is_valid_array_index(data, &idx);
-    self.flags.is_symbol = data.len > 0 && (uint)data[0] == 0xFF;
-    self.flags.is_hidden = self.flags.is_symbol && data.len > 1 && (uint)data[1] == 0xFF;
 }
 
 // Copy `n` bytes like mem::copy, inline for short spans where the library call

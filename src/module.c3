@@ -1689,7 +1689,7 @@ fn void module_settle_eval_promise(Heap* heap, Vm* vm, ModuleDef* mod, bool ok) 
 // reaction is a plain JS-visible-shaped object needing no new native-pointer
 // storage; heap_find_loaded_module recovers `mod` from it when the reaction
 // fires.
-const char[] MODULE_SETTLEMENT_NAME_KEY = "\xFFmpf_name";
+const char[] MODULE_SETTLEMENT_NAME_KEY = "mpf_name";
 
 // Attach a reaction to `pending` (the per-call promise execute_module_async
 // or execute_module_nested handed back for a still-suspended async/TLA
@@ -1719,7 +1719,7 @@ fn void module_attach_async_settlement(Heap* heap, ModuleDef* mod, HObject* sour
 // property, since a builtin reaction has no capture to hold the module in.
 fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source,
                                       uint onf_ordinal, uint onr_ordinal) {
-    HString* name_key = heap.str_intern(MODULE_SETTLEMENT_NAME_KEY);
+    HString* name_key = heap.str_intern_hidden(MODULE_SETTLEMENT_NAME_KEY);
     HString* name_str = heap.str_intern(mod.module_name);
 
     if (name_key == null || name_str == null) return;
@@ -1775,7 +1775,7 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
 // identity has to travel on the object rather than in a capture.
 fn ModuleDef* module_of_reaction(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return null;
-    HString* name_key = ctx.heap.str_intern(MODULE_SETTLEMENT_NAME_KEY);
+    HString* name_key = ctx.heap.str_intern_hidden(MODULE_SETTLEMENT_NAME_KEY);
     if (name_key == null) return null;
     char[] name = {};
     if (try nv = ctx.callee_obj.get_prop(name_key, ctx.heap)) {
@@ -2914,14 +2914,14 @@ fn TVal? dynamic_import_reject(Heap* heap, Vm* vm, TVal* reason) {
 
 // Hidden property keys holding a queued dynamic-import job's state. The job runs
 // the load, link, and evaluate steps as a separate microtask.
-const char[] DYN_IMPORT_SPEC_KEY  = "\xFFdi_spec";
-const char[] DYN_IMPORT_BASE_KEY  = "\xFFdi_base";
-const char[] DYN_IMPORT_JSON_KEY  = "\xFFdi_json";
+const char[] DYN_IMPORT_SPEC_KEY  = "di_spec";
+const char[] DYN_IMPORT_BASE_KEY  = "di_base";
+const char[] DYN_IMPORT_JSON_KEY  = "di_json";
 // `import.defer(x)`: the resolved module is bound to its deferred namespace
 // and is not evaluated by the import itself (import defer).
-const char[] DYN_IMPORT_DEFER_KEY  = "\xFFdi_defer";
-const char[] DYN_IMPORT_SOURCE_KEY = "\xFFdi_source";
-const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
+const char[] DYN_IMPORT_DEFER_KEY  = "di_defer";
+const char[] DYN_IMPORT_SOURCE_KEY = "di_source";
+const char[] DYN_IMPORT_PROM_KEY  = "di_promise";
 
 // `import(specifier)` (ECMA-262 EvaluateImportCall, HostImportModuleDynamically).
 // Synchronously allocates and returns the result promise, then defers the
@@ -2952,12 +2952,12 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAt
     // frame, and the original specifier's backing string, may be gone.
     // Interned HStrings are heap-owned and rooted through the string table for
     // as long as the job object references them.
-    HString* spec_key  = heap.str_intern(DYN_IMPORT_SPEC_KEY);
-    HString* base_key   = heap.str_intern(DYN_IMPORT_BASE_KEY);
-    HString* json_key   = heap.str_intern(DYN_IMPORT_JSON_KEY);
-    HString* defer_key  = heap.str_intern(DYN_IMPORT_DEFER_KEY);
-    HString* srcph_key  = heap.str_intern(DYN_IMPORT_SOURCE_KEY);
-    HString* prom_key   = heap.str_intern(DYN_IMPORT_PROM_KEY);
+    HString* spec_key  = heap.str_intern_hidden(DYN_IMPORT_SPEC_KEY);
+    HString* base_key   = heap.str_intern_hidden(DYN_IMPORT_BASE_KEY);
+    HString* json_key   = heap.str_intern_hidden(DYN_IMPORT_JSON_KEY);
+    HString* defer_key  = heap.str_intern_hidden(DYN_IMPORT_DEFER_KEY);
+    HString* srcph_key  = heap.str_intern_hidden(DYN_IMPORT_SOURCE_KEY);
+    HString* prom_key   = heap.str_intern_hidden(DYN_IMPORT_PROM_KEY);
     HString* spec_str   = heap.str_intern(specifier);
     HString* base_str   = base_name.len > 0 ? heap.str_intern(base_name) : null;
     if (spec_key == null || base_key == null || json_key == null || prom_key == null || spec_str == null) {
@@ -3028,11 +3028,11 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     ctx.result_undefined();
     if (ctx.callee_obj == null) return;
 
-    HString* spec_key = heap.str_intern(DYN_IMPORT_SPEC_KEY);
-    HString* base_key = heap.str_intern(DYN_IMPORT_BASE_KEY);
-    HString* json_key = heap.str_intern(DYN_IMPORT_JSON_KEY);
-    HString* defer_key = heap.str_intern(DYN_IMPORT_DEFER_KEY);
-    HString* prom_key = heap.str_intern(DYN_IMPORT_PROM_KEY);
+    HString* spec_key = heap.str_intern_hidden(DYN_IMPORT_SPEC_KEY);
+    HString* base_key = heap.str_intern_hidden(DYN_IMPORT_BASE_KEY);
+    HString* json_key = heap.str_intern_hidden(DYN_IMPORT_JSON_KEY);
+    HString* defer_key = heap.str_intern_hidden(DYN_IMPORT_DEFER_KEY);
+    HString* prom_key = heap.str_intern_hidden(DYN_IMPORT_PROM_KEY);
     if (spec_key == null || base_key == null || json_key == null || prom_key == null) return;
 
     char[] spec_data = {};
@@ -3062,7 +3062,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         }
     }
     bool source_phase = false;
-    HString* srcph_key = heap.str_intern(DYN_IMPORT_SOURCE_KEY);
+    HString* srcph_key = heap.str_intern_hidden(DYN_IMPORT_SOURCE_KEY);
     if (srcph_key != null) {
         if (try sv2 = ctx.callee_obj.get_prop(srcph_key, ctx.heap)) {
             if (sv2.is_boolean()) source_phase = sv2.get_boolean();

@@ -440,7 +440,7 @@ fn bool env_tval_to_boolean(TVal v) {
     if (v.is_fastint()) return v.get_fastint() != 0;
     if (v.is_string()) {
         void* p = v.get_heapptr();
-        return p != null && ((HString*)p).blen > 0;
+        return p != null && ((HString*)p).is_truthy();
     }
     return true;
 }

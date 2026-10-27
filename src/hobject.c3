@@ -4063,8 +4063,8 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
 // import is an accessor whose getter reads one binding of the exporting
 // module's environment, named by these two internal slots.
 tlocal int module_getter_index = -1;
-const char[] MODULE_BINDING_ENV_SLOT = "\xFFmoduleBindingEnv";
-const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
+const char[] MODULE_BINDING_ENV_SLOT = "moduleBindingEnv";
+const char[] MODULE_BINDING_KEY_SLOT = "moduleBindingKey";
 
 // Retarget an entry filled on a live import binding at the exporter's own data
 // slot, following re-export chains. The import itself is immutable, so the
@@ -4074,8 +4074,8 @@ const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
 // advances the epoch that guards every hit.
 fn void var_ic_alias_import(VarICEntry* vic, heap::Heap* h) {
     if (module_getter_index < 0) return;
-    void* env_key = (void*)h.str_intern(MODULE_BINDING_ENV_SLOT);
-    void* name_key = (void*)h.str_intern(MODULE_BINDING_KEY_SLOT);
+    void* env_key = (void*)h.str_intern_hidden(MODULE_BINDING_ENV_SLOT);
+    void* name_key = (void*)h.str_intern_hidden(MODULE_BINDING_KEY_SLOT);
     if (env_key == null || name_key == null) return;
     for (int depth = 0; depth < 8; depth++) {
         TVal acc = vic.slot_ptr.get();

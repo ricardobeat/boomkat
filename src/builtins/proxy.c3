@@ -32,7 +32,7 @@ fn HObject* proxy_handler(HObject* p) @inline { return (*p.extra_ptr()).proxy.ha
 
 // Hidden own-property key on a revoker function that points back at its proxy.
 // 0xFF-prefixed so it is treated as a symbol (invisible to string-key paths).
-const char[] PROXY_REVOKE_SLOT = "\xFFproxyRevokeSlot";
+const char[] PROXY_REVOKE_SLOT = "proxyRevokeSlot";
 
 // ============================================================================
 // Error helper, heap-level TypeError (usable without a BuiltinContext)
@@ -1960,7 +1960,7 @@ fn void builtin_proxy_revocable(BuiltinContext* ctx) {
     HString* empty_name = ctx.heap.str(heap::BuiltinStr.EMPTY);
     TVal rn; rn.set_string_borrowed(empty_name);
     revoker.put_prop(ctx.heap.str(heap::BuiltinStr.NAME), rn, hobject::PROP_FLAGS_NWC, ctx.heap);
-    HString* slot_key = ctx.heap.str_intern(PROXY_REVOKE_SLOT);
+    HString* slot_key = ctx.heap.str_intern_hidden(PROXY_REVOKE_SLOT);
     TVal p_tv; p_tv.set_object(p);
     revoker.put_prop(slot_key, p_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
 
@@ -1978,7 +1978,7 @@ fn void builtin_proxy_revocable(BuiltinContext* ctx) {
 fn void builtin_proxy_revoke(BuiltinContext* ctx) {
     ctx.result_undefined();
     if (ctx.callee_obj == null) return;
-    HString* slot_key = ctx.heap.str_intern(PROXY_REVOKE_SLOT);
+    HString* slot_key = ctx.heap.str_intern_hidden(PROXY_REVOKE_SLOT);
     int idx = ctx.callee_obj.find_prop_idx((void*)slot_key, ctx.heap);
     if (idx < 0) return;
     TVal p_tv = ctx.callee_obj.prop_values()[idx].get();

@@ -14,100 +14,43 @@ import boomkat::hobject;
 // Symbol creation counter, incremented for each unique symbol to guarantee
 // uniqueness even with identical descriptions.
 
-// Create a new Symbol HString with 0xFF prefix byte.
-// Symbols are NOT inserted into the string table (they are unique).
+// Create a new Symbol HString whose characters are the description.
+// Symbols are NOT inserted into the string table (they are unique), and their
+// identity lives in the `is_symbol` flag rather than in the stored characters.
 //
 // `has_desc` distinguishes `Symbol()` (no description, ES2019 §19.4.3.5
-// returns undefined) from `Symbol("")` (an explicit empty-string
-// description), both would otherwise encode identically as a bare 0xFF
-// byte. When true, a 0x01 marker byte follows the 0xFF prefix, ahead of
-// the (possibly zero-length) description bytes; symbol_description/
-// symbol_has_description read it back. 0x01 can never collide with the
-// 0xFF second byte that marks hidden symbols.
+// returns undefined) from `Symbol("")` (an explicit empty-string description);
+// the `has_desc` flag records which.
 fn HString* create_symbol_string(Heap* heap, char[] desc, bool has_desc = true) {
-    // Build internal representation: 0xFF [0x01 marker if has_desc] + description
-    // We add a counter suffix for uniqueness when description is empty
-    uint counter = heap.symbol_counter;
-    heap.symbol_counter++;
-
-    // Descriptions have no length bound (ES2019 §19.4.3.5), so the prefixed
-    // image spills to a heap buffer when it outgrows the stack fast path.
-    usz prefix_len = has_desc ? 2 : 1;
-    usz total = prefix_len + desc.len;
-    char[256] stack_buf;
-    char* heap_buf = null;
-    char[] buf;
-    if (total <= 256) {
-        buf = stack_buf[:256];
-    } else {
-        heap_buf = (char*)heap.alloc_func(heap.heap_udata, total);
-        if (heap_buf == null) return null;
-        buf = heap_buf[:total];
+    HString* s = alloc_unique_symbol(heap, desc);
+    if (s != null) {
+        s.flags.has_desc = has_desc;
     }
-
-    buf[0] = (char)0xFF;
-    usz pos = 1;
-    if (has_desc) {
-        buf[pos] = (char)0x01;
-        pos++;
-    }
-    for (usz i = 0; i < desc.len; i++) {
-        buf[pos + i] = desc[i];
-    }
-    pos += desc.len;
-
-    uint hash = heap.hash_seed ^ counter;  // Simple unique hash
-
-    HString*? sym = hstring::hstring_alloc(heap, buf[:pos], hash);
-    if (heap_buf != null) heap.free_func(heap.heap_udata, heap_buf);
-    if (try s = sym) {
-        // Not interned, a Symbol is unique, so the content-keyed table would
-        // conflate distinct Symbols sharing a description.  It still needs an
-        // owner, so it goes on the large-string registry: that is the list
-        // reset()/destroy() walk to release non-interned strings.
-        heap.large_string_register(s);
-        return s;
-    }
-    return null;
+    return s;
 }
 
-// Create a new hidden Symbol HString with 0xFF 0xFF prefix.
-// Hidden symbols back private class members: hstring_alloc's prefix
-// detection sets is_symbol + is_hidden automatically, and enumeration
-// paths filter them out. NOT inserted into the string table (unique).
+// Create a new hidden Symbol HString. Hidden symbols back private class
+// members, and enumeration paths filter them out. NOT inserted into the string
+// table (unique).
 fn HString* create_hidden_symbol(Heap* heap, char[] desc) {
+    HString* s = alloc_unique_symbol(heap, desc);
+    if (s != null) {
+        s.flags.is_hidden = true;
+    }
+    return s;
+}
+
+// Allocate a non-interned string holding `desc` with a unique hash. It needs an
+// owner, so it goes on the large-string registry: that is the list
+// reset()/destroy() walk to release non-interned strings.
+fn HString* alloc_unique_symbol(Heap* heap, char[] desc) {
     uint counter = heap.symbol_counter;
     heap.symbol_counter++;
-
-    // Same layout choice as create_symbol_string: stack fast path, heap
-    // buffer for descriptions longer than it (private names can be long).
-    usz total = 2 + desc.len;
-    char[256] stack_buf;
-    char* heap_buf = null;
-    char[] buf;
-    if (total <= 256) {
-        buf = stack_buf[:256];
-    } else {
-        heap_buf = (char*)heap.alloc_func(heap.heap_udata, total);
-        if (heap_buf == null) return null;
-        buf = heap_buf[:total];
-    }
-
-    buf[0] = (char)0xFF;
-    buf[1] = (char)0xFF;
-    usz pos = 2;
-    for (usz i = 0; i < desc.len; i++) {
-        buf[pos + i] = desc[i];
-    }
-    pos += desc.len;
-
-    uint hash = heap.hash_seed ^ counter;  // Simple unique hash
-
-    HString*? sym = hstring::hstring_alloc(heap, buf[:pos], hash);
-    if (heap_buf != null) heap.free_func(heap.heap_udata, heap_buf);
+    uint hash = heap.hash_seed ^ counter;
+    HString*? sym = hstring::hstring_alloc(heap, desc, hash);
     if (try s = sym) {
-        // Not interned (hidden symbols are unique); registered so
-        // reset()/destroy() can release it, see create_symbol.
+        s.flags.is_symbol = true;
+        s.flags.is_arridx = false;
         heap.large_string_register(s);
         return s;
     }
@@ -123,24 +66,11 @@ fn bool is_symbol_val(TVal val) {
 
 // True if the Symbol was created with an explicit description (even an
 // empty string), as opposed to `Symbol()` / `Symbol(undefined)` which has
-// no description at all. See create_symbol_string for the encoding.
-fn bool symbol_has_description(HString* sym) {
-    if (sym.blen <= 1) return false;
-    char* ptr = sym.get_cstr();
-    return (uint)(char)ptr[1] == 0x01;
-}
+// no description at all.
+fn bool symbol_has_description(HString* sym) => sym.flags.has_desc;
 
-// Get the description bytes of a Symbol (everything after the 0xFF prefix
-// and, if present, the has-description marker byte).
-fn char[] symbol_description(HString* sym) {
-    if (sym.blen <= 1) return "";
-    char* ptr = sym.get_cstr();
-    if (symbol_has_description(sym)) {
-        if (sym.blen <= 2) return "";
-        return ptr[2:(sz)(sym.blen - 2)];
-    }
-    return ptr[1:(sz)(sym.blen - 1)];
-}
+// The description bytes of a Symbol.
+fn char[] symbol_description(HString* sym) => sym.get_data();
 
 // ============================================================================
 // Symbol global registry (Symbol.for / Symbol.keyFor)

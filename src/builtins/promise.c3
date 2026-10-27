@@ -612,7 +612,7 @@ fn HObject*? promise_create_synthetic_executor(Heap* heap, HObject* hole) {
         TVal name_tv; name_tv.set_string_borrowed(heap.str(heap::BuiltinStr.EMPTY));
         fn_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
-    HString* hole_key = builtin_intern_string(heap, "\xFFhole");
+    HString* hole_key = heap.str_intern_hidden("hole");
     if (hole_key != null) {
         TVal hole_tv; hole_tv.set_object(hole);
         fn_obj.put_prop(hole_key, hole_tv, hobject::PROP_FLAGS_WEC, heap);
@@ -662,7 +662,7 @@ fn bool promise_new_capability_full(Heap* heap, void* vm, TVal c_tv, HObject* ho
         // "ReturnIfAbrupt(promise)", the error must propagate, NOT be
         // converted to a generic TypeError. Stash the original error on
         // the hole so callers can re-throw it.
-        HString* err_key = builtin_intern_string(heap, "\xFFcap_aborterror");
+        HString* err_key = heap.str_intern_hidden("cap_aborterror");
         if (err_key != null && hole != null) {
             hole.put_prop(err_key, heap.error_value, hobject::PROP_FLAGS_WEC, heap);
         }
@@ -756,7 +756,7 @@ fn void promise_capability_incomplete_throw(BuiltinContext* ctx) {
 // actual exception instead of a generic TypeError.
 fn bool promise_rethrow_stored_abort(BuiltinContext* ctx, HObject* hole) {
     if (hole == null) return false;
-    HString* err_key = builtin_intern_string(ctx.heap, "\xFFcap_aborterror");
+    HString* err_key = ctx.heap.str_intern_hidden("cap_aborterror");
     if (err_key == null) return false;
     if (catch err_get = hole.get_prop(err_key, ctx.heap)) return false;
     TVal? err_tv = hole.get_prop(err_key, ctx.heap);
@@ -1046,7 +1046,7 @@ fn void promise_throw_typeerror(BuiltinContext* ctx, String msg) {
 
 fn void builtin_promise_synthetic_executor(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return;
-    HString* hole_key = builtin_intern_string(ctx.heap, "\xFFhole");
+    HString* hole_key = ctx.heap.str_intern_hidden("hole");
     if (hole_key == null) return;
     TVal? hole_opt = ctx.callee_obj.get_prop(hole_key, ctx.heap);
     HObject* hole = null;
@@ -1306,9 +1306,9 @@ fn HObject*? promise_make_finally_wrapper(Heap* heap, uint builtin_index, TVal o
         TVal len_tv; len_tv.set_fastint(1);
         wrap_fn.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
-    HString* of_key = builtin_intern_string(heap, "\xFFon_finally");
+    HString* of_key = heap.str_intern_hidden("on_finally");
     if (of_key != null) wrap_fn.put_prop(of_key, on_finally, hobject::PROP_FLAGS_WEC, heap);
-    HString* ctor_key = builtin_intern_string(heap, "\xFFfinally_ctor");
+    HString* ctor_key = heap.str_intern_hidden("finally_ctor");
     if (ctor_key != null && ctor != null) {
         TVal ctor_tv; ctor_tv.set_object(ctor);
         wrap_fn.put_prop(ctor_key, ctor_tv, hobject::PROP_FLAGS_WEC, heap);
@@ -1390,12 +1390,12 @@ fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
     passthrough.set_undefined();
     if (ctx.argc >= 1) passthrough = ctx.regs[ctx.base_reg];
 
-    HString* of_key = builtin_intern_string(heap, "\xFFon_finally");
+    HString* of_key = heap.str_intern_hidden("on_finally");
     TVal on_finally; on_finally.set_undefined();
     if (of_key != null) {
         if (try ov = ctx.callee_obj.get_prop(of_key, ctx.heap)) on_finally = ov;
     }
-    HString* ctor_key = builtin_intern_string(heap, "\xFFfinally_ctor");
+    HString* ctor_key = heap.str_intern_hidden("finally_ctor");
     HObject* ctor = heap.promise_ctor;
     if (ctor_key != null) {
         if (try cv = ctx.callee_obj.get_prop(ctor_key, ctx.heap)) {
@@ -1435,9 +1435,9 @@ fn void promise_finally_wrapper_body(BuiltinContext* ctx, bool is_reject) {
     // and mark \xFFfinally_ctor absent so promise_finally_wrapper_body's
     // caller (this same function, recursively) instead takes the "leaf"
     // path below via a dedicated flag.
-    HString* pv_key = builtin_intern_string(heap, "\xFFfinally_passthrough");
+    HString* pv_key = heap.str_intern_hidden("finally_passthrough");
     if (pv_key != null) thunk.put_prop(pv_key, passthrough, hobject::PROP_FLAGS_WEC, ctx.heap);
-    HString* leaf_key = builtin_intern_string(heap, "\xFFfinally_leaf");
+    HString* leaf_key = heap.str_intern_hidden("finally_leaf");
     TVal leaf_true; leaf_true.set_boolean(true);
     if (leaf_key != null) thunk.put_prop(leaf_key, leaf_true, hobject::PROP_FLAGS_WEC, ctx.heap);
 
@@ -1467,7 +1467,7 @@ fn void builtin_promise_then_finally(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     // Leaf thunk (passthrough value/reason holder) vs the outer wrapper
     // (holds \xFFon_finally) are distinguished by \xFFfinally_leaf.
-    HString* leaf_key = builtin_intern_string(heap, "\xFFfinally_leaf");
+    HString* leaf_key = heap.str_intern_hidden("finally_leaf");
     bool is_leaf = false;
     if (ctx.callee_obj != null && leaf_key != null) {
         if (try lv = ctx.callee_obj.get_prop(leaf_key, ctx.heap)) {
@@ -1475,7 +1475,7 @@ fn void builtin_promise_then_finally(BuiltinContext* ctx) {
         }
     }
     if (is_leaf) {
-        HString* pv_key = builtin_intern_string(heap, "\xFFfinally_passthrough");
+        HString* pv_key = heap.str_intern_hidden("finally_passthrough");
         TVal pv; pv.set_undefined();
         if (pv_key != null && ctx.callee_obj != null) {
             if (try v = ctx.callee_obj.get_prop(pv_key, ctx.heap)) pv = v;
@@ -1488,7 +1488,7 @@ fn void builtin_promise_then_finally(BuiltinContext* ctx) {
 
 fn void builtin_promise_catch_finally(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
-    HString* leaf_key = builtin_intern_string(heap, "\xFFfinally_leaf");
+    HString* leaf_key = heap.str_intern_hidden("finally_leaf");
     bool is_leaf = false;
     if (ctx.callee_obj != null && leaf_key != null) {
         if (try lv = ctx.callee_obj.get_prop(leaf_key, ctx.heap)) {
@@ -1496,7 +1496,7 @@ fn void builtin_promise_catch_finally(BuiltinContext* ctx) {
         }
     }
     if (is_leaf) {
-        HString* pv_key = builtin_intern_string(heap, "\xFFfinally_passthrough");
+        HString* pv_key = heap.str_intern_hidden("finally_passthrough");
         TVal pv; pv.set_undefined();
         if (pv_key != null && ctx.callee_obj != null) {
             if (try v = ctx.callee_obj.get_prop(pv_key, ctx.heap)) pv = v;
@@ -2032,10 +2032,10 @@ fn bool promise_enqueue_thenable_job(Heap* heap, HObject* promise, TVal val, voi
     job.flags.constructable = false;
     heap.set_prototype(job, heap.function_proto);
     (*job.extra_ptr()).func.builtin_fn_index = (int)Builtin.PROMISE_RESOLVE_THENABLE_JOB.ordinal;
-    HString* then_hidden_key = builtin_intern_string(heap, "\xFFthen");
-    HString* resolution_key  = builtin_intern_string(heap, "\xFFresolution");
-    HString* resolve_key     = builtin_intern_string(heap, "\xFFjob_resolve");
-    HString* reject_hkey     = builtin_intern_string(heap, "\xFFjob_reject");
+    HString* then_hidden_key = heap.str_intern_hidden("then");
+    HString* resolution_key  = heap.str_intern_hidden("resolution");
+    HString* resolve_key     = heap.str_intern_hidden("job_resolve");
+    HString* reject_hkey     = heap.str_intern_hidden("job_reject");
     if (then_hidden_key != null) job.put_prop(then_hidden_key, then_method, hobject::PROP_FLAGS_WEC, heap);
     if (resolution_key != null)  job.put_prop(resolution_key, val, hobject::PROP_FLAGS_WEC, heap);
     if (resolve_key != null)     job.put_prop(resolve_key, resolve_tv, hobject::PROP_FLAGS_WEC, heap);
@@ -2059,10 +2059,10 @@ fn void builtin_promise_resolve_thenable_job(BuiltinContext* ctx) {
     ctx.result_undefined();
     if (ctx.callee_obj == null) return;
 
-    HString* then_hidden_key = builtin_intern_string(heap, "\xFFthen");
-    HString* resolution_key  = builtin_intern_string(heap, "\xFFresolution");
-    HString* resolve_key     = builtin_intern_string(heap, "\xFFjob_resolve");
-    HString* reject_hkey     = builtin_intern_string(heap, "\xFFjob_reject");
+    HString* then_hidden_key = heap.str_intern_hidden("then");
+    HString* resolution_key  = heap.str_intern_hidden("resolution");
+    HString* resolve_key     = heap.str_intern_hidden("job_resolve");
+    HString* reject_hkey     = heap.str_intern_hidden("job_reject");
 
     TVal then_method; then_method.set_undefined();
     TVal resolution; resolution.set_undefined();
@@ -2120,8 +2120,8 @@ fn void builtin_promise_resolve_thenable_job(BuiltinContext* ctx) {
 // the spec's promiseCapability.[[Resolve]](valuesArray) requirement.
 fn void capability_invoke(Heap* heap, void* vm, HObject* state, TVal* val, bool is_resolve, TVal this_val) {
     if (state == null || heap.call_fn == null || vm == null) return;
-    char[] key_name = is_resolve ? "\xFFcap_resolve" : "\xFFcap_reject";
-    HString* key = builtin_intern_string(heap, key_name);
+    char[] key_name = is_resolve ? "cap_resolve" : "cap_reject";
+    HString* key = heap.str_intern_hidden(key_name);
     if (key == null) return;
     TVal? cap_opt = state.get_prop(key, heap);
     TVal capr;
@@ -2142,7 +2142,7 @@ fn void capability_invoke(Heap* heap, void* vm, HObject* state, TVal* val, bool 
                 // Call(resultCapability.[[Resolve]], ...) must reject the
                 // capability's promise with the thrown value, not be
                 // silently swallowed.
-                HString* rj_key = builtin_intern_string(heap, "\xFFcap_reject");
+                HString* rj_key = heap.str_intern_hidden("cap_reject");
                 if (rj_key != null) {
                     TVal? rj_opt = state.get_prop(rj_key, heap);
                     TVal rejr; rejr.set_undefined();
@@ -2168,12 +2168,12 @@ fn HObject*? promise_create_all_state(Heap* heap, HObject* outer_promise, HObjec
     HObject* state = state_raw;
     heap.set_prototype(state, heap.object_proto);
 
-    HString* outer_key = builtin_intern_string(heap, "\xFFouter");
-    HString* arr_key = builtin_intern_string(heap, "\xFFarr");
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
-    HString* rejected_key = builtin_intern_string(heap, "\xFFrejected");
-    HString* cap_r_key = builtin_intern_string(heap, "\xFFcap_resolve");
-    HString* cap_j_key = builtin_intern_string(heap, "\xFFcap_reject");
+    HString* outer_key = heap.str_intern_hidden("outer");
+    HString* arr_key = heap.str_intern_hidden("arr");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
+    HString* rejected_key = heap.str_intern_hidden("rejected");
+    HString* cap_r_key = heap.str_intern_hidden("cap_resolve");
+    HString* cap_j_key = heap.str_intern_hidden("cap_reject");
 
     if (outer_key != null) {
         TVal outer_tv; outer_tv.set_object(outer_promise);
@@ -2199,7 +2199,7 @@ fn HObject*? promise_create_all_state(Heap* heap, HObject* outer_promise, HObjec
     }
     // Per-index already-called flags, shared by an index's fulfill and reject
     // closures: the first of the pair to run wins, the other returns undefined.
-    HString* called_key = builtin_intern_string(heap, "\xFFcalled");
+    HString* called_key = heap.str_intern_hidden("called");
     if (called_key != null) {
         HObject*? called_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
         if (try called = called_raw) {
@@ -2217,11 +2217,11 @@ fn HObject*? promise_create_all_state(Heap* heap, HObject* outer_promise, HObjec
 // to its value (CreateKeyedPromiseCombinatorResultObject).
 fn TVal promise_combinator_result(Heap* heap, HObject* state) {
     TVal values; values.set_undefined();
-    HString* arr_key = builtin_intern_string(heap, "\xFFarr");
+    HString* arr_key = heap.str_intern_hidden("arr");
     if (arr_key != null) {
         if (try av = state.get_prop(arr_key, heap)) values = av;
     }
-    HString* keys_key = builtin_intern_string(heap, "\xFFkeys");
+    HString* keys_key = heap.str_intern_hidden("keys");
     HObject* keys = null;
     if (keys_key != null) {
         if (try kv = state.get_prop(keys_key, heap)) {
@@ -2269,12 +2269,12 @@ fn HObject*? promise_create_element_callback(Heap* heap, uint builtin_index, HOb
         TVal name_tv; name_tv.set_string_borrowed(heap.str(heap::BuiltinStr.EMPTY));
         cb.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
     }
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
+    HString* state_key = heap.str_intern_hidden("state");
     if (state_key != null) {
         TVal state_tv; state_tv.set_object(state);
         cb.put_prop(state_key, state_tv, hobject::PROP_FLAGS_WEC, heap);
     }
-    HString* idx_key = builtin_intern_string(heap, "\xFFidx");
+    HString* idx_key = heap.str_intern_hidden("idx");
     if (idx_key != null) {
         TVal idx_tv; idx_tv.set_fastint((long)idx);
         cb.put_prop(idx_key, idx_tv, hobject::PROP_FLAGS_WEC, heap);
@@ -2296,7 +2296,7 @@ fn bool promise_element_guard(BuiltinContext* ctx, bool shared = false) {
         usz idx = 0;
         HObject* state = promise_element_state(ctx, &idx, true);
         if (state == null) return false;
-        HString* called_key = builtin_intern_string(heap, "\xFFcalled");
+        HString* called_key = heap.str_intern_hidden("called");
         HObject* called = null;
         if (called_key != null) {
             if (try cv = state.get_prop(called_key, heap)) {
@@ -2311,7 +2311,7 @@ fn bool promise_element_guard(BuiltinContext* ctx, bool shared = false) {
         called.set_array_idx((uint)idx, yes, heap);
         return false;
     }
-    HString* ac_key = builtin_intern_string(heap, "\xFFalreadyCalled");
+    HString* ac_key = heap.str_intern_hidden("alreadyCalled");
     if (ac_key == null) return false;
     if (try acv = ctx.callee_obj.get_prop(ac_key, ctx.heap)) {
         if (acv.is_boolean() && acv.get_boolean()) { ctx.result_undefined(); return true; }
@@ -2324,8 +2324,8 @@ fn bool promise_element_guard(BuiltinContext* ctx, bool shared = false) {
 // Read the combinator state object and element index from a callback's hidden props.
 fn HObject* promise_element_state(BuiltinContext* ctx, usz* idx_out, bool need_idx) {
     Heap* heap = ctx.heap;
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
-    HString* idx_key = builtin_intern_string(heap, "\xFFidx");
+    HString* state_key = heap.str_intern_hidden("state");
+    HString* idx_key = heap.str_intern_hidden("idx");
     if (state_key == null) return null;
     if (need_idx && idx_key == null) return null;
     TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
@@ -2358,9 +2358,9 @@ fn void builtin_promise_all_resolve_element(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return;
     if (promise_element_guard(ctx)) return;
 
-    HString* arr_key = builtin_intern_string(heap, "\xFFarr");
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
-    HString* outer_key = builtin_intern_string(heap, "\xFFouter");
+    HString* arr_key = heap.str_intern_hidden("arr");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
+    HString* outer_key = heap.str_intern_hidden("outer");
     usz idx = 0;
     HObject* state = promise_element_state(ctx, &idx, true);
     if (state == null) return;
@@ -2404,7 +2404,7 @@ fn void builtin_promise_all_resolve_element(BuiltinContext* ctx) {
                 if (ov.is_object() && ov.get_heapptr() != null) outer = (HObject*)ov.get_heapptr();
             }
             // Read current rejected flag, if already rejected, don't overwrite.
-            HString* rej_key = builtin_intern_string(heap, "\xFFrejected");
+            HString* rej_key = heap.str_intern_hidden("rejected");
             bool already_rejected = false;
             if (rej_key != null) {
                 TVal? rej_opt = state.get_prop(rej_key, ctx.heap);
@@ -2436,9 +2436,9 @@ fn void builtin_promise_all_reject_element(BuiltinContext* ctx) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
 
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
-    HString* outer_key = builtin_intern_string(heap, "\xFFouter");
-    HString* rej_key = builtin_intern_string(heap, "\xFFrejected");
+    HString* state_key = heap.str_intern_hidden("state");
+    HString* outer_key = heap.str_intern_hidden("outer");
+    HString* rej_key = heap.str_intern_hidden("rejected");
     if (state_key == null) return;
 
     TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
@@ -2535,9 +2535,9 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     usz idx = 0;
     HObject* state = promise_element_state(ctx, &idx, true);
     if (state == null) return;
-    HString* arr_key = builtin_intern_string(heap, "\xFFarr");
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
-    HString* outer_key = builtin_intern_string(heap, "\xFFouter");
+    HString* arr_key = heap.str_intern_hidden("arr");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
+    HString* outer_key = heap.str_intern_hidden("outer");
 
     TVal value;
     promise_element_arg(ctx, &value);
@@ -2617,9 +2617,9 @@ fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
     usz idx = 0;
     HObject* state = promise_element_state(ctx, &idx, true);
     if (state == null) return;
-    HString* arr_key = builtin_intern_string(heap, "\xFFarr");
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
-    HString* outer_key = builtin_intern_string(heap, "\xFFouter");
+    HString* arr_key = heap.str_intern_hidden("arr");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
+    HString* outer_key = heap.str_intern_hidden("outer");
 
     TVal reason;
     promise_element_arg(ctx, &reason);
@@ -2707,8 +2707,8 @@ fn void builtin_promise_any_resolve_element(BuiltinContext* ctx) {
     // thenable is free to call its resolver multiple times; each call
     // re-invokes the (idempotent, since the promise settles once) outer
     // resolve. See resolve-from-same-thenable.js.
-    HString* state_key = builtin_intern_string(heap, "\xFFstate");
-    HString* outer_key = builtin_intern_string(heap, "\xFFouter");
+    HString* state_key = heap.str_intern_hidden("state");
+    HString* outer_key = heap.str_intern_hidden("outer");
     if (state_key == null) return;
 
     TVal? state_opt = ctx.callee_obj.get_prop(state_key, ctx.heap);
@@ -2755,10 +2755,10 @@ fn void builtin_promise_any_reject_element(BuiltinContext* ctx) {
 
     if (promise_element_guard(ctx)) return;
 
-    HString* errors_key = builtin_intern_string(heap, "\xFFerrors");
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
-    HString* outer_key = builtin_intern_string(heap, "\xFFouter");
-    HString* rej_key = builtin_intern_string(heap, "\xFFrejected");
+    HString* errors_key = heap.str_intern_hidden("errors");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
+    HString* outer_key = heap.str_intern_hidden("outer");
+    HString* rej_key = heap.str_intern_hidden("rejected");
     usz idx = 0;
     HObject* state = promise_element_state(ctx, &idx, true);
     if (state == null) return;
@@ -3306,7 +3306,7 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
     if (catch err_s = state_raw) { ctx.result_undefined(); return; }
     HObject* state = state_raw;
 
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
 
     if (arr != null) ((HeapHeader*)arr).set_temproot();
     if (state != null) ((HeapHeader*)state).set_temproot();
@@ -3539,7 +3539,7 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
                                                     cap_resolve_tv, cap_reject_tv);
     if (catch err_s = state_raw) { ctx.result_undefined(); return; }
     HObject* state = state_raw;
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
 
     bool iter_done = false;
     while (!iter_done) {
@@ -3775,12 +3775,12 @@ fn void promise_builtin_keyed(BuiltinContext* ctx, bool settled) {
     HObject*? state_raw = promise_create_all_state(heap, promise, arr, 1, cap_resolve_tv, cap_reject_tv);
     if (catch err_s = state_raw) { ctx.result_undefined(); return; }
     HObject* state = state_raw;
-    HString* keys_key = builtin_intern_string(heap, "\xFFkeys");
+    HString* keys_key = heap.str_intern_hidden("keys");
     if (keys_key != null) {
         TVal keys_tv; keys_tv.set_object(keys);
         state.put_prop(keys_key, keys_tv, hobject::PROP_FLAGS_WEC, heap);
     }
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
     uint fulfill_idx = settled ? Builtin.PROMISE_ALLSETTLED_RESOLVE_ELEMENT.ordinal
                                : Builtin.PROMISE_ALL_RESOLVE_ELEMENT.ordinal;
     uint reject_idx  = settled ? Builtin.PROMISE_ALLSETTLED_REJECT_ELEMENT.ordinal
@@ -3941,12 +3941,12 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     HObject* state = null;
     if (try sr = state_raw) {
         heap.set_prototype(sr, heap.object_proto);
-        HString* outer_key    = builtin_intern_string(heap, "\xFFouter");
-        HString* errors_key   = builtin_intern_string(heap, "\xFFerrors");
-        HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
-        HString* rejected_key = builtin_intern_string(heap, "\xFFrejected");
-        HString* cap_r_key    = builtin_intern_string(heap, "\xFFcap_resolve");
-        HString* cap_j_key    = builtin_intern_string(heap, "\xFFcap_reject");
+        HString* outer_key    = heap.str_intern_hidden("outer");
+        HString* errors_key   = heap.str_intern_hidden("errors");
+        HString* remaining_key = heap.str_intern_hidden("remaining");
+        HString* rejected_key = heap.str_intern_hidden("rejected");
+        HString* cap_r_key    = heap.str_intern_hidden("cap_resolve");
+        HString* cap_j_key    = heap.str_intern_hidden("cap_reject");
         if (outer_key != null && promise != null) {
             TVal outer_tv; outer_tv.set_object(promise);
             sr.put_prop(outer_key, outer_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -3970,7 +3970,7 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     }
     if (state == null) { ctx.result_undefined(); return; }
 
-    HString* remaining_key = builtin_intern_string(heap, "\xFFremaining");
+    HString* remaining_key = heap.str_intern_hidden("remaining");
     usz remaining = 1;
     usz idx = 0;
 
