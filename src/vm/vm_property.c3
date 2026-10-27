@@ -116,6 +116,25 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
         epoch_chain = hobject::plain_property_object((HObject*)chain_protos[i]);
     }
     if (dict_proto && !epoch_chain) return false;
+    // A site that reads the same key from receivers of different shapes through
+    // one prototype family keeps a set of receiver shapes instead of replacing
+    // the entry each time one class flows through. Every arm resolves the
+    // property from the link and owner the epoch already covers, so one epoch
+    // guard validates the whole set.
+    if (epoch_chain && ic.key.borrow() == key && ic.has_proto
+        && (ic.chain_len == hobject::IC_CHAIN_EPOCH || ic.chain_len == hobject::IC_CHAIN_PROTO)
+        && hobject::ic_epoch_live(ic) && ic.chain.epoch.current == &vm.heap.prototype_epoch
+        && !owner.get_prop_flags((uint)owner_idx, vm.heap).is_accessor) {
+        HObject* first = hobj.prototype;
+        bool known = hobject::ic_proto_add(ic, hobj.shape_id, (uint)owner_idx, owner, first);
+        if (known) {
+            for (uint i = 0; i < chain_len; i++) {
+                ((HObject*)chain_protos[i]).gc.prototype_observed = true;
+            }
+            vm.heap.shade_root_object(owner);
+            return true;
+        }
+    }
     if (chain_len > 0 && !hobject::ic_reserve_chain(ic, vm.heap)) return false;
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(vm.heap);

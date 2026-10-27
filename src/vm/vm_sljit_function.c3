@@ -846,11 +846,13 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
     }
     Shape* shape = h.get_shape(ic.shape_id);
     // Inherited reads cache their links on one prototype epoch, and a site
-    // whose objects differ in shape keeps a set of own data reads.
+    // whose objects differ in shape keeps a set of own data reads, or of the
+    // receiver shapes an inherited read answers for.
     bool epoch_chain = !write && ic.chain_len == hobject::IC_CHAIN_EPOCH;
     bool poly_chain  = !write && ic.chain_len == hobject::IC_CHAIN_POLY;
+    bool proto_chain = !write && ic.chain_len == hobject::IC_CHAIN_PROTO;
     bool usable  = key != null && ic.key.borrow() == key && shape != null && shape.generation == ic.shape_gen
-        && (epoch_chain || poly_chain || ic.chain_len <= hobject::IC_MAX_CHAIN)
+        && (epoch_chain || poly_chain || proto_chain || ic.chain_len <= hobject::IC_MAX_CHAIN)
         && !ic.prop_flags.is_accessor
         && ic.prop_idx < hobject::IC_PROP_MISSING
         && (!write || (!ic.has_proto && ic.prop_flags.writable));
@@ -871,6 +873,20 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
                 Shape* extra = h.get_shape(set.shapes[i]);
                 usable = extra != null && !extra.dict && self.shape(set.shapes[i], h)
                     && function_shape_slot(extra, key, &flags) == (int)set.prop_idx[i];
+            }
+        } else if (proto_chain) {
+            // The entry's own receiver resolves the read through its recorded
+            // link; every arm does the same for one more receiver shape.
+            hobject::ICProtoReads* set = &ic.chain.proto;
+            usable = index < 0 && !shape.dict && set.primary.owner != null && set.primary.first != null
+                && set.count <= hobject::IC_PROTO_ARMS
+                && set.primary.owner.find_prop_idx(key, h) == (int)ic.prop_idx;
+            for (uint i = 0; usable && i < set.count; i++) {
+                Shape* extra = h.get_shape(set.arms[i].shape_id);
+                usable = extra != null && !extra.dict && self.shape(set.arms[i].shape_id, h)
+                    && set.arms[i].owner != null && set.arms[i].first != null
+                    && function_shape_slot(extra, key, &flags) < 0
+                    && set.arms[i].owner.find_prop_idx(key, h) == (int)set.arms[i].prop_idx;
             }
         } else if (epoch_chain) {
             usable = index < 0 && !shape.dict;
@@ -925,6 +941,54 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         self.out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, true);
         void* arms_done = e.label();
         for (uint i = 0; i < arm_count; i++) jit::sljit_set_label(arms[i], arms_done);
+    } else if (proto_chain) {
+        // The epoch guard covers every owner's layout and every repointed link,
+        // so each arm only has to name the receiver shape it answers for and
+        // the link the read stepped through. Arms are tried in order and the
+        // last one's failure leaves to the interpreter.
+        if (tracking && saved_flow != null) {
+            self.flow_materialize();
+            self.out.flow = null;
+        }
+        hobject::ICProtoReads* set = &ic.chain.proto;
+        Heap heap_view;
+        e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(0));
+        e.mov(r3, 0, mem | r3, (char*)&heap_view.prototype_epoch - (char*)&heap_view);
+        self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)set.primary.value, pc);
+        void*[hobject::IC_PROTO_ARMS + 2] arms;
+        uint arm_count = 0;
+        for (uint i = 0; i <= set.count; i++) {
+            uint     shape_id = i == 0 ? ic.shape_id : set.arms[i - 1].shape_id;
+            uint     slot     = i == 0 ? ic.prop_idx : set.arms[i - 1].prop_idx;
+            HObject* first    = i == 0 ? set.primary.first : set.arms[i - 1].first;
+            HObject* owner    = i == 0 ? set.primary.owner : set.arms[i - 1].owner;
+            self.out.load(base_reg, r0);
+            e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+            e.mov(r1, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
+            void* other = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, shape_id);
+            e.mov(r2, 0, mem | r0, proto_offset);
+            void* link = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)first);
+            // The owner keeps its identity while the epoch holds, but its
+            // storage may have moved, so the slot is read from the live object.
+            e.mov(r1, 0, imm, (long)owner);
+            e.mov(r2, 0, mem | r1, (char*)&obj.prop_alloc - (char*)&obj);
+            void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
+            e.op(jit::SLJIT_ADD, r2, r1, 0, imm, HObjectBase::size);
+            e.bind(allocated);
+            e.mov(r0, 0, mem | r2, (long)slot * 8);
+            self.store(ins.a, pc);
+            arms[arm_count++] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+            if (i == set.count) {
+                self.out.link(other, pc, true);
+                self.out.link(link, pc, true);
+            } else {
+                void* next = e.label();
+                self.out.bind_to(other, next);
+                self.out.bind_to(link, next);
+            }
+        }
+        void* proto_done = e.label();
+        for (uint i = 0; i < arm_count; i++) jit::sljit_set_label(arms[i], proto_done);
     } else {
         if (!known_shape) {
             e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);

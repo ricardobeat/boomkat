@@ -2774,6 +2774,9 @@ fn Instruction* th_get_other_shape(Instruction* pc, HandlerTable* handlers, TVal
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() == key) {
         hobject::PropValue* known = hobject::ic_poly_slot(ic, hobj);
+        if (known == null && ic.chain_len == hobject::IC_CHAIN_PROTO) {
+            known = hobject::ic_proto_value(ic, hobj);
+        }
         if (known != null) return th_publish_read(pc, handlers, regs, cold, known.get());
     }
     return th_get_shared(pc, handlers, regs, cold, hobj, key);
@@ -2795,11 +2798,22 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() == null) {
         th_fill_from_mega(pc, cold.heap, ic, hobj, key, me);
+    } else if (me.proto != null && ic.key.borrow() == key) {
+        // An inherited read this cache answered for one more receiver shape
+        // joins the site's set of shapes, so the native tiers can answer it
+        // without leaving the region on every switch between classes. The
+        // megamorphic entry's owner is the receiver's immediate prototype.
+        HObject* owner = (HObject*)me.proto;
+        if (hobject::ic_proto_add(ic, hobj.shape_id, me.prop_idx, owner, owner)) {
+            owner.gc.prototype_observed = true;
+            cold.heap.shade_root_object(owner);
+        }
     } else if (me.proto == null && ic.key.borrow() == key
                && !hobject::ic_poly_add(ic, hobj.shape_id, me.prop_idx, cold.heap)) {
         // A full set keeps answering for its shapes, all own data reads.
         if (ic.chain_len != hobject::IC_CHAIN_POLY) ic.chain_len = 0;
         ic.shape_id = hobj.shape_id;
+        ic.shape_gen = hobj.shape_generation(cold.heap);
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
         ic.has_proto = false;
@@ -2826,6 +2840,7 @@ fn void th_fill_from_mega(Instruction* pc, heap::Heap* h, hobject::ICEntry* ic, 
         ic.has_proto = false;
     }
     ic.shape_id = hobj.shape_id;
+    ic.shape_gen = hobj.shape_generation(h);
     ic.prop_idx = me.prop_idx;
     ic.prop_flags = me.flags;
     ic.key.set(h, (hstring::HString*)key);

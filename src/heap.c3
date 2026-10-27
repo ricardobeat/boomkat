@@ -2027,10 +2027,12 @@ fn bool Heap.ic_names_live_shapes(&self, hobject::ICEntry* ic) @inline {
     if (ic.shape_id == SHAPE_NONE || ic.key.borrow() == null) return true;
     if (ic.shape_id >= self.shape_count || !self.shape_slot_live(ic.shape_id)) return false;
     if (ic.chain == null || ic.chain_len == hobject::IC_CHAIN_EPOCH) return true;
-    bool poly = ic.chain_len == hobject::IC_CHAIN_POLY;
-    uint count = poly ? ic.chain.poly.count : (uint)ic.chain_len;
+    bool poly  = ic.chain_len == hobject::IC_CHAIN_POLY;
+    bool proto = ic.chain_len == hobject::IC_CHAIN_PROTO;
+    uint count = poly ? ic.chain.poly.count : proto ? ic.chain.proto.count : (uint)ic.chain_len;
     for (uint i = 0; i < count; i++) {
-        uint id = poly ? ic.chain.poly.shapes[i] : ic.chain.snapshot.shapes[i];
+        uint id = poly ? ic.chain.poly.shapes[i]
+            : proto ? ic.chain.proto.arms[i].shape_id : ic.chain.snapshot.shapes[i];
         if (id >= self.shape_count || !self.shape_slot_live(id)) return false;
     }
     return true;
@@ -4522,12 +4524,19 @@ fn void Heap.mark_roots(&self) {
                 self.mark_tval(&cf.constants[ci]);
             }
         }
-        // Property IC entries cache a proto object and a key string.
+        // Property IC entries cache a proto object and a key string. An
+        // inherited read that answers for several receiver shapes roots one
+        // owner per shape.
         if (cf.ic_entries != null && cf.ic_count > 0) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
                 self.mark_hobject(hobject::ic_cached_proto(ie));
+                if (ie.chain != null && ie.chain_len == hobject::IC_CHAIN_PROTO) {
+                    for (uint ai = 0; ai < ie.chain.proto.count; ai++) {
+                        self.mark_hobject(ie.chain.proto.arms[ai].owner);
+                    }
+                }
             }
         }
     }

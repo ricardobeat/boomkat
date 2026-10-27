@@ -3545,15 +3545,38 @@ struct ICPolySet {
     uint[IC_POLY_MAX] prop_idx;
 }
 
-const uint IC_POLY_MAX = 5;
+// One more receiver shape an inherited read answers for, under the same epoch.
+// `first` is the link the read stepped through, which is the owner itself when
+// the property sat on the receiver's immediate prototype.
+struct ICProtoArm {
+    uint      shape_id;
+    uint      prop_idx;
+    HObject*  first;
+    HObject*  owner;
+}
+
+// Further receiver shapes of an inherited read. The entry's own fields describe
+// the first receiver shape; these describe the rest, each reaching the property
+// through a recorded link while every owner keeps the epoch's layout.
+struct ICProtoReads {
+    ICChainEpoch primary;
+    uint         count;
+    // Slot the next new receiver shape replaces once the set is full.
+    uint         next;
+    ICProtoArm[IC_PROTO_ARMS] arms;
+}
+
+const uint IC_POLY_MAX   = 5;
+const uint IC_PROTO_ARMS = 3;
 
 union ICChain {
     ICChainSnapshot snapshot;
     ICChainEpoch epoch;
     ICPolySet poly;
+    ICProtoReads proto;
 }
 
-$assert ICChain::size == ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
+$assert ICChain::size == ICProtoReads::size : "inherited read set exceeds the cache payload";
 
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
@@ -3595,6 +3618,79 @@ const uint IC_PROP_ABSENT = 0xFFFFFFFFu;
 const char IC_CHAIN_EPOCH = 0xFF;
 // An own data read whose chain block holds an ICPolySet.
 const char IC_CHAIN_POLY = 0xFE;
+// An inherited read whose chain block holds an ICProtoReads: the epoch guard
+// plus one arm per receiver shape the site has already resolved.
+const char IC_CHAIN_PROTO = 0xFD;
+
+// True when the entry's epoch still holds, so an inherited read needs no
+// layout guard beyond the identity of the link it recorded.
+fn bool ic_epoch_live(ICEntry* ic) @inline {
+    return ic.has_proto && ic.chain != null && ic.chain.epoch.owner != null
+        && ic.chain.epoch.current != null && *ic.chain.epoch.current == ic.chain.epoch.value;
+}
+
+// The owner and slot a polymorphic inherited read answers with for `hobj`, or
+// false when the entry describes no receiver of this shape. The caller has
+// matched the key and checked the receiver's own layout.
+fn bool ic_proto_slot(ICEntry* ic, HObject* hobj, HObject** owner, uint* prop_idx) @inline {
+    if (ic.chain_len != IC_CHAIN_PROTO) return false;
+    if (!ic_epoch_live(ic)) return false;
+    ICProtoReads* set = &ic.chain.proto;
+    if (hobj.shape_id == ic.shape_id) {
+        if (hobj.prototype != set.primary.first) return false;
+        *owner    = set.primary.owner;
+        *prop_idx = ic.prop_idx;
+        return true;
+    }
+    for (uint i = 0; i < set.count; i++) {
+        if (set.arms[i].shape_id != hobj.shape_id || hobj.prototype != set.arms[i].first) continue;
+        *owner    = set.arms[i].owner;
+        *prop_idx = set.arms[i].prop_idx;
+        return true;
+    }
+    return false;
+}
+
+// The slot of `hobj`'s property in a polymorphic inherited read's set, or null.
+fn PropValue* ic_proto_value(ICEntry* ic, HObject* hobj) @inline {
+    HObject* owner;
+    uint prop_idx;
+    if (!ic_proto_slot(ic, hobj, &owner, &prop_idx)) return null;
+    if (owner.is_proxy()) return null;
+    return &owner.prop_values()[prop_idx];
+}
+
+// Record one more receiver shape at a site whose entry already caches an
+// inherited read under a live epoch. Returns false, changing nothing, when the
+// entry describes something else or already names this shape differently, so
+// the caller replaces it instead.
+fn bool ic_proto_add(ICEntry* ic, uint shape_id, uint prop_idx, HObject* owner, HObject* first) {
+    if (ic.chain == null || !ic.has_proto || ic.prop_flags.is_accessor || owner == null || first == null
+        || ic.shape_id == heap::SHAPE_NONE || ic.prop_idx >= IC_PROP_MISSING) return false;
+    if (ic.chain_len == IC_CHAIN_EPOCH) {
+        if (!ic_epoch_live(ic)) return false;
+        // The epoch payload already sits at the offset the read set's first
+        // arm uses, so widening the entry only clears the rest of the set.
+        ic.chain.proto.count = 0;
+        ic.chain.proto.next = 0;
+        ic.chain_len = IC_CHAIN_PROTO;
+    } else if (ic.chain_len != IC_CHAIN_PROTO) return false;
+    ICProtoReads* set = &ic.chain.proto;
+    if (shape_id == ic.shape_id) return set.primary.first == first && ic.prop_idx == prop_idx;
+    for (uint i = 0; i < set.count; i++) {
+        if (set.arms[i].shape_id != shape_id) continue;
+        return set.arms[i].first == first && set.arms[i].owner == owner && set.arms[i].prop_idx == prop_idx;
+    }
+    uint slot;
+    if (set.count < IC_PROTO_ARMS) {
+        slot = set.count++;
+    } else {
+        slot = set.next;
+        set.next = (set.next + 1) % IC_PROTO_ARMS;
+    }
+    set.arms[slot] = { shape_id, prop_idx, first, owner };
+    return true;
+}
 
 // The slot of `hobj`'s property in a polymorphic entry's set, or null. The
 // caller has matched the entry's key and applied the receiver checks of the
@@ -3639,6 +3735,7 @@ fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
 fn HObject* ic_cached_proto(ICEntry* ic) {
     if (!ic.has_proto) return null;
     if (ic.chain_len == IC_CHAIN_EPOCH) return ic.chain.epoch.owner;
+    if (ic.chain_len == IC_CHAIN_PROTO) return ic.chain.proto.primary.owner;
     return (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
 }
 // A read that proved absence through the complete chain, distinct from stores
@@ -3867,6 +3964,7 @@ fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
 // current storage so growing the property buffer does not invalidate a hit.
 fn PropValue* ic_resolve_slot(ICEntry* ic, HObject* hobj) @inline {
     if (hobj.is_proxy()) return null;
+    if (ic.chain_len == IC_CHAIN_PROTO) return ic_proto_value(ic, hobj);
     HObject* owner = hobj;
     if (ic.has_proto) {
         owner = ic_resolve_owner(ic, hobj);
