@@ -1,0 +1,169 @@
+Richards: 3971
+DeltaBlue: 2909
+Crypto: 3065
+RayTrace: 3034
+EarleyBoyer: 3059
+RegExp: 766
+Splay: 8157
+SplayLatency: 21595
+NavierStokes: 7185
+PdfJS: 6969
+Mandreel: 2050
+MandreelLatency: 15245
+Gameboy: 12506
+CodeLoad: 26623
+Box2D: 4432
+zlib: 3362
+Typescript: 10641
+----
+Score (version 9): 5483
+SLJIT loop am3 begin=8 end=39 hits=2532425 iterations=31731878
+SLJIT loop am3 begin=8 end=39 hits=1 iterations=12
+SLJIT loop bnpCopyTo begin=8 end=13 hits=91 iterations=0
+SLJIT loop bnpDLShiftTo begin=8 end=12 hits=3925 iterations=0
+SLJIT loop bnpDLShiftTo begin=16 end=21 hits=36154 iterations=43396
+SLJIT loop bnpDRShiftTo begin=6 end=11 hits=238 iterations=1150
+SLJIT loop bnpDRShiftTo begin=6 end=11 hits=1 iterations=12
+SLJIT loop bnpLShiftTo begin=25 end=35 hits=307 iterations=0
+SLJIT loop bnpRShiftTo begin=31 end=46 hits=1477 iterations=0
+SLJIT loop bnpSubTo begin=35 end=46 hits=2 iterations=0
+SLJIT loop bnpSubTo begin=16 end=28 hits=26 iterations=484
+SLJIT loop bnpSubTo begin=16 end=28 hits=2 iterations=57
+SLJIT loop bnpMultiplyTo begin=21 end=25 hits=7393 iterations=143411
+SLJIT loop bnpSquareTo begin=14 end=18 hits=85334 iterations=3114518
+SLJIT loop montReduce begin=54 end=66 hits=41 iterations=0
+SLJIT loop bnpAddTo begin=16 end=28 hits=1 iterations=0
+SLJIT loop pkcs1pad2 begin=15 end=29 hits=9993 iterations=0
+SLJIT loop sc_length begin=2 end=6 hits=12363 iterations=0
+SLJIT loop sc_vectorFillBang begin=2 end=6 hits=9401 iterations=0
+SLJIT loop addFields begin=2 end=11 hits=4786 iterations=4749645
+SLJIT loop addFields begin=2 end=11 hits=18 iterations=16819
+SLJIT loop set_bnd begin=75 end=96 hits=178 iterations=0
+SLJIT loop set_bnd begin=52 end=72 hits=434 iterations=49230
+SLJIT loop set_bnd begin=24 end=47 hits=178 iterations=0
+SLJIT loop set_bnd begin=3 end=21 hits=114 iterations=0
+SLJIT loop lin_solve begin=13 end=19 hits=13979 iterations=1575268
+SLJIT loop lin_solve begin=47 end=65 hits=555201 iterations=62687013
+SLJIT loop lin_solve begin=47 end=65 hits=2732 iterations=308563
+SLJIT loop lin_solve begin=47 end=65 hits=144 iterations=16179
+SLJIT loop lin_solve2 begin=13 end=22 hits=13780 iterations=1559084
+SLJIT loop lin_solve2 begin=13 end=22 hits=144 iterations=16178
+SLJIT loop advect begin=16 end=70 hits=14215 iterations=1592443
+SLJIT loop advect begin=16 end=70 hits=27676 iterations=3096076
+SLJIT loop project begin=86 end=110 hits=27886 iterations=3125778
+SLJIT loop project begin=23 end=43 hits=27833 iterations=3125925
+SLJIT loop queryUI begin=2 end=13 hits=1602 iterations=1588913
+SLJIT loop runMandreel begin=10 end=20 hits=11655 iterations=11919950
+SLJIT loop Mandreel_checkState begin=4 end=13 hits=153 iterations=152944
+SLJIT loop initHeap begin=57 end=65 hits=3885 iterations=3973269
+SLJIT loop _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=132 end=154 hits=1 iterations=242
+SLJIT loop _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=66 end=80 hits=10455 iterations=135517
+SLJIT loop _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=43 end=57 hits=10452 iterations=131310
+SLJIT loop _ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii begin=357 end=379 hits=797 iterations=80181
+SLJIT loop _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=188 end=210 hits=29 iterations=2981
+SLJIT loop __mandreel_internal_init begin=111 end=145 hits=2 iterations=30
+SLJIT loop jenkinsHash begin=3 end=10 hits=33 iterations=0
+SLJIT loop PartialEvaluator_extractWidths begin=70 end=76 hits=3186 iterations=0
+SLJIT loop fontLoaderPrepareFontLoadEvent begin=88 end=95 hits=3 iterations=0
+SLJIT loop getMaxPower2 begin=11 end=13 hits=1 iterations=0
+SLJIT loop decrypt begin=11 end=25 hits=3443 iterations=0
+SLJIT loop decrypt begin=11 end=25 hits=11798 iterations=0
+SLJIT loop Type1Parser_extractFontHeader begin=56 end=62 hits=1 iterations=0
+SLJIT loop DecodeStream_ensureBuffer begin=23 end=27 hits=849 iterations=725582
+SLJIT loop flateStreamGenerateHuffmanTable begin=5 end=9 hits=22 iterations=2916
+SLJIT loop flateStreamGenerateHuffmanTable begin=39 end=44 hits=16287 iterations=0
+SLJIT loop FlateStream_readBlock begin=309 end=315 hits=14473 iterations=27
+SLJIT loop FlateStream_readBlock begin=198 end=205 hits=2238 iterations=10465
+SLJIT loop  begin=20 end=45 hits=963 iterations=943615
+SLJIT loop  begin=11 end=16 hits=340 iterations=345198
+SLJIT loop  begin=70 end=75 hits=10 iterations=2294
+SLJIT loop  begin=70 end=75 hits=1 iterations=193
+SLJIT loop  begin=69 end=74 hits=341 iterations=345259
+SLJIT loop  begin=69 end=74 hits=142 iterations=131927
+SLJIT function Verify begin=0 ops=15 bytes=4220 id=5187 line=338170
+SLJIT function hasFlag begin=0 ops=4 bytes=2156 id=5192 line=338271
+SLJIT function  begin=0 ops=28 bytes=15628 id=5276 line=339297
+SLJIT function  begin=0 ops=2 bytes=1244 id=5280 line=339329
+SLJIT function  begin=0 ops=12 bytes=4176 id=5368 line=340145
+SLJIT function  begin=0 ops=12 bytes=4176 id=5370 line=340151
+SLJIT function  begin=0 ops=12 bytes=4176 id=5386 line=340227
+SLJIT function  begin=0 ops=12 bytes=4176 id=5387 line=340230
+SLJIT function  begin=0 ops=33 bytes=9024 id=5417 line=340420
+SLJIT function  begin=0 ops=2 bytes=1528 id=5448 line=340598
+SLJIT function getAstWalkerFactory begin=0 ops=9 bytes=2764 id=5554 line=341901
+SLJIT function  begin=0 ops=6 bytes=2784 id=5746 line=343251
+SLJIT function  begin=0 ops=6 bytes=2784 id=5747 line=343254
+SLJIT function  begin=0 ops=6 bytes=4800 id=5756 line=343329
+SLJIT function  begin=0 ops=6 bytes=2712 id=5757 line=343332
+SLJIT function  begin=0 ops=6 bytes=2712 id=5758 line=343337
+SLJIT function  begin=0 ops=13 bytes=5096 id=5759 line=343342
+SLJIT function  begin=0 ops=9 bytes=3412 id=5760 line=343349
+SLJIT function  begin=0 ops=69 bytes=17784 id=5765 line=343418
+SLJIT function  begin=0 ops=66 bytes=12772 id=5766 line=343436
+SLJIT function  begin=0 ops=160 bytes=41612 id=5767 line=343459
+SLJIT function  begin=0 ops=128 bytes=31996 id=5770 line=343710
+SLJIT function  begin=0 ops=269 bytes=71448 id=5773 line=343899
+SLJIT function  begin=0 ops=6 bytes=5396 id=5775 line=343969
+SLJIT function  begin=0 ops=19 bytes=9320 id=5776 line=343972
+SLJIT function  begin=0 ops=27 bytes=12720 id=5777 line=343979
+SLJIT function  begin=0 ops=18 bytes=8036 id=5779 line=344060
+SLJIT function  begin=0 ops=38 bytes=11092 id=5783 line=344189
+SLJIT function  begin=0 ops=9 bytes=3124 id=5784 line=344203
+SLJIT function  begin=0 ops=90 bytes=19716 id=5785 line=344207
+SLJIT function  begin=0 ops=34 bytes=12236 id=5786 line=344230
+SLJIT function  begin=0 ops=36 bytes=9332 id=5795 line=344570
+SLJIT function  begin=0 ops=63 bytes=17968 id=5797 line=344589
+SLJIT function shouldCaptureThis begin=0 ops=9 bytes=2628 id=5799 line=344613
+SLJIT loop getLineNumberFromPosition begin=8 end=22 hits=5311 iterations=60732
+SLJIT function  begin=0 ops=118 bytes=59108 id=6076 line=352663
+SLJIT function  begin=0 ops=106 bytes=53828 id=6077 line=352680
+SLJIT function  begin=0 ops=2 bytes=1240 id=6085 line=352749
+SLJIT function  begin=0 ops=2 bytes=1240 id=6086 line=352752
+SLJIT function  begin=0 ops=2 bytes=1240 id=6090 line=352764
+SLJIT function  begin=0 ops=23 bytes=6284 id=6093 line=352773
+SLJIT function  begin=0 ops=38 bytes=10996 id=6102 line=352850
+SLJIT function  begin=0 ops=2 bytes=1244 id=6118 line=352967
+SLJIT function  begin=0 ops=2 bytes=1244 id=6124 line=353021
+SLJIT function  begin=0 ops=2 bytes=1244 id=6144 line=353136
+SLJIT function  begin=0 ops=2 bytes=1244 id=6147 line=353145
+SLJIT function  begin=0 ops=2 bytes=1244 id=6154 line=353200
+SLJIT function  begin=0 ops=4 bytes=1996 id=6155 line=353203
+SLJIT function  begin=0 ops=4 bytes=2044 id=6156 line=353206
+SLJIT function  begin=0 ops=2 bytes=1244 id=6157 line=353209
+SLJIT function  begin=0 ops=4 bytes=2064 id=6165 line=353264
+SLJIT function  begin=0 ops=2 bytes=1244 id=6166 line=353267
+SLJIT function  begin=0 ops=2 bytes=1244 id=6170 line=353279
+SLJIT function  begin=0 ops=26 bytes=9124 id=6198 line=353439
+SLJIT function  begin=0 ops=22 bytes=6780 id=6308 line=354687
+SLJIT function  begin=0 ops=11 bytes=7060 id=6310 line=354698
+SLJIT function  begin=0 ops=13 bytes=8044 id=6312 line=354704
+SLJIT function  begin=0 ops=6 bytes=2832 id=6323 line=354792
+SLJIT function  begin=0 ops=6 bytes=4740 id=6325 line=354798
+SLJIT function  begin=0 ops=16 bytes=10916 id=6326 line=354801
+SLJIT function  begin=0 ops=9 bytes=8400 id=6328 line=354810
+SLJIT function  begin=0 ops=9 bytes=4264 id=6352 line=355699
+SLJIT function  begin=0 ops=128 bytes=60760 id=6364 line=355898
+SLJIT function  begin=0 ops=38 bytes=13380 id=6445 line=357314
+SLJIT function  begin=0 ops=9 bytes=3260 id=6470 line=357884
+SLJIT function  begin=0 ops=16 bytes=14700 id=6481 line=358237
+SLJIT function  begin=0 ops=159 bytes=80900 id=6493 line=358456
+SLJIT function getLength begin=0 ops=4 bytes=2040 id=6503 line=358934
+SLJIT function  begin=0 ops=28 bytes=7012 id=6525 line=359354
+SLJIT function  begin=0 ops=21 bytes=5544 id=6526 line=359361
+SLJIT function  begin=0 ops=36 bytes=9948 id=6534 line=359521
+SLJIT function  begin=0 ops=108 bytes=36580 id=6540 line=359645
+SLJIT function  begin=0 ops=36 bytes=13664 id=6543 line=359820
+SLJIT function  begin=0 ops=205 bytes=77024 id=6544 line=359840
+SLJIT function  begin=0 ops=12 bytes=5700 id=6577 line=360153
+SLJIT function  begin=0 ops=2 bytes=1244 id=6610 line=360491
+SLJIT function isSTRFile begin=0 ops=4 bytes=1724 id=6632 line=360618
+SLJIT function isTSFile begin=0 ops=4 bytes=1724 id=6633 line=360622
+SLJIT loop a7 begin=3 end=15 hits=1667 iterations=367645
+SLJIT loop bj begin=224 end=247 hits=2519 iterations=37186
+SLJIT loop bj begin=78 end=100 hits=2831 iterations=271702
+SLJIT loop bj begin=753 end=779 hits=3024 iterations=1729
+SLJIT loop bm begin=36 end=43 hits=13849 iterations=13706174
+SLJIT loop bn begin=44 end=57 hits=10925 iterations=10727465
+SLJIT loop bn begin=29 end=42 hits=17455 iterations=16846140
+SLJIT totals functions=77 loops=71 templates=0 code_bytes=1047264
+SLJIT budget bytes=1047264 limit=1048576 native_work=0 evictions=1775

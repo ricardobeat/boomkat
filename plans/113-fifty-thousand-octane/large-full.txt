@@ -1,0 +1,891 @@
+Richards: 3986
+DeltaBlue: 2906
+Crypto: 3064
+RayTrace: 3034
+EarleyBoyer: 3070
+RegExp: 769
+Splay: 7717
+SplayLatency: 20872
+NavierStokes: 7185
+PdfJS: 7003
+Mandreel: 2741
+MandreelLatency: 22660
+Gameboy: 9656
+CodeLoad: 28686
+Box2D: 5796
+zlib: 2886
+Typescript: 21473
+----
+Score (version 9): 5901
+SLJIT function runRichards begin=0 ops=122 bytes=27388 id=5 line=445
+SLJIT function Scheduler begin=0 ops=15 bytes=5288 id=6 line=498
+SLJIT function TaskControlBlock begin=0 ops=12 bytes=6144 id=7 line=659
+SLJIT function DeviceTask begin=0 ops=4 bytes=2500 id=9 line=795
+SLJIT function HandlerTask begin=0 ops=6 bytes=2980 id=11 line=858
+SLJIT function Packet begin=0 ops=10 bytes=4744 id=12 line=914
+SLJIT function OrderedCollection begin=0 ops=4 bytes=2292 id=13 line=1000
+SLJIT function Constraint begin=0 ops=2 bytes=1900 id=15 line=1097
+SLJIT function UnaryConstraint begin=0 ops=15 bytes=5424 id=16 line=1156
+SLJIT function StayConstraint begin=0 ops=10 bytes=3612 id=17 line=1237
+SLJIT function EditConstraint begin=0 ops=10 bytes=3612 id=18 line=1255
+SLJIT function BinaryConstraint begin=0 ops=17 bytes=6464 id=19 line=1285
+SLJIT function ScaleConstraint begin=0 ops=16 bytes=6256 id=20 line=1399
+SLJIT function EqualityConstraint begin=0 ops=11 bytes=3880 id=21 line=1458
+SLJIT function Variable begin=0 ops=18 bytes=6480 id=22 line=1481
+SLJIT function Planner begin=0 ops=3 bytes=1996 id=23 line=1514
+SLJIT function Plan begin=0 ops=4 bytes=2292 id=24 line=1701
+SLJIT function chainTest begin=0 ops=72 bytes=13832 id=25 line=1741
+SLJIT function projectionTest begin=0 ops=116 bytes=21480 id=26 line=1774
+SLJIT function change begin=0 ops=33 bytes=14248 id=27 line=1805
+SLJIT function deltaBlue begin=0 ops=8 bytes=2840 id=28 line=1821
+SLJIT function BigInteger begin=0 ops=33 bytes=9528 id=29 line=1885
+SLJIT function nbi begin=0 ops=5 bytes=1952 id=30 line=1893
+SLJIT function am3 begin=0 ops=41 bytes=21456 id=33 line=1935
+SLJIT loop am3 begin=8 end=39 hits=2508753 iterations=31482011
+SLJIT loop am3 begin=8 end=39 hits=1 iterations=12
+SLJIT function int2char begin=0 ops=5 bytes=2148 id=35 line=1999
+SLJIT function intAt begin=0 ops=11 bytes=6372 id=36 line=2001
+SLJIT function bnpCopyTo begin=0 ops=19 bytes=9756 id=37 line=2007
+SLJIT loop bnpCopyTo begin=8 end=13 hits=73 iterations=0
+SLJIT function nbv begin=0 ops=7 bytes=6128 id=39 line=2026
+SLJIT function bnpFromString begin=0 ops=156 bytes=54112 id=40 line=2030
+SLJIT function bnpClamp begin=0 ops=20 bytes=8644 id=41 line=2069
+SLJIT function bnToString begin=0 ops=108 bytes=34744 id=42 line=2076
+SLJIT function bnAbs begin=0 ops=9 bytes=3344 id=44 line=2110
+SLJIT function bnCompareTo begin=0 ops=28 bytes=13820 id=45 line=2114
+SLJIT function nbits begin=0 ops=31 bytes=7756 id=46 line=2128
+SLJIT function bnBitLength begin=0 ops=22 bytes=15800 id=47 line=2138
+SLJIT function bnpDLShiftTo begin=0 ops=28 bytes=14236 id=48 line=2146
+SLJIT loop bnpDLShiftTo begin=8 end=12 hits=3083 iterations=0
+SLJIT loop bnpDLShiftTo begin=16 end=21 hits=36148 iterations=43268
+SLJIT function bnpDRShiftTo begin=0 ops=22 bytes=12340 id=49 line=2157
+SLJIT loop bnpDRShiftTo begin=6 end=11 hits=187 iterations=1185
+SLJIT loop bnpDRShiftTo begin=6 end=11 hits=1 iterations=12
+SLJIT function bnpLShiftTo begin=0 ops=56 bytes=28644 id=50 line=2166
+SLJIT loop bnpLShiftTo begin=25 end=35 hits=310 iterations=0
+SLJIT function bnpRShiftTo begin=0 ops=64 bytes=40848 id=51 line=2185
+SLJIT loop bnpRShiftTo begin=31 end=46 hits=1471 iterations=0
+SLJIT function bnpSubTo begin=0 ops=95 bytes=45904 id=52 line=2205
+SLJIT loop bnpSubTo begin=35 end=46 hits=2 iterations=0
+SLJIT loop bnpSubTo begin=16 end=28 hits=13 iterations=219
+SLJIT loop bnpSubTo begin=16 end=28 hits=2 iterations=38
+SLJIT function bnpMultiplyTo begin=0 ops=61 bytes=28392 id=53 line=2242
+SLJIT loop bnpMultiplyTo begin=21 end=25 hits=10171 iterations=193927
+SLJIT function bnpSquareTo begin=0 ops=94 bytes=45560 id=54 line=2258
+SLJIT loop bnpSquareTo begin=14 end=18 hits=83262 iterations=3045106
+SLJIT function bnMod begin=0 ops=29 bytes=6920 id=56 line=2332
+SLJIT function bnpInvDigit begin=0 ops=51 bytes=13772 id=63 line=2365
+SLJIT function Montgomery begin=0 ops=23 bytes=7896 id=64 line=2383
+SLJIT function montConvert begin=0 ops=39 bytes=13808 id=65 line=2393
+SLJIT function montRevert begin=0 ops=11 bytes=6196 id=66 line=2402
+SLJIT function montReduce begin=0 ops=94 bytes=61648 id=67 line=2410
+SLJIT loop montReduce begin=54 end=66 hits=41 iterations=0
+SLJIT function montSqrTo begin=0 ops=9 bytes=3264 id=68 line=2429
+SLJIT function montMulTo begin=0 ops=10 bytes=3540 id=69 line=2432
+SLJIT function bnpIsEven begin=0 ops=14 bytes=6656 id=70 line=2441
+SLJIT function bnpExp begin=0 ops=53 bytes=20984 id=71 line=2448
+SLJIT function bnModPowInt begin=0 ops=24 bytes=8148 id=72 line=2462
+SLJIT function bnToByteArray begin=0 ops=100 bytes=40264 id=82 line=2609
+SLJIT function bnpAddTo begin=0 ops=93 bytes=45408 id=107 line=2762
+SLJIT loop bnpAddTo begin=16 end=28 hits=1 iterations=0
+SLJIT function bnAdd begin=0 ops=8 bytes=2812 id=108 line=2797
+SLJIT function bnSubtract begin=0 ops=8 bytes=2812 id=109 line=2800
+SLJIT function bnMultiply begin=0 ops=8 bytes=3024 id=110 line=2803
+SLJIT function bnModPow begin=0 ops=210 bytes=93904 id=129 line=2925
+SLJIT function ARC4init begin=0 ops=38 bytes=23828 id=136 line=3180
+SLJIT function ARC4next begin=0 ops=32 bytes=25860 id=137 line=3193
+SLJIT function rng_get_byte begin=0 ops=40 bytes=9644 id=141 line=3257
+SLJIT function rng_get_bytes begin=0 ops=10 bytes=4692 id=142 line=3272
+SLJIT function SecureRandom begin=0 ops=1 bytes=1032 id=143 line=3275
+SLJIT function parseBigInt begin=0 ops=6 bytes=2300 id=144 line=3282
+SLJIT function pkcs1pad2 begin=0 ops=72 bytes=31500 id=147 line=3304
+SLJIT loop pkcs1pad2 begin=15 end=29 hits=10292 iterations=0
+SLJIT function RSAKey begin=0 ops=17 bytes=5328 id=148 line=3326
+SLJIT function RSASetPublic begin=0 ops=29 bytes=7868 id=149 line=3338
+SLJIT function RSADoPublic begin=0 ops=8 bytes=3144 id=150 line=3348
+SLJIT function RSAEncrypt begin=0 ops=38 bytes=21456 id=151 line=3352
+SLJIT function pkcs1unpad2 begin=0 ops=46 bytes=22724 id=152 line=3378
+SLJIT function RSASetPrivateEx begin=0 ops=58 bytes=12748 id=154 line=3405
+SLJIT function RSADoPrivate begin=0 ops=74 bytes=24060 id=156 line=3454
+SLJIT function RSADecrypt begin=0 ops=24 bytes=16736 id=157 line=3469
+SLJIT function encrypt begin=0 ops=28 bytes=7884 id=158 line=3509
+SLJIT function decrypt begin=0 ops=33 bytes=9380 id=159 line=3516
+SLJIT function renderScene begin=0 ops=293 bytes=64584 id=160 line=4338
+SLJIT function sc_isNumber begin=0 ops=4 bytes=1800 id=173 line=4593
+SLJIT function sc_isPair begin=0 ops=3 bytes=1496 id=207 line=5012
+SLJIT function sc_cons begin=0 ops=6 bytes=2300 id=209 line=5023
+SLJIT function sc_length begin=0 ops=8 bytes=2312 id=249 line=5246
+SLJIT loop sc_length begin=2 end=6 hits=10399 iterations=0
+SLJIT function sc_reverseAppendBang begin=0 ops=10 bytes=2856 id=254 line=5325
+SLJIT function sc_dualAppend begin=0 ops=14 bytes=5316 id=255 line=5336
+SLJIT function sc_reverse begin=0 ops=12 bytes=3456 id=259 line=5371
+SLJIT function sc_member begin=0 ops=13 bytes=3852 id=265 line=5433
+SLJIT function sc_assq begin=0 ops=12 bytes=3532 id=266 line=5457
+SLJIT function sc_isVector begin=0 ops=3 bytes=1496 id=295 line=5798
+SLJIT function sc_makeVector begin=0 ops=11 bytes=4476 id=297 line=5811
+SLJIT function sc_vector2list begin=0 ops=13 bytes=6572 id=302 line=5850
+SLJIT function sc_list2vector begin=0 ops=13 bytes=4032 id=303 line=5858
+SLJIT function sc_vectorFillBang begin=0 ops=8 bytes=4388 id=304 line=5868
+SLJIT loop sc_vectorFillBang begin=2 end=6 hits=13500 iterations=0
+SLJIT function sc_display begin=0 ops=9 bytes=2924 id=410 line=7259
+SLJIT function sc_toDisplayString begin=0 ops=43 bytes=13276 id=411 line=7265
+SLJIT function sc_newline begin=0 ops=8 bytes=2712 id=412 line=7285
+SLJIT function sc_isEqual begin=0 ops=32 bytes=7228 id=427 line=7612
+SLJIT function RunBenchmark begin=0 ops=20 bytes=4468 id=458 line=9110
+SLJIT function computeInputVariants begin=0 ops=50 bytes=13364 id=462 line=9185
+SLJIT function Exec begin=0 ops=21 bytes=7684 id=463 line=9196
+SLJIT function runBlock0 begin=5 ops=128 bytes=57756 id=464 line=9254
+SLJIT function runBlock2 begin=0 ops=298 bytes=95484 id=466 line=9464
+SLJIT function runBlock3 begin=108 ops=128 bytes=50004 id=467 line=9556
+SLJIT function runBlock4 begin=0 ops=337 bytes=89304 id=468 line=9683
+SLJIT function runBlock5 begin=0 ops=348 bytes=79424 id=469 line=9751
+SLJIT function runBlock6 begin=342 ops=258 bytes=65416 id=470 line=9831
+SLJIT function runBlock7 begin=0 ops=378 bytes=82840 id=471 line=9927
+SLJIT function runBlock9 begin=5 ops=128 bytes=39020 id=473 line=10128
+SLJIT function runBlock10 begin=0 ops=128 bytes=29404 id=474 line=10299
+SLJIT function runBlock11 begin=5 ops=128 bytes=29088 id=475 line=10482
+SLJIT function run begin=0 ops=40 bytes=6728 id=476 line=10906
+SLJIT function GeneratePayloadTree begin=0 ops=26 bytes=6584 id=478 line=10980
+SLJIT function GenerateKey begin=0 ops=6 bytes=2356 id=479 line=10997
+SLJIT function SplayUpdateStats begin=0 ops=14 bytes=2920 id=481 line=11008
+SLJIT function InsertNewNode begin=0 ops=23 bytes=6756 id=482 line=11014
+SLJIT function SplaySetup begin=0 ops=35 bytes=7288 id=483 line=11026
+SLJIT function SplayTearDown begin=0 ops=40 bytes=13016 id=484 line=11044
+SLJIT function SplayRun begin=0 ops=31 bytes=7164 id=485 line=11069
+SLJIT function runNavierStokes begin=0 ops=17 bytes=5048 id=487 line=11400
+SLJIT function checkResult begin=0 ops=22 bytes=8408 id=488 line=11409
+SLJIT function addPoints begin=0 ops=47 bytes=10284 id=492 line=11435
+SLJIT function prepareFrame begin=0 ops=14 bytes=3412 id=493 line=11451
+SLJIT function addFields begin=0 ops=13 bytes=11268 id=494 line=11464
+SLJIT loop addFields begin=2 end=11 hits=4802 iterations=4761963
+SLJIT loop set_bnd begin=101 end=119 hits=556 iterations=0
+SLJIT loop set_bnd begin=122 end=143 hits=552 iterations=0
+SLJIT loop set_bnd begin=24 end=47 hits=45 iterations=0
+SLJIT loop set_bnd begin=3 end=21 hits=49 iterations=0
+SLJIT function lin_solve begin=0 ops=77 bytes=42248 id=496 line=11509
+SLJIT loop lin_solve begin=13 end=19 hits=13979 iterations=1575269
+SLJIT loop lin_solve begin=47 end=65 hits=555201 iterations=62687015
+SLJIT loop lin_solve begin=47 end=65 hits=2734 iterations=308562
+SLJIT loop lin_solve begin=47 end=65 hits=144 iterations=16179
+SLJIT function diffuse begin=0 ops=12 bytes=3536 id=497 line=11538
+SLJIT function lin_solve2 begin=0 ops=100 bytes=67428 id=498 line=11544
+SLJIT loop lin_solve2 begin=13 end=22 hits=13780 iterations=1559084
+SLJIT loop lin_solve2 begin=13 end=22 hits=143 iterations=16180
+SLJIT function diffuse2 begin=0 ops=13 bytes=3728 id=499 line=11579
+SLJIT function advect begin=0 ops=79 bytes=36296 id=500 line=11585
+SLJIT loop advect begin=16 end=70 hits=41892 iterations=4688510
+SLJIT function project begin=0 ops=122 bytes=61576 id=501 line=11620
+SLJIT loop project begin=86 end=110 hits=27893 iterations=3125771
+SLJIT loop project begin=23 end=43 hits=27829 iterations=3125809
+SLJIT function dens_step begin=0 ops=17 bytes=4028 id=502 line=11658
+SLJIT function vel_step begin=0 ops=51 bytes=9756 id=503 line=11665
+SLJIT function  begin=0 ops=8 bytes=5212 id=504 line=11683
+SLJIT function  begin=0 ops=15 bytes=8996 id=506 line=11689
+SLJIT function Field begin=0 ops=19 bytes=5208 id=511 line=11679
+SLJIT function queryUI begin=0 ops=23 bytes=11812 id=512 line=11703
+SLJIT loop queryUI begin=2 end=13 hits=1604 iterations=1589387
+SLJIT function reset begin=0 ops=81 bytes=27180 id=513 line=11740
+SLJIT function  begin=0 ops=30 bytes=8216 id=515 line=11709
+SLJIT function buffer begin=0 ops=21 bytes=5452 id=529 line=11863
+SLJIT function hash begin=0 ops=41 bytes=8964 id=530 line=11870
+SLJIT function runMandreel begin=0 ops=70 bytes=17776 id=534 line=44888
+SLJIT loop runMandreel begin=10 end=20 hits=15540 iterations=15893262
+SLJIT function updateMandreelStats begin=0 ops=14 bytes=2920 id=535 line=44911
+SLJIT function my_mandreel_call_constructors begin=0 ops=41 bytes=8480 id=547 line=45041
+SLJIT loop my_mandreel_call_constructors begin=25 end=35 hits=3885 iterations=3973269
+SLJIT function Date_now begin=0 ops=6 bytes=2188 id=548 line=45055
+SLJIT function Mandreel_checkState begin=0 ops=21 bytes=7856 id=549 line=45059
+SLJIT loop Mandreel_checkState begin=4 end=13 hits=53 iterations=52996
+SLJIT function mandreelAppDraw begin=0 ops=44 bytes=10736 id=590 line=46303
+SLJIT function render begin=0 ops=27 bytes=4972 id=606 line=46636
+SLJIT function emit_start begin=0 ops=5 bytes=1468 id=684 line=48069
+SLJIT function emit_16 begin=0 ops=9 bytes=3416 id=686 line=48080
+SLJIT function emit_32 begin=0 ops=9 bytes=3416 id=687 line=48086
+SLJIT function emit_string begin=0 ops=17 bytes=4760 id=689 line=48103
+SLJIT function _Znwj begin=0 ops=3 bytes=1452 id=696 line=48162
+SLJIT function initHeap begin=0 ops=67 bytes=10296 id=698 line=48180
+SLJIT loop initHeap begin=57 end=65 hits=3885 iterations=3973269
+SLJIT function uint begin=0 ops=5 bytes=2016 id=705 line=48304
+SLJIT function gettimeofday begin=0 ops=23 bytes=6972 id=709 line=48339
+SLJIT function free begin=0 ops=16 bytes=6612 id=710 line=48349
+SLJIT function malloc begin=0 ops=54 bytes=15352 id=717 line=48440
+SLJIT function cosf begin=0 ops=11 bytes=3916 id=722 line=48501
+SLJIT function powf begin=0 ops=16 bytes=5956 id=736 line=48592
+SLJIT function sqrtf begin=0 ops=11 bytes=3988 id=747 line=48666
+SLJIT function get_string_from_ptr begin=0 ops=26 bytes=9956 id=759 line=48753
+SLJIT function __mandreel_process_async_calls begin=0 ops=76 bytes=31928 id=828 line=50262
+SLJIT function null_mandreel_audio begin=0 ops=5 bytes=1476 id=1055 line=53311
+SLJIT function _ZN15DemoApplication20localCreateRigidBodyEfRK11btTransformP16btCollisionShape begin=0 ops=128 bytes=52144 id=1110 line=54915
+SLJIT function _ZN13BenchmarkDemo20clientMoveAndDisplayEv begin=0 ops=128 bytes=71612 id=1112 line=55173
+SLJIT function _ZN13BenchmarkDemo11initPhysicsEv begin=820 ops=128 bytes=67288 id=1117 line=56204
+SLJIT function __draw begin=0 ops=12 bytes=4108 id=1121 line=60666
+SLJIT function _ZN20btAxisSweep3InternalItE23getOverlappingPairCacheEv begin=0 ops=16 bytes=5996 id=1142 line=61037
+SLJIT function _ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i begin=0 ops=143 bytes=57556 id=1149 line=61377
+SLJIT function _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 ops=290 bytes=141196 id=1151 line=61751
+SLJIT function _ZN20btAxisSweep3InternalItE9sortMaxUpEitP12btDispatcherb begin=0 ops=291 bytes=149512 id=1152 line=61905
+SLJIT function _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 ops=308 bytes=156680 id=1154 line=62222
+SLJIT function _ZN20btAxisSweep3InternalItE7setAabbEP17btBroadphaseProxyRK9btVector3S5_P12btDispatcher begin=0 ops=331 bytes=147604 id=1155 line=62379
+SLJIT function _ZN20btAxisSweep3InternalItE11createProxyERK9btVector3S3_iPvssP12btDispatcherS4_ begin=0 ops=128 bytes=56288 id=1157 line=62686
+SLJIT function _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 ops=489 bytes=196000 id=1171 line=63706
+SLJIT function _ZL10removeleafP6btDbvtP10btDbvtNode begin=0 ops=286 bytes=126824 id=1172 line=63988
+SLJIT function _ZN6btDbvt6updateEP10btDbvtNodeR12btDbvtAabbMmRK9btVector3f begin=0 ops=269 bytes=129592 id=1173 line=64153
+SLJIT function _ZN16btDbvtBroadphase11createProxyERK9btVector3S2_iPvssP12btDispatcherS3_ begin=0 ops=361 bytes=161644 id=1195 line=65806
+SLJIT function _ZN16btDbvtBroadphase7setAabbEP17btBroadphaseProxyRK9btVector3S4_P12btDispatcher begin=0 ops=128 bytes=57404 id=1200 line=67060
+SLJIT function _ZN28btHashedOverlappingPairCache18hasDeferredRemovalEv begin=0 ops=10 bytes=2708 id=1209 line=67984
+SLJIT function _ZN28btHashedOverlappingPairCache26getOverlappingPairArrayPtrEv begin=0 ops=16 bytes=5996 id=1218 line=68194
+SLJIT function _ZNK28btHashedOverlappingPairCache22getNumOverlappingPairsEv begin=0 ops=16 bytes=5996 id=1220 line=68222
+SLJIT function _ZN28btHashedOverlappingPairCache26processAllOverlappingPairsEP17btOverlapCallbackP12btDispatcher begin=0 ops=105 bytes=69408 id=1221 line=68236
+SLJIT function _ZN21btCollisionDispatcher25dispatchAllCollisionPairsEP22btOverlappingPairCacheRK16btDispatcherInfoP12btDispatcher begin=0 ops=52 bytes=25228 id=1263 line=78400
+SLJIT function _ZNK21btCollisionDispatcher15getNumManifoldsEv begin=0 ops=16 bytes=5996 id=1264 line=78433
+SLJIT function _ZN17btCollisionObject17setCollisionShapeEP16btCollisionShape begin=0 ops=17 bytes=8272 id=1277 line=79373
+SLJIT function _ZN16btCollisionWorld14getDebugDrawerEv begin=0 ops=16 bytes=5996 id=1286 line=79672
+SLJIT function _ZN16btCollisionWorld11updateAabbsEv begin=0 ops=433 bytes=245852 id=1311 line=80740
+SLJIT function _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 ops=425 bytes=178180 id=1315 line=83922
+SLJIT loop _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=132 end=154 hits=6 iterations=1160
+SLJIT function _ZN16btCollisionWorld33performDiscreteCollisionDetectionEv begin=0 ops=410 bytes=165464 id=1317 line=84240
+SLJIT function _ZNK11btMatrix3x311getRotationER12btQuaternion begin=0 ops=231 bytes=112060 id=1327 line=85499
+SLJIT function _Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_ begin=0 ops=256 bytes=106772 id=1345 line=88383
+SLJIT function _ZNK21btConvexInternalShape9getMarginEv begin=0 ops=16 bytes=6068 id=1353 line=90257
+SLJIT function _ZN31btDefaultCollisionConfiguration31getCollisionAlgorithmCreateFuncEii begin=0 ops=144 bytes=34000 id=1432 line=97150
+SLJIT function _ZN25btSimulationIslandManager26storeIslandActivationStateEP16btCollisionWorld begin=0 ops=120 bytes=52600 id=1444 line=98871
+SLJIT function _ZN25btSimulationIslandManager21updateActivationStateEP16btCollisionWorldP12btDispatcher begin=0 ops=501 bytes=283468 id=1446 line=99113
+SLJIT function _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=0 ops=154 bytes=73676 id=1459 line=100407
+SLJIT loop _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=66 end=80 hits=284 iterations=19805
+SLJIT loop _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=43 end=57 hits=218 iterations=17354
+SLJIT function _ZNK10btBoxShape7getAabbERK11btTransformR9btVector3S4_ begin=0 ops=65 bytes=31700 id=1463 line=101163
+SLJIT function _Z15btTransformAabbRK9btVector3fRK11btTransformRS_S5_ begin=0 ops=132 bytes=54924 id=1464 line=101199
+SLJIT function _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=0 ops=141 bytes=51904 id=1535 line=105539
+SLJIT loop _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=84 end=127 hits=4730 iterations=18875
+SLJIT function _ZN17btConvexHullShape8addPointERK9btVector3 begin=0 ops=218 bytes=78424 id=1544 line=106099
+SLJIT function _ZNK23btPolyhedralConvexShape21calculateLocalInertiaEfR9btVector3 begin=0 ops=181 bytes=72996 id=1564 line=108184
+SLJIT function _ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ begin=0 ops=81 bytes=39808 id=1565 line=108279
+SLJIT function _ZN34btPolyhedralConvexAabbCachingShape15recalcLocalAabbEv begin=0 ops=207 bytes=83484 id=1566 line=108326
+SLJIT function _ZN15btTransformUtil18integrateTransformERK11btTransformRK9btVector3S5_fRS0_ begin=0 ops=298 bytes=115280 id=1626 line=111626
+SLJIT function _ZN18btConstraintSolver12prepareSolveEii begin=0 ops=5 bytes=2224 id=1691 line=129650
+SLJIT function _ZN18btConstraintSolver9allSolvedERK19btContactSolverInfoP12btIDebugDrawP12btStackAlloc begin=0 ops=5 bytes=2224 id=1692 line=129659
+SLJIT function _ZNK23btDiscreteDynamicsWorld17getNumConstraintsEv begin=0 ops=16 bytes=5996 id=1729 line=136321
+SLJIT function _ZN23btDiscreteDynamicsWorld11clearForcesEv begin=0 ops=68 bytes=25716 id=1731 line=136355
+SLJIT function _ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii begin=380 ops=128 bytes=50760 id=1736 line=136660
+SLJIT loop _ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii begin=357 end=379 hits=787 iterations=80221
+SLJIT function _ZN23btDiscreteDynamicsWorld25predictUnconstraintMotionEf begin=0 ops=207 bytes=108312 id=1740 line=137507
+SLJIT function _ZN23btDiscreteDynamicsWorld26calculateSimulationIslandsEv begin=0 ops=370 bytes=189724 id=1741 line=137631
+SLJIT function _ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback18processConstraintsEv begin=0 ops=348 bytes=231124 id=1742 line=137876
+SLJIT function _ZN23btDiscreteDynamicsWorld19integrateTransformsEf begin=26 ops=128 bytes=63904 id=1744 line=138195
+SLJIT function _ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo begin=469 ops=128 bytes=64644 id=1745 line=138509
+SLJIT function _ZN23btDiscreteDynamicsWorld21updateActivationStateEf begin=0 ops=343 bytes=166628 id=1748 line=140121
+SLJIT function _ZN23btDiscreteDynamicsWorld28internalSingleStepSimulationEf begin=0 ops=425 bytes=200776 id=1749 line=140347
+SLJIT function _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 ops=328 bytes=116424 id=1751 line=140756
+SLJIT loop _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=188 end=210 hits=7 iterations=1085
+SLJIT function _ZN23btDiscreteDynamicsWorld18addCollisionObjectEP17btCollisionObjectss begin=0 ops=30 bytes=14080 id=1755 line=141140
+SLJIT function _ZN23btDiscreteDynamicsWorld14stepSimulationEfif begin=0 ops=364 bytes=164436 id=1756 line=141162
+SLJIT function _ZN23btDiscreteDynamicsWorld23synchronizeMotionStatesEv begin=0 ops=213 bytes=117432 id=1758 line=141440
+SLJIT function _ZN23btDiscreteDynamicsWorld12applyGravityEv begin=0 ops=95 bytes=40880 id=1759 line=141588
+SLJIT function _ZN23btDiscreteDynamicsWorld14debugDrawWorldEv begin=0 ops=128 bytes=80108 id=1760 line=141662
+SLJIT function _ZN23btDiscreteDynamicsWorld18saveKinematicStateEf begin=0 ops=319 bytes=257116 id=1761 line=143606
+SLJIT function _ZN11btRigidBody12setMassPropsEfRK9btVector3 begin=0 ops=131 bytes=51256 id=1767 line=144088
+SLJIT function _ZN11btRigidBody19updateInertiaTensorEv begin=0 ops=137 bytes=56928 id=1768 line=144176
+SLJIT function _ZN11btRigidBody18proceedToTransformERK11btTransform begin=0 ops=128 bytes=56320 id=1769 line=144286
+SLJIT function _ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE begin=0 ops=128 bytes=46908 id=1773 line=144651
+SLJIT function _ZN11btRigidBody19integrateVelocitiesEf begin=0 ops=170 bytes=83468 id=1778 line=145245
+SLJIT function _ZN11btRigidBody12applyDampingEf begin=0 ops=339 bytes=210060 id=1779 line=145356
+SLJIT function _ZN12CProfileNode5ResetEv begin=0 ops=37 bytes=13884 id=1782 line=145602
+SLJIT function _ZN15CProfileManager13Start_ProfileEPKc begin=0 ops=167 bytes=58612 id=1784 line=145662
+SLJIT function _ZN15CProfileManager5ResetEv begin=0 ops=100 bytes=36860 id=1785 line=145762
+SLJIT function block_merge_next begin=0 ops=192 bytes=55144 id=1814 line=150649
+SLJIT function tlsf_free begin=0 ops=344 bytes=101348 id=1815 line=150783
+SLJIT function block_prepare_used begin=0 ops=266 bytes=82060 id=1816 line=151007
+SLJIT function block_locate_free begin=0 ops=342 bytes=77636 id=1817 line=151170
+SLJIT function tlsf_malloc begin=0 ops=93 bytes=32456 id=1818 line=151402
+SLJIT function tlsf_create begin=0 ops=315 bytes=107608 id=1820 line=151756
+SLJIT function memset begin=0 ops=36 bytes=11812 id=1833 line=153610
+SLJIT function memcpy begin=0 ops=179 bytes=49100 id=1834 line=153642
+SLJIT function __muldi3 begin=0 ops=286 bytes=69956 id=1837 line=153856
+SLJIT function fopen begin=44 ops=128 bytes=48232 id=1882 line=155225
+SLJIT function __udivmoddi4 begin=0 ops=128 bytes=26904 id=1886 line=156107
+SLJIT function __udivdi3 begin=0 ops=34 bytes=15652 id=1890 line=156814
+SLJIT function __v_printf begin=38 ops=128 bytes=45960 id=1892 line=157941
+SLJIT function __mandreel_internal_preupdate begin=0 ops=104 bytes=45828 id=1911 line=160244
+SLJIT function __mandreel_internal_update begin=0 ops=451 bytes=201728 id=1912 line=160299
+SLJIT function __mandreel_internal_init begin=146 ops=128 bytes=68312 id=1913 line=160551
+SLJIT loop __mandreel_internal_init begin=111 end=145 hits=4 iterations=90
+SLJIT function _GLOBAL__I__ZN5my_gl14glAttachShaderEjj begin=0 ops=145 bytes=51992 id=1948 line=165811
+SLJIT function runGameboy begin=0 ops=33 bytes=8456 id=1961 line=322278
+SLJIT function  begin=0 ops=14 bytes=5936 id=1965 line=322316
+SLJIT function getChannelData begin=0 ops=3 bytes=4384 id=1976 line=322366
+SLJIT function sum begin=0 ops=9 bytes=5224 id=1981 line=322393
+SLJIT loop sum begin=3 end=7 hits=220 iterations=221851
+SLJIT function base64_decode begin=0 ops=118 bytes=45256 id=1985 line=322499
+SLJIT function audioOutputEvent begin=0 ops=92 bytes=32804 id=1999 line=323068
+SLJIT loop audioOutputEvent begin=82 end=90 hits=426 iterations=316889
+SLJIT function resampleRefill begin=0 ops=48 bytes=11396 id=2000 line=323098
+SLJIT function  begin=0 ops=1 bytes=1064 id=2005 line=323701
+SLJIT function runCodeLoadClosure begin=0 ops=5 bytes=1888 id=2032 line=333475
+SLJIT function jenkinsHash begin=0 ops=18 bytes=6912 id=2034 line=334870
+SLJIT loop jenkinsHash begin=3 end=10 hits=14 iterations=14
+SLJIT function cacheBust begin=0 ops=33 bytes=8528 id=2035 line=334883
+SLJIT function  begin=0 ops=26 bytes=5208 id=2036 line=334890
+SLJIT function runClosure begin=0 ops=4 bytes=1604 id=2037 line=334896
+SLJIT function  begin=0 ops=3 bytes=1608 id=2041 line=334903
+SLJIT function  begin=0 ops=2 bytes=1212 id=2043 line=334906
+SLJIT function MockElement begin=0 ops=21 bytes=6652 id=2047 line=334900
+SLJIT function  begin=0 ops=72 bytes=12492 id=2072 line=129
+SLJIT function Measure begin=0 ops=31 bytes=6712 id=2086 line=305
+SLJIT function  begin=0 ops=13 bytes=4268 id=2092 line=525
+SLJIT function  begin=0 ops=13 bytes=4344 id=2093 line=535
+SLJIT function  begin=0 ops=11 bytes=3812 id=2094 line=545
+SLJIT function  begin=0 ops=11 bytes=3812 id=2095 line=555
+SLJIT function  begin=0 ops=13 bytes=5088 id=2096 line=566
+SLJIT function  begin=0 ops=16 bytes=6972 id=2097 line=578
+SLJIT function  begin=0 ops=25 bytes=9448 id=2098 line=587
+SLJIT function  begin=0 ops=11 bytes=4964 id=2100 line=619
+SLJIT function  begin=0 ops=22 bytes=14876 id=2102 line=640
+SLJIT function  begin=0 ops=25 bytes=7172 id=2109 line=722
+SLJIT function  begin=0 ops=40 bytes=17784 id=2112 line=773
+SLJIT function  begin=0 ops=29 bytes=23232 id=2114 line=800
+SLJIT function  begin=0 ops=46 bytes=25820 id=2116 line=829
+SLJIT function  begin=0 ops=65 bytes=44400 id=2118 line=863
+SLJIT function  begin=0 ops=14 bytes=4104 id=2120 line=926
+SLJIT function  begin=0 ops=7 bytes=3284 id=2124 line=1004
+SLJIT function  begin=0 ops=3 bytes=4384 id=2125 line=1008
+SLJIT function  begin=0 ops=3 bytes=1784 id=2126 line=1012
+SLJIT function  begin=0 ops=6 bytes=2928 id=2127 line=1016
+SLJIT function  begin=0 ops=27 bytes=11540 id=2128 line=1020
+SLJIT function  begin=0 ops=4 bytes=2128 id=2129 line=1050
+SLJIT function  begin=0 ops=4 bytes=2128 id=2130 line=1054
+SLJIT function  begin=0 ops=9 bytes=3460 id=2131 line=1058
+SLJIT function  begin=0 ops=12 bytes=3968 id=2134 line=1104
+SLJIT function  begin=0 ops=44 bytes=16076 id=2135 line=1115
+SLJIT function  begin=0 ops=15 bytes=5060 id=2136 line=1134
+SLJIT function  begin=0 ops=9 bytes=3264 id=2138 line=1168
+SLJIT function  begin=0 ops=15 bytes=5400 id=2139 line=1177
+SLJIT function  begin=0 ops=2 bytes=1504 id=2140 line=1185
+SLJIT function  begin=0 ops=1 bytes=1064 id=2141 line=1190
+SLJIT function  begin=0 ops=2 bytes=1504 id=2142 line=1196
+SLJIT function  begin=0 ops=16 bytes=5916 id=2143 line=1205
+SLJIT function  begin=0 ops=3 bytes=1768 id=2144 line=1214
+SLJIT function  begin=0 ops=2 bytes=1228 id=2145 line=1218
+SLJIT function  begin=0 ops=11 bytes=3688 id=2146 line=1222
+SLJIT function  begin=0 ops=2 bytes=1228 id=2148 line=1264
+SLJIT function  begin=0 ops=98 bytes=22548 id=2150 line=1300
+SLJIT function  begin=0 ops=16 bytes=5096 id=2151 line=1325
+SLJIT function  begin=0 ops=5 bytes=2700 id=2152 line=1334
+SLJIT function  begin=0 ops=5 bytes=3940 id=2153 line=1341
+SLJIT function  begin=0 ops=9 bytes=4052 id=2154 line=1348
+SLJIT function  begin=0 ops=9 bytes=4052 id=2155 line=1355
+SLJIT function  begin=0 ops=24 bytes=14724 id=2156 line=1363
+SLJIT function  begin=0 ops=4 bytes=2248 id=2157 line=1374
+SLJIT function  begin=0 ops=14 bytes=6228 id=2158 line=1378
+SLJIT function  begin=0 ops=22 bytes=6584 id=2160 line=1411
+SLJIT function  begin=0 ops=16 bytes=5216 id=2162 line=1423
+SLJIT function  begin=0 ops=26 bytes=8392 id=2163 line=1431
+SLJIT function  begin=0 ops=33 bytes=16636 id=2164 line=1443
+SLJIT function  begin=0 ops=11 bytes=7180 id=2165 line=1467
+SLJIT function  begin=0 ops=7 bytes=2924 id=2166 line=1495
+SLJIT function  begin=0 ops=11 bytes=3964 id=2167 line=1502
+SLJIT function  begin=0 ops=17 bytes=5532 id=2168 line=1532
+SLJIT function  begin=0 ops=45 bytes=17460 id=2169 line=1550
+SLJIT function  begin=0 ops=4 bytes=1988 id=2170 line=1569
+SLJIT function  begin=0 ops=45 bytes=15576 id=2171 line=1592
+SLJIT function  begin=0 ops=33 bytes=10512 id=2172 line=1611
+SLJIT function  begin=0 ops=39 bytes=13920 id=2173 line=1635
+SLJIT function  begin=0 ops=78 bytes=24944 id=2174 line=1656
+SLJIT function  begin=0 ops=28 bytes=8324 id=2175 line=1682
+SLJIT function  begin=0 ops=7 bytes=2936 id=2176 line=1705
+SLJIT function  begin=0 ops=6 bytes=3272 id=2177 line=1709
+SLJIT function  begin=0 ops=18 bytes=8504 id=2179 line=1716
+SLJIT function  begin=0 ops=9 bytes=7072 id=2183 line=3570
+SLJIT function initialize begin=0 ops=10 bytes=3648 id=2184 line=3612
+SLJIT function add begin=0 ops=23 bytes=6648 id=2185 line=3622
+SLJIT function addScalar begin=0 ops=23 bytes=12100 id=2186 line=3632
+SLJIT function multiply begin=0 ops=23 bytes=6648 id=2188 line=3654
+SLJIT function multiplyScalar begin=0 ops=20 bytes=5820 id=2189 line=3664
+SLJIT function limit begin=0 ops=44 bytes=9148 id=2191 line=3684
+SLJIT function blend begin=0 ops=41 bytes=10980 id=2193 line=3694
+SLJIT function brightness begin=0 ops=31 bytes=8124 id=2194 line=3703
+SLJIT function initialize begin=0 ops=9 bytes=3504 id=2196 line=3730
+SLJIT function initialize begin=0 ops=19 bytes=4732 id=2198 line=3751
+SLJIT function normalize begin=0 ops=17 bytes=5388 id=2200 line=3762
+SLJIT function magnitude begin=0 ops=17 bytes=5768 id=2201 line=3768
+SLJIT function cross begin=0 ops=29 bytes=9040 id=2202 line=3772
+SLJIT function dot begin=0 ops=12 bytes=4268 id=2203 line=3779
+SLJIT function add begin=0 ops=15 bytes=5184 id=2204 line=3783
+SLJIT function subtract begin=0 ops=27 bytes=6976 id=2205 line=3787
+SLJIT function multiplyScalar begin=0 ops=12 bytes=4192 id=2207 line=3796
+SLJIT function initialize begin=0 ops=3 bytes=2276 id=2209 line=3813
+SLJIT function initialize begin=0 ops=58 bytes=14140 id=2211 line=3834
+SLJIT function wrapUp begin=0 ops=8 bytes=2428 id=2214 line=3868
+SLJIT function initialize begin=0 ops=7 bytes=4312 id=2216 line=3887
+SLJIT function getColor begin=0 ops=2 bytes=1564 id=2217 line=3895
+SLJIT function initialize begin=0 ops=9 bytes=5400 id=2219 line=3916
+SLJIT function getColor begin=0 ops=18 bytes=6636 id=2220 line=3926
+SLJIT function initialize begin=0 ops=4 bytes=2772 id=2222 line=3948
+SLJIT function intersect begin=0 ops=96 bytes=27228 id=2223 line=3953
+SLJIT function initialize begin=0 ops=4 bytes=2772 id=2225 line=4000
+SLJIT function intersect begin=0 ops=108 bytes=38472 id=2226 line=4006
+SLJIT function initialize begin=0 ops=10 bytes=3716 id=2228 line=4059
+SLJIT function initialize begin=0 ops=25 bytes=8552 id=2230 line=4080
+SLJIT function getRay begin=0 ops=71 bytes=20304 id=2231 line=4087
+SLJIT function initialize begin=0 ops=3 bytes=2276 id=2233 line=4121
+SLJIT function initialize begin=0 ops=40 bytes=8160 id=2234 line=4135
+SLJIT function setPixel begin=0 ops=33 bytes=8344 id=2235 line=4155
+SLJIT function renderScene begin=0 ops=62 bytes=14316 id=2236 line=4170
+SLJIT function getPixelColor begin=0 ops=22 bytes=6212 id=2237 line=4198
+SLJIT function testIntersection begin=0 ops=38 bytes=12896 id=2238 line=4208
+SLJIT function getReflectionRay begin=0 ops=35 bytes=11592 id=2239 line=4228
+SLJIT function rayTrace begin=0 ops=310 bytes=87160 id=2240 line=4238
+SLJIT function  begin=0 ops=4 bytes=1964 id=2241 line=4439
+SLJIT function translate_term_nboyer begin=0 ops=30 bytes=9328 id=2298 line=7945
+SLJIT function translate_args_nboyer begin=0 ops=45 bytes=12628 id=2299 line=7949
+SLJIT function BgL_sc_symbolzd2ze3symbolzd2record_1ze3_nboyer begin=0 ops=30 bytes=9352 id=2301 line=7978
+SLJIT function translate_alist_nboyer begin=0 ops=61 bytes=16016 id=2302 line=7984
+SLJIT function apply_subst_nboyer begin=0 ops=40 bytes=12844 id=2303 line=7989
+SLJIT function apply_subst_lst_nboyer begin=0 ops=33 bytes=9892 id=2304 line=7994
+SLJIT function tautologyp_nboyer begin=0 ops=129 bytes=31168 id=2305 line=8009
+SLJIT function rewrite_nboyer begin=0 ops=69 bytes=20356 id=2306 line=8038
+SLJIT function rewrite_args_nboyer begin=0 ops=30 bytes=9144 id=2307 line=8064
+SLJIT function one_way_unify1_nboyer begin=0 ops=84 bytes=24316 id=2308 line=8069
+SLJIT function is_term_equal_nboyer begin=0 ops=59 bytes=14020 id=2310 line=8120
+SLJIT function is_term_member_nboyer begin=0 ops=18 bytes=4708 id=2311 line=8158
+SLJIT function BgL_setupzd2boyerzd2 begin=0 ops=132 bytes=30052 id=2312 line=8167
+SLJIT function ind begin=0 ops=18 bytes=7464 id=2314 line=8273
+SLJIT function rule_loop begin=0 ops=45 bytes=11808 id=2315 line=8289
+SLJIT function BgL_sc_defzd2loop_9zd2 begin=0 ops=42 bytes=9880 id=2316 line=8285
+SLJIT function rule_loop begin=0 ops=29 bytes=8624 id=2317 line=8316
+SLJIT function BgL_sc_defzd2loop_6zd2 begin=0 ops=21 bytes=5080 id=2318 line=8313
+SLJIT function rule_loop begin=0 ops=97 bytes=45304 id=2319 line=8370
+SLJIT function def_loop begin=0 ops=28 bytes=6620 id=2320 line=8358
+SLJIT function sc_ind_43 begin=0 ops=18 bytes=7464 id=2321 line=8460
+SLJIT function make_states begin=0 ops=21 bytes=9464 id=2322 line=8472
+SLJIT function BgL_sc_confzd2setzd2getza2_44za2 begin=0 ops=26 bytes=21252 id=2323 line=8493
+SLJIT function conf_set_merge_new_bang begin=0 ops=17 bytes=20452 id=2324 line=8496
+SLJIT function conf_set_adjoin begin=0 ops=21 bytes=22988 id=2325 line=8500
+SLJIT function BgL_sc_confzd2setzd2adjoinza2_45za2 begin=0 ops=33 bytes=13196 id=2326 line=8508
+SLJIT function BgL_sc_confzd2setzd2adjoinza2za2_46z00 begin=0 ops=37 bytes=23728 id=2327 line=8531
+SLJIT function conf_set_union begin=0 ops=22 bytes=16200 id=2328 line=8536
+SLJIT function sc_loop1_75 begin=0 ops=41 bytes=20064 id=2329 line=8622
+SLJIT function forw begin=0 ops=123 bytes=57292 id=2330 line=8549
+SLJIT function loop3 begin=0 ops=42 bytes=14484 id=2332 line=8720
+SLJIT function loop2 begin=0 ops=79 bytes=28036 id=2333 line=8706
+SLJIT function sc_loop1_98 begin=0 ops=46 bytes=15768 id=2334 line=8692
+SLJIT function deriv_trees begin=0 ops=52 bytes=22140 id=2335 line=8688
+SLJIT function BgL_sc_derivzd2treesza2_47z70 begin=0 ops=54 bytes=26120 id=2336 line=8767
+SLJIT function sc_loop1_127 begin=0 ops=51 bytes=23944 id=2340 line=8981
+SLJIT function loop1 begin=0 ops=76 bytes=40100 id=2341 line=8945
+SLJIT function  begin=0 ops=128 bytes=35208 id=2342 line=8399
+SLJIT function BgL_makezd2parserzd2 begin=0 ops=124 bytes=25196 id=2343 line=8247
+SLJIT function BgL_parsezd2ze3treesz31 begin=0 ops=25 bytes=24908 id=2345 line=9041
+SLJIT function  begin=0 ops=30 bytes=6980 id=2347 line=9055
+SLJIT function test begin=0 ops=23 bytes=6792 id=2348 line=9052
+SLJIT function  begin=0 ops=5 bytes=2340 id=2349 line=9082
+SLJIT function  begin=0 ops=6 bytes=2152 id=2350 line=9084
+SLJIT function  begin=0 ops=3 bytes=1828 id=2353 line=11106
+SLJIT function  begin=0 ops=50 bytes=14652 id=2354 line=11118
+SLJIT function  begin=0 ops=44 bytes=11092 id=2355 line=11151
+SLJIT function  begin=0 ops=18 bytes=6792 id=2356 line=11183
+SLJIT function  begin=0 ops=30 bytes=12976 id=2358 line=11211
+SLJIT function  begin=0 ops=5 bytes=2604 id=2359 line=11235
+SLJIT function  begin=0 ops=73 bytes=14284 id=2361 line=11251
+SLJIT function  begin=0 ops=16 bytes=4220 id=2363 line=11345
+SLJIT function  begin=0 ops=96 bytes=35960 id=2366 line=11920
+SLJIT function  begin=0 ops=86 bytes=20008 id=2367 line=11948
+SLJIT function  begin=0 ops=24 bytes=6684 id=2384 line=12004
+SLJIT function  begin=0 ops=8 bytes=2804 id=2385 line=12032
+SLJIT function  begin=0 ops=8 bytes=2804 id=2386 line=12035
+SLJIT function  begin=0 ops=14 bytes=4412 id=2387 line=12038
+SLJIT function  begin=0 ops=10 bytes=3344 id=2388 line=12041
+SLJIT function  begin=0 ops=10 bytes=3344 id=2389 line=12044
+SLJIT function  begin=0 ops=11 bytes=3840 id=2399 line=12074
+SLJIT function createElement begin=0 ops=22 bytes=5592 id=2414 line=12125
+SLJIT function assert begin=0 ops=5 bytes=1904 id=2427 line=12692
+SLJIT function assertWellFormed begin=0 ops=5 bytes=1904 id=2428 line=12699
+SLJIT function shadow begin=0 ops=14 bytes=3264 id=2429 line=12704
+SLJIT function stringToPDFString begin=0 ops=57 bytes=20464 id=2432 line=12927
+SLJIT function isInt begin=0 ops=7 bytes=3140 id=2434 line=12947
+SLJIT function isNum begin=0 ops=4 bytes=2188 id=2435 line=12951
+SLJIT function isString begin=0 ops=4 bytes=2188 id=2436 line=12955
+SLJIT function isName begin=0 ops=3 bytes=1532 id=2438 line=12963
+SLJIT function isCmd begin=0 ops=9 bytes=3588 id=2439 line=12967
+SLJIT function isDict begin=0 ops=13 bytes=4500 id=2440 line=12971
+SLJIT function isArray begin=0 ops=3 bytes=1496 id=2441 line=12975
+SLJIT function isStream begin=0 ops=10 bytes=3448 id=2442 line=12979
+SLJIT function isRef begin=0 ops=3 bytes=1532 id=2444 line=12987
+SLJIT function ctxSave begin=0 ops=19 bytes=4144 id=2449 line=13883
+SLJIT function ctxRestore begin=0 ops=14 bytes=3008 id=2450 line=13891
+SLJIT function ctxTranslate begin=0 ops=32 bytes=25960 id=2451 line=13900
+SLJIT function ctxScale begin=0 ops=28 bytes=23668 id=2452 line=13908
+SLJIT function ctxTransform begin=0 ops=68 bytes=49420 id=2453 line=13918
+SLJIT function getUnicodeRangeFor begin=0 ops=18 bytes=8160 id=2457 line=26569
+SLJIT function isEOF begin=0 ops=3 bytes=2020 id=2462 line=38067
+SLJIT function messageHandlerComObjOnMessage begin=0 ops=88 bytes=33888 id=2466 line=41320
+SLJIT function find begin=0 ops=40 bytes=11776 id=2485 line=12508
+SLJIT function get startXRef begin=0 ops=88 bytes=17232 id=2487 line=12535
+SLJIT function  begin=0 ops=14 bytes=3848 id=2494 line=12628
+SLJIT function Util_sign begin=0 ops=6 bytes=1864 id=2508 line=12834
+SLJIT function Promise begin=0 ops=23 bytes=7680 id=2515 line=13023
+SLJIT function get data begin=0 ops=12 bytes=3084 id=2520 line=13086
+SLJIT function PDFPageProxy_ensureFonts begin=0 ops=29 bytes=13444 id=2562 line=13501
+SLJIT function WorkerTransport_postMessage begin=0 ops=6 bytes=1432 id=2572 line=13662
+SLJIT function CanvasGraphics_executeOperatorList begin=0 ops=86 bytes=37272 id=2594 line=14067
+SLJIT function CanvasGraphics_moveText begin=0 ops=13 bytes=4008 id=2634 line=14414
+SLJIT function CanvasGraphics_applyTextTransforms begin=0 ops=40 bytes=8720 id=2638 line=14430
+SLJIT function CanvasGraphics_showText begin=0 ops=377 bytes=94692 id=2640 line=14459
+SLJIT function CanvasGraphics_showSpacedText begin=0 ops=176 bytes=32788 id=2641 line=14598
+SLJIT function Cmd_get begin=0 ops=11 bytes=7696 id=2686 line=15083
+SLJIT function Dict_get begin=0 ops=58 bytes=25888 id=2689 line=15106
+SLJIT function Dict_set begin=0 ops=4 bytes=3204 id=2692 line=15134
+SLJIT function Dict_has begin=0 ops=3 bytes=836 id=2693 line=15138
+SLJIT function Dict begin=0 ops=25 bytes=6396 id=2695 line=15095
+SLJIT function XRef_readXRefTable begin=0 ops=127 bytes=35152 id=2715 line=15381
+SLJIT function XRef_getEntry begin=0 ops=12 bytes=5700 id=2721 line=15666
+SLJIT function XRef_fetchIfRef begin=0 ops=9 bytes=2272 id=2722 line=15672
+SLJIT function XRef_fetch begin=0 ops=255 bytes=66700 id=2723 line=15676
+SLJIT function PDFObjects_get begin=0 ops=23 bytes=7476 id=2728 line=15809
+SLJIT function PDFObjects_isResolved begin=0 ops=11 bytes=8412 id=2731 line=15845
+SLJIT function insertDependency begin=0 ops=28 bytes=13052 id=2857 line=25058
+SLJIT function handleSetFont begin=0 ops=96 bytes=22388 id=2858 line=25069
+SLJIT function PartialEvaluator_extractWidths begin=0 ops=107 bytes=35072 id=2866 line=25607
+SLJIT loop PartialEvaluator_extractWidths begin=70 end=76 hits=3189 iterations=0
+SLJIT function checkFontsLoaded begin=0 ops=27 bytes=9584 id=2872 line=26247
+SLJIT function fontLoaderBind begin=0 ops=90 bytes=23628 id=2873 line=26246
+SLJIT function fontLoaderMessage begin=0 ops=40 bytes=11364 id=2874 line=26356
+SLJIT function fontLoaderPrepareFontLoadEvent begin=0 ops=154 bytes=37804 id=2875 line=26308
+SLJIT loop fontLoaderPrepareFontLoadEvent begin=37 end=44 hits=1 iterations=0
+SLJIT loop fontLoaderPrepareFontLoadEvent begin=115 end=122 hits=53 iterations=0
+SLJIT loop fontLoaderPrepareFontLoadEvent begin=115 end=122 hits=1 iterations=0
+SLJIT loop fontLoaderPrepareFontLoadEvent begin=88 end=95 hits=47 iterations=0
+SLJIT function stringToArray begin=0 ops=15 bytes=5780 id=2878 line=26713
+SLJIT function arrayToString begin=0 ops=13 bytes=6264 id=2879 line=26721
+SLJIT function int32 begin=0 ops=16 bytes=14400 id=2881 line=26733
+SLJIT function getMaxPower2 begin=0 ops=15 bytes=3764 id=2882 line=26738
+SLJIT loop getMaxPower2 begin=4 end=7 hits=1 iterations=1
+SLJIT loop getMaxPower2 begin=11 end=13 hits=2 iterations=1
+SLJIT function string16 begin=0 ops=11 bytes=3660 id=2883 line=26752
+SLJIT function safeString16 begin=0 ops=22 bytes=5300 id=2884 line=26758
+SLJIT function string32 begin=0 ops=23 bytes=6564 id=2885 line=26764
+SLJIT function createTableEntry begin=0 ops=60 bytes=23892 id=2887 line=26798
+SLJIT function fontGetRangesSort begin=0 ops=4 bytes=1288 id=2888 line=26830
+SLJIT function getRanges begin=0 ops=60 bytes=25436 id=2889 line=26825
+SLJIT function createCMapTable begin=0 ops=161 bytes=63496 id=2890 line=26852
+SLJIT function createOS2Table begin=0 ops=250 bytes=45756 id=2891 line=26926
+SLJIT function createNameTable begin=0 ops=130 bytes=39040 id=2893 line=27043
+SLJIT function isFixedPitch begin=0 ops=14 bytes=9860 id=2913 line=27982
+SLJIT function fontFieldsHmtx begin=0 ops=30 bytes=8024 id=2916 line=28087
+SLJIT function Font_convert begin=0 ops=165 bytes=48668 id=2918 line=27980
+SLJIT function Font_buildToFontChar begin=0 ops=28 bytes=9980 id=2919 line=28123
+SLJIT function Font_rebuildToUnicode begin=0 ops=49 bytes=24364 id=2920 line=28136
+SLJIT function Font_charsToGlyphs begin=0 ops=88 bytes=23632 id=2925 line=28345
+SLJIT function decrypt begin=0 ops=31 bytes=9960 id=2927 line=28410
+SLJIT loop decrypt begin=11 end=25 hits=3425 iterations=0
+SLJIT loop decrypt begin=11 end=25 hits=12747 iterations=0
+SLJIT function readNumberArray begin=0 ops=55 bytes=21480 id=2929 line=28670
+SLJIT function readNumber begin=0 ops=25 bytes=11264 id=2930 line=28692
+SLJIT function isSeparator begin=0 ops=9 bytes=3672 id=2931 line=28705
+SLJIT function Type1Parser_extractFontProgram begin=0 ops=323 bytes=70624 id=2933 line=28708
+SLJIT function getToken begin=0 ops=38 bytes=20516 id=2934 line=28842
+SLJIT function Type1Parser_extractFontHeader begin=0 ops=131 bytes=41672 id=2935 line=28834
+SLJIT function Type1Font begin=0 ops=58 bytes=17724 id=2937 line=28983
+SLJIT function Type1Font_createCFFIndexHeader begin=0 ops=62 bytes=30912 id=2938 line=29005
+SLJIT function Type1Font_encodeNumber begin=0 ops=48 bytes=12160 id=2939 line=29043
+SLJIT function charstrings_sort begin=0 ops=4 bytes=1288 id=2940 line=29078
+SLJIT function Type1Font_getOrderedCharStrings begin=0 ops=42 bytes=12764 id=2941 line=29059
+SLJIT function Type1Font_getType2Charstrings begin=0 ops=23 bytes=7420 id=2942 line=29085
+SLJIT function Type1Font_getType2Subrs begin=0 ops=44 bytes=10472 id=2943 line=29096
+SLJIT function Type1Font_flattenCharstring begin=0 ops=61 bytes=25916 id=2944 line=29147
+SLJIT function cffWrapTopDict begin=0 ops=105 bytes=27656 id=2945 line=29182
+SLJIT function charset begin=0 ops=26 bytes=8460 id=2948 line=29239
+SLJIT function cffWrapPrivate begin=0 ops=87 bytes=28612 id=2949 line=29261
+SLJIT function Type1Font_wrap begin=0 ops=87 bytes=16540 id=2950 line=29174
+SLJIT function Parser begin=0 ops=9 bytes=4016 id=3047 line=38072
+SLJIT function Parser_refill begin=0 ops=13 bytes=3820 id=3048 line=38081
+SLJIT function Parser_shift begin=0 ops=26 bytes=5756 id=3049 line=38085
+SLJIT function Parser_getObj begin=0 ops=200 bytes=46460 id=3050 line=38095
+SLJIT function Parser_fetchIfRef begin=0 ops=12 bytes=2888 id=3052 line=38223
+SLJIT function Parser_makeStream begin=0 ops=69 bytes=15316 id=3053 line=38226
+SLJIT function Parser_filter begin=0 ops=68 bytes=18744 id=3054 line=38254
+SLJIT function Parser_makeFilter begin=0 ops=141 bytes=36140 id=3055 line=38277
+SLJIT function toHexDigit begin=0 ops=31 bytes=7776 id=3058 line=38355
+SLJIT function Lexer_getNumber begin=0 ops=54 bytes=13052 id=3060 line=38365
+SLJIT function Lexer_getString begin=0 ops=181 bytes=24700 id=3061 line=38392
+SLJIT function Lexer_getName begin=0 ops=74 bytes=22088 id=3062 line=38477
+SLJIT function Lexer_getHexString begin=0 ops=68 bytes=24220 id=3063 line=38504
+SLJIT function Lexer_getObj begin=0 ops=210 bytes=45348 id=3064 line=38532
+SLJIT function Lexer_skipToNextLine begin=0 ops=27 bytes=6532 id=3065 line=38605
+SLJIT function Stream begin=0 ops=18 bytes=6256 id=3100 line=39013
+SLJIT function Stream_getBytes begin=0 ops=23 bytes=4924 id=3103 line=39034
+SLJIT function Stream_lookChar begin=0 ops=14 bytes=4604 id=3104 line=39049
+SLJIT function Stream_getChar begin=0 ops=18 bytes=5500 id=3105 line=39054
+SLJIT function Stream_skip begin=0 ops=6 bytes=1608 id=3106 line=39059
+SLJIT function Stream_makeSubStream begin=0 ops=9 bytes=2224 id=3109 line=39070
+SLJIT function DecodeStream begin=0 ops=9 bytes=3684 id=3113 line=39095
+SLJIT function DecodeStream_ensureBuffer begin=0 ops=30 bytes=7132 id=3114 line=39103
+SLJIT loop DecodeStream_ensureBuffer begin=14 end=16 hits=1 iterations=1
+SLJIT loop DecodeStream_ensureBuffer begin=23 end=27 hits=853 iterations=726449
+SLJIT function DecodeStream_getBytes begin=0 ops=48 bytes=8900 id=3116 line=39124
+SLJIT function DecodeStream_lookChar begin=0 ops=20 bytes=5212 id=3117 line=39152
+SLJIT function DecodeStream_getChar begin=0 ops=24 bytes=6676 id=3118 line=39161
+SLJIT function DecodeStream_skip begin=0 ops=6 bytes=1616 id=3120 line=39177
+SLJIT function FlateStream begin=0 ops=71 bytes=18596 id=3130 line=39350
+SLJIT function FlateStream_getBits begin=0 ops=34 bytes=10232 id=3131 line=39377
+SLJIT function FlateStream_getCode begin=0 ops=53 bytes=18828 id=3132 line=39397
+SLJIT function flateStreamGenerateHuffmanTable begin=0 ops=58 bytes=13292 id=3133 line=39424
+SLJIT loop flateStreamGenerateHuffmanTable begin=5 end=9 hits=27 iterations=3378
+SLJIT loop flateStreamGenerateHuffmanTable begin=39 end=44 hits=17109 iterations=0
+SLJIT function FlateStream_readBlock begin=0 ops=318 bytes=90344 id=3134 line=39461
+SLJIT loop FlateStream_readBlock begin=309 end=315 hits=11649 iterations=25
+SLJIT loop FlateStream_readBlock begin=198 end=205 hits=2242 iterations=10458
+SLJIT function messageHandlerOn begin=0 ops=16 bytes=7496 id=3181 line=41354
+SLJIT function messageHandlerSend begin=0 ops=22 bytes=5896 id=3182 line=41367
+SLJIT function wphSetupRenderPage begin=0 ops=108 bytes=23540 id=3187 line=41424
+SLJIT function run begin=0 ops=10 bytes=2936 id=3353 line=322344
+SLJIT function  begin=0 ops=22 bytes=8460 id=3362 line=322756
+SLJIT function  begin=0 ops=37 bytes=9660 id=3364 line=322793
+SLJIT function  begin=0 ops=22 bytes=8764 id=3396 line=323912
+SLJIT function  begin=0 ops=16 bytes=5160 id=3399 line=323931
+SLJIT function  begin=0 ops=16 bytes=5168 id=3400 line=323939
+SLJIT function  begin=0 ops=14 bytes=7048 id=3401 line=323947
+SLJIT function  begin=0 ops=37 bytes=11784 id=3403 line=323959
+SLJIT function  begin=0 ops=23 bytes=5740 id=3404 line=323968
+SLJIT function  begin=0 ops=9 bytes=3240 id=3405 line=323977
+SLJIT function  begin=0 ops=12 bytes=3780 id=3406 line=323982
+SLJIT function  begin=0 ops=16 bytes=5160 id=3407 line=323989
+SLJIT function  begin=0 ops=16 bytes=5168 id=3408 line=323997
+SLJIT function  begin=0 ops=22 bytes=8764 id=3412 line=324043
+SLJIT function  begin=0 ops=10 bytes=3352 id=3413 line=324050
+SLJIT function  begin=0 ops=11 bytes=3680 id=3414 line=324055
+SLJIT function  begin=0 ops=14 bytes=7048 id=3417 line=324078
+SLJIT function  begin=0 ops=23 bytes=5616 id=3418 line=324084
+SLJIT function  begin=0 ops=16 bytes=7392 id=3419 line=324092
+SLJIT function  begin=0 ops=23 bytes=5740 id=3420 line=324097
+SLJIT function  begin=0 ops=9 bytes=3240 id=3421 line=324106
+SLJIT function  begin=0 ops=16 bytes=5160 id=3423 line=324118
+SLJIT function  begin=0 ops=23 bytes=5920 id=3426 line=324140
+SLJIT function  begin=0 ops=28 bytes=10736 id=3427 line=324148
+SLJIT function  begin=0 ops=23 bytes=9072 id=3428 line=324159
+SLJIT function  begin=0 ops=14 bytes=7092 id=3429 line=324165
+SLJIT function  begin=0 ops=6 bytes=2584 id=3430 line=324171
+SLJIT function  begin=0 ops=19 bytes=5664 id=3431 line=324176
+SLJIT function  begin=0 ops=19 bytes=5672 id=3432 line=324185
+SLJIT function  begin=0 ops=18 bytes=8036 id=3433 line=324194
+SLJIT function  begin=0 ops=27 bytes=9868 id=3435 line=324226
+SLJIT function  begin=0 ops=18 bytes=4920 id=3436 line=324237
+SLJIT function  begin=0 ops=14 bytes=7048 id=3437 line=324245
+SLJIT function  begin=0 ops=18 bytes=5364 id=3439 line=324256
+SLJIT function  begin=0 ops=18 bytes=5372 id=3440 line=324265
+SLJIT function  begin=0 ops=18 bytes=8180 id=3441 line=324274
+SLJIT function  begin=0 ops=8 bytes=2828 id=3442 line=324280
+SLJIT function  begin=0 ops=28 bytes=10732 id=3443 line=324286
+SLJIT function  begin=0 ops=23 bytes=9072 id=3444 line=324297
+SLJIT function  begin=0 ops=14 bytes=7092 id=3445 line=324303
+SLJIT function  begin=0 ops=21 bytes=11448 id=3449 line=324332
+SLJIT function  begin=0 ops=27 bytes=10384 id=3451 line=324344
+SLJIT function  begin=0 ops=16 bytes=5160 id=3455 line=324375
+SLJIT function  begin=0 ops=16 bytes=5168 id=3456 line=324383
+SLJIT function  begin=0 ops=14 bytes=7048 id=3457 line=324391
+SLJIT function  begin=0 ops=4 bytes=2140 id=3463 line=324423
+SLJIT function  begin=0 ops=9 bytes=5924 id=3465 line=324433
+SLJIT function  begin=0 ops=3 bytes=1808 id=3466 line=324438
+SLJIT function  begin=0 ops=3 bytes=1808 id=3470 line=324458
+SLJIT function  begin=0 ops=4 bytes=2136 id=3472 line=324468
+SLJIT function  begin=0 ops=9 bytes=5924 id=3473 line=324473
+SLJIT function  begin=0 ops=3 bytes=1808 id=3474 line=324478
+SLJIT function  begin=0 ops=3 bytes=1808 id=3475 line=324483
+SLJIT function  begin=0 ops=9 bytes=5924 id=3481 line=324513
+SLJIT function  begin=0 ops=3 bytes=1808 id=3482 line=324518
+SLJIT function  begin=0 ops=3 bytes=1808 id=3484 line=324528
+SLJIT function  begin=0 ops=3 bytes=1808 id=3485 line=324533
+SLJIT function  begin=0 ops=9 bytes=5924 id=3489 line=324553
+SLJIT function  begin=0 ops=3 bytes=1808 id=3490 line=324558
+SLJIT function  begin=0 ops=7 bytes=3020 id=3493 line=324573
+SLJIT function  begin=0 ops=13 bytes=6912 id=3497 line=324593
+SLJIT function  begin=0 ops=7 bytes=3020 id=3498 line=324598
+SLJIT function  begin=0 ops=7 bytes=2884 id=3502 line=324618
+SLJIT function  begin=0 ops=13 bytes=7056 id=3505 line=324633
+SLJIT function  begin=0 ops=7 bytes=2884 id=3506 line=324638
+SLJIT function  begin=0 ops=9 bytes=5908 id=3507 line=324643
+SLJIT function  begin=0 ops=9 bytes=5908 id=3508 line=324648
+SLJIT function  begin=0 ops=9 bytes=5908 id=3509 line=324653
+SLJIT function  begin=0 ops=9 bytes=5908 id=3510 line=324658
+SLJIT function  begin=0 ops=10 bytes=6240 id=3511 line=324663
+SLJIT function  begin=0 ops=9 bytes=5908 id=3514 line=324692
+SLJIT function  begin=0 ops=3 bytes=1808 id=3515 line=324697
+SLJIT function  begin=0 ops=3 bytes=1808 id=3516 line=324702
+SLJIT function  begin=0 ops=3 bytes=1808 id=3517 line=324707
+SLJIT function  begin=0 ops=3 bytes=1808 id=3518 line=324712
+SLJIT function  begin=0 ops=4 bytes=2140 id=3519 line=324717
+SLJIT function  begin=0 ops=4 bytes=2136 id=3520 line=324722
+SLJIT function  begin=0 ops=9 bytes=5924 id=3521 line=324727
+SLJIT function  begin=0 ops=22 bytes=6240 id=3523 line=324737
+SLJIT function  begin=0 ops=22 bytes=6240 id=3524 line=324747
+SLJIT function  begin=0 ops=22 bytes=6240 id=3525 line=324757
+SLJIT function  begin=0 ops=22 bytes=6240 id=3526 line=324767
+SLJIT function  begin=0 ops=22 bytes=6200 id=3527 line=324777
+SLJIT function  begin=0 ops=20 bytes=5952 id=3530 line=324807
+SLJIT function  begin=0 ops=20 bytes=5316 id=3540 line=324910
+SLJIT function  begin=0 ops=20 bytes=5316 id=3541 line=324920
+SLJIT function  begin=0 ops=20 bytes=5316 id=3542 line=324930
+SLJIT function  begin=0 ops=21 bytes=5536 id=3543 line=324940
+SLJIT function  begin=0 ops=21 bytes=5532 id=3544 line=324950
+SLJIT function  begin=0 ops=16 bytes=4784 id=3555 line=325065
+SLJIT function  begin=0 ops=16 bytes=4784 id=3556 line=325073
+SLJIT function  begin=0 ops=16 bytes=4784 id=3557 line=325081
+SLJIT function  begin=0 ops=21 bytes=8548 id=3561 line=325113
+SLJIT function  begin=0 ops=12 bytes=3276 id=3570 line=325179
+SLJIT function  begin=0 ops=16 bytes=4948 id=3572 line=325193
+SLJIT function  begin=0 ops=16 bytes=4948 id=3574 line=325207
+SLJIT function  begin=0 ops=11 bytes=3752 id=3578 line=325236
+SLJIT function  begin=0 ops=19 bytes=5356 id=3579 line=325242
+SLJIT function  begin=0 ops=19 bytes=5356 id=3581 line=325260
+SLJIT function  begin=0 ops=19 bytes=5312 id=3584 line=325287
+SLJIT function  begin=0 ops=22 bytes=8764 id=3588 line=325320
+SLJIT function  begin=0 ops=30 bytes=11292 id=3589 line=325327
+SLJIT function  begin=0 ops=63 bytes=23956 id=3591 line=325342
+SLJIT function  begin=0 ops=27 bytes=12608 id=3592 line=325360
+SLJIT function  begin=0 ops=33 bytes=10876 id=3593 line=325368
+SLJIT function  begin=0 ops=31 bytes=13532 id=3594 line=325379
+SLJIT function  begin=0 ops=28 bytes=10316 id=3595 line=325388
+SLJIT function  begin=0 ops=23 bytes=9072 id=3596 line=325397
+SLJIT function  begin=0 ops=24 bytes=12392 id=3598 line=325414
+SLJIT function  begin=0 ops=52 bytes=20852 id=3600 line=325441
+SLJIT function  begin=0 ops=31 bytes=13536 id=3602 line=325465
+SLJIT function  begin=0 ops=22 bytes=8764 id=3604 line=325483
+SLJIT function  begin=0 ops=27 bytes=12608 id=3608 line=325524
+SLJIT function  begin=0 ops=32 bytes=10340 id=3609 line=325532
+SLJIT function  begin=0 ops=43 bytes=15884 id=3612 line=325561
+SLJIT function  begin=0 ops=19 bytes=7952 id=3619 line=325630
+SLJIT function  begin=0 ops=23 bytes=9072 id=3620 line=325636
+SLJIT function  begin=0 ops=29 bytes=13156 id=3624 line=325659
+SLJIT function  begin=0 ops=27 bytes=9856 id=3625 line=325667
+SLJIT function  begin=0 ops=27 bytes=9792 id=3629 line=325702
+SLJIT function  begin=0 ops=27 bytes=9964 id=3633 line=325726
+SLJIT function  begin=0 ops=19 bytes=7964 id=3635 line=325743
+SLJIT function  begin=0 ops=38 bytes=12328 id=3636 line=325749
+SLJIT function  begin=0 ops=53 bytes=16888 id=3640 line=325777
+SLJIT function  begin=0 ops=3 bytes=1808 id=3644 line=325813
+SLJIT function  begin=0 ops=26 bytes=9620 id=3645 line=325818
+SLJIT function  begin=0 ops=30 bytes=10040 id=3649 line=325842
+SLJIT function  begin=0 ops=30 bytes=7804 id=3680 line=326114
+SLJIT function  begin=0 ops=18 bytes=5324 id=3706 line=326326
+SLJIT function  begin=0 ops=17 bytes=5288 id=3714 line=326390
+SLJIT function  begin=0 ops=11 bytes=3500 id=3735 line=326538
+SLJIT function  begin=0 ops=10 bytes=3304 id=3773 line=326804
+SLJIT function  begin=0 ops=10 bytes=3304 id=3774 line=326811
+SLJIT function  begin=0 ops=10 bytes=3304 id=3776 line=326825
+SLJIT function  begin=0 ops=5 bytes=2164 id=3799 line=326946
+SLJIT function  begin=0 ops=5 bytes=2164 id=3863 line=327266
+SLJIT function  begin=0 ops=16 bytes=5912 id=3914 line=328029
+SLJIT function  begin=0 ops=310 bytes=62056 id=3915 line=328036
+SLJIT function  begin=0 ops=177 bytes=66120 id=3917 line=328212
+SLJIT function  begin=0 ops=157 bytes=30020 id=3925 line=328598
+SLJIT function  begin=0 ops=24 bytes=9388 id=3933 line=328774
+SLJIT function  begin=0 ops=54 bytes=15892 id=3935 line=328855
+SLJIT function  begin=0 ops=71 bytes=17216 id=3936 line=328876
+SLJIT function  begin=0 ops=22 bytes=5640 id=3937 line=328908
+SLJIT function  begin=0 ops=18 bytes=7000 id=3938 line=328920
+SLJIT function  begin=0 ops=63 bytes=13260 id=3944 line=329117
+SLJIT function  begin=0 ops=23 bytes=5324 id=3956 line=329220
+SLJIT function  begin=0 ops=17 bytes=3404 id=3957 line=329225
+SLJIT function  begin=0 ops=23 bytes=5324 id=3960 line=329245
+SLJIT function  begin=0 ops=17 bytes=3404 id=3961 line=329250
+SLJIT function  begin=0 ops=22 bytes=5216 id=3962 line=329261
+SLJIT function  begin=0 ops=12 bytes=4804 id=3963 line=329265
+SLJIT function  begin=0 ops=20 bytes=6968 id=3964 line=329269
+SLJIT function  begin=0 ops=12 bytes=4800 id=3965 line=329279
+SLJIT function  begin=0 ops=64 bytes=12068 id=3966 line=329284
+SLJIT function  begin=0 ops=175 bytes=55072 id=3967 line=329321
+SLJIT function  begin=0 ops=35 bytes=10436 id=3968 line=329402
+SLJIT function  begin=0 ops=11 bytes=3540 id=3970 line=329422
+SLJIT function  begin=0 ops=16 bytes=4068 id=3971 line=329428
+SLJIT function  begin=0 ops=21 bytes=5260 id=3972 line=329438
+SLJIT function  begin=0 ops=51 bytes=10724 id=3973 line=329448
+SLJIT function  begin=0 ops=39 bytes=11080 id=3976 line=329502
+SLJIT function  begin=0 ops=98 bytes=33444 id=3978 line=329527
+SLJIT function  begin=0 ops=97 bytes=31764 id=3980 line=329578
+SLJIT function  begin=0 ops=134 bytes=40096 id=3981 line=329628
+SLJIT function  begin=0 ops=45 bytes=20616 id=3982 line=329695
+SLJIT function  begin=0 ops=62 bytes=24824 id=3983 line=329717
+SLJIT function  begin=0 ops=34 bytes=14004 id=3984 line=329571
+SLJIT function  begin=0 ops=59 bytes=16892 id=3986 line=329754
+SLJIT function  begin=0 ops=60 bytes=9872 id=3987 line=329773
+SLJIT function  begin=0 ops=6 bytes=2156 id=3989 line=329807
+SLJIT function  begin=0 ops=50 bytes=14524 id=3990 line=329811
+SLJIT loop  begin=20 end=45 hits=256 iterations=259384
+SLJIT function  begin=0 ops=34 bytes=11564 id=3991 line=329826
+SLJIT loop  begin=9 end=32 hits=256 iterations=257518
+SLJIT function  begin=0 ops=37 bytes=14380 id=3992 line=329837
+SLJIT loop  begin=11 end=16 hits=92 iterations=93817
+SLJIT function  begin=0 ops=49 bytes=14372 id=3995 line=329862
+SLJIT function  begin=0 ops=82 bytes=16284 id=3996 line=329880
+SLJIT function  begin=0 ops=23 bytes=6784 id=4002 line=330012
+SLJIT function  begin=0 ops=61 bytes=21576 id=4008 line=330065
+SLJIT function  begin=0 ops=28 bytes=11516 id=4009 line=330086
+SLJIT function  begin=0 ops=170 bytes=62968 id=4020 line=330782
+SLJIT function  begin=0 ops=170 bytes=63240 id=4021 line=330801
+SLJIT function  begin=0 ops=170 bytes=63272 id=4023 line=330845
+SLJIT function  begin=0 ops=8 bytes=2700 id=4025 line=330888
+SLJIT function  begin=0 ops=23 bytes=5480 id=4027 line=330900
+SLJIT function  begin=0 ops=21 bytes=5164 id=4028 line=330912
+SLJIT function  begin=0 ops=11 bytes=2948 id=4029 line=330927
+SLJIT function  begin=0 ops=58 bytes=19536 id=4030 line=330931
+SLJIT function  begin=0 ops=8 bytes=3192 id=4031 line=330960
+SLJIT function  begin=0 ops=7 bytes=5280 id=4033 line=331051
+SLJIT function  begin=0 ops=7 bytes=5280 id=4034 line=331055
+SLJIT function  begin=0 ops=9 bytes=4292 id=4058 line=331278
+SLJIT function  begin=4 ops=128 bytes=39232 id=4068 line=331057
+SLJIT function  begin=0 ops=3 bytes=2452 id=4069 line=331370
+SLJIT function  begin=0 ops=5 bytes=2824 id=4070 line=331373
+SLJIT function  begin=0 ops=5 bytes=3044 id=4071 line=331376
+SLJIT function  begin=0 ops=14 bytes=7964 id=4072 line=331380
+SLJIT function  begin=0 ops=22 bytes=4780 id=4084 line=331478
+SLJIT function  begin=0 ops=8 bytes=5548 id=4087 line=331502
+SLJIT function  begin=0 ops=8 bytes=5548 id=4088 line=331507
+SLJIT function  begin=0 ops=9 bytes=3076 id=4091 line=331651
+SLJIT function  begin=0 ops=4 bytes=2440 id=4104 line=331740
+SLJIT function  begin=0 ops=5 bytes=2572 id=4105 line=331743
+SLJIT function  begin=0 ops=12 bytes=7008 id=4106 line=331746
+SLJIT function  begin=0 ops=35 bytes=14548 id=4114 line=331834
+SLJIT function  begin=0 ops=15 bytes=5928 id=4116 line=331865
+SLJIT function  begin=0 ops=128 bytes=56420 id=4117 line=331875
+SLJIT function  begin=0 ops=44 bytes=15440 id=4145 line=332358
+SLJIT function  begin=0 ops=102 bytes=45868 id=4176 line=332557
+SLJIT function  begin=0 ops=10 bytes=3912 id=4178 line=332591
+SLJIT function  begin=0 ops=32 bytes=14476 id=4185 line=332647
+SLJIT function  begin=0 ops=32 bytes=14476 id=4187 line=332662
+SLJIT function  begin=0 ops=88 bytes=23500 id=4202 line=332840
+SLJIT loop  begin=70 end=75 hits=3 iterations=286
+SLJIT function  begin=0 ops=36 bytes=13708 id=4203 line=332873
+SLJIT loop  begin=17 end=23 hits=1 iterations=0
+SLJIT function  begin=0 ops=94 bytes=21408 id=4204 line=332889
+SLJIT loop  begin=69 end=74 hits=275 iterations=275930
+SLJIT loop  begin=69 end=74 hits=38 iterations=37245
+SLJIT function  begin=0 ops=4 bytes=616 id=4210 line=334949
+SLJIT function  begin=0 ops=124 bytes=40924 id=6957 line=2
+SLJIT loop  begin=46 end=79 hits=61 iterations=161
+SLJIT function each begin=0 ops=78 bytes=31016 id=166744 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=167165 line=1
+SLJIT function each begin=0 ops=78 bytes=31004 id=167586 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=168007 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=168428 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=168849 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=169270 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=169691 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=170112 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=170533 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=170954 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=171375 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=171796 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=172217 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=172638 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=173059 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=173480 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=173901 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=174322 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=174743 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=175164 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=175585 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=176006 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=176427 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=176848 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=177269 line=1
+SLJIT function each begin=0 ops=78 bytes=31016 id=177690 line=1
+SLJIT totals functions=799 loops=71 templates=0 code_bytes=16776976
+SLJIT budget bytes=16776976 limit=16777216 native_work=0 evictions=0

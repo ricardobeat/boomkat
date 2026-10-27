@@ -1,0 +1,37 @@
+{
+  "head": "fa1e7f7a8a4953473b55d7f5bf57b8cfc251d38d",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "target": 50000,
+  "builds": {
+    "baseline": "fa1e7f7a default O2",
+    "large": "baseline + saved patch, -D SLJIT_LARGE",
+    "reclaim": "baseline + saved patch, -D SLJIT_RECLAIM",
+    "profile": "baseline -D SLJIT_STATS -D SLJIT_MAP"
+  },
+  "artifacts": {
+    "/tmp/boomkat-jit-next/octane-full.js": {
+      "sha256": "ef4c74d25100e6308436fb19b14eaefd5b4b690f30a799b60bc9bccbcefdce8e",
+      "bytes": 10516179
+    },
+    "/tmp/boomkat-jit-50k/octane-jsc.js": {
+      "sha256": "6b84724c6ae896c1fb3bc8a161ca2e5441f808bb433fb529880e3c61508233da",
+      "bytes": 10516250
+    },
+    "/tmp/boomkat-jit-workflows/selected/boomkat": {
+      "sha256": "6bf6de706ca0ad1b0a794dad858e5f3409137b56e1efe92e2973ce1858c16b4d",
+      "bytes": 2641048
+    },
+    "/tmp/boomkat-jit-50k/large/boomkat": {
+      "sha256": "0e37be3c20b7f2b7ce094ddc3bd2ca579406024d7c8ae66d315c0876726a0bd2",
+      "bytes": 2641048
+    },
+    "/tmp/boomkat-jit-50k/reclaim/boomkat": {
+      "sha256": "9d693b2a022232ae6dab40a15b3da798b58657c9732ecafdcd88a5dd0dc17757",
+      "bytes": 2641208
+    },
+    "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc": {
+      "sha256": "af7250ccc800abe6355ff8073b8d7411943afbb5d53676c94542e50c38bdc5b2",
+      "bytes": 393024
+    }
+  }
+}

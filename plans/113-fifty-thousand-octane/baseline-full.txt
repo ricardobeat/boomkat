@@ -1,0 +1,137 @@
+Richards: 3993
+DeltaBlue: 2922
+Crypto: 3068
+RayTrace: 3059
+EarleyBoyer: 3064
+RegExp: 767
+Splay: 8703
+SplayLatency: 21969
+NavierStokes: 3948
+PdfJS: 6047
+Mandreel: 1919
+MandreelLatency: 11078
+Gameboy: 12103
+CodeLoad: 28281
+Box2D: 6890
+zlib: 2884
+Typescript: 21476
+----
+Score (version 9): 5482
+SLJIT function runRichards begin=0 ops=122 bytes=27388 id=5 line=445
+SLJIT function Scheduler begin=0 ops=15 bytes=5288 id=6 line=498
+SLJIT function TaskControlBlock begin=0 ops=12 bytes=6144 id=7 line=659
+SLJIT function DeviceTask begin=0 ops=4 bytes=2500 id=9 line=795
+SLJIT function HandlerTask begin=0 ops=6 bytes=2980 id=11 line=858
+SLJIT function Packet begin=0 ops=10 bytes=4744 id=12 line=914
+SLJIT function OrderedCollection begin=0 ops=4 bytes=2292 id=13 line=1000
+SLJIT function Constraint begin=0 ops=2 bytes=1900 id=15 line=1097
+SLJIT function UnaryConstraint begin=0 ops=15 bytes=5424 id=16 line=1156
+SLJIT function StayConstraint begin=0 ops=10 bytes=3612 id=17 line=1237
+SLJIT function EditConstraint begin=0 ops=10 bytes=3612 id=18 line=1255
+SLJIT function BinaryConstraint begin=0 ops=17 bytes=6464 id=19 line=1285
+SLJIT function ScaleConstraint begin=0 ops=16 bytes=6256 id=20 line=1399
+SLJIT function EqualityConstraint begin=0 ops=11 bytes=3880 id=21 line=1458
+SLJIT function Variable begin=0 ops=18 bytes=6480 id=22 line=1481
+SLJIT function Planner begin=0 ops=3 bytes=1996 id=23 line=1514
+SLJIT function Plan begin=0 ops=4 bytes=2292 id=24 line=1701
+SLJIT function chainTest begin=0 ops=72 bytes=13832 id=25 line=1741
+SLJIT function projectionTest begin=0 ops=116 bytes=21476 id=26 line=1774
+SLJIT function change begin=0 ops=33 bytes=14248 id=27 line=1805
+SLJIT function deltaBlue begin=0 ops=8 bytes=2840 id=28 line=1821
+SLJIT function am3 begin=0 ops=41 bytes=21456 id=33 line=1935
+SLJIT loop am3 begin=8 end=39 hits=2537529 iterations=31837627
+SLJIT loop am3 begin=8 end=39 hits=1 iterations=12
+SLJIT function int2char begin=0 ops=5 bytes=2148 id=35 line=1999
+SLJIT function intAt begin=0 ops=11 bytes=6372 id=36 line=2001
+SLJIT function bnpCopyTo begin=0 ops=19 bytes=9756 id=37 line=2007
+SLJIT loop bnpCopyTo begin=8 end=13 hits=91 iterations=0
+SLJIT function bnpFromString begin=0 ops=156 bytes=54112 id=40 line=2030
+SLJIT function bnpClamp begin=0 ops=20 bytes=8644 id=41 line=2069
+SLJIT function bnAbs begin=0 ops=9 bytes=3344 id=44 line=2110
+SLJIT function bnCompareTo begin=0 ops=28 bytes=13820 id=45 line=2114
+SLJIT function bnpDLShiftTo begin=0 ops=28 bytes=14236 id=48 line=2146
+SLJIT loop bnpDLShiftTo begin=8 end=12 hits=5857 iterations=0
+SLJIT loop bnpDLShiftTo begin=16 end=21 hits=2684 iterations=43680
+SLJIT function bnpDRShiftTo begin=0 ops=22 bytes=12340 id=49 line=2157
+SLJIT loop bnpDRShiftTo begin=6 end=11 hits=12 iterations=322
+SLJIT function bnpLShiftTo begin=0 ops=56 bytes=28644 id=50 line=2166
+SLJIT loop bnpLShiftTo begin=25 end=35 hits=315 iterations=0
+SLJIT loop bnpRShiftTo begin=31 end=46 hits=32 iterations=0
+SLJIT loop bnpSubTo begin=16 end=28 hits=783 iterations=26057
+SLJIT function bnpMultiplyTo begin=0 ops=61 bytes=28392 id=53 line=2242
+SLJIT loop bnpMultiplyTo begin=21 end=25 hits=8586 iterations=166073
+SLJIT function bnpSquareTo begin=0 ops=94 bytes=45560 id=54 line=2258
+SLJIT loop bnpSquareTo begin=14 end=18 hits=87668 iterations=3337256
+SLJIT function montReduce begin=0 ops=94 bytes=61648 id=67 line=2410
+SLJIT loop montReduce begin=54 end=66 hits=42 iterations=0
+SLJIT function ARC4init begin=0 ops=38 bytes=23828 id=136 line=3180
+SLJIT function rng_get_byte begin=0 ops=40 bytes=9644 id=141 line=3257
+SLJIT function rng_get_bytes begin=0 ops=10 bytes=4692 id=142 line=3272
+SLJIT function pkcs1pad2 begin=0 ops=72 bytes=31500 id=147 line=3304
+SLJIT loop pkcs1pad2 begin=15 end=29 hits=8800 iterations=0
+SLJIT function Measure begin=0 ops=31 bytes=6712 id=2086 line=305
+SLJIT function  begin=0 ops=13 bytes=4268 id=2092 line=525
+SLJIT function  begin=0 ops=13 bytes=4344 id=2093 line=535
+SLJIT function  begin=0 ops=11 bytes=3812 id=2094 line=545
+SLJIT function  begin=0 ops=11 bytes=3812 id=2095 line=555
+SLJIT function  begin=0 ops=13 bytes=5088 id=2096 line=566
+SLJIT function  begin=0 ops=16 bytes=6972 id=2097 line=578
+SLJIT function  begin=0 ops=25 bytes=9448 id=2098 line=587
+SLJIT function  begin=0 ops=11 bytes=4964 id=2100 line=619
+SLJIT function  begin=0 ops=22 bytes=14876 id=2102 line=640
+SLJIT function  begin=0 ops=25 bytes=7172 id=2109 line=722
+SLJIT function  begin=0 ops=40 bytes=17784 id=2112 line=773
+SLJIT function  begin=0 ops=29 bytes=23232 id=2114 line=800
+SLJIT function  begin=0 ops=46 bytes=25820 id=2116 line=829
+SLJIT function  begin=0 ops=65 bytes=44400 id=2118 line=863
+SLJIT function  begin=0 ops=14 bytes=4104 id=2120 line=926
+SLJIT function  begin=0 ops=7 bytes=3284 id=2124 line=1004
+SLJIT function  begin=0 ops=3 bytes=4384 id=2125 line=1008
+SLJIT function  begin=0 ops=3 bytes=1784 id=2126 line=1012
+SLJIT function  begin=0 ops=6 bytes=2928 id=2127 line=1016
+SLJIT function  begin=0 ops=27 bytes=11540 id=2128 line=1020
+SLJIT function  begin=0 ops=4 bytes=2128 id=2129 line=1050
+SLJIT function  begin=0 ops=4 bytes=2128 id=2130 line=1054
+SLJIT function  begin=0 ops=9 bytes=3460 id=2131 line=1058
+SLJIT function  begin=0 ops=12 bytes=3968 id=2134 line=1104
+SLJIT function  begin=0 ops=44 bytes=16076 id=2135 line=1115
+SLJIT function  begin=0 ops=15 bytes=5060 id=2136 line=1134
+SLJIT function  begin=0 ops=9 bytes=3264 id=2138 line=1168
+SLJIT function  begin=0 ops=15 bytes=5400 id=2139 line=1177
+SLJIT function  begin=0 ops=2 bytes=1504 id=2140 line=1185
+SLJIT function  begin=0 ops=1 bytes=1064 id=2141 line=1190
+SLJIT function  begin=0 ops=2 bytes=1504 id=2142 line=1196
+SLJIT function  begin=0 ops=16 bytes=5916 id=2143 line=1205
+SLJIT function  begin=0 ops=3 bytes=1768 id=2144 line=1214
+SLJIT function  begin=0 ops=2 bytes=1228 id=2145 line=1218
+SLJIT function  begin=0 ops=11 bytes=3688 id=2146 line=1222
+SLJIT function  begin=0 ops=2 bytes=1228 id=2148 line=1264
+SLJIT function  begin=0 ops=98 bytes=22548 id=2150 line=1300
+SLJIT function  begin=0 ops=16 bytes=5096 id=2151 line=1325
+SLJIT function  begin=0 ops=5 bytes=2700 id=2152 line=1334
+SLJIT function  begin=0 ops=5 bytes=3940 id=2153 line=1341
+SLJIT function  begin=0 ops=9 bytes=4052 id=2154 line=1348
+SLJIT function  begin=0 ops=9 bytes=4052 id=2155 line=1355
+SLJIT function  begin=0 ops=24 bytes=14724 id=2156 line=1363
+SLJIT function  begin=0 ops=4 bytes=2248 id=2157 line=1374
+SLJIT function  begin=0 ops=14 bytes=6228 id=2158 line=1378
+SLJIT function  begin=0 ops=22 bytes=6584 id=2160 line=1411
+SLJIT function  begin=0 ops=16 bytes=5216 id=2162 line=1423
+SLJIT function  begin=0 ops=26 bytes=8392 id=2163 line=1431
+SLJIT function  begin=0 ops=33 bytes=16636 id=2164 line=1443
+SLJIT function  begin=0 ops=11 bytes=7180 id=2165 line=1467
+SLJIT function  begin=0 ops=7 bytes=2924 id=2166 line=1495
+SLJIT function  begin=0 ops=11 bytes=3964 id=2167 line=1502
+SLJIT function  begin=0 ops=17 bytes=5532 id=2168 line=1532
+SLJIT function  begin=0 ops=45 bytes=17460 id=2169 line=1550
+SLJIT function  begin=0 ops=4 bytes=1988 id=2170 line=1569
+SLJIT function  begin=0 ops=45 bytes=15576 id=2171 line=1592
+SLJIT function  begin=0 ops=33 bytes=10512 id=2172 line=1611
+SLJIT function  begin=0 ops=39 bytes=13920 id=2173 line=1635
+SLJIT function  begin=0 ops=78 bytes=24944 id=2174 line=1656
+SLJIT function  begin=0 ops=28 bytes=8324 id=2175 line=1682
+SLJIT function  begin=0 ops=7 bytes=2936 id=2176 line=1705
+SLJIT function  begin=0 ops=6 bytes=3272 id=2177 line=1709
+SLJIT function  begin=0 ops=18 bytes=8504 id=2179 line=1716
+SLJIT totals functions=103 loops=13 templates=0 code_bytes=1048440
+SLJIT budget bytes=1048440 limit=1048576 native_work=0 evictions=0

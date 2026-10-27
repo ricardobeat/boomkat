@@ -1,0 +1,83 @@
+diff --git a/src/heap.c3 b/src/heap.c3
+index d8e189a1..429895b5 100644
+--- a/src/heap.c3
++++ b/src/heap.c3
+@@ -2575,7 +2575,7 @@ fn void Heap.reset(&self) {
+ 
+     self.free_compiled_funcs();
+     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
+-    $if $feat(SLJIT_ADAPTIVE):
++    $if $feat(SLJIT_ADAPTIVE) || $feat(SLJIT_RECLAIM):
+         self.jit_code_limit = 0;
+         self.jit_native_work = 0;
+         self.jit_clock = 0;
+diff --git a/src/vm/vm_sljit_budget.c3 b/src/vm/vm_sljit_budget.c3
+index 7b999585..dc850bce 100644
+--- a/src/vm/vm_sljit_budget.c3
++++ b/src/vm/vm_sljit_budget.c3
+@@ -4,7 +4,7 @@ import boomkat::heap;
+ import boomkat::bytecode;
+ 
+ const usz JIT_INITIAL_CODE_LIMIT = 256 * 1024;
+-const usz JIT_MAX_CODE_LIMIT = 1024 * 1024;
++const usz JIT_MAX_CODE_LIMIT = $feat(SLJIT_LARGE) ? 16 * 1024 * 1024 : 1024 * 1024;
+ 
+ fn usz sljit_code_limit(Heap* h) @feat(SLJIT) @inline {
+     $if $feat(SLJIT_ADAPTIVE):
+@@ -48,7 +48,7 @@ fn void sljit_budget_retry(Heap* h) @feat(SLJIT) {
+ 
+ fn bool sljit_code_room(Heap* h, usz bytes) @feat(SLJIT) @inline {
+     if (h.jit_code_bytes + bytes < sljit_code_limit(h)) return true;
+-    $if $feat(SLJIT_ADAPTIVE): return sljit_budget_reclaim(h, bytes); $else return false; $endif
++    $if $feat(SLJIT_ADAPTIVE) || $feat(SLJIT_RECLAIM): return sljit_budget_reclaim(h, bytes); $else return false; $endif
+ }
+ 
+ // Only compilation calls this, after every generated machine frame has
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index 12ae40f3..76ef5edf 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -2215,7 +2215,7 @@ fn Instruction* sljit_function_entry(
+     bool region = false
+ ) @feat(SLJIT) @noinline {
+     Heap* h              = cold.heap;
+-    $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
++    $if $feat(SLJIT_ADAPTIVE) || $feat(SLJIT_RECLAIM): h.jit_clock++; $endif
+     CompiledFunction* cf = cold.vm.current_func;
+     $if $feat(SLJIT_STATS): cf.sljit_entry_attempts++; $endif
+     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || h.gc_phase != heap::GcPhase.IDLE
+@@ -2268,7 +2268,7 @@ fn Instruction* sljit_function_entry(
+     FunctionRun run @noinit;
+     run.entry = plan.entries[local];
+     run.root = cold.act;
+-    $if $feat(SLJIT_ADAPTIVE):
++    $if $feat(SLJIT_ADAPTIVE) || $feat(SLJIT_RECLAIM):
+         run.clock = h.jit_clock;
+         plan.last_use = h.jit_clock;
+     $endif
+diff --git a/src/vm/vm_sljit_loop.c3 b/src/vm/vm_sljit_loop.c3
+index 916516b4..72c81f48 100644
+--- a/src/vm/vm_sljit_loop.c3
++++ b/src/vm/vm_sljit_loop.c3
+@@ -1616,7 +1616,7 @@ fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @in
+ }
+ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
+     Heap* h              = cold.heap;
+-    $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
++    $if $feat(SLJIT_ADAPTIVE) || $feat(SLJIT_RECLAIM): h.jit_clock++; $endif
+     CompiledFunction* cf = cold.vm.current_func;
+     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || cf.num_regs > LOOP_REGS || h.uncatchable_throw
+         || std::core::mem::@atomic_load(
+diff --git a/src/vm/vm_sljit_native.c3 b/src/vm/vm_sljit_native.c3
+index 6a163e56..9f3153d0 100644
+--- a/src/vm/vm_sljit_native.c3
++++ b/src/vm/vm_sljit_native.c3
+@@ -192,7 +192,7 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
+     }
+     // All refusals precede the first mutation. There are no allocations,
+     // callbacks or safepoints between publication and a body side exit.
+-    $if $feat(SLJIT_ADAPTIVE):
++    $if $feat(SLJIT_ADAPTIVE) || $feat(SLJIT_RECLAIM):
+         e.mov(r0, 0, mem | run, $reflect(FunctionRun.clock).offset);
+         e.mov(mem, (long)&self.plan.last_use, r0, 0);
+     $endif

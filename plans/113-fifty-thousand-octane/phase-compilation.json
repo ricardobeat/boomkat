@@ -1,0 +1,92 @@
+{
+  "Richards": {
+    "functions": 22,
+    "loops": 0,
+    "bytes": 246896,
+    "rejected_regions": 0
+  },
+  "DeltaBlue": {
+    "functions": 63,
+    "loops": 0,
+    "bytes": 420760,
+    "rejected_regions": 0
+  },
+  "Crypto": {
+    "functions": 13,
+    "loops": 8,
+    "bytes": 380848,
+    "rejected_regions": 0
+  },
+  "RayTrace": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 0
+  },
+  "EarleyBoyer": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 0
+  },
+  "RegExp": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 6
+  },
+  "Splay": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 0
+  },
+  "NavierStokes": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 0
+  },
+  "PdfJS": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 1
+  },
+  "Mandreel": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 7
+  },
+  "Gameboy": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 1
+  },
+  "CodeLoad": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 0
+  },
+  "Box2D": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 2
+  },
+  "zlib": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 8
+  },
+  "Typescript": {
+    "functions": 0,
+    "loops": 0,
+    "bytes": 0,
+    "rejected_regions": 6
+  }
+}

@@ -1,0 +1,16 @@
+sample Richards 0 same_phase True
+sample DeltaBlue 0 same_phase True
+sample Crypto 0 same_phase True
+sample RayTrace 0 same_phase True
+sample EarleyBoyer 0 same_phase True
+sample RegExp 0 same_phase True
+sample Splay 0 same_phase True
+sample NavierStokes 0 same_phase True
+sample PdfJS 0 same_phase False
+sample Mandreel 0 same_phase True
+sample Gameboy 0 same_phase False
+sample CodeLoad 0 same_phase True
+sample Box2D 0 same_phase False
+sample zlib 0 same_phase True
+sample Typescript 0 same_phase True
+complete 0
