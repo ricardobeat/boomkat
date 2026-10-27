@@ -92,6 +92,8 @@ struct LoopPlan @feat(SLJIT) {
     char[LOOP_REGS] float_cache;
     ulong hits;
     ulong iterations;
+    ulong ssa_hits @if($feat(SLJIT_STATS));
+    ulong ssa_iterations @if($feat(SLJIT_STATS));
 }
 struct LoopLink @feat(SLJIT) {
     void* jump;
@@ -1700,6 +1702,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     if (!prepared && !loop_prepare(plan, &state, cold)) return body;
     uint resume_pc = plan.native(&state, budget);
     uint consumed  = (uint)(budget - state.budget);
+    $if $feat(SLJIT_STATS):
+    if (plan.ssa) { plan.ssa_hits++; plan.ssa_iterations += consumed; }
+    $endif
     // A guard exit means the SSA speculation did not hold. When an integer
     // operation overflowed, retry once with that register held as a double:
     // JavaScript numbers are IEEE doubles, so the wider representation is

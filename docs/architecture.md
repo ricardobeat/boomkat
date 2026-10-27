@@ -654,6 +654,18 @@ checks array storage and builtin identities, and borrows pointers for a chunk
 that cannot allocate or enter JS. Every indexed access checks bounds; dense
 holes and values needing coercion exit to bytecode.
 
+Eligible numeric loops first use a bounded SSA compiler, with int32, F64 and
+tagged representations, forward branch blocks and phi joins. Its register
+intervals include interpreter recovery uses; each guard reconstructs the frame
+before its bytecode instruction. Join intervals begin at incoming edge copies,
+and loop-carried register and spill values move in parallel. Postfix branch
+operands survive those copies. Load elimination requires dominance and discards
+cached loads across potentially aliased writes. Dense loads guarded as numbers
+may remain live across numeric stores without retaining heap references. Guards
+with identical recovery frames and bytecode PCs share an exit stub. Unsupported graphs fall back to
+the straight-line loop compiler. `SLJIT_NO_SSA` disables this tier for comparison;
+`SLJIT_STATS` reports its actual entries and iterations separately from fallback.
+
 Native exits carry an instruction offset, updated registers, and a remaining
 backedge budget. Completed stores remain committed. The VM retains incoming
 refcounted values before replacing registers, publishes dirty slots, and charges
@@ -700,8 +712,8 @@ Incoming links are patched before a target is freed. Compilation, relinking and
 retirement occur only after generated frames unwind; targets remain in the
 compiled-function registry until heap teardown.
 
-Numeric loops cache boxed values in four general registers. Function regions
-keep authoritative values in VM slots. Within a basic block, four FP registers
+The straight-line loop fallback caches boxed values in four general registers.
+Function regions keep authoritative values in VM slots. Within a basic block, four FP registers
 retain proven numbers, with next-use-based spills and snapshots of
 dirty values at each guard exit. Compact supported regions use CFG liveness to
 reserve up to three canonical FP homes across branches and native iterations.

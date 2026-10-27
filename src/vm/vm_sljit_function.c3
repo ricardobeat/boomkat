@@ -2461,6 +2461,10 @@ fn void sljit_stats_dump(Heap* h) {
                     lp.hits,
                     lp.iterations
                 );
+                $if $feat(SLJIT_STATS):
+                io::printfn("SLJIT ssa name=%s begin=%d end=%d hits=%d iterations=%d",
+                    (String)cf.get_name(), lp.begin, lp.end, lp.ssa_hits, lp.ssa_iterations);
+                $endif
             }
             if (cf.sljit_template != null) {
                 TemplatePlan* tp = (TemplatePlan*)cf.sljit_template;

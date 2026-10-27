@@ -78,8 +78,10 @@ contains at most 512 instructions, with high VM registers accessed directly.
 Ordinary callback spans need six supported instructions; regions using expanded
 integer, indexed or intrinsic-call coverage need sixteen.
 
-Numeric loops cache four boxed registers; function regions use VM slots and
-four FP registers to carry proven numbers between operations.
+Eligible numeric loops keep SSA values in integer and FP registers, spilling
+when needed. The straight-line loop fallback caches four boxed registers;
+function regions use VM slots and four FP registers to carry proven numbers
+between operations.
 Compact supported regions reserve up to three FP homes across control flow;
 other regions keep block-local allocation. Native backedges consume a bounded
 GC/interrupt budget and return to the interpreter before a poll is due. Guarded native operations cover dense-array reads, fixed attached
@@ -96,6 +98,10 @@ Generators, async functions, direct eval and mapped
 arguments stay interpreted. Plans store at most 32 guarded shapes and one mutable
 capture; repeated short guard exits disable the affected native entry. Metadata
 scales with the selected instruction window and is released with generated code.
+
+`SLJIT_NO_SSA` disables the bounded loop SSA optimizer for differential
+measurements. Eligible loops normally use typed SSA values, branch joins,
+and register allocation; unsupported loops retain the straight-line fallback.
 
 `SLJIT_STATS` enables compilation and hit diagnostics on stderr. It is omitted
 from the standard builds. Generated code shares each compiled function's lifetime;
