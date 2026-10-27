@@ -20,13 +20,14 @@ import boomkat::lexer;
 import boomkat::types;
 import boomkat::vm;
 import std::io;
+import boomkat::sync;
 import std::thread;
 import std::time;
 import libc;
 
 // An agent needs room for the whole test: the main thread's stack is the
 // platform default, but a secondary thread's can be a few hundred KB.
-const sz AGENT_STACK_SIZE = 16 * 1024 * 1024;
+const usz AGENT_STACK_SIZE = 16 * 1024 * 1024;
 
 // One report an agent made, waiting for the main side to ask for it.
 struct AgentReport {
@@ -39,8 +40,8 @@ struct AgentReport {
 // worker has its own, and ended with the test: a report from an agent of an
 // earlier test can never reach the next one.
 struct AgentGroup {
-    Mutex             lock;
-    ConditionVariable changed;   // an agent started, took a broadcast, or exited
+    sync::Lock        lock;
+    sync::Cond        changed;   // an agent started, took a broadcast, or exited
     AgentRecord*      agents;
     AgentReport*      reports;
     AgentReport*      reports_tail;
@@ -51,7 +52,7 @@ struct AgentGroup {
 struct AgentRecord {
     AgentRecord* next;
     AgentGroup*  group;
-    Thread       thread;
+    sync::OsThread thread;
     Port*        port;          // the agent's mailbox, retained here
     Heap*        heap;          // valid until `exited`
     char*        source;        // the script, owned
@@ -77,8 +78,8 @@ fn AgentGroup* agent_group() {
     if (t_group == null) {
         AgentGroup* group = (AgentGroup*)libc::calloc(1, AgentGroup::size);
         if (group == null) abort("out of memory creating an agent group");
-        group.lock.init()!!;
-        group.changed.init()!!;
+        group.lock.init();
+        group.changed.init();
         t_group = group;
     }
     return t_group;
@@ -109,7 +110,7 @@ fn void builtin_agent_start(BuiltinContext* ctx) {
     group.lock.unlock();
 
     agent::agent_enter();
-    if (catch err = rec.thread.create(&agent_thread_main, rec, { .stack_size = AGENT_STACK_SIZE })) {
+    if (!rec.thread.start(&agent_thread_main, rec, AGENT_STACK_SIZE)) {
         agent::agent_exit();
         group.lock.lock();
         rec.started = true;
@@ -206,7 +207,7 @@ fn void agent_host_shutdown() {
     AgentRecord* rec = group.agents;
     while (rec != null) {
         AgentRecord* next = rec.next;
-        if (catch err = rec.thread.join()) {}
+        rec.thread.join();
         agent::port_release(rec.port);
         libc::free(rec.source);
         libc::free(rec);

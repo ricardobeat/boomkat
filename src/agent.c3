@@ -8,6 +8,7 @@ module boomkat::agent;
 
 import std::atomic;
 import std::thread;
+import boomkat::sync;
 import std::time;
 import libc;
 import boomkat::heap;
@@ -118,11 +119,11 @@ fn ulong width_mask(uint width) {
 // the futex rule easy to hold: a waiter compares its cell and joins the queue
 // in a single critical section, so a notify that follows the compare cannot
 // miss it.
-Mutex g_lock;
+sync::Lock g_lock;
 OnceFlag g_lock_once;
 
 fn void init_lock() @private {
-    g_lock.init()!!;
+    g_lock.init();
 }
 
 macro void lock() @private {
@@ -206,7 +207,7 @@ fn void unlink_waiter(Waiter* w) @private {
 // drain loop reads without it.
 struct Port {
     uint              refs;
-    ConditionVariable cv;
+    sync::Cond        cv;
     Waiter*           inbox_head;     // notified asynchronous waiters, oldest first
     Waiter*           inbox_tail;
     uint              pending;        // inbox length; read without the lock
@@ -219,7 +220,7 @@ fn Port* port_create() {
     Port* port = (Port*)libc::calloc(1, Port::size);
     if (port == null) abort("out of memory creating an agent port");
     port.refs = 1;
-    port.cv.init()!!;
+    port.cv.init();
     return port;
 }
 
@@ -308,8 +309,7 @@ fn void sleep_until(Port* port, ulong until) @private {
     }
     ulong now = now_ns();
     if (now >= until) return;
-    Duration span = time::us((long)((until - now + 999) / 1000));
-    if (catch port.cv.wait_timeout(&g_lock, span)) {}
+    port.cv.wait_ns(&g_lock, until - now);
 }
 
 // ============================================================================
