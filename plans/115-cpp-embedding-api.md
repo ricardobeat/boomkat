@@ -848,9 +848,9 @@ BK_API bk_status bk_get_error_info(bk_ctx ctx, bk_error_info *out);
 - C++: `bk::Error::describe()` reads the exception after later engine calls
   have overwritten the context's diagnostics. `bk::type_error(cx, "...")`
   builds errors without throwing.
-- Kind: new calls; `bk_error_info` is redefined in place. Read the current
-  struct (`include/boomkat.h`) when implementing; keep its existing fields and
-  add `stack`.
+- Kind: new calls; `bk_error_info` gains `stack` after its current fields
+  (`include/boomkat.h:114-119`). The C3 mirror `BkErrorInfo`
+  (`src/capi.c3:281-286`) and the Rust `boomkat-sys` struct change with it.
 - Internals: `describe_error` (`src/embed.c3:418`) formats into the context
   buffer and also replaces the pending exception. `bk_describe` factors out the
   formatting half. The stack is in `HObjectError` (`src/hobject.c3:739-743`).
