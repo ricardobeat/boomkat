@@ -1304,24 +1304,12 @@ fn void builtin_reflect_deleteProperty(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     if (key == null) { ctx.result_boolean(true); return; }
 
-    if (obj.is_proxy()) {
-        bool res;
-        if (!proxy_mop_delete(ctx.vm, ctx.heap, obj, key, &res)) { proxy_ctx_ok(ctx); return; }
-        ctx.result_boolean(res);
-        return;
-    }
-    // Module Namespace Exotic [[Delete]] (§10.4.6.10): a symbol key that is not
-    // an own property (or an absent string key) succeeds; an existing own key
-    // (any export or Symbol.toStringTag) is non-configurable and cannot be
-    // deleted (false).
     // A deferred namespace evaluates before any of the MOP operations
     // the spec makes triggers (import defer).
-    if (!ns_force_deferred(ctx, obj, key)) return;
-    if (obj.flags.exotic_module_ns) {
-        ctx.result_boolean(obj.find_prop_idx((void*)key, ctx.heap) < 0);
-        return;
-    }
-    ctx.result_boolean(obj.es_delete_prop((void*)key, ctx.heap));
+    if (!obj.is_proxy() && !ns_force_deferred(ctx, obj, key)) return;
+    bool res;
+    if (!object_mop_delete(ctx.vm, ctx.heap, obj, key, &res)) { proxy_ctx_ok(ctx); return; }
+    ctx.result_boolean(res);
 }
 
 // ============================================================================

@@ -716,11 +716,7 @@ fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, boo
     int t = proxy_find_trap(vm, heap, proxy, "deleteProperty", &trap, &target, &handler);
     if (t == 0) return false;
     if (t == 1) {
-        if (target.is_proxy()) {
-            return proxy_mop_delete(vm, heap, target, key, out);
-        }
-        *out = target.es_delete_prop((void*)key, heap);
-        return true;
+        return object_mop_delete(vm, heap, target, key, out);
     }
 
     TVal[2] args;
@@ -745,6 +741,30 @@ fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, boo
         return false;
     }
     *out = true;
+    return true;
+}
+
+// [[Delete]] for any object. A deferred module namespace must already be
+// evaluated; callers that can see one force it first.
+fn bool object_mop_delete(void* vm, Heap* heap, HObject* obj, HString* key, bool* out) {
+    if (obj.is_proxy()) return proxy_mop_delete(vm, heap, obj, key, out);
+    // Module Namespace Exotic (§10.4.6.10): every own key is non-configurable.
+    if (obj.flags.exotic_module_ns) {
+        *out = obj.find_prop_idx((void*)key, heap) < 0;
+        return true;
+    }
+    // TypedArray (§10.4.5.6): a numeric key deletes only when it is not a
+    // valid integer index, and never touches the property table.
+    if (is_typed_array_class(obj.get_class())) {
+        double num;
+        if (ta_key_numeric_index(heap, key, &num)) {
+            ProxyDesc d;
+            ta_own_index_desc(heap, obj, num, &d);
+            *out = !d.found;
+            return true;
+        }
+    }
+    *out = obj.es_delete_prop((void*)key, heap);
     return true;
 }
 
