@@ -735,8 +735,13 @@ operation with authoritative VM slots.
 This is a restricted representation analysis, not a general SSA optimizer;
 integer induction remains boxed. Mixed or larger regions keep block-local FP
 allocation. Pending numeric definitions replace only non-string values, so
-publication does not need string destruction. Receiver identities propagate
-through register copies; ordinary shape guards and field loads can be reused
+publication does not need string destruction. Named-read ICs also sample up to
+16 result values during threaded execution. Sites observed at least four times
+without strings may emit a non-string result guard, then use uncounted stores
+and propagate that ownership fact through copies. Feedback only selects the
+guard: a later string leaves before publication and uses the existing read
+continuation, preserving reference counts and accessor semantics.
+Receiver identities propagate through register copies; ordinary shape guards and field loads can be reused
 until assignment, heap writes or control-flow joins invalidate their proofs.
 
 Interpreter element sites sample bounded, pointer-free typed-array class

@@ -723,7 +723,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             uint value_token = self.flow.versions[previous];
             uint value_shape = self.flow.shapes[previous];
             self.out.load((uint)previous, jit::reg_r(0));
-            self.store(ins.a, pc);
+            self.property_store(ins.a, pc, ic);
             self.flow.same_value(ins.a, value_token, value_shape);
             self.flow.remember(token, key, ins.a);
             return true;
@@ -918,7 +918,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
             e.bind(allocated);
             e.mov(r0, 0, mem | r2, (long)slot * 8);
-            self.store(ins.a, pc);
+            self.property_store(ins.a, pc, ic);
             arms[arm_count++] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
             e.bind(other);
         }
@@ -960,7 +960,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             e.op(jit::SLJIT_ADD, r2, r1, 0, imm, HObjectBase::size);
             e.bind(allocated);
             e.mov(r0, 0, mem | r2, (long)slot * 8);
-            self.store(ins.a, pc);
+            self.property_store(ins.a, pc, ic);
             arms[arm_count++] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
             if (i == set.count) {
                 self.out.link(other, pc, true);
@@ -1011,7 +1011,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             e.op(jit::SLJIT_ADD, r2, r1, 0, imm, HObjectBase::size);
             e.bind(owner_allocated);
             e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
-            self.store(ins.a, pc);
+            self.property_store(ins.a, pc, ic);
             if (tracking) self.flow.remember(token, key, ins.a);
         } else {
             for (uint i = 0; i < ic.chain_len; i++) {
@@ -1031,7 +1031,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
                 self.slot_store(r0, r2, (long)ic.prop_idx * 8, value_reg, pc);
             } else {
                 e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
-                self.store(ins.a, pc);
+                self.property_store(ins.a, pc, ic);
                 if (tracking) self.flow.remember(token, key, ins.a);
             }
         }
@@ -2500,4 +2500,14 @@ fn void FunctionEmitter.property_receiver(&self, uint reg, bool receiver_this) @
     if (!receiver_this) { self.out.load(reg, jit::reg_r(0)); }
     else if (self.this_in_window) { self.out.load(INLINE_THIS_SLOT, jit::reg_r(0)); }
     else { self.out.e.mov(jit::reg_r(0), 0, jit::reg_s(3), 0); }
+}
+
+// Feedback chooses a guarded representation; it never proves a future value.
+fn void FunctionEmitter.property_store(&self, uint reg, uint pc, ICEntry* ic) @feat(SLJIT) {
+    bool uncounted = ic.read_kind == 1 && ic.read_samples >= 4;
+    if (uncounted) {
+        self.out.e.op(jit::SLJIT_LSHR, jit::reg_r(3), jit::reg_r(0), 0, jit::SLJIT_IMM, 48);
+        self.out.guard(jit::SLJIT_EQUAL, jit::reg_r(3), 0, jit::SLJIT_IMM, (long)types::TAG_STRING, pc);
+    }
+    self.store(reg, pc, uncounted);
 }

@@ -3599,6 +3599,9 @@ struct ICEntry {
     // Zero is unseen, class ordinal + 1 is monomorphic, 255 is mixed.
     char typed_kind @if($feat(SLJIT));
     char typed_samples @if($feat(SLJIT));
+    char read_samples @if($feat(SLJIT));
+    // 1: observed non-string values only; 2: a string was observed.
+    char read_kind @if($feat(SLJIT));
     // A read owner is the final object in the recorded chain. Absent stores
     // may also have a chain, but never cache an inherited read owner.
     bool   has_proto;
