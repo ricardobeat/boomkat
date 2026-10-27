@@ -69,8 +69,8 @@ printf 'cc        : %s\n' "$(cc --version | head -1)"
 # ---------------------------------------------------------------------------
 if want build; then
     say "1. build the engine (c3c build boomkat)"
-    if timeout "$TIMEOUT" make boomkat 2>&1 | grep -viE 'warning|^ *[0-9]+:|^ *\^+ *$' | tail -5; then
-        [ -x out/boomkat ] && pass "engine binary built" || fail "engine binary missing"
+    if timeout "$TIMEOUT" make boomkat boomkat-full-icu 2>&1 | grep -viE 'warning|^ *[0-9]+:|^ *\^+ *$' | tail -5; then
+        [ -x out/boomkat ] && [ -x out/boomkat-full-icu ] && pass "engine binary built" || fail "engine binary missing"
     else
         fail "engine build"
     fi
@@ -79,7 +79,7 @@ fi
 # ---------------------------------------------------------------------------
 if want tests; then
     say "2. engine test suite (bash test/run_local.sh)"
-    if [ ! -x out/boomkat ]; then
+    if [ ! -x out/boomkat-full-icu ]; then
         skip "test suite (no engine binary)"
     else
         suite_log=$(mktemp)
