@@ -2158,6 +2158,12 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     // interned, during heap setup, when no exotic array exists yet for the
     // comparisons to match.
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
+    // An Array's length is never enumerable or configurable (§10.4.2). Builtins
+    // that build result arrays pass the default WEC flags, so only the writable
+    // bit is taken from the caller.
+    if (self.flags.exotic_array && key == length_key) {
+        pflags = { .writable = pflags.writable };
+    }
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
     // Existing property: update in place.
@@ -2225,6 +2231,12 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
     if (self.gc.prototype_observed) h.bump_prototype_epoch();
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
+    // An Array's length is never enumerable or configurable (§10.4.2). Builtins
+    // that build result arrays pass the default WEC flags, so only the writable
+    // bit is taken from the caller.
+    if (self.flags.exotic_array && key == length_key) {
+        pflags = { .writable = pflags.writable };
+    }
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
     // A new integer-indexed element on an exotic array goes to the dense part,
