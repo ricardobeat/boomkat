@@ -134,8 +134,8 @@ pub const BK_TYPE_NUMBER: c_int = 3;
 pub const BK_TYPE_STRING: c_int = 4;
 pub const BK_TYPE_OBJECT: c_int = 5;
 pub const BK_TYPE_FUNCTION: c_int = 6;
-/// Symbol, bigint, etc.
-pub const BK_TYPE_OTHER: c_int = 7;
+pub const BK_TYPE_SYMBOL: c_int = 7;
+pub const BK_TYPE_BIGINT: c_int = 8;
 
 // Error kinds for `bk_throw_error`.
 pub const BK_ERROR: c_int = 0;
@@ -328,6 +328,23 @@ extern "C" {
         length: usize,
         value: bk_value,
     ) -> c_int;
+    pub fn bk_construct(
+        ctx: bk_ctx,
+        constructor: bk_value,
+        argv: *const bk_value,
+        argc: c_uint,
+        new_target: bk_value,
+    ) -> bk_value;
+    pub fn bk_new_object_with_proto(ctx: bk_ctx, proto: bk_value) -> bk_value;
+    pub fn bk_get_prototype(ctx: bk_ctx, object: bk_value) -> bk_value;
+    pub fn bk_set_prototype(ctx: bk_ctx, object: bk_value, proto: bk_value) -> c_int;
+    pub fn bk_instanceof(ctx: bk_ctx, value: bk_value, constructor: bk_value, out: *mut c_int) -> c_int;
+    pub fn bk_strict_equals(ctx: bk_ctx, a: bk_value, b: bk_value) -> c_int;
+    pub fn bk_same_value(ctx: bk_ctx, a: bk_value, b: bk_value) -> c_int;
+    pub fn bk_is_array(ctx: bk_ctx, value: bk_value) -> c_int;
+    pub fn bk_get_length(ctx: bk_ctx, object: bk_value, out: *mut u64) -> c_int;
+    pub fn bk_json_parse(ctx: bk_ctx, utf8: *const c_char, length: usize) -> bk_value;
+    pub fn bk_json_stringify(ctx: bk_ctx, value: bk_value) -> bk_value;
     pub fn bk_call(
         ctx: bk_ctx,
         function: bk_value,

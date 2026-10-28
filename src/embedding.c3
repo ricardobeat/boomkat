@@ -64,7 +64,8 @@ enum JsType : int {
     STRING,
     OBJECT,
     FUNCTION,
-    OTHER,        // symbol, bigint, and other non-classified tags
+    SYMBOL,
+    BIGINT,
 }
 
 $assert JsType.UNDEFINED.ordinal == embed::BK_TYPE_UNDEFINED;
@@ -74,7 +75,8 @@ $assert JsType.NUMBER.ordinal    == embed::BK_TYPE_NUMBER;
 $assert JsType.STRING.ordinal    == embed::BK_TYPE_STRING;
 $assert JsType.OBJECT.ordinal    == embed::BK_TYPE_OBJECT;
 $assert JsType.FUNCTION.ordinal  == embed::BK_TYPE_FUNCTION;
-$assert JsType.OTHER.ordinal     == embed::BK_TYPE_OTHER;
+$assert JsType.SYMBOL.ordinal    == embed::BK_TYPE_SYMBOL;
+$assert JsType.BIGINT.ordinal    == embed::BK_TYPE_BIGINT;
 
 // Maps a core status onto this module's faults.
 macro fault_of(int code) {
@@ -895,19 +897,7 @@ fn JsArg JsCtx.value(self, JsValue v) {
 
 // --- inspecting a JsArg -----------------------------------------------------
 
-fn JsType JsArg.type_of(self) {
-    if (self.tv.is_undefined()) return JsType.UNDEFINED;
-    if (self.tv.is_null()) return JsType.NULL;
-    if (self.tv.is_boolean()) return JsType.BOOLEAN;
-    if (self.tv.is_numeric()) return JsType.NUMBER;
-    if (self.tv.is_string()) return JsType.STRING;
-    if (self.tv.is_object()) {
-        HObject* obj = (HObject*)self.tv.get_heapptr();
-        if (obj != null && obj.flags.callable) return JsType.FUNCTION;
-        return JsType.OBJECT;
-    }
-    return JsType.OTHER;
-}
+fn JsType JsArg.type_of(self) => (JsType)embed::classify(self.tv);
 
 fn bool JsArg.is_undefined(self) => self.tv.is_undefined();
 fn bool JsArg.is_number(self)    => self.tv.is_numeric();

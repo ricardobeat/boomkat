@@ -244,8 +244,8 @@ pub enum Type {
     String,
     Object,
     Function,
-    /// Symbol, BigInt, and anything else the ABI does not name.
-    Other,
+    Symbol,
+    BigInt,
 }
 
 impl Type {
@@ -257,7 +257,8 @@ impl Type {
             sys::BK_TYPE_STRING => Type::String,
             sys::BK_TYPE_OBJECT => Type::Object,
             sys::BK_TYPE_FUNCTION => Type::Function,
-            sys::BK_TYPE_OTHER => Type::Other,
+            sys::BK_TYPE_SYMBOL => Type::Symbol,
+            sys::BK_TYPE_BIGINT => Type::BigInt,
             // BK_TYPE_UNDEFINED, and anything unrecognised, which the ABI
             // also reports as undefined.
             _ => Type::Undefined,

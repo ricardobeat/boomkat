@@ -407,6 +407,15 @@ out/atoms: test/capi/atoms.c include/boomkat.h out/boomkat.a
 test-atoms-api: out/atoms
 	./out/atoms
 
+# Construction, prototypes, equality, length and JSON.
+out/object_model: test/capi/object_model.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/object_model.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/object_model
+
+.PHONY: test-object-model-api
+test-object-model-api: out/object_model
+	./out/object_model
+
 .PHONY: test-api-lifecycle
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle

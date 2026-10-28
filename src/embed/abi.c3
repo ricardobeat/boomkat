@@ -31,7 +31,8 @@ const int BK_TYPE_NUMBER    = 3;
 const int BK_TYPE_STRING    = 4;
 const int BK_TYPE_OBJECT    = 5;
 const int BK_TYPE_FUNCTION  = 6;
-const int BK_TYPE_OTHER     = 7;  // symbol, bigint, etc.
+const int BK_TYPE_SYMBOL    = 7;
+const int BK_TYPE_BIGINT    = 8;
 
 // [abi:utf8_mode]
 const int BK_UTF8_REPLACE = 0;  // lone surrogates become U+FFFD

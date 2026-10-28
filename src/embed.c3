@@ -45,7 +45,8 @@ const int BK_TYPE_NUMBER    = abi::BK_TYPE_NUMBER;
 const int BK_TYPE_STRING    = abi::BK_TYPE_STRING;
 const int BK_TYPE_OBJECT    = abi::BK_TYPE_OBJECT;
 const int BK_TYPE_FUNCTION  = abi::BK_TYPE_FUNCTION;
-const int BK_TYPE_OTHER     = abi::BK_TYPE_OTHER;
+const int BK_TYPE_SYMBOL    = abi::BK_TYPE_SYMBOL;
+const int BK_TYPE_BIGINT    = abi::BK_TYPE_BIGINT;
 
 const usz ERRBUF = 512;
 // Embedder data slots per runtime and per context (BK_DATA_SLOTS).
@@ -840,24 +841,25 @@ fn Runtime* ctx_runtime(void* ctxp) @inline {
 // Value classification
 // ============================================================================
 
-// Broad `typeof`-style classification of a resolved value.
+// `typeof`-style classification of a resolved value. Every value the C API
+// hands out has one of these kinds.
 fn int classify(TVal v) {
     if (v.is_undefined()) return BK_TYPE_UNDEFINED;
     if (v.is_null()) return BK_TYPE_NULL;
     if (v.is_boolean()) return BK_TYPE_BOOLEAN;
     if (v.is_numeric()) return BK_TYPE_NUMBER;
-    // Symbols share the string tag but classify as BK_TYPE_OTHER.
+    // Symbols share the string tag.
     if (v.is_string()) {
         HString* s = (HString*)v.get_heapptr();
-        if (s != null && s.is_symbol()) return BK_TYPE_OTHER;
+        if (s != null && s.is_symbol()) return BK_TYPE_SYMBOL;
         return BK_TYPE_STRING;
     }
-    if (v.is_object()) {
-        HObject* o = (HObject*)v.get_heapptr();
-        if (o != null && o.flags.callable) return BK_TYPE_FUNCTION;
-        return BK_TYPE_OBJECT;
-    }
-    return BK_TYPE_OTHER;
+    if (v.is_bigint()) return BK_TYPE_BIGINT;
+    // A builtin not yet promoted to an object is a function value.
+    if (v.is_lightfunc()) return BK_TYPE_FUNCTION;
+    HObject* o = (HObject*)v.get_heapptr();
+    if (o != null && o.flags.callable) return BK_TYPE_FUNCTION;
+    return BK_TYPE_OBJECT;
 }
 
 // ============================================================================
@@ -1336,7 +1338,8 @@ fn char* type_name(int type) {
         case BK_TYPE_STRING:    return "string";
         case BK_TYPE_OBJECT:    return "object";
         case BK_TYPE_FUNCTION:  return "function";
-        case BK_TYPE_OTHER:     return "other";
+        case BK_TYPE_SYMBOL:    return "symbol";
+        case BK_TYPE_BIGINT:    return "bigint";
         default:                return "unknown";
     }
 }

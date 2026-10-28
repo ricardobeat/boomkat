@@ -34,7 +34,7 @@ const int BK_UTF8_REPLACE = 0;
 const int BK_UTF8_STRICT  = 1;
 
 const int BK_TYPE_UNDEFINED = embed::BK_TYPE_UNDEFINED;
-const int BK_TYPE_OTHER     = embed::BK_TYPE_OTHER;
+
 
 // ============================================================================
 // Context plumbing
@@ -413,7 +413,7 @@ fn char* bk_type_str(int type) @export("bk_type_str") {
 // ============================================================================
 
 fn int bk_get_type(void* ctxp, ulong id) @export("bk_get_type") {
-    if (rt_of(ctxp) == null) return BK_TYPE_OTHER;
+    if (rt_of(ctxp) == null) return BK_TYPE_UNDEFINED;
     TVal v;
     if (!resolve(ctxp, id, &v)) return BK_TYPE_UNDEFINED;
     return embed::classify(v);
@@ -1010,9 +1010,13 @@ fn int bk_delete_property_atom(void* ctxp, ulong obj_id, uint atom, int* out) @e
 // Builtin calls
 // ============================================================================
 
+fn bool has_builtin(builtins::Builtin which) @inline => builtins::builtin_dispatch_table[which.ordinal] != null;
+
 // Run builtin `which` of the context's realm on `args` with `this_value`,
-// writing its result to `out`. Returns a BK_* status with the failure recorded.
+// writing its result to `out`. Returns a BK_* status with the failure
+// recorded; BK_ERR_UNSUPPORTED when the build leaves the builtin out.
 fn int call_builtin(Runtime* rt, builtins::Builtin which, TVal this_value, TVal* args, uint argc, TVal* out) {
+    if (!has_builtin(which)) return fail(rt, BK_ERR_UNSUPPORTED, "not available in this build");
     TVal function;
     function.set_builtin(rt.heap, which.ordinal);
     rt.heap.has_error = false;
@@ -1069,11 +1073,32 @@ fn ulong bk_get_own_property_keys(void* ctxp, ulong obj_id, uint flags) @export(
     bool want_strings = (flags & (BK_KEYS_STRINGS | BK_KEYS_SYMBOLS)) == 0 || (flags & BK_KEYS_STRINGS) != 0;
     bool want_symbols = (flags & (BK_KEYS_STRINGS | BK_KEYS_SYMBOLS)) == 0 || (flags & BK_KEYS_SYMBOLS) != 0;
 
+    // Reflect.ownKeys runs [[OwnPropertyKeys]] once; a build without it lists
+    // the two kinds, strings first, as [[OwnPropertyKeys]] orders them.
     TVal all;
     TVal undefined; undefined.set_undefined();
-    int rc = call_builtin(rt, builtins::Builtin.REFLECT_OWNKEYS, undefined, &ov, 1, &all);
-    if (rc != BK_OK) return 0;
-    if (flags == 0 || flags == (BK_KEYS_STRINGS | BK_KEYS_SYMBOLS)) return store(rt, all);
+    builtins::Builtin source_fn = want_strings && want_symbols && has_builtin(builtins::Builtin.REFLECT_OWNKEYS)
+        ? builtins::Builtin.REFLECT_OWNKEYS
+        : want_symbols && !want_strings ? builtins::Builtin.OBJECT_GETOWNPROPERTYSYMBOLS
+        : builtins::Builtin.OBJECT_GETOWNPROPERTYNAMES;
+    if (call_builtin(rt, source_fn, undefined, &ov, 1, &all) != BK_OK) return 0;
+    if (want_strings && want_symbols && source_fn != builtins::Builtin.REFLECT_OWNKEYS) {
+        TVal symbols;
+        ulong strings_root = embed::slot_alloc(rt, all);
+        if (strings_root == 0) return fail_value(rt, BK_ERR_FULL, "value registry full");
+        defer embed::slot_release(rt, strings_root);
+        if (call_builtin(rt, builtins::Builtin.OBJECT_GETOWNPROPERTYSYMBOLS, undefined, &ov, 1, &symbols) != BK_OK) return 0;
+        HObject* dst = (HObject*)all.get_heapptr();
+        HObject* src = (HObject*)symbols.get_heapptr();
+        ulong have, extra;
+        if (length_of(rt, dst, &have) != BK_OK || length_of(rt, src, &extra) != BK_OK) return 0;
+        for (uint i = 0; i < (uint)extra; i++) {
+            builtins::array_set_elem(dst, (uint)have + i, builtins::array_get_elem(src, i, h), h);
+        }
+        TVal total; total.set_fastint((long)(have + extra));
+        dst.put_prop(h.str(heap::BuiltinStr.LENGTH), total, hobject::PROP_FLAGS_WC, h);
+    }
+    if ((flags & (BK_KEYS_ENUMERABLE_ONLY | BK_KEYS_SKIP_INDICES)) == 0) return store(rt, all);
     // Both arrays stay rooted while descriptor traps run.
     ulong all_root = embed::slot_alloc(rt, all);
     if (all_root == 0) return fail_value(rt, BK_ERR_FULL, "value registry full");
@@ -1143,6 +1168,217 @@ fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc)
         rt.vm.throw_pending = false;
         return 0;
     }
+    return store(rt, result);
+}
+
+// ============================================================================
+// Object model
+// ============================================================================
+
+// Resolves `argc` handles into `args`, which holds 16 values; larger lists are
+// allocated and must be released with free_args. Returns null on failure.
+fn TVal* resolve_args(void* ctxp, Runtime* rt, ulong* argv, uint argc, TVal* local) {
+    if (argc != 0 && argv == null) { fail(rt, BK_ERR_INVALID, "null argument array"); return null; }
+    TVal* args = local;
+    if (argc > 16) {
+        args = (TVal*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)argc * TVal::size);
+        if (args == null) { fail(rt, BK_ERR_NOMEM, "out of memory"); return null; }
+    }
+    for (uint i = 0; i < argc; i++) {
+        if (!resolve(ctxp, argv[i], &args[i])) {
+            free_args(rt, args, local);
+            bad_handle(rt);
+            return null;
+        }
+    }
+    return args;
+}
+
+fn void free_args(Runtime* rt, TVal* args, TVal* local) @inline {
+    if (args != null && args != local) rt.heap.free_func(rt.heap.heap_udata, args);
+}
+
+fn bool constructable(TVal v) @inline {
+    return v.is_object() && v.get_heapptr() != null && ((HObject*)v.get_heapptr()).is_constructable();
+}
+
+fn ulong bk_construct(void* ctxp, ulong ctor_id, ulong* argv, uint argc, ulong new_target_id) @export("bk_construct") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (argc > 0xFFFFu) return bk_throw_error(ctxp, builtins::HOST_ERR_RANGE, "too many arguments");
+    TVal ctor, new_target;
+    if (!resolve(ctxp, ctor_id, &ctor)) return bad_handle(rt);
+    if (!constructable(ctor)) return fail_value(rt, BK_ERR_TYPE, "value is not a constructor");
+    if (new_target_id == 0) {
+        new_target = ctor;
+    } else {
+        if (!resolve(ctxp, new_target_id, &new_target)) return bad_handle(rt);
+        if (!constructable(new_target)) return fail_value(rt, BK_ERR_TYPE, "new.target is not a constructor");
+    }
+    TVal[16] local_args;
+    TVal* args = resolve_args(ctxp, rt, argv, argc, &local_args);
+    if (args == null && argc != 0) return 0;
+    defer free_args(rt, args, &local_args);
+    rt.heap.has_error = false;
+    TVal result = rt.heap.construct_fn(rt.vm, ctor, args, argc, new_target);
+    if (rt.heap.has_error || rt.heap.uncatchable_throw) {
+        vm_fault(rt);
+        rt.heap.has_error = false;
+        rt.vm.has_error = false;
+        rt.vm.throw_pending = false;
+        return 0;
+    }
+    if (!result.is_object()) return fail_value(rt, BK_ERR_NOMEM, "construction failed");
+    return store(rt, result);
+}
+
+fn ulong bk_new_object_with_proto(void* ctxp, ulong proto_id) @export("bk_new_object_with_proto") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal proto;
+    if (!resolve(ctxp, proto_id, &proto)) return bad_handle(rt);
+    if (!proto.is_object() && !proto.is_null()) return fail_value(rt, BK_ERR_TYPE, "prototype must be an object or null");
+    HObject*? oraw = rt.heap.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch oraw) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    HObject* o = oraw;
+    rt.heap.set_prototype(o, proto.is_null() ? null : (HObject*)proto.get_heapptr());
+    TVal v; v.set_object(o);
+    return store(rt, v);
+}
+
+fn ulong bk_get_prototype(void* ctxp, ulong obj_id) @export("bk_get_prototype") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal ov;
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return 0;
+    TVal proto;
+    rt.heap.has_error = false;
+    if (!builtins::object_get_proto(rt.vm, rt.heap, obj, &proto)) { vm_fault(rt); return 0; }
+    return store(rt, proto);
+}
+
+// Object.setPrototypeOf: a refusal (non-extensible object, cycle, immutable
+// prototype, proxy trap) throws a TypeError.
+fn int bk_set_prototype(void* ctxp, ulong obj_id, ulong proto_id) @export("bk_set_prototype") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal[2] args;
+    if (as_object(ctxp, obj_id, &args[0]) == null) return rt.errcode;
+    if (!resolve(ctxp, proto_id, &args[1])) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    if (!args[1].is_object() && !args[1].is_null()) return fail(rt, BK_ERR_TYPE, "prototype must be an object or null");
+    TVal undefined; undefined.set_undefined();
+    TVal out;
+    return call_builtin(rt, builtins::Builtin.OBJECT_SETPROTOTYPEOF, undefined, &args, 2, &out);
+}
+
+// InstanceofOperator (ECMA-262 §13.10.2): @@hasInstance when present, else
+// OrdinaryHasInstance.
+fn int bk_instanceof(void* ctxp, ulong value_id, ulong ctor_id, int* out) @export("bk_instanceof") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal value, ctor;
+    if (!resolve(ctxp, value_id, &value) || !resolve(ctxp, ctor_id, &ctor)) {
+        return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    }
+    if (!ctor.is_object()) return fail(rt, BK_ERR_TYPE, "right-hand side of instanceof is not an object");
+    HObject* target = (HObject*)ctor.get_heapptr();
+    TVal method;
+    rt.heap.has_error = false;
+    if (!builtins::js_get_with_receiver((void*)rt.vm, rt.heap, target, rt.heap.hasinstance_symbol, ctor, &method)) {
+        return vm_fault(rt);
+    }
+    TVal result;
+    if (!method.is_undefined() && !method.is_null()) {
+        if (!builtins::is_callable_tval(method)) return fail(rt, BK_ERR_TYPE, "Symbol.hasInstance is not callable");
+        rt.heap.has_error = false;
+        result = rt.heap.call_fn(rt.vm, method, &value, 1, ctor);
+        if (rt.heap.has_error || rt.heap.uncatchable_throw) {
+            int rc = vm_fault(rt);
+            rt.heap.has_error = false;
+            rt.vm.has_error = false;
+            rt.vm.throw_pending = false;
+            return rc;
+        }
+    } else {
+        if (!builtins::is_callable_tval(ctor)) return fail(rt, BK_ERR_TYPE, "right-hand side of instanceof is not callable");
+        int rc = call_builtin(rt, builtins::Builtin.FUNCTION_PROTO_HASINSTANCE, ctor, &value, 1, &result);
+        if (rc != BK_OK) return rc;
+    }
+    *out = builtins::builtin_to_boolean(&result) ? 1 : 0;
+    return BK_OK;
+}
+
+// IsStrictlyEqual. A handle that does not resolve compares unequal.
+fn int bk_strict_equals(void* ctxp, ulong a_id, ulong b_id) @export("bk_strict_equals") {
+    TVal a, b;
+    if (rt_of(ctxp) == null || !resolve(ctxp, a_id, &a) || !resolve(ctxp, b_id, &b)) return 0;
+    return vm::strict_eq(&a, &b) ? 1 : 0;
+}
+
+// SameValue. A handle that does not resolve compares unequal.
+fn int bk_same_value(void* ctxp, ulong a_id, ulong b_id) @export("bk_same_value") {
+    TVal a, b;
+    if (rt_of(ctxp) == null || !resolve(ctxp, a_id, &a) || !resolve(ctxp, b_id, &b)) return 0;
+    return builtins::same_value(a, b) ? 1 : 0;
+}
+
+// IsArray: 1 or 0, or -1 when a revoked proxy makes it throw.
+fn int bk_is_array(void* ctxp, ulong id) @export("bk_is_array") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return -1;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return -1; }
+    TVal undefined; undefined.set_undefined();
+    TVal result;
+    if (call_builtin(rt, builtins::Builtin.ARRAY_ISARRAY, undefined, &v, 1, &result) != BK_OK) return -1;
+    return result.is_boolean() && result.get_boolean() ? 1 : 0;
+}
+
+fn int bk_get_length(void* ctxp, ulong obj_id, ulong* out) @export("bk_get_length") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal ov;
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return rt.errcode;
+    return length_of(rt, obj, out);
+}
+
+fn ulong bk_json_parse(void* ctxp, char* utf8, usz len) @export("bk_json_parse") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (utf8 == null && len != 0) return fail_value(rt, BK_ERR_INVALID, "null text");
+    embed::clear_err(rt);
+    HString* text = embed::string_from_utf8(rt, utf8[:len]);
+    if (text == null) return 0;
+    TVal arg; arg.set_string_borrowed(text);
+    // The text is unreachable from JS while the parser allocates.
+    ulong held = embed::slot_alloc(rt, arg);
+    if (held == 0) return fail_value(rt, BK_ERR_FULL, "value registry full");
+    defer embed::slot_release(rt, held);
+    TVal undefined; undefined.set_undefined();
+    TVal result;
+    if (call_builtin(rt, builtins::Builtin.JSON_PARSE, undefined, &arg, 1, &result) != BK_OK) return 0;
+    return store(rt, result);
+}
+
+// The JSON text of `value`, or undefined for a value JSON cannot represent.
+fn ulong bk_json_stringify(void* ctxp, ulong id) @export("bk_json_stringify") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    TVal undefined; undefined.set_undefined();
+    TVal result;
+    if (call_builtin(rt, builtins::Builtin.JSON_STRINGIFY, undefined, &v, 1, &result) != BK_OK) return 0;
     return store(rt, result);
 }
 

@@ -53,7 +53,7 @@ _STATUS_NAMES = {
 _HANDLE_UNDEFINED, _HANDLE_NULL, _HANDLE_TRUE, _HANDLE_FALSE = 1, 2, 3, 4
 
 # Value types from bk_get_type.
-_UNDEFINED, _NULL, _BOOLEAN, _NUMBER, _STRING, _OBJECT, _FUNCTION, _OTHER = range(8)
+_UNDEFINED, _NULL, _BOOLEAN, _NUMBER, _STRING, _OBJECT, _FUNCTION, _SYMBOL, _BIGINT = range(9)
 
 _TYPE_NAMES = {
     _UNDEFINED: "undefined",
@@ -63,7 +63,8 @@ _TYPE_NAMES = {
     _STRING: "string",
     _OBJECT: "object",
     _FUNCTION: "function",
-    _OTHER: "other",
+    _SYMBOL: "symbol",
+    _BIGINT: "bigint",
 }
 
 
@@ -339,13 +340,7 @@ class Call:
         return bool(self._lib.bk_is_constructor_call(self._ctx))
 
     def _wrap(self, handle, type_id):
-        # OTHER is treated as callable alongside FUNCTION because bk_get_type has
-        # no lightfunc case: engine built-ins such as Math.abs are stored as a
-        # tagged ordinal rather than an HObject, so they fall through to OTHER
-        # even though `typeof` says "function" and bk_call invokes them fine.
-        # Symbols and bigints also land in OTHER, and calling one throws a
-        # TypeError from JS -- the correct outcome anyway.
-        cls = JsFunction if type_id in (_FUNCTION, _OTHER) else JsValue
+        cls = JsFunction if type_id == _FUNCTION else JsValue
         return cls(self, handle, type_id)
 
     def _invoke(self, func, args):
