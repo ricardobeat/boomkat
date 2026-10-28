@@ -737,6 +737,30 @@ fn HString* string_from_utf16(Runtime* rt, ushort[] units) {
     return s;
 }
 
+// A string over the host buffer `data`, which the engine reads in place and
+// hands back through `release` once the string is gone. Content that has no
+// canonical external form, an empty buffer or UTF-16 holding only Latin-1
+// units, is copied and the buffer released at once. Fails with BK_ERR_NOMEM
+// before taking ownership of the buffer.
+fn HString* string_external(Runtime* rt, hstring::Units data, hstring::ExtRelease release, void* udata) {
+    HString* s;
+    if (data.len == 0) {
+        s = rt.heap.str(heap::BuiltinStr.EMPTY);
+    } else if (data.wide && !hstring::has_unit_above_latin1(data)) {
+        s = rt.heap.str_intern_utf16(((ushort*)data.ptr)[:data.len]);
+    } else {
+        s = rt.heap.alloc_external_string(data, release, udata);
+        if (s == null) set_err(rt, BK_ERR_NOMEM, "out of memory");
+        return s;
+    }
+    if (s == null) {
+        set_err(rt, BK_ERR_NOMEM, "out of memory");
+        return null;
+    }
+    if (release != null) release(udata, data.ptr, data.len);
+    return s;
+}
+
 fn HString* intern_or_fail(Runtime* rt, char[] text) {
     HString* s = rt.heap.str_intern(text);
     if (s == null) set_err(rt, BK_ERR_NOMEM, "out of memory");

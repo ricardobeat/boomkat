@@ -3511,6 +3511,7 @@ fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
 fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
     usz total = s.alloc_size();
+    if (s.flags.has_extdata) s.release_external();
     gcprofile::gcprof_string_free(total);
     if (s.length == 1 && s.flags.is_ascii) {
         gcprofile::gcprof_ascii_char_free();
@@ -5457,6 +5458,17 @@ fn HString* Heap.alloc_concat_string(&self, Units data, uint cap) {
     return null;
 }
 
+// A non-interned string over a host buffer, in canonical width and kept as it
+// is until `release` runs at the string's end. The registry keeps it reachable
+// like any other large string. Returns null if allocation fails, leaving the
+// buffer with the caller.
+fn HString* Heap.alloc_external_string(&self, Units data, hstring::ExtRelease release, void* udata) {
+    HString*? created = hstring::hstring_alloc_external(self, data, release, udata);
+    if (catch created) return null;
+    self.large_string_register(created);
+    return created;
+}
+
 // Allocate a non-interned concatenation directly from its two source spans.
 // The registry keeps the result reachable by mark-sweep until a VM register
 // or the string table owns it.
@@ -5475,12 +5487,15 @@ fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) {
 }
 
 // Optional string operands cover the complete spans and stay immutable while cached.
+// The cache retains its operands, so a pair with an external string is never
+// cached: its host buffer is handed back when the last script reference goes.
 fn HString* Heap.alloc_concat_string_parts(&self, Units left, Units right,
                                           uint cap, HString* left_string = null,
                                           HString* right_string = null) {
     usz length = (usz)left.len + (usz)right.len;
     ConcatCacheEntry* entry = left_string != null && right_string != null
         && length <= CONCAT_CACHE_MAX_LENGTH
+        && !left_string.flags.has_extdata && !right_string.flags.has_extdata
         ? &self.concat_cache[length % CONCAT_CACHE_SIZE] : null;
     if (entry != null && entry.left == left_string && entry.right == right_string) return entry.result;
     HString*? new_s = hstring::hstring_alloc_concat_cap(
@@ -5514,6 +5529,8 @@ fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length, bool wide) 
 // non-interned concatenation result is used as a key.
 fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     if (s.flags.is_interned || s.flags.is_symbol) return s;
+    // The table holds only strings it can own, so an external string interns as a copy.
+    if (s.flags.has_extdata) return self.str_intern_units(s.units());
     // A large concat result reaches here with its hash still deferred, and the
     // table both probes and stores by hash, so materialize it first.
     HString* existing = self.str_table_lookup(s.units(), self.content_hash(s));
