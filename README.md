@@ -93,10 +93,6 @@ Currently ~10x faster than Duktape, 20-40% faster than QuickJS, with similar mem
 
 > Results from: Apple MacBook Air, M3, 16GB
 
-*TBA: octane bench score*
-
-Target with JIT (in development): landing somewhere in between major browser engines (V8/JSC/SM) and QuickJS.
-
 ## AI disclosure
 
 This project is built through *AI-assisted engineering*. All code is written by AI agents, but under continuous human guidance - hands-on direction, feedback and review throughout the development process. Autonomous workflows are reserved for well-scoped, bounded tasks.
