@@ -1094,14 +1094,21 @@ fn bool units_equal(HString* a, HString* b) {
 // including print, console.log, and file I/O.
 fn void HString.write_utf8_range(&self, uint from, uint to, PutByteFn put_byte_fn,
                                  void* udata = null, bool keep_lone = false) {
+    self.units().write_utf8_range(from, to, put_byte_fn, udata, keep_lone);
+}
+
+// Write the units `[from, to)` to a byte sink as standard UTF-8; see
+// `HString.write_utf8_range`.
+fn void Units.write_utf8_range(&self, uint from, uint to, PutByteFn put_byte_fn,
+                               void* udata = null, bool keep_lone = false) {
     for (uint i = from; i < to; i++) {
-        uint u = self.unit_at(i);
+        uint u = self.at(i);
         if (u < 0x80) {
             put_byte_fn((char)u, udata);
             continue;
         }
-        if (is_high_surrogate(u) && i + 1 < to && is_low_surrogate(self.unit_at(i + 1))) {
-            u = surrogates_to_codepoint(u, self.unit_at(i + 1));
+        if (is_high_surrogate(u) && i + 1 < to && is_low_surrogate(self.at(i + 1))) {
+            u = surrogates_to_codepoint(u, self.at(i + 1));
             i++;
         } else if (is_surrogate(u) && !keep_lone) {
             u = UNICODE_REPLACEMENT;

@@ -3327,7 +3327,10 @@ struct JsonShapePlan {
     uint refs;
     uint count;
     JsonShapeEntry* entries;
+    // The quoted keys, back to back, as `quoted_wide` UTF-16 units or Latin-1 bytes;
+    // each entry's offset and length count units.
     char* quoted_keys;
+    bool quoted_wide;
 }
 
 fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
