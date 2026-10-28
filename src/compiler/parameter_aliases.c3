@@ -64,15 +64,16 @@ fn bool eliminate_parameter_aliases(CompilerContext* ctx, bool* targets) {
         changed = true;
     }
     if (!changed) return false;
+    if (!moveelim_roles_ready) moveelim_init_roles();
     for (uint pc = end; pc < ctx.code_count; pc++) {
         Instruction* ins = &ctx.code[pc];
         if (ins.op == Opcode.RET || ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) {
             if (aliases[ins.a] != 0) ins.a = aliases[ins.a] - 1;
         } else if (bytecode::is_cmp_branch(ins.op) || moveelim_producer_allowed(ins.op)) {
             if (bytecode::get_op_format(ins.op) != OpFormat.ABC) continue;
-            if (aliases[ins.b] != 0) ins.b = aliases[ins.b] - 1;
-            if (!bytecode::is_imm_form(ins.op) && bytecode::reg_form(ins.op) == Opcode.NOP
-                && aliases[ins.c] != 0) ins.c = aliases[ins.c] - 1;
+            MoveelimRoles roles = moveelim_roles[ins.op.ordinal];
+            if (roles.b_read && aliases[ins.b] != 0) ins.b = aliases[ins.b] - 1;
+            if (roles.c_read && aliases[ins.c] != 0) ins.c = aliases[ins.c] - 1;
         }
     }
     return true;

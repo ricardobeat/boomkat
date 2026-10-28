@@ -827,6 +827,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     uint base        = fused ? call.a : call.b;
     uint nargs       = fused ? call.b : call.c;
     if ((usz)out.link_count + (usz)target.code_count + 8 >= out.link_capacity()) return false;
+    if (self.plan.inline_count >= 128) return false;
     int window   = jit::reg_s(5);
     int imm       = jit::SLJIT_IMM;
     int mem       = jit::SLJIT_MEM;
@@ -837,7 +838,6 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     self.flow_materialize();
     self.inline_guards(cf, pc, target, h, base);
     TemplateEmitter* e = &out.e;
-    if (self.plan.inline_count == 128) { e.failed = true; return false; }
     FunctionInlineFrame* frame = h.alloc_func(h.heap_udata, FunctionInlineFrame::size);
     if (frame == null) { e.failed = true; return false; }
     *frame = { .id = ++self.plan.inline_count, .next = self.plan.inline_frames, .parent = out.inline_frame, .target = target,
@@ -1185,11 +1185,13 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
             case CALL_VAR:
             case CALL_GLOBAL:
             case CALL_UNDEF_THIS:
-                // The predicate already resolved this site and checked the
-                // nesting bound. A failure here means the two analyses
-                // disagree; fail the plan instead of emitting a partial body.
+                // A nested expansion may exceed the shared frame limit.
+                // Recover this virtual frame at the call and let the
+                // interpreter execute it, without replaying earlier effects.
                 if (SSA_ENABLED && !$feat(SLJIT_NO_SSA_LEAVES) && inner.inline_ssa_leaf(target, i, h)) continue;
-                if (!inner.inline_general(target, i, h)) out.e.failed = true;
+                if (!inner.inline_general(target, i, h) && !inner.out.e.failed) {
+                    inner.out.link(jit::sljit_emit_jump(ie.compiler, jit::SLJIT_JUMP), i, true);
+                }
                 continue;
             default: continue;
         }

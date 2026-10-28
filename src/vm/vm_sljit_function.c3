@@ -12,7 +12,6 @@ import std::core::mem;
 
 const uint FUNCTION_OPS        = 512;
 const uint FUNCTION_BAIL       = uint::max;
-const uint FUNCTION_MIN_SPAN   = 16;
 const uint FUNCTION_CAPTURES   = 8;
 const uint FUNCTION_REGION_OPS = 128;
 // Callee bodies nested inside one another each own a register window in the
@@ -230,7 +229,6 @@ fn bool function_analyze(CompiledFunction* cf, FunctionPlan* plan, Heap* h) @fea
     // Baseline slots own their values at every call and side exit. The old
     // borrowed scratch cache cannot survive nested execution or allocation.
     plan.heap_regs = cf.num_regs;
-    plan.min_span = 1;
     $if $feat(SLJIT_STATS): cf.sljit_rejection = null; $endif
     return true;
 }
@@ -1370,24 +1368,37 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         $endif
         return false;
     }
-    void*[FUNCTION_OPS + 1] exits;
+    // Open-addressed table of earlier exit links. The table is at most half
+    // full and compares the entire recovery state after hashing; collisions
+    // never merge different frame IDs, flow snapshots, or resume PCs.
+    uint exit_capacity = 2;
+    while (exit_capacity < out.link_count * 2) exit_capacity *= 2;
+    uint* exit_table = (uint*)h.alloc_func(h.heap_udata, exit_capacity * uint::size);
+    if (exit_table == null) return false;
+    defer h.free_func(h.heap_udata, exit_table);
+    mem::clear(exit_table, (sz)(exit_capacity * uint::size));
     for (uint i = 0; i < out.link_count; i++) {
         LoopLink link = *out.link_at(i);
         if (!link.exit) {
             out.bind_to(link.jump, out.labels[link.target]);
             continue;
         }
+        uint hash = link.target * 0x9e3779b9u ^ (uint)link.inline_id * 0x85ebca6bu
+            ^ (uint)link.flow ^ (uint)(link.flow >> 32);
+        hash ^= hash >> 16;
+        hash *= 0x7feb352du;
+        hash ^= hash >> 15;
+        hash *= 0x846ca68bu;
+        hash ^= hash >> 16;
+        uint slot = hash & (exit_capacity - 1);
         void* existing;
-        if (link.inline_id == 0 && link.flow == 0 && link.target <= FUNCTION_OPS) {
-            existing = exits[link.target];
-        } else {
-            for (uint j = 0; j < i; j++) {
-                if (out.link_at(j).exit && out.link_at(j).target == link.target && out.link_at(j).flow == link.flow
-                    && out.link_at(j).inline_id == link.inline_id) {
-                    existing = out.link_at(j).resolved;
-                    if (existing != null) break;
-                }
+        while (exit_table[slot] != 0) {
+            LoopLink* prev = out.link_at(exit_table[slot] - 1);
+            if (prev.target == link.target && prev.flow == link.flow && prev.inline_id == link.inline_id) {
+                existing = prev.resolved;
+                break;
             }
+            slot = (slot + 1) & (exit_capacity - 1);
         }
         if (existing != null) {
             out.link_at(i).resolved = existing;
@@ -1395,7 +1406,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             continue;
         }
         void* label = e.label();
-        if (link.inline_id == 0 && link.flow == 0 && link.target <= FUNCTION_OPS) exits[link.target] = label;
+        exit_table[slot] = i + 1;
         out.link_at(i).resolved = label;
         out.bind_to(link.jump, label);
         if (link.inline_id != 0) {

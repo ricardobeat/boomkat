@@ -29,6 +29,28 @@ macro void @check(#condition) {
     }
 }
 
+// Exercise the optimizer directly: a property key index can equal the local
+// alias register even when earlier passes hide that pattern in source tests.
+fn void check_parameter_alias_roles() {
+    Opcode[3] ops = { Opcode.GETPROPC, Opcode.GETPROPC_CACHED, Opcode.GETTHISC };
+    foreach (op : ops) {
+        Instruction[5] code = {
+            bytecode::make_abc(Opcode.LDREG, 1, 0, 0),
+            bytecode::make_abc(op, 2, 1, 0),
+            bytecode::make_abc(op, 3, 1, 1),
+            bytecode::make_abc(Opcode.ADD, 2, 2, 3),
+            bytecode::make_abc(Opcode.RET, 2, 0, 0)
+        };
+        bool[5] targets;
+        CompilerContext ctx = { .code = &code[0], .code_count = 5, .num_args = 1, .max_reg = 4 };
+        ctx.bindings.push({ .reg = 1, .kind = VAR });
+        defer ctx.bindings.free();
+        @check(compiler::eliminate_parameter_aliases(&ctx, &targets[0]));
+        @check(code[0].op == Opcode.NOP && code[1].c == 0 && code[2].c == 1);
+        if (op != Opcode.GETTHISC) @check(code[1].b == 0 && code[2].b == 0);
+    }
+}
+
 fn void eval(JsContext* ctx, String source) {
     JsValue? value = ctx.eval(source);
     if (catch err = value) {
@@ -424,6 +446,7 @@ fn void check_ssa_region(JsRuntime* runtime) {
 }
 
 fn void main() {
+    check_parameter_alias_roles();
     check_register_effects();
     check_native_convention();
     check_ic_gc_roots();
@@ -526,6 +549,23 @@ fn void main() {
         linked.sljit_function_calls = 0;
         eval(&a, "for(var linkWarm=0;linkWarm<80;linkWarm++)if(jitLinkDrive(jitLinkObject,100)!==5250)throw 'relink';");
         @check(linked.sljit_function != null);
+        // The inline frame limit is an admission limit, not an emitter
+        // failure. Exercise it with an actual warmed general-inline site.
+        bool checked_inline_limit;
+        for (uint index = 0; index < first.rt.heap.compiled_func_count && !checked_inline_limit; index++) {
+            CompiledFunction* candidate = first.rt.heap.compiled_funcs[index];
+            if (candidate == null) continue;
+            for (uint pc = 0; pc < candidate.code_count; pc++) {
+                if (vm::function_inline_general_candidate(candidate, pc, first.rt.heap) == null) continue;
+                FunctionPlan limit_plan = { .inline_count = 128 };
+                FunctionEmitter limit_emitter = { .plan = &limit_plan };
+                @check(!limit_emitter.inline_general(candidate, pc, first.rt.heap));
+                @check(!limit_emitter.out.e.failed && limit_emitter.out.link_count == 0);
+                checked_inline_limit = true;
+                break;
+            }
+        }
+        @check(checked_inline_limit);
         $if $feat(SLJIT_ADAPTIVE):
         // Exercise the real cache reclaimer with a live linked caller. Make
         // every plan recent except this target, then force one eviction.
@@ -541,11 +581,17 @@ fn void main() {
             }
         }
         target_plan.last_use = 1;
+        // A region can leave the warmup counter at its terminal sentinel even
+        // though its entry was never retired as unproductive. Eviction must
+        // allow that function to warm and compile again.
+        target_plan.begin = 1;
+        linked.sljit_function_calls = uint::max;
         usz saved_limit = vm::sljit_code_limit(first.rt.heap);
         first.rt.heap.jit_code_limit = first.rt.heap.jit_code_bytes + 1;
         @check(vm::sljit_code_room(first.rt.heap, 2));
         first.rt.heap.jit_code_limit = saved_limit;
         @check(linked.sljit_function == null && driver.sljit_function != null);
+        @check(linked.sljit_function_calls == 0);
         eval(&a, "for(var linkAgain=0;linkAgain<80;linkAgain++)if(jitLinkDrive(jitLinkObject,100)!==5250)throw 'cache relink';");
         @check(linked.sljit_function != null);
         $endif

@@ -200,6 +200,11 @@ fn void FunctionEmitter.array_call(&self, CompiledFunction* cf, uint pc) @feat(S
         out.guard(jit::SLJIT_EQUAL, r3, 0, imm, 0, pc);
         e.mov(r1, 0, mem | r0, (char*)&base_view.prototype - (char*)&base_view);
         out.guard(jit::SLJIT_NOT_EQUAL, r1, 0, r3, 0, pc);
+        // Dense holes use the undefined tag. Let OrdinarySet represent an
+        // actual undefined value without turning the new element into a hole.
+        out.load((uint)ins.b + 2, r3);
+        e.op(jit::SLJIT_LSHR, r3, r3, 0, imm, 48);
+        out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED, pc);
         if (out.flow != null) out.flow.heap_write();
         self.slot_store(r0, r2, 0, (uint)ins.b + 2, pc);
         // The store may have clobbered every scratch register, so the receiver

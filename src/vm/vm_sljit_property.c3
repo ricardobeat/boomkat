@@ -458,6 +458,17 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             self.out.flow = null;
         }
         hobject::ICProtoReads* set = &ic.chain.proto;
+        // Receiver shapes are shared by exotic objects too; only ordinary
+        // objects have the absence proof recorded by this cache.
+        self.property_receiver(base_reg, receiver_this);
+        e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+        e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+        ObjFlags proto_forbidden = forbidden;
+        proto_forbidden.exotic_array = true;
+        proto_forbidden.exotic_arguments = true;
+        proto_forbidden.exotic_stringobj = true;
+        e.op(jit::SLJIT_AND, r2, r2, 0, imm, 0x003F0000U | (uint)proto_forbidden);
+        self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)ordinary, pc);
         Heap heap_view;
         e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(0));
         e.mov(r3, 0, mem | r3, (char*)&heap_view.prototype_epoch - (char*)&heap_view);

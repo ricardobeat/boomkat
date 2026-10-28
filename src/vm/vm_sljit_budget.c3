@@ -69,10 +69,12 @@ fn bool sljit_budget_reclaim(Heap* h, usz bytes) @feat(SLJIT) @noinline {
             victim = cf;
         }
         if (victim == null) break;
+        FunctionPlan* retired = victim.sljit_function;
+        bool disabled = retired.begin == 0 && retired.short_runs[0] >= 8;
         sljit_function_free(h, victim);
         // An unproductive entry that was already disabled must not be
         // repeatedly recompiled merely because its code was reclaimed.
-        if (victim.sljit_function_calls != uint::max) victim.sljit_function_calls = 0;
+        if (!disabled) victim.sljit_function_calls = 0;
         h.jit_evictions++;
         reclaimed = true;
     }

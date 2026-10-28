@@ -3638,7 +3638,7 @@ fn bool ic_epoch_live(ICEntry* ic) @inline {
 // false when the entry describes no receiver of this shape. The caller has
 // matched the key and checked the receiver's own layout.
 fn bool ic_proto_slot(ICEntry* ic, HObject* hobj, HObject** owner, uint* prop_idx) @inline {
-    if (ic.chain_len != IC_CHAIN_PROTO) return false;
+    if (ic.chain_len != IC_CHAIN_PROTO || !plain_property_object(hobj)) return false;
     if (!ic_epoch_live(ic)) return false;
     ICProtoReads* set = &ic.chain.proto;
     if (hobj.shape_id == ic.shape_id) {

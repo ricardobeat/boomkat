@@ -91,7 +91,8 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     mem::clear(plan, (sz)bytes);
     plan.begin = begin;
     plan.count = region.code_count;
-    plan.min_span = cf.code_count > FUNCTION_OPS || cf.num_regs > LOOP_REGS ? FUNCTION_MIN_SPAN : 6;
+    // Tiny whole-function callees participate in native call graphs too.
+    plan.min_span = 1;
     plan.entries = (void**)((char*)plan + FunctionPlan::size);
     plan.short_runs = (char*)(plan.entries + plan.count);
     $if $feat(SLJIT_FUNCTION_SSA):
