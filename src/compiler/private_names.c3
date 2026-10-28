@@ -50,19 +50,18 @@ fn char[] CompilerContext.private_slot_name(&self, uint class_id, char[] name) {
     return self.intern_slot_name(format_private_slot_name(buf, class_id, name));
 }
 
-// Intern a slot binding name and return its stable byte slice, for storage in
-// PrivateNameEntry, module metadata and declare_priv_slot.
-//
-// The string table holds only a weak reference, so an otherwise unreferenced
-// name would be freed as soon as its last reference is dropped. Pin it so the
-// data outlives the CompilerContext. Names are read back at link time, e.g. the
-// alias in `export { x as y }`, which appears nowhere else in the source.
+// Canonical CESU-8 text of a slot binding name, for storage in PrivateNameEntry,
+// module metadata and declare_priv_slot. The bytes live in the lexer arena, so
+// they last as long as the compilation; module metadata copies them out in
+// `retain_names`. Two spellings of one name, such as an astral character typed
+// raw and the same character as a surrogate pair, produce the same bytes.
 fn char[] CompilerContext.intern_slot_name(&self, char[] slot_name) {
-    Heap* hp = (Heap*)self.heap;
-    HString* hstr = hp.str_intern(slot_name);
-    ((HeapHeader*)hstr).set_pinned();
-    char[] data = hstr.get_data();
-    return data;
+    usz len = hstring::canonical_cesu8(slot_name, null);
+    if (len == 0) return "";
+    char[] stable = self.lexer.arena_alloc(len);
+    if (stable.len != len) return slot_name;
+    hstring::canonical_cesu8(slot_name, stable.ptr);
+    return stable;
 }
 
 // Declare a private-name slot binding (`#priv:<id>:name`, `#priv:<id>:brand`

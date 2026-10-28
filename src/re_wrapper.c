@@ -107,8 +107,8 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
         return NULL;
     }
 
-    /* lre_compile parses the pattern as standard UTF-8; our internal storage
-     * is CESU-8 (each surrogate half is its own 3-byte sequence), so astral
+    /* lre_compile parses the pattern as standard UTF-8; the pattern arrives as
+     * CESU-8 text (each surrogate half is its own 3-byte sequence), so astral
      * literals in the pattern must be recombined into real 4-byte UTF-8
      * sequences before compiling, or the parser sees two lone surrogates
      * instead of one codepoint > 0xFFFF. Only do this in unicode mode
@@ -225,67 +225,59 @@ static uint8_t* cesu8_pattern_to_utf8(const char* input, size_t input_len, size_
     return out;
 }
 
-/*
- * Convert a CESU-8 buffer (each UTF-16 code unit independently encoded as a
- * standalone UTF-8 sequence) into a flat uint16_t buffer, and record for each
- * emitted code unit the CESU-8 byte offset it started at (plus one trailing
- * entry for the end-of-buffer byte offset), so exec results can be mapped
- * back from code-unit offsets to CESU-8 byte offsets.
- */
-static uint16_t* cesu8_to_utf16(const uint8_t* input, int input_len,
-                                 int** out_byte_offsets, int* out_unit_count)
+/* The first occurrence of the ASCII `prefix` in `n` 16-bit units, or NULL. */
+static const uint16_t* re_find_prefix16(const uint16_t* input, size_t n,
+                                        const char* prefix, size_t prefix_len)
 {
-    uint16_t* units = (uint16_t*)malloc(sizeof(uint16_t) * (input_len + 1));
-    int* offsets = (int*)malloc(sizeof(int) * (input_len + 1));
-    if (!units || !offsets) { free(units); free(offsets); return NULL; }
-
-    const uint8_t* p = input;
-    const uint8_t* end = input + input_len;
-    int n = 0;
-    while (p < end) {
-        offsets[n] = (int)(p - input);
-        units[n] = (uint16_t)decode_utf8_unit(&p, end);
-        n++;
+    if (n < prefix_len) return NULL;
+    for (size_t i = 0; i + prefix_len <= n; i++) {
+        size_t k = 0;
+        while (k < prefix_len && input[i + k] == (unsigned char)prefix[k]) k++;
+        if (k == prefix_len) return input + i;
     }
-    offsets[n] = input_len;
-
-    *out_byte_offsets = offsets;
-    *out_unit_count = n;
-    return units;
+    return NULL;
 }
 
-/* Map a code-unit offset (as returned by lre_exec in 16-bit modes) back to a
- * CESU-8 byte offset using the offsets table built by cesu8_to_utf16(). */
-static int unit_offset_to_byte_offset(const int* byte_offsets, int unit_count, int unit_offset)
-{
-    if (unit_offset < 0) return -1;
-    if (unit_offset > unit_count) unit_offset = unit_count;
-    return byte_offsets[unit_offset];
-}
-
-int re_run_interruptible(ReCompiled* re, const char* input, int input_len,
-           int start_offset, int input_is_ascii,
+/*
+ * Run `re` over `input_len` code units of `input`, starting at unit
+ * `start_offset`. The input is Latin-1 bytes, or native-endian UTF-16 when
+ * `input_wide`; every offset in and out counts units, not bytes.
+ */
+int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
+           int start_offset, int input_wide,
            int* out_start, int* out_end, int* out_num_captures,
            int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt)
 {
     if (!re || !re->bc) return RE_ERROR;
 
-    /* Literal-prefix rejection. Prefix bytes are ASCII, so a CESU-8 byte
-     * search finds exactly the code-unit occurrences. */
+    /* Literal-prefix rejection. The prefix is ASCII, so a unit-wise search
+     * finds exactly the occurrences of the pattern's leading characters. */
     if (re->prefix_len > 0) {
         int n = re->prefix_len;
+        long found = -1;
         if (re->anchored) {
-            if (start_offset != 0 || input_len < n || memcmp(input, re->prefix, (size_t)n) != 0)
-                return RE_NO_MATCH;
+            if (start_offset != 0 || input_len < n) return RE_NO_MATCH;
+            for (int i = 0; i < n; i++) {
+                unsigned u = input_wide ? ((const uint16_t*)input)[i]
+                                        : ((const uint8_t*)input)[i];
+                if (u != (unsigned char)re->prefix[i]) return RE_NO_MATCH;
+            }
         } else {
             if (start_offset > input_len) return RE_NO_MATCH;
-            const char* candidate = re_find_prefix(input + start_offset,
-                (size_t)(input_len - start_offset), re->prefix, (size_t)n);
-            if (!candidate) return RE_NO_MATCH;
+            if (input_wide) {
+                const uint16_t* hit = re_find_prefix16((const uint16_t*)input + start_offset,
+                    (size_t)(input_len - start_offset), re->prefix, (size_t)n);
+                if (hit) found = hit - (const uint16_t*)input;
+            } else {
+                const char* hit = re_find_prefix((const char*)input + start_offset,
+                    (size_t)(input_len - start_offset), re->prefix, (size_t)n);
+                if (hit) found = hit - (const char*)input;
+            }
+            if (found < 0) return RE_NO_MATCH;
             /* A sticky match must start at the caller's exact position. Every
              * other match starts at or after this first prefix occurrence. */
             if (!(lre_get_flags(re->bc) & LRE_FLAG_STICKY))
-                start_offset = (int)(candidate - input);
+                start_offset = (int)found;
         }
     }
 
@@ -308,89 +300,29 @@ int re_run_interruptible(ReCompiled* re, const char* input, int input_len,
         if (!capture) return RE_ERROR;
     }
 
-    /* Fast path: pure-ASCII input. Each byte is exactly one UTF-16 code unit
-     * (value < 0x80), so the raw bytes can be matched directly in 8-bit mode
-     * (cbuf_type == 0) with no transcode and no allocation. Capture pointers
-     * come back as byte pointers into `input`, and for ASCII the byte offset
-     * equals both the code-unit offset and the CESU-8 offset, so no offset
-     * remapping is needed. This is what QuickJS does for its 8-bit strings.
-     * Note: unicode-mode (u/v) regexps are still correct here — surrogate
-     * combining never applies to input that is entirely < 0x80. */
-    if (input_is_ascii) {
-        int ret = lre_exec(capture, re->bc,
-                           (const uint8_t*)input, start_offset, input_len,
-                           0 /* cbuf_type: 8-bit */, interrupt);
-        if (ret == RE_MATCH) {
-            const uint8_t* base = (const uint8_t*)input;
-            if (out_start) *out_start = capture[0] ? (int)(capture[0] - base) : -1;
-            if (out_end)   *out_end   = capture[1] ? (int)(capture[1] - base) : -1;
-            if (out_num_captures) *out_num_captures = total_captures - 1;
-            for (int i = 1; i < total_captures && (i - 1) < max_captures; i++) {
-                int idx = i * 2;
-                caps_start[i - 1] = capture[idx]     ? (int)(capture[idx]     - base) : -1;
-                caps_end[i - 1]   = capture[idx + 1] ? (int)(capture[idx + 1] - base) : -1;
-            }
-            if (capture != capture_stack) free(capture);
-            return RE_MATCH;
-        }
-        if (capture != capture_stack) free(capture);
-        if (ret == 0) return RE_NO_MATCH;
-        return RE_ERROR;
-    }
-
-    /* lre_exec derives is_unicode from the compiled bytecode itself and
-     * internally promotes cbuf_type 1->2 (surrogate-pair combining) when the
-     * u/v flag is set; the buffer stride is always 2 bytes/unit regardless,
-     * so we must always pass 1 here (passing 2 doubles cbuf_end's stride). */
-    int cbuf_type = 1;
-
-    uint16_t* units = NULL;
-    int* byte_offsets = NULL;
-    int unit_count = 0;
-    int unit_start_offset = start_offset;
-
-    units = cesu8_to_utf16((const uint8_t*)input, input_len, &byte_offsets, &unit_count);
-    if (!units) return RE_ERROR;
-
-    /* start_offset is a CESU-8 byte offset; find the matching unit index
-     * (start_offset always lands exactly on a unit boundary in our storage). */
-    for (int i = 0; i <= unit_count; i++) {
-        if (byte_offsets[i] >= start_offset) { unit_start_offset = i; break; }
-        unit_start_offset = i + 1;
-    }
-
-    int ret = lre_exec(capture, re->bc,
-                       (const uint8_t*)units, unit_start_offset, unit_count,
-                       cbuf_type, interrupt);
-
+    /* cbuf_type 0 reads one byte per unit and 1 reads two. lre_exec derives
+     * is_unicode from the compiled bytecode and promotes 1 to 2 itself
+     * (surrogate-pair combining) under the u or v flag; the stride is 2 bytes
+     * either way, so wide input is always passed as 1. A Latin-1 string holds
+     * no surrogate, so unicode mode needs no promotion there. */
+    int ret = lre_exec(capture, re->bc, (const uint8_t*)input, start_offset, input_len,
+                       input_wide ? 1 : 0, interrupt);
     if (ret == RE_MATCH) {
-        if (out_start) {
-            int u = capture[0] ? (int)((const uint16_t*)capture[0] - units) : -1;
-            *out_start = unit_offset_to_byte_offset(byte_offsets, unit_count, u);
-        }
-        if (out_end) {
-            int u = capture[1] ? (int)((const uint16_t*)capture[1] - units) : -1;
-            *out_end = unit_offset_to_byte_offset(byte_offsets, unit_count, u);
-        }
+        size_t shift = input_wide ? 1 : 0;
+        const uint8_t* base = (const uint8_t*)input;
+#define UNIT_OFFSET(p) ((p) ? (int)((size_t)((p) - base) >> shift) : -1)
+        if (out_start) *out_start = UNIT_OFFSET(capture[0]);
+        if (out_end)   *out_end   = UNIT_OFFSET(capture[1]);
         if (out_num_captures) *out_num_captures = total_captures - 1;
-
         for (int i = 1; i < total_captures && (i - 1) < max_captures; i++) {
-            int idx = i * 2;
-            int su = capture[idx] ? (int)((const uint16_t*)capture[idx] - units) : -1;
-            int eu = capture[idx + 1] ? (int)((const uint16_t*)capture[idx + 1] - units) : -1;
-            caps_start[i - 1] = unit_offset_to_byte_offset(byte_offsets, unit_count, su);
-            caps_end[i - 1] = unit_offset_to_byte_offset(byte_offsets, unit_count, eu);
+            caps_start[i - 1] = UNIT_OFFSET(capture[i * 2]);
+            caps_end[i - 1]   = UNIT_OFFSET(capture[i * 2 + 1]);
         }
-        free(units);
-        free(byte_offsets);
+#undef UNIT_OFFSET
         if (capture != capture_stack) free(capture);
         return RE_MATCH;
     }
-
-    free(units);
-    free(byte_offsets);
     if (capture != capture_stack) free(capture);
-
     if (ret == 0) return RE_NO_MATCH;
     return RE_ERROR;
 }
@@ -422,11 +354,11 @@ int re_get_capture_count(ReCompiled* re)
     return re->capture_count;
 }
 
-int re_run(ReCompiled* re, const char* input, int input_len,
-           int start_offset, int input_is_ascii,
+int re_run(ReCompiled* re, const void* input, int input_len,
+           int start_offset, int input_wide,
            int* out_start, int* out_end, int* out_num_captures,
            int* caps_start, int* caps_end, int max_captures)
 {
-    return re_run_interruptible(re, input, input_len, start_offset, input_is_ascii,
+    return re_run_interruptible(re, input, input_len, start_offset, input_wide,
         out_start, out_end, out_num_captures, caps_start, caps_end, max_captures, NULL);
 }

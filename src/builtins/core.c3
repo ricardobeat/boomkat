@@ -120,7 +120,7 @@ fn bool StrBuf.grow(&self, usz extra) {
     }
     // reserve has checked len + extra against the maximum, so the clamp keeps
     // the capacity above what is needed.
-    if (new_cap > (usz)hstring::MAX_STRING_BYTES) new_cap = (usz)hstring::MAX_STRING_BYTES;
+    if (new_cap > (usz)hstring::MAX_STRING_LENGTH) new_cap = (usz)hstring::MAX_STRING_LENGTH;
     char* grown;
     if (self.data == &self.inline_buf[0]) {
         grown = (char*)self.heap.alloc_func(self.heap.heap_udata, new_cap);
@@ -145,7 +145,7 @@ fn bool StrBuf.append_bytes(&self, char[] bytes) {
 
 // Append the whole string.
 fn bool StrBuf.append_hstring(&self, HString* s) {
-    return self.append_bytes(s.get_data());
+    return self.append_hstring_range(s, 0, s.unit_len());
 }
 
 // Append "Symbol(description)"; an anonymous symbol has an empty description.
@@ -158,9 +158,34 @@ fn bool StrBuf.append_symbol(&self, HString* sym) {
 // Append the units `[from, to)` of `s`.
 fn bool StrBuf.append_hstring_range(&self, HString* s, uint from, uint to) {
     if (from >= to) return true;
-    uint byte_from = s.char_offset_to_byte_offset(from);
-    uint byte_to = s.char_offset_to_byte_offset(to);
-    return self.append_bytes(s.get_data()[byte_from:byte_to - byte_from]);
+    if (s.is_ascii()) return self.append_bytes(s.ascii_bytes()[from:to - from]);
+    // Each unit takes at most three bytes, so a bounded chunk is reserved once
+    // and encoded in place.
+    const uint CHUNK = 512;
+    bool wide = s.is_wide();
+    char* units = s.data_ptr();
+    while (from < to) {
+        uint count = to - from < CHUNK ? to - from : CHUNK;
+        if (!self.reserve((usz)count * 3)) return false;
+        char* dst = self.data + self.len;
+        usz n = 0;
+        for (uint k = from; k < from + count; k++) {
+            uint u = wide ? (uint)((ushort*)units)[k] : (uint)units[k];
+            if (u < 0x80) {
+                dst[n++] = (char)u;
+            } else if (u < 0x800) {
+                dst[n++] = (char)(0xC0 | (u >> 6));
+                dst[n++] = (char)(0x80 | (u & 0x3F));
+            } else {
+                dst[n++] = (char)(0xE0 | (u >> 12));
+                dst[n++] = (char)(0x80 | ((u >> 6) & 0x3F));
+                dst[n++] = (char)(0x80 | (u & 0x3F));
+            }
+        }
+        self.len += n;
+        from += count;
+    }
+    return true;
 }
 
 // Append one UTF-16 code unit, which may be a lone surrogate.
@@ -226,29 +251,48 @@ fn HString* StrBuf.to_hstring(&self, BuiltinContext* ctx) {
     HString* result = null;
     if (!self.failed && !hstring::length_exceeds_max((ulong)self.len)) {
         result = self.len == 0 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
-            : ctx.heap.alloc_concat_string(self.bytes(), (uint)self.len);
+            : ctx.heap.alloc_concat_text(self.bytes());
     }
     if (result == null) builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
     return result;
 }
 
 // The pieces of `strs` joined by `sep`, or null after throwing a RangeError
-// when the result is too long.
+// when the result is too long. The units are copied straight into a string of
+// the width they need.
 fn HString* join_hstrings(BuiltinContext* ctx, HString*[] strs, HString* sep) {
     ulong total = (ulong)sep.unit_len() * (strs.len > 1 ? strs.len - 1 : 0);
-    foreach (piece : strs) total += piece.unit_len();
+    // The separator is only copied between pieces, and a wide string must hold a
+    // unit above 0xFF to stay canonical.
+    bool wide = strs.len > 1 && sep.is_wide();
+    foreach (piece : strs) {
+        total += piece.unit_len();
+        wide = wide || piece.is_wide();
+    }
     if (hstring::length_exceeds_max(total)) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
         return null;
     }
-    StrBuf out;
-    out.init(ctx.heap);
-    defer out.free();
-    foreach (i, piece : strs) {
-        if (i > 0) out.append_hstring(sep);
-        out.append_hstring(piece);
+    if (total == 0) return ctx.heap.str(heap::BuiltinStr.EMPTY);
+    HString*? joined = hstring::hstring_alloc_storage(ctx.heap, (uint)total, wide, hstring::HASH_DEFERRED, (uint)total);
+    if (catch joined) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return null;
     }
-    return out.to_hstring(ctx);
+    char* dst = joined.data_ptr();
+    uint shift = wide ? 1 : 0;
+    usz at = 0;
+    foreach (i, piece : strs) {
+        if (i > 0) {
+            hstring::copy_units(dst + at, wide, sep.units());
+            at += (usz)sep.unit_len() << shift;
+        }
+        hstring::copy_units(dst + at, wide, piece.units());
+        at += (usz)piece.unit_len() << shift;
+    }
+    joined.finish_data();
+    ctx.heap.large_string_register(joined);
+    return joined;
 }
 
 // Make the accumulated string the builtin's result, or throw as `to_hstring` does.
@@ -297,6 +341,9 @@ struct BuiltinContext {
     // another host function leaves a deeper scope on top, and the outer
     // handler must keep addressing its own.
     uint host_scope_slot;
+    // UTF-8 copies of string arguments handed to the host during this call,
+    // chained through their first word and freed when the call ends.
+    void* host_text;
 }
 
 // A borrowed descriptor for an owned result slot. Nested builtin contexts may
@@ -1681,15 +1728,8 @@ fn bool builtin_to_boolean(TVal* val, Heap* h = null) {
 // ============================================================================
 
 fn HString* builtin_intern_string(Heap* heap, char[] data) {
-    // Heap.str_intern normalizes raw 4-byte UTF-8 astral sequences to CESU-8
-    // before hashing, so one logical string cannot intern under two different
-    // byte encodings.
     return heap.str_intern(data);
 }
-
-// Interns a slice of an existing string's bytes. A string's bytes are already
-// CESU-8, so a slice needs no astral normalization scan.
-fn HString* builtin_intern_slice(Heap* heap, char[] data) @inline => heap.str_intern_normalized(data);
 
 // ============================================================================
 // Collection class check helper (shared by Map, Set, WeakMap, WeakSet)
@@ -2982,6 +3022,18 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
     return res;
 }
 
+// A string that a call returned belongs to the pending return value until the
+// next call replaces it. A builtin that keeps such a string across another call
+// holds its own reference, and releases it with builtin_unhold.
+fn HString* builtin_hold(HString* s) @inline {
+    if (s != null) ((HeapHeader*)s).incref();
+    return s;
+}
+
+fn void builtin_unhold(BuiltinContext* ctx, HString* s) @inline {
+    if (s != null) ctx.heap.decref((HeapHeader*)s);
+}
+
 // ToPropertyKey (ES §7.1.19): like ToString but a Symbol is a valid property
 // key and passes through unchanged (Symbols are HString with is_symbol()).
 // Use this, not builtin_to_string_vm, anywhere a value is being coerced to a
@@ -3608,6 +3660,39 @@ alias HostFunc = fn void(BuiltinContext*, void*);
 const uint MAX_HOST_DEPTH @feat(GC_STRESS) = 8;
 const uint MAX_HOST_DEPTH @feat(!GC_STRESS) = 32;
 
+// The string as NUL-terminated UTF-8 text valid until the host call returns. An
+// ASCII string is returned in place; any other is copied. Null with `out_len`
+// zero when the copy cannot be allocated.
+fn char* host_text(BuiltinContext* ctx, HString* s, usz* out_len) {
+    if (s.is_ascii()) {
+        *out_len = s.unit_len();
+        return s.data_ptr();
+    }
+    usz len = s.utf8_len();
+    void** block = (void**)alloc::malloc_try(mem, (sz)(usz::size + len + 1)) ?? null;
+    if (block == null) {
+        *out_len = 0;
+        return null;
+    }
+    char* text = (char*)(block + 1);
+    s.copy_utf8(text);
+    text[len] = 0;
+    *block = ctx.host_text;
+    ctx.host_text = block;
+    *out_len = len;
+    return text;
+}
+
+fn void host_text_free(BuiltinContext* ctx) {
+    void** block = (void**)ctx.host_text;
+    while (block != null) {
+        void** next = (void**)*block;
+        mem::free(block);
+        block = next;
+    }
+    ctx.host_text = null;
+}
+
 // Invoke the host function registered in `slot`.
 //
 // An unregistered slot yields undefined rather than faulting, so a forged or
@@ -3699,6 +3784,7 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     uint addon_handle_mark = heap.addon_handle_count;
     handler(ctx, entry.udata);
     heap.addon_handles_rewind(addon_handle_mark);
+    host_text_free(ctx);
 
     // ECMA-262 §9.2.2 step 13: a [[Construct]] call evaluates to the created
     // object unless the host explicitly returned an object of its own.

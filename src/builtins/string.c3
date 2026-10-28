@@ -1848,7 +1848,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     // exactly up to 2^53 and saturates rather than wrapping above that, so a
     // count of 2^32 or 1e10 is compared at its true magnitude.
     double total_d = (double)s_hstr.unit_len() * count_d;
-    if (total_d > (double)hstring::MAX_STRING_BYTES) {
+    if (total_d > (double)hstring::MAX_STRING_LENGTH) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
         return;
     }

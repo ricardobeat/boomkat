@@ -118,7 +118,7 @@ fn void check_num(Heap* hp, Vm* v, String label, String src, double want) {
             if (try m = mv) {
                 if (m.is_string()) {
                     HString* ms = (HString*)m.get_heapptr();
-                    io::printfn("FAIL %s: threw: %s", label, (ZString)ms.get_data().ptr);
+                    io::printfn("FAIL %s: threw: %s", label, (ZString)ms.data_ptr());
                     g_fails++;
                     return;
                 }

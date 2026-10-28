@@ -21,10 +21,14 @@ fn HObject* create_regexp_from_string(Heap* heap, HString* pattern, int js_flags
     if (js_flags & 64)  engine_flags |= re_bindings::RE_FLAG_INDICES;
     if (js_flags & 128) engine_flags |= re_bindings::RE_FLAG_UNICODE_SETS;
 
-    // Compile the regexp
+    // Compile the regexp from the pattern's CESU-8 text.
+    StrBuf pattern_text;
+    pattern_text.init(heap);
+    defer pattern_text.free();
+    char[] pattern_bytes = cesu8_text(&pattern_text, pattern);
     char[128] error_buf;
     void* compiled = re_bindings::re_compile(
-        pattern.get_cstr(), pattern.blen,
+        pattern_bytes.ptr, pattern_bytes.len,
         engine_flags, &error_buf, 128
     );
     if (compiled == null) return null;

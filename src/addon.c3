@@ -30,7 +30,7 @@ import libc;
 // Bump when the vtable changes shape. An add-on compiled against a different
 // major version is rejected rather than called: the alternative is a wild jump
 // through a moved function pointer.
-const uint BK_ADDON_ABI_VERSION = 2;
+const uint BK_ADDON_ABI_VERSION = 3;
 
 const int BK_ADDON_OK          = 0;
 const int BK_ADDON_ERR_OPEN    = -1;  // dlopen failed
@@ -276,8 +276,10 @@ fn char* api_arg_string(void* bctx, uint i, usz* out_len) @private {
     if (!v.is_string()) return null;
     hstring::HString* hs = (hstring::HString*)v.get_heapptr();
     if (hs == null) return null;
-    if (out_len != null) *out_len = (usz)hs.blen;
-    return hs.get_cstr();
+    usz len;
+    char* text = builtins::host_text(c, hs, &len);
+    if (out_len != null) *out_len = len;
+    return text;
 }
 
 fn double api_arg_number(void* bctx, uint i) @private {
@@ -536,7 +538,10 @@ fn void builtin_load_addon(void* bctx, void* udata) @private {
     hstring::HString* hs = (hstring::HString*)v.get_heapptr();
     if (hs == null) { c.result_undefined(); return; }
 
-    int rc = load_addon(h, c.global_env, hs.get_cstr()[:hs.blen]);
+    builtins::StrBuf path;
+    path.init(h);
+    defer path.free();
+    int rc = load_addon(h, c.global_env, builtins::utf8_text(&path, hs));
     if (rc != BK_ADDON_OK) {
         switch (rc) {
             case BK_ADDON_ERR_OPEN:

@@ -1101,15 +1101,12 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     $endif
 }
 
-// Point every name in `mod`'s metadata at an interned string the module owns
-// a reference to.
+// Give `mod` its own copy of every name in its metadata.
 //
-// The compiler fills the metadata with slices of interned strings (and the odd
-// C3 literal such as "default"), but nothing else holds those strings once
-// compilation is over, so the next collection would free them under the
-// module: a later import would then link against garbage names. Interning a
-// name again returns the table's string, and the reference taken here is never
-// released, as the module itself is never freed.
+// The compiler fills the metadata with slices of lexer storage that is freed
+// once compilation ends, so a later import would link against garbage names.
+// Each copy is canonical CESU-8 (see `canonical_cesu8`), so two spellings of a
+// name compare equal bytewise. The module is never freed, so neither are they.
 fn void retain_names(Heap* heap, ModuleDef* mod) @local {
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* e = &mod.req_modules[i];
@@ -1133,10 +1130,11 @@ fn void retain_names(Heap* heap, ModuleDef* mod) @local {
 
 fn char[] retain_name(Heap* heap, ModuleDef* mod, char[] name) @local {
     if (name.len == 0) return name;
-    HString* s = heap.str_intern(name);
-    if (s == null) return name; // out of memory: keep the borrowed slice
-    ((HeapHeader*)s).incref();
-    return s.get_data();
+    usz len = hstring::canonical_cesu8(name, null);
+    char* copy = (char*)heap.alloc_func(heap.heap_udata, len);
+    if (copy == null) return name; // out of memory: keep the borrowed slice
+    hstring::canonical_cesu8(name, copy);
+    return copy[:len];
 }
 
 // Compile `source` as the body of `mod` (status LOADING, named `normalized`),
@@ -1777,9 +1775,12 @@ fn ModuleDef* module_of_reaction(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return null;
     HString* name_key = ctx.heap.str_intern_hidden(MODULE_SETTLEMENT_NAME_KEY);
     if (name_key == null) return null;
+    builtins::StrBuf text;
+    text.init(ctx.heap);
+    defer text.free();
     char[] name = {};
     if (try nv = ctx.callee_obj.get_prop(name_key, ctx.heap)) {
-        if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
+        if (nv.is_string()) name = builtins::utf8_text(&text, (HString*)nv.get_heapptr());
     }
     if (name.len == 0) return null;
     return heap_find_loaded_module(ctx.heap, name);
@@ -2877,13 +2878,12 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
         // synthetic-module path. Other attributes are accepted (well-formed)
         // but carry no loader behavior here. This mirrors parse_with_clause,
         // since `import()` takes the same attributes as a static import.
-        if (char_slice_eq(key.get_data(), "type")) {
+        if (key.equals_chars("type")) {
             HString* avs2 = (HString*)av.get_heapptr();
             if (avs2 != null) {
-                char[] tv = avs2.get_data();
-                if (char_slice_eq(tv, "json"))  *attr_type = compiler::ModuleAttrType.JSON;
-                if (char_slice_eq(tv, "text"))  *attr_type = compiler::ModuleAttrType.TEXT;
-                if (char_slice_eq(tv, "bytes")) *attr_type = compiler::ModuleAttrType.BYTES;
+                if (avs2.equals_chars("json"))  *attr_type = compiler::ModuleAttrType.JSON;
+                if (avs2.equals_chars("text"))  *attr_type = compiler::ModuleAttrType.TEXT;
+                if (avs2.equals_chars("bytes")) *attr_type = compiler::ModuleAttrType.BYTES;
             }
         }
     }
@@ -3035,13 +3035,19 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     HString* prom_key = heap.str_intern_hidden(DYN_IMPORT_PROM_KEY);
     if (spec_key == null || base_key == null || json_key == null || prom_key == null) return;
 
+    builtins::StrBuf spec_text;
+    spec_text.init(heap);
+    defer spec_text.free();
+    builtins::StrBuf base_text;
+    base_text.init(heap);
+    defer base_text.free();
     char[] spec_data = {};
     if (try sv = ctx.callee_obj.get_prop(spec_key, ctx.heap)) {
-        if (sv.is_string()) spec_data = ((HString*)sv.get_heapptr()).get_data();
+        if (sv.is_string()) spec_data = builtins::utf8_text(&spec_text, (HString*)sv.get_heapptr());
     }
     char[] base_data = {};
     if (try bv = ctx.callee_obj.get_prop(base_key, ctx.heap)) {
-        if (bv.is_string()) base_data = ((HString*)bv.get_heapptr()).get_data();
+        if (bv.is_string()) base_data = builtins::utf8_text(&base_text, (HString*)bv.get_heapptr());
     }
     compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE;
     if (try jv = ctx.callee_obj.get_prop(json_key, ctx.heap)) {

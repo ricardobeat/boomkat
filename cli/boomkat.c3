@@ -421,13 +421,16 @@ fn void print_tval_stderr(Heap* hp, TVal* v) {
     io::eprintf("[object]");
 }
 
+fn void stderr_put_byte(char c, void* udata) {
+    io::eprintf("%c", c);
+}
+
 fn void print_hstring_stderr(HString* s) {
     if (s == null) {
         io::eprintf("<null string>");
         return;
     }
-    char[] d = s.get_data();
-    for (usz i = 0; i < d.len; i++) io::eprintf("%c", d[i]);
+    s.write_utf8(&stderr_put_byte);
 }
 
 // Uses the same parser and code generator as normal execution.

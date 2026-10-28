@@ -222,7 +222,10 @@ fn bool has_flag(char[] src, char[] word) {
 // The `message` of the value currently in hp.error_value, or an empty slice
 // when there is none. The thrown value is the only record of a runtime error:
 // lx.err_msg is the lexer's buffer and holds compile errors only, so reading
-// it after execute() returns 512 zero bytes rather than the error.
+// it after execute() returns 512 zero bytes rather than the error. The text is
+// UTF-8 in a buffer valid until the next call.
+char[512] thrown_message_buf;
+
 fn char[] thrown_message(Heap* hp) {
     if (!hp.error_value.is_object()) return "";
     HObject* eo = (HObject*)hp.error_value.get_heapptr();
@@ -238,7 +241,7 @@ fn char[] thrown_message(Heap* hp) {
             TVal mv = vals[val_idx].get();
             if (sp[i].key.borrow() == (void*)msg_key && mv.is_string()) {
                 HString* str = (HString*)mv.get_heapptr();
-                return str.get_data();
+                return thrown_message_buf[:str.utf8_copy_truncated(thrown_message_buf[:thrown_message_buf.len])];
             }
             val_idx++;
         }
@@ -444,7 +447,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     // Check constructor.name for custom error types (such as Test262Error).
     char[] ctor_key = "constructor";
     uint ch = hp.hash_string(ctor_key);
-    HString*? cks = hp.str_table_lookup(ctor_key, ch);
+    HString*? cks = hp.str_table_lookup(hstring::narrow_units(ctor_key), ch);
     HObject* ctor = null;
     if (try ck = cks) {
         HObject* cur = thrown;
@@ -461,7 +464,7 @@ fn bool thrown_type_matches(Vm* v, Heap* hp, char[] expected) {
     if (ctor != null) {
         char[] name_key = "name";
         uint nh = hp.hash_string(name_key);
-        HString*? nks = hp.str_table_lookup(name_key, nh);
+        HString*? nks = hp.str_table_lookup(hstring::narrow_units(name_key), nh);
         if (try nk = nks) {
             int nidx = ctor.find_prop_idx(nk, hp);
             if (nidx >= 0) {
@@ -714,7 +717,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
     if (async_test) {
         char[] adk = "__test262_async_done";
         uint adh = hp.hash_string(adk);
-        HString*? ads = hp.str_table_lookup(adk, adh);
+        HString*? ads = hp.str_table_lookup(hstring::narrow_units(adk), adh);
         if (try adks = ads) {
             TVal? adtv = env::env_get(v.global_env, adks);
             if (try adval = adtv) {
@@ -737,7 +740,7 @@ fn int run_one_test(Vm* v, Heap* hp, char[] test_path, char[] src, char[] assert
     // completed, so an unreadable counter is a runner fault, not a test failure.
     char[] kn = "__test262_fail";
     uint hh = hp.hash_string(kn);
-    HString*? ks = hp.str_table_lookup(kn, hh);
+    HString*? ks = hp.str_table_lookup(hstring::narrow_units(kn), hh);
     if (catch ks) {
         io::eprintfn("  FAIL: runner could not read %s (harness did not load)", (String)kn);
         return 1;

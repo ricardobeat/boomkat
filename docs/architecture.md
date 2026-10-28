@@ -50,7 +50,7 @@ Running a file containing `f("hi")` crosses these boundaries:
 | `src/gc/` | Tracing, nursery collection, roots, verification and collector profiling |
 | `src/types.c3` | `TVal` and `HeapHeader`, the two universal representations |
 | `src/hobject.c3` | Object layout, property storage, shapes, inline caches |
-| `src/hstring.c3` | String storage, interning, and CESU-8 conversion |
+| `src/hstring.c3` | String storage, interning, and text conversion |
 | `src/env.c3` | Environment records and the scope chain |
 | `src/module.c3` | The ESM lifecycle: resolve, link, evaluate |
 | `src/builtins/` | The standard library, one file per area |
@@ -410,8 +410,8 @@ pending, or any guard fails, the instruction returns to the switch, which runs
 the call safepoint and existing fast/slow call dispatch.
 
 `ITER_NEXT_FAST` also handles cached ASCII steps for a real string iterator
-whose captured `next` is the built-in method. `Heap.str_intern_normalized`
-keeps a lazy cache of pinned one-byte ASCII strings, so the threaded step can
+whose captured `next` is the built-in method. `Heap.str_intern_units`
+keeps a lazy cache of pinned one-unit ASCII strings, so the threaded step can
 publish a character without hashing or changing its fixed reference count.
 The first uncached character and every non-ASCII code point return to the
 switch; that path interns the character and preserves surrogate-pair handling.
@@ -675,7 +675,7 @@ other header, whose corresponding union member holds generation and verifier bit
 
 ### HString
 
-String bytes live next to the header, with a trailing NUL for C APIs. Published
+String units live next to the header, with a trailing NUL for C APIs. Published
 strings are immutable. A uniquely owned, non-interned concat accumulator may
 extend its spare capacity before another value can observe it.
 
@@ -692,8 +692,8 @@ derives content metadata from the combined bytes.
 
 `JSON.stringify` also returns a non-interned string. Its writer copies safe
 text spans in bulk, grows for actual escaped output, and preserves paired
-surrogates in CESU-8 while escaping lone surrogates. Finishing needs no
-intern-table lookup or UTF-8 normalization pass.
+surrogates while escaping lone surrogates. Finishing needs no intern-table
+lookup.
 
 Immutable ordinary-object shapes cache JSON serialization plans when shared
 or pinned by compiled code. A plan owns the enumerable string keys in spec
@@ -704,17 +704,25 @@ receiver's shape and the heap's recycle epoch before each direct slot read. A mu
 uses normal property access against the original key snapshot, preserving
 deletion, inheritance, and getter behavior.
 
-The internal encoding is **CESU-8**. JavaScript strings are sequences of
-UTF-16 code units: an astral code point occupies two surrogate units, while a
-lone surrogate is also a valid string element. Encoding each unit separately
-preserves both cases. `normalize_to_cesu8` canonicalizes input for interning;
-`write_cesu8_as_utf8` converts text for host output.
+A string is a sequence of UTF-16 code units: an astral code point occupies two
+surrogate units, and a lone surrogate is a valid element. Storage is dual width
+and canonical. A **narrow** string holds one byte per unit and every unit is at
+most 0xFF (Latin-1); a **wide** string holds two bytes per unit in native
+endianness and at least one unit above 0xFF. A string is narrow whenever it can
+be, so equal strings always have equal width and equal bytes. `is_ascii` is a
+sub-flag of narrow. `length` counts units, so indexing, slicing and search are
+direct offsets with no cursor or scan. The hash is FNV-1a over the units.
 
-Character indexing is by UTF-16 code unit and cached. Each string remembers one
-`(char_offset, byte_offset)` cursor, and `char_offset_to_byte_offset` scans from
-whichever of the string start, the string end, or that cursor is nearest.
-Because strings are immutable, the cache is only ever updated, never
-invalidated. ASCII strings skip all of it: one byte is one character.
+Text crosses the boundary only at the edges. `StrBuf` accumulates CESU-8 text,
+which encodes each unit separately and so round-trips lone surrogates;
+`Heap.alloc_text` and `alloc_concat_text` decode it into a string of canonical
+width. `write_utf8` and `utf8_len` produce standard UTF-8 for host output and
+the C API. Compiler and module metadata that must outlive a string keep owned
+canonical CESU-8 copies (`canonical_cesu8`), so equal names compare as bytes.
+
+RegExp matching runs on the string's own width without transcoding: libregexp
+receives 8-bit or 16-bit input directly, every offset is a unit offset, and
+only the pattern is compiled from CESU-8 text.
 
 ### HObject
 

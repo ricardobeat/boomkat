@@ -133,7 +133,7 @@ const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
 const usz   ASCII_CHAR_CACHE_SIZE   = 128;
 const usz   CONCAT_CACHE_SIZE       = 16;
-const usz   CONCAT_CACHE_MAX_BYTES  = 256;
+const usz   CONCAT_CACHE_MAX_LENGTH = 256;
 
 struct ConcatCacheEntry {
     HString* result;
@@ -178,7 +178,7 @@ const uint  INTERRUPT_BUDGET_INIT  = 16;
 // Strings longer than this are never interned. They are very rarely property
 // keys, and interned copies pile up in the table until the next GC, which
 // gives O(n^2) memory growth in loops like `s += chunk`.
-const uint  MAX_INTERN_BYTES        = 256;
+const uint  MAX_INTERN_LENGTH       = 256;
 
 // Lightfunc deleted-property bitset sizing.
 // Each builtin index occupies 3 bits: name, length, and prototype deleted flags.
@@ -1780,7 +1780,8 @@ fn HString* Heap.find_int_hstring(&self, long val) {
     char[24] buf;
     int len = hstring::int_to_buf(val, &buf, 24);
     if (len <= 0) return null;
-    return self.str_table_lookup(buf[:len], self.hash_string(buf[:len]));
+    Units digits = hstring::narrow_units(buf[:len]);
+    return self.str_table_lookup(digits, self.hash_units(digits));
 }
 
 // ============================================================================
@@ -2318,7 +2319,7 @@ fn void Heap.destroy(&self) {
             HString* string = self.large_strings[i];
             uint bucket = string.refcount < 4 ? string.refcount : 4;
             refcounts[bucket]++;
-            retained_bytes += hstring::HSTRING_HDR_SIZE + (ulong)string.capacity + 1;
+            retained_bytes += (ulong)string.alloc_size();
         }
         io::eprintfn("# GC_STRING_REFS zero=%d one=%d two=%d three=%d four_plus=%d bytes=%d",
                      refcounts[0], refcounts[1], refcounts[2], refcounts[3], refcounts[4], retained_bytes);
@@ -3509,9 +3510,9 @@ fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
  */
 fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
-    usz total = hstring::HSTRING_HDR_SIZE + (usz)s.capacity + 1;  // +1 for NUL
+    usz total = s.alloc_size();
     gcprofile::gcprof_string_free(total);
-    if (s.blen == 1 && s.flags.is_ascii) {
+    if (s.length == 1 && s.flags.is_ascii) {
         gcprofile::gcprof_ascii_char_free();
     }
     int cls = pool_class_index(total);
@@ -3941,7 +3942,7 @@ fn void Heap.verify_string_owner(&self, HString* value) @feat(GC_VERIFY) {
     uint table_reference = value.flags.is_interned ? 1u : 0u;
     if (value.refcount <= table_reference) {
         io::eprintfn("[GC_VERIFY] live string lacks an owner: refs=%d interned=%d bytes=%d",
-            value.refcount, (int)value.flags.is_interned, value.blen);
+            value.refcount, (int)value.flags.is_interned, value.length);
         self.fatal_func(self.heap_udata, "GC_VERIFY: unowned live string");
     }
 }
@@ -5199,23 +5200,21 @@ const uint FNV1A_PRIME        = 0x0100_0193;
  * Compute a 32-bit FNV-1a hash of `data`, mixing in the heap's seed so hash
  * collisions cannot be predicted from outside.
  */
-fn uint Heap.hash_string(&self, char[] data) {
-    uint h = FNV1A_OFFSET_BASIS ^ self.hash_seed;
-    foreach (b : data) {
-        h ^= (uint)b;
-        h *= FNV1A_PRIME;
-    }
+fn uint Heap.hash_units(&self, hstring::Units data) {
+    uint h = hstring::hash_units(FNV1A_OFFSET_BASIS ^ self.hash_seed, data);
     // Keep HASH_DEFERRED reserved as the "not computed yet" sentinel.
     return h == hstring::HASH_DEFERRED ? h + 1 : h;
 }
 
+fn uint Heap.hash_string(&self, char[] data) => self.hash_units(hstring::narrow_units(data));
+
 // The string's content hash, computing and caching it if it was deferred.
 // Interned strings always have it already, so this is a plain field read on
-// the hot path; only a large non-interned string ever pays the O(blen) scan,
+// the hot path; only a large non-interned string ever pays the O(length) scan,
 // and only if something actually needs its hash.
 fn uint Heap.content_hash(&self, hstring::HString* s) {
     if (s.hash == hstring::HASH_DEFERRED) {
-        s.hash = self.hash_string(s.get_data());
+        s.hash = self.hash_units(s.units());
     }
     return s.hash;
 }
@@ -5297,10 +5296,10 @@ fn void Heap.str_table_shrink(&self) {
 }
 
 /**
- * Look up an interned string by byte content and precomputed hash, returning
+ * Look up an interned string by content and precomputed hash, returning
  * null when the table does not hold it.
  */
-fn HString* Heap.str_table_lookup(&self, char[] data, uint hash, bool hidden = false) {
+fn HString* Heap.str_table_lookup(&self, hstring::Units data, uint hash, bool hidden = false) {
     long lookup_start = gcprofile::gcprof_now();
     defer gcprofile::gcprof_phase(35, &lookup_start);
     if (self.str_table_size == 0) return null;
@@ -5313,8 +5312,9 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash, bool hidden = f
         if (slot == 0) return null;  // an empty slot ends the probe chain; a tombstone does not
         if (slot == tag) {
             HString* entry = self.str_table[idx];
-            if (entry.flags.is_hidden == hidden && entry.blen == (uint)data.len
-                && entry.equals_chars(data)) return entry;
+            if (entry.flags.is_hidden == hidden && entry.length == data.len
+                && entry.flags.is_wide == data.wide
+                && mem::equals(entry.data_ptr(), data.ptr, (sz)data.byte_len())) return entry;
         }
         idx = (idx + 1) & mask;
     }
@@ -5445,7 +5445,7 @@ fn void Heap.large_string_unregister(&self, HString* s) {
 // Concatenation results defer hashing and interning until a consumer needs
 // them. Accumulators reserve spare capacity for subsequent in-place appends.
 // Returns null if allocation fails.
-fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
+fn HString* Heap.alloc_concat_string(&self, Units data, uint cap) {
     HString*? new_s = hstring::hstring_alloc_cap(self, data, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {
         // Same registry contract as any other large non-interned string: the
@@ -5468,19 +5468,19 @@ fn void Heap.clear_concat_cache(&self) {
 
 // Both operands are retained with the result, so pointer identity is enough.
 fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) {
-    ulong length = (ulong)left.blen + right.blen;
-    if (length > CONCAT_CACHE_MAX_BYTES) return null;
+    ulong length = (ulong)left.length + right.length;
+    if (length > CONCAT_CACHE_MAX_LENGTH) return null;
     ConcatCacheEntry* entry = &self.concat_cache[length % CONCAT_CACHE_SIZE];
     return entry.left == left && entry.right == right ? entry.result : null;
 }
 
 // Optional string operands cover the complete spans and stay immutable while cached.
-fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
+fn HString* Heap.alloc_concat_string_parts(&self, Units left, Units right,
                                           uint cap, HString* left_string = null,
                                           HString* right_string = null) {
     usz length = (usz)left.len + (usz)right.len;
     ConcatCacheEntry* entry = left_string != null && right_string != null
-        && length <= CONCAT_CACHE_MAX_BYTES
+        && length <= CONCAT_CACHE_MAX_LENGTH
         ? &self.concat_cache[length % CONCAT_CACHE_SIZE] : null;
     if (entry != null && entry.left == left_string && entry.right == right_string) return entry.result;
     HString*? new_s = hstring::hstring_alloc_concat_cap(
@@ -5500,8 +5500,8 @@ fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
     return null;
 }
 
-fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length) {
-    if (try s = hstring::hstring_alloc_join(self, parts, length)) {
+fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length, bool wide) {
+    if (try s = hstring::hstring_alloc_join(self, parts, length, wide)) {
         self.large_string_register(s);
         return s;
     }
@@ -5516,7 +5516,7 @@ fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     if (s.flags.is_interned || s.flags.is_symbol) return s;
     // A large concat result reaches here with its hash still deferred, and the
     // table both probes and stores by hash, so materialize it first.
-    HString* existing = self.str_table_lookup(s.get_data(), self.content_hash(s));
+    HString* existing = self.str_table_lookup(s.units(), self.content_hash(s));
     if (existing != null) return existing;
     // The table owns the string from here on, so it must leave the registry or
     // the sweep would free it behind the table's back. If the table cannot take
@@ -5548,31 +5548,82 @@ fn int lf_key_to_prop_bit(HString* key) @inline {
     return -1;
 }
 
-fn HString* Heap.str_intern(&self, char[] data) {
-    // Raw 4-byte UTF-8 astral sequences, such as an emoji typed straight into
-    // source, become CESU-8 surrogate pairs before the hash and lookup. One
-    // logical string can otherwise intern under two byte encodings depending on
-    // how the astral character arrived, as a literal, a \u{...} escape, or
-    // String.fromCodePoint, which breaks `===` and property-key dedup. Almost no
-    // string contains a 4-byte sequence, so the check avoids the scratch buffer.
-    if (hstring::has_raw_utf8_astral(data)) {
-        usz cap = (usz)data.len + ((usz)data.len / 4) * 2 + 1;
-        char* scratch = (char*)alloc::malloc_try(mem, (sz)cap) ?? null;
-        if (scratch != null) {
-            uint norm_len = hstring::normalize_to_cesu8(data, scratch[:cap]);
-            HString* result = self.str_intern_normalized(scratch[:norm_len]);
-            mem::free(scratch);
-            return result;
-        }
+// A non-interned string of the UTF-8 or CESU-8 `text`, decoded to units in
+// canonical width. It is in neither the string table nor the large-string
+// registry, so the caller owns it until it registers or interns it. Returns
+// null if allocation fails.
+fn HString* Heap.alloc_text(&self, char[] text) {
+    // Well-formed text, which is nearly all of it, is sized by a quick estimate
+    // and decoded once. Malformed text decodes to a different count or width and
+    // is counted exactly instead.
+    bool wide;
+    uint count = hstring::estimate_text_units(text, &wide);
+    HString*? first = hstring::hstring_alloc_storage(self, count, wide, hstring::HASH_DEFERRED, count);
+    if (catch first) return null;
+    HString* s = first;
+    bool above;
+    uint written = hstring::decode_text(text, s.data_ptr(), wide, &above, count);
+    if (written != count || (above && !wide)) {
+        self.free_string(s);
+        count = hstring::decode_text(text, null, false, &wide);
+        HString*? exact = hstring::hstring_alloc_storage(self, count, wide, hstring::HASH_DEFERRED, count);
+        if (catch exact) return null;
+        s = exact;
+        hstring::decode_text(text, s.data_ptr(), wide, &above);
     }
-    return self.str_intern_normalized(data);
+    s.finish_data();
+    return s;
 }
 
-// Intern bytes that are already CESU-8 canonical. Callers whose input has no
-// raw 4-byte UTF-8 sequences, such as pure-ASCII builtin literals or data
-// already put through `normalize_to_cesu8`, can skip the astral scan by
-// calling this directly.
-fn HString* Heap.str_intern_normalized(&self, char[] data) {
+// Register a text-built string as a non-interned concatenation result.
+fn HString* Heap.alloc_concat_text(&self, char[] text) {
+    if (hstring::check_is_ascii(text)) {
+        return self.alloc_concat_string(hstring::narrow_units(text), (uint)text.len);
+    }
+    HString* s = self.alloc_text(text);
+    if (s != null) self.large_string_register(s);
+    return s;
+}
+
+// Settle a fully built, unregistered string: intern it, or free it in favor of
+// the equal interned string already in the table. A string too long to intern
+// goes to the large-string registry instead.
+fn HString* Heap.intern_fresh(&self, HString* s) {
+    if (s.length > MAX_INTERN_LENGTH) {
+        self.large_string_register(s);
+        return s;
+    }
+    s.hash = self.hash_units(s.units());
+    HString* existing = self.str_table_lookup(s.units(), s.hash);
+    if (existing != null) {
+        self.free_string(s);
+        return existing;
+    }
+    if (!self.str_table_insert(s)) { self.large_string_register(s); }
+    return s;
+}
+
+// Intern UTF-8 or CESU-8 text. A literal astral character, a surrogate pair of
+// 3-byte sequences and a `\u{...}` escape all decode to the same units, so the
+// one logical string interns once.
+fn HString* Heap.str_intern(&self, char[] text) {
+    if (hstring::check_is_ascii(text)) return self.str_intern_units(hstring::narrow_units(text));
+    HString* s = self.alloc_text(text);
+    return s == null ? null : self.intern_fresh(s);
+}
+
+// Intern Latin-1 bytes, one unit each.
+fn HString* Heap.str_intern_latin1(&self, char[] data) {
+    return self.str_intern_units(hstring::narrow_units(data));
+}
+
+// Intern UTF-16 units, narrowing them when none is above 0xFF.
+fn HString* Heap.str_intern_utf16(&self, ushort[] data) {
+    return self.str_intern_span(hstring::wide_units(data));
+}
+
+// Intern units in canonical width. A narrow run is interned as it is.
+fn HString* Heap.str_intern_units(&self, Units data) {
     // Strings this long are not used as property keys, symbols, or identifiers.
     // Interning them piles dead strings into the table until the next GC, giving
     // O(n^2) memory growth in string-building loops such as buildString in the
@@ -5584,7 +5635,7 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     // string and turn the loop O(n^2) in time even though it is already O(n) in
     // memory. These strings get `HASH_DEFERRED` and hash lazily via
     // `content_hash` if anything ever needs it.
-    if (data.len > MAX_INTERN_BYTES) {
+    if (data.len > MAX_INTERN_LENGTH) {
         HString*? new_s = hstring::hstring_alloc(self, data, hstring::HASH_DEFERRED);
         if (try s = new_s) {
             // The registry is what the mark-sweep backstop and heap reset use to
@@ -5596,15 +5647,15 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     }
     bool cache_ascii_char = false;
     uint ascii_char_index = 0;
-    if (data.len == 1) {
-        ascii_char_index = (uint)data[0];
+    if (data.len == 1 && !data.wide) {
+        ascii_char_index = (uint)data.ptr[0];
         cache_ascii_char = ascii_char_index < ASCII_CHAR_CACHE_SIZE;
         if (cache_ascii_char) {
             HString* cached = self.ascii_char_strs[ascii_char_index];
             if (cached != null) return cached;
         }
     }
-    uint hash = self.hash_string(data);
+    uint hash = self.hash_units(data);
     HString* existing = self.str_table_lookup(data, hash);
     if (existing != null) {
         if (cache_ascii_char) {
@@ -5628,32 +5679,69 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     return null;
 }
 
+// Intern units of either width that may not be canonical: a wide run with no
+// unit above 0xFF, such as a slice of a wide string, is stored narrow.
+fn HString* Heap.str_intern_span(&self, Units data) {
+    if (!data.wide || !hstring::fits_latin1(data)) return self.str_intern_units(data);
+    ushort* units = (ushort*)data.ptr;
+    if (data.len <= MAX_INTERN_LENGTH) {
+        char[MAX_INTERN_LENGTH] buf;
+        for (uint i = 0; i < data.len; i++) buf[i] = (char)units[i];
+        return self.str_intern_units(hstring::narrow_units(buf[:data.len]));
+    }
+    HString*? new_s = hstring::hstring_alloc_storage(self, data.len, false, hstring::HASH_DEFERRED, data.len);
+    if (catch new_s) return null;
+    char* dest = new_s.data_ptr();
+    for (uint i = 0; i < data.len; i++) dest[i] = (char)units[i];
+    new_s.finish_data();
+    self.large_string_register(new_s);
+    return new_s;
+}
+
 // The string of the units `[from, to)` of `s`. Both bounds must lie within the
 // string; an empty range yields the empty string.
 fn HString* Heap.str_slice(&self, HString* s, uint from, uint to) {
     if (from >= to) return self.str(BuiltinStr.EMPTY);
-    uint byte_from = s.char_offset_to_byte_offset(from);
-    uint byte_to = s.char_offset_to_byte_offset(to);
-    return self.str_intern_normalized(s.get_data()[byte_from:byte_to - byte_from]);
+    Units u = s.units();
+    u.ptr += (usz)from << (u.wide ? 1 : 0);
+    u.len = to - from;
+    return self.str_intern_span(u);
 }
 
 // The one-unit string holding `unit`, which may be a lone surrogate.
 fn HString* Heap.str_from_unit(&self, uint unit) {
-    char[3] buf;
-    uint n = hstring::encode_codepoint(unit, buf[:3]);
-    return self.str_intern_normalized(buf[:n]);
+    if (unit <= 0xFF) {
+        char byte = (char)unit;
+        return self.str_intern_units(hstring::narrow_units((&byte)[:1]));
+    }
+    ushort wide = (ushort)unit;
+    return self.str_intern_units(hstring::wide_units((&wide)[:1]));
 }
 
 // Intern an engine slot name as a hidden symbol. A hidden symbol shares the
 // table with ordinary strings but never matches one, so no script string can
 // spell a slot name. Enumeration paths skip hidden symbols.
 fn HString* Heap.str_intern_hidden(&self, char[] name) {
-    uint hash = self.hash_string(name);
-    HString* existing = self.str_table_lookup(name, hash, true);
-    if (existing != null) return existing;
-    HString*? new_s = hstring::hstring_alloc(self, name, hash);
-    if (catch err = new_s) return null;
-    HString* s = new_s;
+    HString* fresh = null;
+    Units units = hstring::narrow_units(name);
+    if (!hstring::check_is_ascii(name)) {
+        fresh = self.alloc_text(name);
+        if (fresh == null) return null;
+        units = fresh.units();
+    }
+    uint hash = self.hash_units(units);
+    HString* existing = self.str_table_lookup(units, hash, true);
+    if (existing != null) {
+        self.free_string(fresh);
+        return existing;
+    }
+    HString* s = fresh;
+    if (s == null) {
+        HString*? new_s = hstring::hstring_alloc(self, units, hash);
+        if (catch err = new_s) return null;
+        s = new_s;
+    }
+    s.hash = hash;
     s.flags.is_symbol = true;
     s.flags.is_hidden = true;
     s.flags.is_arridx = false;

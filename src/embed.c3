@@ -725,23 +725,16 @@ fn HString* string_from_utf8(Runtime* rt, char[] utf8) {
 
 // Builds a string from ISO 8859-1 bytes, each byte being the code point of the same value.
 fn HString* string_from_latin1(Runtime* rt, char[] chars) {
-    bool ascii = true;
-    foreach (c : chars) if (c >= 0x80) { ascii = false; break; }
-    if (ascii) return intern_or_fail(rt, chars);
-    builtins::StrBuf sb;
-    sb.init(rt.heap);
-    defer sb.free();
-    foreach (c : chars) sb.append_unit((uint)c);
-    return intern_builder(rt, &sb);
+    HString* s = rt.heap.str_intern_latin1(chars);
+    if (s == null) set_err(rt, BK_ERR_NOMEM, "out of memory");
+    return s;
 }
 
 // Builds a string from UTF-16 code units, which may hold lone surrogates.
 fn HString* string_from_utf16(Runtime* rt, ushort[] units) {
-    builtins::StrBuf sb;
-    sb.init(rt.heap);
-    defer sb.free();
-    foreach (u : units) sb.append_unit((uint)u);
-    return intern_builder(rt, &sb);
+    HString* s = rt.heap.str_intern_utf16(units);
+    if (s == null) set_err(rt, BK_ERR_NOMEM, "out of memory");
+    return s;
 }
 
 fn HString* intern_or_fail(Runtime* rt, char[] text) {
