@@ -167,6 +167,22 @@ class _FnDef(ctypes.Structure):
                 ("finalize_opaque", ctypes.c_void_p)]
 
 
+class _TypedArrayInfo(ctypes.Structure):
+    """Mirrors bk_typed_array_info in boomkat.h."""
+
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("data", ctypes.c_void_p),
+        ("length", ctypes.c_size_t),
+        ("byte_offset", ctypes.c_size_t),
+        ("buffer", ctypes.c_uint64),
+    ]
+
+
+# Element size of each bk_element_type, in enum order.
+_ELEMENT_SIZES = (1, 1, 1, 2, 2, 4, 4, 2, 4, 8, 8, 8)
+
+
 def _declare(lib):
     """Pin argtypes/restype on every symbol.
 
@@ -224,6 +240,11 @@ def _declare(lib):
                                           _STRING_RELEASE, ctypes.c_void_p], val),
         ("bk_string_view_get", [ctx, val, ctypes.POINTER(_StringView)], ctypes.c_int),
         ("bk_dup_value", [ctx, val], val),
+        # Binary data: ArrayBuffers and typed arrays cross as bytes.
+        ("bk_new_array_buffer", [ctx, ctypes.c_size_t, ctypes.POINTER(ctypes.c_void_p)], val),
+        ("bk_get_array_buffer", [ctx, val, ctypes.POINTER(ctypes.c_void_p),
+                                 ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
+        ("bk_get_typed_array", [ctx, val, ctypes.POINTER(_TypedArrayInfo)], ctypes.c_int),
         ("bk_call", [ctx, val, val, ctypes.POINTER(val), ctypes.c_uint], val),
     ]
     for name, argtypes, restype in signatures:
@@ -412,10 +433,11 @@ class _Reader:
     and the borrowed call handles (arguments, this, new.target).
     """
 
-    __slots__ = ("_owner", "type_of", "_read_bool", "_read_number", "_read_string_utf16")
+    __slots__ = ("_owner", "_lib", "type_of", "_read_bool", "_read_number", "_read_string_utf16")
 
     def __init__(self, lib, owner):
         self._owner = owner
+        self._lib = lib
         self.type_of = _bind(lib, "bk_get_type", owner)
         self._read_bool = _bind(lib, "bk_read_bool", owner)
         self._read_number = _bind(lib, "bk_read_number", owner)
@@ -448,7 +470,27 @@ class _Reader:
                 return JsObject(type_id)
             return bytes(memoryview(buffer).cast("B")).decode(
                 "utf-16-le", "surrogatepass")
+        if type_id == _OBJECT:
+            data = self._binary(handle)
+            if data is not None:
+                return data
         return JsObject(type_id)
+
+    def _binary(self, handle):
+        """The bytes of an ArrayBuffer or typed array, copied, or None."""
+        lib = self._lib
+        data = ctypes.c_void_p()
+        size = ctypes.c_size_t()
+        if lib.bk_get_array_buffer(self._owner, handle, ctypes.byref(data),
+                                   ctypes.byref(size)) == _OK:
+            return ctypes.string_at(data, size.value) if data.value else b""
+        info = _TypedArrayInfo()
+        if lib.bk_get_typed_array(self._owner, handle, ctypes.byref(info)) == _OK:
+            lib.bk_free_value(self._owner, info.buffer)
+            if not info.data:
+                return b""
+            return ctypes.string_at(info.data, info.length * _ELEMENT_SIZES[info.type])
+        return None
 
 
 def _bind(lib, name, owner):
@@ -623,6 +665,12 @@ class Runtime:
             encoded = result.encode("utf-16-le", "surrogatepass")
             units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
             handle = lib.bk_new_string_utf16(ctx, units, len(units))
+        elif isinstance(result, (bytes, bytearray, memoryview)):
+            raw = bytes(result)
+            data = ctypes.c_void_p()
+            handle = lib.bk_new_array_buffer(ctx, len(raw), ctypes.byref(data))
+            if handle and raw:
+                ctypes.memmove(data, raw, len(raw))
         elif isinstance(result, JsValue):
             # Returning an argument straight back, or the result of a callback.
             # The engine copies the returned handle, so it is passed as is.

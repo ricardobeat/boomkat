@@ -399,6 +399,44 @@ BK_API bk_value  bk_new_bigint_words(bk_ctx ctx, int negative, const uint64_t *w
 BK_API bk_status bk_read_bigint_words(bk_ctx ctx, bk_value value, int *negative,
                                       uint64_t *words, size_t capacity, size_t *count);
 
+/* Binary data. Data pointers stay valid until the next call that can run JS,
+ * resize or detach the buffer. Lengths above 2^31 - 1 bytes fail with
+ * BK_ERR_INVALID. Builds without typed arrays or shared memory fail with
+ * BK_ERR_UNSUPPORTED. */
+typedef enum { BK_INT8, BK_UINT8, BK_UINT8_CLAMPED, BK_INT16, BK_UINT16, BK_INT32, BK_UINT32,
+               BK_FLOAT16, BK_FLOAT32, BK_FLOAT64, BK_BIGINT64, BK_BIGUINT64 } bk_element_type;
+/* A zeroed buffer; `data_out` (optional) receives its bytes. */
+BK_API bk_value  bk_new_array_buffer(bk_ctx ctx, size_t length, void **data_out);
+/* A buffer over caller memory, read and written in place. `release` runs once
+ * with (data, opaque) when the buffer is detached, collected or torn down, and
+ * also when creation fails. It runs during collection and must not call into
+ * the engine. */
+BK_API bk_value  bk_new_external_array_buffer(bk_ctx ctx, void *data, size_t length,
+                                              bk_finalizer release, void *opaque);
+/* An ArrayBuffer or SharedArrayBuffer's bytes; NULL and 0 once detached. */
+BK_API bk_status bk_get_array_buffer(bk_ctx ctx, bk_value buffer, void **data, size_t *length);
+/* DetachArrayBuffer. Shared and immutable buffers fail with BK_ERR_TYPE. */
+BK_API bk_status bk_detach_array_buffer(bk_ctx ctx, bk_value buffer);
+/* A view of `length` elements at `byte_offset`, which must be aligned to the
+ * element size; a view that does not fit fails with BK_ERR_INVALID. */
+BK_API bk_value  bk_new_typed_array(bk_ctx ctx, bk_element_type type, bk_value buffer,
+                                    size_t byte_offset, size_t length);
+typedef struct {
+    bk_element_type type;
+    void  *data;          /* buffer data + byte offset; NULL when detached or out of bounds */
+    size_t length;        /* elements */
+    size_t byte_offset;
+    bk_value buffer;      /* a new handle, freed like any other */
+} bk_typed_array_info;
+BK_API bk_status bk_get_typed_array(bk_ctx ctx, bk_value view, bk_typed_array_info *out);
+/* Shared blocks: a SharedArrayBuffer's bytes, reference counted across
+ * runtimes and threads. `data_out` is the block. */
+BK_API bk_value  bk_new_shared_array_buffer(bk_ctx ctx, size_t length, void **data_out);
+/* A SharedArrayBuffer over a block the caller holds a reference to. */
+BK_API bk_value  bk_adopt_shared_block(bk_ctx ctx, void *data);
+BK_API void      bk_shared_block_retain(void *data);              /* any thread */
+BK_API void      bk_shared_block_release(void *data);             /* any thread */
+
 /* Promises. Settle a promise by calling its resolving functions with
  * bk_call; resolve follows the spec's resolution procedure, thenables
  * included. */

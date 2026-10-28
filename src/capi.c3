@@ -4,6 +4,7 @@ import boomkat::agent;
 import boomkat::builtins;
 import boomkat::embed;
 import boomkat::esm;
+import boomkat::features;
 import boomkat::vm;
 import boomkat::heap;
 import boomkat::lexer;
@@ -2667,4 +2668,250 @@ fn void bk_set_promise_rejection_tracker(void* rtp, void* cb, void* opaque)
     rt.promise_rejection_udata = opaque;
     rt.heap.promise_rejection_fn = cb != null ? &capi_rejection_tracker : null;
     rt.heap.promise_rejection_udata = rt;
+}
+
+// ============================================================================
+// Binary data
+// ============================================================================
+
+// Mirrors bk_typed_array_info in boomkat.h.
+struct BkTypedArrayInfo {
+    int   type;
+    void* data;
+    usz   length;
+    usz   byte_offset;
+    ulong buffer;
+}
+
+const uint ELEMENT_TYPE_COUNT = 12;
+
+// The ArrayBuffer or SharedArrayBuffer behind `id`, or null with the failure
+// recorded.
+fn HObject* buffer_of(void* ctxp, Runtime* rt, ulong id) {
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return null; }
+    if (!v.is_object() || v.get_heapptr() == null
+        || ((HObject*)v.get_heapptr()).flags.obj_class != hobject::ObjClass.ARRAYBUFFER) {
+        fail(rt, BK_ERR_TYPE, "not an ArrayBuffer or SharedArrayBuffer");
+        return null;
+    }
+    return (HObject*)v.get_heapptr();
+}
+
+// The current realm's prototype for a typed array class, or null when the
+// build leaves that kind out.
+fn HObject* typed_array_proto(Heap* heap, hobject::ObjClass cls) {
+    switch (cls) {
+        case INT8ARRAY:         return heap.int8array_proto;
+        case UINT8ARRAY:        return heap.uint8array_proto;
+        case UINT8CLAMPEDARRAY: return heap.uint8clampedarray_proto;
+        case INT16ARRAY:        return heap.int16array_proto;
+        case UINT16ARRAY:       return heap.uint16array_proto;
+        case INT32ARRAY:        return heap.int32array_proto;
+        case UINT32ARRAY:       return heap.uint32array_proto;
+        case FLOAT16ARRAY:      return heap.float16array_proto;
+        case FLOAT32ARRAY:      return heap.float32array_proto;
+        case FLOAT64ARRAY:      return heap.float64array_proto;
+        case BIGINT64ARRAY:     return heap.bigint64array_proto;
+        case BIGUINT64ARRAY:    return heap.biguint64array_proto;
+        default:                return null;
+    }
+}
+
+// A fresh fixed-length ArrayBuffer with no data, or null after recording the
+// failure.
+fn HObject* new_buffer_object(Runtime* rt, HObject* proto) {
+    HObject*? raw = rt.heap.alloc_object(hobject::ObjClass.ARRAYBUFFER);
+    if (catch raw) { fail(rt, BK_ERR_NOMEM, "out of memory"); return null; }
+    HObject* buf = raw;
+    rt.heap.set_prototype(buf, proto);
+    (*buf.extra_ptr()).ab.data = null;
+    (*buf.extra_ptr()).ab.byte_length = 0;
+    (*buf.extra_ptr()).ab.views_head = null;
+    return buf;
+}
+
+fn ulong bk_new_array_buffer(void* ctxp, usz length, void** data_out) @export("bk_new_array_buffer") {
+    if (data_out != null) *data_out = null;
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (!features::BUFFERS || rt.heap.arraybuffer_proto == null) {
+        return fail_value(rt, BK_ERR_UNSUPPORTED, "ArrayBuffer is not available in this build");
+    }
+    if (length > 0x7FFF_FFFF) return fail_value(rt, BK_ERR_INVALID, "ArrayBuffer length too large");
+    char* data = null;
+    if (length > 0) {
+        data = (char*)rt.heap.alloc_func(rt.heap.heap_udata, length);
+        if (data == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+        mem::clear(data, (sz)length);
+    }
+    HObject* buf = new_buffer_object(rt, rt.heap.arraybuffer_proto);
+    if (buf == null) {
+        if (data != null) rt.heap.free_func(rt.heap.heap_udata, data);
+        return 0;
+    }
+    (*buf.extra_ptr()).ab.data = data;
+    (*buf.extra_ptr()).ab.byte_length = (uint)length;
+    TVal v; v.set_object(buf);
+    ulong id = store(rt, v);
+    if (id != 0 && data_out != null) *data_out = data;
+    return id;
+}
+
+fn ulong bk_new_external_array_buffer(void* ctxp, void* data, usz length, heap::ExternalReleaseFn release,
+                                      void* opaque) @export("bk_new_external_array_buffer") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    // Every failure below hands the data back, so the caller never has to
+    // tell a refused buffer from an accepted one.
+    int code = BK_OK;
+    String msg;
+    if (!features::BUFFERS || rt.heap.arraybuffer_proto == null) {
+        code = BK_ERR_UNSUPPORTED; msg = "ArrayBuffer is not available in this build";
+    } else if (data == null && length != 0) {
+        code = BK_ERR_INVALID; msg = "null data";
+    } else if (length > 0x7FFF_FFFF) {
+        code = BK_ERR_INVALID; msg = "ArrayBuffer length too large";
+    }
+    HObject* buf = null;
+    if (code == BK_OK) {
+        buf = new_buffer_object(rt, rt.heap.arraybuffer_proto);
+        if (buf == null) { code = BK_ERR_NOMEM; msg = "out of memory"; }
+    }
+    if (code == BK_OK && !rt.heap.make_external_buffer(buf, (char*)data, (uint)length, release, opaque)) {
+        code = BK_ERR_NOMEM; msg = "out of memory";
+    }
+    if (code != BK_OK) {
+        if (release != null) release(data, opaque);
+        return fail_value(rt, code, msg);
+    }
+    TVal v; v.set_object(buf);
+    return store(rt, v);
+}
+
+fn int bk_get_array_buffer(void* ctxp, ulong id, void** data, usz* length) @export("bk_get_array_buffer") {
+    if (data != null) *data = null;
+    if (length != null) *length = 0;
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HObject* buf = buffer_of(ctxp, rt, id);
+    if (buf == null) return rt.errcode;
+    if ((*buf.extra_ptr()).ab.byte_length == 0xFFFF_FFFF) return BK_OK;
+    if (data != null) *data = (*buf.extra_ptr()).ab.data;
+    if (length != null) *length = builtins::buffer_byte_length(buf);
+    return BK_OK;
+}
+
+fn int bk_detach_array_buffer(void* ctxp, ulong id) @export("bk_detach_array_buffer") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HObject* buf = buffer_of(ctxp, rt, id);
+    if (buf == null) return rt.errcode;
+    if ((*buf.extra_ptr()).ab.is_shared) return fail(rt, BK_ERR_TYPE, "a SharedArrayBuffer cannot be detached");
+    if ((*buf.extra_ptr()).ab.immutable) return fail(rt, BK_ERR_TYPE, "an immutable ArrayBuffer cannot be detached");
+    builtins::arraybuffer_detach(rt.heap, buf);
+    return BK_OK;
+}
+
+fn ulong bk_new_typed_array(void* ctxp, int type, ulong buffer, usz byte_offset, usz length)
+        @export("bk_new_typed_array") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (type < 0 || (uint)type >= ELEMENT_TYPE_COUNT) return fail_value(rt, BK_ERR_INVALID, "unknown element type");
+    hobject::ObjClass cls = (hobject::ObjClass)((int)hobject::ObjClass.INT8ARRAY + type);
+    HObject* proto = features::BUFFERS ? typed_array_proto(rt.heap, cls) : null;
+    if (proto == null) return fail_value(rt, BK_ERR_UNSUPPORTED, "this typed array kind is not available in this build");
+    HObject* buf = buffer_of(ctxp, rt, buffer);
+    if (buf == null) return 0;
+    if ((*buf.extra_ptr()).ab.byte_length == 0xFFFF_FFFF) return fail_value(rt, BK_ERR_TYPE, "ArrayBuffer is detached");
+    usz elem = (usz)builtins::ta_elem_size(cls);
+    if (byte_offset % elem != 0) return fail_value(rt, BK_ERR_INVALID, "byte offset is not a multiple of the element size");
+    usz available = (usz)builtins::buffer_byte_length(buf);
+    if (byte_offset > available || length > (available - byte_offset) / elem) {
+        return fail_value(rt, BK_ERR_INVALID, "view does not fit in the buffer");
+    }
+    HObject*? raw = rt.heap.alloc_object(cls);
+    if (catch raw) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    HObject* view = raw;
+    rt.heap.set_prototype(view, proto);
+    (*view.extra_ptr()).view.byte_offset = (uint)byte_offset;
+    (*view.extra_ptr()).view.byte_length = (uint)(length * elem);
+    (*view.extra_ptr()).view.length_tracking = false;
+    builtins::typedarray_link_view(rt.heap, buf, view);
+    TVal v; v.set_object(view);
+    return store(rt, v);
+}
+
+fn int bk_get_typed_array(void* ctxp, ulong id, BkTypedArrayInfo* out) @export("bk_get_typed_array") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    *out = {};
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return BK_ERR_INVALID; }
+    if (!v.is_object() || v.get_heapptr() == null
+        || !builtins::is_typed_array_class(((HObject*)v.get_heapptr()).flags.obj_class)) {
+        return fail(rt, BK_ERR_TYPE, "not a typed array");
+    }
+    HObject* view = (HObject*)v.get_heapptr();
+    HObject* buf = (*view.extra_ptr()).view.buffer;
+    TVal bv; bv.set_object(buf);
+    ulong bid = store(rt, bv);
+    if (bid == 0) return rt.errcode;
+    out.type = (int)view.flags.obj_class - (int)hobject::ObjClass.INT8ARRAY;
+    out.byte_offset = (*view.extra_ptr()).view.byte_offset;
+    out.buffer = bid;
+    if (!builtins::ta_is_detached(view)) {
+        out.data = (*buf.extra_ptr()).ab.data + (*view.extra_ptr()).view.byte_offset;
+        out.length = builtins::ta_element_count(view);
+    }
+    return BK_OK;
+}
+
+fn ulong bk_new_shared_array_buffer(void* ctxp, usz length, void** data_out) @export("bk_new_shared_array_buffer") {
+    if (data_out != null) *data_out = null;
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (!features::SHARED_MEMORY || !features::BUFFERS || rt.heap.sharedarraybuffer_proto == null) {
+        return fail_value(rt, BK_ERR_UNSUPPORTED, "SharedArrayBuffer is not available in this build");
+    }
+    if (length > 0x7FFF_FFFF) return fail_value(rt, BK_ERR_INVALID, "SharedArrayBuffer length too large");
+    char* block = agent::block_alloc((uint)length, (uint)length);
+    if (block == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    HObject* buf = builtins::sab_adopt(rt.heap, block);
+    // The buffer holds its own reference now, or none was taken.
+    agent::block_release(block);
+    if (buf == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    TVal v; v.set_object(buf);
+    ulong id = store(rt, v);
+    if (id != 0 && data_out != null) *data_out = block;
+    return id;
+}
+
+fn ulong bk_adopt_shared_block(void* ctxp, void* data) @export("bk_adopt_shared_block") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (data == null) return fail_value(rt, BK_ERR_INVALID, "null shared block");
+    if (!features::SHARED_MEMORY || !features::BUFFERS || rt.heap.sharedarraybuffer_proto == null) {
+        return fail_value(rt, BK_ERR_UNSUPPORTED, "SharedArrayBuffer is not available in this build");
+    }
+    HObject* buf = builtins::sab_adopt(rt.heap, (char*)data);
+    if (buf == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    TVal v; v.set_object(buf);
+    return store(rt, v);
+}
+
+fn void bk_shared_block_retain(void* data) @export("bk_shared_block_retain") {
+    if (data != null) agent::block_retain((char*)data);
+}
+
+fn void bk_shared_block_release(void* data) @export("bk_shared_block_release") {
+    if (data != null) agent::block_release((char*)data);
 }

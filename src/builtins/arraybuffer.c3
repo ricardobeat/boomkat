@@ -172,7 +172,9 @@ fn HObject* ab_this(BuiltinContext* ctx, char[] method) {
 // The single detach primitive, ArrayBuffer.prototype.transfer and the
 // $262.detachArrayBuffer host hook both route through here.
 fn void arraybuffer_detach(Heap* heap, HObject* obj) {
-    if ((*obj.extra_ptr()).ab.data != null) {
+    if ((*obj.extra_ptr()).ab.external) {
+        heap.release_external_buffer(obj);
+    } else if ((*obj.extra_ptr()).ab.data != null) {
         heap.free_func(heap.heap_udata, (*obj.extra_ptr()).ab.data);
         (*obj.extra_ptr()).ab.data = null;
     }
