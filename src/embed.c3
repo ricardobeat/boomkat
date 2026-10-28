@@ -207,6 +207,9 @@ struct Runtime {
     HostReg* cfn_regs;
     uint     cfn_data_class;   // id + 1, or 0 before the first use
     uint     script_class;     // host class of bk_compile scripts, id + 1, or 0
+    // bk_set_module_loader: the host's loader and the engine hooks over it.
+    ModuleLoader     module_loader;
+    esm::ModuleHostHooks module_hooks;
     // Atoms: property keys held by index. An atom is its entry index + 1.
     AtomEntry* atoms;
     uint     atom_cap;
@@ -1112,6 +1115,14 @@ struct HostReg {
 }
 
 alias BkFinalizer = fn void(void* data, void* opaque);
+
+// Mirrors bk_module_loader in include/boomkat.h.
+struct ModuleLoader {
+    void*  resolve;   // fn int(ctx, referrer, specifier, request, opaque)
+    void*  load;      // fn int(ctx, name, request, opaque)
+    void*  opaque;
+    uint   flags;
+}
 // The tracer handed to hosts is the heap that is marking.
 alias BkRootTracer = fn void(void* tracer, void* opaque);
 

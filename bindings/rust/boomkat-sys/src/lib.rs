@@ -85,6 +85,24 @@ pub const BK_PROMISE_REJECTED: c_int = 2;
 /// Runs when a job is enqueued into an empty queue; must not run JS.
 pub type bk_job_hook = unsafe extern "C" fn(runtime: bk_runtime, opaque: *mut c_void);
 
+/// An engine-owned module question, valid during the loader callback.
+#[repr(C)]
+pub struct bk_module_request {
+    _private: [u8; 0],
+}
+pub const BK_LOADER_ASYNC: c_uint = 1;
+pub const BK_LOADER_NO_FILESYSTEM_FALLBACK: c_uint = 2;
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct bk_module_loader {
+    pub resolve: Option<
+        unsafe extern "C" fn(bk_ctx, *const c_char, *const c_char, *mut bk_module_request, *mut c_void) -> c_int,
+    >,
+    pub load: Option<unsafe extern "C" fn(bk_ctx, *const c_char, *mut bk_module_request, *mut c_void) -> c_int>,
+    pub opaque: *mut c_void,
+    pub flags: c_uint,
+}
+
 /// A host class id; 0 is invalid.
 pub type bk_class = u32;
 pub const BK_CLASS_DEFER_FINALIZE: c_uint = 1;
@@ -478,6 +496,14 @@ extern "C" {
     pub fn bk_promise_mark_handled(ctx: bk_ctx, promise: bk_value) -> c_int;
     pub fn bk_promise_resolve(ctx: bk_ctx, value: bk_value) -> bk_value;
     pub fn bk_promise_then(ctx: bk_ctx, promise: bk_value, on_fulfilled: bk_value, on_rejected: bk_value) -> bk_value;
+    pub fn bk_set_module_loader(runtime: bk_runtime, loader: *const bk_module_loader) -> c_int;
+    pub fn bk_module_set_name(request: *mut bk_module_request, name: *const c_char, length: usize) -> c_int;
+    pub fn bk_module_provide(request: *mut bk_module_request, source: *const c_char, length: usize) -> c_int;
+    pub fn bk_module_provide_native(request: *mut bk_module_request, exports: bk_value) -> c_int;
+    pub fn bk_module_fail(request: *mut bk_module_request, error: bk_value) -> c_int;
+    pub fn bk_define_native_module(ctx: bk_ctx, name: *const c_char, length: usize, exports: bk_value) -> c_int;
+    pub fn bk_invalidate_module(ctx: bk_ctx, name: *const c_char, length: usize) -> c_int;
+    pub fn bk_import(ctx: bk_ctx, specifier: *const c_char, length: usize) -> bk_value;
     pub fn bk_compile(
         ctx: bk_ctx,
         source: *const c_char,

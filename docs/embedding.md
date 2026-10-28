@@ -363,6 +363,35 @@ bk_call(app, resolve, BK_UNDEFINED, &result, 1);
 bk_run_jobs(bk_get_runtime(app));
 ```
 
+### Module loaders
+
+`bk_set_module_loader` installs a host loader with two optional callbacks.
+`resolve` maps a specifier and its referrer to a canonical name with
+`bk_module_set_name`; `load` supplies the module for a name with
+`bk_module_provide` (source, which the runtime copies) or
+`bk_module_provide_native` (an exports object). Either can reject with
+`bk_module_fail`, whose error becomes the import's failure. A callback that
+returns `BK_OK` without answering, or a NULL callback, falls back to the
+filesystem unless the loader sets `BK_LOADER_NO_FILESYSTEM_FALLBACK`. Loading
+is synchronous; `BK_LOADER_ASYNC` fails with `BK_ERR_UNSUPPORTED`.
+
+```c
+static bk_status load(bk_ctx ctx, const char *name, bk_module_request *req, void *opaque) {
+    const asset *a = find_asset(name);
+    return a ? bk_module_provide(req, a->text, a->length) : BK_OK;
+}
+
+bk_module_loader loader = { NULL, load, NULL, 0 };
+bk_set_module_loader(bk_get_runtime(app), &loader);
+```
+
+`bk_define_native_module` makes a module from an object: each own enumerable
+string-keyed property, read once, becomes a named export, and the object is
+the `default` export unless it has its own. `bk_invalidate_module` drops a
+loaded module so the next import loads it again, which gives hot reload;
+namespaces and bindings already taken keep the old instance. `bk_import` is
+`import()` from the host and returns a promise of the namespace.
+
 ### Compiled scripts
 
 `bk_compile` parses a script once and returns it as a value; `bk_run_script`

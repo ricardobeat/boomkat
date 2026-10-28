@@ -410,6 +410,7 @@ fn char[]? probe_ts_twin(char[] path) {
 struct DefinedModule {
     char[] name;
     char[] source;
+    bool   native;    // built by define_native_module; `source` is empty
 }
 
 fn char[]? copy_bytes(char[] bytes) @local {
@@ -450,8 +451,90 @@ fn bool define_module(Heap* heap, char[] name, char[] source) {
         heap.defined_modules = grown;
         heap.defined_module_cap = new_cap;
     }
-    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, src_copy };
+    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, src_copy, false };
     return true;
+}
+
+// Removes `name`'s definition, if any.
+fn void undefine_module(Heap* heap, char[] name) @local {
+    DefinedModule* table = (DefinedModule*)heap.defined_modules;
+    for (uint i = 0; i < heap.defined_module_count; i++) {
+        if (!char_slice_eq(table[i].name, name)) continue;
+        mem::free(table[i].name.ptr);
+        mem::free(table[i].source.ptr);
+        table[i] = table[--heap.defined_module_count];
+        return;
+    }
+}
+
+// Drops the module record cached under `name`, so the next import loads it
+// again; namespaces and bindings already taken keep the old instance. A native
+// module's definition goes with it. Returns false when nothing was cached.
+fn bool invalidate_module(Heap* heap, char[] name) {
+    DefinedModule* dm = find_defined_module(heap, name);
+    if (dm != null && dm.native) undefine_module(heap, name);
+    if (!heap.module_index.is_initialized()) return false;
+    ModuleKey key = { .name = name, .attr_type = compiler::ModuleAttrType.NONE };
+    if (!heap.module_index.has_key(key)) return false;
+    heap.module_index.remove(key);
+    return true;
+}
+
+// Makes `name` a module whose exports are `names[i]` bound to `values[i]`,
+// already evaluated. It replaces a module of that name for later imports.
+// Returns false when out of memory.
+fn bool define_native_module(Heap* heap, char[] name, char[][] names, TVal[] values) {
+    invalidate_module(heap, name);
+    undefine_module(heap, name);
+    char[]? name_copy = copy_bytes(name);
+    if (catch name_copy) return false;
+    char[]? empty = copy_bytes("");
+    if (catch empty) { mem::free(name_copy.ptr); return false; }
+    if (heap.defined_module_count >= heap.defined_module_cap) {
+        uint new_cap = heap.defined_module_cap == 0 ? 8 : heap.defined_module_cap * 2;
+        void* grown = mem::realloc(heap.defined_modules, (usz)new_cap * DefinedModule::size);
+        if (grown == null) { mem::free(name_copy.ptr); mem::free(empty.ptr); return false; }
+        heap.defined_modules = grown;
+        heap.defined_module_cap = new_cap;
+    }
+    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, empty, true };
+
+    // The record keeps its own name, separate from the definition table's.
+    char[]? mod_name = copy_bytes(name);
+    if (catch mod_name) return false;
+    ModuleDef*? mod_opt = heap_new_module(heap, mod_name);
+    if (catch mod_opt) return false;
+    ModuleDef* mod = mod_opt;
+    mod.is_synthetic = true;
+    mod.synth_value.set_undefined();
+    EnvRecord*? env_opt = env::env_create_declarative(heap, null);
+    if (catch env_opt) return false;
+    mod.env = env_opt;
+    heap.shade_root_env(mod.env);
+    mod.env.flags.is_module = true;
+    if (mod.env.bindings != null) heap.register_gc_root(mod.env.bindings.as_header());
+    foreach (i, export_name : names) {
+        char[] kept = retain_name(heap, mod, export_name);
+        HString* key = heap.str_intern(kept);
+        if (key == null) return false;
+        env::env_declare(mod.env, key, values[i]);
+        ExportEntry e;
+        e.local_name = kept;
+        e.export_name = kept;
+        e.is_indirect = false;
+        e.req_module_idx = 0;
+        e.is_lexical = false;
+        mod.exports.push(e);
+    }
+    call_on_module_loaded(heap, mod);
+    mod.status = ModuleStatus.LOADED;
+    return true;
+}
+
+// True when a synthetic or native module exports `name`.
+fn bool synthetic_exports(ModuleDef* mod, char[] name) @local {
+    foreach (e : mod.exports) if (char_slice_eq(e.export_name, name)) return true;
+    return false;
 }
 
 // The source defined for `name`, if the host defined one.
@@ -782,6 +865,11 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
             return hooks.resolve_name(base_name, specifier, hooks.udata);
         }
     }
+    return default_resolve_name(base_name, specifier);
+}
+
+// The filesystem resolution used when no host hook resolves names.
+fn char[]? default_resolve_name(char[] base_name, char[] specifier) {
     // A bare specifier names a package: resolve it through node_modules
     // directories first (Node-style), falling back to treating it as a
     // plain path (plus an extension probe so `import 'x'` can find `x.ts`).
@@ -989,7 +1077,12 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
 
     // 3. Read source via host hook
     char[]? source_opt = call_read_source(heap, normalized, attr_type);
-    if (catch err = source_opt) return MODULE_ERROR~;
+    if (catch err = source_opt) {
+        // A host loader may have answered with a native module instead.
+        ModuleDef* native = heap_find_loaded_module(heap, normalized, attr_type);
+        if (native != null) return native;
+        return MODULE_ERROR~;
+    }
     char[] source = source_opt;
     // An empty ECMAScript file is a module with no body, but the loader's
     // extension probing uses emptiness as its "keep looking" signal (see
@@ -1423,7 +1516,7 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
         if (source_mod.is_synthetic) {
-            if (!char_slice_eq(ie.import_name, "default")) {
+            if (!synthetic_exports(source_mod, ie.import_name)) {
                 return module_raise_link_error(heap,
                     "requested module does not provide the requested export");
             }

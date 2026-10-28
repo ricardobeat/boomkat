@@ -320,6 +320,242 @@ fn int bk_define_module(void* ctxp, char* name, usz name_len, char* src, usz len
     return BK_OK;
 }
 
+// ============================================================================
+// Module loader and native modules
+// ============================================================================
+
+const uint BK_LOADER_ASYNC = 1;
+const uint BK_LOADER_NO_FILESYSTEM_FALLBACK = 2;
+
+alias BkResolveFn = fn int(void* ctx, char* referrer, char* specifier, ModuleRequest* request, void* opaque);
+alias BkLoadFn    = fn int(void* ctx, char* name, ModuleRequest* request, void* opaque);
+
+// One question to the host loader, answered through bk_module_* before the
+// callback returns.
+struct ModuleRequest {
+    Runtime* rt;
+    char[]   name;        // set by bk_module_set_name; malloc'd
+    char[]   source;      // set by bk_module_provide; heap payload memory
+    char[]   for_name;    // the module a load asks for
+    bool     answered;
+    bool     failed;
+    TVal     error;
+}
+
+// `bytes` as a NUL-terminated malloc'd string, or null.
+fn char* cstr_copy(char[] bytes) {
+    char* out = (char*)libc::malloc(bytes.len + 1);
+    if (out == null) return null;
+    if (bytes.len > 0) mem::copy(out, bytes.ptr, (sz)bytes.len);
+    out[bytes.len] = 0;
+    return out;
+}
+
+// Parks the host's failure as the pending module error.
+fn void park_module_error(Runtime* rt, ModuleRequest* req) {
+    if (!req.failed) return;
+    rt.heap.shade_root_tval(req.error);
+    rt.heap.error_value = req.error;
+    rt.heap.has_error = true;
+}
+
+fn char[]? loader_resolve(char[] base_name, char[] specifier, void* udata) {
+    Runtime* rt = (Runtime*)udata;
+    ModuleLoader* l = &rt.module_loader;
+    bool fallback = (l.flags & BK_LOADER_NO_FILESYSTEM_FALLBACK) == 0;
+    if (l.resolve == null) {
+        if (!fallback) return esm::MODULE_ERROR~;
+        return esm::default_resolve_name(base_name, specifier);
+    }
+    char* ref = cstr_copy(base_name);
+    char* spec = cstr_copy(specifier);
+    defer { libc::free(ref); libc::free(spec); }
+    if (ref == null || spec == null) return esm::MODULE_ERROR~;
+    ModuleRequest req = { .rt = rt };
+    int rc = ((BkResolveFn)l.resolve)(rt.active, ref, spec, &req, l.opaque);
+    if (rc == BK_OK && req.name.ptr != null) return req.name;
+    if (req.name.ptr != null) libc::free(req.name.ptr);
+    if (rc == BK_OK && !req.failed && fallback) return esm::default_resolve_name(base_name, specifier);
+    park_module_error(rt, &req);
+    return esm::MODULE_ERROR~;
+}
+
+fn char[]? loader_load(char[] name, void* udata) {
+    Runtime* rt = (Runtime*)udata;
+    ModuleLoader* l = &rt.module_loader;
+    bool fallback = (l.flags & BK_LOADER_NO_FILESYSTEM_FALLBACK) == 0;
+    if (l.load == null) {
+        if (!fallback) return esm::MODULE_ERROR~;
+        return esm::default_module_read(name, null);
+    }
+    char* n = cstr_copy(name);
+    defer libc::free(n);
+    if (n == null) return esm::MODULE_ERROR~;
+    ModuleRequest req = { .rt = rt, .for_name = name };
+    int rc = ((BkLoadFn)l.load)(rt.active, n, &req, l.opaque);
+    if (rc == BK_OK && req.source.ptr != null) return req.source;
+    // A native answer has defined the module; the loader finds it in the cache.
+    if (rc == BK_OK && req.answered && !req.failed) return esm::MODULE_ERROR~;
+    if (rc == BK_OK && !req.failed && fallback) return esm::default_module_read(name, null);
+    park_module_error(rt, &req);
+    return esm::MODULE_ERROR~;
+}
+
+fn int bk_set_module_loader(void* runtime, embed::ModuleLoader* loader) @export("bk_set_module_loader") {
+    if (runtime == null) return BK_ERR_INVALID;
+    Runtime* rt = (Runtime*)runtime;
+    if (loader == null) {
+        rt.module_loader = {};
+        rt.heap.set_module_hooks(null);
+        return BK_OK;
+    }
+    if ((loader.flags & ~(BK_LOADER_ASYNC | BK_LOADER_NO_FILESYSTEM_FALLBACK)) != 0) return BK_ERR_INVALID;
+    if ((loader.flags & BK_LOADER_ASYNC) != 0) return BK_ERR_UNSUPPORTED;
+    rt.module_loader = *loader;
+    rt.module_hooks = { .resolve_name = &loader_resolve, .read_source = &loader_load, .udata = (void*)rt };
+    rt.heap.set_module_hooks(&rt.module_hooks);
+    return BK_OK;
+}
+
+fn int bk_module_set_name(ModuleRequest* req, char* name, usz len) @export("bk_module_set_name") {
+    if (req == null || name == null || len == 0 || req.answered) return BK_ERR_INVALID;
+    char* copy = cstr_copy(name[:len]);
+    if (copy == null) return BK_ERR_NOMEM;
+    req.name = copy[:len];
+    req.answered = true;
+    return BK_OK;
+}
+
+// The source is copied into memory the runtime frees when it is destroyed;
+// the module keeps referring to it for as long as it lives.
+fn int bk_module_provide(ModuleRequest* req, char* source, usz len) @export("bk_module_provide") {
+    if (req == null || (source == null && len != 0) || req.answered || req.for_name.ptr == null) return BK_ERR_INVALID;
+    Runtime* rt = req.rt;
+    void* raw = rt.heap.alloc_func(rt.heap.heap_udata, embed::HostPayload::size + len + 1);
+    if (raw == null) return BK_ERR_NOMEM;
+    embed::HostPayload* payload = (embed::HostPayload*)raw;
+    payload.next = rt.host_payloads;
+    rt.host_payloads = payload;
+    char* text = (char*)raw + embed::HostPayload::size;
+    if (len > 0) mem::copy(text, source, (sz)len);
+    text[len] = 0;
+    req.source = text[:len];
+    req.answered = true;
+    return BK_OK;
+}
+
+// Collects own enumerable string-keyed properties of `exports` (reading them
+// with [[Get]]) plus `default`, and defines the module.
+fn int define_native(Runtime* rt, char[] name, TVal exports) {
+    if (!exports.is_object()) return fail(rt, BK_ERR_TYPE, "exports must be an object");
+    Heap* hp = rt.heap;
+    TVal keys;
+    TVal undefined; undefined.set_undefined();
+    int rc = call_builtin(rt, builtins::Builtin.OBJECT_KEYS, undefined, &exports, 1, &keys);
+    if (rc != BK_OK) return rc;
+    HObject* karr = (HObject*)keys.get_heapptr();
+    ulong keys_held = embed::slot_alloc(rt, keys);
+    defer embed::slot_release(rt, keys_held);
+    ulong count;
+    rc = length_of(rt, karr, &count);
+    if (rc != BK_OK) return rc;
+    char[][] names = mem::new_array(char[], (sz)(count + 1));
+    TVal[] values = mem::new_array(TVal, (sz)(count + 1));
+    // Registry roots keep values read so far alive while later getters run.
+    ulong[] held = mem::new_array(ulong, (sz)(count + 1));
+    defer {
+        foreach (n : names) if (n.ptr != null) mem::free(n.ptr);
+        foreach (h : held) if (h != 0) embed::slot_release(rt, h);
+        mem::free(names.ptr);
+        mem::free(values.ptr);
+        mem::free(held.ptr);
+    }
+    usz used = 0;
+    bool has_default = false;
+    HObject* eo = (HObject*)exports.get_heapptr();
+    for (ulong i = 0; i < count; i++) {
+        TVal kv;
+        hp.has_error = false;
+        char[24] digits;
+        usz nd = 0;
+        ulong x = i;
+        do { digits[23 - nd++] = (char)('0' + x % 10); x /= 10; } while (x != 0);
+        HString* index = hp.str_intern(digits[24 - nd:nd]);
+        if (index == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
+        if (!builtins::js_get_with_receiver((void*)rt.vm, hp, karr, index, keys, &kv)) return vm_fault(rt);
+        if (!kv.is_string()) continue;
+        HString* key = (HString*)kv.get_heapptr();
+        if (!builtins::js_get_with_receiver((void*)rt.vm, hp, eo, key, exports, &values[used])) return vm_fault(rt);
+        held[used] = embed::slot_alloc(rt, values[used]);
+        char[] buf = mem::new_array(char, (sz)key.unit_len() * 3 + 1);
+        names[used] = buf[:key.write_cesu8(buf)];
+        if (names[used] == "default") has_default = true;
+        used++;
+    }
+    if (!has_default) {
+        char[] buf = mem::new_array(char, 8);
+        mem::copy(buf.ptr, "default", 7);
+        names[used] = buf[:7];
+        values[used] = exports;
+        used++;
+    }
+    if (!esm::define_native_module(hp, name, names[:used], values[:used])) return fail(rt, BK_ERR_NOMEM, "out of memory");
+    return BK_OK;
+}
+
+fn int bk_module_provide_native(ModuleRequest* req, ulong exports) @export("bk_module_provide_native") {
+    if (req == null || req.answered || req.for_name.ptr == null) return BK_ERR_INVALID;
+    Runtime* rt = req.rt;
+    TVal v;
+    if (!embed::resolve_handle(rt, exports, &v)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
+    int rc = define_native(rt, req.for_name, v);
+    if (rc == BK_OK) req.answered = true;
+    return rc;
+}
+
+fn int bk_module_fail(ModuleRequest* req, ulong error) @export("bk_module_fail") {
+    if (req == null || req.answered) return BK_ERR_INVALID;
+    TVal v;
+    if (!embed::resolve_handle(req.rt, error, &v)) return BK_ERR_INVALID;
+    req.error = v;
+    req.failed = true;
+    req.answered = true;
+    return BK_OK;
+}
+
+fn int bk_define_native_module(void* ctxp, char* name, usz len, ulong exports) @export("bk_define_native_module") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    if (name == null || len == 0) return fail(rt, BK_ERR_INVALID, "missing module name");
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, exports, &v)) { bad_handle(rt); return BK_ERR_INVALID; }
+    return define_native(rt, name[:len], v);
+}
+
+fn int bk_invalidate_module(void* ctxp, char* name, usz len) @export("bk_invalidate_module") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    if (name == null || len == 0) return fail(rt, BK_ERR_INVALID, "missing module name");
+    embed::clear_err(rt);
+    if (!esm::invalidate_module(rt.heap, name[:len])) return fail(rt, BK_ERR_INVALID, "no module of that name is loaded");
+    return BK_OK;
+}
+
+// import(specifier) from the host: a promise of the module namespace.
+fn ulong bk_import(void* ctxp, char* specifier, usz len) @export("bk_import") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (specifier == null) return fail_value(rt, BK_ERR_INVALID, "missing specifier");
+    embed::clear_err(rt);
+    rt.heap.has_error = false;
+    TVal? p = esm::dynamic_import(rt.heap, rt.vm, specifier[:len]);
+    if (catch p) return fail_value(rt, BK_ERR_UNSUPPORTED, "module loading is not available in this build");
+    ulong out = store(rt, p);
+    rt.heap.decref_tval(&p);
+    return out;
+}
+
 fn int bk_is_job_pending(void* rtp) @export("bk_is_job_pending") {
     if (rtp == null) return 0;
     Heap* h = ((Runtime*)rtp).heap;
