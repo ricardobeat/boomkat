@@ -49,6 +49,14 @@ module JS
     SYNTAX    = 4
   end
 
+  # Immediate handles from boomkat.h: valid in any context, never freed.
+  module Handle
+    UNDEFINED = 1
+    NULL      = 2
+    TRUE      = 3
+    FALSE     = 4
+  end
+
   # Value types reported by bk_get_type.
   module Type
     UNDEFINED = 0
@@ -214,8 +222,6 @@ module JS
       'unsigned long long bk_call(void*, unsigned long long, unsigned long long, const unsigned long long*, unsigned int)',
 
       'unsigned long long bk_new_number(void*, double)',
-      'unsigned long long bk_new_undefined(void*)',
-      'unsigned long long bk_new_bool(void*, int)',
       'unsigned long long bk_new_string(void*, const char*, size_t)',
       'unsigned long long bk_new_string_latin1(void*, const char*, size_t)',
       'unsigned long long bk_new_string_utf16(void*, const void*, size_t)',
@@ -811,8 +817,8 @@ module JS
     # silently returning undefined.
     def return_value(call, ctx, value)
       case value
-      when nil            then Lib.bk_new_undefined(ctx)
-      when true, false    then Lib.bk_new_bool(ctx, value ? 1 : 0)
+      when nil            then Handle::UNDEFINED
+      when true, false    then value ? Handle::TRUE : Handle::FALSE
       when Numeric        then Lib.bk_new_number(ctx, value.to_f)
       when String
         bytes = value.dup.force_encoding(Encoding::BINARY)
@@ -846,7 +852,7 @@ module JS
 
       case value
       when true, false
-        call.send(:record_owned, Lib.bk_new_bool(pointer, value ? 1 : 0))
+        value ? Handle::TRUE : Handle::FALSE
       when Numeric
         call.send(:record_owned, Lib.bk_new_number(pointer, value.to_f))
       when String, Symbol

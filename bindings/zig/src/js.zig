@@ -235,9 +235,7 @@ pub const Ctx = struct {
     }
 
     pub fn boolean(self: Ctx, value: bool) Error!Value {
-        const result = c.bk_new_bool(self.raw, @intFromBool(value));
-        if (result == 0) return valueError(self.raw);
-        return .{ .owner = self.raw, .handle = result };
+        return .{ .owner = self.raw, .handle = if (value) c.BK_TRUE else c.BK_FALSE };
     }
 
     pub fn string(self: Ctx, value: []const u8) Error!Value {

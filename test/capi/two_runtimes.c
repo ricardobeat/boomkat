@@ -128,7 +128,7 @@ static bk_value h_reenter(bk_ctx ctx, bk_value this_value, unsigned argc, const 
     if (v != 0) bk_free_value(g_other, v);
     return bk_new_number(ctx, (arg == kept) ? kept : -1);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Same name in both runtimes, different udata: each must see its own. */
@@ -136,7 +136,7 @@ static bk_value h_udata(bk_ctx ctx, bk_value this_value, unsigned argc, const bk
     (void)this_value; (void)argc; (void)argv;
     return bk_new_number(ctx, udata ? *(double *)udata : -1);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 static void test_reentry(void) {

@@ -63,12 +63,18 @@ root. Ordinary arguments are borrowed: setters and `bk_throw` leave the caller's
 handle owned by the caller. A callback's `this` and `argv` borrow the current
 call; duplicate a handle to keep it after return.
 
+`BK_UNDEFINED`, `BK_NULL`, `BK_TRUE` and `BK_FALSE` (and `BK_BOOL(b)`) are
+immediate handles. They are valid with any context and need no free;
+`bk_free_value` ignores them and `bk_dup_value` returns them unchanged. Every
+call whose result is undefined, null or a boolean returns the immediate, so
+those results take no registry slot.
+
 Value-producing functions return `BK_EXCEPTION` on failure. Use
 `bk_is_exception` to check it, then `bk_get_exception(ctx)` to take the actual
 thrown value. This preserves identity, primitives, and `throw undefined`.
 API failures such as invalid handles produce an Error when taken. A successful
 call may clear diagnostics but leaves a pending exception available until taken
-or replaced. Taking an empty exception slot yields owned undefined.
+or replaced. Taking an empty exception slot yields `BK_UNDEFINED`.
 
 Calls that report a `bk_status` return `BK_OK` (0) or a negative code;
 `bk_status_str` names it. `BK_ERR_UNSUPPORTED` means the feature is compiled out
@@ -183,7 +189,7 @@ bk_free_value(app, function);
 
 The callback receives its stable defining context. It returns an owned handle,
 which transfers to the engine, or returns `bk_throw_error`, `bk_throw`, or
-`BK_EXCEPTION` to propagate a pending failure. Return `bk_new_undefined` for a
+`BK_EXCEPTION` to propagate a pending failure. Return `BK_UNDEFINED` for a
 normal undefined result. Returning a borrowed argument requires duplication.
 `bk_call` can invoke JS from a callback, and the host can catch its failure with
 `bk_get_exception` before returning a normal result. Interrupts remain

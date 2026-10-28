@@ -86,6 +86,9 @@ fn ulong take_exception(Runtime* rt) {
 // handles.
 //
 // Bits 63..48 identify the issuing Runtime to catch cross-runtime lookups.
+//
+// Runtime id 0 is never issued. Handles 1 to 4 are the immediates undefined,
+// null, true and false: valid in every runtime, never stored, never freed.
 const ulong SLOT_INDEX_BITS = 32;
 const ulong SLOT_INDEX_MASK = (1ul << SLOT_INDEX_BITS) - 1;
 const ulong SLOT_GEN_BITS   = 15;
@@ -107,6 +110,31 @@ const ulong RT_ID_MASK  = 0xFFFF;
 uint g_next_rt_id = 1;
 
 macro ulong handle_rt_id(ulong h) => (h >> RT_ID_SHIFT) & RT_ID_MASK;
+
+const ulong IMM_UNDEFINED = 1;
+const ulong IMM_NULL      = 2;
+const ulong IMM_TRUE      = 3;
+const ulong IMM_FALSE     = 4;
+
+// The immediate handle for `v`, or 0 when `v` has none.
+fn ulong immediate_of(TVal v) @inline {
+    if (v.is_undefined()) return IMM_UNDEFINED;
+    if (v.is_null()) return IMM_NULL;
+    if (v.is_boolean()) return v.get_boolean() ? IMM_TRUE : IMM_FALSE;
+    return 0;
+}
+
+// Reads an immediate handle into `out`. False for any other handle.
+fn bool immediate_get(ulong id, TVal* out) @inline {
+    switch (id) {
+        case IMM_UNDEFINED: out.set_undefined();
+        case IMM_NULL:      out.set_null();
+        case IMM_TRUE:      out.set_boolean(true);
+        case IMM_FALSE:     out.set_boolean(false);
+        default:            return false;
+    }
+    return true;
+}
 
 // One registry entry. `used` distinguishes live slots from free-list entries.
 struct SlotEntry {
@@ -594,6 +622,7 @@ fn ulong scope_handle(Runtime* rt, ulong index) @inline {
 }
 
 fn bool resolve_handle(Runtime* rt, ulong id, TVal* out) {
+    if (id <= IMM_FALSE) return immediate_get(id, out);
     if ((id & SCOPE_HANDLE_BIT) == 0) return slot_get(rt, id, out);
     if (rt == null || handle_rt_id(id) != (ulong)rt.rt_id) return false;
     uint depth = (uint)((id >> 32) & SLOT_GEN_MASK);
@@ -833,7 +862,7 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
         return;
     }
     TVal value;
-    if ((result & SCOPE_HANDLE_BIT) != 0 || !slot_get(rt, result, &value)) {
+    if ((result & SCOPE_HANDLE_BIT) != 0 || !(immediate_get(result, &value) || slot_get(rt, result, &value))) {
         builtins::host_throw_error(bctx, builtins::HOST_ERR_TYPE, "C function must return an owned value");
         return;
     }

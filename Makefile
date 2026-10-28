@@ -380,6 +380,15 @@ out/strings: test/capi/strings.c include/boomkat.h out/boomkat.a
 test-strings-api: out/strings
 	./out/strings
 
+# Immediate handles and local scopes.
+out/handles: test/capi/handles.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/handles.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/handles
+
+.PHONY: test-handles-api
+test-handles-api: out/handles
+	./out/handles
+
 .PHONY: test-api-lifecycle
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle

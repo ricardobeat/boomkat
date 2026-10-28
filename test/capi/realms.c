@@ -19,7 +19,7 @@ static bk_value bounce(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_
     bk_value result = bk_eval_ex(ctx, "secret === 42", strlen("secret === 42"), "<eval>", BK_EVAL_GLOBAL);
     return result;
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 int main(void) {

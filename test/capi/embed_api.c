@@ -324,7 +324,7 @@ static void test_get_primitive(bk_ctx rt) {
     if (!self || bk_read_string(rt, self, type, sizeof type, &blen) != BK_OK || strcmp(type, "number") != 0) {
         fail("primitive getter receiver is not the primitive");
     }
-    bk_value undef = bk_new_undefined(rt);
+    bk_value undef = BK_UNDEFINED;
     if (bk_get_property(rt, undef, "x", 1) || bk_get_error_code(rt) != BK_ERR_TYPE) {
         fail("reading a property of undefined should fail with BK_ERR_TYPE");
     }
@@ -401,7 +401,7 @@ static bk_value doubled(bk_ctx ctx, bk_value this_value, unsigned argc, const bk
     bk_read_number(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION), &d);
     return bk_new_number(ctx, d * 2.0);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Evaluates its argument as a separate script, the way a host `load()` or
@@ -415,7 +415,7 @@ static bk_value h_eval_script(bk_ctx ctx, bk_value this_value, unsigned argc, co
     bk_free_cstring(ctx, src);
     if (v) bk_free_value(ctx, v);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* A host callback can evaluate a script while another is running. It runs

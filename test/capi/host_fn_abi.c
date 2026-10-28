@@ -29,7 +29,7 @@ static bk_value h_answer(bk_ctx ctx, bk_value this_value, unsigned argc, const b
     host_calls++;
     return bk_new_number(ctx, 42);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 static bk_value h_add(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
@@ -43,7 +43,7 @@ static bk_value h_add(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_v
     }
     return bk_new_number(ctx, sum);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Reads the udata pointer through, proving passthrough. */
@@ -51,7 +51,7 @@ static bk_value h_udata(bk_ctx ctx, bk_value this_value, unsigned argc, const bk
     (void)this_value; (void)argc; (void)argv;
     return bk_new_number(ctx, udata ? *(int *)udata : -1);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Returns a host-built string, including an astral character. */
@@ -61,7 +61,7 @@ static bk_value h_greet(bk_ctx ctx, bk_value this_value, unsigned argc, const bk
     (void)udata;
     return bk_new_string(ctx, msg, sizeof(msg) - 1);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Throws a TypeError. */
@@ -70,7 +70,7 @@ static bk_value h_throws(bk_ctx ctx, bk_value this_value, unsigned argc, const b
     (void)udata;
     return bk_throw_error(ctx, BK_ERROR_TYPE, "host refused");
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Echoes argument 0 back, exercising handle round-tripping. */
@@ -79,17 +79,17 @@ static bk_value h_echo(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_
     (void)udata;
     return bk_dup_value(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION));
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Reports whether it saw a construct call, stashed via the return value. */
 static bk_value h_is_new(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *udata) {
     (void)this_value; (void)argc; (void)argv;
     (void)udata;
-    if (!bk_is_constructor_call(ctx)) return bk_new_bool(ctx, 0);
+    if (!bk_is_constructor_call(ctx)) return BK_FALSE;
     /* On `new` the created object is returned automatically. */
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* hostApply(f, x) -> f(x): the host calling back into JS. */
@@ -102,7 +102,7 @@ static bk_value h_apply(bk_ctx ctx, bk_value this_value, unsigned argc, const bk
     if (!(out = bk_call(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION), 0, args, 1))) return BK_EXCEPTION;
     return out;
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Calls a JS function that throws; the throw must propagate. */
@@ -112,7 +112,7 @@ static bk_value h_apply_throwing(bk_ctx ctx, bk_value this_value, unsigned argc,
     if (!bk_call(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION), 0, NULL, 0)) return BK_EXCEPTION;
     return bk_new_number(ctx, 0);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* --- harness ------------------------------------------------------------- */

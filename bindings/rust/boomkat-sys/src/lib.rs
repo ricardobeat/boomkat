@@ -59,6 +59,12 @@ pub const BK_CTOR: c_uint = 1;
 /// The handle value that is never valid.
 pub const BK_EXCEPTION: bk_value = 0;
 
+// Immediate handles: valid with any context, never freed.
+pub const BK_UNDEFINED: bk_value = 1;
+pub const BK_NULL: bk_value = 2;
+pub const BK_TRUE: bk_value = 3;
+pub const BK_FALSE: bk_value = 4;
+
 /// A string's units in place: width 1 is Latin-1, width 2 native UTF-16.
 /// `ascii` is nonzero when width is 1 and every unit is below 0x80. Valid only
 /// until the next call into the engine.
@@ -214,9 +220,6 @@ extern "C" {
     pub fn bk_to_cstring(ctx: bk_ctx, value: bk_value, length: *mut usize) -> *const c_char;
     pub fn bk_free_cstring(ctx: bk_ctx, string: *const c_char);
     pub fn bk_new_number(ctx: bk_ctx, value: c_double) -> bk_value;
-    pub fn bk_new_bool(ctx: bk_ctx, value: c_int) -> bk_value;
-    pub fn bk_new_null(ctx: bk_ctx) -> bk_value;
-    pub fn bk_new_undefined(ctx: bk_ctx) -> bk_value;
     pub fn bk_new_string(ctx: bk_ctx, utf8: *const c_char, length: usize) -> bk_value;
     pub fn bk_new_string_latin1(ctx: bk_ctx, chars: *const u8, length: usize) -> bk_value;
     pub fn bk_new_string_utf16(ctx: bk_ctx, units: *const u16, length: usize) -> bk_value;
