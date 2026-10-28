@@ -1,0 +1,32 @@
+[
+  {
+    "pair": 0,
+    "mode": "before",
+    "ms": 23777
+  },
+  {
+    "pair": 0,
+    "mode": "after",
+    "ms": 14849
+  },
+  {
+    "pair": 1,
+    "mode": "after",
+    "ms": 20642
+  },
+  {
+    "pair": 1,
+    "mode": "before",
+    "ms": 22658
+  },
+  {
+    "pair": 2,
+    "mode": "before",
+    "ms": 14194
+  },
+  {
+    "pair": 2,
+    "mode": "after",
+    "ms": 9975
+  }
+]

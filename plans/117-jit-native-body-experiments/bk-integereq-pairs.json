@@ -1,0 +1,242 @@
+[
+  {
+    "repeat": 0,
+    "bench": "richards",
+    "mode": "before",
+    "ms": 83
+  },
+  {
+    "repeat": 0,
+    "bench": "richards",
+    "mode": "after",
+    "ms": 100
+  },
+  {
+    "repeat": 0,
+    "bench": "deltablue",
+    "mode": "before",
+    "ms": 118
+  },
+  {
+    "repeat": 0,
+    "bench": "deltablue",
+    "mode": "after",
+    "ms": 113
+  },
+  {
+    "repeat": 0,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 159
+  },
+  {
+    "repeat": 0,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 158
+  },
+  {
+    "repeat": 0,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 161
+  },
+  {
+    "repeat": 0,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 160
+  },
+  {
+    "repeat": 1,
+    "bench": "richards",
+    "mode": "after",
+    "ms": 80
+  },
+  {
+    "repeat": 1,
+    "bench": "richards",
+    "mode": "before",
+    "ms": 82
+  },
+  {
+    "repeat": 1,
+    "bench": "deltablue",
+    "mode": "after",
+    "ms": 114
+  },
+  {
+    "repeat": 1,
+    "bench": "deltablue",
+    "mode": "before",
+    "ms": 114
+  },
+  {
+    "repeat": 1,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 158
+  },
+  {
+    "repeat": 1,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 158
+  },
+  {
+    "repeat": 1,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 159
+  },
+  {
+    "repeat": 1,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 161
+  },
+  {
+    "repeat": 2,
+    "bench": "richards",
+    "mode": "before",
+    "ms": 82
+  },
+  {
+    "repeat": 2,
+    "bench": "richards",
+    "mode": "after",
+    "ms": 80
+  },
+  {
+    "repeat": 2,
+    "bench": "deltablue",
+    "mode": "before",
+    "ms": 114
+  },
+  {
+    "repeat": 2,
+    "bench": "deltablue",
+    "mode": "after",
+    "ms": 120
+  },
+  {
+    "repeat": 2,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 164
+  },
+  {
+    "repeat": 2,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 163
+  },
+  {
+    "repeat": 2,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 165
+  },
+  {
+    "repeat": 2,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 165
+  },
+  {
+    "repeat": 3,
+    "bench": "richards",
+    "mode": "after",
+    "ms": 82
+  },
+  {
+    "repeat": 3,
+    "bench": "richards",
+    "mode": "before",
+    "ms": 84
+  },
+  {
+    "repeat": 3,
+    "bench": "deltablue",
+    "mode": "after",
+    "ms": 122
+  },
+  {
+    "repeat": 3,
+    "bench": "deltablue",
+    "mode": "before",
+    "ms": 118
+  },
+  {
+    "repeat": 3,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 160
+  },
+  {
+    "repeat": 3,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 162
+  },
+  {
+    "repeat": 3,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 164
+  },
+  {
+    "repeat": 3,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 165
+  },
+  {
+    "repeat": 4,
+    "bench": "richards",
+    "mode": "before",
+    "ms": 88
+  },
+  {
+    "repeat": 4,
+    "bench": "richards",
+    "mode": "after",
+    "ms": 82
+  },
+  {
+    "repeat": 4,
+    "bench": "deltablue",
+    "mode": "before",
+    "ms": 118
+  },
+  {
+    "repeat": 4,
+    "bench": "deltablue",
+    "mode": "after",
+    "ms": 117
+  },
+  {
+    "repeat": 4,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 163
+  },
+  {
+    "repeat": 4,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 160
+  },
+  {
+    "repeat": 4,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 165
+  },
+  {
+    "repeat": 4,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 169
+  }
+]

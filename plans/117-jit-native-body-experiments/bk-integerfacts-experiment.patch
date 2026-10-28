@@ -1,0 +1,74 @@
+diff --git a/src/vm/vm_sljit_flow.c3 b/src/vm/vm_sljit_flow.c3
+index 707246c9..d1a93977 100644
+--- a/src/vm/vm_sljit_flow.c3
++++ b/src/vm/vm_sljit_flow.c3
+@@ -15,6 +15,7 @@ struct FunctionFlowLoad @feat(SLJIT) { uint base; uint value; void* key; }
+ struct FunctionFlow @feat(SLJIT) {
+     // Numbers/objects and permanently pinned strings need no refcount release.
+     bool[256] unowned;
++    bool[256] integer;
+     char[256] registers;
+     char[4] owners;
+     uint used;
+@@ -29,6 +30,7 @@ struct FunctionFlow @feat(SLJIT) {
+ }
+ fn void FunctionFlow.forget(&self, uint reg) @feat(SLJIT) {
+     self.unowned[reg] = false;
++    self.integer[reg] = false;
+     self.shapes[reg] = 0;
+     self.versions[reg] = ++self.next_version;
+     foreach (&load : self.loads) if (load.value == reg) load.key = null;
+@@ -93,6 +95,7 @@ fn void FunctionEmitter.flow_flush(&self) @feat(SLJIT) {
+     self.flow.used = self.flow.pinned; self.flow.dirty = self.flow.pinned;
+     for (uint i = 0; i < 256; i++) {
+         self.flow.unowned[i] = false;
++        self.flow.integer[i] = false;
+         self.flow.shapes[i] = 0; self.flow.versions[i] = i + 1;
+     }
+     self.flow.this_shape = 0; self.flow.next_version = 256; self.flow.heap_write();
+@@ -200,3 +203,14 @@ fn void FunctionEmitter.flow_reload(&self, uint pc) @feat(SLJIT) {
+     reload.e.bind(done);
+     if (reload.e.failed) self.out.e.failed = true;
+ }
++
++// These producers always return a tagged integer after their guards succeed.
++fn bool function_integer_result(Instruction ins, FunctionFlow* flow) @feat(SLJIT) {
++    switch (ins.op) {
++        case LDINT: return true;
++        case LDREG: return flow.integer[ins.b];
++        case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR: case BNOT:
++        case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI: return true;
++        default: return false;
++    }
++}
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index 68c05de2..2be0d86e 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -312,7 +312,10 @@ fn void FunctionEmitter.store(&self, uint reg, uint pc, bool known = false) @fea
+         self.flow_value(reg, pc);
+         return;
+     }
++    bool integer = self.out.flow != null && reg == self.cf.code[pc].a
++        && function_integer_result(self.cf.code[pc], self.out.flow);
+     function_store(&self.out, reg, jit::reg_r(0), pc, known);
++    if (self.out.flow != null) self.flow.integer[reg] = integer;
+ }
+ 
+ fn void FunctionEmitter.truth(&self, uint reg, uint pc) @feat(SLJIT) {
+@@ -396,6 +399,15 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
+     int mem            = jit::SLJIT_MEM;
+     self.out.load(ins.b, r0);
+     self.out.load(ins.c, r1);
++    if (self.out.flow != null && self.flow.integer[ins.b] && self.flow.integer[ins.c]) {
++        void* same = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
++        e.mov(r0, 0, imm, (long)(types::TAG_BOOLEAN << 48) | (negate ? 1 : 0));
++        void* done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
++        e.bind(same);
++        e.mov(r0, 0, imm, (long)(types::TAG_BOOLEAN << 48) | (negate ? 0 : 1));
++        e.bind(done);
++        return;
++    }
+     e.op(jit::SLJIT_LSHR, r2, r0, 0, imm, 48);
+     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+     void* nonnumber_left = e.cmp(jit::SLJIT_GREATER, r2, 0, imm, (long)types::TAG_FASTINT);

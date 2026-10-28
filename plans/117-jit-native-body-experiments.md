@@ -106,3 +106,42 @@ bytes. Restricting emission to own-data feedback yields DeltaBlue117→116,
 Richards83→84, RayTrace163→162, Splay111→111; code461548 bytes. No persuasive
 speedup for the extra code; removed. Inlined property misses still reconstruct
 interpreter frames and are not covered by this prototype.
+
+
+## Inline ordinary-read continuation (removed)
+
+Factored ordinary data-slot lookup from native_read and reused it against
+borrowed inline windows, with non-string results only and no allocation or
+observable calls. Added continuation labels and flow-reset boundaries. Focused
+three-mode checks pass. Stats against the older current-profile binary at
+2c310e0e: DeltaBlue inline recoveries75472→2338, inlined4877650→4962648.
+This large recovery reduction only gives a small timing change: paired release
+medians versus5130a280 DeltaBlue115→113, Richards83→85, RayTrace162→160,
+Splay113→112, Crypto159→158. Restricting continuation boundaries to polymorphic
+feedback yields DeltaBlue115→115, Richards82→82, RayTrace161→164,
+Splay114→110, Crypto159→158. Removed rather than claim a broad win.
+The preserved patch is the selective version; remove the feedback restriction
+to reproduce the broader version. Profiling evidence favors eliminating
+successful generated-code work over further transition-only changes.
+
+
+## Integer equality and SLJIT audit after b2be46d3
+
+Performance-first seed for Richards' predicate region. Explicit block-local
+integer-result facts did not improve Richards (84→85 ms); removed before broad
+correctness work. Direct tagged-integer equality avoids F64 conversions.
+Branch-result variant: Richards83→82, DeltaBlue118→117, Crypto162→160,
+RayTrace165→164. Condition-flags materialization variant: Richards84→83,
+DeltaBlue119→120, Crypto168→167, RayTrace168→169. Short-run differences are small.
+Three alternating extended Richards pairs (12000 workload iterations):
+23777→14849, 22658→20642, 14194→9975 ms. All favor the candidate but absolute
+variance is large; do not report the median ratio as a reliable broad speedup.
+Focused three-mode equality/JIT checks, generated-code ABI checks and targeted
+ASan equality/Richards/DeltaBlue pass. Broad differential matches (local status1, Rosetta/modules0). Equality landed196e4028.
+
+SLJIT audit committed6fe17d05: five status returns corrected from64 to32bits;
+condition materialization exposed and executed in the ABI suite. New checker
+validates70 constants,23 return widths,106 parameter widths and arity against
+the bundled header. Architecture documentation inventories missing capabilities
+and constraints; existing shared-register calls/fragments/patching distinguished
+from missing indexed-operand helpers/selects/flag setters/constants/SIMD APIs.

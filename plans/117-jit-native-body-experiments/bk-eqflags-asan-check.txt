@@ -1,0 +1,6 @@
+test/jit_integer_equality.js 0 Integer equality: PASS
+ 
+bench/mini/richards.js 0 Richards: 90 ms
+ 
+bench/mini/deltablue.js 0 DeltaBlue: 173 ms
+ 
