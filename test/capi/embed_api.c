@@ -364,7 +364,7 @@ static void test_enumeration(bk_ctx rt) {
     if (!(obj = bk_eval_ex(rt, "var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e", strlen("var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e"), "<eval>", BK_EVAL_GLOBAL))) {
         printf("FAIL: eval enum setup: %s\n", bk_get_error_message(rt)); failures++; return;
     }
-    if (!(keys = bk_get_own_property_names(rt, obj))) {
+    if (!(keys = bk_get_own_property_keys(rt, obj, BK_KEYS_STRINGS))) {
         printf("FAIL: own_prop_names: %s\n", bk_get_error_message(rt)); failures++; bk_free_value(rt, obj); return;
     }
     double n = 0;

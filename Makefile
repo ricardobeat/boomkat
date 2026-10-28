@@ -398,6 +398,15 @@ out/runtime_options: test/capi/runtime_options.c include/boomkat.h out/boomkat.a
 test-runtime-options: out/runtime_options
 	./out/runtime_options
 
+# Atoms and own-key enumeration.
+out/atoms: test/capi/atoms.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/atoms.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/atoms
+
+.PHONY: test-atoms-api
+test-atoms-api: out/atoms
+	./out/atoms
+
 .PHONY: test-api-lifecycle
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle

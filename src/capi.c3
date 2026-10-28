@@ -89,6 +89,11 @@ fn ulong store_root(Runtime* rt, TVal v) {
 
 // A handle argument that did not resolve. Records the reason and yields 0, so
 // the value-returning entry points can `return bad_handle(rt)`.
+fn ulong fail_value(Runtime* rt, int code, String msg) {
+    fail(rt, code, msg);
+    return 0;
+}
+
 fn ulong bad_handle(Runtime* rt) {
     fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
     return 0;
@@ -681,7 +686,7 @@ fn ulong bk_new_object(void* ctxp) @export("bk_new_object") {
     return store(rt, v);
 }
 
-// Fresh empty array. Shared by bk_new_array, bk_new_array_from and bk_get_own_property_names.
+// Fresh empty array. Shared by bk_new_array, bk_new_array_from and bk_get_own_property_keys.
 fn HObject* new_array(Runtime* rt) {
     HObject*? araw = rt.heap.alloc_object(hobject::ObjClass.ARRAY);
     if (catch araw) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
@@ -843,10 +848,15 @@ fn int bk_has_property(void* ctxp, ulong obj_id, char* key, usz key_len, int* ou
     Runtime* rt = rt_of(ctxp);
     if (rt == null || key == null || out == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
+    return has_key(ctxp, obj_id, rt.heap.str_intern(key[:key_len]), out);
+}
+
+// Shared by the named and atom-keyed `in` checks.
+fn int has_key(void* ctxp, ulong obj_id, HString* k, int* out) {
+    Runtime* rt = rt_of(ctxp);
     TVal ov;
     HObject* obj = as_object(ctxp, obj_id, &ov);
     if (obj == null) return rt.errcode;
-    HString* k = rt.heap.str_intern(key[:key_len]);
     if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
     bool b;
     if (!builtins::js_has_property((void*)rt.vm, rt.heap, obj, k, &b)) return vm_fault(rt);
@@ -859,10 +869,15 @@ fn int bk_delete_property(void* ctxp, ulong obj_id, char* key, usz key_len, int*
     Runtime* rt = rt_of(ctxp);
     if (rt == null || key == null || out == null) return BK_ERR_INVALID;
     embed::clear_err(rt);
+    return delete_key(ctxp, obj_id, rt.heap.str_intern(key[:key_len]), out);
+}
+
+// Shared by the named and atom-keyed deletes.
+fn int delete_key(void* ctxp, ulong obj_id, HString* k, int* out) {
+    Runtime* rt = rt_of(ctxp);
     TVal ov;
     HObject* obj = as_object(ctxp, obj_id, &ov);
     if (obj == null) return rt.errcode;
-    HString* k = rt.heap.str_intern(key[:key_len]);
     if (k == null) return fail(rt, BK_ERR_NOMEM, "out of memory");
     // Absent own property: report 0 and succeed. A proxy reports its trap's
     // answer, since only the trap knows whether the key existed.
@@ -882,94 +897,215 @@ fn int bk_delete_property(void* ctxp, ulong obj_id, char* key, usz key_len, int*
     return BK_OK;
 }
 
-fn ulong bk_get_own_property_names(void* ctxp, ulong obj_id) @export("bk_get_own_property_names") {
+// ============================================================================
+// Atoms
+// ============================================================================
+
+// The atom for `key`, recording a failure when the table cannot grow.
+fn uint intern_atom(Runtime* rt, HString* key) {
+    if (key == null) return 0;
+    uint atom = embed::atom_intern(rt, key);
+    if (atom == 0) fail(rt, BK_ERR_NOMEM, "out of memory");
+    return atom;
+}
+
+fn uint bk_new_atom(void* ctxp, char* utf8, usz len) @export("bk_new_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (utf8 == null && len != 0) { fail(rt, BK_ERR_INVALID, "null key"); return 0; }
+    embed::clear_err(rt);
+    return intern_atom(rt, embed::string_from_utf8(rt, utf8[:len]));
+}
+
+fn uint bk_new_atom_index(void* ctxp, uint index) @export("bk_new_atom_index") {
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
+    HString* key = rt.heap.int_to_hstring((long)index);
+    if (key == null) { fail(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+    return intern_atom(rt, key);
+}
+
+// ToPropertyKey of a resolved value: a string or symbol key, interned.
+fn HString* property_key(Runtime* rt, TVal v) {
+    builtins::BuiltinContext call = { .heap = rt.heap, .vm = rt.vm };
+    rt.heap.has_error = false;
+    HString* key = builtins::builtin_to_property_key_vm(&call, &v);
+    if (rt.heap.uncatchable_throw) { vm_fault(rt); return null; }
+    if (call.should_throw) { embed::describe_error(rt, &call.throw_value); return null; }
+    if (rt.heap.has_error) { vm_fault(rt); return null; }
+    if (key == null) fail(rt, BK_ERR_NOMEM, "out of memory");
+    return key;
+}
+
+fn uint bk_value_to_atom(void* ctxp, ulong id) @export("bk_value_to_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return 0; }
+    HString* key = property_key(rt, v);
+    return key == null ? 0 : intern_atom(rt, key);
+}
+
+fn ulong bk_atom_to_value(void* ctxp, uint atom) @export("bk_atom_to_value") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail_value(rt, BK_ERR_INVALID, "invalid or freed atom");
+    TVal v; v.set_string_borrowed(key);
+    return store(rt, v);
+}
+
+fn uint bk_dup_atom(void* ctxp, uint atom) @export("bk_dup_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (!embed::atom_dup(rt, atom)) { fail(rt, BK_ERR_INVALID, "invalid or freed atom"); return 0; }
+    return atom;
+}
+
+fn void bk_free_atom(void* ctxp, uint atom) @export("bk_free_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt != null) embed::atom_release(rt, atom);
+}
+
+fn ulong bk_get_property_atom(void* ctxp, ulong obj_id, uint atom) @export("bk_get_property_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail_value(rt, BK_ERR_INVALID, "invalid or freed atom");
+    return get_key(ctxp, obj_id, key);
+}
+
+fn int bk_set_property_atom(void* ctxp, ulong obj_id, uint atom, ulong val_id) @export("bk_set_property_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail(rt, BK_ERR_INVALID, "invalid or freed atom");
+    return set_key(ctxp, obj_id, key, val_id);
+}
+
+fn int bk_has_property_atom(void* ctxp, ulong obj_id, uint atom, int* out) @export("bk_has_property_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail(rt, BK_ERR_INVALID, "invalid or freed atom");
+    return has_key(ctxp, obj_id, key, out);
+}
+
+fn int bk_delete_property_atom(void* ctxp, ulong obj_id, uint atom, int* out) @export("bk_delete_property_atom") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail(rt, BK_ERR_INVALID, "invalid or freed atom");
+    return delete_key(ctxp, obj_id, key, out);
+}
+
+// ============================================================================
+// Builtin calls
+// ============================================================================
+
+// Run builtin `which` of the context's realm on `args` with `this_value`,
+// writing its result to `out`. Returns a BK_* status with the failure recorded.
+fn int call_builtin(Runtime* rt, builtins::Builtin which, TVal this_value, TVal* args, uint argc, TVal* out) {
+    TVal function;
+    function.set_builtin(rt.heap, which.ordinal);
+    rt.heap.has_error = false;
+    *out = rt.heap.call_fn(rt.vm, function, args, argc, this_value);
+    if (rt.heap.has_error || rt.heap.uncatchable_throw) {
+        int rc = vm_fault(rt);
+        rt.heap.has_error = false;
+        rt.vm.has_error = false;
+        rt.vm.throw_pending = false;
+        return rc;
+    }
+    return BK_OK;
+}
+
+// LengthOfArrayLike (ECMA-262 §7.3.18): ToLength(Get(obj, "length")).
+fn int length_of(Runtime* rt, HObject* obj, ulong* out) {
+    TVal ov; ov.set_object(obj);
+    TVal got;
+    rt.heap.has_error = false;
+    if (!builtins::js_get_with_receiver((void*)rt.vm, rt.heap, obj, rt.heap.str(heap::BuiltinStr.LENGTH), ov, &got)) {
+        return vm_fault(rt);
+    }
+    double d = got.is_numeric() ? got.get_number_or_fastint() : vm::vm_to_number(rt.vm, &got);
+    if (rt.heap.has_error || rt.heap.uncatchable_throw) return vm_fault(rt);
+    // ToLength: NaN and negatives clamp to 0, the rest truncate up to 2^53 - 1.
+    if (!(d > 0)) { *out = 0; return BK_OK; }
+    if (d >= 9007199254740991.0) { *out = 9007199254740991; return BK_OK; }
+    *out = (ulong)d;
+    return BK_OK;
+}
+
+// ============================================================================
+// Own keys
+// ============================================================================
+
+const uint BK_KEYS_STRINGS = 1;
+const uint BK_KEYS_SYMBOLS = 2;
+const uint BK_KEYS_ENUMERABLE_ONLY = 4;
+const uint BK_KEYS_SKIP_INDICES = 8;
+
+// The object's [[OwnPropertyKeys]] in order, filtered by `flags`. Strings and
+// symbols are both included unless one kind is asked for. Enumerability is
+// read through [[GetOwnProperty]], so a proxy sees its traps called in the
+// order Object.keys calls them.
+fn ulong bk_get_own_property_keys(void* ctxp, ulong obj_id, uint flags) @export("bk_get_own_property_keys") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if ((flags & ~15u) != 0) return fail_value(rt, BK_ERR_INVALID, "unknown key flags");
     TVal ov;
     HObject* obj = as_object(ctxp, obj_id, &ov);
     if (obj == null) return 0;
     Heap* h = rt.heap;
+    bool want_strings = (flags & (BK_KEYS_STRINGS | BK_KEYS_SYMBOLS)) == 0 || (flags & BK_KEYS_STRINGS) != 0;
+    bool want_symbols = (flags & (BK_KEYS_STRINGS | BK_KEYS_SYMBOLS)) == 0 || (flags & BK_KEYS_SYMBOLS) != 0;
 
-    HObject* arr = new_array(rt);
-    if (arr == null) return 0;
+    TVal all;
+    TVal undefined; undefined.set_undefined();
+    int rc = call_builtin(rt, builtins::Builtin.REFLECT_OWNKEYS, undefined, &ov, 1, &all);
+    if (rc != BK_OK) return 0;
+    if (flags == 0 || flags == (BK_KEYS_STRINGS | BK_KEYS_SYMBOLS)) return store(rt, all);
+    // Both arrays stay rooted while descriptor traps run.
+    ulong all_root = embed::slot_alloc(rt, all);
+    if (all_root == 0) return fail_value(rt, BK_ERR_FULL, "value registry full");
+    defer embed::slot_release(rt, all_root);
+    HObject* source = (HObject*)all.get_heapptr();
+    HObject* result = new_array(rt);
+    if (result == null) return 0;
+    TVal rv; rv.set_object(result);
+    ulong result_root = embed::slot_alloc(rt, rv);
+    if (result_root == 0) return fail_value(rt, BK_ERR_FULL, "value registry full");
+    defer embed::slot_release(rt, result_root);
 
-    // Proxy exotic: [[OwnPropertyKeys]] filtered to string keys.
-    if (obj.is_proxy()) {
-        HString** pkeys;
-        uint pn;
-        if (!builtins::proxy_filtered_own_keys((void*)rt.vm, h, obj, 1, &pkeys, &pn)) {
-            vm_fault(rt);
-            return 0;
+    HString* length_key = h.str(heap::BuiltinStr.LENGTH);
+    ulong count;
+    if (length_of(rt, source, &count) != BK_OK) return 0;
+    uint written = 0;
+    for (uint i = 0; i < (uint)count; i++) {
+        TVal kv = builtins::array_get_elem(source, i, h);
+        if (!kv.is_string()) continue;
+        HString* key = (HString*)kv.get_heapptr();
+        if (key.is_symbol() ? !want_symbols : !want_strings) continue;
+        if ((flags & BK_KEYS_SKIP_INDICES) != 0 && !key.is_symbol() && key.is_arridx()) continue;
+        if ((flags & BK_KEYS_ENUMERABLE_ONLY) != 0) {
+            builtins::ProxyDesc desc;
+            if (!builtins::own_property_desc(rt.vm, h, obj, key, &desc)) { vm_fault(rt); return 0; }
+            if (!desc.found || !desc.enumerable) continue;
         }
-        defer h.free_func(h.heap_udata, pkeys);
-        for (uint i = 0; i < pn; i++) {
-            TVal kv; kv.set_string_borrowed(pkeys[i]);
-            builtins::array_set_elem(arr, i, kv, h);
-        }
-        TVal plen; plen.set_fastint((long)pn);
-        arr.put_prop(h.str(heap::BuiltinStr.LENGTH), plen, hobject::PROP_FLAGS_WC, h);
-        TVal v; v.set_object(arr);
-        return store(rt, v);
+        builtins::array_set_elem(result, written++, kv, h);
     }
-
-    uint max_keys = builtins::own_key_buf_capacity(obj) + 64;
-    usz bytes = (usz)(max_keys * HString*::size);
-    HString** key_buf = (HString**)h.alloc_func(h.heap_udata, bytes);
-    if (key_buf == null) { embed::set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
-    defer h.free_func(h.heap_udata, key_buf);
-    uint key_count = 0;
-
-    // Integer-indexed own properties, ascending (ES9.1.11.1 OrdinaryOwnKeys).
-    // Dense array / string-exotic / typed-array indices plus named integer keys.
-    if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
-        HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null) for (uint i = 0; i < prim.unit_len() && key_count < max_keys; i++) {
-            key_buf[key_count++] = h.int_to_hstring((long)i);
-        }
-    }
-    if (builtins::is_typed_array_class(obj.get_class())) {
-        uint n = builtins::ta_element_count(obj);
-        for (uint i = 0; i < n && key_count < max_keys; i++) {
-            key_buf[key_count++] = h.int_to_hstring((long)i);
-        }
-    }
-    // Named integer-indexed properties.
-    for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i, h) != null) {
-            HString* key = (HString*)obj.prop_key_at(i, h);
-            if (key.is_arridx() && !key.is_symbol() && key_count < max_keys) {
-                key_buf[key_count++] = key;
-            }
-        }
-    }
-    bool array_part_is_indexed = obj.flags.exotic_array || obj.flags.exotic_arguments;
-    if (obj.array_size > 0 && array_part_is_indexed) {
-        for (uint i = 0; i < obj.array_size && key_count < max_keys; i++) {
-            if (!obj.dense_idx_present(i)) continue;
-            HString* ki = h.int_to_hstring((long)i);
-            if (ki == null) continue;
-            if (ki.is_arridx() && obj.find_prop_idx(ki, h) >= 0) continue;
-            key_buf[key_count++] = ki;
-        }
-    }
-    // Non-index string keys in insertion order (symbols skipped).
-    for (uint i = 0; i < obj.prop_count; i++) {
-        if (obj.prop_key_at(i, h) != null) {
-            HString* key = (HString*)obj.prop_key_at(i, h);
-            if (key.is_arridx() || key.is_symbol()) continue;
-            if (key_count < max_keys) key_buf[key_count++] = key;
-        }
-    }
-
-    for (uint i = 0; i < key_count; i++) {
-        TVal kv; kv.set_string_borrowed(key_buf[i]);
-        builtins::array_set_elem(arr, i, kv, h);
-    }
-    TVal len_tv; len_tv.set_fastint((long)key_count);
-    arr.put_prop(h.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WC, h);
-    TVal v; v.set_object(arr);
-    return store(rt, v);
+    TVal written_tv; written_tv.set_fastint((long)written);
+    result.put_prop(length_key, written_tv, hobject::PROP_FLAGS_WC, h);
+    return store(rt, rv);
 }
 
 // ============================================================================
