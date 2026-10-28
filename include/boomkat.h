@@ -251,20 +251,15 @@ typedef struct {
 } bk_fn_def;
 #define BK_FN_END { NULL, NULL, 0, 0u, NULL }
 BK_API bk_status bk_set_function_list(bk_ctx ctx, bk_value target, const bk_fn_def *functions);
-/* A bk_host_fn reads its call through the context and answers with bk_return;
- * returning without one yields undefined, and a pending throw wins over both. */
-typedef void (*bk_host_fn)(bk_ctx ctx, void *opaque);
-/* target 0 installs the function as a global. */
+/* Install `fn` on `target`, or as a global when target is 0. */
 BK_API bk_status bk_register_fn(bk_ctx ctx, bk_value target, const char *name,
-                                bk_host_fn fn, int arity, unsigned flags, void *opaque);
-/* Call accessors (argc, arg, this, new.target) work in either callback kind and
- * borrow the current call. Arguments past argc read as undefined; outside a
- * callback they return 0. */
+                                bk_c_function fn, int arity, unsigned flags, void *opaque);
+/* Call accessors (argc, arg, this, new.target) read the current call from any
+ * depth of a callback and borrow it. Arguments past argc read as undefined;
+ * outside a callback they return 0. */
 BK_API unsigned bk_argc(bk_ctx ctx);
 BK_API bk_value bk_arg(bk_ctx ctx, unsigned index);
 BK_API bk_value bk_this(bk_ctx ctx);
-/* Stage the result of a bk_host_fn. The value is borrowed; a later call replaces it. */
-BK_API bk_status bk_return(bk_ctx ctx, bk_value value);
 BK_API bk_value bk_get_new_target(bk_ctx ctx);
 BK_API int bk_is_constructor_call(bk_ctx ctx);
 BK_API bk_value bk_throw_error(bk_ctx ctx, bk_error_kind kind, const char *message);
@@ -313,18 +308,6 @@ static inline int bk_is_number(bk_ctx c, bk_value v)    { return bk_get_type(c, 
 static inline int bk_is_string(bk_ctx c, bk_value v)    { return bk_get_type(c, v) == BK_TYPE_STRING; }
 static inline int bk_is_object(bk_ctx c, bk_value v)    { return bk_get_type(c, v) == BK_TYPE_OBJECT; }
 static inline int bk_is_function(bk_ctx c, bk_value v)  { return bk_get_type(c, v) == BK_TYPE_FUNCTION; }
-
-static inline bk_status bk_return_owned(bk_ctx c, bk_value v) {
-    bk_status status = bk_return(c, v);
-    bk_free_value(c, v);
-    return status;
-}
-static inline bk_status bk_return_number(bk_ctx c, double d) { return bk_return_owned(c, bk_new_number(c, d)); }
-static inline bk_status bk_return_bool(bk_ctx c, int b)      { return bk_return(c, BK_BOOL(b)); }
-static inline bk_status bk_return_null(bk_ctx c)             { return bk_return(c, BK_NULL); }
-static inline bk_status bk_return_str(bk_ctx c, const char *utf8) {
-    return bk_return_owned(c, bk_str(c, utf8));
-}
 
 #ifdef __cplusplus
 }

@@ -8,8 +8,10 @@ the library's own image.
 ## Quick start
 
 ```c
-static void print(bk_ctx js, void *out) {
-    fprintf(out, "%s\n", bk_cstr(js, bk_arg(js, 0), NULL));
+static bk_value print(bk_ctx js, bk_value self, unsigned argc,
+                      const bk_value *argv, void *out) {
+    fprintf(out, "%s\n", argc ? bk_cstr(js, argv[0], NULL) : "");
+    return BK_UNDEFINED;
 }
 
 bk_ctx js = bk_create();
@@ -23,7 +25,7 @@ both. `bk_eval(ctx, source)` runs a NUL-terminated sloppy script and returns an
 owned result; `bk_exec` discards the result and returns non-zero on failure.
 `bk_cstr` coerces any value to context-owned UTF-8 that stays valid for the next
 three `bk_cstr` calls, so it needs no free. The header's inline shorthands
-(`bk_get`, `bk_set`, `bk_str`, `bk_is_*`, `bk_return_*`) take NUL-terminated
+(`bk_get`, `bk_set`, `bk_str`, `bk_is_*`) take NUL-terminated
 names and forward to the full calls below.
 
 ## Runtimes and contexts
@@ -228,21 +230,12 @@ and `bk_is_constructor_call` identifies a constructor call. Opaque user pointers
 are borrowed for the runtime's lifetime. Runtime and context opaque data have
 separate setters/getters.
 
-A `bk_host_fn` is the short form. `bk_register_fn` installs one on a target
-object, or as a global when the target is 0. The callback reads its call with
-`bk_argc`, `bk_arg`, and `bk_this`, which borrow the call like `argv` does;
-arguments past `argc` read as undefined. `bk_return` stages a borrowed result,
-and returning without one yields undefined. A throw raised during the callback,
-by `bk_throw_error` or by a failing `bk_call`, takes precedence over any staged
-result.
+`bk_register_fn` installs one callback on a target object, or as a global when
+the target is 0. `bk_argc`, `bk_arg`, `bk_this` and `bk_get_new_target` read
+the current call from anywhere inside the callback, including helpers it calls,
+and borrow it like `argv` does; arguments past `argc` read as `BK_UNDEFINED`.
 
 ```c
-static void add(bk_ctx js, void *opaque) {
-    double total = 0;
-    for (unsigned i = 0; i < bk_argc(js); i++) total += bk_to_number(js, bk_arg(js, i));
-    bk_return_number(js, total);
-}
-
 bk_register_fn(js, 0, "add", add, 2, 0, NULL);
 ```
 

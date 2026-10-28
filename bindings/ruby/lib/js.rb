@@ -777,8 +777,8 @@ module JS
       buf
     end
 
-    # Wrap a Ruby block in the C callback shape bk_host_fn declares:
-    #   void (*)(bk_call_ctx ctx, void *udata)
+    # Wrap a Ruby block in the C callback shape bk_c_function declares:
+    #   bk_value (*)(bk_ctx ctx, bk_value this, unsigned argc, const bk_value *argv, void *udata)
     #
     # The udata parameter is unused -- Ruby closes over the block directly,
     # which is both simpler and safer than round-tripping an object through a

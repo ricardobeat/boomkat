@@ -1,8 +1,10 @@
 #include <boomkat.h>
 #include <stdio.h>
 
-static void print(bk_ctx js, void *out) {
-    fprintf(out, "%s\n", bk_cstr(js, bk_arg(js, 0), NULL));
+static bk_value print(bk_ctx js, bk_value self, unsigned argc, const bk_value *argv, void *out) {
+    (void)self;
+    fprintf(out, "%s\n", argc ? bk_cstr(js, argv[0], NULL) : "");
+    return BK_UNDEFINED;
 }
 
 int main(void) {
