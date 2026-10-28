@@ -1516,6 +1516,8 @@ struct BkFnDef {
     int   arity;
     uint  flags;
     void* udata;
+    void* finalize;
+    void* finalize_opaque;
 }
 
 const uint BK_CTOR = 1;
@@ -1523,35 +1525,50 @@ const uint BK_CTOR = 1;
 // Install a table of host functions, ending at the first entry with a null
 // name. `target_id` 0 means globalThis, which is an environment binding rather
 // than a property write, so the two cases stay separate below.
+// Runs the finalizers of the entries from `from` on, which a failed
+// bk_set_function_list never created.
+fn void finalize_entries(BkFnDef* defs, usz from) {
+    for (usz i = from; defs[i].name != null; i++) {
+        embed::BkFinalizer fin = (embed::BkFinalizer)defs[i].finalize;
+        if (fin != null) fin(defs[i].udata, defs[i].finalize_opaque);
+    }
+}
+
 fn int bk_set_function_list(void* ctxp, ulong target_id, BkFnDef* defs) @export("bk_set_function_list") {
+    if (defs == null) return BK_ERR_INVALID;
     Runtime* rt = rt_of(ctxp);
-    if (rt == null || defs == null) return BK_ERR_INVALID;
+    if (rt == null) { finalize_entries(defs, 0); return BK_ERR_INVALID; }
     embed::clear_err(rt);
 
     TVal ov;
     HObject* target = null;
     if (target_id != 0) {
         target = as_object(ctxp, target_id, &ov);
-        if (target == null) return rt.errcode;
+        if (target == null) { finalize_entries(defs, 0); return rt.errcode; }
     }
 
     for (usz i = 0; defs[i].name != null; i++) {
         BkFnDef* d = &defs[i];
-        if (d.cfn == null) return fail(rt, BK_ERR_INVALID, "table entry has no function");
+        if (d.cfn == null) {
+            finalize_entries(defs, i);
+            return fail(rt, BK_ERR_INVALID, "table entry has no function");
+        }
         usz nlen = 0;
         while (d.name[nlen] != 0) nlen++;
 
-        int rc = install_function(rt, target, d.name[:nlen], d.cfn, d.udata, d.arity, d.flags);
-        if (rc != BK_OK) return rc;
+        // A failed entry has been finalized by install_function.
+        int rc = install_function(rt, target, d.name[:nlen], d.cfn, d.udata,
+                                  (embed::BkFinalizer)d.finalize, d.finalize_opaque, d.arity, d.flags);
+        if (rc != BK_OK) { finalize_entries(defs, i + 1); return rc; }
     }
     return BK_OK;
 }
 
 // Install one host function on `target`, or as a global when it is null.
 fn int install_function(Runtime* rt, HObject* target, char[] name, void* cfn, void* udata,
-                        int arity, uint flags) {
+                        embed::BkFinalizer finalize, void* finalize_opaque, int arity, uint flags) {
     TVal fv;
-    int rc = embed::make_c_function(rt, name, cfn, udata, arity, (flags & BK_CTOR) != 0, &fv);
+    int rc = embed::make_c_function(rt, name, cfn, udata, finalize, finalize_opaque, arity, (flags & BK_CTOR) != 0, &fv);
     if (rc != BK_OK) return rc;
     if (target == null) return embed::declare_global(rt, name, fv);
     HString* k = rt.heap.str_intern(name);
@@ -1573,7 +1590,7 @@ fn int bk_register_fn(void* ctxp, ulong target_id, char* name, void* fn_ptr, int
         target = as_object(ctxp, target_id, &ov);
         if (target == null) return rt.errcode;
     }
-    return install_function(rt, target, ((ZString)name).str_view(), fn_ptr, udata, arity, flags);
+    return install_function(rt, target, ((ZString)name).str_view(), fn_ptr, udata, null, null, arity, flags);
 }
 
 fn uint bk_argc(void* ctxp) @export("bk_argc") {
@@ -1671,13 +1688,22 @@ fn ulong bk_throw(void* ctxp, ulong id) @export("bk_throw") {
     return 0;
 }
 
-fn ulong bk_new_c_function(void* ctxp, void* callback, char* name, int arity, uint flags, void* opaque) @export("bk_new_c_function") {
+fn ulong bk_new_c_function(void* ctxp, void* callback, char* name, int arity, uint flags, void* data,
+                           void* finalize, void* finalize_opaque) @export("bk_new_c_function") {
     Runtime* rt = rt_of(ctxp);
-    if (rt == null) return 0;
-    if (callback == null) { fail(rt, BK_ERR_INVALID, "null C function"); return 0; }
+    embed::BkFinalizer fin = (embed::BkFinalizer)finalize;
+    if (rt == null) {
+        if (fin != null) fin(data, finalize_opaque);
+        return 0;
+    }
+    if (callback == null) {
+        if (fin != null) fin(data, finalize_opaque);
+        fail(rt, BK_ERR_INVALID, "null C function");
+        return 0;
+    }
     TVal function;
     char[] fname = name == null ? (char[])"" : ((ZString)name).str_view();
-    if (embed::make_c_function(rt, fname, callback, opaque, arity, (flags & BK_CTOR) != 0, &function) != BK_OK) return 0;
+    if (embed::make_c_function(rt, fname, callback, data, fin, finalize_opaque, arity, (flags & BK_CTOR) != 0, &function) != BK_OK) return 0;
     return store(rt, function);
 }
 

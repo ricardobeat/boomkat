@@ -475,6 +475,8 @@ impl Runtime {
                 arity: arity as c_int,
                 flags: if constructable { sys::BK_CTOR } else { 0 },
                 udata: data as *mut c_void,
+                finalize: None,
+                finalize_opaque: std::ptr::null_mut(),
             },
             sys::BK_FN_END,
         ];

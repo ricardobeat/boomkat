@@ -65,11 +65,11 @@ int main(void) {
     assert(bk_get_context_data(first, BK_DATA_SLOTS) == NULL && bk_get_runtime_data(runtime, 99) == NULL);
     bk_set_context_data(first, 2, NULL);
     expected_context = second;
-    bk_value callback = bk_new_c_function(second, sum, "sum", 0, 0, &marker);
+    bk_value callback = bk_new_c_function(second, sum, "sum", 0, 0, &marker, NULL, NULL);
     assert(callback);
     bk_set_global_property(first, "sum", 3, callback);
     bk_free_value(first, callback);
-    callback = bk_new_c_function(second, cross_read, "crossRead", 1, 0, first);
+    callback = bk_new_c_function(second, cross_read, "crossRead", 1, 0, first, NULL, NULL);
     bk_set_global_property(first, "crossRead", 9, callback);
     bk_free_value(first, callback);
     check(first, "crossRead({tag:42})===42");
@@ -119,7 +119,7 @@ int main(void) {
     assert(bk_get_type(second, result) == BK_TYPE_UNDEFINED);
     bk_free_value(second, result);
 
-    callback = bk_new_c_function(first, catch_value, "catchValue", 1, 0, NULL);
+    callback = bk_new_c_function(first, catch_value, "catchValue", 1, 0, NULL, NULL, NULL);
     bk_set_global_property(first, "catchValue", 10, callback);
     bk_free_value(first, callback);
     check(first, "var thrown={tag:7}; catchValue(function(){throw thrown}) === thrown");

@@ -50,7 +50,7 @@ int main(void) {
     expect_describe(ctx, eval(ctx, "(function f() {})"), "[Function: f]");
 
     /* No getters, traps or toString run. */
-    bk_value spy = bk_new_c_function(ctx, mark, "spy", 0, 0, NULL);
+    bk_value spy = bk_new_c_function(ctx, mark, "spy", 0, 0, NULL, NULL, NULL);
     bk_set_global_property(ctx, "spy", 3, spy);
     expect_describe(ctx, eval(ctx, "({ get message() { spy(); return 'm' }, toString() { spy(); return 'x' } })"),
                     "[object Object]");

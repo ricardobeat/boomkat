@@ -428,6 +428,14 @@ out/descriptors_api: test/capi/descriptors.c include/boomkat.h out/boomkat.a
 test-descriptors-api: out/descriptors_api
 	./out/descriptors_api
 
+out/closures_api: test/capi/closures.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/closures.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/closures_api
+
+.PHONY: test-closures-api
+test-closures-api: out/closures_api
+	./out/closures_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model
