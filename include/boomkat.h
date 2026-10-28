@@ -278,6 +278,28 @@ BK_API bk_value  bk_get_property_atom(bk_ctx ctx, bk_value object, bk_atom key);
 BK_API bk_status bk_set_property_atom(bk_ctx ctx, bk_value object, bk_atom key, bk_value value);
 BK_API bk_status bk_has_property_atom(bk_ctx ctx, bk_value object, bk_atom key, int *out);
 BK_API bk_status bk_delete_property_atom(bk_ctx ctx, bk_value object, bk_atom key, int *out);
+
+/* Property descriptors. A WRITABLE, ENUMERABLE or CONFIGURABLE bit counts only
+ * with its HAS_ bit; a descriptor with neither value nor accessor bits is
+ * generic. */
+enum {
+    BK_PROP_WRITABLE = 1, BK_PROP_ENUMERABLE = 2, BK_PROP_CONFIGURABLE = 4,
+    BK_PROP_HAS_VALUE = 8, BK_PROP_HAS_GET = 16, BK_PROP_HAS_SET = 32,
+    BK_PROP_HAS_WRITABLE = 64, BK_PROP_HAS_ENUMERABLE = 128, BK_PROP_HAS_CONFIGURABLE = 256
+};
+typedef struct {
+    unsigned flags;
+    bk_value value, get, set;   /* borrowed on input; locals or owned on output */
+} bk_property_descriptor;
+/* [[DefineOwnProperty]]: `ok` is 0 when the object refuses, as
+ * Reflect.defineProperty returns false. Accessors must be functions or
+ * BK_UNDEFINED. */
+BK_API bk_status bk_define_property(bk_ctx ctx, bk_value object, bk_atom key,
+                                    const bk_property_descriptor *desc, int *ok);
+/* [[GetOwnProperty]], through Proxy traps. On a hit every HAS_ bit of the
+ * descriptor's kind is set; handles not in use are BK_UNDEFINED. */
+BK_API bk_status bk_get_own_property(bk_ctx ctx, bk_value object, bk_atom key,
+                                     bk_property_descriptor *out, int *found);
 BK_API bk_status bk_set_global_property(bk_ctx ctx, const char *name, size_t length, bk_value value);
 /* Calls accept up to 65535 arguments; larger counts throw RangeError. */
 BK_API bk_value bk_call(bk_ctx ctx, bk_value function, bk_value this_value, const bk_value *argv, unsigned argc);

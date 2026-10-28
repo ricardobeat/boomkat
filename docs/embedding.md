@@ -256,6 +256,22 @@ string or symbol. One key has one atom while any reference to it remains: each
 creating call and `bk_dup_atom` adds a reference, and `bk_free_atom` drops one.
 The `_atom` property calls behave like their string forms.
 
+`bk_define_property` and `bk_get_own_property` take a `bk_property_descriptor`
+whose `flags` mirror a JS descriptor: `BK_PROP_HAS_VALUE`, `HAS_GET`, `HAS_SET`,
+`HAS_WRITABLE`, `HAS_ENUMERABLE` and `HAS_CONFIGURABLE` say which fields are
+present, and `BK_PROP_WRITABLE`, `ENUMERABLE` and `CONFIGURABLE` give their
+values. Defining reports refusal through `ok`, as `Reflect.defineProperty`
+does; a Proxy runs its traps. A descriptor read back is complete, and its
+`value`, `get` and `set` handles are locals of the current scope (registry
+roots with none open) or `BK_UNDEFINED`.
+
+```c
+bk_property_descriptor d = { BK_PROP_HAS_GET | BK_PROP_HAS_ENUMERABLE |
+                             BK_PROP_ENUMERABLE, 0, getter, 0 };
+int ok;
+bk_define_property(app, object, x, &d, &ok);
+```
+
 `bk_get_own_property_keys` returns an array of an object's own keys in
 [[OwnPropertyKeys]] order. `BK_KEYS_STRINGS` or `BK_KEYS_SYMBOLS` selects one
 kind (neither means both), `BK_KEYS_ENUMERABLE_ONLY` keeps enumerable keys, and

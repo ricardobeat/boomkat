@@ -420,6 +420,14 @@ out/errors_api: test/capi/errors.c include/boomkat.h out/boomkat.a
 test-errors-api: out/errors_api
 	./out/errors_api
 
+out/descriptors_api: test/capi/descriptors.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/descriptors.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/descriptors_api
+
+.PHONY: test-descriptors-api
+test-descriptors-api: out/descriptors_api
+	./out/descriptors_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model
