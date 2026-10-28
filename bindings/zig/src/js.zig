@@ -304,10 +304,10 @@ fn trampoline(comptime func: anytype) c.bk_c_function {
     if (info.params.len != 1 and info.params.len != 2)
         @compileError("host function must take (Ctx) or (Ctx, *T)");
     return struct {
-        fn invoke(raw: c.bk_ctx, this_value: c.bk_value, argc: c_uint, argv: [*c]const c.bk_value, opaque: ?*anyopaque) callconv(.c) c.bk_value {
+        fn invoke(raw: c.bk_ctx, this_value: c.bk_value, argc: c_uint, argv: [*c]const c.bk_value, data: ?*anyopaque) callconv(.c) c.bk_value {
             const context: Ctx = .{ .raw = raw, .this_value = this_value, .argv = argv[0..argc] };
-            const result = (if (info.params.len == 1) func(context) else func(context, @ptrCast(@alignCast(opaque)))) catch |err| {
-                if (err != Error.Throw) _ = context.throwError(.generic, @errorName(err));
+            const result = (if (info.params.len == 1) func(context) else func(context, @ptrCast(@alignCast(data)))) catch |err| {
+                if (err != Error.Throw) _ = c.bk_throw_error(raw, @intCast(@intFromEnum(ErrorKind.generic)), @errorName(err));
                 return c.BK_EXCEPTION;
             };
             return result.handle;
@@ -522,7 +522,11 @@ test "runtimes are independent and do not share values" {
     defer moved.deinit();
     try std.testing.expectEqual(@as(f64, 333), try moved.toNumber());
 
-    // Closing one runtime leaves the other fully working.
+    // Closing one runtime leaves the other fully working. Its values go
+    // first: a handle cannot be released once its runtime is gone.
+    a_tag.deinit();
+    a_k49.deinit();
+    a_n.deinit();
     a.deinit();
     var after = try b.eval("n + 1");
     defer after.deinit();
