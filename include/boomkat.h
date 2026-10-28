@@ -399,6 +399,21 @@ BK_API bk_value  bk_new_bigint_words(bk_ctx ctx, int negative, const uint64_t *w
 BK_API bk_status bk_read_bigint_words(bk_ctx ctx, bk_value value, int *negative,
                                       uint64_t *words, size_t capacity, size_t *count);
 
+/* Promises. Settle a promise by calling its resolving functions with
+ * bk_call; resolve follows the spec's resolution procedure, thenables
+ * included. */
+typedef enum { BK_PROMISE_PENDING, BK_PROMISE_FULFILLED, BK_PROMISE_REJECTED } bk_promise_state;
+/* A pending promise and its resolving functions; either output may be NULL. */
+BK_API bk_value  bk_new_promise(bk_ctx ctx, bk_value *resolve_out, bk_value *reject_out);
+BK_API bk_status bk_promise_state_get(bk_ctx ctx, bk_value promise, bk_promise_state *out);
+/* The value or reason, or BK_UNDEFINED while pending. */
+BK_API bk_value  bk_promise_result(bk_ctx ctx, bk_value promise);
+/* Mark a rejection handled, as attaching a handler does. */
+BK_API bk_status bk_promise_mark_handled(bk_ctx ctx, bk_value promise);
+BK_API bk_value  bk_promise_resolve(bk_ctx ctx, bk_value value);   /* Promise.resolve */
+/* Promise.prototype.then; a reaction of 0 means none. */
+BK_API bk_value  bk_promise_then(bk_ctx ctx, bk_value promise, bk_value on_fulfilled, bk_value on_rejected);
+
 /* Traced slots: storage for one JS value inside host memory. A slot holds a
  * reference without being a root; it stays valid only while something traces
  * it, the owning instance's `trace` callback or the root tracer. That lets a

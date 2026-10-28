@@ -460,6 +460,14 @@ out/intrinsics_api: test/capi/intrinsics.c include/boomkat.h out/boomkat.a
 test-intrinsics-api: out/intrinsics_api
 	./out/intrinsics_api
 
+out/promises_api: test/capi/promises.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/promises.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/promises_api
+
+.PHONY: test-promises-api
+test-promises-api: out/promises_api
+	./out/promises_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model

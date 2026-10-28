@@ -1388,6 +1388,117 @@ fn int bk_read_bigint_words(void* ctxp, ulong id, int* negative, ulong* words, u
 }
 
 // ============================================================================
+// Promises
+// ============================================================================
+
+const int BK_PROMISE_PENDING   = 0;
+const int BK_PROMISE_FULFILLED = 1;
+const int BK_PROMISE_REJECTED  = 2;
+
+// The promise behind `id`, or null with BK_ERR_TYPE recorded.
+fn HObject* promise_of(void* ctxp, Runtime* rt, ulong id) {
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return null; }
+    if (v.is_object()) {
+        HObject* o = (HObject*)v.get_heapptr();
+        if (o.get_class() == hobject::ObjClass.PROMISE) return o;
+    }
+    fail(rt, BK_ERR_TYPE, "not a promise");
+    return null;
+}
+
+fn ulong bk_new_promise(void* ctxp, ulong* resolve_out, ulong* reject_out) @export("bk_new_promise") {
+    if (resolve_out != null) *resolve_out = 0;
+    if (reject_out != null) *reject_out = 0;
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    HObject*? made = builtins::promise_create(rt.heap);
+    if (catch made) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    builtins::PromiseCapability cap = builtins::promise_new_capability(rt.heap, made);
+    if (cap.promise == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    TVal pv; pv.set_object(cap.promise);
+    TVal rv; rv.set_object(cap.resolve_func);
+    TVal jv; jv.set_object(cap.reject_func);
+    ulong p = store(rt, pv);
+    if (p == 0) return 0;
+    if (resolve_out != null) {
+        *resolve_out = store(rt, rv);
+        if (*resolve_out == 0) return 0;
+    }
+    if (reject_out != null) {
+        *reject_out = store(rt, jv);
+        if (*reject_out == 0) return 0;
+    }
+    return p;
+}
+
+fn int bk_promise_state_get(void* ctxp, ulong id, int* out) @export("bk_promise_state_get") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HObject* p = promise_of(ctxp, rt, id);
+    if (p == null) return rt.errcode;
+    switch (builtins::promise_get_state(p, builtins::PROMISE_PENDING)) {
+        case builtins::PROMISE_FULFILLED: *out = BK_PROMISE_FULFILLED;
+        case builtins::PROMISE_REJECTED:  *out = BK_PROMISE_REJECTED;
+        default:                          *out = BK_PROMISE_PENDING;
+    }
+    return BK_OK;
+}
+
+// The fulfillment value or rejection reason; undefined while pending.
+fn ulong bk_promise_result(void* ctxp, ulong id) @export("bk_promise_result") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    HObject* p = promise_of(ctxp, rt, id);
+    if (p == null) return 0;
+    if (builtins::promise_get_state(p, builtins::PROMISE_PENDING) == builtins::PROMISE_PENDING) return embed::IMM_UNDEFINED;
+    return store(rt, builtins::promise_get_result(p));
+}
+
+fn int bk_promise_mark_handled(void* ctxp, ulong id) @export("bk_promise_mark_handled") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HObject* p = promise_of(ctxp, rt, id);
+    if (p == null) return rt.errcode;
+    builtins::promise_mark_handled(p, rt.heap);
+    return BK_OK;
+}
+
+// Promise.resolve(value) with the realm's %Promise%.
+fn ulong bk_promise_resolve(void* ctxp, ulong id) @export("bk_promise_resolve") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    TVal ctor; ctor.set_object(rt.heap.promise_ctor);
+    TVal out;
+    if (call_builtin(rt, builtins::Builtin.PROMISE_RESOLVE, ctor, &v, 1, &out) != BK_OK) return 0;
+    return store(rt, out);
+}
+
+// Promise.prototype.then; either reaction may be 0 for none.
+fn ulong bk_promise_then(void* ctxp, ulong id, ulong on_fulfilled, ulong on_rejected) @export("bk_promise_then") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal p;
+    if (!resolve(ctxp, id, &p)) return bad_handle(rt);
+    TVal[2] args;
+    args[0].set_undefined();
+    args[1].set_undefined();
+    if (on_fulfilled != 0 && !resolve(ctxp, on_fulfilled, &args[0])) return bad_handle(rt);
+    if (on_rejected != 0 && !resolve(ctxp, on_rejected, &args[1])) return bad_handle(rt);
+    TVal out;
+    if (call_builtin(rt, builtins::Builtin.PROMISE_PROTO_THEN, p, &args, 2, &out) != BK_OK) return 0;
+    return store(rt, out);
+}
+
+// ============================================================================
 // Host classes
 // ============================================================================
 
