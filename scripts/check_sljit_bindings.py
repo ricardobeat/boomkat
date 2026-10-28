@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / 'src/jit/sljit_extern.c3').read_text()
+source = '\n'.join(p.read_text() for p in sorted((ROOT / 'src/jit').glob('sljit_*.c3')))
 checks = ['#include <stdint.h>', '#include "sljitLir.h"']
 constants = re.findall(r'const int (SLJIT_\w+)\s*=\s*([^;]+);', source)
 for name, value in constants:
@@ -24,7 +24,7 @@ for name, value in constants:
         expression = f'SLJIT_ARGS{count}(W, ' + ', '.join([argument] * count) + ')'
     checks.append(f'_Static_assert(({expression}) == ({value}), "{name}");')
 
-widths = {'int': 'int32_t', 'long': 'int64_t', 'usz': 'uintptr_t', 'void*': 'void*'}
+widths = {'int': 'int32_t', 'long': 'int64_t', 'usz': 'uintptr_t', 'void*': 'void*', 'ZString': 'char*'}
 header = (ROOT / 'vendor/sljit/sljit_src/sljitLir.h').read_text()
 header = re.sub(r'/\*.*?\*/', '', header, flags=re.S)
 prototypes = {name: params for name, params in re.findall(
@@ -34,8 +34,8 @@ returns = 0
 for result, name, params in re.findall(r'extern fn ([\w*]+) (\w+)\(([^;]*)\);', source):
     if name.startswith('sljit_shim_'):
         continue
-    c_params = [p.strip() for p in prototypes[name].split(',')]
-    c3_params = [p.strip() for p in params.split(',')]
+    c_params = [] if prototypes[name].strip() in ('', 'void') else [p.strip() for p in prototypes[name].split(',')]
+    c3_params = [p.strip() for p in params.split(',')] if params.strip() else []
     assert len(c_params) == len(c3_params), f'{name}: parameter count differs'
     for index, (c_param, c3_param) in enumerate(zip(c_params, c3_params)):
         c_type = re.sub(r'\b\w+$', '', c_param).strip()

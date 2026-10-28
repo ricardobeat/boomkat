@@ -33,6 +33,9 @@ int sljit_shim_info(int key)
     switch (key) {
     case 0: return SLJIT_NUMBER_OF_REGISTERS;
     case 1: return SLJIT_NUMBER_OF_SAVED_REGISTERS;
+    case 2: return SLJIT_NUMBER_OF_FLOAT_REGISTERS;
+    case 3: return SLJIT_NUMBER_OF_SAVED_FLOAT_REGISTERS;
+    case 4: return SLJIT_NUMBER_OF_VECTOR_REGISTERS;
     default: return 0;
     }
 }
@@ -55,4 +58,9 @@ sljit_uw sljit_shim_jump_addr(struct sljit_jump *jump)
 sljit_sw sljit_shim_executable_offset(struct sljit_compiler *compiler)
 {
     return sljit_get_executable_offset(compiler);
+}
+
+sljit_uw sljit_shim_const_addr(struct sljit_const *constant)
+{
+    return sljit_get_const_addr(constant);
 }

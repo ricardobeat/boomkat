@@ -108,6 +108,7 @@ fn AbiCode abi_entry(void* callee) {
 
 fn void check_native_convention() {
     check_condition_values();
+    check_codegen_capabilities();
     AbiCode leaf       = abi_leaf(3);
     AbiCode other_leaf = abi_leaf(13);
     defer jit::sljit_free_code(leaf.code, null);
@@ -154,4 +155,66 @@ fn void check_condition_values() {
     @check(compare(-1, -1) == 1);
     @check(compare(-1, 1) == 0);
     @check(compare(long::min, long::max) == 0);
+}
+
+alias AbiIndexed = fn long(long* values, long index);
+alias AbiBuffer = fn long(char* buffer);
+alias AbiPair = fn long(long* values);
+
+fn void check_codegen_capabilities() {
+    @check(jit::sljit_has_cpu_feature(jit::SLJIT_HAS_FPU) != 0);
+    @check(jit::sljit_shim_info(2) >= 10);
+    void* compiler = jit::sljit_create_compiler(null);
+    @check(compiler != null);
+    defer jit::sljit_free_compiler(compiler);
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    @check(jit::sljit_emit_enter(compiler, 0, jit::SLJIT_ARGS2WWW_R, 2, 0, 0) == 0);
+    @check(jit::sljit_emit_op1(compiler, jit::SLJIT_MOV, r0, 0, jit::mem_index(r0, r1), 3) == 0);
+    @check(jit::sljit_emit_op2(compiler, jit::SLJIT_MSHL | jit::SLJIT_32, r0, 0, r0, 0, jit::SLJIT_IMM, 36) == 0);
+    @check(jit::sljit_emit_op2(compiler, jit::SLJIT_ROTL | jit::SLJIT_32, r0, 0, r0, 0, jit::SLJIT_IMM, 8) == 0);
+    @check(jit::sljit_emit_op2u(compiler, jit::SLJIT_SUB | jit::SLJIT_SET_Z, r0, 0, jit::SLJIT_IMM, 16384) == 0);
+    @check(jit::sljit_emit_select(compiler, jit::SLJIT_EQUAL, r0, jit::SLJIT_IMM, 31, r0) == 0);
+    void* constant = jit::sljit_emit_const(compiler, jit::SLJIT_MOV, r1, 0, 7);
+    @check(constant != null);
+    @check(jit::sljit_emit_op2(compiler, jit::SLJIT_ADD, r0, 0, r0, 0, r1, 0) == 0);
+    @check(jit::sljit_emit_return(compiler, jit::SLJIT_MOV, r0, 0) == 0);
+    AbiCode generated = abi_generate(compiler);
+    defer jit::sljit_free_code(generated.code, null);
+    AbiIndexed run = (AbiIndexed)generated.code;
+    long[2] values = {2, 4};
+    @check(run(&values[0], 1) == 38);
+    @check(run(&values[0], 0) == 8199);
+    jit::sljit_set_const(jit::sljit_shim_const_addr(constant), jit::SLJIT_MOV, 17, generated.executable_offset);
+    @check(run(&values[0], 1) == 48);
+
+    void* pair_compiler = jit::sljit_create_compiler(null);
+    @check(pair_compiler != null);
+    defer jit::sljit_free_compiler(pair_compiler);
+    @check(jit::sljit_emit_enter(pair_compiler, 0, jit::SLJIT_ARGS1WW_R, 3, 0, 0) == 0);
+    int pair = jit::reg_pair(r1, jit::reg_r(2));
+    @check(jit::sljit_emit_mem(pair_compiler, jit::SLJIT_MOV, pair, jit::SLJIT_MEM | r0, 0) == 0);
+    @check(jit::sljit_emit_mem(pair_compiler, jit::SLJIT_MOV | jit::SLJIT_MEM_STORE, pair, jit::SLJIT_MEM | r0, 16) == 0);
+    @check(jit::sljit_emit_return(pair_compiler, jit::SLJIT_MOV, jit::SLJIT_IMM, 0) == 0);
+    AbiCode pair_code = abi_generate(pair_compiler);
+    defer jit::sljit_free_code(pair_code.code, null);
+    long[4] pair_values = {11, 22, 0, 0};
+    @check(((AbiPair)pair_code.code)(&pair_values[0]) == 0);
+    @check(pair_values[2] == 11 && pair_values[3] == 22);
+
+    if (jit::sljit_has_cpu_feature(jit::SLJIT_HAS_SIMD) == 0) return;
+    void* vector_compiler = jit::sljit_create_compiler(null);
+    @check(vector_compiler != null);
+    defer jit::sljit_free_compiler(vector_compiler);
+    @check(jit::sljit_emit_enter(vector_compiler, 0, jit::SLJIT_ARGS1WW_R, 1 | (1 << 16), 0, 0) == 0);
+    int type = jit::SLJIT_SIMD_REG_128 | jit::SLJIT_SIMD_ELEM_8;
+    if (jit::sljit_emit_simd_replicate(vector_compiler, type | jit::SLJIT_SIMD_TEST, 1, jit::SLJIT_IMM, 0x5a) != 0) return;
+    @check(jit::sljit_emit_simd_replicate(vector_compiler, type, 1, jit::SLJIT_IMM, 0x5a) == 0);
+    @check(jit::sljit_emit_simd_mov(vector_compiler, type | jit::SLJIT_SIMD_STORE, 1, jit::SLJIT_MEM | r0, 0) == 0);
+    @check(jit::sljit_emit_return(vector_compiler, jit::SLJIT_MOV, jit::SLJIT_IMM, 0) == 0);
+    AbiCode vector_code = abi_generate(vector_compiler);
+    defer jit::sljit_free_code(vector_code.code, null);
+    char[16] buffer;
+    @check(((AbiBuffer)vector_code.code)(&buffer[0]) == 0);
+    foreach (byte : buffer) @check(byte == 0x5a);
 }

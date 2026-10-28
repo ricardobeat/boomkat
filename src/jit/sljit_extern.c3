@@ -82,6 +82,10 @@ const int SLJIT_ARGS3WWW_R        = 0x9991;
 const int SLJIT_ARGS4WWWW         = 0x11111;
 const int SLJIT_ARGS4WWWW_R       = 0x99991;
 
+// Indexed operands encode base + (index << shift); shift is the operand
+// offset passed to the emitting instruction, restricted by SLJIT to 0..3.
+fn int mem_index(int base, int index) @inline => SLJIT_MEM | base | (index << 8);
+
 fn int reg_r(int i) @inline => 1 + i;
 fn int reg_s(int i) @inline => sljit_shim_info(0) - i;
 fn int enter_keep(int count) @inline {
@@ -90,7 +94,8 @@ fn int enter_keep(int count) @inline {
 }
 
 fn bool bind_sljit_runtime() {
-    return sljit_shim_info(0) >= 13 && sljit_shim_info(1) >= 5;
+    return sljit_shim_info(0) >= 13 && sljit_shim_info(1) >= 6
+        && sljit_has_cpu_feature(SLJIT_HAS_FPU) != 0 && sljit_shim_info(2) >= 10;
 }
 
 const int SLJIT_MOV_F64           = 144;
