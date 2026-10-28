@@ -1,0 +1,434 @@
+SLJIT template compiled render: parts=5 code_bytes=844 plan_bytes=320
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..24 function_ops=24 regs=7 code_bytes=4243 plan_bytes=15112
+SLJIT template compiled render: parts=5 code_bytes=844 plan_bytes=320
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..24 function_ops=24 regs=7 code_bytes=4243 plan_bytes=15112
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..24 function_ops=24 regs=7 code_bytes=4243 plan_bytes=15112
+SLJIT region attempt ops=1471 regs=13 begin=223 budget_used=12729
+SLJIT region result  ops=1471 analyzed=1 emitted=1 code_bytes=45377 budget_used=12729 limit=262144
+SLJIT function compiled  pc=223..351 function_ops=1471 regs=13 code_bytes=45377 plan_bytes=16048
+SLJIT loop compiled  pc=3..6 code_bytes=1408 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3527 plan_bytes=14968
+SLJIT loop compiled reference pc=3..8 code_bytes=1505 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=10 stage=analysis
+SLJIT function compiled reference pc=0..10 function_ops=10 regs=7 code_bytes=4587 plan_bytes=14986
+SLJIT loop compiled  pc=2..9 code_bytes=1730 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5409 plan_bytes=14995
+SLJIT SSA leaf reject line=1 stage=analysis
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled same pc=0..14 function_ops=14 regs=10 code_bytes=4538 plan_bytes=15022
+SLJIT SSA leaf reject line=1 stage=analysis
+SLJIT function compiled check pc=0..6 function_ops=6 regs=6 code_bytes=2198 plan_bytes=14950
+SLJIT loop compiled  pc=3..6 code_bytes=1408 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3527 plan_bytes=14968
+SLJIT loop compiled reference pc=3..8 code_bytes=1505 plan_bytes=1616 ssa=1 mem=1
+SLJIT loop compiled  pc=2..9 code_bytes=1730 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5409 plan_bytes=14995
+SLJIT loop compiled  pc=3..6 code_bytes=1411 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=5907 plan_bytes=14968
+SLJIT loop compiled reference pc=3..8 code_bytes=1508 plan_bytes=1616 ssa=1 mem=1
+SLJIT loop compiled  pc=2..9 code_bytes=1736 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5415 plan_bytes=14995
+SLJIT loop compiled  pc=3..6 code_bytes=1411 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3530 plan_bytes=14968
+SLJIT loop compiled reference pc=3..8 code_bytes=1508 plan_bytes=1616 ssa=1 mem=1
+SLJIT loop compiled  pc=2..9 code_bytes=1736 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5415 plan_bytes=14995
+SLJIT loop compiled  pc=3..6 code_bytes=1411 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3531 plan_bytes=14968
+SLJIT loop compiled  pc=2..9 code_bytes=1736 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5417 plan_bytes=14995
+SLJIT loop compiled  pc=3..6 code_bytes=1133 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3530 plan_bytes=14968
+SLJIT loop compiled  pc=2..9 code_bytes=1736 plan_bytes=1616 ssa=1 mem=2
+SLJIT ssa fallback name= begin=2 pc=4 opcode=MULI iterations=0
+SLJIT ssa fallback name= begin=2 pc=4 opcode=MULI iterations=0
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5442 plan_bytes=14995
+SLJIT loop compiled  pc=3..6 code_bytes=1138 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3543 plan_bytes=14968
+SLJIT loop compiled  pc=2..9 code_bytes=1643 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5411 plan_bytes=14995
+SLJIT loop compiled  pc=3..6 code_bytes=1132 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=3537 plan_bytes=14968
+SLJIT loop compiled  pc=2..9 code_bytes=1629 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=10 code_bytes=5397 plan_bytes=14995
+SLJIT loop compiled sum pc=3..6 code_bytes=1411 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf reject line=4 stage=analysis
+SLJIT function compiled sum pc=0..8 function_ops=8 regs=5 code_bytes=3530 plan_bytes=14968
+SLJIT loop compiled blend pc=2..12 code_bytes=2054 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled blend pc=0..14 function_ops=14 regs=12 code_bytes=13476 plan_bytes=15022
+SLJIT loop compiled sum pc=3..6 code_bytes=1156 plan_bytes=1616 ssa=1 mem=1
+SLJIT loop compiled  pc=2..12 code_bytes=1953 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled  pc=0..14 function_ops=14 regs=12 code_bytes=6759 plan_bytes=15022
+SLJIT loop compiled transform pc=2..9 code_bytes=1730 plan_bytes=1616 ssa=1 mem=2
+SLJIT function compiled transform pc=0..11 function_ops=11 regs=10 code_bytes=5409 plan_bytes=14995
+SLJIT loop compiled ascii pc=3..12 code_bytes=1613 plan_bytes=1616 ssa=0 mem=1
+SLJIT SSA leaf reject line=7 stage=analysis
+SLJIT function compiled ascii pc=0..14 function_ops=14 regs=8 code_bytes=4459 plan_bytes=15022
+SLJIT loop compiled asciiBinding pc=4..14 code_bytes=1626 plan_bytes=1616 ssa=0 mem=1
+SLJIT SSA leaf reject line=8 stage=analysis
+SLJIT function compiled asciiBinding pc=0..16 function_ops=16 regs=7 code_bytes=4830 plan_bytes=15040
+SLJIT function compiled  pc=0..2 function_ops=2 regs=1 code_bytes=1288 plan_bytes=14914
+SLJIT loop compiled hash pc=3..13 code_bytes=1508 plan_bytes=1616 ssa=0 mem=2
+SLJIT SSA leaf reject line=9 stage=analysis
+SLJIT function compiled hash pc=0..15 function_ops=15 regs=7 code_bytes=7939 plan_bytes=15031
+SLJIT function compiled  pc=0..2 function_ops=2 regs=1 code_bytes=1288 plan_bytes=14914
+SLJIT ssa fallback name=sum begin=3 pc=3 opcode=GETPROP iterations=0
+SLJIT loop compiled  pc=2..8 code_bytes=1286 plan_bytes=1616 ssa=0 mem=2
+SLJIT function compiled  pc=0..10 function_ops=10 regs=8 code_bytes=7145 plan_bytes=14986
+SLJIT loop compiled numeric pc=2..15 code_bytes=2263 plan_bytes=1616 ssa=0 mem=2
+SLJIT function compiled numeric pc=0..17 function_ops=17 regs=13 code_bytes=9234 plan_bytes=15049
+SLJIT function hash hits=489 returns=3 charged_edges=478 budget_exits=34 code_bytes=7939
+SLJIT loop compiled classify pc=2..19 code_bytes=2404 plan_bytes=1616 ssa=0 mem=2
+SLJIT function compiled classify pc=0..21 function_ops=21 regs=11 code_bytes=15256 plan_bytes=15085
+SLJIT loop compiled shiftDense pc=4..9 code_bytes=1284 plan_bytes=1616 ssa=0 mem=3
+SLJIT function compiled shiftDense pc=0..18 function_ops=18 regs=11 code_bytes=13079 plan_bytes=15058
+SLJIT loop compiled  pc=3..6 code_bytes=1118 plan_bytes=1616 ssa=1 mem=0
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=2815 plan_bytes=14968
+SLJIT SSA leaf reject line=9 stage=analysis
+SLJIT function compiled hash pc=0..15 function_ops=15 regs=7 code_bytes=7939 plan_bytes=15031
+SLJIT function compiled  pc=0..22 function_ops=22 regs=6 code_bytes=3921 plan_bytes=15094
+SLJIT loop compiled jitNativeStep pc=7..10 code_bytes=1242 plan_bytes=1616 ssa=1 mem=0
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT function compiled jitNativeStep pc=0..14 function_ops=14 regs=6 code_bytes=4226 plan_bytes=15022
+SLJIT SSA leaf reject line=11 stage=analysis
+SLJIT function compiled jitNativeDrive pc=0..11 function_ops=11 regs=7 code_bytes=3346 plan_bytes=14995
+SLJIT SSA leaf reject line=46 stage=analysis
+SLJIT function compiled jitNativeRecurse pc=0..9 function_ops=9 regs=5 code_bytes=3759 plan_bytes=14977
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT function compiled  pc=0..333 function_ops=333 regs=9 code_bytes=57415 plan_bytes=17893
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT function compiled nativeCheck pc=0..15 function_ops=15 regs=9 code_bytes=4090 plan_bytes=15031
+SLJIT SSA leaf reject line=56 stage=analysis
+SLJIT function compiled jitNativeSizes pc=0..11 function_ops=11 regs=6 code_bytes=3260 plan_bytes=14995
+SLJIT SSA leaf reject line=54 stage=analysis
+SLJIT function compiled jitNativePlanSize pc=0..6 function_ops=6 regs=5 code_bytes=2669 plan_bytes=14950
+SLJIT SSA leaf reject line=53 stage=analysis
+SLJIT function compiled jitNativeCollectionSize pc=0..3 function_ops=3 regs=3 code_bytes=1946 plan_bytes=14923
+SLJIT loop compiled nativeArity pc=4..6 code_bytes=1157 plan_bytes=1616 ssa=1 mem=0
+SLJIT SSA leaf reject line=67 stage=analysis
+SLJIT function compiled nativeArity pc=0..10 function_ops=10 regs=7 code_bytes=3906 plan_bytes=14986
+SLJIT loop compiled  pc=3..6 code_bytes=1118 plan_bytes=1616 ssa=1 mem=0
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=2815 plan_bytes=14968
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT function compiled  pc=0..460 function_ops=460 regs=18 code_bytes=83896 plan_bytes=19036
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT SSA leaf reject line=9 stage=analysis
+SLJIT function compiled recoverMiddle pc=0..15 function_ops=15 regs=9 code_bytes=7505 plan_bytes=15031
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT function compiled recoverLeaf pc=0..9 function_ops=9 regs=4 code_bytes=3306 plan_bytes=14977
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT SSA leaf reject line=16 stage=analysis
+SLJIT function compiled recoverDrive pc=0..11 function_ops=11 regs=7 code_bytes=8948 plan_bytes=14995
+SLJIT function compiled recoverAdd pc=0..5 function_ops=5 regs=6 code_bytes=2647 plan_bytes=14941
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT function compiled recoverCheck pc=0..15 function_ops=15 regs=9 code_bytes=4090 plan_bytes=15031
+SLJIT SSA leaf line=65 caller_depth=0 commit=0
+SLJIT SSA leaf line=65 caller_depth=0 commit=0
+SLJIT function compiled recoverTwice pc=0..14 function_ops=14 regs=7 code_bytes=5934 plan_bytes=15022
+SLJIT SSA leaf reject line=70 stage=analysis
+SLJIT SSA leaf reject line=71 stage=analysis
+SLJIT function compiled recoveryCompare pc=0..6 function_ops=6 regs=6 code_bytes=4370 plan_bytes=14950
+SLJIT SSA leaf reject line=70 stage=analysis
+SLJIT function compiled recoveryEquals pc=0..5 function_ops=5 regs=5 code_bytes=2812 plan_bytes=14941
+SLJIT SSA leaf reject line=83 stage=analysis
+SLJIT function compiled recoveryLoop pc=0..9 function_ops=9 regs=5 code_bytes=3239 plan_bytes=14977
+SLJIT SSA leaf reject line=83 stage=analysis
+SLJIT SSA leaf reject line=86 stage=analysis
+SLJIT function compiled recoveryLoopDrive pc=0..6 function_ops=6 regs=5 code_bytes=4796 plan_bytes=14950
+SLJIT function compiled resumeAllocate pc=0..35 function_ops=35 regs=14 code_bytes=18013 plan_bytes=15211
+SLJIT SSA leaf reject line=17 stage=analysis
+SLJIT function compiled resumeAppend pc=0..10 function_ops=10 regs=6 code_bytes=3808 plan_bytes=14986
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT function compiled resumeAssert pc=0..10 function_ops=10 regs=8 code_bytes=2849 plan_bytes=14986
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT function compiled  pc=0..191 function_ops=191 regs=11 code_bytes=34905 plan_bytes=16615
+SLJIT function resumeAppend hits=548 returns=155 charged_edges=6044 budget_exits=398 code_bytes=3808
+SLJIT loop compiled jitLinkTarget pc=3..5 code_bytes=1152 plan_bytes=1616 ssa=1 mem=0
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled jitLinkTarget pc=0..7 function_ops=7 regs=13 code_bytes=2632 plan_bytes=14959
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled  pc=0..106 function_ops=106 regs=14 code_bytes=17894 plan_bytes=15850
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT function compiled jitLinkDrive pc=0..19 function_ops=19 regs=15 code_bytes=5214 plan_bytes=15067
+SLJIT function compiled  pc=0..2 function_ops=2 regs=3 code_bytes=1723 plan_bytes=14914
+SLJIT function jitLinkTarget hits=4351 returns=4338 charged_edges=265 budget_exits=20 code_bytes=2632
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled jitLinkTarget pc=0..7 function_ops=7 regs=13 code_bytes=2632 plan_bytes=14959
+SLJIT function compiled  pc=0..23 function_ops=23 regs=7 code_bytes=3953 plan_bytes=15103
+SLJIT function jitLinkTarget hits=5414 returns=5379 charged_edges=73 budget_exits=35 code_bytes=2632
+SLJIT SSA leaf reject line=3 stage=analysis
+SLJIT function compiled jitLinkTarget pc=0..7 function_ops=7 regs=13 code_bytes=2632 plan_bytes=14959
+SLJIT function compiled  pc=0..23 function_ops=23 regs=7 code_bytes=3953 plan_bytes=15103
+SLJIT region attempt ops=615 regs=8 begin=603 budget_used=0
+SLJIT region result jitCfgNumbers ops=615 analyzed=1 emitted=1 code_bytes=3426 budget_used=0 limit=262144
+SLJIT function compiled jitCfgNumbers pc=603..615 function_ops=615 regs=8 code_bytes=3426 plan_bytes=15004
+SLJIT function compiled jitCfgCalls pc=0..28 function_ops=28 regs=10 code_bytes=8517 plan_bytes=15148
+SLJIT SSA leaf reject line=24 stage=analysis
+SLJIT function compiled jitCfgStep pc=0..7 function_ops=7 regs=8 code_bytes=3293 plan_bytes=14959
+SLJIT function compiled jitCfgDrive pc=0..17 function_ops=17 regs=10 code_bytes=5059 plan_bytes=15049
+SLJIT function compiled jitCfgShort pc=0..10 function_ops=10 regs=9 code_bytes=3448 plan_bytes=14986
+SLJIT function jitCfgStep hits=37 returns=37 charged_edges=0 budget_exits=0 code_bytes=3293
+SLJIT function jitCfgCalls hits=4371 returns=651 charged_edges=55814 budget_exits=3756 code_bytes=8517
+SLJIT function jitCfgDrive hits=104 returns=34 charged_edges=551 budget_exits=69 code_bytes=5059
+SLJIT function jitCfgShort hits=46 returns=36 charged_edges=153 budget_exits=14 code_bytes=3448
+SLJIT function jitCfgNumbers hits=818 returns=168 charged_edges=9081 budget_exits=625 code_bytes=3426
+SLJIT region attempt ops=1142 regs=63 begin=96 budget_used=609580
+SLJIT region result  ops=1142 analyzed=1 emitted=1 code_bytes=21351 budget_used=609580 limit=1048576
+SLJIT function compiled  pc=96..224 function_ops=1142 regs=63 code_bytes=21351 plan_bytes=16048
+SLJIT function compiled pull pc=0..14 function_ops=14 regs=5 code_bytes=4719 plan_bytes=15022
+SLJIT SSA leaf reject line=6 stage=analysis
+SLJIT function compiled enqueue pc=0..11 function_ops=11 regs=7 code_bytes=6951 plan_bytes=14995
+SLJIT function compiled make pc=0..18 function_ops=18 regs=9 code_bytes=2443 plan_bytes=15058
+SLJIT function compiled Sink pc=0..9 function_ops=9 regs=5 code_bytes=3040 plan_bytes=14977
+SLJIT SSA leaf reject line=7 stage=analysis
+SLJIT function compiled close pc=0..16 function_ops=16 regs=5 code_bytes=4512 plan_bytes=15040
+SLJIT SSA leaf reject line=8 stage=analysis
+SLJIT function compiled _wake pc=0..10 function_ops=10 regs=6 code_bytes=3364 plan_bytes=14986
+SLJIT function compiled count pc=0..2 function_ops=2 regs=1 code_bytes=1517 plan_bytes=14914
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT function compiled check pc=0..6 function_ops=6 regs=6 code_bytes=2198 plan_bytes=14950
+SLJIT function compiled select pc=0..8 function_ops=8 regs=5 code_bytes=3853 plan_bytes=14968
+SLJIT function compiled compute pc=0..9 function_ops=9 regs=8 code_bytes=4031 plan_bytes=14977
+SLJIT SSA leaf reject line=78 stage=analysis
+SLJIT function compiled setFields pc=0..6 function_ops=6 regs=6 code_bytes=2445 plan_bytes=14950
+SLJIT SSA leaf reject line=82 stage=analysis
+SLJIT function compiled strictStore pc=0..6 function_ops=6 regs=6 code_bytes=2445 plan_bytes=14950
+SLJIT SSA leaf reject line=87 stage=analysis
+SLJIT function compiled hasTypes pc=0..9 function_ops=9 regs=7 code_bytes=3909 plan_bytes=14977
+SLJIT SSA leaf reject line=96 stage=analysis
+SLJIT function compiled responseStatus pc=0..24 function_ops=24 regs=10 code_bytes=6925 plan_bytes=15112
+SLJIT function compiled bounds pc=0..8 function_ops=8 regs=8 code_bytes=3573 plan_bytes=14968
+SLJIT function compiled serverPump pc=0..65 function_ops=65 regs=11 code_bytes=12207 plan_bytes=15481
+SLJIT SSA leaf reject line=125 stage=analysis
+SLJIT function compiled pull pc=0..7 function_ops=7 regs=4 code_bytes=2861 plan_bytes=14959
+SLJIT function compiled functionFields pc=0..8 function_ops=8 regs=8 code_bytes=2491 plan_bytes=14968
+SLJIT loop compiled jitRegionFields pc=3..8 code_bytes=1380 plan_bytes=1616 ssa=1 mem=2
+SLJIT loop compiled jitRegionCalls pc=3..9 code_bytes=1445 plan_bytes=1616 ssa=1 mem=0
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1977 plan_bytes=1616 ssa=0 mem=3
+SLJIT SSA leaf reject line=7 stage=analysis
+SLJIT function compiled jitRegionFields pc=0..10 function_ops=10 regs=6 code_bytes=3220 plan_bytes=14986
+SLJIT loop compiled jitRegionFields pc=3..8 code_bytes=1380 plan_bytes=1616 ssa=1 mem=2
+SLJIT SSA leaf line=20 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=22 stage=analysis
+SLJIT function compiled jitRegionCalls pc=0..11 function_ops=11 regs=7 code_bytes=3752 plan_bytes=14995
+SLJIT function compiled jitRegionTyped pc=0..16 function_ops=16 regs=12 code_bytes=7507 plan_bytes=15040
+SLJIT SSA leaf reject line=4 stage=analysis
+SLJIT function compiled jitRegionCheck pc=0..16 function_ops=16 regs=11 code_bytes=4614 plan_bytes=15040
+SLJIT SSA leaf reject line=7 stage=analysis
+SLJIT SSA leaf line=20 caller_depth=1 commit=0
+SLJIT function compiled  pc=0..200 function_ops=200 regs=12 code_bytes=42896 plan_bytes=16696
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1968 plan_bytes=1616 ssa=0 mem=3
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1968 plan_bytes=1616 ssa=0 mem=3
+SLJIT loop compiled jitRegionTyped pc=3..14 code_bytes=1977 plan_bytes=1616 ssa=0 mem=3
+SLJIT SSA leaf reject line=39 stage=analysis
+SLJIT function compiled get x pc=0..3 function_ops=3 regs=1 code_bytes=1329 plan_bytes=14923
+SLJIT function compiled jitRegionHelper pc=0..2 function_ops=2 regs=3 code_bytes=1430 plan_bytes=14914
+SLJIT SSA leaf reject line=44 stage=analysis
+SLJIT function compiled jitRegionHelper pc=0..3 function_ops=3 regs=3 code_bytes=1471 plan_bytes=14923
+SLJIT loop compiled jitRegionPoll pc=3..8 code_bytes=1380 plan_bytes=1616 ssa=1 mem=2
+SLJIT SSA leaf reject line=1 stage=analysis
+SLJIT function compiled jitRegionPoll pc=0..10 function_ops=10 regs=6 code_bytes=3220 plan_bytes=14986
+SLJIT loop compiled jitRegionPoll pc=3..8 code_bytes=1380 plan_bytes=1616 ssa=1 mem=2
+SLJIT SSA leaf reject line=1 stage=analysis
+SLJIT function compiled  pc=0..20 function_ops=20 regs=7 code_bytes=5392 plan_bytes=15076
+SLJIT loop compiled spin pc=4..9 code_bytes=1665 plan_bytes=1616 ssa=1 mem=1
+SLJIT SSA leaf line=1 caller_depth=0 commit=1
+SLJIT function compiled  pc=0..32 function_ops=32 regs=7 code_bytes=6389 plan_bytes=15184
+SLJIT function compiled ssaSet pc=0..4 function_ops=4 regs=6 code_bytes=2405 plan_bytes=14932
+SLJIT SSA leaf line=1 caller_depth=0 commit=1
+SLJIT SSA leaf reject line=1 stage=analysis
+SLJIT function compiled ssaCommit pc=0..5 function_ops=5 regs=3 code_bytes=2986 plan_bytes=14941
+SLJIT function compiled regionOutput pc=0..8 function_ops=8 regs=7 code_bytes=3930 plan_bytes=14968
+SLJIT function compiled regionInput pc=0..8 function_ops=8 regs=7 code_bytes=3572 plan_bytes=14968
+SLJIT SSA leaf line=4 caller_depth=0 commit=0
+SLJIT SSA leaf line=7 caller_depth=0 commit=0
+SLJIT SSA leaf line=7 caller_depth=1 commit=0
+SLJIT SSA leaf line=4 caller_depth=1 commit=0
+SLJIT function compiled  pc=0..316 function_ops=316 regs=9 code_bytes=62643 plan_bytes=17740
+SLJIT SSA leaf line=7 caller_depth=0 commit=0
+SLJIT SSA leaf line=4 caller_depth=0 commit=0
+SLJIT function compiled regionExecute pc=0..11 function_ops=11 regs=8 code_bytes=8231 plan_bytes=14995
+SLJIT SSA leaf line=4 caller_depth=0 commit=0
+SLJIT SSA leaf line=7 caller_depth=0 commit=0
+SLJIT SSA leaf line=7 caller_depth=0 commit=0
+SLJIT function compiled regionDrive pc=0..35 function_ops=35 regs=11 code_bytes=14746 plan_bytes=15211
+SLJIT SSA leaf reject line=54 stage=analysis
+SLJIT function compiled regionNumeric pc=0..5 function_ops=5 regs=6 code_bytes=5473 plan_bytes=14941
+SLJIT function compiled regionChoose pc=0..6 function_ops=6 regs=5 code_bytes=2800 plan_bytes=14950
+SLJIT SSA leaf line=7 caller_depth=0 commit=0
+SLJIT SSA leaf line=4 caller_depth=0 commit=0
+SLJIT function compiled  pc=0..11 function_ops=11 regs=8 code_bytes=8231 plan_bytes=14995
+SLJIT SSA leaf reject line=1 stage=analysis
+SLJIT function compiled  pc=0..4 function_ops=4 regs=3 code_bytes=2361 plan_bytes=14932
+SLJIT function regionNumeric hits=21 returns=14 charged_edges=1 budget_exits=0 code_bytes=5473
+embedding JIT: PASS
+SLJIT template render hits=112 misses=0 parts=5
+SLJIT template render hits=48 misses=0 parts=5
+SLJIT function  hits=14 returns=1 charged_edges=5 budget_exits=0 code_bytes=4243
+SLJIT function  hits=14 returns=1 charged_edges=5 budget_exits=0 code_bytes=4243
+SLJIT function  hits=18 returns=1 charged_edges=7 budget_exits=1 code_bytes=4243
+SLJIT function check hits=9356 returns=9356 charged_edges=0 budget_exits=0 code_bytes=2198
+SLJIT function same hits=9362 returns=9354 charged_edges=0 budget_exits=0 code_bytes=4538
+SLJIT loop sum pc=3..6 hits=100 iterations=1407 code_bytes=836
+SLJIT loop sum pc=3..6 hits=32 iterations=478 code_bytes=1411
+SLJIT function sum hits=25 returns=8 charged_edges=0 budget_exits=0 code_bytes=3530
+SLJIT loop transform pc=2..9 hits=32 iterations=471 code_bytes=1730
+SLJIT function transform hits=11 returns=2 charged_edges=0 budget_exits=0 code_bytes=5409
+SLJIT loop blend pc=2..12 hits=289 iterations=4248 code_bytes=2054
+SLJIT function blend hits=41 returns=18 charged_edges=0 budget_exits=0 code_bytes=13476
+SLJIT loop ascii pc=3..12 hits=223 iterations=209 code_bytes=1613
+SLJIT function ascii hits=26 returns=2 charged_edges=8 budget_exits=0 code_bytes=4459
+SLJIT loop asciiBinding pc=4..14 hits=209 iterations=189 code_bytes=1626
+SLJIT function asciiBinding hits=9 returns=0 charged_edges=1 budget_exits=0 code_bytes=4830
+SLJIT loop hash pc=3..13 hits=2079 iterations=30551 code_bytes=1508
+SLJIT function hash hits=197 returns=121 charged_edges=583 budget_exits=77 code_bytes=7939
+SLJIT loop reference pc=3..8 hits=33 iterations=479 code_bytes=1508
+SLJIT loop reference pc=3..8 hits=67 iterations=957 code_bytes=1508
+SLJIT loop reference pc=3..8 hits=34 iterations=479 code_bytes=1505
+SLJIT loop reference pc=3..8 hits=33 iterations=472 code_bytes=1505
+SLJIT function reference hits=34 returns=8 charged_edges=0 budget_exits=0 code_bytes=4587
+SLJIT loop numeric pc=2..15 hits=32 iterations=460 code_bytes=2263
+SLJIT function numeric hits=8 returns=2 charged_edges=7 budget_exits=1 code_bytes=9234
+SLJIT loop classify pc=2..19 hits=33 iterations=476 code_bytes=2404
+SLJIT function classify hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=15256
+SLJIT loop shiftDense pc=4..9 hits=160 iterations=355 code_bytes=1284
+SLJIT function shiftDense hits=2073 returns=80 charged_edges=1993 budget_exits=139 code_bytes=13079
+SLJIT loop  pc=3..6 hits=300 iterations=601 code_bytes=1118
+SLJIT function  hits=693 returns=492 charged_edges=472 budget_exits=4 code_bytes=2815
+SLJIT function  hits=419 returns=419 charged_edges=0 budget_exits=0 code_bytes=1288
+SLJIT function  hits=419 returns=419 charged_edges=0 budget_exits=0 code_bytes=1288
+SLJIT function  hits=12618 returns=0 charged_edges=11454 budget_exits=793 code_bytes=45377
+SLJIT loop  pc=3..6 hits=32 iterations=471 code_bytes=1408
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=3527
+SLJIT loop  pc=2..9 hits=32 iterations=475 code_bytes=1730
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5409
+SLJIT loop  pc=3..6 hits=32 iterations=472 code_bytes=1408
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=3527
+SLJIT loop  pc=2..9 hits=32 iterations=476 code_bytes=1730
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5409
+SLJIT loop  pc=3..6 hits=33 iterations=480 code_bytes=1411
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5907
+SLJIT loop  pc=2..9 hits=32 iterations=469 code_bytes=1736
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5415
+SLJIT loop  pc=3..6 hits=32 iterations=474 code_bytes=1411
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=3530
+SLJIT loop  pc=2..9 hits=32 iterations=478 code_bytes=1736
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5415
+SLJIT loop  pc=3..6 hits=32 iterations=468 code_bytes=1411
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=3531
+SLJIT loop  pc=2..9 hits=32 iterations=473 code_bytes=1736
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5417
+SLJIT loop  pc=3..6 hits=32 iterations=478 code_bytes=1133
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=3530
+SLJIT loop  pc=2..9 hits=97 iterations=356 code_bytes=1492
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5442
+SLJIT loop  pc=3..6 hits=32 iterations=475 code_bytes=1138
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=3543
+SLJIT loop  pc=2..9 hits=32 iterations=479 code_bytes=1643
+SLJIT function  hits=0 returns=0 charged_edges=0 budget_exits=0 code_bytes=5411
+SLJIT loop  pc=3..6 hits=32 iterations=469 code_bytes=1132
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=3537
+SLJIT loop  pc=2..9 hits=32 iterations=474 code_bytes=1629
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=5397
+SLJIT loop  pc=2..12 hits=32 iterations=479 code_bytes=1953
+SLJIT function  hits=0 returns=0 charged_edges=0 budget_exits=0 code_bytes=6759
+SLJIT loop  pc=2..8 hits=33 iterations=472 code_bytes=1286
+SLJIT function  hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=7145
+SLJIT function  hits=13 returns=1 charged_edges=59 budget_exits=6 code_bytes=3921
+SLJIT function nativeCheck hits=2 returns=0 charged_edges=0 budget_exits=0 code_bytes=4090
+SLJIT loop jitNativeStep pc=7..10 hits=177 iterations=429 code_bytes=1242
+SLJIT function jitNativeStep hits=217 returns=184 charged_edges=165 budget_exits=15 code_bytes=4226
+SLJIT function jitNativeDrive hits=182 returns=2 charged_edges=1891 budget_exits=157 code_bytes=3346
+SLJIT function jitNativeRecurse hits=32 returns=0 charged_edges=431 budget_exits=32 code_bytes=3759
+SLJIT function jitNativeCollectionSize hits=8 returns=8 charged_edges=0 budget_exits=0 code_bytes=1946
+SLJIT function jitNativePlanSize hits=16 returns=15 charged_edges=7 budget_exits=0 code_bytes=2669
+SLJIT function jitNativeSizes hits=1726 returns=50 charged_edges=24930 budget_exits=1672 code_bytes=3260
+SLJIT loop nativeArity pc=4..6 hits=65 iterations=144 code_bytes=1157
+SLJIT function nativeArity hits=52 returns=49 charged_edges=6 budget_exits=1 code_bytes=3906
+SLJIT loop  pc=3..6 hits=229 iterations=472 code_bytes=1118
+SLJIT function  hits=623 returns=470 charged_edges=217 budget_exits=30 code_bytes=2815
+SLJIT function  hits=987 returns=0 charged_edges=2860 budget_exits=227 code_bytes=57415
+SLJIT function recoverCheck hits=8 returns=0 charged_edges=0 budget_exits=0 code_bytes=4090
+SLJIT function recoverLeaf hits=3 returns=0 charged_edges=0 budget_exits=0 code_bytes=3306
+SLJIT function recoverMiddle hits=53 returns=51 charged_edges=0 budget_exits=0 code_bytes=7505
+SLJIT function recoverDrive hits=22 returns=4 charged_edges=229 budget_exits=15 code_bytes=8948
+SLJIT function recoverAdd hits=59 returns=59 charged_edges=0 budget_exits=0 code_bytes=2647
+SLJIT function recoverTwice hits=1 returns=1 charged_edges=0 budget_exits=0 code_bytes=5934
+SLJIT function recoveryEquals hits=0 returns=0 charged_edges=0 budget_exits=0 code_bytes=2812
+SLJIT function recoveryCompare hits=748 returns=748 charged_edges=0 budget_exits=0 code_bytes=4370
+SLJIT function recoveryLoop hits=996 returns=300 charged_edges=11082 budget_exits=711 code_bytes=3239
+SLJIT function recoveryLoopDrive hits=19 returns=16 charged_edges=30 budget_exits=3 code_bytes=4796
+SLJIT function  hits=926 returns=0 charged_edges=1937 budget_exits=166 code_bytes=83896
+SLJIT function resumeAssert hits=61 returns=61 charged_edges=0 budget_exits=0 code_bytes=2849
+SLJIT function resumeAllocate hits=3308 returns=0 charged_edges=76 budget_exits=4 code_bytes=18013
+SLJIT function  hits=4195 returns=1 charged_edges=7895 budget_exits=545 code_bytes=34905
+SLJIT loop jitLinkTarget pc=3..5 hits=7487 iterations=21050 code_bytes=1152
+SLJIT function jitLinkTarget hits=5347 returns=5313 charged_edges=70 budget_exits=34 code_bytes=2632
+SLJIT function jitLinkDrive hits=7797 returns=227 charged_edges=90621 budget_exits=7445 code_bytes=5214
+SLJIT function  hits=35 returns=35 charged_edges=0 budget_exits=0 code_bytes=1723
+SLJIT function  hits=88 returns=0 charged_edges=466 budget_exits=65 code_bytes=17894
+SLJIT function  hits=27 returns=1 charged_edges=132 budget_exits=18 code_bytes=3953
+SLJIT function  hits=27 returns=1 charged_edges=134 budget_exits=18 code_bytes=3953
+SLJIT function check hits=4658 returns=4658 charged_edges=0 budget_exits=0 code_bytes=2198
+SLJIT function pull hits=6774 returns=6750 charged_edges=4 budget_exits=0 code_bytes=4719
+SLJIT function count hits=8 returns=0 charged_edges=0 budget_exits=0 code_bytes=1517
+SLJIT function make hits=968 returns=944 charged_edges=0 budget_exits=0 code_bytes=2443
+SLJIT function select hits=874 returns=874 charged_edges=0 budget_exits=0 code_bytes=3853
+SLJIT function compute hits=516 returns=504 charged_edges=0 budget_exits=0 code_bytes=4031
+SLJIT function setFields hits=130 returns=129 charged_edges=0 budget_exits=0 code_bytes=2445
+SLJIT function strictStore hits=129 returns=128 charged_edges=0 budget_exits=0 code_bytes=2445
+SLJIT function hasTypes hits=1072 returns=1060 charged_edges=0 budget_exits=0 code_bytes=3909
+SLJIT function responseStatus hits=224 returns=222 charged_edges=0 budget_exits=0 code_bytes=6925
+SLJIT function bounds hits=131 returns=131 charged_edges=0 budget_exits=0 code_bytes=3573
+SLJIT function serverPump hits=254 returns=250 charged_edges=246 budget_exits=0 code_bytes=12207
+SLJIT function Sink hits=8 returns=0 charged_edges=0 budget_exits=0 code_bytes=3040
+SLJIT function enqueue hits=6706 returns=6698 charged_edges=0 budget_exits=0 code_bytes=6951
+SLJIT function close hits=10 returns=7 charged_edges=3 budget_exits=0 code_bytes=4512
+SLJIT function _wake hits=4 returns=4 charged_edges=0 budget_exits=0 code_bytes=3364
+SLJIT function pull hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=2861
+SLJIT function functionFields hits=194 returns=194 charged_edges=0 budget_exits=0 code_bytes=2491
+SLJIT function  hits=9441 returns=0 charged_edges=21261 budget_exits=1369 code_bytes=21351
+SLJIT function jitRegionCheck hits=8 returns=0 charged_edges=0 budget_exits=0 code_bytes=4614
+SLJIT loop jitRegionFields pc=3..8 hits=2779 iterations=39986 code_bytes=1380
+SLJIT loop jitRegionFields pc=3..8 hits=10 iterations=115 code_bytes=1380
+SLJIT function jitRegionFields hits=252 returns=178 charged_edges=0 budget_exits=0 code_bytes=3220
+SLJIT loop jitRegionTyped pc=3..14 hits=4 iterations=58 code_bytes=1977
+SLJIT loop jitRegionTyped pc=3..14 hits=5 iterations=58 code_bytes=1968
+SLJIT loop jitRegionTyped pc=3..14 hits=5 iterations=58 code_bytes=1968
+SLJIT loop jitRegionTyped pc=3..14 hits=137 iterations=1134 code_bytes=1977
+SLJIT function jitRegionTyped hits=211 returns=164 charged_edges=297 budget_exits=39 code_bytes=7507
+SLJIT loop jitRegionCalls pc=3..9 hits=1599 iterations=21139 code_bytes=1445
+SLJIT function jitRegionCalls hits=2083 returns=160 charged_edges=2217 budget_exits=172 code_bytes=3752
+SLJIT function get x hits=1808 returns=1808 charged_edges=0 budget_exits=0 code_bytes=1329
+SLJIT function jitRegionHelper hits=879 returns=879 charged_edges=0 budget_exits=0 code_bytes=1430
+SLJIT function jitRegionHelper hits=0 returns=0 charged_edges=0 budget_exits=0 code_bytes=1471
+SLJIT function  hits=220 returns=0 charged_edges=763 budget_exits=97 code_bytes=42896
+SLJIT loop jitRegionPoll pc=3..8 hits=235 iterations=2551 code_bytes=1380
+SLJIT loop jitRegionPoll pc=3..8 hits=13 iterations=147 code_bytes=1380
+SLJIT function jitRegionPoll hits=216 returns=168 charged_edges=0 budget_exits=0 code_bytes=3220
+SLJIT function  hits=54 returns=1 charged_edges=391 budget_exits=45 code_bytes=5392
+SLJIT loop spin pc=4..9 hits=2 iterations=29 code_bytes=1665
+SLJIT function ssaSet hits=59 returns=59 charged_edges=0 budget_exits=0 code_bytes=2405
+SLJIT function  hits=7 returns=1 charged_edges=5 budget_exits=0 code_bytes=6389
+SLJIT function ssaCommit hits=3 returns=2 charged_edges=0 budget_exits=0 code_bytes=2986
+SLJIT function regionInput hits=240 returns=236 charged_edges=0 budget_exits=0 code_bytes=3572
+SLJIT function regionOutput hits=300 returns=293 charged_edges=0 budget_exits=0 code_bytes=3930
+SLJIT function regionExecute hits=1882 returns=1872 charged_edges=0 budget_exits=0 code_bytes=8231
+SLJIT function regionDrive hits=1944 returns=2 charged_edges=1820 budget_exits=123 code_bytes=14746
+SLJIT function regionChoose hits=2 returns=2 charged_edges=0 budget_exits=0 code_bytes=2800
+SLJIT function  hits=171 returns=0 charged_edges=171 budget_exits=12 code_bytes=62643
+SLJIT function  hits=13 returns=5 charged_edges=0 budget_exits=0 code_bytes=8231
+SLJIT function  hits=108 returns=104 charged_edges=102 budget_exits=0 code_bytes=2361

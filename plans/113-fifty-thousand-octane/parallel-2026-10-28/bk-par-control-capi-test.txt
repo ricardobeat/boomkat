@@ -1,0 +1,1 @@
+embedding JIT check failed: code[0].op == Opcode.NOP && code[1].c == 0 && code[2].c == 1

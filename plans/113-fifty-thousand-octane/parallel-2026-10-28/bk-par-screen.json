@@ -1,0 +1,1190 @@
+[
+  {
+    "bench": "crypto",
+    "variant": "control",
+    "pair": 0,
+    "ms": 149.0,
+    "rc": 0,
+    "output": "Encrypt: 10 ms\nDecrypt: 139 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 171.0,
+    "rc": 0,
+    "output": "Encrypt: 20 ms\nDecrypt: 151 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 177.0,
+    "rc": 0,
+    "output": "Encrypt: 20 ms\nDecrypt: 157 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 169.0,
+    "rc": 0,
+    "output": "Encrypt: 19 ms\nDecrypt: 150 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 148.0,
+    "rc": 0,
+    "output": "Encrypt: 9 ms\nDecrypt: 139 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 159.0,
+    "rc": 0,
+    "output": "Encrypt: 10 ms\nDecrypt: 149 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 149.0,
+    "rc": 0,
+    "output": "Encrypt: 9 ms\nDecrypt: 140 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "control",
+    "pair": 1,
+    "ms": 151.0,
+    "rc": 0,
+    "output": "Encrypt: 10 ms\nDecrypt: 141 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "control",
+    "pair": 2,
+    "ms": 152.0,
+    "rc": 0,
+    "output": "Encrypt: 10 ms\nDecrypt: 142 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 151.0,
+    "rc": 0,
+    "output": "Encrypt: 9 ms\nDecrypt: 142 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 157.0,
+    "rc": 0,
+    "output": "Encrypt: 10 ms\nDecrypt: 147 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "crypto",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 152.0,
+    "rc": 0,
+    "output": "Encrypt: 9 ms\nDecrypt: 143 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "control",
+    "pair": 0,
+    "ms": 187.0,
+    "rc": 0,
+    "output": "NavierStokes: 187 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 186.0,
+    "rc": 0,
+    "output": "NavierStokes: 186 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 180.0,
+    "rc": 0,
+    "output": "NavierStokes: 180 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 186.0,
+    "rc": 0,
+    "output": "NavierStokes: 186 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 186.0,
+    "rc": 0,
+    "output": "NavierStokes: 186 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 179.0,
+    "rc": 0,
+    "output": "NavierStokes: 179 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 186.0,
+    "rc": 0,
+    "output": "NavierStokes: 186 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "control",
+    "pair": 1,
+    "ms": 187.0,
+    "rc": 0,
+    "output": "NavierStokes: 187 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "control",
+    "pair": 2,
+    "ms": 187.0,
+    "rc": 0,
+    "output": "NavierStokes: 187 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 186.0,
+    "rc": 0,
+    "output": "NavierStokes: 186 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 181.0,
+    "rc": 0,
+    "output": "NavierStokes: 181 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 186.0,
+    "rc": 0,
+    "output": "NavierStokes: 186 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "control",
+    "pair": 0,
+    "ms": 158.0,
+    "rc": 0,
+    "output": "RayTrace: 158 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 157.0,
+    "rc": 0,
+    "output": "RayTrace: 157 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 158.0,
+    "rc": 0,
+    "output": "RayTrace: 158 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 156.0,
+    "rc": 0,
+    "output": "RayTrace: 156 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 158.0,
+    "rc": 0,
+    "output": "RayTrace: 158 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 158.0,
+    "rc": 0,
+    "output": "RayTrace: 158 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 158.0,
+    "rc": 0,
+    "output": "RayTrace: 158 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "control",
+    "pair": 1,
+    "ms": 159.0,
+    "rc": 0,
+    "output": "RayTrace: 159 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "control",
+    "pair": 2,
+    "ms": 157.0,
+    "rc": 0,
+    "output": "RayTrace: 157 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 157.0,
+    "rc": 0,
+    "output": "RayTrace: 157 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 158.0,
+    "rc": 0,
+    "output": "RayTrace: 158 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "raytrace",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 156.0,
+    "rc": 0,
+    "output": "RayTrace: 156 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "control",
+    "pair": 0,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 173.0,
+    "rc": 0,
+    "output": "Earley: 21 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "control",
+    "pair": 1,
+    "ms": 171.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 151 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "control",
+    "pair": 2,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 152 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 174.0,
+    "rc": 0,
+    "output": "Earley: 21 ms\nBoyer: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 171.0,
+    "rc": 0,
+    "output": "Earley: 20 ms\nBoyer: 151 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "earley-boyer",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 172.0,
+    "rc": 0,
+    "output": "Earley: 21 ms\nBoyer: 151 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "control",
+    "pair": 0,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 108.0,
+    "rc": 0,
+    "output": "Splay: 108 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 108.0,
+    "rc": 0,
+    "output": "Splay: 108 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "control",
+    "pair": 1,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "control",
+    "pair": 2,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 108.0,
+    "rc": 0,
+    "output": "Splay: 108 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 108.0,
+    "rc": 0,
+    "output": "Splay: 108 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "splay",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 107.0,
+    "rc": 0,
+    "output": "Splay: 107 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "control",
+    "pair": 0,
+    "ms": 74.0,
+    "rc": 0,
+    "output": "Richards: 74 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 74.0,
+    "rc": 0,
+    "output": "Richards: 74 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 74.0,
+    "rc": 0,
+    "output": "Richards: 74 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 74.0,
+    "rc": 0,
+    "output": "Richards: 74 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 75.0,
+    "rc": 0,
+    "output": "Richards: 75 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 74.0,
+    "rc": 0,
+    "output": "Richards: 74 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 74.0,
+    "rc": 0,
+    "output": "Richards: 74 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "control",
+    "pair": 1,
+    "ms": 75.0,
+    "rc": 0,
+    "output": "Richards: 75 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "control",
+    "pair": 2,
+    "ms": 75.0,
+    "rc": 0,
+    "output": "Richards: 75 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 75.0,
+    "rc": 0,
+    "output": "Richards: 75 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 74.0,
+    "rc": 0,
+    "output": "Richards: 74 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "richards",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 75.0,
+    "rc": 0,
+    "output": "Richards: 75 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "control",
+    "pair": 0,
+    "ms": 103.0,
+    "rc": 0,
+    "output": "DeltaBlue: 103 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 105.0,
+    "rc": 0,
+    "output": "DeltaBlue: 105 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 104.0,
+    "rc": 0,
+    "output": "DeltaBlue: 104 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 103.0,
+    "rc": 0,
+    "output": "DeltaBlue: 103 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 102.0,
+    "rc": 0,
+    "output": "DeltaBlue: 102 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 103.0,
+    "rc": 0,
+    "output": "DeltaBlue: 103 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 103.0,
+    "rc": 0,
+    "output": "DeltaBlue: 103 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "control",
+    "pair": 1,
+    "ms": 104.0,
+    "rc": 0,
+    "output": "DeltaBlue: 104 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "control",
+    "pair": 2,
+    "ms": 104.0,
+    "rc": 0,
+    "output": "DeltaBlue: 104 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 104.0,
+    "rc": 0,
+    "output": "DeltaBlue: 104 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 103.0,
+    "rc": 0,
+    "output": "DeltaBlue: 103 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "deltablue",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 101.0,
+    "rc": 0,
+    "output": "DeltaBlue: 101 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "control",
+    "pair": 0,
+    "ms": 360.0,
+    "rc": 0,
+    "output": "PdfJS: 360 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 358.0,
+    "rc": 0,
+    "output": "PdfJS: 358 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 361.0,
+    "rc": 0,
+    "output": "PdfJS: 361 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 358.0,
+    "rc": 0,
+    "output": "PdfJS: 358 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 356.0,
+    "rc": 0,
+    "output": "PdfJS: 356 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 360.0,
+    "rc": 0,
+    "output": "PdfJS: 360 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 356.0,
+    "rc": 0,
+    "output": "PdfJS: 356 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "control",
+    "pair": 1,
+    "ms": 361.0,
+    "rc": 0,
+    "output": "PdfJS: 361 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "control",
+    "pair": 2,
+    "ms": 358.0,
+    "rc": 0,
+    "output": "PdfJS: 358 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 359.0,
+    "rc": 0,
+    "output": "PdfJS: 359 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 359.0,
+    "rc": 0,
+    "output": "PdfJS: 359 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 356.0,
+    "rc": 0,
+    "output": "PdfJS: 356 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "control",
+    "pair": 0,
+    "ms": 4203.0,
+    "rc": 0,
+    "output": "zlib: 4203 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 4167.0,
+    "rc": 0,
+    "output": "zlib: 4167 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 4206.0,
+    "rc": 0,
+    "output": "zlib: 4206 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 4228.0,
+    "rc": 0,
+    "output": "zlib: 4228 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 4182.0,
+    "rc": 0,
+    "output": "zlib: 4182 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 4214.0,
+    "rc": 0,
+    "output": "zlib: 4214 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 4194.0,
+    "rc": 0,
+    "output": "zlib: 4194 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "control",
+    "pair": 1,
+    "ms": 4205.0,
+    "rc": 0,
+    "output": "zlib: 4205 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "control",
+    "pair": 2,
+    "ms": 4268.0,
+    "rc": 0,
+    "output": "zlib: 4268 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 4187.0,
+    "rc": 0,
+    "output": "zlib: 4187 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 4223.0,
+    "rc": 0,
+    "output": "zlib: 4223 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "zlib",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 4200.0,
+    "rc": 0,
+    "output": "zlib: 4200 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "control",
+    "pair": 0,
+    "ms": 1214.0,
+    "rc": 0,
+    "output": "Typescript: 1214 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 1210.0,
+    "rc": 0,
+    "output": "Typescript: 1210 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 1208.0,
+    "rc": 0,
+    "output": "Typescript: 1208 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 1204.0,
+    "rc": 0,
+    "output": "Typescript: 1204 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 1216.0,
+    "rc": 0,
+    "output": "Typescript: 1216 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 1219.0,
+    "rc": 0,
+    "output": "Typescript: 1219 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 1219.0,
+    "rc": 0,
+    "output": "Typescript: 1219 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "control",
+    "pair": 1,
+    "ms": 1212.0,
+    "rc": 0,
+    "output": "Typescript: 1212 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "control",
+    "pair": 2,
+    "ms": 1217.0,
+    "rc": 0,
+    "output": "Typescript: 1217 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 1230.0,
+    "rc": 0,
+    "output": "Typescript: 1230 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 1204.0,
+    "rc": 0,
+    "output": "Typescript: 1204 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "typescript",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 1204.0,
+    "rc": 0,
+    "output": "Typescript: 1204 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "control",
+    "pair": 0,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 159.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "reads",
+    "pair": 0,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "reads",
+    "pair": 1,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 154 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 154 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "control",
+    "pair": 1,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 154 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "control",
+    "pair": 2,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 154 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 159.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 160.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 153 ms\n",
+    "error": ""
+  },
+  {
+    "bench": "code-load",
+    "variant": "reads",
+    "pair": 2,
+    "ms": 161.0,
+    "rc": 0,
+    "output": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 155 ms\n",
+    "error": ""
+  }
+]

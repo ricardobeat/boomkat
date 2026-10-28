@@ -1,0 +1,19 @@
+Richards: 3629
+DeltaBlue: 3055
+Crypto: 5056
+RayTrace: 3154
+EarleyBoyer: 3098
+RegExp: 771
+Splay: 9086
+SplayLatency: 21864
+NavierStokes: 3909
+PdfJS: 6039
+Mandreel: 1925
+MandreelLatency: 11078
+Gameboy: 12182
+CodeLoad: 28327
+Box2D: 6993
+zlib: 2897
+Typescript: 22113
+----
+Score (version 9): 5673

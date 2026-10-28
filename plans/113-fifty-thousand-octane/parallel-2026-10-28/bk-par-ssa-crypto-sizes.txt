@@ -1,0 +1,53 @@
+Encrypt: 10 ms
+Decrypt: 144 ms
+SLJIT function BigInteger begin=0 ops=33 bytes=9592 id=5 line=462
+SLJIT function nbi begin=0 ops=5 bytes=1932 id=6 line=470
+SLJIT function am3 begin=0 ops=39 bytes=20928 id=9 line=512
+SLJIT loop am3 begin=6 end=37 hits=402032 iterations=4461820
+SLJIT loop am3 begin=6 end=37 hits=1 iterations=13
+SLJIT function int2char begin=0 ops=5 bytes=2128 id=11 line=576
+SLJIT function intAt begin=0 ops=11 bytes=6352 id=12 line=578
+SLJIT function bnpCopyTo begin=0 ops=17 bytes=9228 id=13 line=584
+SLJIT loop bnpCopyTo begin=6 end=11 hits=11 iterations=0
+SLJIT loop bnpCopyTo begin=6 end=11 hits=1 iterations=0
+SLJIT function bnpFromString begin=0 ops=153 bytes=53592 id=16 line=607
+SLJIT function bnpClamp begin=0 ops=19 bytes=8180 id=17 line=646
+SLJIT function bnToString begin=0 ops=106 bytes=34392 id=18 line=653
+SLJIT function bnAbs begin=0 ops=9 bytes=3312 id=20 line=687
+SLJIT function bnCompareTo begin=0 ops=25 bytes=13208 id=21 line=691
+SLJIT function bnpDLShiftTo begin=0 ops=26 bytes=13716 id=24 line=723
+SLJIT loop bnpDLShiftTo begin=6 end=10 hits=180 iterations=0
+SLJIT loop bnpDLShiftTo begin=14 end=19 hits=53 iterations=756
+SLJIT function bnpDRShiftTo begin=0 ops=20 bytes=11704 id=25 line=734
+SLJIT loop bnpDRShiftTo begin=4 end=9 hits=8 iterations=0
+SLJIT loop bnpDRShiftTo begin=4 end=9 hits=1 iterations=12
+SLJIT function bnpLShiftTo begin=0 ops=54 bytes=28036 id=26 line=743
+SLJIT loop bnpLShiftTo begin=23 end=33 hits=240 iterations=0
+SLJIT function bnpRShiftTo begin=0 ops=63 bytes=40236 id=27 line=762
+SLJIT loop bnpRShiftTo begin=30 end=45 hits=34 iterations=0
+SLJIT function bnpSubTo begin=0 ops=91 bytes=44508 id=28 line=782
+SLJIT loop bnpSubTo begin=12 end=24 hits=1 iterations=18
+SLJIT loop bnpSubTo begin=12 end=24 hits=1 iterations=13
+SLJIT function bnpMultiplyTo begin=0 ops=56 bytes=26988 id=29 line=819
+SLJIT loop bnpMultiplyTo begin=17 end=21 hits=664 iterations=9442
+SLJIT function bnpSquareTo begin=0 ops=92 bytes=44800 id=30 line=835
+SLJIT loop bnpSquareTo begin=12 end=16 hits=6784 iterations=220527
+SLJIT function montReduce begin=0 ops=88 bytes=59488 id=43 line=987
+SLJIT function montSqrTo begin=0 ops=9 bytes=3200 id=44 line=1006
+SLJIT function montMulTo begin=0 ops=10 bytes=3476 id=45 line=1009
+SLJIT function bnpExp begin=0 ops=53 bytes=21060 id=47 line=1025
+SLJIT function bnToByteArray begin=0 ops=98 bytes=39416 id=58 line=1186
+SLJIT function bnpAddTo begin=0 ops=89 bytes=44216 id=83 line=1339
+SLJIT loop bnpAddTo begin=31 end=42 hits=1 iterations=0
+SLJIT function bnModPow begin=0 ops=209 bytes=93320 id=105 line=1502
+SLJIT function ARC4init begin=0 ops=38 bytes=23796 id=112 line=1757
+SLJIT function ARC4next begin=0 ops=32 bytes=25284 id=113 line=1770
+SLJIT function rng_get_byte begin=0 ops=39 bytes=9244 id=117 line=1834
+SLJIT function rng_get_bytes begin=0 ops=10 bytes=4692 id=118 line=1849
+SLJIT function parseBigInt begin=0 ops=6 bytes=2280 id=120 line=1859
+SLJIT function pkcs1pad2 begin=0 ops=72 bytes=31464 id=123 line=1881
+SLJIT loop pkcs1pad2 begin=15 end=29 hits=593 iterations=0
+SLJIT function pkcs1unpad2 begin=0 ops=46 bytes=22672 id=128 line=1955
+SLJIT function  begin=1148 ops=128 bytes=43204 id=164 line=1
+SLJIT totals functions=33 loops=16 templates=0 code_bytes=829804
+SLJIT budget bytes=829804 limit=1048576 native_work=0 evictions=0

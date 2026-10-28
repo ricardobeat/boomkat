@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28.** Current implementation checkpoint: rat `8bd1e565`. The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28.** Current implementation checkpoint: rat `456df4ef` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -16,6 +16,16 @@ Status: **ACTIVE — consolidated 2026-10-28.** Current implementation checkpoin
 | 116 | Bounded numeric-loop SSA repair and activation | Cyclic function SSA, effect/alias information and richer frame states |
 | 117 | Measured native-body experiments and accepted small improvements | Broad guard/load elimination, useful region selection and register allocation |
 | 118 | JSC bytecode/native comparison; compound frameless SSA entry | Remove the specific excess machine work exposed by that comparison |
+
+## Latest accepted batch: parallel implementation, 2026-10-28
+
+[Full results and cloud-review closeout](113-fifty-thousand-octane/parallel-2026-10-28/report.md): three alternating original full-Octane pairs improve median aggregate **5752 → 6355 (+10.48%)**, all assertions pass. Standard JIT targets enable a bounded standalone-loop reserve: function admission stays below 1 MiB total native code, loops may continue to 2 MiB; ending native bytes increase **1.00 → 1.21 MiB**. No eviction or eager allocation is introduced. `-U SLJIT_LOOP_RESERVE` retains the old cap; the adaptive policy is independent.
+
+NavierStokes improves 86.6%, Mandreel 12.7%, Gameboy 10.7%, MandreelLatency 2.18x. Richards/DeltaBlue/Crypto are flat. PdfJS median is 3.5% lower with mixed pair directions and needs follow-up. Metadata/RSS, compilation CPU and GC-pause costs remain unmeasured; this does not close plan E or the 50K objective.
+
+All eight cloud-review findings were addressed in `72db32f4`, including a negative-control test of alias operand roles and preservation of intentional tiny-callee admission. The direct FP-spill change simplifies emission and reduces generated code. Register coalescing and inherited-read experiments were removed: their tradeoffs did not justify retention. Existing shape/prototype epochs do not cover value-only writes; plan A still requires live value guards or real write dependencies.
+
+Workstream status: **A open; B open; C partial (FP spills); D open; E partial (bounded reserve)**. Next work remains the sequence below, with PdfJS's reserve interaction added to the admission follow-up. Do not describe this batch as a general optimizing tier or a 5–10x gain. The following long-mini targets retain their explicitly named 8bd1e565 reference; the full-suite checkpoint above is newer.
 
 ## Current evidence and target
 

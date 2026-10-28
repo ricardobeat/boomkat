@@ -1,0 +1,58 @@
+diff --git a/src/vm/vm_sljit_ssa_opt.c3 b/src/vm/vm_sljit_ssa_opt.c3
+index 50a240e3..349e5b8e 100644
+--- a/src/vm/vm_sljit_ssa_opt.c3
++++ b/src/vm/vm_sljit_ssa_opt.c3
+@@ -198,6 +198,17 @@ fn int ssa_alias(SsaGraph* g, int value) @feat(SLJIT) {
+     while (value >= 0 && guard++ < SSA_MAX_VALUES && g.values[value].op == COPY) value = g.values[value].a;
+     return value;
+ }
++// These operations read all operands before writing the result, and SLJIT
++// permits the destination to overlap either input. A loop recovery frame
++// extends an input's lifetime past the definition when it still needs it.
++fn bool ssa_reuse_operand(SsaOp op) @feat(SLJIT) {
++    switch (op) {
++        case ADD: case SUB: case MUL: case DIV:
++        case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
++        case BNOT: case NEG: return true;
++        default: return false;
++    }
++}
+ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+     for (uint i = 0; i < g.value_count; i++) {
+         SsaValue* value = &g.values[i];
+@@ -250,14 +261,33 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+         SsaValue* value = &g.values[i];
+         if (value.op == PHI || value.op == COPY || !ssa_has_result(value.op)) continue;
+         uint homes = value.rep == F64 ? g.fpr_homes : g.registers.scratch_homes + g.registers.saved_homes;
+-        for (uint s = 0; s < homes; s++) {
+-            int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
++        // Prefer a dying input's register, then try the ordinary home order.
++        // Reusing it can avoid a spill and its subsequent memory traffic.
++        int reuse = -1;
++        if (ssa_reuse_operand(value.op)) {
++            int[2] inputs = { ssa_alias(g, value.a),
++                value.op == BNOT || value.op == NEG ? -1 : ssa_alias(g, value.b) };
++            foreach (input : inputs) {
++                if (input < 0 || input >= (int)i) continue;
++                SsaValue source = g.values[input];
++                if (source.op != PHI && source.home != 0 && source.last == value.def
++                    && ssa_same_class(source.rep, value.rep)) {
++                    reuse = input;
++                    break;
++                }
++            }
++        }
++        for (uint s = 0; s <= homes; s++) {
++            if (s == 0 && reuse < 0) continue;
++            int home = s == 0 ? g.values[reuse].home
++                : value.rep == F64 ? 3 + (int)(s - 1) : ssa_gpr_home(g, s - 1);
+             bool free = true;
+             for (uint j = 0; j < g.value_count; j++) {
+                 if (j == i) continue;
+                 SsaValue other = g.values[j];
+                 if (other.home != home || !ssa_same_class(other.rep, value.rep)) continue;
+                 if (other.alloc_begin <= value.last && value.alloc_begin <= other.last) {
++                    if ((int)j == reuse && other.last == value.def) continue;
+                     free = false;
+                     break;
+                 }

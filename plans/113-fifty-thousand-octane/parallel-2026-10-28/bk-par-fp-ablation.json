@@ -1,0 +1,542 @@
+[
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 147.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fp",
+    "pair": 0,
+    "ms": 166.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 154.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 153.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fp",
+    "pair": 1,
+    "ms": 148.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 150.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 150.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fp",
+    "pair": 2,
+    "ms": 150.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 156.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 3,
+    "ms": 156.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fp",
+    "pair": 3,
+    "ms": 151.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 3,
+    "ms": 152.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fix",
+    "pair": 4,
+    "ms": 152.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "fp",
+    "pair": 4,
+    "ms": 152.0
+  },
+  {
+    "bench": "crypto",
+    "variant": "ssa",
+    "pair": 4,
+    "ms": 158.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 186.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fp",
+    "pair": 0,
+    "ms": 180.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 181.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 180.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fp",
+    "pair": 1,
+    "ms": 181.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 187.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 187.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fp",
+    "pair": 2,
+    "ms": 183.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 181.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 3,
+    "ms": 182.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fp",
+    "pair": 3,
+    "ms": 181.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 3,
+    "ms": 187.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fix",
+    "pair": 4,
+    "ms": 187.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "fp",
+    "pair": 4,
+    "ms": 184.0
+  },
+  {
+    "bench": "navier-stokes",
+    "variant": "ssa",
+    "pair": 4,
+    "ms": 185.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 73.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fp",
+    "pair": 0,
+    "ms": 73.0
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 73.0
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fp",
+    "pair": 1,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fp",
+    "pair": 2,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 3,
+    "ms": 73.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fp",
+    "pair": 3,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 3,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fix",
+    "pair": 4,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "fp",
+    "pair": 4,
+    "ms": 74.0
+  },
+  {
+    "bench": "richards",
+    "variant": "ssa",
+    "pair": 4,
+    "ms": 74.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 104.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fp",
+    "pair": 0,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 104.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fp",
+    "pair": 1,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fp",
+    "pair": 2,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 3,
+    "ms": 104.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fp",
+    "pair": 3,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 3,
+    "ms": 104.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fix",
+    "pair": 4,
+    "ms": 104.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "fp",
+    "pair": 4,
+    "ms": 103.0
+  },
+  {
+    "bench": "deltablue",
+    "variant": "ssa",
+    "pair": 4,
+    "ms": 104.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 157.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fp",
+    "pair": 0,
+    "ms": 160.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 159.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 158.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fp",
+    "pair": 1,
+    "ms": 160.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 158.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 158.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fp",
+    "pair": 2,
+    "ms": 160.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 159.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 3,
+    "ms": 158.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fp",
+    "pair": 3,
+    "ms": 160.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 3,
+    "ms": 158.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fix",
+    "pair": 4,
+    "ms": 158.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "fp",
+    "pair": 4,
+    "ms": 158.0
+  },
+  {
+    "bench": "raytrace",
+    "variant": "ssa",
+    "pair": 4,
+    "ms": 159.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 0,
+    "ms": 358.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fp",
+    "pair": 0,
+    "ms": 358.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 0,
+    "ms": 359.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 1,
+    "ms": 359.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fp",
+    "pair": 1,
+    "ms": 358.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 1,
+    "ms": 356.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 2,
+    "ms": 357.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fp",
+    "pair": 2,
+    "ms": 357.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 2,
+    "ms": 357.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 3,
+    "ms": 359.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fp",
+    "pair": 3,
+    "ms": 358.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 3,
+    "ms": 357.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fix",
+    "pair": 4,
+    "ms": 358.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "fp",
+    "pair": 4,
+    "ms": 361.0
+  },
+  {
+    "bench": "pdfjs",
+    "variant": "ssa",
+    "pair": 4,
+    "ms": 361.0
+  }
+]

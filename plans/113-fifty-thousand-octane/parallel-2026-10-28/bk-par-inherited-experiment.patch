@@ -1,0 +1,52 @@
+diff --git a/src/vm/vm_sljit_native.c3 b/src/vm/vm_sljit_native.c3
+index b8e33662..cf236eb9 100644
+--- a/src/vm/vm_sljit_native.c3
++++ b/src/vm/vm_sljit_native.c3
+@@ -56,7 +56,6 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
+     }
+     if (!native_data_object(object, key, cold.heap)) return 0;
+     HObject* receiver = object;
+-    bool cacheable = receiver.mega_cacheable(key, cold.heap);
+     PropValue* slot;
+     ICEntry* ic = (ICEntry*)cold.vm.current_func.ic_entries + offset;
+     // Own slots remain usable on dictionary objects, even when the emitter
+@@ -67,6 +66,39 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
+         && !ic.has_proto && !ic.prop_flags.is_accessor && ic.prop_idx < receiver.prop_count) {
+         slot = &receiver.prop_values()[ic.prop_idx];
+     }
++    // Reuse inherited site feedback before probing the shared cache. The
++    // epoch form covers the whole ordinary chain; snapshot entries validate
++    // each live link and reject exotic objects before touching its slot.
++    if (slot == null && ic.key.borrow() == key && ic.has_proto && ic.chain != null
++        && !ic.prop_flags.is_accessor && ic.prop_idx < hobject::IC_PROP_MISSING) {
++        HObject* owner;
++        uint index = ic.prop_idx;
++        if (ic.chain_len == hobject::IC_CHAIN_PROTO) {
++            if (hobject::ic_proto_slot(ic, receiver, &owner, &index)
++                && native_data_object(owner, key, cold.heap)) slot = &owner.prop_values()[index];
++        } else if (ic.shape_id == receiver.shape_id
++                   && ic.shape_gen == receiver.live_shape_generation(cold.heap)) {
++            if (ic.chain_len == hobject::IC_CHAIN_EPOCH) {
++                if (hobject::ic_epoch_live(ic) && receiver.prototype == ic.chain.epoch.first) {
++                    owner = ic.chain.epoch.owner;
++                    if (native_data_object(owner, key, cold.heap)) slot = &owner.prop_values()[index];
++                }
++            } else if (ic.chain_len > 0 && ic.chain_len <= hobject::IC_MAX_CHAIN) {
++                owner = receiver;
++                for (uint i = 0; i < ic.chain_len; i++) {
++                    owner = owner.prototype;
++                    if (owner != (HObject*)ic.chain.snapshot.protos[i]
++                        || owner == null || owner.shape_id != ic.chain.snapshot.shapes[i]
++                        || !native_data_object(owner, key, cold.heap)) {
++                        owner = null;
++                        break;
++                    }
++                }
++                if (owner != null) slot = &owner.prop_values()[index];
++            }
++        }
++    }
++    bool cacheable = slot == null && receiver.mega_cacheable(key, cold.heap);
+     if (slot == null && cacheable) {
+         MegamorphicEntry* entry;
+         slot = hobject::mega_cache_lookup(cold.heap, receiver, key, &entry);
