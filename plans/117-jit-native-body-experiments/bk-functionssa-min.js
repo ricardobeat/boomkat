@@ -1,0 +1,37 @@
+function arithmeticRegion(a,b) {
+ var x=a+b;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ x = x * 1.001 + a;
+ return x;
+}
+var sum=0,start=Date.now();
+for(var i=0;i<200000;i++)sum+=arithmeticRegion(i&31,3);
+print("region: "+(Date.now()-start)+" ms");print(sum);

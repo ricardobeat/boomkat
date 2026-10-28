@@ -1,0 +1,108 @@
+diff --git a/src/vm/vm_sljit_ssa_opt.c3 b/src/vm/vm_sljit_ssa_opt.c3
+index 4727ae36..57e3f1d2 100644
+--- a/src/vm/vm_sljit_ssa_opt.c3
++++ b/src/vm/vm_sljit_ssa_opt.c3
+@@ -12,6 +12,26 @@ import std::io;
+ 
+ // SSA optimization and register allocation.
+ 
++// Scalar operations have no observable effects. A dominating evaluation of
++// identical SSA operands has already passed any representation/overflow guard.
++fn bool ssa_scalar_value(SsaOp op) @feat(SLJIT) {
++    switch (op) {
++        case CONST_I: case CONST_F:
++        case ADD: case SUB: case MUL: case DIV:
++        case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR: case BNOT: case NEG:
++        case TO_INT: case TO_INDEX: case TO_F64: case BOX_I: case BOX_F: return true;
++        default: return false;
++    }
++}
++fn void ssa_replace_value(SsaGraph* g, uint index, int prior) @feat(SLJIT) {
++    SsaValue* value = &g.values[index];
++    value.op = COPY;
++    value.a = prior;
++    value.b = 0;
++    value.imm = 0;
++    if (g.values[prior].last < value.last) g.values[prior].last = value.last;
++}
++
+ // Forward body edges form a DAG (the latch owns the only backedge). Reuse a
+ // load only if its definition dominates this use, and no possibly aliased
+ // store intervenes. Distinct memory descriptors do not prove disjoint objects.
+@@ -24,8 +44,26 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
+         g.dominators[b] = mask | (1U << b);
+     }
+     uint count;
++    uint scalar_count;
++    int[SSA_CSE] scalars;
+     for (uint i = 0; i < g.value_count; i++) {
+         SsaValue* value = &g.values[i];
++        if (g.single_pass && ssa_scalar_value(value.op)) {
++            if (value.a >= 0) value.a = ssa_alias(g, value.a);
++            if (value.b >= 0) value.b = ssa_alias(g, value.b);
++            int found = -1;
++            for (uint k = 0; k < scalar_count; k++) {
++                SsaValue prior = g.values[scalars[k]];
++                if (prior.op == value.op && prior.rep == value.rep && prior.a == value.a
++                    && prior.b == value.b && prior.imm == value.imm
++                    && (g.dominators[value.block] & (1U << (uint)prior.block)) != 0) {
++                    found = scalars[k];
++                    break;
++                }
++            }
++            if (found >= 0) { ssa_replace_value(g, i, found); }
++            else if (scalar_count < SSA_CSE) { scalars[scalar_count++] = (int)i; }
++        }
+         if (value.op == LOAD) {
+             int found = -1;
+             for (uint k = 0; k < count; k++) {
+@@ -37,11 +75,7 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
+                 }
+             }
+             if (found >= 0) {
+-                value.op = COPY;
+-                value.a = found;
+-                value.b = 0;
+-                value.imm = 0;
+-                if (g.values[found].last < value.last) g.values[found].last = value.last;
++                ssa_replace_value(g, i, found);
+             } else if (count < SSA_CSE) {
+                 g.cse_memory[count] = (int)value.imm;
+                 g.cse_index[count] = value.a;
+@@ -91,7 +125,11 @@ fn bool ssa_same_location(SsaValue a, SsaValue b) @feat(SLJIT) {
+     if (a.home != 0 || b.home != 0) return a.home != 0 && a.home == b.home;
+     return a.spill == b.spill;
+ }
+-fn int ssa_gpr_home(uint slot) @feat(SLJIT) => slot < 4 ? jit::reg_r((int)slot + 4) : jit::reg_s((int)slot - 2);
++fn int ssa_gpr_home(
++    SsaGraph* g,
++    uint slot
++) @feat(SLJIT) => slot < g.registers.scratch_homes ? jit::reg_r((int)slot + 4)
++    : jit::reg_s((int)(slot - g.registers.scratch_homes) + 2);
+ 
+ // Copies are pure aliases of their source: both hold the same value, so the
+ // allocator coalesces them onto one home and codegen drops the move.
+@@ -128,9 +166,9 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+         SsaValue* value = &g.values[i];
+         value.home = 0;
+         if (value.op != PHI) continue;
+-        uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
++        uint homes = value.rep == F64 ? SSA_HOMES : g.registers.scratch_homes + g.registers.saved_homes;
+         for (uint s = 0; s < homes; s++) {
+-            int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
++            int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
+             bool used;
+             for (uint j = 0; j < i; j++) {
+                 SsaValue other = g.values[j];
+@@ -150,9 +188,9 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+     for (uint i = 0; i < g.value_count; i++) {
+         SsaValue* value = &g.values[i];
+         if (value.op == PHI || value.op == COPY) continue;
+-        uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
++        uint homes = value.rep == F64 ? SSA_HOMES : g.registers.scratch_homes + g.registers.saved_homes;
+         for (uint s = 0; s < homes; s++) {
+-            int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
++            int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
+             bool free = true;
+             for (uint j = 0; j < g.value_count; j++) {
+                 if (j == i) continue;

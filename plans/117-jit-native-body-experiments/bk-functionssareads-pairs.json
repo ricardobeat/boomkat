@@ -1,0 +1,122 @@
+[
+  {
+    "repeat": 0,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 206
+  },
+  {
+    "repeat": 0,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 209
+  },
+  {
+    "repeat": 0,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 199
+  },
+  {
+    "repeat": 0,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 253
+  },
+  {
+    "repeat": 1,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 279
+  },
+  {
+    "repeat": 1,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 275
+  },
+  {
+    "repeat": 1,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 260
+  },
+  {
+    "repeat": 1,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 258
+  },
+  {
+    "repeat": 2,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 268
+  },
+  {
+    "repeat": 2,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 271
+  },
+  {
+    "repeat": 2,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 276
+  },
+  {
+    "repeat": 2,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 263
+  },
+  {
+    "repeat": 3,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 255
+  },
+  {
+    "repeat": 3,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 268
+  },
+  {
+    "repeat": 3,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 281
+  },
+  {
+    "repeat": 3,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 261
+  },
+  {
+    "repeat": 4,
+    "bench": "raytrace",
+    "mode": "before",
+    "ms": 279
+  },
+  {
+    "repeat": 4,
+    "bench": "raytrace",
+    "mode": "after",
+    "ms": 271
+  },
+  {
+    "repeat": 4,
+    "bench": "crypto",
+    "mode": "before",
+    "ms": 250
+  },
+  {
+    "repeat": 4,
+    "bench": "crypto",
+    "mode": "after",
+    "ms": 268
+  }
+]

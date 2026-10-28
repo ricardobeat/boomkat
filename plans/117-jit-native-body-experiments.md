@@ -145,3 +145,42 @@ validates70 constants,23 return widths,106 parameter widths and arity against
 the bundled header. Architecture documentation inventories missing capabilities
 and constraints; existing shared-register calls/fragments/patching distinguished
 from missing indexed-operand helpers/selects/flag setters/constants/SIMD APIs.
+
+
+## Shared function-region SSA and capability consumers
+
+9d84537e exposes selects, flag-only arithmetic, masked shifts/rotates, patchable
+constants, paired memory, SIMD movement and feature/register queries. Header
+checker validates109 constants,39 return widths,188 argument widths. Executable
+ABI tests exercise indexed loads, selects, masked shifts, rotates, constant
+patching, paired transfers and vector stores on ARM64 and x86-64 (cross C sources
+need --cflags '-arch x86_64').
+
+810cf7f6 adds single-pass regions to the existing SSA graph/allocator/emitter,
+shared publication and an opt-in SLJIT_FUNCTION_SSA scalar adapter. Admission
+remains restricted; no 5–10x mini-Octane gain is claimed. Five-pair minimal long
+arithmetic case: baseline29→region24ms; live-input initialization24→20ms, with
+identical output on all runs. The continuation must clear baseline temporary
+FP assumptions: broad diff caught captured global sum300 instead of1500, fixed
+by an explicit continuation block boundary. A branch at pc0 also needed an
+unambiguous no-branch sentinel; a direct region test covers both arms.
+
+CPU register queries revealed the old SSA request (9 saved/8 scratch) exceeds
+x86-64's6 saved/13 total registers. Allocation now uses actual counts and only
+pins memory descriptors when a complete saved-register pair is available.
+ARM allocation is unchanged. Targeted generated-region/ABI tests pass on both
+architectures. Focused three-mode suites under ASan pass, including scalar type
+changes/coercion and function_scope_capacity. Broad differential matches:
+local status1 in both modes, Rosetta/modules0.
+
+52a60313 uses masked 32-bit shifts in function bitwise lowering. Five-pair
+minis vs196e4028: Crypto165→164, Mandreel722→716 (4/5 pairs faster),
+Navier209→210, Richards83→83, DeltaBlue118→118. Small effect only.
+
+Rejected: indexed memory operands in existing loop SSA (Crypto158→158,
+Navier200→202, Mandreel697→704); scalar value numbering (no loop or minimal
+region gain); read-only region descriptor preparation (Vector.dot admitted,
+25525 calls, but RayTrace268→271 and Crypto control258→263 with substantial
+run-time variation). Descriptor preparation per short call is unproven; restored
+scalar-only admission. Next: direct generated function-region entry for memory
+reads, wider CFG/return selection, and measured select/patch/SIMD consumers.

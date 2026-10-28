@@ -1,0 +1,132 @@
+diff --git a/src/vm/vm_sljit_ssa_emit.c3 b/src/vm/vm_sljit_ssa_emit.c3
+index ca6c3d31..0c2c419d 100644
+--- a/src/vm/vm_sljit_ssa_emit.c3
++++ b/src/vm/vm_sljit_ssa_emit.c3
+@@ -35,6 +35,7 @@ struct SsaEmitter @feat(SLJIT) {
+     int addr_memory;
+     int addr_value;
+     int addr_reg;
++    long addr_shift;
+     bool addr_numeric_load;
+     // The label of each block, and the jumps that reach them.
+     void*[SSA_BLOCKS] block_label;
+@@ -849,8 +850,8 @@ fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
+     // allocator coalesces them, so compare the copy chains' common root.
+     int key = ssa_alias(self.g, value);
+     if (self.addr_reg != 0 && self.addr_memory == (int)memory && self.addr_value == key) {
+-        // r2 still holds this address: nothing emitted between two accesses
+-        // through one index value writes it.
++        // The base and index still hold this address: intervening element
++        // accesses preserve both registers.
+         return;
+     }
+     self.addr_memory = (int)memory;
+@@ -865,14 +866,13 @@ fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
+     } else {
+         self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2), pc);
+     }
+-    uint shift = self.plan.memory[memory].kind == DENSE ? 3 : builtins::ta_elem_shift(self.plan.memory[memory].cls);
+-    if (shift != 0) self.e.op(jit::SLJIT_SHL, r1, r1, 0, jit::SLJIT_IMM, shift);
+-    if (memory < 2 && self.memory_base[memory] != 0) {
+-        self.e.op(jit::SLJIT_ADD, r2, self.memory_base[memory], 0, r1, 0);
+-    } else {
++    self.addr_shift = self.plan.memory[memory].kind == DENSE ? 3 : builtins::ta_elem_shift(self.plan.memory[memory].cls);
++    int base = memory < 2 ? self.memory_base[memory] : 0;
++    if (base == 0) {
+         self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 1));
+-        self.e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
++        base = r2;
+     }
++    self.addr_reg = jit::mem_index(base, r1);
+ }
+ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep) @feat(SLJIT) {
+     LoopMemorySpec spec = self.plan.memory[memory];
+@@ -941,7 +941,7 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
+         // one guard replaces the tag test, the representation branch and the
+         // conversion. Anything else exits and the interpreter reruns the loop.
+         int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : 1;
+-        self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
++        self.e.mov(r0, 0, self.addr_reg, self.addr_shift);
+         self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+         self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+         if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, r0) != 0) self.e.failed = true;
+@@ -949,7 +949,7 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
+         self.addr_numeric_load = true;
+     } else if (spec.kind == DENSE) {
+         int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
+-        self.e.mov(dst, 0, jit::SLJIT_MEM | r2, 0);
++        self.e.mov(dst, 0, self.addr_reg, self.addr_shift);
+         if (self.g.numeric_load[dst_value]) {
+             // Every consumer rejects a non-number, which also covers a hole,
+             // and the stored value can then never hold a heap reference.
+@@ -969,8 +969,8 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
+             jit::SLJIT_MOV_F64 | (small ? jit::SLJIT_32 : 0),
+             dst,
+             0,
+-            jit::SLJIT_MEM | r2,
+-            0
++            self.addr_reg,
++            self.addr_shift
+         ) != 0) self.e.failed = true;
+         if (small && jit::sljit_emit_fop1(
+             self.e.compiler,
+@@ -983,7 +983,7 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
+         if (self.g.values[dst_value].home == 0) self.store_fpr(dst_value, dst);
+     } else {
+         int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
+-        self.e.mov(dst, 0, jit::SLJIT_MEM | r2, 0, loop_load_op(spec.cls));
++        self.e.mov(dst, 0, self.addr_reg, self.addr_shift, loop_load_op(spec.cls));
+         if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
+     }
+ }
+@@ -1012,20 +1012,20 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT)
+         // that is both the reference-release test and the invariant guard. An
+         // earlier numeric read of this exact slot already proved it.
+         if (!self.addr_numeric_load) {
+-            self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
++            self.e.mov(r0, 0, self.addr_reg, self.addr_shift);
+             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+             self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+         }
+         self.load_fpr(value, 1);
+         self.bits_fpr(1, r0);
+-        self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0);
++        self.e.mov(self.addr_reg, self.addr_shift, r0, 0);
+         return;
+     }
+     if (spec.kind == DENSE) {
+         // A numeric read of this exact slot earlier in the iteration already
+         // proved the stored value holds no reference to release.
+         if (!(self.addr_reg != 0 && self.addr_numeric_load && self.addr_memory == (int)memory)) {
+-            self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0);
++            self.e.mov(r0, 0, self.addr_reg, self.addr_shift);
+             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+             self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+         }
+@@ -1036,7 +1036,7 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT)
+             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+             self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+         }
+-        self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0);
++        self.e.mov(self.addr_reg, self.addr_shift, r0, 0);
+     } else if (spec.cls >= FLOAT32ARRAY) {
+         self.load_fpr(value, 1);
+         bool small = spec.cls == FLOAT32ARRAY;
+@@ -1051,14 +1051,14 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT)
+         if (jit::sljit_emit_fop1(
+             self.e.compiler,
+             jit::SLJIT_MOV_F64 | (small ? jit::SLJIT_32 : 0),
+-            jit::SLJIT_MEM | r2,
+-            0,
++            self.addr_reg,
++            self.addr_shift,
+             1,
+             0
+         ) != 0) self.e.failed = true;
+     } else {
+         self.gpr(value, r0);
+-        self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0, loop_load_op(spec.cls));
++        self.e.mov(self.addr_reg, self.addr_shift, r0, 0, loop_load_op(spec.cls));
+     }
+ }
+ 
