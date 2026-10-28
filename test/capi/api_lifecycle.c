@@ -10,7 +10,7 @@ static bk_value sum(bk_ctx ctx, bk_value receiver, unsigned argc,
                     const bk_value *argv, void *opaque) {
     (void)receiver;
     assert(ctx == expected_context);
-    assert(opaque == &marker && bk_get_context_opaque(ctx) == &marker);
+    assert(opaque == &marker && bk_get_context_data(ctx, 0) == &marker);
     double total = 0;
     for (unsigned i = 0; i < argc; i++) total += bk_to_number(ctx, argv[i]);
     return bk_new_number(ctx, total);
@@ -50,10 +50,20 @@ int main(void) {
     bk_runtime runtime = bk_new_runtime(NULL);
     bk_ctx first = bk_new_context(runtime), second = bk_new_context(runtime);
     assert(runtime && first && second && first != second);
-    bk_set_runtime_opaque(runtime, &marker);
-    bk_set_context_opaque(second, &marker);
-    assert(bk_get_runtime(second) == runtime && bk_get_runtime_opaque(runtime) == &marker);
-    assert(bk_get_context_opaque(first) == NULL);
+    bk_set_runtime_data(runtime, 0, &marker);
+    bk_set_context_data(second, 0, &marker);
+    assert(bk_get_runtime(second) == runtime && bk_get_runtime_data(runtime, 0) == &marker);
+    assert(bk_get_context_data(first, 0) == NULL);
+    /* Slots are independent per runtime, per context and per index. */
+    static int other;
+    bk_set_context_data(first, 2, &other);
+    bk_set_runtime_data(runtime, BK_DATA_SLOTS - 1, &other);
+    assert(bk_get_context_data(first, 2) == &other && bk_get_context_data(second, 2) == NULL);
+    assert(bk_get_context_data(second, 0) == &marker && bk_get_context_data(first, 0) == NULL);
+    assert(bk_get_runtime_data(runtime, BK_DATA_SLOTS - 1) == &other && bk_get_runtime_data(runtime, 1) == NULL);
+    bk_set_context_data(first, BK_DATA_SLOTS, &other);
+    assert(bk_get_context_data(first, BK_DATA_SLOTS) == NULL && bk_get_runtime_data(runtime, 99) == NULL);
+    bk_set_context_data(first, 2, NULL);
     expected_context = second;
     bk_value callback = bk_new_c_function(second, sum, "sum", 0, 0, &marker);
     assert(callback);

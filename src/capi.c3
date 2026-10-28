@@ -166,23 +166,25 @@ fn void bk_free_context(void* ctxp) @export("bk_free_context") => embed::free_co
 
 fn void* bk_get_runtime(void* ctxp) @export("bk_get_runtime") => ctxp == null ? null : ((Ctx*)ctxp).rt;
 
-fn void bk_set_runtime_opaque(void* rtp, void* opaque) @export("bk_set_runtime_opaque") {
-    if (rtp != null) ((Runtime*)rtp).opaque = opaque;
+fn void bk_set_runtime_data(void* rtp, uint slot, void* data) @export("bk_set_runtime_data") {
+    if (rtp != null && slot < embed::DATA_SLOTS) ((Runtime*)rtp).data[slot] = data;
 }
 
-fn void* bk_get_runtime_opaque(void* rtp) @export("bk_get_runtime_opaque") => rtp == null ? null : ((Runtime*)rtp).opaque;
+fn void* bk_get_runtime_data(void* rtp, uint slot) @export("bk_get_runtime_data") {
+    if (rtp == null || slot >= embed::DATA_SLOTS) return null;
+    return ((Runtime*)rtp).data[slot];
+}
 
-fn void bk_set_context_opaque(void* ctxp, void* opaque) @export("bk_set_context_opaque") {
+fn void bk_set_context_data(void* ctxp, uint slot, void* data) @export("bk_set_context_data") {
     Runtime* rt = rt_of(ctxp);
-    if (rt != null) rt.context_opaque = opaque;
+    if (rt != null && slot < embed::DATA_SLOTS) rt.context_data[slot] = data;
 }
 
-fn void* bk_get_context_opaque(void* ctxp) @export("bk_get_context_opaque") {
+fn void* bk_get_context_data(void* ctxp, uint slot) @export("bk_get_context_data") {
     Runtime* rt = rt_of(ctxp);
-    return rt == null ? null : rt.context_opaque;
+    if (rt == null || slot >= embed::DATA_SLOTS) return null;
+    return rt.context_data[slot];
 }
-
-
 
 fn char* bk_version() @export("bk_version") {
     return "0.2.0";
