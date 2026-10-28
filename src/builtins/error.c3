@@ -27,7 +27,7 @@ fn void error_set_captured_stack(HObject* err, Heap* heap, HString* stack_str) {
     heap.tval_copy_ref(&(*err.extra_ptr()).err.captured_stack, &tv);
 }
 
-fn void error_append_coordinate(StrBuf* out, uint value) {
+fn void error_append_coordinate(UnitBuf* out, uint value) {
     out.append_char(':');
     char[16] num;
     uint nd = 0;
@@ -43,12 +43,12 @@ fn void error_append_coordinate(StrBuf* out, uint value) {
 // `file` and `line` are omitted when the compiled function carries neither,
 // which is the case whenever the source was not compiled from a named script
 // or no source positions were emitted for it.
-fn void error_append_frame(StrBuf* out, char[] name, char[] file, bytecode::SourcePosition pos) {
-    out.append_bytes("\n    at ");
-    out.append_bytes(name.len > 0 ? name : "<anonymous>");
+fn void error_append_frame(UnitBuf* out, char[] name, char[] file, bytecode::SourcePosition pos) {
+    out.append_latin1("\n    at ");
+    out.append_text(name.len > 0 ? name : "<anonymous>");
     if (file.len > 0 || pos.line != 0) {
-        out.append_bytes(" (");
-        if (file.len > 0) out.append_bytes(file);
+        out.append_latin1(" (");
+        if (file.len > 0) out.append_text(file);
         if (pos.line != 0) {
             error_append_coordinate(out, pos.line);
             if (pos.column != 0) error_append_coordinate(out, pos.column);
@@ -63,7 +63,7 @@ fn void error_append_frame(StrBuf* out, char[] name, char[] file, bytecode::Sour
 // the Error constructor itself (a native builtin, which has no
 // CompiledFunction), so frames without a compiled function are skipped
 // rather than emitted as placeholders.
-fn void error_append_stack_frames(StrBuf* out, void* vm_ptr) {
+fn void error_append_stack_frames(UnitBuf* out, void* vm_ptr) {
     if (vm_ptr == null) return;
     Vm* vm = (Vm*)vm_ptr;
     uint n = vm.activation_count;
@@ -84,24 +84,24 @@ fn void error_append_stack_frames(StrBuf* out, void* vm_ptr) {
 // Build the `.stack` payload for a freshly constructed error: the
 // `"name: message"` header followed by one line per live JS call frame.
 //
-// Heap-backed (StrBuf) rather than a fixed buffer: a deep stack runs to
+// Heap-backed (UnitBuf) rather than a fixed buffer: a deep stack runs to
 // kilobytes and a fixed buffer would silently truncate it.
 fn HString* error_build_stack_string(BuiltinContext* ctx, HString* name_str, HString* msg_str) {
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
 
     if (name_str != null && name_str.unit_len() > 0) {
         out.append_hstring(name_str);
     }
-    out.append_bytes(": ");
+    out.append_latin1(": ");
     if (msg_str != null && msg_str.unit_len() > 0) {
         out.append_hstring(msg_str);
     }
 
     error_append_stack_frames(&out, ctx.vm);
 
-    return builtin_intern_string(ctx.heap, out.bytes());
+    return out.intern(ctx.heap);
 }
 
 // Capture `.stack` on an error the ENGINE threw (a TypeError from a bad
@@ -121,7 +121,7 @@ fn void error_capture_vm_stack_hstring(HObject* err, Heap* heap, void* vm_ptr, H
 }
 
 fn void error_capture_stack(HObject* err, Heap* heap, void* vm_ptr, char[] msg, HString* hmsg) {
-    StrBuf out;
+    UnitBuf out;
     out.init(heap);
     defer out.free();
 
@@ -136,16 +136,16 @@ fn void error_capture_stack(HObject* err, Heap* heap, void* vm_ptr, char[] msg, 
             }
         }
     }
-    out.append_bytes(": ");
+    out.append_latin1(": ");
     if (hmsg != null) {
         out.append_hstring(hmsg);
     } else if (msg.len > 0) {
-        out.append_bytes(msg);
+        out.append_text(msg);
     }
 
     error_append_stack_frames(&out, vm_ptr);
 
-    HString* s = builtin_intern_string(heap, out.bytes());
+    HString* s = out.intern(heap);
     if (s != null) error_set_captured_stack(err, heap, s);
 }
 
@@ -594,11 +594,11 @@ fn void builtin_error_prototype_to_string(BuiltinContext* ctx) {
     } else if (msg_str.unit_len() == 0) {
         ctx.result_string(name_str);
     } else {
-        StrBuf out;
+        UnitBuf out;
         out.init(ctx.heap);
         defer out.free();
         out.append_hstring(name_str);
-        out.append_bytes(": ");
+        out.append_latin1(": ");
         out.append_hstring(msg_str);
         out.finish(ctx);
     }

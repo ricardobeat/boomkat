@@ -1433,7 +1433,7 @@ fn void builtin_eval_script(BuiltinContext* ctx) {
     $endif
 }
 
-fn void uri_encode_byte(StrBuf* out, char b) {
+fn void uri_encode_byte(UnitBuf* out, char b) {
     out.append_char('%');
     out.append_char("0123456789ABCDEF"[b >> 4]);
     out.append_char("0123456789ABCDEF"[b & 0x0F]);
@@ -1466,7 +1466,7 @@ alias UriExtraUnreservedFn = fn bool(char);
 // (unpaired) surrogate, Encode is defined over Unicode code points, and a lone
 // surrogate is not one.
 fn void uri_encode(BuiltinContext* ctx, HString* str, UriExtraUnreservedFn extra_unreserved) {
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     uint len = str.unit_len();
@@ -1583,7 +1583,7 @@ fn bool uri_decode_sequence(HString* str, uint i, uint len, uint* cp, uint* cons
 // differ only in which percent-triplets are left un-decoded (reserved URI
 // characters, decodeURI only).
 fn void uri_decode(BuiltinContext* ctx, HString* str, bool preserve_reserved) {
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     uint len = str.unit_len();
@@ -1653,7 +1653,7 @@ fn bool escape_is_unescaped(uint unit) {
            unit == '-' || unit == '.' || unit == '/';
 }
 
-fn void escape_emit_hex(StrBuf* out, uint value, uint digits) {
+fn void escape_emit_hex(UnitBuf* out, uint value, uint digits) {
     for (uint shift = digits * 4; shift > 0; shift -= 4) {
         out.append_char("0123456789ABCDEF"[(value >> (shift - 4)) & 0x0F]);
     }
@@ -1674,7 +1674,7 @@ fn void builtin_escape(BuiltinContext* ctx) {
         ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     uint len = str.unit_len();
@@ -1708,7 +1708,7 @@ fn void builtin_unescape(BuiltinContext* ctx) {
         ctx.result_string(ctx.heap.str(heap::BuiltinStr.EMPTY));
         return;
     }
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     uint len = str.unit_len();

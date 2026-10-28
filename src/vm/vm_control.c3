@@ -227,10 +227,10 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     if (cur_name == null || cur_name.unit_len() != 0) return;  // non-empty: already set
 
     // Build "prefix + key_desc".
-    builtins::StrBuf name;
+    builtins::UnitBuf name;
     name.init(vm.heap);
     defer name.free();
-    name.append_bytes(prefix);
+    name.append_latin1(prefix);
 
     if (key_tval.is_string()) {
         HString* key_hstr = (HString*)key_tval.get_heapptr();
@@ -247,7 +247,7 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
         }
     }
 
-    HString* new_name = intern_string(vm, name.bytes());
+    HString* new_name = name.intern(vm.heap);
     if (new_name != null) {
         TVal new_tv;
         new_tv.set_string_borrowed(new_name);

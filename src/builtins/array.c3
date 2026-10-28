@@ -1314,7 +1314,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
     // Steps 4-7: concatenate ToString(Invoke(element, "toLocaleString")),
     // separated by ",". Built incrementally in a DString-style growable buffer
     // so output length is bounded only by memory.
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
 
@@ -1325,7 +1325,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
     $endif
     for (ulong k = 0; k < len; k++) {
         // Step 6.a: separator before every element but the first.
-        if (k > 0 && !out.append_bytes(",")) {
+        if (k > 0 && !out.append_char(',')) {
             arr_throw_range_error(ctx, "Array.prototype.toLocaleString out of memory");
             ctx.result_undefined(); return;
         }
@@ -1378,9 +1378,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
         }
     }
 
-    HString* result = builtin_intern_string(ctx.heap, out.bytes());
-    if (result == null) { ctx.result_undefined(); return; }
-    ctx.result_string(result);
+    out.finish(ctx);
 }
 
 // ============================================================================

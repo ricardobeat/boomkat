@@ -52,15 +52,15 @@ extern fn double math_cbrt(double x)          @MathLibc("cbrt");
 // The Tm struct mirrors C's struct tm layout exactly.
 
 // ============================================================================
-// StrBuf: a growable byte buffer for builtins that assemble a string whose
-// final size is not known up front (JSON.stringify, Array.prototype.join's
-// toLocaleString sibling, the console formatter).
+// StrBuf: a growable buffer of CESU-8 bytes for text that stays text: the
+// console formatter and inspect output, Intl results from ICU, the source of
+// the Function constructor, and error messages. A builtin that assembles a JS
+// string builds it in a UnitBuf instead, which holds the code units directly.
 // ============================================================================
 //
 // Everything here reports allocation failure through a `bool` return rather
-// than truncating. A builtin that silently stops appending would hand back a
-// well-formed-looking but corrupt result, which is far worse than an error:
-// JSON.stringify did exactly that, returning unterminated JSON as success.
+// than truncating, since a builtin that silently stops appending would hand
+// back a well-formed-looking but corrupt result.
 
 // Bytes held inline before the first heap allocation. Sized so the common
 // case (short strings, small objects) never touches the allocator.

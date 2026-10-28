@@ -4867,10 +4867,10 @@ fn void builtin_object_groupBy(BuiltinContext* ctx) {
 // Per ECMA-262 §19.1.2.5, this performs ToPropertyKey on the entry's "0" element.
 // The result "[object <tag>]" of Object.prototype.toString for a string tag.
 fn void object_tag_result(BuiltinContext* ctx, HString* tag) {
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
-    out.append_bytes("[object ");
+    out.append_latin1("[object ");
     out.append_hstring(tag);
     out.append_char(']');
     out.finish(ctx);
