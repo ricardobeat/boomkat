@@ -1091,13 +1091,14 @@ struct HostPayload {
     HostPayload* next;
 }
 
-// One host function slot per distinct C callback and constructability; every
-// function made from that callback shares it.
+// One host function slot per distinct C callback, constructability and host
+// class; every function made from that combination shares it.
 struct HostReg {
     HostPayload lifetime;
     void*    cfn;
     long     slot;
     bool     constructable;
+    uint     class_plus1;    // host class id + 1 a constructor allocates, or 0
     HostReg* next_reg;
 }
 
@@ -1137,6 +1138,10 @@ fn void* cfn_data_of(builtins::BuiltinContext* bctx) {
 fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     HostReg* reg = (HostReg*)udata;
     if (reg == null || reg.cfn == null) return;
+    if (reg.class_plus1 != 0 && !builtins::host_is_construct(bctx)) {
+        builtins::host_throw_error(bctx, builtins::HOST_ERR_TYPE, "class constructor cannot be invoked without 'new'");
+        return;
+    }
     Runtime* rt = ctx_runtime(bctx);
     Ctx* ctx = realm_context(rt, bctx.heap.realm);
     if (ctx == null) { builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "missing host context"); return; }
@@ -1213,19 +1218,20 @@ fn char* cstr_slot(Runtime* rt, usz need) {
 }
 
 // The shared registration for `cfn`, claiming its host function slot on first use.
-fn HostReg* cfn_reg(Runtime* rt, void* cfn, bool constructable) {
+fn HostReg* cfn_reg(Runtime* rt, void* cfn, bool constructable, uint class_plus1) {
     for (HostReg* r = rt.cfn_regs; r != null; r = r.next_reg) {
-        if (r.cfn == cfn && r.constructable == constructable) return r;
+        if (r.cfn == cfn && r.constructable == constructable && r.class_plus1 == class_plus1) return r;
     }
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
     if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
     HostReg* reg = (HostReg*)raw;
-    *reg = { .cfn = cfn, .constructable = constructable };
+    *reg = { .cfn = cfn, .constructable = constructable, .class_plus1 = class_plus1 };
     reg.lifetime.next = rt.host_payloads;
     rt.host_payloads = &reg.lifetime;
     long slot = rt.heap.register_host_fn((void*)&host_trampoline, reg, (void*)rt.heap.str(heap::BuiltinStr.EMPTY), 0, constructable);
     if (slot < 0) { set_err(rt, BK_ERR_NOMEM, "host function table full"); return null; }
     reg.slot = slot;
+    rt.heap.host_fn_at((uint)slot).class_id = class_plus1;
     reg.next_reg = rt.cfn_regs;
     rt.cfn_regs = reg;
     return reg;
@@ -1235,9 +1241,10 @@ fn HostReg* cfn_reg(Runtime* rt, void* cfn, bool constructable) {
 // call; `finalize`, when set, runs once with it when the function is freed or
 // the runtime is destroyed.
 fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* data, BkFinalizer finalize,
-                       void* finalize_opaque, int arity, bool constructable, TVal* out) {
+                       void* finalize_opaque, int arity, bool constructable, TVal* out,
+                       uint class_plus1 = 0) {
     Heap* hp = rt.heap;
-    HostReg* reg = cfn_reg(rt, cfn, constructable);
+    HostReg* reg = cfn_reg(rt, cfn, constructable, class_plus1);
     if (reg == null) {
         if (finalize != null) finalize(data, finalize_opaque);
         return rt.errcode;

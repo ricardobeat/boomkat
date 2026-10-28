@@ -2923,8 +2923,12 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
             if (payload != null) {
                 heap::HostClassEntry* hc = hp.host_class_at((*obj.extra_ptr()).host.class_id);
                 if (hc != null && hc.finalizer != null) {
-                    heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
-                    fin(payload, hc.udata);
+                    if ((hc.flags & heap::HOST_CLASS_DEFER_FINALIZE) != 0 && !hp.tearing_down) {
+                        hp.defer_finalizer(hc.finalizer, payload, hc.udata);
+                    } else {
+                        heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
+                        fin(payload, hc.udata);
+                    }
                 }
                 (*obj.extra_ptr()).host.payload = null;
             }

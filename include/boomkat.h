@@ -355,6 +355,36 @@ typedef struct {
     void *finalize_opaque;
 } bk_fn_def;
 #define BK_FN_END { NULL, NULL, 0, 0u, NULL, NULL, NULL }
+/* Host classes. Ids are per runtime; 0 is invalid. Instances carry a payload
+ * pointer that the class's finalizer receives when the instance is freed. */
+typedef uint32_t bk_class;
+enum { BK_CLASS_DEFER_FINALIZE = 1 };   /* hold finalizers for bk_run_finalizers */
+typedef struct {
+    const char   *name;
+    bk_class      parent;      /* 0 = none; brand checks accept subclasses */
+    bk_finalizer  finalize;    /* (payload, opaque); runs only for a non-NULL payload */
+    bk_c_function construct;   /* receives opaque; NULL = `new` throws TypeError */
+    int           arity;
+    unsigned      flags;
+    void         *opaque;
+} bk_class_def;
+/* Creates the class, its prototype (inheriting the parent's) and its
+ * constructor in this context's realm. Either output may be NULL. */
+BK_API bk_class bk_define_class(bk_ctx ctx, const bk_class_def *def,
+                                bk_value *constructor_out, bk_value *prototype_out);
+/* An instance owning `payload`, with the prototype of `new_target` (0 = the
+ * class prototype). */
+BK_API bk_value bk_new_instance(bk_ctx ctx, bk_class cls, void *payload, bk_value new_target);
+/* The payload when `value` is an instance of `cls` or a subclass, else NULL. */
+BK_API void *bk_get_instance_payload(bk_ctx ctx, bk_value value, bk_class cls);
+/* Set the payload of an instance whose payload is NULL (the constructor's
+ * `this`), or clear it to detach. Clearing does not run the finalizer. */
+BK_API bk_status bk_set_instance_payload(bk_ctx ctx, bk_value value, bk_class cls, void *payload);
+/* The class of a host instance, or 0. */
+BK_API bk_class bk_get_instance_class(bk_ctx ctx, bk_value value);
+/* Run finalizers deferred by BK_CLASS_DEFER_FINALIZE. Returns how many ran. */
+BK_API unsigned bk_run_finalizers(bk_runtime runtime);
+
 /* Every entry's finalizer runs exactly once, also for entries a failed call
  * did not create. */
 BK_API bk_status bk_set_function_list(bk_ctx ctx, bk_value target, const bk_fn_def *functions);

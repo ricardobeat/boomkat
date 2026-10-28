@@ -324,7 +324,40 @@ bk_value counter = bk_new_c_function(app, tick, "tick", 0, 0, count, free_box, N
 ```
 
 A finalizer may run in the middle of any engine call, so it must not call the
-engine. `bk_fn_def` carries the same two fields; `bk_register_fn` borrows its
+engine.
+
+### Host classes
+
+`bk_define_class` creates a class whose instances carry a native payload: a
+constructor, a prototype inheriting from the parent class's (or
+`Object.prototype`), and a per-runtime `bk_class` id. `new C(...)` and `super()`
+from a JS subclass allocate the instance with a NULL payload and the prototype of
+`new.target`; the `construct` callback attaches one with
+`bk_set_instance_payload`. Calling the constructor without `new` throws a
+TypeError, and a class with no `construct` throws on `new` as well, so its
+instances come only from `bk_new_instance`.
+
+```c
+static bk_value vec_new(bk_ctx ctx, bk_value self, unsigned argc,
+                        const bk_value *argv, void *opaque) {
+    vec *v = calloc(1, sizeof *v);
+    bk_set_instance_payload(ctx, self, vec_class, v);
+    return BK_UNDEFINED;
+}
+
+bk_class_def def = { "Vec", 0, free_vec, vec_new, 2, 0, NULL };
+bk_value ctor, proto;
+vec_class = bk_define_class(app, &def, &ctor, &proto);
+```
+
+`bk_get_instance_payload` is the brand check: it returns the payload only for an
+instance of the class or a subclass, so a method moved to another object sees
+NULL. `bk_get_instance_class` names an instance's class. The finalizer receives
+the payload and the class's `opaque` when the instance is freed or the runtime
+is destroyed; detaching with a NULL payload skips it. With
+`BK_CLASS_DEFER_FINALIZE`, finalizers wait until the host calls
+`bk_run_finalizers`, which gives engines such as Unreal or Godot a safe point to
+destroy native objects. `bk_fn_def` carries the same two fields; `bk_register_fn` borrows its
 `opaque`.
 
 Runtimes and contexts each carry `BK_DATA_SLOTS` (4) embedder pointers, set

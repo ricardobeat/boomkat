@@ -520,6 +520,21 @@ struct HostClassEntry {
     void* udata;
     hstring::StringRef name;
     HObject* proto;      // prototype for instances; marked as a root
+    HObject* ctor;       // constructor of a C API class, or null; marked as a root
+    uint     parent;     // parent class id + 1, or 0
+    uint     flags;      // HOST_CLASS_*
+}
+
+// Finalizers of this class run from Heap.run_deferred_finalizers, not at free.
+const uint HOST_CLASS_DEFER_FINALIZE = 1;
+// Defined through the C API's bk_define_class, so visible to its brand checks.
+const uint HOST_CLASS_C_API = 0x100;
+
+// A finalizer call held back by HOST_CLASS_DEFER_FINALIZE.
+struct DeferredFinal {
+    void* finalizer;     // HostClassFinalizeFn
+    void* payload;
+    void* udata;
 }
 
 struct HostFnEntry {
@@ -528,6 +543,7 @@ struct HostFnEntry {
     hstring::StringRef name;
     int   arity;
     bool  constructable;
+    uint  class_id;      // host class id + 1 whose instances `new` allocates, or 0
 }
 
 // One host-call scope: the values a single host callback can address.
@@ -943,6 +959,9 @@ struct Heap {
     HostClassEntry* host_classes;
     uint            host_class_count;
     uint            host_class_capacity;
+    DeferredFinal*  deferred_finals;
+    uint            deferred_final_count;
+    uint            deferred_final_capacity;
     // Values handed to add-ons for the duration of one call. A GC root, so a
     // handle keeps its value alive without the add-on doing anything; reset
     // per call rather than released individually.
@@ -1637,6 +1656,9 @@ fn Heap*? create(
     h.host_classes          = null;
     h.host_class_count      = 0;
     h.host_class_capacity   = 0;
+    h.deferred_finals       = null;
+    h.deferred_final_count  = 0;
+    h.deferred_final_capacity = 0;
     h.addon_handles         = null;
     h.addon_handle_count    = 0;
     h.addon_handle_capacity = 0;
@@ -2375,6 +2397,12 @@ fn void Heap.destroy(&self) {
         self.host_fn_count = 0;
         self.host_fn_capacity = 0;
     }
+    self.run_deferred_finalizers();
+    if (self.deferred_finals != null) {
+        self.free_func(self.heap_udata, self.deferred_finals);
+        self.deferred_finals = null;
+        self.deferred_final_capacity = 0;
+    }
     if (self.host_classes != null) {
         self.free_func(self.heap_udata, self.host_classes);
         self.host_classes = null;
@@ -2582,6 +2610,7 @@ fn void Heap.reset(&self) {
         }
     }
     for (uint i = 0; i < 4; i++) self.object_list(i).clear();
+    self.run_deferred_finalizers();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2966,6 +2995,7 @@ fn long Heap.register_host_fn(&self, void* handler, void* udata, void* name, int
     self.host_fns[slot].name          = hstring::string_ref((HString*)name);
     self.host_fns[slot].arity         = arity;
     self.host_fns[slot].constructable = constructable;
+    self.host_fns[slot].class_id      = 0;
     self.host_fn_count++;
     return (long)slot;
 }
@@ -2997,9 +3027,41 @@ fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* ud
     self.host_classes[id].udata     = udata;
     self.host_classes[id].name      = hstring::string_ref((HString*)name);
     self.host_classes[id].proto     = proto;
+    self.host_classes[id].ctor      = null;
+    self.host_classes[id].parent    = 0;
+    self.host_classes[id].flags     = 0;
     self.shade_root_object(proto);
     self.host_class_count++;
     return (long)id;
+}
+
+// Holds a finalizer call for run_deferred_finalizers. Without memory for the
+// record, the finalizer runs now rather than leaking the payload.
+fn void Heap.defer_finalizer(&self, void* finalizer, void* payload, void* udata) {
+    if (self.deferred_final_count >= self.deferred_final_capacity) {
+        uint new_cap = self.deferred_final_capacity == 0 ? 16 : self.deferred_final_capacity * 2;
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.deferred_finals, (usz)new_cap * DeferredFinal::size);
+        if (grown == null) {
+            ((HostClassFinalizeFn)finalizer)(payload, udata);
+            return;
+        }
+        self.deferred_finals = (DeferredFinal*)grown;
+        self.deferred_final_capacity = new_cap;
+    }
+    self.deferred_finals[self.deferred_final_count++] = { .finalizer = finalizer, .payload = payload, .udata = udata };
+}
+
+// Runs the finalizers held back so far, in the order their objects were freed.
+// Returns how many ran.
+fn uint Heap.run_deferred_finalizers(&self) {
+    uint ran = 0;
+    for (uint i = 0; i < self.deferred_final_count; i++) {
+        DeferredFinal d = self.deferred_finals[i];
+        ((HostClassFinalizeFn)d.finalizer)(d.payload, d.udata);
+        ran++;
+    }
+    self.deferred_final_count = 0;
+    return ran;
 }
 
 // Entry for `id`, or null when never registered. As with host_fn_at, callers
@@ -4526,6 +4588,7 @@ fn void Heap.mark_roots(&self) {
     // engine-side field of their own.
     for (uint i = 0; i < self.host_class_count; i++) {
         if (self.host_classes[i].proto != null) { self.mark_hobject(self.host_classes[i].proto); }
+        if (self.host_classes[i].ctor != null) { self.mark_hobject(self.host_classes[i].ctor); }
     }
     // Every live slot on the VM value stack, from base to top, can reference a
     // heap object or string.

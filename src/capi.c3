@@ -1130,6 +1130,178 @@ fn int bk_get_own_property(void* ctxp, ulong obj_id, uint atom, BkPropertyDescri
 }
 
 // ============================================================================
+// Host classes
+// ============================================================================
+
+const uint BK_CLASS_DEFER_FINALIZE = 1;
+
+// Layout must match bk_class_def in include/boomkat.h.
+struct BkClassDef {
+    char* name;
+    uint  parent;
+    void* finalize;
+    void* construct;
+    int   arity;
+    uint  flags;
+    void* opaque;
+}
+
+// The entry of a class defined through bk_define_class, or null.
+fn heap::HostClassEntry* api_class(Runtime* rt, uint cls) {
+    if (cls == 0) return null;
+    heap::HostClassEntry* e = rt.heap.host_class_at(cls - 1);
+    if (e == null || (e.flags & heap::HOST_CLASS_C_API) == 0) return null;
+    return e;
+}
+
+// The class of a C API host instance, as id + 1, or 0.
+fn uint instance_class(Runtime* rt, TVal v) {
+    if (!v.is_object()) return 0;
+    HObject* o = (HObject*)v.get_heapptr();
+    if (o.get_class() != hobject::ObjClass.HOST) return 0;
+    uint cls = (*o.extra_ptr()).host.class_id + 1;
+    return api_class(rt, cls) != null ? cls : 0;
+}
+
+// True when class `cls` is `want` or inherits from it.
+fn bool class_is_a(Runtime* rt, uint cls, uint want) {
+    for (uint depth = 0; cls != 0 && depth < 1024; depth++) {
+        if (cls == want) return true;
+        heap::HostClassEntry* e = api_class(rt, cls);
+        if (e == null) return false;
+        cls = e.parent;
+    }
+    return false;
+}
+
+// The constructor of a class with no construct callback.
+fn ulong illegal_constructor(void* ctxp, ulong this_value, uint argc, ulong* argv, void* opaque) {
+    return bk_throw_error(ctxp, abi::BK_ERROR_TYPE, "Illegal constructor");
+}
+
+fn uint bk_define_class(void* ctxp, BkClassDef* def, ulong* ctor_out, ulong* proto_out) @export("bk_define_class") {
+    if (ctor_out != null) *ctor_out = 0;
+    if (proto_out != null) *proto_out = 0;
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (def == null || def.name == null) { fail(rt, BK_ERR_INVALID, "class needs a name"); return 0; }
+    if ((def.flags & ~BK_CLASS_DEFER_FINALIZE) != 0) { fail(rt, BK_ERR_INVALID, "unknown class flags"); return 0; }
+    embed::clear_err(rt);
+    Heap* hp = rt.heap;
+    heap::HostClassEntry* parent = null;
+    if (def.parent != 0) {
+        parent = api_class(rt, def.parent);
+        if (parent == null) { fail(rt, BK_ERR_INVALID, "unknown parent class"); return 0; }
+    }
+    char[] name = ((ZString)def.name).str_view();
+    HString* nm = embed::string_from_utf8(rt, name);
+    if (nm == null) return 0;
+    HObject*? proto_raw = hp.alloc_object(hobject::ObjClass.OBJECT);
+    if (catch proto_raw) { fail(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+    HObject* proto = proto_raw;
+    hp.set_prototype(proto, parent != null ? parent.proto : hp.object_proto);
+    long id = hp.register_host_class(def.finalize, null, def.opaque, (void*)nm, proto);
+    if (id < 0) { fail(rt, BK_ERR_NOMEM, "host class table full"); return 0; }
+    uint cls = (uint)id + 1;
+    // Registration may have grown the table; re-read entries by id from here.
+    hp.host_class_at((uint)id).parent = def.parent;
+    hp.host_class_at((uint)id).flags = heap::HOST_CLASS_C_API | (def.flags & BK_CLASS_DEFER_FINALIZE);
+    void* construct = def.construct != null ? def.construct : (void*)&illegal_constructor;
+    TVal ctor_tv;
+    if (embed::make_c_function(rt, name, construct, def.opaque, null, null, def.arity, true, &ctor_tv, cls) != BK_OK) return 0;
+    HObject* ctor = (HObject*)ctor_tv.get_heapptr();
+    TVal proto_tv; proto_tv.set_object(proto);
+    ctor.put_prop(hp.str(heap::BuiltinStr.PROTOTYPE), proto_tv, (hobject::PropFlags){}, hp);
+    proto.put_prop(hp.str(heap::BuiltinStr.CONSTRUCTOR), ctor_tv, hobject::PROP_FLAGS_WC, hp);
+    if (def.parent != 0) hp.set_prototype(ctor, hp.host_class_at(def.parent - 1).ctor);
+    hp.host_class_at((uint)id).ctor = ctor;
+    hp.shade_root_object(ctor);
+    if (ctor_out != null) {
+        *ctor_out = store(rt, ctor_tv);
+        if (*ctor_out == 0) return 0;
+    }
+    if (proto_out != null) {
+        *proto_out = store(rt, proto_tv);
+        if (*proto_out == 0) return 0;
+    }
+    return cls;
+}
+
+fn ulong bk_new_instance(void* ctxp, uint cls, void* payload, ulong new_target) @export("bk_new_instance") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    heap::HostClassEntry* e = api_class(rt, cls);
+    if (e == null) return fail_value(rt, BK_ERR_INVALID, "unknown class");
+    Heap* hp = rt.heap;
+    HObject* proto = e.proto;
+    if (new_target != 0) {
+        TVal nt;
+        if (!resolve(ctxp, new_target, &nt)) return bad_handle(rt);
+        if (!nt.is_object() || !((HObject*)nt.get_heapptr()).is_constructable()) {
+            return fail_value(rt, BK_ERR_TYPE, "new_target is not a constructor");
+        }
+        HObject* nto = (HObject*)nt.get_heapptr();
+        TVal pv;
+        hp.has_error = false;
+        if (!builtins::js_get_with_receiver((void*)rt.vm, hp, nto, hp.str(heap::BuiltinStr.PROTOTYPE), nt, &pv)) {
+            vm_fault(rt);
+            return 0;
+        }
+        if (pv.is_object()) proto = (HObject*)pv.get_heapptr();
+        // GetPrototypeFromConstructor may have run JS; reload the entry.
+        e = api_class(rt, cls);
+    }
+    HObject*? inst_raw = hp.alloc_object(hobject::ObjClass.HOST);
+    if (catch inst_raw) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    HObject* inst = inst_raw;
+    (*inst.extra_ptr()).host.class_id = cls - 1;
+    (*inst.extra_ptr()).host.payload = payload;
+    hp.set_prototype(inst, proto);
+    TVal v; v.set_object(inst);
+    return store(rt, v);
+}
+
+fn void* bk_get_instance_payload(void* ctxp, ulong id, uint cls) @export("bk_get_instance_payload") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return null;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return null;
+    uint have = instance_class(rt, v);
+    if (have == 0 || !class_is_a(rt, have, cls)) return null;
+    return (*((HObject*)v.get_heapptr()).extra_ptr()).host.payload;
+}
+
+fn int bk_set_instance_payload(void* ctxp, ulong id, uint cls, void* payload) @export("bk_set_instance_payload") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return BK_ERR_INVALID; }
+    uint have = instance_class(rt, v);
+    if (have == 0 || !class_is_a(rt, have, cls)) return fail(rt, BK_ERR_TYPE, "not an instance of the class");
+    HObject* o = (HObject*)v.get_heapptr();
+    if (payload != null && (*o.extra_ptr()).host.payload != null) {
+        return fail(rt, BK_ERR_INVALID, "instance already has a payload");
+    }
+    (*o.extra_ptr()).host.payload = payload;
+    return BK_OK;
+}
+
+fn uint bk_get_instance_class(void* ctxp, ulong id) @export("bk_get_instance_class") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return 0;
+    return instance_class(rt, v);
+}
+
+fn uint bk_run_finalizers(void* runtime) @export("bk_run_finalizers") {
+    if (runtime == null) return 0;
+    return ((Runtime*)runtime).heap.run_deferred_finalizers();
+}
+
+// ============================================================================
 // Builtin calls
 // ============================================================================
 

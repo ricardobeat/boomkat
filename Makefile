@@ -436,6 +436,14 @@ out/closures_api: test/capi/closures.c include/boomkat.h out/boomkat.a
 test-closures-api: out/closures_api
 	./out/closures_api
 
+out/classes_api: test/capi/classes.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/classes.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/classes_api
+
+.PHONY: test-classes-api
+test-classes-api: out/classes_api
+	./out/classes_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model
