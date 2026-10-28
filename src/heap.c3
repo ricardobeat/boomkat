@@ -2024,6 +2024,8 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
             if (!self.ic_names_live_shapes(&entries[i])) {
                 entries[i].shape_id = SHAPE_NONE;
                 entries[i].chain_len = 0;
+                // With chain_len 0, has_proto would make ic_cached_proto read protos[-1].
+                entries[i].has_proto = false;
             }
         }
     }
