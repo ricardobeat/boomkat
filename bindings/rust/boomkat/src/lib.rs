@@ -960,9 +960,14 @@ impl<'a> Ctx<'a> {
             None => sys::BK_EXCEPTION,
         };
 
+        // The call's result would be a local of this callback's scope, which
+        // lives until the callback returns. Run it in a scope of its own and
+        // keep the result as a registry root the guard can free on drop.
+        // SAFETY: live context.
+        let scope = unsafe { sys::bk_scope_open(self.raw) };
         // SAFETY: live context; `raw_args` is valid for its length (a null
         // pointer when empty is what the ABI wants for "no arguments").
-        let out = unsafe {
+        let local = unsafe {
             sys::bk_call(
                 self.raw,
                 func_handle,
@@ -975,6 +980,13 @@ impl<'a> Ctx<'a> {
                 raw_args.len() as u32,
             )
         };
+        // SAFETY: live context; `local` is a handle in `scope` or an immediate.
+        let out = if local == sys::BK_EXCEPTION {
+            sys::BK_EXCEPTION
+        } else {
+            unsafe { sys::bk_dup_value(self.raw, local) }
+        };
+        unsafe { sys::bk_scope_close(self.raw, scope) };
 
         // Only a callee exception leaves a throw staged on this context; other
         // failures come back with nothing recorded, and reporting them as an
@@ -1304,8 +1316,10 @@ where
         // Apply exactly the value the closure returned, ignoring any others it
         // built along the way.
         Ok(Ok(v)) => match v.repr {
+            // A copy in the call's own scope: the registry slots `keep`
+            // retained are freed below, before the engine reads the result.
             // SAFETY: live context; the handle came from this call.
-            Repr::Handle(h) => unsafe { sys::bk_dup_value(raw, h) },
+            Repr::Handle(h) => unsafe { sys::bk_scope_local(raw, h) },
             // The index came from `Ctx::park` on this same context, so it is
             // always in bounds.
             Repr::Built(i) => ctx.built.borrow()[i].apply(raw),

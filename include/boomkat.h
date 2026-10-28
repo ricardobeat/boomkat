@@ -2,9 +2,11 @@
  * Values may cross contexts in one runtime. Runtime operations run on one thread,
  * except bk_request_interrupt, which may run concurrently while the runtime lives.
  *
- * Value results are owned GC roots; release each with bk_free_value.
+ * Outside any local scope, value results are owned GC roots; release each
+ * with bk_free_value. Inside a local scope, including a C callback's own call,
+ * results are locals that die when the scope closes.
  * All value arguments are borrowed, including property setters and bk_throw.
- * C callbacks borrow this/argv and transfer an owned result to the engine.
+ * C callbacks borrow this/argv and return a borrowed handle.
  * BK_EXCEPTION reports a failure; bk_get_exception transfers the thrown value.
  * Eval and call run synchronous work only. The host schedules job checkpoints.
  */
@@ -121,8 +123,27 @@ BK_API int bk_is_job_pending(bk_runtime runtime);
 BK_API int bk_execute_pending_job(bk_runtime runtime, bk_ctx *ctx);
 BK_API bk_status bk_run_jobs(bk_runtime runtime);
 
+/* bk_free_value ignores locals and immediates. bk_dup_value always returns a
+ * registry root (or an immediate): the way a local outlives its scope. */
 BK_API void bk_free_value(bk_ctx ctx, bk_value value);
 BK_API bk_value bk_dup_value(bk_ctx ctx, bk_value value);
+
+/* Local scopes. While a local scope is the innermost, every value-returning
+ * call yields a local handle that dies when the scope closes, instead of a
+ * registry root. A C callback's call is a local scope. Scopes nest strictly;
+ * closing a scope closes the scopes opened inside it, and a callback's
+ * unclosed scopes close when it returns. A scope holds at most 131,072 values;
+ * past that, calls fail with BK_ERR_FULL. */
+typedef uint32_t bk_scope;   /* 0 = none */
+BK_API bk_scope bk_scope_open(bk_ctx ctx);
+BK_API void     bk_scope_close(bk_ctx ctx, bk_scope scope);
+/* Close `scope` and return `value` as a handle in the enclosing scope, or as an
+ * owned registry root when no local scope encloses it. */
+BK_API bk_value bk_scope_close_escape(bk_ctx ctx, bk_scope scope, bk_value value);
+/* Copy any handle into the innermost local scope; with none, a registry root. */
+BK_API bk_value bk_scope_local(bk_ctx ctx, bk_value value);
+/* The innermost local scope, or 0. */
+BK_API bk_scope bk_scope_current(bk_ctx ctx);
 BK_API bk_value bk_get_exception(bk_ctx ctx);
 /* Diagnostics are context-owned; reading them never executes JS. Successful
  * operations may clear diagnostics; pending exceptions survive until taken. */
@@ -212,8 +233,10 @@ BK_API bk_status bk_set_global_property(bk_ctx ctx, const char *name, size_t len
 BK_API bk_value bk_call(bk_ctx ctx, bk_value function, bk_value this_value, const bk_value *argv, unsigned argc);
 
 /* Arguments/this borrow the current call and must be duplicated to escape it.
- * A callback returns an owned handle (including undefined), or BK_EXCEPTION.
- * bk_throw/error set the pending exception and return BK_EXCEPTION. */
+ * Values the callback creates are locals of its call. It returns any live
+ * handle (a local, an argument, an immediate or a registry root), which the
+ * engine copies, or BK_EXCEPTION. bk_throw/error set the pending exception and
+ * return BK_EXCEPTION. */
 typedef bk_value (*bk_c_function)(bk_ctx ctx, bk_value this_value,
                                   unsigned argc, const bk_value *argv, void *opaque);
 #define BK_CTOR 1u

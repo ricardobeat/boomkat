@@ -208,7 +208,7 @@ pub const Ctx = struct {
     /// Argument `i` as a scope handle. Reading past `argc` yields `undefined`,
     /// matching JS, so there is no bounds error to handle.
     pub fn arg(self: Ctx, i: u32) Value {
-        return .{ .owner = self.raw, .handle = if (i < self.argv.len) self.argv[i] else 0, .owned = false };
+        return .{ .owner = self.raw, .handle = if (i < self.argv.len) self.argv[i] else c.BK_UNDEFINED, .owned = false };
     }
 
     /// The `this` receiver. Strict semantics: an undefined receiver stays
@@ -310,7 +310,7 @@ fn trampoline(comptime func: anytype) c.bk_c_function {
                 if (err != Error.Throw) _ = context.throwError(.generic, @errorName(err));
                 return c.BK_EXCEPTION;
             };
-            return if (result.owned) result.handle else c.bk_dup_value(raw, result.handle);
+            return result.handle;
         }
     }.invoke;
 }

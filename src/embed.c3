@@ -613,9 +613,9 @@ fn void slot_release(Runtime* rt, ulong id) {
 const uint SCOPE_INDEX_BITS = 17;
 const ulong SCOPE_INDEX_MASK = (1ul << SCOPE_INDEX_BITS) - 1;
 
-fn ulong scope_handle(Runtime* rt, ulong index) @inline {
-    if (rt == null || rt.heap.host_scope_depth == 0) return 0;
-    uint depth = rt.heap.host_scope_depth - 1;
+// The handle of slot `index` in the scope at `depth`.
+fn ulong scope_handle(Runtime* rt, uint depth, ulong index) @inline {
+    if (rt == null || depth >= rt.heap.host_scope_depth) return 0;
     ulong generation = (ulong)rt.heap.host_scope_generation_at(depth) & SLOT_GEN_MASK;
     return ((ulong)rt.rt_id << RT_ID_SHIFT) | SCOPE_HANDLE_BIT |
            (generation << SCOPE_INDEX_BITS) | ((ulong)depth << 32) | index;
@@ -628,12 +628,50 @@ fn bool resolve_handle(Runtime* rt, ulong id, TVal* out) {
     uint depth = (uint)((id >> 32) & SLOT_GEN_MASK);
     uint generation = (uint)((id >> SCOPE_INDEX_BITS) & SLOT_GEN_MASK);
     if ((rt.heap.host_scope_generation_at(depth) & SLOT_GEN_MAX) != generation) return false;
-    uint index = (uint)(id & SCOPE_INDEX_MASK);
-    if (rt.heap.host_scope_get(depth, index, out)) return true;
-    // Arguments past argc read as undefined, as in JS.
-    if (index < heap::HOST_SCOPE_ARG0) return false;
-    out.set_undefined();
-    return true;
+    return rt.heap.host_scope_get(depth, (uint)(id & SCOPE_INDEX_MASK), out);
+}
+
+// The innermost scope when it collects local results, else null.
+fn heap::HostScope* local_scope(Runtime* rt) @inline {
+    Heap* h = rt.heap;
+    if (h.host_scope_depth == 0) return null;
+    heap::HostScope* sc = &h.host_scopes[h.host_scope_depth - 1];
+    return sc.local ? sc : null;
+}
+
+// Stores `v` as a local of the innermost local scope, or as a registry root
+// when there is none. Returns 0 when the scope or the registry is full.
+fn ulong store_value(Runtime* rt, TVal v) {
+    if (local_scope(rt) == null) return slot_alloc(rt, v);
+    long index = rt.heap.host_scope_append(v);
+    if (index < 0) return 0;
+    return scope_handle(rt, rt.heap.host_scope_depth - 1, (ulong)index);
+}
+
+// Opens a local scope and returns its id, or 0 when the scope stack is full.
+fn uint scope_open(Runtime* rt) {
+    long depth = rt.heap.host_scope_push(0);
+    if (depth < 0) return 0;
+    heap::HostScope* sc = &rt.heap.host_scopes[depth];
+    sc.local = true;
+    sc.opened = true;
+    return sc.generation;
+}
+
+// Closes the host-opened scope `id` and every scope opened inside it. A scope
+// that is not open above the innermost host call is left alone; returns
+// whether `id` was closed.
+fn bool scope_close(Runtime* rt, uint id) {
+    Heap* h = rt.heap;
+    if (id == 0) return false;
+    for (uint d = h.host_scope_depth; d > 0; d--) {
+        heap::HostScope* sc = &h.host_scopes[d - 1];
+        if (!sc.opened) return false;
+        if (sc.generation != id) continue;
+        while (h.host_scope_depth >= d) h.host_scope_pop();
+        return true;
+    }
+    return false;
 }
 
 // Returns the Runtime associated with a BuiltinContext, or null.
@@ -820,7 +858,7 @@ struct HostReg {
     bool simple;  // cfn is a BkHostFn that answers through bk_return
 }
 
-// Return values transfer an owned registry handle; arguments borrow the host scope.
+// Arguments and the returned handle borrow the call scope or the registry.
 fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     HostReg* reg = (HostReg*)udata;
     if (reg == null || reg.cfn == null) return;
@@ -834,6 +872,9 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     select_context(ctx);
     ctx.bctx = bctx;
     ctx.host_return = 0;
+    // Values the callback creates are locals of its call scope.
+    uint call_depth = bctx.host_scope_slot - 1;
+    rt.heap.host_scopes[call_depth].local = true;
     defer {
         slot_release(rt, ctx.host_return);
         ctx.host_return = previous_return;
@@ -844,7 +885,6 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     ulong result = reg.simple ? call_host_fn(rt, ctx, reg) : call_c_function(rt, ctx, bctx, reg);
     select_context(ctx);
     if (rt.heap.uncatchable_throw) {
-        slot_release(rt, result);
         builtins::host_throw(bctx, rt.heap.error_value);
         return;
     }
@@ -862,15 +902,14 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
         return;
     }
     TVal value;
-    if ((result & SCOPE_HANDLE_BIT) != 0 || !(immediate_get(result, &value) || slot_get(rt, result, &value))) {
-        builtins::host_throw_error(bctx, builtins::HOST_ERR_TYPE, "C function must return an owned value");
+    if (!resolve_handle(rt, result, &value)) {
+        builtins::host_throw_error(bctx, builtins::HOST_ERR_TYPE, "C function returned an invalid or freed handle");
         return;
     }
     builtins::host_return(bctx, value);
-    slot_release(rt, result);
 }
 
-// A bk_c_function receives this/argv as scope handles and returns an owned handle.
+// A bk_c_function receives this/argv as scope handles and returns a borrowed handle.
 fn ulong call_c_function(Runtime* rt, Ctx* ctx, builtins::BuiltinContext* bctx, HostReg* reg) {
     uint argc = builtins::host_argc(bctx);
     ulong[16] local_args;
@@ -880,9 +919,10 @@ fn ulong call_c_function(Runtime* rt, Ctx* ctx, builtins::BuiltinContext* bctx, 
         if (args == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
     }
     defer if (args != &local_args) rt.heap.free_func(rt.heap.heap_udata, args);
-    for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, (ulong)(heap::HOST_SCOPE_ARG0 + i));
+    uint depth = bctx.host_scope_slot - 1;
+    for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, depth, (ulong)(heap::HOST_SCOPE_ARG0 + i));
     BkCFunction fnp = (BkCFunction)reg.cfn;
-    return fnp(ctx, scope_handle(rt, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
+    return fnp(ctx, scope_handle(rt, depth, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
 }
 
 // A bk_host_fn reads its arguments through the context and answers with
@@ -894,11 +934,7 @@ fn ulong call_host_fn(Runtime* rt, Ctx* ctx, HostReg* reg) {
     if (rt.exception != 0 && rt.exception != before) return 0;
     ulong result = ctx.host_return;
     ctx.host_return = 0;
-    if (result != 0) return result;
-    TVal undefined; undefined.set_undefined();
-    result = slot_alloc(rt, undefined);
-    if (result == 0) set_err(rt, BK_ERR_FULL, "value registry full");
-    return result;
+    return result != 0 ? result : IMM_UNDEFINED;
 }
 
 // Returns a ring buffer of at least need+1 bytes for bk_cstr, or null.

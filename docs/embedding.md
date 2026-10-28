@@ -57,11 +57,34 @@ stop and join it before destroying the runtime. Requests stay latched until
 
 ## Values and exceptions
 
-A `bk_value` is an opaque 64-bit GC root. Owned value results remain valid until
-`bk_free_value` or runtime destruction. `bk_dup_value` creates another owned
-root. Ordinary arguments are borrowed: setters and `bk_throw` leave the caller's
-handle owned by the caller. A callback's `this` and `argv` borrow the current
-call; duplicate a handle to keep it after return.
+A `bk_value` is an opaque 64-bit handle. Outside any local scope, value results
+are owned registry roots that remain valid until `bk_free_value` or runtime
+destruction. `bk_dup_value` always creates another owned root. Ordinary
+arguments are borrowed: setters and `bk_throw` leave the caller's handle owned
+by the caller. A callback's `this` and `argv` borrow the current call; duplicate
+a handle to keep it after return.
+
+### Local scopes
+
+```c
+bk_scope scope = bk_scope_open(app);
+for (int i = 0; i < 1000; i++) {
+    bk_value n = bk_new_number(app, i);       /* a local: no free needed */
+    bk_set_property_uint32(app, array, i, n);
+}
+bk_value kept = bk_scope_close_escape(app, scope, array_or_result);
+```
+
+While a local scope is the innermost one, every value-returning call yields a
+local handle instead of a registry root. Locals need no free (`bk_free_value`
+ignores them) and all die when the scope closes; a stale local fails with
+`BK_ERR_INVALID`. Scopes nest strictly. Closing a scope also closes any scope
+opened inside it, and `bk_scope_close_escape` closes a scope and returns one
+value in the enclosing scope, or as an owned root when no local scope encloses
+it. `bk_scope_local` copies any handle into the innermost local scope, and
+`bk_scope_current` returns it, or 0. A scope holds at most 131,072 values;
+past that, calls fail with `BK_ERR_FULL`, so open a nested scope inside large
+loops. `bk_dup_value` is the way a local outlives its scope.
 
 `BK_UNDEFINED`, `BK_NULL`, `BK_TRUE` and `BK_FALSE` (and `BK_BOOL(b)`) are
 immediate handles. They are valid with any context and need no free;
@@ -187,10 +210,14 @@ bk_set_global_property(app, "add", 3, function);
 bk_free_value(app, function);
 ```
 
-The callback receives its stable defining context. It returns an owned handle,
-which transfers to the engine, or returns `bk_throw_error`, `bk_throw`, or
-`BK_EXCEPTION` to propagate a pending failure. Return `BK_UNDEFINED` for a
-normal undefined result. Returning a borrowed argument requires duplication.
+The callback receives its stable defining context. Its call is a local scope:
+every value it creates is a local that dies when it returns, like its `argv`,
+so a callback frees nothing it made. It returns any live handle (a local, an
+argument, an immediate or a registry root), which the engine copies, or returns
+`bk_throw_error`, `bk_throw`, or `BK_EXCEPTION` to propagate a pending failure.
+Return `BK_UNDEFINED` for a normal undefined result. A value kept past the call
+must be `bk_dup_value`d. Scopes the callback opens and leaves open close when
+it returns.
 `bk_call` can invoke JS from a callback, and the host can catch its failure with
 `bk_get_exception` before returning a normal result. Interrupts remain
 uncatchable across native reentry.

@@ -5,8 +5,8 @@
 //! crate, which wraps these.
 //!
 //! A runtime owns a heap; contexts are realms sharing its value registry.
-//! Callback inputs borrow the active call, while returned handles transfer to
-//! the engine. Eval and call leave jobs queued for host checkpoints.
+//! Callback inputs borrow the active call, and values a callback creates are
+//! locals of that call; the handle a callback returns is borrowed. Eval and call leave jobs queued for host checkpoints.
 
 #![allow(non_camel_case_types)]
 
@@ -18,6 +18,9 @@ pub type bk_runtime = *mut c_void;
 
 /// Opaque value handle (64 bits). Not a pointer; 0 means failure.
 pub type bk_value = c_ulonglong;
+
+/// A local scope id; 0 means none.
+pub type bk_scope = u32;
 
 /// A host callback JS can invoke by name.
 ///
@@ -181,6 +184,11 @@ extern "C" {
     pub fn bk_run_jobs(runtime: bk_runtime) -> c_int;
     pub fn bk_free_value(ctx: bk_ctx, value: bk_value);
     pub fn bk_dup_value(ctx: bk_ctx, value: bk_value) -> bk_value;
+    pub fn bk_scope_open(ctx: bk_ctx) -> bk_scope;
+    pub fn bk_scope_close(ctx: bk_ctx, scope: bk_scope);
+    pub fn bk_scope_close_escape(ctx: bk_ctx, scope: bk_scope, value: bk_value) -> bk_value;
+    pub fn bk_scope_local(ctx: bk_ctx, value: bk_value) -> bk_value;
+    pub fn bk_scope_current(ctx: bk_ctx) -> bk_scope;
     pub fn bk_get_exception(ctx: bk_ctx) -> bk_value;
     pub fn bk_get_error_message(ctx: bk_ctx) -> *const c_char;
     pub fn bk_get_error_code(ctx: bk_ctx) -> c_int;
