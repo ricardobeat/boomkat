@@ -278,6 +278,21 @@ pub struct bk_runtime_options {
     pub free: Option<unsafe extern "C" fn(opaque: *mut c_void, ptr: *mut c_void)>,
     pub alloc_opaque: *mut c_void,
     pub fatal: Option<unsafe extern "C" fn(opaque: *mut c_void, message: *const c_char)>,
+    /// Nonzero counts bytes and limits them; u64::MAX counts without a limit.
+    pub heap_limit: u64,
+}
+
+pub const BK_GC_MINOR: c_int = 0;
+pub const BK_GC_FULL: c_int = 1;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct bk_heap_stats {
+    pub heap_bytes: u64,
+    pub external_bytes: u64,
+    pub heap_limit: u64,
+    pub live_handles: u32,
+    pub gc_cycles: u32,
 }
 pub const BK_EVAL_GLOBAL: c_uint = 0;
 pub const BK_EVAL_MODULE: c_uint = 1;
@@ -595,5 +610,10 @@ extern "C" {
     );
     pub fn bk_request_interrupt(runtime: bk_runtime);
     pub fn bk_clear_interrupt(runtime: bk_runtime);
-    pub fn bk_set_memory_limit(runtime: bk_runtime, bytes: u64);
+    pub fn bk_gc(runtime: bk_runtime, kind: c_int);
+    pub fn bk_gc_step(runtime: bk_runtime, budget_ns: u64) -> c_int;
+    pub fn bk_gc_inhibit(runtime: bk_runtime, inhibit: c_int);
+    pub fn bk_add_external_memory(runtime: bk_runtime, delta_bytes: i64);
+    pub fn bk_set_heap_limit(runtime: bk_runtime, bytes: u64) -> c_int;
+    pub fn bk_get_heap_stats(runtime: bk_runtime, out: *mut bk_heap_stats) -> c_int;
 }

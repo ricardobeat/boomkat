@@ -113,6 +113,7 @@ struct BkRuntimeOptions {
     heap::FreeFunc    free;
     void*             alloc_opaque;
     heap::FatalFunc   fatal;
+    ulong             heap_limit;
 }
 
 // A runtime with the given allocator and fatal handler, or the defaults when
@@ -122,7 +123,8 @@ fn void* bk_new_runtime(BkRuntimeOptions* options) @export("bk_new_runtime") {
     bool some = options.alloc != null || options.realloc != null || options.free != null;
     bool all = options.alloc != null && options.realloc != null && options.free != null;
     if (some && !all) return null;
-    return embed::create(options.alloc, options.realloc, options.free, options.alloc_opaque, options.fatal);
+    return embed::create(options.alloc, options.realloc, options.free, options.alloc_opaque, options.fatal,
+                         options.heap_limit);
 }
 
 fn void* bk_alloc(void* rtp, usz size) @export("bk_alloc") {
@@ -1043,11 +1045,7 @@ fn HObject* as_object(void* ctxp, ulong id, TVal* out) {
 // Surface a VM failure (heap error channel) as a status, distinguishing an
 // interrupt from an ordinary throw.
 fn int vm_fault(Runtime* rt) {
-    if (rt.heap.uncatchable_throw) {
-        embed::finish_interrupt(rt);
-        embed::set_err(rt, BK_ERR_INTERRUPT, "interrupted");
-        return BK_ERR_INTERRUPT;
-    }
+    if (rt.heap.uncatchable_throw) return embed::interrupt_status(rt);
     embed::describe_error(rt, &rt.heap.error_value);
     return BK_ERR_THROW;
 }
@@ -2625,12 +2623,61 @@ fn void bk_set_interrupt(void* rtp, void* cb, void* opaque) @export("bk_set_inte
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
 }
 
-// Set the resident-memory budget in bytes; 0 disables it. The heap checks it
-// after each GC cycle and calls the fatal handler when it is exceeded.
-fn void bk_set_memory_limit(void* rtp, ulong bytes) @export("bk_set_memory_limit") {
+// ============================================================================
+// GC and resource control
+// ============================================================================
+
+const int BK_GC_MINOR = 0;
+const int BK_GC_FULL = 1;
+
+// Mirrors bk_heap_stats in boomkat.h.
+struct BkHeapStats {
+    ulong heap_bytes;
+    ulong external_bytes;
+    ulong heap_limit;
+    uint  live_handles;
+    uint  gc_cycles;
+}
+
+fn void bk_gc(void* rtp, int kind) @export("bk_gc") {
     Runtime* rt = (Runtime*)rtp;
     if (rt == null) return;
-    rt.heap.mem_limit = bytes;
+    rt.heap.host_collect(kind == BK_GC_MINOR);
+}
+
+fn int bk_gc_step(void* rtp, ulong budget_ns) @export("bk_gc_step") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt == null) return 0;
+    return rt.heap.host_gc_step(budget_ns) ? 1 : 0;
+}
+
+fn void bk_gc_inhibit(void* rtp, int inhibit) @export("bk_gc_inhibit") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt != null) rt.heap.gc_set_inhibit(inhibit != 0);
+}
+
+fn void bk_add_external_memory(void* rtp, long delta) @export("bk_add_external_memory") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt != null) rt.heap.add_external_memory(delta);
+}
+
+fn int bk_set_heap_limit(void* rtp, ulong bytes) @export("bk_set_heap_limit") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt == null) return BK_ERR_INVALID;
+    if (!rt.heap.accounting) return fail(rt, BK_ERR_INVALID, "the runtime was created without a heap limit");
+    rt.heap.set_heap_limit(bytes);
+    return BK_OK;
+}
+
+fn int bk_get_heap_stats(void* rtp, BkHeapStats* out) @export("bk_get_heap_stats") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    out.heap_bytes = rt.heap.heap_bytes;
+    out.external_bytes = (ulong)rt.heap.external_bytes;
+    out.heap_limit = rt.heap.accounting && rt.heap.heap_limit != heap::HEAP_UNLIMITED ? rt.heap.heap_limit : 0;
+    out.live_handles = rt.live;
+    out.gc_cycles = rt.heap.gc_cycles;
+    return BK_OK;
 }
 
 fn void bk_request_interrupt(void* rtp) @export("bk_request_interrupt") {

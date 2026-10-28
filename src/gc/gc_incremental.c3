@@ -198,6 +198,7 @@ fn void Heap.gc_sweep_large_strings_step(&self, uint budget, bool quiescent) {
 }
 
 fn void Heap.gc_finish_cycle(&self) {
+    self.gc_cycles++;
     gcprofile::gcprof_generation(self.gc_kind == GcKind.MINOR);
     self.gc_phase = GcPhase.IDLE;
     self.gc_running = false;

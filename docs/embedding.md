@@ -444,6 +444,34 @@ one target share its state, and each is released with `bk_free_weak`; reading
 a released one fails with `BK_ERR_INVALID`. Registered symbols
 (`Symbol.for`) and primitives fail with `BK_ERR_TYPE`.
 
+### Collection and memory
+
+`bk_gc` collects now, `BK_GC_FULL` or `BK_GC_MINOR` (a minor collection needs
+the nursery and a quiescent heap, and runs as a full one otherwise).
+`bk_gc_step` runs collector work for a time budget, starting a cycle when none
+is running, and returns nonzero until the cycle finishes, so an idle callback
+calls it until it returns 0. The budget is checked between work batches.
+`bk_gc_inhibit` nests: while inhibited, allocation neither starts nor advances
+a cycle, and a collection requested meanwhile starts after the last release.
+`bk_add_external_memory` reports host memory that JS objects keep alive as
+collector pressure.
+
+A runtime created with `bk_runtime_options.heap_limit` counts every byte it
+allocates through its allocator, at the cost of a 16-byte header per block;
+`UINT64_MAX` counts without a limit. Crossing the limit terminates the running
+script at its next safepoint: catch blocks cannot intercept it, and the call
+fails with `BK_ERR_NOMEM`. A single block of 1 MiB or more that would cross it
+is refused first, which script sees as a RangeError. The runtime then
+collects and stays usable. `bk_set_heap_limit` changes the limit (0 removes
+it). `bk_get_heap_stats` reports counted bytes, external bytes, the limit, live
+registry handles and completed cycles. The compiler, lexer, regexp engine and
+shared-memory blocks allocate through libc and are not counted.
+
+```c
+bk_runtime_options options = { .heap_limit = 64u << 20 };
+bk_runtime rt = bk_new_runtime(&options);
+```
+
 ### Event loops
 
 `bk_set_job_hook` reports the job queue turning non-empty, so a host loop can

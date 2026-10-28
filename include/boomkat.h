@@ -104,6 +104,10 @@ typedef struct {
     void  (*free)(void *opaque, void *ptr);
     void  *alloc_opaque;
     void  (*fatal)(void *opaque, const char *message);
+    /* Nonzero counts every byte allocated through the runtime allocator (a
+     * 16-byte header per block) and limits the total; see bk_set_heap_limit.
+     * UINT64_MAX counts without a limit. */
+    uint64_t heap_limit;
 } bk_runtime_options;
 
 /* options may be NULL for the defaults. Returns NULL on failure, including a
@@ -602,8 +606,38 @@ typedef int (*bk_interrupt_fn)(bk_runtime runtime, void *opaque);
 BK_API void bk_set_interrupt(bk_runtime runtime, bk_interrupt_fn callback, void *opaque);
 BK_API void bk_request_interrupt(bk_runtime runtime);
 BK_API void bk_clear_interrupt(bk_runtime runtime);
-/* Resident-memory limit in bytes; zero disables the process-wide RSS check. */
-BK_API void bk_set_memory_limit(bk_runtime runtime, uint64_t bytes);
+
+/* GC and resource control. */
+enum { BK_GC_MINOR = 0, BK_GC_FULL = 1 };
+/* Collect now. Inside a callback the collection keeps the values the call
+ * holds; a minor collection there, or with no nursery, runs as a full one. */
+BK_API void      bk_gc(bk_runtime runtime, int kind);
+/* Run collector work for about `budget_ns`, checked between work batches,
+ * starting a cycle when none is running. Returns nonzero while that cycle is
+ * still in progress, so a host idle loop calls it until it returns 0. Inside a
+ * callback only marking advances. */
+BK_API int       bk_gc_step(bk_runtime runtime, uint64_t budget_ns);
+/* Nested: while inhibited, allocation never starts or advances a cycle; bk_gc
+ * and bk_gc_step still run. A collection requested meanwhile starts after the
+ * last bk_gc_inhibit(runtime, 0). */
+BK_API void      bk_gc_inhibit(bk_runtime runtime, int inhibit);
+/* Host memory owned by JS objects, as pressure on the collector. */
+BK_API void      bk_add_external_memory(bk_runtime runtime, int64_t delta_bytes);
+/* The byte budget of a runtime created with bk_runtime_options.heap_limit;
+ * 0 removes it. Crossing it terminates the running script at its next
+ * safepoint, uncatchably, and the call reports BK_ERR_NOMEM; a single block
+ * of 1 MiB or more that would cross it is refused, which script sees as a
+ * RangeError before the termination. The runtime then collects and stays
+ * usable. Fails with BK_ERR_INVALID on a runtime that does not count bytes. */
+BK_API bk_status bk_set_heap_limit(bk_runtime runtime, uint64_t bytes);
+typedef struct {
+    uint64_t heap_bytes;      /* 0 unless the runtime counts bytes */
+    uint64_t external_bytes;
+    uint64_t heap_limit;      /* 0 = none */
+    uint32_t live_handles;
+    uint32_t gc_cycles;
+} bk_heap_stats;
+BK_API bk_status bk_get_heap_stats(bk_runtime runtime, bk_heap_stats *out);
 
 /* Shorthands over the calls above; static inline, so they add no ABI symbols. */
 static inline int bk_exec(bk_ctx ctx, const char *source) {

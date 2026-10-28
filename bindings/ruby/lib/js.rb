@@ -225,6 +225,8 @@ module JS
       'unsigned long long bk_dup_value(void*, unsigned long long)',
       # Binary data: ArrayBuffers and typed arrays read back as binary Strings.
       'int bk_get_array_buffer(void*, unsigned long long, void**, size_t*)',
+      'void bk_gc(void*, int)',
+      'int bk_get_heap_stats(void*, void*)',
       'int bk_get_typed_array(void*, unsigned long long, void*)',
       'unsigned long long bk_call(void*, unsigned long long, unsigned long long, const unsigned long long*, unsigned int)',
 
@@ -723,6 +725,22 @@ module JS
 
     # Run pending promise jobs. #eval already drains before returning, so this
     # is only needed after resolving promises from outside the engine.
+    # Collect garbage now: a full collection, or a minor one.
+    def gc(full: true)
+      check_open!
+      Lib.bk_gc(@runtime, full ? 1 : 0)
+    end
+
+    # The collector's counters as a Hash.
+    def heap_stats
+      check_open!
+      out = Fiddle::Pointer.malloc(32)
+      Lib.bk_get_heap_stats(@runtime, out)
+      heap, external, limit, live, cycles = out[0, 32].unpack('QQQLL')
+      { heap_bytes: heap, external_bytes: external, heap_limit: limit,
+        live_handles: live, gc_cycles: cycles }
+    end
+
     def drain_microtasks
       check_open!
       status = Lib.bk_run_jobs(@runtime)

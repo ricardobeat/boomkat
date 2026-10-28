@@ -246,10 +246,11 @@ fn void ensure_engine_init() {
 // select the libc allocator and the aborting fatal handler.
 // Returns null on allocation failure, with nothing left allocated.
 fn Runtime* create(heap::AllocFunc alloc = null, heap::ReallocFunc realloc = null,
-                   heap::FreeFunc free = null, void* udata = null, heap::FatalFunc fatal = null) {
+                   heap::FreeFunc free = null, void* udata = null, heap::FatalFunc fatal = null,
+                   ulong heap_limit = 0) {
     ensure_engine_init();
 
-    Heap*? hpr = heap::create(alloc, realloc, free, udata, fatal);
+    Heap*? hpr = heap::create(alloc, realloc, free, udata, fatal, heap_limit);
     if (catch hpr) return null;
     Heap* hp = hpr;
 
@@ -1448,9 +1449,7 @@ fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
 fn int module_failure(Runtime* rt, int code) @local {
     Heap* h = rt.heap;
     if (h.uncatchable_throw) {
-        finish_interrupt(rt);
-        code = BK_ERR_INTERRUPT;
-        set_err(rt, code, "interrupted");
+        code = interrupt_status(rt);
     } else if (h.has_error || !h.error_value.is_undefined()) {
         describe_error(rt, &h.error_value);
         rt.errcode = code;
@@ -1592,10 +1591,15 @@ fn void finish_interrupt(Runtime* rt) {
     rt.vm.throw_value.set_undefined();
 }
 
-// Report a watchdog timeout or uncatchable throw as a BK_ERR_INTERRUPT status,
-// clearing the pending interrupt first.
-fn int interrupt_status(Runtime* rt) @local {
+// Report an uncatchable termination, clearing it first: BK_ERR_NOMEM when the
+// heap limit caused it, else BK_ERR_INTERRUPT for an interrupt.
+fn int interrupt_status(Runtime* rt) {
     finish_interrupt(rt);
+    if (rt.heap.heap_limit_hit) {
+        if (rt.vm.run_depth == 0) rt.heap.settle_heap_limit();
+        set_err(rt, BK_ERR_NOMEM, "heap limit exceeded");
+        return BK_ERR_NOMEM;
+    }
     set_err(rt, BK_ERR_INTERRUPT, "interrupted");
     return BK_ERR_INTERRUPT;
 }
