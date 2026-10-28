@@ -190,7 +190,7 @@ module JS
     SIGNATURES = [
       'void* bk_new_runtime(void*)',
       'void bk_free_runtime(void*)',
-      'void* bk_new_context(void*)',
+      'void* bk_new_context(void*, void*)',
       'void bk_free_context(void*)',
       'const char* bk_version()',
 
@@ -583,7 +583,7 @@ module JS
       Lib.load!(library || JS.default_library)
 
       @runtime = Lib.bk_new_runtime(nil)
-      @rt = Lib.bk_new_context(@runtime)
+      @rt = Lib.bk_new_context(@runtime, nil)
       raise Error.new('cannot create context', Status::NOMEM) unless @rt
 
       @reader = Reader.new(@rt)

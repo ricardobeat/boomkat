@@ -85,7 +85,7 @@ int main(void) {
     bk_free_value(ctx, back);
 
     /* Atoms are valid in every context of the runtime. */
-    bk_ctx other = bk_new_context(bk_get_runtime(ctx));
+    bk_ctx other = bk_new_context(bk_get_runtime(ctx), NULL);
     a = bk_get_property_atom(other, obj, name);
     assert(bk_read_string(other, a, buf, sizeof buf, NULL) == BK_OK && strcmp(buf, "n") == 0);
     bk_free_value(other, a);

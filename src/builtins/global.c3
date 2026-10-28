@@ -886,6 +886,12 @@ fn void builtin_eval(BuiltinContext* ctx) {
         return;
     }
 
+    // HostEnsureCanCompileStrings.
+    if (ctx.heap.no_eval) {
+        builtin_throw_no_result_change(ctx, ctx.heap.eval_err_proto, "code generation from strings is disabled in this context");
+        return;
+    }
+
     HString* source = (HString*)arg.get_heapptr();
     StrBuf src_tmp;
     src_tmp.init(ctx.heap);

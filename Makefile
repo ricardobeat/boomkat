@@ -524,3 +524,11 @@ out/gc_control_api: test/capi/gc_control.c include/boomkat.h out/boomkat.a
 .PHONY: test-gc-control-api
 test-gc-control-api: out/gc_control_api
 	./out/gc_control_api
+
+out/context_options_api: test/capi/context_options.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/context_options.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/context_options_api
+
+.PHONY: test-context-options-api
+test-context-options-api: out/context_options_api
+	./out/context_options_api

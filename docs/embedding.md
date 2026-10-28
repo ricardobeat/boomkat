@@ -38,8 +38,8 @@ Independent runtimes reject each other's handles.
 
 ```c
 bk_runtime runtime = bk_new_runtime(NULL);
-bk_ctx app = bk_new_context(runtime);
-bk_ctx sandbox = bk_new_context(runtime);
+bk_ctx app = bk_new_context(runtime, NULL);
+bk_ctx sandbox = bk_new_context(runtime, NULL);
 /* use app and sandbox */
 bk_free_context(sandbox);
 bk_free_context(app);
@@ -58,6 +58,22 @@ allocate through libc.
 ```c
 bk_runtime_options options = { my_alloc, my_realloc, my_free, &my_arena, my_fatal };
 bk_runtime runtime = bk_new_runtime(&options);
+```
+
+`bk_new_context` takes a `bk_context_options` pointer, or `NULL` for the
+defaults. `BK_CONTEXT_NO_EVAL` makes `eval` of a string and the `Function`,
+generator and async function constructors throw `EvalError` in that realm;
+the host's own `bk_eval_ex` and compiled scripts still run.
+`BK_CONTEXT_CANNOT_BLOCK` makes `Atomics.wait` throw, for realms on a thread
+that must not sleep. With `global_class`, the realm's global object is an
+instance of that host class carrying `global_payload`, with the class
+prototype as its prototype, so `bk_get_instance_payload` on the global object
+finds the host's window or scene object. A context with options always gets
+its own realm. Unknown flags or an unknown class return `NULL`.
+
+```c
+bk_context_options page = { BK_CONTEXT_NO_EVAL, window_class, window };
+bk_ctx js = bk_new_context(runtime, &page);
 ```
 
 Context records and realms live until runtime destruction, so escaped functions

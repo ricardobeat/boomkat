@@ -206,7 +206,7 @@ def _declare(lib):
     signatures = [
         ("bk_new_runtime", [ctypes.c_void_p], ctx),
         ("bk_free_runtime", [ctx], None),
-        ("bk_new_context", [ctx], ctx),
+        ("bk_new_context", [ctx, ctypes.c_void_p], ctx),
         ("bk_free_context", [ctx], None),
         ("bk_version", [], ctypes.c_char_p),
         # Value-producing calls return the handle directly; 0 means failure
@@ -547,7 +547,7 @@ class Runtime:
         self._runtime = self._lib.bk_new_runtime(None)
         if not self._runtime:
             raise JsError(-1, "cannot create runtime")
-        self._rt = self._lib.bk_new_context(self._runtime)
+        self._rt = self._lib.bk_new_context(self._runtime, None)
         if not self._rt:
             self._lib.bk_free_runtime(self._runtime)
             raise JsError(-1, "cannot create context")

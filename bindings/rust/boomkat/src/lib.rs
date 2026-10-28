@@ -310,7 +310,7 @@ impl Runtime {
         if runtime.is_null() {
             return Err(Error::new(Kind::from_status(sys::BK_ERR_NOMEM), ""));
         }
-        let raw = unsafe { sys::bk_new_context(runtime) };
+        let raw = unsafe { sys::bk_new_context(runtime, std::ptr::null()) };
 
         if raw.is_null() {
             return Err(Error::new(Kind::from_status(sys::BK_ERR_NOMEM), ""));

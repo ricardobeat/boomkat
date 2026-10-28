@@ -131,6 +131,17 @@ pub struct bk_typed_array_info {
 pub type bk_weak = u64;
 
 pub type bk_class = u32;
+
+pub const BK_CONTEXT_NO_EVAL: c_uint = 1;
+pub const BK_CONTEXT_CANNOT_BLOCK: c_uint = 2;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct bk_context_options {
+    pub flags: c_uint,
+    pub global_class: bk_class,
+    pub global_payload: *mut c_void,
+}
 pub const BK_CLASS_DEFER_FINALIZE: c_uint = 1;
 
 #[repr(C)]
@@ -304,7 +315,7 @@ extern "C" {
     pub fn bk_realloc(runtime: bk_runtime, ptr: *mut c_void, size: usize) -> *mut c_void;
     pub fn bk_free_memory(runtime: bk_runtime, ptr: *mut c_void);
     pub fn bk_free_runtime(runtime: bk_runtime);
-    pub fn bk_new_context(runtime: bk_runtime) -> bk_ctx;
+    pub fn bk_new_context(runtime: bk_runtime, options: *const bk_context_options) -> bk_ctx;
     pub fn bk_free_context(ctx: bk_ctx);
     pub fn bk_get_runtime(ctx: bk_ctx) -> bk_runtime;
     pub fn bk_set_runtime_data(runtime: bk_runtime, slot: c_uint, data: *mut c_void);

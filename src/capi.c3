@@ -165,9 +165,35 @@ fn void bk_destroy(void* ctxp) @export("bk_destroy") {
     embed::free_context(ctx);
 }
 
-fn void* bk_new_context(void* rtp) @export("bk_new_context") {
+// Mirrors bk_context_options in boomkat.h.
+struct BkContextOptions {
+    uint  flags;
+    uint  global_class;
+    void* global_payload;
+}
+
+const uint CONTEXT_FLAGS = embed::CONTEXT_NO_EVAL | embed::CONTEXT_CANNOT_BLOCK;
+
+// A context with `options`, or the defaults when it is null. A host-class
+// global object owns `global_payload` from the moment the context exists.
+fn void* bk_new_context(void* rtp, BkContextOptions* options) @export("bk_new_context") {
     if (rtp == null) return null;
-    return embed::new_context((Runtime*)rtp);
+    Runtime* rt = (Runtime*)rtp;
+    if (options == null) return embed::new_context(rt);
+    if ((options.flags & ~CONTEXT_FLAGS) != 0) return null;
+    HObject* global = null;
+    HObject* proto = null;
+    if (options.global_class != 0) {
+        heap::HostClassEntry* e = api_class(rt, options.global_class);
+        if (e == null) return null;
+        HObject*? raw = rt.heap.alloc_object(hobject::ObjClass.HOST);
+        if (catch raw) return null;
+        global = raw;
+        (*global.extra_ptr()).host.class_id = options.global_class - 1;
+        (*global.extra_ptr()).host.payload = options.global_payload;
+        proto = e.proto;
+    }
+    return embed::new_context(rt, options.flags, global, proto);
 }
 
 fn void bk_free_runtime(void* rtp) @export("bk_free_runtime") => embed::destroy((Runtime*)rtp);

@@ -191,7 +191,7 @@ static void external_string_outlives_runtime(void) {
 }
 
 int main(void) {
-    ctx = bk_new_context(bk_new_runtime(NULL));
+    ctx = bk_new_context(bk_new_runtime(NULL), NULL);
     assert(ctx);
 
     /* Empty string through every creator and reader. */

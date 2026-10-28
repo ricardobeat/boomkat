@@ -41,6 +41,11 @@ fn void dispatch_retargeted(uint fn_idx, BuiltinContext* inner) {
 fn CompiledFunction* dynamic_function_compile(BuiltinContext* ctx, String prefix,
                                               bool is_gen, bool is_async) {
     $if features::SOURCE_COMPILER:
+    // HostEnsureCanCompileStrings, before any argument is converted.
+    if (ctx.heap.no_eval) {
+        builtin_throw_no_result_change(ctx, ctx.heap.eval_err_proto, "code generation from strings is disabled in this context");
+        return null;
+    }
     StrBuf params;
     params.init(ctx.heap);
     defer params.free();

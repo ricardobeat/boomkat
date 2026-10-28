@@ -42,7 +42,7 @@ int main(void) {
     assert(bk_run_script(ctx, bk_new_number(ctx, 1)) == 0 && bk_get_error_code(ctx) == BK_ERR_TYPE);
 
     /* Another context runs it against its own globals. */
-    bk_ctx other = bk_new_context(bk_get_runtime(ctx));
+    bk_ctx other = bk_new_context(bk_get_runtime(ctx), NULL);
     assert(bk_to_number(other, bk_run_script(other, script)) == 10);
 
     /* From inside a callback, nested in a running script. */

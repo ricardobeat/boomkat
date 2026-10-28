@@ -70,7 +70,7 @@ int main(void) {
     for (int i = 0; i < N; i++) {
         args[i].id = i;
         args[i].source = sources[i];
-        if (!(args[i].rt = bk_new_context(bk_new_runtime(NULL)))) {
+        if (!(args[i].rt = bk_new_context(bk_new_runtime(NULL), NULL))) {
             printf("FAIL: could not open runtime %d\n", i);
             failures++;
             args[i].rt = NULL;

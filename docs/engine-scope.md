@@ -32,7 +32,7 @@ The ES5/ES6 core, plus the later additions that ordinary code now assumes:
 - `WeakRef` and `FinalizationRegistry`
 - `Symbol`, including the well-known symbols
 - **Cross-realm behavior.** Realms share a heap and have independent globals
-  and intrinsics. The C API exposes `bk_new_context(runtime)`; test262 uses
+  and intrinsics. The C API exposes `bk_new_context(runtime, options)`; test262 uses
   `$262.createRealm`. Realm storage lives until the runtime closes.
 - TypedArrays, `ArrayBuffer` (including resizable and immutable), `DataView`
 - `Atomics` and `SharedArrayBuffer`, shared between agents: threads that each

@@ -430,7 +430,7 @@ static void test_memory_limit(bk_ctx unused) {
     bk_runtime_options options = { 0 };
     options.heap_limit = (uint64_t)1 << 40;
     bk_runtime runtime = bk_new_runtime(&options);
-    bk_ctx rt = bk_new_context(runtime);
+    bk_ctx rt = bk_new_context(runtime, NULL);
     bk_value v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
     if (!v) { printf("FAIL: memory limit: %s\n", bk_get_error_message(rt)); failures++; goto done; }
     if (bk_to_number(rt, v) != 200000) {
@@ -549,7 +549,7 @@ static void test_locations(bk_ctx rt) {
 
 int main(void) {
     bk_ctx rt = NULL;
-    if (!(rt = bk_new_context(bk_new_runtime(NULL)))) {
+    if (!(rt = bk_new_context(bk_new_runtime(NULL), NULL))) {
         printf("FAIL: bk_new_context\n");
         return 1;
     }

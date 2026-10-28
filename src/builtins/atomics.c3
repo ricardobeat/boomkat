@@ -698,7 +698,7 @@ fn void builtin_atomics_wait(BuiltinContext* ctx) {
 
     // DoWait step 7: an agent that cannot suspend (a main thread that must
     // not block) cannot wait.
-    if (ctx.heap.agent_no_block) {
+    if (ctx.heap.agent_no_block || ctx.heap.no_block) {
         atomics_throw_type_error(ctx, "Atomics.wait: this agent cannot suspend");
         return;
     }

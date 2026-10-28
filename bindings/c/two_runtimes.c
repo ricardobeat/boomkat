@@ -4,7 +4,7 @@
 
 int main(void) {
     bk_runtime a = bk_new_runtime(NULL), b = bk_new_runtime(NULL);
-    bk_ctx first = bk_new_context(a), sibling = bk_new_context(a), isolated = bk_new_context(b);
+    bk_ctx first = bk_new_context(a, NULL), sibling = bk_new_context(a, NULL), isolated = bk_new_context(b, NULL);
     assert(first && sibling && isolated);
     bk_value object = bk_new_object(first), answer = bk_new_number(first, 42);
     assert(bk_set(sibling, object, "answer", answer) == BK_OK);

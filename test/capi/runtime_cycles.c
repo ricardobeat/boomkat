@@ -32,7 +32,7 @@ static const char *SRC =
 int main(void){
     for(int i=0;i<40;i++){
         bk_ctx rt=NULL; bk_value v;
-        if(!(rt = bk_new_context(bk_new_runtime(NULL)))){ printf("open failed at %d\n",i); return 1; }
+        if(!(rt = bk_new_context(bk_new_runtime(NULL), NULL))){ printf("open failed at %d\n",i); return 1; }
         if(!(v = bk_eval_ex(rt, SRC, strlen(SRC), "<eval>", BK_EVAL_GLOBAL))){ printf("eval failed at %d: %s\n",i,bk_get_error_message(rt)); bk_free_runtime(bk_get_runtime(rt)); return 1; }
         bk_free_value(rt,v);
         bk_run_jobs(bk_get_runtime(rt));

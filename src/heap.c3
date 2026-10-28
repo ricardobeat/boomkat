@@ -662,6 +662,10 @@ struct PromiseSpeciesGuard {
 
 // Active intrinsics stay inline in Heap so property and allocation paths keep direct loads.
 struct RealmState {
+    // HostEnsureCanCompileStrings refuses eval and Function construction.
+    bool no_eval;
+    // The realm's code runs as an agent that cannot suspend (Atomics.wait).
+    bool no_block;
     HString* intl_fallback_symbol; // ECMA-402 legacy constructor key
     lexer::JsxOptions jsx;
     HObject* int8array_proto @tag("constructor", "Int8Array");
