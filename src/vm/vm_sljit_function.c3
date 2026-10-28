@@ -35,6 +35,8 @@ struct FunctionRun {
     FunctionTypedCache[2] typed;
     double[32 * INLINE_DEPTH] inline_values;
     LoopState* ssa_state @if($feat(SLJIT));
+    void* ssa_callee @if($feat(SLJIT));
+    ulong ssa_receiver @if($feat(SLJIT));
 }
 alias FunctionNative = fn Instruction*(TVal* regs, ColdCtx* cold, FunctionRun* run);
 
@@ -50,6 +52,7 @@ struct FunctionPlan @feat(SLJIT) {
     uint numeric_homes;
     LoopPlan* ssa_region;
     LoopPlan* ssa_leaves;
+    ulong ssa_fast_calls @if($feat(SLJIT_STATS));
     ulong last_use;
     void*[FUNCTION_OPS + 1] map_pcs @if($feat(SLJIT_MAP));
     void* map_calls @if($feat(SLJIT_MAP));

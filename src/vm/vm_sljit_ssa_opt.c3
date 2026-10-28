@@ -15,7 +15,7 @@ import std::io;
 // Forward body edges form a DAG (the latch owns the only backedge). Reuse a
 // load only if its definition dominates this use, and no possibly aliased
 // store intervenes. Distinct memory descriptors do not prove disjoint objects.
-fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
+fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
     for (uint b = 0; b < g.block_count; b++) {
         uint mask = b == 0 || g.blocks[b].pred_count == 0 ? 0 : uint::max;
         if (b != 0) for (uint p = 0; p < g.blocks[b].pred_count; p++) {
@@ -23,6 +23,9 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
         }
         g.dominators[b] = mask | (1U << b);
     }
+}
+
+fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
     uint count;
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
@@ -30,7 +33,7 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
             int found = -1;
             for (uint k = 0; k < count; k++) {
                 SsaValue prior = g.values[g.cse_value[k]];
-                if (g.cse_memory[k] == (int)value.imm && g.cse_index[k] == value.a && prior.rep == value.rep
+                if (g.cse_memory[k] == (int)value.imm && ssa_alias(g, g.cse_index[k]) == ssa_alias(g, value.a) && prior.rep == value.rep
                     && (g.dominators[value.block] & (1U << (uint)prior.block)) != 0) {
                     found = g.cse_value[k];
                     break;
@@ -54,21 +57,30 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
     }
 }
 
-// Binding snapshots and function identities are immutable SSA inputs. Their
-// checks can cross stores, but can only be reused along a dominated path.
+// Snapshot bindings, identities and guarded ordinary layouts remain valid
+// across slot writes. Reuse them only along a dominated path; regions admit
+// no operation that changes a layout, prototype or property storage.
 fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
     int[SSA_CSE] seen;
     uint count;
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op != BINDING && value.op != CHECKFN) continue;
+        if (value.op != BINDING && value.op != CHECKFN && value.op != RECEIVER && value.op != CHECKSHAPE
+            && value.op != STORAGE && value.op != CHECKWRITE && value.op != PROTO_STORAGE) continue;
         bool found;
         for (uint k = 0; k < count; k++) {
             SsaValue prior = g.values[seen[k]];
-            if (value.op != prior.op || value.imm != prior.imm
-                || (g.dominators[value.block] & (1U << (uint)prior.block)) == 0) continue;
-            if (value.op == CHECKFN && ssa_alias(g, value.a) != ssa_alias(g, prior.a)) continue;
-            if (value.op == BINDING) {
+            if (value.op != prior.op || (g.dominators[value.block] & (1U << (uint)prior.block)) == 0) continue;
+            if (value.op == CHECKSHAPE) {
+                LoopMemorySpec a = g.plan.memory[value.imm];
+                LoopMemorySpec b = g.plan.memory[prior.imm];
+                if (a.shape != b.shape || a.shape_gen != b.shape_gen) continue;
+            } else if (value.op == PROTO_STORAGE) {
+                if (!ssa_proto_layout_equal(&g.plan.memory[value.imm], &g.plan.memory[prior.imm])) continue;
+            } else if (value.imm != prior.imm) { continue; }
+            if ((value.op == CHECKFN || value.op == CHECKSHAPE || value.op == STORAGE || value.op == CHECKWRITE || value.op == PROTO_STORAGE)
+                && ssa_alias(g, value.a) != ssa_alias(g, prior.a)) continue;
+            if (value.op == BINDING || value.op == RECEIVER || value.op == STORAGE || value.op == PROTO_STORAGE) {
                 value.op = COPY;
                 value.a = seen[k];
                 value.b = 0;
@@ -114,6 +126,45 @@ fn void ssa_numeric_loads(SsaGraph* g) @feat(SLJIT) {
 // Greedy home assignment over the flat definition order. Loop phis are live
 // across the backedge; other values are released at their last use.
 fn bool ssa_same_class(SsaRep a, SsaRep b) @feat(SLJIT) => (a == F64) == (b == F64);
+
+fn void ssa_keep(SsaGraph* g, int value, uint stamp) @feat(SLJIT) {
+    value = ssa_alias(g, value);
+    if (value >= 0 && g.values[value].last < stamp) g.values[value].last = stamp;
+}
+
+// Function exits recover the untouched caller frame. Rebuild their liveness
+// from optimized operands, so removed loads/checks do not keep receivers and
+// aliases in registers. Loop recovery still uses its conservative frame uses.
+fn void ssa_function_liveness(SsaGraph* g) @feat(SLJIT) {
+    if (!g.inplace) return;
+    for (uint i = 0; i < g.value_count; i++) g.values[i].last = g.values[i].def;
+    for (uint i = 0; i < g.value_count; i++) {
+        SsaValue v = g.values[i];
+        switch (v.op) {
+            case NOP: case ARG: case PHI: case RECEIVER: case BINDING:
+            case CONST_I: case CONST_F: case COPY: case GOTO: break;
+            case JOIN:
+                {
+                    SsaJoin* join = &g.joins[v.a];
+                    for (uint p = 0; p < join.pred_count; p++) {
+                        uint last = g.block_last[join.preds[p]];
+                        uint stamp = last != 0 ? g.values[last - 1].def + 1 : v.def;
+                        ssa_keep(g, join.incoming[p][v.b], stamp);
+                    }
+                    break;
+                }
+            case SELECT:
+                ssa_keep(g, v.a, v.def);
+                ssa_keep(g, v.b, v.def);
+                ssa_keep(g, (int)v.imm, v.def);
+                break;
+            default:
+                ssa_keep(g, v.a, v.def);
+                ssa_keep(g, v.b, v.def);
+                break;
+        }
+    }
+}
 fn bool ssa_same_location(SsaValue a, SsaValue b) @feat(SLJIT) {
     if (!ssa_same_class(a.rep, b.rep)) return false;
     if (a.home != 0 || b.home != 0) return a.home != 0 && a.home == b.home;
@@ -131,7 +182,7 @@ fn bool ssa_inert_value(SsaGraph* g, int value, uint depth = 0) @feat(SLJIT) {
     if (value < 0 || depth > SSA_BLOCKS) return false;
     value = ssa_alias(g, value);
     SsaValue v = g.values[value];
-    if (v.rep != BOXED || v.op == COMPARE || v.op == BOX_I || v.op == BOX_F) return true;
+    if (v.rep != BOXED || v.op == COMPARE || v.op == BOX_I || v.op == BOX_F || v.op == RECEIVER) return true;
     if (v.op != JOIN) return false;
     SsaJoin* join = &g.joins[v.a];
     for (uint p = 0; p < join.pred_count; p++) {

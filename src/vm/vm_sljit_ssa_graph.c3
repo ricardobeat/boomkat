@@ -30,12 +30,16 @@ const uint SSA_JOINS      = 16;
 enum SsaRep : char {
     BOXED,
     INT32,
-    F64
+    F64,
+    RAW
 }
 
 enum SsaOp : char {
     NOP,
     ARG,
+    RECEIVER,
+    STORAGE,
+    PROTO_STORAGE,
     PHI,
     BINDING,
     CONST_I,
@@ -63,19 +67,23 @@ enum SsaOp : char {
     // Identity guard: the value must be a function whose compiled body is the
     // one the call was expanded from.
     CHECKFN,
+    CHECKSHAPE,
+    CHECKWRITE,
     COMPARE,
+    SELECT,
     // A value merged from several arms at a join. Its home holds whichever
     // incoming value the path took.
     JOIN,
     // A conditional branch inside the body: the arms of an if.
     BRANCH,
     // An unconditional branch inside the body: the end of an arm.
-    GOTO
+    GOTO,
+    RETURN
 }
 
 fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
     switch (op) {
-        case NOP: case STORE: case CHECKFN: case BRANCH: case GOTO: return false;
+        case NOP: case STORE: case CHECKFN: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: return false;
         default: return true;
     }
 }
@@ -113,6 +121,7 @@ struct SsaBlock @feat(SLJIT) {
     uint branch_pc; // uint::max when the block has no branch
     bool conditional;
     bool jump;
+    bool returns;
 }
 
 // A block with more than one predecessor: the registers its predecessors
@@ -168,6 +177,8 @@ struct SsaGraph @feat(SLJIT) {
     bool single_pass;
     bool direct;
     bool inplace;
+    bool direct_fields;
+    bool callee_entry;
     uint inline_base;
     uint inline_depth;
     uint fpr_homes;
@@ -256,6 +267,7 @@ fn int ssa_convert(SsaGraph* g, int value, SsaRep rep, bool exact) @feat(SLJIT) 
         return 0;
     }
     SsaRep from = g.values[value].rep;
+    if (from == RAW || rep == RAW) { g.failed = true; return 0; }
     if (from == rep && (!exact || rep != INT32)) return value;
     if (from == rep && exact) return value;
     // ToInt32 truncates/wraps; an exact array index must retain its own guard.
@@ -348,9 +360,11 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         block.begin = starts[i];
         uint limit = i + 1 < count ? starts[i + 1] - 1 : plan.end;
         uint e     = starts[i];
-        while (e <= limit && loop_target(cf.code[e], e) < 0) e++;
-        block.branch_pc = e <= limit ? e : uint::max;
-        block.end = block.branch_pc != uint::max ? e : limit;
+        while (e <= limit && loop_target(cf.code[e], e) < 0
+            && !(plan.ssa_function != null && (cf.code[e].op == Opcode.RET || cf.code[e].op == Opcode.RETUNDEF))) e++;
+        block.returns = e <= limit && (cf.code[e].op == Opcode.RET || cf.code[e].op == Opcode.RETUNDEF);
+        block.branch_pc = e <= limit && !block.returns ? e : uint::max;
+        block.end = e <= limit ? e : limit;
         block.conditional = false;
         block.jump = false;
         block.succ0 = 0;
@@ -367,6 +381,11 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
     // Resolve the edges now that every block start is known.
     for (uint i = 0; i < count; i++) {
         SsaBlock* block = &g.blocks[i];
+        if (block.returns) {
+            block.succ0 = SSA_BLOCKS;
+            block.succ1 = SSA_BLOCKS;
+            continue;
+        }
         if (block.branch_pc == uint::max) {
             block.succ0 = i + 1 < count ? i + 1 : 0;
             continue;
@@ -448,11 +467,15 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             continue;
         }
         switch (ins.op) {
+            case LDTHIS:
+                if (plan.ssa_function == null) return false;
+                continue;
             case RET:
             case RETUNDEF:
-                if (plan.ssa_function == null || pos != plan.end) return false;
+                if (plan.ssa_function == null) return false;
                 continue;
             case PUTTHISC:
+            case PUTPROPC:
                 if (!plan.ssa_commit || pos + 1 != plan.end) return false;
                 continue;
             case GETCAP:
@@ -504,7 +527,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
                     uint at = pos - plan.begin;
                     if (plan.memory_at[at] == 0 || plan.intrinsic_at[at] != 0) return false;
                     LoopMemoryKind kind = plan.memory[(uint)plan.memory_at[at] - 1].kind;
-                    if (kind != FIELD && kind != SHAPE_FIELD) return false;
+                    if (kind != FIELD && kind != SHAPE_FIELD && kind != PROTO_FIELD) return false;
                     continue;
                 }
             case CALL:
@@ -513,7 +536,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case CALL_VAR:
                 // Expanded in place, so the callee body must be a leaf.
                 if (plan.memory_at[pos - plan.begin] != 0) return false;
-                if (function_inline_ssa_candidate(cf, pos, h) == null) return false;
+                if (function_inline_ssa_candidate(cf, pos, h, plan.ssa_function != null) == null) return false;
                 continue;
             default:
                 return false;
@@ -569,6 +592,15 @@ fn void ssa_infer(
                 if (!assigned[ins.a]) (*live_in)[ins.a] = true;
                 writes = false;
                 break;
+            case PUTPROPC:
+                (*read)[ins.a] = true;
+                (*value_read)[ins.a] = true;
+                if (!assigned[ins.a]) (*live_in)[ins.a] = true;
+                (*read)[ins.b] = true;
+                (*value_read)[ins.b] = true;
+                if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                writes = false;
+                break;
             case RETUNDEF:
                 writes = false;
                 break;
@@ -605,8 +637,18 @@ fn void ssa_infer(
             case GETPROPC:
             case GETPROPC_CACHED:
             case GETTHISC:
+                if (g.direct_fields && plan.memory_at[pos - plan.begin] != 0) {
+                    LoopMemorySpec spec = plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1];
+                    if (spec.kind == FIELD && spec.source < LOOP_REGS) {
+                        uint source = spec.source;
+                        (*read)[source] = true;
+                        (*value_read)[source] = true;
+                        if (!assigned[source]) (*live_in)[source] = true;
+                    }
+                }
                 if (plan.memory_at[pos - plan.begin] != 0
-                    && plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1].kind == SHAPE_FIELD
+                    && (plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1].kind == SHAPE_FIELD
+                        || plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1].kind == PROTO_FIELD)
                     && ins.op != Opcode.GETTHISC) {
                     (*read)[ins.b] = true;
                     (*value_read)[ins.b] = true;

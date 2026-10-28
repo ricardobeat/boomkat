@@ -758,13 +758,39 @@ fn bool function_inline_ssa_leaf(CompiledFunction* target, uint nargs) @feat(SLJ
     }
     return false;
 }
-fn CompiledFunction* function_inline_ssa_candidate(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
+fn bool function_inline_ssa_selector(CompiledFunction* target, uint nargs) @feat(SLJIT) {
+    if (target == null || target.num_args != nargs || target.code_count > 24 || target.num_regs > LOOP_REGS
+        || target.capture_count != 0 || target.is_class_ctor() || target.flags.is_generator || target.flags.is_async
+        || target.flags.has_direct_eval || target.flags.needs_lex_bridge || target.mapped_arguments()) return false;
+    uint branches;
+    uint returns;
+    for (uint pc = 0; pc < target.code_count; pc++) {
+        Instruction ins = target.code[pc];
+        int branch = loop_target(ins, pc);
+        if (branch >= 0) {
+            if (!ssa_comparison_op(ins.op) || branch <= (int)pc || branch >= (int)target.code_count || ++branches > 1) return false;
+            continue;
+        }
+        switch (ins.op) {
+            case RET:
+                if (++returns == 2) return branches == 1;
+                continue;
+            case NOP: case LDREG: case LDTHIS: case LDINT: case LDCONST:
+            case GETGLOBAL: case GETTHISC: case GETPROPC: case GETPROPC_CACHED: continue;
+            default: return false;
+        }
+    }
+    return false;
+}
+
+fn CompiledFunction* function_inline_ssa_candidate(CompiledFunction* cf, uint pc, Heap* h, bool advanced = false) @feat(SLJIT) {
     Instruction call = cf.code[pc];
     bool fused = call.op == Opcode.CALL_GLOBAL || call.op == Opcode.CALL_VAR;
     if (!fused && call.op != Opcode.CALL && call.op != Opcode.CALL_UNDEF_THIS) return null;
     CompiledFunction* target = function_inline_target(cf, pc, h);
     if (target != null && (fused || call.op == Opcode.CALL_UNDEF_THIS) && !target.call_flags.ignores_this) return null;
-    if (!function_inline_ssa_leaf(target, fused ? call.b : call.c)) return null;
+    uint nargs = fused ? call.b : call.c;
+    if (!function_inline_ssa_leaf(target, nargs) && !(advanced && function_inline_ssa_selector(target, nargs))) return null;
     return target;
 }
 fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uint pc, Heap* h, uint depth = 1) @feat(SLJIT) {

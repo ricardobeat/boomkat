@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Attribute macOS sample self counts using a same-process SLJIT_MAP dump.
 
-Build with -D SLJIT_STATS -D SLJIT_MAP and run with --jit --stats. Addresses
+Build with -D SLJIT_MAP and run with --jit --stats. SLJIT_STATS adds optional
+execution counters; maps alone do not instrument generated code. Addresses
 must come from the sampled process. Inlining creates overlapping ranges;
 the deepest frame wins. Unknown/retired code remains explicitly unmapped.
 Loop-tier ranges are attributed as whole loops, without per-opcode detail.
@@ -17,7 +18,7 @@ def read_maps(text):
     ranges = []
     functions = {}
     for line in text.splitlines():
-        if line.startswith('SLJIT coverage '):
+        if line.startswith('SLJIT coverage ') or re.match(r'SLJIT function .* begin=', line):
             fields = dict(re.findall(r'(\w+)=(\S+)', line))
             functions[int(fields['id'])] = fields
         if not line.startswith('SLJIT map '):

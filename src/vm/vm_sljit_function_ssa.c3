@@ -84,8 +84,7 @@ fn bool sljit_function_ssa_live(Heap* h, LoopPlan* plan) @feat(SLJIT) {
     if (plan.ssa_fields && plan.ssa_shape_epoch != h.shape_recycle_epoch) {
         for (uint memory = 0; memory < plan.memory_count; memory++) {
             LoopMemorySpec spec = plan.memory[memory];
-            Shape* shape = h.get_shape(spec.shape);
-            if (shape == null || shape.dict || shape.generation != spec.shape_gen) {
+            if (!ssa_memory_layout_live(h, &spec)) {
                 plan.ssa_invalid = true;
                 jit::sljit_set_const(plan.ssa_epoch_patch, jit::SLJIT_MOV, 1L << 32, plan.ssa_executable_offset);
                 return false;
@@ -105,7 +104,7 @@ fn bool sljit_function_ssa_live(Heap* h, LoopPlan* plan) @feat(SLJIT) {
 // per heap epoch, before any generated frames are active; otherwise one recycle
 // leaves those callees permanently using their baseline fallback.
 fn void sljit_function_ssa_refresh(Heap* h) @feat(SLJIT) {
-    $if $feat(SLJIT_FUNCTION_SSA) || !$feat(SLJIT_NO_SSA_LEAVES):
+    $if $feat(SLJIT_FUNCTION_SSA) || !$feat(SLJIT_NO_SSA_LEAVES) || !$feat(SLJIT_NO_SSA_CALL_ENTRY):
         if (h.jit_ssa_epoch == h.shape_recycle_epoch) return;
         for (uint i = 0; i < h.compiled_func_count; i++) {
             CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[i];

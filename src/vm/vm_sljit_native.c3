@@ -195,6 +195,7 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     } else {
         e.mov(receiver, 0, imm, (long)loop_bits(undef));
     }
+    $if !$feat(SLJIT_NO_SSA_CALL_ENTRY): self.ssa_call_entry(cf); $endif
     for (uint i = cf.num_formals; i < cf.num_regs; i++) {
         e.mov(r0, 0, mem | bottom, loop_value_offset(i));
         e.op(jit::SLJIT_LSHR, r0, r0, 0, imm, 48);

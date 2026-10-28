@@ -4,6 +4,67 @@ import boomkat::jit;
 import boomkat::types;
 import boomkat::hobject;
 
+// A receiver is a value in function SSA, not a prepared loop descriptor.
+// Keeping its structure check in the graph lets dominance remove repeated
+// checks for other fields of the same object.
+fn int ssa_field_storage(SsaGraph* g, uint memory, int dynamic = -1) @feat(SLJIT) {
+    LoopMemorySpec spec = g.plan.memory[memory];
+    int receiver;
+    if (spec.kind == PROTO_FIELD && dynamic >= 0) {
+        receiver = dynamic;
+    } else if (spec.kind == SHAPE_FIELD) {
+        receiver = dynamic;
+    } else if (spec.source == LOOP_THIS) {
+        receiver = ssa_value(g, RECEIVER, BOXED, -1, -1, 0);
+    } else if (spec.source >= LOOP_REGS) {
+        receiver = ssa_value(g, BINDING, BOXED, -1, -1, (long)(spec.source - LOOP_REGS));
+    } else {
+        receiver = g.current[spec.source];
+    }
+    receiver = ssa_convert(g, receiver, BOXED, false);
+    ssa_use(g, receiver);
+    if (spec.kind == PROTO_FIELD) return ssa_value(g, PROTO_STORAGE, RAW, receiver, -1, memory);
+    ssa_value(g, CHECKSHAPE, BOXED, receiver, -1, memory);
+    if (spec.written && spec.kind == SHAPE_FIELD) {
+        ssa_use(g, receiver);
+        ssa_value(g, CHECKWRITE, BOXED, receiver, -1, 0);
+    } else if (spec.kind == FIELD) {
+        foreach (other : g.plan.memory[:g.plan.memory_count]) {
+            if (other.written && other.kind == FIELD && other.source == spec.source) {
+                ssa_use(g, receiver);
+                ssa_value(g, CHECKWRITE, BOXED, receiver, -1, 0);
+                break;
+            }
+        }
+    }
+    ssa_use(g, receiver);
+    return ssa_value(g, STORAGE, RAW, receiver, -1, 0);
+}
+
+fn void SsaEmitter.check_shape(&self, int receiver, uint memory) @feat(SLJIT) {
+    int r0 = jit::reg_r(0);
+    int r2 = jit::reg_r(2);
+    int r3 = jit::reg_r(3);
+    int imm = jit::SLJIT_IMM;
+    HObject object;
+    self.gpr(receiver, r0);
+    self.e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, self.pc);
+    self.e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    self.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, self.pc);
+    self.ordinary_receiver(r0, self.pc);
+    self.e.mov(r2, 0, jit::SLJIT_MEM | r0, (char*)&object.shape_id - (char*)&object, jit::SLJIT_MOV_U32);
+    self.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, self.plan.memory[memory].shape, self.pc);
+}
+
+fn void SsaEmitter.field_address(&self, int receiver, int storage) @feat(SLJIT) {
+    HObject object;
+    self.e.mov(storage, 0, jit::SLJIT_MEM | receiver, (char*)&object.prop_alloc - (char*)&object);
+    void* allocated = self.e.cmp(jit::SLJIT_NOT_EQUAL, storage, 0, jit::SLJIT_IMM, 0);
+    self.e.op(jit::SLJIT_ADD, storage, receiver, 0, jit::SLJIT_IMM, HObjectBase::size);
+    self.e.bind(allocated);
+}
+
 // Single-pass own fields: validate the receiver once at entry and derive the
 // address without C-side property lookup. Admission excludes dictionary shapes;
 // the enclosing header guards the shape-recycle epoch before any slot access.

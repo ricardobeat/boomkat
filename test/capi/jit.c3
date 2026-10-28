@@ -17,6 +17,7 @@ const String RECOVERY_SOURCE = $embed("../jit_inline_recovery.js");
 const String ALLOCATION_SOURCE = $embed("../jit_alloc_continuations.js");
 const String LINK_SOURCE = $embed("../jit_linked_calls.js");
 const String SSA_CALLS_SOURCE = $embed("../jit_function_ssa_calls.js");
+const String SSA_REGIONS_SOURCE = $embed("../jit_ssa_call_regions.js");
 const String CFG_SOURCE = $embed("../jit_cfg_numbers.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
 const String RUN             = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
@@ -352,6 +353,33 @@ fn void check_ssa_leaf(JsRuntime* runtime, JsContext* context) {
     $endif
 }
 
+fn void check_ssa_call_regions(JsRuntime* runtime, JsContext* context) {
+    $if !$feat(SLJIT_NO_SSA_CALL_ENTRY) && !$feat(SLJIT_NO_SSA_FIELD_IR):
+        Heap* h = runtime.rt.heap;
+        $if $feat(SLJIT_STATS): ulong before = h.jit_ssa_call_commits; $endif
+        eval(context, "var print=function(){};");
+        eval(context, SSA_REGIONS_SOURCE);
+        eval(context, "var regionWarm=new RegionConstraint({value:7},{value:0});");
+        // The fixture deliberately invalidates its original plans. Warm a
+        // fresh call body after those semantic fallback checks.
+        for (uint i = 0; i < 64; i++) eval(context, "regionWarm.input();regionWarm.output();");
+        eval(context, "RegionConstraint.prototype.execute=function(){this.output().value=this.input().value;};");
+        for (uint i = 0; i < 64; i++) eval(context, "regionWarm.execute();");
+        // Compile the caller against another callee. Replacing it must use
+        // the guarded native call fallback, including its frameless entry.
+        eval(context, "regionFunctions.execute=RegionConstraint.prototype.execute;RegionConstraint.prototype.execute=function(){};regionFunctions.drive=function(c){c.execute();return c;};");
+        for (uint i = 0; i < 64; i++) eval(context, "regionFunctions.drive(regionWarm);");
+        eval(context, "RegionConstraint.prototype.execute=regionFunctions.execute;");
+        for (uint i = 0; i < 100; i++) eval(context, "regionFunctions.drive(regionWarm);");
+        $if $feat(SLJIT_STATS): @check(h.jit_ssa_call_commits > before); $endif
+        eval(context, "var regionNativeEffects=0;regionWarm.input=function(){regionNativeEffects++;return this.v1;};regionFunctions.drive(regionWarm);if(regionNativeEffects!==1||regionWarm.v2.value!==7)throw 'SSA native method fallback';delete regionWarm.input;");
+        eval(context, "Object.defineProperty(regionWarm.v1,'value',{get:function(){regionNativeEffects++;return 23;}});regionFunctions.drive(regionWarm);if(regionNativeEffects!==2||regionWarm.v2.value!==23)throw 'SSA native getter replay';");
+        h.mark_and_sweep(true, true);
+        eval(context, "regionFunctions.drive(regionWarm);if(regionNativeEffects!==3||regionWarm.v2.value!==23)throw 'SSA native region after GC';");
+        eval(context, "if(regionNumeric(regionFunctions,'choose',1)!==1.25)throw 'SSA call after GC';");
+    $endif
+}
+
 // Single-pass regions reuse the loop SSA graph, allocation and recovery code.
 fn void check_ssa_region(JsRuntime* runtime) {
     Instruction[3] code = {
@@ -589,5 +617,6 @@ fn void main() {
     check_ssa_epoch(&first, &a);
     check_ssa_calls(&first, &a);
     check_ssa_leaf(&first, &a);
+    check_ssa_call_regions(&first, &a);
     io::printn("embedding JIT: PASS");
 }

@@ -18,6 +18,7 @@ struct SsaEmitter @feat(SLJIT) {
     LoopPlan* plan;
     CompiledFunction* cf;
     int state;
+    long state_bias;
     int regs;
     int budget;
     ulong dirty_mask;
@@ -47,14 +48,14 @@ struct SsaEmitter @feat(SLJIT) {
 // Standalone kernels keep their public LoopState ABI. In-place SSA uses only
 // the invocation-local descriptors/bindings/spills, packed into unused windows.
 fn long SsaEmitter.memory_offset(&self, uint memory, uint field) @feat(SLJIT) => self.g.inplace
-    ? (long)memory * LoopMemory::size + (long)field * TVal::size : loop_memory_offset(memory, field);
+    ? self.state_bias + (long)memory * LoopMemory::size + (long)field * TVal::size : loop_memory_offset(memory, field);
 fn long SsaEmitter.binding_offset(&self, uint binding) @feat(SLJIT) {
     LoopState state;
-    return self.g.inplace ? (long)self.plan.memory_count * LoopMemory::size + (long)binding * TVal::size
+    return self.g.inplace ? self.state_bias + (long)self.plan.memory_count * LoopMemory::size + (long)binding * TVal::size
         : (char*)&state.bindings[binding] - (char*)&state;
 }
 fn long SsaEmitter.spill_offset(&self, uint spill) @feat(SLJIT) => self.g.inplace
-    ? (long)self.plan.memory_count * LoopMemory::size + (long)self.plan.binding_count * TVal::size
+    ? self.state_bias + (long)self.plan.memory_count * LoopMemory::size + (long)self.plan.binding_count * TVal::size
         + (long)spill * double::size : ssa_spill_offset(spill);
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
@@ -250,6 +251,7 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
         self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, jit::reg_r(1), 0), self.plan.begin);
     }
     for (uint memory = 0; memory < self.plan.memory_count && memory < LOOP_MEMORY; memory++) {
+        if (self.g.direct_fields && (self.plan.memory[memory].kind == FIELD || self.plan.memory[memory].kind == PROTO_FIELD)) continue;
         // Layout-only descriptors are checked against the live SSA receiver
         // at each access. They have no invocation-local source to compare.
         if (self.plan.memory[memory].kind == SHAPE_FIELD || !self.g.invariant[memory]) continue;
@@ -288,7 +290,7 @@ fn void SsaEmitter.prologue(&self) @feat(SLJIT) {
         int value = self.g.phi[reg] >= 0 ? self.g.phi[reg] : self.g.arg[reg];
         if (value < 0 || (self.g.direct && self.g.values[value].last == self.g.values[value].def)) continue;
         SsaRep rep = self.g.values[value].rep;
-        self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(reg + (self.g.inplace ? self.g.inline_base + 2 : 0)));
+        self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(reg + (self.g.inplace && !self.g.callee_entry ? self.g.inline_base + 2 : 0)));
         if (rep == INT32) {
             self.exact_int(r0, r0, self.plan.begin);
             self.store_gpr(value, r0);
@@ -310,6 +312,8 @@ fn void SsaEmitter.output(&self, int value, uint pc) @feat(SLJIT) {
     } else if (v.rep == INT32) {
         self.gpr(value, r0);
         self.box_gpr(r0);
+    } else if (v.rep == RAW) {
+        self.e.failed = true;
     } else {
         self.gpr(value, r0);
     }
@@ -339,6 +343,26 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case NOP:
                 case ARG:
                 case PHI: break;
+                case RECEIVER:
+                    {
+                        if (self.g.callee_entry) { self.e.mov(r0, 0, jit::reg_s(3), 0); }
+                        else { self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(self.g.inline_base + 1)); }
+                        self.store_gpr((int)i, r0);
+                        break;
+                    }
+                case CHECKSHAPE: self.check_shape(v.a, (uint)v.imm); break;
+                case PROTO_STORAGE: self.proto_storage((int)i); break;
+                case CHECKWRITE:
+                    self.gpr(v.a, r0);
+                    self.e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+                    self.commit_receiver(r0);
+                    break;
+                case STORAGE:
+                    self.gpr(v.a, r0);
+                    self.e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+                    self.field_address(r0, r1);
+                    self.store_gpr((int)i, r1);
+                    break;
                 case BINDING:
 
                     {
@@ -592,6 +616,24 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         break;
                     }
                 case COMPARE: self.compare((int)i); break;
+                case SELECT:
+                    {
+                        int yes = v.rep == F64 ? self.fpr_slot(v.b, 1) : self.gpr_slot(v.b, r1);
+                        int no = v.rep == F64 ? self.fpr_slot((int)v.imm, 2) : self.gpr_slot((int)v.imm, r2);
+                        self.gpr(v.a, r0);
+                        if (jit::sljit_emit_op2u(e.compiler, jit::SLJIT_SUB | jit::SLJIT_SET_Z,
+                            r0, 0, imm, (long)(types::TAG_BOOLEAN << 48)) != 0) e.failed = true;
+                        if (v.rep == F64) {
+                            int dst = v.home != 0 ? v.home : 1;
+                            if (jit::sljit_emit_fselect(e.compiler, jit::SLJIT_NOT_EQUAL, dst, yes, 0, no) != 0) e.failed = true;
+                            if (v.home == 0) self.store_fpr((int)i, dst);
+                        } else {
+                            int dst = v.home != 0 ? v.home : r0;
+                            if (jit::sljit_emit_select(e.compiler, jit::SLJIT_NOT_EQUAL, dst, yes, 0, no) != 0) e.failed = true;
+                            if (v.home == 0) self.store_gpr((int)i, dst);
+                        }
+                        break;
+                    }
                 case CHECKFN:
 
                     {
@@ -620,6 +662,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         self.guard(jit::SLJIT_NOT_EQUAL, rr1, 0, imm2, (uint)wanted, self.pc);
                         self.e.mov(rr1, 0, jit::SLJIT_MEM | rr0, address);
                         self.guard(jit::SLJIT_NOT_EQUAL, rr1, 0, imm2, v.imm, self.pc);
+                        CompiledFunction* target = (CompiledFunction*)v.imm;
+                        self.e.mov(rr1, 0, jit::SLJIT_MEM | rr0, (char*)&object.extra.func.realm - (char*)&object);
+                        self.guard(jit::SLJIT_NOT_EQUAL, rr1, 0, imm2, (long)target.realm, self.pc);
                         break;
                     }
                 case LOAD:
@@ -639,12 +684,13 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case JOIN: break;
                 case BRANCH: self.branch((int)i); break;
                 case GOTO: self.goto_block((int)i); break;
+                case RETURN: self.direct_return(v.a); break;
             }
             if (v.dst_reg >= 0) self.live[v.dst_reg] = (int)i;
         }
         // A block without a branch hands its state to the block that follows
         // it, so the join's values are written on that path too.
-        if (self.g.blocks[b].branch_pc == uint::max && b + 1 < self.g.block_count) {
+        if (!self.g.blocks[b].returns && self.g.blocks[b].branch_pc == uint::max && b + 1 < self.g.block_count) {
             self.join_copies(b, b + 1);
         }
     }
@@ -939,7 +985,7 @@ fn void SsaEmitter.index(&self, int value, uint memory, uint pc) @feat(SLJIT) {
 fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep) @feat(SLJIT) {
     LoopMemorySpec spec = self.plan.memory[memory];
     uint pc             = self.pc;
-    if (spec.kind == SHAPE_FIELD) {
+    if (spec.kind == SHAPE_FIELD && !self.g.direct_fields) {
         int r0  = jit::reg_r(0);
         int r1  = jit::reg_r(1);
         int r2  = jit::reg_r(2);
@@ -981,13 +1027,19 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
         }
         return;
     }
-    if (spec.kind == FIELD) {
+    if (spec.kind == FIELD || ((spec.kind == SHAPE_FIELD || spec.kind == PROTO_FIELD) && self.g.direct_fields)) {
         int r1 = jit::reg_r(1);
         int r0 = jit::reg_r(0);
         int r3 = jit::reg_r(3);
-        self.e.mov(r1, 0, jit::SLJIT_MEM | self.state, self.memory_offset(memory, 1));
+        long offset;
+        if (self.g.direct_fields) {
+            self.gpr(index, r1);
+            offset = (long)spec.slot * 8;
+        } else {
+            self.e.mov(r1, 0, jit::SLJIT_MEM | self.state, self.memory_offset(memory, 1));
+        }
         if (spec.integers) {
-            self.e.mov(r0, 0, jit::SLJIT_MEM | r1, 0);
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r1, offset);
             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
             self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
             int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
@@ -995,14 +1047,14 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
             if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
         } else if (spec.doubles) {
             int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : 1;
-            self.e.mov(r0, 0, jit::SLJIT_MEM | r1, 0);
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r1, offset);
             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
             self.guard(jit::SLJIT_GREATER_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
             if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, r0) != 0) self.e.failed = true;
             if (self.g.values[dst_value].home == 0) self.store_fpr(dst_value, dst);
         } else {
             int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
-            self.e.mov(dst, 0, jit::SLJIT_MEM | r1, 0);
+            self.e.mov(dst, 0, jit::SLJIT_MEM | r1, offset);
             if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
         }
         return;
@@ -1064,18 +1116,24 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
     }
 }
 fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) {
-    if (self.plan.ssa_commit && self.plan.memory[memory].kind == FIELD) {
+    if (self.plan.ssa_commit && (self.plan.memory[memory].kind == FIELD || self.plan.memory[memory].kind == SHAPE_FIELD)) {
         int r0 = jit::reg_r(0);
         int r2 = jit::reg_r(2);
         int r3 = jit::reg_r(3);
         self.gpr(value, r0);
         self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
         self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, self.pc);
-        self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, self.memory_offset(memory, 1));
-        self.e.mov(r3, 0, jit::SLJIT_MEM | r2, 0);
+        long offset;
+        if (self.g.direct_fields) {
+            self.gpr(index, r2);
+            offset = (long)self.plan.memory[memory].slot * 8;
+        } else {
+            self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, self.memory_offset(memory, 1));
+        }
+        self.e.mov(r3, 0, jit::SLJIT_MEM | r2, offset);
         self.e.op(jit::SLJIT_LSHR, r3, r3, 0, jit::SLJIT_IMM, 48);
         self.guard(jit::SLJIT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_STRING, self.pc);
-        self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0);
+        self.e.mov(jit::SLJIT_MEM | r2, offset, r0, 0);
         return;
     }
     for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
@@ -1152,25 +1210,28 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) 
     }
 }
 
+// All native function exits use one result convention. A side exit leaves the
+// original caller frame untouched; a return transfers only the selected value.
+fn void SsaEmitter.direct_return(&self, int value, bool refused = false) @feat(SLJIT) {
+    int r0 = jit::reg_r(0);
+    if (refused || value < 0) {
+        self.e.mov(r0, 0, jit::SLJIT_IMM, refused ? (long)SSA_REFUSED : (long)(types::TAG_UNDEFINED << 48));
+    } else {
+        self.output(value, self.pc);
+        self.e.op(jit::SLJIT_LSHR, jit::reg_r(1), r0, 0, jit::SLJIT_IMM, 48);
+        self.snapshot_none(self.e.cmp(jit::SLJIT_EQUAL, jit::reg_r(1), 0,
+            jit::SLJIT_IMM, (long)types::TAG_STRING), self.plan.begin);
+    }
+    if (self.g.inplace) {
+        if (self.done_count == self.done_jumps.len) { self.e.failed = true; return; }
+        self.done_jumps[self.done_count++] = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+    } else if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
+}
+
 fn void SsaEmitter.publish(&self, int[LOOP_REGS]* regs, uint pc) @feat(SLJIT) {
     int r0      = jit::reg_r(0);
     if (self.g.direct) {
-        if (pc == self.plan.end + 1) {
-            if (self.g.result_reg == LOOP_REGS) {
-                self.e.mov(r0, 0, jit::SLJIT_IMM, (long)(types::TAG_UNDEFINED << 48));
-            } else {
-                self.output(self.g.current[self.g.result_reg], pc);
-                self.e.op(jit::SLJIT_LSHR, jit::reg_r(1), r0, 0, jit::SLJIT_IMM, 48);
-                self.snapshot_none(self.e.cmp(jit::SLJIT_EQUAL, jit::reg_r(1), 0,
-                    jit::SLJIT_IMM, (long)types::TAG_STRING), self.plan.begin);
-            }
-        } else {
-            self.e.mov(r0, 0, jit::SLJIT_IMM, (long)SSA_REFUSED);
-        }
-        if (self.g.inplace) {
-            if (self.done_count == self.done_jumps.len) { self.e.failed = true; return; }
-            self.done_jumps[self.done_count++] = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
-        } else if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
+        self.direct_return(self.g.result_reg < LOOP_REGS ? self.g.current[self.g.result_reg] : -1, pc != self.plan.end + 1);
         return;
     }
 

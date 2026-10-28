@@ -136,18 +136,37 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 continue;
             }
             switch (ins.op) {
+                case LDTHIS:
+                    {
+                        if (!g.direct_fields) return false;
+                        int value = ssa_value(g, RECEIVER, BOXED, -1, -1, 0);
+                        ssa_result(g, value, ins.a, pos);
+                        g.current[ins.a] = value;
+                        break;
+                    }
                 case RET:
                 case RETUNDEF:
-                    if (plan.ssa_function == null || pos != plan.end) return false;
-                    continue;
+                    {
+                        if (plan.ssa_function == null || !g.direct) return false;
+                        int value = ins.op == Opcode.RET ? g.current[ins.a] : -1;
+                        if (ins.op == Opcode.RET && value < 0) return false;
+                        if (value >= 0) ssa_use(g, value);
+                        ssa_value(g, RETURN, BOXED, value, -1, 0);
+                        continue;
+                    }
                 case PUTTHISC:
+                case PUTPROPC:
                     {
                         if (!plan.ssa_commit) return false;
-                        int value = g.current[ins.a];
+                        int value = g.current[ins.op == Opcode.PUTTHISC ? ins.a : ins.b];
                         if (value < 0 || !ssa_numeric_rep(g.values[value].rep)) return false;
                         value = ssa_convert(g, value, BOXED, false);
                         ssa_use(g, value);
-                        ssa_value(g, STORE, BOXED, -1, value, (long)plan.memory_at[at] - 1);
+                        uint memory = (uint)plan.memory_at[at] - 1;
+                        int receiver = g.direct_fields ? ssa_field_storage(g, memory,
+                            ins.op == Opcode.PUTPROPC ? g.current[ins.a] : -1) : -1;
+                        if (g.direct_fields) ssa_use(g, receiver);
+                        ssa_value(g, STORE, BOXED, receiver, value, memory);
                         break;
                     }
                 case LDREG:
@@ -258,12 +277,16 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         }
                         LoopMemorySpec spec =  plan.memory[memory];
                         int base_value      = -1;
-                        if (spec.kind == SHAPE_FIELD) {
+                        if (g.direct_fields && spec.kind == FIELD) {
+                            base_value = ssa_field_storage(g, memory);
+                            ssa_use(g, base_value);
+                        } else if (spec.kind == SHAPE_FIELD || spec.kind == PROTO_FIELD) {
                             base_value = g.current[ins.b];
                             if (base_value < 0) {
                                 g.failed = true;
                                 return false;
                             }
+                            if (g.direct_fields) base_value = ssa_field_storage(g, memory, base_value);
                             ssa_use(g, base_value);
                         }
                         int nv = ssa_value(g, LOAD, spec.integers ? INT32 : spec.doubles ? F64 : BOXED, base_value, -1, (long)memory);

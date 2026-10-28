@@ -1105,6 +1105,7 @@ struct Heap {
     ulong               jit_clock @if($feat(SLJIT));
     uint                jit_evictions @if($feat(SLJIT));
     uint                jit_ssa_epoch @if($feat(SLJIT));
+    ulong               jit_ssa_call_commits @if($feat(SLJIT) && $feat(SLJIT_STATS));
     ulong               jit_resumed_pushes @if($feat(SLJIT) && $feat(SLJIT_STATS));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;

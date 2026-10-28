@@ -33,7 +33,8 @@ enum LoopMemoryKind : char {
     // A data property of an object supplied by a register that the loop
     // rewrites, so each access guards the receiver's shape against the one
     // the site cache recorded.
-    SHAPE_FIELD
+    SHAPE_FIELD,
+    PROTO_FIELD
 }
 struct LoopMemory @feat(SLJIT) {
     TVal source;
@@ -58,6 +59,9 @@ struct LoopMemorySpec @feat(SLJIT) {
     int slot;
     uint shape;
     uint shape_gen;
+    uint[hobject::IC_MAX_CHAIN] proto_shapes;
+    uint[hobject::IC_MAX_CHAIN] proto_generations;
+    uint proto_depth;
 }
 struct LoopState @feat(SLJIT) {
     TVal[LOOP_REGS] values;
@@ -98,6 +102,7 @@ struct LoopPlan @feat(SLJIT) {
     LoopMemorySpec[LOOP_MEMORY] memory;
     uint memory_count;
     uint[LOOP_BINDINGS] bindings;
+    CompiledFunction*[LOOP_BINDINGS] binding_functions;
     uint binding_count;
     char[LOOP_OPS] memory_at;
     char[LOOP_OPS] binding_at;
@@ -512,7 +517,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     for (uint pos = plan.begin; pos <= end; pos++) {
         Instruction ins = cf.code[pos];
         uint at         = pos - plan.begin;
-        if (feedback && pos == end && (ins.op == Opcode.RET || ins.op == Opcode.RETUNDEF)) continue;
+        if (feedback && (ins.op == Opcode.RET || ins.op == Opcode.RETUNDEF)) continue;
         if (ins.a >= LOOP_REGS || ins.b >= LOOP_REGS) {
             // Branch A and immediates do not name registers.
             if (loop_target(
@@ -592,17 +597,20 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     }
                 }
             case PUTTHISC:
+            case PUTPROPC:
                 {
                     // One final own-slot update: every refusal precedes it.
                     if (!feedback || pos + 1 != end || cf.code[end].op != Opcode.RETUNDEF
                         || cf.ic_entries == null) return false;
+                    if (ins.op == Opcode.PUTPROPC && $feat(SLJIT_NO_SSA_FIELD_IR)) return false;
                     ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
                     Shape* shape = cold.heap.get_shape(ic.shape_id);
                     if (ic.key.borrow() == null || ic.has_proto || ic.prop_flags.is_accessor || !ic.prop_flags.writable
                         || shape == null || shape.dict || shape.generation != ic.shape_gen) return false;
                     if (plan.memory_count == LOOP_MEMORY) return false;
                     uint memory = plan.memory_count++;
-                    plan.memory[memory] = { .kind = FIELD, .source = LOOP_THIS, .written = true,
+                    bool receiver = ins.op == Opcode.PUTTHISC;
+                    plan.memory[memory] = { .kind = receiver ? FIELD : SHAPE_FIELD, .source = receiver ? LOOP_THIS : ins.a, .written = true,
                         .shape = ic.shape_id, .shape_gen = ic.shape_gen, .slot = (int)ic.prop_idx, .cls = OBJECT };
                     plan.memory_at[at] = (char)(memory + 1);
                     plan.ssa_commit = true;
@@ -626,6 +634,9 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     if (receiver) {
                         if (cf.ic_entries == null) return false;
                         key = (HString*)((ICEntry*)cf.ic_entries + pos).key.borrow();
+                        if (feedback && key == null && ins.c < cf.const_count && cf.constants[ins.c].is_string()) {
+                            key = cf.constants[ins.c].get_heapptr();
+                        }
                         if (key == null) return false;
                     } else {
                         key = cf.constants[ins.c].get_heapptr();
@@ -635,6 +646,41 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     if (feedback) {
                         if (cf.ic_entries == null) return false;
                         ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
+                        if (ic.has_proto && inline_calls) {
+                            HObject* observed;
+                            if (cold.vm.current_func.code == cf.code) {
+                                TVal value;
+                                if (source == (int)LOOP_THIS) { value = cold.act.this_binding; }
+                                else if (source >= 0 && source < (int)cf.num_args) { value = cold.act.bottom[source]; }
+                                if (value.is_object()) observed = value.get_heapptr();
+                            }
+                            int memory = ssa_proto_memory(plan, ic, key, cold.heap, observed);
+                            if (memory < 0) return false;
+                            plan.memory_at[at] = (char)(memory + 1);
+                            origin[ins.a] = -1;
+                            written |= 1UL << ins.a;
+                            continue;
+                        }
+                        ICEntry inferred;
+                        if (ic.key.borrow() == null && source >= 0) {
+                            // A known receiver layout describes its other own
+                            // fields even when an arm has not executed yet.
+                            for (uint prior = 0; prior < plan.memory_count; prior++) {
+                                LoopMemorySpec known = plan.memory[prior];
+                                if (known.kind != FIELD || known.source != (uint)source) continue;
+                                Shape* layout = cold.heap.get_shape(known.shape);
+                                PropFlags flags;
+                                int slot = function_shape_slot(layout, key, &flags);
+                                if (slot < 0 || flags.is_accessor) continue;
+                                inferred.shape_id = known.shape;
+                                inferred.shape_gen = known.shape_gen;
+                                inferred.prop_idx = (uint)slot;
+                                inferred.prop_flags = flags;
+                                inferred.key = (hstring::StringRef)key;
+                                ic = &inferred;
+                                break;
+                            }
+                        }
                         Shape* shape = cold.heap.get_shape(ic.shape_id);
                         if (ic.key.borrow() != key || ic.has_proto || ic.prop_flags.is_accessor
                             || shape == null || shape.dict || shape.generation != ic.shape_gen) return false;
@@ -755,7 +801,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case CALL_VAR:
 
                 {
-                    if (inline_calls && function_inline_ssa_candidate(cf, pos, cold.heap) != null) {
+                    if (inline_calls && function_inline_ssa_candidate(cf, pos, cold.heap, feedback) != null) {
                         plan.ssa_calls = true;
                         bool fused = ins.op == Opcode.CALL_GLOBAL || ins.op == Opcode.CALL_VAR;
                         uint base = fused ? ins.a : ins.b;

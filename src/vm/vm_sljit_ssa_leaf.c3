@@ -10,7 +10,7 @@ import std::io;
 // Pure callees and callees with one terminal numeric write can refuse before
 // any observable effect. The original argument window remains authoritative
 // for interpreter recovery. Both reuse the complete SSA pipeline.
-fn LoopPlan* FunctionEmitter.ssa_leaf(&self, CompiledFunction* target, Heap* h) @feat(SLJIT) {
+fn LoopPlan* FunctionEmitter.ssa_leaf(&self, CompiledFunction* target, Heap* h, bool calls = false) @feat(SLJIT) {
     if (target == null || target.code_count < 3 || target.code_count > 32 || target.num_regs > LOOP_REGS
         || target.capture_count != 0 || (target.code[target.code_count - 1].op != Opcode.RET
             && target.code[target.code_count - 1].op != Opcode.RETUNDEF)
@@ -18,12 +18,12 @@ fn LoopPlan* FunctionEmitter.ssa_leaf(&self, CompiledFunction* target, Heap* h) 
         || target.flags.has_direct_eval || target.mapped_arguments()) return null;
     for (uint pc = 0; pc < target.code_count - 1; pc++) {
         Opcode op = target.code[pc].op;
-        if (function_call_op(op) || op == Opcode.GETVAR || op == Opcode.GETCAP
-            || op == Opcode.RET || op == Opcode.RETUNDEF || op == Opcode.PUTPROP) return null;
+        if ((function_call_op(op) && !calls) || op == Opcode.GETVAR || op == Opcode.GETCAP
+            || op == Opcode.PUTPROP) return null;
     }
     TVal[LOOP_REGS] values;
     LoopPlan draft;
-    if (!loop_analyze(&draft, target.code_count - 1, &values[0], self.cold, 0, false, target)) {
+    if (!loop_analyze(&draft, target.code_count - 1, &values[0], self.cold, 0, calls, target)) {
         $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA leaf reject line=%d stage=analysis", target.get_line(0)); $endif
         return null;
     }
@@ -74,6 +74,7 @@ fn bool FunctionEmitter.inline_ssa_leaf(&self, CompiledFunction* cf, uint pc, He
         self.out.guard(jit::SLJIT_EQUAL, jit::reg_r(3), 0, imm, (long)types::TAG_STRING, pc);
     }
     if (ssa_emit(leaf, target, h, true, true, e, base, self.depth) == null) {
+        $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA leaf reject line=%d stage=graph", target.get_line(0)); $endif
         self.plan.ssa_leaves = leaf.next;
         h.free_func(h.heap_udata, leaf);
         return false;
@@ -93,11 +94,12 @@ fn bool FunctionEmitter.inline_ssa_leaf(&self, CompiledFunction* cf, uint pc, He
 // slot before reading it; no allocation or JS can occur before return.
 fn void SsaEmitter.binding_entry(&self, uint id) @feat(SLJIT) {
     uint pc = self.plan.bindings[id];
-    if (self.cf.code[pc].op != Opcode.GETGLOBAL || self.cf.var_ic_entries == null) {
+    CompiledFunction* cf = self.plan.binding_functions[id] != null ? self.plan.binding_functions[id] : self.cf;
+    if (cf.code[pc].op != Opcode.GETGLOBAL || cf.var_ic_entries == null) {
         self.e.failed = true;
         return;
     }
-    VarICEntry* ic = (VarICEntry*)self.cf.var_ic_entries + pc;
+    VarICEntry* ic = (VarICEntry*)cf.var_ic_entries + pc;
     VarICEntry layout;
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);

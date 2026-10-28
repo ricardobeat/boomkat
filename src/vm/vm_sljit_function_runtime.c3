@@ -128,6 +128,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     $if $feat(SLJIT_MAP):
         io::eprintfn("SLJIT live line=%d native=%p bytes=%d", cf.get_line(0), plan.native,
             plan.code_bytes - plan.resume_bytes - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0));
+        for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) {
+            io::eprintfn("SLJIT live_ssa line=%d target_line=%d depth=%d start=%p end=%p", cf.get_line(0),
+                leaf.ssa_function.get_line(0), leaf.ssa_map_depth, leaf.ssa_map_begin, leaf.ssa_map_end);
+        }
     $endif
     cf.sljit_function = plan;
     for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_link_target(link);
@@ -353,6 +357,7 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT pipeline id=%d inlined=%d recoveries=%d allocations=%d pushes=%d links=%d",
                     i, plan.general_inlines, plan.inline_recoveries, plan.resumed_allocations, plan.resumed_pushes, links);
                 io::printfn("SLJIT numeric id=%d homes=%d", i, plan.numeric_homes);
+                io::printfn("SLJIT SSA calls id=%d frameless=%d", i, plan.ssa_fast_calls);
                 for (uint pc = 0; pc < plan.count && pc < FUNCTION_OPS; pc++) {
                     if (plan.read_hits[pc] != 0) {
                         ICEntry* ic = (ICEntry*)cf.ic_entries + plan.begin + pc;
@@ -373,7 +378,6 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes
                         - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0), plan.resume_fragment, plan.resume_bytes);
-                $if $feat(SLJIT_MAP): sljit_address_map(plan, cf, i); $endif
                 for (FunctionInlineFrame* frame = plan.inline_frames; frame != null; frame = frame.next) {
                     for (uint pc = 0; pc < frame.target.code_count; pc++) {
                         if (frame.exits[pc] == 0) continue;
@@ -414,6 +418,7 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT function %s begin=%d ops=%d bytes=%d id=%d line=%d",
                     (String)cf.get_name(), plan.begin, plan.count, plan.code_bytes, i, cf.get_line(0));
                 $endif
+                $if $feat(SLJIT_MAP): sljit_address_map(plan, cf, i); $endif
             }
             for (LoopPlan* lp = cf.sljit_loops; lp != null; lp = lp.next) {
                 loops++;
