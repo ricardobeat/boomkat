@@ -111,7 +111,7 @@ fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
         ctx.result_string(empty);
         return;
     }
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     for (ushort i = 0; i < ctx.argc; i++) {
@@ -119,7 +119,7 @@ fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
         if (ctx.should_throw) return;
         out.append_unit(cu);
     }
-    HString* result = builtin_intern_string(ctx.heap, out.bytes());
+    HString* result = out.intern(ctx.heap);
     if (result == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length"); return; }
     ctx.result_string(result);
 }
@@ -131,7 +131,7 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
         ctx.result_string(empty);
         return;
     }
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     for (ushort i = 0; i < ctx.argc; i++) {
@@ -164,7 +164,7 @@ fn void builtin_string_fromcodepoint(BuiltinContext* ctx) {
             out.append_unit(low);
         }
     }
-    HString* result_str = builtin_intern_string(ctx.heap, out.bytes());
+    HString* result_str = out.intern(ctx.heap);
     if (result_str == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length"); return; }
     ctx.result_string(result_str);
 }
@@ -244,7 +244,7 @@ fn void builtin_string_raw(BuiltinContext* ctx) {
     }
 
     // Step 12+: Accumulate the interleaved segments.
-    StrBuf out;
+    UnitBuf out;
     out.init(heap);
     defer out.free();
 
@@ -683,12 +683,12 @@ fn uint* string_codepoints(HString* s, uint* out_n) {
 // The string of the code points `cps[0:n]`, interned when short. Null on OOM or
 // when the result would be too long.
 fn HString* codepoints_to_hstring(Heap* heap, uint* cps, uint n) {
-    StrBuf out;
+    UnitBuf out;
     out.init(heap);
     defer out.free();
     for (uint i = 0; i < n; i++) out.append_codepoint(cps[i]);
     if (out.failed) return null;
-    return builtin_intern_string(heap, out.bytes());
+    return out.intern(heap);
 }
 
 // GREEK CAPITAL LETTER SIGMA codepoint, has Final_Sigma conditional mapping.
@@ -1256,7 +1256,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         for (uint i = 0; i < count; i++) {
             TVal elem;
             elem.set_string_borrowed(ctx.heap.str_from_unit(s_hstr.unit_at(i)));
-            arr.put_prop(ctx.heap.int_to_hstring((long)i), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
+            array_fill_elem(ctx.heap, arr, i, elem);
         }
         ctx.result_object(arr);
         return;
@@ -1275,7 +1275,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
 
         TVal elem;
         elem.set_string_borrowed(substr);
-        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
+        array_fill_elem(ctx.heap, arr, arr_idx, elem);
         arr_idx++;
 
         search_pos = (uint)(found_pos + (int)sep_len);
@@ -1286,7 +1286,7 @@ fn void builtin_string_proto_split(BuiltinContext* ctx) {
         HString* substr = ctx.heap.str_slice(s_hstr, search_pos, len);
         TVal elem;
         elem.set_string_borrowed(substr);
-        arr.put_prop(ctx.heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
+        array_fill_elem(ctx.heap, arr, arr_idx, elem);
         arr_idx++;
     }
 
@@ -1307,7 +1307,7 @@ fn void builtin_string_proto_concat(BuiltinContext* ctx) {
         return;
     }
 
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     out.append_hstring(s_hstr);
@@ -1324,7 +1324,7 @@ fn void builtin_string_proto_concat(BuiltinContext* ctx) {
 // Append GetSubstitution(`rep`) to `out` for the match
 // input[match_start..match_end) of a string search value. That match has no
 // captures, so only `$$`, `$&`, `` $` `` and `$'` are special.
-fn void string_get_substitution(StrBuf* out, HString* rep, HString* input,
+fn void string_get_substitution(UnitBuf* out, HString* rep, HString* input,
                                 uint match_start, uint match_end) {
     uint n = rep.unit_len();
     uint i = 0;
@@ -1448,7 +1448,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
         return;
     }
 
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     uint match_end = (uint)found_pos + search_hstr.unit_len();
@@ -1644,7 +1644,7 @@ fn void builtin_string_proto_replaceAll(BuiltinContext* ctx) {
     // Steps 8-11: find all match positions via a StringIndexOf loop, matching
     // left-to-right, non-overlapping, advancing by advanceBy on every step
     // (including empty-string matches).
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     uint pos = 0;
@@ -1854,7 +1854,7 @@ fn void builtin_string_proto_repeat(BuiltinContext* ctx) {
     }
     ulong count64 = (ulong)count_d;
 
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     for (ulong i = 0; i < count64 && !out.failed; i++) out.append_hstring(s_hstr);
@@ -1975,7 +1975,7 @@ macro void @string_pad(BuiltinContext* ctx, $at_start) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
         return;
     }
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     if (!$at_start) out.append_hstring(s_hstr);
@@ -2438,7 +2438,7 @@ fn void builtin_string_proto_toWellFormed(BuiltinContext* ctx) {
         ctx.result_string(s_hstr);
         return;
     }
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     uint len = s_hstr.unit_len();

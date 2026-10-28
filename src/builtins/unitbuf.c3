@@ -61,6 +61,21 @@ fn void UnitBuf.clear(&self) {
     self.failed = false;
 }
 
+// Drop the units from `len` on, keeping the first `len`. The buffer narrows
+// again when no unit that remains needs two bytes, so its width stays canonical.
+fn void UnitBuf.truncate(&self, usz len) {
+    if (len >= self.len) return;
+    self.len = len;
+    if (!self.wide) return;
+    ushort* units = (ushort*)self.data;
+    for (usz i = 0; i < len; i++) {
+        if (units[i] > 0xFF) return;
+    }
+    char* narrow = self.data;
+    for (usz i = 0; i < len; i++) narrow[i] = (char)units[i];
+    self.wide = false;
+}
+
 fn usz UnitBuf.cap(&self) @inline => self.cap_bytes >> (self.wide ? 1 : 0);
 
 // The units appended so far, valid until the next append.
