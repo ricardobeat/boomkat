@@ -1847,3 +1847,46 @@ pointers and clears intrinsic pointers during heap reset. Realm records live
 until heap teardown; exported functions and objects retain their globals after
 the embedding context closes. BigInt wrappers carry an internal class brand,
 so unboxing works across realms and after prototype mutation.
+
+
+### Bundled SLJIT binding audit
+
+The bindings intentionally expose a subset of the bundled `sljitLir.h`.
+`python3 scripts/check_sljit_bindings.py` compile-checks numeric constants and
+bound C API return/argument widths against that header on the host ABI. This checks widths and arity, not signedness, opaque-pointer identity or
+cross-target calling conventions. Handles stay opaque;
+inline C accessors use the existing shim. The engine currently admits this JIT
+only for 64-bit NaN-boxed values; word operands in these bindings assume that
+configuration. Status returns are C3 `int`, matching `sljit_s32`.
+
+Capabilities already exposed include shared-register calls (`ENTER_REG_ARG`,
+`CALL_REG_ARG`, `KEEP`), separately emitted context fragments (`set_context`),
+rewritable calls/jumps, executable offsets, and return-to-address. They still
+require the engine's own frame, root, exception and code-retirement contracts.
+
+Useful gaps, ranked by direct relevance to generated code:
+
+| Capability in bundled header | Current binding coverage | Candidate use and constraint |
+| --- | --- | --- |
+| `emit_op_flags`, arithmetic flag setters | Zero flag and condition materialization exposed; other setters absent | Boolean comparisons without branches; overflow/carry checks for typed arithmetic. Flags are invalidated by calls and many operations. |
+| `MEM2`, register-pair operand encoding | General operand APIs exist; named constructors absent | Fold base + scaled index into array loads/stores. Index shifts are limited to 0..3; preserve bounds and alias guards. No new C API is needed for MEM2. |
+| `emit_select`, `emit_fselect`, `cmp_info` | Absent | Select values and some min/max idioms without branch diamonds. Memory operands may be loaded even when not selected; never use this to speculatively read observable or unsafe memory. JS NaN and signed-zero rules still apply. |
+| `emit_op2u`, `emit_op2cmpz` | Absent | Flag-only compares and arithmetic-plus-zero branches, reducing temporary results and counter instructions. Benefit is architecture dependent. |
+| Masked shifts, rotates, CLZ/CTZ and byte reversal opcodes | General op APIs exist; opcode constants absent | Crypto, generated integer workloads, typed-array kernels. JS shifts require 32-bit masking; CTZ/CLZ and rotations need explicit JS-compatible semantics. |
+| `emit_op2_shift` | Absent | Add a scaled index directly when an explicit address is required, rather than a memory operand. |
+| `emit_const`, `set_const`, const-address accessor | Absent | Patch shape/slot constants in code. Requires invalidation, executable-memory handling and tracking every embedded reference; it does not supply IC ownership or safe retirement. |
+| `has_cpu_feature`, platform name, register counts and indices | Only two integer register counts exposed through shim | Select native versus emulated operations, validate FP/vector register budgets and make diagnostics portable. Feature result 2 can mean partial/emulated support; inspect each feature's contract. |
+| `emit_mem`, `emit_fmem`, update forms | Absent | Paired transfers, explicit unaligned accesses and supported pre/post-increment addressing. Update forms can return unsupported; probe before emission and retain a fallback. |
+| `emit_fset32/64`, `emit_fop2r` / copysign | Absent | Floating constants and numeric builtins with fewer integer-register transfers. Copysign must preserve JS edge cases. This revision has no portable sqrt opcode; the existing architecture-specific shim remains necessary. |
+| `emit_op2r` / integer multiply-add, shift-into | Absent | Integer address/math and multiword kernels. Integer multiply-add is distinct from floating FMA; do not change JS rounding by fusing FP operations. |
+| `FAST_CALL`, `FAST_ENTER`, `FAST_RETURN`, `CALL_RETURN` | Ordinary shared calls exposed; these forms absent | Shared-context leaf stubs or tail transfers. Return-address ownership and interpreter-visible tail-call behavior require design first. |
+| Aligned labels and read-only buffers | Absent | Constant pools, jump tables and shared miss-path data. Extra alignment may increase code size; buffers have a separate writable-access contract. |
+| SIMD and atomic emission | Absent | Proven typed-array/string kernels or future shared-memory support. Requires feature probing, vector register allocation and alias/bounds analysis; not a general JS auto-vectorizer. |
+| Custom emission and current-flags metadata | Custom instructions used inside sqrt shim only | Architecture-specific instructions when portable forms are unavailable. The emitter must report flag effects accurately. |
+| Compiler serialization/deserialization | Absent | Possible future persistent compilation artifacts. Relocations, runtime pointers, versioning and speculative dependencies remain engine responsibilities. Low immediate priority. |
+| Verbose assembly output, compiler errors, local-base and jump metadata queries | Mostly absent | Debug code generation and inspect frame/patch layouts. Diagnostics can be added without making them part of execution policy. |
+
+The next binding additions should accompany measured consumers. Prefer portable
+operand forms and existing SLJIT operations before architecture-specific custom
+instructions. Keep patching and retirement policy in the engine, separate from
+these mechanical bindings.

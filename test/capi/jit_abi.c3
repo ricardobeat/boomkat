@@ -107,6 +107,7 @@ fn AbiCode abi_entry(void* callee) {
 }
 
 fn void check_native_convention() {
+    check_condition_values();
     AbiCode leaf       = abi_leaf(3);
     AbiCode other_leaf = abi_leaf(13);
     defer jit::sljit_free_code(leaf.code, null);
@@ -133,4 +134,24 @@ fn void check_native_convention() {
     jit::sljit_set_jump_addr(entry.patch, (usz)other_callee.code, entry.executable_offset);
     @check(run(&context, 5) == 159 && context.calls == 1001);
     @check(run(&context, -1) == 219 && context.calls == 1001);
+}
+alias AbiCompare = fn long(long left, long right);
+
+fn void check_condition_values() {
+    void* compiler = jit::sljit_create_compiler(null);
+    @check(compiler != null);
+    defer jit::sljit_free_compiler(compiler);
+    @check(jit::sljit_emit_enter(compiler, 0, jit::SLJIT_ARGS2WWW_R, 2, 0, 0) == 0);
+    int r0 = jit::reg_r(0);
+    int r1 = jit::reg_r(1);
+    @check(jit::sljit_emit_op2(compiler, jit::SLJIT_SUB | jit::SLJIT_SET_Z, r0, 0, r0, 0, r1, 0) == 0);
+    @check(jit::sljit_emit_op_flags(compiler, jit::SLJIT_MOV, r0, 0, jit::SLJIT_EQUAL) == 0);
+    @check(jit::sljit_emit_return(compiler, jit::SLJIT_MOV, r0, 0) == 0);
+    AbiCode generated = abi_generate(compiler);
+    defer jit::sljit_free_code(generated.code, null);
+    AbiCompare compare = (AbiCompare)generated.code;
+    @check(compare(0, 0) == 1);
+    @check(compare(-1, -1) == 1);
+    @check(compare(-1, 1) == 0);
+    @check(compare(long::min, long::max) == 0);
 }
