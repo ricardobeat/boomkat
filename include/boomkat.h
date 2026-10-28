@@ -414,6 +414,18 @@ BK_API bk_value  bk_promise_resolve(bk_ctx ctx, bk_value value);   /* Promise.re
 /* Promise.prototype.then; a reaction of 0 means none. */
 BK_API bk_value  bk_promise_then(bk_ctx ctx, bk_value promise, bk_value on_fulfilled, bk_value on_rejected);
 
+/* Event loop integration. The hook runs on the engine thread when a job is
+ * enqueued into an empty queue; it must not run JS, and schedules a
+ * bk_run_jobs checkpoint instead. */
+typedef void (*bk_job_hook)(bk_runtime runtime, void *opaque);
+BK_API void bk_set_job_hook(bk_runtime runtime, bk_job_hook hook, void *opaque);
+/* Block until bk_wake, an Atomics.waitAsync settlement or deadline, an
+ * interrupt request, or the timeout: 0 polls, a negative timeout waits
+ * indefinitely. Returns 1 for an event, 0 on timeout. Engine thread only. */
+BK_API int  bk_wait_events(bk_runtime runtime, double timeout_ms);
+/* Any thread, while the runtime lives. Latched until the next wait returns. */
+BK_API void bk_wake(bk_runtime runtime);
+
 /* Traced slots: storage for one JS value inside host memory. A slot holds a
  * reference without being a root; it stays valid only while something traces
  * it, the owning instance's `trace` callback or the root tracer. That lets a

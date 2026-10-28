@@ -363,6 +363,25 @@ bk_call(app, resolve, BK_UNDEFINED, &result, 1);
 bk_run_jobs(bk_get_runtime(app));
 ```
 
+### Event loops
+
+`bk_set_job_hook` reports the job queue turning non-empty, so a host loop can
+schedule a `bk_run_jobs` checkpoint instead of polling; the hook must not run
+JS. `bk_wait_events` sleeps the engine thread until `bk_wake` is called from
+any thread, an `Atomics.waitAsync` wait settles or times out, an interrupt is
+requested, or the timeout passes (0 polls, a negative value waits
+indefinitely). A wake before the wait is latched, so none is lost. `bk_run_jobs`
+settles finished `Atomics.waitAsync` waits before draining.
+
+```c
+for (;;) {
+    bk_run_jobs(rt);
+    if (!bk_wait_events(rt, next_timer_ms()))
+        run_timers();
+    drain_host_queue();   /* filled by threads that call bk_wake */
+}
+```
+
 ### Host classes
 
 `bk_define_class` creates a class whose instances carry a native payload: a

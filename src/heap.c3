@@ -1353,7 +1353,13 @@ struct Heap {
     AgentPollFn    agent_poll_fn;
     // AgentCanSuspend(): when set, Atomics.wait throws instead of blocking.
     bool           agent_no_block;
+    // Host hook for the job queue turning non-empty: fn(runtime, opaque).
+    JobHookFn      job_hook;
+    void*          job_hook_runtime;
+    void*          job_hook_opaque;
 }
+
+alias JobHookFn = fn void(void* runtime, void* opaque);
 
 // ============================================================================
 // Built-in string cache, pre-interned at heap creation
@@ -1749,6 +1755,9 @@ fn Heap*? create(
     h.async_waiter_count = 0;
     h.async_waiter_capacity = 0;
     h.agent_port = null;
+    h.job_hook = null;
+    h.job_hook_runtime = null;
+    h.job_hook_opaque = null;
     h.agent_poll_fn = null;
     h.agent_no_block = false;
 
@@ -5917,7 +5926,9 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     self.tval_copy_ref(&self.microtask_queue[idx], &handler);
     self.tval_copy_ref(&self.microtask_queue[idx + 1], &arg);
     self.tval_copy_ref(&self.microtask_queue[idx + 2], &downstream);
+    bool was_empty = self.microtask_count == self.microtask_head;
     self.microtask_count++;
+    if (was_empty && self.job_hook != null) self.job_hook(self.job_hook_runtime, self.job_hook_opaque);
 }
 
 // Release the three references that queue slot `job` owns.

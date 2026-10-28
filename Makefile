@@ -468,6 +468,14 @@ out/promises_api: test/capi/promises.c include/boomkat.h out/boomkat.a
 test-promises-api: out/promises_api
 	./out/promises_api
 
+out/event_loop_api: test/capi/event_loop.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -Wall -Wextra -pedantic -Iinclude test/capi/event_loop.c \
+	   out/boomkat.a $(BK_LDLIBS) -lpthread -o out/event_loop_api
+
+.PHONY: test-event-loop-api
+test-event-loop-api: out/event_loop_api
+	./out/event_loop_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model
