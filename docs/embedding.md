@@ -100,6 +100,37 @@ leaves the size it needs in `*length`, so a caller sizes a buffer in two calls
 with a `NULL` buffer first. UTF-8 lengths are in bytes and exclude the NUL;
 UTF-16 lengths count code units. `bk_string_length` returns the UTF-16 length.
 
+### Views and external strings
+
+The engine stores a string one byte per unit (Latin-1) when every unit is at
+most U+00FF and two bytes per unit (native-endian UTF-16) otherwise; the width
+is determined by the content, never by how the string was made.
+`bk_string_view_get` exposes the stored units without a copy:
+
+```c
+bk_string_view view;
+if (bk_string_view_get(app, value, &view) == BK_OK) {
+    if (view.width == 1) use_latin1((const uint8_t *)view.data, view.length);
+    else                 use_utf16((const uint16_t *)view.data, view.length);
+}
+```
+
+`length` counts units, the data has no terminator, and `ascii` is nonzero when
+`width` is 1 and every byte is below 0x80, so such a view is also valid UTF-8.
+A view is valid only until the next call into the engine: a collection may free
+the string once the host drops its handle, and any call can run one. Copy the
+units or finish with the view before calling again.
+
+`bk_new_external_string_latin1` and `bk_new_external_string_utf16` build a
+string over host memory with no copy. The buffer must stay unchanged until the
+`bk_string_release` callback runs, once, with the buffer and its length in units
+when the string is freed. That is after the last handle and script reference
+are gone, or when the runtime is destroyed, so the callback may run after the
+context is gone. `release` may be `NULL` for static data. An empty buffer, or a
+UTF-16 buffer whose units are all at most U+00FF, is copied and released before
+the call returns. If the call fails it returns `BK_EXCEPTION` and `release` is
+not called. A view of an external string points at the host buffer itself.
+
 ## Evaluation and jobs
 
 ```c

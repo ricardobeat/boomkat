@@ -720,6 +720,14 @@ width. `write_utf8` and `utf8_len` produce standard UTF-8 for host output and
 the C API. Compiler and module metadata that must outlive a string keep owned
 canonical CESU-8 copies (`canonical_cesu8`), so equal names compare as bytes.
 
+An **external** string (`has_extdata`) keeps a pointer, a release callback and
+an opaque value after its header in place of the units, so the C API can wrap
+host memory with no copy. It has the same canonical width and is read through
+`data_ptr()`, but it is never flagged ASCII (its buffer has no terminator, which
+the in-place text paths rely on), never enters the intern table (interning
+makes a copy), and stays out of the concat cache so the host buffer is released
+as soon as the last reference goes. `Heap.free_string` calls the callback once.
+
 RegExp matching runs on the string's own width without transcoding: libregexp
 receives 8-bit or 16-bit input directly, every offset is a unit offset, and
 only the pattern is compiled from CESU-8 text.

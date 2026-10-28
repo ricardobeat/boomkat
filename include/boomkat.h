@@ -144,6 +144,19 @@ BK_API bk_status bk_read_string_utf16(bk_ctx ctx, bk_value value, uint16_t *buff
                                       size_t capacity, size_t *length);
 /* Length in UTF-16 code units; 0 when value is not a string. */
 BK_API size_t bk_string_length(bk_ctx ctx, bk_value value);
+
+/* The units of a string where they are stored. width 1 is Latin-1, one byte per
+ * unit; width 2 is native-endian UTF-16. A string whose units are all at most
+ * 0xFF always has width 1. ascii is nonzero when width is 1 and every unit is
+ * below 0x80. The data is not NUL-terminated and is valid only until the next
+ * call into the engine, which may collect or move the string. */
+typedef struct bk_string_view {
+    const void *data;
+    size_t length; /* units */
+    uint8_t width;
+    uint8_t ascii;
+} bk_string_view;
+BK_API bk_status bk_string_view_get(bk_ctx ctx, bk_value value, bk_string_view *out);
 BK_API double bk_to_number(bk_ctx ctx, bk_value value);
 BK_API int bk_to_bool(bk_ctx ctx, bk_value value);
 BK_API bk_value bk_to_string(bk_ctx ctx, bk_value value);
@@ -164,6 +177,19 @@ BK_API bk_value bk_new_string(bk_ctx ctx, const char *utf8, size_t length);
 BK_API bk_value bk_new_string_latin1(bk_ctx ctx, const uint8_t *chars, size_t length);
 /* Lone surrogates are kept as given. */
 BK_API bk_value bk_new_string_utf16(bk_ctx ctx, const uint16_t *units, size_t length);
+/* Called once when an external string is freed, with the buffer it was created
+ * over and its length in units. */
+typedef void (*bk_string_release)(void *opaque, const void *data, size_t length);
+/* A string over caller memory, read in place with no copy. The buffer must stay
+ * unchanged until release runs, which may be after the context is destroyed;
+ * release may be NULL for a buffer that never goes away. A UTF-16 buffer whose
+ * units are all at most 0xFF, and an empty buffer, are copied and released
+ * before the call returns. On failure returns BK_EXCEPTION and release is not
+ * called. */
+BK_API bk_value bk_new_external_string_latin1(bk_ctx ctx, const uint8_t *chars, size_t length,
+                                              bk_string_release release, void *opaque);
+BK_API bk_value bk_new_external_string_utf16(bk_ctx ctx, const uint16_t *units, size_t length,
+                                             bk_string_release release, void *opaque);
 BK_API bk_value bk_new_object(bk_ctx ctx);
 BK_API bk_value bk_new_array(bk_ctx ctx);
 BK_API bk_value bk_new_array_from(bk_ctx ctx, const bk_value *elements, unsigned count);

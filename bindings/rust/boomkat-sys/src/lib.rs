@@ -59,6 +59,22 @@ pub const BK_CTOR: c_uint = 1;
 /// The handle value that is never valid.
 pub const BK_EXCEPTION: bk_value = 0;
 
+/// A string's units in place: width 1 is Latin-1, width 2 native UTF-16.
+/// `ascii` is nonzero when width is 1 and every unit is below 0x80. Valid only
+/// until the next call into the engine.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct bk_string_view {
+    pub data: *const c_void,
+    pub length: usize,
+    pub width: u8,
+    pub ascii: u8,
+}
+
+/// Called once when an external string is freed, with its buffer and length in units.
+pub type bk_string_release =
+    unsafe extern "C" fn(opaque: *mut c_void, data: *const c_void, length: usize);
+
 // Status codes. 0 is success; all errors are negative.
 pub const BK_OK: c_int = 0;
 /// Allocation failed.
@@ -189,6 +205,7 @@ extern "C" {
         length: *mut usize,
     ) -> c_int;
     pub fn bk_string_length(ctx: bk_ctx, value: bk_value) -> usize;
+    pub fn bk_string_view_get(ctx: bk_ctx, value: bk_value, out: *mut bk_string_view) -> c_int;
     pub fn bk_to_number(ctx: bk_ctx, value: bk_value) -> c_double;
     pub fn bk_to_bool(ctx: bk_ctx, value: bk_value) -> c_int;
     pub fn bk_to_string(ctx: bk_ctx, value: bk_value) -> bk_value;
@@ -201,6 +218,20 @@ extern "C" {
     pub fn bk_new_string(ctx: bk_ctx, utf8: *const c_char, length: usize) -> bk_value;
     pub fn bk_new_string_latin1(ctx: bk_ctx, chars: *const u8, length: usize) -> bk_value;
     pub fn bk_new_string_utf16(ctx: bk_ctx, units: *const u16, length: usize) -> bk_value;
+    pub fn bk_new_external_string_latin1(
+        ctx: bk_ctx,
+        chars: *const u8,
+        length: usize,
+        release: Option<bk_string_release>,
+        opaque: *mut c_void,
+    ) -> bk_value;
+    pub fn bk_new_external_string_utf16(
+        ctx: bk_ctx,
+        units: *const u16,
+        length: usize,
+        release: Option<bk_string_release>,
+        opaque: *mut c_void,
+    ) -> bk_value;
     pub fn bk_new_object(ctx: bk_ctx) -> bk_value;
     pub fn bk_new_array(ctx: bk_ctx) -> bk_value;
     pub fn bk_new_array_from(ctx: bk_ctx, elements: *const bk_value, count: c_uint) -> bk_value;

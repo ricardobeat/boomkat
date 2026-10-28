@@ -388,6 +388,30 @@ fn usz bk_string_length(void* ctxp, ulong id) @export("bk_string_length") {
     return hs == null ? 0 : hs.unit_len();
 }
 
+// Mirrors bk_string_view in boomkat.h.
+struct StringView {
+    void* data;
+    usz   length;
+    char  width;
+    char  ascii;
+}
+
+// The units of the string in place: Latin-1 bytes at width 1, native-endian
+// UTF-16 at width 2. The view lasts until the next call into the engine.
+fn int bk_string_view_get(void* ctxp, ulong id, StringView* out) @export("bk_string_view_get") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    HString* hs = string_of(rt, ctxp, id);
+    if (hs == null) return rt.errcode;
+    if (out == null) return fail(rt, BK_ERR_INVALID, "no view to fill");
+    bool wide = hs.is_wide();
+    out.data = hs.data_ptr();
+    out.length = hs.unit_len();
+    out.width = wide ? 2 : 1;
+    // An external string is not flagged, as its buffer has no terminator.
+    out.ascii = !wide && (hs.is_ascii() || (hs.has_extdata() && hstring::check_is_ascii(hs.latin1()))) ? 1 : 0;
+    return BK_OK;
+}
 
 // ============================================================================
 // Coercion tier
@@ -544,6 +568,26 @@ fn ulong bk_new_string_utf16(void* ctxp, ushort* units, usz len) @export("bk_new
     if (rt == null || (units == null && len != 0)) return 0;
     embed::clear_err(rt);
     return store_string(rt, embed::string_from_utf16(rt, units[:len]));
+}
+
+fn ulong bk_new_external_string_latin1(void* ctxp, char* chars, usz len, hstring::ExtRelease release,
+        void* opaque) @export("bk_new_external_string_latin1") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || (chars == null && len != 0)) return 0;
+    embed::clear_err(rt);
+    if (hstring::length_exceeds_max((ulong)len)) { embed::set_err(rt, BK_ERR_NOMEM, "string too long"); return 0; }
+    hstring::Units data = { .ptr = chars, .len = (uint)len, .wide = false };
+    return store_string(rt, embed::string_external(rt, data, release, opaque));
+}
+
+fn ulong bk_new_external_string_utf16(void* ctxp, ushort* units, usz len, hstring::ExtRelease release,
+        void* opaque) @export("bk_new_external_string_utf16") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || (units == null && len != 0)) return 0;
+    embed::clear_err(rt);
+    if (hstring::length_exceeds_max((ulong)len)) { embed::set_err(rt, BK_ERR_NOMEM, "string too long"); return 0; }
+    hstring::Units data = { .ptr = (char*)units, .len = (uint)len, .wide = true };
+    return store_string(rt, embed::string_external(rt, data, release, opaque));
 }
 
 fn ulong bk_new_object(void* ctxp) @export("bk_new_object") {

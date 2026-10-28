@@ -128,6 +128,10 @@ const usz HSTRING_HDR_SIZE = HString::size;
 // above 0xFF, so equal contents always have the same width and the same bytes.
 // A NUL terminator, one byte narrow and two wide, follows the last unit.
 //
+// An external string (`has_extdata`) keeps an `ExtData` record after the header
+// instead of units. It points at a host buffer that is neither copied nor
+// NUL-terminated, and is never ASCII-flagged, so no in-place text path sees it.
+//
 // Strings are immutable once they can be observed. The one exception is a
 // non-interned concatenation accumulator that is provably referenced by a
 // single VM register: `try_append_in_place` extends it in the spare bytes
@@ -179,9 +183,25 @@ fn uint Units.at(&self, uint i) @inline {
     return self.wide ? (uint)((ushort*)self.ptr)[i] : (uint)self.ptr[i];
 }
 
-// Where the units start: inline after the header.
+// Called when an external string is freed. `length` counts units.
+alias ExtRelease = fn void(void* udata, void* data, usz length);
+
+// The record an external string keeps after its header.
+struct ExtData {
+    char*      data;
+    // Null for a buffer that outlives the heap.
+    ExtRelease release;
+    void*      udata;
+}
+
+const usz EXT_DATA_SIZE = ExtData::size;
+
+fn ExtData* HString.ext(&self) @inline => (ExtData*)((usz)self + HSTRING_HDR_SIZE);
+
+// Where the units start: inline after the header, or in the host buffer of an
+// external string.
 macro char* HString.data_ptr(&self) {
-    return (char*)((usz)self + HSTRING_HDR_SIZE);
+    return self.flags.has_extdata ? self.ext().data : (char*)((usz)self + HSTRING_HDR_SIZE);
 }
 
 fn Units HString.units(&self) @inline {
@@ -190,8 +210,10 @@ fn Units HString.units(&self) @inline {
 
 fn bool HString.is_wide(&self) @inline => self.flags.is_wide;
 
-// Bytes of the whole allocation: header, capacity and terminator.
+// Bytes of the whole allocation: header, capacity and terminator, or header and
+// record for an external string.
 fn usz HString.alloc_size(&self) @inline {
+    if (self.flags.has_extdata) return HSTRING_HDR_SIZE + EXT_DATA_SIZE;
     return HSTRING_HDR_SIZE + (usz)self.capacity + (self.flags.is_wide ? 2u : 1u);
 }
 
@@ -366,6 +388,42 @@ fn HString*? hstring_alloc_storage(void* heap_ptr, uint len, bool wide, uint has
     s.data_ptr()[s.byte_len()] = 0;
     if (wide) s.data_ptr()[s.byte_len() + 1] = 0;
     return s;
+}
+
+// Allocate an external string over `data`, which must be in canonical width and
+// is neither copied nor terminated. The buffer stays untouched until `release`
+// runs when the string is freed; a null `release` means it never needs one.
+// The string is not interned and not registered.
+//
+// Returns the new HString, or a fault if allocation fails.
+fn HString*? hstring_alloc_external(void* heap_ptr, Units data, ExtRelease release, void* udata) {
+    if (length_exceeds_max((ulong)data.len)) return boomkat::types::ALLOC_ERROR~;
+    usz total = HSTRING_HDR_SIZE + EXT_DATA_SIZE;
+    void* raw = ((heap::Heap*)heap_ptr).alloc_no_gc(total) ?? null;
+    if (raw == null) return boomkat::types::ALLOC_ERROR~;
+    gcprofile::gcprof_string_alloc(total);
+    mem::clear(raw, (sz)total);
+    HString* s = (HString*)raw;
+    s.flags.htype = HType.STRING;
+    s.flags.is_wide = data.wide;
+    s.flags.has_extdata = true;
+    s.hash = HASH_DEFERRED;
+    s.length = data.len;
+    ExtData* ext = s.ext();
+    ext.data = data.ptr;
+    ext.release = release;
+    ext.udata = udata;
+    if (!data.wide) {
+        uint index;
+        s.flags.is_arridx = is_valid_array_index(s.latin1(), &index);
+    }
+    return s;
+}
+
+// Hand the host buffer back. Runs once, as the string is freed.
+fn void HString.release_external(&self) {
+    ExtData* ext = self.ext();
+    if (ext.release != null) ext.release(ext.udata, ext.data, self.length);
 }
 
 fn void HString.finish_data(&self) {
@@ -866,6 +924,16 @@ fn uint estimate_text_units(char[] text, bool* above_latin1) {
     }
     *above_latin1 = high != 0;
     return units;
+}
+
+// True when some unit of `data` exceeds 0xFF, so that a wide run is already in
+// canonical width.
+fn bool has_unit_above_latin1(Units data) {
+    if (!data.wide) return false;
+    foreach (u : ((ushort*)data.ptr)[:data.len]) {
+        if (u > 0xFF) return true;
+    }
+    return false;
 }
 
 // Bytes the code unit `u` takes in UTF-8 form.

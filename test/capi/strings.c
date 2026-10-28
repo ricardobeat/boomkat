@@ -53,6 +53,143 @@ static int equals(bk_value v, const char *src) {
     return ok;
 }
 
+
+static int is_wide_pattern(const bk_string_view *view, const uint16_t *want, size_t n) {
+    return view->width == 2 && view->length == n && memcmp(view->data, want, n * sizeof *want) == 0;
+}
+
+/* Strings expose their stored units: Latin-1 bytes when every unit is at most
+ * 0xFF, native UTF-16 otherwise. */
+static void string_views(void) {
+    bk_string_view view;
+
+    bk_value ascii = bk_new_string(ctx, "hello", 5);
+    assert(bk_string_view_get(ctx, ascii, &view) == BK_OK);
+    assert(view.width == 1 && view.ascii && view.length == 5 && memcmp(view.data, "hello", 5) == 0);
+
+    bk_value latin = bk_new_string(ctx, "caf\xC3\xA9", 5);
+    assert(bk_string_view_get(ctx, latin, &view) == BK_OK);
+    assert(view.width == 1 && !view.ascii && view.length == 4);
+    assert(memcmp(view.data, "caf\xE9", 4) == 0);
+
+    const uint16_t wide[] = { 'a', 0x20AC, 0xD800 };
+    bk_value w = bk_new_string_utf16(ctx, wide, 3);
+    assert(bk_string_view_get(ctx, w, &view) == BK_OK);
+    assert(is_wide_pattern(&view, wide, 3) && !view.ascii);
+
+    /* A UTF-16 buffer of Latin-1 units is stored narrow. */
+    const uint16_t narrow[] = { 'a', 0xE9 };
+    bk_value n = bk_new_string_utf16(ctx, narrow, 2);
+    assert(bk_string_view_get(ctx, n, &view) == BK_OK);
+    assert(view.width == 1 && !view.ascii && view.length == 2);
+
+    bk_value empty = bk_new_string(ctx, "", 0);
+    assert(bk_string_view_get(ctx, empty, &view) == BK_OK && view.length == 0 && view.width == 1);
+
+    bk_value number = bk_new_number(ctx, 1);
+    assert(bk_string_view_get(ctx, number, &view) == BK_ERR_TYPE);
+    assert(bk_string_view_get(ctx, ascii, NULL) == BK_ERR_INVALID);
+
+    /* A view taken before a collection is gone; a fresh one reads the same units. */
+    bk_value junk = eval("(function () { var s = 0; for (var i = 0; i < 20000; i++) s += ('x' + i + '\\u20ac').length; return s; })()");
+    bk_free_value(ctx, junk);
+    assert(bk_string_view_get(ctx, w, &view) == BK_OK && is_wide_pattern(&view, wide, 3));
+
+    bk_free_value(ctx, number);
+    bk_free_value(ctx, empty);
+    bk_free_value(ctx, n);
+    bk_free_value(ctx, w);
+    bk_free_value(ctx, latin);
+    bk_free_value(ctx, ascii);
+}
+
+static int releases;
+static const void *released_data;
+static size_t released_length;
+static void *released_opaque;
+
+static void on_release(void *opaque, const void *data, size_t length) {
+    releases++;
+    released_opaque = opaque;
+    released_data = data;
+    released_length = length;
+}
+
+static void collect(void) {
+    bk_value r = eval("(function () { for (var i = 0; i < 200000; i++) { var s = 'g' + i; } return 0; })()");
+    bk_free_value(ctx, r);
+}
+
+/* External strings are read in place and released exactly once, when the
+ * string is freed. */
+static void external_strings(void) {
+    static const uint8_t latin1[] = { 'c', 'a', 'f', 0xE9, '!' };
+    static uint16_t wide[] = { 0x20AC, 'x', 0xD83D, 0xDE00 };
+    static int marker;
+    bk_string_view view;
+    releases = 0;
+
+    bk_value a = bk_new_external_string_latin1(ctx, latin1, 5, on_release, &marker);
+    assert(a);
+    assert(bk_string_view_get(ctx, a, &view) == BK_OK);
+    assert(view.data == latin1 && view.width == 1 && view.length == 5 && !view.ascii);
+    assert(equals(a, "'caf\\u00e9!'"));
+    assert(releases == 0);
+
+    bk_value b = bk_new_external_string_utf16(ctx, wide, 4, on_release, &marker);
+    assert(b);
+    assert(bk_string_view_get(ctx, b, &view) == BK_OK && view.data == wide && view.width == 2);
+    assert(equals(b, "'\\u20acx\\ud83d\\ude00'"));
+    expect_units(b, wide, 4);
+
+    /* Used as a key, concatenated and sliced, the string behaves like any other. */
+    bk_value keyed = eval("(function (s) { var o = {}; o[s] = 1; return (s + 'y').length === s.length + 1 && s.slice(1) === 'x\\ud83d\\ude00' && ('\\u20acx\\ud83d\\ude00' in o); })");
+    bk_value r = bk_call(ctx, keyed, 0, &b, 1);
+    int ok = 0;
+    assert(r && bk_read_bool(ctx, r, &ok) == BK_OK && ok);
+    bk_free_value(ctx, r);
+    bk_free_value(ctx, keyed);
+
+    bk_free_value(ctx, a);
+    bk_free_value(ctx, b);
+    collect();
+    assert(releases == 2);
+
+    /* Content with no external form is copied and released at once. */
+    releases = 0;
+    static const uint16_t narrow[] = { 'a', 0xE9 };
+    bk_value c = bk_new_external_string_utf16(ctx, narrow, 2, on_release, &marker);
+    assert(c && releases == 1 && released_data == narrow && released_length == 2 && released_opaque == &marker);
+    assert(bk_string_view_get(ctx, c, &view) == BK_OK && view.data != narrow && view.width == 1);
+    bk_value e = bk_new_external_string_latin1(ctx, latin1, 0, on_release, &marker);
+    assert(e && releases == 2);
+    assert(bk_string_length(ctx, e) == 0);
+    bk_free_value(ctx, c);
+    bk_free_value(ctx, e);
+
+    /* A NULL release is allowed. */
+    bk_value f = bk_new_external_string_latin1(ctx, latin1, 5, NULL, NULL);
+    assert(f && bk_string_length(ctx, f) == 5);
+    bk_free_value(ctx, f);
+
+    assert(bk_new_external_string_latin1(ctx, NULL, 3, on_release, &marker) == BK_EXCEPTION);
+    assert(releases == 2);
+
+}
+
+/* A string still alive when its runtime goes away is released with it. */
+static void external_string_outlives_runtime(void) {
+    static uint16_t wide[] = { 0x20AC, 'x' };
+    static int marker;
+    releases = 0;
+    bk_ctx own = bk_create();
+    assert(own);
+    bk_value g = bk_new_external_string_utf16(own, wide, 2, on_release, &marker);
+    assert(g && releases == 0);
+    bk_destroy(own);
+    assert(releases == 1 && released_data == wide && released_length == 2);
+}
+
 int main(void) {
     ctx = bk_new_context(bk_new_runtime());
     assert(ctx);
@@ -158,6 +295,10 @@ int main(void) {
         bk_free_value(ctx, s);
         bk_free_value(ctx, n);
     }
+
+    string_views();
+    external_strings();
+    external_string_outlives_runtime();
 
     bk_free_context(ctx);
     puts("strings: PASS");

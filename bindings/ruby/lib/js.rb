@@ -194,6 +194,7 @@ module JS
       'int bk_read_string_utf8(void*, unsigned long long, int, char*, size_t, size_t*)',
       'int bk_read_string_utf16(void*, unsigned long long, void*, size_t, size_t*)',
       'size_t bk_string_length(void*, unsigned long long)',
+      'int bk_string_view_get(void*, unsigned long long, void*)',
       'const char* bk_get_error_message(void*)',
       'int bk_get_error_code(void*)',
       'int bk_run_jobs(void*)',
@@ -216,7 +217,9 @@ module JS
       'unsigned long long bk_new_bool(void*, int)',
       'unsigned long long bk_new_string(void*, const char*, size_t)',
       'unsigned long long bk_new_string_latin1(void*, const char*, size_t)',
-      'unsigned long long bk_new_string_utf16(void*, const void*, size_t)'
+      'unsigned long long bk_new_string_utf16(void*, const void*, size_t)',
+      'unsigned long long bk_new_external_string_latin1(void*, const void*, size_t, void*, void*)',
+      'unsigned long long bk_new_external_string_utf16(void*, const void*, size_t, void*, void*)'
     ].freeze
 
     class << self

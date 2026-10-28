@@ -137,6 +137,18 @@ _HOST_FN = ctypes.CFUNCTYPE(ctypes.c_uint64, ctypes.c_void_p, ctypes.c_uint64,
                             ctypes.c_uint, ctypes.POINTER(ctypes.c_uint64), ctypes.c_void_p)
 
 
+class _StringView(ctypes.Structure):
+    """bk_string_view: width 1 is Latin-1, width 2 native UTF-16."""
+
+    _fields_ = [("data", ctypes.c_void_p), ("length", ctypes.c_size_t),
+                ("width", ctypes.c_uint8), ("ascii", ctypes.c_uint8)]
+
+
+# void (*bk_string_release)(void *opaque, const void *data, size_t length)
+_STRING_RELEASE = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p,
+                                   ctypes.c_size_t)
+
+
 class _FnDef(ctypes.Structure):
     """One entry of a bk_set_function_list table (mirrors bk_fn_def in boomkat.h)."""
 
@@ -198,6 +210,11 @@ def _declare(lib):
         ("bk_new_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
         ("bk_new_string_utf16", [ctx, ctypes.POINTER(ctypes.c_uint16),
                                  ctypes.c_size_t], val),
+        ("bk_new_external_string_latin1", [ctx, ctypes.c_void_p, ctypes.c_size_t,
+                                           _STRING_RELEASE, ctypes.c_void_p], val),
+        ("bk_new_external_string_utf16", [ctx, ctypes.c_void_p, ctypes.c_size_t,
+                                          _STRING_RELEASE, ctypes.c_void_p], val),
+        ("bk_string_view_get", [ctx, val, ctypes.POINTER(_StringView)], ctypes.c_int),
         ("bk_dup_value", [ctx, val], val),
         ("bk_call", [ctx, val, val, ctypes.POINTER(val), ctypes.c_uint], val),
     ]
