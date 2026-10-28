@@ -1868,20 +1868,20 @@ Useful gaps, ranked by direct relevance to generated code:
 
 | Capability in bundled header | Current binding coverage | Candidate use and constraint |
 | --- | --- | --- |
-| `emit_op_flags`, arithmetic flag setters | Zero flag and condition materialization exposed; other setters absent | Boolean comparisons without branches; overflow/carry checks for typed arithmetic. Flags are invalidated by calls and many operations. |
-| `MEM2`, register-pair operand encoding | General operand APIs exist; named constructors absent | Fold base + scaled index into array loads/stores. Index shifts are limited to 0..3; preserve bounds and alias guards. No new C API is needed for MEM2. |
-| `emit_select`, `emit_fselect`, `cmp_info` | Absent | Select values and some min/max idioms without branch diamonds. Memory operands may be loaded even when not selected; never use this to speculatively read observable or unsafe memory. JS NaN and signed-zero rules still apply. |
-| `emit_op2u`, `emit_op2cmpz` | Absent | Flag-only compares and arithmetic-plus-zero branches, reducing temporary results and counter instructions. Benefit is architecture dependent. |
-| Masked shifts, rotates, CLZ/CTZ and byte reversal opcodes | General op APIs exist; opcode constants absent | Crypto, generated integer workloads, typed-array kernels. JS shifts require 32-bit masking; CTZ/CLZ and rotations need explicit JS-compatible semantics. |
-| `emit_op2_shift` | Absent | Add a scaled index directly when an explicit address is required, rather than a memory operand. |
-| `emit_const`, `set_const`, const-address accessor | Absent | Patch shape/slot constants in code. Requires invalidation, executable-memory handling and tracking every embedded reference; it does not supply IC ownership or safe retirement. |
-| `has_cpu_feature`, platform name, register counts and indices | Only two integer register counts exposed through shim | Select native versus emulated operations, validate FP/vector register budgets and make diagnostics portable. Feature result 2 can mean partial/emulated support; inspect each feature's contract. |
-| `emit_mem`, `emit_fmem`, update forms | Absent | Paired transfers, explicit unaligned accesses and supported pre/post-increment addressing. Update forms can return unsupported; probe before emission and retain a fallback. |
+| `emit_op_flags`, arithmetic flag setters | Zero/overflow/carry flags and condition materialization exposed | Boolean comparisons without branches; overflow/carry checks for typed arithmetic. Flags are invalidated by calls and many operations. |
+| `MEM2`, register-pair operand encoding | Indexed operand constructor exposed | Fold base + scaled index into array loads/stores. Index shifts are limited to 0..3; preserve bounds and alias guards. No new C API is needed for MEM2. |
+| `emit_select`, `emit_fselect`, `cmp_info` | Exposed | Select values and some min/max idioms without branch diamonds. Memory operands may be loaded even when not selected; never use this to speculatively read observable or unsafe memory. JS NaN and signed-zero rules still apply. |
+| `emit_op2u`, `emit_op2cmpz` | Exposed | Flag-only compares and arithmetic-plus-zero branches, reducing temporary results and counter instructions. Benefit is architecture dependent. |
+| Masked shifts, rotates, CLZ/CTZ and byte reversal opcodes | Masked-shift, rotate, CLZ/CTZ and byte-reversal constants exposed | Crypto, generated integer workloads, typed-array kernels. JS shifts require 32-bit masking; CTZ/CLZ and rotations need explicit JS-compatible semantics. |
+| `emit_op2_shift` | Exposed | Add a scaled index directly when an explicit address is required, rather than a memory operand. |
+| `emit_const`, `set_const`, const-address accessor | Exposed | Patch shape/slot constants in code. Requires invalidation, executable-memory handling and tracking every embedded reference; it does not supply IC ownership or safe retirement. |
+| `has_cpu_feature`, platform name, register counts and indices | Feature queries, platform name and integer/FP/vector register counts exposed through shim | Select native versus emulated operations, validate FP/vector register budgets and make diagnostics portable. Feature result 2 can mean partial/emulated support; inspect each feature's contract. |
+| `emit_mem`, `emit_fmem`, update forms | Exposed | Paired transfers, explicit unaligned accesses and supported pre/post-increment addressing. Update forms can return unsupported; probe before emission and retain a fallback. |
 | `emit_fset32/64`, `emit_fop2r` / copysign | Absent | Floating constants and numeric builtins with fewer integer-register transfers. Copysign must preserve JS edge cases. This revision has no portable sqrt opcode; the existing architecture-specific shim remains necessary. |
 | `emit_op2r` / integer multiply-add, shift-into | Absent | Integer address/math and multiword kernels. Integer multiply-add is distinct from floating FMA; do not change JS rounding by fusing FP operations. |
 | `FAST_CALL`, `FAST_ENTER`, `FAST_RETURN`, `CALL_RETURN` | Ordinary shared calls exposed; these forms absent | Shared-context leaf stubs or tail transfers. Return-address ownership and interpreter-visible tail-call behavior require design first. |
 | Aligned labels and read-only buffers | Absent | Constant pools, jump tables and shared miss-path data. Extra alignment may increase code size; buffers have a separate writable-access contract. |
-| SIMD and atomic emission | Absent | Proven typed-array/string kernels or future shared-memory support. Requires feature probing, vector register allocation and alias/bounds analysis; not a general JS auto-vectorizer. |
+| SIMD and atomic emission | SIMD movement, replication and bitwise/shuffle exposed; atomics absent | Proven typed-array/string kernels or future shared-memory support. Requires feature probing, vector register allocation and alias/bounds analysis; not a general JS auto-vectorizer. |
 | Custom emission and current-flags metadata | Custom instructions used inside sqrt shim only | Architecture-specific instructions when portable forms are unavailable. The emitter must report flag effects accurately. |
 | Compiler serialization/deserialization | Absent | Possible future persistent compilation artifacts. Relocations, runtime pointers, versioning and speculative dependencies remain engine responsibilities. Low immediate priority. |
 | Verbose assembly output, compiler errors, local-base and jump metadata queries | Mostly absent | Debug code generation and inspect frame/patch layouts. Diagnostics can be added without making them part of execution policy. |
@@ -1890,3 +1890,33 @@ The next binding additions should accompany measured consumers. Prefer portable
 operand forms and existing SLJIT operations before architecture-specific custom
 instructions. Keep patching and retirement policy in the engine, separate from
 these mechanical bindings.
+
+
+### Function-region SSA bring-up
+
+`SLJIT_FUNCTION_SSA` enables an experimental scalar-function adapter in
+`vm_sljit_function_ssa.c3`. Single-pass regions share graph construction,
+representation inference, optimization, allocation, emission and guard snapshots
+with loop SSA. Entry values become arguments; there are no loop phis or latch.
+The region returns its exact replay PC, and both modes share value publication.
+
+Initial admission covers bounded, call-free scalar bodies ending at a return.
+The adapter deliberately remains opt-in: its runtime boundary and copied state
+must earn their cost, and the first Crypto/Richards checks admitted no regions.
+A minimal long arithmetic function improved29→24ms over five alternating pairs;
+copying only live SSA entry inputs reduced that further to20ms with matching results.
+This is a boundary-cost experiment, not an Octane performance claim. Memory
+regions, arbitrary hot spans, direct generated continuations, reference-aware
+allocation and wider opcode coverage remain required before this becomes the
+general optimizing function tier.
+
+The new SLJIT facilities are exercised in machine-code ABI tests. Their presence
+is not evidence of a workload gain. Indexed operands replacing explicit address
+formation in existing loop SSA measured neutral/slightly worse and were removed.
+Current production use includes condition materialization, CPU/FP-register
+capability validation and target-sized SSA register allocation. The backend
+reserves only available scratch/saved registers and enables descriptor-register
+caches only when their full saved-register pair is available. Selects, rotates/masked shifts, patchable constants,
+paired transfers and SIMD still need measured engine consumers. Function bitwise
+lowering uses the masked 32-bit shift operations, removing its explicit shift-count
+mask and preserving signed/unsigned result extension.

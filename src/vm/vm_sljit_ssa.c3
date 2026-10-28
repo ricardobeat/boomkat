@@ -12,7 +12,26 @@ import std::io;
 
 // SSA compilation pipeline: build representations, optimize, allocate, emit.
 
-fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
+fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) => ssa_emit(plan, cf, h, false);
+
+// The caller owns the region's descriptor preparation and frame publication.
+// A span excludes its terminal RET and may contain forward branches only.
+fn LoopNative ssa_region_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
+    if (plan.begin > plan.end || plan.end >= cf.code_count || plan.end - plan.begin >= LOOP_OPS
+        || cf.num_regs > LOOP_REGS
+        || !ssa_loop_eligible(
+        plan,
+        cf,
+        h
+    )) return null;
+    for (uint pc = plan.begin; pc <= plan.end; pc++) {
+        int target = loop_target(cf.code[pc], pc);
+        if (target >= 0 && (target <= (int)pc || target > (int)plan.end)) return null;
+    }
+    return ssa_emit(plan, cf, h, true);
+}
+
+fn LoopNative ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pass) @feat(SLJIT) {
     SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
     if (graph == null) return null;
     defer h.free_func(h.heap_udata, graph);
@@ -20,6 +39,8 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     graph.plan = plan;
     graph.cf = cf;
     graph.heap = h;
+    graph.single_pass = single_pass;
+    graph.registers = ssa_register_budget();
     if (!ssa_build(graph)) return null;
     // A register can gain a double representation only after its definitions
     // are built, so rebuild the graph when the first pass asks for one.
@@ -29,9 +50,20 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
         graph.plan = plan;
         graph.cf = cf;
         graph.heap = h;
+        graph.single_pass = single_pass;
+        graph.registers = ssa_register_budget();
         graph.force_f64 |= forced;
         if (!ssa_build(graph)) return null;
         if (graph.force_f64 == forced) break;
+    }
+    if (single_pass) {
+        for (uint reg = 0; reg < cf.num_regs; reg++) {
+            if (graph.arg[reg] >= 0) plan.ssa_inputs |= 1UL << reg;
+        }
+        for (uint memory = 0; memory < plan.memory_count; memory++) {
+            uint source = plan.memory[memory].source;
+            if (source < LOOP_REGS) plan.ssa_inputs |= 1UL << source;
+        }
     }
     ssa_cse(graph);
     ssa_numeric_loads(graph);
@@ -44,7 +76,14 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     e.compiler = jit::sljit_create_compiler(null);
     if (e.compiler == null) return null;
     defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW_R, 8 | (10 << 8), 9, 0) != 0) return null;
+    if (jit::sljit_emit_enter(
+        e.compiler,
+        0,
+        jit::SLJIT_ARGS2WWW_R,
+        (int)graph.registers.scratches | (10 << 8),
+        (int)graph.registers.saveds,
+        0
+    ) != 0) return null;
     int r0 = jit::reg_r(0);
     self.state = jit::reg_s(0);
     self.budget = jit::reg_s(1);
@@ -63,12 +102,12 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
     }
     self.header = e.label();
     self.body();
-    self.latch();
+    if (!single_pass) self.latch();
     self.resolve_blocks();
     // Normal completion falls through the backedge condition.
     self.at_def = graph.stamp;
     int[LOOP_REGS] final;
-    for (uint rr = 0; rr < LOOP_REGS; rr++) final[rr] = graph.phi[rr];
+    final = single_pass ? graph.current : graph.phi;
     self.publish(&final, plan.end + 1);
     self.exit_stubs();
     if (e.failed) return null;

@@ -68,6 +68,7 @@ struct LoopState @feat(SLJIT) {
 }
 struct LoopPlan @feat(SLJIT) {
     LoopNative native;
+    ulong ssa_inputs;
     LoopPlan* next;
     uint begin;
     uint end;
@@ -414,9 +415,9 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold) @feat(SLJI
     return true;
 }
 
-fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(SLJIT) {
+fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int region_begin = -1) @feat(SLJIT) {
     CompiledFunction* cf = cold.vm.current_func;
-    int begin            = loop_target(cf.code[end], end);
+    int begin            = region_begin >= 0 ? region_begin : loop_target(cf.code[end], end);
     if (begin < 0 || begin >= (int)end || end - (uint)begin >= LOOP_OPS || cf.num_regs > LOOP_REGS
         || cf.flags.is_generator
         || cf.flags.is_async
@@ -1774,19 +1775,24 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     h.bwd_gc_budget -= consumed;
     sljit_budget_progress(h, consumed);
     if (interrupts) h.interrupt_budget -= consumed;
-    // Retain every incoming string before releasing any overwritten register;
-    // a native permutation can move its last reference between slots.
-    for (uint i = 0; i < cf.num_regs; i++) {
+    sljit_publish_state(cold, regs, &state, cf.num_regs);
+    plan.hits++;
+    plan.iterations += consumed;
+    return cf.code + resume_pc;
+}
+
+// Publish after native frames return. Retain incoming strings before releasing
+// any outgoing slot, preserving permutations and aliases in both SSA modes.
+fn void sljit_publish_state(ColdCtx* cold, TVal* regs, LoopState* state, uint count) @feat(SLJIT) {
+    Heap* h = cold.heap;
+    for (uint i = 0; i < count; i++) {
         if ((state.dirty & (1UL << i)) != 0 && state.values[i].is_refcounted()
             && state.values[i].get_heapptr() != null) ((HeapHeader*)state.values[i].get_heapptr()).incref();
     }
-    for (uint i = 0; i < cf.num_regs; i++) {
+    for (uint i = 0; i < count; i++) {
         if ((state.dirty & (1UL << i)) == 0) continue;
         h.tval_copy_ref(regs + i, &state.values[i]);
         h.decref_tval(&state.values[i]);
         if (regs[i].is_heap_allocated()) track_heap_store(cold.act, regs + i, i);
     }
-    plan.hits++;
-    plan.iterations += consumed;
-    return cf.code + resume_pc;
 }

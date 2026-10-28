@@ -50,7 +50,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     }
     g.current_pc = plan.begin;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
-        if (written[reg] && (live_in[reg] || exit_live[reg])) {
+        if (!g.single_pass && written[reg] && (live_in[reg] || exit_live[reg])) {
             // Recovery-only inputs can hold any value on entry. Their old
             // contents are overwritten before use, so imposing the body's
             // numeric representation here creates a spurious entry guard.
@@ -59,7 +59,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             g.phi[reg] = phi;
             g.values[phi].arg_reg = (int)reg;
             g.current[reg] = phi;
-        } else if (!written[reg] && value_read[reg]) {
+        } else if ((g.single_pass && live_in[reg]) || (!written[reg] && value_read[reg])) {
             int arg = ssa_value(g, ARG, g.rep[reg], -1, 0, 0);
             g.values[arg].arg_reg = (int)reg;
             g.arg[reg] = arg;
@@ -659,6 +659,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         uint source = plan.memory[i].source;
         // Binding/this descriptors are invocation-local inputs, not registers.
         g.invariant[i] = source >= LOOP_REGS || !written[source];
+    }
+    if (g.single_pass) {
+        // A function region publishes its final definitions directly. There
+        // are no loop-carried phis or backedge representation conversions.
+        foreach (value : g.current) if (value >= 0) ssa_use(g, value);
+        return !g.failed;
     }
     // Latch inputs for loop phis.
     g.current_pc = plan.end;

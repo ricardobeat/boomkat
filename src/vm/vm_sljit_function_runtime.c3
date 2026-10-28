@@ -29,6 +29,7 @@ fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     $endif
     jit::sljit_free_code((void*)plan.native, null);
     if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
+    sljit_function_ssa_free(h, plan);
     sljit_inline_frames_free(h, plan);
     sljit_call_links_free(h, plan);
     h.jit_code_bytes -= plan.code_bytes;
@@ -93,6 +94,9 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     plan.min_span = cf.code_count > FUNCTION_OPS || cf.num_regs > LOOP_REGS ? FUNCTION_MIN_SPAN : 6;
     plan.entries = (void**)((char*)plan + FunctionPlan::size);
     plan.short_runs = (char*)(plan.entries + plan.count);
+    $if $feat(SLJIT_FUNCTION_SSA):
+        if (begin == 0 && region.code_count == cf.code_count) plan.ssa_region = sljit_function_ssa_compile(cf, cold);
+    $endif
     bool analyzed = function_analyze(&region, plan, h);
     bool emitted  = analyzed && function_emit(plan, &region, h, cold.act);
     $if $feat(SLJIT_STATS):
@@ -115,6 +119,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         $if $feat(SLJIT_STATS): if (emitted) cf.sljit_rejection = "code budget"; $endif
         if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
         if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
+        sljit_function_ssa_free(h, plan);
         sljit_inline_frames_free(h, plan);
         sljit_call_links_free(h, plan);
         h.free_func(h.heap_udata, plan);
@@ -339,6 +344,8 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT pipeline id=%d inlined=%d recoveries=%d allocations=%d pushes=%d links=%d",
                     i, plan.general_inlines, plan.inline_recoveries, plan.resumed_allocations, plan.resumed_pushes, links);
                 io::printfn("SLJIT numeric id=%d homes=%d", i, plan.numeric_homes);
+                if (plan.ssa_region != null) io::printfn("SLJIT function SSA id=%d hits=%d begin=%d end=%d bytes=%d",
+                    i, plan.ssa_region.hits, plan.ssa_region.begin, plan.ssa_region.end, plan.ssa_region.code_bytes);
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes, plan.resume_fragment, plan.resume_bytes);
                 $if $feat(SLJIT_MAP): sljit_address_map(plan, cf, i); $endif

@@ -91,7 +91,11 @@ fn bool ssa_same_location(SsaValue a, SsaValue b) @feat(SLJIT) {
     if (a.home != 0 || b.home != 0) return a.home != 0 && a.home == b.home;
     return a.spill == b.spill;
 }
-fn int ssa_gpr_home(uint slot) @feat(SLJIT) => slot < 4 ? jit::reg_r((int)slot + 4) : jit::reg_s((int)slot - 2);
+fn int ssa_gpr_home(
+    SsaGraph* g,
+    uint slot
+) @feat(SLJIT) => slot < g.registers.scratch_homes ? jit::reg_r((int)slot + 4)
+    : jit::reg_s((int)(slot - g.registers.scratch_homes) + 2);
 
 // Copies are pure aliases of their source: both hold the same value, so the
 // allocator coalesces them onto one home and codegen drops the move.
@@ -128,9 +132,9 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
         SsaValue* value = &g.values[i];
         value.home = 0;
         if (value.op != PHI) continue;
-        uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
+        uint homes = value.rep == F64 ? SSA_HOMES : g.registers.scratch_homes + g.registers.saved_homes;
         for (uint s = 0; s < homes; s++) {
-            int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
+            int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
             bool used;
             for (uint j = 0; j < i; j++) {
                 SsaValue other = g.values[j];
@@ -150,9 +154,9 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
         if (value.op == PHI || value.op == COPY) continue;
-        uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
+        uint homes = value.rep == F64 ? SSA_HOMES : g.registers.scratch_homes + g.registers.saved_homes;
         for (uint s = 0; s < homes; s++) {
-            int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
+            int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
             bool free = true;
             for (uint j = 0; j < g.value_count; j++) {
                 if (j == i) continue;

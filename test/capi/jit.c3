@@ -241,6 +241,49 @@ fn void check_register_effects() {
     @check(writes.test(0) && writes.test(255));
 }
 
+// Single-pass regions reuse the loop SSA graph, allocation and recovery code.
+fn void check_ssa_region(JsRuntime* runtime) {
+    Instruction[3] code = {
+        bytecode::make_abc(Opcode.ADD, 2, 0, 1),
+        bytecode::make_abc(Opcode.MUL, 3, 2, 2),
+        bytecode::make_abc(Opcode.SUB, 4, 3, 0)
+    };
+    CompiledFunction cf = { .code = &code[0], .code_count = 3, .num_regs = 5 };
+    LoopPlan plan = { .begin = 0, .end = 2 };
+    LoopNative native = vm::ssa_region_emit(&plan, &cf, runtime.rt.heap);
+    @check(native != null);
+    defer jit::sljit_free_code((void*)native, null);
+    LoopState state;
+    for (long i = 0; i < 1000; i++) {
+        state.values[0].set_fastint(i);
+        state.values[1].set_fastint(3);
+        @check(native(&state, 100) == 3);
+        @check(state.values[4].get_number_or_fastint() == (double)((i + 3) * (i + 3) - i));
+        @check(state.budget == 100);
+    }
+    state.values[0].set_undefined();
+    state.dirty = 0;
+    @check(native(&state, 100) == 0 && state.dirty == 0);
+    // A branch at bytecode zero is a real branch, not the no-branch marker.
+    Instruction[4] branches = {
+        bytecode::make_abc(Opcode.JMP_NLTI, 1, 0, 0),
+        bytecode::make_abc(Opcode.MULI, 0, 0, 255),
+        bytecode::make_abc(Opcode.ADDI, 1, 0, 3),
+        bytecode::make_abc(Opcode.MUL, 2, 1, 1)
+    };
+    cf.code = &branches[0]; cf.code_count = 4; cf.num_regs = 3;
+    LoopPlan branch_plan = { .begin = 0, .end = 3 };
+    LoopNative branch_native = vm::ssa_region_emit(&branch_plan, &cf, runtime.rt.heap);
+    @check(branch_native != null);
+    defer jit::sljit_free_code((void*)branch_native, null);
+    for (long input = -3; input <= 3; input++) {
+        state.values[0].set_fastint(input);
+        long magnitude = input < 0 ? -input : input;
+        @check(branch_native(&state, 100) == 4);
+        @check(state.values[2].get_number_or_fastint() == (double)((magnitude + 3) * (magnitude + 3)));
+    }
+}
+
 fn void main() {
     check_register_effects();
     check_native_convention();
@@ -249,6 +292,7 @@ fn void main() {
     @check(!first.set_jit());
     first.create()!!;
     defer first.destroy();
+    check_ssa_region(&first);
     second.create()!!;
     defer second.destroy();
     JsContext a, b, isolated;

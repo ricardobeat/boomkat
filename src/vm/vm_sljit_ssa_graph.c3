@@ -12,8 +12,8 @@ import std::io;
 
 // Bytecode analysis and SSA graph construction.
 
-// SSA for the numeric loop tier. Bytecode registers become SSA values with
-// loop phis at the header; definitions are renamed, representations are
+// Shared SSA for numeric loops and single-pass function regions. Bytecode
+// registers become SSA values; loops add header phis. Representations are
 // selected from uses, and exits reconstruct the interpreter's register slots.
 // Unsupported loops fall back to the straight-line loop emitter.
 // Keep an opt-out for differential measurements of the straight-line tier.
@@ -21,7 +21,6 @@ const bool SSA_ENABLED    = !$feat(SLJIT_NO_SSA);
 const uint SSA_MAX_VALUES = 512;
 const uint SSA_MAX_SPILL  = 128;
 const uint SSA_HOMES      = 8;
-const uint SSA_GPR_HOMES  = 7;
 const uint SSA_EXITS      = 128;
 const uint SSA_CSE        = 64;
 const uint SSA_BLOCKS     = 16;
@@ -101,7 +100,7 @@ struct SsaBlock @feat(SLJIT) {
     uint succ1;
     uint pred_count;
     uint[4] preds;
-    uint branch_pc;
+    uint branch_pc; // uint::max when the block has no branch
     bool conditional;
     bool jump;
 }
@@ -122,6 +121,25 @@ struct SsaExit @feat(SLJIT) {
     int[LOOP_REGS] regs;
 }
 
+// Reserve R0..R3 for emission and S0/S1 for state and budget. Homes and
+// optional descriptor caches must fit the target's actual register file.
+struct SsaRegisterBudget @feat(SLJIT) {
+    uint scratches;
+    uint saveds;
+    uint scratch_homes;
+    uint saved_homes;
+}
+fn SsaRegisterBudget ssa_register_budget() @feat(SLJIT) {
+    uint saveds = (uint)jit::sljit_shim_info(1);
+    if (saveds > 9) saveds = 9;
+    uint scratches = (uint)jit::sljit_shim_info(0) - saveds;
+    if (scratches > 8) scratches = 8;
+    uint scratch_homes = scratches > 4 ? scratches - 4 : 0;
+    uint saved_homes   = saveds > 2 ? saveds - 2 : 0;
+    if (saved_homes > 3) saved_homes = 3;
+    return { scratches, saveds, scratch_homes, saved_homes };
+}
+
 struct SsaGraph @feat(SLJIT) {
     LoopPlan* plan;
     CompiledFunction* cf;
@@ -134,6 +152,8 @@ struct SsaGraph @feat(SLJIT) {
     uint current_block;
     uint spill_count;
     bool failed;
+    bool single_pass;
+    SsaRegisterBudget registers;
     int[LOOP_REGS] current;
     int[LOOP_REGS] header;
     // Interpreter state before each bytecode, including values whose only
@@ -264,7 +284,7 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         Instruction ins = cf.code[pos];
         int target      = loop_target(ins, pos);
         if (target < 0) continue;
-        if (target == (int)plan.begin) continue;
+        if (!g.single_pass && target == (int)plan.begin) continue;
         // A branch inside the body must move forward and stay inside it.
         if (target <= (int)pos || target > (int)plan.end) return false;
         if (ins.op != Opcode.JUMP && pos + 1 <= plan.end) {
@@ -310,13 +330,13 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         uint limit = i + 1 < count ? starts[i + 1] - 1 : plan.end;
         uint e     = starts[i];
         while (e <= limit && loop_target(cf.code[e], e) < 0) e++;
-        block.branch_pc = e <= limit ? e : 0;
-        block.end = block.branch_pc != 0 ? e : limit;
+        block.branch_pc = e <= limit ? e : uint::max;
+        block.end = block.branch_pc != uint::max ? e : limit;
         block.conditional = false;
         block.jump = false;
         block.succ0 = 0;
         block.succ1 = 0;
-        if (block.branch_pc != 0) {
+        if (block.branch_pc != uint::max) {
             Instruction ins = cf.code[block.branch_pc];
             if (ins.op == Opcode.JUMP) {
                 block.jump = true;
@@ -328,7 +348,7 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
     // Resolve the edges now that every block start is known.
     for (uint i = 0; i < count; i++) {
         SsaBlock* block = &g.blocks[i];
-        if (block.branch_pc == 0) {
+        if (block.branch_pc == uint::max) {
             block.succ0 = i + 1 < count ? i + 1 : 0;
             continue;
         }
@@ -356,8 +376,8 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         }
     }
     // The last block ends at the backedge, which the latch owns.
-    g.blocks[count - 1].succ0 = 0;
-    g.blocks[count - 1].succ1 = 0;
+    g.blocks[count - 1].succ0 = g.single_pass ? SSA_BLOCKS : 0;
+    g.blocks[count - 1].succ1 = g.single_pass ? SSA_BLOCKS : 0;
     // Collect the predecessors.
     for (uint i = 0; i < count; i++) {
         SsaBlock* block = &g.blocks[i];

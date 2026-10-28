@@ -235,7 +235,7 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
         // The descriptor of an invariant memory cannot change during the run,
         // so its data pointer and length stay in registers instead of being
         // reloaded for every element access.
-        if (memory < 2) {
+        if (memory < 2 && self.g.registers.saveds >= 7 + memory * 2) {
             self.memory_length[memory] = jit::reg_s(5 + (int)memory * 2);
             self.memory_base[memory] = jit::reg_s(6 + (int)memory * 2);
             self.e.mov(self.memory_length[memory], 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2));
@@ -613,7 +613,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
         }
         // A block without a branch hands its state to the block that follows
         // it, so the join's values are written on that path too.
-        if (self.g.blocks[b].branch_pc == 0 && b + 1 < self.g.block_count) {
+        if (self.g.blocks[b].branch_pc == uint::max && b + 1 < self.g.block_count) {
             self.join_copies(b, b + 1);
         }
     }

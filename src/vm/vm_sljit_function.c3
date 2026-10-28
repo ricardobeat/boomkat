@@ -47,6 +47,7 @@ struct FunctionPlan @feat(SLJIT) {
     void* resume_fragment;
     usz resume_bytes;
     uint numeric_homes;
+    LoopPlan* ssa_region;
     ulong last_use;
     void*[FUNCTION_OPS + 1] map_pcs @if($feat(SLJIT_MAP));
     void* map_calls @if($feat(SLJIT_MAP));
@@ -880,6 +881,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     f.cf = cf;
     if (FUNCTION_DATAFLOW) out.flow = &f.flow;
     f.blocks[0] = true;
+    if (plan.ssa_region != null) f.blocks[plan.ssa_region.end + 1] = true;
     for (uint i = 0; i < cf.code_count; i++) {
         int target = loop_target(cf.code[i], i);
         if ((function_call_op(cf.code[i].op) || function_read_op(cf.code[i].op) || function_alloc_op(cf.code[i].op)
@@ -947,6 +949,17 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         Instruction ins = cf.code[pos];
         if (out.flow != null && f.blocks[pos]) f.flow_flush();
         out.labels[pos] = e.label();
+        if (pos == 0 && plan.ssa_region != null) {
+            e.mov(r0, 0, jit::reg_s(1), 0);
+            e.mov(r1, 0, imm, (long)plan.ssa_region);
+            if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
+                    imm, (long)&sljit_function_ssa_run) != 0) return false;
+            void* completed = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
+            if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
+            e.bind(completed);
+            f.flow_reload(plan.ssa_region.end + 1);
+            out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), plan.ssa_region.end + 1, false);
+        }
         bool active = function_op(
             ins.op
         ) || function_math_candidate(
@@ -1467,7 +1480,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         }
     $endif
     if (call_entry != null) plan.call_entry = (void*)jit::sljit_shim_label_addr(call_entry);
-    plan.code_bytes = jit::sljit_shim_code_size(e.compiler) + plan.resume_bytes;
+    plan.code_bytes = jit::sljit_shim_code_size(e.compiler) + plan.resume_bytes
+        + (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0);
     uint entries;
     bool[FUNCTION_OPS] loop_headers;
     for (uint i = 0; i < cf.code_count; i++) {
