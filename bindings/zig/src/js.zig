@@ -394,6 +394,8 @@ pub const Runtime = struct {
             .arity = opts.arity,
             .flags = if (opts.constructable) c.BK_CTOR else 0,
             .udata = opts.udata,
+            .finalize = null,
+            .finalize_opaque = null,
         };
         const table = [_]c.bk_fn_def{ def, std.mem.zeroes(c.bk_fn_def) };
         try check(c.bk_set_function_list(self.ptr, 0, &table));

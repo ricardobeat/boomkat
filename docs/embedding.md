@@ -288,7 +288,7 @@ static bk_value add(bk_ctx ctx, bk_value receiver, unsigned argc,
     return bk_new_number(ctx, total);
 }
 
-bk_value function = bk_new_c_function(app, add, "add", 2, 0, NULL);
+bk_value function = bk_new_c_function(app, add, "add", 2, 0, NULL, NULL, NULL);
 bk_set_global_property(app, "add", 3, function);
 bk_free_value(app, function);
 ```
@@ -307,8 +307,25 @@ uncatchable across native reentry.
 
 `bk_set_function_list` installs a `bk_fn_def` table terminated by `BK_FN_END`.
 `BK_CTOR` allows construction; `bk_get_new_target` returns borrowed `new.target`,
-and `bk_is_constructor_call` identifies a constructor call. Opaque user pointers
-are borrowed for the runtime's lifetime.
+and `bk_is_constructor_call` identifies a constructor call.
+
+A C function's `data` reaches the callback as its `opaque`. With no finalizer,
+`data` is borrowed for the runtime's lifetime. With one, the function owns it:
+`finalize(data, finalize_opaque)` runs exactly once, when the function object is
+freed, when the runtime is destroyed, or right away when creation fails. That
+makes closures cheap: functions made from the same callback share one engine
+slot and differ only in their data.
+
+```c
+static void free_box(void *data, void *opaque) { (void)opaque; free(data); }
+
+int *count = calloc(1, sizeof *count);
+bk_value counter = bk_new_c_function(app, tick, "tick", 0, 0, count, free_box, NULL);
+```
+
+A finalizer may run in the middle of any engine call, so it must not call the
+engine. `bk_fn_def` carries the same two fields; `bk_register_fn` borrows its
+`opaque`.
 
 Runtimes and contexts each carry `BK_DATA_SLOTS` (4) embedder pointers, set
 with `bk_set_runtime_data`/`bk_set_context_data` and read with the matching

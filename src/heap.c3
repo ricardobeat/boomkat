@@ -1410,6 +1410,7 @@ enum BuiltinStr : uint {
     HIDDEN_PROMISE,   // "promise"
     CAP_CELL,         // "cap_cell"
     ALREADY_RESOLVED, // "alreadyResolved"
+    HOST_FN_DATA,     // "host_fn_data"
 }
 
 // The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
@@ -1429,6 +1430,7 @@ const String[] BUILTIN_STR_LITERALS = {
     "then", "resolve", "reject",
     "cap_resolve_tv", "cap_reject_tv", "cap_promise_tv",
     "promise_reaction_next", "promise", "cap_cell", "alreadyResolved",
+    "host_fn_data",
 };
 
 $assert BUILTIN_STR_LITERALS.len == BuiltinStr::len :

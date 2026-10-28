@@ -38,7 +38,7 @@ static void test_immediates(void) {
     assert(bk_get_property(ctx, object, "b", 1) == BK_TRUE);
     assert(bk_set_property(ctx, object, "c", 1, BK_NULL) == BK_OK);
     assert(bk_get_property(ctx, object, "c", 1) == BK_NULL);
-    bk_value fn = bk_new_c_function(ctx, echo, "echo", 1, 0, NULL);
+    bk_value fn = bk_new_c_function(ctx, echo, "echo", 1, 0, NULL, NULL, NULL);
     bk_value args[1] = { BK_FALSE };
     assert(bk_call(ctx, fn, BK_UNDEFINED, args, 1) == BK_FALSE);
     assert(bk_get_exception(ctx) == BK_UNDEFINED);
@@ -150,16 +150,16 @@ static void test_scopes(void) {
     assert(made == 131072 && bk_get_error_code(ctx) == BK_ERR_FULL);
     bk_scope_close(ctx, big);
 
-    bk_value fn = bk_new_c_function(ctx, churn, "churn", 1, 0, NULL);
+    bk_value fn = bk_new_c_function(ctx, churn, "churn", 1, 0, NULL, NULL, NULL);
     bk_set_global_property(ctx, "churn", 5, fn);
     bk_free_value(ctx, fn);
-    fn = bk_new_c_function(ctx, keep, "keep", 1, 0, NULL);
+    fn = bk_new_c_function(ctx, keep, "keep", 1, 0, NULL, NULL, NULL);
     bk_set_global_property(ctx, "keep", 4, fn);
     bk_free_value(ctx, fn);
-    fn = bk_new_c_function(ctx, nest, "nest", 1, 0, NULL);
+    fn = bk_new_c_function(ctx, nest, "nest", 1, 0, NULL, NULL, NULL);
     bk_set_global_property(ctx, "nest", 4, fn);
     bk_free_value(ctx, fn);
-    fn = bk_new_c_function(ctx, echo, "echo", 1, 0, NULL);
+    fn = bk_new_c_function(ctx, echo, "echo", 1, 0, NULL, NULL, NULL);
     bk_set_global_property(ctx, "echo", 4, fn);
     bk_free_value(ctx, fn);
 

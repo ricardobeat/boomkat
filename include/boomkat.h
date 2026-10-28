@@ -335,16 +335,28 @@ BK_API bk_value  bk_json_stringify(bk_ctx ctx, bk_value value);
 typedef bk_value (*bk_c_function)(bk_ctx ctx, bk_value this_value,
                                   unsigned argc, const bk_value *argv, void *opaque);
 #define BK_CTOR 1u
+/* Runs once with a C function's data when the function object is freed or the
+ * runtime is destroyed. It may run in the middle of any engine call, so it must
+ * not call the engine. */
+typedef void (*bk_finalizer)(void *data, void *opaque);
+/* The callback receives `data` as its `opaque`. With `finalize` NULL, `data`
+ * is borrowed for the runtime's lifetime. Otherwise `finalize(data,
+ * finalize_opaque)` runs exactly once, also when creation fails. */
 BK_API bk_value bk_new_c_function(bk_ctx ctx, bk_c_function callback, const char *name,
-                                  int arity, unsigned flags, void *opaque);
+                                  int arity, unsigned flags, void *data,
+                                  bk_finalizer finalize, void *finalize_opaque);
 typedef struct {
     const char *name;
     bk_c_function fn;
     int arity;
     unsigned flags;
     void *udata;
+    bk_finalizer finalize;      /* as bk_new_c_function; NULL borrows udata */
+    void *finalize_opaque;
 } bk_fn_def;
-#define BK_FN_END { NULL, NULL, 0, 0u, NULL }
+#define BK_FN_END { NULL, NULL, 0, 0u, NULL, NULL, NULL }
+/* Every entry's finalizer runs exactly once, also for entries a failed call
+ * did not create. */
 BK_API bk_status bk_set_function_list(bk_ctx ctx, bk_value target, const bk_fn_def *functions);
 /* Install `fn` on `target`, or as a global when target is 0. */
 BK_API bk_status bk_register_fn(bk_ctx ctx, bk_value target, const char *name,

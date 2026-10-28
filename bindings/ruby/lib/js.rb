@@ -757,9 +757,9 @@ module JS
     end
 
     # Size of one bk_fn_def on the C ABI: two pointers, an int, an unsigned
-    # int, and a trailing pointer, with no padding beyond that on any 64-bit
-    # target this binding supports.
-    FN_DEF_SIZE = Fiddle::SIZEOF_VOIDP * 3 + Fiddle::SIZEOF_INT * 2
+    # int, and three trailing pointers (udata, finalize, finalize_opaque),
+    # with no padding beyond that on any 64-bit target this binding supports.
+    FN_DEF_SIZE = Fiddle::SIZEOF_VOIDP * 5 + Fiddle::SIZEOF_INT * 2
     private_constant :FN_DEF_SIZE
 
     # Pack a two-entry registration table into a byte buffer: the function
@@ -776,8 +776,10 @@ module JS
         closure.to_i,
         arity,
         constructable ? 1 : 0,
+        0,
+        0,
         0
-      ].pack('Q Q l L Q')
+      ].pack('Q Q l L Q Q Q')
       buf
     end
 

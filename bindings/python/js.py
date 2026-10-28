@@ -162,7 +162,9 @@ class _FnDef(ctypes.Structure):
                 ("fn", _HOST_FN),
                 ("arity", ctypes.c_int),
                 ("flags", ctypes.c_uint),
-                ("udata", ctypes.c_void_p)]
+                ("udata", ctypes.c_void_p),
+                ("finalize", ctypes.c_void_p),
+                ("finalize_opaque", ctypes.c_void_p)]
 
 
 def _declare(lib):
@@ -540,7 +542,8 @@ class Runtime:
         self._trampolines.append(trampoline)
         encoded = name.encode("utf-8")
         table = (_FnDef * 2)(_FnDef(encoded, trampoline, arity,
-                                    1 if constructable else 0, None),
+                                    1 if constructable else 0, None,
+                                    None, None),
                              _FnDef())
         rc = self._lib.bk_set_function_list(self._rt, 0, table)
         if rc != _OK:

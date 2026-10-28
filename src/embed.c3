@@ -200,6 +200,9 @@ struct Runtime {
     char*[CSTR_RING] cstr_buf;
     usz[CSTR_RING]   cstr_cap;
     uint     cstr_next;
+    // Shared registrations of C callbacks, and the host class of their data.
+    HostReg* cfn_regs;
+    uint     cfn_data_class;   // id + 1, or 0 before the first use
     // Atoms: property keys held by index. An atom is its entry index + 1.
     AtomEntry* atoms;
     uint     atom_cap;
@@ -1088,10 +1091,46 @@ struct HostPayload {
     HostPayload* next;
 }
 
+// One host function slot per distinct C callback and constructability; every
+// function made from that callback shares it.
 struct HostReg {
     HostPayload lifetime;
-    void* cfn;
-    void* udata;
+    void*    cfn;
+    long     slot;
+    bool     constructable;
+    HostReg* next_reg;
+}
+
+alias BkFinalizer = fn void(void* data, void* opaque);
+
+// The per-function data of a C function, the payload of a hidden HOST object
+// on the function under BuiltinStr.HOST_FN_DATA.
+struct CFnData {
+    void*       data;
+    BkFinalizer finalize;
+    void*       finalize_opaque;
+}
+
+// Host class finalizer for CFnData; `udata` is the heap.
+fn void cfn_data_finalize(void* payload, void* udata) {
+    CFnData* d = (CFnData*)payload;
+    Heap* hp = (Heap*)udata;
+    if (d.finalize != null) d.finalize(d.data, d.finalize_opaque);
+    hp.free_func(hp.heap_udata, payload);
+}
+
+// The data a C function was created with, read off the called function.
+fn void* cfn_data_of(builtins::BuiltinContext* bctx) {
+    HObject* callee = bctx.callee_obj;
+    if (callee == null) return null;
+    int idx = callee.find_prop_idx((void*)bctx.heap.str(heap::BuiltinStr.HOST_FN_DATA), bctx.heap);
+    if (idx < 0) return null;
+    TVal holder = callee.prop_values()[idx].get();
+    if (!holder.is_object()) return null;
+    HObject* o = (HObject*)holder.get_heapptr();
+    if (o.get_class() != hobject::ObjClass.HOST) return null;
+    CFnData* d = (CFnData*)(*o.extra_ptr()).host.payload;
+    return d == null ? null : d.data;
 }
 
 // Arguments and the returned handle borrow the call scope or the registry.
@@ -1154,7 +1193,7 @@ fn ulong call_c_function(Runtime* rt, Ctx* ctx, builtins::BuiltinContext* bctx, 
     uint depth = bctx.host_scope_slot - 1;
     for (uint i = 0; i < argc; i++) args[i] = scope_handle(rt, depth, (ulong)(heap::HOST_SCOPE_ARG0 + i));
     BkCFunction fnp = (BkCFunction)reg.cfn;
-    return fnp(ctx, scope_handle(rt, depth, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
+    return fnp(ctx, scope_handle(rt, depth, heap::HOST_SCOPE_THIS), argc, args, cfn_data_of(bctx));
 }
 
 // Returns a ring buffer of at least need+1 bytes for bk_cstr, or null.
@@ -1173,13 +1212,85 @@ fn char* cstr_slot(Runtime* rt, usz need) {
     return rt.cstr_buf[i];
 }
 
-fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* udata,
-                       int arity, bool constructable, TVal* out) {
+// The shared registration for `cfn`, claiming its host function slot on first use.
+fn HostReg* cfn_reg(Runtime* rt, void* cfn, bool constructable) {
+    for (HostReg* r = rt.cfn_regs; r != null; r = r.next_reg) {
+        if (r.cfn == cfn && r.constructable == constructable) return r;
+    }
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
-    if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
+    if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return null; }
     HostReg* reg = (HostReg*)raw;
-    *reg = { .cfn = cfn, .udata = udata };
-    return make_fn_value(rt, name, (void*)&host_trampoline, reg, arity, constructable, out);
+    *reg = { .cfn = cfn, .constructable = constructable };
+    reg.lifetime.next = rt.host_payloads;
+    rt.host_payloads = &reg.lifetime;
+    long slot = rt.heap.register_host_fn((void*)&host_trampoline, reg, (void*)rt.heap.str(heap::BuiltinStr.EMPTY), 0, constructable);
+    if (slot < 0) { set_err(rt, BK_ERR_NOMEM, "host function table full"); return null; }
+    reg.slot = slot;
+    reg.next_reg = rt.cfn_regs;
+    rt.cfn_regs = reg;
+    return reg;
+}
+
+// Creates a function object for C callback `cfn`. `data` is passed to every
+// call; `finalize`, when set, runs once with it when the function is freed or
+// the runtime is destroyed.
+fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* data, BkFinalizer finalize,
+                       void* finalize_opaque, int arity, bool constructable, TVal* out) {
+    Heap* hp = rt.heap;
+    HostReg* reg = cfn_reg(rt, cfn, constructable);
+    if (reg == null) {
+        if (finalize != null) finalize(data, finalize_opaque);
+        return rt.errcode;
+    }
+    HString* nm = hp.str_intern(name);
+    if (nm == null) {
+        if (finalize != null) finalize(data, finalize_opaque);
+        set_err(rt, BK_ERR_NOMEM, "could not intern function name");
+        return BK_ERR_NOMEM;
+    }
+    HObject*? fo = builtins::make_host_function(hp, (uint)reg.slot);
+    if (catch fo) {
+        if (finalize != null) finalize(data, finalize_opaque);
+        set_err(rt, BK_ERR_NOMEM, "could not create function object");
+        return BK_ERR_NOMEM;
+    }
+    HObject* f = fo;
+    TVal len_tv; len_tv.set_fastint((long)(arity >= 0 ? arity : 0));
+    TVal name_tv; name_tv.set_string_borrowed(nm);
+    f.put_prop(hp.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_NWC, hp);
+    f.put_prop(hp.str(heap::BuiltinStr.NAME), name_tv, hobject::PROP_FLAGS_NWC, hp);
+    out.set_object(f);
+    if (data == null && finalize == null) return BK_OK;
+    if (rt.cfn_data_class == 0) {
+        long id = hp.register_host_class((void*)&cfn_data_finalize, null, (void*)hp,
+                                         (void*)hp.str(heap::BuiltinStr.HOST_FN_DATA), null);
+        if (id < 0) {
+            if (finalize != null) finalize(data, finalize_opaque);
+            set_err(rt, BK_ERR_NOMEM, "host class table full");
+            return BK_ERR_NOMEM;
+        }
+        rt.cfn_data_class = (uint)id + 1;
+    }
+    void* raw = hp.alloc_func(hp.heap_udata, CFnData::size);
+    if (raw == null) {
+        if (finalize != null) finalize(data, finalize_opaque);
+        set_err(rt, BK_ERR_NOMEM, "out of memory");
+        return BK_ERR_NOMEM;
+    }
+    *(CFnData*)raw = { .data = data, .finalize = finalize, .finalize_opaque = finalize_opaque };
+    HObject*? holder_raw = hp.alloc_object(hobject::ObjClass.HOST);
+    if (catch holder_raw) {
+        cfn_data_finalize(raw, (void*)hp);
+        set_err(rt, BK_ERR_NOMEM, "out of memory");
+        return BK_ERR_NOMEM;
+    }
+    HObject* holder = holder_raw;
+    hp.set_prototype(holder, null);
+    (*holder.extra_ptr()).host.class_id = rt.cfn_data_class - 1;
+    (*holder.extra_ptr()).host.payload = raw;
+    TVal holder_tv; holder_tv.set_object(holder);
+    f.put_prop(hp.str(heap::BuiltinStr.HOST_FN_DATA), holder_tv, hobject::PROP_FLAGS_NWC, hp);
+    return BK_OK;
 }
 
 // ============================================================================

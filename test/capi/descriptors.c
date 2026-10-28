@@ -23,7 +23,7 @@ int main(void) {
     bk_ctx ctx = bk_create();
     bk_value obj = eval(ctx, "globalThis.o = {}; o");
     bk_atom x = bk_new_atom(ctx, "x", 1), y = bk_new_atom(ctx, "y", 1), z = bk_new_atom(ctx, "z", 1);
-    bk_value get = bk_new_c_function(ctx, getter, "get x", 0, 0, NULL);
+    bk_value get = bk_new_c_function(ctx, getter, "get x", 0, 0, NULL, NULL, NULL);
     int ok = -1, found = -1;
 
     bk_property_descriptor acc = { BK_PROP_HAS_GET | BK_PROP_HAS_ENUMERABLE | BK_PROP_ENUMERABLE, 0, get, 0 };

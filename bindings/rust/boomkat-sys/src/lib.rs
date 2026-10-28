@@ -55,7 +55,13 @@ pub struct bk_fn_def {
     pub arity: c_int,
     pub flags: c_uint,
     pub udata: *mut c_void,
+    pub finalize: Option<bk_finalizer>,
+    pub finalize_opaque: *mut c_void,
 }
+
+/// Runs once with a C function's data when the function is freed, the runtime
+/// is destroyed, or creation fails. It must not call the engine.
+pub type bk_finalizer = unsafe extern "C" fn(data: *mut c_void, opaque: *mut c_void);
 
 /// The all-zero entry that terminates a registration table.
 pub const BK_FN_END: bk_fn_def = bk_fn_def {
@@ -64,6 +70,8 @@ pub const BK_FN_END: bk_fn_def = bk_fn_def {
     arity: 0,
     flags: 0,
     udata: std::ptr::null_mut(),
+    finalize: None,
+    finalize_opaque: std::ptr::null_mut(),
 };
 
 /// Registration flag: `new fn()` is allowed; without it, it throws a TypeError.
@@ -393,7 +401,9 @@ extern "C" {
         name: *const c_char,
         arity: c_int,
         flags: c_uint,
-        opaque: *mut c_void,
+        data: *mut c_void,
+        finalize: Option<bk_finalizer>,
+        finalize_opaque: *mut c_void,
     ) -> bk_value;
     pub fn bk_set_function_list(
         ctx: bk_ctx,

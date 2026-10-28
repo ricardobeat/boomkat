@@ -345,7 +345,7 @@ static bk_value new_target_fn(bk_ctx ctx, bk_value this_value, unsigned argc,
 }
 
 static void test_new_target(bk_ctx rt) {
-    bk_value fn = expect_val(bk_new_c_function(rt, new_target_fn, "NT", 0, BK_CTOR, NULL), rt, "new NT fn");
+    bk_value fn = expect_val(bk_new_c_function(rt, new_target_fn, "NT", 0, BK_CTOR, NULL, NULL, NULL), rt, "new NT fn");
     if (!fn) return;
     if (!expect_ok(bk_set_global_property(rt, "NT", 2, fn), rt, "install NT")) { bk_free_value(rt, fn); return; }
     bk_value r = eval_global(rt, "new NT() === NT && NT() === 'plain' && Reflect.construct(NT, [], Array) === Array");
