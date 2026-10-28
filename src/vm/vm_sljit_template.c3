@@ -51,6 +51,12 @@ fn void TemplateEmitter.mov(&self, int dst, long dw, int src, long sw, int op = 
 fn void TemplateEmitter.op(&self, int op, int dst, int left, long lw, int right, long rw) @feat(SLJIT) {
     if (jit::sljit_emit_op2(self.compiler, op, dst, 0, left, lw, right, rw) != 0) self.failed = true;
 }
+// Materialize an equality result directly from the arithmetic flags.
+fn void TemplateEmitter.equal_value(&self, int dst, int left, int right, bool negate) @feat(SLJIT) {
+    self.op(jit::SLJIT_SUB | jit::SLJIT_SET_Z, dst, left, 0, right, 0);
+    if (jit::sljit_emit_op_flags(self.compiler, jit::SLJIT_MOV, dst, 0,
+            negate ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL) != 0) self.failed = true;
+}
 fn void* TemplateEmitter.cmp(&self, int condition, int left, long lw, int right, long rw) @feat(SLJIT) {
     void* jump = jit::sljit_emit_cmp(self.compiler, condition, left, lw, right, rw);
     if (jump == null) self.failed = true;

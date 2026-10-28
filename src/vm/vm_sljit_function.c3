@@ -400,6 +400,15 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
     void* nonnumber_left = e.cmp(jit::SLJIT_GREATER, r2, 0, imm, (long)types::TAG_FASTINT);
     void* nonnumber_right = e.cmp(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_FASTINT);
+    // Tagged integers have one canonical encoding, so equality needs no
+    // floating-point conversion. Preserve numeric semantics for mixed tags.
+    void* left_float = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (long)types::TAG_FASTINT);
+    void* right_float = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT);
+    e.equal_value(r0, r0, r1, negate);
+    e.op(jit::SLJIT_OR, r0, r0, 0, imm, (long)(types::TAG_BOOLEAN << 48));
+    void* integer_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(left_float);
+    e.bind(right_float);
     self.out.number(r0, 1, pc);
     self.out.number(r1, 2, pc);
     void* number_equal = self.out.fcmp(jit::SLJIT_ORDERED_EQUAL, 1, 2);
@@ -462,6 +471,7 @@ fn void FunctionEmitter.loose_equal(&self, Instruction ins, bool negate, uint pc
     e.bind(finish);
     e.bind(number_done);
     e.bind(number_equal_done);
+    e.bind(integer_done);
 }
 // A branch on `x == null` or `x != null`, which never coerces: the operand is
 // nullish when it is null or undefined, or the one object the language treats
