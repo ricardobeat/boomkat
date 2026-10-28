@@ -877,7 +877,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     for (uint i = 0; i < target.code_count; i++) {
         int destination = loop_target(target.code[i], i);
         if (destination >= 0 && destination < (int)target.code_count) inner.blocks[destination] = true;
-        if ((destination >= 0 || function_call_op(target.code[i].op)) && i + 1 < target.code_count) inner.blocks[i + 1] = true;
+        if ((destination >= 0 || function_call_op(target.code[i].op) || function_inline_read_resume(target, i)) && i + 1 < target.code_count) inner.blocks[i + 1] = true;
     }
     inner.cf = target;
     inner.depth = self.depth + 1;
@@ -890,7 +890,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     for (uint i = 0; i <= target.code_count; i++) {
         if (i < target.code_count && inner.blocks[i]) inner.flow_flush();
         labels[i] = ie.label();
-        $if $feat(SLJIT_MAP): frame.map_pcs[i] = labels[i]; $endif
+        frame.map_pcs[i] = labels[i];
         for (uint j = 0; j < pending_count; j++) {
             if (pending_target[j] != i) continue;
             jit::sljit_set_label(pending[j], labels[i]);

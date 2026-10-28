@@ -1982,6 +1982,15 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
                     e.mov(mem | r1, 0, r2, 0);
                 }
             $endif
+            if (link.target + 1 < frame.target.code_count && function_inline_read_resume(frame.target, link.target)) {
+                e.mov(r0, 0, jit::reg_s(1), 0);
+                e.mov(r1, 0, imm, (long)frame);
+                e.mov(r2, 0, jit::reg_s(5), 0);
+                e.mov(jit::reg_r(3), 0, imm, link.target);
+                if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS4WWWW,
+                        imm, (long)&sljit_inline_read) != 0) return false;
+                out.bind_to(e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, imm, 0), frame.map_pcs[link.target + 1]);
+            }
             e.mov(mem | jit::reg_s(2), $reflect(FunctionRun.recover_frame).offset, imm, (long)frame);
             e.mov(mem | jit::reg_s(2), $reflect(FunctionRun.recover_pc).offset, imm, link.target, jit::SLJIT_MOV_U32);
             e.mov(r0, 0, imm, (long)(frame.target.code + link.target));

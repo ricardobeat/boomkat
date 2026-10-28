@@ -54,38 +54,8 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
         }
         object = cold.heap.string_proto;
     }
-    if (!native_data_object(object, key, cold.heap)) return 0;
-    HObject* receiver = object;
-    bool cacheable = receiver.mega_cacheable(key, cold.heap);
-    PropValue* slot;
     ICEntry* ic = (ICEntry*)cold.vm.current_func.ic_entries + offset;
-    // Own slots remain usable on dictionary objects, even when the emitter
-    // cannot embed that layout. Read current storage after validating the
-    // site's generation, rather than searching the shape on every miss.
-    if (ic.key.borrow() == key && ic.shape_id == receiver.shape_id
-        && ic.shape_gen == receiver.shape_generation(cold.heap)
-        && !ic.has_proto && !ic.prop_flags.is_accessor && ic.prop_idx < receiver.prop_count) {
-        slot = &receiver.prop_values()[ic.prop_idx];
-    }
-    if (slot == null && cacheable) {
-        MegamorphicEntry* entry;
-        slot = hobject::mega_cache_lookup(cold.heap, receiver, key, &entry);
-        if (slot != null && (entry.is_accessor || (entry.proto != null
-            && !native_data_object((HObject*)entry.proto, key, cold.heap)))) return 0;
-    }
-    if (slot == null) for (uint depth = 0; object != null && depth < 64; depth++, object = object.prototype) {
-        if (!native_data_object(object, key, cold.heap)) return 0;
-        PropFlags flags;
-        int index = function_shape_slot(object.get_shape(cold.heap), key, &flags);
-        if (index < 0) continue;
-        if (flags.is_accessor) return 0;
-        slot = &object.prop_values()[index];
-        // Reuse the bounded shared cache, including its shape-recycle and
-        // prototype checks. Do not retarget a site's IC: existing generated
-        // code may still embed the owners that entry keeps alive.
-        if (cacheable) hobject::mega_cache_store(cold.heap, receiver, key, object, index, false);
-        break;
-    }
+    PropValue* slot = sljit_native_data_slot(cold.heap, object, key, ic);
     if (slot == null) return 0;
     TVal value = slot.get();
     TVal* dest = regs + ins.a;
@@ -280,4 +250,63 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     e.mov(r0, 0, mem | run, $reflect(FunctionRun.start).offset);
     if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0 || guards.e.failed) e.failed = true;
     return entry;
+}
+
+fn PropValue* sljit_native_data_slot(Heap* h, HObject* object, HString* key, ICEntry* ic) @feat(SLJIT) {
+    if (!native_data_object(object, key, h)) return null;
+    HObject* receiver = object;
+    bool cacheable = receiver.mega_cacheable(key, h);
+    PropValue* slot;
+    // Own slots remain usable on dictionary objects, even when the emitter
+    // cannot embed that layout. Read current storage after validating the
+    // site's generation, rather than searching the shape on every miss.
+    if (ic.key.borrow() == key && ic.shape_id == receiver.shape_id
+        && ic.shape_gen == receiver.shape_generation(h)
+        && !ic.has_proto && !ic.prop_flags.is_accessor && ic.prop_idx < receiver.prop_count) {
+        slot = &receiver.prop_values()[ic.prop_idx];
+    }
+    if (slot == null && cacheable) {
+        MegamorphicEntry* entry;
+        slot = hobject::mega_cache_lookup(h, receiver, key, &entry);
+        if (slot != null && (entry.is_accessor || (entry.proto != null
+            && !native_data_object((HObject*)entry.proto, key, h)))) return null;
+    }
+    if (slot == null) for (uint depth = 0; object != null && depth < 64; depth++, object = object.prototype) {
+        if (!native_data_object(object, key, h)) return null;
+        PropFlags flags;
+        int index = function_shape_slot(object.get_shape(h), key, &flags);
+        if (index < 0) continue;
+        if (flags.is_accessor) return null;
+        slot = &object.prop_values()[index];
+        // Reuse the bounded shared cache, including its shape-recycle and
+        // prototype checks. Do not retarget a site's IC: existing generated
+        // code may still embed the owners that entry keeps alive.
+        if (cacheable) hobject::mega_cache_store(h, receiver, key, object, index, false);
+        break;
+    }
+    if (slot == null) return null;
+    return slot;
+}
+
+// Inline windows borrow inert/traced values. No allocation, accessor call,
+// refcount mutation, or VM-frame publication occurs on this continuation.
+fn long sljit_inline_read(ColdCtx* cold, FunctionInlineFrame* frame, TVal* regs, uint pc) @feat(SLJIT) {
+    Instruction ins = frame.target.code[pc];
+    TVal base = regs[ins.op == Opcode.GETTHISC ? INLINE_THIS_SLOT : ins.b];
+    if (!base.is_object()) return 0;
+    HString* key = frame.target.constants[ins.c].get_heapptr();
+    if (key == null) return 0;
+    ICEntry* ic = (ICEntry*)frame.target.ic_entries + pc;
+    PropValue* slot = sljit_native_data_slot(cold.heap, base.get_heapptr(), key, ic);
+    if (slot == null) return 0;
+    TVal value = slot.get();
+    if (value.is_string()) return 0;
+    regs[ins.a] = value;
+    return 1;
+}
+
+fn bool function_inline_read_resume(CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    if (!function_read_op(cf.code[pc].op) || cf.ic_entries == null) return false;
+    ICEntry* ic = (ICEntry*)cf.ic_entries + pc;
+    return ic.chain_len == hobject::IC_CHAIN_POLY || ic.chain_len == hobject::IC_CHAIN_PROTO;
 }

@@ -17,7 +17,7 @@ struct FunctionInlineFrame @feat(SLJIT) {
     uint depth;
     uint bottom_offset;
     ulong[49] exits @if($feat(SLJIT_STATS));
-    void*[49] map_pcs @if($feat(SLJIT_MAP));
+    void*[49] map_pcs;
 }
 const uint INLINE_CALLEE_SLOT = 31;
 
