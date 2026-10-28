@@ -500,3 +500,11 @@ test-object-model-api: out/object_model
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle
 	./out/api_lifecycle
+
+out/binary_api: test/capi/binary.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/binary.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/binary_api
+
+.PHONY: test-binary-api
+test-binary-api: out/binary_api
+	./out/binary_api

@@ -104,6 +104,30 @@ pub struct bk_module_loader {
 }
 
 /// A host class id; 0 is invalid.
+// bk_element_type
+pub const BK_INT8: c_int = 0;
+pub const BK_UINT8: c_int = 1;
+pub const BK_UINT8_CLAMPED: c_int = 2;
+pub const BK_INT16: c_int = 3;
+pub const BK_UINT16: c_int = 4;
+pub const BK_INT32: c_int = 5;
+pub const BK_UINT32: c_int = 6;
+pub const BK_FLOAT16: c_int = 7;
+pub const BK_FLOAT32: c_int = 8;
+pub const BK_FLOAT64: c_int = 9;
+pub const BK_BIGINT64: c_int = 10;
+pub const BK_BIGUINT64: c_int = 11;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct bk_typed_array_info {
+    pub type_: c_int,
+    pub data: *mut c_void,
+    pub length: usize,
+    pub byte_offset: usize,
+    pub buffer: bk_value,
+}
+
 pub type bk_class = u32;
 pub const BK_CLASS_DEFER_FINALIZE: c_uint = 1;
 
@@ -512,6 +536,22 @@ extern "C" {
         flags: c_uint,
     ) -> bk_value;
     pub fn bk_run_script(ctx: bk_ctx, script: bk_value) -> bk_value;
+    pub fn bk_new_array_buffer(ctx: bk_ctx, length: usize, data_out: *mut *mut c_void) -> bk_value;
+    pub fn bk_new_external_array_buffer(
+        ctx: bk_ctx,
+        data: *mut c_void,
+        length: usize,
+        release: Option<bk_finalizer>,
+        opaque: *mut c_void,
+    ) -> bk_value;
+    pub fn bk_get_array_buffer(ctx: bk_ctx, buffer: bk_value, data: *mut *mut c_void, length: *mut usize) -> c_int;
+    pub fn bk_detach_array_buffer(ctx: bk_ctx, buffer: bk_value) -> c_int;
+    pub fn bk_new_typed_array(ctx: bk_ctx, type_: c_int, buffer: bk_value, byte_offset: usize, length: usize) -> bk_value;
+    pub fn bk_get_typed_array(ctx: bk_ctx, view: bk_value, out: *mut bk_typed_array_info) -> c_int;
+    pub fn bk_new_shared_array_buffer(ctx: bk_ctx, length: usize, data_out: *mut *mut c_void) -> bk_value;
+    pub fn bk_adopt_shared_block(ctx: bk_ctx, data: *mut c_void) -> bk_value;
+    pub fn bk_shared_block_retain(data: *mut c_void);
+    pub fn bk_shared_block_release(data: *mut c_void);
     pub fn bk_set_job_hook(runtime: bk_runtime, hook: Option<bk_job_hook>, opaque: *mut c_void);
     pub fn bk_wait_events(runtime: bk_runtime, timeout_ms: f64) -> c_int;
     pub fn bk_wake(runtime: bk_runtime);

@@ -537,6 +537,21 @@ struct DeferredFinal {
     void* udata;
 }
 
+// Called once with an external ArrayBuffer's data when the buffer is detached
+// or freed. Mirrors bk_finalizer.
+alias ExternalReleaseFn = fn void(void* data, void* opaque);
+
+// The release record of an external ArrayBuffer. A free record links to the
+// next free index through `next_free`.
+struct ExternalBuffer {
+    ExternalReleaseFn release;
+    void* data;
+    void* opaque;
+    uint  next_free;
+}
+
+const uint EXTERNAL_NONE = 0xFFFF_FFFF;
+
 struct HostFnEntry {
     void* handler;
     void* udata;
@@ -962,6 +977,10 @@ struct Heap {
     DeferredFinal*  deferred_finals;
     uint            deferred_final_count;
     uint            deferred_final_capacity;
+    ExternalBuffer* external_buffers;
+    uint            external_buffer_count;
+    uint            external_buffer_capacity;
+    uint            external_buffer_free;   // EXTERNAL_NONE when no record is free
     // Values handed to add-ons for the duration of one call. A GC root, so a
     // handle keeps its value alive without the add-on doing anything; reset
     // per call rather than released individually.
@@ -1665,6 +1684,10 @@ fn Heap*? create(
     h.deferred_finals       = null;
     h.deferred_final_count  = 0;
     h.deferred_final_capacity = 0;
+    h.external_buffers      = null;
+    h.external_buffer_count = 0;
+    h.external_buffer_capacity = 0;
+    h.external_buffer_free  = EXTERNAL_NONE;
     h.addon_handles         = null;
     h.addon_handle_count    = 0;
     h.addon_handle_capacity = 0;
@@ -2412,6 +2435,13 @@ fn void Heap.destroy(&self) {
         self.deferred_finals = null;
         self.deferred_final_capacity = 0;
     }
+    if (self.external_buffers != null) {
+        self.free_func(self.heap_udata, self.external_buffers);
+        self.external_buffers = null;
+        self.external_buffer_count = 0;
+        self.external_buffer_capacity = 0;
+        self.external_buffer_free = EXTERNAL_NONE;
+    }
     if (self.host_classes != null) {
         self.free_func(self.heap_udata, self.host_classes);
         self.host_classes = null;
@@ -3042,6 +3072,45 @@ fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* ud
     self.shade_root_object(proto);
     self.host_class_count++;
     return (long)id;
+}
+
+// Make `buf`, a fresh fixed-length ArrayBuffer, view `data` as embedder memory
+// handed back through `release` on detach or free. False when the record cannot
+// be allocated; the buffer is then left untouched.
+fn bool Heap.make_external_buffer(&self, HObject* buf, char* data, uint length,
+                                  ExternalReleaseFn release, void* opaque) {
+    uint index = self.external_buffer_free;
+    if (index != EXTERNAL_NONE) {
+        self.external_buffer_free = self.external_buffers[index].next_free;
+    } else {
+        if (self.external_buffer_count >= self.external_buffer_capacity) {
+            uint new_cap = self.external_buffer_capacity == 0 ? 8 : self.external_buffer_capacity * 2;
+            void* grown = self.realloc_func(self.heap_udata, (void*)self.external_buffers, (usz)new_cap * ExternalBuffer::size);
+            if (grown == null) return false;
+            self.external_buffers = (ExternalBuffer*)grown;
+            self.external_buffer_capacity = new_cap;
+        }
+        index = self.external_buffer_count++;
+    }
+    self.external_buffers[index] = { .release = release, .data = data, .opaque = opaque, .next_free = EXTERNAL_NONE };
+    (*buf.extra_ptr()).ab.data = data;
+    (*buf.extra_ptr()).ab.byte_length = length;
+    (*buf.extra_ptr()).ab.external = true;
+    (*buf.extra_ptr()).ab.external_index = index;
+    return true;
+}
+
+// Hand an external buffer's data back to its embedder and leave the buffer an
+// ordinary one with no data. Runs the release callback exactly once.
+fn void Heap.release_external_buffer(&self, HObject* buf) {
+    uint index = (*buf.extra_ptr()).ab.external_index;
+    (*buf.extra_ptr()).ab.external = false;
+    (*buf.extra_ptr()).ab.external_index = 0;
+    (*buf.extra_ptr()).ab.data = null;
+    ExternalBuffer record = self.external_buffers[index];
+    self.external_buffers[index] = { .next_free = self.external_buffer_free };
+    self.external_buffer_free = index;
+    if (record.release != null) record.release(record.data, record.opaque);
 }
 
 // Holds a finalizer call for run_deferred_finalizers. Without memory for the

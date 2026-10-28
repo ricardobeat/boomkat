@@ -223,6 +223,9 @@ module JS
       'unsigned long long bk_new_error(void*, int, const char*)',
       'int bk_describe(void*, unsigned long long, char*, size_t, size_t*)',
       'unsigned long long bk_dup_value(void*, unsigned long long)',
+      # Binary data: ArrayBuffers and typed arrays read back as binary Strings.
+      'int bk_get_array_buffer(void*, unsigned long long, void**, size_t*)',
+      'int bk_get_typed_array(void*, unsigned long long, void*)',
       'unsigned long long bk_call(void*, unsigned long long, unsigned long long, const unsigned long long*, unsigned int)',
 
       'unsigned long long bk_new_number(void*, double)',
@@ -974,8 +977,40 @@ module JS
       when Type::BOOLEAN then read_bool(id, @reader)
       when Type::NUMBER  then read_number(id, @reader)
       when Type::STRING  then read_string(id, @reader)
+      when Type::OBJECT  then read_binary(id, @rt) || Opaque.new(type)
       else Opaque.new(type)
       end
+    end
+
+    # Element size of each bk_element_type, in enum order.
+    ELEMENT_SIZES = [1, 1, 1, 2, 2, 4, 4, 2, 4, 8, 8, 8].freeze
+    # bk_typed_array_info: int type (padded), void* data, size_t length,
+    # size_t byte_offset, bk_value buffer.
+    TYPED_ARRAY_INFO_SIZE = 8 + Fiddle::SIZEOF_VOIDP + (2 * Fiddle::SIZEOF_SIZE_T) + 8
+
+    # The bytes of an ArrayBuffer or typed array as a binary String, or nil.
+    def read_binary(id, ctx)
+      data = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP)
+      len = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T)
+      if Lib.bk_get_array_buffer(ctx, id, data, len) == Status::OK
+        size = len[0, Fiddle::SIZEOF_SIZE_T].unpack1('J')
+        ptr = data[0, Fiddle::SIZEOF_VOIDP].unpack1('J')
+        return ''.b if ptr.zero? || size.zero?
+
+        return Fiddle::Pointer.new(ptr)[0, size]
+      end
+
+      info = Fiddle::Pointer.malloc(TYPED_ARRAY_INFO_SIZE)
+      return nil unless Lib.bk_get_typed_array(ctx, id, info) == Status::OK
+
+      type = info[0, 4].unpack1('l')
+      ptr = info[8, Fiddle::SIZEOF_VOIDP].unpack1('J')
+      count = info[8 + Fiddle::SIZEOF_VOIDP, Fiddle::SIZEOF_SIZE_T].unpack1('J')
+      buffer = info[TYPED_ARRAY_INFO_SIZE - 8, 8].unpack1('Q')
+      Lib.bk_free_value(ctx, buffer)
+      return ''.b if ptr.zero?
+
+      Fiddle::Pointer.new(ptr)[0, count * ELEMENT_SIZES[type]]
     end
 
     # The readers take the context that can resolve the handle: the runtime's

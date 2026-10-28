@@ -400,6 +400,40 @@ run behaving as `bk_eval_ex` on the same source. Syntax errors surface at
 compile time. Flags are `BK_EVAL_GLOBAL` or `BK_EVAL_STRICT`; modules are not
 compiled this way. The compiled code lives until the runtime is destroyed.
 
+### Binary data
+
+`bk_new_array_buffer` makes a zeroed buffer and returns its bytes through
+`data_out`; `bk_get_array_buffer` reads the bytes of any ArrayBuffer or
+SharedArrayBuffer. `bk_new_external_array_buffer` wraps host memory without
+copying, so JS reads and writes it in place. Its `release` callback runs once
+with `(data, opaque)` when the buffer is detached, collected or torn down, or
+when creation fails; it runs during collection and must not call the engine.
+`transfer()` copies an external buffer's bytes out and releases it.
+`bk_detach_array_buffer` detaches any buffer that is neither shared nor
+immutable.
+
+`bk_new_typed_array` makes a view of `length` elements at an aligned
+`byte_offset`, and `bk_get_typed_array` reports a view's element type, data
+pointer (offset applied), element count, byte offset and buffer handle. A
+detached or out-of-bounds view reports a NULL pointer and length 0. Pointers
+from these calls are valid until the next call that can run JS, resize or
+detach the buffer.
+
+```c
+float *verts = mesh_vertices(mesh);
+bk_value buf = bk_new_external_array_buffer(ctx, verts, n * sizeof *verts,
+                                            release_mesh, mesh);
+bk_value view = bk_new_typed_array(ctx, BK_FLOAT32, buf, 0, n);
+```
+
+A shared block is the reference-counted memory behind a SharedArrayBuffer.
+`bk_new_shared_array_buffer` returns the block through `data_out`;
+`bk_shared_block_retain` and `bk_shared_block_release` work from any thread,
+and `bk_adopt_shared_block` makes a SharedArrayBuffer over a block in another
+runtime, which takes its own reference. Lengths above 2^31 - 1 fail with
+`BK_ERR_INVALID`, and builds without typed arrays or shared memory return
+`BK_ERR_UNSUPPORTED`.
+
 ### Event loops
 
 `bk_set_job_hook` reports the job queue turning non-empty, so a host loop can

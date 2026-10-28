@@ -916,14 +916,23 @@ struct HObjectGetterSetter {
 // never changes after construction: every write through a view is rejected,
 // and it can be neither detached nor resized. `immutable` and `resizable` are
 // mutually exclusive.
+//
+// An external buffer (bk_new_external_array_buffer) sets `external`. Its data
+// belongs to the embedder and is handed back through the release record at
+// `external_index` in Heap.external_buffers, on detach or free. External
+// buffers are never resizable, so the index shares the cap's storage.
 struct HObjectArrayBuffer {
     char*    data;          // heap.alloc_func'd, zeroed; null when detached or zero-length
     uint     byte_length;   // byte length; set to 0xFFFFFFFF on detach
     HObject* views_head;    // intrusive list of views (via HObjectBufferView.next_view)
-    uint     max_byte_length; // cap for resizable buffers; unused (0) when !resizable
+    union {
+        uint max_byte_length; // cap for resizable buffers; unused (0) when !resizable
+        uint external_index;  // release record of an external buffer
+    }
     bool     resizable;     // true iff constructed with {maxByteLength}
     bool     is_shared;     // true iff this is a SharedArrayBuffer (never detachable)
     bool     immutable;     // true iff produced by transferToImmutable
+    bool     external;      // data is embedder memory with a release record
 }
 
 // TypedArray or DataView, active for INT8ARRAY through FLOAT64ARRAY and DATAVIEW.
@@ -2954,6 +2963,9 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
                 // other frees: other agents may still hold it.
                 if ((*obj.extra_ptr()).ab.data != null) agent::block_release((*obj.extra_ptr()).ab.data);
                 (*obj.extra_ptr()).ab.data = null;
+            } else if ((*obj.extra_ptr()).ab.external) {
+                // Embedder memory is released on teardown too.
+                if (hp != null) hp.release_external_buffer(obj);
             } else if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
                 hp.free_func(hp.heap_udata, (*obj.extra_ptr()).ab.data);
                 (*obj.extra_ptr()).ab.data = null;
