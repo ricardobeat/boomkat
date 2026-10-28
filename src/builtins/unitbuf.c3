@@ -76,10 +76,10 @@ fn bool UnitBuf.grow_bytes(&self, usz bytes) {
         if (new_cap > (usz)-1 / 2) return false;
         new_cap *= 2;
     }
-    // Both widths stay below the longest string, plus the terminator-free slack
-    // the doubling may have added; there is no point reserving past it.
+    // The callers have checked `bytes` against the longest string, so the clamp
+    // keeps the capacity at least what is needed.
     usz limit = (usz)hstring::MAX_STRING_LENGTH << 1;
-    if (new_cap > limit) new_cap = limit < bytes ? bytes : limit;
+    if (new_cap > limit) new_cap = limit;
     char* grown;
     if (self.data == (char*)&self.inline_units[0]) {
         grown = (char*)self.heap.alloc_func(self.heap.heap_udata, new_cap);
@@ -114,7 +114,7 @@ fn bool UnitBuf.widen(&self, usz extra) {
     }
     char* narrow = self.data;
     ushort* units = (ushort*)self.data;
-    for (usz i = self.len; i > 0; i--) units[i - 1] = (ushort)(uint)(narrow[i - 1]);
+    for (usz i = self.len; i > 0; i--) units[i - 1] = (ushort)narrow[i - 1];
     self.wide = true;
     return true;
 }
@@ -152,7 +152,16 @@ fn bool UnitBuf.append_codepoint(&self, uint cp) {
 
 // Append `text`, one unit per byte. A literal is ASCII, and any byte is a
 // Latin-1 unit.
-fn bool UnitBuf.append_latin1(&self, char[] text) {
+fn bool UnitBuf.append_latin1(&self, char[] text) @inline {
+    if (!self.wide && self.len + text.len <= self.cap_bytes) {
+        hstring::copy_short(self.data + self.len, text.ptr, text.len);
+        self.len += text.len;
+        return true;
+    }
+    return self.append_latin1_slow(text);
+}
+
+fn bool UnitBuf.append_latin1_slow(&self, char[] text) @noinline {
     if (text.len == 0) return true;
     if (!self.reserve(text.len)) return false;
     if (self.wide) {
@@ -199,15 +208,17 @@ fn bool UnitBuf.append_wide(&self, ushort[] run, bool has_high) {
 
 // Append units of either width, narrowing nothing it does not have to: a wide
 // run joins a narrow buffer as narrow units unless one of them needs two bytes.
-fn bool UnitBuf.append_units(&self, hstring::Units run) {
+fn bool UnitBuf.append_units(&self, hstring::Units run) @inline {
+    if (!run.wide) return self.append_latin1(run.ptr[:run.len]);
+    return self.append_wide_units(run);
+}
+
+fn bool UnitBuf.append_wide_units(&self, hstring::Units run) @noinline {
     if (run.len == 0) return true;
-    if (run.wide) {
-        ushort[] units = ((ushort*)run.ptr)[:run.len];
-        bool high = false;
-        if (!self.wide) high = hstring::has_unit_above_latin1(run);
-        return self.append_wide(units, high);
-    }
-    return self.append_latin1(run.ptr[:run.len]);
+    ushort[] units = ((ushort*)run.ptr)[:run.len];
+    bool high = false;
+    if (!self.wide) high = hstring::has_unit_above_latin1(run);
+    return self.append_wide(units, high);
 }
 
 // Append the whole string.
