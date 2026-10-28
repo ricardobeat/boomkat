@@ -5,6 +5,7 @@ function sum(a, n) { var x = 0; for (var i = 0; i < n; i++) x += a[i]; return x;
 function transform(dst, src, n) { for (var i = 0; i < n; i++) dst[i] = (src[i] * 3 + 17) ^ 91; }
 function blend(dst, src, n) { for (var i = 0; i < n; i++) dst[i] = src[i] * .75 + dst[i] * .25; }
 function ascii(s) { var x = 0; for (var i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x; }
+function asciiBinding() { var x = 0; for (var i = 0; i < text.length; i++) x = (x * 31 + text.charCodeAt(i)) | 0; return x; }
 function hash(a) { var x = 1; for (var i = 0; i < a.length; i++) x = Math.imul(x, 31) + a[i] | 0; return x; }
 function reference(a, n) { var x = 0; for (var i = 0; i < n; i++) x += identity(a[i]); return x; }
 
@@ -50,9 +51,12 @@ for (var i = 0; i < alias.length; i++) same(alias[i], mirror[i], 'alias');
 var text = 'abc0123456789'.repeat(128), h = 0;
 for (var i = 0; i < text.length; i++) h = (h * 31 + identity(text.charCodeAt(i))) | 0;
 same(ascii(text), h, 'ASCII');
+// Intrinsic receivers loaded from bindings are not VM register indices.
+same(asciiBinding(), h, 'ASCII binding');
 text += '\u00e9\ud83d\ude00'; h = 0;
 for (var i = 0; i < text.length; i++) h = (h * 31 + identity(text.charCodeAt(i))) | 0;
 same(ascii(text), h, 'Unicode fallback');
+same(asciiBinding(), h, 'Unicode binding fallback');
 var oldChar = String.prototype.charCodeAt;
 String.prototype.charCodeAt = function () { return 7; };
 h = 0; for (var i = 0; i < 512; i++) h = (h * 31 + identity(7)) | 0;
@@ -129,6 +133,37 @@ classify(classes, edges);
 for (var i = 0; i < edges.length; i++) {
     var value = identity(edges[i]);
     same(classes[i], value < 0 ? 1 : value >= 0 ? 2 : 3, 'numeric branches');
+}
+
+// A this-property loop bound must be loaded as a field, including a native
+// exit at the poll budget. GETTHISC is not a generic integer operation.
+function shiftDense(n, result) {
+    var source = this.array, dest = result.array;
+    for (var i = n; i < this.limit; ++i) dest[i - n] = source[i];
+    result.limit = Math.max(this.limit - n, 0);
+}
+for (var sample = 0; sample < 100; sample++) {
+    var count = sample % 50 + 1;
+    var shifting = { array: [], limit: count * 2 };
+    for (var i = 0; i < shifting.limit; i++) shifting.array[i] = i < count ? 0 : i * 10017;
+    shiftDense.call(shifting, count, shifting);
+    for (var i = 0; i < count; i++) same(shifting.array[i], (count + i) * 10017, 'this bound and overlap');
+}
+
+// Eval forces environment lookup instead of a direct capture. A compiled
+// loop and its bytecode IC are shared, but these closures own different slots.
+function makeLoopBinding(value) {
+    eval('');
+    return function (n) {
+        for (var i = 0; i < 3; i++) n += value;
+        return n;
+    };
+}
+var loopBindingA = { run: makeLoopBinding(2) };
+var loopBindingB = { run: makeLoopBinding(7) };
+for (var i = 0; i < 200; i++) {
+    same(loopBindingA.run(1), 7, 'first closure binding');
+    same(loopBindingB.run(1), 22, 'second closure binding');
 }
 
 console.log('SLJIT loops: PASS');

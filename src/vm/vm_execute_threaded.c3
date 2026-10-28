@@ -216,6 +216,7 @@ fn Instruction* th_bailout(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 // check, since only a return can be last.
 macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction next = *pc;
+    $if $feat(SLJIT_STATS): cold.vm.current_func.sljit_threaded_entries++; $endif
     $if $feat(OP_PROFILE):
         opprof_thread_complete();
         opprof_thread_begin(next.op);
@@ -247,7 +248,7 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 macro bool th_bwd_edge_bails(Instruction* pc, ColdCtx* cold) @private {
     heap::Heap* h = cold.heap;
     $if $feat(SLJIT):
-        if (h.jit_enabled && sljit_function_backedge(pc, cold.vm.current_func)) return true;
+        if (h.jit_enabled && sljit_function_backedge(pc, cold.vm.current_func, h)) return true;
         if (h.jit_enabled
             && (cold.vm.current_func.sljit_loop_ready & (1U << ((uint)(pc - cold.code_base) & 31))) != 0) return true;
     $endif
@@ -2774,6 +2775,9 @@ fn Instruction* th_get_other_shape(Instruction* pc, HandlerTable* handlers, TVal
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() == key) {
         hobject::PropValue* known = hobject::ic_poly_slot(ic, hobj);
+        if (known == null && ic.chain_len == hobject::IC_CHAIN_PROTO) {
+            known = hobject::ic_proto_value(ic, hobj);
+        }
         if (known != null) return th_publish_read(pc, handlers, regs, cold, known.get());
     }
     return th_get_shared(pc, handlers, regs, cold, hobj, key);
@@ -2795,15 +2799,27 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     hobject::ICEntry* ic = th_ic_at(cold, pc);
     if (ic.key.borrow() == null) {
         th_fill_from_mega(pc, cold.heap, ic, hobj, key, me);
+    } else if (me.proto != null && ic.key.borrow() == key) {
+        // An inherited read this cache answered for one more receiver shape
+        // joins the site's set of shapes, so the native tiers can answer it
+        // without leaving the region on every switch between classes. The
+        // megamorphic entry's owner is the receiver's immediate prototype.
+        HObject* owner = (HObject*)me.proto;
+        if (hobject::ic_proto_add(ic, hobj.shape_id, me.prop_idx, owner, owner)) {
+            owner.gc.prototype_observed = true;
+            cold.heap.shade_root_object(owner);
+        }
     } else if (me.proto == null && ic.key.borrow() == key
                && !hobject::ic_poly_add(ic, hobj.shape_id, me.prop_idx, cold.heap)) {
         // A full set keeps answering for its shapes, all own data reads.
         if (ic.chain_len != hobject::IC_CHAIN_POLY) ic.chain_len = 0;
         ic.shape_id = hobj.shape_id;
+        ic.shape_gen = hobj.shape_generation(cold.heap);
         ic.prop_idx = me.prop_idx;
         ic.prop_flags = me.flags;
         ic.has_proto = false;
     }
+    $if $feat(SLJIT): sljit_read_observe(ic, slot.get()); $endif
     return th_publish_read(pc, handlers, regs, cold, slot.get());
 }
 
@@ -2826,6 +2842,7 @@ fn void th_fill_from_mega(Instruction* pc, heap::Heap* h, hobject::ICEntry* ic, 
         ic.has_proto = false;
     }
     ic.shape_id = hobj.shape_id;
+    ic.shape_gen = hobj.shape_generation(h);
     ic.prop_idx = me.prop_idx;
     ic.prop_flags = me.flags;
     ic.key.set(h, (hstring::HString*)key);
@@ -3510,10 +3527,12 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
             if ((pc != cf.code && sljit_function_resumes(pc, cf))
                 || (pc == cf.code && cf.sljit_function_calls != uint::max)) {
                 pc = sljit_function_entry(pc, regs, cold);
+                regs = cold.act.bottom;
             }
         }
     $endif
     Instruction first = *pc;
+    $if $feat(SLJIT_STATS): cold.vm.current_func.sljit_threaded_entries++; $endif
     opprof_th_record(first.op);
     $if $feat(OP_PROFILE):
         Opcode saved_op = opprof_pending_op;

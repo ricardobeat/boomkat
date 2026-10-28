@@ -5,6 +5,15 @@ import boomkat::hobject;
 import boomkat::bytecode;
 import boomkat::esm;
 
+// One IC owns a bounded set of prototype owners. Full and incremental scans
+// must trace the same set, including arms beyond the primary receiver shape.
+fn void Heap.mark_ic_owners(&self, hobject::ICEntry* ic) {
+    self.mark_hobject(hobject::ic_cached_proto(ic));
+    if (ic.has_proto && ic.chain != null && ic.chain_len == hobject::IC_CHAIN_PROTO) {
+        for (uint i = 0; i < ic.chain.proto.count; i++) self.mark_hobject(ic.chain.proto.arms[i].owner);
+    }
+}
+
 // Scan one constant or inline-cache edge. The caller keeps only indices, so
 // compiler array growth cannot leave a cursor pointing into old storage.
 fn bool Heap.gc_scan_compiled_slot(&self, bytecode::CompiledFunction* cf, uint* index) {
@@ -18,7 +27,7 @@ fn bool Heap.gc_scan_compiled_slot(&self, bytecode::CompiledFunction* cf, uint* 
     if (ic_index < cf.ic_count) {
         if (cf.ic_entries != null) {
             hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
-            self.mark_hobject(hobject::ic_cached_proto(&entries[ic_index]));
+            self.mark_ic_owners(&entries[ic_index]);
         }
         (*index)++;
         return false;

@@ -80,22 +80,14 @@ fn bool RegSet.equals(&self, RegSet* other) {
 // write-only, meaning never simultaneously read as a value, a branch
 // condition, or an assignment source. This is the exhaustive
 // write-only-A allow-list (`moveelim_producer_allowed`'s opcode set, the
-// opcodes this pass proves safe to retarget, plus the fused property loads);
+// opcodes this pass proves safe to retarget, including fused property loads);
 // every opcode outside it is conservatively treated as
 // reading A (see `moveelim_a_is_read` below) even for opcodes where A is
 // actually unused (e.g. INITTZ, YIELD's B/C=0-only forms), marking an
 // unused field as "read" only adds a harmless spurious liveness entry for
 // register 0, since unused fields are always encoded as 0.
 fn bool moveelim_a_is_write_only(Opcode op) {
-    return moveelim_producer_allowed(op) || moveelim_fused_load(op);
-}
-
-// The fused property loads write A and read none of A, B-as-key or C-as-key:
-// GETPROPC reads only its object register B, GETTHISC reads none. They are
-// not producers move elimination retargets, but a read of their destination
-// before the load would otherwise keep it live through the load.
-fn bool moveelim_fused_load(Opcode op) {
-    return op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED || op == Opcode.GETTHISC;
+    return moveelim_producer_allowed(op);
 }
 
 // Whether `op` reads its A field as a register (an input, an assignment
@@ -116,8 +108,7 @@ fn bool moveelim_a_is_read(Opcode op) {
 // Missing a def keeps a register live too far back, which can only suppress a
 // retarget, never permit an unsafe one.
 fn bool moveelim_a_is_write(Opcode op) {
-    // The producer allow-list, plus LDINTX (it spans two instruction words) and
-    // the fused property loads, which are excluded from producer retargeting.
+    // The producer allow-list, plus LDINTX (it spans two instruction words).
     return op == Opcode.LDINTX || moveelim_a_is_write_only(op);
 }
 
@@ -166,6 +157,9 @@ fn bool moveelim_producer_allowed(Opcode op) {
         case Opcode.INSTANCEOF:
         case Opcode.IN:
         case Opcode.GETPROP:
+        case Opcode.GETPROPC:
+        case Opcode.GETPROPC_CACHED:
+        case Opcode.GETTHISC:
         case Opcode.GETPROTO:
         case Opcode.GETVAR:
         case Opcode.GETBOUND:

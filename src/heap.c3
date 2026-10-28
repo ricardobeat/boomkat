@@ -1098,7 +1098,13 @@ struct Heap {
     CapiMarkSliceFn     capi_mark_slice;
 
     bool                jit_enabled @if($feat(SLJIT));
+    bool                jit_stress @if($feat(SLJIT));
     usz                 jit_code_bytes @if($feat(SLJIT));
+    usz                 jit_code_limit @if($feat(SLJIT));
+    ulong               jit_native_work @if($feat(SLJIT));
+    ulong               jit_clock @if($feat(SLJIT));
+    uint                jit_evictions @if($feat(SLJIT));
+    ulong               jit_resumed_pushes @if($feat(SLJIT) && $feat(SLJIT_STATS));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
     // the host keeps the heap alive until every watchdog has stopped.
@@ -2008,6 +2014,7 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
             if (!self.ic_names_live_shapes(&entries[i])) {
                 entries[i].shape_id = SHAPE_NONE;
                 entries[i].chain_len = 0;
+                entries[i].has_proto = false;
             }
         }
     }
@@ -2026,10 +2033,12 @@ fn bool Heap.ic_names_live_shapes(&self, hobject::ICEntry* ic) @inline {
     if (ic.shape_id == SHAPE_NONE || ic.key.borrow() == null) return true;
     if (ic.shape_id >= self.shape_count || !self.shape_slot_live(ic.shape_id)) return false;
     if (ic.chain == null || ic.chain_len == hobject::IC_CHAIN_EPOCH) return true;
-    bool poly = ic.chain_len == hobject::IC_CHAIN_POLY;
-    uint count = poly ? ic.chain.poly.count : (uint)ic.chain_len;
+    bool poly  = ic.chain_len == hobject::IC_CHAIN_POLY;
+    bool proto = ic.chain_len == hobject::IC_CHAIN_PROTO;
+    uint count = poly ? ic.chain.poly.count : proto ? ic.chain.proto.count : (uint)ic.chain_len;
     for (uint i = 0; i < count; i++) {
-        uint id = poly ? ic.chain.poly.shapes[i] : ic.chain.snapshot.shapes[i];
+        uint id = poly ? ic.chain.poly.shapes[i]
+            : proto ? ic.chain.proto.arms[i].shape_id : ic.chain.snapshot.shapes[i];
         if (id >= self.shape_count || !self.shape_slot_live(id)) return false;
     }
     return true;
@@ -2285,6 +2294,7 @@ fn void Heap.free_compiled_funcs(&self) {
             cf.src_ptr = null;
         }
         self.free_func(self.heap_udata, cf);
+        self.compiled_funcs[i] = null;
     }
 }
 
@@ -2565,6 +2575,12 @@ fn void Heap.reset(&self) {
 
     self.free_compiled_funcs();
     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
+    $if $feat(SLJIT_ADAPTIVE):
+        self.jit_code_limit = 0;
+        self.jit_native_work = 0;
+        self.jit_clock = 0;
+        self.jit_evictions = 0;
+    $endif
 
     // Large strings are in neither str_table nor the object vectors, so the registry
     // is the only list that can reach them. Skipping this pass would leave them
@@ -4521,12 +4537,13 @@ fn void Heap.mark_roots(&self) {
                 self.mark_tval(&cf.constants[ci]);
             }
         }
-        // Property IC entries cache a proto object and a key string.
+        // Property IC entries cache a proto object and a key string. An
+        // inherited read that answers for several receiver shapes roots one
+        // owner per shape.
         if (cf.ic_entries != null && cf.ic_count > 0) {
             hobject::ICEntry* ics = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
-                hobject::ICEntry* ie = &ics[ii];
-                self.mark_hobject(hobject::ic_cached_proto(ie));
+                self.mark_ic_owners(&ics[ii]);
             }
         }
     }
@@ -5850,6 +5867,17 @@ fn bool Heap.set_jit(&self, bool enabled) {
         if (enabled && (!types::USE_NANBOX || usz::size != 8
             || !$feat(THREADED_DISPATCH) || !jit::bind_sljit_runtime())) return false;
         self.jit_enabled = enabled;
+        return true;
+    $else
+        return !enabled;
+    $endif
+}
+// Test setting: warm every function on its first call and never retire an
+// entry, so each function the tiers accept runs native and a fault surfaces
+// in the compiler rather than behind the warmup policy.
+fn bool Heap.set_jit_stress(&self, bool enabled) {
+    $if $feat(SLJIT):
+        self.jit_stress = enabled;
         return true;
     $else
         return !enabled;

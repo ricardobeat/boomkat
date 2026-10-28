@@ -46,3 +46,13 @@ sljit_uw sljit_shim_label_addr(struct sljit_label *label)
 {
     return sljit_get_label_addr(label);
 }
+
+sljit_uw sljit_shim_jump_addr(struct sljit_jump *jump)
+{
+    return sljit_get_jump_addr(jump);
+}
+
+sljit_sw sljit_shim_executable_offset(struct sljit_compiler *compiler)
+{
+    return sljit_get_executable_offset(compiler);
+}

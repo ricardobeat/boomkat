@@ -20,6 +20,7 @@ function countNeNull(value, rounds) {
 
 var a = { name: "a" };
 var b = { name: "b" };
+var dda = __isHTMLDDA();
 
 for (var round = 0; round < 300; round++) {
     check("undefined == null", countEqNull(undefined, 100), 100);
@@ -30,6 +31,8 @@ for (var round = 0; round < 300; round++) {
     check("null != null", countNeNull(null, 100), 0);
     check("0 != null", countNeNull(0, 100), 100);
     check("object != null", countNeNull(a, 100), 100);
+    check("dda == null", countEqNull(dda, 100), 100);
+    check("dda != null", countNeNull(dda, 100), 0);
 
     var same = 0;
     var different = 0;

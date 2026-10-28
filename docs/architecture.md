@@ -251,6 +251,11 @@ function therefore snapshots its private-name table into
 
 The fusion drivers check jump targets and register liveness before replacing a
 sequence. A branch cannot land inside a sequence whose producer was removed.
+Move elimination can retarget fused named-property reads (`GETPROPC`,
+`GETPROPC_CACHED`, `GETTHISC`) directly into a following copy's destination.
+It uses the same source/destination liveness, alias, jump-target and protected
+region checks as ordinary producers; getter order and throwing assignments
+remain observable in their original order.
 
 `gen_module_slots` gives a module's top-level `var` a register when resolution
 finds no capture, dynamic scope or export that requires an environment binding.
@@ -654,6 +659,27 @@ checks array storage and builtin identities, and borrows pointers for a chunk
 that cannot allocate or enter JS. Every indexed access checks bounds; dense
 holes and values needing coercion exit to bytecode.
 
+Eligible numeric loops first use a bounded SSA compiler, with int32, F64 and
+tagged representations, forward branch blocks and phi joins. Its register
+intervals include interpreter recovery uses; each guard reconstructs the frame
+before its bytecode instruction. Join intervals begin at incoming edge copies,
+and loop-carried register and spill values move in parallel. Recovery-only
+header values remain tagged, avoiding numeric entry guards on overwritten
+temporaries. Captured and lexical/global binding reads reuse the loop entry's
+validated binding snapshots; integer inference uses the compiler's shared
+conservative register-write effects. Postfix branch
+operands survive those copies. Load elimination requires dominance and discards
+cached loads across potentially aliased writes. Dense loads guarded as numbers
+may remain live across numeric stores without retaining heap references. Guards
+with identical recovery frames and bytecode PCs share an exit stub. Unsupported graphs fall back to
+the straight-line loop compiler. `SLJIT_NO_SSA` disables this tier for comparison;
+`SLJIT_STATS` reports its actual entries and iterations separately from fallback.
+
+When a function region overlaps an existing SSA memory loop, its taken comparison
+backedge returns to the interpreter at that branch. Ordinary edge dispatch then
+selects the loop specialization, preventing generic boxed code from displacing
+the optimized kernel. Scalar-only loops keep native function backedges.
+
 Native exits carry an instruction offset, updated registers, and a remaining
 backedge budget. Completed stores remain committed. The VM retains incoming
 refcounted values before replacing registers, publishes dirty slots, and charges
@@ -675,25 +701,57 @@ sixteen instructions. Repeated short guard exits disable that entry.
 Native backward branches consume an invocation-local budget bounded by the
 heap's GC and interrupt budgets and 1024 edges. Before exhaustion they publish
 state and resume at the original branch, whose interpreter handler performs the
-poll. There is no allocation, collection, or JS callback inside a native run.
+poll. Collection and arbitrary JS callbacks run after generated machine frames
+unwind. Allocation helpers may request collection; they publish the completed
+result and leave at the following instruction before that collection runs.
 
 Regions combine ordinary data-property accesses, captured integer counters,
 bitwise operations, dense-array reads and fixed typed-array loads/stores. Guarded
-Math min/max/abs/sqrt/imul calls execute without entering JS. Small straight-line
-numeric JS helpers can also be inlined from warmed binding sites: live binding,
-callee identity and argument guards precede evaluation in private scratch space.
-Unsupported calls, allocations and exceptional operations return to the
-interpreter; eligible continuations resume after a call returns.
+Math min/max/abs/sqrt/imul calls execute without entering JS. Generated callees
+share the register window, cold context and invocation budget through SLJIT's
+register-argument convention. Entry publishes an ordinary VM activation; return
+restores the caller and continues natively. A side exit unwinds machine frames
+while preserving VM activations for the interpreter.
 
-Four general registers cache boxed values. Within a basic block, four FP
-registers retain proven numbers, with next-use-based spills and snapshots of
+Bounded inlining records virtual frames and exact exit PCs, including branches,
+loops and completed stores. Recovery constructs the interpreter activations
+without replaying effects. Allocating object/array operations and dense-array
+growth use helpers with explicit refused/completed/completed-and-exit status.
+A separately compiled SLJIT context fragment resumes the native continuation.
+VM slots own GC roots and refcounted values across these transitions. Unsupported
+operations, callbacks and exceptions retain interpreter handling.
+
+Monomorphic calls use rewritable native links with a generic call fallback.
+Incoming links are patched before a target is freed. Compilation, relinking and
+retirement occur only after generated frames unwind; targets remain in the
+compiled-function registry until heap teardown.
+
+The straight-line loop fallback caches boxed values in four general registers.
+Function regions keep authoritative values in VM slots. Within a basic block, four FP registers
+retain proven numbers, with next-use-based spills and snapshots of
 dirty values at each guard exit. Compact supported regions use CFG liveness to
 reserve up to three canonical FP homes across branches and native iterations.
+Operand reads come from the compiler's liveness metadata. Numeric-home admission
+uses the separate `register_may_writes` query: destructive inputs and implicit
+call windows invalidate homes, while unknown opcodes conservatively invalidate
+all registers. These may-write effects are not liveness kills; move elimination
+retains its narrower set of definite, retargetable destinations.
+Whole-function entry selects only arguments; region entry may guard live locals.
+Every entry converts those slots before entering a continuation. Calls and
+helpers publish canonical homes before clobbering FP registers and reload them
+after successful completion. A failed reload resumes after the completed
+operation with authoritative VM slots.
 This is a restricted representation analysis, not a general SSA optimizer;
 integer induction remains boxed. Mixed or larger regions keep block-local FP
 allocation. Pending numeric definitions replace only non-string values, so
-publication does not need string destruction. Receiver identities propagate
-through register copies; ordinary shape guards and field loads can be reused
+publication does not need string destruction. Named-read ICs also sample up to
+16 result values at property-cache fills and shared-cache misses. Ordinary
+interpreter cache hits do not sample. Sites observed without strings may emit
+a non-string result guard, then use uncounted stores
+and propagate that ownership fact through copies. Feedback only selects the
+guard: a later string leaves before publication and uses the existing read
+continuation, preserving reference counts and accessor semantics.
+Receiver identities propagate through register copies; ordinary shape guards and field loads can be reused
 until assignment, heap writes or control-flow joins invalidate their proofs.
 
 Interpreter element sites sample bounded, pointer-free typed-array class

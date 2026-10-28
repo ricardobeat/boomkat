@@ -13,6 +13,8 @@ struct FunctionFlowLoad @feat(SLJIT) { uint base; uint value; void* key; }
 // Block-local typed values. FP1/2 are temporaries; FP3..6 retain proven
 // numbers. Dirty values own no strings and are published at spills/exits.
 struct FunctionFlow @feat(SLJIT) {
+    // Numbers/objects and permanently pinned strings need no refcount release.
+    bool[256] unowned;
     char[256] registers;
     char[4] owners;
     uint used;
@@ -26,6 +28,7 @@ struct FunctionFlow @feat(SLJIT) {
     uint next_load;
 }
 fn void FunctionFlow.forget(&self, uint reg) @feat(SLJIT) {
+    self.unowned[reg] = false;
     self.shapes[reg] = 0;
     self.versions[reg] = ++self.next_version;
     foreach (&load : self.loads) if (load.value == reg) load.key = null;
@@ -71,7 +74,7 @@ fn bool function_float_op(Opcode op) @feat(SLJIT) {
 fn void FunctionEmitter.flow_publish(&self, uint slot, uint reg) @feat(SLJIT) {
     self.out.float_bits((int)slot + 3, jit::reg_r(0));
     int cached = self.out.cached(reg);
-    self.out.e.mov(cached != 0 ? cached : jit::SLJIT_MEM | jit::reg_s(0),
+    self.out.e.mov(cached != 0 ? cached : jit::SLJIT_MEM | self.out.state_base(),
         cached != 0 ? 0 : loop_value_offset(reg), jit::reg_r(0), 0);
 }
 fn void FunctionEmitter.flow_exit(&self, ulong state) @feat(SLJIT) {
@@ -89,6 +92,7 @@ fn void FunctionEmitter.flow_flush(&self) @feat(SLJIT) {
     }
     self.flow.used = self.flow.pinned; self.flow.dirty = self.flow.pinned;
     for (uint i = 0; i < 256; i++) {
+        self.flow.unowned[i] = false;
         self.flow.shapes[i] = 0; self.flow.versions[i] = i + 1;
     }
     self.flow.this_shape = 0; self.flow.next_version = 256; self.flow.heap_write();
@@ -120,11 +124,14 @@ fn int FunctionEmitter.flow_slot(&self, uint reg, uint pc) @feat(SLJIT) {
 // A dirty FP definition replaces only a non-string value. This allows the
 // native spill/exit to publish a number without invoking string destruction.
 fn void FunctionEmitter.flow_destination(&self, uint reg, uint pc) @feat(SLJIT) {
+    if (self.out.raw_store) return;
+    if (self.flow.unowned[reg]) return;
     if (self.flow.registers[reg] != 0) return;
     int r1 = jit::reg_r(1); int r3 = jit::reg_r(3);
     self.out.load(reg, r1);
     self.out.e.op(jit::SLJIT_LSHR, r3, r1, 0, jit::SLJIT_IMM, 48);
     self.out.guard(jit::SLJIT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_STRING, pc);
+    self.flow.unowned[reg] = true;
 }
 fn void FunctionEmitter.flow_number(&self, uint reg, int temporary, uint pc) @feat(SLJIT) {
     int cached = self.flow.registers[reg];
@@ -137,6 +144,7 @@ fn void FunctionEmitter.flow_value(&self, uint reg, uint pc) @feat(SLJIT) {
     self.flow_destination(reg, pc);
     self.out.number(jit::reg_r(0), 1, pc);
     self.flow.forget(reg);
+    self.flow.unowned[reg] = true;
     int slot = self.flow_slot(reg, pc);
     self.out.fop(jit::SLJIT_MOV_F64, slot, 0, 1, 0);
     self.flow.dirty |= 1U << (uint)(slot - 3);
@@ -158,6 +166,7 @@ fn void FunctionEmitter.flow_numeric(&self, Instruction ins, uint pc) @feat(SLJI
         : ins.op == Opcode.SUB ? jit::SLJIT_SUB_F64 : jit::SLJIT_ADD_F64;
     if (jit::sljit_emit_fop2(self.out.e.compiler, op, 1, 0, 1, 0, 2, 0) != 0) self.out.e.failed = true;
     self.flow.forget(ins.a);
+    self.flow.unowned[ins.a] = true;
     int slot = self.flow_slot(ins.a, pc);
     self.out.fop(jit::SLJIT_MOV_F64, slot, 0, 1, 0);
     self.flow.dirty |= 1U << (uint)(slot - 3);
@@ -167,5 +176,27 @@ fn void FunctionEmitter.flow_numeric(&self, Instruction ins, uint pc) @feat(SLJI
 // Paths that temporarily disable flow must first expose every canonical lane.
 fn void FunctionEmitter.flow_materialize(&self) @feat(SLJIT) {
     self.flow_exit(self.flow.snapshot());
+    self.flow.dirty = 0;
     self.flow_flush();
+}
+
+// Reload the canonical representation after a completed operation that may
+// clobber FP registers. Slots are already authoritative; a failed conversion
+// exits at the following bytecode without publishing partially reloaded lanes.
+fn void FunctionEmitter.flow_reload(&self, uint pc) @feat(SLJIT) {
+    if (self.flow.pinned == 0) return;
+    LoopEmitter reload = { .e = self.out.e };
+    for (uint lane = 0; lane < 4; lane++) {
+        if ((self.flow.pinned & (1U << lane)) == 0) continue;
+        reload.e.mov(jit::reg_r(0), 0, jit::SLJIT_MEM | self.out.state_base(),
+            loop_value_offset(self.flow.owners[lane]));
+        reload.number(jit::reg_r(0), (int)lane + 3, pc);
+    }
+    void* done = jit::sljit_emit_jump(reload.e.compiler, jit::SLJIT_JUMP);
+    void* failed = reload.e.label();
+    for (uint i = 0; i < reload.link_count; i++) reload.bind_to(reload.link_at(i).jump, failed);
+    reload.e.mov(jit::reg_r(0), 0, jit::SLJIT_IMM, (long)(self.cf.code + pc));
+    if (jit::sljit_emit_return(reload.e.compiler, jit::SLJIT_MOV, jit::reg_r(0), 0) != 0) reload.e.failed = true;
+    reload.e.bind(done);
+    if (reload.e.failed) self.out.e.failed = true;
 }

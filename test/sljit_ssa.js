@@ -1,5 +1,5 @@
-// Differential checks for loops that the SSA path can lower. The path is
-// opt-in today, so this also runs against the straight-line loop tier.
+// Differential checks for loops that the SSA path can lower, also run
+// against the interpreter and the straight-line fallback.
 function check(actual, expected, label) {
     if (actual !== expected) throw new Error(label + ": " + actual + " != " + expected);
 }

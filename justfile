@@ -536,3 +536,13 @@ test-jit:
     python3 scripts/build.py embedding_jit
     ./out/embedding_jit
     ./out/jit_api
+
+# Differential JIT run: local suites with and without --jit must agree.
+test-jit-diff:
+    @make out/boomkat
+    bash scripts/run_jit_diff.sh ./out/boomkat
+
+# Differential JIT run over the main test262 areas.
+test262-jit-diff:
+    @make out/test262_runner
+    bash scripts/run_jit_diff.sh --test262 ./out/test262_runner

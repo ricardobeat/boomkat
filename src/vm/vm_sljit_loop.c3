@@ -17,7 +17,8 @@ const uint LOOP_OPS       = 128;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
 const uint LOOP_THIS      = LOOP_REGS + LOOP_BINDINGS;
-const usz LOOP_CODE_LIMIT = 1024 * 1024;
+const uint LOOP_LINK_LIMIT = 8192;
+const uint LOOP_LINK_BLOCK = usz::size == 8 ? 4 : 2;
 
 alias LoopNative = fn uint(void* state, long budget);
 enum LoopMemoryKind : char {
@@ -89,25 +90,34 @@ struct LoopPlan @feat(SLJIT) {
     bool ssa;
     char[LOOP_REGS] cache;
     char[LOOP_REGS] float_cache;
-    ulong hits @if($feat(SLJIT_STATS));
-    ulong iterations @if($feat(SLJIT_STATS));
+    ulong hits;
+    ulong iterations;
+    ulong ssa_hits @if($feat(SLJIT_STATS));
+    ulong ssa_iterations @if($feat(SLJIT_STATS));
 }
 struct LoopLink @feat(SLJIT) {
     void* jump;
     uint target;
     bool exit;
+    ushort inline_id;
     ulong flow;
+    void* resolved;
 }
 struct LoopEmitter @feat(SLJIT) {
     TemplateEmitter e;
     LoopPlan* plan;
     void*[512] labels;
-    LoopLink[2048] links;
+    // Small chunks belong to the SLJIT compiler arena. Nested emitters keep
+    // only this index on the stack; unused fixup capacity allocates nothing.
+    LoopLink*[LOOP_LINK_LIMIT / LOOP_LINK_BLOCK] link_blocks;
     uint link_count;
+    uint link_limit;
+    bool link_limit_reached @if($feat(SLJIT_STATS));
     bool function_mode;
     // Inlined callees keep their registers in a private scratch window, so the
     // emitter needs a second base pointer and must not touch reference counts.
     bool raw_store;
+    FunctionInlineFrame* inline_frame;
     int state_reg;
     FunctionFlow* flow;
 }
@@ -127,7 +137,7 @@ fn ulong loop_bits(TVal v) @feat(SLJIT) {
 fn int loop_target(Instruction ins, uint pc) @feat(SLJIT) {
     if (ins.op == Opcode.JUMP) return (int)pc + 1 + ins.get_sabc();
     if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) return (int)pc + 1 + ins.get_sbc();
-    if ((ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_SNEQ)
+    if ((ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_NNULL)
         || (ins.op >= Opcode.JMP_NLTI && ins.op <= Opcode.JMP_SNEQI)) return (int)pc + 1 + (int)(ichar)ins.a;
     return -1;
 }
@@ -155,7 +165,11 @@ fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) 
             return !env::is_tdz_sentinel(result);
         }
     } else {
-        hobject::VarICEntry* ic = pc.op == Opcode.GETGLOBAL ? th_global_ic_hit(pc, cold) : th_var_ic_hit(pc, cold);
+        // The bytecode IC is shared by every closure of this function. The
+        // threaded GETVAR handler checks the environment head before using
+        // its cached slot; a loop entry must make the same check.
+        hobject::VarICEntry* ic = pc.op == Opcode.GETGLOBAL ? th_global_ic_hit(pc, cold)
+            : (!th_var_ic_moved(pc, cold) ? th_var_ic_hit(pc, cold) : null);
         if (ic != null && !ic.prop_flags.is_accessor) {
             *result = ic.slot_ptr.get();
             return !env::is_tdz_sentinel(result);
@@ -419,6 +433,8 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         origin[i] = (int)i;
         method[i] = -1;
     }
+    // Only VM registers participate in allocation; binding/this sources use
+    // indices beyond LOOP_REGS and must not index this array.
     uint[LOOP_REGS] frequency;
     // Over-approximation of the registers any instruction may write; a field
     // read off a register that the loop rewrites needs a per-access guard.
@@ -456,10 +472,15 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
         if (target >= 0) {
             if ((uint)target >= cf.code_count || (target <= (int)pos && pos != end)) return false;
             if (ins.op == Opcode.JUMP) continue;
+            // The template emitter's condition path carries the numeric
+            // relations only, so the equality and null branches stay out of
+            // this tier.
+            if (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ
+                || ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL) return false;
             uint b = ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE ? ins.a : ins.b;
             if (b >= cf.num_regs) return false;
             frequency[b]++;
-            if (ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_SNEQ) {
+            if (ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_NEQ) {
                 if (ins.c >= cf.num_regs) return false;
                 frequency[ins.c]++;
             }
@@ -564,7 +585,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                             plan.memory_at[at] = (char)(memory + 1);
                             origin[ins.a] = -1;
                             method[ins.a] = memory;
-                            frequency[source]++;
+                            if (source < (int)LOOP_REGS) frequency[(uint)source]++;
                             continue;
                         } else {
                             memory = -1;
@@ -582,7 +603,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold) @feat(
                             plan.memory_at[at] = (char)(memory + 1);
                             origin[ins.a] = -1;
                             method[ins.a] = memory;
-                            frequency[source]++;
+                            if (source < (int)LOOP_REGS) frequency[(uint)source]++;
                             continue;
                         }
                         memory = -1;
@@ -850,11 +871,29 @@ fn void LoopEmitter.mark(&self, uint reg) @feat(SLJIT) {
     self.e.op(jit::SLJIT_OR, jit::reg_s(2), jit::reg_s(2), 0, jit::SLJIT_IMM, (long)(1UL << reg));
 }
 fn void LoopEmitter.link(&self, void* jump, uint target, bool exit) @feat(SLJIT) {
-    if (jump == null || self.link_count == self.links.len) {
+    self.add_link({ .jump = jump, .target = target, .exit = exit,
+        .inline_id = exit && self.inline_frame != null ? self.inline_frame.id : 0,
+        .flow = self.flow != null && exit ? self.flow.snapshot() : 0 });
+}
+fn LoopLink* LoopEmitter.link_at(&self, uint index) @feat(SLJIT) {
+    return self.link_blocks[index / LOOP_LINK_BLOCK] + index % LOOP_LINK_BLOCK;
+}
+fn uint LoopEmitter.link_capacity(&self) @feat(SLJIT) => self.link_limit != 0 ? self.link_limit : 2048;
+fn void LoopEmitter.add_link(&self, LoopLink link) @feat(SLJIT) {
+    $if $feat(SLJIT_STATS):
+        if (self.link_count == self.link_capacity()) self.link_limit_reached = true;
+    $endif
+    if (link.jump == null || self.link_count == self.link_capacity()) {
         self.e.failed = true;
         return;
     }
-    self.links[self.link_count++] = { jump, target, exit, self.flow != null && exit ? self.flow.snapshot() : 0 };
+    uint block = self.link_count / LOOP_LINK_BLOCK;
+    if (self.link_blocks[block] == null) {
+        self.link_blocks[block] = (LoopLink*)jit::sljit_alloc_memory(self.e.compiler,
+            (int)(LOOP_LINK_BLOCK * LoopLink::size));
+        if (self.link_blocks[block] == null) { self.e.failed = true; return; }
+    }
+    *self.link_at(self.link_count++) = link;
 }
 fn void LoopEmitter.bind_to(&self, void* jump, void* label) @feat(SLJIT) {
     if (jump != null && label != null) {
@@ -1101,11 +1140,7 @@ fn void*[2] LoopEmitter.condition(&self, Instruction ins, uint pc) @feat(SLJIT) 
         self.e.bind(floating);
         self.number(r0, 1, pc);
         self.number(r1, 2, pc);
-        uint index         = ins.op >= Opcode.JMP_NLTI ? ins.op.ordinal - Opcode.JMP_NLTI.ordinal
-            : ins.op.ordinal - Opcode.JMP_NLT.ordinal;
-        // Negated relations include unordered inputs; ordinary relations exclude NaNs.
-        int[10] conditions = { 27, 34, 29, 32, 26, 35, 28, 33, 24, 25 };
-        skip_float = jit::sljit_emit_fcmp(self.e.compiler, conditions[index] ^ 1, 1, 0, 2, 0);
+        skip_float = jit::sljit_emit_fcmp(self.e.compiler, loop_float_condition(ins.op) ^ 1, 1, 0, 2, 0);
         if (skip_float == null || take_integer == null) self.e.failed = true;
         self.e.bind(take_integer);
     }
@@ -1164,17 +1199,62 @@ fn void LoopEmitter.index(&self, uint reg, uint memory, uint pc) @feat(SLJIT) {
     self.e.op(jit::SLJIT_ADD, jit::reg_r(2), jit::reg_r(2), 0, jit::reg_r(1), 0);
 }
 fn int loop_condition(Opcode op) @feat(SLJIT) {
-    uint index         = op >= Opcode.JMP_NLTI ? op.ordinal - Opcode.JMP_NLTI.ordinal
-        : op.ordinal - Opcode.JMP_NLT.ordinal;
-    int[10] conditions = { 7, 8, 9, 6, 6, 9, 8, 7, 0, 1 };
-    return conditions[index];
+    switch (op) {
+        case JMP_NLT:
+        case JMP_NLTI: return jit::SLJIT_SIG_GREATER_EQUAL;
+        case JMP_NLE:
+        case JMP_NLEI: return jit::SLJIT_SIG_GREATER;
+        case JMP_NGT:
+        case JMP_NGTI: return jit::SLJIT_SIG_LESS_EQUAL;
+        case JMP_NGE:
+        case JMP_NGEI: return jit::SLJIT_SIG_LESS;
+        case JMP_LT:
+        case JMP_LTI: return jit::SLJIT_SIG_LESS;
+        case JMP_LE:
+        case JMP_LEI: return jit::SLJIT_SIG_LESS_EQUAL;
+        case JMP_GT:
+        case JMP_GTI: return jit::SLJIT_SIG_GREATER;
+        case JMP_GE:
+        case JMP_GEI: return jit::SLJIT_SIG_GREATER_EQUAL;
+        case JMP_SEQ:
+        case JMP_SEQI: return jit::SLJIT_EQUAL;
+        case JMP_SNEQ:
+        case JMP_SNEQI: return jit::SLJIT_NOT_EQUAL;
+        default: unreachable("loop_condition relation opcode");
+    }
+}
+// Negated relations include unordered inputs; ordinary relations exclude NaNs.
+fn int loop_float_condition(Opcode op) @feat(SLJIT) {
+    switch (op) {
+        case JMP_NLT:
+        case JMP_NLTI: return jit::SLJIT_UNORDERED_OR_GREATER_EQUAL;
+        case JMP_NLE:
+        case JMP_NLEI: return jit::SLJIT_UNORDERED_OR_GREATER;
+        case JMP_NGT:
+        case JMP_NGTI: return jit::SLJIT_UNORDERED_OR_LESS_EQUAL;
+        case JMP_NGE:
+        case JMP_NGEI: return jit::SLJIT_UNORDERED_OR_LESS;
+        case JMP_LT:
+        case JMP_LTI: return jit::SLJIT_ORDERED_LESS;
+        case JMP_LE:
+        case JMP_LEI: return jit::SLJIT_ORDERED_LESS_EQUAL;
+        case JMP_GT:
+        case JMP_GTI: return jit::SLJIT_ORDERED_GREATER;
+        case JMP_GE:
+        case JMP_GEI: return jit::SLJIT_ORDERED_GREATER_EQUAL;
+        case JMP_SEQ:
+        case JMP_SEQI: return jit::SLJIT_ORDERED_EQUAL;
+        case JMP_SNEQ:
+        case JMP_SNEQI: return jit::SLJIT_UNORDERED_OR_NOT_EQUAL;
+        default: unreachable("loop_float_condition relation opcode");
+    }
 }
 fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
     LoopEmitter out    = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = plan };
     TemplateEmitter* e = &out.e;
     if (!e.compiler) return null;
     defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW, 8 | (6 << 8), 5, 0) != 0) return null;
+    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW_R, 8 | (6 << 8), 5, 0) != 0) return null;
     int r0     = jit::reg_r(0);
     int r1     = jit::reg_r(1);
     int r2     = jit::reg_r(2);
@@ -1256,6 +1336,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
                     long offset = (char*)&layout.bindings[id] - (char*)&layout;
                     e.mov(r0, 0, mem | state, offset);
                 }
+            case GETTHISC:
             case GETPROPC:
             case GETPROPC_CACHED:
                 if (plan.memory[memory].kind == SHAPE_FIELD) {
@@ -1414,8 +1495,8 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
             case DIV:
                 out.numeric(ins, pos);
                 continue;
-            default:
-
+            case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+            case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
                 {
                     out.int32(ins.b, r0, pos);
                     bool immediate = ins.op == Opcode.BANDI || ins.op == Opcode.BORI || ins.op == Opcode.BXORI
@@ -1452,6 +1533,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
                     }
                     out.box(r0);
                 }
+            default: return null;
         }
         out.store(ins.a, r0, pos);
     }
@@ -1463,7 +1545,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
     void*[512] epilog_jumps;
     uint exit_count;
     for (uint i = 0; i < out.link_count; i++) {
-        LoopLink link = out.links[i];
+        LoopLink link = *out.link_at(i);
         if (!link.exit) {
             out.bind_to(link.jump, out.labels[link.target - plan.begin]);
             continue;
@@ -1536,6 +1618,7 @@ fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @in
 }
 fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
     Heap* h              = cold.heap;
+    $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
     CompiledFunction* cf = cold.vm.current_func;
     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || cf.num_regs > LOOP_REGS || h.uncatchable_throw
         || std::core::mem::@atomic_load(
@@ -1566,7 +1649,8 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         cf.sljit_loop_ready &= ~(1U << (offset & 31));
         int target = loop_target(*pc, offset);
         if (target < 0 || target >= (int)offset || (cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return body;
-        if (plans >= 4 || h.jit_code_bytes >= LOOP_CODE_LIMIT) {
+        if (plans >= 4 || !sljit_code_room(h, 0)) {
+            if (plans < 4) cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
@@ -1585,7 +1669,8 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
-        if (h.jit_code_bytes + draft.code_bytes > LOOP_CODE_LIMIT) {
+        if (!sljit_code_room(h, draft.code_bytes)) {
+            cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
             jit::sljit_free_code((void*)draft.native, null);
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
@@ -1617,12 +1702,19 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     if (!prepared && !loop_prepare(plan, &state, cold)) return body;
     uint resume_pc = plan.native(&state, budget);
     uint consumed  = (uint)(budget - state.budget);
+    $if $feat(SLJIT_STATS):
+    if (plan.ssa) { plan.ssa_hits++; plan.ssa_iterations += consumed; }
+    $endif
     // A guard exit means the SSA speculation did not hold. When an integer
     // operation overflowed, retry once with that register held as a double:
     // JavaScript numbers are IEEE doubles, so the wider representation is
     // exact. Anything else falls back to the straight-line loop tier instead
     // of retrying the same speculation at every safepoint.
     if (plan.ssa && resume_pc >= plan.begin && resume_pc < plan.end) {
+        $if $feat(SLJIT_STATS):
+            io::eprintfn("SLJIT ssa fallback name=%s begin=%d pc=%d opcode=%s iterations=%d",
+                (String)cf.get_name(), plan.begin, resume_pc, cf.code[resume_pc].op, consumed);
+        $endif
         jit::sljit_free_code((void*)plan.native, null);
         h.jit_code_bytes -= plan.code_bytes;
         plan.native = null;
@@ -1680,6 +1772,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         cf.sljit_loop_ready |= ready;
     }
     h.bwd_gc_budget -= consumed;
+    sljit_budget_progress(h, consumed);
     if (interrupts) h.interrupt_budget -= consumed;
     // Retain every incoming string before releasing any overwritten register;
     // a native permutation can move its last reference between slots.
@@ -1693,17 +1786,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         h.decref_tval(&state.values[i]);
         if (regs[i].is_heap_allocated()) track_heap_store(cold.act, regs + i, i);
     }
-    $if $feat(SLJIT_STATS):
-        plan.hits++;
-        plan.iterations += consumed;
-        if (plan.hits == 1000) io::eprintfn(
-            "SLJIT loop native %s pc=%d..%d hits=%d iterations=%d",
-            (String)cf.get_name(),
-            plan.begin,
-            plan.end,
-            plan.hits,
-            plan.iterations
-        );
-    $endif
+    plan.hits++;
+    plan.iterations += consumed;
     return cf.code + resume_pc;
 }
