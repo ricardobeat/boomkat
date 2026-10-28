@@ -1445,6 +1445,9 @@ fn int drain_microtasks(Runtime* rt) {
     clear_err(rt);
     rt.heap.uncatchable_throw = false;
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
+    // Settle Atomics.waitAsync notifications and timeouts first, so a host
+    // checkpoint runs their reactions even when the queue starts empty.
+    if (rt.heap.agent_port != null) (void)rt.heap.agent_poll_fn(rt.heap, rt.vm);
     rt.heap.drain_microtasks((void*)rt.vm, force: true);
     if (rt.heap.uncatchable_throw) {
         return interrupt_status(rt);

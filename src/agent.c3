@@ -236,7 +236,13 @@ fn void port_release(Port* port) {
 
 // The heap's port, created on first use. A heap that never touches shared
 // memory never pays for one, and its drain loop skips the poll.
+// Creation takes the lock, because bk_wake can reach a runtime's port from
+// another thread.
 fn Port* port_for(Heap* heap) {
+    void* port = mem::@atomic_load(heap.agent_port);
+    if (port != null) return (Port*)port;
+    lock();
+    defer unlock();
     if (heap.agent_port == null) {
         heap.agent_poll_fn = &builtins::atomics_poll;
         mem::@atomic_store(heap.agent_port, (void*)port_create());
@@ -514,6 +520,28 @@ fn void wait_events(Heap* heap, double limit_ms) {
         ulong until = port.next_deadline;
         if (limit != 0 && (until == 0 || limit < until)) until = limit;
         if (until != 0 && now >= until) return;
+        sleep_until(port, until);
+    }
+}
+
+// Blocks the engine thread until the host posts an event, an asynchronous
+// wait settles or reaches its deadline, an interrupt is requested, or
+// `timeout_ms` passes: 0 polls and a negative timeout waits indefinitely.
+// Returns true for an event and consumes a posted one.
+fn bool wait_host_events(Heap* heap, double timeout_ms) {
+    Port* port = port_for(heap);
+    ulong limit = timeout_ms > 0.0 ? deadline_after(timeout_ms) : 0;
+    lock();
+    defer unlock();
+    while (true) {
+        if (port.host_event) { port.host_event = false; return true; }
+        if (port.pending != 0 || port.stop) return true;
+        if (mem::@atomic_load(heap.interrupt_requested) != 0) return true;
+        ulong now = now_ns();
+        if (port.next_deadline != 0 && now >= port.next_deadline) return true;
+        if (timeout_ms == 0.0 || (limit != 0 && now >= limit)) return false;
+        ulong until = port.next_deadline;
+        if (limit != 0 && (until == 0 || limit < until)) until = limit;
         sleep_until(port, until);
     }
 }

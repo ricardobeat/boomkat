@@ -1721,6 +1721,28 @@ fn void bk_set_root_tracer(void* runtime, void* callback, void* opaque) @export(
     rt.root_tracer_opaque = opaque;
 }
 
+// ============================================================================
+// Job hook, wait and wake
+// ============================================================================
+
+fn void bk_set_job_hook(void* runtime, void* hook, void* opaque) @export("bk_set_job_hook") {
+    if (runtime == null) return;
+    Heap* hp = ((Runtime*)runtime).heap;
+    hp.job_hook = (heap::JobHookFn)hook;
+    hp.job_hook_runtime = runtime;
+    hp.job_hook_opaque = opaque;
+}
+
+fn int bk_wait_events(void* runtime, double timeout_ms) @export("bk_wait_events") {
+    if (runtime == null) return 0;
+    return agent::wait_host_events(((Runtime*)runtime).heap, timeout_ms) ? 1 : 0;
+}
+
+fn void bk_wake(void* runtime) @export("bk_wake") {
+    if (runtime == null) return;
+    agent::port_post_event(agent::port_for(((Runtime*)runtime).heap));
+}
+
 fn uint bk_run_finalizers(void* runtime) @export("bk_run_finalizers") {
     if (runtime == null) return 0;
     return ((Runtime*)runtime).heap.run_deferred_finalizers();
