@@ -11,7 +11,8 @@ import std::collections::list;
 
 faultdef INVALID_IMAGE, IMAGE_NOMEM, UNSUPPORTED_CONSTANT;
 
-const uint VERSION = 7;
+const uint VERSION = 8;
+const uint WIDE_STRING = 0x80000000;
 const uint NONE = 0xFFFFFFFF;
 const uint MAX_FUNCTIONS = 65536;
 const uint MAX_IMAGE_BYTES = 64 * 1024 * 1024;
@@ -59,6 +60,21 @@ fn void Writer.text(&self, char[] value) {
     self.word((uint)value.len);
     self.bytes.push_all(value);
 }
+// A string is its unit count, with WIDE_STRING set for 16-bit units, then the
+// units: one byte each, or two bytes little-endian each.
+fn void Writer.hstring(&self, HString* s) {
+    uint count = s.unit_len();
+    bool wide = s.is_wide();
+    self.word(count | (wide ? WIDE_STRING : 0));
+    if (!wide) {
+        self.bytes.push_all(s.latin1());
+        return;
+    }
+    foreach (unit : s.utf16()) {
+        self.bytes.push((char)(unit & 0xFF));
+        self.bytes.push((char)(unit >> 8));
+    }
+}
 fn uint Writer.function_id(&self, CompiledFunction* f) {
     if (f == null) return NONE;
     foreach (i, existing : self.functions) if (existing == f) return (uint)i;
@@ -67,7 +83,7 @@ fn uint Writer.function_id(&self, CompiledFunction* f) {
 }
 fn void Writer.string_ref(&self, void* raw) {
     self.word(raw != null ? 1 : 0);
-    if (raw != null) self.text(((HString*)raw).get_data());
+    if (raw != null) self.hstring((HString*)raw);
 }
 
 // Literal shapes describe ordered default data properties. Native shape ids
@@ -97,7 +113,7 @@ fn void? Writer.literal_shape(&self, Heap* heap, uint id) {
         for (uint j = 0; j < i; j++) if (keys[j] == keys[i]) return INVALID_IMAGE~;
     }
     self.word(count);
-    foreach (key : keys[:count]) self.text(key.get_data());
+    foreach (key : keys[:count]) self.hstring(key);
 }
 
 fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations) {
@@ -157,7 +173,7 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
             else if (v.is_boolean()) { w.word(2); w.word(v.get_boolean() ? 1 : 0); }
             else if (v.is_fastint()) { w.word(3); w.wide((ulong)v.get_fastint()); }
             else if (v.is_number()) { w.word(4); w.wide(bitcast(v.get_number(), ulong)); }
-            else if (v.is_string()) { w.word(5); w.text(((HString*)v.get_heapptr()).get_data()); }
+            else if (v.is_string()) { w.word(5); w.hstring((HString*)v.get_heapptr()); }
             else { return UNSUPPORTED_CONSTANT~; }
         }
         w.word(f.capture_count);
@@ -219,6 +235,28 @@ fn char[]? Reader.text(&self) {
     self.offset += len;
     return text;
 }
+fn HString*? Reader.hstring(&self) {
+    uint header = self.word()!;
+    uint count = header & ~WIDE_STRING;
+    bool wide = (header & WIDE_STRING) != 0;
+    if (count > hstring::MAX_STRING_LENGTH) return INVALID_IMAGE~;
+    ulong byte_len = (ulong)count << (wide ? 1 : 0);
+    if (byte_len > self.bytes.len - self.offset) return INVALID_IMAGE~;
+    char[] data = self.bytes[self.offset:(usz)byte_len];
+    self.offset += (uint)byte_len;
+    HString* str;
+    if (!wide) {
+        str = self.heap.str_intern_latin1(data);
+    } else {
+        ushort* units = (ushort*)alloc::malloc_try(mem, (sz)(count * 2 + 2)) ?? null;
+        if (units == null) return IMAGE_NOMEM~;
+        defer mem::free(units);
+        for (uint i = 0; i < count; i++) units[i] = (ushort)data[i * 2] | (ushort)((ushort)data[i * 2 + 1] << 8);
+        str = self.heap.str_intern_utf16(units[:count]);
+    }
+    if (str == null) return IMAGE_NOMEM~;
+    return str;
+}
 fn char*? Reader.owned_text(&self, uint* len) {
     char[] text = self.text()!;
     *len = (uint)text.len;
@@ -250,9 +288,7 @@ fn void*? Reader.string_ref(&self) {
     uint present = self.word()!;
     if (present == 0) return (void*)null;
     if (present != 1) return INVALID_IMAGE~;
-    HString* str = self.heap.str_intern(self.text()!);
-    if (str == null) return IMAGE_NOMEM~;
-    return (void*)str;
+    return (void*)self.hstring()!;
 }
 fn ushort? Reader.short_word(&self) {
     uint value = self.word()!;
@@ -268,8 +304,7 @@ fn uint? Reader.literal_shape(&self) {
     HString*[256] keys = {};
     uint id = 0;
     for (uint i = 0; i < count; i++) {
-        HString* key = self.heap.str_intern(self.text()!);
-        if (key == null) return IMAGE_NOMEM~;
+        HString* key = self.hstring()!;
         if (key.is_symbol() || key.is_arridx() || key.is_hidden()) return INVALID_IMAGE~;
         for (uint j = 0; j < i; j++) if (keys[j] == key) return INVALID_IMAGE~;
         keys[i] = key;
@@ -363,9 +398,7 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
                 case 3: v.set_fastint((long)r.wide()!);
                 case 4: v.set_number(bitcast(r.wide()!, double));
                 case 5:
-                    HString* str = heap.str_intern(r.text()!);
-                    if (str == null) return IMAGE_NOMEM~;
-                    v.set_string(str);
+                    v.set_string(r.hstring()!);
                 default: return INVALID_IMAGE~;
             }
         }

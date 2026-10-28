@@ -32,18 +32,23 @@ fn void builtin_regexp(BuiltinContext* ctx) {
     // Get pattern
     bool is_regexp = false;
     HObject* pattern_regexp = null;  // Saved pointer for RegExp→RegExp constructor shortcut
-    char* pattern_str = "";
-    usz pattern_len = 0;
+    HString* pattern_hs = null;  // null stands for the empty pattern
     int js_flags = 0;  // JS flag bits: 1=g, 2=i, 4=m
-    char* flags_str = "";
-    usz flags_len = 0;
+    HString* flags_hs = null;    // null stands for no flags
+    // References to strings that a getter or a coercion returned: the result
+    // of a call belongs to the pending return value until the next call
+    // replaces it, and the checks below make further calls.
+    HString* held_pattern = null;
+    HString* held_flags = null;
+    defer builtin_unhold(ctx, held_pattern);
+    defer builtin_unhold(ctx, held_flags);
     TVal pattern_arg;
     pattern_arg.set_undefined();
     // ECMA-262 §22.2.4.1 step 1.c: `flags is undefined` -- whether the CALLER
-    // passed an explicit flags argument, distinct from flags_len (which also
+    // passed an explicit flags argument, distinct from flags_hs (which also
     // gets populated later from pattern.flags in the regexp-like-object
     // fallback path, e.g. `RegExp(obj)` with no second arg but obj.flags ===
-    // "i" leaves flags_len == 1). The identity-return shortcut below must
+    // "i" leaves flags_hs set). The identity-return shortcut below must
     // gate on the former, not the latter.
     bool flags_arg_provided = ctx.argc > 1 && !ctx.regs[ctx.base_reg + 1].is_undefined();
     // ECMA-262 §22.2.4.1 steps 3-4: ToString(P) and ToString(F) belong to
@@ -90,8 +95,7 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                 pattern_regexp = obj;
                 if ((*obj.extra_ptr()).prim.primitive_value.is_string()) {
                     HString* phs = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-                    pattern_str = phs.get_cstr();
-                    pattern_len = phs.blen;
+                    pattern_hs = phs;
                 }
             } else if (pattern_is_regexp) {
                 // ECMA-262 §22.2.3.1 step 6: regexp-like non-RegExp object, extract source and flags.
@@ -129,14 +133,18 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                 if (try sv = src_opt) {
                     if (sv.is_string() && sv.get_heapptr() != null) {
                         HString* src_hs = (HString*)sv.get_heapptr();
-                        pattern_str = src_hs.get_cstr();
-                        pattern_len = src_hs.blen;
+                        if (src_hs.is_symbol()) {
+                            arr_throw_type_error(ctx, "Cannot convert a Symbol value to a string");
+                            return;
+                        }
+                        held_pattern = builtin_hold(src_hs);
+                        pattern_hs = src_hs;
                     } else {
                         HString* src_hs = builtin_to_string_vm(ctx, &sv);
                         if (ctx.should_throw) return;
                         if (src_hs != null) {
-                            pattern_str = src_hs.get_cstr();
-                            pattern_len = src_hs.blen;
+                            held_pattern = builtin_hold(src_hs);
+                            pattern_hs = src_hs;
                         }
                     }
                 }
@@ -151,18 +159,22 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                         if (!fv.is_undefined() && !fv.is_null()) {
                             if (fv.is_string() && fv.get_heapptr() != null) {
                                 HString* fl_hs = (HString*)fv.get_heapptr();
-                                flags_str = fl_hs.get_cstr();
-                                flags_len = fl_hs.blen;
+                                if (fl_hs.is_symbol()) {
+                                    arr_throw_type_error(ctx, "Cannot convert a Symbol value to a string");
+                                    return;
+                                }
+                                held_flags = builtin_hold(fl_hs);
+                                flags_hs = fl_hs;
                             } else {
                                 HString* fl_hs = builtin_to_string_vm(ctx, &fv);
                                 if (ctx.should_throw) return;
                                 if (fl_hs != null) {
-                                    flags_str = fl_hs.get_cstr();
-                                    flags_len = fl_hs.blen;
+                                    held_flags = builtin_hold(fl_hs);
+                                    flags_hs = fl_hs;
                                 }
                             }
                         }
-                        // undefined/null flags → flags_str stays "" (empty).
+                        // undefined/null flags → flags_hs stays null (empty).
                     }
                 }
                 // Skip the ToString fallthrough and flags-from-arg below.
@@ -173,16 +185,14 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                 pattern_needs_tostring = true;
             }
         } else if (pattern_arg.is_string() && pattern_arg.get_heapptr() != null) {
-            HString* phs = (HString*)pattern_arg.get_heapptr();
-            pattern_str = phs.get_cstr();
-            pattern_len = phs.blen;
+            pattern_hs = (HString*)pattern_arg.get_heapptr();
         } else if (!pattern_arg.is_undefined()) {
             // ECMA-262 §15.10.4.1: if pattern is undefined, use empty string.
             // Only convert to string when pattern is not undefined. Deferred
             // past RegExpAlloc for the same ordering reason as above.
             pattern_needs_tostring = true;
         }
-        // else: pattern_arg is undefined → use empty pattern (pattern_str = "", pattern_len = 0)
+        // else: pattern_arg is undefined → use the empty pattern (pattern_hs = null)
     }
 
     // ECMA-262 §22.2.4.1 step 3.a: the "return the pattern unchanged" shortcut is
@@ -225,14 +235,14 @@ fn void builtin_regexp(BuiltinContext* ctx) {
         // Extract pattern source and flags from the original regexp (if actual RegExp object)
         if (pattern_regexp != null) {
             js_flags = (*pattern_regexp.extra_ptr()).regexp.flags;
-            flags_len = 0;  // Clear flags so we don't re-parse
+            flags_hs = null;  // Clear flags so we don't re-parse
         }
     } else if (is_regexp && !flags_arg_provided && pattern_regexp != null) {
         // `new RegExp(re)`: no shortcut, but the copy still inherits the
         // source pattern's flags (step 3.a passes them to RegExpInitialize).
         // Gated on flags_arg_provided, not flags_len: the flags argument is
         // now coerced AFTER this point (see step 3/4 ordering below), so
-        // flags_len is still 0 here even for `new RegExp(re, "")`, which must
+        // flags_hs is still null here even for `new RegExp(re, "")`, which must
         // NOT inherit the source's flags.
         js_flags = (*pattern_regexp.extra_ptr()).regexp.flags;
     }
@@ -267,16 +277,14 @@ fn void builtin_regexp(BuiltinContext* ctx) {
             phs = builtin_to_string(ctx.heap, &pattern_arg);
         }
         if (phs != null) {
-            pattern_str = phs.get_cstr();
-            pattern_len = phs.blen;
+            held_pattern = builtin_hold(phs);
+            pattern_hs = phs;
         }
     }
     if (ctx.argc > 1) {
         TVal* flags_arg = &ctx.regs[ctx.base_reg + 1];
         if (flags_arg.is_string() && flags_arg.get_heapptr() != null) {
-            HString* fhs = (HString*)flags_arg.get_heapptr();
-            flags_str = fhs.get_cstr();
-            flags_len = fhs.blen;
+            flags_hs = (HString*)flags_arg.get_heapptr();
         } else if (!flags_arg.is_undefined()) {
             HString* fhs;
             if (ctx.vm != null) {
@@ -286,13 +294,13 @@ fn void builtin_regexp(BuiltinContext* ctx) {
                 fhs = builtin_to_string(ctx.heap, flags_arg);
             }
             if (fhs != null) {
-                flags_str = fhs.get_cstr();
-                flags_len = fhs.blen;
+                held_flags = builtin_hold(fhs);
+                flags_hs = fhs;
             }
         }
     }
 
-    if (!regexp_initialize(ctx, obj, pattern_str, pattern_len, flags_str, flags_len, js_flags)) return;
+    if (!regexp_initialize(ctx, obj, pattern_hs, flags_hs, js_flags)) return;
     ctx.result_object(obj);
 }
 
@@ -304,15 +312,16 @@ fn void builtin_regexp(BuiltinContext* ctx) {
 // otherwise). On invalid flags or a pattern that fails to compile, throws
 // SyntaxError via ctx and returns false leaving `obj` untouched.
 fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
-                          char* pattern_str, usz pattern_len,
-                          char* flags_str, usz flags_len,
+                          HString* pattern, HString* flag_text,
                           int js_flags = 0) {
     // Parse the flags string into JS flag bits.
     // ECMA-262 §21.2.3.2.2 step 5: if F contains the same code unit more than
     // once, or an unrecognized one, throw SyntaxError.
     int seen_flags = 0;
-    for (usz i = 0; i < flags_len; i++) {
-        char f = flags_str[i];
+    uint flags_len = flag_text == null ? 0 : flag_text.unit_len();
+    for (uint i = 0; i < flags_len; i++) {
+        uint unit = flag_text.unit_at(i);
+        char f = unit < 0x80 ? (char)unit : 0;
         int flag_bit;
         switch (f) {
             case 'g': flag_bit = 1;
@@ -328,7 +337,7 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
         // Invalid or duplicate flag, throw SyntaxError.
         if (flag_bit == 0 || (seen_flags & flag_bit) != 0) {
             char[80] buf;
-            int len = (int)(io::bprintf(&buf, "Invalid flags supplied to RegExp constructor '%c'", f) ?? buf[:0]).len;
+            int len = f == 0 ? 0 : (int)(io::bprintf(&buf, "Invalid flags supplied to RegExp constructor '%c'", f) ?? buf[:0]).len;
             builtin_throw_no_result_change(ctx, ctx.heap.syntax_err_proto,
                 (len > 0 && len < 80) ? buf[:len] : "Invalid flags supplied to RegExp constructor");
             return false;
@@ -348,10 +357,14 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
     if ((js_flags & 64)  != 0) flags |= re_bindings::RE_FLAG_INDICES;
     if ((js_flags & 128) != 0) flags |= re_bindings::RE_FLAG_UNICODE_SETS;
 
-    // Compile the regexp
+    // Compile the regexp from the pattern's CESU-8 text.
+    StrBuf pattern_text;
+    pattern_text.init(ctx.heap);
+    defer pattern_text.free();
+    char[] pattern_bytes = pattern == null ? (char[])"" : cesu8_text(&pattern_text, pattern);
     char[128] error_buf;
     void* compiled = re_bindings::re_compile(
-        (char*)pattern_str, (usz)pattern_len,
+        pattern_bytes.ptr, pattern_bytes.len,
         flags, &error_buf, 128
     );
     if (compiled == null) {
@@ -372,7 +385,8 @@ fn bool regexp_initialize(BuiltinContext* ctx, HObject* obj,
     (*obj.extra_ptr()).regexp.flags = js_flags;
 
     // Store pattern string as primitive_value
-    HString* pattern_hs = builtin_intern_string(ctx.heap, pattern_str[:pattern_len]);
+    HString* pattern_hs = pattern == null ? ctx.heap.str(heap::BuiltinStr.EMPTY)
+                                          : ctx.heap.ensure_interned(pattern);
     ctx.heap.set_reg_string(&(*obj.extra_ptr()).prim.primitive_value, pattern_hs);
 
     // Set lastIndex = 0 (ECMA-262 §15.10.7.5), writable, non-enumerable,
@@ -408,10 +422,14 @@ fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
     if (ctx.argc > 0) pattern_arg = ctx.regs[ctx.base_reg];
     if (ctx.argc > 1) flags_arg = ctx.regs[ctx.base_reg + 1];
 
-    char* pattern_str = "";
-    usz pattern_len = 0;
-    char* flags_str = "";
-    usz flags_len = 0;
+    HString* pattern_hs = null;
+    HString* flags_hs = null;
+    // Coercion results belong to the pending return value until the next call
+    // replaces it; see builtin_regexp.
+    HString* held_pattern = null;
+    HString* held_flags = null;
+    defer builtin_unhold(ctx, held_pattern);
+    defer builtin_unhold(ctx, held_flags);
     int js_flags = 0;
 
     HObject* src = null;
@@ -429,9 +447,7 @@ fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
             return;
         }
         if ((*src.extra_ptr()).prim.primitive_value.is_string()) {
-            HString* phs = (HString*)(*src.extra_ptr()).prim.primitive_value.get_heapptr();
-            pattern_str = phs.get_cstr();
-            pattern_len = phs.blen;
+            pattern_hs = (HString*)(*src.extra_ptr()).prim.primitive_value.get_heapptr();
         }
         js_flags = (*src.extra_ptr()).regexp.flags;
     } else {
@@ -441,22 +457,22 @@ fn void builtin_regexp_proto_compile(BuiltinContext* ctx) {
             HString* phs = builtin_to_string_vm(ctx, &pattern_arg);
             if (ctx.should_throw) return;
             if (phs != null) {
-                pattern_str = phs.get_cstr();
-                pattern_len = phs.blen;
+                held_pattern = builtin_hold(phs);
+                pattern_hs = phs;
             }
         }
         if (!flags_arg.is_undefined()) {
             HString* fhs = builtin_to_string_vm(ctx, &flags_arg);
             if (ctx.should_throw) return;
             if (fhs != null) {
-                flags_str = fhs.get_cstr();
-                flags_len = fhs.blen;
+                held_flags = builtin_hold(fhs);
+                flags_hs = fhs;
             }
         }
     }
 
     // Step 5: re-run RegExpInitialize on the SAME object; return the receiver.
-    if (!regexp_initialize(ctx, obj, pattern_str, pattern_len, flags_str, flags_len, js_flags)) {
+    if (!regexp_initialize(ctx, obj, pattern_hs, flags_hs, js_flags)) {
         ctx.result_undefined();
         return;
     }
@@ -500,7 +516,6 @@ fn void builtin_regexp_proto_test(BuiltinContext* ctx) {
 
 // Build a RegExp exec/match result array with .groups and optional .indices.
 fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HString* input_str,
-                                      char* input, int input_len,
                                       int out_start, int out_end,
                                       int* caps_start, int* caps_end, int num_caps,
                                       bool with_indices) {
@@ -518,10 +533,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     ctx.heap.set_prototype(arr, ctx.heap.array_proto);
 
     // Element 0: full match string
-    usz match_len = (usz)(out_end - out_start);
-    HString* match_str = match_len == 0
-        ? ctx.heap.str(heap::BuiltinStr.EMPTY)
-        : builtin_intern_slice(ctx.heap, input[out_start : match_len]);
+    HString* match_str = ctx.heap.str_slice(input_str, (uint)out_start, (uint)out_end);
     // Elements go straight into the dense part: the index is already known, so
     // put_prop's int -> key string -> array_index round-trip buys nothing. A
     // non-participating capture is `undefined`, which the dense part cannot
@@ -534,11 +546,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     int total_captures = 1 + num_caps;
     for (int i = 0; i < num_caps; i++) {
         if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-            usz cap_len = (usz)(caps_end[i] - caps_start[i]);
             TVal cap_elem;
-            cap_elem.set_string_borrowed(cap_len == 0
-                ? ctx.heap.str(heap::BuiltinStr.EMPTY)
-                : builtin_intern_slice(ctx.heap, input[caps_start[i] : cap_len]));
+            cap_elem.set_string_borrowed(ctx.heap.str_slice(input_str, (uint)caps_start[i], (uint)caps_end[i]));
             arr.set_array_idx((uint)(i + 1), cap_elem, ctx.heap);
         } else {
             TVal cap_elem; cap_elem.set_undefined();
@@ -546,9 +555,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
         }
     }
 
-    // index property, convert byte offset to character (UTF-16 code unit) index
-    long char_index = (long)input_str.byte_offset_to_char_offset((uint)out_start);
-    TVal idx_tv; idx_tv.set_fastint(char_index);
+    TVal idx_tv; idx_tv.set_fastint((long)out_start);
     arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.INDEX), idx_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
 
     // input property
@@ -569,10 +576,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                     HString* name_str = builtin_intern_string(ctx.heap, p[:name_len]);
                     TVal cap_val;
                     if (gi < num_caps && caps_start[gi] >= 0 && caps_end[gi] >= 0) {
-                        usz cap_len = (usz)(caps_end[gi] - caps_start[gi]);
-                        cap_val.set_string_borrowed(cap_len == 0
-                            ? ctx.heap.str(heap::BuiltinStr.EMPTY)
-                            : builtin_intern_slice(ctx.heap, input[caps_start[gi] : cap_len]));
+                        cap_val.set_string_borrowed(ctx.heap.str_slice(input_str, (uint)caps_start[gi], (uint)caps_end[gi]));
                     } else {
                         cap_val.set_undefined();
                     }
@@ -600,12 +604,12 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
         if (try indices_arr = indices_raw) {
             ctx.heap.set_prototype(indices_arr, ctx.heap.array_proto);
 
-            // indices[0], convert byte offsets to character (UTF-16 code unit) indices
+            // indices[0]
             HObject*? pair0_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
             if (try pair0 = pair0_raw) {
                 ctx.heap.set_prototype(pair0, ctx.heap.array_proto);
-                TVal p0s; p0s.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_start));
-                TVal p0e; p0e.set_fastint((long)input_str.byte_offset_to_char_offset((uint)out_end));
+                TVal p0s; p0s.set_fastint((long)out_start);
+                TVal p0e; p0e.set_fastint((long)out_end);
                 pair0.put_prop(ctx.heap.int_to_hstring(0), p0s, hobject::PROP_FLAGS_WEC, ctx.heap);
                 pair0.put_prop(ctx.heap.int_to_hstring(1), p0e, hobject::PROP_FLAGS_WEC, ctx.heap);
                 TVal pair0_tv; pair0_tv.set_object(pair0);
@@ -619,8 +623,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                 ctx.heap.set_prototype(pair, ctx.heap.array_proto);
                 TVal pair_tv;
                 if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                    TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[i]));
-                    TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[i]));
+                    TVal ps; ps.set_fastint((long)caps_start[i]);
+                    TVal pe; pe.set_fastint((long)caps_end[i]);
                     pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC, ctx.heap);
                     pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC, ctx.heap);
                     pair_tv.set_object(pair);
@@ -646,8 +650,8 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                                 HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
                                 if (try pair = pair_raw) {
                                     ctx.heap.set_prototype(pair, ctx.heap.array_proto);
-                                    TVal ps; ps.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_start[gi]));
-                                    TVal pe; pe.set_fastint((long)input_str.byte_offset_to_char_offset((uint)caps_end[gi]));
+                                    TVal ps; ps.set_fastint((long)caps_start[gi]);
+                                    TVal pe; pe.set_fastint((long)caps_end[gi]);
                                     pair.put_prop(ctx.heap.int_to_hstring(0), ps, hobject::PROP_FLAGS_WEC, ctx.heap);
                                     pair.put_prop(ctx.heap.int_to_hstring(1), pe, hobject::PROP_FLAGS_WEC, ctx.heap);
                                     pair_tv.set_object(pair);
@@ -727,7 +731,7 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     } else if (is_regexp && (*obj.extra_ptr()).prim.primitive_value.is_string() && (*obj.extra_ptr()).prim.primitive_value.get_heapptr() != null) {
         // Regular RegExp object: apply EscapeRegExpPattern to internal source
         HString* phs = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        source_str = regexp_escaped_source(ctx, phs.get_data());
+        source_str = regexp_escaped_source(ctx, phs);
         if (source_str == null) return;
     } else {
         // For non-regexp objects or regexp with no source, get via property lookup
@@ -738,7 +742,7 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
             HString* src_str = builtin_to_string_vm(ctx, &src);
             if (ctx.should_throw) return;
             if (src_str != null) {
-                source_str = regexp_escaped_source(ctx, src_str.get_data());
+                source_str = regexp_escaped_source(ctx, src_str);
                 if (source_str == null) return;
             } else {
                 source_str = builtin_intern_string(ctx.heap, "(?:)");
@@ -789,9 +793,9 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
     out.init(ctx.heap);
     defer out.free();
     out.append_char('/');
-    out.append_bytes(source_str.get_data());
+    out.append_hstring(source_str);
     out.append_char('/');
-    out.append_bytes(flags_str.get_data());
+    out.append_hstring(flags_str);
     out.finish(ctx);
 }
 
@@ -813,14 +817,10 @@ fn void regexp_match_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr)
     if (catch err = arr_raw) { ctx.result_null(); return; }
     HObject* arr = arr_raw;
     heap.set_prototype(arr, heap.array_proto);
-    char* input = s_hstr.get_cstr();
     ulong count = 0;
     for (usz at = 0; at < spans.len; at += 2) {
-        int start = spans.items[at];
-        int len = spans.items[at + 1] - start;
         TVal piece;
-        piece.set_string_borrowed(len == 0 ? heap.str(heap::BuiltinStr.EMPTY)
-                                           : builtin_intern_slice(heap, input[start : len]));
+        piece.set_string_borrowed(heap.str_slice(s_hstr, (uint)spans.items[at], (uint)spans.items[at + 1]));
         regexp_split_push(heap, arr, &count, piece);
     }
     TVal len_tv;
@@ -867,13 +867,10 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
     if (flags_hstr_m == null) { flags_hstr_m = ctx.heap.str(heap::BuiltinStr.EMPTY); }
     bool global_flag = false;
     bool full_unicode = false;
-    {
-        char* fc = flags_hstr_m.get_cstr();
-        usz flen = flags_hstr_m.blen;
-        for (usz i = 0; i < flen; i++) {
-            if (fc[i] == 'g') global_flag = true;
-            if (fc[i] == 'u' || fc[i] == 'v') full_unicode = true;
-        }
+    for (uint i = 0; i < flags_hstr_m.unit_len(); i++) {
+        uint fc = flags_hstr_m.unit_at(i);
+        if (fc == 'g') global_flag = true;
+        if (fc == 'u' || fc == 'v') full_unicode = true;
     }
 
     if (!global_flag) {
@@ -939,9 +936,7 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
         //    i. Let thisIndex be ? ToLength(? Get(rx, "lastIndex")).
         //    ii. Let nextIndex be AdvanceStringIndex(S, thisIndex, fullUnicode).
         //    iii. Perform ? Set(rx, "lastIndex", nextIndex, true).
-        // thisIndex is a UTF-16 code unit count; convert to byte offset to
-        // call advance_string_index_byte_len, then back to code units.
-        if (match_str.blen == 0) {
+        if (match_str.unit_len() == 0) {
             // 8.g.i. Let thisIndex be ? ToLength(? Get(rx, "lastIndex")).
             TVal? li_opt = builtins_generic_get(rx, li_key, ctx);
             if (ctx.should_throw) return;
@@ -951,24 +946,11 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
             if (ctx.should_throw) return;
             if (this_d < 0.0) this_d = 0.0;
             long this_index = (long)this_d;
-            // AdvanceStringIndex(S, thisIndex, fullUnicode): when thisIndex is
-            // at or beyond S's char length, it's just thisIndex + 1, guard
-            // this first, since char_offset_to_byte_offset clamps to blen and
-            // would otherwise silently lose indices past the string's end.
-            long next_index;
-            if ((ulong)this_index >= (ulong)s_hstr.unit_len()) {
-                next_index = this_index + 1;
-            } else {
-                char* input = s_hstr.get_cstr();
-                int input_len = (int)s_hstr.blen;
-                // Convert char-unit index → byte offset, compute the byte advance,
-                // then convert the resulting byte offset back to char-unit count.
-                uint byte_off = s_hstr.char_offset_to_byte_offset((uint)this_index);
-                int adv_bytes = (int)hstring::advance_string_index_byte_len(
-                    input[:input_len], byte_off, full_unicode);
-                uint new_byte_off = byte_off + (uint)adv_bytes;
-                next_index = (long)s_hstr.byte_offset_to_char_offset(new_byte_off);
-            }
+            // AdvanceStringIndex(S, thisIndex, fullUnicode): at or beyond S's
+            // length it is just thisIndex + 1.
+            long next_index = (ulong)this_index >= (ulong)s_hstr.unit_len()
+                ? this_index + 1
+                : (long)hstring::advance_string_index(s_hstr, (uint)this_index, full_unicode);
             TVal next_tv; next_tv.set_fastint(next_index);
             // 8.g.iii. Perform ? Set(rx, "lastIndex", nextIndex, true).
             if (!builtins_generic_set(ctx, rx, li_key, next_tv, "lastIndex")) return;
@@ -992,13 +974,13 @@ fn void builtin_regexp_proto_symbol_match(BuiltinContext* ctx) {
 // one exec and restores it, which leaves lastIndex as it was.
 fn void regexp_search_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr) {
     int m_start, m_end, m_caps;
-    if (regexp_run(ctx, (*rx.extra_ptr()).regexp.regexp_data, s_hstr.get_cstr(), (int)s_hstr.blen,
-            0, (int)s_hstr.is_ascii(), &m_start, &m_end, &m_caps, null, null, 0) != re_bindings::RE_MATCH) {
+    if (regexp_run(ctx, (*rx.extra_ptr()).regexp.regexp_data, s_hstr, 0,
+            &m_start, &m_end, &m_caps, null, null, 0) != re_bindings::RE_MATCH) {
         if (ctx.should_throw) return;
         ctx.result_fastint(-1);
         return;
     }
-    ctx.result_fastint((long)s_hstr.byte_offset_to_char_offset((uint)m_start));
+    ctx.result_fastint((long)m_start);
 }
 
 // ============================================================================
@@ -1091,68 +1073,85 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 // RegExp.prototype[@@replace], ECMA-262 §22.2.5.8
 // ============================================================================
 
-// GetSubstitution (ECMA-262 Table 58) over byte slices. A capture slice with a
-// null pointer is an undefined capture. `namedCaptures` is a TVal (already
-// ToObject'd when not undefined). Appends the substituted string to `out`; an
-// abrupt completion leaves ctx.should_throw set.
+// A range of code units of a string. A null string stands for an undefined
+// capture.
+struct StrSlice {
+    HString* str;
+    uint     from;
+    uint     to;
+}
+
+// The whole of `s`, or an undefined capture when `s` is null.
+fn StrSlice slice_of(HString* s) @inline {
+    return s == null ? (StrSlice){} : (StrSlice){ .str = s, .from = 0, .to = s.unit_len() };
+}
+
+fn bool StrBuf.append_slice(&self, StrSlice slice) {
+    return slice.str == null || self.append_hstring_range(slice.str, slice.from, slice.to);
+}
+
+// GetSubstitution (ECMA-262 Table 58) over code units. An undefined capture is a
+// slice with a null string. `namedCaptures` is a TVal (already ToObject'd when
+// not undefined). Appends the substituted string to `out`; an abrupt completion
+// leaves ctx.should_throw set.
 fn void rr_get_substitution(
     BuiltinContext* ctx,
     StrBuf* out,
-    char[] matched,          // ToString(result[0])
-    char[] str,              // full input string
-    usz position,            // byte offset of match start
-    usz match_end,           // byte offset of match end
-    char[][] captures,
+    StrSlice matched,        // ToString(result[0])
+    HString* str,            // full input string
+    uint position,           // unit offset of match start
+    uint match_end,          // unit offset of match end
+    StrSlice[] captures,
     TVal named_captures_tv,  // groups value (object or any type after ToObject)
     bool have_named_captures,// true when groups !== undefined
-    char[] rep               // replacement template
+    HString* rep             // replacement template
 ) {
-    int num_caps = (int)captures.len;
-    usz i = 0;
-    while (i < rep.len && !out.failed) {
-        usz lit = i;
-        while (lit < rep.len && rep[lit] != '$') lit++;
+    uint num_caps = (uint)captures.len;
+    uint rep_len = rep.unit_len();
+    uint i = 0;
+    while (i < rep_len && !out.failed) {
+        uint lit = i;
+        while (lit < rep_len && rep.unit_at(lit) != '$') lit++;
         if (lit > i) {
-            out.append_bytes(rep[i : lit - i]);
+            out.append_hstring_range(rep, i, lit);
             i = lit;
             continue;
         }
-        char next = i + 1 < rep.len ? rep[i + 1] : 0;
+        uint next = i + 1 < rep_len ? rep.unit_at(i + 1) : 0;
         if (next == '$') {
             out.append_char('$');
             i += 2;
             continue;
         }
         if (next == '&') {
-            out.append_bytes(matched);
+            out.append_slice(matched);
             i += 2;
             continue;
         }
         if (next == '`') {
-            out.append_bytes(str[:position]);
+            out.append_hstring_range(str, 0, position);
             i += 2;
             continue;
         }
         if (next == '\'') {
-            out.append_bytes(str[match_end..]);
+            out.append_hstring_range(str, match_end, str.unit_len());
             i += 2;
             continue;
         }
         if (next >= '0' && next <= '9') {
             // Try 2-digit index first; fall back to 1-digit.
-            int idx1 = next - '0';
+            uint idx1 = next - '0';
             bool use2 = false;
-            int idx2 = -1;
-            if (i + 2 < rep.len && rep[i + 2] >= '0' && rep[i + 2] <= '9') {
-                idx2 = idx1 * 10 + (rep[i + 2] - '0');
+            uint idx2 = 0;
+            if (i + 2 < rep_len && rep.unit_at(i + 2) >= '0' && rep.unit_at(i + 2) <= '9') {
+                idx2 = idx1 * 10 + (rep.unit_at(i + 2) - '0');
                 if (idx2 >= 1 && idx2 <= num_caps) use2 = true;
             }
-            int idx = use2 ? idx2 : idx1;
-            int consumed = use2 ? 2 : 1;
+            uint idx = use2 ? idx2 : idx1;
+            uint consumed = use2 ? 2 : 1;
             if (idx >= 1 && idx <= num_caps) {
-                char[] cap = captures[idx - 1];
-                if (cap.ptr != null) out.append_bytes(cap);
-                i += 1 + (usz)consumed;
+                out.append_slice(captures[idx - 1]);
+                i += 1 + consumed;
                 continue;
             }
             // Out of range → emit '$' literally; re-process next char.
@@ -1166,22 +1165,21 @@ fn void rr_get_substitution(
                 i += 2;
                 continue;
             }
-            usz name_start = i + 2;
-            usz name_end = name_start;
-            while (name_end < rep.len && rep[name_end] != '>') name_end++;
-            if (name_end >= rep.len) {
+            uint name_start = i + 2;
+            uint name_end = name_start;
+            while (name_end < rep_len && rep.unit_at(name_end) != '>') name_end++;
+            if (name_end >= rep_len) {
                 // No closing '>' → emit "$<" literally.
                 out.append_bytes("$<");
                 i += 2;
                 continue;
             }
-            usz gname_len = name_end - name_start;
-            if (gname_len == 0) {
+            if (name_end == name_start) {
                 // $<> empty group name → empty substitution.
                 i = name_end + 1;
                 continue;
             }
-            HString* gname_hs = builtin_intern_string(ctx.heap, rep[name_start : gname_len]);
+            HString* gname_hs = ctx.heap.str_slice(rep, name_start, name_end);
             // Get(namedCaptures, groupName).
             if (named_captures_tv.is_object() && named_captures_tv.get_heapptr() != null) {
                 HObject* nc_obj = (HObject*)named_captures_tv.get_heapptr();
@@ -1191,7 +1189,7 @@ fn void rr_get_substitution(
                     if (!cap_tv.is_undefined()) {
                         HString* cs = builtin_to_string_vm(ctx, &cap_tv);
                         if (ctx.should_throw) return;
-                        if (cs != null) out.append_bytes(cs.get_data());
+                        if (cs != null) out.append_hstring(cs);
                     }
                     // undefined capture → empty substitution
                 }
@@ -1319,13 +1317,9 @@ fn bool regexp_is_pristine(Heap* heap, HObject* rx) {
         && regexp_proto_pristine(heap);
 }
 
-// A slice that is never null, so an empty capture stays distinguishable from
-// an undefined one (a null slice) in `rr_get_substitution`.
-fn char[] regexp_defined_slice(char[] s) @inline => s.len == 0 ? (char[])"" : s;
-
 // The matches a pristine receiver produces for `s_hstr`, as the exec loop of
 // @@replace and @@match would find them with no script able to run between
-// them. `spans` receives, per match, [start, end] byte offsets followed by a
+// them. `spans` receives, per match, [start, end] unit offsets followed by a
 // start/end pair for each of the first `ncap` capture groups (-1 for a group
 // that did not participate). A global receiver is left with lastIndex 0, which
 // is where its final failing exec puts it; a non-global one is not touched.
@@ -1337,8 +1331,7 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     int jsf = (*rx.extra_ptr()).regexp.flags;
     bool global = (jsf & 1) != 0;
     bool full_unicode = (jsf & (16 | 128)) != 0;
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
+    int input_len = (int)s_hstr.unit_len();
 
     growvec::GrowVec{int} bounds = { .heap = heap };
     defer bounds.free();
@@ -1351,7 +1344,7 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     int pos = 0;
     while (pos <= input_len) {
         int m_start, m_end, m_caps;
-        if (regexp_run(ctx, re_data, input, input_len, pos, (int)s_hstr.is_ascii(),
+        if (regexp_run(ctx, re_data, s_hstr, pos,
                 &m_start, &m_end, &m_caps, caps_start, caps_end,
                 (int)ncap) != re_bindings::RE_MATCH) {
             if (ctx.should_throw) return false;
@@ -1368,7 +1361,7 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
         }
         if (!global || m_end >= input_len && m_end == m_start) break;
         pos = m_end == m_start
-            ? m_end + (int)hstring::advance_string_index_byte_len(input[:input_len], (uint)m_end, full_unicode)
+            ? (int)hstring::advance_string_index(s_hstr, (uint)m_end, full_unicode)
             : m_end;
     }
     if (global) {
@@ -1385,8 +1378,7 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
                                 bool replace_is_fn, TVal replace_val, HString* replace_hs) {
     Heap* heap = ctx.heap;
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
+    uint input_len = s_hstr.unit_len();
     usz ncap = (usz)(re_bindings::re_get_capture_count(re_data) - 1);
     usz stride = 2 + 2 * ncap;
 
@@ -1397,8 +1389,8 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
     StrBuf out;
     out.init(heap);
     defer out.free();
-    usz last_end = 0;
-    growvec::GrowVec{char[]} slices = { .heap = heap };
+    uint last_end = 0;
+    growvec::GrowVec{StrSlice} slices = { .heap = heap };
     growvec::GrowVec{TVal} args = { .heap = heap };
     defer slices.free();
     defer args.free();
@@ -1406,31 +1398,28 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
         builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
         return;
     }
-    char[][] cap_slices = slices.items[:ncap];
+    StrSlice[] cap_slices = slices.items[:ncap];
     for (usz at = 0; at < spans.len; at += stride) {
-        usz m_start = (usz)spans.items[at];
-        usz m_end = (usz)spans.items[at + 1];
-        char[] matched = regexp_defined_slice(input[m_start : m_end - m_start]);
-        out.append_bytes(input[last_end : m_start - last_end]);
+        uint m_start = (uint)spans.items[at];
+        uint m_end = (uint)spans.items[at + 1];
+        out.append_hstring_range(s_hstr, last_end, m_start);
         for (usz i = 0; i < ncap; i++) {
             int cs = spans.items[at + 2 + 2 * i];
             int ce = spans.items[at + 3 + 2 * i];
-            cap_slices[i] = cs < 0 ? (char[]){} : regexp_defined_slice(input[cs : ce - cs]);
+            cap_slices[i] = cs < 0 ? (StrSlice){} : (StrSlice){ s_hstr, (uint)cs, (uint)ce };
         }
         if (replace_is_fn) {
             TVal* argv = args.items;
             usz argc = 0;
-            argv[argc++].set_string_borrowed(m_end == m_start
-                ? heap.str(heap::BuiltinStr.EMPTY) : builtin_intern_slice(heap, matched));
+            argv[argc++].set_string_borrowed(heap.str_slice(s_hstr, m_start, m_end));
             for (usz i = 0; i < ncap; i++) {
-                if (cap_slices[i].ptr == null) {
+                if (cap_slices[i].str == null) {
                     argv[argc++].set_undefined();
                 } else {
-                    argv[argc++].set_string_borrowed(cap_slices[i].len == 0
-                        ? heap.str(heap::BuiltinStr.EMPTY) : builtin_intern_slice(heap, cap_slices[i]));
+                    argv[argc++].set_string_borrowed(heap.str_slice(s_hstr, cap_slices[i].from, cap_slices[i].to));
                 }
             }
-            argv[argc++].set_fastint((long)s_hstr.byte_offset_to_char_offset((uint)m_start));
+            argv[argc++].set_fastint((long)m_start);
             argv[argc++].set_string_borrowed(s_hstr);
             TVal undef_this; undef_this.set_undefined();
             TVal res = heap.call_fn(ctx.vm, replace_val, argv, (uint)argc, undef_this);
@@ -1442,16 +1431,16 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
             }
             HString* rep = builtin_to_string_vm(ctx, &res);
             if (ctx.should_throw) return;
-            out.append_bytes(rep == null ? "undefined" : rep.get_data());
+            if (rep == null) { out.append_bytes("undefined"); } else { out.append_hstring(rep); }
         } else {
             TVal no_groups; no_groups.set_undefined();
-            rr_get_substitution(ctx, &out, matched, input[:input_len], m_start, m_end,
-                cap_slices, no_groups, false, replace_hs.get_data());
+            rr_get_substitution(ctx, &out, { s_hstr, m_start, m_end }, s_hstr, m_start, m_end,
+                cap_slices, no_groups, false, replace_hs);
             if (ctx.should_throw) return;
         }
         last_end = m_end;
     }
-    out.append_bytes(input[last_end : (usz)input_len - last_end]);
+    out.append_hstring_range(s_hstr, last_end, input_len);
     out.finish(ctx);
 }
 
@@ -1477,8 +1466,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     }
     if (s_hstr == null) { ctx.result_string(heap.str(heap::BuiltinStr.EMPTY)); return; }
 
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
+    int input_len = (int)s_hstr.unit_len();
 
     // Step 5: functionalReplace = IsCallable(replaceValue).
     TVal replace_val;
@@ -1527,14 +1515,10 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     // Parse flags for global, sticky, fullUnicode.
     bool global_flag = false;
     bool rr_full_unicode = false;
-    {
-        char* fp = flags_hstr.get_cstr();
-        uint flen = flags_hstr.blen;
-        for (uint fi = 0; fi < flen; fi++) {
-            char fc = fp[fi];
-            if (fc == 'g') global_flag = true;
-            if (fc == 'u' || fc == 'v') rr_full_unicode = true;
-        }
+    for (uint fi = 0; fi < flags_hstr.unit_len(); fi++) {
+        uint fc = flags_hstr.unit_at(fi);
+        if (fc == 'g') global_flag = true;
+        if (fc == 'u' || fc == 'v') rr_full_unicode = true;
     }
 
     HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);
@@ -1577,7 +1561,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                     HString* ms_hstr2 = builtin_to_string_vm(ctx, &ms_raw2);
                     if (ctx.should_throw) return;
                     if (ms_hstr2 == null) ms_hstr2 = heap.str(heap::BuiltinStr.UNDEFINED);
-                    if (ms_hstr2.blen == 0) {
+                    if (ms_hstr2.unit_len() == 0) {
                         // Empty match: AdvanceStringIndex(S, ToLength(lastIndex), fullUnicode).
                         TVal? li_opt2 = builtins_generic_get(rx, li_key, ctx);
                         if (ctx.should_throw) return;
@@ -1590,18 +1574,10 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                         double max53 = 9007199254740991.0;
                         if (li_d2 > max53) li_d2 = max53;
                         long this_li = (long)li_d2;
-                        long next_li2;
-                        long str_charlen2 = (long)s_hstr.unit_len();
-                        if (this_li >= str_charlen2) {
-                            // AdvanceStringIndex: if thisIndex >= length, return thisIndex + 1.
-                            next_li2 = this_li + 1;
-                        } else {
-                            uint byte_off2 = s_hstr.char_offset_to_byte_offset((uint)this_li);
-                            int adv2 = (int)hstring::advance_string_index_byte_len(
-                                input[:input_len], byte_off2, rr_full_unicode);
-                            long new_byte2 = (long)byte_off2 + adv2;
-                            next_li2 = (long)s_hstr.byte_offset_to_char_offset((uint)new_byte2);
-                        }
+                        // AdvanceStringIndex: if thisIndex >= length, return thisIndex + 1.
+                        long next_li2 = this_li >= (long)s_hstr.unit_len()
+                            ? this_li + 1
+                            : (long)hstring::advance_string_index(s_hstr, (uint)this_li, rr_full_unicode);
                         TVal next_li_tv2;
                         if (next_li2 >= types::FASTINT_MIN && next_li2 <= types::FASTINT_MAX) {
                             next_li_tv2.set_fastint(next_li2);
@@ -1622,7 +1598,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     int last_end = 0;
     // Per-match scratch, sized by each result's capture count.
     growvec::GrowVec{HString*} cap_strs_v = { .heap = heap };
-    growvec::GrowVec{char[]} cap_slices_v = { .heap = heap };
+    growvec::GrowVec{StrSlice} cap_slices_v = { .heap = heap };
     growvec::GrowVec{TVal} fn_args_v = { .heap = heap };
     defer cap_strs_v.free();
     defer cap_slices_v.free();
@@ -1665,9 +1641,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         if (matched_hstr == null) matched_hstr = heap.str(heap::BuiltinStr.UNDEFINED);
 
         // Step 14.e: position = ? ToInteger(? Get(result, "index")), clamped
-        // [0,|S|], |S| is the UTF-16 code-unit length, since "index" is a
-        // code-unit index. Convert to a CESU-8 byte offset before using it
-        // to slice `input` (which is the raw CESU-8 byte buffer).
+        // to [0,|S|], where |S| is the UTF-16 code-unit length.
         HString* idx_key = heap.str(heap::BuiltinStr.INDEX);
         TVal? idx_opt = builtins_generic_get(m, idx_key, ctx);
         if (ctx.should_throw) return;
@@ -1678,16 +1652,13 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
         if (pos_d < 0.0) pos_d = 0.0;
         double str_charlen_d = (double)s_hstr.unit_len();
         if (pos_d > str_charlen_d) pos_d = str_charlen_d;
-        int out_start = (int)s_hstr.char_offset_to_byte_offset((uint)pos_d);
+        int out_start = (int)pos_d;
         // Step 14.h: endOfLastMatch is position + the match's length in code
-        // units. `matched` comes from the exec result and is its own string,
-        // so its byte length says nothing about how many bytes of the input
-        // the match spans -- adding it to a byte offset into `input` lands
-        // mid-character whenever the two differ in encoding, and with an exec
-        // override `matched` need not occur in the input at all.
+        // units. `matched` comes from the exec result and is its own string;
+        // with an exec override it need not occur in the input at all.
         double end_charunit = pos_d + (double)matched_hstr.unit_len();
         if (end_charunit > str_charlen_d) end_charunit = str_charlen_d;
-        int out_end = (int)s_hstr.char_offset_to_byte_offset((uint)end_charunit);
+        int out_end = (int)end_charunit;
 
         // Step 14.f: coerce each capture to HString* (null = undefined).
         for (usz ci = 0; ci < num_caps; ci++) {
@@ -1729,8 +1700,6 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
                     fn_args[arg_count++] = cap_undef;
                 }
             }
-            // position argument is the UTF-16 code-unit index (pos_d), not
-            // the CESU-8 byte offset (out_start) used for slicing `input`.
             TVal pos_tv; pos_tv.set_fastint((long)pos_d);
             fn_args[arg_count++] = pos_tv;
             TVal str_tv; str_tv.set_string_borrowed(s_hstr);
@@ -1752,8 +1721,8 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             if (rep_hs == null) rep_hs = heap.str(heap::BuiltinStr.UNDEFINED);
 
             if (out_start >= last_end) {
-                out.append_bytes(input[last_end : out_start - last_end]);
-                out.append_bytes(rep_hs.get_data());
+                out.append_hstring_range(s_hstr, (uint)last_end, (uint)out_start);
+                out.append_hstring(rep_hs);
                 last_end = out_end > input_len ? input_len : out_end;
             }
         } else {
@@ -1803,17 +1772,15 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             // text is then dropped.
             usz keep = out.len;
             bool append = out_start >= last_end;
-            if (append) out.append_bytes(input[last_end : out_start - last_end]);
-            char[][] cap_slices = cap_slices_v.items[:num_caps];
-            for (usz ci = 0; ci < num_caps; ci++) {
-                cap_slices[ci] = cap_strs[ci] == null ? (char[]){} : regexp_defined_slice(cap_strs[ci].get_data());
-            }
+            if (append) out.append_hstring_range(s_hstr, (uint)last_end, (uint)out_start);
+            StrSlice[] cap_slices = cap_slices_v.items[:num_caps];
+            for (usz ci = 0; ci < num_caps; ci++) cap_slices[ci] = slice_of(cap_strs[ci]);
             rr_get_substitution(ctx, &out,
-                matched_hstr.get_data(),
-                input[:input_len], (usz)out_start, (usz)out_end,
+                slice_of(matched_hstr),
+                s_hstr, (uint)out_start, (uint)out_end,
                 cap_slices,
                 named_captures_tv, have_named_captures,
-                replace_str_hstr.get_data());
+                replace_str_hstr);
             if (ctx.should_throw) return;
             if (append) {
                 last_end = out_end > input_len ? input_len : out_end;
@@ -1824,7 +1791,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     }
 
     // Append tail [last_end, input_len).
-    out.append_bytes(input[last_end : input_len - last_end]);
+    out.append_hstring_range(s_hstr, (uint)last_end, (uint)input_len);
     out.finish(ctx);
 }
 
@@ -1878,8 +1845,7 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     Heap* heap = ctx.heap;
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     bool full_unicode = ((*rx.extra_ptr()).regexp.flags & (16 | 128)) != 0;
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
+    int input_len = (int)s_hstr.unit_len();
     usz ncap = (usz)(re_bindings::re_get_capture_count(re_data) - 1);
 
     HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
@@ -1901,7 +1867,7 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     int m_start, m_end, m_caps;
     if (input_len == 0) {
         // The empty subject is [] when the matcher accepts it and [S] when not.
-        if (regexp_run(ctx, re_data, input, 0, 0, 1, &m_start, &m_end, &m_caps,
+        if (regexp_run(ctx, re_data, s_hstr, 0, &m_start, &m_end, &m_caps,
                 caps_start, caps_end, (int)ncap) != re_bindings::RE_MATCH) {
             if (ctx.should_throw) return;
             TVal whole;
@@ -1914,7 +1880,7 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     while (q < input_len) {
         // Positions below the next match fail, as the sticky search would. A
         // match that starts at the end of the subject is never tried.
-        if (regexp_run(ctx, re_data, input, input_len, q, (int)s_hstr.is_ascii(),
+        if (regexp_run(ctx, re_data, s_hstr, q,
                 &m_start, &m_end, &m_caps, caps_start, caps_end,
                 (int)ncap) != re_bindings::RE_MATCH || m_start >= input_len) {
             if (ctx.should_throw) return;
@@ -1922,21 +1888,18 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
         }
         q = m_start;
         if (m_end == p) {
-            q += (int)hstring::advance_string_index_byte_len(input[:input_len], (uint)q, full_unicode);
+            q = (int)hstring::advance_string_index(s_hstr, (uint)q, full_unicode);
             continue;
         }
         TVal piece;
-        piece.set_string_borrowed(m_start == p
-            ? heap.str(heap::BuiltinStr.EMPTY) : builtin_intern_slice(heap, input[p : m_start - p]));
+        piece.set_string_borrowed(heap.str_slice(s_hstr, (uint)p, (uint)m_start));
         regexp_split_push(heap, arr, &count, piece);
         if (count == limit) break;
         for (usz i = 0; i < ncap && count < limit; i++) {
             TVal cap;
             cap.set_undefined();
             if (caps_start[i] >= 0 && caps_end[i] >= 0) {
-                cap.set_string_borrowed(caps_start[i] == caps_end[i]
-                    ? heap.str(heap::BuiltinStr.EMPTY)
-                    : builtin_intern_slice(heap, input[caps_start[i] : caps_end[i] - caps_start[i]]));
+                cap.set_string_borrowed(heap.str_slice(s_hstr, (uint)caps_start[i], (uint)caps_end[i]));
             }
             regexp_split_push(heap, arr, &count, cap);
         }
@@ -1949,8 +1912,7 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
         if (p == 0) {
             tail.set_string_borrowed(s_hstr);
         } else {
-            tail.set_string_borrowed(p == input_len
-                ? heap.str(heap::BuiltinStr.EMPTY) : builtin_intern_slice(heap, input[p : input_len - p]));
+            tail.set_string_borrowed(heap.str_slice(s_hstr, (uint)p, (uint)input_len));
         }
         regexp_split_push(heap, arr, &count, tail);
     }
@@ -2086,22 +2048,23 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     // Step 8: newFlags = flags; if 'y' not in flags, append 'y'.
     bool has_y = false;
     bool has_u = false;
-    char* fp = flags_str.get_cstr();
-    uint flen = flags_str.blen;
+    uint flen = flags_str.unit_len();
     for (uint i = 0; i < flen; i++) {
-        if (fp[i] == 'y') { has_y = true; }
-        if (fp[i] == 'u') { has_u = true; }
+        if (flags_str.unit_at(i) == 'y') { has_y = true; }
+        if (flags_str.unit_at(i) == 'u') { has_u = true; }
     }
     HString* new_flags_str;
     if (has_y) {
         new_flags_str = flags_str;
     } else {
         // Append 'y'.
-        char[64] nf_buf;
-        uint nf_len = 0;
-        for (uint i = 0; i < flen && nf_len < 63; i++) { nf_buf[nf_len++] = fp[i]; }
-        if (nf_len < 63) { nf_buf[nf_len++] = 'y'; }
-        new_flags_str = builtin_intern_string(heap, nf_buf[:nf_len]);
+        StrBuf nf;
+        nf.init(heap);
+        defer nf.free();
+        nf.append_hstring(flags_str);
+        nf.append_char('y');
+        new_flags_str = nf.to_hstring(ctx);
+        if (new_flags_str == null) return;
     }
 
     // Step 9: Let splitter be ? Construct(C, «rx, newFlags»).
@@ -2150,8 +2113,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         return;
     }
 
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
+    int input_len = (int)s_hstr.unit_len();
 
     // Step 22: if size = 0, handle empty string case.
     if (input_len == 0) {
@@ -2172,15 +2134,14 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     }
 
     ulong arr_idx = 0;
-    int q = 0;  // current search position in bytes (CESU-8 byte offset)
-    int p = 0;  // start of current substring in bytes
+    int q = 0;  // current search position in code units
+    int p = 0;  // start of current substring in code units
 
     // Main loop: ES §21.2.5.11 step 24.
     while (q < input_len) {
-        // Step 24.a: Set(splitter, "lastIndex", q, true), q as char-unit index.
+        // Step 24.a: Set(splitter, "lastIndex", q, true).
         {
-            long q_cu = (long)s_hstr.byte_offset_to_char_offset((uint)q);
-            TVal q_tv; q_tv.set_fastint(q_cu);
+            TVal q_tv; q_tv.set_fastint((long)q);
             if (!regexp_set_last_index(ctx, splitter, li_key, q_tv)) return;
         }
 
@@ -2192,17 +2153,13 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
 
         // Step 24.e: If z is null, let q be AdvanceStringIndex(S, q, unicodeMatching).
         if (z.is_null()) {
-            int adv = (int)hstring::advance_string_index_byte_len(
-                input[:input_len], (uint)q, has_u);
-            q += adv;
+            q = (int)hstring::advance_string_index(s_hstr, (uint)q, has_u);
             continue;
         }
 
         if (!z.is_object() || z.get_heapptr() == null) {
             // Treat as no match.
-            int adv = (int)hstring::advance_string_index_byte_len(
-                input[:input_len], (uint)q, has_u);
-            q += adv;
+            q = (int)hstring::advance_string_index(s_hstr, (uint)q, has_u);
             continue;
         }
         HObject* z_obj = (HObject*)z.get_heapptr();
@@ -2219,37 +2176,18 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         if (e_d < 0.0) { e_d = 0.0; }
         // Clamp e to size.
         if (e_d > (double)input_len) { e_d = (double)input_len; }
-        // Convert char-unit index (from lastIndex) back to byte offset.
-        // splitter.lastIndex is a char-unit count; convert to byte offset.
-        int e_cu = (int)e_d;
-        int e_byte;
-        if (e_cu <= 0) {
-            e_byte = 0;
-        } else {
-            // Walk s_hstr to find byte offset corresponding to e_cu char units.
-            e_byte = (int)s_hstr.char_offset_to_byte_offset((uint)e_cu);
-            if (e_byte > input_len) { e_byte = input_len; }
-        }
-        int e = e_byte;
+        int e = (int)e_d;
 
         // Step 24.f.ii: If e == p, advance q (no forward progress).
         if (e == p) {
-            int adv = (int)hstring::advance_string_index_byte_len(
-                input[:input_len], (uint)q, has_u);
-            q += adv;
+            q = (int)hstring::advance_string_index(s_hstr, (uint)q, has_u);
             continue;
         }
 
         // Step 24.f.iv: e != p, we have a real match boundary.
         // Push substring [p, q) as the next result element.
         {
-            int sub_len = q - p;
-            HString* substr;
-            if (sub_len <= 0) {
-                substr = heap.str(heap::BuiltinStr.EMPTY);
-            } else {
-                substr = builtin_intern_slice(heap, input[p : (usz)sub_len]);
-            }
+            HString* substr = heap.str_slice(s_hstr, (uint)p, (uint)q);
             TVal elem; elem.set_string_borrowed(substr);
             arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
             arr_idx++;
@@ -2296,13 +2234,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
 
     // Tail: push [p, size) as the final element.
     if (arr_idx < limit) {
-        int tail_len = input_len - p;
-        HString* tail_str;
-        if (tail_len <= 0) {
-            tail_str = heap.str(heap::BuiltinStr.EMPTY);
-        } else {
-            tail_str = builtin_intern_slice(heap, input[p : (usz)tail_len]);
-        }
+        HString* tail_str = heap.str_slice(s_hstr, (uint)p, (uint)input_len);
         TVal elem; elem.set_string_borrowed(tail_str);
         arr.put_prop(heap.int_to_hstring((long)arr_idx), elem, hobject::PROP_FLAGS_WEC, ctx.heap);
         arr_idx++;
@@ -2472,13 +2404,10 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     // 8. If flags contains "g", let global be true.
     bool global_flag = false;
     bool unicode_flag = false;
-    {
-        char* fp = flags_str.get_cstr();
-        uint flen = flags_str.blen;
-        for (uint i = 0; i < flen; i++) {
-            if (fp[i] == 'g') global_flag = true;
-            if (fp[i] == 'u' || fp[i] == 'v') unicode_flag = true;
-        }
+    for (uint i = 0; i < flags_str.unit_len(); i++) {
+        uint fc = flags_str.unit_at(i);
+        if (fc == 'g') global_flag = true;
+        if (fc == 'u' || fc == 'v') unicode_flag = true;
     }
 
     // 9. Return CreateRegExpStringIterator(matcher, S, global, unicode).
@@ -2674,8 +2603,6 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         if (ctx.should_throw) return;
         if (s_hstr == null) s_hstr = ctx.heap.str(heap::BuiltinStr.UNDEFINED);
     }
-    char* input = s_hstr.get_cstr();
-    int input_len = (int)s_hstr.blen;
 
     // Step 3: ToLength(Get(R, "lastIndex")). Both halves can run arbitrary
     // script -- a getter on the receiver, then `valueOf` on what it returns --
@@ -2715,8 +2642,6 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
     // alone, however large the value read above.
     int start_pos = 0;
     if (global_flag || sticky_flag) {
-        // lastIndex is a UTF-16 code unit count; convert to CESU-8 byte
-        // offset for re_run. Bounds-check against char-unit length.
         long li_charunit = (long)li_d;
         uint str_charlen = s_hstr.unit_len();
         if (li_charunit < 0 || (ulong)li_charunit > (ulong)str_charlen) {
@@ -2726,7 +2651,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
             else { ctx.result_null(); }
             return;
         }
-        start_pos = (int)s_hstr.char_offset_to_byte_offset((uint)li_charunit);
+        start_pos = (int)li_charunit;
     }
 
     int out_start = 0;
@@ -2736,8 +2661,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
     int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
 
     int result = regexp_run(ctx,
-        re_data, input, input_len, start_pos,
-        (int)s_hstr.is_ascii(),
+        re_data, s_hstr, start_pos,
         &out_start, &out_end, &out_num_captures,
         &caps_start, &caps_end, re_bindings::RE_MAX_CAPTURES
     );
@@ -2757,9 +2681,8 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
         // UTF-16 code unit index. For empty matches (e == matchStart) the
         // AdvanceStringIndex step is performed by the *caller* (@@match step
         // 8.g, @@replace step 11.d) so that custom exec overrides are also
-        // covered. Do NOT advance here, set lastIndex = charlen(input[:e]).
-        long new_li = (long)s_hstr.byte_offset_to_char_offset((uint)out_end);
-        TVal end_tv; end_tv.set_fastint(new_li);
+        // covered. Do NOT advance here.
+        TVal end_tv; end_tv.set_fastint((long)out_end);
         if (!regexp_set_last_index(ctx, rx, li_key, end_tv)) return;
     }
 
@@ -2770,7 +2693,7 @@ fn void regexp_builtin_exec(BuiltinContext* ctx, HObject* rx, TVal* input_str_tv
 
     int num_caps = out_num_captures;
     if (num_caps > re_bindings::RE_MAX_CAPTURES) num_caps = re_bindings::RE_MAX_CAPTURES;
-    HObject* arr = regexp_build_match_result(ctx, re_data, s_hstr, input, input_len,
+    HObject* arr = regexp_build_match_result(ctx, re_data, s_hstr,
                                              out_start, out_end,
                                              &caps_start, &caps_end, num_caps, has_indices);
     if (arr == null) {
@@ -2917,11 +2840,14 @@ fn void regexp_append_line_terminator(StrBuf* out, char[] src, usz at) {
 
 // The escaped source of a RegExp pattern as a string; null with a RangeError
 // pending when the result is too long.
-fn HString* regexp_escaped_source(BuiltinContext* ctx, char[] src) {
+fn HString* regexp_escaped_source(BuiltinContext* ctx, HString* src) {
+    StrBuf text;
+    text.init(ctx.heap);
+    defer text.free();
     StrBuf out;
     out.init(ctx.heap);
     defer out.free();
-    regexp_escape_pattern(&out, src);
+    regexp_escape_pattern(&out, cesu8_text(&text, src));
     return out.to_hstring(ctx);
 }
 
@@ -2937,7 +2863,7 @@ fn void builtin_regexp_proto_get_source(BuiltinContext* ctx) {
     HObject* obj = this_r.obj;
     if ((*obj.extra_ptr()).prim.primitive_value.is_string() && (*obj.extra_ptr()).prim.primitive_value.get_heapptr() != null) {
         HString* phs = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        HString* escaped = regexp_escaped_source(ctx, phs.get_data());
+        HString* escaped = regexp_escaped_source(ctx, phs);
         if (escaped != null) ctx.result_string(escaped);
     } else {
         ctx.result_string(builtin_intern_string(ctx.heap, "(?:)"));
@@ -3160,27 +3086,22 @@ fn void builtin_regexp_escape(BuiltinContext* ctx) {
         return;
     }
     HString* s = (HString*)ctx.regs[ctx.base_reg].get_heapptr();
-    char[] data = s.get_cstr()[:s.blen];
-
-    usz cap = (usz)s.blen * 6 + 16;
+    usz cap = (usz)s.unit_len() * 6 + 16;
     char* buf = (char*)alloc::malloc_try(mem, (sz)cap) ?? null;
     if (buf == null) { ctx.result_undefined(); return; }
     usz len = 0;
 
+    uint n = s.unit_len();
     uint offset = 0;
     bool first = true;
-    while ((usz)offset < data.len) {
-        uint seq_len = hstring::utf8_seq_len(data[offset]);
-        uint cp = hstring::decode_codepoint(data, offset);
+    while (offset < n) {
+        uint cp = s.unit_at(offset);
+        uint step = 1;
         // Combine a high surrogate immediately followed by a low surrogate
         // into its astral code point (StringToCodePoints semantics).
-        if (hstring::is_high_surrogate(cp) && (usz)(offset + seq_len) < data.len) {
-            uint next_len = hstring::utf8_seq_len(data[offset + seq_len]);
-            uint next_cp = hstring::decode_codepoint(data, offset + seq_len);
-            if (hstring::is_low_surrogate(next_cp)) {
-                cp = hstring::surrogates_to_codepoint(cp, next_cp);
-                seq_len += next_len;
-            }
+        if (hstring::is_high_surrogate(cp) && offset + 1 < n && hstring::is_low_surrogate(s.unit_at(offset + 1))) {
+            cp = hstring::surrogates_to_codepoint(cp, s.unit_at(offset + 1));
+            step = 2;
         }
 
         bool leading_digit_or_letter = first &&
@@ -3193,7 +3114,7 @@ fn void builtin_regexp_escape(BuiltinContext* ctx) {
             re_escape_encode_codepoint(buf, &len, cp);
         }
         first = false;
-        offset += seq_len;
+        offset += step;
     }
 
     HString* result = builtin_intern_string(ctx.heap, buf[:len]);
@@ -3358,12 +3279,14 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     return true;
 }
 
-fn int regexp_run(BuiltinContext* ctx, void* re, char* input, int input_len,
-    int start_offset, int input_is_ascii, int* out_start, int* out_end,
+// Run `re` over the units of `s` from unit `start_offset`; every offset in and
+// out is a unit offset.
+fn int regexp_run(BuiltinContext* ctx, void* re, HString* s,
+    int start_offset, int* out_start, int* out_end,
     int* out_num_captures, int* caps_start, int* caps_end, int max_captures) {
     re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, ctx.heap };
-    int result = re_bindings::re_run_interruptible(re, input, input_len,
-        start_offset, input_is_ascii, out_start, out_end, out_num_captures,
+    int result = re_bindings::re_run_interruptible(re, s.data_ptr(), (int)s.unit_len(),
+        start_offset, s.is_wide() ? 1 : 0, out_start, out_end, out_num_captures,
         caps_start, caps_end, max_captures, &interrupt);
     if (ctx.heap.uncatchable_throw) builtin_throw(ctx, ctx.heap.err_proto, "interrupted");
     return result;

@@ -388,6 +388,7 @@ fn usz bk_string_length(void* ctxp, ulong id) @export("bk_string_length") {
     return hs == null ? 0 : hs.unit_len();
 }
 
+
 // ============================================================================
 // Coercion tier
 // ============================================================================

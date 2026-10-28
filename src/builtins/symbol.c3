@@ -47,7 +47,7 @@ fn HString* alloc_unique_symbol(Heap* heap, HString* desc) {
     uint counter = heap.symbol_counter;
     heap.symbol_counter++;
     uint hash = heap.hash_seed ^ counter;
-    HString*? sym = hstring::hstring_alloc(heap, desc.get_data(), hash);
+    HString*? sym = hstring::hstring_alloc(heap, desc.units(), hash);
     if (try s = sym) {
         s.flags.is_symbol = true;
         s.flags.is_arridx = false;

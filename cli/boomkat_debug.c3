@@ -26,6 +26,7 @@ import boomkat::types;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::esm;
+import boomkat::builtins;
 import std::io;
 import std::time;
 
@@ -562,9 +563,8 @@ fn void print_tval_stdout(TVal* v) {
         case types::TValTag.STRING: {
             HString* s = (HString*)v.get_heapptr();
             if (s != null) {
-                char[] d = s.get_data();
                 io::printf("\"");
-                for (usz i = 0; i < d.len; i++) { io::printf("%c", d[i]); }
+                s.write_utf8(&builtins::putc_stdout);
                 io::printf("\"");
             } else { io::printf("(null)"); }
             break;
@@ -659,20 +659,14 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
                     if (!found_name && sp[i].key.borrow() == (void*)name_key && v.is_string()) {
                         HString* s = (HString*)v.get_heapptr();
                         if (s != null) {
-                            char[] d = s.get_data();
-                            usz copy_len = d.len < (name_buf.len - 1) ? d.len : (name_buf.len - 1);
-                            mem::copy(&name_buf[0], &d[0], (sz)(copy_len));
-                            name_len = copy_len;
+                            name_len = s.utf8_copy_truncated(name_buf[:name_buf.len - 1]);
                             found_name = true;
                         }
                     }
                     if (!found_msg && sp[i].key.borrow() == (void*)msg_key && v.is_string()) {
                         HString* s = (HString*)v.get_heapptr();
                         if (s != null) {
-                            char[] d = s.get_data();
-                            usz copy_len = d.len < (msg_buf.len - 1) ? d.len : (msg_buf.len - 1);
-                            mem::copy(&msg_buf[0], &d[0], (sz)(copy_len));
-                            msg_len = copy_len;
+                            msg_len = s.utf8_copy_truncated(msg_buf[:msg_buf.len - 1]);
                             found_msg = true;
                         }
                     }
@@ -696,6 +690,10 @@ fn void print_uncaught_error(heap::Heap* h, TVal* err_val) {
     io::eprintf("\n");
 }
 
+fn void stderr_put_byte(char c, void* udata) {
+    io::eprintf("%c", c);
+}
+
 fn void print_tval_stderr(TVal* v) {
     switch (v.get_tag()) {
         case types::TValTag.UNDEFINED:  io::eprintf("undef");   break;
@@ -706,9 +704,8 @@ fn void print_tval_stderr(TVal* v) {
         case types::TValTag.STRING: {
             HString* s = (HString*)v.get_heapptr();
             if (s != null) {
-                char[] d = s.get_data();
                 io::eprintf("\"");
-                for (usz i = 0; i < d.len; i++) { io::eprintf("%c", d[i]); }
+                s.write_utf8(&stderr_put_byte);
                 io::eprintf("\"");
             } else { io::eprintf("(null)"); }
             break;

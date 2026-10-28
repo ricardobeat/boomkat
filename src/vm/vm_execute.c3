@@ -353,10 +353,10 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
 // overlapping tails retain immutable-copy semantics. The result stays
 // non-interned; property-key consumers canonicalize it with ensure_interned.
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
-                             HString* ls, char[] tail, uint reg_idx,
+                             HString* ls, Units tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
     if (ra != rb) return false;
-    if (ls.blen < CONCAT_ACCUM_MIN && ls.capacity <= ls.blen) return false;
+    if (ls.length < CONCAT_ACCUM_MIN && ls.capacity <= ls.byte_len()) return false;
     if (ls.flags.is_interned || ls.flags.is_symbol) return false;
     if (((types::HeapHeader*)ls).is_temproot()) return false;
     if (!ra.is_string() || ra.get_heapptr() != (void*)ls) return false;
@@ -364,24 +364,27 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     uint rc_val = ((types::HeapHeader*)ls).refcount;
     if (rc_val != 1 && (rc_val != 2
         || !concat_binding_owns(vm, act, ls, reg_idx, next_insn))) return false;
-    // Appending a slice of the accumulator's own buffer would read the bytes
+    // Appending a slice of the accumulator's own buffer would read the units
     // the append is concurrently writing, and growing would leave `tail`
     // dangling at the old allocation. `s += s` is the reachable case; the
     // check is on the buffer range so it also rejects any partial overlap.
-    char* ls_data = ls.get_cstr();
+    char* ls_data = ls.data_ptr();
     if (tail.ptr >= ls_data && tail.ptr < ls_data + ls.capacity) return false;
 
     if (ls.try_append_in_place(tail)) return true;
 
-    // Geometric growth keeps the total copied prefix bytes linear in the
-    // final string size.
-    ulong need = (ulong)ls.blen + (ulong)tail.len;
-    ulong want = (ulong)ls.capacity * 2;
+    // Geometric growth keeps the total copied prefix units linear in the
+    // final string size. The new width is the wider of the two.
+    bool wide = ls.is_wide() || tail.wide;
+    ulong need = (ulong)ls.length + (ulong)tail.len;
+    ulong want = (ulong)ls.capacity * 2 >> (ls.is_wide() ? 1 : 0);
     if (want < need) { want = need; }
     if (hstring::length_exceeds_max(want)) { want = need; }
     if (hstring::length_exceeds_max(want)) return false;
 
-    HString* grown = vm.heap.alloc_concat_string(ls.get_data(), (uint)want);
+    // The empty tail only gives the allocation its width.
+    Units shape = { .ptr = null, .len = 0, .wide = wide };
+    HString* grown = vm.heap.alloc_concat_string_parts(ls.units(), shape, (uint)want);
     if (grown == null) return false;
     if (!grown.try_append_in_place(tail)) {
         // Cannot happen: the capacity was sized for exactly this append. Drop
@@ -428,18 +431,8 @@ fn bool concat_next_add_uses_left(Instruction* next, Instruction* code_end, uint
 // Concatenation values need no canonical identity until used as property keys.
 // Reserve growth space only for the accumulator shape; other results hold
 // exactly their content and defer hashing until a consumer needs it.
-fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data,
-                            bool reserve_for_next_add = false) {
-    ulong cap = (ulong)data.len;
-    if ((ra == rb && data.len >= CONCAT_ACCUM_MIN) || reserve_for_next_add) {
-        cap *= 2;
-        if (hstring::length_exceeds_max(cap)) { cap = (ulong)data.len; }
-    }
-    return vm.heap.alloc_concat_string(data, (uint)cap);
-}
-
 fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
-                                  char[] left, char[] right, uint len,
+                                  Units left, Units right, uint len,
                                   bool reserve_for_next_add = false,
                                   HString* left_string = null, HString* right_string = null) {
     ulong cap = (ulong)len;
@@ -468,18 +461,20 @@ fn bool vm_concat_overflow(Vm* vm, Dispatch* ds) {
 }
 
 // Last resort when the concat string cannot be allocated directly: build the
-// bytes in a scratch buffer and intern them.
-fn HString* vm_concat_interned(Vm* vm, char[] left, char[] right, uint total) @noinline {
+// units in a scratch buffer and intern them.
+fn HString* vm_concat_interned(Vm* vm, Units left, Units right, uint total) @noinline {
+    bool wide = left.wide || right.wide;
+    usz bytes = (usz)total << (wide ? 1 : 0);
     char[512] stack_buf;
     char* buf = &stack_buf;
-    if (total > stack_buf.len) {
-        buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
+    if (bytes > stack_buf.len) {
+        buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, bytes);
         if (buf == null) return null;
     }
-    if (left.len > 0) mem::copy(buf, left.ptr, (sz)left.len);
-    if (right.len > 0) mem::copy(buf + left.len, right.ptr, (sz)right.len);
-    HString* result = intern_string(vm, buf[:total]);
-    if (total > stack_buf.len) vm.heap.free_func(vm.heap.heap_udata, buf);
+    hstring::copy_units(buf, wide, left);
+    hstring::copy_units(buf + ((usz)left.len << (wide ? 1 : 0)), wide, right);
+    HString* result = vm.heap.str_intern_units({ .ptr = buf, .len = total, .wide = wide });
+    if (bytes > stack_buf.len) vm.heap.free_func(vm.heap.heap_udata, buf);
     return result;
 }
 
@@ -489,7 +484,7 @@ fn HString* vm_concat_interned(Vm* vm, char[] left, char[] right, uint total) @n
 // register tracking: heap_reg_count must cover it for the frame teardown to
 // release the reference.
 fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* acc,
-                          char[] left, char[] right, uint reg_idx,
+                          Units left, Units right, uint reg_idx,
                           Instruction* next, Instruction* code_end, HString* right_string = null) {
     // The cap bounds each length well below 2^32, so the sum cannot wrap, but
     // it can land past the cap, which must surface as a RangeError rather than
@@ -531,18 +526,18 @@ fn ConcatStatus vm_concat_add(Vm* vm, Activation* act, TVal* ra, TVal* rb, TVal*
             track_heap_store(act, ra, reg_idx);
             return ConcatStatus.DONE;
         }
-        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end, rs);
+        return vm_concat(vm, act, ra, rb, ls, ls.units(), rs.units(), reg_idx, next, code_end, rs);
     }
     char[32] buf;
     if (ls != null && rc.is_fastint()) {
         int n = hstring::int_to_buf(rc.get_fastint(), &buf, buf.len);
         if (n <= 0) return ConcatStatus.NOT_APPLICABLE;
-        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), buf[:n], reg_idx, next, code_end);
+        return vm_concat(vm, act, ra, rb, ls, ls.units(), hstring::narrow_units(buf[:n]), reg_idx, next, code_end);
     }
     if (rs != null && rb.is_fastint()) {
         int n = hstring::int_to_buf(rb.get_fastint(), &buf, buf.len);
         if (n <= 0) return ConcatStatus.NOT_APPLICABLE;
-        return vm_concat(vm, act, ra, rb, null, buf[:n], rs.get_data(), reg_idx, next, code_end);
+        return vm_concat(vm, act, ra, rb, null, hstring::narrow_units(buf[:n]), rs.units(), reg_idx, next, code_end);
     }
     return ConcatStatus.NOT_APPLICABLE;
 }
@@ -3110,7 +3105,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 continue;
             }
             if (try ls = left_str && try rs = right_str) {
-                if (vm_concat(vm, ds.act, ra, rb, ls, ls.get_data(), rs.get_data(), (uint)insn.a,
+                if (vm_concat(vm, ds.act, ra, rb, ls, ls.units(), rs.units(), (uint)insn.a,
                               ds.curr_pc, ds.code_end, rs) == ConcatStatus.TOO_LONG) {
                     if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                     if (ds.needs_restart) break;
@@ -3194,7 +3189,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             char[32] int_buf;
             int int_len = hstring::int_to_buf(imm, &int_buf, int_buf.len);
             if (int_len > 0) {
-                if (vm_concat(vm, ds.act, ra, rb, str, str.get_data(), int_buf[:int_len], (uint)insn.a,
+                if (vm_concat(vm, ds.act, ra, rb, str, str.units(), hstring::narrow_units(int_buf[:int_len]), (uint)insn.a,
                               ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
                     if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                     if (ds.needs_restart) break;
@@ -3223,34 +3218,12 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     char[32] int_buf;
                     int int_len = hstring::int_to_buf(imm, &int_buf, 32);
                     if (int_len > 0) {
-                        uint s_len = left_str.blen;
-                        // Widened for the same reason as the ADD fast path.
-                        ulong total64 = (ulong)s_len + (ulong)int_len;
-                        if (hstring::length_exceeds_max(total64)) {
-                            if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
-                            }
+                        if (vm_concat(vm, ds.act, ra, rb, null, left_str.units(),
+                                      hstring::narrow_units(int_buf[:int_len]), (uint)insn.a,
+                                      ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
+                            if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                             if (ds.needs_restart) break;
-                            continue;
                         }
-                        uint total = (uint)total64;
-                        char[544] stack_buf;
-                        char* buf;
-                        bool heap_allocated = false;
-                        if (total <= 544) {
-                            buf = &stack_buf;
-                        } else {
-                            buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                            if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
-                            heap_allocated = true;
-                        }
-                        mem::copy(buf, left_str.get_cstr(), (sz)(s_len));
-                        mem::copy(buf + s_len, &int_buf, (sz)((usz)int_len));
-                        HString* interned = intern_string(vm, buf[:total]);
-                        if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                        vm.heap.set_reg_string(ra, interned);
-                        // Large concat results are non-interned; see ADD.
-                        track_heap_store(ds.act, ra, (uint)insn.a);
                         continue;
                     }
                 }
@@ -3331,6 +3304,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // before the add so two lengths near the cap cannot wrap.
         ulong total64 = 0;
         ulong char_length = 0;
+        bool wide = false;
         for (uint i = 0; i < count; i++) {
             TVal part_val = parts[i];
             if (part_val.get_tag() == TValTag.FASTINT) {
@@ -3339,7 +3313,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 if (insn.op == Opcode.STRJOIN_LENGTH) char_length += digits;
             } else {
                 HString* part = (HString*)part_val.get_heapptr();
-                total64 += (ulong)part.blen;
+                total64 += (ulong)part.length;
+                wide = wide || part.is_wide();
                 if (insn.op == Opcode.STRJOIN_LENGTH) char_length += part.unit_len();
             }
         }
@@ -3357,7 +3332,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
 
-        HString* result = vm.heap.alloc_concat_join(parts[:count], total);
+        HString* result = vm.heap.alloc_concat_join(parts[:count], total, wide);
         if (result == null) { vm.heap.set_reg_undefined(ra); continue; }
         vm.heap.set_reg_string(ra, result);
         // A non-interned result is a pure refcounted leaf with no
@@ -4257,7 +4232,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
         ds.regs_base = ds.act.bottom;
-        TVal? prom_opt = esm::dynamic_import(vm.heap, vm, spec_str.get_data(), attr_type,
+        builtins::StrBuf spec_text;
+        spec_text.init(vm.heap);
+        defer spec_text.free();
+        TVal? prom_opt = esm::dynamic_import(vm.heap, vm, builtins::utf8_text(&spec_text, spec_str), attr_type,
                                              op == Opcode.DYN_IMPORT_DEFER,
                                              op == Opcode.DYN_IMPORT_SOURCE);
         // The nested module evaluation may have reallocated the valstack.

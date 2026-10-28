@@ -1253,14 +1253,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         return;
     }
 
-    StrBuf out;
-    out.init(ctx.heap);
-    defer out.free();
-    for (uint i = 0; i < len; i++) {
-        if (i > 0) out.append_hstring(sep);
-        out.append_hstring(elem_strs[i]);
-    }
-    HString* result = out.to_hstring(ctx);
+    HString* result = join_hstrings(ctx, elem_strs[:len], sep);
     if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
     for (uint i = 0; i < len; i++) {
         ctx.heap.decref((types::HeapHeader*)elem_strs[i]);

@@ -22,7 +22,7 @@ fn void? vm_retest(Dispatch* ds, TVal* ra, TVal* rb, DecodedInsn insn) {
         int[re_bindings::RE_MAX_CAPTURES] caps_start @noinit;
         int[re_bindings::RE_MAX_CAPTURES] caps_end @noinit;
         re_bindings::ReInterrupt interrupt = { &heap::regexp_interrupt, vm.heap };
-        int r = re_bindings::re_run_interruptible(func.regexp_cache[k], s.get_cstr(), (int)s.blen, 0, (int)s.is_ascii(),
+        int r = re_bindings::re_run_interruptible(func.regexp_cache[k], s.data_ptr(), (int)s.unit_len(), 0, s.is_wide() ? 1 : 0,
                                     &out_start, &out_end, &out_num, &caps_start, &caps_end, 0, &interrupt);
         if (vm.heap.uncatchable_throw) {
             if (!vm_throw_error(vm, vm.heap.err_proto, "interrupted", ds.act, &ds.curr_pc, &ds.needs_restart)) return VM_ERROR~;
@@ -73,30 +73,25 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
         TVal raw_tv = ds.constants[bc];
         if (raw_tv.is_string()) {
             HString* raw_hs = (HString*)raw_tv.get_heapptr();
-            char[] raw = raw_hs.get_data();
-            usz len = raw.len;
+            uint len = raw_hs.unit_len();
 
             // Parse "/pattern/flags" by finding the closing '/'
             // Flags are only letters, so scan backwards past them
-            usz end_slash = len - 1;
+            uint end_slash = len - 1;
             while (end_slash > 0 &&
-                   ((raw[end_slash] >= 'a' && raw[end_slash] <= 'z') ||
-                    (raw[end_slash] >= 'A' && raw[end_slash] <= 'Z'))) {
+                   ((raw_hs.unit_at(end_slash) >= 'a' && raw_hs.unit_at(end_slash) <= 'z') ||
+                    (raw_hs.unit_at(end_slash) >= 'A' && raw_hs.unit_at(end_slash) <= 'Z'))) {
                 end_slash--;
             }
 
-            if (end_slash > 0 && raw[0] == '/' && raw[end_slash] == '/') {
-                char[] pattern_data = raw[1..end_slash - 1];
-                char[] flag_data = {};
-                if (end_slash + 1 < len) {
-                    flag_data = raw[end_slash + 1..len - 1];
-                }
+            if (end_slash > 0 && raw_hs.unit_at(0) == '/' && raw_hs.unit_at(end_slash) == '/') {
+                HString* pattern_hs = vm.heap.str_slice(raw_hs, 1, end_slash);
 
                 // Convert JS flags to libregexp flag bits
                 int flags = 0;
                 int js_flags = 0;  // 1=g, 2=i, 4=m, 8=s, 16=u, 32=y, 64=d, 128=v
-                for (usz i = 0; i < flag_data.len; i++) {
-                    char f = flag_data[i];
+                for (uint i = end_slash + 1; i < len; i++) {
+                    uint f = raw_hs.unit_at(i);
                     if (f == 'g') {
                         js_flags |= 1;
                     } else if (f == 'i') {
@@ -141,18 +136,12 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                 }
 
                 if (!from_cache) {
-                    // Heap-allocate the buffer so patterns of any length fit.
-                    usz plen = pattern_data.len;
-                    char* pattern_buf_heap = (char*)alloc::malloc_try(mem, (sz)(plen + 1)) ?? null;
-                    if (pattern_buf_heap != null) {
-                        mem::copy(pattern_buf_heap, pattern_data.ptr, (sz)(plen));
-                        pattern_buf_heap[plen] = 0;
-                    }
+                    builtins::StrBuf pattern_text;
+                    pattern_text.init(vm.heap);
+                    defer pattern_text.free();
+                    char[] pattern_bytes = builtins::cesu8_text(&pattern_text, pattern_hs);
                     char[128] error_buf;
-                    compiled = (pattern_buf_heap != null)
-                        ? re_bindings::re_compile(pattern_buf_heap, plen, flags, &error_buf, 128)
-                        : null;
-                    if (pattern_buf_heap != null) mem::free(pattern_buf_heap);
+                    compiled = re_bindings::re_compile(pattern_bytes.ptr, pattern_bytes.len, flags, &error_buf, 128);
 
                     // The cache takes its own ref; the object below keeps
                     // re_compile's. The cache ref is freed with the function.
@@ -170,7 +159,6 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                         // Owns one ref: re_compile's, or the one taken on a cache hit.
                         (*obj.extra_ptr()).regexp.regexp_data = compiled;
                         (*obj.extra_ptr()).regexp.flags = js_flags;
-                        HString* pattern_hs = intern_string(vm, pattern_data);
                         (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
                         // Set lastIndex, the only own data property (ECMA-262 RegExpAlloc)
                         HString* lastindex_key = vm.heap.str(heap::BuiltinStr.LAST_INDEX);
@@ -190,7 +178,6 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                         obj.prototype = vm.heap.regexp_proto;
                         (*obj.extra_ptr()).regexp.regexp_data = null;
                         (*obj.extra_ptr()).regexp.flags = js_flags;
-                        HString* pattern_hs = intern_string(vm, pattern_data);
                         (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
                         vm.heap.set_reg_object(ra, obj);
                         track_heap_store(ds.act, ra, (uint)insn.a);

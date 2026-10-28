@@ -684,10 +684,10 @@ fn void test_short_concat_cache() {
     Heap* h = heap::create(null, null, null, null, null)!!;
     defer h.destroy();
     char[1] digits = { '1' };
-    HString* first = h.alloc_concat_string_parts("value-", digits[..], 7);
+    HString* first = h.alloc_concat_string_parts(hstring::narrow_units("value-"), hstring::narrow_units(digits[..]), 7);
     ((HeapHeader*)first).incref();
     digits[0] = '2';
-    HString* second = h.alloc_concat_string_parts("value-", digits[..], 7);
+    HString* second = h.alloc_concat_string_parts(hstring::narrow_units("value-"), hstring::narrow_units(digits[..]), 7);
     ((HeapHeader*)second).incref();
     assert(first.equals("value-1") && second.equals("value-2"));
     assert(first.refcount == 1 && second.refcount == 1);
@@ -696,27 +696,27 @@ fn void test_short_concat_cache() {
     h.decref((HeapHeader*)second);
     assert(h.large_string_count == 0);
 
-    HString* left = h.alloc_concat_string("left", 4);
-    HString* right = h.alloc_concat_string("right", 5);
-    HString* pair = h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right);
+    HString* left = h.alloc_concat_string(hstring::narrow_units("left"), 4);
+    HString* right = h.alloc_concat_string(hstring::narrow_units("right"), 5);
+    HString* pair = h.alloc_concat_string_parts(left.units(), right.units(), 9, left, right);
     assert(pair.equals("leftright") && left.refcount == 1 && right.refcount == 1);
     assert(h.cached_concat_string(left, right) == pair);
-    assert(h.alloc_concat_string_parts(left.get_data(), right.get_data(), 9, left, right) == pair);
+    assert(h.alloc_concat_string_parts(left.units(), right.units(), 9, left, right) == pair);
     // Replacing this slot must retain an old result used as the new operand.
-    HString* tail = h.alloc_concat_string("0123456789abcdef", 16);
-    HString* extended = h.alloc_concat_string_parts(pair.get_data(), tail.get_data(), 25, pair, tail);
+    HString* tail = h.alloc_concat_string(hstring::narrow_units("0123456789abcdef"), 16);
+    HString* extended = h.alloc_concat_string_parts(pair.units(), tail.units(), 25, pair, tail);
     assert(extended.equals("leftright0123456789abcdef") && pair.refcount == 1);
     h.clear_concat_cache();
     assert(h.large_string_count == 0);
 
-    HString* same = h.alloc_concat_string("same", 4);
-    assert(h.alloc_concat_string_parts(same.get_data(), same.get_data(), 8, same, same).equals("samesame"));
+    HString* same = h.alloc_concat_string(hstring::narrow_units("same"), 4);
+    assert(h.alloc_concat_string_parts(same.units(), same.units(), 8, same, same).equals("samesame"));
     assert(same.refcount == 2);
     h.clear_concat_cache();
     assert(h.large_string_count == 0);
-    HString* reset_left = h.alloc_concat_string("reset", 5);
-    HString* reset_right = h.alloc_concat_string("cache", 5);
-    h.alloc_concat_string_parts(reset_left.get_data(), reset_right.get_data(), 10, reset_left, reset_right);
+    HString* reset_left = h.alloc_concat_string(hstring::narrow_units("reset"), 5);
+    HString* reset_right = h.alloc_concat_string(hstring::narrow_units("cache"), 5);
+    h.alloc_concat_string_parts(reset_left.units(), reset_right.units(), 10, reset_left, reset_right);
     h.reset();
     assert(h.large_string_count == 0);
     foreach (entry : h.concat_cache) assert(entry.result == null && entry.left == null && entry.right == null);
@@ -813,7 +813,7 @@ fn void check_string_owners(Heap* h) {
     }
     // The first few named slots live in the object header. Reclamation must
     // release their string owners even without an external property block.
-    HString* inline_string = hstring::hstring_alloc(h, "inline-owned", 0)!!;
+    HString* inline_string = hstring::hstring_alloc(h, hstring::narrow_units("inline-owned"), 0)!!;
     TVal inline_value;
     inline_value.set_string(inline_string);
     HObject* inline_obj = h.alloc_object(ObjClass.OBJECT)!!;
@@ -826,7 +826,7 @@ fn void check_string_owners(Heap* h) {
     h.decref_tval(&inline_value);
     inline_value.set_undefined();
     // No intern-table owner: the slot is this string's sole reference.
-    HString* value = hstring::hstring_alloc(h, "same-string", 0)!!;
+    HString* value = hstring::hstring_alloc(h, hstring::narrow_units("same-string"), 0)!!;
     TVal slot;
     slot.set_string(value);
     assert(value.refcount == 1);
@@ -858,7 +858,7 @@ fn void check_register_string_owners() {
     h.finish_sweep(true);
     uint retained = 0;
     for (uint i = 0; i < h.large_string_count; i++) {
-        if (h.large_strings[i].blen == 2048) retained++;
+        if (h.large_strings[i].length == 2048) retained++;
     }
     // The globals retain one replacement string and one parsed string.
     assert(retained <= 2);
@@ -882,7 +882,7 @@ fn void check_tail_argument_owners() {
     h.finish_sweep(true);
     uint retained = 0;
     for (uint i = 0; i < h.large_string_count; i++) {
-        if (h.large_strings[i].blen == 2048) retained++;
+        if (h.large_strings[i].length == 2048) retained++;
     }
     assert(retained <= 2);
     io::printfn("tail-arguments: fresh and forwarded strings stay bounded");
@@ -906,7 +906,7 @@ fn void check_collection_clear_owners() {
     h.finish_sweep(true);
     uint retained = 0;
     for (uint i = 0; i < h.large_string_count; i++) {
-        if (h.large_strings[i].blen >= 2048) retained++;
+        if (h.large_strings[i].length >= 2048) retained++;
     }
     assert(retained == 0);
     io::printfn("collection-clear: string keys and values stay bounded");

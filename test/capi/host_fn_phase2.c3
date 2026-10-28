@@ -85,7 +85,7 @@ fn void host_is_new(builtins::BuiltinContext* ctx, void* udata) {
         if (t.is_object()) {
             HObject* o = (HObject*)t.get_heapptr();
             HString* k = ctx.heap.str_intern("wasNew");
-            if (k != null) o.put_prop(k, r, hobject::PROP_FLAGS_WEC);
+            if (k != null) o.put_prop(k, r, hobject::PROP_FLAGS_WEC, ctx.heap);
         }
         return;
     }

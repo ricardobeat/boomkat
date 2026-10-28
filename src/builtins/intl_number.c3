@@ -72,7 +72,7 @@ fn bool intl_decimal(BuiltinContext* ctx, TVal input, IntlDecimal* out, bool plu
         if (i < source.len && (source[i] == '+' || source[i] == '-')) i++;
         long exponent = 0;
         while (i < source.len) {
-            if (exponent > (long)hstring::MAX_STRING_BYTES) { builtin_throw(ctx, ctx.heap.range_err_proto, "formatted number exceeds string limit"); return false; }
+            if (exponent > (long)hstring::MAX_STRING_LENGTH) { builtin_throw(ctx, ctx.heap.range_err_proto, "formatted number exceeds string limit"); return false; }
             exponent = exponent * 10 + source[i++] - '0';
         }
         out.point += minus ? -exponent : exponent;

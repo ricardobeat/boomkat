@@ -2475,7 +2475,7 @@ fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* r
     if (ic.key.borrow() == null && key.flags.is_interned) return pc;
     HString* interned = key;
     if (!key.flags.is_interned) {
-        interned = h.str_table_lookup(key.get_data(), h.content_hash(key));
+        interned = h.str_table_lookup(key.units(), h.content_hash(key));
         if (interned == null) return pc;
     }
     TVal value;
