@@ -211,6 +211,22 @@ The promise and reason are borrowed handles; retain them with `bk_dup_value`.
 Report rejections still unhandled after the task's job checkpoint. Hooks must
 not execute JS or replace themselves.
 
+## Objects
+
+`bk_construct(ctx, ctor, argv, argc, new_target)` runs `new`, with `new_target`
+0 for the constructor itself. `bk_new_object_with_proto` takes an object or
+`BK_NULL`; `bk_get_prototype` and `bk_set_prototype` follow
+`Object.getPrototypeOf` and `Object.setPrototypeOf`, so a refused change throws
+a TypeError. `bk_instanceof` is the operator, `Symbol.hasInstance` included.
+`bk_strict_equals` is `===` and `bk_same_value` is `Object.is`. `bk_is_array`
+sees through proxies and returns -1 after a throw. `bk_get_length` reads
+`length` as array-likes do (ToLength). `bk_json_parse` and `bk_json_stringify`
+are `JSON.parse` and `JSON.stringify`; the latter returns `BK_UNDEFINED` for a
+value JSON cannot represent.
+
+`bk_get_type` returns one of `BK_TYPE_UNDEFINED`, `NULL`, `BOOLEAN`, `NUMBER`,
+`STRING`, `OBJECT`, `FUNCTION`, `SYMBOL` or `BIGINT`.
+
 ## Properties and atoms
 
 `bk_get_property`, `bk_set_property`, `bk_has_property` and

@@ -78,8 +78,8 @@ pub const Type = enum(c_int) {
     string = c.BK_TYPE_STRING,
     object = c.BK_TYPE_OBJECT,
     function = c.BK_TYPE_FUNCTION,
-    /// symbol, bigint, ...
-    other = c.BK_TYPE_OTHER,
+    symbol = c.BK_TYPE_SYMBOL,
+    bigint = c.BK_TYPE_BIGINT,
 };
 
 /// Engine version, e.g. "0.2.0".

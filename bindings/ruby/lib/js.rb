@@ -66,7 +66,8 @@ module JS
     STRING    = 4
     OBJECT    = 5
     FUNCTION  = 6
-    OTHER     = 7
+    SYMBOL    = 7
+    BIGINT    = 8
   end
 
   # Base of the exception hierarchy. Everything this binding raises is a JS::Error,
@@ -156,7 +157,8 @@ module JS
     NAMES = {
       Type::OBJECT   => 'object',
       Type::FUNCTION => 'function',
-      Type::OTHER    => 'other'
+      Type::SYMBOL   => 'symbol',
+      Type::BIGINT   => 'bigint'
     }.freeze
 
     attr_reader :type_id
@@ -942,13 +944,6 @@ module JS
       when Type::NUMBER   then Tagged.wrap(read_number(id, reader), id)
       when Type::STRING   then Tagged.wrap(read_string(id, reader), id)
       when Type::FUNCTION then Callback.new(call, id)
-      when Type::OTHER
-        # bk_get_type reports OTHER for a lightfunc -- the compact
-        # representation the engine uses for many built-ins, where Math.sqrt
-        # and friends live -- as well as for symbols and bigints. A lightfunc
-        # is callable, so expose the whole class as a Callback and let
-        # bk_call's own TypeError reject the ones that are not.
-        Callback.new(call, id)
       else Opaque.new(type, id)
       end
     end

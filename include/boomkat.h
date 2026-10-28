@@ -63,7 +63,8 @@ typedef enum {
     BK_TYPE_STRING    = 4,
     BK_TYPE_OBJECT    = 5,
     BK_TYPE_FUNCTION  = 6,
-    BK_TYPE_OTHER     = 7   /* symbol, bigint, etc. */
+    BK_TYPE_SYMBOL    = 7,
+    BK_TYPE_BIGINT    = 8
 } bk_type;
 /* END GENERATED type */
 
@@ -279,6 +280,29 @@ BK_API bk_status bk_delete_property_atom(bk_ctx ctx, bk_value object, bk_atom ke
 BK_API bk_status bk_set_global_property(bk_ctx ctx, const char *name, size_t length, bk_value value);
 /* Calls accept up to 65535 arguments; larger counts throw RangeError. */
 BK_API bk_value bk_call(bk_ctx ctx, bk_value function, bk_value this_value, const bk_value *argv, unsigned argc);
+/* [[Construct]]. new_target 0 means the constructor itself. */
+BK_API bk_value bk_construct(bk_ctx ctx, bk_value constructor, const bk_value *argv,
+                             unsigned argc, bk_value new_target);
+/* proto is an object or BK_NULL. */
+BK_API bk_value  bk_new_object_with_proto(bk_ctx ctx, bk_value proto);
+/* [[GetPrototypeOf]], through proxy traps: an object or BK_NULL. */
+BK_API bk_value  bk_get_prototype(bk_ctx ctx, bk_value object);
+/* As Object.setPrototypeOf: a refused change throws a TypeError. */
+BK_API bk_status bk_set_prototype(bk_ctx ctx, bk_value object, bk_value proto);
+/* The instanceof operator, Symbol.hasInstance included. */
+BK_API bk_status bk_instanceof(bk_ctx ctx, bk_value value, bk_value constructor, int *out);
+/* === and Object.is. A handle that does not resolve compares unequal. */
+BK_API int       bk_strict_equals(bk_ctx ctx, bk_value a, bk_value b);
+BK_API int       bk_same_value(bk_ctx ctx, bk_value a, bk_value b);
+/* Array.isArray, which sees through proxies: 1 or 0, or -1 after a throw
+ * (a revoked proxy). */
+BK_API int       bk_is_array(bk_ctx ctx, bk_value value);
+/* LengthOfArrayLike: ToLength(object.length), which may run JS. */
+BK_API bk_status bk_get_length(bk_ctx ctx, bk_value object, uint64_t *out);
+/* JSON.parse of UTF-8 text, and JSON.stringify, which returns BK_UNDEFINED for
+ * a value JSON cannot represent. */
+BK_API bk_value  bk_json_parse(bk_ctx ctx, const char *utf8, size_t length);
+BK_API bk_value  bk_json_stringify(bk_ctx ctx, bk_value value);
 
 /* Arguments/this borrow the current call and must be duplicated to escape it.
  * Values the callback creates are locals of its call. It returns any live
