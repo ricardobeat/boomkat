@@ -184,3 +184,41 @@ region gain); read-only region descriptor preparation (Vector.dot admitted,
 run-time variation). Descriptor preparation per short call is unproven; restored
 scalar-only admission. Next: direct generated function-region entry for memory
 reads, wider CFG/return selection, and measured select/patch/SIMD consumers.
+
+Function-region shared-context continuation (2026-10-28)
+------------------------------------------------------
+
+Added opt-in direct SSA entries for call-free functions with no captured
+bindings. They retain S0/S1/S2, allocate values in S3/S4 and use run-owned
+scratch via S5. Original VM slots are untouched until successful publication
+of the return value; guard failures restart the compiled baseline body at PC0.
+No helpers/allocations/writes occur in these regions. String results and
+replacement of a string-owned return slot use baseline ownership handling.
+Captured bindings keep the C adapter/exact snapshot path.
+
+Ordinary, non-dictionary own FIELD reads now have generated entry preparation.
+One receiver/shape guard supplies all its slot addresses. An epoch constant is
+patched through SLJIT's API before native execution. A once-per-heap-epoch scan
+refreshes linked callees too; invalid shape generations patch a value outside
+the runtime uint epoch range, permanently refusing the stale region.
+
+Five alternating pairs against scalar live-input SSA: RayTrace168→166ms,
+Richards83→83, DeltaBlue118→118, Crypto165→165, Navier208→208. Long arithmetic
+micro20–21→18ms, output98173796.02306579 unchanged. RayTrace Vector.dot:
+25525 entries,25131 completed,394 baseline refusals,4 epoch updates; guard
+sharing reduced region904→632 bytes. These are small gains and neutral minis,
+not evidence of the requested5–10x improvement. Keep feature opt-in.
+
+Checks:43 focused fixtures in interpreter/JIT/stress, embedding JIT success on
+ARM64 and x86-64, default embedding build, ASan scalar/field fixtures and
+Richards/DeltaBlue/RayTrace. Embedding tests execute the shared-context entry
+explicitly, assert unchanged input slots, and force epoch refresh/invalidation.
+Broad differential before the epoch-refresh follow-up: local outputs/status1
+match, Rosetta/modules outputs/status0 match. No full Octane run this iteration.
+
+A smaller admission threshold admitted extra tiny functions but showed no
+reliable benefit; restored eight-instruction minimum. An actual-used-register
+context experiment was neutral/slightly worse for loop SSA, so existing loop
+context sizes remain unchanged; only single-pass region contexts are trimmed.
+Next coverage barriers remain calls/allocations and multiple returns. Existing
+binding capabilities do not remove these semantic barriers by themselves.
