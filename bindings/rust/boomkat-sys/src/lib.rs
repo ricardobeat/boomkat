@@ -19,6 +19,16 @@ pub type bk_runtime = *mut c_void;
 /// Opaque value handle (64 bits). Not a pointer; 0 means failure.
 pub type bk_value = c_ulonglong;
 
+/// A property key held by the runtime; 0 means failure.
+pub type bk_atom = u32;
+
+// `bk_get_own_property_keys` flags.
+pub const BK_KEYS_OWN: c_uint = 0;
+pub const BK_KEYS_STRINGS: c_uint = 1;
+pub const BK_KEYS_SYMBOLS: c_uint = 2;
+pub const BK_KEYS_ENUMERABLE_ONLY: c_uint = 4;
+pub const BK_KEYS_SKIP_INDICES: c_uint = 8;
+
 /// A local scope id; 0 means none.
 pub type bk_scope = u32;
 
@@ -301,7 +311,17 @@ extern "C" {
         key_len: usize,
         out: *mut c_int,
     ) -> c_int;
-    pub fn bk_get_own_property_names(ctx: bk_ctx, object: bk_value) -> bk_value;
+    pub fn bk_get_own_property_keys(ctx: bk_ctx, object: bk_value, flags: c_uint) -> bk_value;
+    pub fn bk_new_atom(ctx: bk_ctx, utf8: *const c_char, length: usize) -> bk_atom;
+    pub fn bk_new_atom_index(ctx: bk_ctx, index: u32) -> bk_atom;
+    pub fn bk_value_to_atom(ctx: bk_ctx, key: bk_value) -> bk_atom;
+    pub fn bk_atom_to_value(ctx: bk_ctx, atom: bk_atom) -> bk_value;
+    pub fn bk_dup_atom(ctx: bk_ctx, atom: bk_atom) -> bk_atom;
+    pub fn bk_free_atom(ctx: bk_ctx, atom: bk_atom);
+    pub fn bk_get_property_atom(ctx: bk_ctx, object: bk_value, key: bk_atom) -> bk_value;
+    pub fn bk_set_property_atom(ctx: bk_ctx, object: bk_value, key: bk_atom, value: bk_value) -> c_int;
+    pub fn bk_has_property_atom(ctx: bk_ctx, object: bk_value, key: bk_atom, out: *mut c_int) -> c_int;
+    pub fn bk_delete_property_atom(ctx: bk_ctx, object: bk_value, key: bk_atom, out: *mut c_int) -> c_int;
     pub fn bk_set_global_property(
         ctx: bk_ctx,
         name: *const c_char,

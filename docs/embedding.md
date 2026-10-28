@@ -211,6 +211,35 @@ The promise and reason are borrowed handles; retain them with `bk_dup_value`.
 Report rejections still unhandled after the task's job checkpoint. Hooks must
 not execute JS or replace themselves.
 
+## Properties and atoms
+
+`bk_get_property`, `bk_set_property`, `bk_has_property` and
+`bk_delete_property` take a UTF-8 key and its length, and the `_uint32` forms
+take an index. They intern the key on every call. An atom is a key interned
+once and held by the runtime, valid in every context:
+
+```c
+bk_atom x = bk_new_atom(app, "x", 1);
+for (unsigned i = 0; i < count; i++) {
+    bk_value v = bk_get_property_atom(app, points[i], x);
+    ...
+}
+bk_free_atom(app, x);
+```
+
+`bk_new_atom` takes UTF-8, `bk_new_atom_index` an array index, and
+`bk_value_to_atom` any value, converted with ToPropertyKey (which may run JS and
+throw), so a symbol becomes an atom too. `bk_atom_to_value` returns the key as a
+string or symbol. One key has one atom while any reference to it remains: each
+creating call and `bk_dup_atom` adds a reference, and `bk_free_atom` drops one.
+The `_atom` property calls behave like their string forms.
+
+`bk_get_own_property_keys` returns an array of an object's own keys in
+[[OwnPropertyKeys]] order. `BK_KEYS_STRINGS` or `BK_KEYS_SYMBOLS` selects one
+kind (neither means both), `BK_KEYS_ENUMERABLE_ONLY` keeps enumerable keys, and
+`BK_KEYS_SKIP_INDICES` drops array indices. Proxies see their `ownKeys` trap
+and, for the enumerable filter, `getOwnPropertyDescriptor`.
+
 ## Native C callbacks
 
 ```c

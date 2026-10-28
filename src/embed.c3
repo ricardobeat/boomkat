@@ -195,6 +195,15 @@ struct Runtime {
     char*[CSTR_RING] cstr_buf;
     usz[CSTR_RING]   cstr_cap;
     uint     cstr_next;
+    // Atoms: property keys held by index. An atom is its entry index + 1.
+    AtomEntry* atoms;
+    uint     atom_cap;
+    uint     atom_count;     // high-water index
+    uint     atom_free;      // free list head, ATOM_FREE_END when empty
+    // Open-addressed map from key to atom, so one key has one atom.
+    uint*    atom_index;
+    uint     atom_index_cap; // a power of two, or 0
+    uint     atom_live;
 
 }
 
@@ -240,6 +249,7 @@ fn Runtime* create(heap::AllocFunc alloc = null, heap::ReallocFunc realloc = nul
     rt.heap = hp; rt.vm = v;
     rt.slots = null; rt.slot_cap = 0; rt.slot_count = 0;
     rt.free_head = SLOT_FREE_END; rt.live = 0; rt.retired = 0;
+    rt.atom_free = ATOM_FREE_END;
     rt.promise_rejection_fn = null;
     rt.promise_rejection_udata = null;
     rt.root.rt = rt;
@@ -311,26 +321,36 @@ fn void free_context(Ctx* ctx) {
 fn void mark_slots(void* rtp) {
     if (rtp == null) return;
     Runtime* rt = (Runtime*)rtp;
-    if (rt.slots == null) return;
     for (uint i = 0; i < rt.slot_count; i++) {
         if (!rt.slots[i].used) continue;
         rt.heap.mark_tval(&rt.slots[i].v);
     }
+    for (uint i = 0; i < rt.atom_count; i++) {
+        if (rt.atoms[i].key == null) continue;
+        TVal kv; kv.set_string_borrowed(rt.atoms[i].key);
+        rt.heap.mark_tval(&kv);
+    }
 }
 
-// Cursor indexes registry entries, so a resize cannot invalidate it between
-// slices. Newly published handles shade their values in slot_alloc.
+// The cursor runs over registry entries and then atoms, by index, so a resize
+// cannot invalidate it between slices. Newly published handles and atoms
+// shade their values when created.
 fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget) {
     if (rtp == null) return true;
     Runtime* rt = (Runtime*)rtp;
     heap::Heap* h = (heap::Heap*)heap_ptr;
     uint done = 0;
-    while (*cursor < rt.slot_count && done < budget) {
+    while (*cursor < rt.slot_count + rt.atom_count && done < budget) {
         uint i = (*cursor)++;
-        if (rt.slots[i].used) h.shade_root_tval(rt.slots[i].v);
+        if (i < rt.slot_count) {
+            if (rt.slots[i].used) h.shade_root_tval(rt.slots[i].v);
+        } else if (rt.atoms[i - rt.slot_count].key != null) {
+            TVal kv; kv.set_string_borrowed(rt.atoms[i - rt.slot_count].key);
+            h.shade_root_tval(kv);
+        }
         done++;
     }
-    return *cursor == rt.slot_count;
+    return *cursor >= rt.slot_count + rt.atom_count;
 }
 
 // Destroy the runtime and everything it owns. All outstanding handles become
@@ -355,6 +375,7 @@ fn void destroy(Runtime* rt) {
     hp.capi_runtime = null;
     hp.capi_mark = null;
     hp.capi_mark_slice = null;
+    atoms_destroy(rt);
     if (rt.slots != null) {
         for (uint i = 0; i < rt.slot_count; i++) {
             if (rt.slots[i].used && rt.slots[i].v.is_heap_allocated()) {
@@ -370,6 +391,136 @@ fn void destroy(Runtime* rt) {
     vm::vm_destroy(rt.vm);
     hp.free_func(hp.heap_udata, (void*)rt);
     hp.destroy();
+}
+
+// ============================================================================
+// Atoms
+// ============================================================================
+
+const uint ATOM_FREE_END = 0xFFFF_FFFF;
+
+// One atom: a property key (an interned string or a symbol) the runtime holds
+// a reference to while any host reference remains.
+struct AtomEntry {
+    HString* key;     // null when the entry is free
+    uint refs;
+    uint next_free;
+}
+
+fn uint atom_hash(HString* key) @inline {
+    ulong h = (ulong)(usz)key >> 4;
+    return (uint)((h * 0x9E3779B97F4A7C15) >> 32);
+}
+
+// The slot of `key` in the index, or of the empty slot where it belongs.
+fn uint atom_probe(Runtime* rt, HString* key) {
+    uint mask = rt.atom_index_cap - 1;
+    uint i = atom_hash(key) & mask;
+    while (rt.atom_index[i] != 0 && rt.atoms[rt.atom_index[i] - 1].key != key) i = (i + 1) & mask;
+    return i;
+}
+
+fn bool atom_index_grow(Runtime* rt) {
+    uint cap = rt.atom_index_cap == 0 ? 16 : rt.atom_index_cap * 2;
+    uint* fresh = (uint*)rt.heap.alloc_func(rt.heap.heap_udata, (usz)cap * uint::size);
+    if (fresh == null) return false;
+    mem::clear(fresh, (sz)((usz)cap * uint::size));
+    uint* old = rt.atom_index;
+    uint old_cap = rt.atom_index_cap;
+    rt.atom_index = fresh;
+    rt.atom_index_cap = cap;
+    for (uint i = 0; i < old_cap; i++) {
+        if (old[i] != 0) rt.atom_index[atom_probe(rt, rt.atoms[old[i] - 1].key)] = old[i];
+    }
+    if (old != null) rt.heap.free_func(rt.heap.heap_udata, old);
+    return true;
+}
+
+// The atom for `key`, adding a reference, or 0 when memory runs out.
+fn uint atom_intern(Runtime* rt, HString* key) {
+    if (key == null) return 0;
+    if ((rt.atom_live + 1) * 2 > rt.atom_index_cap && !atom_index_grow(rt)) return 0;
+    uint slot = atom_probe(rt, key);
+    if (rt.atom_index[slot] != 0) {
+        rt.atoms[rt.atom_index[slot] - 1].refs++;
+        return rt.atom_index[slot];
+    }
+    uint idx;
+    if (rt.atom_free != ATOM_FREE_END) {
+        idx = rt.atom_free;
+        rt.atom_free = rt.atoms[idx].next_free;
+    } else {
+        if (rt.atom_count == rt.atom_cap) {
+            uint cap = rt.atom_cap == 0 ? 16 : rt.atom_cap * 2;
+            void* grown = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.atoms, (usz)cap * AtomEntry::size);
+            if (grown == null) return 0;
+            rt.atoms = (AtomEntry*)grown;
+            rt.atom_cap = cap;
+        }
+        idx = rt.atom_count++;
+    }
+    ((HeapHeader*)key).incref();
+    TVal kv; kv.set_string_borrowed(key);
+    rt.heap.shade_root_tval(kv);
+    rt.atoms[idx] = { .key = key, .refs = 1, .next_free = ATOM_FREE_END };
+    rt.atom_index[slot] = idx + 1;
+    rt.atom_live++;
+    return idx + 1;
+}
+
+// The key of a live atom, or null.
+fn HString* atom_key(Runtime* rt, uint atom) @inline {
+    if (atom == 0 || atom > rt.atom_count) return null;
+    return rt.atoms[atom - 1].key;
+}
+
+fn bool atom_dup(Runtime* rt, uint atom) {
+    if (atom_key(rt, atom) == null) return false;
+    rt.atoms[atom - 1].refs++;
+    return true;
+}
+
+// Drops one reference; the last one frees the entry and releases its key.
+fn void atom_release(Runtime* rt, uint atom) {
+    HString* key = atom_key(rt, atom);
+    if (key == null) return;
+    AtomEntry* e = &rt.atoms[atom - 1];
+    if (--e.refs != 0) return;
+    // Backward-shift deletion keeps every probe chain unbroken.
+    uint mask = rt.atom_index_cap - 1;
+    uint hole = atom_probe(rt, key);
+    uint i = hole;
+    for (;;) {
+        i = (i + 1) & mask;
+        uint id = rt.atom_index[i];
+        if (id == 0) break;
+        uint home = atom_hash(rt.atoms[id - 1].key) & mask;
+        // Move the entry back unless its home lies cyclically in (hole, i].
+        bool stays = hole <= i ? (hole < home && home <= i) : (hole < home || home <= i);
+        if (stays) continue;
+        rt.atom_index[hole] = id;
+        hole = i;
+    }
+    rt.atom_index[hole] = 0;
+    e.key = null;
+    e.next_free = rt.atom_free;
+    rt.atom_free = atom - 1;
+    rt.atom_live--;
+    TVal kv; kv.set_string_borrowed(key);
+    rt.heap.decref_tval(&kv);
+}
+
+fn void atoms_destroy(Runtime* rt) {
+    Heap* hp = rt.heap;
+    for (uint i = 0; i < rt.atom_count; i++) {
+        if (rt.atoms[i].key == null) continue;
+        TVal kv; kv.set_string_borrowed(rt.atoms[i].key);
+        hp.decref_tval(&kv);
+    }
+    if (rt.atoms != null) hp.free_func(hp.heap_udata, (void*)rt.atoms);
+    if (rt.atom_index != null) hp.free_func(hp.heap_udata, (void*)rt.atom_index);
+    rt.atoms = null;
+    rt.atom_index = null;
 }
 
 // ============================================================================

@@ -251,7 +251,31 @@ BK_API bk_status bk_set_property(bk_ctx ctx, bk_value object, const char *key, s
 BK_API bk_status bk_set_property_uint32(bk_ctx ctx, bk_value object, unsigned index, bk_value value);
 BK_API bk_status bk_has_property(bk_ctx ctx, bk_value object, const char *key, size_t key_len, int *out);
 BK_API bk_status bk_delete_property(bk_ctx ctx, bk_value object, const char *key, size_t key_len, int *out);
-BK_API bk_value bk_get_own_property_names(bk_ctx ctx, bk_value object);
+/* An array of the object's own keys in [[OwnPropertyKeys]] order. With neither
+ * BK_KEYS_STRINGS nor BK_KEYS_SYMBOLS both kinds are included.
+ * BK_KEYS_ENUMERABLE_ONLY reads each key's descriptor, calling proxy traps. */
+enum { BK_KEYS_OWN = 0, BK_KEYS_STRINGS = 1, BK_KEYS_SYMBOLS = 2,
+       BK_KEYS_ENUMERABLE_ONLY = 4, BK_KEYS_SKIP_INDICES = 8 };
+BK_API bk_value bk_get_own_property_keys(bk_ctx ctx, bk_value object, unsigned flags);
+
+/* Atoms: property keys (strings, array indices, symbols) held by the runtime
+ * and valid in every one of its contexts. One key has one atom while any
+ * reference to it remains; each bk_new_atom, bk_new_atom_index,
+ * bk_value_to_atom and bk_dup_atom adds a reference that bk_free_atom drops.
+ * 0 is never an atom and reports failure. */
+typedef uint32_t bk_atom;
+BK_API bk_atom bk_new_atom(bk_ctx ctx, const char *utf8, size_t length);
+BK_API bk_atom bk_new_atom_index(bk_ctx ctx, uint32_t index);
+/* ToPropertyKey; may run JS and throw. */
+BK_API bk_atom bk_value_to_atom(bk_ctx ctx, bk_value key);
+/* The key as a string or symbol. */
+BK_API bk_value bk_atom_to_value(bk_ctx ctx, bk_atom atom);
+BK_API bk_atom bk_dup_atom(bk_ctx ctx, bk_atom atom);
+BK_API void    bk_free_atom(bk_ctx ctx, bk_atom atom);
+BK_API bk_value  bk_get_property_atom(bk_ctx ctx, bk_value object, bk_atom key);
+BK_API bk_status bk_set_property_atom(bk_ctx ctx, bk_value object, bk_atom key, bk_value value);
+BK_API bk_status bk_has_property_atom(bk_ctx ctx, bk_value object, bk_atom key, int *out);
+BK_API bk_status bk_delete_property_atom(bk_ctx ctx, bk_value object, bk_atom key, int *out);
 BK_API bk_status bk_set_global_property(bk_ctx ctx, const char *name, size_t length, bk_value value);
 /* Calls accept up to 65535 arguments; larger counts throw RangeError. */
 BK_API bk_value bk_call(bk_ctx ctx, bk_value function, bk_value this_value, const bk_value *argv, unsigned argc);
