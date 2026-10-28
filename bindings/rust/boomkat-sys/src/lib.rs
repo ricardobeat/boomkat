@@ -144,6 +144,26 @@ pub const BK_ERROR_RANGE: c_int = 2;
 pub const BK_ERROR_REFERENCE: c_int = 3;
 pub const BK_ERROR_SYNTAX: c_int = 4;
 
+// Property descriptor flags.
+pub const BK_PROP_WRITABLE: c_uint = 1;
+pub const BK_PROP_ENUMERABLE: c_uint = 2;
+pub const BK_PROP_CONFIGURABLE: c_uint = 4;
+pub const BK_PROP_HAS_VALUE: c_uint = 8;
+pub const BK_PROP_HAS_GET: c_uint = 16;
+pub const BK_PROP_HAS_SET: c_uint = 32;
+pub const BK_PROP_HAS_WRITABLE: c_uint = 64;
+pub const BK_PROP_HAS_ENUMERABLE: c_uint = 128;
+pub const BK_PROP_HAS_CONFIGURABLE: c_uint = 256;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct bk_property_descriptor {
+    pub flags: c_uint,
+    pub value: bk_value,
+    pub get: bk_value,
+    pub set: bk_value,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct bk_error_info {
@@ -323,6 +343,20 @@ extern "C" {
     pub fn bk_set_property_atom(ctx: bk_ctx, object: bk_value, key: bk_atom, value: bk_value) -> c_int;
     pub fn bk_has_property_atom(ctx: bk_ctx, object: bk_value, key: bk_atom, out: *mut c_int) -> c_int;
     pub fn bk_delete_property_atom(ctx: bk_ctx, object: bk_value, key: bk_atom, out: *mut c_int) -> c_int;
+    pub fn bk_define_property(
+        ctx: bk_ctx,
+        object: bk_value,
+        key: bk_atom,
+        desc: *const bk_property_descriptor,
+        ok: *mut c_int,
+    ) -> c_int;
+    pub fn bk_get_own_property(
+        ctx: bk_ctx,
+        object: bk_value,
+        key: bk_atom,
+        out: *mut bk_property_descriptor,
+        found: *mut c_int,
+    ) -> c_int;
     pub fn bk_set_global_property(
         ctx: bk_ctx,
         name: *const c_char,

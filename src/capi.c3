@@ -1009,6 +1009,127 @@ fn int bk_delete_property_atom(void* ctxp, ulong obj_id, uint atom, int* out) @e
 }
 
 // ============================================================================
+// Property descriptors
+// ============================================================================
+
+const uint BK_PROP_WRITABLE         = 1;
+const uint BK_PROP_ENUMERABLE       = 2;
+const uint BK_PROP_CONFIGURABLE     = 4;
+const uint BK_PROP_HAS_VALUE        = 8;
+const uint BK_PROP_HAS_GET          = 16;
+const uint BK_PROP_HAS_SET          = 32;
+const uint BK_PROP_HAS_WRITABLE     = 64;
+const uint BK_PROP_HAS_ENUMERABLE   = 128;
+const uint BK_PROP_HAS_CONFIGURABLE = 256;
+const uint BK_PROP_ALL              = 511;
+
+// Layout must match bk_property_descriptor in include/boomkat.h.
+struct BkPropertyDescriptor {
+    uint  flags;
+    ulong value;
+    ulong get;
+    ulong set;
+}
+
+// Resolves an accessor half: undefined or a callable.
+fn int accessor_of(void* ctxp, Runtime* rt, ulong id, TVal* out) {
+    if (!resolve(ctxp, id, out)) { bad_handle(rt); return BK_ERR_INVALID; }
+    if (out.is_undefined()) return BK_OK;
+    if (out.is_object()) {
+        HObject* f = (HObject*)out.get_heapptr();
+        if (f != null && f.flags.callable) return BK_OK;
+    }
+    if (out.is_lightfunc()) return BK_OK;
+    return fail(rt, BK_ERR_TYPE, "accessor must be a function or undefined");
+}
+
+fn int bk_define_property(void* ctxp, ulong obj_id, uint atom, BkPropertyDescriptor* desc, int* ok) @export("bk_define_property") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || desc == null || ok == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    uint f = desc.flags;
+    if ((f & ~BK_PROP_ALL) != 0) return fail(rt, BK_ERR_INVALID, "unknown property flags");
+    bool data = (f & (BK_PROP_HAS_VALUE | BK_PROP_HAS_WRITABLE)) != 0;
+    bool accessor = (f & (BK_PROP_HAS_GET | BK_PROP_HAS_SET)) != 0;
+    if (data && accessor) return fail(rt, BK_ERR_INVALID, "descriptor is both data and accessor");
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail(rt, BK_ERR_INVALID, "invalid or freed atom");
+    TVal ov;
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return rt.errcode;
+    builtins::ProxyDesc pd;
+    pd.found = true;
+    pd.getter.set_undefined();
+    pd.setter.set_undefined();
+    if ((f & BK_PROP_HAS_VALUE) != 0) {
+        if (!resolve(ctxp, desc.value, &pd.value)) { bad_handle(rt); return BK_ERR_INVALID; }
+        pd.has_value = true;
+    }
+    if ((f & BK_PROP_HAS_GET) != 0) {
+        int rc = accessor_of(ctxp, rt, desc.get, &pd.getter);
+        if (rc != BK_OK) return rc;
+        pd.has_get = true;
+    }
+    if ((f & BK_PROP_HAS_SET) != 0) {
+        int rc = accessor_of(ctxp, rt, desc.set, &pd.setter);
+        if (rc != BK_OK) return rc;
+        pd.has_set = true;
+    }
+    pd.has_writable     = (f & BK_PROP_HAS_WRITABLE) != 0;
+    pd.writable         = pd.has_writable && (f & BK_PROP_WRITABLE) != 0;
+    pd.has_enumerable   = (f & BK_PROP_HAS_ENUMERABLE) != 0;
+    pd.enumerable       = pd.has_enumerable && (f & BK_PROP_ENUMERABLE) != 0;
+    pd.has_configurable = (f & BK_PROP_HAS_CONFIGURABLE) != 0;
+    pd.configurable     = pd.has_configurable && (f & BK_PROP_CONFIGURABLE) != 0;
+    bool res;
+    rt.heap.has_error = false;
+    if (!builtins::object_define_own((void*)rt.vm, rt.heap, obj, key, &pd, &res)) return vm_fault(rt);
+    if (rt.heap.has_error || rt.heap.uncatchable_throw) return vm_fault(rt);
+    *ok = res ? 1 : 0;
+    return BK_OK;
+}
+
+fn int bk_get_own_property(void* ctxp, ulong obj_id, uint atom, BkPropertyDescriptor* out, int* found) @export("bk_get_own_property") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null || found == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    *out = { .value = embed::IMM_UNDEFINED, .get = embed::IMM_UNDEFINED, .set = embed::IMM_UNDEFINED };
+    *found = 0;
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail(rt, BK_ERR_INVALID, "invalid or freed atom");
+    TVal ov;
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return rt.errcode;
+    builtins::ProxyDesc pd;
+    rt.heap.has_error = false;
+    if (!builtins::own_property_desc((void*)rt.vm, rt.heap, obj, key, &pd)) return vm_fault(rt);
+    if (rt.heap.has_error || rt.heap.uncatchable_throw) return vm_fault(rt);
+    if (!pd.found) return BK_OK;
+    pd.complete();
+    uint f = BK_PROP_HAS_ENUMERABLE | BK_PROP_HAS_CONFIGURABLE;
+    if (pd.enumerable) f |= BK_PROP_ENUMERABLE;
+    if (pd.configurable) f |= BK_PROP_CONFIGURABLE;
+    if (pd.is_accessor_desc()) {
+        f |= BK_PROP_HAS_GET | BK_PROP_HAS_SET;
+        ulong g = store(rt, pd.getter);
+        if (g == 0) return rt.errcode;
+        ulong st = store(rt, pd.setter);
+        if (st == 0) { bk_free_value(ctxp, g); return rt.errcode; }
+        out.get = g;
+        out.set = st;
+    } else {
+        f |= BK_PROP_HAS_VALUE | BK_PROP_HAS_WRITABLE;
+        if (pd.writable) f |= BK_PROP_WRITABLE;
+        ulong v = store(rt, pd.value);
+        if (v == 0) return rt.errcode;
+        out.value = v;
+    }
+    out.flags = f;
+    *found = 1;
+    return BK_OK;
+}
+
+// ============================================================================
 // Builtin calls
 // ============================================================================
 
