@@ -444,6 +444,14 @@ out/classes_api: test/capi/classes.c include/boomkat.h out/boomkat.a
 test-classes-api: out/classes_api
 	./out/classes_api
 
+out/tracing_api: test/capi/tracing.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/tracing.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/tracing_api
+
+.PHONY: test-tracing-api
+test-tracing-api: out/tracing_api
+	./out/tracing_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model

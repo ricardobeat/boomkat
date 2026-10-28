@@ -51,7 +51,7 @@ static int truthy(bk_ctx ctx, const char *src) { return bk_to_bool(ctx, eval(ctx
 int main(void) {
     bk_ctx ctx = bk_create();
     bk_value ctor, proto;
-    bk_class_def vdef = { "Vec", 0, free_vec, construct_vec, 2, 0, &Vec };
+    bk_class_def vdef = { "Vec", 0, free_vec, NULL, construct_vec, 2, 0, &Vec };
     Vec = bk_define_class(ctx, &vdef, &ctor, &proto);
     assert(Vec != 0);
     bk_set_global_property(ctx, "Vec", 3, ctor);
@@ -86,7 +86,7 @@ int main(void) {
 
     /* A C subclass: brand checks accept it for the parent, not the reverse. */
     bk_value ctor3;
-    bk_class_def v3def = { "Vec3", Vec, free_vec, NULL, 0, 0, &Vec };
+    bk_class_def v3def = { "Vec3", Vec, free_vec, NULL, NULL, 0, 0, &Vec };
     Vec3 = bk_define_class(ctx, &v3def, &ctor3, NULL);
     bk_set_global_property(ctx, "Vec3", 4, ctor3);
     assert(truthy(ctx, "Object.getPrototypeOf(Vec3) === Vec && Object.getPrototypeOf(Vec3.prototype) === Vec.prototype"));
@@ -100,13 +100,13 @@ int main(void) {
     bk_free_value(ctx, i3);
 
     /* Invalid definitions. */
-    bk_class_def bad = { "Bad", 999, NULL, NULL, 0, 0, NULL };
+    bk_class_def bad = { "Bad", 999, NULL, NULL, NULL, 0, 0, NULL };
     assert(bk_define_class(ctx, &bad, NULL, NULL) == 0 && bk_get_error_code(ctx) == BK_ERR_INVALID);
-    bk_class_def badflags = { "Bad", 0, NULL, NULL, 0, 8, NULL };
+    bk_class_def badflags = { "Bad", 0, NULL, NULL, NULL, 0, 8, NULL };
     assert(bk_define_class(ctx, &badflags, NULL, NULL) == 0);
 
     /* Deferred finalizers wait for bk_run_finalizers. */
-    bk_class_def pdef = { "Point", 0, free_point, NULL, 0, BK_CLASS_DEFER_FINALIZE, NULL };
+    bk_class_def pdef = { "Point", 0, free_point, NULL, NULL, 0, BK_CLASS_DEFER_FINALIZE, NULL };
     Point = bk_define_class(ctx, &pdef, NULL, NULL);
     for (int i = 0; i < 1000; i++) bk_free_value(ctx, bk_new_instance(ctx, Point, malloc(8), 0));
     eval(ctx, "for (let i = 0; i < 200000; i++) ({ a: [i] })");

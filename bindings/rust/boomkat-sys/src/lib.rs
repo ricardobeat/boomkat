@@ -63,6 +63,20 @@ pub struct bk_fn_def {
 /// is destroyed, or creation fails. It must not call the engine.
 pub type bk_finalizer = unsafe extern "C" fn(data: *mut c_void, opaque: *mut c_void);
 
+/// Storage for one JS value inside host memory; see `bk_trace_slot`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct bk_slot {
+    pub opaque: [u64; 2],
+}
+/// Opaque marker passed to trace callbacks.
+#[repr(C)]
+pub struct bk_tracer {
+    _private: [u8; 0],
+}
+pub type bk_trace_fn = unsafe extern "C" fn(payload: *mut c_void, tracer: *mut bk_tracer, opaque: *mut c_void);
+pub type bk_root_tracer = unsafe extern "C" fn(tracer: *mut bk_tracer, opaque: *mut c_void);
+
 /// A host class id; 0 is invalid.
 pub type bk_class = u32;
 pub const BK_CLASS_DEFER_FINALIZE: c_uint = 1;
@@ -73,6 +87,7 @@ pub struct bk_class_def {
     pub name: *const c_char,
     pub parent: bk_class,
     pub finalize: Option<bk_finalizer>,
+    pub trace: Option<bk_trace_fn>,
     pub construct: Option<bk_c_function>,
     pub arity: c_int,
     pub flags: c_uint,
@@ -432,6 +447,12 @@ extern "C" {
     pub fn bk_set_instance_payload(ctx: bk_ctx, value: bk_value, cls: bk_class, payload: *mut c_void) -> c_int;
     pub fn bk_get_instance_class(ctx: bk_ctx, value: bk_value) -> bk_class;
     pub fn bk_run_finalizers(runtime: bk_runtime) -> c_uint;
+    pub fn bk_slot_init(slot: *mut bk_slot);
+    pub fn bk_slot_set(ctx: bk_ctx, slot: *mut bk_slot, value: bk_value) -> c_int;
+    pub fn bk_slot_get(ctx: bk_ctx, slot: *const bk_slot) -> bk_value;
+    pub fn bk_slot_clear(ctx: bk_ctx, slot: *mut bk_slot);
+    pub fn bk_trace_slot(tracer: *mut bk_tracer, slot: *const bk_slot);
+    pub fn bk_set_root_tracer(runtime: bk_runtime, callback: Option<bk_root_tracer>, opaque: *mut c_void);
     pub fn bk_set_function_list(
         ctx: bk_ctx,
         target: bk_value,

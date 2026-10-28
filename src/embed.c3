@@ -200,6 +200,9 @@ struct Runtime {
     char*[CSTR_RING] cstr_buf;
     usz[CSTR_RING]   cstr_cap;
     uint     cstr_next;
+    // Host roots, reported by the host during root marking.
+    BkRootTracer root_tracer;
+    void*        root_tracer_opaque;
     // Shared registrations of C callbacks, and the host class of their data.
     HostReg* cfn_regs;
     uint     cfn_data_class;   // id + 1, or 0 before the first use
@@ -338,19 +341,24 @@ fn void mark_slots(void* rtp) {
         TVal kv; kv.set_string_borrowed(rt.atoms[i].key);
         rt.heap.mark_tval(&kv);
     }
+    if (rt.root_tracer != null) rt.root_tracer((void*)rt.heap, rt.root_tracer_opaque);
 }
 
-// The cursor runs over registry entries and then atoms, by index, so a resize
-// cannot invalidate it between slices. Newly published handles and atoms
-// shade their values when created.
+// The cursor runs over registry entries, then atoms, by index, so a resize
+// cannot invalidate it between slices, and ends with one call of the host's
+// root tracer. Newly published handles and atoms shade their values when
+// created.
 fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget) {
     if (rtp == null) return true;
     Runtime* rt = (Runtime*)rtp;
     heap::Heap* h = (heap::Heap*)heap_ptr;
     uint done = 0;
-    while (*cursor < rt.slot_count + rt.atom_count && done < budget) {
+    uint total = rt.slot_count + rt.atom_count;
+    while (*cursor <= total && done < budget) {
         uint i = (*cursor)++;
-        if (i < rt.slot_count) {
+        if (i == total) {
+            if (rt.root_tracer != null) rt.root_tracer((void*)h, rt.root_tracer_opaque);
+        } else if (i < rt.slot_count) {
             if (rt.slots[i].used) h.shade_root_tval(rt.slots[i].v);
         } else if (rt.atoms[i - rt.slot_count].key != null) {
             TVal kv; kv.set_string_borrowed(rt.atoms[i - rt.slot_count].key);
@@ -358,7 +366,7 @@ fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget) {
         }
         done++;
     }
-    return *cursor >= rt.slot_count + rt.atom_count;
+    return *cursor > total;
 }
 
 fn void free_context_state(Heap* hp, ContextState* state) {
@@ -1103,6 +1111,8 @@ struct HostReg {
 }
 
 alias BkFinalizer = fn void(void* data, void* opaque);
+// The tracer handed to hosts is the heap that is marking.
+alias BkRootTracer = fn void(void* tracer, void* opaque);
 
 // The per-function data of a C function, the payload of a hidden HOST object
 // on the function under BuiltinStr.HOST_FN_DATA.
