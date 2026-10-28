@@ -305,7 +305,7 @@ impl Runtime {
     /// independent: each has its own globals, prototypes, objects and string
     /// intern table, and nothing is shared between them.
     pub fn new() -> Result<Self, Error> {
-        let runtime = unsafe { sys::bk_new_runtime() };
+        let runtime = unsafe { sys::bk_new_runtime(std::ptr::null()) };
         if runtime.is_null() {
             return Err(Error::new(Kind::from_status(sys::BK_ERR_NOMEM), ""));
         }

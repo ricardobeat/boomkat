@@ -142,12 +142,27 @@ pub struct bk_error_info {
 pub type bk_interrupt_fn = unsafe extern "C" fn(bk_runtime, *mut c_void) -> c_int;
 pub type bk_promise_rejection_fn =
     unsafe extern "C" fn(bk_ctx, u64, bk_value, bk_value, c_int, *mut c_void);
+/// Runtime options: an allocator set (all three functions or none) and a
+/// fatal handler that must not return.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct bk_runtime_options {
+    pub alloc: Option<unsafe extern "C" fn(opaque: *mut c_void, size: usize) -> *mut c_void>,
+    pub realloc:
+        Option<unsafe extern "C" fn(opaque: *mut c_void, ptr: *mut c_void, size: usize) -> *mut c_void>,
+    pub free: Option<unsafe extern "C" fn(opaque: *mut c_void, ptr: *mut c_void)>,
+    pub alloc_opaque: *mut c_void,
+    pub fatal: Option<unsafe extern "C" fn(opaque: *mut c_void, message: *const c_char)>,
+}
 pub const BK_EVAL_GLOBAL: c_uint = 0;
 pub const BK_EVAL_MODULE: c_uint = 1;
 pub const BK_EVAL_STRICT: c_uint = 2;
 
 extern "C" {
-    pub fn bk_new_runtime() -> bk_runtime;
+    pub fn bk_new_runtime(options: *const bk_runtime_options) -> bk_runtime;
+    pub fn bk_alloc(runtime: bk_runtime, size: usize) -> *mut c_void;
+    pub fn bk_realloc(runtime: bk_runtime, ptr: *mut c_void, size: usize) -> *mut c_void;
+    pub fn bk_free_memory(runtime: bk_runtime, ptr: *mut c_void);
     pub fn bk_free_runtime(runtime: bk_runtime);
     pub fn bk_new_context(runtime: bk_runtime) -> bk_ctx;
     pub fn bk_free_context(ctx: bk_ctx);

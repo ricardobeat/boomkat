@@ -57,7 +57,7 @@ static void expect_export(bk_ctx js, const char *name, const char *src,
 }
 
 static void test_strict(void) {
-    bk_ctx js = bk_new_context(bk_new_runtime());
+    bk_ctx js = bk_new_context(bk_new_runtime(NULL));
     int before = failures;
 
     /* The default is sloppy. */
@@ -85,7 +85,7 @@ static void test_strict(void) {
 }
 
 static void test_eval_module(void) {
-    bk_ctx js = bk_new_context(bk_new_runtime());
+    bk_ctx js = bk_new_context(bk_new_runtime(NULL));
     int before = failures;
 
     expect_export(js, "main.js",
@@ -123,7 +123,7 @@ static void define(bk_ctx js, const char *name, const char *src) {
 }
 
 static void test_define_module(void) {
-    bk_ctx js = bk_new_context(bk_new_runtime());
+    bk_ctx js = bk_new_context(bk_new_runtime(NULL));
     int before = failures;
 
     define(js, "lib", "export function greet(n) { return 'hi ' + n; }");
@@ -168,7 +168,7 @@ static void collect(bk_ctx js) {
  * against its exports read freed names.
  */
 static void test_names_survive_gc(void) {
-    bk_ctx js = bk_new_context(bk_new_runtime());
+    bk_ctx js = bk_new_context(bk_new_runtime(NULL));
     int before = failures;
 
     expect_eval(js, "globalThis.evaluations = 0; 'ok'", "ok");
@@ -202,7 +202,7 @@ static void test_names_survive_gc(void) {
  * from the repository root, where the fixture path resolves.
  */
 static void test_names_survive_gc_with_files(void) {
-    bk_ctx js = bk_new_context(bk_new_runtime());
+    bk_ctx js = bk_new_context(bk_new_runtime(NULL));
     int before = failures;
     const char *src = "import { x } from 'dep'; import './m.js'; export const out = x;";
 
@@ -218,7 +218,7 @@ static void test_names_survive_gc_with_files(void) {
 }
 
 static void test_jsx(void) {
-    bk_ctx js = bk_new_context(bk_new_runtime());
+    bk_ctx js = bk_new_context(bk_new_runtime(NULL));
     int before = failures;
 
     /* A .jsx module parses JSX with no options; the classic factory defaults to React.createElement. */

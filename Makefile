@@ -389,6 +389,15 @@ out/handles: test/capi/handles.c include/boomkat.h out/boomkat.a
 test-handles-api: out/handles
 	./out/handles
 
+# Runtime options: a host allocator sees every heap allocation.
+out/runtime_options: test/capi/runtime_options.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/runtime_options.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/runtime_options
+
+.PHONY: test-runtime-options
+test-runtime-options: out/runtime_options
+	./out/runtime_options
+
 .PHONY: test-api-lifecycle
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle

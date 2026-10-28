@@ -186,7 +186,7 @@ module JS
     extend Fiddle::Importer
 
     SIGNATURES = [
-      'void* bk_new_runtime()',
+      'void* bk_new_runtime(void*)',
       'void bk_free_runtime(void*)',
       'void* bk_new_context(void*)',
       'void bk_free_context(void*)',
@@ -573,7 +573,7 @@ module JS
     def initialize(library = nil)
       Lib.load!(library || JS.default_library)
 
-      @runtime = Lib.bk_new_runtime
+      @runtime = Lib.bk_new_runtime(nil)
       @rt = Lib.bk_new_context(@runtime)
       raise Error.new('cannot create context', Status::NOMEM) unless @rt
 

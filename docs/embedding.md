@@ -37,13 +37,27 @@ that context. Values cross contexts in the same runtime without cloning.
 Independent runtimes reject each other's handles.
 
 ```c
-bk_runtime runtime = bk_new_runtime();
+bk_runtime runtime = bk_new_runtime(NULL);
 bk_ctx app = bk_new_context(runtime);
 bk_ctx sandbox = bk_new_context(runtime);
 /* use app and sandbox */
 bk_free_context(sandbox);
 bk_free_context(app);
 bk_free_runtime(runtime);
+```
+
+`bk_new_runtime` takes a `bk_runtime_options` pointer, or `NULL` for the
+defaults. Its `alloc`, `realloc` and `free` route the runtime's heap through a
+host allocator; they come as a set, and a partial set makes the call return
+`NULL`. `realloc` behaves like C `realloc`. `fatal` reports an unrecoverable
+engine failure and must not return; the default prints and aborts.
+`bk_alloc`, `bk_realloc` and `bk_free_memory` hand the host memory from the same
+allocator. The compiler, lexer, regexp engine and shared-memory blocks still
+allocate through libc.
+
+```c
+bk_runtime_options options = { my_alloc, my_realloc, my_free, &my_arena, my_fatal };
+bk_runtime runtime = bk_new_runtime(&options);
 ```
 
 Context records and realms live until runtime destruction, so escaped functions
