@@ -2898,6 +2898,7 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // put_prop above anchored desc_vals[0] as the (placeholder) slot value;
                 // the GS cell holds its own incref'd copy, so release the placeholder's
                 // reference before replacing the slot.
+                ctx.heap.jit_notify_write(obj, &obj.prop_values()[idx]);
                 obj.prop_values()[idx].release_ref(ctx.heap);
                 ctx.heap.store_slot(obj, &obj.prop_values()[idx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
             }
@@ -3018,10 +3019,12 @@ fn void builtin_object_defineProperty(BuiltinContext* ctx) {
                 // hobject_set_access_getter on it would crash on slot.get_heapptr().
                 // Decref the old data value (may be a heap pointer like a string)
                 // and replace with a fresh GS cell.
+                ctx.heap.jit_notify_write(obj, current);
                 current.release_ref(ctx.heap);
                 ctx.heap.store_slot(obj, current, hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
             } else {
                 // Update existing accessor: modify the GS cell in-place.
+                if (has_get_in_desc || has_set_in_desc) ctx.heap.jit_notify_write(obj, current);
                 if (has_get_in_desc) hobject::hobject_set_access_getter(current.get(), desc_vals[0], ctx.heap);
                 if (has_set_in_desc) hobject::hobject_set_access_setter(current.get(), desc_vals[1], ctx.heap);
             }
@@ -3331,6 +3334,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
+                        ctx.heap.jit_notify_write(obj, &obj.prop_values()[pidx]);
                         obj.prop_values()[pidx].release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, &obj.prop_values()[pidx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     }
@@ -3513,6 +3517,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // put_prop above anchored desc_vals[0] as the (placeholder) slot
                         // value; the GS cell holds its own incref'd copy, so release the
                         // placeholder's reference before replacing the slot.
+                        ctx.heap.jit_notify_write(obj, &obj.prop_values()[idx]);
                         obj.prop_values()[idx].release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, &obj.prop_values()[idx], hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     }
@@ -3574,10 +3579,14 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         // *current holds a data value (number, string, etc.), calling
                         // hobject_set_access_getter on it would crash on slot.get_heapptr().
                         // Decref the old data value and replace with a fresh GS cell.
+                        ctx.heap.jit_notify_write(obj, current);
                         current.release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, current, hobject::hobject_create_accessors(ctx.heap, desc_vals[0], desc_vals[1]));
                     } else {
                         // Update existing accessor: modify the GS cell in-place.
+                        if (has_get_in_desc_helper(ctx.heap, desc_obj) || has_set_in_desc_helper(ctx.heap, desc_obj)) {
+                            ctx.heap.jit_notify_write(obj, current);
+                        }
                         if (has_get_in_desc_helper(ctx.heap, desc_obj)) hobject::hobject_set_access_getter(current.get(), desc_vals[0], ctx.heap);
                         if (has_set_in_desc_helper(ctx.heap, desc_obj)) hobject::hobject_set_access_setter(current.get(), desc_vals[1], ctx.heap);
                     }
@@ -3593,6 +3602,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                     if (cur_flags.is_accessor && desc_has_data_fields) {
                         // Accessor → data conversion (ECMA-262 §8.12.9 step 9.a/b): release the
                         // GetterSetter cell and reset flags so the slot becomes a data slot.
+                        ctx.heap.jit_notify_write(obj, current);
                         current.release_ref(ctx.heap);
                         TVal undef_tv; undef_tv.set_undefined();
                         ctx.heap.store_slot(obj, current, undef_tv);
@@ -3616,6 +3626,7 @@ fn void object_define_properties(BuiltinContext* ctx, HObject* obj, HObject* pro
                         if (desc_vals[0].is_heap_allocated() && desc_vals[0].get_heapptr() != null) {
                             ((types::HeapHeader*)desc_vals[0].get_heapptr()).incref();
                         }
+                        ctx.heap.jit_notify_write(obj, current);
                         current.release_ref(ctx.heap);
                         ctx.heap.store_slot(obj, current, desc_vals[0]);
                         // Sync value change back to dense array slot for ARRAY exotic.

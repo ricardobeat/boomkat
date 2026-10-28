@@ -67,6 +67,7 @@ enum SsaOp : char {
     // Identity guard: the value must be a function whose compiled body is the
     // one the call was expanded from.
     CHECKFN,
+    CHECKPROTO,
     CHECKSHAPE,
     CHECKWRITE,
     COMPARE,
@@ -83,7 +84,7 @@ enum SsaOp : char {
 
 fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
     switch (op) {
-        case NOP: case STORE: case CHECKFN: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: return false;
+        case NOP: case STORE: case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: return false;
         default: return true;
     }
 }
@@ -102,6 +103,7 @@ struct SsaValue @feat(SLJIT) {
     int home;
     uint spill;
     int arg_reg;
+    bool watched_method;
     // A branch names the block it leaves and the block its other arm takes.
     int block;
     int target;

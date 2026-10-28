@@ -25,8 +25,10 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
         return;
     }
     TemplateEmitter* e = &self.out.e;
+    JitWriteDependency* checkpoint = self.plan.dependencies;
     SsaGraph* graph = ssa_prepare(region, cf, h, true, true, e, 0, 0, true);
     if (graph == null || (cf.num_args < LOOP_REGS && (region.ssa_inputs >> cf.num_args) != 0)) {
+        sljit_dependencies_rollback(h, self.plan, checkpoint);
         if (graph != null) h.free_func(h.heap_udata, graph);
         self.plan.ssa_leaves = region.next;
         h.free_func(h.heap_udata, region);

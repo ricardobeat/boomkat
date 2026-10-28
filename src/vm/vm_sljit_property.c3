@@ -155,6 +155,7 @@ fn void FunctionEmitter.append_property(&self, CompiledFunction* cf, uint pc, IC
     // interpreter does.
     GcBits observed;
     observed.prototype_observed = true;
+    observed.jit_observed = true;
     e.mov(r2, 0, mem | r0, (char*)&obj.gc - (char*)&obj, jit::SLJIT_MOV_U32);
     e.op(jit::SLJIT_AND, r2, r2, 0, imm, (uint)observed);
     self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0, pc);
@@ -562,6 +563,14 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
             e.bind(allocated);
             if (write) {
+                // Only ordinary named-property owners can be watched. The
+                // append path has its own layout guard; indexed array stores
+                // cannot register dependencies under the current registry.
+                GcBits observed_write;
+                observed_write.jit_observed = true;
+                e.mov(r3, 0, mem | r0, (char*)&obj.gc - (char*)&obj, jit::SLJIT_MOV_U32);
+                e.op(jit::SLJIT_AND, r3, r3, 0, imm, (uint)observed_write);
+                self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
                 self.slot_store(r0, r2, (long)ic.prop_idx * 8, value_reg, pc);
             } else {
                 e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);

@@ -385,6 +385,7 @@ tlocal ulong[64] opprof_private_class;
 tlocal ulong[64] opprof_dict_class;
 
 fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
+    h.jit_notify_layout(self);
     if (self.gc.prototype_observed) h.bump_prototype_epoch();
     if (self.gc.ic_bound) {
         h.shape_recycle_epoch++;
@@ -1833,6 +1834,7 @@ fn void HObject.set_prop_flags(&self, uint idx, PropFlags new_flags, heap::Heap*
         }
         sh = sh.parent_shape;
     }
+    h.jit_notify_layout(self);
     if (self.gc.prototype_observed) h.bump_prototype_epoch();
     if (self.retransition_flags(idx, new_flags, h)) return;
     self.make_shape_private(h);
@@ -2222,6 +2224,7 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
 // must be interned and genuinely absent; passing a present key appends a
 // duplicate the shape chain cannot describe.
 fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap::Heap* h) {
+    h.jit_notify_layout(self);
     if (self.gc.prototype_observed) h.bump_prototype_epoch();
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
@@ -2382,6 +2385,7 @@ fn bool HObject.delete_prop(&self, void* key, heap::Heap* h) {
         return false;
     }
 
+    h.jit_notify_layout(self);
     uint ui = (uint)idx;
     uint new_count = self.prop_count - 1;
     $if $feat(OP_PROFILE): opprof_shape_site[1]++; $endif
@@ -2510,6 +2514,7 @@ fn void HObject.sync_named_length(&self, heap::Heap* h) {
     } else {
         len_tv.set_number((double)len);
     }
+    h.jit_notify_write(self, &self.prop_values()[idx]);
     self.prop_values()[idx].set_untraced(len_tv);
 }
 
@@ -2647,6 +2652,7 @@ fn void HObject.reserve_props(&self, heap::Heap* h, uint cap) {
     void* raw = h.pool_alloc(bytes) ?? null;
     if (raw == null) return;
     mem::clear(raw, (sz)bytes);
+    h.jit_notify_layout(self);
     self.prop_alloc = raw;
     self.prop_capacity = cap;
 }
@@ -2899,6 +2905,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // destroy() and reset() free every node directly and must not also release
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
+    if (hp != null) hp.jit_notify_layout(obj);
     // A weak first-link identity must not survive reuse of this address.
     if (obj.gc.prototype_observed && hp != null) hp.bump_prototype_epoch();
 
@@ -3102,7 +3109,7 @@ fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget
 fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
     ObjClass cls = obj.flags.obj_class;
     if ((cls != ObjClass.OBJECT && cls != ObjClass.ARRAY) || obj.flags.pool_fallback
-        || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed
+        || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed || obj.gc.jit_observed
         || h.tearing_down) return false;
     if (obj.shape_id != 0) {
         Shape* sh = h.get_shape(obj.shape_id);
@@ -3840,6 +3847,7 @@ fn bool ic_fill_missing_read(ICEntry* ic, HObject* receiver, void* key, heap::He
 // the property storage is full and put_prop_new must grow it.
 fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) @inline {
     if (self.prop_count >= self.prop_capacity || self.prop_hash != null) return false;
+    h.jit_notify_layout(self);
     if (self.gc.prototype_observed) h.bump_prototype_epoch();
     PropValue* slot = &self.prop_values()[self.prop_count];
     mem::clear(slot, (sz)(PropValue::size));

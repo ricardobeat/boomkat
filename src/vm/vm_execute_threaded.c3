@@ -1580,6 +1580,7 @@ fn Instruction* th_declvar(Instruction* pc, HandlerTable* handlers, TVal* regs, 
         return th_next(pc + 1, handlers, regs, cold);
     }
     if (b.prop_count >= b.prop_capacity) return pc;
+    cold.heap.jit_notify_layout(b);
     if (b.gc.prototype_observed) cold.heap.bump_prototype_epoch();
     b.flags.has_nondefault_flags = true;
     hobject::PropValue* slot = &b.prop_values()[b.prop_count];
@@ -2184,6 +2185,7 @@ fn Instruction* th_putglobal(Instruction* pc, HandlerTable* handlers, TVal* regs
     if (ra.is_traced() || slot.get().is_refcounted()) {
         return th_putglobal_move(pc, handlers, regs, cold, (HObject*)gic.bindings, slot);
     }
+    cold.heap.jit_notify_write((HObject*)gic.bindings, slot);
     *slot = (hobject::PropValue)*ra;
     ra.set_undefined();
     return th_next(pc + 1, handlers, regs, cold);
@@ -2211,6 +2213,7 @@ fn Instruction* th_inc_global_impl(Instruction* pc, HandlerTable* handlers, TVal
     if (v < types::FASTINT_MIN || v > types::FASTINT_MAX) return pc;
     TVal* ra = regs + insn.a;
     if (!th_can_release(ra)) return pc;
+    cold.heap.jit_notify_write((HObject*)gic.bindings, slot);
     th_do_release(ra);
     slot.set_fastint(v);
     ra.set_fastint(v);
@@ -2431,6 +2434,7 @@ fn Instruction* th_inc_var(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     long next = old_val.get_fastint() + 1L;
     TVal* ra = regs + insn.a;
     if (!types::fits_fastint(next) || !th_can_release(ra)) return pc;
+    cold.heap.jit_notify_write((HObject*)vic.bindings, slot);
     th_do_release(ra);
     slot.set_fastint(next);
     ra.set_fastint(next);
@@ -2926,6 +2930,7 @@ fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) {
         return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, null);
     }
+    cold.heap.jit_notify_layout(hobj);
     if (hobj.gc.prototype_observed) cold.heap.bump_prototype_epoch();
     hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
     *slot = (hobject::PropValue)*value;
@@ -2968,6 +2973,7 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
         return th_store_slot_ref_next(pc, handlers, regs, cold, hobj, slot, value);
     }
+    cold.heap.jit_notify_write(hobj, slot);
     *slot = (hobject::PropValue)*value;
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -3004,6 +3010,7 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
             return th_store_slot_ref_next(pc, handlers, regs, cold, hobj, slot, value);
         }
+        cold.heap.jit_notify_write(hobj, slot);
         *slot = (hobject::PropValue)*value;
         return th_next(pc + 1, handlers, regs, cold);
     }
@@ -3259,6 +3266,7 @@ fn Instruction* th_init_slot(Instruction* pc, HandlerTable* handlers,
 
     // Only a heap value has a reference count or needs the write barrier.
     if (value.is_heap_allocated()) return th_store_slot_ref_next(pc, handlers, regs, cold, object, slot, value);
+    cold.heap.jit_notify_write(object, slot);
     *slot = (hobject::PropValue)*value;
     return th_next(pc + 1, handlers, regs, cold);
 }

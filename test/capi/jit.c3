@@ -61,6 +61,131 @@ fn void eval(JsContext* ctx, String source) {
     ctx.release(value);
 }
 
+// Exercise real interpreter and generated stores against registered watches.
+// An unrelated own slot must preserve the value dependency; changing layout
+// must invalidate both slot and layout dependencies before storage can move.
+fn void check_write_dependencies(JsRuntime* rt, JsContext* ctx) {
+    eval(ctx, "var depObj={x:1,y:2};var depGlobal=1;function depPut(o,v){o.x=v;return o.x;}function depInc(){return ++depGlobal;}for(var i=0;i<200;i++){depPut(depObj,1);depInc();}");
+    for (uint i = 0; i < 128; i++) eval(ctx, "depPut(depObj,1);");
+    CompiledFunction* writer = named_function(rt, "depPut");
+    @check(writer != null && writer.sljit_function != null);
+    @check(((FunctionPlan*)writer.sljit_function).hits > 0);
+    Heap* h = rt.rt.heap;
+    HObject* globals = rt.rt.vm.global_env.bindings;
+    int obj_idx = globals.find_prop_idx(h.str_intern("depObj"), h);
+    @check(obj_idx >= 0);
+    HObject* obj = globals.prop_values()[obj_idx].get().get_heapptr();
+    int x = obj.find_prop_idx(h.str_intern("x"), h);
+    int global_idx = globals.find_prop_idx(h.str_intern("depGlobal"), h);
+    @check(x >= 0 && global_idx >= 0);
+    bool value_live = true;
+    bool layout_live = true;
+    bool global_live = true;
+    JitWriteDependency* value_watch = h.jit_watch_slot(obj, (uint)x, &value_live);
+    JitWriteDependency* layout_watch = h.jit_watch_layout(obj, &layout_live);
+    JitWriteDependency* global_watch = h.jit_watch_slot(globals, (uint)global_idx, &global_live);
+    @check(value_watch != null && layout_watch != null && global_watch != null);
+    eval(ctx, "depObj.y=17;");
+    @check(value_live && layout_live && global_live);
+    eval(ctx, "if(depPut(depObj,29)!==29)throw 'watched store';");
+    @check(!value_live && layout_live && global_live);
+    value_live = true;
+    eval(ctx, "depObj.extra=3;");
+    @check(!value_live && !layout_live && global_live);
+    eval(ctx, "depInc();");
+    @check(!global_live);
+    h.jit_unwatch(value_watch);
+    h.jit_unwatch(layout_watch);
+    h.jit_unwatch(global_watch);
+    // Rebind after the shape change, then exercise descriptor and prototype
+    // mutations through their ordinary runtime APIs.
+    x = obj.find_prop_idx(h.str_intern("x"), h);
+    value_live = true;
+    layout_live = true;
+    value_watch = h.jit_watch_slot(obj, (uint)x, &value_live);
+    layout_watch = h.jit_watch_layout(obj, &layout_live);
+    @check(value_watch != null && layout_watch != null);
+    eval(ctx, "Object.defineProperty(depObj,'x',{value:31});");
+    @check(!value_live);
+    eval(ctx, "Object.setPrototypeOf(depObj,null);");
+    @check(!layout_live);
+    h.jit_unwatch(value_watch);
+    h.jit_unwatch(layout_watch);
+
+    // Doubles force INC_VAR through the switch's variable-IC arithmetic
+    // path rather than the threaded fastint handler.
+    @check(rt.set_jit(false));
+    eval(ctx, "function depFactory(){var n=0.5;return function depClosure(){return ++n;};}var depClosure=depFactory();for(var j=0;j<100;j++)depClosure();");
+    CompiledFunction* closure = named_function(rt, "depClosure");
+    @check(closure != null && closure.var_ic_entries != null);
+    VarICEntry* inc_ic;
+    for (uint pc = 0; pc < closure.code_count; pc++) {
+        if (closure.code[pc].op == Opcode.INC_VAR) {
+            inc_ic = (VarICEntry*)closure.var_ic_entries + pc;
+            break;
+        }
+    }
+    @check(inc_ic != null && inc_ic.env != null && inc_ic.bindings != null);
+    HObject* binding_owner = (HObject*)inc_ic.bindings;
+    bool binding_live = true;
+    JitWriteDependency* binding_watch = h.jit_watch_slot(binding_owner, inc_ic.prop_idx, &binding_live);
+    @check(binding_watch != null);
+    eval(ctx, "depClosure();");
+    @check(!binding_live);
+    TVal integer;
+    integer.set_fastint(3);
+    h.store_slot(binding_owner, inc_ic.slot(), integer);
+    binding_live = true;
+    eval(ctx, "depClosure();");
+    @check(!binding_live);
+    integer.set_fastint(types::FASTINT_MAX);
+    h.store_slot(binding_owner, inc_ic.slot(), integer);
+    binding_live = true;
+    eval(ctx, "depClosure();");
+    @check(!binding_live);
+    h.jit_unwatch(binding_watch);
+    @check(rt.set_jit());
+}
+
+// A watch is the sole root of an object, including one installed after the
+// incremental collector has passed its root list.
+fn void check_dependency_gc() {
+    Heap* h = heap::create(null, null, null, null, null)!!;
+    HObject* obj = h.alloc_object(hobject::ObjClass.OBJECT)!!;
+    bool live = true;
+    h.jit_native_active = 1;
+    @check(h.jit_watch_layout(obj, &live) == null);
+    h.jit_native_active = 0;
+    h.gc_begin_cycle(true);
+    uint steps = 0;
+    while (h.gc_root_stage <= 3 && h.gc_phase == heap::GcPhase.MARK && steps++ < 1000000) h.gc_step(1, true);
+    @check(h.gc_phase == heap::GcPhase.MARK && h.gc_root_stage > 3);
+    JitWriteDependency* first = h.jit_watch_layout(obj, &live);
+    JitWriteDependency* second = h.jit_watch_layout(obj, &live);
+    @check(first != null && second != null);
+    steps = 0;
+    while (h.gc_phase != heap::GcPhase.IDLE && steps++ < 1000000) h.gc_step(1, true);
+    @check(h.gc_phase == heap::GcPhase.IDLE && h.live_obj_count == 1);
+    h.jit_unwatch(first);
+    h.mark_and_sweep(true, true);
+    @check(h.live_obj_count == 1);
+    h.jit_unwatch(second);
+    h.mark_and_sweep(true, true);
+    @check(h.live_obj_count == 0);
+
+    // Reset and destruction free owners before compiled plans. Remaining
+    // registrations invalidate their clients without touching dead owners.
+    obj = h.alloc_object(hobject::ObjClass.OBJECT)!!;
+    @check(h.jit_watch_layout(obj, &live) != null);
+    h.reset();
+    @check(!live && h.jit_write_buckets == null);
+    live = true;
+    obj = h.alloc_object(hobject::ObjClass.OBJECT)!!;
+    @check(h.jit_watch_layout(obj, &live) != null);
+    h.destroy();
+    @check(!live);
+}
+
 fn ulong native_edges(JsRuntime* rt, String name, bool returns = false) {
     $if $feat(SLJIT) && $feat(SLJIT_STATS):
         for (uint i = 0; i < rt.rt.heap.compiled_func_count; i++) {
@@ -375,6 +500,32 @@ fn void check_ssa_leaf(JsRuntime* runtime, JsContext* context) {
     $endif
 }
 
+// Re-establish the exact watched entry after each invalidation, then require
+// native completion before the next mutation is tested.
+fn void check_watch_method_live(JsRuntime* runtime, JsContext* context) {
+    // Recompile the caller against the stub. Its guard then directs the real
+    // target through the native call entry instead of inlining it into the caller.
+    CompiledFunction* driver = named_function(runtime, "regionWatchDrive");
+    @check(driver != null);
+    if (driver.sljit_function != null) vm::sljit_function_free(runtime.rt.heap, driver);
+    driver.sljit_function_calls = 0;
+    eval(context, "RegionConstraint.prototype.execute=regionWatchStub;");
+    for (uint i = 0; i < 80; i++) eval(context, "regionWatchDrive(regionWatch);");
+    eval(context, "RegionConstraint.prototype.execute=regionWatchExecute;");
+    for (uint i = 0; i < 160; i++) eval(context, "regionWatch.input();regionWatch.output();regionWatch.execute();");
+    CompiledFunction* cf = named_function(runtime, "regionWatchExecute");
+    @check(cf != null && cf.sljit_function != null);
+    FunctionPlan* plan = cf.sljit_function;
+    bool found;
+    for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) {
+        if (leaf.ssa_watched_methods) found = true;
+    }
+    @check(found && plan.dependencies != null && plan.dependencies_live);
+    $if $feat(SLJIT_STATS): ulong before = plan.ssa_fast_calls; $endif
+    for (uint i = 0; i < 32; i++) eval(context, "regionWatchDrive(regionWatch);");
+    $if $feat(SLJIT_STATS): @check(plan.ssa_fast_calls > before); $endif
+}
+
 fn void check_ssa_call_regions(JsRuntime* runtime, JsContext* context) {
     $if !$feat(SLJIT_NO_SSA_CALL_ENTRY) && !$feat(SLJIT_NO_SSA_FIELD_IR):
         Heap* h = runtime.rt.heap;
@@ -399,6 +550,47 @@ fn void check_ssa_call_regions(JsRuntime* runtime, JsContext* context) {
         h.mark_and_sweep(true, true);
         eval(context, "regionFunctions.drive(regionWarm);if(regionNativeEffects!==3||regionWarm.v2.value!==23)throw 'SSA native region after GC';");
         eval(context, "if(regionNumeric(regionFunctions,'choose',1)!==1.25)throw 'SSA call after GC';");
+
+        // Use a fresh named target and train the caller against a different
+        // method, so the subsequent guarded native call takes the target's
+        // frameless entry. Require that watched entry to run before mutation.
+        eval(context, "function regionWatchExecute(){this.output().value=this.input().value;}function regionWatchDrive(c){c.execute();return c;}function regionWatchStub(){}function RegionWatch(a,b){RegionConstraint.call(this,a,b);}RegionWatch.prototype=Object.create(RegionConstraint.prototype);var regionOriginProto=RegionWatch.prototype;var regionAltBase=Object.create(RegionConstraint.prototype);regionAltBase.input=function(){return {value:91};};var regionAlt=Object.create(regionAltBase);var regionSavedInput=RegionConstraint.prototype.input;var regionWatch=new RegionWatch({value:7},{value:0});RegionConstraint.prototype.execute=regionWatchStub;");
+        HObject* globals = runtime.rt.vm.global_env.bindings;
+        int original_slot = globals.find_prop_idx(h.str_intern("regionOriginProto"), h);
+        int alternate_slot = globals.find_prop_idx(h.str_intern("regionAlt"), h);
+        @check(original_slot >= 0 && alternate_slot >= 0);
+        HObject* original_proto = globals.prop_values()[original_slot].get().get_heapptr();
+        HObject* alternate_proto = globals.prop_values()[alternate_slot].get().get_heapptr();
+        @check(original_proto != alternate_proto && original_proto.shape_id == alternate_proto.shape_id);
+        for (uint i = 0; i < 80; i++) eval(context, "regionWatchDrive(regionWatch);");
+        eval(context, "RegionConstraint.prototype.execute=regionWatchExecute;");
+        for (uint i = 0; i < 80; i++) eval(context, "regionWatch.input();regionWatch.output();regionWatch.execute();");
+        CompiledFunction* watched = named_function(runtime, "regionWatchExecute");
+        @check(watched != null && watched.sljit_function != null);
+        FunctionPlan* watched_plan = watched.sljit_function;
+        bool has_watched_region;
+        bool has_watched_methods;
+        for (LoopPlan* leaf = watched_plan.ssa_leaves; leaf != null; leaf = leaf.next) {
+            if (leaf.ssa_watched_bindings != 0) has_watched_region = true;
+            if (leaf.ssa_watched_methods) has_watched_methods = true;
+        }
+        @check(has_watched_region && has_watched_methods && watched_plan.dependencies != null && watched_plan.dependencies_live);
+        $if $feat(SLJIT_STATS): ulong calls_before = watched_plan.ssa_fast_calls; $endif
+        for (uint i = 0; i < 100; i++) eval(context, "regionWatchDrive(regionWatch);");
+        $if $feat(SLJIT_STATS): @check(watched_plan.ssa_fast_calls > calls_before); $endif
+        // Both first prototypes have an empty own layout; only their identity
+        // distinguishes the two chains.
+        eval(context, "Object.setPrototypeOf(regionWatch,regionAlt);regionWatch.v2.value=0;regionWatchDrive(regionWatch);if(regionWatch.v2.value!==91)throw 'watched first prototype';Object.setPrototypeOf(regionWatch,regionOriginProto);");
+        check_watch_method_live(runtime, context);
+        eval(context, "regionOriginProto.input=function(){return {value:83};};regionWatch.v2.value=0;regionWatchDrive(regionWatch);if(regionWatch.v2.value!==83)throw 'watched intermediate shadow';delete regionOriginProto.input;");
+        check_watch_method_live(runtime, context);
+        eval(context, "RegionConstraint.prototype.input=function(){return {value:79};};regionWatch.v2.value=0;regionWatchDrive(regionWatch);if(regionWatch.v2.value!==79)throw 'watched method replacement';RegionConstraint.prototype.input=regionSavedInput;");
+        check_watch_method_live(runtime, context);
+        eval(context, "regionDirection.FORWARD=-1;regionWatch.v1.value=0;regionWatch.v2.value=31;regionWatchDrive(regionWatch);if(regionWatch.v1.value!==31)throw 'watched slot write';");
+        check_watch_method_live(runtime, context);
+        eval(context, "regionDirection={FORWARD:1};regionWatch.v1.value=47;regionWatch.v2.value=0;regionWatchDrive(regionWatch);if(regionWatch.v2.value!==47)throw 'watched binding write';");
+        check_watch_method_live(runtime, context);
+        eval(context, "Object.defineProperty(regionDirection,'FORWARD',{get:function(){return -1;},configurable:true});regionWatch.v1.value=0;regionWatch.v2.value=53;regionWatchDrive(regionWatch);if(regionWatch.v1.value!==53)throw 'watched accessor transition';");
     $endif
 }
 
@@ -446,6 +638,7 @@ fn void check_ssa_region(JsRuntime* runtime) {
 }
 
 fn void main() {
+    check_dependency_gc();
     check_parameter_alias_roles();
     check_register_effects();
     check_native_convention();
@@ -491,6 +684,7 @@ fn void main() {
         @check(first.set_jit());
         eval(&a, RUN);
         @check(native_hits(&first) > before);
+        check_write_dependencies(&first, &a);
         eval(&isolated, RUN);
         @check(plans(&second) == 0);
         eval(&isolated, "var console={log:function(){}};");

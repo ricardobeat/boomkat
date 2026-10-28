@@ -39,6 +39,7 @@ fn LoopPlan* FunctionEmitter.ssa_leaf(&self, CompiledFunction* target, Heap* h, 
         draft.ssa_binding_constants[i] = value;
     }
     draft.ssa_function = target;
+    draft.dependency_owner = self.plan;
     draft.ssa_shape_epoch = h.shape_recycle_epoch;
     LoopPlan* leaf = h.alloc_func(h.heap_udata, LoopPlan::size);
     if (leaf == null) return null;
@@ -73,7 +74,9 @@ fn bool FunctionEmitter.inline_ssa_leaf(&self, CompiledFunction* cf, uint pc, He
         e.op(jit::SLJIT_LSHR, jit::reg_r(3), r0, 0, imm, 48);
         self.out.guard(jit::SLJIT_EQUAL, jit::reg_r(3), 0, imm, (long)types::TAG_STRING, pc);
     }
+    JitWriteDependency* checkpoint = self.plan.dependencies;
     if (ssa_emit(leaf, target, h, true, true, e, base, self.depth) == null) {
+        sljit_dependencies_rollback(h, self.plan, checkpoint);
         $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA leaf reject line=%d stage=graph", target.get_line(0)); $endif
         self.plan.ssa_leaves = leaf.next;
         h.free_func(h.heap_udata, leaf);

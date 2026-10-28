@@ -35,6 +35,7 @@ fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     sljit_function_ssa_free(h, plan);
     sljit_inline_frames_free(h, plan);
     sljit_call_links_free(h, plan);
+    sljit_dependencies_free(h, plan);
     h.jit_code_bytes -= plan.code_bytes;
     h.free_func(h.heap_udata, plan);
     cf.sljit_function = null;
@@ -93,6 +94,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     }
     mem::clear(plan, (sz)bytes);
     plan.begin = begin;
+    plan.dependencies_live = true;
     plan.count = region.code_count;
     // Tiny whole-function callees participate in native call graphs too.
     plan.min_span = 1;
@@ -126,6 +128,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         sljit_function_ssa_free(h, plan);
         sljit_inline_frames_free(h, plan);
         sljit_call_links_free(h, plan);
+        sljit_dependencies_free(h, plan);
         h.free_func(h.heap_udata, plan);
         return null;
     }
@@ -158,6 +161,21 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     $endif
     return plan;
 }
+// A linked callee need not reach its own gateway. Retire every invalid plan
+// at the next outer gateway, unlinking incoming call sites before freeing.
+fn void sljit_retire_invalid_dependencies(Heap* h) @feat(SLJIT) {
+    if (!h.jit_dependencies_dirty || h.jit_native_active != 0) return;
+    h.jit_dependencies_dirty = false;
+    for (uint i = 0; i < h.compiled_func_count; i++) {
+        CompiledFunction* cf = h.compiled_funcs[i];
+        if (cf == null || cf.sljit_function == null) continue;
+        FunctionPlan* plan = cf.sljit_function;
+        if (plan.dependencies_live) continue;
+        sljit_function_free(h, cf);
+        cf.sljit_function_calls = 0;
+    }
+}
+
 // Calls a function must see before the tier compiles it. The differential
 // test setting compiles on the first call instead.
 fn uint sljit_warmup(Heap* h) @feat(SLJIT) @inline => h.jit_stress ? 1 : 64;
@@ -176,8 +194,17 @@ fn Instruction* sljit_function_entry(
         || std::core::mem::@atomic_load(
         h.interrupt_requested
     ) != 0) return pc;
+    sljit_retire_invalid_dependencies(h);
     uint offset        = (uint)(pc - cf.code);
     FunctionPlan* plan = cf.sljit_function;
+    if (plan != null && !plan.dependencies_live) {
+        // The validity cell already diverts every dependent SSA entry. Retire
+        // only outside all generated frames, including nested C gateways.
+        if (h.jit_native_active != 0) return pc;
+        sljit_function_free(h, cf);
+        cf.sljit_function_calls = 0;
+        plan = null;
+    }
     if (plan == null) {
         if (cf.sljit_function_calls == uint::max) return pc;
         // Every function size warms on taken backedges as well as calls. A
@@ -197,6 +224,7 @@ fn Instruction* sljit_function_entry(
         for (uint i = 0; i < plan.shape_count; i++) {
             Shape* shape = h.get_shape(plan.shapes[i]);
             if (shape == null || shape.generation != plan.generations[i]) {
+                if (h.jit_native_active != 0) return pc;
                 sljit_function_free(h, cf);
                 cf.sljit_function_calls = 0;
                 return pc;
@@ -236,6 +264,8 @@ fn Instruction* sljit_function_entry(
     run.budget = budget;
     run.typed[0].receiver = null;
     run.typed[1].receiver = null;
+    h.jit_native_active++;
+    defer h.jit_native_active--;
     Instruction* resume = plan.native(regs, cold, &run);
     if (run.recover_frame != null) {
         $if $feat(SLJIT_STATS): plan.inline_recoveries++; $endif

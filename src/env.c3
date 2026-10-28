@@ -844,6 +844,7 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
                 return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
             }
             TVal old = pv.get();
+            h.jit_notify_write(cur.bindings, pv);
             if (old.is_string() || old.is_bigint()) { pv.release_ref(h); }
             h.store_slot(cur.bindings, pv, val);
             if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }

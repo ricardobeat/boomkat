@@ -341,6 +341,14 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         break;
                     }
                 case CHECKSHAPE: self.check_shape(v.a, (uint)v.imm); break;
+                case CHECKPROTO:
+                    {
+                        self.check_shape(v.a, (uint)v.target);
+                        HObject object;
+                        self.e.mov(r2, 0, mem | r0, (char*)&object.prototype - (char*)&object);
+                        self.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, v.imm, self.pc);
+                        break;
+                    }
                 case PROTO_STORAGE: self.proto_storage((int)i); break;
                 case CHECKWRITE:
                     self.gpr(v.a, r0);
@@ -357,8 +365,14 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
 
                     {
                         // loop_prepare snapshots bindings before entering native code.
-                        long offset = self.binding_offset((uint)v.imm);
-                        self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, offset);
+                        if ((self.plan.ssa_watched_bindings & (1UL << (uint)v.imm)) != 0) {
+                            if (v.last == v.def) break;
+                            self.e.mov(r0, 0, jit::SLJIT_IMM,
+                                (long)loop_bits(self.plan.ssa_binding_constants[v.imm]));
+                        } else {
+                            long offset = self.binding_offset((uint)v.imm);
+                            self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, offset);
+                        }
                         self.store_gpr((int)i, r0);
                         break;
                     }
@@ -366,7 +380,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
 
                     {
                         SsaValue from = self.g.values[v.a];
-                        if (v.home != 0 && from.home == v.home) break;
+                        if (ssa_same_location(v, from)) break;
                         if (v.rep == F64) {
                             self.load_fpr(v.a, 1);
                             self.store_fpr((int)i, 1);

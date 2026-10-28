@@ -131,6 +131,7 @@ fn void SsaEmitter.field_entry(&self, uint memory) @feat(SLJIT) {
 fn void SsaEmitter.commit_receiver(&self, int receiver) @feat(SLJIT) {
     GcBits observed;
     observed.prototype_observed = true;
+    observed.jit_observed = true;
     HObject object;
     int r3 = jit::reg_r(3);
     self.e.mov(r3, 0, jit::SLJIT_MEM | receiver, (char*)&object.gc - (char*)&object, jit::SLJIT_MOV_U32);

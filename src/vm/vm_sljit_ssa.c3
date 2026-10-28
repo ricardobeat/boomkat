@@ -115,6 +115,24 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     ssa_cse(graph);
     ssa_numeric_loads(graph);
     ssa_function_liveness(graph);
+    // Only method reads replaced by a watched call proof may lose their
+    // faulting load and its chain walk. Other guarded reads stay observable.
+    if (graph.inplace) {
+        bool removed;
+        for (uint i = 0; i < graph.value_count; i++) {
+            SsaValue* value = &graph.values[i];
+            if (value.watched_method && value.op == LOAD && value.last == value.def) {
+                value.op = NOP;
+                removed = true;
+            }
+        }
+        if (removed) ssa_function_liveness(graph);
+        for (uint i = 0; i < graph.value_count; i++) {
+            SsaValue* value = &graph.values[i];
+            if (value.watched_method && value.op == PROTO_STORAGE && value.last == value.def) value.op = NOP;
+        }
+        if (removed) ssa_function_liveness(graph);
+    }
     ssa_allocate(graph);
     uint phi_count;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
@@ -199,7 +217,14 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     // Prologue guards must not publish anything: the interpreter resumes at
     // the loop header with its original frame.
     int saved_count = (int)graph.exit_count;
-    if (parent != null) for (uint i = 0; i < plan.binding_count; i++) self.binding_entry(i);
+    if (parent != null && (plan.ssa_watched_bindings != 0 || plan.ssa_watched_methods)) {
+        e.mov(r0, 0, jit::SLJIT_IMM, (long)&plan.dependency_owner.dependencies_live);
+        e.mov(r0, 0, jit::SLJIT_MEM | r0, 0, jit::SLJIT_MOV_U8);
+        self.snapshot_none(e.cmp(jit::SLJIT_EQUAL, r0, 0, jit::SLJIT_IMM, 0), plan.begin);
+    }
+    if (parent != null) for (uint i = 0; i < plan.binding_count; i++) {
+        if ((plan.ssa_watched_bindings & (1UL << i)) == 0) self.binding_entry(i);
+    }
     self.header_guards();
     self.prologue();
     for (uint i = (uint)saved_count; i < graph.exit_count; i++) {

@@ -829,6 +829,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             if (idx >= 0) {
                 TVal tv;
                 tv.set_fastint((long)len_val);
+                heap.jit_notify_write(obj, &obj.prop_values()[idx]);
                 obj.prop_values()[idx].set_untraced(tv);
                 return;
             }
@@ -843,6 +844,7 @@ fn void array_set_length(HObject* obj, uint len_val, Heap* heap) {
             if (idx >= 0) {
                 TVal tv;
                 tv.set_fastint((long)len_val);
+                heap.jit_notify_write(obj, &obj.prop_values()[idx]);
                 obj.prop_values()[idx].set_untraced(tv);
                 return;
             }
@@ -1482,6 +1484,7 @@ fn void builtin_array_proto_pop(BuiltinContext* ctx) {
             } else {
                 len_tv_pop.set_number((double)idx);
             }
+            ctx.heap.jit_notify_write(obj, &obj.prop_values()[len_own_idx_pop]);
             obj.prop_values()[len_own_idx_pop].set_untraced(len_tv_pop);
         }
         ctx.take_result(&elem_fast);
@@ -1651,6 +1654,7 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
                     } else {
                         len_tv_fast.set_number((double)new_len);
                     }
+                    ctx.heap.jit_notify_write(obj, &obj.prop_values()[len_own_idx]);
                     obj.prop_values()[len_own_idx].set_untraced(len_tv_fast);
                 }
                 if (new_len <= (ulong)types::FASTINT_MAX) {

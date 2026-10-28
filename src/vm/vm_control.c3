@@ -1474,6 +1474,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     }
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's getter
+                        vm.heap.jit_notify_write(hobj, &initget_props[idx]);
                         hobject::hobject_set_access_getter(initget_props[idx].get(), getter_val, vm.heap);
                     } else {
                         // Create new accessor property
@@ -1514,6 +1515,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     }
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's setter
+                        vm.heap.jit_notify_write(hobj, &initset_props[idx]);
                         hobject::hobject_set_access_setter(initset_props[idx].get(), setter_val, vm.heap);
                     } else {
                         // Create new accessor property
@@ -1672,6 +1674,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     // non-configurable `.prototype`).
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's getter
+                        vm.heap.jit_notify_write(hobj, &initget_props[idx]);
                         hobject::hobject_set_access_getter(initget_props[idx].get(), getter_val, vm.heap);
                     } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable) {
                         // Non-configurable: DefinePropertyOrThrow throws TypeError
@@ -1734,6 +1737,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     // checked before the non-configurable rejection.
                     if (idx >= 0 && hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         // Update existing accessor's setter
+                        vm.heap.jit_notify_write(hobj, &initset_props[idx]);
                         hobject::hobject_set_access_setter(initset_props[idx].get(), setter_val, vm.heap);
                     } else if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable) {
                         // Non-configurable: DefinePropertyOrThrow throws TypeError

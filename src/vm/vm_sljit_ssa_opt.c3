@@ -65,7 +65,7 @@ fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
     uint count;
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op != BINDING && value.op != CHECKFN && value.op != RECEIVER && value.op != CHECKSHAPE
+        if (value.op != BINDING && value.op != CHECKFN && value.op != CHECKPROTO && value.op != RECEIVER && value.op != CHECKSHAPE
             && value.op != STORAGE && value.op != CHECKWRITE && value.op != PROTO_STORAGE) continue;
         bool found;
         for (uint k = 0; k < count; k++) {
@@ -77,8 +77,10 @@ fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
                 if (a.shape != b.shape || a.shape_gen != b.shape_gen) continue;
             } else if (value.op == PROTO_STORAGE) {
                 if (!ssa_proto_layout_equal(&g.plan.memory[value.imm], &g.plan.memory[prior.imm])) continue;
+            } else if (value.op == CHECKPROTO) {
+                if (value.imm != prior.imm || g.plan.memory[value.target].shape != g.plan.memory[prior.target].shape) continue;
             } else if (value.imm != prior.imm) { continue; }
-            if ((value.op == CHECKFN || value.op == CHECKSHAPE || value.op == STORAGE || value.op == CHECKWRITE || value.op == PROTO_STORAGE)
+            if ((value.op == CHECKFN || value.op == CHECKPROTO || value.op == CHECKSHAPE || value.op == STORAGE || value.op == CHECKWRITE || value.op == PROTO_STORAGE)
                 && ssa_alias(g, value.a) != ssa_alias(g, prior.a)) continue;
             if (value.op == BINDING || value.op == RECEIVER || value.op == STORAGE || value.op == PROTO_STORAGE) {
                 value.op = COPY;

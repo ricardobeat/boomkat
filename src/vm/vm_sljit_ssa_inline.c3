@@ -66,8 +66,10 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
         if (binding < 0) return -1;
         callee = ssa_value(g, BINDING, BOXED, -1, -1, binding);
     } else { callee = g.current[base]; }
-    ssa_use(g, callee);
-    ssa_use(g, ssa_value(g, CHECKFN, BOXED, callee, -1, (long)callee_fn));
+    if (fused || !ssa_watch_method(g, callee, callee_fn)) {
+        ssa_use(g, callee);
+        ssa_use(g, ssa_value(g, CHECKFN, BOXED, callee, -1, (long)callee_fn));
+    }
     int[LOOP_REGS] mapped;
     for (uint i = 0; i < LOOP_REGS; i++) mapped[i] = -1;
     for (uint i = 0; i < nargs; i++) {
@@ -241,6 +243,10 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
                         || ic.has_proto || ic.prop_flags.is_accessor) {
                         g.failed = true;
                         return -1;
+                    }
+                    if (!on_receiver) {
+                        int constant = ssa_watch_global_field(g, callee_fn, ci_pos, mapped[ci.b], ic);
+                        if (constant >= 0) { mapped[ci.a] = constant; continue; }
                     }
                     int receiver_value = on_receiver ? ssa_convert(g, receiver, BOXED, false)
                         : mapped[ci.b];

@@ -64,7 +64,7 @@ fn bool sljit_code_room(Heap* h, usz bytes, bool function = false) @feat(SLJIT) 
 // unwound. Native callees stamp their last use too; a hot linked callee cannot
 // look cold merely because it never crosses the C gateway. Unlink before free.
 fn bool sljit_budget_reclaim(Heap* h, usz bytes) @feat(SLJIT) @noinline {
-    if (bytes >= sljit_code_limit(h)) return false;
+    if (bytes >= sljit_code_limit(h) || h.jit_native_active != 0) return false;
     bool reclaimed;
     while (h.jit_code_bytes + bytes >= sljit_code_limit(h)) {
         CompiledFunction* victim;

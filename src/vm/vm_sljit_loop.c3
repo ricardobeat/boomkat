@@ -62,6 +62,9 @@ struct LoopMemorySpec @feat(SLJIT) {
     uint[hobject::IC_MAX_CHAIN] proto_shapes;
     uint[hobject::IC_MAX_CHAIN] proto_generations;
     uint proto_depth;
+    // Borrowed only during graph construction, when an active receiver or
+    // the rooted IC owner proves the first prototype remains live.
+    HObject* proto_anchor;
 }
 struct LoopState @feat(SLJIT) {
     TVal[LOOP_REGS] values;
@@ -86,6 +89,9 @@ struct LoopPlan @feat(SLJIT) {
     void* ssa_map_end @if($feat(SLJIT_MAP));
     uint ssa_map_depth @if($feat(SLJIT_MAP));
     ulong ssa_binding_mask;
+    ulong ssa_watched_bindings;
+    bool ssa_watched_methods;
+    FunctionPlan* dependency_owner;
     TVal[LOOP_BINDINGS] ssa_binding_constants;
     bool ssa_invalid;
     ulong ssa_completed @if($feat(SLJIT_STATS));
@@ -1867,7 +1873,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     }
     if (h.interrupt_due || budget <= 1) return body;
     if (!prepared && !loop_prepare(plan, &state, cold)) return body;
+    h.jit_native_active++;
     uint resume_pc = plan.native(&state, budget);
+    h.jit_native_active--;
     uint consumed  = (uint)(budget - state.budget);
     $if $feat(SLJIT_STATS):
     if (plan.ssa) { plan.ssa_hits++; plan.ssa_iterations += consumed; }

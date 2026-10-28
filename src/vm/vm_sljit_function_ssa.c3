@@ -136,7 +136,9 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan) @feat(SLJI
         if ((plan.ssa_inputs & (1UL << i)) != 0) state.values[i] = regs[i];
     }
     if (plan.binding_count != 0 && !loop_prepare(plan, &state, cold, plan.ssa_fields)) return cf.code;
+    cold.heap.jit_native_active++;
     uint resume = plan.native(&state, 1);
+    cold.heap.jit_native_active--;
     sljit_publish_state(cold, regs, &state, cf.num_regs);
     plan.hits++;
     $if $feat(SLJIT_STATS):

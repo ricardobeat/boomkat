@@ -277,9 +277,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (old_val.is_fastint()) {
                                 long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                                 if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                                    vm.heap.jit_notify_write(b, vic.slot());
                                     vic.slot().set_fastint(v);
                                     vm.heap.set_reg_fastint(ra, v);
                                 } else {
+                                    vm.heap.jit_notify_write(b, vic.slot());
                                     vic.slot().set_number((double)v);
                                     vm.heap.set_reg_number(ra, (double)v);
                                 }
@@ -299,6 +301,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 double d = vm_to_number(vm,&old_val);
                                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                                 double new_d = d + (is_inc ? 1.0 : -1.0);
+                                vm.heap.jit_notify_write(b, vic.slot());
                                 vic.slot().set_number(new_d);
                                 vm.heap.set_reg_number(ra, new_d);
                             }
@@ -502,9 +505,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                            vm.heap.jit_notify_write(cur.bindings, &cur.bindings.prop_values()[idx]);
                             cur.bindings.prop_values()[idx].set_fastint(v);
                             vm.heap.set_reg_fastint(ra, v);
                         } else {
+                            vm.heap.jit_notify_write(cur.bindings, &cur.bindings.prop_values()[idx]);
                             cur.bindings.prop_values()[idx].set_number((double)v);
                             vm.heap.set_reg_number(ra, (double)v);
                         }
@@ -524,6 +529,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                         double new_d = d + (is_inc ? 1.0 : -1.0);
+                        vm.heap.jit_notify_write(cur.bindings, &cur.bindings.prop_values()[idx]);
                         cur.bindings.prop_values()[idx].set_number(new_d);
                         vm.heap.set_reg_number(ra, new_d);
                     }
@@ -610,9 +616,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                            vm.heap.jit_notify_write(gb, slot);
                             slot.set_fastint(v);
                             vm.heap.set_reg_fastint(ra, v);
                         } else {
+                            vm.heap.jit_notify_write(gb, slot);
                             slot.set_number((double)v);
                             vm.heap.set_reg_number(ra, (double)v);
                         }
@@ -621,6 +629,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                         double new_d = d + (is_inc ? 1.0 : -1.0);
+                        vm.heap.jit_notify_write(gb, slot);
                         slot.set_number(new_d);
                         vm.heap.set_reg_number(ra, new_d);
                         return (TVal){};
@@ -686,9 +695,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                            vm.heap.jit_notify_write(cur.bindings, &cur.bindings.prop_values()[idx]);
                             cur.bindings.prop_values()[idx].set_fastint(v);
                             vm.heap.set_reg_fastint(ra, v);
                         } else {
+                            vm.heap.jit_notify_write(cur.bindings, &cur.bindings.prop_values()[idx]);
                             cur.bindings.prop_values()[idx].set_number((double)v);
                             vm.heap.set_reg_number(ra, (double)v);
                         }
@@ -708,6 +719,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                         double new_d = d + (is_inc ? 1.0 : -1.0);
+                        vm.heap.jit_notify_write(cur.bindings, &cur.bindings.prop_values()[idx]);
                         cur.bindings.prop_values()[idx].set_number(new_d);
                         vm.heap.set_reg_number(ra, new_d);
                     }
@@ -733,9 +745,11 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         if (old_val.is_fastint()) {
                             long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                             if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
+                                vm.heap.jit_notify_write(ds.act.var_env.bindings, &ds.act.var_env.bindings.prop_values()[vidx]);
                                 ds.act.var_env.bindings.prop_values()[vidx].set_fastint(v);
                                 vm.heap.set_reg_fastint(ra, v);
                             } else {
+                                vm.heap.jit_notify_write(ds.act.var_env.bindings, &ds.act.var_env.bindings.prop_values()[vidx]);
                                 ds.act.var_env.bindings.prop_values()[vidx].set_number((double)v);
                                 vm.heap.set_reg_number(ra, (double)v);
                             }
@@ -743,6 +757,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             double d = vm_to_number(vm,&old_val);
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             double new_d = d + (is_inc ? 1.0 : -1.0);
+                            vm.heap.jit_notify_write(ds.act.var_env.bindings, &ds.act.var_env.bindings.prop_values()[vidx]);
                             ds.act.var_env.bindings.prop_values()[vidx].set_number(new_d);
                             vm.heap.set_reg_number(ra, new_d);
                         } else {

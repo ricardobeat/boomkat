@@ -38,6 +38,9 @@ fn int ssa_proto_memory(LoopPlan* plan, ICEntry* ic, void* key, Heap* h, HObject
         || shape == null || shape.dict || shape.generation != ic.shape_gen) return -1;
     LoopMemorySpec spec = { .kind = PROTO_FIELD, .source = LOOP_THIS, .cls = OBJECT,
         .shape = ic.shape_id, .shape_gen = ic.shape_gen, .slot = (int)ic.prop_idx };
+    if (first == owner || (receiver != null && receiver.shape_id == ic.shape_id && receiver.prototype == first)) {
+        spec.proto_anchor = first;
+    }
     if (epoch) {
         HObject* link;
         if (first == owner) { link = owner; }
@@ -78,7 +81,10 @@ fn int ssa_proto_memory(LoopPlan* plan, ICEntry* ic, void* key, Heap* h, HObject
     }
     for (uint i = 0; i < plan.memory_count; i++) {
         LoopMemorySpec* prior = &plan.memory[i];
-        if (prior.kind == PROTO_FIELD && prior.slot == spec.slot && ssa_proto_layout_equal(prior, &spec)) return (int)i;
+        if (prior.kind == PROTO_FIELD && prior.slot == spec.slot && ssa_proto_layout_equal(prior, &spec)) {
+            if (prior.proto_anchor != spec.proto_anchor) prior.proto_anchor = null;
+            return (int)i;
+        }
     }
     if (plan.memory_count == LOOP_MEMORY) return -1;
     uint id = plan.memory_count++;

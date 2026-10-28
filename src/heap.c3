@@ -1229,6 +1229,9 @@ struct Heap {
     uint                shape_recycle_epoch;
     // Advanced only by mutations to prototype objects observed by read caches.
     ulong               prototype_epoch;
+    JitWriteDependency** jit_write_buckets @if($feat(SLJIT));
+    uint jit_native_active @if($feat(SLJIT));
+    bool jit_dependencies_dirty @if($feat(SLJIT));
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
     // makes back to back advance the epoch once.
@@ -2355,6 +2358,8 @@ fn void Heap.destroy(&self) {
         self.compiled_funcs = null;
     }
 
+    self.jit_free_write_dependencies();
+
     // The entries hold no owned allocations: `name` is an interned HString
     // freed by the string-table sweep below, and `udata` belongs to the host.
     if (self.host_fns != null) {
@@ -2577,6 +2582,7 @@ fn void Heap.reset(&self) {
     }
 
     self.free_compiled_funcs();
+    self.jit_free_write_dependencies();
     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
     $if $feat(SLJIT_ADAPTIVE):
         self.jit_code_limit = 0;
@@ -3587,14 +3593,6 @@ fn void Heap.copy_tval_to_slot(&self, HObject* owner, hobject::PropValue* dst, T
     self.store_slot_ref(owner, dst, src);
 }
 
-fn void Heap.move_slot_to_tval(&self, TVal* dst, hobject::PropValue* src) @inline {
-    TVal value = src.get();
-    self.shade_root_tval(value);
-    self.decref_tval(dst);
-    *dst = value;
-    src.set_undefined();
-}
-
 // Copy a TVal from src to dst, keeping refcounts balanced. Increfs src, then
 // decrefs the old dst value, then copies the bits. Does nothing when dst == src.
 fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
@@ -3636,6 +3634,7 @@ fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
 // Only the overwritten dst value decides whether a decref is owed. The move
 // preserves src's refcount whether src is a heap value or a primitive.
 fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst, TVal* src) @inline {
+    self.jit_notify_write(owner, dst);
     self.write_barrier(owner, *src);
     TVal old = dst.get();
     if (old.is_heap_allocated()) {
@@ -3768,6 +3767,7 @@ fn void Heap.join_visited_pop(&self) {
  * PropValue's distinct type keeps a plain assignment from compiling.
  */
 fn void Heap.store_slot(&self, HObject* owner, hobject::PropValue* slot, TVal v) @inline {
+    self.jit_notify_write(owner, slot);
     *slot = (hobject::PropValue)v;
     self.write_barrier(owner, v);
 }
@@ -3776,6 +3776,7 @@ fn void Heap.store_slot(&self, HObject* owner, hobject::PropValue* slot, TVal v)
  * tval_copy_ref into a slot of `owner`, passing the write barrier.
  */
 fn void Heap.store_slot_ref(&self, HObject* owner, hobject::PropValue* slot, TVal* src) @inline {
+    self.jit_notify_write(owner, slot);
     TVal old = slot.get();
     if (src.is_refcounted()) {
         void* ptr = src.get_heapptr();
@@ -3886,7 +3887,10 @@ fn void Heap.bump_prototype_epoch(&self) @noinline {
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
-    if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch();
+    if (obj.prototype != proto) {
+        self.jit_notify_layout(obj);
+        if (obj.gc.prototype_observed) self.bump_prototype_epoch();
+    }
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;
@@ -4665,6 +4669,7 @@ fn void Heap.prune_var_ic_entries(&self) {
 // advancing it retires them all at once; walking each compiled function's
 // entries made a program that keeps evaluating code quadratic.
 fn void Heap.invalidate_var_ic_entries(&self) {
+    self.jit_invalidate_writes();
     if (!self.var_ic_filled) return;
     self.var_ic_filled = false;
     self.shape_recycle_epoch++;

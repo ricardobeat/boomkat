@@ -46,6 +46,10 @@ struct FunctionPlan @feat(SLJIT) {
     FunctionNative native;
     void* call_entry;
     FunctionCallLink* calls;
+    // Watched assumptions remain allocated until this plan is retired. Native
+    // code checks the shared cell before entering any dependent SSA body.
+    JitWriteDependency* dependencies;
+    bool dependencies_live;
     void* resume_fragment;
     usz resume_bytes;
     uint numeric_homes;
@@ -601,6 +605,13 @@ fn bool FunctionEmitter.capture(&self, CompiledFunction* cf, Activation* act, He
     self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, ref.guard_shadow ? 1 : 0, FUNCTION_BAIL);
     e.mov(capture, 0, mem | r1, (char*)&layout.owner - (char*)&layout);
     self.out.guard(jit::SLJIT_EQUAL, capture, 0, imm, 0, FUNCTION_BAIL);
+    // Mutable capture stores use the resolved slot directly. An observed
+    // owner must take the interpreter's notifying store path instead.
+    GcBits watched;
+    watched.jit_observed = true;
+    e.mov(r3, 0, mem | capture, (char*)&object.gc - (char*)&object, jit::SLJIT_MOV_U32);
+    e.op(jit::SLJIT_AND, r3, r3, 0, imm, (uint)watched);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, FUNCTION_BAIL);
     e.mov(r3, 0, mem | r1, (char*)&layout.prop_idx - (char*)&layout, jit::SLJIT_MOV_U32);
     self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, ref.prop_idx, FUNCTION_BAIL);
     e.mov(r0, 0, mem | capture, 0, jit::SLJIT_MOV_U32);
