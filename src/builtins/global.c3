@@ -184,6 +184,11 @@ fn void ConsoleSink.write_units(&self, HString* s, uint from, uint to) {
     s.write_utf8_range(from, to, self.use_stderr ? &eputc : &putc_out);
 }
 
+// Write the units of a buffer as UTF-8.
+fn void ConsoleSink.write_buf(&self, UnitBuf* buf) {
+    buf.units().write_utf8_range(0, (uint)buf.len, self.use_stderr ? &eputc : &putc_out);
+}
+
 // Emit one value the way console renders it outside any specifier: the
 // structured inspect form, with a top-level string emitted bare.
 fn void console_emit_value(BuiltinContext* ctx, ConsoleSink sink, TVal* val) {
@@ -427,7 +432,7 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
     // Grows to fit, like JSON.stringify's own buffer: %j has no size limit of
     // its own, and a structure too large to render reports failure rather than
     // printing a truncated fragment that looks like valid JSON.
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     JsonSerializeCtx jctx;
@@ -435,8 +440,8 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
     jctx.vm = ctx.vm;
     jctx.out = &out;
     jctx.indent_level = 0;
-    jctx.gap = null;
     jctx.gap_len = 0;
+    jctx.gap_high = false;
     jctx.depth = 0;
     jctx.replacer_func.set_undefined();
     jctx.prop_keys = null;
@@ -459,7 +464,7 @@ fn void console_emit_json_spec(BuiltinContext* ctx, ConsoleSink sink, TVal* arg)
         sink.write("undefined");
         return;
     }
-    sink.write(out.bytes());
+    sink.write_buf(&out);
 }
 
 // Stdout byte sink for write_cesu8_as_utf8. The udata a PutByteFn must accept
