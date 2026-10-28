@@ -117,10 +117,14 @@ BK_API void bk_free_runtime(bk_runtime runtime);
 BK_API bk_ctx bk_new_context(bk_runtime runtime);
 BK_API void bk_free_context(bk_ctx ctx);
 BK_API bk_runtime bk_get_runtime(bk_ctx ctx);
-BK_API void bk_set_runtime_opaque(bk_runtime runtime, void *opaque);
-BK_API void *bk_get_runtime_opaque(bk_runtime runtime);
-BK_API void bk_set_context_opaque(bk_ctx ctx, void *opaque);
-BK_API void *bk_get_context_opaque(bk_ctx ctx);
+/* Embedder data: BK_DATA_SLOTS pointers per runtime and per context, NULL
+ * until set. Slot 3 is reserved for boomkat.hpp; slots 0-2 belong to the host.
+ * Out-of-range slots are ignored on set and read as NULL. */
+#define BK_DATA_SLOTS 4
+BK_API void bk_set_runtime_data(bk_runtime runtime, unsigned slot, void *data);
+BK_API void *bk_get_runtime_data(bk_runtime runtime, unsigned slot);
+BK_API void bk_set_context_data(bk_ctx ctx, unsigned slot, void *data);
+BK_API void *bk_get_context_data(bk_ctx ctx, unsigned slot);
 BK_API const char *bk_version(void);
 
 enum { BK_EVAL_GLOBAL = 0, BK_EVAL_MODULE = 1, BK_EVAL_STRICT = 2 };

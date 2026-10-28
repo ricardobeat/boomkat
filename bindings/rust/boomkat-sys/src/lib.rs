@@ -59,6 +59,9 @@ pub const BK_FN_END: bk_fn_def = bk_fn_def {
 /// Registration flag: `new fn()` is allowed; without it, it throws a TypeError.
 pub const BK_CTOR: c_uint = 1;
 
+/// Embedder data slots per runtime and per context; slot 3 is reserved.
+pub const BK_DATA_SLOTS: c_uint = 4;
+
 /// The handle value that is never valid.
 pub const BK_EXCEPTION: bk_value = 0;
 
@@ -167,10 +170,10 @@ extern "C" {
     pub fn bk_new_context(runtime: bk_runtime) -> bk_ctx;
     pub fn bk_free_context(ctx: bk_ctx);
     pub fn bk_get_runtime(ctx: bk_ctx) -> bk_runtime;
-    pub fn bk_set_runtime_opaque(runtime: bk_runtime, opaque: *mut c_void);
-    pub fn bk_get_runtime_opaque(runtime: bk_runtime) -> *mut c_void;
-    pub fn bk_set_context_opaque(ctx: bk_ctx, opaque: *mut c_void);
-    pub fn bk_get_context_opaque(ctx: bk_ctx) -> *mut c_void;
+    pub fn bk_set_runtime_data(runtime: bk_runtime, slot: c_uint, data: *mut c_void);
+    pub fn bk_get_runtime_data(runtime: bk_runtime, slot: c_uint) -> *mut c_void;
+    pub fn bk_set_context_data(ctx: bk_ctx, slot: c_uint, data: *mut c_void);
+    pub fn bk_get_context_data(ctx: bk_ctx, slot: c_uint) -> *mut c_void;
     pub fn bk_version() -> *const c_char;
     pub fn bk_eval_ex(
         ctx: bk_ctx,

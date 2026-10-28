@@ -241,8 +241,12 @@ uncatchable across native reentry.
 `bk_set_function_list` installs a `bk_fn_def` table terminated by `BK_FN_END`.
 `BK_CTOR` allows construction; `bk_get_new_target` returns borrowed `new.target`,
 and `bk_is_constructor_call` identifies a constructor call. Opaque user pointers
-are borrowed for the runtime's lifetime. Runtime and context opaque data have
-separate setters/getters.
+are borrowed for the runtime's lifetime.
+
+Runtimes and contexts each carry `BK_DATA_SLOTS` (4) embedder pointers, set
+with `bk_set_runtime_data`/`bk_set_context_data` and read with the matching
+getters. Slots 0 to 2 belong to the host; slot 3 is reserved for the C++
+layer, so a C++ host and a C library can share a context.
 
 `bk_register_fn` installs one callback on a target object, or as a global when
 the target is 0. `bk_argc`, `bk_arg`, `bk_this` and `bk_get_new_target` read

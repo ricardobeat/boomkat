@@ -48,6 +48,8 @@ const int BK_TYPE_FUNCTION  = abi::BK_TYPE_FUNCTION;
 const int BK_TYPE_OTHER     = abi::BK_TYPE_OTHER;
 
 const usz ERRBUF = 512;
+// Embedder data slots per runtime and per context (BK_DATA_SLOTS).
+const uint DATA_SLOTS = 4;
 // Live bk_cstr results per runtime before the oldest buffer is reused.
 const usz CSTR_RING = 4;
 
@@ -161,7 +163,7 @@ struct ContextState {
     ulong exception;
     int pending_code;
     char[ERRBUF] pending_message;
-    void* context_opaque;
+    void*[DATA_SLOTS] context_data;
 }
 
 // Owns one heap, VM, and value registry.
@@ -186,7 +188,7 @@ struct Runtime {
     Ctx*     contexts;
     Ctx*     active;
     bool     root_used;
-    void*    opaque;
+    void*[DATA_SLOTS] data;
     HostPayload* host_payloads;
     // Set by bk_create, whose context owns the runtime.
     bool     owned_by_context;
