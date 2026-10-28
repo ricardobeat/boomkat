@@ -437,6 +437,22 @@ pub const Runtime = struct {
         try check(c.bk_run_jobs(self.runtime));
     }
 
+    /// Collect garbage now.
+    pub fn gc(self: *Runtime, kind: enum { minor, full }) void {
+        c.bk_gc(self.runtime, if (kind == .full) c.BK_GC_FULL else c.BK_GC_MINOR);
+    }
+
+    /// Collector work for about `budget_ns`; true while the cycle continues.
+    pub fn gcStep(self: *Runtime, budget_ns: u64) bool {
+        return c.bk_gc_step(self.runtime, budget_ns) != 0;
+    }
+
+    pub fn heapStats(self: *Runtime) c.bk_heap_stats {
+        var out: c.bk_heap_stats = undefined;
+        _ = c.bk_get_heap_stats(self.runtime, &out);
+        return out;
+    }
+
     /// A weak handle to an object or non-registered symbol. `deinit` it.
     pub fn weak(self: *Runtime, v: Value) Error!Weak {
         const w = c.bk_new_weak(self.ptr, v.handle);
@@ -464,6 +480,15 @@ pub const Weak = struct {
         self.id = 0;
     }
 };
+
+test "collection and heap stats" {
+    var rt = try Runtime.init();
+    defer rt.deinit();
+    const before = rt.heapStats().gc_cycles;
+    rt.gc(.full);
+    try std.testing.expect(rt.heapStats().gc_cycles > before);
+    while (rt.gcStep(1_000_000)) {}
+}
 
 test "weak handles follow their target" {
     var rt = try Runtime.init();

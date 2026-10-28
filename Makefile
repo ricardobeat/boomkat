@@ -516,3 +516,11 @@ out/weak_api: test/capi/weak.c include/boomkat.h out/boomkat.a
 .PHONY: test-weak-api
 test-weak-api: out/weak_api
 	./out/weak_api
+
+out/gc_control_api: test/capi/gc_control.c include/boomkat.h out/boomkat.a
+	cc -std=c11 -Wall -Wextra -pedantic -Iinclude test/capi/gc_control.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/gc_control_api
+
+.PHONY: test-gc-control-api
+test-gc-control-api: out/gc_control_api
+	./out/gc_control_api

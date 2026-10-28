@@ -421,21 +421,26 @@ static bk_value h_eval_script(bk_ctx ctx, bk_value this_value, unsigned argc, co
 /* A host callback can evaluate a script while another is running. It runs
  * as its own global Script: its declarations land on the global object and
  * its `this` is the global object. */
-/* A limit far above the process runs a GC-heavy script to completion; going
- * over one calls the fatal handler, which would end this process. */
-static void test_memory_limit(bk_ctx rt) {
+/* A heap limit far above the script's needs runs a GC-heavy script to
+ * completion. */
+static void test_memory_limit(bk_ctx unused) {
     static const char src[] =
         "let a = []; for (let i = 0; i < 200000; i++) a.push({ i }); a.length";
-    bk_set_interrupt(bk_get_runtime(rt), NULL, NULL);
-    bk_set_memory_limit(bk_get_runtime(rt), (uint64_t)1 << 40);
+    (void)unused;
+    bk_runtime_options options = { 0 };
+    options.heap_limit = (uint64_t)1 << 40;
+    bk_runtime runtime = bk_new_runtime(&options);
+    bk_ctx rt = bk_new_context(runtime);
     bk_value v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
-    bk_set_memory_limit(bk_get_runtime(rt), 0);
-    if (!v) { printf("FAIL: memory limit: %s\n", bk_get_error_message(rt)); failures++; return; }
+    if (!v) { printf("FAIL: memory limit: %s\n", bk_get_error_message(rt)); failures++; goto done; }
     if (bk_to_number(rt, v) != 200000) {
         printf("FAIL: memory limit: got %g\n", bk_to_number(rt, v)); failures++;
     }
     bk_free_value(rt, v);
     printf("PASS: memory limit\n");
+done:
+    bk_free_context(rt);
+    bk_free_runtime(runtime);
 }
 
 static void test_nested_eval(bk_ctx rt) {

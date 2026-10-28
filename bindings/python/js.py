@@ -167,6 +167,18 @@ class _FnDef(ctypes.Structure):
                 ("finalize_opaque", ctypes.c_void_p)]
 
 
+class _HeapStats(ctypes.Structure):
+    """Mirrors bk_heap_stats in boomkat.h."""
+
+    _fields_ = [
+        ("heap_bytes", ctypes.c_uint64),
+        ("external_bytes", ctypes.c_uint64),
+        ("heap_limit", ctypes.c_uint64),
+        ("live_handles", ctypes.c_uint32),
+        ("gc_cycles", ctypes.c_uint32),
+    ]
+
+
 class _TypedArrayInfo(ctypes.Structure):
     """Mirrors bk_typed_array_info in boomkat.h."""
 
@@ -240,6 +252,8 @@ def _declare(lib):
                                           _STRING_RELEASE, ctypes.c_void_p], val),
         ("bk_string_view_get", [ctx, val, ctypes.POINTER(_StringView)], ctypes.c_int),
         ("bk_dup_value", [ctx, val], val),
+        ("bk_gc", [ctx, ctypes.c_int], None),
+        ("bk_get_heap_stats", [ctx, ctypes.POINTER(_HeapStats)], ctypes.c_int),
         # Binary data: ArrayBuffers and typed arrays cross as bytes.
         ("bk_new_array_buffer", [ctx, ctypes.c_size_t, ctypes.POINTER(ctypes.c_void_p)], val),
         ("bk_get_array_buffer", [ctx, val, ctypes.POINTER(ctypes.c_void_p),
@@ -687,6 +701,18 @@ class Runtime:
             raise TypeError("no JS equivalent; return a number, string, bool, "
                             "None, or a value from call.raw")
         return handle
+
+    def gc(self, full=True):
+        """Collect garbage now: a full collection, or a minor one."""
+        self._check_open()
+        self._lib.bk_gc(self._runtime, 1 if full else 0)
+
+    def heap_stats(self):
+        """The collector's counters as a dict."""
+        self._check_open()
+        out = _HeapStats()
+        self._lib.bk_get_heap_stats(self._runtime, ctypes.byref(out))
+        return {name: getattr(out, name) for name, _ in _HeapStats._fields_}
 
     def drain_microtasks(self):
         """Run pending promise jobs. eval() already does this on its own."""

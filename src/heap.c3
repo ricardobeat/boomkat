@@ -1176,6 +1176,21 @@ struct Heap {
     // finally blocks still run. Cleared only at the host boundary when the
     // BK_ERR_INTERRUPT status is handed out.
     bool                uncatchable_throw;
+    // Byte accounting (gc_control.c3). With `accounting`, the allocator
+    // fields hold the wrappers and these hold the embedder's callbacks.
+    bool                accounting;
+    bool                heap_limit_hit;
+    AllocFunc           user_alloc;
+    ReallocFunc         user_realloc;
+    FreeFunc            user_free;
+    void*               user_udata;
+    ulong               heap_bytes;
+    ulong               heap_limit;
+    long                external_bytes;
+    uint                gc_cycles;
+    // Nesting depth of bk_gc_inhibit; a collection requested meanwhile waits.
+    uint                gc_inhibit;
+    bool                gc_inhibited_request;
 
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
     // create and resize. valstack_top_ptr points at vm.valstack_top so the GC
@@ -1638,7 +1653,8 @@ fn Heap*? create(
     ReallocFunc  r,
     FreeFunc     f,
     void*        udata,
-    FatalFunc    fatal
+    FatalFunc    fatal,
+    ulong        heap_limit = 0
 ) {
     // Resolve defaults
     AllocFunc   afn   = a     != null ? a     : &default_alloc;
@@ -1663,6 +1679,8 @@ fn Heap*? create(
     h.free_func    = ffn;
     h.heap_udata   = udata;
     h.fatal_func   = fatfn;
+    h.heap_limit   = HEAP_UNLIMITED;
+    if (heap_limit != 0) h.enable_accounting(heap_limit);
 
     // GC tunables
     h.gc_trigger_counter    = GC_INITIAL_TRIGGER;
@@ -1721,7 +1739,7 @@ fn Heap*? create(
 
     // Allocate the initial string table
     usz tbl_bytes = str_table_bytes(INITIAL_STR_TABLE_SIZE);
-    void* tbl_raw = afn(udata, tbl_bytes);
+    void* tbl_raw = h.alloc_func(h.heap_udata, tbl_bytes);
     if (tbl_raw == null) {
         ffn(udata, raw);
         return HEAP_ALLOC_FAULT~;
@@ -1770,7 +1788,7 @@ fn Heap*? create(
 
     // 16 entries of (handler, arg, downstream), so 48 TVal slots.
     h.microtask_capacity = 16;
-    h.microtask_queue = (TVal*)afn(udata, TVal::size * 48);
+    h.microtask_queue = (TVal*)h.alloc_func(h.heap_udata, TVal::size * 48);
     if (h.microtask_queue != null) {
         mem::clear(h.microtask_queue, (sz)(TVal::size * 48));
     }
@@ -2579,8 +2597,9 @@ fn void Heap.destroy(&self) {
 
     self.gc_roots.free();
 
-    FreeFunc    ffn   = self.free_func;
-    void*       udata = self.heap_udata;
+    // The struct came from the embedder's allocator before any wrapping.
+    FreeFunc    ffn   = self.accounting ? self.user_free : self.free_func;
+    void*       udata = self.accounting ? self.user_udata : self.heap_udata;
     ffn(udata, self);
 }
 
@@ -5213,6 +5232,7 @@ fn void Heap.charge_allocation(&self, long units) @inline {
  * Ask the next safepoint to collect.
  */
 fn void Heap.request_gc(&self) @inline {
+    if (self.gc_inhibit != 0) { self.gc_inhibited_request = true; return; }
     if (self.gc_phase == GcPhase.IDLE) self.gc_requested = true;
     self.gc_pending = true;
 }
@@ -5321,6 +5341,7 @@ fn void Heap.trigger_gc(&self) {
  * Marking can advance there; reclamation waits for a quiescent boundary.
  */
 fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
+    if (self.gc_inhibit != 0) return;
     bool quiescent = self.native_frame_depth == 0;
     if (quiescent && self.gc_full_requested) {
         self.gc_full_requested = false;
@@ -6194,7 +6215,7 @@ fn void Heap.report_unhandled_rejections(&self, void* vm) {
 
 // Shared by bytecode safepoints and libregexp's backtracking timeout hook.
 fn bool Heap.poll_interrupt(&self) {
-    if (self.uncatchable_throw || mem::@atomic_load(self.interrupt_requested) != 0) return true;
+    if (self.uncatchable_throw || self.heap_limit_hit || mem::@atomic_load(self.interrupt_requested) != 0) return true;
     if (self.capi_interrupt_fn == null) return false;
     BkInterruptFn cb = (BkInterruptFn)self.capi_interrupt_fn;
     return cb(self.capi_runtime, self.capi_interrupt_opaque) != 0;

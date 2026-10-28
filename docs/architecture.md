@@ -897,12 +897,17 @@ through that heap's matching hook, including during teardown. `gs_release()`
 takes an explicit heap for this reason.
 
 `mem_limit` caps the process's resident memory, defaulting to 80% of physical
-memory (`bk_set_memory_limit`, `--memory-limit=MB`, 0 for none). The heap
+memory (`--memory-limit=MB`, 0 for none). The heap
 compares the OS-reported resident size with it after every GC cycle, every
 `MEM_CHECK_INTERVAL` object allocations, and before any block of 1 MB or more,
 and calls `fatal_func` when it is over. Resident size covers the whole process
 and the freed memory malloc keeps, so the limit is a backstop, not an exact
 budget: it holds to within a few percent of the limit.
+
+A C API runtime created with `bk_runtime_options.heap_limit` counts bytes
+exactly instead (`src/gc/gc_control.c3`): the allocator callbacks are wrapped so
+each block carries its size, and crossing the budget becomes an uncatchable
+termination at the next interrupt poll, reported as `BK_ERR_NOMEM`.
 
 Object pools (`PagePool`, `src/pagepool.c3`) serve object classes with similar storage needs:
 
