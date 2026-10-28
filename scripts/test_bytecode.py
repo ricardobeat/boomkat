@@ -24,7 +24,7 @@ def compile_file(generator, source, image):
 
 
 def image_fields(data):
-    """Locate mutation targets in BKBC v7 (see bytecode_image.c3::encode).
+    """Locate mutation targets in BKBC v8 (see bytecode_image.c3::encode).
 
     Keep format knowledge here so mutations cannot silently target other fields.
     Only the first function's prefix is needed; later records are variable-sized.
@@ -51,7 +51,7 @@ def image_fields(data):
 
     assert text('magic') == b'BKBC', 'Unexpected bytecode magic'
     version = word('version')
-    assert version == 7, f'Update image_fields for BKBC version {version}'
+    assert version == 8, f'Update image_fields for BKBC version {version}'
     word('opcode_signature')
     word('capabilities')
     assert word('function_count') > 0, 'Fixture must contain a function'
@@ -79,7 +79,8 @@ def main():
         for name, expected in [('roundtrip', b'bytecode roundtrip passed\n'),
                                ('async', b'bytecode async passed\n'),
                                ('dynamic_disabled', b'dynamic compilation disabled\n'),
-                               ('core_builtins', b'core builtins passed\n')]:
+                               ('core_builtins', b'core builtins passed\n'),
+                               ('string_widths', b'string widths passed\n')]:
             image = tmp / (name + '.bkbc')
             compile_file(GEN, ROOT / 'test/bytecode' / (name + '.js'), image)
             for runner in RUNNERS:
