@@ -201,7 +201,6 @@ struct Runtime {
 struct Ctx {
     Runtime* rt;
     void*    bctx;   // builtins::BuiltinContext*, null outside a host callback
-    ulong    host_return;  // value staged by bk_return during a host callback
     heap::Realm* realm;
     Ctx* next;
     ContextState saved;
@@ -845,7 +844,6 @@ fn HString* intern_builder(Runtime* rt, builtins::StrBuf* sb) {
 // ============================================================================
 
 alias BkCFunction = fn ulong(void*, ulong, uint, ulong*, void*);
-alias BkHostFn = fn void(void*, void*);
 
 struct HostPayload {
     HostPayload* next;
@@ -855,7 +853,6 @@ struct HostReg {
     HostPayload lifetime;
     void* cfn;
     void* udata;
-    bool simple;  // cfn is a BkHostFn that answers through bk_return
 }
 
 // Arguments and the returned handle borrow the call scope or the registry.
@@ -868,21 +865,17 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
     Ctx* previous = rt.active;
     heap::Realm* previous_realm = rt.heap.realm;
     void* previous_call = ctx.bctx;
-    ulong previous_return = ctx.host_return;
     select_context(ctx);
     ctx.bctx = bctx;
-    ctx.host_return = 0;
     // Values the callback creates are locals of its call scope.
     uint call_depth = bctx.host_scope_slot - 1;
     rt.heap.host_scopes[call_depth].local = true;
     defer {
-        slot_release(rt, ctx.host_return);
-        ctx.host_return = previous_return;
         ctx.bctx = previous_call;
         select_context(previous);
         rt.heap.enter_realm(previous_realm);
     }
-    ulong result = reg.simple ? call_host_fn(rt, ctx, reg) : call_c_function(rt, ctx, bctx, reg);
+    ulong result = call_c_function(rt, ctx, bctx, reg);
     select_context(ctx);
     if (rt.heap.uncatchable_throw) {
         builtins::host_throw(bctx, rt.heap.error_value);
@@ -925,18 +918,6 @@ fn ulong call_c_function(Runtime* rt, Ctx* ctx, builtins::BuiltinContext* bctx, 
     return fnp(ctx, scope_handle(rt, depth, heap::HOST_SCOPE_THIS), argc, args, reg.udata);
 }
 
-// A bk_host_fn reads its arguments through the context and answers with
-// bk_return. A JS exception raised during the call beats any staged value.
-fn ulong call_host_fn(Runtime* rt, Ctx* ctx, HostReg* reg) {
-    ulong before = rt.exception;
-    ((BkHostFn)reg.cfn)(ctx, reg.udata);
-    select_context(ctx);
-    if (rt.exception != 0 && rt.exception != before) return 0;
-    ulong result = ctx.host_return;
-    ctx.host_return = 0;
-    return result != 0 ? result : IMM_UNDEFINED;
-}
-
 // Returns a ring buffer of at least need+1 bytes for bk_cstr, or null.
 fn char* cstr_slot(Runtime* rt, usz need) {
     uint i = rt.cstr_next;
@@ -954,11 +935,11 @@ fn char* cstr_slot(Runtime* rt, usz need) {
 }
 
 fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* udata,
-                       int arity, bool constructable, TVal* out, bool simple = false) {
+                       int arity, bool constructable, TVal* out) {
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, HostReg::size);
     if (raw == null) { set_err(rt, BK_ERR_NOMEM, "out of memory"); return BK_ERR_NOMEM; }
     HostReg* reg = (HostReg*)raw;
-    *reg = { .cfn = cfn, .udata = udata, .simple = simple };
+    *reg = { .cfn = cfn, .udata = udata };
     return make_fn_value(rt, name, (void*)&host_trampoline, reg, arity, constructable, out);
 }
 

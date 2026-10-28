@@ -2,34 +2,36 @@
 #include <stdio.h>
 #include <assert.h>
 
-static void add(bk_ctx js, void *opaque) {
-    (void)opaque;
+#define CALLBACK(name) static bk_value name(bk_ctx js, bk_value self, unsigned argc, \
+                                            const bk_value *argv, void *opaque)
+
+CALLBACK(add) {
+    (void)self; (void)opaque;
     double total = 0;
-    for (unsigned i = 0; i < bk_argc(js); i++) total += bk_to_number(js, bk_arg(js, i));
-    bk_return_number(js, total);
+    for (unsigned i = 0; i < argc; i++) total += bk_to_number(js, argv[i]);
+    return bk_new_number(js, total);
 }
 
-static void describe(bk_ctx js, void *prefix) {
+CALLBACK(describe) {
+    (void)argv; (void)argc;
     char text[64];
-    snprintf(text, sizeof text, "%s%s:%s", (const char *)prefix,
-             bk_cstr(js, bk_this(js), NULL), bk_cstr(js, bk_arg(js, 3), NULL));
-    bk_return_str(js, text);
+    snprintf(text, sizeof text, "%s%s:%s", (const char *)opaque,
+             bk_cstr(js, self, NULL), bk_cstr(js, bk_arg(js, 3), NULL));
+    return bk_str(js, text);
 }
 
-static void fail(bk_ctx js, void *opaque) {
-    (void)opaque;
-    bk_return_number(js, 1);
-    bk_throw_error(js, BK_ERROR_RANGE, "nope");
+CALLBACK(fail) {
+    (void)self; (void)argc; (void)argv; (void)opaque;
+    bk_new_number(js, 1);
+    return bk_throw_error(js, BK_ERROR_RANGE, "nope");
 }
 
-static void forward(bk_ctx js, void *opaque) {
-    (void)opaque;
-    bk_value result = bk_call(js, bk_arg(js, 0), 0, NULL, 0);
-    if (!bk_is_exception(result)) bk_return(js, result);
-    bk_free(js, result);
+CALLBACK(forward) {
+    (void)self; (void)argc; (void)opaque;
+    return bk_call(js, argv[0], BK_UNDEFINED, NULL, 0);
 }
 
-static void nothing(bk_ctx js, void *opaque) { (void)js; (void)opaque; }
+CALLBACK(nothing) { (void)js; (void)self; (void)argc; (void)argv; (void)opaque; return BK_UNDEFINED; }
 
 static void expect(bk_ctx js, const char *source, const char *want) {
     bk_value value = bk_eval(js, source);
@@ -81,7 +83,7 @@ int main(void) {
     bk_free(js, answer);
     bk_free(js, obj);
 
-    assert(bk_arg(js, 0) == 0 && bk_argc(js) == 0 && bk_return(js, 0) == BK_ERR_INVALID);
+    assert(bk_arg(js, 0) == 0 && bk_argc(js) == 0);
     assert(bk_exec(js, "globalThis.ran = true") == 0 && bk_exec(js, "throw 1") == 1);
     bk_destroy(js);
 

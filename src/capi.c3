@@ -1007,7 +1007,7 @@ fn int bk_set_function_list(void* ctxp, ulong target_id, BkFnDef* defs) @export(
         usz nlen = 0;
         while (d.name[nlen] != 0) nlen++;
 
-        int rc = install_function(rt, target, d.name[:nlen], d.cfn, d.udata, d.arity, d.flags, false);
+        int rc = install_function(rt, target, d.name[:nlen], d.cfn, d.udata, d.arity, d.flags);
         if (rc != BK_OK) return rc;
     }
     return BK_OK;
@@ -1015,9 +1015,9 @@ fn int bk_set_function_list(void* ctxp, ulong target_id, BkFnDef* defs) @export(
 
 // Install one host function on `target`, or as a global when it is null.
 fn int install_function(Runtime* rt, HObject* target, char[] name, void* cfn, void* udata,
-                        int arity, uint flags, bool simple) {
+                        int arity, uint flags) {
     TVal fv;
-    int rc = embed::make_c_function(rt, name, cfn, udata, arity, (flags & BK_CTOR) != 0, &fv, simple);
+    int rc = embed::make_c_function(rt, name, cfn, udata, arity, (flags & BK_CTOR) != 0, &fv);
     if (rc != BK_OK) return rc;
     if (target == null) return embed::declare_global(rt, name, fv);
     HString* k = rt.heap.str_intern(name);
@@ -1039,7 +1039,7 @@ fn int bk_register_fn(void* ctxp, ulong target_id, char* name, void* fn_ptr, int
         target = as_object(ctxp, target_id, &ov);
         if (target == null) return rt.errcode;
     }
-    return install_function(rt, target, ((ZString)name).str_view(), fn_ptr, udata, arity, flags, true);
+    return install_function(rt, target, ((ZString)name).str_view(), fn_ptr, udata, arity, flags);
 }
 
 fn uint bk_argc(void* ctxp) @export("bk_argc") {
@@ -1061,20 +1061,6 @@ fn ulong bk_this(void* ctxp) @export("bk_this") {
     void* bctx = bctx_of(ctxp);
     if (bctx == null) return 0;
     return embed::scope_handle(rt_of(ctxp), call_depth(bctx), (ulong)heap::HOST_SCOPE_THIS);
-}
-
-fn int bk_return(void* ctxp, ulong id) @export("bk_return") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return BK_ERR_INVALID;
-    if (bctx_of(ctxp) == null) return fail(rt, BK_ERR_INVALID, "bk_return outside a host function");
-    TVal value;
-    if (!resolve(ctxp, id, &value)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
-    ulong held = store(rt, value);
-    if (held == 0) return BK_ERR_FULL;
-    Ctx* ctx = (Ctx*)ctxp;
-    embed::slot_release(rt, ctx.host_return);
-    ctx.host_return = held;
-    return BK_OK;
 }
 
 fn int bk_set_global_property(void* ctxp, char* name, usz name_len, ulong val_id)
