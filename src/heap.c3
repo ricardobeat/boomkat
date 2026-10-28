@@ -544,6 +544,11 @@ struct HostScope {
     uint base;
     uint count;
     uint generation;
+    // Embedding calls made while this is the innermost scope store their
+    // results here instead of in the registry.
+    bool local;
+    // Opened by the host (bk_scope_open) rather than pushed for a host call.
+    bool opened;
 }
 
 // --- Heap struct ---
@@ -958,6 +963,9 @@ struct Heap {
     // Monotonic counter stamped into each handle. Never reset, so a handle
     // from a popped scope can never collide with a live one.
     uint       host_scope_generation;
+    // Host function frames on the native stack. Scopes the host opens itself
+    // do not count.
+    uint       host_call_depth;
     // Monotonic compile-time id for class private-slot binding names
     // ("#priv:<id>:foo"), one per class body. Per-runtime: every compiler
     // context in one runtime shares it, so sibling classes across the
@@ -2656,6 +2664,7 @@ fn void Heap.reset(&self) {
     self.addon_handle_count = 0;
     self.host_vals_len = 0;
     self.host_scope_depth = 0;
+    self.host_call_depth = 0;
     self.join_visited_count = 0;
     self.unhandled_count    = 0;
     self.reporting_rejections = false;
@@ -3047,10 +3056,14 @@ fn HostClassEntry* Heap.host_class_at(&self, uint id) {
 const uint HOST_SCOPE_THIS = 0;
 const uint HOST_SCOPE_NEW_TARGET = 1;
 const uint HOST_SCOPE_ARG0 = 2;
+// Scope depth and slot index each fit the bits a handle gives them.
+const uint HOST_SCOPE_MAX_DEPTH = 0x7FFF;
+const uint HOST_SCOPE_MAX_INDEX = 0x1FFFF;
 
 // Push a scope of `count` slots, all undefined, for one host callback and
 // return its depth index, or -1.
 fn long Heap.host_scope_push(&self, uint count) {
+    if (self.host_scope_depth >= HOST_SCOPE_MAX_DEPTH) return -1;
     if (self.host_scope_depth >= self.host_scope_capacity) {
         uint new_cap = self.host_scope_capacity == 0 ? 4 : self.host_scope_capacity * 2;
         void* grown = self.realloc_func(self.heap_udata, (void*)self.host_scopes, (usz)new_cap * HostScope::size);
@@ -3070,7 +3083,7 @@ fn long Heap.host_scope_push(&self, uint count) {
     self.host_vals_len = base + count;
     uint depth = self.host_scope_depth;
     self.host_scope_generation++;
-    self.host_scopes[depth] = { base, count, self.host_scope_generation };
+    self.host_scopes[depth] = { base, count, self.host_scope_generation, false, false };
     self.host_scope_depth++;
     return (long)depth;
 }
@@ -3085,6 +3098,29 @@ fn void Heap.host_scope_pop(&self) {
     for (uint i = 0; i < sc.count; i++) self.decref_tval(&self.host_vals[sc.base + i]);
     self.host_vals_len = sc.base;
     *sc = { };
+}
+
+// Append `v` to the innermost scope and return its index, or -1 when the
+// scope is full or the slot cannot be allocated.
+fn long Heap.host_scope_append(&self, TVal v) {
+    if (self.host_scope_depth == 0) return -1;
+    HostScope* sc = &self.host_scopes[self.host_scope_depth - 1];
+    if (sc.count > HOST_SCOPE_MAX_INDEX) return -1;
+    uint at = sc.base + sc.count;
+    if (at >= self.host_vals_capacity) {
+        uint new_cap = max(self.host_vals_capacity * 2, at + 1, 16u);
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_vals, (usz)new_cap * TVal::size);
+        if (grown == null) return -1;
+        self.host_vals = (TVal*)grown;
+        self.host_vals_capacity = new_cap;
+    }
+    if (v.is_refcounted() && v.get_heapptr() != null) ((HeapHeader*)v.get_heapptr()).incref();
+    self.host_vals[at] = v;
+    // The root scan may already have passed this slot.
+    self.shade_root_tval(v);
+    sc.count++;
+    self.host_vals_len = at + 1;
+    return (long)(sc.count - 1);
 }
 
 // Store `v` in scope `depth` at `index`, returning success.

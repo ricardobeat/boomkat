@@ -65,11 +65,21 @@ fn bool resolve(void* ctxp, ulong id, TVal* out) {
     return embed::resolve_handle(rt_of(ctxp), id, out);
 }
 
-// Store a value in the registry and return its handle, or 0 with the failure
-// recorded. Undefined, null and booleans return their immediate handle. Reports exhaustion for every value kind, undefined included:
+// Store a value and return its handle, or 0 with the failure recorded: a local
+// of the innermost local scope, else a registry root. Undefined, null and
+// booleans return their immediate handle. Reports exhaustion for every value kind, undefined included:
 // handle 0 reads back as undefined, so returning it for a failed registration
 // would be a silent wrong answer rather than an error.
 fn ulong store(Runtime* rt, TVal v) {
+    ulong imm = embed::immediate_of(v);
+    if (imm != 0) return imm;
+    ulong id = embed::store_value(rt, v);
+    if (id == 0) embed::set_err(rt, BK_ERR_FULL, embed::local_scope(rt) != null ? "local scope full" : "value registry full");
+    return id;
+}
+
+// Store `v` as a registry root whatever scope is open.
+fn ulong store_root(Runtime* rt, TVal v) {
     ulong imm = embed::immediate_of(v);
     if (imm != 0) return imm;
     ulong id = embed::slot_alloc(rt, v);
@@ -265,7 +275,51 @@ fn ulong bk_dup_value(void* ctxp, ulong id) @export("bk_dup_value") {
     if (rt == null) return 0;
     TVal v;
     if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    return store_root(rt, v);
+}
+
+// ============================================================================
+// Local scopes
+// ============================================================================
+
+fn uint bk_scope_open(void* ctxp) @export("bk_scope_open") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    uint id = embed::scope_open(rt);
+    if (id == 0) fail(rt, BK_ERR_FULL, "too many nested scopes");
+    return id;
+}
+
+fn void bk_scope_close(void* ctxp, uint scope) @export("bk_scope_close") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt != null) embed::scope_close(rt, scope);
+}
+
+fn ulong bk_scope_close_escape(void* ctxp, uint scope, ulong id) @export("bk_scope_close_escape") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { embed::scope_close(rt, scope); return bad_handle(rt); }
+    // Hold the value while the scope that may be its only owner closes.
+    if (v.is_refcounted() && v.get_heapptr() != null) ((HeapHeader*)v.get_heapptr()).incref();
+    defer rt.heap.decref_tval(&v);
+    if (!embed::scope_close(rt, scope)) { fail(rt, BK_ERR_INVALID, "scope is not open"); return 0; }
     return store(rt, v);
+}
+
+fn ulong bk_scope_local(void* ctxp, ulong id) @export("bk_scope_local") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    return store(rt, v);
+}
+
+fn uint bk_scope_current(void* ctxp) @export("bk_scope_current") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    heap::HostScope* sc = embed::local_scope(rt);
+    return sc == null ? 0 : sc.generation;
 }
 
 // ============================================================================
@@ -511,10 +565,10 @@ fn ulong bk_get_exception(void* ctxp) @export("bk_get_exception") {
     ulong id = embed::take_exception(rt);
     TVal v;
     if (!embed::slot_get(rt, id, &v)) return id;
-    ulong imm = embed::immediate_of(v);
-    if (imm == 0) return id;
+    if (embed::immediate_of(v) == 0 && embed::local_scope(rt) == null) return id;
+    ulong out = store(rt, v);
     embed::slot_release(rt, id);
-    return imm;
+    return out;
 }
 
 // ============================================================================
@@ -686,7 +740,7 @@ fn ulong get_key(void* ctxp, ulong obj_id, HString* k) {
     if (!ov.is_object()) {
         TVal wv;
         wv.set_object(obj);
-        wrapper = store(rt, wv);
+        wrapper = store_root(rt, wv);
         if (wrapper == 0) return 0;
     }
     defer if (wrapper != 0) embed::slot_release(rt, wrapper);
@@ -993,16 +1047,20 @@ fn uint bk_argc(void* ctxp) @export("bk_argc") {
     return bctx == null ? 0 : builtins::host_argc((builtins::BuiltinContext*)bctx);
 }
 
+// The scope depth of the live call behind a context.
+macro uint call_depth(void* bctx) => ((builtins::BuiltinContext*)bctx).host_scope_slot - 1;
+
 fn ulong bk_arg(void* ctxp, uint i) @export("bk_arg") {
-    if (bctx_of(ctxp) == null) return 0;
-    // Any index past argc reads as undefined; clamp so it stays in the index field.
-    ulong index = min((ulong)heap::HOST_SCOPE_ARG0 + i, embed::SCOPE_INDEX_MASK);
-    return embed::scope_handle(rt_of(ctxp), index);
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null) return 0;
+    if (i >= builtins::host_argc((builtins::BuiltinContext*)bctx)) return embed::IMM_UNDEFINED;
+    return embed::scope_handle(rt_of(ctxp), call_depth(bctx), (ulong)heap::HOST_SCOPE_ARG0 + i);
 }
 
 fn ulong bk_this(void* ctxp) @export("bk_this") {
-    if (bctx_of(ctxp) == null) return 0;
-    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_THIS);
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null) return 0;
+    return embed::scope_handle(rt_of(ctxp), call_depth(bctx), (ulong)heap::HOST_SCOPE_THIS);
 }
 
 fn int bk_return(void* ctxp, ulong id) @export("bk_return") {
@@ -1030,8 +1088,9 @@ fn int bk_set_global_property(void* ctxp, char* name, usz name_len, ulong val_id
 }
 
 fn ulong bk_get_new_target(void* ctxp) @export("bk_get_new_target") {
-    if (bctx_of(ctxp) == null) return 0;
-    return embed::scope_handle(rt_of(ctxp), (ulong)heap::HOST_SCOPE_NEW_TARGET);
+    void* bctx = bctx_of(ctxp);
+    if (bctx == null) return 0;
+    return embed::scope_handle(rt_of(ctxp), call_depth(bctx), (ulong)heap::HOST_SCOPE_NEW_TARGET);
 }
 
 fn int bk_is_constructor_call(void* ctxp) @export("bk_is_constructor_call") {

@@ -3712,9 +3712,9 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     ctx.result_undefined();
 
     // Bound host nesting before touching any VM state, so the caller sees an
-    // unmodified engine alongside the pending throw. host_scope_depth is
+    // unmodified engine alongside the pending throw. host_call_depth is
     // exactly the count of host frames currently on the C3 stack.
-    if (heap.host_scope_depth >= MAX_HOST_DEPTH) {
+    if (heap.host_call_depth >= MAX_HOST_DEPTH) {
         host_throw_error(ctx, HOST_ERR_RANGE, "Maximum call stack size exceeded");
         return;
     }
@@ -3782,7 +3782,9 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // returns. Saving the mark and restoring it, rather than clearing, keeps a
     // nested host call from invalidating its caller's handles.
     uint addon_handle_mark = heap.addon_handle_count;
+    heap.host_call_depth++;
     handler(ctx, entry.udata);
+    heap.host_call_depth--;
     heap.addon_handles_rewind(addon_handle_mark);
     host_text_free(ctx);
 
@@ -3792,7 +3794,8 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
         ctx.copy_result(ctx.this_val);
     }
 
-    heap.host_scope_pop();
+    // Scopes the handler opened and left open close with its call.
+    while (heap.host_scope_depth > depth) heap.host_scope_pop();
     ctx.host_scope_slot = 0;
     heap.leave_native_frame();
 }

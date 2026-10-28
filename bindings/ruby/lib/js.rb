@@ -829,7 +829,7 @@ module JS
         Lib.bk_new_string(ctx, s, bytes.bytesize)
       when Callback
         raise HostThrow.new('callback belongs to another call', :type) unless value.scope.equal?(call)
-        Lib.bk_dup_value(ctx, value.handle)
+        value.handle
       else
         raise HostThrow.new(
           "host function returned a #{value.class}, which has no JS " \

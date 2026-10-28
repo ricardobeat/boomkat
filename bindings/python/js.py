@@ -624,7 +624,8 @@ class Runtime:
             handle = lib.bk_new_string_utf16(ctx, units, len(units))
         elif isinstance(result, JsValue):
             # Returning an argument straight back, or the result of a callback.
-            return lib.bk_dup_value(ctx, result._handle)
+            # The engine copies the returned handle, so it is passed as is.
+            return result._handle
         elif isinstance(result, (list, dict, tuple)):
             # No ABI constructor builds an object or array inside a callback,
             # and bk_eval must not be re-entered from one. Returning JSON text
@@ -636,7 +637,6 @@ class Runtime:
         else:
             raise TypeError("no JS equivalent; return a number, string, bool, "
                             "None, or a value from call.raw")
-        # go straight back to the registry.
         return handle
 
     def drain_microtasks(self):
