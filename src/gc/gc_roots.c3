@@ -112,7 +112,8 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                     self.gc_root_stage++;
                     continue;
                 }
-                self.mark_hobject(self.host_classes[self.gc_root_index++].proto);
+                self.mark_hobject(self.host_classes[self.gc_root_index].proto);
+                self.mark_hobject(self.host_classes[self.gc_root_index++].ctor);
             case 8:
                 if (self.valstack_base == null || self.valstack_top_ptr == null
                     || self.gc_root_index >= (uint)(*self.valstack_top_ptr - self.valstack_base)) {

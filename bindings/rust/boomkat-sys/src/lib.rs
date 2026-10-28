@@ -63,6 +63,22 @@ pub struct bk_fn_def {
 /// is destroyed, or creation fails. It must not call the engine.
 pub type bk_finalizer = unsafe extern "C" fn(data: *mut c_void, opaque: *mut c_void);
 
+/// A host class id; 0 is invalid.
+pub type bk_class = u32;
+pub const BK_CLASS_DEFER_FINALIZE: c_uint = 1;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct bk_class_def {
+    pub name: *const c_char,
+    pub parent: bk_class,
+    pub finalize: Option<bk_finalizer>,
+    pub construct: Option<bk_c_function>,
+    pub arity: c_int,
+    pub flags: c_uint,
+    pub opaque: *mut c_void,
+}
+
 /// The all-zero entry that terminates a registration table.
 pub const BK_FN_END: bk_fn_def = bk_fn_def {
     name: std::ptr::null(),
@@ -405,6 +421,17 @@ extern "C" {
         finalize: Option<bk_finalizer>,
         finalize_opaque: *mut c_void,
     ) -> bk_value;
+    pub fn bk_define_class(
+        ctx: bk_ctx,
+        def: *const bk_class_def,
+        constructor_out: *mut bk_value,
+        prototype_out: *mut bk_value,
+    ) -> bk_class;
+    pub fn bk_new_instance(ctx: bk_ctx, cls: bk_class, payload: *mut c_void, new_target: bk_value) -> bk_value;
+    pub fn bk_get_instance_payload(ctx: bk_ctx, value: bk_value, cls: bk_class) -> *mut c_void;
+    pub fn bk_set_instance_payload(ctx: bk_ctx, value: bk_value, cls: bk_class, payload: *mut c_void) -> c_int;
+    pub fn bk_get_instance_class(ctx: bk_ctx, value: bk_value) -> bk_class;
+    pub fn bk_run_finalizers(runtime: bk_runtime) -> c_uint;
     pub fn bk_set_function_list(
         ctx: bk_ctx,
         target: bk_value,

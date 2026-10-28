@@ -3729,7 +3729,10 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // collection the host triggers.
     bool made_this = false;
     if (ctx.is_constructor && !ctx.this_val.is_object()) {
-        HObject*? inst_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        // A host class constructor allocates an instance of its class with no
+        // payload yet; the callback attaches one.
+        heap::HostClassEntry* cls = entry.class_id != 0 ? heap.host_class_at(entry.class_id - 1) : null;
+        HObject*? inst_raw = heap.alloc_object(cls != null ? hobject::ObjClass.HOST : hobject::ObjClass.OBJECT);
         if (catch inst_raw) {
             heap.leave_native_frame();
             ctx.should_throw = true;
@@ -3737,7 +3740,11 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
             return;
         }
         HObject* inst = inst_raw;
-        heap.set_prototype(inst, heap.object_proto);
+        if (cls != null) {
+            (*inst.extra_ptr()).host.class_id = entry.class_id - 1;
+            (*inst.extra_ptr()).host.payload = null;
+        }
+        heap.set_prototype(inst, cls != null && cls.proto != null ? cls.proto : heap.object_proto);
         HObject* src = ctx.new_target != null ? ctx.new_target : ctx.callee_obj;
         if (src != null) {
             HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
