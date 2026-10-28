@@ -40,7 +40,7 @@ write_probe() {
 #include <string.h>
 int main(void) {
     bk_runtime runtime = bk_new_runtime(NULL);
-    bk_ctx ctx = bk_new_context(runtime);
+    bk_ctx ctx = bk_new_context(runtime, NULL);
     if (!ctx) return 1;
     const char *s = "6*7";
     bk_value v = bk_eval_ex(ctx, s, strlen(s), "smoke.js", BK_EVAL_GLOBAL);
@@ -218,7 +218,7 @@ const c = @cImport({ @cInclude("boomkat.h"); });
 pub fn main() void {
     const runtime = c.bk_new_runtime(null) orelse return;
     defer c.bk_free_runtime(runtime);
-    const ctx = c.bk_new_context(runtime) orelse return;
+    const ctx = c.bk_new_context(runtime, null) orelse return;
     defer c.bk_free_context(ctx);
     const src = "6*7";
     const v = c.bk_eval_ex(ctx, src, src.len, null, c.BK_EVAL_GLOBAL);
@@ -260,7 +260,7 @@ EOF
 use std::os::raw::{c_char, c_double, c_int, c_ulonglong, c_void};
 extern "C" {
     fn bk_new_runtime(options: *const c_void) -> *mut c_void;
-    fn bk_new_context(runtime: *mut c_void) -> *mut c_void;
+    fn bk_new_context(runtime: *mut c_void, options: *const c_void) -> *mut c_void;
     fn bk_free_runtime(runtime: *mut c_void);
     fn bk_free_context(ctx: *mut c_void);
     fn bk_eval_ex(ctx: *mut c_void, src: *const c_char, len: usize, filename: *const c_char, flags: u32) -> c_ulonglong;
@@ -270,7 +270,7 @@ extern "C" {
 fn main() {
     unsafe {
         let runtime = bk_new_runtime(std::ptr::null());
-        let ctx = bk_new_context(runtime);
+        let ctx = bk_new_context(runtime, std::ptr::null());
         assert!(!ctx.is_null(), "bk_new_context");
         let s = b"6*7";
         let v = bk_eval_ex(ctx, s.as_ptr() as *const c_char, s.len(), std::ptr::null(), 0);

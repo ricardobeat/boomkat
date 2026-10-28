@@ -303,11 +303,20 @@ fn void activate_context(Runtime* rt, Ctx* ctx) @noinline {
     rt.active = ctx;
 }
 
-fn Ctx* new_context(Runtime* rt) {
-    if (!rt.root_used) { rt.root_used = true; return &rt.root; }
+// Context options, from bk_context_options.
+const uint CONTEXT_NO_EVAL = 1;
+const uint CONTEXT_CANNOT_BLOCK = 2;
+
+// A context: the runtime's primary realm on first use, a new realm after. A
+// context with options, or with a host global object (`global` and its
+// prototype), always gets a new realm, so the primary realm keeps defaults.
+fn Ctx* new_context(Runtime* rt, uint flags = 0, HObject* global = null, HObject* global_proto = null) {
+    if (!rt.root_used && flags == 0 && global == null) { rt.root_used = true; return &rt.root; }
     void* raw = rt.heap.alloc_func(rt.heap.heap_udata, Ctx::size);
     if (raw == null) return null;
-    if (try realm = rt.heap.create_realm()) {
+    if (try realm = rt.heap.create_realm(global, global_proto)) {
+        realm.state.no_eval = (flags & CONTEXT_NO_EVAL) != 0;
+        realm.state.no_block = (flags & CONTEXT_CANNOT_BLOCK) != 0;
         Ctx* ctx = (Ctx*)raw;
         *ctx = { .rt = rt, .realm = realm, .next = rt.contexts };
         rt.contexts = ctx;

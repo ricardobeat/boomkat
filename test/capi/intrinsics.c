@@ -55,7 +55,7 @@ int main(void) {
     assert(bk_get_intrinsic(ctx, (bk_intrinsic)99) == 0 && bk_get_error_code(ctx) == BK_ERR_INVALID);
 
     /* A second context has its own intrinsics. */
-    bk_ctx other = bk_new_context(bk_get_runtime(ctx));
+    bk_ctx other = bk_new_context(bk_get_runtime(ctx), NULL);
     assert(!bk_strict_equals(ctx, bk_get_intrinsic(other, BK_INTRINSIC_ARRAY_PROTOTYPE),
                              bk_get_intrinsic(ctx, BK_INTRINSIC_ARRAY_PROTOTYPE)));
 

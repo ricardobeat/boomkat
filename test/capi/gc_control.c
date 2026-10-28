@@ -27,7 +27,7 @@ int main(void) {
     bk_runtime_options options = { 0 };
     options.heap_limit = 16u << 20;
     bk_runtime rt = bk_new_runtime(&options);
-    bk_ctx ctx = bk_new_context(rt);
+    bk_ctx ctx = bk_new_context(rt, NULL);
     bk_heap_stats s = stats(rt);
     assert(s.heap_bytes > 0 && s.heap_limit == 16u << 20);
 

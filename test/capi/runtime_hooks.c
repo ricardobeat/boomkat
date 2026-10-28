@@ -66,7 +66,7 @@ static void expect_interrupt(bk_ctx ctx, const char *src) {
 
 int main(void) {
     alarm(20);
-    bk_ctx ctx = bk_new_context(bk_new_runtime(NULL));
+    bk_ctx ctx = bk_new_context(bk_new_runtime(NULL), NULL);
     assert(ctx);
     bk_set_promise_rejection_tracker(bk_get_runtime(ctx), rejection, &pending);
     eval_ok(ctx, "var p = Promise.reject('first');");

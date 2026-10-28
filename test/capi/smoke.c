@@ -6,7 +6,7 @@
 #include <string.h>
 
 int main(void) {
-    bk_ctx ctx = bk_new_context(bk_new_runtime(NULL));
+    bk_ctx ctx = bk_new_context(bk_new_runtime(NULL), NULL);
     if (!ctx) return 1;
     bk_value v = bk_eval_ex(ctx, "6*7", strlen("6*7"), "<eval>", BK_EVAL_GLOBAL);
     if (!v) { bk_free_runtime(bk_get_runtime(ctx)); return 1; }

@@ -333,7 +333,7 @@ pub const Runtime = struct {
     pub fn init() Error!Runtime {
         const runtime = c.bk_new_runtime(null) orelse return Error.OutOfMemory;
         errdefer c.bk_free_runtime(runtime);
-        return .{ .runtime = runtime, .ptr = c.bk_new_context(runtime) orelse return Error.OutOfMemory };
+        return .{ .runtime = runtime, .ptr = c.bk_new_context(runtime, null) orelse return Error.OutOfMemory };
     }
 
     /// Destroy the runtime. All outstanding `Value`s from it become invalid;

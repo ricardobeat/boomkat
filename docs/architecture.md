@@ -1709,7 +1709,7 @@ specifier means.
 
 ### Realms
 
-`bk_new_runtime` owns an isolated heap and VM. `bk_new_context(runtime)` creates
+`bk_new_runtime` owns an isolated heap and VM. `bk_new_context(runtime, options)` creates
 an independently released realm, sharing interned strings, symbols, the value
 registry, and the job queue with its siblings. Each realm owns its globals,
 intrinsics, builtin promotion cache, and module cache. Context records and realm

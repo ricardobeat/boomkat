@@ -33,7 +33,9 @@ fn void Heap.switch_realm(&self, Realm* target) @noinline {
     }
 }
 
-fn Realm*? Heap.create_realm(&self) {
+// A new realm with its own global object and intrinsics. `global`, when
+// given, becomes the global object, with `global_proto` as its prototype.
+fn Realm*? Heap.create_realm(&self, HObject* global_object = null, HObject* global_proto = null) {
     vm::Vm* v = (vm::Vm*)self.vm_ptr;
     if (self.realms == null) {
         void* root = self.alloc_func(self.heap_udata, Realm::size);
@@ -49,13 +51,14 @@ fn Realm*? Heap.create_realm(&self) {
     self.realms.next = realm;
     Realm* previous = self.enter_realm(realm);
     defer self.enter_realm(previous);
-    env::EnvRecord* global = env::env_create(self, null)!;
+    env::EnvRecord* global = env::env_create(self, null, global_object)!;
     v.global_env = global;
     v.global_lex_env = env::env_create_declarative(self, global)!;
     self.register_gc_root(global.bindings.as_header());
     self.register_gc_root(v.global_lex_env.bindings.as_header());
     if (!builtins::register_builtins(global, self)) return types::ALLOC_ERROR~;
     if (vm::test262_host_enabled && !builtins::register_test262_host(global, self)) return types::ALLOC_ERROR~;
+    if (global_object != null && global_proto != null) self.set_prototype(global_object, global_proto);
     return realm;
 }
 

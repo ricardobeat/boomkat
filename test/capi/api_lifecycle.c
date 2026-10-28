@@ -48,7 +48,7 @@ static void check(bk_ctx ctx, const char *source) {
 int main(void) {
     assert(strcmp(bk_status_str(BK_ERR_UNSUPPORTED), "UNSUPPORTED") == 0);
     bk_runtime runtime = bk_new_runtime(NULL);
-    bk_ctx first = bk_new_context(runtime), second = bk_new_context(runtime);
+    bk_ctx first = bk_new_context(runtime, NULL), second = bk_new_context(runtime, NULL);
     assert(runtime && first && second && first != second);
     bk_set_runtime_data(runtime, 0, &marker);
     bk_set_context_data(second, 0, &marker);
@@ -158,7 +158,7 @@ int main(void) {
     check(second, "first.sum(8,9) === 17");
     callback = eval(second, "first.sum");
     bk_free_context(second);
-    bk_ctx third = bk_new_context(runtime);
+    bk_ctx third = bk_new_context(runtime, NULL);
     check(third, "typeof sum==='undefined'");
     bk_set_global_property(third, "escaped", 7, callback);
     bk_free_value(third, callback);

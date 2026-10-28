@@ -39,7 +39,7 @@ static void test_independence(void) {
     bk_ctx A = NULL, B = NULL, C = NULL;
     bk_value t; double d; char s[64];
 
-    if (!(A = bk_new_context(bk_new_runtime(NULL))) || !(B = bk_new_context(bk_new_runtime(NULL))) || !(C = bk_new_context(bk_new_runtime(NULL)))) {
+    if (!(A = bk_new_context(bk_new_runtime(NULL), NULL)) || !(B = bk_new_context(bk_new_runtime(NULL), NULL)) || !(C = bk_new_context(bk_new_runtime(NULL), NULL))) {
         check("three runtimes open", 0);
         return;
     }
@@ -143,7 +143,7 @@ static void test_reentry(void) {
     bk_ctx A = NULL, B = NULL;
     double d, ua = 10, ub = 20;
 
-    if (!(A = bk_new_context(bk_new_runtime(NULL))) || !(B = bk_new_context(bk_new_runtime(NULL)))) {
+    if (!(A = bk_new_context(bk_new_runtime(NULL), NULL)) || !(B = bk_new_context(bk_new_runtime(NULL), NULL))) {
         check("reentry: two runtimes open", 0);
         return;
     }
@@ -171,7 +171,7 @@ static void test_cross_handles(void) {
     bk_value va;
     double d; char s[64]; size_t n = 0;
 
-    if (!(A = bk_new_context(bk_new_runtime(NULL))) || !(B = bk_new_context(bk_new_runtime(NULL)))) {
+    if (!(A = bk_new_context(bk_new_runtime(NULL), NULL)) || !(B = bk_new_context(bk_new_runtime(NULL), NULL))) {
         check("cross: two runtimes open", 0);
         return;
     }

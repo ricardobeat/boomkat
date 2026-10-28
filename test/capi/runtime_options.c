@@ -55,7 +55,7 @@ int main(void) {
     bk_runtime runtime = bk_new_runtime(&options);
     assert(runtime);
     assert(c.total_allocs > 0 && c.live_bytes > 0);
-    bk_ctx ctx = bk_new_context(runtime);
+    bk_ctx ctx = bk_new_context(runtime, NULL);
     size_t before = c.total_allocs;
     const char *src = "var a = []; for (var i = 0; i < 10000; i++) a.push({i: i, s: 'x' + i}); a.length";
     bk_value v = bk_eval_ex(ctx, src, strlen(src), "options.js", BK_EVAL_GLOBAL);

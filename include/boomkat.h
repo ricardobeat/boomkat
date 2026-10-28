@@ -119,7 +119,23 @@ BK_API void *bk_alloc(bk_runtime runtime, size_t size);
 BK_API void *bk_realloc(bk_runtime runtime, void *ptr, size_t size);
 BK_API void  bk_free_memory(bk_runtime runtime, void *ptr);
 BK_API void bk_free_runtime(bk_runtime runtime);
-BK_API bk_ctx bk_new_context(bk_runtime runtime);
+/* Context options. A context with options or a host-class global gets a
+ * realm of its own. BK_CONTEXT_NO_EVAL makes eval() of a string and the
+ * Function constructors (also generator and async ones) throw EvalError; host
+ * evaluation still works. BK_CONTEXT_CANNOT_BLOCK makes Atomics.wait throw.
+ * With `global_class`, the global object is an instance of that class owning
+ * `global_payload` (the class finalizer runs for it), with the class
+ * prototype as its prototype. Returns NULL for unknown flags or class. */
+#define BK_CONTEXT_NO_EVAL      1u
+#define BK_CONTEXT_CANNOT_BLOCK 2u
+typedef uint32_t bk_class;
+typedef struct {
+    unsigned flags;
+    bk_class global_class;   /* 0 = ordinary global object */
+    void    *global_payload;
+} bk_context_options;
+/* options may be NULL for the defaults. */
+BK_API bk_ctx bk_new_context(bk_runtime runtime, const bk_context_options *options);
 BK_API void bk_free_context(bk_ctx ctx);
 BK_API bk_runtime bk_get_runtime(bk_ctx ctx);
 /* Embedder data: BK_DATA_SLOTS pointers per runtime and per context, NULL
@@ -542,7 +558,6 @@ BK_API void      bk_set_root_tracer(bk_runtime runtime, bk_root_tracer callback,
 
 /* Host classes. Ids are per runtime; 0 is invalid. Instances carry a payload
  * pointer that the class's finalizer receives when the instance is freed. */
-typedef uint32_t bk_class;
 enum { BK_CLASS_DEFER_FINALIZE = 1 };   /* hold finalizers for bk_run_finalizers */
 typedef struct {
     const char   *name;

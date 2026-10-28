@@ -99,7 +99,7 @@ fn void test_freed_handles_release(void* rt) {
 }
 
 fn int main() {
-    void* rt = capi::bk_new_context(capi::bk_new_runtime(null));
+    void* rt = capi::bk_new_context(capi::bk_new_runtime(null), null);
     if (rt == null) {
         io::printn("FAIL could not open runtime");
         return 1;
