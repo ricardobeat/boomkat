@@ -45,6 +45,8 @@ _STATUS_NAMES = {
     -6: "wrong type",
     -7: "buffer too small or registry full",
     -8: "aborted by the interrupt handler",
+    -9: "invalid text encoding",
+    -10: "feature not in this build",
 }
 
 # Value types from bk_get_type.

@@ -139,6 +139,8 @@ pub enum Kind {
     Full,
     /// Source or a string result was not valid UTF-8 / contained a NUL byte.
     Encoding,
+    /// The feature is compiled out of this build.
+    Unsupported,
     /// The ABI returned a status this binding does not know.
     Unknown(c_int),
 }
@@ -154,6 +156,7 @@ impl Kind {
             sys::BK_ERR_TYPE => Kind::Type,
             sys::BK_ERR_FULL => Kind::Full,
             sys::BK_ERR_ENCODING => Kind::Encoding,
+            sys::BK_ERR_UNSUPPORTED => Kind::Unsupported,
             other => Kind::Unknown(other),
         }
     }
@@ -168,6 +171,7 @@ impl Kind {
             Kind::Type => "wrong type",
             Kind::Full => "value registry full",
             Kind::Encoding => "invalid text encoding",
+            Kind::Unsupported => "feature not in this build",
             Kind::Unknown(_) => "unknown error",
         }
     }

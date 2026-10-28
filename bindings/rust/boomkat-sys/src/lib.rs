@@ -95,6 +95,8 @@ pub const BK_ERR_FULL: c_int = -7;
 pub const BK_ERR_INTERRUPT: c_int = -8;
 /// Invalid UTF-8 input, or a lone surrogate read in strict mode.
 pub const BK_ERR_ENCODING: c_int = -9;
+/// Feature compiled out of this build.
+pub const BK_ERR_UNSUPPORTED: c_int = -10;
 
 // `bk_utf8_mode` values for `bk_read_string_utf8`.
 /// A lone surrogate becomes U+FFFD.

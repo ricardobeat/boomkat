@@ -46,6 +46,7 @@ static void check(bk_ctx ctx, const char *source) {
 }
 
 int main(void) {
+    assert(strcmp(bk_status_str(BK_ERR_UNSUPPORTED), "UNSUPPORTED") == 0);
     bk_runtime runtime = bk_new_runtime();
     bk_ctx first = bk_new_context(runtime), second = bk_new_context(runtime);
     assert(runtime && first && second && first != second);

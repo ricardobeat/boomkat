@@ -30,16 +30,17 @@ static inline int bk_is_exception(bk_value value) { return value == BK_EXCEPTION
 
 /* BEGIN GENERATED status (scripts/gen_abi_header.py) */
 typedef enum {
-    BK_OK            =  0,
-    BK_ERR_NOMEM     = -1,  /* allocation failed */
-    BK_ERR_SYNTAX    = -2,  /* compile failed */
-    BK_ERR_THROW     = -3,  /* uncaught JS exception */
-    BK_ERR_INTERNAL  = -4,  /* engine fault with no JS error attached */
-    BK_ERR_INVALID   = -5,  /* null/bad argument, or a handle from elsewhere */
-    BK_ERR_TYPE      = -6,  /* value is not of the requested type */
-    BK_ERR_FULL      = -7,  /* buffer too small, or the registry is full */
-    BK_ERR_INTERRUPT = -8,  /* aborted by the interrupt handler */
-    BK_ERR_ENCODING  = -9   /* invalid UTF-8 input, or a lone surrogate in strict mode */
+    BK_OK              =   0,
+    BK_ERR_NOMEM       =  -1,  /* allocation failed */
+    BK_ERR_SYNTAX      =  -2,  /* compile failed */
+    BK_ERR_THROW       =  -3,  /* uncaught JS exception */
+    BK_ERR_INTERNAL    =  -4,  /* engine fault with no JS error attached */
+    BK_ERR_INVALID     =  -5,  /* null/bad argument, or a handle from elsewhere */
+    BK_ERR_TYPE        =  -6,  /* value is not of the requested type */
+    BK_ERR_FULL        =  -7,  /* buffer too small, or the registry is full */
+    BK_ERR_INTERRUPT   =  -8,  /* aborted by the interrupt handler */
+    BK_ERR_ENCODING    =  -9,  /* invalid UTF-8 input, or a lone surrogate in strict mode */
+    BK_ERR_UNSUPPORTED = -10   /* feature compiled out of this build */
 } bk_status;
 /* END GENERATED status */
 

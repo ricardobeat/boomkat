@@ -42,6 +42,8 @@ pub const Error = error{
     Interrupt,
     /// Invalid UTF-8 input, or a lone surrogate read in strict mode.
     Encoding,
+    /// The feature is compiled out of this build.
+    Unsupported,
 };
 
 fn check(status: c_int) Error!void {
@@ -55,6 +57,7 @@ fn check(status: c_int) Error!void {
         c.BK_ERR_FULL => Error.Full,
         c.BK_ERR_INTERRUPT => Error.Interrupt,
         c.BK_ERR_ENCODING => Error.Encoding,
+        c.BK_ERR_UNSUPPORTED => Error.Unsupported,
         else => Error.Internal,
     };
 }

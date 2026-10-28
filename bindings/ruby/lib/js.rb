@@ -37,6 +37,7 @@ module JS
     FULL       = -7
     INTERRUPT  = -8
     ENCODING   = -9
+    UNSUPPORTED = -10
   end
 
   # Error constructors bk_throw_error can raise, from bk_error_kind.

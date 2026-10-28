@@ -33,6 +33,7 @@ const int BK_ERR_TYPE      = abi::BK_ERR_TYPE;
 const int BK_ERR_FULL      = abi::BK_ERR_FULL;
 const int BK_ERR_INTERRUPT = abi::BK_ERR_INTERRUPT;
 const int BK_ERR_ENCODING  = abi::BK_ERR_ENCODING;
+const int BK_ERR_UNSUPPORTED = abi::BK_ERR_UNSUPPORTED;
 
 const int BK_UTF8_REPLACE = abi::BK_UTF8_REPLACE;
 const int BK_UTF8_STRICT  = abi::BK_UTF8_STRICT;
@@ -1120,6 +1121,7 @@ fn char* status_name(int status) {
         case BK_ERR_FULL:      return "FULL";
         case BK_ERR_INTERRUPT: return "INTERRUPT";
         case BK_ERR_ENCODING:  return "ENCODING";
+        case BK_ERR_UNSUPPORTED: return "UNSUPPORTED";
         default:               return "UNKNOWN";
     }
 }
