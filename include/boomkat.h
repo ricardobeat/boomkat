@@ -414,6 +414,13 @@ BK_API bk_value  bk_promise_resolve(bk_ctx ctx, bk_value value);   /* Promise.re
 /* Promise.prototype.then; a reaction of 0 means none. */
 BK_API bk_value  bk_promise_then(bk_ctx ctx, bk_value promise, bk_value on_fulfilled, bk_value on_rejected);
 
+/* Compiled scripts: compile once, run many times in any context of the
+ * runtime. Flags are BK_EVAL_GLOBAL or BK_EVAL_STRICT. The compiled code
+ * lives until the runtime is destroyed. */
+BK_API bk_value bk_compile(bk_ctx ctx, const char *source, size_t length,
+                           const char *filename, unsigned flags);
+BK_API bk_value bk_run_script(bk_ctx ctx, bk_value script);
+
 /* Event loop integration. The hook runs on the engine thread when a job is
  * enqueued into an empty queue; it must not run JS, and schedules a
  * bk_run_jobs checkpoint instead. */

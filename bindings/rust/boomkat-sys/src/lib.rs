@@ -478,6 +478,14 @@ extern "C" {
     pub fn bk_promise_mark_handled(ctx: bk_ctx, promise: bk_value) -> c_int;
     pub fn bk_promise_resolve(ctx: bk_ctx, value: bk_value) -> bk_value;
     pub fn bk_promise_then(ctx: bk_ctx, promise: bk_value, on_fulfilled: bk_value, on_rejected: bk_value) -> bk_value;
+    pub fn bk_compile(
+        ctx: bk_ctx,
+        source: *const c_char,
+        length: usize,
+        filename: *const c_char,
+        flags: c_uint,
+    ) -> bk_value;
+    pub fn bk_run_script(ctx: bk_ctx, script: bk_value) -> bk_value;
     pub fn bk_set_job_hook(runtime: bk_runtime, hook: Option<bk_job_hook>, opaque: *mut c_void);
     pub fn bk_wait_events(runtime: bk_runtime, timeout_ms: f64) -> c_int;
     pub fn bk_wake(runtime: bk_runtime);

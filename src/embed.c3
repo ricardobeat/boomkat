@@ -206,6 +206,7 @@ struct Runtime {
     // Shared registrations of C callbacks, and the host class of their data.
     HostReg* cfn_regs;
     uint     cfn_data_class;   // id + 1, or 0 before the first use
+    uint     script_class;     // host class of bk_compile scripts, id + 1, or 0
     // Atoms: property keys held by index. An atom is its entry index + 1.
     AtomEntry* atoms;
     uint     atom_cap;
@@ -1314,18 +1315,13 @@ fn int make_c_function(Runtime* rt, char[] name, void* cfn, void* data, BkFinali
 // Eval
 // ============================================================================
 
-// Compiles and runs `src`, writing the completion value to `*out`. Sets
-// `*out_owned` when `*out` carries a reference the caller must release.
-// Returns a BK_* status.
-fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_owned, bool strict = false) {
-    *out_owned = false;
+// Compiles `src` as a global script (sloppy source as indirect eval code),
+// recording a syntax error on failure. Returns a BK_* status.
+fn int compile_script(Runtime* rt, char[] src, char[] name, bool strict, CompiledFunction** out) {
     clear_err(rt);
     if (name.len != 0) set_script_name(rt, &name[0], name.len);
-    // Reset interrupt state before starting execution.
-    rt.heap.uncatchable_throw = false;
-    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
-
     Lexer lex = lexer::lexer_init(src, rt.heap, name.len != 0 ? name : (char[])"<eval>");
+    defer lex.free_arena();
     lex.skip_hashbang();
     // Both modes capture the top-level completion value. Sloppy source runs as
     // indirect eval code. Strict source runs as a strict global Script: strict
@@ -1344,11 +1340,20 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
         } else {
             set_err_at(rt, BK_ERR_SYNTAX, m[:n], (int)lex.err_line, (int)lex.err_col);
         }
-        lex.free_arena();
         return BK_ERR_SYNTAX;
     }
-    CompiledFunction* f = fr;
+    *out = fr;
+    return BK_OK;
+}
 
+// Runs a compiled global script, writing the completion value to `*out`. Sets
+// `*out_owned` when `*out` carries a reference the caller must release.
+// Returns a BK_* status.
+fn int run_script(Runtime* rt, CompiledFunction* f, TVal* out, bool* out_owned) {
+    *out_owned = false;
+    // Reset interrupt state before starting execution.
+    rt.heap.uncatchable_throw = false;
+    rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     rt.heap.has_error = false;
     if (rt.vm.run_depth > 0) {
         // A host callback is evaluating source while a script runs. The
@@ -1358,7 +1363,6 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
         TVal completion;
         completion.set_undefined();
         bool? ok = rt.vm.execute_module_nested(f, rt.vm.global_env, &pending, &completion);
-        lex.free_arena();
         if (catch ok) {
             set_err(rt, BK_ERR_INTERNAL, "internal VM error");
             return BK_ERR_INTERNAL;
@@ -1376,8 +1380,6 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
         return BK_OK;
     }
     TVal? res = rt.vm.execute(f);
-    lex.free_arena();
-
     if (catch res) {
         if (rt.heap.uncatchable_throw) {
             return interrupt_status(rt);
@@ -1388,9 +1390,19 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
         set_err(rt, BK_ERR_INTERNAL, "internal VM error");
         return BK_ERR_INTERNAL;
     }
-
     *out = res;
     return BK_OK;
+}
+
+// Compiles and runs `src`, writing the completion value to `*out`. Sets
+// `*out_owned` when `*out` carries a reference the caller must release.
+// Returns a BK_* status.
+fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_owned, bool strict = false) {
+    *out_owned = false;
+    CompiledFunction* f;
+    int rc = compile_script(rt, src, name, strict, &f);
+    if (rc != BK_OK) return rc;
+    return run_script(rt, f, out, out_owned);
 }
 
 // Compile `src` as a new top-level module named `name`, link and evaluate it,
