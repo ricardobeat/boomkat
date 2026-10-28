@@ -36,43 +36,57 @@ fn LoopNative ssa_region_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @fe
 }
 
 fn void* ssa_function_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
-    if (!ssa_region_supported(plan, cf, h) || plan.end + 1 >= cf.code_count || cf.code[plan.end + 1].op != Opcode.RET || plan.binding_count != 0) return null;
+    uint terminal = plan.ssa_function != null ? plan.end : plan.end + 1;
+    if (!ssa_region_supported(plan, cf, h) || terminal >= cf.code_count || cf.code[terminal].op != Opcode.RET
+        || (plan.binding_count != 0 && plan.ssa_function == null)) return null;
     return ssa_emit(plan, cf, h, true, true);
 }
 
-fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pass, bool direct = false) @feat(SLJIT) {
-    SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
-    if (graph == null) return null;
-    defer h.free_func(h.heap_udata, graph);
+fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Heap* h,
+    bool single_pass, bool direct, TemplateEmitter* parent, uint inline_base, uint inline_depth, ulong forced = 0) @feat(SLJIT) {
     mem::clear(graph, (sz)SsaGraph::size);
     graph.plan = plan;
     graph.cf = cf;
     graph.heap = h;
     graph.single_pass = single_pass;
     graph.direct = direct;
-    graph.result_reg = direct ? cf.code[plan.end + 1].a : 0;
+    graph.result_reg = direct ? cf.code[plan.ssa_function != null ? plan.end : plan.end + 1].a : 0;
+    if (plan.ssa_function != null && cf.code[plan.end].op == Opcode.RETUNDEF) graph.result_reg = LOOP_REGS;
     graph.registers = ssa_register_budget(direct);
+    graph.inplace = parent != null;
+    graph.inline_base = inline_base;
+    graph.inline_depth = inline_depth;
+    graph.fpr_homes = parent != null ? 4 : SSA_HOMES;
+    if (parent != null) {
+        graph.registers.scratch_homes = 2;
+        graph.registers.saved_homes = 0;
+    }
+    graph.force_f64 = forced;
+}
+
+fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pass, bool direct = false, TemplateEmitter* parent = null, uint inline_base = 0, uint inline_depth = 0) @feat(SLJIT) {
+    SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
+    if (graph == null) return null;
+    defer h.free_func(h.heap_udata, graph);
+    ssa_configure(graph, plan, cf, h, single_pass, direct, parent, inline_base, inline_depth);
     if (!ssa_build(graph)) return null;
     // A register can gain a double representation only after its definitions
     // are built, so rebuild the graph when the first pass asks for one.
     for (uint round = 0; round < 3 && graph.force_f64 != 0; round++) {
         ulong forced = graph.force_f64;
-        mem::clear(graph, (sz)SsaGraph::size);
-        graph.plan = plan;
-        graph.cf = cf;
-        graph.heap = h;
-        graph.single_pass = single_pass;
-        graph.direct = direct;
-        graph.result_reg = direct ? cf.code[plan.end + 1].a : 0;
-        graph.registers = ssa_register_budget(direct);
-        graph.force_f64 |= forced;
+        ssa_configure(graph, plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, forced);
         if (!ssa_build(graph)) return null;
         if (graph.force_f64 == forced) break;
     }
     if (single_pass) {
-        if (plan.ssa_fields) {
-            for (uint memory = 0; memory < plan.memory_count; memory++) if (!graph.invariant[memory]) return null;
+        for (uint memory = 0; memory < plan.memory_count; memory++) {
+            LoopMemorySpec spec = plan.memory[memory];
+            if (spec.kind != FIELD && spec.kind != SHAPE_FIELD) return null;
+            if (spec.kind == FIELD && !graph.invariant[memory]) return null;
+            Shape* shape = h.get_shape(spec.shape);
+            if (shape == null || shape.dict || shape.generation != spec.shape_gen || (spec.written && !plan.ssa_commit)) return null;
         }
+        plan.ssa_fields = plan.memory_count != 0;
         for (uint reg = 0; reg < cf.num_regs; reg++) {
             if (graph.arg[reg] >= 0) plan.ssa_inputs |= 1UL << reg;
         }
@@ -82,11 +96,15 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
         }
     }
     ssa_cse(graph);
+    ssa_invariant_cse(graph);
     ssa_numeric_loads(graph);
     ssa_allocate(graph);
     uint phi_count;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
     if (graph.spill_count + phi_count + 2 > SSA_MAX_SPILL) return null;
+    uint scratch_window = inline_depth == 0 ? 0 : inline_depth + 1;
+    if (parent != null && ((usz)plan.memory_count * LoopMemory::size + (usz)plan.binding_count * TVal::size
+        + (usz)(graph.spill_count + phi_count + 2) * double::size > (usz)(INLINE_DEPTH - scratch_window) * 32 * double::size)) return null;
     // Allocation uses the target's maximum budget; the ABI context needs
     // only the homes and optional descriptor caches that were actually used.
     uint scratches = 4;
@@ -118,10 +136,11 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     }
     SsaEmitter self    = { .g = graph, .plan = plan, .cf = cf };
     TemplateEmitter* e = &self.e;
-    e.compiler = jit::sljit_create_compiler(null);
+    if (parent != null) { *e = *parent; }
+    else { e.compiler = jit::sljit_create_compiler(null); }
     if (e.compiler == null) return null;
-    defer jit::sljit_free_compiler(e.compiler);
-    if (jit::sljit_emit_enter(
+    defer if (parent == null) jit::sljit_free_compiler(e.compiler);
+    if (parent == null && jit::sljit_emit_enter(
         e.compiler,
         direct ? jit::SLJIT_ENTER_REG_ARG | jit::enter_keep(3) : 0,
         direct ? 1 : jit::SLJIT_ARGS2WWW_R,
@@ -130,12 +149,17 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
         0
     ) != 0) return null;
     int r0 = jit::reg_r(0);
-    self.state = jit::reg_s(direct ? 5 : 0);
-    self.regs = jit::reg_s(0);
+    self.state = parent != null ? jit::reg_r(6) : jit::reg_s(direct ? 5 : 0);
+    self.regs = jit::reg_s(parent != null && inline_depth != 0 ? 5 : 0);
     self.budget = jit::reg_s(1);
     self.at_def = 0;
     for (uint i = 0; i < LOOP_REGS; i++) self.live[i] = graph.header[i];
-    if (direct) {
+    if (parent != null) {
+        // Reuse only windows deeper than the active virtual caller. The
+        // compile-time bound covers compact descriptors, bindings and spills.
+        e.op(jit::SLJIT_ADD, self.state, jit::reg_s(2), 0, jit::SLJIT_IMM,
+            function_inline_offset(scratch_window * 32));
+    } else if (direct) {
         e.mov(self.state, 0, jit::SLJIT_MEM | jit::reg_s(2), $reflect(FunctionRun.ssa_state).offset);
     } else {
         e.mov(self.state, 0, r0, 0);
@@ -144,6 +168,7 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     // Prologue guards must not publish anything: the interpreter resumes at
     // the loop header with its original frame.
     int saved_count = (int)graph.exit_count;
+    if (parent != null) for (uint i = 0; i < plan.binding_count; i++) self.binding_entry(i);
     self.header_guards();
     self.prologue();
     for (uint i = (uint)saved_count; i < graph.exit_count; i++) {
@@ -159,6 +184,13 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     final = single_pass ? graph.current : graph.phi;
     self.publish(&final, plan.end + 1);
     self.exit_stubs();
+    if (parent != null) {
+        void* done = e.label();
+        for (uint i = 0; i < self.done_count; i++) jit::sljit_set_label(self.done_jumps[i], done);
+        plan.ssa_epoch_constant = self.epoch_constant;
+        *parent = *e;
+        return e.failed ? null : (void*)1;
+    }
     if (e.failed) return null;
     void* native = jit::sljit_generate_code(e.compiler, 0, null);
     if (native != null) {

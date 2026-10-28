@@ -360,6 +360,7 @@ fn void FunctionEmitter.inline_guards(
 }
 
 fn void FunctionEmitter.inline_call(&self, CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
+    if (SSA_ENABLED && !$feat(SLJIT_NO_SSA_LEAVES) && self.inline_ssa_leaf(cf, pc, h)) return;
     CompiledFunction* target = function_inline_candidate(cf, pc, h);
     if (target == null) {
         if (self.inline_general(cf, pc, h)) return;
@@ -691,7 +692,6 @@ fn bool function_inline_ssa_leaf(CompiledFunction* target, uint nargs) @feat(SLJ
         || target.capture_count != 0) return false;
     bool[32] defined;
     for (uint i = 0; i < nargs; i++) defined[i] = true;
-    bool returns;
     for (uint i = 0; i < target.code_count; i++) {
         Instruction ins = target.code[i];
         if (loop_target(ins, i) >= 0) return false;
@@ -699,9 +699,7 @@ fn bool function_inline_ssa_leaf(CompiledFunction* target, uint nargs) @feat(SLJ
         switch (ins.op) {
             case NOP: continue;
             case RET:
-                if (!defined[ins.a]) return false;
-                returns = true;
-                continue;
+                return defined[ins.a];
             case LDTHIS:
             case LDINT:
             case LDCONST: defined[ins.a] = true; continue;
@@ -732,6 +730,12 @@ fn bool function_inline_ssa_leaf(CompiledFunction* target, uint nargs) @feat(SLJ
             case SUB:
             case MUL:
             case DIV:
+            case BAND:
+            case BOR:
+            case BXOR:
+            case SHL:
+            case SHR:
+            case USHR:
                 if (ins.b >= 32 || ins.c >= 32 || !defined[ins.b] || !defined[ins.c]) return false;
                 defined[ins.a] = true;
                 continue;
@@ -739,20 +743,28 @@ fn bool function_inline_ssa_leaf(CompiledFunction* target, uint nargs) @feat(SLJ
             case SUBI:
             case MULI:
             case UNM:
+            case BNOT:
+            case BANDI:
+            case BORI:
+            case BXORI:
+            case SHLI:
+            case SHRI:
+            case USHRI:
                 if (ins.b >= 32 || !defined[ins.b]) return false;
                 defined[ins.a] = true;
                 continue;
             default: return false;
         }
     }
-    return returns;
+    return false;
 }
 fn CompiledFunction* function_inline_ssa_candidate(CompiledFunction* cf, uint pc, Heap* h) @feat(SLJIT) {
     Instruction call = cf.code[pc];
-    if (call.op != Opcode.CALL && call.op != Opcode.CALL_UNDEF_THIS) return null;
-    uint nargs               = call.c;
+    bool fused = call.op == Opcode.CALL_GLOBAL || call.op == Opcode.CALL_VAR;
+    if (!fused && call.op != Opcode.CALL && call.op != Opcode.CALL_UNDEF_THIS) return null;
     CompiledFunction* target = function_inline_target(cf, pc, h);
-    if (!function_inline_ssa_leaf(target, nargs)) return null;
+    if (target != null && (fused || call.op == Opcode.CALL_UNDEF_THIS) && !target.call_flags.ignores_this) return null;
+    if (!function_inline_ssa_leaf(target, fused ? call.b : call.c)) return null;
     return target;
 }
 fn CompiledFunction* function_inline_general_candidate(CompiledFunction* cf, uint pc, Heap* h, uint depth = 1) @feat(SLJIT) {
@@ -881,6 +893,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     }
     inner.cf = target;
     inner.depth = self.depth + 1;
+    inner.cold = self.cold;
     inner.this_in_window = true;
     TemplateEmitter* ie = &inner.out.e;
     void*[64] labels;
@@ -1149,6 +1162,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
                 // The predicate already resolved this site and checked the
                 // nesting bound. A failure here means the two analyses
                 // disagree; fail the plan instead of emitting a partial body.
+                if (SSA_ENABLED && !$feat(SLJIT_NO_SSA_LEAVES) && inner.inline_ssa_leaf(target, i, h)) continue;
                 if (!inner.inline_general(target, i, h)) out.e.failed = true;
                 continue;
             default: continue;

@@ -98,7 +98,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         if (begin == 0 && region.code_count == cf.code_count) plan.ssa_region = sljit_function_ssa_compile(cf, cold);
     $endif
     bool analyzed = function_analyze(&region, plan, h);
-    bool emitted  = analyzed && function_emit(plan, &region, h, cold.act);
+    bool emitted  = analyzed && function_emit(plan, &region, h, cold.act, cold);
     $if $feat(SLJIT_STATS):
         cf.sljit_rejection = emitted ? null : region.sljit_rejection;
     $endif
@@ -125,6 +125,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         h.free_func(h.heap_udata, plan);
         return null;
     }
+    $if $feat(SLJIT_MAP):
+        io::eprintfn("SLJIT live line=%d native=%p bytes=%d", cf.get_line(0), plan.native,
+            plan.code_bytes - plan.resume_bytes - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0));
+    $endif
     cf.sljit_function = plan;
     for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_link_target(link);
     sljit_relink_calls(h, cf);
@@ -210,8 +214,8 @@ fn Instruction* sljit_function_entry(
     $if $feat(SLJIT_FUNCTION_SSA):
         LoopState ssa_state @noinit;
         run.ssa_state = &ssa_state;
-        sljit_function_ssa_refresh(h);
     $endif
+    sljit_function_ssa_refresh(h);
     run.entry = plan.entries[local];
     run.root = cold.act;
     $if $feat(SLJIT_ADAPTIVE):
@@ -349,13 +353,26 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT pipeline id=%d inlined=%d recoveries=%d allocations=%d pushes=%d links=%d",
                     i, plan.general_inlines, plan.inline_recoveries, plan.resumed_allocations, plan.resumed_pushes, links);
                 io::printfn("SLJIT numeric id=%d homes=%d", i, plan.numeric_homes);
+                for (uint pc = 0; pc < plan.count && pc < FUNCTION_OPS; pc++) {
+                    if (plan.read_hits[pc] != 0) {
+                        ICEntry* ic = (ICEntry*)cf.ic_entries + plan.begin + pc;
+                        io::printfn("SLJIT readmiss id=%d pc=%d hits=%d changes=%d shape=%d class=%d rep=%d chain=%d cached=%d",
+                            i, plan.begin + pc, plan.read_hits[pc], plan.read_changes[pc], plan.read_shapes[pc],
+                            plan.read_classes[pc], ic.read_rep, ic.chain_len, ic.key.borrow() != null);
+                    }
+                }
+                for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) {
+                    io::printfn("SLJIT leaf usage id=%d target_line=%d hits=%d completed=%d commit=%d", i,
+                        leaf.ssa_function.get_line(0), leaf.hits, leaf.ssa_completed, leaf.ssa_commit);
+                }
                 if (plan.ssa_region != null) io::printfn("SLJIT function SSA id=%d hits=%d begin=%d end=%d bytes=%d",
                     i, plan.ssa_region.hits, plan.ssa_region.begin, plan.ssa_region.end, plan.ssa_region.code_bytes);
                 if (plan.ssa_region != null) io::printfn("SLJIT SSA outcomes id=%d completed=%d entry_misses=%d body_misses=%d epoch_updates=%d",
                     i, plan.ssa_region.ssa_completed, plan.ssa_region.ssa_entry_misses,
                     plan.ssa_region.ssa_body_misses, plan.ssa_region.ssa_epoch_updates);
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
-                    i, plan.native, plan.code_bytes - plan.resume_bytes, plan.resume_fragment, plan.resume_bytes);
+                    i, plan.native, plan.code_bytes - plan.resume_bytes
+                        - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0), plan.resume_fragment, plan.resume_bytes);
                 $if $feat(SLJIT_MAP): sljit_address_map(plan, cf, i); $endif
                 for (FunctionInlineFrame* frame = plan.inline_frames; frame != null; frame = frame.next) {
                     for (uint pc = 0; pc < frame.target.code_count; pc++) {

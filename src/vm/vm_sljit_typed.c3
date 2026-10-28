@@ -265,6 +265,10 @@ fn bool FunctionEmitter.typed_length(&self, CompiledFunction* cf, uint pc, ICEnt
 fn void sljit_read_observe(ICEntry* ic, TVal value) @feat(SLJIT) @inline {
     if (ic.read_samples >= 16) return;
     ic.read_samples++;
+    char rep = value.is_fastint() && value.get_fastint() >= -2147483648L && value.get_fastint() <= 2147483647L ? 1
+        : value.is_fastint() || value.is_number() ? 2 : 3;
+    if (ic.read_rep == 0) { ic.read_rep = rep; }
+    else if (ic.read_rep != rep) ic.read_rep = ic.read_rep <= 2 && rep <= 2 ? 2 : 3;
     if (value.is_string()) { ic.read_kind = 2; }
     else if (ic.read_kind == 0) { ic.read_kind = 1; }
 }

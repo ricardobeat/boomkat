@@ -20,28 +20,66 @@ fn void SsaEmitter.field_entry(&self, uint memory) @feat(SLJIT) {
     for (uint prior = 0; prior < memory; prior++) {
         LoopMemorySpec earlier = self.plan.memory[prior];
         if (earlier.source != spec.source || earlier.shape != spec.shape) continue;
-        self.e.mov(r0, 0, mem | self.state, loop_memory_offset(prior, 0));
-        self.e.mov(mem | self.state, loop_memory_offset(memory, 0), r0, 0);
-        self.e.mov(r2, 0, mem | self.state, loop_memory_offset(prior, 1));
+        self.e.mov(r0, 0, mem | self.state, self.memory_offset(prior, 0));
+        self.e.mov(mem | self.state, self.memory_offset(memory, 0), r0, 0);
+        if (spec.written) {
+            self.e.op(jit::SLJIT_AND, r1, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+            self.commit_receiver(r1);
+        }
+        self.e.mov(r2, 0, mem | self.state, self.memory_offset(prior, 1));
         self.e.op(jit::SLJIT_ADD, r2, r2, 0, imm, ((long)spec.slot - earlier.slot) * 8);
-        self.e.mov(mem | self.state, loop_memory_offset(memory, 1), r2, 0);
-        self.e.mov(mem | self.state, loop_memory_offset(memory, 2), imm, 0);
+        self.e.mov(mem | self.state, self.memory_offset(memory, 1), r2, 0);
+        self.e.mov(mem | self.state, self.memory_offset(memory, 2), imm, 0);
         return;
     }
     LoopState layout;
     long source = spec.source < LOOP_REGS ? loop_value_offset(spec.source)
         : spec.source == LOOP_THIS ? (char*)&layout.receiver - (char*)&layout
         : (char*)&layout.bindings[spec.source - LOOP_REGS] - (char*)&layout;
-    if (self.g.direct && spec.source == LOOP_THIS) {
+    if (self.g.inplace && spec.source == LOOP_THIS) {
+        self.e.mov(r0, 0, mem | self.regs, loop_value_offset(self.g.inline_base + 1));
+    } else if (self.g.direct && spec.source == LOOP_THIS) {
         self.e.mov(r0, 0, jit::reg_s(3), 0);
     } else {
+        if (self.g.inplace) {
+            if (spec.source < LOOP_REGS) { source += loop_value_offset(self.g.inline_base + 2); }
+            else { source = self.binding_offset(spec.source - LOOP_REGS); }
+        }
         self.e.mov(r0, 0, mem | (spec.source < LOOP_REGS ? self.regs : self.state), source);
     }
-    self.e.mov(mem | self.state, loop_memory_offset(memory, 0), r0, 0);
     self.e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
     self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT), self.plan.begin);
+    self.e.mov(mem | self.state, self.memory_offset(memory, 0), r0, 0);
     self.e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
     self.snapshot_none(self.e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0), self.plan.begin);
+    self.ordinary_receiver(r0, self.plan.begin, true);
+    HObject object;
+    if (spec.written) self.commit_receiver(r0);
+    self.e.mov(r3, 0, mem | r0, (char*)&object.shape_id - (char*)&object, jit::SLJIT_MOV_U32);
+    self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, spec.shape), self.plan.begin);
+    self.e.mov(r1, 0, mem | r0, (char*)&object.prop_alloc - (char*)&object);
+    void* allocated = self.e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0);
+    self.e.op(jit::SLJIT_ADD, r1, r0, 0, imm, HObjectBase::size);
+    self.e.bind(allocated);
+    self.e.op(jit::SLJIT_ADD, r2, r1, 0, imm, (long)spec.slot * 8);
+    self.e.mov(mem | self.state, self.memory_offset(memory, 1), r2, 0);
+    self.e.mov(mem | self.state, self.memory_offset(memory, 2), imm, 0);
+}
+
+// Updating an observed prototype needs the runtime's epoch bookkeeping.
+fn void SsaEmitter.commit_receiver(&self, int receiver) @feat(SLJIT) {
+    GcBits observed;
+    observed.prototype_observed = true;
+    HObject object;
+    int r3 = jit::reg_r(3);
+    self.e.mov(r3, 0, jit::SLJIT_MEM | receiver, (char*)&object.gc - (char*)&object, jit::SLJIT_MOV_U32);
+    self.e.op(jit::SLJIT_AND, r3, r3, 0, jit::SLJIT_IMM, (uint)observed);
+    self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, jit::SLJIT_IMM, 0), self.plan.begin);
+}
+
+// Own data-slot specialization excludes every object class with custom reads.
+fn void SsaEmitter.ordinary_receiver(&self, int receiver, uint pc, bool entry = false) @feat(SLJIT) {
+    int r3 = jit::reg_r(3);
     ObjFlags forbidden;
     forbidden.exotic_proxyobj = true;
     forbidden.exotic_module_ns = true;
@@ -51,17 +89,9 @@ fn void SsaEmitter.field_entry(&self, uint memory) @feat(SLJIT) {
     forbidden.exotic_array = true;
     ObjFlags ordinary;
     ordinary.obj_class = OBJECT;
-    self.e.mov(r3, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
-    self.e.op(jit::SLJIT_AND, r3, r3, 0, imm, 0x003F0000U | (uint)forbidden);
-    self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (uint)ordinary), self.plan.begin);
-    HObject object;
-    self.e.mov(r3, 0, mem | r0, (char*)&object.shape_id - (char*)&object, jit::SLJIT_MOV_U32);
-    self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, spec.shape), self.plan.begin);
-    self.e.mov(r1, 0, mem | r0, (char*)&object.prop_alloc - (char*)&object);
-    void* allocated = self.e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0);
-    self.e.op(jit::SLJIT_ADD, r1, r0, 0, imm, HObjectBase::size);
-    self.e.bind(allocated);
-    self.e.op(jit::SLJIT_ADD, r2, r1, 0, imm, (long)spec.slot * 8);
-    self.e.mov(mem | self.state, loop_memory_offset(memory, 1), r2, 0);
-    self.e.mov(mem | self.state, loop_memory_offset(memory, 2), imm, 0);
+    self.e.mov(r3, 0, jit::SLJIT_MEM | receiver, 0, jit::SLJIT_MOV_U32);
+    self.e.op(jit::SLJIT_AND, r3, r3, 0, jit::SLJIT_IMM, 0x003F0000U | (uint)forbidden);
+    void* mismatch = self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, jit::SLJIT_IMM, (uint)ordinary);
+    if (entry) { self.snapshot_none(mismatch, pc); }
+    else { self.snapshot(mismatch, pc); }
 }

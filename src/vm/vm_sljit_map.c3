@@ -9,7 +9,8 @@ import std::io;
 // separate ranges so frame overhead cannot be mistaken for bytecode work.
 fn void sljit_address_map(FunctionPlan* plan, CompiledFunction* cf, uint id) @feat(SLJIT_MAP) {
     io::printfn("SLJIT map id=%d kind=entry start=%p end=%p", id, plan.native, plan.map_pcs[0]);
-    void* end = (char*)(void*)plan.native + (sz)(plan.code_bytes - plan.resume_bytes);
+    void* end = (char*)(void*)plan.native + (sz)(plan.code_bytes - plan.resume_bytes
+        - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0));
     io::printfn("SLJIT map id=%d kind=exit start=%p end=%p", id, plan.map_pcs[plan.count],
         plan.map_calls != null ? plan.map_calls : end);
     if (plan.map_calls != null) io::printfn("SLJIT map id=%d kind=call_entry start=%p end=%p", id, plan.map_calls, end);
@@ -26,5 +27,9 @@ fn void sljit_address_map(FunctionPlan* plan, CompiledFunction* cf, uint id) @fe
                 id, frame.depth, frame.id, frame.target.get_line(0), pc,
                 (ZString)bytecode::get_opcode_name(frame.target.code[pc].op), frame.map_pcs[pc], frame.map_pcs[pc + 1]);
         }
+    }
+    for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) {
+        io::printfn("SLJIT map id=%d kind=ssa_leaf depth=%d target_line=%d start=%p end=%p", id,
+            leaf.ssa_map_depth, leaf.ssa_function.get_line(0), leaf.ssa_map_begin, leaf.ssa_map_end);
     }
 }

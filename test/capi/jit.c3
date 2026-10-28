@@ -16,6 +16,7 @@ const String NATIVE_SOURCE   = $embed("../jit_native_calls.js");
 const String RECOVERY_SOURCE = $embed("../jit_inline_recovery.js");
 const String ALLOCATION_SOURCE = $embed("../jit_alloc_continuations.js");
 const String LINK_SOURCE = $embed("../jit_linked_calls.js");
+const String SSA_CALLS_SOURCE = $embed("../jit_function_ssa_calls.js");
 const String CFG_SOURCE = $embed("../jit_cfg_numbers.js");
 const String TEMPLATE_SOURCE = $embed("jit_render.js");
 const String RUN             = "for(var i=0;i<64;i++){if(render(rows)!=='<li>1:one</li><li>2:two</li>')throw new Error('render');}";
@@ -130,8 +131,11 @@ fn ulong region_work(JsRuntime* rt, String name, bool calls = false) {
             CompiledFunction* cf = (CompiledFunction*)rt.rt.heap.compiled_funcs[i];
             if (cf == null || (String)cf.get_name() != name) continue;
             if (calls) {
-                if (cf.sljit_function == null) continue;
-                return ((FunctionPlan*)cf.sljit_function).inline_calls;
+                ulong work = cf.sljit_function != null ? ((FunctionPlan*)cf.sljit_function).inline_calls : 0;
+                for (LoopPlan* plan = cf.sljit_loops; plan != null; plan = plan.next) {
+                    if (plan.ssa_calls) work += plan.hits;
+                }
+                return work;
             }
             ulong work = 0;
             if (cf.sljit_function != null) work += ((FunctionPlan*)cf.sljit_function).charged_edges;
@@ -306,6 +310,45 @@ fn void check_ssa_epoch(JsRuntime* runtime, JsContext* context) {
         vm::sljit_function_ssa_refresh(h);
         @check(region.ssa_invalid);
         eval(context, "if(ssaLeft.dot(ssaRight)!==112)throw 'SSA epoch refusal';");
+    $endif
+}
+
+fn void check_ssa_calls(JsRuntime* runtime, JsContext* context) {
+    $if $feat(SLJIT_FUNCTION_SSA):
+        eval(context, "var print=function(){};");
+        eval(context, SSA_CALLS_SOURCE);
+        CompiledFunction* cf = named_function(runtime, "ssaMixRegion");
+        @check(cf != null && cf.sljit_function != null);
+        FunctionPlan* function = cf.sljit_function;
+        @check(function.ssa_region != null && function.ssa_region.binding_count == 1);
+        $if $feat(SLJIT_STATS): @check(function.ssa_region.ssa_completed != 0); $endif
+        CompiledFunction* loop = named_function(runtime, "ssaLeafLoop");
+        @check(loop != null && loop.sljit_loops != null);
+        LoopPlan* kernel = loop.sljit_loops;
+        @check(kernel.ssa && kernel.ssa_calls);
+    $endif
+}
+
+fn void check_ssa_leaf(JsRuntime* runtime, JsContext* context) {
+    $if !$feat(SLJIT_NO_SSA_LEAVES):
+        eval(context, "function ssaSet(){this.state=this.state|3;}function SsaOwner(){this.state=0;}SsaOwner.prototype.set=ssaSet;var ssaOwner=new SsaOwner();for(var i=0;i<64;i++)ssaOwner.set();");
+        eval(context, "function ssaCommit(o){o.set();return o.state;}");
+        for (uint i = 0; i < 64; i++) eval(context, "if(ssaCommit(ssaOwner)!==3)throw 'SSA commit';");
+        CompiledFunction* cf = named_function(runtime, "ssaCommit");
+        @check(cf != null && cf.sljit_function != null);
+        FunctionPlan* function = cf.sljit_function;
+        LoopPlan* leaf = function.ssa_leaves;
+        @check(leaf != null && leaf.ssa_commit && leaf.ssa_fields);
+        $if $feat(SLJIT_STATS): @check(leaf.ssa_completed != 0); $endif
+        Heap* h = runtime.rt.heap;
+        h.shape_recycle_epoch++;
+        vm::sljit_function_ssa_refresh(h);
+        @check(leaf.ssa_shape_epoch == h.shape_recycle_epoch && !leaf.ssa_invalid);
+        leaf.memory[0].shape_gen++;
+        h.shape_recycle_epoch++;
+        vm::sljit_function_ssa_refresh(h);
+        @check(leaf.ssa_invalid);
+        eval(context, "ssaOwner.state=4;if(ssaCommit(ssaOwner)!==7)throw 'SSA commit refusal';");
     $endif
 }
 
@@ -544,5 +587,7 @@ fn void main() {
         @check(!first.set_jit());
     $endif
     check_ssa_epoch(&first, &a);
+    check_ssa_calls(&first, &a);
+    check_ssa_leaf(&first, &a);
     io::printn("embedding JIT: PASS");
 }

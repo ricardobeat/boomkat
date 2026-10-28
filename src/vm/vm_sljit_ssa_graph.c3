@@ -34,6 +34,7 @@ enum SsaRep : char {
 }
 
 enum SsaOp : char {
+    NOP,
     ARG,
     PHI,
     BINDING,
@@ -62,6 +63,7 @@ enum SsaOp : char {
     // Identity guard: the value must be a function whose compiled body is the
     // one the call was expanded from.
     CHECKFN,
+    COMPARE,
     // A value merged from several arms at a join. Its home holds whichever
     // incoming value the path took.
     JOIN,
@@ -69,6 +71,13 @@ enum SsaOp : char {
     BRANCH,
     // An unconditional branch inside the body: the end of an arm.
     GOTO
+}
+
+fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
+    switch (op) {
+        case NOP: case STORE: case CHECKFN: case BRANCH: case GOTO: return false;
+        default: return true;
+    }
 }
 
 struct SsaValue @feat(SLJIT) {
@@ -158,6 +167,10 @@ struct SsaGraph @feat(SLJIT) {
     bool failed;
     bool single_pass;
     bool direct;
+    bool inplace;
+    uint inline_base;
+    uint inline_depth;
+    uint fpr_homes;
     uint result_reg;
     SsaRegisterBudget registers;
     int[LOOP_REGS] current;
@@ -271,7 +284,7 @@ fn bool ssa_numeric_rep(SsaRep rep) @feat(SLJIT) => rep == INT32 || rep == F64;
 // The comparison branches the tier can turn into a native test. The other
 // branch forms pack their operand into the offset field.
 fn bool ssa_comparison_op(Opcode op) @feat(SLJIT) {
-    return (op >= Opcode.JMP_NLT && op <= Opcode.JMP_SNEQ) || (op >= Opcode.JMP_NLTI && op <= Opcode.JMP_SNEQI);
+    return (op >= Opcode.JMP_NLT && op <= Opcode.JMP_NEQ) || (op >= Opcode.JMP_NLTI && op <= Opcode.JMP_SNEQI);
 }
 
 // Split the body into basic blocks at the forward branch targets. A block
@@ -422,7 +435,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
                 if (target != (int)plan.begin) return false;
                 // The backedge must compare two values. A truthiness test names
                 // its operand in the branch's offset field, not in a register.
-                if (!ssa_comparison_op(ins.op)) return false;
+                if (!ssa_comparison_op(ins.op) && ins.op != Opcode.IF_TRUE && ins.op != Opcode.IF_FALSE) return false;
                 continue;
             }
             // An arm's branch: a comparison, a truthiness test, or the jump
@@ -435,6 +448,13 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             continue;
         }
         switch (ins.op) {
+            case RET:
+            case RETUNDEF:
+                if (plan.ssa_function == null || pos != plan.end) return false;
+                continue;
+            case PUTTHISC:
+                if (!plan.ssa_commit || pos + 1 != plan.end) return false;
+                continue;
             case GETCAP:
             case GETVAR:
             case GETGLOBAL:
@@ -455,6 +475,8 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case MUL:
             case MULI:
             case DIV:
+            case LT: case LE: case GT: case GE:
+            case EQ: case NEQ: case SEQ: case SNEQ:
             case BAND:
             case BOR:
             case BXOR:
@@ -487,6 +509,8 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
                 }
             case CALL:
             case CALL_UNDEF_THIS:
+            case CALL_GLOBAL:
+            case CALL_VAR:
                 // Expanded in place, so the callee body must be a leaf.
                 if (plan.memory_at[pos - plan.begin] != 0) return false;
                 if (function_inline_ssa_candidate(cf, pos, h) == null) return false;
@@ -538,6 +562,16 @@ fn void ssa_infer(
         }
         bool writes = true;
         switch (ins.op) {
+            case PUTTHISC:
+            case RET:
+                (*read)[ins.a] = true;
+                (*value_read)[ins.a] = true;
+                if (!assigned[ins.a]) (*live_in)[ins.a] = true;
+                writes = false;
+                break;
+            case RETUNDEF:
+                writes = false;
+                break;
             case LDREG:
                 (*read)[ins.b] = true;
                 (*value_read)[ins.b] = true;
@@ -551,16 +585,21 @@ fn void ssa_infer(
                 break;
             case CALL:
             case CALL_UNDEF_THIS:
+            case CALL_GLOBAL:
+            case CALL_VAR:
 
                 {
-                    if (ins.b + 1 + ins.c >= cf.num_regs) return;
-                    for (uint i = 0; i <= ins.c + 1; i++) {
-                        uint reg = ins.b + i;
+                    bool fused = ins.op == Opcode.CALL_GLOBAL || ins.op == Opcode.CALL_VAR;
+                    uint call_base = fused ? ins.a : ins.b;
+                    uint nargs = fused ? ins.b : ins.c;
+                    if (call_base + 1 + nargs >= cf.num_regs) return;
+                    for (uint i = fused ? 2 : 0; i <= nargs + 1; i++) {
+                        uint reg = call_base + i;
                         (*read)[reg] = true;
                         (*value_read)[reg] = true;
                         if (!assigned[reg]) (*live_in)[reg] = true;
                     }
-                    writes = false;
+
                 }
                 break;
             case GETPROPC:
@@ -636,6 +675,8 @@ fn void ssa_infer(
             case SUB:
             case MUL:
             case DIV:
+            case LT: case LE: case GT: case GE:
+            case EQ: case NEQ: case SEQ: case SNEQ:
                 (*read)[ins.b] = true;
                 (*read)[ins.c] = true;
                 (*value_read)[ins.b] = true;

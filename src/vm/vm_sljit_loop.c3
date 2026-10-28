@@ -49,6 +49,7 @@ struct LoopMemorySpec @feat(SLJIT) {
     bool length_read;
     int builtin;
     bool doubles;
+    bool integers;
     // FIELD: the bytecode position (for the site cache's key), the constant
     // pool index of the key when it has one, the resolved slot and the shape
     // that made it valid.
@@ -73,12 +74,21 @@ struct LoopPlan @feat(SLJIT) {
     ulong ssa_inputs;
     uint ssa_shape_epoch;
     bool ssa_fields;
+    bool ssa_calls;
+    bool ssa_commit;
     void* ssa_entry;
+    CompiledFunction* ssa_function;
+    void* ssa_map_begin @if($feat(SLJIT_MAP));
+    void* ssa_map_end @if($feat(SLJIT_MAP));
+    uint ssa_map_depth @if($feat(SLJIT_MAP));
+    ulong ssa_binding_mask;
+    TVal[LOOP_BINDINGS] ssa_binding_constants;
     bool ssa_invalid;
     ulong ssa_completed @if($feat(SLJIT_STATS));
     ulong ssa_entry_misses @if($feat(SLJIT_STATS));
     ulong ssa_body_misses @if($feat(SLJIT_STATS));
     ulong ssa_epoch_updates @if($feat(SLJIT_STATS));
+    void* ssa_epoch_constant;
     usz ssa_epoch_patch;
     long ssa_executable_offset;
     LoopPlan* next;
@@ -181,7 +191,7 @@ fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) 
         // The bytecode IC is shared by every closure of this function. The
         // threaded GETVAR handler checks the environment head before using
         // its cached slot; a loop entry must make the same check.
-        hobject::VarICEntry* ic = pc.op == Opcode.GETGLOBAL ? th_global_ic_hit(pc, cold)
+        hobject::VarICEntry* ic = (pc.op == Opcode.GETGLOBAL || pc.op == Opcode.CALL_GLOBAL) ? th_global_ic_hit(pc, cold)
             : (!th_var_ic_moved(pc, cold) ? th_var_ic_hit(pc, cold) : null);
         if (ic != null && !ic.prop_flags.is_accessor) {
             *result = ic.slot_ptr.get();
@@ -189,7 +199,7 @@ fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) 
         }
     }
     CompiledFunction* cf = cold.vm.current_func;
-    uint constant        = pc.get_bc();
+    uint constant        = pc.op == Opcode.CALL_GLOBAL || pc.op == Opcode.CALL_VAR ? pc.c : pc.get_bc();
     if (pc.op == Opcode.GETCAP) {
         if (constant >= cf.capture_count) return false;
         constant = cf.capture_names[constant];
@@ -211,6 +221,33 @@ fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) 
     }
     return false;
 }
+// An admitted region cannot mutate its lexical environment. Normalize fused
+// callee reads to the same binding descriptor as an explicit variable read.
+fn int loop_record_binding(LoopPlan* plan, uint pc, ColdCtx* cold, LoopState* sample, bool feedback = false, CompiledFunction* cf = null) @feat(SLJIT) {
+    if (cf == null) cf = cold.vm.current_func;
+    Instruction ins = cf.code[pc];
+    Opcode kind = ins.op == Opcode.CALL_GLOBAL ? Opcode.GETGLOBAL
+        : ins.op == Opcode.CALL_VAR ? Opcode.GETVAR : ins.op;
+    uint key = ins.op == Opcode.CALL_GLOBAL || ins.op == Opcode.CALL_VAR ? ins.c : ins.get_bc();
+    for (uint i = 0; i < plan.binding_count; i++) {
+        Instruction prior = cf.code[plan.bindings[i]];
+        Opcode prior_kind = prior.op == Opcode.CALL_GLOBAL ? Opcode.GETGLOBAL
+            : prior.op == Opcode.CALL_VAR ? Opcode.GETVAR : prior.op;
+        uint prior_key = prior.op == Opcode.CALL_GLOBAL || prior.op == Opcode.CALL_VAR ? prior.c : prior.get_bc();
+        if (kind == prior_kind && key == prior_key) {
+            plan.binding_at[pc - plan.begin] = (char)(i + 1);
+            return (int)i;
+        }
+    }
+    if (plan.binding_count == LOOP_BINDINGS) return -1;
+    uint id = plan.binding_count;
+    if (!feedback && !loop_binding(cf.code + pc, cold, &sample.bindings[id])) return -1;
+    plan.binding_count++;
+    plan.bindings[id] = pc;
+    plan.binding_at[pc - plan.begin] = (char)(id + 1);
+    return (int)id;
+}
+
 fn TVal loop_source(uint source, LoopState* state, ColdCtx* cold) @feat(SLJIT) {
     if (source == LOOP_THIS) return cold.act.this_binding;
     return source < LOOP_REGS ? state.values[source] : state.bindings[source - LOOP_REGS];
@@ -357,7 +394,7 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool gener
         LoopMemorySpec spec = plan.memory[i];
         if (generated_fields && spec.kind == FIELD) continue;
         LoopMemory* memory  = &state.memory[i];
-        memory.source = loop_source(spec.source, state, cold);
+        if (spec.kind != SHAPE_FIELD) memory.source = loop_source(spec.source, state, cold);
         if (spec.kind == ASCII) {
             if (!memory.source.is_string()) return false;
             HString* text = memory.source.get_heapptr();
@@ -430,8 +467,9 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool gener
     return true;
 }
 
-fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int region_begin = -1) @feat(SLJIT) {
-    CompiledFunction* cf = cold.vm.current_func;
+fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int region_begin = -1, bool inline_calls = false, CompiledFunction* target_cf = null) @feat(SLJIT) {
+    bool feedback = target_cf != null;
+    CompiledFunction* cf = feedback ? target_cf : cold.vm.current_func;
     int begin            = region_begin >= 0 ? region_begin : loop_target(cf.code[end], end);
     if (begin < 0 || begin >= (int)end || end - (uint)begin >= LOOP_OPS || cf.num_regs > LOOP_REGS
         || cf.flags.is_generator
@@ -457,7 +495,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     bool[LOOP_REGS] maybe_written;
     for (uint pos = plan.begin; pos <= end; pos++) {
         Instruction ins = cf.code[pos];
-        if (loop_target(ins, pos) >= 0) continue;
+        if (ins.op == Opcode.RET || loop_target(ins, pos) >= 0) continue;
         switch (ins.op) {
             case PUTPROP:
             case PUTPROPC:
@@ -474,6 +512,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     for (uint pos = plan.begin; pos <= end; pos++) {
         Instruction ins = cf.code[pos];
         uint at         = pos - plan.begin;
+        if (feedback && pos == end && (ins.op == Opcode.RET || ins.op == Opcode.RETUNDEF)) continue;
         if (ins.a >= LOOP_REGS || ins.b >= LOOP_REGS) {
             // Branch A and immediates do not name registers.
             if (loop_target(
@@ -491,8 +530,8 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             // The template emitter's condition path carries the numeric
             // relations only, so the equality and null branches stay out of
             // this tier.
-            if (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ
-                || ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL) return false;
+            if (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL
+                || (!feedback && (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ))) return false;
             uint b = ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE ? ins.a : ins.b;
             if (b >= cf.num_regs) return false;
             frequency[b]++;
@@ -522,12 +561,9 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case GETCAP:
 
                 {
-                    if (plan.binding_count == LOOP_BINDINGS) return false;
-                    uint id = plan.binding_count++;
-                    plan.bindings[id] = pos;
-                    if (!loop_binding(cf.code + pos, cold, &sample.bindings[id])) return false;
-                    plan.binding_at[at] = (char)(id + 1);
-                    origin[ins.a] = (int)(LOOP_REGS + id);
+                    int id = loop_record_binding(plan, pos, cold, &sample, feedback, cf);
+                    if (id < 0) return false;
+                    origin[ins.a] = (int)LOOP_REGS + id;
                     method[ins.a] = -1;
                     written |= 1UL << ins.a;
                     continue;
@@ -555,6 +591,23 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                         continue;
                     }
                 }
+            case PUTTHISC:
+                {
+                    // One final own-slot update: every refusal precedes it.
+                    if (!feedback || pos + 1 != end || cf.code[end].op != Opcode.RETUNDEF
+                        || cf.ic_entries == null) return false;
+                    ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
+                    Shape* shape = cold.heap.get_shape(ic.shape_id);
+                    if (ic.key.borrow() == null || ic.has_proto || ic.prop_flags.is_accessor || !ic.prop_flags.writable
+                        || shape == null || shape.dict || shape.generation != ic.shape_gen) return false;
+                    if (plan.memory_count == LOOP_MEMORY) return false;
+                    uint memory = plan.memory_count++;
+                    plan.memory[memory] = { .kind = FIELD, .source = LOOP_THIS, .written = true,
+                        .shape = ic.shape_id, .shape_gen = ic.shape_gen, .slot = (int)ic.prop_idx, .cls = OBJECT };
+                    plan.memory_at[at] = (char)(memory + 1);
+                    plan.ssa_commit = true;
+                    continue;
+                }
             case GETPROPC:
             case GETPROPC_CACHED:
             case GETTHISC:
@@ -563,10 +616,11 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     bool receiver = ins.op == Opcode.GETTHISC;
                     if (!receiver) {
                         if (ins.b >= cf.num_regs || ins.c >= cf.const_count || !cf.constants[ins.c].is_string()
-                            || origin[ins.b] < 0) return false;
+                            || (!feedback && origin[ins.b] < 0)) return false;
                     }
                     int source = receiver ? (int)LOOP_THIS : origin[ins.b];
-                    TVal base  = loop_source((uint)source, &sample, cold);
+                    TVal base;
+                    if (!feedback) base = loop_source((uint)source, &sample, cold);
                     HString* key;
                     uint key_const;
                     if (receiver) {
@@ -578,6 +632,38 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                         key_const = ins.c + 1;
                     }
                     if (key.is_symbol()) return false;
+                    if (feedback) {
+                        if (cf.ic_entries == null) return false;
+                        ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
+                        Shape* shape = cold.heap.get_shape(ic.shape_id);
+                        if (ic.key.borrow() != key || ic.has_proto || ic.prop_flags.is_accessor
+                            || shape == null || shape.dict || shape.generation != ic.shape_gen) return false;
+                        uint memory;
+                        if (source < 0) {
+                            int layout = loop_memory_shape_layout(plan, ic.shape_id, ic.shape_gen, (int)ic.prop_idx, false);
+                            if (layout < 0) return false;
+                            memory = (uint)layout;
+                        } else {
+                            while (memory < plan.memory_count) {
+                                LoopMemorySpec prior = plan.memory[memory];
+                                if (prior.kind == FIELD && prior.source == (uint)source && prior.shape == ic.shape_id
+                                    && prior.slot == (int)ic.prop_idx) break;
+                                memory++;
+                            }
+                            if (memory == plan.memory_count) {
+                                if (memory == LOOP_MEMORY) return false;
+                                plan.memory_count++;
+                                plan.memory[memory] = { .kind = FIELD, .source = (uint)source,
+                                    .shape = ic.shape_id, .shape_gen = ic.shape_gen, .slot = (int)ic.prop_idx, .cls = OBJECT };
+                            }
+                        }
+                        plan.memory[memory].integers = ic.read_rep == 1;
+                        plan.memory_at[at] = (char)(memory + 1);
+                        origin[ins.a] = -1;
+                        method[ins.a] = -1;
+                        written |= 1UL << ins.a;
+                        continue;
+                    }
                     String name =  (String)key.get_data();
                     // Element, string and builtin-method memories first.
                     int memory  = -1;
@@ -664,9 +750,24 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     if (source < (int)LOOP_REGS) frequency[(uint)source]++;
                 }
             case CALL:
+            case CALL_UNDEF_THIS:
+            case CALL_GLOBAL:
+            case CALL_VAR:
 
                 {
-                    if ((uint)ins.b + 2 >= cf.num_regs || method[ins.b] < 0) return false;
+                    if (inline_calls && function_inline_ssa_candidate(cf, pos, cold.heap) != null) {
+                        plan.ssa_calls = true;
+                        bool fused = ins.op == Opcode.CALL_GLOBAL || ins.op == Opcode.CALL_VAR;
+                        uint base = fused ? ins.a : ins.b;
+                        uint nargs = fused ? ins.b : ins.c;
+                        if (base + 1 + nargs >= cf.num_regs) return false;
+                        if (fused) {
+                            if (loop_record_binding(plan, pos, cold, &sample, feedback, cf) < 0) return false;
+                        }
+                        for (uint i = fused ? 2 : 0; i <= nargs + 1; i++) frequency[base + i]++;
+                        break;
+                    }
+                    if (ins.op != Opcode.CALL || (uint)ins.b + 2 >= cf.num_regs || method[ins.b] < 0) return false;
                     uint memory = (uint)method[ins.b];
                     int builtin = plan.memory[memory].builtin;
                     uint nargs  = builtin == (int)builtins::Builtin.MATH_IMUL.ordinal ? 2 : 1;
@@ -780,7 +881,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
         written |= 1UL << ins.a;
     }
     plan.canonical = entry_canonical;
-    if (!loop_prepare(plan, &sample, cold)) return false;
+    if (!feedback && !loop_prepare(plan, &sample, cold)) return false;
     bool floating_memory;
     for (uint i = 0; i < plan.memory_count; i++) {
         if (plan.memory[i].kind == DENSE
@@ -1232,8 +1333,10 @@ fn int loop_condition(Opcode op) @feat(SLJIT) {
         case JMP_GTI: return jit::SLJIT_SIG_GREATER;
         case JMP_GE:
         case JMP_GEI: return jit::SLJIT_SIG_GREATER_EQUAL;
+        case JMP_EQ:
         case JMP_SEQ:
         case JMP_SEQI: return jit::SLJIT_EQUAL;
+        case JMP_NEQ:
         case JMP_SNEQ:
         case JMP_SNEQI: return jit::SLJIT_NOT_EQUAL;
         default: unreachable("loop_condition relation opcode");
@@ -1258,8 +1361,10 @@ fn int loop_float_condition(Opcode op) @feat(SLJIT) {
         case JMP_GTI: return jit::SLJIT_ORDERED_GREATER;
         case JMP_GE:
         case JMP_GEI: return jit::SLJIT_ORDERED_GREATER_EQUAL;
+        case JMP_EQ:
         case JMP_SEQ:
         case JMP_SEQI: return jit::SLJIT_ORDERED_EQUAL;
+        case JMP_NEQ:
         case JMP_SNEQ:
         case JMP_SNEQI: return jit::SLJIT_UNORDERED_OR_NOT_EQUAL;
         default: unreachable("loop_float_condition relation opcode");
@@ -1671,13 +1776,13 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             return body;
         }
         LoopPlan draft;
-        if (!loop_analyze(&draft, offset, regs, cold)) {
+        if (!loop_analyze(&draft, offset, regs, cold, -1, SSA_ENABLED)) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
         draft.native = ssa_loop_eligible(&draft, cf, h) ? ssa_loop_emit(&draft, cf, h) : null;
         draft.ssa = draft.native != null;
-        if (draft.native == null) {
+        if (draft.native == null && !draft.ssa_calls) {
             for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
             draft.native = loop_emit(&draft, cf);
         }
@@ -1726,7 +1831,10 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     // JavaScript numbers are IEEE doubles, so the wider representation is
     // exact. Anything else falls back to the straight-line loop tier instead
     // of retrying the same speculation at every safepoint.
-    if (plan.ssa && resume_pc >= plan.begin && resume_pc < plan.end) {
+    // Call-expanded kernels have no straight-line template equivalent. Keep
+    // their guarded code for future matching inputs and publish this miss's
+    // exact caller state below before the interpreter replays the call.
+    if (plan.ssa && !plan.ssa_calls && resume_pc >= plan.begin && resume_pc < plan.end) {
         $if $feat(SLJIT_STATS):
             io::eprintfn("SLJIT ssa fallback name=%s begin=%d pc=%d opcode=%s iterations=%d",
                 (String)cf.get_name(), plan.begin, resume_pc, cf.code[resume_pc].op, consumed);

@@ -49,6 +49,7 @@ struct FunctionPlan @feat(SLJIT) {
     usz resume_bytes;
     uint numeric_homes;
     LoopPlan* ssa_region;
+    LoopPlan* ssa_leaves;
     ulong last_use;
     void*[FUNCTION_OPS + 1] map_pcs @if($feat(SLJIT_MAP));
     void* map_calls @if($feat(SLJIT_MAP));
@@ -83,6 +84,10 @@ struct FunctionPlan @feat(SLJIT) {
     ulong direct_calls @if($feat(SLJIT_STATS));
     ulong direct_returns @if($feat(SLJIT_STATS));
     ulong inline_recoveries @if($feat(SLJIT_STATS));
+    ulong[FUNCTION_OPS] read_hits @if($feat(SLJIT_STATS));
+    uint[FUNCTION_OPS] read_shapes @if($feat(SLJIT_STATS));
+    uint[FUNCTION_OPS] read_changes @if($feat(SLJIT_STATS));
+    uint[FUNCTION_OPS] read_classes @if($feat(SLJIT_STATS));
     ulong resumed_allocations @if($feat(SLJIT_STATS));
     ulong resumed_pushes @if($feat(SLJIT_STATS));
     ulong stalled @if($feat(SLJIT_STATS));
@@ -93,6 +98,7 @@ struct FunctionPlan @feat(SLJIT) {
 struct FunctionEmitter @feat(SLJIT) {
     LoopEmitter out;
     FunctionPlan* plan;
+    ColdCtx* cold;
     FunctionFlow flow;
     CompiledFunction* cf;
     bool[FUNCTION_OPS] blocks;
@@ -868,7 +874,7 @@ fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
     return typed >= 8 && typed > named ? LOOP_LINK_LIMIT : 2048;
 }
 
-fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act) @feat(SLJIT) {
+fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act, ColdCtx* cold = null) @feat(SLJIT) {
     $if $feat(SLJIT_STATS): cf.sljit_rejection = "emission failed"; $endif
     LoopPlan layout_plan;
     FunctionEmitter emitter = {
@@ -880,6 +886,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     out.link_limit = function_link_limit(cf);
     out.function_mode = true;
     f.cf = cf;
+    f.cold = cold;
     if (FUNCTION_DATAFLOW) out.flow = &f.flow;
     f.blocks[0] = true;
     if (plan.ssa_region != null) f.blocks[plan.ssa_region.end + 1] = true;
@@ -1460,6 +1467,16 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     plan.native = (FunctionNative)jit::sljit_generate_code(e.compiler, 0, null);
     if (plan.native == null) return false;
     sljit_calls_generated(plan, e.compiler, fallback);
+    for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) {
+        $if $feat(SLJIT_MAP):
+            leaf.ssa_map_begin = (void*)jit::sljit_shim_label_addr(leaf.ssa_map_begin);
+            leaf.ssa_map_end = (void*)jit::sljit_shim_label_addr(leaf.ssa_map_end);
+        $endif
+        if (leaf.ssa_epoch_constant == null) continue;
+        leaf.ssa_epoch_patch = jit::sljit_shim_const_addr(leaf.ssa_epoch_constant);
+        leaf.ssa_executable_offset = jit::sljit_shim_executable_offset(e.compiler);
+        leaf.ssa_epoch_constant = null;
+    }
     $if $feat(SLJIT_MAP):
         for (uint pc = 0; pc < cf.code_count; pc++) plan.map_pcs[pc] = (void*)jit::sljit_shim_label_addr(out.labels[pc]);
         plan.map_pcs[cf.code_count] = (void*)jit::sljit_shim_label_addr(plan.map_pcs[cf.code_count]);

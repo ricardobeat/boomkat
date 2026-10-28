@@ -8,12 +8,13 @@ import boomkat::jit;
 import std::io;
 
 // Function regions share graph construction, optimization and allocation with
-// loop SSA. Pure, call-free regions use a shared-register entry: guards can
+// loop SSA. Pure regions use a shared-register entry when no binding snapshot
+// preparation is needed: guards can
 // restart the untouched baseline frame, and only the result is published.
 fn LoopPlan* sljit_function_ssa_compile(CompiledFunction* cf, ColdCtx* cold) @feat(SLJIT) {
     if (cf.num_regs > LOOP_REGS || cf.code_count > LOOP_OPS || cf.code_count < 9) return null;
     for (uint pc = 0; pc < cf.code_count; pc++) {
-        if (function_call_op(cf.code[pc].op)) return null;
+        if (function_call_op(cf.code[pc].op) && function_inline_ssa_candidate(cf, pc, cold.heap) == null) return null;
     }
     uint terminal;
     for (uint pc = 0; pc < cf.code_count; pc++) {
@@ -24,13 +25,13 @@ fn LoopPlan* sljit_function_ssa_compile(CompiledFunction* cf, ColdCtx* cold) @fe
     }
     if (terminal < 8) return null;
     LoopPlan draft;
-    if (!loop_analyze(&draft, terminal - 1, cold.act.bottom, cold, 0)) return null;
+    if (!loop_analyze(&draft, terminal - 1, cold.act.bottom, cold, 0, true)) return null;
     // Only immutable own-field layouts can be prepared entirely in generated
     // code. A global recycle-epoch guard prevents shape-id reuse.
     for (uint i = 0; i < draft.memory_count; i++) {
         LoopMemorySpec spec = draft.memory[i];
         Shape* shape = cold.heap.get_shape(spec.shape);
-        if (spec.kind != FIELD || spec.written || spec.cls != OBJECT || shape == null || shape.dict) return null;
+        if ((spec.kind != FIELD && spec.kind != SHAPE_FIELD) || spec.written || spec.cls != OBJECT || shape == null || shape.dict || shape.generation != spec.shape_gen) return null;
     }
     draft.ssa_fields = draft.memory_count != 0;
     draft.ssa_shape_epoch = cold.heap.shape_recycle_epoch;
@@ -61,6 +62,12 @@ fn LoopPlan* sljit_function_ssa_compile(CompiledFunction* cf, ColdCtx* cold) @fe
 }
 
 fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
+    while (plan.ssa_leaves != null) {
+        LoopPlan* leaf = plan.ssa_leaves;
+        plan.ssa_leaves = leaf.next;
+        if (leaf.ssa_entry != null) jit::sljit_free_code(leaf.ssa_entry, null);
+        h.free_func(h.heap_udata, leaf);
+    }
     if (plan.ssa_region == null) return;
     $if $feat(SLJIT_STATS):
         io::eprintfn("SLJIT function SSA hits=%d", plan.ssa_region.hits);
@@ -98,13 +105,15 @@ fn bool sljit_function_ssa_live(Heap* h, LoopPlan* plan) @feat(SLJIT) {
 // per heap epoch, before any generated frames are active; otherwise one recycle
 // leaves those callees permanently using their baseline fallback.
 fn void sljit_function_ssa_refresh(Heap* h) @feat(SLJIT) {
-    $if $feat(SLJIT_FUNCTION_SSA):
+    $if $feat(SLJIT_FUNCTION_SSA) || !$feat(SLJIT_NO_SSA_LEAVES):
         if (h.jit_ssa_epoch == h.shape_recycle_epoch) return;
         for (uint i = 0; i < h.compiled_func_count; i++) {
             CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[i];
             if (cf == null) continue;
             FunctionPlan* plan = cf.sljit_function;
-            if (plan != null && plan.ssa_region != null) sljit_function_ssa_live(h, plan.ssa_region);
+            if (plan == null) continue;
+            if (plan.ssa_region != null) sljit_function_ssa_live(h, plan.ssa_region);
+            for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) sljit_function_ssa_live(h, leaf);
         }
         h.jit_ssa_epoch = h.shape_recycle_epoch;
     $endif

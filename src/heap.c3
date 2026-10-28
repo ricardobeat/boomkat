@@ -1104,7 +1104,7 @@ struct Heap {
     ulong               jit_native_work @if($feat(SLJIT));
     ulong               jit_clock @if($feat(SLJIT));
     uint                jit_evictions @if($feat(SLJIT));
-    uint                jit_ssa_epoch @if($feat(SLJIT) && $feat(SLJIT_FUNCTION_SSA));
+    uint                jit_ssa_epoch @if($feat(SLJIT));
     ulong               jit_resumed_pushes @if($feat(SLJIT) && $feat(SLJIT_STATS));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
@@ -1898,7 +1898,7 @@ fn void Heap.init_shapes(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
-    $if $feat(SLJIT) && $feat(SLJIT_FUNCTION_SSA): self.jit_ssa_epoch = 0; $endif
+    $if $feat(SLJIT): self.jit_ssa_epoch = 0; $endif
     self.regexp_guard = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
@@ -2866,7 +2866,7 @@ fn void Heap.reset(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
-    $if $feat(SLJIT) && $feat(SLJIT_FUNCTION_SSA): self.jit_ssa_epoch = 0; $endif
+    $if $feat(SLJIT): self.jit_ssa_epoch = 0; $endif
     self.var_ic_filled = false;
     self.regexp_guard = {};
     self.promise_species_guard = {};

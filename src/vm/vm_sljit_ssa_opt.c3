@@ -54,6 +54,34 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
     }
 }
 
+// Binding snapshots and function identities are immutable SSA inputs. Their
+// checks can cross stores, but can only be reused along a dominated path.
+fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
+    int[SSA_CSE] seen;
+    uint count;
+    for (uint i = 0; i < g.value_count; i++) {
+        SsaValue* value = &g.values[i];
+        if (value.op != BINDING && value.op != CHECKFN) continue;
+        bool found;
+        for (uint k = 0; k < count; k++) {
+            SsaValue prior = g.values[seen[k]];
+            if (value.op != prior.op || value.imm != prior.imm
+                || (g.dominators[value.block] & (1U << (uint)prior.block)) == 0) continue;
+            if (value.op == CHECKFN && ssa_alias(g, value.a) != ssa_alias(g, prior.a)) continue;
+            if (value.op == BINDING) {
+                value.op = COPY;
+                value.a = seen[k];
+                value.b = 0;
+                value.imm = 0;
+                if (g.values[seen[k]].last < value.last) g.values[seen[k]].last = value.last;
+            } else { value.op = NOP; }
+            found = true;
+            break;
+        }
+        if (!found && count < seen.len) seen[count++] = (int)i;
+    }
+}
+
 // A dense element read whose only consumers are numeric conversions cannot
 // carry a heap reference or a hole past them.
 fn void ssa_numeric_loads(SsaGraph* g) @feat(SLJIT) {
@@ -97,6 +125,21 @@ fn int ssa_gpr_home(
 ) @feat(SLJIT) => slot < g.registers.scratch_homes ? jit::reg_r((int)slot + 4)
     : jit::reg_s((int)(slot - g.registers.scratch_homes + g.registers.saved_first));
 
+// Private inline scratch never owns strings. Keep unknown boxed spills out
+// of it; numeric results and boolean joins need no runtime ownership guard.
+fn bool ssa_inert_value(SsaGraph* g, int value, uint depth = 0) @feat(SLJIT) {
+    if (value < 0 || depth > SSA_BLOCKS) return false;
+    value = ssa_alias(g, value);
+    SsaValue v = g.values[value];
+    if (v.rep != BOXED || v.op == COMPARE || v.op == BOX_I || v.op == BOX_F) return true;
+    if (v.op != JOIN) return false;
+    SsaJoin* join = &g.joins[v.a];
+    for (uint p = 0; p < join.pred_count; p++) {
+        if (!ssa_inert_value(g, join.incoming[p][v.b], depth + 1)) return false;
+    }
+    return true;
+}
+
 // Copies are pure aliases of their source: both hold the same value, so the
 // allocator coalesces them onto one home and codegen drops the move.
 fn int ssa_alias(SsaGraph* g, int value) @feat(SLJIT) {
@@ -107,6 +150,7 @@ fn int ssa_alias(SsaGraph* g, int value) @feat(SLJIT) {
 fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
+        if ((value.op == CONST_I || value.op == CONST_F) && value.last == value.def) value.op = NOP;
         value.alloc_begin = value.def;
         if (value.op != JOIN) continue;
         SsaJoin* join = &g.joins[value.a];
@@ -132,7 +176,7 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
         SsaValue* value = &g.values[i];
         value.home = 0;
         if (value.op != PHI) continue;
-        uint homes = value.rep == F64 ? SSA_HOMES : g.registers.scratch_homes + g.registers.saved_homes;
+        uint homes = value.rep == F64 ? g.fpr_homes : g.registers.scratch_homes + g.registers.saved_homes;
         for (uint s = 0; s < homes; s++) {
             int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
             bool used;
@@ -153,8 +197,8 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
     }
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op == PHI || value.op == COPY) continue;
-        uint homes = value.rep == F64 ? SSA_HOMES : g.registers.scratch_homes + g.registers.saved_homes;
+        if (value.op == PHI || value.op == COPY || !ssa_has_result(value.op)) continue;
+        uint homes = value.rep == F64 ? g.fpr_homes : g.registers.scratch_homes + g.registers.saved_homes;
         for (uint s = 0; s < homes; s++) {
             int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
             bool free = true;

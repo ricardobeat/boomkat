@@ -87,6 +87,16 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
         break;
     }
     if (slot == null) return 0;
+    $if $feat(SLJIT_STATS):
+        FunctionPlan* plan = cold.vm.current_func.sljit_function;
+        if (plan != null && offset >= plan.begin && offset - plan.begin < FUNCTION_OPS) {
+            uint at = offset - plan.begin;
+            plan.read_hits[at]++;
+            if (plan.read_shapes[at] != receiver.shape_id) plan.read_changes[at]++;
+            plan.read_shapes[at] = receiver.shape_id;
+            plan.read_classes[at] = (uint)receiver.get_class();
+        }
+    $endif
     TVal value = slot.get();
     TVal* dest = regs + ins.a;
     if (!th_can_publish(cold.heap, value) || !th_can_release(dest)) return 0;
