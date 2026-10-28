@@ -207,6 +207,11 @@ fn Instruction* sljit_function_entry(
     // Inline scratch is written before each read; avoid clearing 256 bytes
     // on every native entry. Only metadata-cache keys require initialization.
     FunctionRun run @noinit;
+    $if $feat(SLJIT_FUNCTION_SSA):
+        LoopState ssa_state @noinit;
+        run.ssa_state = &ssa_state;
+        sljit_function_ssa_refresh(h);
+    $endif
     run.entry = plan.entries[local];
     run.root = cold.act;
     $if $feat(SLJIT_ADAPTIVE):
@@ -346,6 +351,9 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT numeric id=%d homes=%d", i, plan.numeric_homes);
                 if (plan.ssa_region != null) io::printfn("SLJIT function SSA id=%d hits=%d begin=%d end=%d bytes=%d",
                     i, plan.ssa_region.hits, plan.ssa_region.begin, plan.ssa_region.end, plan.ssa_region.code_bytes);
+                if (plan.ssa_region != null) io::printfn("SLJIT SSA outcomes id=%d completed=%d entry_misses=%d body_misses=%d epoch_updates=%d",
+                    i, plan.ssa_region.ssa_completed, plan.ssa_region.ssa_entry_misses,
+                    plan.ssa_region.ssa_body_misses, plan.ssa_region.ssa_epoch_updates);
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes, plan.resume_fragment, plan.resume_bytes);
                 $if $feat(SLJIT_MAP): sljit_address_map(plan, cf, i); $endif

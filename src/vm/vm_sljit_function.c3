@@ -27,13 +27,14 @@ struct FunctionRun {
     Activation* root;
     uint depth;
     Instruction* start;
-    FunctionInlineFrame* recover_frame;
+    FunctionInlineFrame* recover_frame @if($feat(SLJIT));
     uint recover_pc;
     void* helper_continuation;
     Instruction* helper_pc;
     ulong clock;
     FunctionTypedCache[2] typed;
     double[32 * INLINE_DEPTH] inline_values;
+    LoopState* ssa_state @if($feat(SLJIT));
 }
 alias FunctionNative = fn Instruction*(TVal* regs, ColdCtx* cold, FunctionRun* run);
 
@@ -949,17 +950,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         Instruction ins = cf.code[pos];
         if (out.flow != null && f.blocks[pos]) f.flow_flush();
         out.labels[pos] = e.label();
-        if (pos == 0 && plan.ssa_region != null) {
-            e.mov(r0, 0, jit::reg_s(1), 0);
-            e.mov(r1, 0, imm, (long)plan.ssa_region);
-            if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
-                    imm, (long)&sljit_function_ssa_run) != 0) return false;
-            void* completed = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
-            if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
-            e.bind(completed);
-            f.flow_reload(plan.ssa_region.end + 1);
-            out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), plan.ssa_region.end + 1, false);
-        }
+        if (pos == 0 && plan.ssa_region != null) f.ssa_entry();
         bool active = function_op(
             ins.op
         ) || function_math_candidate(

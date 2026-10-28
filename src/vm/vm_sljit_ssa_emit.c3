@@ -18,15 +18,14 @@ struct SsaEmitter @feat(SLJIT) {
     LoopPlan* plan;
     CompiledFunction* cf;
     int state;
+    int regs;
     int budget;
-    int dirty;
     ulong dirty_mask;
     int[LOOP_REGS] live;
     uint at_def;
     uint pc;
     void* header;
-    int length_home;
-    int base_home;
+    void* epoch_constant;
     int[2] memory_length;
     int[2] memory_base;
     // The address of the last element access, when it was computed for the
@@ -120,11 +119,10 @@ fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int[LOOP_REGS]* re
 }
 fn void SsaEmitter.snapshot_none(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc);
 fn void SsaEmitter.snapshot_phis(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc, &self.g.phi);
-fn void SsaEmitter.snapshot(
-    &self,
-    void* jump,
-    uint pc
-) @feat(SLJIT) => self.snapshot_frame(jump, pc, &self.g.frames[pc - self.plan.begin]);
+fn void SsaEmitter.snapshot(&self, void* jump, uint pc) @feat(SLJIT) {
+    if (self.g.direct) { self.snapshot_none(jump, self.plan.begin); }
+    else { self.snapshot_frame(jump, pc, &self.g.frames[pc - self.plan.begin]); }
+}
 fn void SsaEmitter.guard(&self, int condition, int left, long lw, int right, long rw, uint pc) @feat(SLJIT) {
     self.snapshot(self.e.cmp(condition, left, lw, right, rw), pc);
 }
@@ -218,10 +216,24 @@ fn long ssa_memory_offset(uint memory, uint field) @feat(SLJIT) => loop_memory_o
 
 fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
     int r0 = jit::reg_r(0);
+    if (self.g.single_pass && self.plan.ssa_fields) {
+        LoopState layout;
+        self.epoch_constant = jit::sljit_emit_const(self.e.compiler, jit::SLJIT_MOV, jit::reg_r(1), 0, self.plan.ssa_shape_epoch);
+        if (self.epoch_constant == null) self.e.failed = true;
+        if (self.g.direct) {
+            Heap heap;
+            self.e.mov(r0, 0, jit::SLJIT_MEM | jit::reg_s(1), $reflect(ColdCtx.heap).offset);
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r0, (char*)&heap.shape_recycle_epoch - (char*)&heap, jit::SLJIT_MOV_U32);
+        } else {
+            self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, (char*)&layout.shape_epoch - (char*)&layout, jit::SLJIT_MOV_U32);
+        }
+        self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, jit::reg_r(1), 0), self.plan.begin);
+    }
     for (uint memory = 0; memory < self.plan.memory_count && memory < LOOP_MEMORY; memory++) {
         if (!self.g.invariant[memory]) continue;
         uint source = self.plan.memory[memory].source;
-        if (source < LOOP_REGS) {
+        if (self.g.single_pass && self.plan.ssa_fields) self.field_entry(memory);
+        if (source < LOOP_REGS && !(self.g.direct && self.plan.ssa_fields)) {
             self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, loop_value_offset(source));
             void* jump = self.e.cmp(
                 jit::SLJIT_NOT_EQUAL,
@@ -235,15 +247,13 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
         // The descriptor of an invariant memory cannot change during the run,
         // so its data pointer and length stay in registers instead of being
         // reloaded for every element access.
-        if (memory < 2 && self.g.registers.saveds >= 7 + memory * 2) {
+        if (memory < 2 && self.plan.memory[memory].kind != FIELD
+            && self.plan.memory[memory].kind != SHAPE_FIELD
+            && self.g.registers.saveds >= 7 + memory * 2) {
             self.memory_length[memory] = jit::reg_s(5 + (int)memory * 2);
             self.memory_base[memory] = jit::reg_s(6 + (int)memory * 2);
             self.e.mov(self.memory_length[memory], 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 2));
             self.e.mov(self.memory_base[memory], 0, jit::SLJIT_MEM | self.state, loop_memory_offset(memory, 1));
-            if (memory == 0) {
-                self.length_home = self.memory_length[0];
-                self.base_home = self.memory_base[0];
-            }
         }
     }
 }
@@ -251,9 +261,9 @@ fn void SsaEmitter.prologue(&self) @feat(SLJIT) {
     int r0 = jit::reg_r(0);
     for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
         int value = self.g.phi[reg] >= 0 ? self.g.phi[reg] : self.g.arg[reg];
-        if (value < 0) continue;
+        if (value < 0 || (self.g.direct && self.g.values[value].last == self.g.values[value].def)) continue;
         SsaRep rep = self.g.values[value].rep;
-        self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, loop_value_offset(reg));
+        self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(reg));
         if (rep == INT32) {
             self.exact_int(r0, r0, self.plan.begin);
             self.store_gpr(value, r0);
@@ -1064,6 +1074,19 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) 
 
 fn void SsaEmitter.publish(&self, int[LOOP_REGS]* regs, uint pc) @feat(SLJIT) {
     int r0      = jit::reg_r(0);
+    if (self.g.direct) {
+        if (pc == self.plan.end + 1) {
+            self.output(self.g.current[self.g.result_reg], pc);
+            self.e.op(jit::SLJIT_LSHR, jit::reg_r(1), r0, 0, jit::SLJIT_IMM, 48);
+            self.snapshot_none(self.e.cmp(jit::SLJIT_EQUAL, jit::reg_r(1), 0,
+                jit::SLJIT_IMM, (long)types::TAG_STRING), self.plan.begin);
+        } else {
+            self.e.mov(r0, 0, jit::SLJIT_IMM, (long)SSA_REFUSED);
+        }
+        if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
+        return;
+    }
+
     LoopState layout;
     ulong dirty = self.dirty_mask;
     for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {

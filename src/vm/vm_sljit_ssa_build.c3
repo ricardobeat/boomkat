@@ -59,8 +59,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             g.phi[reg] = phi;
             g.values[phi].arg_reg = (int)reg;
             g.current[reg] = phi;
-        } else if ((g.single_pass && live_in[reg]) || (!written[reg] && value_read[reg])) {
-            int arg = ssa_value(g, ARG, g.rep[reg], -1, 0, 0);
+        } else if ((g.single_pass && (live_in[reg] || exit_live[reg])) || (!written[reg] && value_read[reg])) {
+            int arg = ssa_value(g, ARG, g.single_pass && !live_in[reg] ? BOXED : g.rep[reg], -1, 0, 0);
             g.values[arg].arg_reg = (int)reg;
             g.arg[reg] = arg;
             g.current[reg] = arg;
@@ -90,7 +90,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             // Conversions can consume a bytecode operand before a later guard in
             // the same operation. Keep the original value until that operation
             // commits, so replay observes the exact pre-instruction frame.
-            defer foreach (value : g.frames[at]) if (value >= 0) ssa_use(g, value);
+            defer if (!g.direct) { foreach (value : g.frames[at]) if (value >= 0) ssa_use(g, value); }
             g.current_pc = pos;
             int target = loop_target(ins, pos);
             if (target >= 0) {
@@ -663,7 +663,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     if (g.single_pass) {
         // A function region publishes its final definitions directly. There
         // are no loop-carried phis or backedge representation conversions.
-        foreach (value : g.current) if (value >= 0) ssa_use(g, value);
+        if (g.direct) {
+            if (g.current[g.result_reg] < 0) return false;
+            ssa_use(g, g.current[g.result_reg]);
+        } else {
+            foreach (value : g.current) if (value >= 0) ssa_use(g, value);
+        }
         return !g.failed;
     }
     // Latch inputs for loop phis.

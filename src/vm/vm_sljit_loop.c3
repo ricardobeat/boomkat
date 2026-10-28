@@ -60,6 +60,8 @@ struct LoopMemorySpec @feat(SLJIT) {
 }
 struct LoopState @feat(SLJIT) {
     TVal[LOOP_REGS] values;
+    TVal receiver;
+    uint shape_epoch;
     LoopMemory[LOOP_MEMORY] memory;
     TVal[LOOP_BINDINGS] bindings;
     ulong dirty;
@@ -69,6 +71,16 @@ struct LoopState @feat(SLJIT) {
 struct LoopPlan @feat(SLJIT) {
     LoopNative native;
     ulong ssa_inputs;
+    uint ssa_shape_epoch;
+    bool ssa_fields;
+    void* ssa_entry;
+    bool ssa_invalid;
+    ulong ssa_completed @if($feat(SLJIT_STATS));
+    ulong ssa_entry_misses @if($feat(SLJIT_STATS));
+    ulong ssa_body_misses @if($feat(SLJIT_STATS));
+    ulong ssa_epoch_updates @if($feat(SLJIT_STATS));
+    usz ssa_epoch_patch;
+    long ssa_executable_offset;
     LoopPlan* next;
     uint begin;
     uint end;
@@ -269,6 +281,8 @@ fn int loop_memory_field(
     LoopMemorySpec spec = {
         .source = (uint)source,
         .kind = FIELD,
+        .cls = object.get_class(),
+        .shape_gen = object.shape_generation(h),
         .pc = pc,
         .key_const = key_const,
         .slot = slot,
@@ -330,7 +344,7 @@ fn int loop_memory_shape_layout(LoopPlan* plan, uint shape, uint generation, int
     plan.memory[index] = spec;
     return (int)index;
 }
-fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold) @feat(SLJIT) {
+fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool generated_fields = false) @feat(SLJIT) {
     Heap* h = cold.heap;
     for (EnvRecord* scope = cold.act.lex_env; scope != null; scope = scope.parent) if (scope.is_with()) return false;
     for (uint i = 0; i < cold.vm.current_func.num_regs; i++) {
@@ -341,6 +355,7 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold) @feat(SLJI
     }
     for (uint i = 0; i < plan.memory_count; i++) {
         LoopMemorySpec spec = plan.memory[i];
+        if (generated_fields && spec.kind == FIELD) continue;
         LoopMemory* memory  = &state.memory[i];
         memory.source = loop_source(spec.source, state, cold);
         if (spec.kind == ASCII) {

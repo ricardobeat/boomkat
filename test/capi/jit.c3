@@ -241,6 +241,74 @@ fn void check_register_effects() {
     @check(writes.test(0) && writes.test(255));
 }
 
+// Exercise the internal entry through a real C-to-shared-register gateway.
+alias SsaDirectEntry = fn ulong(TVal* regs, ColdCtx* cold, FunctionRun* run);
+fn void check_ssa_direct(JsRuntime* runtime) {
+    Instruction[4] code = {
+        bytecode::make_abc(Opcode.ADD, 2, 0, 1),
+        bytecode::make_abc(Opcode.MUL, 3, 2, 2),
+        bytecode::make_abc(Opcode.SUB, 4, 3, 0),
+        bytecode::make_abc(Opcode.RET, 4, 0, 0)
+    };
+    CompiledFunction cf = { .code = &code[0], .code_count = 4, .num_regs = 5 };
+    LoopPlan plan = { .begin = 0, .end = 2 };
+    void* native = vm::ssa_function_emit(&plan, &cf, runtime.rt.heap);
+    @check(native != null);
+    defer jit::sljit_free_code(native, null);
+    TemplateEmitter e = { .compiler = jit::sljit_create_compiler(null) };
+    @check(e.compiler != null);
+    defer jit::sljit_free_compiler(e.compiler);
+    @check(jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS3WWW_R, 3, 3, 0) == 0);
+    for (int i = 0; i < 3; i++) e.mov(jit::reg_s(i), 0, jit::reg_r(i), 0);
+    @check(jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL_REG_ARG, 1,
+        jit::SLJIT_IMM, (long)native) == 0);
+    @check(jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, jit::reg_r(0), 0) == 0);
+    @check(!e.failed);
+    void* gateway = jit::sljit_generate_code(e.compiler, 0, null);
+    @check(gateway != null);
+    defer jit::sljit_free_code(gateway, null);
+    SsaDirectEntry entry = (SsaDirectEntry)gateway;
+    LoopState state;
+    FunctionRun run = { .ssa_state = &state };
+    TVal[5] regs;
+    for (long i = 0; i < 1000; i++) {
+        regs[0].set_fastint(i);
+        regs[1].set_fastint(3);
+        regs[4].set_fastint(-99);
+        TVal result = { .bits = entry(&regs[0], null, &run) };
+        @check(result.get_number_or_fastint() == (double)((i + 3) * (i + 3) - i));
+        @check(regs[0].get_fastint() == i && regs[4].get_fastint() == -99);
+    }
+    regs[0].set_undefined();
+    @check(entry(&regs[0], null, &run) == vm::SSA_REFUSED);
+    @check(regs[0].is_undefined() && regs[4].get_fastint() == -99);
+}
+
+fn void check_ssa_epoch(JsRuntime* runtime, JsContext* context) {
+    $if $feat(SLJIT_FUNCTION_SSA):
+        eval(context, "function ssaDot(v){return this.x*v.x+this.y*v.y+this.z*v.z;}var ssaLeft={x:2,y:3,z:5,dot:ssaDot};var ssaRight={x:7,y:11,z:13};");
+        for (uint i = 0; i < 64; i++) eval(context, "if(ssaLeft.dot(ssaRight)!==112)throw 'SSA dot';");
+        CompiledFunction* cf = named_function(runtime, "ssaDot");
+        @check(cf != null && cf.sljit_function != null);
+        FunctionPlan* function = cf.sljit_function;
+        LoopPlan* region = function.ssa_region;
+        @check(region != null && region.ssa_entry != null && region.ssa_fields);
+        Heap* h = runtime.rt.heap;
+        h.shape_recycle_epoch++;
+        vm::sljit_function_ssa_refresh(h);
+        @check(region.ssa_shape_epoch == h.shape_recycle_epoch && !region.ssa_invalid);
+        eval(context, "if(ssaLeft.dot(ssaRight)!==112)throw 'SSA epoch refresh';");
+        $if $feat(SLJIT_STATS): @check(region.ssa_completed != 0); $endif
+        // Model a recycled shape by invalidating the recorded generation,
+        // then require the patched entry to choose baseline execution safely.
+        region.memory[0].shape_gen++;
+        h.shape_recycle_epoch++;
+        vm::sljit_function_ssa_refresh(h);
+        @check(region.ssa_invalid);
+        eval(context, "if(ssaLeft.dot(ssaRight)!==112)throw 'SSA epoch refusal';");
+    $endif
+}
+
 // Single-pass regions reuse the loop SSA graph, allocation and recovery code.
 fn void check_ssa_region(JsRuntime* runtime) {
     Instruction[3] code = {
@@ -293,6 +361,7 @@ fn void main() {
     first.create()!!;
     defer first.destroy();
     check_ssa_region(&first);
+    check_ssa_direct(&first);
     second.create()!!;
     defer second.destroy();
     JsContext a, b, isolated;
@@ -474,5 +543,6 @@ fn void main() {
     $else
         @check(!first.set_jit());
     $endif
+    check_ssa_epoch(&first, &a);
     io::printn("embedding JIT: PASS");
 }

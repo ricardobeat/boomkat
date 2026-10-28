@@ -95,7 +95,7 @@ fn int ssa_gpr_home(
     SsaGraph* g,
     uint slot
 ) @feat(SLJIT) => slot < g.registers.scratch_homes ? jit::reg_r((int)slot + 4)
-    : jit::reg_s((int)(slot - g.registers.scratch_homes) + 2);
+    : jit::reg_s((int)(slot - g.registers.scratch_homes + g.registers.saved_first));
 
 // Copies are pure aliases of their source: both hold the same value, so the
 // allocator coalesces them onto one home and codegen drops the move.

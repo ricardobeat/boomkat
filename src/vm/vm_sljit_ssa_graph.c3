@@ -17,6 +17,7 @@ import std::io;
 // selected from uses, and exits reconstruct the interpreter's register slots.
 // Unsupported loops fall back to the straight-line loop emitter.
 // Keep an opt-out for differential measurements of the straight-line tier.
+const ulong SSA_REFUSED = types::TAG_POISON << 48;
 const bool SSA_ENABLED    = !$feat(SLJIT_NO_SSA);
 const uint SSA_MAX_VALUES = 512;
 const uint SSA_MAX_SPILL  = 128;
@@ -128,16 +129,19 @@ struct SsaRegisterBudget @feat(SLJIT) {
     uint saveds;
     uint scratch_homes;
     uint saved_homes;
+    uint saved_first;
 }
-fn SsaRegisterBudget ssa_register_budget() @feat(SLJIT) {
+fn SsaRegisterBudget ssa_register_budget(bool direct = false) @feat(SLJIT) {
     uint saveds = (uint)jit::sljit_shim_info(1);
-    if (saveds > 9) saveds = 9;
+    uint limit = direct ? 6 : 9;
+    if (saveds > limit) saveds = limit;
     uint scratches = (uint)jit::sljit_shim_info(0) - saveds;
     if (scratches > 8) scratches = 8;
     uint scratch_homes = scratches > 4 ? scratches - 4 : 0;
-    uint saved_homes   = saveds > 2 ? saveds - 2 : 0;
+    uint first = direct ? 3 : 2;
+    uint saved_homes = direct ? 2 : saveds > first ? saveds - first : 0;
     if (saved_homes > 3) saved_homes = 3;
-    return { scratches, saveds, scratch_homes, saved_homes };
+    return { scratches, saveds, scratch_homes, saved_homes, first };
 }
 
 struct SsaGraph @feat(SLJIT) {
@@ -153,6 +157,8 @@ struct SsaGraph @feat(SLJIT) {
     uint spill_count;
     bool failed;
     bool single_pass;
+    bool direct;
+    uint result_reg;
     SsaRegisterBudget registers;
     int[LOOP_REGS] current;
     int[LOOP_REGS] header;

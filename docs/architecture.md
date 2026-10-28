@@ -1894,21 +1894,37 @@ these mechanical bindings.
 
 ### Function-region SSA bring-up
 
-`SLJIT_FUNCTION_SSA` enables an experimental scalar-function adapter in
+`SLJIT_FUNCTION_SSA` enables an experimental function adapter in
 `vm_sljit_function_ssa.c3`. Single-pass regions share graph construction,
-representation inference, optimization, allocation, emission and guard snapshots
-with loop SSA. Entry values become arguments; there are no loop phis or latch.
-The region returns its exact replay PC, and both modes share value publication.
+representation inference, optimization, allocation and emission with loop SSA.
+Entry values become arguments; there are no loop phis or latch.
 
-Initial admission covers bounded, call-free scalar bodies ending at a return.
-The adapter deliberately remains opt-in: its runtime boundary and copied state
-must earn their cost, and the first Crypto/Richards checks admitted no regions.
-A minimal long arithmetic function improved29→24ms over five alternating pairs;
-copying only live SSA entry inputs reduced that further to20ms with matching results.
-This is a boundary-cost experiment, not an Octane performance claim. Memory
-regions, arbitrary hot spans, direct generated continuations, reference-aware
-allocation and wider opcode coverage remain required before this becomes the
-general optimizing function tier.
+Admission covers bounded, call-free bodies ending at a return, including
+forward joins and read-only own fields of ordinary, non-dictionary objects.
+`vm_sljit_ssa_field.c3` emits receiver guards and slot-address preparation;
+multiple fields of one invariant receiver share one layout check. A patchable
+constant guards the heap's shape-recycle epoch. The outer native gateway
+refreshes field regions once per epoch, including linked callees that bypass
+that gateway. Invalid generations permanently refuse the region. Patching
+occurs only before generated frames become active, and the owning function
+plan retains the code until safe retirement.
+
+Pure regions use SLJIT's shared-register calling convention: S0..S2 retain
+the VM frame, cold context and run block. S3/S4 hold allocated values, S5
+addresses invocation-local SSA scratch. No helper, write or allocation occurs
+inside this region. Guards can therefore restart baseline execution from its
+untouched entry frame. Success publishes only the result before the baseline
+return continuation. String results or replacement of an owned string slot
+use baseline execution to preserve reference ownership. Captured bindings
+retain the C adapter and exact snapshot publication.
+
+The adapter remains opt-in. A long arithmetic microbenchmark measured 20–21 ms
+with copied live inputs versus 18 ms with shared-register entry in five
+alternating pairs, with identical results. Targeted Octane minis remain
+approximately neutral: this demonstrates lower boundary cost, not an Octane
+speedup. Calls, allocations, multiple returns and larger hot spans still limit
+coverage. Machine-code tests exercise direct success/refusal without mutating
+the VM frame, epoch refresh/invalidation, and both target register files.
 
 The new SLJIT facilities are exercised in machine-code ABI tests. Their presence
 is not evidence of a workload gain. Indexed operands replacing explicit address
@@ -1916,7 +1932,8 @@ formation in existing loop SSA measured neutral/slightly worse and were removed.
 Current production use includes condition materialization, CPU/FP-register
 capability validation and target-sized SSA register allocation. The backend
 reserves only available scratch/saved registers and enables descriptor-register
-caches only when their full saved-register pair is available. Selects, rotates/masked shifts, patchable constants,
+caches only when their full saved-register pair is available. Experimental
+function regions use patchable constants for epoch refresh. Selects, rotates,
 paired transfers and SIMD still need measured engine consumers. Function bitwise
 lowering uses the masked 32-bit shift operations, removing its explicit shift-count
 mask and preserving signed/unsigned result extension.
