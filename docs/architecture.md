@@ -659,6 +659,16 @@ checks array storage and builtin identities, and borrows pointers for a chunk
 that cannot allocate or enter JS. Every indexed access checks bounds; dense
 holes and values needing coercion exit to bytecode.
 
+The JIT source follows the compilation phases. `vm_sljit_ssa_graph.c3`
+owns graph types, control-flow analysis and representation inference;
+`vm_sljit_ssa_build.c3` renames bytecode definitions;
+`vm_sljit_ssa_opt.c3` owns optimization and register allocation;
+`vm_sljit_ssa_emit.c3` emits machine code and recovery exits. The small
+`vm_sljit_ssa.c3` driver orders these phases. Property-cache emission lives in
+`vm_sljit_property.c3`; function admission, lifetime and diagnostics live in
+`vm_sljit_function_runtime.c3`. These files share the VM module and its existing
+emitter types rather than introducing parallel abstractions.
+
 Eligible numeric loops first use a bounded SSA compiler, with int32, F64 and
 tagged representations, forward branch blocks and phi joins. Its register
 intervals include interpreter recovery uses; each guard reconstructs the frame

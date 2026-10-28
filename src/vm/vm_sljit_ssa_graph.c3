@@ -1,0 +1,857 @@
+module boomkat::vm;
+
+import boomkat::bytecode;
+import boomkat::compiler;
+import boomkat::types;
+import boomkat::heap;
+import boomkat::hobject;
+import boomkat::builtins;
+import boomkat::jit;
+import std::core::mem;
+import std::io;
+
+// Bytecode analysis and SSA graph construction.
+
+// SSA for the numeric loop tier. Bytecode registers become SSA values with
+// loop phis at the header; definitions are renamed, representations are
+// selected from uses, and exits reconstruct the interpreter's register slots.
+// Unsupported loops fall back to the straight-line loop emitter.
+// Keep an opt-out for differential measurements of the straight-line tier.
+const bool SSA_ENABLED    = !$feat(SLJIT_NO_SSA);
+const uint SSA_MAX_VALUES = 512;
+const uint SSA_MAX_SPILL  = 128;
+const uint SSA_HOMES      = 8;
+const uint SSA_GPR_HOMES  = 7;
+const uint SSA_EXITS      = 128;
+const uint SSA_CSE        = 64;
+const uint SSA_BLOCKS     = 16;
+const uint SSA_JOINS      = 16;
+
+enum SsaRep : char {
+    BOXED,
+    INT32,
+    F64
+}
+
+enum SsaOp : char {
+    ARG,
+    PHI,
+    BINDING,
+    CONST_I,
+    CONST_F,
+    COPY,
+    ADD,
+    SUB,
+    MUL,
+    DIV,
+    BAND,
+    BOR,
+    BXOR,
+    SHL,
+    SHR,
+    USHR,
+    BNOT,
+    NEG,
+    TO_INT,
+    TO_INDEX,
+    TO_F64,
+    BOX_I,
+    BOX_F,
+    LOAD,
+    STORE,
+    // Identity guard: the value must be a function whose compiled body is the
+    // one the call was expanded from.
+    CHECKFN,
+    // A value merged from several arms at a join. Its home holds whichever
+    // incoming value the path took.
+    JOIN,
+    // A conditional branch inside the body: the arms of an if.
+    BRANCH,
+    // An unconditional branch inside the body: the end of an arm.
+    GOTO
+}
+
+struct SsaValue @feat(SLJIT) {
+    SsaOp op;
+    SsaRep rep;
+    int a;
+    int b;
+    long imm;
+    uint def;
+    uint alloc_begin;
+    uint last;
+    uint pc;
+    int dst_reg;
+    int home;
+    uint spill;
+    int arg_reg;
+    // A branch names the block it leaves and the block its other arm takes.
+    int block;
+    int target;
+    int fallto;
+    Opcode branch_op;
+}
+
+// One basic block of the loop body. The blocks partition the body in
+// bytecode order, so a block's fall-through successor is the next one.
+struct SsaBlock @feat(SLJIT) {
+    uint begin;
+    uint end;
+    uint succ0;
+    uint succ1;
+    uint pred_count;
+    uint[4] preds;
+    uint branch_pc;
+    bool conditional;
+    bool jump;
+}
+
+// A block with more than one predecessor: the registers its predecessors
+// disagree about are merged here.
+struct SsaJoin @feat(SLJIT) {
+    uint block;
+    uint pred_count;
+    uint[4] preds;
+    int[LOOP_REGS] phi;
+    int[LOOP_REGS][4] incoming;
+}
+
+struct SsaExit @feat(SLJIT) {
+    void* jump;
+    uint pc;
+    int[LOOP_REGS] regs;
+}
+
+struct SsaGraph @feat(SLJIT) {
+    LoopPlan* plan;
+    CompiledFunction* cf;
+    Heap* heap;
+    SsaValue[SSA_MAX_VALUES] values;
+    int[SSA_MAX_VALUES * 4] conv;
+    uint value_count;
+    uint stamp;
+    uint current_pc;
+    uint current_block;
+    uint spill_count;
+    bool failed;
+    int[LOOP_REGS] current;
+    int[LOOP_REGS] header;
+    // Interpreter state before each bytecode, including values whose only
+    // remaining use is recovery after a guard. IR-use liveness is insufficient.
+    int[LOOP_REGS][LOOP_OPS + 1] frames;
+    int[LOOP_REGS] phi;
+    int[LOOP_REGS] arg;
+    SsaRep[LOOP_REGS] rep;
+    bool[LOOP_REGS] int_reg;
+    int cmp_lhs;
+    int cmp_rhs;
+    long cmp_imm;
+    Opcode cmp_op;
+    SsaExit[SSA_EXITS] exits;
+    uint exit_count;
+    // Memories whose source register is not written by the loop keep the same
+    // descriptor for the whole run, so their guards can be checked once.
+    bool[LOOP_MEMORY] invariant;
+    // Element reads whose every consumer converts to a number: the tag guard
+    // that rejects a non-number also rules out a hole, so the store that
+    // follows such a read into the same slot needs no second check.
+    bool[SSA_MAX_VALUES] numeric_load;
+    // Registers whose loop-carried value arrives as an exact double: keeping
+    // them in the wider representation removes an exact conversion from every
+    // backedge and lets the loop test compare doubles directly.
+    ulong force_f64;
+    int[SSA_CSE] cse_memory;
+    int[SSA_CSE] cse_index;
+    int[SSA_CSE] cse_value;
+    // The body's block graph and the joins between its arms.
+    SsaBlock[SSA_BLOCKS] blocks;
+    uint block_count;
+    uint[SSA_BLOCKS] dominators;
+    SsaJoin[SSA_JOINS] joins;
+    uint join_count;
+    // The register state at the end of each block.
+    int[LOOP_REGS][SSA_BLOCKS] block_exit;
+    // The values each block owns, in the order they were built.
+    uint[SSA_BLOCKS] block_first;
+    uint[SSA_BLOCKS] block_last;
+}
+
+fn long ssa_spill_offset(uint slot) @feat(SLJIT) {
+    LoopState state;
+    return (char*)&state.ssa_spill - (char*)&state + (long)slot * double::size;
+}
+fn int ssa_value(SsaGraph* g, SsaOp op, SsaRep rep, int a, int b, long imm) @feat(SLJIT) {
+    if (g.value_count == SSA_MAX_VALUES) {
+        g.failed = true;
+        return 0;
+    }
+    uint index = g.value_count++;
+    g.values[index].op = op;
+    g.values[index].rep = rep;
+    g.values[index].a = a;
+    g.values[index].b = b;
+    g.values[index].imm = imm;
+    g.values[index].def = g.stamp;
+    g.values[index].last = g.stamp;
+    g.values[index].arg_reg = -1;
+    g.values[index].dst_reg = -1;
+    g.values[index].pc = g.current_pc;
+    g.values[index].block = (int)g.current_block;
+    g.stamp++;
+    return (int)index;
+}
+fn void ssa_use(SsaGraph* g, int value) @feat(SLJIT) {
+    if (value < 0 || value >= (int)g.value_count) {
+        g.failed = true;
+        return;
+    }
+    if (g.stamp > g.values[value].last) g.values[value].last = g.stamp;
+}
+fn void ssa_result(SsaGraph* g, int value, uint reg, uint pc) @feat(SLJIT) {
+    g.values[value].dst_reg = (int)reg;
+    g.values[value].pc = pc;
+}
+fn int ssa_convert(SsaGraph* g, int value, SsaRep rep, bool exact) @feat(SLJIT) {
+    if (value < 0) {
+        g.failed = true;
+        return 0;
+    }
+    SsaRep from = g.values[value].rep;
+    if (from == rep && (!exact || rep != INT32)) return value;
+    if (from == rep && exact) return value;
+    // ToInt32 truncates/wraps; an exact array index must retain its own guard.
+    uint key = (uint)value * 4 + (exact && rep == INT32 ? 3 : (uint)rep);
+    if (g.conv[key] != 0) return g.conv[key] - 1;
+    SsaOp op;
+    if (rep == F64) {
+        op = from == BOXED ? TO_F64 : (from == INT32 ? TO_F64 : COPY);
+    } else if (rep == INT32) {
+        if (from == BOXED) {
+            op = exact ? TO_INDEX : TO_INT;
+        } else if (from == F64) {
+            op = exact ? TO_INDEX : TO_INT;
+        } else {
+            op = COPY;
+        }
+    } else {
+        op = from == F64 ? BOX_F : BOX_I;
+    }
+    ssa_use(g, value);
+    int result = ssa_value(g, op, rep, value, 0, 0);
+    g.conv[key] = (int)(result + 1);
+    return result;
+}
+fn bool ssa_numeric_rep(SsaRep rep) @feat(SLJIT) => rep == INT32 || rep == F64;
+// The comparison branches the tier can turn into a native test. The other
+// branch forms pack their operand into the offset field.
+fn bool ssa_comparison_op(Opcode op) @feat(SLJIT) {
+    return (op >= Opcode.JMP_NLT && op <= Opcode.JMP_SNEQ) || (op >= Opcode.JMP_NLTI && op <= Opcode.JMP_SNEQI);
+}
+
+// Split the body into basic blocks at the forward branch targets. A block
+// ends at the branch that leaves it, or at the start of the next block, so
+// the blocks partition the body in bytecode order and a block's fall-through
+// successor is the next one.
+fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan       = g.plan;
+    // A block starts at the body's head, after a conditional branch (the arm
+    // that falls through) and at the target of a forward branch.
+    uint[SSA_BLOCKS] starts;
+    uint count           = 0;
+    starts[count++] = plan.begin;
+    for (uint pos = plan.begin; pos <= plan.end; pos++) {
+        Instruction ins = cf.code[pos];
+        int target      = loop_target(ins, pos);
+        if (target < 0) continue;
+        if (target == (int)plan.begin) continue;
+        // A branch inside the body must move forward and stay inside it.
+        if (target <= (int)pos || target > (int)plan.end) return false;
+        if (ins.op != Opcode.JUMP && pos + 1 <= plan.end) {
+            bool found = false;
+            for (uint i = 0; i < count; i++) {
+                if (starts[i] == pos + 1) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (count == SSA_BLOCKS) return false;
+                uint at = count;
+                while (at > 0 && starts[at - 1] > pos + 1) {
+                    starts[at] = starts[at - 1];
+                    at--;
+                }
+                starts[at] = pos + 1;
+                count++;
+            }
+        }
+        bool found = false;
+        for (uint i = 0; i < count; i++) {
+            if (starts[i] == (uint)target) {
+                found = true;
+                break;
+            }
+        }
+        if (found) continue;
+        if (count == SSA_BLOCKS) return false;
+        uint at = count;
+        while (at > 0 && starts[at - 1] > (uint)target) {
+            starts[at] = starts[at - 1];
+            at--;
+        }
+        starts[at] = (uint)target;
+        count++;
+    }
+    g.block_count = count;
+    for (uint i = 0; i < count; i++) {
+        SsaBlock* block = &g.blocks[i];
+        block.begin = starts[i];
+        uint limit = i + 1 < count ? starts[i + 1] - 1 : plan.end;
+        uint e     = starts[i];
+        while (e <= limit && loop_target(cf.code[e], e) < 0) e++;
+        block.branch_pc = e <= limit ? e : 0;
+        block.end = block.branch_pc != 0 ? e : limit;
+        block.conditional = false;
+        block.jump = false;
+        block.succ0 = 0;
+        block.succ1 = 0;
+        if (block.branch_pc != 0) {
+            Instruction ins = cf.code[block.branch_pc];
+            if (ins.op == Opcode.JUMP) {
+                block.jump = true;
+            } else {
+                block.conditional = true;
+            }
+        }
+    }
+    // Resolve the edges now that every block start is known.
+    for (uint i = 0; i < count; i++) {
+        SsaBlock* block = &g.blocks[i];
+        if (block.branch_pc == 0) {
+            block.succ0 = i + 1 < count ? i + 1 : 0;
+            continue;
+        }
+        Instruction ins = cf.code[block.branch_pc];
+        int target      = loop_target(ins, block.branch_pc);
+        if (block.jump) {
+            block.succ0 = 0;
+            for (uint j = 0; j < count; j++) {
+                if (g.blocks[j].begin == (uint)target) {
+                    block.succ0 = j;
+                    break;
+                }
+            }
+            continue;
+        }
+        // A conditional branch: the arm that falls through is the next block,
+        // the other one is the block the target names.
+        block.succ0 = i + 1 < count ? i + 1 : 0;
+        block.succ1 = 0;
+        for (uint j = 0; j < count; j++) {
+            if (g.blocks[j].begin == (uint)target) {
+                block.succ1 = j;
+                break;
+            }
+        }
+    }
+    // The last block ends at the backedge, which the latch owns.
+    g.blocks[count - 1].succ0 = 0;
+    g.blocks[count - 1].succ1 = 0;
+    // Collect the predecessors.
+    for (uint i = 0; i < count; i++) {
+        SsaBlock* block = &g.blocks[i];
+        block.pred_count = 0;
+        for (uint j = 0; j < count; j++) {
+            SsaBlock* from = &g.blocks[j];
+            if (from.succ0 == i || from.succ1 == i) {
+                if (block.pred_count == block.preds.len) return false;
+                block.preds[block.pred_count++] = j;
+            }
+        }
+    }
+    return true;
+}
+
+// The block a bytecode position belongs to.
+fn int ssa_block_of(SsaGraph* g, uint pc) @feat(SLJIT) {
+    for (uint i = 0; i < g.block_count; i++) {
+        if (g.blocks[i].begin <= pc && pc <= g.blocks[i].end) return (int)i;
+    }
+    return -1;
+}
+
+fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
+    // Unsupported graphs retain the straight-line loop implementation.
+    if (!SSA_ENABLED || plan.memory_count > LOOP_MEMORY) return false;
+    for (uint i = 0; i < plan.memory_count; i++) {
+        LoopMemoryKind kind = plan.memory[i].kind;
+        if (kind == ASCII || kind == INTRINSIC) return false;
+    }
+    for (uint pos = plan.begin; pos <= plan.end; pos++) {
+        Instruction ins = cf.code[pos];
+        int target      = loop_target(ins, pos);
+        if (target >= 0) {
+            if (pos == plan.end) {
+                if (target != (int)plan.begin) return false;
+                // The backedge must compare two values. A truthiness test names
+                // its operand in the branch's offset field, not in a register.
+                if (!ssa_comparison_op(ins.op)) return false;
+                continue;
+            }
+            // An arm's branch: a comparison, a truthiness test, or the jump
+            // that ends an arm. A branch that leaves the body is not
+            // supported.
+            if (target <= (int)pos || target > (int)plan.end) return false;
+            if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) continue;
+            if (ins.op == Opcode.JUMP) continue;
+            if (!ssa_comparison_op(ins.op)) return false;
+            continue;
+        }
+        switch (ins.op) {
+            case GETCAP:
+            case GETVAR:
+            case GETGLOBAL:
+                if (plan.binding_at[pos - plan.begin] == 0) return false;
+                continue;
+            case LDREG:
+            case LDINT:
+            case LDCONST:
+            case TONUMERIC:
+            case INC:
+            case INC_LT:
+            case DEC:
+            case ADD:
+            case ADD_FUSED:
+            case ADDI:
+            case SUB:
+            case SUBI:
+            case MUL:
+            case MULI:
+            case DIV:
+            case BAND:
+            case BOR:
+            case BXOR:
+            case SHL:
+            case SHR:
+            case USHR:
+            case BNOT:
+            case BANDI:
+            case BORI:
+            case BXORI:
+            case SHLI:
+            case SHRI:
+            case USHRI:
+                continue;
+            case GETPROP:
+            case GETPROP_CACHE:
+            case PUTPROP:
+                if (plan.memory_at[pos - plan.begin] == 0) return false;
+                continue;
+            case GETPROPC:
+            case GETPROPC_CACHED:
+            case GETTHISC:
+
+                {
+                    uint at = pos - plan.begin;
+                    if (plan.memory_at[at] == 0 || plan.intrinsic_at[at] != 0) return false;
+                    LoopMemoryKind kind = plan.memory[(uint)plan.memory_at[at] - 1].kind;
+                    if (kind != FIELD && kind != SHAPE_FIELD) return false;
+                    continue;
+                }
+            case CALL:
+            case CALL_UNDEF_THIS:
+                // Expanded in place, so the callee body must be a leaf.
+                if (plan.memory_at[pos - plan.begin] != 0) return false;
+                if (function_inline_ssa_candidate(cf, pos, h) == null) return false;
+                continue;
+            default:
+                return false;
+        }
+    }
+    return true;
+}
+
+// Determine representations from uses before renaming. Counters and indices
+// stay integers; arithmetic carries F64 values; pure memory bases are ignored.
+fn void ssa_infer(
+    SsaGraph* g,
+    bool[LOOP_REGS]* read,
+    bool[LOOP_REGS]* value_read,
+    bool[LOOP_REGS]* written,
+    bool[LOOP_REGS]* live_in,
+    bool[LOOP_REGS]* base,
+    bool[LOOP_REGS]* int_need,
+    bool[LOOP_REGS]* f64_need
+) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan       = g.plan;
+    bool[LOOP_REGS] assigned;
+    for (uint pos = plan.begin; pos <= plan.end; pos++) {
+        Instruction ins = cf.code[pos];
+        if (loop_target(ins, pos) >= 0) {
+            // A comparison branch reads two numbers; a truthiness test reads
+            // one value and does not use it as a number.
+            bool comparison = ssa_comparison_op(ins.op);
+            uint left       = comparison ? ins.b : ins.a;
+            uint right      = comparison ? ins.c : left;
+            if (comparison && ins.op >= Opcode.JMP_NLTI) right = left;
+            if (left < LOOP_REGS) {
+                (*read)[left] = true;
+                (*value_read)[left] = true;
+                if (!assigned[left]) (*live_in)[left] = true;
+                if (comparison) (*int_need)[left] = true;
+            }
+            if (right < LOOP_REGS && right != left) {
+                (*read)[right] = true;
+                (*value_read)[right] = true;
+                if (!assigned[right]) (*live_in)[right] = true;
+                if (comparison) (*int_need)[right] = true;
+            }
+            continue;
+        }
+        bool writes = true;
+        switch (ins.op) {
+            case LDREG:
+                (*read)[ins.b] = true;
+                (*value_read)[ins.b] = true;
+                if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                break;
+            case GETCAP:
+            case GETVAR:
+            case GETGLOBAL:
+            case LDINT:
+            case LDCONST:
+                break;
+            case CALL:
+            case CALL_UNDEF_THIS:
+
+                {
+                    if (ins.b + 1 + ins.c >= cf.num_regs) return;
+                    for (uint i = 0; i <= ins.c + 1; i++) {
+                        uint reg = ins.b + i;
+                        (*read)[reg] = true;
+                        (*value_read)[reg] = true;
+                        if (!assigned[reg]) (*live_in)[reg] = true;
+                    }
+                    writes = false;
+                }
+                break;
+            case GETPROPC:
+            case GETPROPC_CACHED:
+            case GETTHISC:
+                if (plan.memory_at[pos - plan.begin] != 0
+                    && plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1].kind == SHAPE_FIELD
+                    && ins.op != Opcode.GETTHISC) {
+                    (*read)[ins.b] = true;
+                    (*value_read)[ins.b] = true;
+                    if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                }
+                break;
+            case GETPROP:
+            case GETPROP_CACHE:
+                (*read)[ins.c] = true;
+                (*value_read)[ins.c] = true;
+                if (!assigned[ins.c]) (*live_in)[ins.c] = true;
+                (*base)[ins.b] = true;
+                (*read)[ins.b] = true;
+                (*int_need)[ins.c] = true;
+                break;
+            case PUTPROP:
+                (*read)[ins.b] = true;
+                (*value_read)[ins.b] = true;
+                (*read)[ins.c] = true;
+                (*value_read)[ins.c] = true;
+                if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                if (!assigned[ins.c]) (*live_in)[ins.c] = true;
+                (*base)[ins.a] = true;
+                (*read)[ins.a] = true;
+                (*int_need)[ins.b] = true;
+                writes = false;
+                break;
+            case TONUMERIC:
+            case INC:
+            case INC_LT:
+            case DEC:
+                (*read)[ins.a] = true;
+                (*value_read)[ins.a] = true;
+                if (!assigned[ins.a]) (*live_in)[ins.a] = true;
+                if (ins.op != Opcode.TONUMERIC) (*int_need)[ins.a] = true;
+                break;
+            case BAND:
+            case BOR:
+            case BXOR:
+            case SHL:
+            case SHR:
+            case USHR:
+                (*read)[ins.b] = true;
+                (*read)[ins.c] = true;
+                (*value_read)[ins.b] = true;
+                (*value_read)[ins.c] = true;
+                if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                if (!assigned[ins.c]) (*live_in)[ins.c] = true;
+                (*int_need)[ins.b] = true;
+                (*int_need)[ins.c] = true;
+                break;
+            case BANDI:
+            case BORI:
+            case BXORI:
+            case SHLI:
+            case SHRI:
+            case USHRI:
+            case BNOT:
+                (*read)[ins.b] = true;
+                (*value_read)[ins.b] = true;
+                if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                (*int_need)[ins.b] = true;
+                break;
+            case ADD:
+            case ADD_FUSED:
+            case SUB:
+            case MUL:
+            case DIV:
+                (*read)[ins.b] = true;
+                (*read)[ins.c] = true;
+                (*value_read)[ins.b] = true;
+                (*value_read)[ins.c] = true;
+                if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                if (!assigned[ins.c]) (*live_in)[ins.c] = true;
+                (*f64_need)[ins.b] = true;
+                (*f64_need)[ins.c] = true;
+                break;
+            case ADDI:
+            case SUBI:
+            case MULI:
+                (*read)[ins.b] = true;
+                (*value_read)[ins.b] = true;
+                if (!assigned[ins.b]) (*live_in)[ins.b] = true;
+                (*f64_need)[ins.b] = true;
+                break;
+            default: break;
+        }
+        if (writes) {
+            (*written)[ins.a] = true;
+            assigned[ins.a] = true;
+        }
+    }
+}
+fn SsaRep ssa_rep_for(bool int_need, bool f64_need, bool numeric_only) @feat(SLJIT) {
+    if (f64_need) return F64;
+    if (int_need) return INT32;
+    return numeric_only ? INT32 : BOXED;
+}
+
+// Conservative may-analysis for integer-valued registers. A register is
+// integer when every definition in the loop is an integer-producing operation
+// whose operands are themselves integer registers. Bitwise operations always
+// produce an int32 regardless of their inputs.
+fn bool ssa_op_is_int(SsaGraph* g, Instruction ins, uint pos, bool[LOOP_REGS]* int_reg) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan       = g.plan;
+    switch (ins.op) {
+        case LDINT: return true;
+        case LDCONST:
+
+            {
+                if (ins.get_bc() >= cf.const_count) return false;
+                TVal value = cf.constants[ins.get_bc()];
+                if (!value.is_fastint()) return false;
+                long integer = value.get_fastint();
+                return integer >= -2147483648L && integer <= 2147483647L;
+            }
+        case BAND:
+        case BOR:
+        case BXOR:
+        case SHL:
+        case SHR:
+        case USHR:
+        case BNOT:
+        case BANDI:
+        case BORI:
+        case BXORI:
+        case SHLI:
+        case SHRI:
+        case USHRI:
+            return true;
+        case LDREG:
+        case TONUMERIC: return (*int_reg)[ins.b];
+        case INC:
+        case INC_LT:
+        case DEC: return (*int_reg)[ins.a];
+        case ADD:
+        case ADD_FUSED:
+        case SUB:
+        case MUL:
+            return (*int_reg)[ins.b] && (*int_reg)[ins.c];
+        case ADDI:
+        case SUBI:
+        case MULI: return (*int_reg)[ins.b];
+        case GETPROP:
+        case GETPROP_CACHE:
+
+            {
+                uint memory = plan.memory_at[pos - plan.begin];
+                if (memory == 0) return false;
+                LoopMemorySpec spec = plan.memory[memory - 1];
+                if (spec.kind == FIELD || spec.kind == SHAPE_FIELD) return false;
+                return spec.kind != DENSE && spec.cls < FLOAT32ARRAY && spec.cls != UINT32ARRAY;
+            }
+        default: return false;
+    }
+}
+fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan       = g.plan;
+    bool[LOOP_REGS] assigned;
+    bool[LOOP_REGS] int_reg;
+    for (uint i = 0; i < LOOP_REGS; i++) int_reg[i] = true;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (uint pos = plan.begin; pos <= plan.end; pos++) {
+            Instruction ins         = cf.code[pos];
+            uint[8] words;
+            compiler::RegSet writes = { .words = &words[0], .word_count = 8 };
+            compiler::register_may_writes(ins, &writes);
+            bool integer = ssa_op_is_int(g, ins, pos, &int_reg);
+            for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                if (!writes.test(reg)) continue;
+                assigned[reg] = true;
+                if (int_reg[reg] && (reg != ins.a || !integer)) {
+                    int_reg[reg] = false;
+                    changed = true;
+                }
+            }
+        }
+        for (uint reg = 0; reg < LOOP_REGS; reg++) {
+            if (!assigned[reg] && int_reg[reg]) {
+                int_reg[reg] = false;
+                changed = true;
+            }
+        }
+    }
+    for (uint i = 0; i < LOOP_REGS; i++) g.int_reg[i] = int_reg[i];
+}
+
+// Enter a block: its register state is the merge of its predecessors' states.
+// Where the predecessors disagree, the join holds a value each of them
+// writes before it arrives.
+fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
+    SsaBlock* block = &g.blocks[b];
+    if (b == 0) return true;
+    if (block.pred_count == 0) return true;
+    if (block.pred_count == 1) {
+        uint pred = block.preds[0];
+        for (uint reg = 0; reg < LOOP_REGS; reg++) g.current[reg] = g.block_exit[pred][reg];
+        return true;
+    }
+    if (g.join_count == SSA_JOINS) return false;
+    uint index    = g.join_count++;
+    SsaJoin* join = &g.joins[index];
+    join.block = b;
+    join.pred_count = block.pred_count;
+    for (uint p = 0; p < block.pred_count; p++) {
+        join.preds[p] = block.preds[p];
+        for (uint reg = 0; reg < LOOP_REGS; reg++) join.incoming[p][reg] = -1;
+    }
+    for (uint reg = 0; reg < LOOP_REGS; reg++) join.phi[reg] = -1;
+    for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        int first   = g.block_exit[block.preds[0]][reg];
+        bool differ = false;
+        for (uint p = 1; p < block.pred_count; p++) {
+            if (g.block_exit[block.preds[p]][reg] != first) {
+                differ = true;
+                break;
+            }
+        }
+        if (!differ) {
+            g.current[reg] = first;
+            continue;
+        }
+        // A register that one path never wrote has no value to merge. Such a
+        // register is dead: a live one has a value before the loop, which the
+        // header keeps in a phi.
+        bool missing = false;
+        for (uint p = 0; p < block.pred_count; p++) {
+            if (g.block_exit[block.preds[p]][reg] < 0) missing = true;
+        }
+        if (missing) {
+            g.current[reg] = -1;
+            continue;
+        }
+        // Join representations without narrowing a predecessor. Integer and
+        // double arms merge as F64; an arbitrary tagged arm keeps the join boxed.
+        SsaRep rep = g.values[first].rep;
+        for (uint p = 1; p < block.pred_count; p++) {
+            SsaRep incoming = g.values[g.block_exit[block.preds[p]][reg]].rep;
+            if (rep != incoming) rep = ssa_numeric_rep(rep) && ssa_numeric_rep(incoming) ? F64 : BOXED;
+        }
+        int phi = ssa_value(g, JOIN, rep, (int)index, (int)reg, 0);
+        ssa_result(g, phi, (uint)reg, block.begin);
+        join.phi[reg] = phi;
+        for (uint p = 0; p < block.pred_count; p++) {
+            int incoming = g.block_exit[block.preds[p]][reg];
+            join.incoming[p][reg] = incoming;
+            // The incoming value lives until the join copies it, so its range
+            // reaches past the join and keeps it out of the phi's home.
+            ssa_use(g, incoming);
+        }
+        ssa_use(g, phi);
+        g.current[reg] = phi;
+    }
+    return true;
+}
+
+// An arm's branch: the condition it tests and the two blocks it reaches.
+fn bool ssa_arm_branch(SsaGraph* g, uint b, uint pos, Instruction ins) @feat(SLJIT) {
+    SsaBlock* block =  &g.blocks[b];
+    int lhs;
+    int rhs         = -1;
+    long imm        =  0;
+    Opcode op       =  (Opcode)0;
+    if (ins.op == Opcode.JUMP) {
+        // The end of an arm: the block continues at the target.
+        int value = ssa_value(g, GOTO, INT32, -1, -1, 0);
+        g.values[value].block = (int)b;
+        g.values[value].target = (int)block.succ0;
+        g.values[value].fallto = 0;
+        g.values[value].pc = pos;
+        return true;
+    }
+    if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) {
+        // The truthiness of a value. An integer reads its own value; a boxed
+        // one must be a boolean, whose payload is the value.
+        if (ins.a >= LOOP_REGS) return false;
+        lhs = g.current[ins.a];
+        if (lhs < 0) return false;
+        SsaRep rep = g.values[lhs].rep;
+        if (rep != INT32 && rep != BOXED) return false;
+        imm = ins.op == Opcode.IF_TRUE ? 1 : 0;
+    } else {
+        if (ins.b >= LOOP_REGS || ins.c >= LOOP_REGS) return false;
+        lhs = g.current[ins.b];
+        if (lhs < 0) return false;
+        if (ins.op >= Opcode.JMP_NLTI) {
+            imm = (long)(ichar)ins.c;
+        } else {
+            rhs = g.current[ins.c];
+            if (rhs < 0) return false;
+        }
+        op = ins.op;
+        // Branch operands must use one register class, just like the latch
+        // comparison. A body expression can widen even when its peer is int32.
+        bool integer = g.values[lhs].rep == INT32 && (rhs < 0 || g.values[rhs].rep == INT32);
+        SsaRep rep   = integer ? INT32 : F64;
+        lhs = ssa_convert(g, lhs, rep, false);
+        if (rhs >= 0) rhs = ssa_convert(g, rhs, rep, false);
+    }
+    int value = ssa_value(g, BRANCH, INT32, lhs, rhs, imm);
+    g.values[value].block = (int)b;
+    g.values[value].target = (int)block.succ1;
+    g.values[value].fallto = (int)block.succ0;
+    g.values[value].branch_op = op;
+    g.values[value].pc = pos;
+    ssa_use(g, lhs);
+    if (rhs >= 0) ssa_use(g, rhs);
+    return true;
+}
