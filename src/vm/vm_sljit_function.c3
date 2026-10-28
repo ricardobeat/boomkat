@@ -906,12 +906,14 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         ICPolySet* set = &ic.chain.poly;
         void*[hobject::IC_POLY_MAX + 1] arms;
         uint arm_count = 0;
+        // A failed arm only compares the shape. Keep the receiver and its
+        // shape live across the chain; successful arms jump directly out.
+        self.property_receiver(base_reg, receiver_this);
+        e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+        e.mov(r1, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
         for (uint i = 0; i <= set.count; i++) {
             uint shape_id = i == 0 ? ic.shape_id : set.shapes[i - 1];
             uint slot     = i == 0 ? ic.prop_idx : set.prop_idx[i - 1];
-            self.property_receiver(base_reg, receiver_this);
-            e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
-            e.mov(r1, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
             void* other = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, shape_id);
             e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
             void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
