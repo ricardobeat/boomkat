@@ -173,7 +173,7 @@ def _declare(lib):
     ctx = ctypes.c_void_p
     val = ctypes.c_uint64
     signatures = [
-        ("bk_new_runtime", [], ctx),
+        ("bk_new_runtime", [ctypes.c_void_p], ctx),
         ("bk_free_runtime", [ctx], None),
         ("bk_new_context", [ctx], ctx),
         ("bk_free_context", [ctx], None),
@@ -488,7 +488,7 @@ class Runtime:
         # sees its text, so keeping the object here preserves the traceback for
         # an embedder that wants to re-raise or log it after eval() returns.
         self._last_host_exception = None
-        self._runtime = self._lib.bk_new_runtime()
+        self._runtime = self._lib.bk_new_runtime(None)
         if not self._runtime:
             raise JsError(-1, "cannot create runtime")
         self._rt = self._lib.bk_new_context(self._runtime)

@@ -319,7 +319,7 @@ int main(void) {
     bk_ctx rt = NULL;
     int udata_val = 99;
 
-    if (!(rt = bk_new_context(bk_new_runtime()))) {
+    if (!(rt = bk_new_context(bk_new_runtime(NULL)))) {
         fprintf(stderr, "cannot create context\n");
         return 1;
     }

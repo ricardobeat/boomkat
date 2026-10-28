@@ -544,7 +544,7 @@ static void test_locations(bk_ctx rt) {
 
 int main(void) {
     bk_ctx rt = NULL;
-    if (!(rt = bk_new_context(bk_new_runtime()))) {
+    if (!(rt = bk_new_context(bk_new_runtime(NULL)))) {
         printf("FAIL: bk_new_context\n");
         return 1;
     }

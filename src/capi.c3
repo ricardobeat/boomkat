@@ -98,7 +98,44 @@ fn ulong bad_handle(Runtime* rt) {
 // Lifecycle
 // ============================================================================
 
-fn void* bk_new_runtime() @export("bk_new_runtime") => embed::create();
+// Mirrors bk_runtime_options in boomkat.h.
+struct BkRuntimeOptions {
+    heap::AllocFunc   alloc;
+    heap::ReallocFunc realloc;
+    heap::FreeFunc    free;
+    void*             alloc_opaque;
+    heap::FatalFunc   fatal;
+}
+
+// A runtime with the given allocator and fatal handler, or the defaults when
+// `options` is null. The allocator functions come as a set: all or none.
+fn void* bk_new_runtime(BkRuntimeOptions* options) @export("bk_new_runtime") {
+    if (options == null) return embed::create();
+    bool some = options.alloc != null || options.realloc != null || options.free != null;
+    bool all = options.alloc != null && options.realloc != null && options.free != null;
+    if (some && !all) return null;
+    return embed::create(options.alloc, options.realloc, options.free, options.alloc_opaque, options.fatal);
+}
+
+fn void* bk_alloc(void* rtp, usz size) @export("bk_alloc") {
+    if (rtp == null) return null;
+    Heap* h = ((Runtime*)rtp).heap;
+    return h.alloc_func(h.heap_udata, size);
+}
+
+fn void* bk_realloc(void* rtp, void* ptr, usz size) @export("bk_realloc") {
+    if (rtp == null) return null;
+    Heap* h = ((Runtime*)rtp).heap;
+    if (ptr == null) return h.alloc_func(h.heap_udata, size);
+    if (size == 0) { h.free_func(h.heap_udata, ptr); return null; }
+    return h.realloc_func(h.heap_udata, ptr, size);
+}
+
+fn void bk_free_memory(void* rtp, void* ptr) @export("bk_free_memory") {
+    if (rtp == null || ptr == null) return;
+    Heap* h = ((Runtime*)rtp).heap;
+    h.free_func(h.heap_udata, ptr);
+}
 
 // A context that owns its runtime; bk_destroy releases both.
 fn void* bk_create() @export("bk_create") {

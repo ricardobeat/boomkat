@@ -87,7 +87,7 @@ int main(void) {
     assert(bk_exec(js, "globalThis.ran = true") == 0 && bk_exec(js, "throw 1") == 1);
     bk_destroy(js);
 
-    bk_runtime runtime = bk_new_runtime();
+    bk_runtime runtime = bk_new_runtime(NULL);
     bk_ctx first = bk_new_context(runtime), second = bk_new_context(runtime);
     bk_destroy(second);
     assert(bk_exec(first, "1") == 0);

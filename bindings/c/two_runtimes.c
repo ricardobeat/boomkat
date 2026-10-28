@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 int main(void) {
-    bk_runtime a = bk_new_runtime(), b = bk_new_runtime();
+    bk_runtime a = bk_new_runtime(NULL), b = bk_new_runtime(NULL);
     bk_ctx first = bk_new_context(a), sibling = bk_new_context(a), isolated = bk_new_context(b);
     assert(first && sibling && isolated);
     bk_value object = bk_new_object(first), answer = bk_new_number(first, 42);

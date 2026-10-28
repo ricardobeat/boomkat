@@ -39,7 +39,7 @@ write_probe() {
 #include <stdio.h>
 #include <string.h>
 int main(void) {
-    bk_runtime runtime = bk_new_runtime();
+    bk_runtime runtime = bk_new_runtime(NULL);
     bk_ctx ctx = bk_new_context(runtime);
     if (!ctx) return 1;
     const char *s = "6*7";
@@ -216,7 +216,7 @@ const std = @import("std");
 const c = @cImport({ @cInclude("boomkat.h"); });
 
 pub fn main() void {
-    const runtime = c.bk_new_runtime() orelse return;
+    const runtime = c.bk_new_runtime(null) orelse return;
     defer c.bk_free_runtime(runtime);
     const ctx = c.bk_new_context(runtime) orelse return;
     defer c.bk_free_context(ctx);
@@ -259,7 +259,7 @@ EOF
     cat > src/main.rs <<'EOF'
 use std::os::raw::{c_char, c_double, c_int, c_ulonglong, c_void};
 extern "C" {
-    fn bk_new_runtime() -> *mut c_void;
+    fn bk_new_runtime(options: *const c_void) -> *mut c_void;
     fn bk_new_context(runtime: *mut c_void) -> *mut c_void;
     fn bk_free_runtime(runtime: *mut c_void);
     fn bk_free_context(ctx: *mut c_void);
@@ -269,7 +269,7 @@ extern "C" {
 }
 fn main() {
     unsafe {
-        let runtime = bk_new_runtime();
+        let runtime = bk_new_runtime(std::ptr::null());
         let ctx = bk_new_context(runtime);
         assert!(!ctx.is_null(), "bk_new_context");
         let s = b"6*7";

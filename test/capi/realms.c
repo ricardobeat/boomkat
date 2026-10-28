@@ -23,7 +23,7 @@ static bk_value bounce(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_
 }
 
 int main(void) {
-    bk_ctx primary = bk_new_context(bk_new_runtime());
+    bk_ctx primary = bk_new_context(bk_new_runtime(NULL));
     bk_ctx other = bk_new_context(bk_get_runtime(primary));
     if (!primary || !other) return 1;
     bk_value global = bk_get_global_object(other);

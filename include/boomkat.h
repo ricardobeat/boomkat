@@ -92,7 +92,27 @@ BK_API void bk_destroy(bk_ctx ctx);
 /* Free contexts before their runtime. Escaped objects/functions retain their
  * realm until runtime destruction. Context release never destroys sibling realms.
  * Callback contexts are stable and may equal the caller's context. */
-BK_API bk_runtime bk_new_runtime(void);
+/* Runtime options. alloc, realloc and free come as a set (all or none) and
+ * receive alloc_opaque. realloc behaves as C realloc: a NULL pointer
+ * allocates, and a zero size frees and returns NULL. fatal must not return; NULL prints the message and aborts. The
+ * compiler, lexer, regexp and shared-memory blocks still allocate through
+ * libc. */
+typedef struct {
+    void *(*alloc)(void *opaque, size_t size);
+    void *(*realloc)(void *opaque, void *ptr, size_t size);
+    void  (*free)(void *opaque, void *ptr);
+    void  *alloc_opaque;
+    void  (*fatal)(void *opaque, const char *message);
+} bk_runtime_options;
+
+/* options may be NULL for the defaults. Returns NULL on failure, including a
+ * partial allocator set. */
+BK_API bk_runtime bk_new_runtime(const bk_runtime_options *options);
+/* Memory from the runtime's allocator. bk_realloc(NULL) allocates and a zero
+ * size frees. */
+BK_API void *bk_alloc(bk_runtime runtime, size_t size);
+BK_API void *bk_realloc(bk_runtime runtime, void *ptr, size_t size);
+BK_API void  bk_free_memory(bk_runtime runtime, void *ptr);
 BK_API void bk_free_runtime(bk_runtime runtime);
 BK_API bk_ctx bk_new_context(bk_runtime runtime);
 BK_API void bk_free_context(bk_ctx ctx);

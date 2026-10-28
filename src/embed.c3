@@ -216,12 +216,14 @@ fn void ensure_engine_init() {
     g_engine_once.call(&builtins::init_builtin_dispatch_table);
 }
 
-// Create a runtime: heap, VM, empty registry, GC root hookup.
+// Create a runtime: heap, VM, empty registry, GC root hookup. Null functions
+// select the libc allocator and the aborting fatal handler.
 // Returns null on allocation failure, with nothing left allocated.
-fn Runtime* create() {
+fn Runtime* create(heap::AllocFunc alloc = null, heap::ReallocFunc realloc = null,
+                   heap::FreeFunc free = null, void* udata = null, heap::FatalFunc fatal = null) {
     ensure_engine_init();
 
-    Heap*? hpr = heap::create(null, null, null, null, null);
+    Heap*? hpr = heap::create(alloc, realloc, free, udata, fatal);
     if (catch hpr) return null;
     Heap* hp = hpr;
 

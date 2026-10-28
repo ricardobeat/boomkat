@@ -331,7 +331,7 @@ pub const Runtime = struct {
     /// back to it, so keep it at a stable address (a local you never copy is
     /// fine; see the example).
     pub fn init() Error!Runtime {
-        const runtime = c.bk_new_runtime() orelse return Error.OutOfMemory;
+        const runtime = c.bk_new_runtime(null) orelse return Error.OutOfMemory;
         errdefer c.bk_free_runtime(runtime);
         return .{ .runtime = runtime, .ptr = c.bk_new_context(runtime) orelse return Error.OutOfMemory };
     }
