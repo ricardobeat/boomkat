@@ -28,6 +28,7 @@ const int BK_ERR_TYPE      = embed::BK_ERR_TYPE;
 const int BK_ERR_FULL      = embed::BK_ERR_FULL;
 const int BK_ERR_INTERRUPT = embed::BK_ERR_INTERRUPT;
 const int BK_ERR_ENCODING  = embed::BK_ERR_ENCODING;
+const int BK_ERR_UNSUPPORTED = embed::BK_ERR_UNSUPPORTED;
 
 const int BK_UTF8_REPLACE = 0;
 const int BK_UTF8_STRICT  = 1;

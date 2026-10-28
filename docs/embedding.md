@@ -70,6 +70,10 @@ API failures such as invalid handles produce an Error when taken. A successful
 call may clear diagnostics but leaves a pending exception available until taken
 or replaced. Taking an empty exception slot yields owned undefined.
 
+Calls that report a `bk_status` return `BK_OK` (0) or a negative code;
+`bk_status_str` names it. `BK_ERR_UNSUPPORTED` means the feature is compiled out
+of this build, as some are in the tiny profile.
+
 `bk_get_error_message`, `bk_get_error_code`, and `bk_get_error_info` provide
 context-local diagnostics without executing getters, Proxy traps, or user
 string conversion. `bk_to_cstring` performs JS string coercion and returns UTF-8

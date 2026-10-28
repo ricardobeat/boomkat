@@ -21,6 +21,7 @@ const int BK_ERR_TYPE      = -6;  // value is not of the requested type
 const int BK_ERR_FULL      = -7;  // buffer too small, or the registry is full
 const int BK_ERR_INTERRUPT = -8;  // aborted by the interrupt handler
 const int BK_ERR_ENCODING  = -9;  // invalid UTF-8 input, or a lone surrogate in strict mode
+const int BK_ERR_UNSUPPORTED = -10; // feature compiled out of this build
 
 // [abi:type]
 const int BK_TYPE_UNDEFINED = 0;
