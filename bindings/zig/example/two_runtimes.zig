@@ -117,6 +117,13 @@ pub fn main(init: std.process.Init) !void {
 
     // --- lifetimes are independent ----------------------------------------
 
+    // A's values go before A itself: a handle cannot be released once its
+    // runtime is gone.
+    a_tag.deinit();
+    a_k.deinit();
+    a_lbl.deinit();
+    a_n.deinit();
+    json.deinit();
     a.deinit();
     var after = try b.eval("tag + ' still works, n=' + n");
     defer after.deinit();
