@@ -2809,7 +2809,7 @@ fn void builtin_iterator_proto_join(BuiltinContext* ctx) {
     TVal next_method;
     if (!iterhelper_get_iterator_direct(ctx, obj, &next_method)) { ctx.result_undefined(); return; }
 
-    StrBuf out;
+    UnitBuf out;
     out.init(heap);
     defer out.free();
 

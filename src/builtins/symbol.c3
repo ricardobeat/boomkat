@@ -374,10 +374,10 @@ fn void builtin_symbol_proto_toString(BuiltinContext* ctx) {
     }
 
     // Build "Symbol(description)" string
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
-    out.append_bytes("Symbol(");
+    out.append_latin1("Symbol(");
     out.append_hstring(sym);
     out.append_char(')');
     out.finish(ctx);

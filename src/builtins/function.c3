@@ -956,12 +956,12 @@ fn void builtin_function_proto_bind(BuiltinContext* ctx) {
             }
         }
     }
-    StrBuf bound;
+    UnitBuf bound;
     bound.init(ctx.heap);
     defer bound.free();
-    bound.append_bytes("bound ");
+    bound.append_latin1("bound ");
     if (target_name != null) bound.append_hstring(target_name);
-    HString* bound_name = bound.failed ? null : builtin_intern_string(ctx.heap, bound.bytes());
+    HString* bound_name = bound.intern(ctx.heap);
     if (bound_name != null) {
         TVal name_tv; name_tv.set_string_borrowed(bound_name);
         bound_obj.put_prop(name_key, name_tv, hobject::PROP_FLAGS_NWC, ctx.heap);
