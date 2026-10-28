@@ -13,7 +13,7 @@
 
 ## Features
 
-- :che **ECMAScript 2026** — [ES2026](https://tc39.es/ecma262/2026/) support, native ESM, top-level await, proxies and modern built-ins.
+- 🟨 **ECMAScript 2026** — [ES2026](https://tc39.es/ecma262/2026/) support, native ESM, top-level await, proxies and modern built-ins.
 - ⚛️ **TypeScript & JSX** — run `.ts`, `.tsx`, and `.jsx` files without a build step.
 - 🌎 **Temporal & Intl** — full internationalization support with the *full-ICU* build.
 - 🧱 **Small footprint** — tunable build profiles down to ~700 KB.
