@@ -33,12 +33,10 @@ fn void FunctionEmitter.bitwise(&self, Instruction ins, uint pc) @feat(SLJIT) {
                 e.op(op, r0, r0, 0, r1, 0);
                 e.mov(r0, 0, r0, 0, jit::SLJIT_MOV_S32);
             } else {
-                e.op(jit::SLJIT_AND, r1, r1, 0, imm, 31);
                 bool right = ins.op == Opcode.SHR || ins.op == Opcode.SHRI;
                 bool unsigned_right = ins.op == Opcode.USHR || ins.op == Opcode.USHRI;
-                if (unsigned_right) e.mov(r0, 0, r0, 0, jit::SLJIT_MOV_U32);
-                e.op(right ? jit::SLJIT_ASHR : (unsigned_right ? jit::SLJIT_LSHR : jit::SLJIT_SHL), r0, r0, 0, r1, 0);
-                if (!unsigned_right) e.mov(r0, 0, r0, 0, jit::SLJIT_MOV_S32);
+                e.op((right ? jit::SLJIT_MASHR : (unsigned_right ? jit::SLJIT_MLSHR : jit::SLJIT_MSHL)) | jit::SLJIT_32, r0, r0, 0, r1, 0);
+                e.mov(r0, 0, r0, 0, unsigned_right ? jit::SLJIT_MOV_U32 : jit::SLJIT_MOV_S32);
             }
             out.box(r0);
         }
