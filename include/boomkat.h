@@ -355,6 +355,50 @@ typedef struct {
     void *finalize_opaque;
 } bk_fn_def;
 #define BK_FN_END { NULL, NULL, 0, 0u, NULL, NULL, NULL }
+/* Intrinsics of the context's realm. Values are appended only. A prototype
+ * compiled out of the build fails with BK_ERR_UNSUPPORTED. */
+typedef enum {
+    BK_INTRINSIC_OBJECT_PROTOTYPE, BK_INTRINSIC_FUNCTION_PROTOTYPE,
+    BK_INTRINSIC_ARRAY_PROTOTYPE, BK_INTRINSIC_ERROR_PROTOTYPE,
+    BK_INTRINSIC_TYPE_ERROR_PROTOTYPE, BK_INTRINSIC_PROMISE_PROTOTYPE,
+    BK_INTRINSIC_ITERATOR_PROTOTYPE, BK_INTRINSIC_RANGE_ERROR_PROTOTYPE,
+    BK_INTRINSIC_REFERENCE_ERROR_PROTOTYPE, BK_INTRINSIC_SYNTAX_ERROR_PROTOTYPE,
+    BK_INTRINSIC_ASYNC_ITERATOR_PROTOTYPE, BK_INTRINSIC_GENERATOR_PROTOTYPE,
+    BK_INTRINSIC_STRING_PROTOTYPE, BK_INTRINSIC_NUMBER_PROTOTYPE,
+    BK_INTRINSIC_BOOLEAN_PROTOTYPE, BK_INTRINSIC_SYMBOL_PROTOTYPE,
+    BK_INTRINSIC_BIGINT_PROTOTYPE, BK_INTRINSIC_DATE_PROTOTYPE,
+    BK_INTRINSIC_REGEXP_PROTOTYPE, BK_INTRINSIC_MAP_PROTOTYPE,
+    BK_INTRINSIC_SET_PROTOTYPE, BK_INTRINSIC_ARRAY_BUFFER_PROTOTYPE,
+    BK_INTRINSIC_TYPED_ARRAY_PROTOTYPE, BK_INTRINSIC_GLOBAL_OBJECT
+} bk_intrinsic;
+BK_API bk_value bk_get_intrinsic(bk_ctx ctx, bk_intrinsic which);
+
+typedef enum {
+    BK_SYMBOL_ITERATOR, BK_SYMBOL_ASYNC_ITERATOR, BK_SYMBOL_TO_STRING_TAG,
+    BK_SYMBOL_TO_PRIMITIVE, BK_SYMBOL_HAS_INSTANCE, BK_SYMBOL_IS_CONCAT_SPREADABLE,
+    BK_SYMBOL_MATCH, BK_SYMBOL_MATCH_ALL, BK_SYMBOL_REPLACE, BK_SYMBOL_SEARCH,
+    BK_SYMBOL_SPECIES, BK_SYMBOL_SPLIT, BK_SYMBOL_UNSCOPABLES, BK_SYMBOL_DISPOSE,
+    BK_SYMBOL_ASYNC_DISPOSE
+} bk_well_known_symbol;
+/* A unique symbol; a NULL description makes Symbol(). Descriptions are UTF-8. */
+BK_API bk_value bk_new_symbol(bk_ctx ctx, const char *description, size_t length);
+BK_API bk_value bk_symbol_for(bk_ctx ctx, const char *key, size_t length);
+BK_API bk_value bk_get_well_known_symbol(bk_ctx ctx, bk_well_known_symbol which);
+/* A string, or BK_UNDEFINED for a symbol made without one. */
+BK_API bk_value bk_symbol_description(bk_ctx ctx, bk_value symbol);
+
+/* BigInt. Builds without BigInt fail with BK_ERR_UNSUPPORTED. */
+BK_API bk_value  bk_new_bigint_int64(bk_ctx ctx, int64_t value);
+BK_API bk_value  bk_new_bigint_uint64(bk_ctx ctx, uint64_t value);
+/* BigInt.asIntN(64, value); `lossless` (optional) is 1 when that is exact. */
+BK_API bk_status bk_read_bigint_int64(bk_ctx ctx, bk_value value, int64_t *out, int *lossless);
+/* Magnitude words, least significant first. */
+BK_API bk_value  bk_new_bigint_words(bk_ctx ctx, int negative, const uint64_t *words, size_t count);
+/* Writes the magnitude; `count` receives the words needed (0 for zero), and a
+ * smaller capacity fails with BK_ERR_FULL. Measure with words = NULL. */
+BK_API bk_status bk_read_bigint_words(bk_ctx ctx, bk_value value, int *negative,
+                                      uint64_t *words, size_t capacity, size_t *count);
+
 /* Traced slots: storage for one JS value inside host memory. A slot holds a
  * reference without being a root; it stays valid only while something traces
  * it, the owning instance's `trace` callback or the root tracer. That lets a

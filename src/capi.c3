@@ -9,6 +9,7 @@ import boomkat::heap;
 import boomkat::lexer;
 import boomkat::hobject;
 import boomkat::hstring;
+import boomkat::hbigint;
 import boomkat::types;
 import libc;
 
@@ -1126,6 +1127,263 @@ fn int bk_get_own_property(void* ctxp, ulong obj_id, uint atom, BkPropertyDescri
     }
     out.flags = f;
     *found = 1;
+    return BK_OK;
+}
+
+// ============================================================================
+// Intrinsics, symbols and BigInt
+// ============================================================================
+
+// bk_intrinsic, append-only.
+enum Intrinsic : int {
+    OBJECT_PROTOTYPE, FUNCTION_PROTOTYPE, ARRAY_PROTOTYPE, ERROR_PROTOTYPE,
+    TYPE_ERROR_PROTOTYPE, PROMISE_PROTOTYPE, ITERATOR_PROTOTYPE,
+    RANGE_ERROR_PROTOTYPE, REFERENCE_ERROR_PROTOTYPE, SYNTAX_ERROR_PROTOTYPE,
+    ASYNC_ITERATOR_PROTOTYPE, GENERATOR_PROTOTYPE, STRING_PROTOTYPE,
+    NUMBER_PROTOTYPE, BOOLEAN_PROTOTYPE, SYMBOL_PROTOTYPE, BIGINT_PROTOTYPE,
+    DATE_PROTOTYPE, REGEXP_PROTOTYPE, MAP_PROTOTYPE, SET_PROTOTYPE,
+    ARRAY_BUFFER_PROTOTYPE, TYPED_ARRAY_PROTOTYPE, GLOBAL_OBJECT,
+}
+
+fn ulong bk_get_intrinsic(void* ctxp, int which) @export("bk_get_intrinsic") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (which < 0 || which > Intrinsic.GLOBAL_OBJECT.ordinal) return fail_value(rt, BK_ERR_INVALID, "unknown intrinsic");
+    Heap* hp = rt.heap;
+    HObject* o;
+    switch ((Intrinsic)which) {
+        case OBJECT_PROTOTYPE:          o = hp.object_proto;
+        case FUNCTION_PROTOTYPE:        o = hp.function_proto;
+        case ARRAY_PROTOTYPE:           o = hp.array_proto;
+        case ERROR_PROTOTYPE:           o = hp.err_proto;
+        case TYPE_ERROR_PROTOTYPE:      o = hp.type_err_proto;
+        case PROMISE_PROTOTYPE:         o = hp.promise_proto;
+        case ITERATOR_PROTOTYPE:        o = hp.iterator_proto;
+        case RANGE_ERROR_PROTOTYPE:     o = hp.range_err_proto;
+        case REFERENCE_ERROR_PROTOTYPE: o = hp.ref_err_proto;
+        case SYNTAX_ERROR_PROTOTYPE:    o = hp.syntax_err_proto;
+        case ASYNC_ITERATOR_PROTOTYPE:  o = hp.async_iterator_proto;
+        case GENERATOR_PROTOTYPE:       o = hp.generator_proto;
+        case STRING_PROTOTYPE:          o = hp.string_proto;
+        case NUMBER_PROTOTYPE:          o = hp.number_proto;
+        case BOOLEAN_PROTOTYPE:         o = hp.bool_proto;
+        case SYMBOL_PROTOTYPE:          o = hp.symbol_proto;
+        case BIGINT_PROTOTYPE:          o = hp.bigint_proto;
+        case DATE_PROTOTYPE:            o = hp.date_proto;
+        case REGEXP_PROTOTYPE:          o = hp.regexp_proto;
+        case MAP_PROTOTYPE:             o = hp.map_proto;
+        case SET_PROTOTYPE:             o = hp.set_proto;
+        case ARRAY_BUFFER_PROTOTYPE:    o = hp.arraybuffer_proto;
+        case TYPED_ARRAY_PROTOTYPE:     o = hp.typedarray_proto;
+        case GLOBAL_OBJECT:             o = (HObject*)rt.vm.global_env.bindings;
+    }
+    if (o == null) return fail_value(rt, BK_ERR_UNSUPPORTED, "intrinsic not available in this build");
+    TVal v; v.set_object(o);
+    return store(rt, v);
+}
+
+// bk_well_known_symbol, append-only.
+enum WellKnownSymbol : int {
+    ITERATOR, ASYNC_ITERATOR, TO_STRING_TAG, TO_PRIMITIVE, HAS_INSTANCE,
+    IS_CONCAT_SPREADABLE, MATCH, MATCH_ALL, REPLACE, SEARCH, SPECIES, SPLIT,
+    UNSCOPABLES, DISPOSE, ASYNC_DISPOSE,
+}
+
+fn ulong bk_get_well_known_symbol(void* ctxp, int which) @export("bk_get_well_known_symbol") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (which < 0 || which > WellKnownSymbol.ASYNC_DISPOSE.ordinal) return fail_value(rt, BK_ERR_INVALID, "unknown well-known symbol");
+    Heap* hp = rt.heap;
+    HString* s;
+    switch ((WellKnownSymbol)which) {
+        case ITERATOR:             s = builtins::ensure_iterator_symbol(hp);
+        case ASYNC_ITERATOR:       s = builtins::ensure_asynciterator_symbol(hp);
+        case TO_STRING_TAG:        s = builtins::ensure_tostringtag_symbol(hp);
+        case TO_PRIMITIVE:         s = builtins::ensure_toprimitive_symbol(hp);
+        case HAS_INSTANCE:         s = builtins::ensure_hasinstance_symbol(hp);
+        case IS_CONCAT_SPREADABLE: s = builtins::ensure_concatspreadable_symbol(hp);
+        case MATCH:                s = builtins::ensure_match_symbol(hp);
+        case MATCH_ALL:            s = builtins::ensure_matchall_symbol(hp);
+        case REPLACE:              s = builtins::ensure_replace_symbol(hp);
+        case SEARCH:               s = builtins::ensure_search_symbol(hp);
+        case SPECIES:              s = builtins::ensure_species_symbol(hp);
+        case SPLIT:                s = builtins::ensure_split_symbol(hp);
+        case UNSCOPABLES:          s = builtins::ensure_unscopables_symbol(hp);
+        case DISPOSE:              s = builtins::ensure_dispose_symbol(hp);
+        case ASYNC_DISPOSE:        s = builtins::ensure_asyncdispose_symbol(hp);
+    }
+    if (s == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    return store_string(rt, s);
+}
+
+// A new unique symbol; a NULL description gives Symbol().
+fn ulong bk_new_symbol(void* ctxp, char* desc, usz len) @export("bk_new_symbol") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    HString* d = desc == null ? rt.heap.str(heap::BuiltinStr.EMPTY) : embed::string_from_utf8(rt, desc[:len]);
+    if (d == null) return 0;
+    HString* sym = builtins::create_symbol_string(rt.heap, d, desc != null);
+    if (sym == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    return store_string(rt, sym);
+}
+
+// Symbol.for(key).
+fn ulong bk_symbol_for(void* ctxp, char* key, usz len) @export("bk_symbol_for") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (key == null && len != 0) return fail_value(rt, BK_ERR_INVALID, "null key");
+    embed::clear_err(rt);
+    HString* k = embed::string_from_utf8(rt, key == null ? (char[])"" : key[:len]);
+    if (k == null) return 0;
+    HString* sym = builtins::symbol_registry_get(rt.heap, k);
+    if (sym == null) {
+        sym = builtins::create_symbol_string(rt.heap, k);
+        if (sym == null || !builtins::symbol_registry_put(rt.heap, k, sym)) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    }
+    return store_string(rt, sym);
+}
+
+// The description of a symbol as a string, or undefined for Symbol().
+fn ulong bk_symbol_description(void* ctxp, ulong id) @export("bk_symbol_description") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    if (!v.is_string() || !((HString*)v.get_heapptr()).is_symbol()) return fail_value(rt, BK_ERR_TYPE, "not a symbol");
+    HString* sym = (HString*)v.get_heapptr();
+    if (!builtins::symbol_has_description(sym)) return embed::IMM_UNDEFINED;
+    HString* d = rt.heap.str_slice(sym, 0, sym.unit_len());
+    if (d == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    return store_string(rt, d);
+}
+
+macro ulong @store_bigint(Runtime* rt, #b) {
+    HBigInt*? made = #b;
+    if (catch err = made) {
+        $if $feat(NO_BIGINT):
+            return fail_value(rt, BK_ERR_UNSUPPORTED, "BigInt is not available in this build");
+        $else
+            return fail_value(rt, BK_ERR_NOMEM, "could not allocate BigInt");
+        $endif
+    }
+    TVal v; v.set_bigint(made);
+    return store(rt, v);
+}
+
+fn ulong bk_new_bigint_int64(void* ctxp, long value) @export("bk_new_bigint_int64") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    return @store_bigint(rt, hbigint::hbigint_alloc(rt.heap, (int128)value));
+}
+
+fn ulong bk_new_bigint_uint64(void* ctxp, ulong value) @export("bk_new_bigint_uint64") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    return @store_bigint(rt, hbigint::hbigint_alloc(rt.heap, (int128)value));
+}
+
+// The BigInt behind `id`, or null with BK_ERR_TYPE recorded.
+fn HBigInt* bigint_of(void* ctxp, Runtime* rt, ulong id) {
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return null; }
+    if (!v.is_bigint()) { fail(rt, BK_ERR_TYPE, "not a BigInt"); return null; }
+    return v.get_bigint();
+}
+
+// BigInt.asIntN(64, value) in *out; `lossless` reports whether that is the
+// value itself.
+fn int bk_read_bigint_int64(void* ctxp, ulong id, long* out, int* lossless) @export("bk_read_bigint_int64") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || out == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HBigInt* b = bigint_of(ctxp, rt, id);
+    if (b == null) return rt.errcode;
+    Limb* l = b.limbs();
+    ulong low = (ulong)l[0];
+    if (b.len > 1) {
+        low |= (ulong)l[1] << 32;
+    } else if ((l[0] >> 31) != 0) {
+        low |= 0xFFFF_FFFF_0000_0000;
+    }
+    *out = (long)low;
+    if (lossless != null) *lossless = b.len <= 2 ? 1 : 0;
+    return BK_OK;
+}
+
+// Magnitude words, least significant first, and a sign.
+fn ulong bk_new_bigint_words(void* ctxp, int negative, ulong* words, usz count) @export("bk_new_bigint_words") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (words == null && count != 0) return fail_value(rt, BK_ERR_INVALID, "null words");
+    embed::clear_err(rt);
+    $if $feat(NO_BIGINT):
+        return fail_value(rt, BK_ERR_UNSUPPORTED, "BigInt is not available in this build");
+    $else
+        if (count > (usz)hbigint::BIGINT_MAX_LIMBS / 2) return fail_value(rt, BK_ERR_INVALID, "BigInt too large");
+        int len = (int)count * 2 + 1;
+        HBigInt*? raw = hbigint::hbigint_alloc_len(rt.heap, len);
+        if (catch raw) return fail_value(rt, BK_ERR_NOMEM, "could not allocate BigInt");
+        HBigInt* b = raw;
+        Limb* l = b.limbs();
+        for (usz i = 0; i < count; i++) {
+            l[2 * i] = (Limb)words[i];
+            l[2 * i + 1] = (Limb)(words[i] >> 32);
+        }
+        l[len - 1] = 0;
+        if (negative != 0) {
+            // Two's complement: invert and add one.
+            ulong carry = 1;
+            for (int i = 0; i < len; i++) {
+                ulong sum = (ulong)(Limb)~l[i] + carry;
+                l[i] = (Limb)sum;
+                carry = sum >> 32;
+            }
+        }
+        b.normalize();
+        TVal v; v.set_bigint(b);
+        return store(rt, v);
+    $endif
+}
+
+// Writes the magnitude in 64-bit words and the sign. `count` receives the
+// words needed; BK_ERR_FULL when `capacity` is smaller.
+fn int bk_read_bigint_words(void* ctxp, ulong id, int* negative, ulong* words, usz capacity, usz* count) @export("bk_read_bigint_words") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HBigInt* b = bigint_of(ctxp, rt, id);
+    if (b == null) return rt.errcode;
+    Limb* l = b.limbs();
+    bool neg = (l[b.len - 1] >> 31) != 0;
+    // Magnitude limbs, negated on the fly for a negative value.
+    usz n = (usz)b.len;
+    usz nwords = (n + 1) / 2;
+    ulong carry = 1;
+    usz used = 0;
+    for (usz i = 0; i < nwords; i++) {
+        ulong w = 0;
+        for (usz half = 0; half < 2; half++) {
+            usz k = 2 * i + half;
+            ulong limb = k < n ? (ulong)l[k] : (neg ? 0xFFFF_FFFF : 0);
+            if (neg) {
+                ulong sum = (ulong)(Limb)~(Limb)limb + carry;
+                limb = sum & 0xFFFF_FFFF;
+                carry = sum >> 32;
+            }
+            w |= limb << (32 * half);
+        }
+        if (w != 0) used = i + 1;
+        if (words != null && i < capacity) words[i] = w;
+    }
+    if (negative != null) *negative = neg ? 1 : 0;
+    if (count != null) *count = used;
+    if (words != null && used > capacity) return fail(rt, BK_ERR_FULL, "buffer too small for BigInt");
     return BK_OK;
 }
 
