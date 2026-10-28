@@ -257,6 +257,14 @@ fn HString* StrBuf.to_hstring(&self, BuiltinContext* ctx) {
     return result;
 }
 
+// Store `elem`, which must not be undefined, at index `idx` of a new array that
+// a builtin fills in index order. The element goes straight into the dense part,
+// and the caller sets "length" once at the end.
+fn void array_fill_elem(Heap* heap, HObject* arr, uint idx, TVal elem) @inline {
+    if (arr.set_array_idx(idx, elem, heap)) return;
+    arr.put_prop(heap.int_to_hstring((long)idx), elem, hobject::PROP_FLAGS_WEC, heap);
+}
+
 // The pieces of `strs` joined by `sep`, or null after throwing a RangeError
 // when the result is too long. The units are copied straight into a string of
 // the width they need.

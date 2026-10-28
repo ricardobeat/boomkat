@@ -789,7 +789,7 @@ fn void builtin_regexp_proto_toString(BuiltinContext* ctx) {
         }
     }
 
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     out.append_char('/');
@@ -1086,7 +1086,7 @@ fn StrSlice slice_of(HString* s) @inline {
     return s == null ? (StrSlice){} : (StrSlice){ .str = s, .from = 0, .to = s.unit_len() };
 }
 
-fn bool StrBuf.append_slice(&self, StrSlice slice) {
+fn bool UnitBuf.append_slice(&self, StrSlice slice) {
     return slice.str == null || self.append_hstring_range(slice.str, slice.from, slice.to);
 }
 
@@ -1096,7 +1096,7 @@ fn bool StrBuf.append_slice(&self, StrSlice slice) {
 // leaves ctx.should_throw set.
 fn void rr_get_substitution(
     BuiltinContext* ctx,
-    StrBuf* out,
+    UnitBuf* out,
     StrSlice matched,        // ToString(result[0])
     HString* str,            // full input string
     uint position,           // unit offset of match start
@@ -1161,7 +1161,7 @@ fn void rr_get_substitution(
         }
         if (next == '<') {
             if (!have_named_captures) {
-                out.append_bytes("$<");
+                out.append_latin1("$<");
                 i += 2;
                 continue;
             }
@@ -1170,7 +1170,7 @@ fn void rr_get_substitution(
             while (name_end < rep_len && rep.unit_at(name_end) != '>') name_end++;
             if (name_end >= rep_len) {
                 // No closing '>' → emit "$<" literally.
-                out.append_bytes("$<");
+                out.append_latin1("$<");
                 i += 2;
                 continue;
             }
@@ -1386,7 +1386,7 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
     defer spans.free();
     if (!regexp_find_matches(ctx, rx, s_hstr, &spans, ncap)) return;
 
-    StrBuf out;
+    UnitBuf out;
     out.init(heap);
     defer out.free();
     uint last_end = 0;
@@ -1431,7 +1431,7 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
             }
             HString* rep = builtin_to_string_vm(ctx, &res);
             if (ctx.should_throw) return;
-            if (rep == null) { out.append_bytes("undefined"); } else { out.append_hstring(rep); }
+            if (rep == null) { out.append_latin1("undefined"); } else { out.append_hstring(rep); }
         } else {
             TVal no_groups; no_groups.set_undefined();
             rr_get_substitution(ctx, &out, { s_hstr, m_start, m_end }, s_hstr, m_start, m_end,
@@ -1592,7 +1592,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
     }
 
     // Process collected results to build the output string.
-    StrBuf out;
+    UnitBuf out;
     out.init(heap);
     defer out.free();
     int last_end = 0;
@@ -1785,7 +1785,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
             if (append) {
                 last_end = out_end > input_len ? input_len : out_end;
             } else {
-                out.len = keep;
+                out.truncate(keep);
             }
         }
     }
@@ -2058,7 +2058,7 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
         new_flags_str = flags_str;
     } else {
         // Append 'y'.
-        StrBuf nf;
+        UnitBuf nf;
         nf.init(heap);
         defer nf.free();
         nf.append_hstring(flags_str);
@@ -2781,73 +2781,62 @@ fn void builtin_regexp_proto_get_flags(BuiltinContext* ctx) {
 // EscapeRegExpPattern, ECMA-262 §21.2.3.2.4
 // Appends `src` to `out` with `/` and line terminators (LF, CR, LS, PS)
 // escaped, so it can be embedded in a RegExpLiteral.
-fn void regexp_escape_pattern(StrBuf* out, char[] src) {
+fn void regexp_escape_pattern(UnitBuf* out, HString* src) {
+    uint len = src.unit_len();
     // ECMA-262 §21.2.3.2.4 step 2: if srcLength = 0, return "(?:)".
-    if (src.len == 0) {
-        out.append_bytes("(?:)");
+    if (len == 0) {
+        out.append_latin1("(?:)");
         return;
     }
     bool in_class = false;
-    for (usz si = 0; si < src.len; si++) {
-        char c = src[si];
+    for (uint si = 0; si < len; si++) {
+        uint c = src.unit_at(si);
         // A raw LineTerminator can never appear literally inside a
         // RegularExpressionLiteral, so it is escaped, and a backslash right
         // before one is dropped: the spec operates on the pattern's characters
         // with no notion of "already escaped".
-        usz at = c == '\\' && si + 1 < src.len && regexp_line_terminator_byte_len(src, si + 1) > 0
-            ? si + 1 : si;
-        usz lt_len = regexp_line_terminator_byte_len(src, at);
-        if (lt_len > 0) {
-            regexp_append_line_terminator(out, src, at);
-            si = at + lt_len - 1;
-        } else if (c == '\\' && si + 1 < src.len) {
+        uint at = c == '\\' && si + 1 < len && regexp_is_line_terminator(src.unit_at(si + 1)) ? si + 1 : si;
+        uint unit = src.unit_at(at);
+        if (regexp_is_line_terminator(unit)) {
+            regexp_append_line_terminator(out, unit);
+            si = at;
+        } else if (c == '\\' && si + 1 < len) {
             // An escape pair is copied verbatim: it keeps an existing `\/` and
             // stops an escaped `[` or `]` from being taken for a class delimiter.
-            out.append_bytes(src[si : 2]);
+            out.append_unit(c);
+            out.append_unit(src.unit_at(si + 1));
             si++;
         } else if (c == '/' && !in_class) {
-            out.append_bytes("\\/");
+            out.append_latin1("\\/");
         } else {
             if (c == '[') in_class = true;
             if (c == ']') in_class = false;
-            out.append_char(c);
+            out.append_unit(c);
         }
     }
 }
 
-// Byte length of the raw LineTerminator starting at src[si]: 1 for LF/CR, 3
-// for the UTF-8 encoding of LS/PS (U+2028/U+2029), 0 if src[si] doesn't
-// start one.
-fn usz regexp_line_terminator_byte_len(char[] src, usz si) {
-    char c = src[si];
-    if (c == '\n' || c == '\r') return 1;
-    if (c == (char)0xE2 && si + 2 < src.len && src[si + 1] == (char)0x80
-        && (src[si + 2] == (char)0xA8 || src[si + 2] == (char)0xA9)) {
-        return 3;
-    }
-    return 0;
+fn bool regexp_is_line_terminator(uint unit) @inline {
+    return unit == '\n' || unit == '\r' || unit == 0x2028 || unit == 0x2029;
 }
 
-// Append the escape for the raw LineTerminator at src[at]: backslash-n or
+// Append the escape for the raw LineTerminator `unit`: backslash-n or
 // backslash-r for LF/CR, a six-character backslash-u escape for LS/PS.
-fn void regexp_append_line_terminator(StrBuf* out, char[] src, usz at) {
-    switch (src[at]) {
-        case '\n': out.append_bytes("\\n");
-        case '\r': out.append_bytes("\\r");
-        default: out.append_bytes(src[at + 2] == (char)0xA9 ? "\\u2029" : "\\u2028");
+fn void regexp_append_line_terminator(UnitBuf* out, uint unit) {
+    switch (unit) {
+        case '\n': out.append_latin1("\\n");
+        case '\r': out.append_latin1("\\r");
+        default: out.append_latin1(unit == 0x2029 ? "\\u2029" : "\\u2028");
     }
 }
 
 // The escaped source of a RegExp pattern as a string; null with a RangeError
 // pending when the result is too long.
 fn HString* regexp_escaped_source(BuiltinContext* ctx, HString* src) {
-    StrBuf text;
-    text.init(ctx.heap);
-    defer text.free();
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
-    regexp_escape_pattern(&out, cesu8_text(&text, src));
+    regexp_escape_pattern(&out, src);
     return out.to_hstring(ctx);
 }
 
