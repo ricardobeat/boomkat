@@ -1,0 +1,33 @@
+diff --git a/src/vm/vm_sljit_ssa.c3 b/src/vm/vm_sljit_ssa.c3
+index 268096c5..313123b5 100644
+--- a/src/vm/vm_sljit_ssa.c3
++++ b/src/vm/vm_sljit_ssa.c3
+@@ -83,6 +83,7 @@ struct SsaValue @feat(SLJIT) {
+     int home;
+     uint spill;
+     int arg_reg;
++    bool recovery_only;
+     // A branch names the block it leaves and the block its other arm takes.
+     int block;
+     int target;
+@@ -901,6 +902,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
+             int phi = ssa_value(g, PHI, rep, -1, 0, 0);
+             g.phi[reg] = phi;
+             g.values[phi].arg_reg = (int)reg;
++            g.values[phi].recovery_only = !live_in[reg];
+             g.current[reg] = phi;
+         } else if (!written[reg] && value_read[reg]) {
+             int arg = ssa_value(g, ARG, g.rep[reg], -1, 0, 0);
+@@ -1645,6 +1647,12 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+         SsaValue* value = &g.values[i];
+         value.home = 0;
+         if (value.op != PHI) continue;
++        // Values needed only for interpreter recovery should not pin a
++        // register that arithmetic could reuse throughout the loop.
++        if (value.recovery_only) {
++            value.spill = g.spill_count++;
++            continue;
++        }
+         uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
+         for (uint s = 0; s < homes; s++) {
+             int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);

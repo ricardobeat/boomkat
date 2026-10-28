@@ -1,0 +1,14 @@
+diff --git a/src/vm/vm_sljit_native.c3 b/src/vm/vm_sljit_native.c3
+index 6a163e56..49a8e1e3 100644
+--- a/src/vm/vm_sljit_native.c3
++++ b/src/vm/vm_sljit_native.c3
+@@ -67,6 +67,9 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
+         && !ic.has_proto && !ic.prop_flags.is_accessor && ic.prop_idx < receiver.prop_count) {
+         slot = &receiver.prop_values()[ic.prop_idx];
+     }
++    // Polymorphic own-slot feedback can outgrow the generated arm chain.
++    // Reuse its validated slots before probing the shared megamorphic cache.
++    if (slot == null && ic.key.borrow() == key) slot = hobject::ic_poly_slot(ic, receiver);
+     if (slot == null && cacheable) {
+         MegamorphicEntry* entry;
+         slot = hobject::mega_cache_lookup(cold.heap, receiver, key, &entry);

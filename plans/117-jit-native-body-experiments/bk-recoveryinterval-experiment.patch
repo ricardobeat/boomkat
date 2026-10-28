@@ -1,0 +1,56 @@
+diff --git a/src/vm/vm_sljit_ssa.c3 b/src/vm/vm_sljit_ssa.c3
+index 268096c5..c8be1dd2 100644
+--- a/src/vm/vm_sljit_ssa.c3
++++ b/src/vm/vm_sljit_ssa.c3
+@@ -83,6 +83,7 @@ struct SsaValue @feat(SLJIT) {
+     int home;
+     uint spill;
+     int arg_reg;
++    bool recovery_only;
+     // A branch names the block it leaves and the block its other arm takes.
+     int block;
+     int target;
+@@ -901,6 +902,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
+             int phi = ssa_value(g, PHI, rep, -1, 0, 0);
+             g.phi[reg] = phi;
+             g.values[phi].arg_reg = (int)reg;
++            g.values[phi].recovery_only = !live_in[reg];
+             g.current[reg] = phi;
+         } else if (!written[reg] && value_read[reg]) {
+             int arg = ssa_value(g, ARG, g.rep[reg], -1, 0, 0);
+@@ -1515,7 +1517,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
+         value = ssa_convert(g, value, g.values[g.phi[reg]].rep, false);
+         g.values[g.phi[reg]].a = value;
+         ssa_use(g, value);
+-        g.values[g.phi[reg]].last = g.stamp;
++        if (!g.values[g.phi[reg]].recovery_only) g.values[g.phi[reg]].last = g.stamp;
+     }
+     // Representation conversions on backedges are executable IR too. Keep
+     // them in the final block before parallel copies, and retain recovery
+@@ -1523,7 +1525,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
+     g.block_last[g.block_count - 1] = g.value_count;
+     foreach (value : g.frames[plan.end - plan.begin]) if (value >= 0) ssa_use(g, value);
+     for (uint i = 0; i < g.value_count; i++) {
+-        if (g.values[i].op == ARG || g.values[i].op == PHI) g.values[i].last = g.stamp;
++        if (g.values[i].op == ARG || (g.values[i].op == PHI && !g.values[i].recovery_only)) g.values[i].last = g.stamp;
+     }
+     return !g.failed;
+ }
+@@ -1644,7 +1646,7 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+     for (uint i = 0; i < g.value_count; i++) {
+         SsaValue* value = &g.values[i];
+         value.home = 0;
+-        if (value.op != PHI) continue;
++        if (value.op != PHI || value.recovery_only) continue;
+         uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
+         for (uint s = 0; s < homes; s++) {
+             int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);
+@@ -1666,7 +1668,7 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+     }
+     for (uint i = 0; i < g.value_count; i++) {
+         SsaValue* value = &g.values[i];
+-        if (value.op == PHI || value.op == COPY) continue;
++        if ((value.op == PHI && !value.recovery_only) || value.op == COPY) continue;
+         uint homes = value.rep == F64 ? SSA_HOMES : SSA_GPR_HOMES;
+         for (uint s = 0; s < homes; s++) {
+             int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(s);

@@ -1,0 +1,44 @@
+{'repeat': 0, 'bench': 'deltablue', 'mode': 'before', 'ms': 115}
+{'repeat': 0, 'bench': 'deltablue', 'mode': 'after', 'ms': 115}
+{'repeat': 0, 'bench': 'richards', 'mode': 'before', 'ms': 82}
+{'repeat': 0, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 0, 'bench': 'raytrace', 'mode': 'before', 'ms': 160}
+{'repeat': 0, 'bench': 'raytrace', 'mode': 'after', 'ms': 159}
+{'repeat': 0, 'bench': 'splay', 'mode': 'before', 'ms': 109}
+{'repeat': 0, 'bench': 'splay', 'mode': 'after', 'ms': 108}
+{'repeat': 1, 'bench': 'deltablue', 'mode': 'after', 'ms': 116}
+{'repeat': 1, 'bench': 'deltablue', 'mode': 'before', 'ms': 114}
+{'repeat': 1, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 1, 'bench': 'richards', 'mode': 'before', 'ms': 82}
+{'repeat': 1, 'bench': 'raytrace', 'mode': 'after', 'ms': 161}
+{'repeat': 1, 'bench': 'raytrace', 'mode': 'before', 'ms': 160}
+{'repeat': 1, 'bench': 'splay', 'mode': 'after', 'ms': 109}
+{'repeat': 1, 'bench': 'splay', 'mode': 'before', 'ms': 109}
+{'repeat': 2, 'bench': 'deltablue', 'mode': 'before', 'ms': 115}
+{'repeat': 2, 'bench': 'deltablue', 'mode': 'after', 'ms': 115}
+{'repeat': 2, 'bench': 'richards', 'mode': 'before', 'ms': 82}
+{'repeat': 2, 'bench': 'richards', 'mode': 'after', 'ms': 83}
+{'repeat': 2, 'bench': 'raytrace', 'mode': 'before', 'ms': 159}
+{'repeat': 2, 'bench': 'raytrace', 'mode': 'after', 'ms': 160}
+{'repeat': 2, 'bench': 'splay', 'mode': 'before', 'ms': 113}
+{'repeat': 2, 'bench': 'splay', 'mode': 'after', 'ms': 109}
+{'repeat': 3, 'bench': 'deltablue', 'mode': 'after', 'ms': 115}
+{'repeat': 3, 'bench': 'deltablue', 'mode': 'before', 'ms': 115}
+{'repeat': 3, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 3, 'bench': 'richards', 'mode': 'before', 'ms': 83}
+{'repeat': 3, 'bench': 'raytrace', 'mode': 'after', 'ms': 165}
+{'repeat': 3, 'bench': 'raytrace', 'mode': 'before', 'ms': 161}
+{'repeat': 3, 'bench': 'splay', 'mode': 'after', 'ms': 113}
+{'repeat': 3, 'bench': 'splay', 'mode': 'before', 'ms': 108}
+{'repeat': 4, 'bench': 'deltablue', 'mode': 'before', 'ms': 115}
+{'repeat': 4, 'bench': 'deltablue', 'mode': 'after', 'ms': 114}
+{'repeat': 4, 'bench': 'richards', 'mode': 'before', 'ms': 82}
+{'repeat': 4, 'bench': 'richards', 'mode': 'after', 'ms': 82}
+{'repeat': 4, 'bench': 'raytrace', 'mode': 'before', 'ms': 161}
+{'repeat': 4, 'bench': 'raytrace', 'mode': 'after', 'ms': 160}
+{'repeat': 4, 'bench': 'splay', 'mode': 'before', 'ms': 111}
+{'repeat': 4, 'bench': 'splay', 'mode': 'after', 'ms': 110}
+deltablue {'before': 115, 'after': 115}
+richards {'before': 82, 'after': 82}
+raytrace {'before': 160, 'after': 160}
+splay {'before': 109, 'after': 109}

@@ -60,3 +60,49 @@ unsupported operations still limit coverage.
 The preceding optional 256 KiB SSA reserve experiment admitted no Mandreel loops
 and only about 2 KiB additional code in the pressure harness. Removed rather than
 claiming its timing changes demonstrated the intended benefit.
+
+
+## Mixed numeric loads and recovery allocation experiments
+
+Mixed dense-number conversion removed all reported Navier SSA fallbacks, but
+five-pair medians versus 6e4741bb were Navier 200→202, Crypto 158→161,
+DeltaBlue 115→116, Richards 82→82 ms. Removed. The stale double-read proof flag
+was independently corrected in 2c310e0e, reusing the address-invalidated numeric
+proof; focused three-mode tests passed under ASan.
+
+Forcing recovery-only phis into spills: Navier 202→206, Crypto 160→158,
+Richards 82→82, DeltaBlue 115→115. Shortening their allocation intervals instead:
+Navier 203→203, Crypto 159→159, Richards 83→84, DeltaBlue 117→115. Both pass
+focused three-mode checks but establish no overall performance improvement;
+both removed. Comparisons use the 6e4741bb release binary, so candidates also
+include the later ownership-guard correction. Raw data and patches preserved.
+
+
+## Native property miss tracing after 5130a280
+
+Fresh same-process samples at 2c310e0e show Richards body62.55%, calls15.18%,
+call entry10.60%, runtime8.73%; named read opcodes1093/4112 samples. DeltaBlue
+runtime36.24%, body33.99%, calls17.47%, call entry8.15%; native_read371/4269.
+555a140f adds missing boolean ownership facts for EQ/NEQ (neutral minis).
+5130a280 hoists receiver/shape reloads out of polymorphic own-arm chains:
+Richards83→82, DeltaBlue116→114, RayTrace160→160, Splay111→109; focused tests pass.
+
+Temporary direction-read tracing found62/80 early misses with cached polymorphic
+own data feedback (receiver287, primary278, chain254),18 with the same primary
+shape287. Reusing ic_poly_slot inside native_read passed tests but gave
+DeltaBlue115→115, Richards82→82, RayTrace160→160, Splay108→109. Removed. Existing
+feedback availability is established; a generated fallback may avoid the helper
+call, while a helper-only lookup change did not improve these workloads.
+
+
+## Live polymorphic generated fallback (removed)
+
+Implemented direct reads from existing ICPolySet data on generated misses,
+ordinary-object guards, common value-store continuation, no cache ownership
+changes. Focused three-mode checks pass. Stats counted190644 successful reads
+in DeltaBlue mini. First shared-continuation variant: all four paired medians
+unchanged (DeltaBlue115, Richards82, RayTrace160, Splay109 ms), code385652→502676
+bytes. Restricting emission to own-data feedback yields DeltaBlue117→116,
+Richards83→84, RayTrace163→162, Splay111→111; code461548 bytes. No persuasive
+speedup for the extra code; removed. Inlined property misses still reconstruct
+interpreter frames and are not covered by this prototype.
