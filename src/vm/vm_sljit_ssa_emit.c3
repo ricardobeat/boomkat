@@ -71,13 +71,8 @@ fn void SsaEmitter.load_fpr(&self, int value, int dst) @feat(SLJIT) {
     if (v.home != 0) {
         if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, dst, 0, v.home, 0) != 0) self.e.failed = true;
     } else {
-        self.e.mov(jit::reg_r(0), 0, jit::SLJIT_MEM | self.state, self.spill_offset(v.spill));
-        if (jit::sljit_emit_fcopy(
-            self.e.compiler,
-            jit::SLJIT_COPY_TO_F64,
-            dst,
-            jit::reg_r(0)
-        ) != 0) self.e.failed = true;
+        if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, dst, 0,
+            jit::SLJIT_MEM | self.state, self.spill_offset(v.spill)) != 0) self.e.failed = true;
     }
 }
 fn void SsaEmitter.store_gpr(&self, int value, int src) @feat(SLJIT) {
@@ -99,13 +94,8 @@ fn void SsaEmitter.store_fpr(&self, int value, int src) @feat(SLJIT) {
     if (v.home != 0) {
         if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, v.home, 0, src, 0) != 0) self.e.failed = true;
     } else {
-        if (jit::sljit_emit_fcopy(
-            self.e.compiler,
-            jit::SLJIT_COPY_FROM_F64,
-            src,
-            jit::reg_r(0)
-        ) != 0) self.e.failed = true;
-        self.e.mov(jit::SLJIT_MEM | self.state, self.spill_offset(v.spill), jit::reg_r(0), 0);
+        if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64,
+            jit::SLJIT_MEM | self.state, self.spill_offset(v.spill), src, 0) != 0) self.e.failed = true;
     }
 }
 // Register holding an integer or boxed value, spilling into `scratch` only
