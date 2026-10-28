@@ -437,6 +437,16 @@ BK_API bk_value  bk_adopt_shared_block(bk_ctx ctx, void *data);
 BK_API void      bk_shared_block_retain(void *data);              /* any thread */
 BK_API void      bk_shared_block_release(void *data);             /* any thread */
 
+/* Weak handles: refer to an object or a non-registered symbol without keeping
+ * it alive. Every weak handle to one target shares its state, and each one is
+ * freed with bk_free_weak. bk_weak_get returns a new handle to the target, or
+ * BK_UNDEFINED once it was collected; a freed weak handle fails with
+ * BK_ERR_INVALID. Weak handles belong to the runtime. */
+typedef uint64_t bk_weak;
+BK_API bk_weak  bk_new_weak(bk_ctx ctx, bk_value target);
+BK_API bk_value bk_weak_get(bk_ctx ctx, bk_weak weak);
+BK_API void     bk_free_weak(bk_ctx ctx, bk_weak weak);
+
 /* Promises. Settle a promise by calling its resolving functions with
  * bk_call; resolve follows the spec's resolution procedure, thenables
  * included. */

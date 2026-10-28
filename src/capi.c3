@@ -2915,3 +2915,60 @@ fn void bk_shared_block_retain(void* data) @export("bk_shared_block_retain") {
 fn void bk_shared_block_release(void* data) @export("bk_shared_block_release") {
     if (data != null) agent::block_release((char*)data);
 }
+
+// ============================================================================
+// Weak handles
+// ============================================================================
+
+fn bool symbol_is_registered(Heap* heap, HString* sym) {
+    for (uint i = 0; i < heap.symbol_registry_count; i++) {
+        if (heap.symbol_registry_syms[i] == sym) return true;
+    }
+    return false;
+}
+
+fn ulong bk_new_weak(void* ctxp, ulong id) @export("bk_new_weak") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    HeapHeader* target = null;
+    if (v.is_object() && v.get_heapptr() != null) {
+        target = (HeapHeader*)v.get_heapptr();
+    } else if (v.is_string() && ((HString*)v.get_heapptr()).is_symbol()) {
+        // A registered symbol can be recreated by Symbol.for, so it can never
+        // be observed to die, and the spec keeps it out of weak collections.
+        if (symbol_is_registered(rt.heap, (HString*)v.get_heapptr())) {
+            return fail_value(rt, BK_ERR_TYPE, "a registered symbol cannot be held weakly");
+        }
+        target = (HeapHeader*)v.get_heapptr();
+    } else {
+        return fail_value(rt, BK_ERR_TYPE, "only objects and symbols can be held weakly");
+    }
+    ulong weak = rt.heap.weak_new(target);
+    if (weak == 0) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    return weak;
+}
+
+fn ulong bk_weak_get(void* ctxp, ulong weak) @export("bk_weak_get") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    if (rt.heap.weak_entry(weak) == null) return fail_value(rt, BK_ERR_INVALID, "invalid or freed weak handle");
+    HeapHeader* target = rt.heap.weak_get(weak);
+    if (target == null) return embed::IMM_UNDEFINED;
+    TVal v;
+    if (target.flags.htype == HType.STRING) {
+        v.set_string_borrowed((HString*)target);
+    } else {
+        v.set_object((HObject*)target);
+    }
+    return store(rt, v);
+}
+
+fn void bk_free_weak(void* ctxp, ulong weak) @export("bk_free_weak") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return;
+    rt.heap.weak_free_handle(weak);
+}

@@ -2923,6 +2923,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     heap::Heap* hp = (heap::Heap*)heap_ptr;
     // A weak first-link identity must not survive reuse of this address.
     if (obj.gc.prototype_observed && hp != null) hp.bump_prototype_epoch();
+    if (obj.gc.weak_target && hp != null) hp.weak_target_died((HeapHeader*)obj);
 
     // Subtype resources are disjoint. Ordinary objects and arrays own only
     // the shared property and element storage released below.
@@ -3137,6 +3138,7 @@ fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
     ObjClass cls = obj.flags.obj_class;
     if ((cls != ObjClass.OBJECT && cls != ObjClass.ARRAY) || obj.flags.pool_fallback
         || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed
+        || obj.gc.weak_target
         || h.tearing_down) return false;
     if (obj.shape_id != 0) {
         Shape* sh = h.get_shape(obj.shape_id);

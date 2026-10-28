@@ -508,3 +508,11 @@ out/binary_api: test/capi/binary.c include/boomkat.h out/boomkat.a
 .PHONY: test-binary-api
 test-binary-api: out/binary_api
 	./out/binary_api
+
+out/weak_api: test/capi/weak.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/weak.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/weak_api
+
+.PHONY: test-weak-api
+test-weak-api: out/weak_api
+	./out/weak_api

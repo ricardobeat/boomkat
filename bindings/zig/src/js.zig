@@ -436,7 +436,49 @@ pub const Runtime = struct {
     pub fn drain(self: *Runtime) Error!void {
         try check(c.bk_run_jobs(self.runtime));
     }
+
+    /// A weak handle to an object or non-registered symbol. `deinit` it.
+    pub fn weak(self: *Runtime, v: Value) Error!Weak {
+        const w = c.bk_new_weak(self.ptr, v.handle);
+        if (w == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .id = w };
+    }
 };
+
+/// A reference that does not keep its target alive.
+pub const Weak = struct {
+    owner: c.bk_ctx,
+    id: c.bk_weak,
+
+    /// The target as an owned `Value`, or null once it was collected.
+    pub fn get(self: Weak) Error!?Value {
+        const h = c.bk_weak_get(self.owner, self.id);
+        if (h == 0) return valueError(self.owner);
+        if (h == c.BK_UNDEFINED) return null;
+        return .{ .owner = self.owner, .handle = h };
+    }
+
+    pub fn deinit(self: *Weak) void {
+        if (self.id == 0) return;
+        c.bk_free_weak(self.owner, self.id);
+        self.id = 0;
+    }
+};
+
+test "weak handles follow their target" {
+    var rt = try Runtime.init();
+    defer rt.deinit();
+    var kept = try rt.eval("globalThis.kept = {}");
+    var w = try rt.weak(kept);
+    defer w.deinit();
+    kept.deinit();
+    var again = (try w.get()) orelse return error.TestUnexpectedResult;
+    defer again.deinit();
+    try std.testing.expectEqual(Type.object, again.typeOf());
+    var n = try rt.eval("1");
+    defer n.deinit();
+    try std.testing.expectError(Error.WrongType, rt.weak(n));
+}
 
 test "eval, read back, and surface errors" {
     const gpa = std.testing.allocator;

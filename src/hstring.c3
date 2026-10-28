@@ -111,6 +111,8 @@ bitstruct HStringFlags : uint {
     bool  has_extdata       : 13;
     // String has been inserted into the heap's string table.
     bool  is_interned       : 14;
+    // A weak handle refers to this symbol (gc_weak.c3).
+    bool  weak_target       : 15;
 }
 
 // ============================================================================
