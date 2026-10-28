@@ -220,6 +220,8 @@ module JS
       'int bk_is_constructor_call(void*)',
 
       'unsigned long long bk_throw_error(void*, int, const char*)',
+      'unsigned long long bk_new_error(void*, int, const char*)',
+      'int bk_describe(void*, unsigned long long, char*, size_t, size_t*)',
       'unsigned long long bk_dup_value(void*, unsigned long long)',
       'unsigned long long bk_call(void*, unsigned long long, unsigned long long, const unsigned long long*, unsigned int)',
 

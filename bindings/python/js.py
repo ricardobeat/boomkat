@@ -207,6 +207,9 @@ def _declare(lib):
 
         ("bk_throw_error", [ctx, ctypes.c_int, ctypes.c_char_p], val),
         ("bk_throw", [ctx, val], val),
+        ("bk_new_error", [ctx, ctypes.c_int, ctypes.c_char_p], val),
+        ("bk_describe", [ctx, val, ctypes.c_char_p, ctypes.c_size_t,
+                         ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
         # Constructors, for building a return value inside a callback. The
         # so ctypes cannot reach them.
         ("bk_new_number", [ctx, ctypes.c_double], val),

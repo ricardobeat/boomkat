@@ -530,7 +530,7 @@ test-realms:
 
 # Runtime/context ownership, callback values, exceptions, strings, and explicit jobs.
 test-api:
-    @make test-api-lifecycle test-host-abi test-embed-api test-modules-api test-realms-api test-runtime-hooks test-strings-api test-handles-api test-runtime-options test-atoms-api test-object-model-api
+    @make test-api-lifecycle test-host-abi test-embed-api test-modules-api test-realms-api test-runtime-hooks test-strings-api test-handles-api test-runtime-options test-atoms-api test-object-model-api test-errors-api
 
 # C3 contexts with private or shared runtimes, including ownership and reuse.
 test-c3-api:

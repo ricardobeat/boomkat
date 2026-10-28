@@ -412,6 +412,14 @@ out/object_model: test/capi/object_model.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/object_model.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/object_model
 
+out/errors_api: test/capi/errors.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/errors.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/errors_api
+
+.PHONY: test-errors-api
+test-errors-api: out/errors_api
+	./out/errors_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model

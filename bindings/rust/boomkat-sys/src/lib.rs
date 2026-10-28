@@ -151,6 +151,7 @@ pub struct bk_error_info {
     pub line: c_int,
     pub col: c_int,
     pub script_name: *const c_char,
+    pub stack: *const c_char,
 }
 pub type bk_interrupt_fn = unsafe extern "C" fn(bk_runtime, *mut c_void) -> c_int;
 pub type bk_promise_rejection_fn =
@@ -369,6 +370,14 @@ extern "C" {
     pub fn bk_is_constructor_call(ctx: bk_ctx) -> c_int;
     pub fn bk_throw_error(ctx: bk_ctx, kind: c_int, message: *const c_char) -> bk_value;
     pub fn bk_throw(ctx: bk_ctx, value: bk_value) -> bk_value;
+    pub fn bk_new_error(ctx: bk_ctx, kind: c_int, message: *const c_char) -> bk_value;
+    pub fn bk_describe(
+        ctx: bk_ctx,
+        value: bk_value,
+        buffer: *mut c_char,
+        capacity: usize,
+        length: *mut usize,
+    ) -> c_int;
     pub fn bk_set_promise_rejection_tracker(
         runtime: bk_runtime,
         callback: Option<bk_promise_rejection_fn>,

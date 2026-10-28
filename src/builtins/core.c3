@@ -3880,13 +3880,10 @@ const int HOST_ERR_RANGE     = abi::BK_ERROR_RANGE;
 const int HOST_ERR_REFERENCE = abi::BK_ERROR_REFERENCE;
 const int HOST_ERR_SYNTAX    = abi::BK_ERROR_SYNTAX;
 
-// Throw a fresh Error of `kind` carrying `msg`. The ergonomic path, and the
-// one bindings use: it spares the host from building an Error through the
-// value API.
-fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
-    if (ctx == null || ctx.heap == null) return;
-    Heap* heap = ctx.heap;
-    HObject* proto = heap.err_proto;
+// Build a fresh Error of `kind` carrying `msg` (null for none), with the stack
+// of the running VM captured. Returns false when allocation fails.
+fn bool host_new_error(Heap* heap, void* vm, int kind, HString* msg, TVal* out) {
+    HObject* proto;
     switch (kind) {
         case HOST_ERR_TYPE:      proto = heap.type_err_proto;
         case HOST_ERR_RANGE:     proto = heap.range_err_proto;
@@ -3895,20 +3892,27 @@ fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
         default:                 proto = heap.err_proto;
     }
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_raw) {
-        ctx.heap.set_prototype(err, proto);
-
-        HString* msg_str = builtin_intern_string(heap, msg);
-        HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-        if (msg_str != null && msg_key != null) {
-            TVal msg_tv;
-            msg_tv.set_string_borrowed(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
-        }
-        ctx.throw_value.set_object(err);
-    } else {
-        ctx.throw_value.set_undefined();
+    if (catch err_raw) return false;
+    HObject* err = err_raw;
+    heap.set_prototype(err, proto);
+    HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
+    if (msg != null && msg_key != null) {
+        TVal msg_tv;
+        msg_tv.set_string_borrowed(msg);
+        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
     }
+    error_capture_vm_stack_hstring(err, heap, vm, msg);
+    out.set_object(err);
+    return true;
+}
+
+// Throw a fresh Error of `kind` carrying `msg`. The ergonomic path, and the
+// one bindings use: it spares the host from building an Error through the
+// value API.
+fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
+    if (ctx == null || ctx.heap == null) return;
+    HString* msg_str = builtin_intern_string(ctx.heap, msg);
+    if (!host_new_error(ctx.heap, ctx.vm, kind, msg_str, &ctx.throw_value)) ctx.throw_value.set_undefined();
     ctx.should_throw = true;
 }
 
