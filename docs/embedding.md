@@ -121,7 +121,13 @@ of this build, as some are in the tiny profile.
 
 `bk_get_error_message`, `bk_get_error_code`, and `bk_get_error_info` provide
 context-local diagnostics without executing getters, Proxy traps, or user
-string conversion. `bk_to_cstring` performs JS string coercion and returns UTF-8
+string conversion. `bk_error_info.stack` holds the `stack` text of the last
+thrown Error, or NULL when the thrown value was not an Error. `bk_describe`
+formats any value the same way, without getters, Proxy traps or `toString`, and
+without disturbing the diagnostics or the pending exception, so it can describe
+an exception taken earlier. It measures and fills like `bk_read_string`.
+`bk_new_error` builds an Error of a `bk_error_kind` with the current stack and
+returns it without throwing. `bk_to_cstring` performs JS string coercion and returns UTF-8
 storage, including a trailing NUL. Its optional length includes embedded NUL
 bytes and excludes the terminator. Release it with `bk_free_cstring`.
 ## Strings

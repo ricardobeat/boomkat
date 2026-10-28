@@ -388,6 +388,7 @@ struct BkErrorInfo {
     int line;
     int col;
     char* script_name;
+    char* stack;
 }
 
 fn int bk_get_error_info(void* ctxp, BkErrorInfo* out) @export("bk_get_error_info") {
@@ -397,6 +398,7 @@ fn int bk_get_error_info(void* ctxp, BkErrorInfo* out) @export("bk_get_error_inf
     out.line = rt.err_line;
     out.col = rt.err_col;
     out.script_name = rt.err_name[0] != 0 ? &rt.err_name[0] : null;
+    out.stack = rt.err_stack != null && rt.err_stack[0] != 0 ? rt.err_stack : null;
     return BK_OK;
 }
 
@@ -1506,6 +1508,37 @@ fn ulong bk_throw_error(void* ctxp, int kind, char* msg) @export("bk_throw_error
     builtins::host_throw_error(&call, kind, msg == null ? (char[])"" : ((ZString)msg).str_view());
     embed::describe_error(rt, &call.throw_value);
     return 0;
+}
+
+// An Error of `kind` with the current stack, returned rather than thrown.
+fn ulong bk_new_error(void* ctxp, int kind, char* msg) @export("bk_new_error") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (kind < abi::BK_ERROR || kind > abi::BK_ERROR_SYNTAX) return fail_value(rt, BK_ERR_INVALID, "unknown error kind");
+    embed::clear_err(rt);
+    HString* text = null;
+    if (msg != null) {
+        text = embed::string_from_utf8(rt, ((ZString)msg).str_view());
+        if (text == null) return 0;
+    }
+    TVal err;
+    if (!builtins::host_new_error(rt.heap, rt.vm, kind, text, &err)) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    return store(rt, err);
+}
+
+// Describes `id` without running JS and without touching the context's
+// diagnostics or pending exception, except to report an invalid handle.
+fn int bk_describe(void* ctxp, ulong id, char* buf, usz cap, usz* out_len) @export("bk_describe") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return BK_ERR_INVALID; }
+    embed::TextOut out = { .buf = buf, .cap = buf == null || cap == 0 ? 0 : cap - 1 };
+    embed::describe_value(rt, &v, &out);
+    if (out_len != null) *out_len = out.need;
+    if (buf == null) return BK_OK;
+    if (cap > 0) buf[out.len] = 0;
+    return out.full ? BK_ERR_FULL : BK_OK;
 }
 
 fn ulong bk_throw(void* ctxp, ulong id) @export("bk_throw") {

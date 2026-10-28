@@ -15,6 +15,7 @@ import boomkat::env;
 import boomkat::hstring;
 import boomkat::lexer;
 import boomkat::types;
+import boomkat::hbigint;
 import boomkat::bytecode;
 import boomkat::embed::abi;
 import boomkat::esm;
@@ -160,6 +161,9 @@ struct ContextState {
     char[ERRBUF] err_name;   // script name for the most recent failure
     // Backing store for the strings of Heap.jsx (bk_set_jsx).
     char*    jsx_buf;
+    // The stack of the most recent thrown Error as UTF-8, NUL-terminated.
+    char*    err_stack;
+    usz      err_stack_cap;
 
     ulong exception;
     int pending_code;
@@ -354,6 +358,11 @@ fn bool mark_slots_slice(void* rtp, void* heap_ptr, uint* cursor, uint budget) {
     return *cursor >= rt.slot_count + rt.atom_count;
 }
 
+fn void free_context_state(Heap* hp, ContextState* state) {
+    if (state.jsx_buf != null) hp.free_func(hp.heap_udata, (void*)state.jsx_buf);
+    if (state.err_stack != null) hp.free_func(hp.heap_udata, (void*)state.err_stack);
+}
+
 // Destroy the runtime and everything it owns. All outstanding handles become
 // invalid. Safe with null.
 fn void destroy(Runtime* rt) {
@@ -364,9 +373,9 @@ fn void destroy(Runtime* rt) {
         hp.free_func(hp.heap_udata, payload);
         payload = next;
     }
-    if (rt.active != &rt.root && rt.root.saved.jsx_buf != null) hp.free_func(hp.heap_udata, rt.root.saved.jsx_buf);
+    if (rt.active != &rt.root) free_context_state(hp, &rt.root.saved);
     for (Ctx* ctx = rt.contexts; ctx != null; ) {
-        if (ctx != rt.active && ctx.saved.jsx_buf != null) hp.free_func(hp.heap_udata, ctx.saved.jsx_buf);
+        if (ctx != rt.active) free_context_state(hp, &ctx.saved);
         Ctx* next = ctx.next;
         hp.free_func(hp.heap_udata, ctx);
         ctx = next;
@@ -386,7 +395,7 @@ fn void destroy(Runtime* rt) {
         hp.free_func(hp.heap_udata, (void*)rt.slots);
         rt.slots = null;
     }
-    if (rt.jsx_buf != null) hp.free_func(hp.heap_udata, (void*)rt.jsx_buf);
+    free_context_state(hp, &rt.state);
     foreach (buf : rt.cstr_buf) if (buf != null) hp.free_func(hp.heap_udata, (void*)buf);
     // Teardown order is load-bearing: vm_destroy uses heap.free_func.
     vm::vm_destroy(rt.vm);
@@ -551,6 +560,7 @@ fn void set_err(Runtime* rt, int code, char[] msg) {
     usz n = msg.len < ERRBUF - 1 ? msg.len : ERRBUF - 1;
     for (usz i = 0; i < n; i++) rt.errmsg[i] = msg[i];
     rt.errmsg[n] = 0;
+    if (rt.err_stack != null) rt.err_stack[0] = 0;
 }
 
 fn void set_err_at(Runtime* rt, int code, char[] msg, int line, int col) {
@@ -571,6 +581,7 @@ fn void clear_err(Runtime* rt) {
     rt.err_line = 0;
     rt.err_col = 0;
     rt.err_name[0] = 0;
+    if (rt.err_stack != null) rt.err_stack[0] = 0;
 }
 
 // Returns the current error message as a slice, excluding the trailing NUL.
@@ -602,57 +613,128 @@ fn HString* str_prop(HObject* o, HString* key, Heap* h) {
     return null;
 }
 
-// Formats a thrown value into the error buffer without re-entering the VM.
+// UTF-8 output into a caller buffer. Text stops at the first piece that does
+// not fit, never splitting a character; `need` counts the complete text.
+struct TextOut {
+    char* buf;
+    usz   cap;    // bytes available for text, excluding the NUL
+    usz   len;
+    usz   need;
+    bool  full;
+}
+
+fn void TextOut.bytes(&self, char[] s) {
+    self.need += s.len;
+    if (self.full) return;
+    if (s.len > self.cap - self.len) { self.full = true; return; }
+    mem::copy(self.buf + self.len, s.ptr, (sz)s.len);
+    self.len += s.len;
+}
+
+fn void TextOut.str(&self, HString* s) {
+    usz n = s.utf8_len();
+    self.need += n;
+    if (self.full) return;
+    usz room = self.cap - self.len;
+    if (n <= room) {
+        if (n > 0) s.copy_utf8(self.buf + self.len);
+        self.len += n;
+        return;
+    }
+    self.len += s.utf8_copy_truncated(self.buf[self.len:room]);
+    self.full = true;
+}
+
+// Formats `v` for diagnostics without running JS: no getters, no Proxy traps,
+// no toString. A function shows as `[Function: name]`; another object as
+// `name: message` read from plain data properties when it has them.
+fn void describe_value(Runtime* rt, TVal* v, TextOut* out) {
+    if (v.is_string()) {
+        HString* s = (HString*)v.get_heapptr();
+        if (s.is_symbol()) {
+            out.bytes("Symbol(");
+            out.str(s);
+            out.bytes(")");
+        } else {
+            out.str(s);
+        }
+        return;
+    }
+    if (v.is_undefined()) { out.bytes("undefined"); return; }
+    if (v.is_null())      { out.bytes("null"); return; }
+    if (v.is_boolean())   { out.bytes(v.get_boolean() ? "true" : "false"); return; }
+    if (v.is_numeric()) {
+        char[64] nbuf;
+        usz n = builtins::json_number_to_string(v.get_number_or_fastint(), &nbuf[0], 64);
+        out.bytes(nbuf[:n]);
+        return;
+    }
+    if (v.is_bigint()) {
+        char[64] bbuf;
+        char* bheap;
+        char[] digits = hbigint::hbigint_to_decimal(rt.heap, v.get_bigint(), bbuf[..], &bheap);
+        defer if (bheap != null) rt.heap.free((void*)bheap);
+        out.bytes(digits);
+        out.bytes("n");
+        return;
+    }
+    if (v.is_object()) {
+        HObject* o = (HObject*)v.get_heapptr();
+        HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE], rt.heap);
+        HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME], rt.heap);
+        if (o.flags.callable) {
+            out.bytes("[Function");
+            if (name != null && name.unit_len() != 0) { out.bytes(": "); out.str(name); }
+            out.bytes("]");
+            return;
+        }
+        if (name != null && msg != null && msg.unit_len() != 0) {
+            out.str(name);
+            out.bytes(": ");
+            out.str(msg);
+            return;
+        }
+        HString* only = msg != null && msg.unit_len() != 0 ? msg : name;
+        if (only != null && only.unit_len() != 0) { out.str(only); return; }
+        if (o.get_class() == hobject::ObjClass.ARRAY) { out.bytes("[object Array]"); return; }
+        out.bytes("[object Object]");
+        return;
+    }
+    out.bytes("[unknown value]");
+}
+
+// Copies the stack captured by an Error object into the context's diagnostics.
+fn void record_stack(Runtime* rt, TVal* ev) {
+    if (!ev.is_object()) return;
+    HObject* o = (HObject*)ev.get_heapptr();
+    if (o.get_class() != hobject::ObjClass.ERROR) return;
+    TVal* captured = &(*o.extra_ptr()).err.captured_stack;
+    if (!captured.is_string()) return;
+    HString* s = (HString*)captured.get_heapptr();
+    usz n = s.utf8_len();
+    if (n + 1 > rt.err_stack_cap) {
+        void* raw = rt.heap.realloc_func(rt.heap.heap_udata, (void*)rt.err_stack, n + 1);
+        if (raw == null) return;
+        rt.err_stack = (char*)raw;
+        rt.err_stack_cap = n + 1;
+    }
+    s.copy_utf8(rt.err_stack);
+    rt.err_stack[n] = 0;
+}
+
+// Records a thrown value as the pending exception, with its description and
+// stack as the context's diagnostics, without re-entering the VM.
 fn void describe_error(Runtime* rt, TVal* ev) {
     ulong held = slot_alloc(rt, *ev);
     defer {
         clear_exception(rt);
         rt.exception = held;
     }
-    if (ev.is_string()) {
-        char[ERRBUF] sbuf;
-        HString* s = (HString*)ev.get_heapptr();
-        set_err(rt, BK_ERR_THROW, sbuf[:s.utf8_copy_truncated(sbuf[..])]);
-        return;
-    }
-    if (ev.is_undefined()) { set_err(rt, BK_ERR_THROW, "undefined"); return; }
-    if (ev.is_null())      { set_err(rt, BK_ERR_THROW, "null"); return; }
-    if (ev.is_boolean())   {
-        set_err(rt, BK_ERR_THROW, ev.get_boolean() ? "true" : "false");
-        return;
-    }
-    if (ev.is_numeric()) {
-        // Format numbers directly into the buffer without VM re-entry or allocation.
-        char[64] nbuf;
-        usz n = builtins::json_number_to_string(ev.get_number_or_fastint(), &nbuf[0], 64);
-        set_err(rt, BK_ERR_THROW, nbuf[:n]);
-        return;
-    }
-    if (ev.is_object()) {
-        HObject* o = (HObject*)ev.get_heapptr();
-        HString* msg  = str_prop(o, rt.heap.strs[heap::BuiltinStr.MESSAGE], rt.heap);
-        HString* name = str_prop(o, rt.heap.strs[heap::BuiltinStr.NAME], rt.heap);
-
-        if (name != null && msg != null && msg.unit_len() != 0) {
-            char[ERRBUF] buf;
-            usz pos = 0;
-            pos += name.utf8_copy_truncated(buf[:ERRBUF - 3]);
-            buf[pos++] = ':';
-            buf[pos++] = ' ';
-            pos += msg.utf8_copy_truncated(buf[pos:ERRBUF - pos]);
-            set_err(rt, BK_ERR_THROW, buf[:pos]);
-            return;
-        }
-        char[ERRBUF] tbuf;
-        HString* only = msg != null && msg.unit_len() != 0 ? msg : name;
-        if (only != null && only.unit_len() != 0) {
-            set_err(rt, BK_ERR_THROW, tbuf[:only.utf8_copy_truncated(tbuf[..])]);
-            return;
-        }
-        set_err(rt, BK_ERR_THROW, "uncaught exception (object)");
-        return;
-    }
-    set_err(rt, BK_ERR_THROW, "uncaught exception");
+    char[ERRBUF] buf;
+    TextOut out = { .buf = &buf, .cap = ERRBUF - 1 };
+    describe_value(rt, ev, &out);
+    set_err(rt, BK_ERR_THROW, buf[:out.len]);
+    record_stack(rt, ev);
 }
 
 // ============================================================================

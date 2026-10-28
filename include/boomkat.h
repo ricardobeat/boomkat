@@ -179,6 +179,7 @@ typedef struct {
     int line;
     int col;
     const char *script_name;
+    const char *stack;   /* stack of the last thrown Error, context-owned; may be NULL */
 } bk_error_info;
 BK_API bk_status bk_get_error_info(bk_ctx ctx, bk_error_info *out);
 BK_API const char *bk_status_str(bk_status status);
@@ -335,6 +336,13 @@ BK_API bk_value bk_this(bk_ctx ctx);
 BK_API bk_value bk_get_new_target(bk_ctx ctx);
 BK_API int bk_is_constructor_call(bk_ctx ctx);
 BK_API bk_value bk_throw_error(bk_ctx ctx, bk_error_kind kind, const char *message);
+/* A new Error of `kind` carrying the UTF-8 `message` (NULL for none) and the
+ * current stack. It is returned, not thrown. */
+BK_API bk_value bk_new_error(bk_ctx ctx, bk_error_kind kind, const char *message);
+/* Format a value for diagnostics without running JS: no getters, no Proxy
+ * traps, no toString. Sizing follows bk_read_string, but a full buffer leaves
+ * the context's diagnostics and pending exception untouched. */
+BK_API bk_status bk_describe(bk_ctx ctx, bk_value value, char *buffer, size_t capacity, size_t *length);
 BK_API bk_value bk_throw(bk_ctx ctx, bk_value value);
 
 /* The tracker runs on the engine thread; promise/reason are borrowed. It must

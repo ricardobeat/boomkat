@@ -112,6 +112,15 @@ fn HString* error_build_stack_string(BuiltinContext* ctx, HString* name_str, HSt
 // has no BuiltinContext: the error's name is read off its prototype's `name`
 // property instead of being passed in.
 fn void error_capture_vm_stack(HObject* err, Heap* heap, void* vm_ptr, char[] msg) {
+    error_capture_stack(err, heap, vm_ptr, msg, null);
+}
+
+// error_capture_vm_stack with the message as a string.
+fn void error_capture_vm_stack_hstring(HObject* err, Heap* heap, void* vm_ptr, HString* msg) {
+    error_capture_stack(err, heap, vm_ptr, "", msg);
+}
+
+fn void error_capture_stack(HObject* err, Heap* heap, void* vm_ptr, char[] msg, HString* hmsg) {
     StrBuf out;
     out.init(heap);
     defer out.free();
@@ -128,7 +137,11 @@ fn void error_capture_vm_stack(HObject* err, Heap* heap, void* vm_ptr, char[] ms
         }
     }
     out.append_bytes(": ");
-    if (msg.len > 0) out.append_bytes(msg);
+    if (hmsg != null) {
+        out.append_hstring(hmsg);
+    } else if (msg.len > 0) {
+        out.append_bytes(msg);
+    }
 
     error_append_stack_frames(&out, vm_ptr);
 
