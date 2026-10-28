@@ -447,6 +447,23 @@ extern "C" {
     pub fn bk_set_instance_payload(ctx: bk_ctx, value: bk_value, cls: bk_class, payload: *mut c_void) -> c_int;
     pub fn bk_get_instance_class(ctx: bk_ctx, value: bk_value) -> bk_class;
     pub fn bk_run_finalizers(runtime: bk_runtime) -> c_uint;
+    pub fn bk_get_intrinsic(ctx: bk_ctx, which: c_int) -> bk_value;
+    pub fn bk_new_symbol(ctx: bk_ctx, description: *const c_char, length: usize) -> bk_value;
+    pub fn bk_symbol_for(ctx: bk_ctx, key: *const c_char, length: usize) -> bk_value;
+    pub fn bk_get_well_known_symbol(ctx: bk_ctx, which: c_int) -> bk_value;
+    pub fn bk_symbol_description(ctx: bk_ctx, symbol: bk_value) -> bk_value;
+    pub fn bk_new_bigint_int64(ctx: bk_ctx, value: i64) -> bk_value;
+    pub fn bk_new_bigint_uint64(ctx: bk_ctx, value: u64) -> bk_value;
+    pub fn bk_read_bigint_int64(ctx: bk_ctx, value: bk_value, out: *mut i64, lossless: *mut c_int) -> c_int;
+    pub fn bk_new_bigint_words(ctx: bk_ctx, negative: c_int, words: *const u64, count: usize) -> bk_value;
+    pub fn bk_read_bigint_words(
+        ctx: bk_ctx,
+        value: bk_value,
+        negative: *mut c_int,
+        words: *mut u64,
+        capacity: usize,
+        count: *mut usize,
+    ) -> c_int;
     pub fn bk_slot_init(slot: *mut bk_slot);
     pub fn bk_slot_set(ctx: bk_ctx, slot: *mut bk_slot, value: bk_value) -> c_int;
     pub fn bk_slot_get(ctx: bk_ctx, slot: *const bk_slot) -> bk_value;

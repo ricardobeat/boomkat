@@ -326,6 +326,24 @@ bk_value counter = bk_new_c_function(app, tick, "tick", 0, 0, count, free_box, N
 A finalizer may run in the middle of any engine call, so it must not call the
 engine.
 
+### Intrinsics, symbols and BigInt
+
+`bk_get_intrinsic` returns a built-in object of the context's realm, such as
+`BK_INTRINSIC_ARRAY_PROTOTYPE` or `BK_INTRINSIC_GLOBAL_OBJECT`, without looking
+it up through globals a script may have replaced. One compiled out of the
+build fails with `BK_ERR_UNSUPPORTED`.
+
+`bk_new_symbol` makes a unique symbol (a NULL description makes `Symbol()`),
+`bk_symbol_for` reads the global registry like `Symbol.for`, and
+`bk_get_well_known_symbol` returns `Symbol.iterator` and its peers.
+`bk_symbol_description` returns the description, or `BK_UNDEFINED`.
+
+BigInts convert through `int64_t`, `uint64_t`, or sign-and-magnitude arrays of
+64-bit words, least significant first. `bk_read_bigint_int64` wraps like
+`BigInt.asIntN(64, value)` and reports through `lossless` whether nothing was
+lost; `bk_read_bigint_words` measures with a NULL buffer. Builds without BigInt
+fail with `BK_ERR_UNSUPPORTED`.
+
 ### Host classes
 
 `bk_define_class` creates a class whose instances carry a native payload: a

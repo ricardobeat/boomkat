@@ -452,6 +452,14 @@ out/tracing_api: test/capi/tracing.c include/boomkat.h out/boomkat.a
 test-tracing-api: out/tracing_api
 	./out/tracing_api
 
+out/intrinsics_api: test/capi/intrinsics.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/intrinsics.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/intrinsics_api
+
+.PHONY: test-intrinsics-api
+test-intrinsics-api: out/intrinsics_api
+	./out/intrinsics_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model
