@@ -1140,6 +1140,7 @@ struct BkClassDef {
     char* name;
     uint  parent;
     void* finalize;
+    void* trace;
     void* construct;
     int   arity;
     uint  flags;
@@ -1200,7 +1201,9 @@ fn uint bk_define_class(void* ctxp, BkClassDef* def, ulong* ctor_out, ulong* pro
     if (catch proto_raw) { fail(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
     HObject* proto = proto_raw;
     hp.set_prototype(proto, parent != null ? parent.proto : hp.object_proto);
-    long id = hp.register_host_class(def.finalize, null, def.opaque, (void*)nm, proto);
+    // A trace callback has the shape of a host class mark function: the tracer
+    // it receives is the marking heap.
+    long id = hp.register_host_class(def.finalize, def.trace, def.opaque, (void*)nm, proto);
     if (id < 0) { fail(rt, BK_ERR_NOMEM, "host class table full"); return 0; }
     uint cls = (uint)id + 1;
     // Registration may have grown the table; re-read entries by id from here.
@@ -1294,6 +1297,59 @@ fn uint bk_get_instance_class(void* ctxp, ulong id) @export("bk_get_instance_cla
     TVal v;
     if (!resolve(ctxp, id, &v)) return 0;
     return instance_class(rt, v);
+}
+
+// ============================================================================
+// Traced slots
+// ============================================================================
+
+// bk_slot is two 64-bit words, which holds a TVal in either value layout.
+const usz BK_SLOT_SIZE = 16;
+$assert(TVal::size <= BK_SLOT_SIZE);
+
+fn void bk_slot_init(void* slot) @export("bk_slot_init") {
+    if (slot == null) return;
+    mem::clear(slot, BK_SLOT_SIZE);
+    ((TVal*)slot).set_undefined();
+}
+
+// Stores `id` with a reference. The value is shaded, so an owner traced
+// earlier in an incremental cycle cannot hide it from the collector.
+fn int bk_slot_set(void* ctxp, void* slot, ulong id) @export("bk_slot_set") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || slot == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) { bad_handle(rt); return BK_ERR_INVALID; }
+    rt.heap.tval_copy_ref((TVal*)slot, &v);
+    return BK_OK;
+}
+
+fn ulong bk_slot_get(void* ctxp, void* slot) @export("bk_slot_get") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (slot == null) return fail_value(rt, BK_ERR_INVALID, "null slot");
+    embed::clear_err(rt);
+    return store(rt, *(TVal*)slot);
+}
+
+fn void bk_slot_clear(void* ctxp, void* slot) @export("bk_slot_clear") {
+    Runtime* rt = rt_of(ctxp);
+    if (slot == null) return;
+    if (rt != null && !rt.heap.tearing_down) rt.heap.decref_tval((TVal*)slot);
+    ((TVal*)slot).set_undefined();
+}
+
+fn void bk_trace_slot(void* tracer, void* slot) @export("bk_trace_slot") {
+    if (tracer == null || slot == null) return;
+    ((Heap*)tracer).mark_tval((TVal*)slot);
+}
+
+fn void bk_set_root_tracer(void* runtime, void* callback, void* opaque) @export("bk_set_root_tracer") {
+    if (runtime == null) return;
+    Runtime* rt = (Runtime*)runtime;
+    rt.root_tracer = (embed::BkRootTracer)callback;
+    rt.root_tracer_opaque = opaque;
 }
 
 fn uint bk_run_finalizers(void* runtime) @export("bk_run_finalizers") {

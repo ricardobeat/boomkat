@@ -345,7 +345,7 @@ static bk_value vec_new(bk_ctx ctx, bk_value self, unsigned argc,
     return BK_UNDEFINED;
 }
 
-bk_class_def def = { "Vec", 0, free_vec, vec_new, 2, 0, NULL };
+bk_class_def def = { "Vec", 0, free_vec, NULL, vec_new, 2, 0, NULL };
 bk_value ctor, proto;
 vec_class = bk_define_class(app, &def, &ctor, &proto);
 ```
@@ -357,7 +357,31 @@ the payload and the class's `opaque` when the instance is freed or the runtime
 is destroyed; detaching with a NULL payload skips it. With
 `BK_CLASS_DEFER_FINALIZE`, finalizers wait until the host calls
 `bk_run_finalizers`, which gives engines such as Unreal or Godot a safe point to
-destroy native objects. `bk_fn_def` carries the same two fields; `bk_register_fn` borrows its
+destroy native objects.
+
+### Traced slots
+
+A payload that refers to JS values stores them in `bk_slot`s. A slot holds a
+reference but is not a root: the collector keeps its value only while
+something reports the slot with `bk_trace_slot`. The class's `trace` callback
+does that for a payload, so a payload that points back at the object owning it
+forms a cycle the collector can still free. `bk_set_root_tracer` installs one
+callback per runtime for slots held outside any instance; it runs during root
+marking and must only call `bk_trace_slot`.
+
+```c
+typedef struct { bk_slot on_change; } widget;
+
+static void trace_widget(void *payload, bk_tracer *tracer, void *opaque) {
+    bk_trace_slot(tracer, &((widget *)payload)->on_change);
+}
+```
+
+Initialize a slot with `bk_slot_init`, store with `bk_slot_set` and read with
+`bk_slot_get`, which returns a handle like any other call. `bk_slot_clear`
+releases the value; a finalizer, which must not call the engine, drops its
+slots without clearing them. A slot whose owner stops tracing it must not be
+read again. `bk_fn_def` carries the same two fields; `bk_register_fn` borrows its
 `opaque`.
 
 Runtimes and contexts each carry `BK_DATA_SLOTS` (4) embedder pointers, set

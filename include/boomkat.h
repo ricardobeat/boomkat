@@ -355,6 +355,25 @@ typedef struct {
     void *finalize_opaque;
 } bk_fn_def;
 #define BK_FN_END { NULL, NULL, 0, 0u, NULL, NULL, NULL }
+/* Traced slots: storage for one JS value inside host memory. A slot holds a
+ * reference without being a root; it stays valid only while something traces
+ * it, the owning instance's `trace` callback or the root tracer. That lets a
+ * payload point back at JS objects without leaking cycles. */
+typedef struct { uint64_t opaque[2]; } bk_slot;
+typedef struct bk_tracer bk_tracer;
+typedef void (*bk_trace_fn)(void *payload, bk_tracer *tracer, void *opaque);
+BK_API void      bk_slot_init(bk_slot *slot);                     /* undefined */
+BK_API bk_status bk_slot_set(bk_ctx ctx, bk_slot *slot, bk_value value);
+BK_API bk_value  bk_slot_get(bk_ctx ctx, const bk_slot *slot);
+/* Release the slot's value. Not from a finalizer: there, drop the slot. */
+BK_API void      bk_slot_clear(bk_ctx ctx, bk_slot *slot);
+/* Report a slot from a trace callback or the root tracer. */
+BK_API void      bk_trace_slot(bk_tracer *tracer, const bk_slot *slot);
+/* Host roots: called during root marking, including incremental root scans.
+ * It must only call bk_trace_slot. */
+typedef void (*bk_root_tracer)(bk_tracer *tracer, void *opaque);
+BK_API void      bk_set_root_tracer(bk_runtime runtime, bk_root_tracer callback, void *opaque);
+
 /* Host classes. Ids are per runtime; 0 is invalid. Instances carry a payload
  * pointer that the class's finalizer receives when the instance is freed. */
 typedef uint32_t bk_class;
@@ -363,6 +382,7 @@ typedef struct {
     const char   *name;
     bk_class      parent;      /* 0 = none; brand checks accept subclasses */
     bk_finalizer  finalize;    /* (payload, opaque); runs only for a non-NULL payload */
+    bk_trace_fn   trace;       /* (payload, tracer, opaque): report the payload's slots */
     bk_c_function construct;   /* receives opaque; NULL = `new` throws TypeError */
     int           arity;
     unsigned      flags;
