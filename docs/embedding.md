@@ -363,6 +363,14 @@ bk_call(app, resolve, BK_UNDEFINED, &result, 1);
 bk_run_jobs(bk_get_runtime(app));
 ```
 
+### Compiled scripts
+
+`bk_compile` parses a script once and returns it as a value; `bk_run_script`
+evaluates it again without reparsing, in the context it is called with, each
+run behaving as `bk_eval_ex` on the same source. Syntax errors surface at
+compile time. Flags are `BK_EVAL_GLOBAL` or `BK_EVAL_STRICT`; modules are not
+compiled this way. The compiled code lives until the runtime is destroyed.
+
 ### Event loops
 
 `bk_set_job_hook` reports the job queue turning non-empty, so a host loop can

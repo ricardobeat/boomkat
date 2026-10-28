@@ -10,6 +10,7 @@ import boomkat::lexer;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::hbigint;
+import boomkat::bytecode;
 import boomkat::types;
 import libc;
 
@@ -199,6 +200,51 @@ fn char* bk_version() @export("bk_version") {
 // ============================================================================
 // Eval
 // ============================================================================
+
+// A compiled script is a HOST object of an internal class whose payload is the
+// CompiledFunction, which the heap owns until it is destroyed.
+fn ulong bk_compile(void* ctxp, char* src, usz len, char* filename, uint flags) @export("bk_compile") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    if (src == null || (flags & ~2u) != 0) return fail_value(rt, BK_ERR_INVALID, "invalid source or compile flags");
+    Heap* hp = rt.heap;
+    if (rt.script_class == 0) {
+        long id = hp.register_host_class(null, null, null, (void*)hp.str(heap::BuiltinStr.EMPTY), null);
+        if (id < 0) return fail_value(rt, BK_ERR_NOMEM, "host class table full");
+        rt.script_class = (uint)id + 1;
+    }
+    char[] name = filename != null ? ((ZString)filename).str_view() : (char[])"<eval>";
+    bytecode::CompiledFunction* f;
+    if (embed::compile_script(rt, src[:len], name, (flags & 2u) != 0, &f) != BK_OK) return 0;
+    HObject*? raw = hp.alloc_object(hobject::ObjClass.HOST);
+    if (catch raw) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    HObject* script = raw;
+    hp.set_prototype(script, null);
+    (*script.extra_ptr()).host.class_id = rt.script_class - 1;
+    (*script.extra_ptr()).host.payload = (void*)f;
+    TVal v; v.set_object(script);
+    return store(rt, v);
+}
+
+// Runs a compiled script in this context, as bk_eval_ex would its source.
+fn ulong bk_run_script(void* ctxp, ulong id) @export("bk_run_script") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal v;
+    if (!resolve(ctxp, id, &v)) return bad_handle(rt);
+    HObject* o = v.is_object() ? (HObject*)v.get_heapptr() : null;
+    if (o == null || rt.script_class == 0 || o.get_class() != hobject::ObjClass.HOST
+        || (*o.extra_ptr()).host.class_id != rt.script_class - 1) {
+        return fail_value(rt, BK_ERR_TYPE, "not a compiled script");
+    }
+    TVal result;
+    bool owned;
+    if (embed::run_script(rt, (bytecode::CompiledFunction*)(*o.extra_ptr()).host.payload, &result, &owned) != BK_OK) return 0;
+    ulong out = store(rt, result);
+    if (owned) rt.heap.decref_tval(&result);
+    return out;
+}
 
 fn ulong bk_eval_ex(void* ctxp, char* src, usz len, char* filename, uint flags) @export("bk_eval_ex") {
     Runtime* rt = rt_of(ctxp);

@@ -476,6 +476,14 @@ out/event_loop_api: test/capi/event_loop.c include/boomkat.h out/boomkat.a
 test-event-loop-api: out/event_loop_api
 	./out/event_loop_api
 
+out/scripts_api: test/capi/scripts.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/scripts.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/scripts_api
+
+.PHONY: test-scripts-api
+test-scripts-api: out/scripts_api
+	./out/scripts_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model
