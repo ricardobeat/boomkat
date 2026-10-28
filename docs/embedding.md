@@ -344,6 +344,25 @@ BigInts convert through `int64_t`, `uint64_t`, or sign-and-magnitude arrays of
 lost; `bk_read_bigint_words` measures with a NULL buffer. Builds without BigInt
 fail with `BK_ERR_UNSUPPORTED`.
 
+### Promises
+
+`bk_new_promise` returns a pending promise with its resolve and reject
+functions; the host settles it later with `bk_call`, from any callback or from
+its own event loop. Resolving runs the spec's resolution procedure, so a
+thenable is adopted. `bk_promise_state_get` and `bk_promise_result` read a
+settled promise, `bk_promise_then` attaches reactions (0 for none) and
+`bk_promise_resolve` is `Promise.resolve`. Reactions run in `bk_run_jobs`.
+`bk_promise_mark_handled` keeps a rejection the host deals with itself away
+from the rejection tracker.
+
+```c
+bk_value resolve;
+bk_value promise = bk_new_promise(app, &resolve, NULL);
+/* later, when the native work completes: */
+bk_call(app, resolve, BK_UNDEFINED, &result, 1);
+bk_run_jobs(bk_get_runtime(app));
+```
+
 ### Host classes
 
 `bk_define_class` creates a class whose instances carry a native payload: a

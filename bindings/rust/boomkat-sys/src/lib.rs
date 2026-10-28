@@ -77,6 +77,11 @@ pub struct bk_tracer {
 pub type bk_trace_fn = unsafe extern "C" fn(payload: *mut c_void, tracer: *mut bk_tracer, opaque: *mut c_void);
 pub type bk_root_tracer = unsafe extern "C" fn(tracer: *mut bk_tracer, opaque: *mut c_void);
 
+// Promise states for `bk_promise_state_get`.
+pub const BK_PROMISE_PENDING: c_int = 0;
+pub const BK_PROMISE_FULFILLED: c_int = 1;
+pub const BK_PROMISE_REJECTED: c_int = 2;
+
 /// A host class id; 0 is invalid.
 pub type bk_class = u32;
 pub const BK_CLASS_DEFER_FINALIZE: c_uint = 1;
@@ -464,6 +469,12 @@ extern "C" {
         capacity: usize,
         count: *mut usize,
     ) -> c_int;
+    pub fn bk_new_promise(ctx: bk_ctx, resolve_out: *mut bk_value, reject_out: *mut bk_value) -> bk_value;
+    pub fn bk_promise_state_get(ctx: bk_ctx, promise: bk_value, out: *mut c_int) -> c_int;
+    pub fn bk_promise_result(ctx: bk_ctx, promise: bk_value) -> bk_value;
+    pub fn bk_promise_mark_handled(ctx: bk_ctx, promise: bk_value) -> c_int;
+    pub fn bk_promise_resolve(ctx: bk_ctx, value: bk_value) -> bk_value;
+    pub fn bk_promise_then(ctx: bk_ctx, promise: bk_value, on_fulfilled: bk_value, on_rejected: bk_value) -> bk_value;
     pub fn bk_slot_init(slot: *mut bk_slot);
     pub fn bk_slot_set(ctx: bk_ctx, slot: *mut bk_slot, value: bk_value) -> c_int;
     pub fn bk_slot_get(ctx: bk_ctx, slot: *const bk_slot) -> bk_value;
