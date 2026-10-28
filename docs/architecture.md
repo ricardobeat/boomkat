@@ -696,17 +696,22 @@ refcounted values before replacing registers, publishes dirty slots, and charges
 GC and interrupt budgets before resuming normal dispatch. Compiled functions
 cache up to four regions or input specializations. A branch bitmap routes
 cached loops to native entry; guard misses retry at interpreter safepoints.
-Generated loop and function code share a 1 MiB cap per heap and are released
-with their compiled function.
+Generated code is released with its compiled function. Function admission
+requires total native code to stay below 1 MiB. Standard JIT targets enable
+`SLJIT_LOOP_RESERVE`: hot standalone loops can continue compiling up to a
+2 MiB total ceiling. The reserve allocates nothing eagerly and does not evict
+existing code. Build with `-U SLJIT_LOOP_RESERVE` for the original shared 1 MiB
+ceiling. The opt-in adaptive policy retains its separate 256 KiB starting limit
+and 1 MiB maximum.
 
 The function compiler warms on calls and emits native regions of up to 512
 instructions. Larger functions warm at a backward branch and select its complete
 loop when it fits; oversized loops retain a 128-instruction forward-region
 fallback. VM registers above the 64-register numeric-loop budget use their
 physical slots. Branches outside the region leave through explicit bytecode
-side exits. Ordinary callback spans retain the six-instruction admission
-threshold; expanded integer, indexed and intrinsic-call coverage requires
-sixteen instructions. Repeated short guard exits disable that entry.
+side exits. Regions admit single-instruction spans so tiny whole-function
+callees can participate in native call graphs. Repeated short guard exits
+disable an unproductive entry.
 
 Native backward branches consume an invocation-local budget bounded by the
 heap's GC and interrupt budgets and 1024 edges. Before exhaustion they publish

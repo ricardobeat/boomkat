@@ -5,13 +5,16 @@ import boomkat::bytecode;
 
 const usz JIT_INITIAL_CODE_LIMIT = 256 * 1024;
 const usz JIT_MAX_CODE_LIMIT = 1024 * 1024;
+// A bounded reserve for hot standalone loops after function admission
+// saturates. The adaptive policy retains its independent limit.
+const usz JIT_LOOP_RESERVE_LIMIT = 2 * JIT_MAX_CODE_LIMIT;
 
 fn usz sljit_code_limit(Heap* h) @feat(SLJIT) @inline {
     $if $feat(SLJIT_ADAPTIVE):
     if (h.jit_code_limit == 0) h.jit_code_limit = JIT_INITIAL_CODE_LIMIT;
     return h.jit_code_limit;
     $else
-    return JIT_MAX_CODE_LIMIT;
+    return $feat(SLJIT_LOOP_RESERVE) ? JIT_LOOP_RESERVE_LIMIT : JIT_MAX_CODE_LIMIT;
     $endif
 }
 
@@ -46,7 +49,13 @@ fn void sljit_budget_retry(Heap* h) @feat(SLJIT) {
     }
 }
 
-fn bool sljit_code_room(Heap* h, usz bytes) @feat(SLJIT) @inline {
+fn bool sljit_code_room(Heap* h, usz bytes, bool function = false) @feat(SLJIT) @inline {
+    $if $feat(SLJIT_LOOP_RESERVE) && !$feat(SLJIT_ADAPTIVE):
+    // Keep the reserve for loop candidates, which have reached a hot
+    // backedge and passed the loop analyzer. No existing code is retired.
+    if (function && (h.jit_code_bytes >= JIT_MAX_CODE_LIMIT
+        || bytes >= JIT_MAX_CODE_LIMIT - h.jit_code_bytes)) return false;
+    $endif
     if (h.jit_code_bytes + bytes < sljit_code_limit(h)) return true;
     $if $feat(SLJIT_ADAPTIVE): return sljit_budget_reclaim(h, bytes); $else return false; $endif
 }

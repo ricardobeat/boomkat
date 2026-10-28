@@ -18,10 +18,13 @@ fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     sljit_relink_calls(h, cf, true);
     $if $feat(SLJIT_STATS):
         io::eprintfn(
-            "SLJIT function %s hits=%d returns=%d charged_edges=%d budget_exits=%d code_bytes=%d",
+            "SLJIT function %s hits=%d returns=%d stalled=%d direct_calls=%d direct_returns=%d charged_edges=%d budget_exits=%d code_bytes=%d",
             (String)cf.get_name(),
             plan.hits,
             plan.completed,
+            plan.stalled,
+            plan.direct_calls,
+            plan.direct_returns,
             plan.charged_edges,
             plan.budget_exits,
             plan.code_bytes
@@ -53,7 +56,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
             h.jit_code_bytes
         );
     $endif
-    if (begin >= cf.code_count || !sljit_code_room(h, 0)) {
+    if (begin >= cf.code_count || !sljit_code_room(h, 0, true)) {
         cf.sljit_budget_wait = begin < cf.code_count;
         $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
         return null;
@@ -115,7 +118,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
             sljit_code_limit(h)
         );
     $endif
-    if (!emitted || !sljit_code_room(h, plan.code_bytes)) {
+    if (!emitted || !sljit_code_room(h, plan.code_bytes, true)) {
         cf.sljit_budget_wait = emitted;
         $if $feat(SLJIT_STATS): if (emitted) cf.sljit_rejection = "code budget"; $endif
         if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
@@ -436,6 +439,7 @@ fn void sljit_stats_dump(Heap* h) {
                     lp.iterations
                 );
                 $if $feat(SLJIT_STATS):
+                io::printfn("SLJIT loop code id=%d begin=%d end=%d bytes=%d", i, lp.begin, lp.end, lp.code_bytes);
                 io::printfn("SLJIT ssa name=%s begin=%d end=%d hits=%d iterations=%d",
                     (String)cf.get_name(), lp.begin, lp.end, lp.ssa_hits, lp.ssa_iterations);
                 $endif
