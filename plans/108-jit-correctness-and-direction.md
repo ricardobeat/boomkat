@@ -1,6 +1,14 @@
 # 108: JIT correctness gates and direction
 
-Status: proposed. A review of the `rat` branch at `8ab73eba` plus the
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+The review and corrective implementation cycle are closed. Later repair and validation are recorded in plans 110 and 116–118. Ongoing recovery, ownership and optimizing-tier requirements are tracked in plan 113. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
+Historical status: proposed. A review of the `rat` branch at `8ab73eba` plus the
 uncommitted work in `.worktrees/rat` (equality and null branches in the
 function tier). It follows plan 107 and reorders its next steps. Nothing
 here was built or measured; the facts come from the branch, its diff

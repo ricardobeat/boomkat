@@ -1,5 +1,13 @@
 # Shared JIT buffer and continuation workflows
 
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+The scoped buffer and continuation implementation is complete. WIDE/high-register regions, environment-call chains, scanner specialization and broader guard/load elimination are carried into plan 113. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
 Follow-up implementation to plan 111, based on the shared-workflow profiles.
 Implementation: rat `fa1e7f7a`. Baseline: rat `d569b9ed`. macOS arm64, C3 0.8.5, default 1 MiB code budget.
 

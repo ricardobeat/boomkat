@@ -1,6 +1,14 @@
 # 110: A native execution convention, reliable baseline, and compact optimizer
 
-Status: recoverable inlining, allocating continuations, patchable native calls
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+Native calls, selected allocating continuations, recoverable inlining and patchable links were delivered. General function SSA, complete baseline continuations and the performance objective were not completed here; they are carried into plan 113. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
+Historical status: recoverable inlining, allocating continuations, patchable native calls
 and guarded cross-block numeric homes implemented, 2026-10-27.
 Sections 11–12 record the new implementation, measurements, profiling and
 validation. The compact optimizer remains deliberately restricted; a general

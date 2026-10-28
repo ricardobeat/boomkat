@@ -1,5 +1,13 @@
 # 116: Loop SSA repair and activation
 
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+The bounded numeric-loop SSA repair and activation are complete. Cyclic function CFGs, effectful function SSA, broader recovery state and cross-call optimization remain work in plan 113. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
 Engine commit: `f5bb66df`. Baseline: `fa1e7f7a`. This activates the existing bounded numeric-loop
 SSA tier after repairing its recovery, CFG and representation invariants. It
 is a foundation for the optimizing tier in plan 113, not a general function

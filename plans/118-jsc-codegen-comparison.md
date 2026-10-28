@@ -1,5 +1,13 @@
 # JSC comparison and compound function SSA
 
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+The JSC comparison and bounded compound SSA implementation are complete. The measured native-code gaps and proposed follow-ups are incorporated into the active plan 113; the 50K target remains unmet. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
 Implementation: `8bd1e565` on rat.
 
 The 50K full-Octane objective is not achieved. This batch uses focused mini workloads, not another full Octane run. The accepted change improves DeltaBlue about 9%; Richards is neutral. Longer runs show that Boomkat remains slower even than JSC's baseline tier.

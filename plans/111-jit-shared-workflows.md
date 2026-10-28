@@ -1,6 +1,14 @@
 # 111: Shared JIT opportunities beyond Richards and DeltaBlue
 
-Status: investigation complete, 2026-10-27. Baseline `rat` at `bd44daea`.
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+The shared-workflow investigation is complete. Selected consumers landed in plans 112 and 116–118; remaining buffer, scanner, construction and property-miss work is tracked in plan 113. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
+Historical status: investigation complete, 2026-10-27. Baseline `rat` at `bd44daea`.
 Diagnostics committed as `d569b9ed`; performance experiments remain isolated.
 
 The strongest common targets are complete buffer-processing kernels,

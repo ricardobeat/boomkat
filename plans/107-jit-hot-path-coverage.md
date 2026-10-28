@@ -1,6 +1,14 @@
 # 107: Covering the deltablue, richards and splay hot paths with the JIT
 
-Status: the loop tier's arms, the array element read, RETUNDEF, loose
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+The hot-path investigation and subsequent implementation cycle are closed. Its object-store, call-coverage and region-optimization follow-ups are carried into plan 113; historical blocker descriptions below are not a current backlog. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
+Historical status: the loop tier's arms, the array element read, RETUNDEF, loose
 equality and multi-level expansion landed. Object-valued property stores
 are the next blocker; see section 10.
 

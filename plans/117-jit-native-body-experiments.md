@@ -1,5 +1,13 @@
 # Native-body optimization experiments
 
+Status: **COMPLETED — consolidated into [plan 113](113-fifty-thousand-octane.md), 2026-10-28.**
+
+The recorded experiment cycle is complete: accepted commits and rejected approaches remain evidence. It did not establish a 5–10x gain. Unfinished general function-SSA and native-body optimization work is carried into plan 113. Completion closes this document as a separate workstream; it does not assert that the broader optimizing tier or performance target has been achieved.
+
+The original implementation notes, measurements and status statements below are historical evidence. Plan 113 owns the current priorities and acceptance criteria.
+
+---
+
 Target remains 10x improvement / approximately 50K full Octane. No full-suite result in this batch establishes progress to that target; iteration used interleaved mini timings.
 
 ## Landed
