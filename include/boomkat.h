@@ -414,6 +414,42 @@ BK_API bk_value  bk_promise_resolve(bk_ctx ctx, bk_value value);   /* Promise.re
 /* Promise.prototype.then; a reaction of 0 means none. */
 BK_API bk_value  bk_promise_then(bk_ctx ctx, bk_value promise, bk_value on_fulfilled, bk_value on_rejected);
 
+/* Module loading. A loader answers each question before its callback
+ * returns, through the request it receives (valid only during the call).
+ * resolve: turn `specifier` from `referrer` into a canonical name with
+ * bk_module_set_name. load: supply the module named `name` with
+ * bk_module_provide (source, copied) or bk_module_provide_native. Either may
+ * reject with bk_module_fail. Returning BK_OK without an answer, or leaving a
+ * callback NULL, falls back to the filesystem unless
+ * BK_LOADER_NO_FILESYSTEM_FALLBACK is set. BK_LOADER_ASYNC is not supported
+ * yet and fails with BK_ERR_UNSUPPORTED. */
+typedef struct bk_module_request bk_module_request;
+enum { BK_LOADER_ASYNC = 1, BK_LOADER_NO_FILESYSTEM_FALLBACK = 2 };
+typedef struct {
+    bk_status (*resolve)(bk_ctx ctx, const char *referrer, const char *specifier,
+                         bk_module_request *request, void *opaque);
+    bk_status (*load)(bk_ctx ctx, const char *name, bk_module_request *request, void *opaque);
+    void *opaque;
+    unsigned flags;
+} bk_module_loader;
+/* NULL removes the loader. Modules from bk_define_module and
+ * bk_define_native_module are found before the loader is asked. */
+BK_API bk_status bk_set_module_loader(bk_runtime runtime, const bk_module_loader *loader);
+BK_API bk_status bk_module_set_name(bk_module_request *request, const char *name, size_t length);
+BK_API bk_status bk_module_provide(bk_module_request *request, const char *source, size_t length);
+BK_API bk_status bk_module_provide_native(bk_module_request *request, bk_value exports);
+BK_API bk_status bk_module_fail(bk_module_request *request, bk_value error);
+/* A module whose named exports are the object's own enumerable string-keyed
+ * properties, read once now, plus `default` (the object, unless it has its
+ * own `default`). It replaces a module of that name for later imports. */
+BK_API bk_status bk_define_native_module(bk_ctx ctx, const char *name, size_t length, bk_value exports);
+/* Drop the module record so the next import loads it again. Namespaces and
+ * bindings already taken keep the old instance. A native module's definition
+ * is dropped with it. */
+BK_API bk_status bk_invalidate_module(bk_ctx ctx, const char *name, size_t length);
+/* import(specifier): a promise of the namespace. Settles in bk_run_jobs. */
+BK_API bk_value  bk_import(bk_ctx ctx, const char *specifier, size_t length);
+
 /* Compiled scripts: compile once, run many times in any context of the
  * runtime. Flags are BK_EVAL_GLOBAL or BK_EVAL_STRICT. The compiled code
  * lives until the runtime is destroyed. */

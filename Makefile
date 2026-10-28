@@ -484,6 +484,14 @@ out/scripts_api: test/capi/scripts.c include/boomkat.h out/boomkat.a
 test-scripts-api: out/scripts_api
 	./out/scripts_api
 
+out/module_loader_api: test/capi/module_loader.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/module_loader.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/module_loader_api
+
+.PHONY: test-module-loader-api
+test-module-loader-api: out/module_loader_api
+	./out/module_loader_api
+
 .PHONY: test-object-model-api
 test-object-model-api: out/object_model
 	./out/object_model
