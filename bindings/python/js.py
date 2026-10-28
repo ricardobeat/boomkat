@@ -49,6 +49,9 @@ _STATUS_NAMES = {
     -10: "feature not in this build",
 }
 
+# Immediate handles from boomkat.h: valid in any context, never freed.
+_HANDLE_UNDEFINED, _HANDLE_NULL, _HANDLE_TRUE, _HANDLE_FALSE = 1, 2, 3, 4
+
 # Value types from bk_get_type.
 _UNDEFINED, _NULL, _BOOLEAN, _NUMBER, _STRING, _OBJECT, _FUNCTION, _OTHER = range(8)
 
@@ -206,9 +209,6 @@ def _declare(lib):
         # Constructors, for building a return value inside a callback. The
         # so ctypes cannot reach them.
         ("bk_new_number", [ctx, ctypes.c_double], val),
-        ("bk_new_bool", [ctx, ctypes.c_int], val),
-        ("bk_new_null", [ctx], val),
-        ("bk_new_undefined", [ctx], val),
         ("bk_new_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
         ("bk_new_string_utf16", [ctx, ctypes.POINTER(ctypes.c_uint16),
                                  ctypes.c_size_t], val),
@@ -612,10 +612,10 @@ class Runtime:
         """Store a Python value as the call's JS return value."""
         lib = self._lib
         if result is None:
-            return lib.bk_new_undefined(ctx)
+            return _HANDLE_UNDEFINED
         if isinstance(result, bool):
             # Checked before int: bool is a subclass of int in Python.
-            handle = lib.bk_new_bool(ctx, 1 if result else 0)
+            handle = _HANDLE_TRUE if result else _HANDLE_FALSE
         elif isinstance(result, (int, float)):
             handle = lib.bk_new_number(ctx, float(result))
         elif isinstance(result, str):

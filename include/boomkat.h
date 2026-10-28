@@ -27,6 +27,14 @@ typedef struct bk_ctx_s *bk_ctx;
 typedef uint64_t bk_value;
 #define BK_EXCEPTION ((bk_value)0)
 static inline int bk_is_exception(bk_value value) { return value == BK_EXCEPTION; }
+/* Immediate handles: valid with any context, never freed (bk_free_value
+ * ignores them). Every call whose result is one of these values returns the
+ * constant instead of a registry root. */
+#define BK_UNDEFINED ((bk_value)1)
+#define BK_NULL      ((bk_value)2)
+#define BK_TRUE      ((bk_value)3)
+#define BK_FALSE     ((bk_value)4)
+#define BK_BOOL(b)   ((b) ? BK_TRUE : BK_FALSE)
 
 /* BEGIN GENERATED status (scripts/gen_abi_header.py) */
 typedef enum {
@@ -169,9 +177,6 @@ BK_API const char *bk_to_cstring(bk_ctx ctx, bk_value value, size_t *length);
 BK_API void bk_free_cstring(bk_ctx ctx, const char *string);
 
 BK_API bk_value bk_new_number(bk_ctx ctx, double value);
-BK_API bk_value bk_new_bool(bk_ctx ctx, int value);
-BK_API bk_value bk_new_null(bk_ctx ctx);
-BK_API bk_value bk_new_undefined(bk_ctx ctx);
 /* Fails with BK_ERR_ENCODING and returns BK_EXCEPTION on invalid UTF-8. */
 BK_API bk_value bk_new_string(bk_ctx ctx, const char *utf8, size_t length);
 /* Each byte is the code point of the same value. */
@@ -292,8 +297,8 @@ static inline bk_status bk_return_owned(bk_ctx c, bk_value v) {
     return status;
 }
 static inline bk_status bk_return_number(bk_ctx c, double d) { return bk_return_owned(c, bk_new_number(c, d)); }
-static inline bk_status bk_return_bool(bk_ctx c, int b)      { return bk_return_owned(c, bk_new_bool(c, b)); }
-static inline bk_status bk_return_null(bk_ctx c)             { return bk_return_owned(c, bk_new_null(c)); }
+static inline bk_status bk_return_bool(bk_ctx c, int b)      { return bk_return(c, BK_BOOL(b)); }
+static inline bk_status bk_return_null(bk_ctx c)             { return bk_return(c, BK_NULL); }
 static inline bk_status bk_return_str(bk_ctx c, const char *utf8) {
     return bk_return_owned(c, bk_str(c, utf8));
 }

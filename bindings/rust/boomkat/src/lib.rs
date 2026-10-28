@@ -1183,9 +1183,9 @@ impl Built {
         unsafe {
             match self {
                 Built::Number(n) => sys::bk_new_number(raw, *n),
-                Built::Bool(b) => sys::bk_new_bool(raw, *b as c_int),
-                Built::Null => sys::bk_new_null(raw),
-                Built::Undefined => sys::bk_new_undefined(raw),
+                Built::Bool(b) => if *b { sys::BK_TRUE } else { sys::BK_FALSE },
+                Built::Null => sys::BK_NULL,
+                Built::Undefined => sys::BK_UNDEFINED,
                 Built::Str(s) => sys::bk_new_string(raw, s.as_ptr() as *const c_char, s.len()),
             }
         }

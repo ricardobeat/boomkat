@@ -66,10 +66,12 @@ fn bool resolve(void* ctxp, ulong id, TVal* out) {
 }
 
 // Store a value in the registry and return its handle, or 0 with the failure
-// recorded. Reports exhaustion for every value kind, undefined included:
+// recorded. Undefined, null and booleans return their immediate handle. Reports exhaustion for every value kind, undefined included:
 // handle 0 reads back as undefined, so returning it for a failed registration
 // would be a silent wrong answer rather than an error.
 fn ulong store(Runtime* rt, TVal v) {
+    ulong imm = embed::immediate_of(v);
+    if (imm != 0) return imm;
     ulong id = embed::slot_alloc(rt, v);
     if (id == 0) embed::set_err(rt, BK_ERR_FULL, "value registry full");
     return id;
@@ -505,7 +507,14 @@ fn void bk_free_cstring(void* ctxp, char* string) @export("bk_free_cstring") {
 
 fn ulong bk_get_exception(void* ctxp) @export("bk_get_exception") {
     Runtime* rt = rt_of(ctxp);
-    return rt == null ? 0 : embed::take_exception(rt);
+    if (rt == null) return 0;
+    ulong id = embed::take_exception(rt);
+    TVal v;
+    if (!embed::slot_get(rt, id, &v)) return id;
+    ulong imm = embed::immediate_of(v);
+    if (imm == 0) return id;
+    embed::slot_release(rt, id);
+    return imm;
 }
 
 // ============================================================================
@@ -517,30 +526,6 @@ fn ulong bk_new_number(void* ctxp, double d) @export("bk_new_number") {
     if (rt == null) return 0;
     embed::clear_err(rt);
     TVal v; v.set_number(d);
-    return store(rt, v);
-}
-
-fn ulong bk_new_bool(void* ctxp, int b) @export("bk_new_bool") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return 0;
-    embed::clear_err(rt);
-    TVal v; v.set_boolean(b != 0);
-    return store(rt, v);
-}
-
-fn ulong bk_new_null(void* ctxp) @export("bk_new_null") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return 0;
-    embed::clear_err(rt);
-    TVal v; v.set_null();
-    return store(rt, v);
-}
-
-fn ulong bk_new_undefined(void* ctxp) @export("bk_new_undefined") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null) return 0;
-    embed::clear_err(rt);
-    TVal v; v.set_undefined();
     return store(rt, v);
 }
 
