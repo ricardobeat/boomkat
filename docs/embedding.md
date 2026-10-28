@@ -434,6 +434,16 @@ runtime, which takes its own reference. Lengths above 2^31 - 1 fail with
 `BK_ERR_INVALID`, and builds without typed arrays or shared memory return
 `BK_ERR_UNSUPPORTED`.
 
+### Weak handles
+
+`bk_new_weak` refers to an object or a non-registered symbol without keeping it
+alive, for identity caches that map native objects to their wrappers.
+`bk_weak_get` returns a new handle to the target, or `BK_UNDEFINED` once the
+collector freed it or, for a symbol, its last reference went. Weak handles to
+one target share its state, and each is released with `bk_free_weak`; reading
+a released one fails with `BK_ERR_INVALID`. Registered symbols
+(`Symbol.for`) and primitives fail with `BK_ERR_TYPE`.
+
 ### Event loops
 
 `bk_set_job_hook` reports the job queue turning non-empty, so a host loop can

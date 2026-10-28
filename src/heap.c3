@@ -977,6 +977,11 @@ struct Heap {
     DeferredFinal*  deferred_finals;
     uint            deferred_final_count;
     uint            deferred_final_capacity;
+    WeakEntry*      weak_entries;
+    uint            weak_count;
+    uint            weak_capacity;
+    uint            weak_free;              // WEAK_NONE when no entry is free
+    HashMap{usz, uint} weak_index;          // target address -> entry
     ExternalBuffer* external_buffers;
     uint            external_buffer_count;
     uint            external_buffer_capacity;
@@ -1684,6 +1689,11 @@ fn Heap*? create(
     h.deferred_finals       = null;
     h.deferred_final_count  = 0;
     h.deferred_final_capacity = 0;
+    h.weak_entries          = null;
+    h.weak_count            = 0;
+    h.weak_capacity         = 0;
+    h.weak_free             = WEAK_NONE;
+    h.weak_index            = {};
     h.external_buffers      = null;
     h.external_buffer_count = 0;
     h.external_buffer_capacity = 0;
@@ -2435,6 +2445,7 @@ fn void Heap.destroy(&self) {
         self.deferred_finals = null;
         self.deferred_final_capacity = 0;
     }
+    self.weak_destroy();
     if (self.external_buffers != null) {
         self.free_func(self.heap_udata, self.external_buffers);
         self.external_buffers = null;
@@ -3690,6 +3701,8 @@ fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
     usz total = s.alloc_size();
     if (s.flags.has_extdata) s.release_external();
+
+    if (s.flags.weak_target) self.weak_target_died((HeapHeader*)s);
     gcprofile::gcprof_string_free(total);
     if (s.length == 1 && s.flags.is_ascii) {
         gcprofile::gcprof_ascii_char_free();

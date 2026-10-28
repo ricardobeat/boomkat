@@ -332,6 +332,7 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock
                         self.verify_incremental_mark();
                     $endif
                     self.gc_phase = GcPhase.SWEEP;
+                    self.weak_condemn();
                     self.prepare_object_sweep();
                     self.sweep_active = true;
                     self.gc_sweep_stage = 0;

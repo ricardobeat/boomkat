@@ -128,6 +128,8 @@ pub struct bk_typed_array_info {
     pub buffer: bk_value,
 }
 
+pub type bk_weak = u64;
+
 pub type bk_class = u32;
 pub const BK_CLASS_DEFER_FINALIZE: c_uint = 1;
 
@@ -552,6 +554,9 @@ extern "C" {
     pub fn bk_adopt_shared_block(ctx: bk_ctx, data: *mut c_void) -> bk_value;
     pub fn bk_shared_block_retain(data: *mut c_void);
     pub fn bk_shared_block_release(data: *mut c_void);
+    pub fn bk_new_weak(ctx: bk_ctx, target: bk_value) -> bk_weak;
+    pub fn bk_weak_get(ctx: bk_ctx, weak: bk_weak) -> bk_value;
+    pub fn bk_free_weak(ctx: bk_ctx, weak: bk_weak);
     pub fn bk_set_job_hook(runtime: bk_runtime, hook: Option<bk_job_hook>, opaque: *mut c_void);
     pub fn bk_wait_events(runtime: bk_runtime, timeout_ms: f64) -> c_int;
     pub fn bk_wake(runtime: bk_runtime);
