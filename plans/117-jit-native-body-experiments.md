@@ -222,3 +222,71 @@ context experiment was neutral/slightly worse for loop SSA, so existing loop
 context sizes remain unchanged; only single-pass region contexts are trimmed.
 Next coverage barriers remain calls/allocations and multiple returns. Existing
 binding capabilities do not remove these semantic barriers by themselves.
+
+
+## SSA leaves and call-containing loops, de9352ce
+
+The function and loop tiers now consume the same scalar lowering for arithmetic,
+comparisons and bitwise operations. Fused CALL_GLOBAL/CALL_VAR expand guarded
+scalar callees into the caller graph. Binding snapshots and dominated function
+checks share SSA values; effect-only nodes no longer consume register homes.
+Comparison values and IF_TRUE/IF_FALSE latches admit call-containing loops whose
+bytecode cannot use a fused numeric backedge. Recovery publishes the latch
+temporary as well as loop-carried values. Call-containing SSA kernels are enabled
+by default; whole-function SSA regions remain opt-in.
+
+Small warmed own-field callees emit SSA directly into baseline code, including
+nested virtual callers. They borrow bounded, compact private scratch in deeper
+FunctionRun windows and use R4/R5 plus FP3..6; no new C call or native frame is
+introduced. Observed int32 fields stay unboxed, numeric globals are folded behind
+live binding/bit guards, immediate operands avoid constant homes, and repeated
+field loads are coalesced. One terminal numeric PUTTHISC is admitted only before
+RETUNDEF, with receiver/prototype, value, old-slot and result-ownership guards
+before the write. Dictionary layouts, accessors and unsupported effects retain
+interpreter recovery. Unknown boxed stores are declined at graph construction.
+
+Fixed a provenance error in feedback-only field analysis: a field destination
+must lose its previous origin. Otherwise a chained access can guard an unrelated
+entry input and always refuse. The nested leaf fixture now records 438 completed
+chain-read SSA executions and 438 terminal-write completions. This coverage fix
+has neutral mini timings; it is not claimed as another performance win.
+
+Three alternating screening pairs, leaves disabled versus enabled (same source
+before call-loop default enablement): Richards83→77ms, DeltaBlue118→118,
+Crypto163→164, RayTrace166→166, Navier208→207, Splay114→113,
+Earley181→178. Default call-loop expansion separately gives numeric call-loop
+micro15→5ms; actual mini changes remain small. Five longer Richards pairs,
+500 workload repetitions: disabled408,408,408,408,407 versus
+candidate379,379,380,380,378; medians408→379ms (-7.1%). Earley confirmation
+181,181,181,181,182 versus180,180,180,180,180. These are ablations, not a
+full-Octane score or evidence of 10x gains. Raw rows:117-ssa-focused-results.json.
+The final provenance correction is neutral: Delta118→118, Richards77→77;
+RayTrace165→166 in five short pairs.
+
+Rejected: short copy-region SSA (neutral); a direct empty-array named-method
+path removed212k DeltaBlue property-helper calls but produced no reliable wall
+clock gain; a generated baseline expansion after every refused SSA leaf added
+code without a speedup and was removed. No full Octane run in this iteration.
+
+Fresh same-process address maps now name SSA leaf ranges, including virtual
+caller depth, separately from ordinary CALL ranges. Corrected native range ends
+to exclude separately allocated whole-function SSA code. Richards2323 self CPU
+samples: body55.96%, SSA leaf10.98%, call/return13.65%, call entry12.70%,
+entry3.40%, runtime3.27%, exit0.04%. DeltaBlue2316 samples: body33.29%,
+call/return17.27%, call entry8.46%, entry4.06%, runtime36.57%, exit0.35%.
+These are process CPU attribution, not timing measurements. Prior disassembly
+matched hot Richards PCs to648 loads among1182 sampled instructions in
+Scheduler.schedule and TaskControlBlock.run. DeltaBlue miss telemetry finds
+stable receiver shapes repeatedly taking sljit_native_read: Plan.execute118861,
+Binary.isSatisfied66499, Binary.output54492/53777 calls in the short trace.
+The next larger levers remain cross-call guard/load reuse and useful cold
+property specialization; adding more coverage without reducing repeated work
+has repeatedly been neutral.
+
+Validation after measuring:45 focused fixtures in interpreter/JIT/stress modes;
+C embedding checks assert actual SSA execution, shared binding snapshots, kernel
+call expansion and shape-epoch refresh/refusal; ARM64 and x86-64 embedding tests;
+ASan leaf/call fixtures and Richards/DeltaBlue/Splay; non-JIT slim build.
+Broad differential agrees: local status1 in both modes (existing feature-limited
+failures), Rosetta/modules status0. SLJIT binding checker still validates
+109 constants,39 return widths,188 argument widths.
