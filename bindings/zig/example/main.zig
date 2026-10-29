@@ -136,4 +136,36 @@ pub fn main(init: std.process.Init) !void {
         calls,
         try bumped.toNumber(),
     });
+
+    // Compile once, run many times.
+    var script = try rt.compile("globalThis.runs = (globalThis.runs || 0) + 1", "runs.js", .{});
+    defer script.deinit();
+    var first = try rt.runScript(script);
+    first.deinit();
+    var second = try rt.runScript(script);
+    defer second.deinit();
+    try out.print("compiled runs = {d}\n", .{try second.toNumber()});
+
+    // Modules served from Zig.
+    var loader = Sources{};
+    try rt.setModuleLoader(Sources, &loader, .{ .filesystem_fallback = false });
+    var ns = try rt.importModule("app:main");
+    ns.deinit();
+    var result = try rt.eval("out");
+    defer result.deinit();
+    try out.print("module result = {d}\n", .{try result.toNumber()});
+    try out.print("missing module = {any}\n", .{rt.importModule("app:missing")});
 }
+
+/// A module loader over two in-memory modules.
+const Sources = struct {
+    pub fn resolve(_: *Sources, req: js.ModuleRequest, _: []const u8, specifier: []const u8) !void {
+        try req.setName(specifier);
+    }
+
+    pub fn load(_: *Sources, req: js.ModuleRequest, name: []const u8) !void {
+        if (std.mem.eql(u8, name, "app:main")) return req.provide("import { twice } from 'app:lib'; globalThis.out = twice(21)");
+        if (std.mem.eql(u8, name, "app:lib")) return req.provide("export const twice = (n) => n * 2");
+        return error.ModuleNotFound;
+    }
+};

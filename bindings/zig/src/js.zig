@@ -453,11 +453,118 @@ pub const Runtime = struct {
         return out;
     }
 
+    /// Compile a classic script once; `runScript` runs it any number of
+    /// times. A syntax error fails here with `error.Syntax`. The returned
+    /// `Value` is the compiled script; `deinit` it when done.
+    pub fn compile(self: *Runtime, src: []const u8, filename: [:0]const u8, opts: struct { strict: bool = false }) Error!Value {
+        const handle = c.bk_compile(self.ptr, src.ptr, src.len, filename.ptr, if (opts.strict) c.BK_EVAL_STRICT else c.BK_EVAL_GLOBAL);
+        if (handle == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .handle = handle };
+    }
+
+    /// Run a script from `compile`. Caller owns the completion value.
+    pub fn runScript(self: *Runtime, script: Value) Error!Value {
+        const handle = c.bk_run_script(self.ptr, script.handle);
+        if (handle == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .handle = handle };
+    }
+
+    /// Serve module imports from `loader`, a `*T` that outlives the runtime
+    /// or the next `setModuleLoader`. `T` may declare
+    ///
+    ///     fn resolve(self: *T, req: ModuleRequest, referrer: []const u8, specifier: []const u8) !void
+    ///     fn load(self: *T, req: ModuleRequest, name: []const u8) !void
+    ///
+    /// and answers through `req`. Not answering falls back to the filesystem
+    /// unless `filesystem_fallback` is false; an error fails the import with
+    /// the error's name.
+    pub fn setModuleLoader(self: *Runtime, comptime T: type, loader: *T, opts: struct { filesystem_fallback: bool = true }) Error!void {
+        const Glue = struct {
+            fn resolve(ctx: c.bk_ctx, referrer: [*c]const u8, specifier: [*c]const u8, req: ?*c.bk_module_request, opaque_ptr: ?*anyopaque) callconv(.c) c.bk_status {
+                const r = ModuleRequest{ .ctx = ctx, .ptr = req.? };
+                const from: []const u8 = if (referrer == null) "" else std.mem.span(referrer);
+                T.resolve(@ptrCast(@alignCast(opaque_ptr)), r, from, std.mem.span(specifier)) catch |e| return r.failWith(@errorName(e));
+                return c.BK_OK;
+            }
+            fn load(ctx: c.bk_ctx, name: [*c]const u8, req: ?*c.bk_module_request, opaque_ptr: ?*anyopaque) callconv(.c) c.bk_status {
+                const r = ModuleRequest{ .ctx = ctx, .ptr = req.? };
+                T.load(@ptrCast(@alignCast(opaque_ptr)), r, std.mem.span(name)) catch |e| return r.failWith(@errorName(e));
+                return c.BK_OK;
+            }
+        };
+        const def = c.bk_module_loader{
+            .resolve = if (@hasDecl(T, "resolve")) Glue.resolve else null,
+            .load = if (@hasDecl(T, "load")) Glue.load else null,
+            .@"opaque" = loader,
+            .flags = if (opts.filesystem_fallback) 0 else c.BK_LOADER_NO_FILESYSTEM_FALLBACK,
+        };
+        try check(c.bk_set_module_loader(self.runtime, &def));
+    }
+
+    /// Remove the module loader.
+    pub fn clearModuleLoader(self: *Runtime) Error!void {
+        try check(c.bk_set_module_loader(self.runtime, null));
+    }
+
+    /// A module whose named exports are `exports`'s own enumerable properties.
+    pub fn defineNativeModule(self: *Runtime, name: []const u8, exports: Value) Error!void {
+        try check(c.bk_define_native_module(self.ptr, name.ptr, name.len, exports.handle));
+    }
+
+    /// Drop a cached module so the next import loads it again.
+    pub fn invalidateModule(self: *Runtime, name: []const u8) Error!void {
+        try check(c.bk_invalidate_module(self.ptr, name.ptr, name.len));
+    }
+
+    /// Load and evaluate a module, as `import(specifier)` does, draining jobs
+    /// until it settles. Returns the namespace, or `error.Throw` when the
+    /// import rejects.
+    pub fn importModule(self: *Runtime, specifier: []const u8) Error!Value {
+        const promise = c.bk_import(self.ptr, specifier.ptr, specifier.len);
+        if (promise == 0) return valueError(self.ptr);
+        defer c.bk_free_value(self.ptr, promise);
+        try self.drain();
+        var state: c.bk_promise_state = c.BK_PROMISE_PENDING;
+        try check(c.bk_promise_state_get(self.ptr, promise, &state));
+        if (state != c.BK_PROMISE_FULFILLED) return if (state == c.BK_PROMISE_REJECTED) Error.Throw else Error.Internal;
+        const ns = c.bk_promise_result(self.ptr, promise);
+        if (ns == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .handle = ns };
+    }
+
     /// A weak handle to an object or non-registered symbol. `deinit` it.
     pub fn weak(self: *Runtime, v: Value) Error!Weak {
         const w = c.bk_new_weak(self.ptr, v.handle);
         if (w == 0) return valueError(self.ptr);
         return .{ .owner = self.ptr, .id = w };
+    }
+};
+
+/// A module loader's question, answered once before its callback returns.
+pub const ModuleRequest = struct {
+    ctx: c.bk_ctx,
+    ptr: *c.bk_module_request,
+
+    /// Answer a resolve with the module's canonical name.
+    pub fn setName(self: ModuleRequest, name: []const u8) Error!void {
+        try check(c.bk_module_set_name(self.ptr, name.ptr, name.len));
+    }
+
+    /// Answer a load with module source, which the engine copies.
+    pub fn provide(self: ModuleRequest, source: []const u8) Error!void {
+        try check(c.bk_module_provide(self.ptr, source.ptr, source.len));
+    }
+
+    /// Answer a load with a module whose exports are `exports`'s properties.
+    pub fn provideNative(self: ModuleRequest, exports: Value) Error!void {
+        try check(c.bk_module_provide_native(self.ptr, exports.handle));
+    }
+
+    fn failWith(self: ModuleRequest, message: [:0]const u8) c.bk_status {
+        const err = c.bk_new_error(self.ctx, c.BK_ERROR, message.ptr);
+        if (err == 0) return c.bk_get_error_code(self.ctx);
+        defer c.bk_free_value(self.ctx, err);
+        return c.bk_module_fail(self.ptr, err);
     }
 };
 
