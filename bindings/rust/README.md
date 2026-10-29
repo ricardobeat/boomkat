@@ -218,8 +218,8 @@ is `Fn` (the engine may re-enter it) rather than `FnMut`.
   exhaustion by ordinary use.
 - Error messages are copied out of the engine's buffer immediately, since
   that buffer is only valid until the next `bk_*` call.
-- `Runtime` is `Send` but not `Sync`, which is the engine's threading rule
-  stated in the type system rather than in prose. See below.
+- `Runtime` is neither `Send` nor `Sync`: it stays on the thread that
+  created it. See below.
 
 ## Several runtimes
 
@@ -245,19 +245,11 @@ write it back in. `cargo run --example two_runtimes` walks all of this.
 
 ### Threads
 
-`Runtime` is `Send` and deliberately not `Sync`:
-
-- **Two runtimes on two threads share nothing.** They hold no common state, so
-  this is sound, and `Send` is what lets you build a runtime on one thread and
-  drive it on another, or give every worker its own.
-- **One runtime on two threads at once would corrupt it.** The engine takes no
-  locks. `!Sync` makes that a compile error: with no shareable `&Runtime`, two
-  threads cannot both reach one instance. Wrapping it in a `Mutex<Runtime>` is
-  the opt-in, and is `Sync`, because the lock supplies the exclusion the engine
-  does not.
-
-`Value` is neither `Send` nor `Sync`, which follows for free: it borrows its
-runtime, and `&Runtime` is not `Send` precisely because `Runtime` is not `Sync`.
+`Runtime` is neither `Send` nor `Sync`. The engine takes no locks, and
+registered closures may capture thread-bound state (an `Rc` holding a
+`Persisted`, say), so a runtime stays on the thread that created it. Runtimes
+on different threads share nothing: give each worker its own, built on that
+thread. `Value` borrows its runtime and follows.
 
 ## Limitations
 

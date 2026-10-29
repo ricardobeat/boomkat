@@ -27,8 +27,8 @@
 //!   into exhaustion by ordinary use.
 //! - Every fallible call returns [`Result`], with the engine's message
 //!   captured (copied, not borrowed) into [`Error`].
-//! - [`Runtime`] is [`Send`] but not [`Sync`], which is exactly the engine's
-//!   threading rule expressed in the type system. See below.
+//! - [`Runtime`] is neither [`Send`] nor [`Sync`]: it stays on the thread
+//!   that created it. See below.
 //!
 //! # Several runtimes
 //!
@@ -58,22 +58,18 @@
 //!
 //! # Threads
 //!
-//! [`Runtime`] is [`Send`] and deliberately not [`Sync`]. The engine takes no
-//! locks and has no thread-local or process-global state, so:
+//! [`Runtime`] is neither [`Send`] nor [`Sync`]. The engine takes no locks, and
+//! registered closures may capture thread-bound state such as an `Rc` holding a
+//! [`Persisted`], so a runtime stays on the thread that created it. Runtimes on
+//! different threads share nothing: give each worker its own, built on that
+//! thread. [`Value`] borrows its runtime and follows.
 //!
-//! - Two runtimes on two threads share nothing and do not interact. `Send` is
-//!   what lets you build one here and drive it there, or give each worker its
-//!   own.
-//! - One runtime driven from two threads at once would corrupt it. `!Sync` is
-//!   what makes that a compile error: without a shareable `&Runtime`, two
-//!   threads cannot both reach the same instance. Opting in means saying so —
-//!   a [`std::sync::Mutex<Runtime>`] serialises access and *is* `Sync`,
-//!   because the lock supplies the exclusion the engine does not.
+//! Moving or sharing a runtime is a compile error:
 //!
-//! [`Value`] is neither, and follows for free: it borrows its runtime, and
-//! `&Runtime` is not [`Send`] precisely because [`Runtime`] is not [`Sync`].
-//!
-//! Sharing one runtime is rejected rather than merely discouraged:
+//! ```compile_fail
+//! fn assert_send<T: Send>() {}
+//! assert_send::<boomkat::Runtime>();
+//! ```
 //!
 //! ```compile_fail
 //! fn assert_sync<T: Sync>() {}
@@ -280,27 +276,13 @@ impl Type {
 ///
 /// # Threads
 ///
-/// [`Send`] but deliberately not [`Sync`]. The engine takes no locks, so a
-/// single runtime must be driven from one thread at a time; `!Sync` is what
-/// makes sharing one across threads a compile error. Moving one to another
-/// thread, or giving each thread its own, is sound and is what `Send` allows:
-/// two runtimes share no state whatsoever. See the crate docs for the full
-/// argument.
+/// Neither [`Send`] nor [`Sync`]: a runtime stays on the thread that created
+/// it, because registered closures may hold thread-bound state. Each thread
+/// can build its own. See the crate docs.
 pub struct Runtime {
     raw: sys::bk_ctx,
     shared: Rc<Shared>,
-    /// `Send`, not `Sync`: a runtime may move between threads but must not be
-    /// used from two at once. See the type's doc comment.
-    _not_sync: PhantomData<std::cell::Cell<()>>,
 }
-
-// SAFETY: a runtime owns a heap that is reachable from nothing else -- no
-// process-global state remains in the engine, so two runtimes on two threads
-// touch disjoint memory. Handing one to another thread is therefore sound so
-// long as only one thread drives it at a time, which `!Sync` (via the `Cell`
-// marker) enforces: without `&Runtime` being shareable, two threads cannot hold
-// a usable reference to the same instance.
-unsafe impl Send for Runtime {}
 
 impl Runtime {
     /// Open an engine instance.
@@ -325,7 +307,6 @@ impl Runtime {
                 alive: Cell::new(true),
                 released: RefCell::new(Vec::new()),
             }),
-            _not_sync: PhantomData,
         })
     }
 
@@ -1116,8 +1097,8 @@ impl fmt::Debug for Retained<'_, '_> {
 /// so unlike [`Value`] this one is on the host to sequence. Registered closures
 /// are dropped only when the runtime is, which is the case it is designed for.
 ///
-/// A `Persisted` is not [`Send`]: it names a slot in one runtime, and that
-/// runtime must be driven from one thread at a time.
+/// A `Persisted` is not [`Send`]: it names a slot in one runtime, which stays
+/// on its thread.
 pub struct Persisted {
     rt: sys::bk_ctx,
     shared: Rc<Shared>,
