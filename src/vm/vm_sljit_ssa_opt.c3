@@ -155,7 +155,7 @@ fn void ssa_function_liveness(SsaGraph* g) @feat(SLJIT) {
         SsaValue v = g.values[i];
         switch (v.op) {
             case NOP: case ARG: case PHI: case RECEIVER: case BINDING:
-            case CONST_I: case CONST_F: case COPY: case GOTO: break;
+            case CONST_I: case CONST_F: case CONST_BOX: case COPY: case GOTO: break;
             case JOIN:
                 {
                     SsaJoin* join = &g.joins[v.a];
@@ -176,6 +176,14 @@ fn void ssa_function_liveness(SsaGraph* g) @feat(SLJIT) {
                 ssa_keep(g, v.b, v.def);
                 break;
         }
+        // Recovery uses the bytecode's pruned pre-instruction frame. Keep
+        // those homes through every IR operation emitted for that bytecode.
+        if (g.plan.ssa_effect_prefix && v.op != ARG && v.pc >= g.plan.begin && v.pc <= g.plan.end) {
+            foreach (value : g.frames[v.pc - g.plan.begin]) ssa_keep(g, value, v.def + 1);
+        }
+    }
+    if (g.plan.ssa_effect_prefix) {
+        foreach (value : g.frames[g.plan.end + 1 - g.plan.begin]) ssa_keep(g, value, g.stamp);
     }
 }
 fn bool ssa_same_location(SsaValue a, SsaValue b) @feat(SLJIT) {

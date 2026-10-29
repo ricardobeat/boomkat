@@ -70,9 +70,12 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
     }
     if (plan.ssa_region == null) return;
     $if $feat(SLJIT_STATS):
-        io::eprintfn("SLJIT function SSA hits=%d", plan.ssa_region.hits);
+        io::eprintfn("SLJIT function SSA hits=%d completed=%d entry_misses=%d body_misses=%d",
+            plan.ssa_region.hits, plan.ssa_region.ssa_completed, plan.ssa_region.ssa_entry_misses, plan.ssa_region.ssa_body_misses);
     $endif
-    jit::sljit_free_code(plan.ssa_region.ssa_entry != null ? plan.ssa_region.ssa_entry : (void*)plan.ssa_region.native, null);
+    if (plan.ssa_region.ssa_entry != null || plan.ssa_region.native != null) {
+        jit::sljit_free_code(plan.ssa_region.ssa_entry != null ? plan.ssa_region.ssa_entry : (void*)plan.ssa_region.native, null);
+    }
     h.free_func(h.heap_udata, plan.ssa_region);
     plan.ssa_region = null;
 }
@@ -167,6 +170,13 @@ fn void FunctionEmitter.ssa_entry(&self) @feat(SLJIT) {
     int r1 = jit::reg_r(1);
     int mem = jit::SLJIT_MEM;
     int imm = jit::SLJIT_IMM;
+    if (plan.ssa_region.ssa_effect_prefix) {
+        if (!self.ssa_effect_entry()) {
+            self.cold.heap.free_func(self.cold.heap.heap_udata, plan.ssa_region);
+            plan.ssa_region = null;
+        }
+        return;
+    }
     if (plan.ssa_region.ssa_entry != null) {
         $if $feat(SLJIT_STATS): ssa_counter(e, &plan.ssa_region.hits); $endif
         if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL_REG_ARG, 1,

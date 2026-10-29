@@ -100,8 +100,11 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     plan.min_span = 1;
     plan.entries = (void**)((char*)plan + FunctionPlan::size);
     plan.short_runs = (char*)(plan.entries + plan.count);
+    $if $feat(SLJIT_EFFECT_REGION):
+        if (begin == 0 && region.code_count == cf.code_count) plan.ssa_region = sljit_effect_prefix_compile(cf, cold);
+    $endif
     $if $feat(SLJIT_FUNCTION_SSA):
-        if (begin == 0 && region.code_count == cf.code_count) plan.ssa_region = sljit_function_ssa_compile(cf, cold);
+        if (plan.ssa_region == null && begin == 0 && region.code_count == cf.code_count) plan.ssa_region = sljit_function_ssa_compile(cf, cold);
     $endif
     bool analyzed = function_analyze(&region, plan, h);
     bool emitted  = analyzed && function_emit(plan, &region, h, cold.act, cold);
@@ -135,6 +138,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     $if $feat(SLJIT_MAP):
         io::eprintfn("SLJIT live line=%d native=%p bytes=%d", cf.get_line(0), plan.native,
             plan.code_bytes - plan.resume_bytes - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0));
+        if (plan.ssa_region != null && plan.ssa_region.ssa_effect_prefix) {
+            io::eprintfn("SLJIT live_prefix line=%d target_line=%d depth=1 start=%p end=%p", cf.get_line(0),
+                cf.get_line(0), plan.ssa_region.ssa_map_begin, plan.ssa_region.ssa_map_end);
+        }
         for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) {
             io::eprintfn("SLJIT live_ssa line=%d target_line=%d depth=%d start=%p end=%p", cf.get_line(0),
                 leaf.ssa_function.get_line(0), leaf.ssa_map_depth, leaf.ssa_map_begin, leaf.ssa_map_end);

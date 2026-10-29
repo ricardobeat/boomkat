@@ -52,9 +52,9 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     graph.direct = direct;
     graph.result_reg = direct ? cf.code[plan.ssa_function != null ? plan.end : plan.end + 1].a : 0;
     if (plan.ssa_function != null) graph.result_reg = LOOP_REGS;
-    graph.registers = ssa_register_budget(direct);
+    graph.registers = ssa_register_budget(direct || plan.ssa_effect_prefix);
     graph.inplace = parent != null;
-    graph.direct_fields = parent != null && !$feat(SLJIT_NO_SSA_FIELD_IR);
+    graph.direct_fields = (parent != null || plan.ssa_effect_prefix) && !$feat(SLJIT_NO_SSA_FIELD_IR);
     graph.callee_entry = callee_entry;
     graph.inline_base = inline_base;
     graph.inline_depth = inline_depth;
@@ -62,6 +62,14 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     if (parent != null) {
         graph.registers.scratch_homes = graph.direct_fields ? 3 : 2;
         graph.registers.saved_homes = 0;
+        if (plan.ssa_effect_prefix) {
+            // The parent declares S0..S5; S0..S3 hold VM state and this.
+            // Prefix admission excludes captures and pinned numeric homes.
+            graph.registers.scratches = plan.dependency_owner.scratch_registers;
+            graph.registers.scratch_homes = graph.registers.scratches - 4;
+            graph.registers.saved_first = 4;
+            graph.registers.saved_homes = 2;
+        }
     }
     graph.force_f64 = forced;
 }
@@ -195,12 +203,13 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
         0
     ) != 0) return null;
     int r0 = jit::reg_r(0);
-    self.state = graph.direct_fields ? jit::reg_s(2) : parent != null ? jit::reg_r(6) : jit::reg_s(direct ? 5 : 0);
+    self.state = graph.direct_fields && parent != null ? jit::reg_s(2) : parent != null ? jit::reg_r(6) : jit::reg_s(direct ? 5 : 0);
     self.regs = jit::reg_s(parent != null && inline_depth != 0 ? 5 : 0);
     self.budget = jit::reg_s(1);
     self.at_def = 0;
+    self.pc = plan.begin;
     for (uint i = 0; i < LOOP_REGS; i++) self.live[i] = graph.header[i];
-    if (graph.direct_fields) {
+    if (graph.direct_fields && parent != null) {
         // Address spills from the shared run directly, freeing R6 for values.
         self.state_bias = function_inline_offset(scratch_window * 32);
     } else if (parent != null) {
@@ -237,8 +246,9 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     // Normal completion falls through the backedge condition.
     self.at_def = graph.stamp;
     int[LOOP_REGS] final;
-    final = single_pass ? graph.current : graph.phi;
-    if (plan.ssa_function == null) self.publish(&final, plan.end + 1);
+    final = plan.ssa_effect_prefix ? graph.frames[plan.end + 1 - plan.begin]
+        : single_pass ? graph.current : graph.phi;
+    if (plan.ssa_function == null || plan.ssa_effect_prefix) self.publish(&final, plan.end + 1);
     self.exit_stubs();
     if (parent != null) {
         void* done = e.label();

@@ -28,8 +28,12 @@ fn void sljit_address_map(FunctionPlan* plan, CompiledFunction* cf, uint id) @fe
                 (ZString)bytecode::get_opcode_name(frame.target.code[pc].op), frame.map_pcs[pc], frame.map_pcs[pc + 1]);
         }
     }
+    if (plan.ssa_region != null && plan.ssa_region.ssa_effect_prefix) {
+        io::printfn("SLJIT map id=%d kind=ssa_prefix depth=1 target_line=%d start=%p end=%p", id,
+            cf.get_line(0), plan.ssa_region.ssa_map_begin, plan.ssa_region.ssa_map_end);
+    }
     for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) {
-        io::printfn("SLJIT map id=%d kind=ssa_leaf depth=%d target_line=%d start=%p end=%p", id,
-            leaf.ssa_map_depth, leaf.ssa_function.get_line(0), leaf.ssa_map_begin, leaf.ssa_map_end);
+        io::printfn("SLJIT map id=%d kind=%s depth=%d target_line=%d start=%p end=%p", id,
+            leaf.ssa_effect_prefix ? "ssa_region" : "ssa_leaf", leaf.ssa_map_depth, leaf.ssa_function.get_line(0), leaf.ssa_map_begin, leaf.ssa_map_end);
     }
 }

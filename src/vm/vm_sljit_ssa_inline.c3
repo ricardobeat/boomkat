@@ -90,11 +90,25 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
     int predicate = -1;
     int fallthrough = -1;
     uint branch_target;
+    bool short_circuit;
+    bool branch_on_true;
     int[LOOP_REGS] branch_values;
     for (uint ci_pos = 0; ci_pos < callee_fn.code_count && result < 0; ci_pos++) {
         Instruction ci = callee_fn.code[ci_pos];
         int target = loop_target(ci, ci_pos);
         if (target >= 0) {
+            if ((ci.op == Opcode.IF_TRUE || ci.op == Opcode.IF_FALSE) && predicate < 0
+                && target > (int)ci_pos && target < (int)callee_fn.code_count
+                && callee_fn.code[target].op == Opcode.RET && ci.a < LOOP_REGS) {
+                int cond = mapped[ci.a];
+                if (cond < 0 || g.values[ssa_alias(g, cond)].op != COMPARE) return -1;
+                predicate = cond;
+                branch_target = (uint)target;
+                branch_values = mapped;
+                short_circuit = true;
+                branch_on_true = ci.op == Opcode.IF_TRUE;
+                continue;
+            }
             bool immediate = ci.op >= Opcode.JMP_NLTI;
             if (predicate >= 0 || !ssa_comparison_op(ci.op) || ci.b >= LOOP_REGS || (!immediate && ci.c >= LOOP_REGS)) return -1;
             int left = mapped[ci.b];
@@ -120,6 +134,17 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
             case RET:
                 {
                     if (predicate < 0) { result = mapped[ci.a]; continue; }
+                    if (short_circuit) {
+                        if (ci_pos != branch_target || mapped[ci.a] < 0 || branch_values[ci.a] < 0) return -1;
+                        int taken = branch_values[ci.a];
+                        int fall = mapped[ci.a];
+                        SsaRep rep = g.values[taken].rep == g.values[fall].rep ? g.values[taken].rep : BOXED;
+                        taken = ssa_convert(g, taken, rep, false);
+                        fall = ssa_convert(g, fall, rep, false);
+                        ssa_use(g, predicate); ssa_use(g, taken); ssa_use(g, fall);
+                        result = ssa_value(g, SELECT, rep, predicate, branch_on_true ? taken : fall, branch_on_true ? fall : taken);
+                        continue;
+                    }
                     if (fallthrough < 0) {
                         fallthrough = mapped[ci.a];
                         if (fallthrough < 0) return -1;
@@ -142,7 +167,8 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
                 {
                     int binding = ssa_inline_global(g, callee_fn, ci_pos);
                     if (binding < 0) return -1;
-                    mapped[ci.a] = ssa_value(g, BINDING, BOXED, -1, -1, binding);
+                    int constant = ssa_watch_numeric_binding(g, (uint)binding);
+                    mapped[ci.a] = constant >= 0 ? constant : ssa_value(g, BINDING, BOXED, -1, -1, binding);
                     continue;
                 }
             case LDINT:
@@ -200,6 +226,8 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
             case ADDI:
             case SUBI:
             case MULI:
+            case LT: case LE: case GT: case GE:
+            case EQ: case NEQ: case SEQ: case SNEQ:
             case BAND:
             case BOR:
             case BXOR:

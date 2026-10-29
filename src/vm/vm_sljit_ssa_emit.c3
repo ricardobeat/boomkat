@@ -77,11 +77,14 @@ fn void SsaEmitter.load_fpr(&self, int value, int dst) @feat(SLJIT) {
 }
 fn void SsaEmitter.store_gpr(&self, int value, int src) @feat(SLJIT) {
     SsaValue v = self.g.values[value];
-    if (self.g.inplace && v.home == 0 && !ssa_inert_value(self.g, value)) {
+    bool effect_string = self.plan.ssa_effect_prefix && self.g.inplace && v.rep == BOXED
+        && v.op != CONST_BOX && v.op != COMPARE && v.op != BOX_I && v.op != BOX_F;
+    if (effect_string || (self.g.inplace && v.home == 0 && !ssa_inert_value(self.g, value))) {
         int tag = src == jit::reg_r(3) ? jit::reg_r(2) : jit::reg_r(3);
         self.e.op(jit::SLJIT_LSHR, tag, src, 0, jit::SLJIT_IMM, 48);
-        self.snapshot_none(self.e.cmp(jit::SLJIT_EQUAL, tag, 0, jit::SLJIT_IMM,
-            (long)types::TAG_STRING), self.plan.begin);
+        void* counted = self.e.cmp(jit::SLJIT_EQUAL, tag, 0, jit::SLJIT_IMM, (long)types::TAG_STRING);
+        if (self.plan.ssa_effect_prefix) { self.snapshot(counted, self.pc); }
+        else { self.snapshot_none(counted, self.plan.begin); }
     }
     if (v.home != 0) {
         self.e.mov(v.home, 0, src, 0);
@@ -231,7 +234,7 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
         LoopState layout;
         self.epoch_constant = jit::sljit_emit_const(self.e.compiler, jit::SLJIT_MOV, jit::reg_r(1), 0, self.plan.ssa_shape_epoch);
         if (self.epoch_constant == null) self.e.failed = true;
-        if (self.g.direct) {
+        if (self.g.direct || (self.g.inplace && self.plan.ssa_effect_prefix)) {
             Heap heap;
             self.e.mov(r0, 0, jit::SLJIT_MEM | jit::reg_s(1), $reflect(ColdCtx.heap).offset);
             self.e.mov(r0, 0, jit::SLJIT_MEM | r0, (char*)&heap.shape_recycle_epoch - (char*)&heap, jit::SLJIT_MOV_U32);
@@ -278,9 +281,10 @@ fn void SsaEmitter.prologue(&self) @feat(SLJIT) {
     int r0 = jit::reg_r(0);
     for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
         int value = self.g.phi[reg] >= 0 ? self.g.phi[reg] : self.g.arg[reg];
-        if (value < 0 || (self.g.direct && self.g.values[value].last == self.g.values[value].def)) continue;
+        if (value < 0 || ((self.g.direct || (self.g.inplace && self.plan.ssa_effect_prefix))
+            && self.g.values[value].last == self.g.values[value].def)) continue;
         SsaRep rep = self.g.values[value].rep;
-        self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(reg + (self.g.inplace && !self.g.callee_entry ? self.g.inline_base + 2 : 0)));
+        self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(reg + (self.g.inplace && !self.g.callee_entry && !self.plan.ssa_effect_prefix ? self.g.inline_base + 2 : 0)));
         if (rep == INT32) {
             self.exact_int(r0, r0, self.plan.begin);
             self.store_gpr(value, r0);
@@ -335,7 +339,8 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case PHI: break;
                 case RECEIVER:
                     {
-                        if (self.g.callee_entry) { self.e.mov(r0, 0, jit::reg_s(3), 0); }
+                        if (self.plan.ssa_effect_prefix && self.g.inplace) { self.e.mov(r0, 0, jit::reg_s(3), 0); }
+                        else if (self.g.callee_entry) { self.e.mov(r0, 0, jit::reg_s(3), 0); }
                         else { self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(self.g.inline_base + 1)); }
                         self.store_gpr((int)i, r0);
                         break;
@@ -390,6 +395,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         }
                         break;
                     }
+                case CONST_BOX:
                 case CONST_I:
 
                     {
@@ -840,7 +846,9 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
     int r3             = jit::reg_r(3);
     int imm            = jit::SLJIT_IMM;
     void* taken;
-    if ((int)v.branch_op == 0) {
+    if (v.branch_op == Opcode.JMP_NULL || v.branch_op == Opcode.JMP_NNULL) {
+        taken = self.effect_null_branch(v);
+    } else if ((int)v.branch_op == 0) {
         // The truthiness of the condition's value.
         if (self.g.values[v.a].rep == INT32) {
             int src = self.gpr_slot(v.a, r0);
@@ -885,6 +893,14 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
     self.join_copies((uint)v.block, (uint)v.fallto);
     void* fall = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
     e.bind(taken);
+    if ((uint)v.target == SSA_BLOCKS && self.plan.ssa_effect_prefix) {
+        uint destination = (uint)loop_target(self.cf.code[v.pc], v.pc);
+        self.publish(&self.g.frames[v.pc - self.plan.begin], destination);
+        if (self.pending_count == (uint)self.pending_jump.len) { e.failed = true; return; }
+        self.pending_jump[self.pending_count] = fall;
+        self.pending_target[self.pending_count++] = (uint)v.fallto;
+        return;
+    }
     self.join_copies((uint)v.block, (uint)v.target);
     void* target = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
     if (self.pending_count + 2 > (uint)self.pending_jump.len) {
@@ -902,6 +918,11 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
 // The end of an arm: the block continues at the block the jump names.
 fn void SsaEmitter.goto_block(&self, int value) @feat(SLJIT) {
     SsaValue v = self.g.values[value];
+    if ((uint)v.target == SSA_BLOCKS && self.plan.ssa_effect_prefix) {
+        uint destination = (uint)loop_target(self.cf.code[v.pc], v.pc);
+        self.publish(&self.g.frames[v.pc - self.plan.begin], destination);
+        return;
+    }
     self.join_copies((uint)v.block, (uint)v.target);
     void* jump = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
     if (jump == null || self.pending_count + 1 > (uint)self.pending_jump.len) {
@@ -1059,7 +1080,14 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
         } else {
             int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
             self.e.mov(dst, 0, jit::SLJIT_MEM | r1, offset);
-            if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
+            if (self.g.values[dst_value].home == 0) { self.store_gpr(dst_value, dst); }
+            else if (self.plan.ssa_effect_prefix && self.g.inplace) {
+                // A homed boxed field bypasses store_gpr; still refuse counted
+                // values before they can be published without ownership work.
+                self.e.op(jit::SLJIT_LSHR, r3, dst, 0, jit::SLJIT_IMM, 48);
+                self.snapshot(self.e.cmp(jit::SLJIT_EQUAL, r3, 0, jit::SLJIT_IMM,
+                    (long)types::TAG_STRING), self.pc);
+            }
         }
         return;
     }
@@ -1120,6 +1148,7 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
     }
 }
 fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) {
+    if (self.plan.ssa_effect_prefix) { self.effect_store(memory, index, value); return; }
     if (self.plan.ssa_commit && (self.plan.memory[memory].kind == FIELD || self.plan.memory[memory].kind == SHAPE_FIELD)) {
         int r0 = jit::reg_r(0);
         int r2 = jit::reg_r(2);
@@ -1234,6 +1263,37 @@ fn void SsaEmitter.direct_return(&self, int value, bool refused = false) @feat(S
 
 fn void SsaEmitter.publish(&self, int[LOOP_REGS]* regs, uint pc) @feat(SLJIT) {
     int r0      = jit::reg_r(0);
+    if (self.plan.ssa_effect_prefix && self.g.inplace) {
+        for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+            int value = (*regs)[reg];
+            if (value < 0 || (self.g.arg[reg] >= 0 && ssa_alias(self.g, value) == self.g.arg[reg])) continue;
+            self.output(value, pc);
+            self.e.mov(jit::SLJIT_MEM | self.regs, loop_value_offset(reg), r0, 0);
+        }
+        if (pc == self.plan.end + 1) {
+            if (self.done_count == self.done_jumps.len) { self.e.failed = true; return; }
+            self.done_jumps[self.done_count++] = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+        } else {
+            $if $feat(SLJIT_STATS):
+                if (pc == self.plan.begin) { ssa_counter(&self.e, &self.plan.ssa_entry_misses); }
+                else { ssa_counter(&self.e, &self.plan.ssa_body_misses); }
+            $endif
+            // Re-enter only labels whose baseline flow state is known empty.
+            // Label zero is the baseline body after the separate prefix entry.
+            if (pc == self.plan.begin && pc != 0 && self.g.effect_out != null) {
+                if (self.g.effect_retry_count == self.g.effect_retries.len) { self.e.failed = true; return; }
+                self.g.effect_retries[self.g.effect_retry_count++] = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+            } else if (self.g.effect_out != null && pc < self.cf.code_count
+                && self.g.effect_blocks != null && self.g.effect_blocks[pc]) {
+                self.g.effect_out.link(jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP), pc, false);
+                if (self.g.effect_out.e.failed) self.e.failed = true;
+            } else {
+                self.e.mov(r0, 0, jit::SLJIT_IMM, (long)(self.cf.code + pc));
+                if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
+            }
+        }
+        return;
+    }
     if (self.g.direct) {
         self.direct_return(self.g.result_reg < LOOP_REGS ? self.g.current[self.g.result_reg] : -1, pc != self.plan.end + 1);
         return;

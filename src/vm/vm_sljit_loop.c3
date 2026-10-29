@@ -83,6 +83,7 @@ struct LoopPlan @feat(SLJIT) {
     bool ssa_fields;
     bool ssa_calls;
     bool ssa_commit;
+    bool ssa_effect_prefix;
     void* ssa_entry;
     CompiledFunction* ssa_function;
     void* ssa_map_begin @if($feat(SLJIT_MAP));
@@ -403,7 +404,7 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool gener
     }
     for (uint i = 0; i < plan.memory_count; i++) {
         LoopMemorySpec spec = plan.memory[i];
-        if (generated_fields && spec.kind == FIELD) continue;
+        if (generated_fields && (spec.kind == FIELD || spec.kind == PROTO_FIELD)) continue;
         LoopMemory* memory  = &state.memory[i];
         if (spec.kind != SHAPE_FIELD) memory.source = loop_source(spec.source, state, cold);
         if (spec.kind == ASCII) {
@@ -541,7 +542,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             // The template emitter's condition path carries the numeric
             // relations only, so the equality and null branches stay out of
             // this tier.
-            if (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL
+            if ((!plan.ssa_effect_prefix && (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL))
                 || (!feedback && (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ))) return false;
             uint b = ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE ? ins.a : ins.b;
             if (b >= cf.num_regs) return false;
@@ -606,7 +607,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case PUTPROPC:
                 {
                     // One final own-slot update: every refusal precedes it.
-                    if (!feedback || pos + 1 != end || cf.code[end].op != Opcode.RETUNDEF
+                    if (!feedback || (!plan.ssa_effect_prefix && (pos + 1 != end || cf.code[end].op != Opcode.RETUNDEF))
                         || cf.ic_entries == null) return false;
                     if (ins.op == Opcode.PUTPROPC && $feat(SLJIT_NO_SSA_FIELD_IR)) return false;
                     ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
@@ -833,7 +834,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case LDFALSE:
             case LDNULL:
             case LDUNDEF:
-                integer_required |= 1UL << ins.a;
+                if (!plan.ssa_effect_prefix || (ins.op != Opcode.LDNULL && ins.op != Opcode.LDUNDEF)) integer_required |= 1UL << ins.a;
             case LDINT:
             case LDCONST:
             case TONUMERIC:

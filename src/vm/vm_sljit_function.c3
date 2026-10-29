@@ -14,6 +14,10 @@ const uint FUNCTION_OPS        = 512;
 const uint FUNCTION_BAIL       = uint::max;
 const uint FUNCTION_CAPTURES   = 8;
 const uint FUNCTION_REGION_OPS = 128;
+const uint FUNCTION_SCRATCHES = 7;
+const uint FUNCTION_SAVEDS = 6;
+const uint FUNCTION_FLOATS = 6;
+const uint FUNCTION_PREFIX_SCRATCH_LIMIT = 12;
 // Callee bodies nested inside one another each own a register window in the
 // run block.
 const uint INLINE_DEPTH = 4;
@@ -59,6 +63,8 @@ struct FunctionPlan @feat(SLJIT) {
     void* resume_fragment;
     usz resume_bytes;
     uint numeric_homes;
+    uint scratch_registers;
+    void* fresh_entry;
     LoopPlan* ssa_region;
     LoopPlan* ssa_leaves;
     ulong ssa_fast_calls @if($feat(SLJIT_STATS));
@@ -906,6 +912,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     f.cf = cf;
     f.cold = cold;
     if (FUNCTION_DATAFLOW) out.flow = &f.flow;
+    bool[FUNCTION_OPS] effect_headers;
     f.blocks[0] = true;
     if (plan.ssa_region != null) f.blocks[plan.ssa_region.end + 1] = true;
     for (uint i = 0; i < cf.code_count; i++) {
@@ -913,7 +920,10 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         if ((function_call_op(cf.code[i].op) || function_read_op(cf.code[i].op) || function_alloc_op(cf.code[i].op)
             || function_string_add_candidate(cf, i))
             && i + 1 < cf.code_count) f.blocks[i + 1] = true;
-        if (target >= 0 && target < (int)cf.code_count) f.blocks[target] = true;
+        if (target >= 0 && target < (int)cf.code_count) {
+            f.blocks[target] = true;
+            if (target < (int)i) effect_headers[target] = true;
+        }
         if (((!function_op(
             cf.code[i].op
         ) && function_math_candidate(
@@ -946,8 +956,17 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     if (gateway == null || jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
     void* internal = e.label();
     jit::sljit_set_label(gateway, internal);
+    plan.scratch_registers = FUNCTION_SCRATCHES;
+    if ($feat(SLJIT_EFFECT_WIDE_SCRATCH) && ((plan.ssa_region != null && plan.ssa_region.ssa_effect_prefix)
+        || $feat(SLJIT_EFFECT_BLOCK_REGIONS))) {
+        uint available = (uint)jit::sljit_shim_info(0);
+        if (available >= FUNCTION_SAVEDS + FUNCTION_SCRATCHES) {
+            plan.scratch_registers = available - FUNCTION_SAVEDS;
+            if (plan.scratch_registers > FUNCTION_PREFIX_SCRATCH_LIMIT) plan.scratch_registers = FUNCTION_PREFIX_SCRATCH_LIMIT;
+        }
+    }
     if (jit::sljit_emit_enter(e.compiler, jit::SLJIT_ENTER_REG_ARG | jit::enter_keep(3),
-            1, 7 | (6 << 8), 6, 0) != 0) return false;
+            1, (int)(plan.scratch_registers | (FUNCTION_FLOATS << 8)), (int)FUNCTION_SAVEDS, 0) != 0) return false;
     void* body = e.label();
     if (plan.receiver) {
         Activation layout;
@@ -971,11 +990,36 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     e.mov(r0, 0, mem | jit::reg_s(2), (char*)&run_layout.entry - (char*)&run_layout);
     if (jit::sljit_emit_ijump(e.compiler, jit::SLJIT_JUMP, r0, 0) != 0) return false;
     bool[FUNCTION_OPS] supported;
+    void* optimized_entry;
     for (uint pos = 0; pos < cf.code_count; pos++) {
         Instruction ins = cf.code[pos];
         if (out.flow != null && f.blocks[pos]) f.flow_flush();
-        out.labels[pos] = e.label();
-        if (pos == 0 && plan.ssa_region != null) f.ssa_entry();
+        if (pos == 0 && plan.ssa_region != null && plan.ssa_region.ssa_effect_prefix) {
+            void* candidate = e.label();
+            f.ssa_entry();
+            if (plan.ssa_region != null) optimized_entry = candidate;
+            // Internal links to PC 0 must reach baseline code, not the prefix.
+            out.labels[pos] = e.label();
+        } else {
+            out.labels[pos] = e.label();
+            if (pos == 0 && plan.ssa_region != null) f.ssa_entry();
+            if ($feat(SLJIT_EFFECT_BLOCK_REGIONS) && pos != 0 && effect_headers[pos]
+                && f.cold != null && plan.numeric_homes == 0) {
+                LoopPlan* effect = sljit_effect_prefix_compile(cf, cold, pos);
+                if (effect != null) {
+                    f.blocks[effect.end + 1] = true;
+                    effect.next = plan.ssa_leaves;
+                    plan.ssa_leaves = effect;
+                    $if $feat(SLJIT_MAP): effect.ssa_map_depth = 1; $endif
+                    if (!f.ssa_effect_entry(effect)) {
+                        plan.ssa_leaves = effect.next;
+                        h.free_func(h.heap_udata, effect);
+                    } else {
+                        $if $feat(SLJIT_STATS): io::eprintfn("SLJIT effect region line=%d begin=%d end=%d", cf.get_line(0), pos, effect.end); $endif
+                    }
+                }
+            }
+        }
         bool active = function_op(
             ins.op
         ) || function_math_candidate(
@@ -1509,6 +1553,17 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         leaf.ssa_epoch_constant = null;
     }
     $if $feat(SLJIT_MAP):
+        if (plan.ssa_region != null && plan.ssa_region.ssa_effect_prefix) {
+            plan.ssa_region.ssa_map_begin = (void*)jit::sljit_shim_label_addr(plan.ssa_region.ssa_map_begin);
+            plan.ssa_region.ssa_map_end = (void*)jit::sljit_shim_label_addr(plan.ssa_region.ssa_map_end);
+        }
+    $endif
+    if (plan.ssa_region != null && plan.ssa_region.ssa_effect_prefix && plan.ssa_region.ssa_epoch_constant != null) {
+        plan.ssa_region.ssa_epoch_patch = jit::sljit_shim_const_addr(plan.ssa_region.ssa_epoch_constant);
+        plan.ssa_region.ssa_executable_offset = jit::sljit_shim_executable_offset(e.compiler);
+        plan.ssa_region.ssa_epoch_constant = null;
+    }
+    $if $feat(SLJIT_MAP):
         for (uint pc = 0; pc < cf.code_count; pc++) plan.map_pcs[pc] = (void*)jit::sljit_shim_label_addr(out.labels[pc]);
         plan.map_pcs[cf.code_count] = (void*)jit::sljit_shim_label_addr(plan.map_pcs[cf.code_count]);
         plan.map_calls = call_entry != null ? (void*)jit::sljit_shim_label_addr(call_entry) : null;
@@ -1518,6 +1573,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
             }
         }
     $endif
+    if (plan.fresh_entry != null) plan.fresh_entry = (void*)jit::sljit_shim_label_addr(plan.fresh_entry);
     if (call_entry != null) plan.call_entry = (void*)jit::sljit_shim_label_addr(call_entry);
     plan.code_bytes = jit::sljit_shim_code_size(e.compiler) + plan.resume_bytes
         + (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0);
@@ -1542,7 +1598,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         if (target > (int)i && target < (int)cf.code_count && span[target] > following) following = span[target];
         span[i] = following + 1;
         if ((span[i] >= plan.min_span || loop_headers[i]) && (!FUNCTION_DATAFLOW || f.blocks[i])) {
-            plan.entries[i] = (void*)jit::sljit_shim_label_addr(out.labels[i]);
+            plan.entries[i] = (void*)jit::sljit_shim_label_addr(i == 0 && optimized_entry != null ? optimized_entry : out.labels[i]);
             entries++;
         }
     }

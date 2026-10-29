@@ -136,7 +136,9 @@ fn void SsaEmitter.commit_receiver(&self, int receiver) @feat(SLJIT) {
     int r3 = jit::reg_r(3);
     self.e.mov(r3, 0, jit::SLJIT_MEM | receiver, (char*)&object.gc - (char*)&object, jit::SLJIT_MOV_U32);
     self.e.op(jit::SLJIT_AND, r3, r3, 0, jit::SLJIT_IMM, (uint)observed);
-    self.snapshot_none(self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, jit::SLJIT_IMM, 0), self.plan.begin);
+    void* mismatch = self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, jit::SLJIT_IMM, 0);
+    if (self.plan.ssa_effect_prefix) { self.snapshot(mismatch, self.pc); }
+    else { self.snapshot_none(mismatch, self.plan.begin); }
 }
 
 // Own data-slot specialization excludes every object class with custom reads.

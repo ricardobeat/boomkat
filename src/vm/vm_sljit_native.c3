@@ -293,8 +293,12 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     e.op(jit::SLJIT_SUB, r0, r0, 0, imm, 1);
     e.mov(mem | run, $reflect(FunctionRun.budget).offset, r0, 0);
     e.mov(mem | run, $reflect(FunctionRun.start).offset, imm, (long)cf.code);
-    e.mov(r0, 0, imm, (long)self.plan.entries);
-    e.mov(r0, 0, mem | r0, 0);
+    if ($feat(SLJIT_EFFECT_FRESH_ENTRY) && self.plan.fresh_entry != null) {
+        e.mov(r0, 0, mem, (long)&self.plan.fresh_entry);
+    } else {
+        e.mov(r0, 0, imm, (long)self.plan.entries);
+        e.mov(r0, 0, mem | r0, 0);
+    }
     e.mov(mem | run, $reflect(FunctionRun.entry).offset, r0, 0);
     FunctionRun state;
     e.mov(mem | run, (char*)&state.typed[0].receiver - (char*)&state, imm, 0);

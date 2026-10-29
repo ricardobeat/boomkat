@@ -6,6 +6,41 @@ import boomkat::hobject;
 import boomkat::types;
 import std::io;
 
+// GETGLOBAL sites share the same slot/layout validation for primitive and
+// property folds. The watch roots the binding owner and tracks value writes.
+fn VarICEntry* ssa_watchable_binding(SsaGraph* g, uint binding, CompiledFunction* consumer) @feat(SLJIT) {
+    if (!g.inplace || g.plan.dependency_owner == null || binding >= g.plan.binding_count) return null;
+    CompiledFunction* source = g.plan.binding_functions[binding] != null ? g.plan.binding_functions[binding] : g.cf;
+    uint site = g.plan.bindings[binding];
+    if (source.var_ic_entries == null || source.code[site].op != Opcode.GETGLOBAL || source.realm != consumer.realm) return null;
+    VarICEntry* ic = (VarICEntry*)source.var_ic_entries + site;
+    HObject* bindings = (HObject*)ic.bindings;
+    if (!hobject::plain_property_object(bindings) || ic.slot_ptr == null || ic.prop_flags.is_accessor
+        || ic.recycle_epoch != g.heap.shape_recycle_epoch || ic.prop_idx >= bindings.prop_count
+        || bindings.shape_id != ic.shape_id || &bindings.prop_values()[ic.prop_idx] != ic.slot_ptr) return null;
+    return ic;
+}
+
+fn int ssa_watch_numeric_binding(SsaGraph* g, uint binding) @feat(SLJIT) {
+    VarICEntry* ic = ssa_watchable_binding(g, binding, g.cf);
+    if (ic == null) return -1;
+    TVal value = ic.slot_ptr.get();
+    if (!value.is_fastint() && !value.is_number()) return -1;
+    FunctionPlan* owner = g.plan.dependency_owner;
+    JitWriteDependency* checkpoint = owner.dependencies;
+    if (!sljit_watch_property(g.heap, owner, (HObject*)ic.bindings, ic.prop_idx)) {
+        sljit_dependencies_rollback(g.heap, owner, checkpoint);
+        return -1;
+    }
+    g.plan.ssa_watched_bindings |= 1UL << binding;
+    g.plan.ssa_binding_constants[binding] = value;
+    $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA watched binding line=%d id=%d", g.cf.get_line(0), binding); $endif
+    if (value.is_fastint() && value.get_fastint() >= -2147483648L && value.get_fastint() <= 2147483647L) {
+        return ssa_value(g, CONST_I, INT32, -1, -1, value.get_fastint());
+    }
+    return ssa_value(g, CONST_F, F64, -1, -1, (long)bitcast(value.get_number_or_fastint(), ulong));
+}
+
 // Fold only an own numeric data property of a stable global object. Both
 // the binding and its object slot have independent value and layout watches.
 // The object is rooted by its layout watch while embedded in generated code.
@@ -14,15 +49,9 @@ fn int ssa_watch_global_field(SsaGraph* g, CompiledFunction* cf, uint pc, int ba
     base = ssa_alias(g, base);
     if (base < 0 || g.values[base].op != BINDING) return -1;
     uint binding = (uint)g.values[base].imm;
-    if (binding >= g.plan.binding_count) return -1;
-    CompiledFunction* source = g.plan.binding_functions[binding] != null ? g.plan.binding_functions[binding] : g.cf;
-    uint site = g.plan.bindings[binding];
-    if (source.var_ic_entries == null || source.code[site].op != Opcode.GETGLOBAL || source.realm != cf.realm) return -1;
-    VarICEntry* ic = (VarICEntry*)source.var_ic_entries + site;
+    VarICEntry* ic = ssa_watchable_binding(g, binding, cf);
+    if (ic == null) return -1;
     HObject* bindings = (HObject*)ic.bindings;
-    if (!hobject::plain_property_object(bindings) || ic.slot_ptr == null || ic.prop_flags.is_accessor
-        || ic.recycle_epoch != g.heap.shape_recycle_epoch || ic.prop_idx >= bindings.prop_count
-        || bindings.shape_id != ic.shape_id || &bindings.prop_values()[ic.prop_idx] != ic.slot_ptr) return -1;
     TVal object_value = ic.slot_ptr.get();
     if (!object_value.is_object() || object_value.get_heapptr() == null) return -1;
     HObject* object = object_value.get_heapptr();

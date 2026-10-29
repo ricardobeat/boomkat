@@ -15,6 +15,21 @@ import std::io;
 fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     CompiledFunction* cf = g.cf;
     LoopPlan* plan       = g.plan;
+    // Reuse the compiler's whole-function use/def and CFG analysis, including
+    // call argument windows, to bound materialization at every recovery PC.
+    RegSet[LOOP_OPS] effect_live_in;
+    RegSet[LOOP_OPS] effect_live_out;
+    uint[LOOP_OPS * 2] effect_in_words;
+    uint[LOOP_OPS * 2] effect_out_words;
+    uint[2] effect_scratch_words;
+    if (plan.ssa_effect_prefix) {
+        for (uint pc = 0; pc < cf.code_count; pc++) {
+            effect_live_in[pc] = { .words = &effect_in_words[pc * 2], .word_count = 2 };
+            effect_live_out[pc] = { .words = &effect_out_words[pc * 2], .word_count = 2 };
+        }
+        RegSet scratch = { .words = &effect_scratch_words[0], .word_count = 2 };
+        compiler::moveelim_compute_liveness(cf.code, cf.code_count, &effect_live_out[0], &effect_live_in[0], true, &scratch);
+    }
     bool[LOOP_REGS] read;
     bool[LOOP_REGS] value_read;
     bool[LOOP_REGS] written;
@@ -87,6 +102,13 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             Instruction ins = cf.code[pos];
             uint at         = pos - plan.begin;
             g.frames[at] = g.current;
+            if (plan.ssa_effect_prefix) {
+                for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
+                    int value = g.frames[at][reg];
+                    if (!effect_live_in[pos].test(reg) || (value >= 0 && g.arg[reg] >= 0
+                        && ssa_alias(g, value) == g.arg[reg])) g.frames[at][reg] = -1;
+                }
+            }
             // Conversions can consume a bytecode operand before a later guard in
             // the same operation. Keep the original value until that operation
             // commits, so replay observes the exact pre-instruction frame.
@@ -136,6 +158,16 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 continue;
             }
             switch (ins.op) {
+                case LDNULL:
+                case LDUNDEF:
+                    {
+                        if (!plan.ssa_effect_prefix) return false;
+                        ulong tag = ins.op == Opcode.LDNULL ? types::TAG_NULL_VAL : types::TAG_UNDEFINED;
+                        int value = ssa_value(g, CONST_BOX, BOXED, -1, -1, (long)(tag << 48));
+                        ssa_result(g, value, ins.a, pos);
+                        g.current[ins.a] = value;
+                        break;
+                    }
                 case LDTHIS:
                     {
                         if (!g.direct_fields) return false;
@@ -159,13 +191,15 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     {
                         if (!plan.ssa_commit) return false;
                         int value = g.current[ins.op == Opcode.PUTTHISC ? ins.a : ins.b];
-                        if (value < 0 || !ssa_numeric_rep(g.values[value].rep)) return false;
+                        if (value < 0 || (!plan.ssa_effect_prefix && !ssa_numeric_rep(g.values[value].rep))) return false;
                         value = ssa_convert(g, value, BOXED, false);
-                        ssa_use(g, value);
                         uint memory = (uint)plan.memory_at[at] - 1;
                         int receiver = g.direct_fields ? ssa_field_storage(g, memory,
                             ins.op == Opcode.PUTPROPC ? g.current[ins.a] : -1) : -1;
                         if (g.direct_fields) ssa_use(g, receiver);
+                        // Field-address guards can create several definitions;
+                        // the stored value must remain live through the STORE.
+                        ssa_use(g, value);
                         ssa_value(g, STORE, BOXED, receiver, value, memory);
                         break;
                     }
@@ -190,8 +224,10 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
 
                     {
                         int binding = (int)plan.binding_at[pos - plan.begin] - 1;
-                        int value;
-                        if ((plan.ssa_binding_mask & (1UL << (uint)binding)) != 0) {
+                        int value = ins.op == Opcode.GETGLOBAL ? ssa_watch_numeric_binding(g, (uint)binding) : -1;
+                        if (value >= 0) {
+                            // A live dependency replaces the repeated entry read.
+                        } else if ((plan.ssa_binding_mask & (1UL << (uint)binding)) != 0) {
                             TVal constant = plan.ssa_binding_constants[binding];
                             if (constant.is_fastint() && constant.get_fastint() >= -2147483648L
                                 && constant.get_fastint() <= 2147483647L) {
@@ -422,6 +458,16 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             if (g.result_reg < LOOP_REGS) {
                 if (g.current[g.result_reg] < 0) return false;
                 ssa_use(g, g.current[g.result_reg]);
+            }
+        } else if (plan.ssa_effect_prefix) {
+            uint continuation = plan.end + 1;
+            uint at = continuation - plan.begin;
+            g.frames[at] = g.current;
+            for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
+                int value = g.frames[at][reg];
+                if (!effect_live_in[continuation].test(reg) || (value >= 0 && g.arg[reg] >= 0
+                    && ssa_alias(g, value) == g.arg[reg])) g.frames[at][reg] = -1;
+                if (g.frames[at][reg] >= 0) ssa_use(g, g.frames[at][reg]);
             }
         } else {
             foreach (value : g.current) if (value >= 0) ssa_use(g, value);

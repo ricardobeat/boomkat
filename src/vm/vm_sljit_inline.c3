@@ -764,19 +764,25 @@ fn bool function_inline_ssa_selector(CompiledFunction* target, uint nargs) @feat
         || target.flags.has_direct_eval || target.flags.needs_lex_bridge || target.mapped_arguments()) return false;
     uint branches;
     uint returns;
+    bool boolean_join;
     for (uint pc = 0; pc < target.code_count; pc++) {
         Instruction ins = target.code[pc];
         int branch = loop_target(ins, pc);
         if (branch >= 0) {
-            if (!ssa_comparison_op(ins.op) || branch <= (int)pc || branch >= (int)target.code_count || ++branches > 1) return false;
+            bool short_circuit = $feat(SLJIT_EFFECT_BLOCK_REGIONS) && (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE)
+                && branch > (int)pc && branch < (int)target.code_count && target.code[branch].op == Opcode.RET;
+            if (short_circuit) boolean_join = true;
+            if ((!ssa_comparison_op(ins.op) && !short_circuit) || branch <= (int)pc || branch >= (int)target.code_count || ++branches > 1) return false;
             continue;
         }
         switch (ins.op) {
             case RET:
                 if (++returns == 2) return branches == 1;
+                if (boolean_join) return true;
                 continue;
             case NOP: case LDREG: case LDTHIS: case LDINT: case LDCONST:
-            case GETGLOBAL: case GETTHISC: case GETPROPC: case GETPROPC_CACHED: continue;
+            case GETGLOBAL: case GETTHISC: case GETPROPC: case GETPROPC_CACHED:
+            case BAND: case BOR: case BXOR: case EQ: case NEQ: case SEQ: case SNEQ: continue;
             default: return false;
         }
     }

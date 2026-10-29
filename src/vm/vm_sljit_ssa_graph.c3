@@ -44,6 +44,7 @@ enum SsaOp : char {
     BINDING,
     CONST_I,
     CONST_F,
+    CONST_BOX,
     COPY,
     ADD,
     SUB,
@@ -168,6 +169,11 @@ struct SsaGraph @feat(SLJIT) {
     LoopPlan* plan;
     CompiledFunction* cf;
     Heap* heap;
+    // Compile-only parent context for effect-prefix native continuations.
+    LoopEmitter* effect_out;
+    bool* effect_blocks;
+    void*[LOOP_OPS] effect_retries;
+    uint effect_retry_count;
     SsaValue[SSA_MAX_VALUES] values;
     int[SSA_MAX_VALUES * 4] conv;
     uint value_count;
@@ -319,7 +325,10 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         if (target < 0) continue;
         if (!g.single_pass && target == (int)plan.begin) continue;
         // A branch inside the body must move forward and stay inside it.
-        if (target <= (int)pos || target > (int)plan.end) return false;
+        if (target <= (int)pos) return false;
+        bool external = $feat(SLJIT_EFFECT_BLOCK_REGIONS) && g.plan.ssa_effect_prefix && plan.begin != 0
+            && target > (int)plan.end && pos < plan.end;
+        if (target > (int)plan.end && !external) return false;
         if (ins.op != Opcode.JUMP && pos + 1 <= plan.end) {
             bool found = false;
             for (uint i = 0; i < count; i++) {
@@ -339,6 +348,7 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
                 count++;
             }
         }
+        if (external) continue;
         bool found = false;
         for (uint i = 0; i < count; i++) {
             if (starts[i] == (uint)target) {
@@ -395,7 +405,7 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         Instruction ins = cf.code[block.branch_pc];
         int target      = loop_target(ins, block.branch_pc);
         if (block.jump) {
-            block.succ0 = 0;
+            block.succ0 = target > (int)plan.end && plan.ssa_effect_prefix ? SSA_BLOCKS : 0;
             for (uint j = 0; j < count; j++) {
                 if (g.blocks[j].begin == (uint)target) {
                     block.succ0 = j;
@@ -407,7 +417,7 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         // A conditional branch: the arm that falls through is the next block,
         // the other one is the block the target names.
         block.succ0 = i + 1 < count ? i + 1 : 0;
-        block.succ1 = 0;
+        block.succ1 = target > (int)plan.end && plan.ssa_effect_prefix ? SSA_BLOCKS : 0;
         for (uint j = 0; j < count; j++) {
             if (g.blocks[j].begin == (uint)target) {
                 block.succ1 = j;
@@ -462,10 +472,12 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             // An arm's branch: a comparison, a truthiness test, or the jump
             // that ends an arm. A branch that leaves the body is not
             // supported.
-            if (target <= (int)pos || target > (int)plan.end) return false;
+            if (target <= (int)pos || (target > (int)plan.end
+                && (!$feat(SLJIT_EFFECT_BLOCK_REGIONS) || !plan.ssa_effect_prefix || plan.begin == 0 || pos == plan.end))) return false;
             if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) continue;
             if (ins.op == Opcode.JUMP) continue;
-            if (!ssa_comparison_op(ins.op)) return false;
+            if (!ssa_comparison_op(ins.op) && !(plan.ssa_effect_prefix
+                && (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL))) return false;
             continue;
         }
         switch (ins.op) {
@@ -478,7 +490,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
                 continue;
             case PUTTHISC:
             case PUTPROPC:
-                if (!plan.ssa_commit || pos + 1 != plan.end) return false;
+                if (!plan.ssa_commit || (!plan.ssa_effect_prefix && pos + 1 != plan.end)) return false;
                 continue;
             case GETCAP:
             case GETVAR:
@@ -486,6 +498,8 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
                 if (plan.binding_at[pos - plan.begin] == 0) return false;
                 continue;
             case LDREG:
+            case LDNULL:
+            case LDUNDEF:
             case LDINT:
             case LDCONST:
             case TONUMERIC:
@@ -568,7 +582,7 @@ fn void ssa_infer(
             // A comparison branch reads two numbers; a truthiness test reads
             // one value and does not use it as a number.
             bool comparison = ssa_comparison_op(ins.op);
-            uint left       = comparison ? ins.b : ins.a;
+            uint left       = comparison || ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL ? ins.b : ins.a;
             uint right      = comparison ? ins.c : left;
             if (comparison && ins.op >= Opcode.JMP_NLTI) right = left;
             if (left < LOOP_REGS) {
@@ -615,6 +629,8 @@ fn void ssa_infer(
             case GETVAR:
             case GETGLOBAL:
             case LDINT:
+            case LDNULL:
+            case LDUNDEF:
             case LDCONST:
                 break;
             case CALL:
@@ -929,7 +945,12 @@ fn bool ssa_arm_branch(SsaGraph* g, uint b, uint pos, Instruction ins) @feat(SLJ
         g.values[value].pc = pos;
         return true;
     }
-    if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) {
+    if (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL) {
+        lhs = g.current[ins.b];
+        if (lhs < 0) return false;
+        lhs = ssa_convert(g, lhs, BOXED, false);
+        op = ins.op;
+    } else if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) {
         // The truthiness of a value. An integer reads its own value; a boxed
         // one must be a boolean, whose payload is the value.
         if (ins.a >= LOOP_REGS) return false;
