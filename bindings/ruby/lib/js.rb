@@ -230,6 +230,19 @@ module JS
       'int bk_get_typed_array(void*, unsigned long long, void*)',
       'unsigned long long bk_call(void*, unsigned long long, unsigned long long, const unsigned long long*, unsigned int)',
 
+      # Compiled scripts and modules.
+      'unsigned long long bk_compile(void*, const char*, size_t, const char*, unsigned int)',
+      'unsigned long long bk_run_script(void*, unsigned long long)',
+      'int bk_set_module_loader(void*, void*)',
+      'int bk_module_set_name(void*, const char*, size_t)',
+      'int bk_module_provide(void*, const char*, size_t)',
+      'int bk_module_fail(void*, unsigned long long)',
+      'int bk_define_native_module(void*, const char*, size_t, unsigned long long)',
+      'int bk_invalidate_module(void*, const char*, size_t)',
+      'unsigned long long bk_import(void*, const char*, size_t)',
+      'int bk_promise_state_get(void*, unsigned long long, int*)',
+      'unsigned long long bk_promise_result(void*, unsigned long long)',
+
       'unsigned long long bk_new_number(void*, double)',
       'unsigned long long bk_new_string(void*, const char*, size_t)',
       'unsigned long long bk_new_string_latin1(void*, const char*, size_t)',
@@ -578,6 +591,27 @@ module JS
   # A value belongs to the runtime that produced it. #eval converts its result
   # to Ruby before returning, so ordinary results move freely; a handle held
   # inside a host function does not, and the other runtime refuses it.
+  # Compiled script code from Runtime#compile, runnable any number of times.
+  class Script
+    def initialize(runtime, id)
+      @runtime = runtime
+      @id = id
+    end
+
+    # Run the script and return its completion value.
+    def run
+      raise Error.new('this Script is closed', Status::INVALID) if @id.zero?
+
+      @runtime.run_script(@id)
+    end
+
+    def close
+      @runtime.release(@id)
+      @id = 0
+      self
+    end
+  end
+
   class Runtime
     def initialize(library = nil)
       Lib.load!(library || JS.default_library)
@@ -653,6 +687,135 @@ module JS
         raise_status!(status)
       end
       self
+    end
+
+    # Compile a classic script once; JS::Script#run runs it. A syntax error
+    # raises JS::SyntaxError here rather than at run time.
+    def compile(source, filename = '<script>', strict: false)
+      check_open!
+      bytes = source.to_s.b
+      id = Lib.bk_compile(@rt, bytes, bytes.bytesize, filename.to_s, strict ? 2 : 0)
+      raise_status!(Lib.bk_get_error_code(@rt), filename) if id.zero?
+      Script.new(self, id)
+    end
+
+    # Serve module imports from Ruby. `resolve` is called as
+    # (referrer, specifier) and returns the canonical name; `load` is called
+    # with a name and returns the source. Returning nil falls back to the
+    # filesystem unless filesystem_fallback is false; raising fails the
+    # import with the exception's message. With neither, the loader is removed.
+    def set_module_loader(resolve: nil, load: nil, filesystem_fallback: true)
+      check_open!
+      if resolve.nil? && load.nil?
+        @loader = nil
+        status = Lib.bk_set_module_loader(@runtime, nil)
+      else
+        answer = lambda do |request, deliver, &fn|
+          begin
+            result = fn.call
+          rescue StandardError => e
+            err = Lib.bk_new_error(@rt, 0, e.message)
+            status = Lib.bk_module_fail(request, err)
+            Lib.bk_free_value(@rt, err)
+            next status
+          end
+          next Status::OK if result.nil?
+
+          bytes = result.to_s.b
+          Lib.send(deliver, request, bytes, bytes.bytesize)
+        end
+        voidp = Fiddle::TYPE_VOIDP
+        on_resolve = resolve && Fiddle::Closure::BlockCaller.new(
+          Fiddle::TYPE_INT, [voidp, voidp, voidp, voidp, voidp]
+        ) do |_ctx, referrer, specifier, request, _opaque|
+          from = referrer.null? ? '' : referrer.to_s.force_encoding(Encoding::UTF_8)
+          answer.call(request, :bk_module_set_name) do
+            resolve.call(from, specifier.to_s.force_encoding(Encoding::UTF_8))
+          end
+        end
+        on_load = load && Fiddle::Closure::BlockCaller.new(
+          Fiddle::TYPE_INT, [voidp, voidp, voidp, voidp]
+        ) do |_ctx, name, request, _opaque|
+          answer.call(request, :bk_module_provide) { load.call(name.to_s.force_encoding(Encoding::UTF_8)) }
+        end
+        # bk_module_loader: resolve, load, opaque, flags.
+        table = [on_resolve ? on_resolve.to_i : 0, on_load ? on_load.to_i : 0, 0,
+                 filesystem_fallback ? 0 : 2].pack('QQQL')
+        # The closures must outlive their registration.
+        @loader = [on_resolve, on_load, table]
+        status = Lib.bk_set_module_loader(@runtime, Fiddle::Pointer[table])
+      end
+      raise_status!(status) if status != Status::OK
+      self
+    end
+
+    # A module whose exports are the keys of `exports`, a JSON-compatible Hash.
+    def define_native_module(name, exports)
+      check_open!
+      require 'json'
+      source = "(#{JSON.generate(exports)})".b
+      id = Lib.bk_eval_ex(@rt, source, source.bytesize, '<exports>', 0)
+      raise_status!(Lib.bk_get_error_code(@rt)) if id.zero?
+      begin
+        bytes = name.to_s.b
+        status = Lib.bk_define_native_module(@rt, bytes, bytes.bytesize, id)
+      ensure
+        Lib.bk_free_value(@rt, id)
+      end
+      raise_status!(status) if status != Status::OK
+      self
+    end
+
+    # Drop a cached module so the next import loads it again.
+    def invalidate_module(name)
+      check_open!
+      bytes = name.to_s.b
+      status = Lib.bk_invalidate_module(@rt, bytes, bytes.bytesize)
+      raise_status!(status) if status != Status::OK
+      self
+    end
+
+    # Load and evaluate a module, as import(specifier) does, running pending
+    # jobs until it settles. Raises JS::ThrowError when the import rejects.
+    def import_module(specifier)
+      check_open!
+      bytes = specifier.to_s.b
+      promise = Lib.bk_import(@rt, bytes, bytes.bytesize)
+      raise_status!(Lib.bk_get_error_code(@rt)) if promise.zero?
+      begin
+        Lib.bk_run_jobs(@runtime)
+        state = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
+        Lib.bk_promise_state_get(@rt, promise, state)
+        case state[0, Fiddle::SIZEOF_INT].unpack1('i')
+        when 1 then self
+        when 2
+          reason = Lib.bk_promise_result(@rt, promise)
+          buf = Fiddle::Pointer.malloc(512)
+          Lib.bk_describe(@rt, reason, buf, 512, nil)
+          Lib.bk_free_value(@rt, reason)
+          raise ThrowError.new(buf.to_s, Status::THROW)
+        else raise Error.new('import did not settle', Status::INTERNAL)
+        end
+      ensure
+        Lib.bk_free_value(@rt, promise)
+      end
+    end
+
+    # Run compiled code; JS::Script calls this.
+    def run_script(id)
+      check_open!
+      result = Lib.bk_run_script(@rt, id)
+      raise_status!(Lib.bk_get_error_code(@rt)) if result.zero?
+      begin
+        to_ruby(result)
+      ensure
+        Lib.bk_free_value(@rt, result)
+      end
+    end
+
+    # Release a value handle this runtime issued.
+    def release(id)
+      Lib.bk_free_value(@rt, id) unless @closed || id.zero?
     end
 
     # Engine version, e.g. "0.1.0".

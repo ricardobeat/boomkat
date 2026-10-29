@@ -268,6 +268,21 @@ Run the example:
 ruby bindings/ruby/examples/two_runtimes.rb
 ```
 
+## Compiled scripts and modules
+
+`vm.compile(source, filename = '<script>', strict: false)` compiles a classic script
+once and reports syntax errors then; `script.run` runs it and returns its
+completion value, as many times as needed. `script.close` releases it.
+
+`vm.set_module_loader(resolve:, load:, filesystem_fallback: true)` serves
+imports from Ruby. `resolve.call(referrer, specifier)` returns the module's canonical
+name and `load.call(name)` returns its source. Returning `nil` falls back to the
+filesystem unless `filesystem_fallback` is false, and raising fails the import
+with the exception's message. `vm.define_native_module(name, exports)` defines a
+module from a JSON-compatible Hash, `vm.invalidate_module(name)` drops a cached
+module so the next import loads it again, and `vm.import_module(specifier)`
+loads and evaluates a module, raising `JS::ThrowError` when the import rejects.
+
 ## Limitations
 
 These come from the v1 ABI, not from the binding:

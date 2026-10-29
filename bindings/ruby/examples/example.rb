@@ -144,6 +144,32 @@ JS.open do |vm|
       catch (e) { return 'propagated ' + e.name + ': ' + e.message }
     })()
   JS
+
+  # Compile once, run many times.
+  script = vm.compile('globalThis.runs = (globalThis.runs || 0) + 1')
+  script.run
+  puts "compiled runs: #{script.run}"
+  script.close
+
+  # Modules come from Ruby: resolve names a module, load supplies its source.
+  sources = { 'app:main' => "import { twice } from 'app:lib'; globalThis.out = twice(21)",
+              'app:lib' => 'export const twice = (n) => n * 2' }
+  vm.set_module_loader(resolve: ->(_referrer, spec) { spec },
+                       load: ->(name) { sources[name] },
+                       filesystem_fallback: false)
+  vm.define_native_module('app:config', { mode: 'demo' })
+  vm.import_module('app:main')
+  puts "module result: #{vm.eval('out')}"
+  sources['app:lib'] = 'export const twice = (n) => n * 3'
+  vm.invalidate_module('app:lib')
+  vm.invalidate_module('app:main')
+  vm.import_module('app:main')
+  puts "reloaded: #{vm.eval('out')}"
+  begin
+    vm.import_module('app:missing')
+  rescue JS::ThrowError => e
+    puts "missing module: #{e.message}"
+  end
 end
 
 # Leaving the block closed the runtime, so another can be opened.
