@@ -301,6 +301,51 @@ install: out/boomkat.a out/boomkat.$(SHLIB_EXT)
 	install -m 644 out/boomkat.a $(DESTDIR)$(PREFIX)/lib/libboomkat.a
 	install -m 755 out/boomkat.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/boomkat.$(SHLIB_EXT)
 
+# ---- C++ binding (include/boomkat.hpp) --------------------------------------
+# Header-only; nothing here goes into the C library. cpp-check builds every
+# test/cpp/*.cpp in each mode of the matrix, runs it, compiles each header on
+# its own, and runs the compile-fail cases.
+CXX ?= c++
+CPP_WARN := -Wall -Wextra -Werror -pedantic
+CPP_MODES := cxx17-noexc cxx17 cxx20-noexc
+CPP_FLAGS_cxx17-noexc := -std=c++17 -fno-exceptions -fno-rtti
+CPP_FLAGS_cxx17 := -std=c++17
+CPP_FLAGS_cxx20-noexc := -std=c++20 -fno-exceptions -fno-rtti
+CPP_HEADERS := include/boomkat.hpp include/boomkat_std.hpp include/boomkat_coro.hpp
+CPP_TESTS := $(basename $(notdir $(wildcard test/cpp/*.cpp)))
+CPP_LIB ?= out/boomkat.a
+
+.PHONY: cpp-check cpp-headers cpp-compile-fail cpp-examples
+cpp-check: $(CPP_LIB) cpp-headers cpp-compile-fail
+	@set -e; for mode in $(CPP_MODES); do \
+	  mkdir -p out/cpp/$$mode; \
+	  case $$mode in \
+	    cxx17-noexc) flags="$(CPP_FLAGS_cxx17-noexc)";; \
+	    cxx17) flags="$(CPP_FLAGS_cxx17)";; \
+	    cxx20-noexc) flags="$(CPP_FLAGS_cxx20-noexc)";; \
+	  esac; \
+	  for t in $(CPP_TESTS); do \
+	    $(CXX) $$flags $(CPP_WARN) -Iinclude test/cpp/$$t.cpp $(CPP_LIB) $(BK_LDLIBS) -lpthread \
+	      -o out/cpp/$$mode/$$t; \
+	    printf '%s ' "$$mode"; ./out/cpp/$$mode/$$t; \
+	  done; \
+	done
+
+cpp-headers:
+	@set -e; for h in $(CPP_HEADERS); do \
+	  std=-std=c++17; case $$h in *coro*) std=-std=c++20;; esac; \
+	  echo "#include \"$$(basename $$h)\"" | $(CXX) $$std $(CPP_WARN) -Iinclude -x c++ -fsyntax-only -; \
+	done; echo "cpp-headers: ok"
+
+cpp-compile-fail:
+	@CXX="$(CXX)" sh test/cpp/compile_fail/run.sh
+
+cpp-examples: $(CPP_LIB)
+	@set -e; mkdir -p out/cpp/examples; for f in bindings/cpp/examples/*.cpp; do \
+	  n=$$(basename $$f .cpp); \
+	  $(CXX) -std=c++17 $(CPP_WARN) -Iinclude $$f $(CPP_LIB) $(BK_LDLIBS) -lpthread -o out/cpp/examples/$$n; \
+	done; echo "cpp-examples: built $$(ls out/cpp/examples | wc -l | tr -d ' ')"
+
 # ---- Linux CI ---------------------------------------------------------------
 # Build the Linux image and run the whole build/test/link-validation suite in
 # it. Uses Apple's `container` CLI (not docker). See scripts/linux/arm64/README.md.

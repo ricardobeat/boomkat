@@ -489,8 +489,9 @@ BK_API bk_value  bk_promise_then(bk_ctx ctx, bk_value promise, bk_value on_fulfi
  * bk_module_provide (source, copied) or bk_module_provide_native. Either may
  * reject with bk_module_fail. Returning BK_OK without an answer, or leaving a
  * callback NULL, falls back to the filesystem unless
- * BK_LOADER_NO_FILESYSTEM_FALLBACK is set. BK_LOADER_ASYNC is not supported
- * yet and fails with BK_ERR_UNSUPPORTED. */
+ * BK_LOADER_NO_FILESYSTEM_FALLBACK is set. With BK_LOADER_ASYNC, load may
+ * return BK_OK without answering and answer later on the runtime's thread; the
+ * request stays valid until answered. Only import() and bk_import wait for it. */
 typedef struct bk_module_request bk_module_request;
 enum { BK_LOADER_ASYNC = 1, BK_LOADER_NO_FILESYSTEM_FALLBACK = 2 };
 typedef struct {

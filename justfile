@@ -529,6 +529,11 @@ test-realms:
     @python3 scripts/run_test262.py --single test/capi/intl_realms.js
 
 # Runtime/context ownership, callback values, exceptions, strings, and explicit jobs.
+# C++ binding: test/cpp in the C++17/C++20, exceptions on/off matrix, plus header
+# self-containment and compile-fail cases.
+cpp-test:
+    @make cpp-check
+
 test-api:
     @make test-api-lifecycle test-host-abi test-embed-api test-modules-api test-realms-api test-runtime-hooks test-strings-api test-handles-api test-runtime-options test-atoms-api test-object-model-api test-errors-api test-descriptors-api test-closures-api test-classes-api test-tracing-api test-intrinsics-api test-promises-api test-event-loop-api test-scripts-api test-module-loader-api test-binary-api test-weak-api test-gc-control-api test-context-options-api test-exotic-api
 
