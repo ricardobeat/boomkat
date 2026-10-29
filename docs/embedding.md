@@ -389,7 +389,12 @@ bk_run_jobs(bk_get_runtime(app));
 `bk_module_fail`, whose error becomes the import's failure. A callback that
 returns `BK_OK` without answering, or a NULL callback, falls back to the
 filesystem unless the loader sets `BK_LOADER_NO_FILESYSTEM_FALLBACK`. Loading
-is synchronous; `BK_LOADER_ASYNC` fails with `BK_ERR_UNSUPPORTED`.
+is synchronous unless the loader sets `BK_LOADER_ASYNC`: a `load` callback
+may then return `BK_OK` without answering and answer the request later, from
+the runtime's thread, with the same calls. The request stays valid until it is
+answered. Imports waiting on it continue in `bk_run_jobs`. Only `import()` and
+`bk_import` can wait; a static import of a module whose load has not been
+answered rejects. A module is requested once however many imports wait on it.
 
 ```c
 static bk_status load(bk_ctx ctx, const char *name, bk_module_request *req, void *opaque) {

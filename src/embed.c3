@@ -210,6 +210,7 @@ struct Runtime {
     // bk_set_module_loader: the host's loader and the engine hooks over it.
     ModuleLoader     module_loader;
     esm::ModuleHostHooks module_hooks;
+    ModuleRequest*   module_requests;   // asynchronous loads in flight or answered, newest first
     // Atoms: property keys held by index. An atom is its entry index + 1.
     AtomEntry* atoms;
     uint     atom_cap;
@@ -388,11 +389,23 @@ fn void free_context_state(Heap* hp, ContextState* state) {
     if (state.err_stack != null) hp.free_func(hp.heap_udata, (void*)state.err_stack);
 }
 
+// Unlinks and frees an asynchronous load request, with its failure slot.
+fn void free_module_request(Runtime* rt, ModuleRequest* req) {
+    for (ModuleRequest** link = &rt.module_requests; *link != null; link = &(*link).next) {
+        if (*link == req) { *link = req.next; break; }
+    }
+    if (req.error != 0) slot_release(rt, req.error);
+    if (req.name.ptr != null) mem::free(req.name.ptr);
+    mem::free(req.for_name.ptr);
+    mem::free(req);
+}
+
 // Destroy the runtime and everything it owns. All outstanding handles become
 // invalid. Safe with null.
 fn void destroy(Runtime* rt) {
     if (rt == null) return;
     Heap* hp = rt.heap;
+    while (rt.module_requests != null) free_module_request(rt, rt.module_requests);
     for (HostPayload* payload = rt.host_payloads; payload != null; ) {
         HostPayload* next = payload.next;
         hp.free_func(hp.heap_udata, payload);
@@ -1133,6 +1146,22 @@ struct ModuleLoader {
     void*  opaque;
     uint   flags;
 }
+// One question to the host loader, answered through bk_module_* before the
+// callback returns. An asynchronous load's request outlives the callback, on
+// Runtime.module_requests, until the engine takes its answer.
+struct ModuleRequest {
+    Runtime* rt;
+    char[]   name;        // set by bk_module_set_name; malloc'd
+    char[]   source;      // set by bk_module_provide; heap payload memory
+    char[]   for_name;    // the module a load asks for
+    bool     answered;
+    bool     failed;
+    bool     deferred;    // an asynchronous load: lives on rt.module_requests
+    bool     in_call;     // the loader callback has not returned
+    ulong    error;       // slot holding the failure of bk_module_fail
+    ModuleRequest* next;
+}
+
 // The tracer handed to hosts is the heap that is marking.
 alias BkRootTracer = fn void(void* tracer, void* opaque);
 

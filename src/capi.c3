@@ -359,18 +359,6 @@ const uint BK_LOADER_NO_FILESYSTEM_FALLBACK = 2;
 alias BkResolveFn = fn int(void* ctx, char* referrer, char* specifier, ModuleRequest* request, void* opaque);
 alias BkLoadFn    = fn int(void* ctx, char* name, ModuleRequest* request, void* opaque);
 
-// One question to the host loader, answered through bk_module_* before the
-// callback returns.
-struct ModuleRequest {
-    Runtime* rt;
-    char[]   name;        // set by bk_module_set_name; malloc'd
-    char[]   source;      // set by bk_module_provide; heap payload memory
-    char[]   for_name;    // the module a load asks for
-    bool     answered;
-    bool     failed;
-    TVal     error;
-}
-
 // `bytes` as a NUL-terminated malloc'd string, or null.
 fn char* cstr_copy(char[] bytes) {
     char* out = (char*)libc::malloc(bytes.len + 1);
@@ -383,8 +371,10 @@ fn char* cstr_copy(char[] bytes) {
 // Parks the host's failure as the pending module error.
 fn void park_module_error(Runtime* rt, ModuleRequest* req) {
     if (!req.failed) return;
-    rt.heap.shade_root_tval(req.error);
-    rt.heap.error_value = req.error;
+    TVal error;
+    if (!embed::slot_get(rt, req.error, &error)) return;
+    rt.heap.shade_root_tval(error);
+    rt.heap.error_value = error;
     rt.heap.has_error = true;
 }
 
@@ -409,25 +399,62 @@ fn char[]? loader_resolve(char[] base_name, char[] specifier, void* udata) {
     return esm::MODULE_ERROR~;
 }
 
+// The request for `name` an asynchronous load left on the runtime, or null.
+fn ModuleRequest* find_module_request(Runtime* rt, char[] name) {
+    for (ModuleRequest* r = rt.module_requests; r != null; r = r.next) {
+        if (r.for_name == name) return r;
+    }
+    return null;
+}
+
+// What the engine does with an answered request: its source, or the failure of
+// a native answer, which has defined the module for the loader to find.
+fn char[]? take_module_answer(Runtime* rt, ModuleRequest* req, bool fallback, char[] name) {
+    defer if (req.deferred) embed::free_module_request(rt, req);
+    if (req.source.ptr != null) return req.source;
+    if (!req.failed && req.answered) return esm::MODULE_ERROR~;
+    if (!req.failed && fallback) return esm::default_module_read(name, null);
+    park_module_error(rt, req);
+    return esm::MODULE_ERROR~;
+}
+
 fn char[]? loader_load(char[] name, void* udata) {
     Runtime* rt = (Runtime*)udata;
     ModuleLoader* l = &rt.module_loader;
     bool fallback = (l.flags & BK_LOADER_NO_FILESYSTEM_FALLBACK) == 0;
+    bool async = (l.flags & BK_LOADER_ASYNC) != 0;
     if (l.load == null) {
         if (!fallback) return esm::MODULE_ERROR~;
         return esm::default_module_read(name, null);
     }
+    // An asynchronous load asked earlier: wait for it, or take its answer.
+    ModuleRequest* req = find_module_request(rt, name);
+    if (req != null) {
+        if (!req.answered) return esm::MODULE_PENDING~;
+        return take_module_answer(rt, req, fallback, name);
+    }
     char* n = cstr_copy(name);
-    defer libc::free(n);
     if (n == null) return esm::MODULE_ERROR~;
-    ModuleRequest req = { .rt = rt, .for_name = name };
-    int rc = ((BkLoadFn)l.load)(rt.active, n, &req, l.opaque);
-    if (rc == BK_OK && req.source.ptr != null) return req.source;
-    // A native answer has defined the module; the loader finds it in the cache.
-    if (rc == BK_OK && req.answered && !req.failed) return esm::MODULE_ERROR~;
-    if (rc == BK_OK && !req.failed && fallback) return esm::default_module_read(name, null);
-    park_module_error(rt, &req);
-    return esm::MODULE_ERROR~;
+    ModuleRequest local = { .rt = rt, .for_name = name };
+    req = &local;
+    if (async) {
+        // The request outlives this call and owns the name the host answers for.
+        req = mem::new(ModuleRequest);
+        if (req == null) { libc::free(n); return esm::MODULE_ERROR~; }
+        *req = { .rt = rt, .for_name = n[:name.len], .deferred = true, .next = rt.module_requests };
+        rt.module_requests = req;
+    }
+    defer if (!async) libc::free(n);
+    req.in_call = true;
+    int rc = ((BkLoadFn)l.load)(rt.active, n, req, l.opaque);
+    req.in_call = false;
+    // An asynchronous loader that returned without answering will answer later.
+    if (async && rc == BK_OK && !req.answered) return esm::MODULE_PENDING~;
+    if (rc != BK_OK && !req.failed) {
+        if (async) embed::free_module_request(rt, req);
+        return esm::MODULE_ERROR~;
+    }
+    return take_module_answer(rt, req, fallback, name);
 }
 
 fn int bk_set_module_loader(void* runtime, embed::ModuleLoader* loader) @export("bk_set_module_loader") {
@@ -439,7 +466,6 @@ fn int bk_set_module_loader(void* runtime, embed::ModuleLoader* loader) @export(
         return BK_OK;
     }
     if ((loader.flags & ~(BK_LOADER_ASYNC | BK_LOADER_NO_FILESYSTEM_FALLBACK)) != 0) return BK_ERR_INVALID;
-    if ((loader.flags & BK_LOADER_ASYNC) != 0) return BK_ERR_UNSUPPORTED;
     rt.module_loader = *loader;
     rt.module_hooks = { .resolve_name = &loader_resolve, .read_source = &loader_load, .udata = (void*)rt };
     rt.heap.set_module_hooks(&rt.module_hooks);
@@ -447,7 +473,7 @@ fn int bk_set_module_loader(void* runtime, embed::ModuleLoader* loader) @export(
 }
 
 fn int bk_module_set_name(ModuleRequest* req, char* name, usz len) @export("bk_module_set_name") {
-    if (req == null || name == null || len == 0 || req.answered) return BK_ERR_INVALID;
+    if (req == null || name == null || len == 0 || req.answered || req.for_name.ptr != null) return BK_ERR_INVALID;
     char* copy = cstr_copy(name[:len]);
     if (copy == null) return BK_ERR_NOMEM;
     req.name = copy[:len];
@@ -456,7 +482,8 @@ fn int bk_module_set_name(ModuleRequest* req, char* name, usz len) @export("bk_m
 }
 
 // The source is copied into memory the runtime frees when it is destroyed;
-// the module keeps referring to it for as long as it lives.
+// the module keeps referring to it for as long as it lives. After an
+// asynchronous load's callback has returned, this answers it.
 fn int bk_module_provide(ModuleRequest* req, char* source, usz len) @export("bk_module_provide") {
     if (req == null || (source == null && len != 0) || req.answered || req.for_name.ptr == null) return BK_ERR_INVALID;
     Runtime* rt = req.rt;
@@ -469,7 +496,14 @@ fn int bk_module_provide(ModuleRequest* req, char* source, usz len) @export("bk_
     if (len > 0) mem::copy(text, source, (sz)len);
     text[len] = 0;
     req.source = text[:len];
+    return answered(req);
+}
+
+// Marks `req` answered. An asynchronous load answered after its callback
+// returned wakes the imports waiting on it.
+fn int answered(ModuleRequest* req) {
     req.answered = true;
+    if (req.deferred && !req.in_call) esm::module_loads_progressed(req.rt.heap);
     return BK_OK;
 }
 
@@ -538,18 +572,17 @@ fn int bk_module_provide_native(ModuleRequest* req, ulong exports) @export("bk_m
     TVal v;
     if (!embed::resolve_handle(rt, exports, &v)) return fail(rt, BK_ERR_INVALID, "invalid or freed value handle");
     int rc = define_native(rt, req.for_name, v);
-    if (rc == BK_OK) req.answered = true;
-    return rc;
+    return rc == BK_OK ? answered(req) : rc;
 }
 
 fn int bk_module_fail(ModuleRequest* req, ulong error) @export("bk_module_fail") {
     if (req == null || req.answered) return BK_ERR_INVALID;
     TVal v;
     if (!embed::resolve_handle(req.rt, error, &v)) return BK_ERR_INVALID;
-    req.error = v;
+    req.error = embed::slot_alloc(req.rt, v);
+    if (req.error == 0) return BK_ERR_NOMEM;
     req.failed = true;
-    req.answered = true;
-    return BK_OK;
+    return answered(req);
 }
 
 fn int bk_define_native_module(void* ctxp, char* name, usz len, ulong exports) @export("bk_define_native_module") {

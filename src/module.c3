@@ -30,6 +30,8 @@ import std::collections::list;
 // ============================================================================
 
 faultdef MODULE_ERROR;
+// A module's source is still being fetched by an asynchronous host loader.
+faultdef MODULE_PENDING;
 
 // ============================================================================
 // Module status lifecycle
@@ -38,6 +40,7 @@ faultdef MODULE_ERROR;
 enum ModuleStatus : char {
     UNLOADED,
     LOADING,       // currently being compiled (cycle detection)
+    LOAD_PENDING,  // compiled; a dependency awaits an asynchronous host load
     LOADED,        // compiled, not yet linked
     LINKING,       // being linked
     LINKED,        // ready for evaluation
@@ -1073,11 +1076,15 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
 
     // 2. Check engine cache
     ModuleDef* cached = heap_find_loaded_module(heap, normalized, attr_type);
-    if (cached != null) return cached;
+    if (cached != null) {
+        if (cached.status == ModuleStatus.LOAD_PENDING) return load_dependencies(heap, cached, normalized, quiet);
+        return cached;
+    }
 
     // 3. Read source via host hook
     char[]? source_opt = call_read_source(heap, normalized, attr_type);
     if (catch err = source_opt) {
+        if (err == MODULE_PENDING) return MODULE_PENDING~;
         // A host loader may have answered with a native module instead.
         ModuleDef* native = heap_find_loaded_module(heap, normalized, attr_type);
         if (native != null) return native;
@@ -1297,17 +1304,29 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     call_on_module_loaded(heap, mod);
 
     // 7. Recursively resolve dependencies
+    return load_dependencies(heap, mod, normalized, quiet);
+}
+
+// Resolves the dependencies of `mod` not resolved yet. When one waits on an
+// asynchronous host load, `mod` becomes LOAD_PENDING and the next import that
+// reaches it resumes here.
+fn ModuleDef*? load_dependencies(Heap* heap, ModuleDef* mod, char[] normalized, bool quiet) {
+    mod.status = ModuleStatus.LOADING;
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
+        if (rme.resolved != null) continue;
         // A dependency of a quietly-resolved module is quiet too: its parse
         // failure reaches the same promise rejection.
         ModuleDef*? dep = resolve_module(heap, rme.module_name, normalized, rme.attr_type, quiet);
         if (catch err = dep) {
+            if (err == MODULE_PENDING) {
+                mod.status = ModuleStatus.LOAD_PENDING;
+                return MODULE_PENDING~;
+            }
             return MODULE_ERROR~;
         }
         rme.resolved = dep;
     }
-
     mod.status = ModuleStatus.LOADED;
     return mod;
 }
@@ -3107,6 +3126,56 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAt
     $endif
 }
 
+// Dynamic import jobs waiting on asynchronous host loads form a list through
+// a hidden slot of each job, headed by Heap.module_waiters.
+const char[] DYN_IMPORT_NEXT_KEY = "di_next";
+
+fn void module_wait_for_load(Heap* heap, HObject* job) {
+    HString* next_key = heap.str_intern_hidden(DYN_IMPORT_NEXT_KEY);
+    if (next_key == null) return;
+    TVal next;
+    if (heap.module_waiters != null) { next.set_object(heap.module_waiters); } else { next.set_undefined(); }
+    job.put_prop(next_key, next, hobject::PROP_FLAGS_WEC, heap);
+    heap.@set_edge(null, heap.module_waiters, job);
+}
+
+// A host answered an asynchronous load: queue every waiting import job
+// again, in the order they started waiting.
+fn void module_loads_progressed(Heap* heap) {
+    HObject* job = heap.module_waiters;
+    if (job == null) return;
+    HString* next_key = heap.str_intern_hidden(DYN_IMPORT_NEXT_KEY);
+    if (next_key == null) return;
+    uint n = 0;
+    for (HObject* j = job; j != null; n++) j = module_next_waiter(heap, j, next_key);
+    // Hold every job from a local array while the list is taken apart.
+    TVal* jobs = (TVal*)heap.alloc_func(heap.heap_udata, (usz)n * TVal::size);
+    if (jobs == null) return;
+    defer heap.free_func(heap.heap_udata, jobs);
+    uint i = 0;
+    for (HObject* j = job; j != null; j = module_next_waiter(heap, j, next_key)) {
+        TVal jv; jv.set_object(j);
+        jobs[i].set_undefined();
+        heap.tval_copy_ref(&jobs[i++], &jv);
+    }
+    heap.@set_edge(null, heap.module_waiters, (HObject*)null);
+    TVal undef; undef.set_undefined();
+    // The list runs newest first.
+    for (uint k = n; k > 0; k--) {
+        HObject* j = (HObject*)jobs[k - 1].get_heapptr();
+        j.put_prop(next_key, undef, hobject::PROP_FLAGS_WEC, heap);
+        heap.enqueue_microtask(jobs[k - 1], undef, undef);
+    }
+    for (uint k = 0; k < n; k++) heap.decref_tval(&jobs[k]);
+}
+
+fn HObject* module_next_waiter(Heap* heap, HObject* job, HString* next_key) @local {
+    if (try v = job.get_prop(next_key, heap)) {
+        if (v.is_object()) return (HObject*)v.get_heapptr();
+    }
+    return null;
+}
+
 // Microtask handler for DYNAMIC_IMPORT_JOB. Reads the deferred
 // specifier/base/attr-type/promise off ctx.callee_obj's hidden slots and
 // performs the resolve → link → evaluate pipeline. If the module's
@@ -3185,6 +3254,13 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     heap.error_value.set_undefined();
     ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, attr_type, true);
     if (catch err = mod_opt) {
+        // Waiting on an asynchronous host load: this job runs again once the
+        // host answers.
+        if (err == MODULE_PENDING) {
+            heap.has_error = false;
+            module_wait_for_load(heap, ctx.callee_obj);
+            return;
+        }
         // A load failure may have parked a specific static-semantics error
         // (SyntaxError for a module parse failure) on the heap error channel.
         // Prefer it over the generic TypeError, and clear the channel so the

@@ -34,6 +34,36 @@ static bk_status load(bk_ctx ctx, const char *name, bk_module_request *req, void
     return BK_ERR_INVALID;
 }
 
+/* The asynchronous loader keeps the requests it has not answered. */
+static bk_module_request *held[8];
+static char held_name[8][16];
+static int held_count, async_loads;
+
+static bk_status async_load(bk_ctx ctx, const char *name, bk_module_request *req, void *opaque) {
+    (void)ctx; (void)opaque;
+    async_loads++;
+    if (strcmp(name, "app:now") == 0) return bk_module_provide(req, "export default 5", 16);
+    assert(held_count < 8);
+    strcpy(held_name[held_count], name);
+    held[held_count++] = req;
+    return BK_OK;
+}
+
+static bk_module_request *take(const char *name) {
+    for (int i = 0; i < held_count; i++) if (held[i] && strcmp(held_name[i], name) == 0) {
+        bk_module_request *r = held[i];
+        held[i] = NULL;
+        return r;
+    }
+    return NULL;
+}
+
+static int promise_state(bk_ctx ctx, bk_value p) {
+    bk_promise_state st = BK_PROMISE_PENDING;
+    assert(bk_promise_state_get(ctx, p, &st) == BK_OK);
+    return (int)st;
+}
+
 static bk_value eval_module(bk_ctx ctx, const char *src) {
     bk_value r = bk_eval_ex(ctx, src, strlen(src), "main.js", BK_EVAL_MODULE);
     if (bk_is_exception(r)) fprintf(stderr, "%s\n", bk_get_error_message(ctx));
@@ -101,8 +131,50 @@ int main(void) {
     assert(bk_set_module_loader(rt, &strict) == BK_OK);
     assert(bk_is_exception(eval_module(ctx, "import x from './test/modules/basic/main.js'")));
     bk_free_value(ctx, bk_get_exception(ctx));
-    bk_module_loader async_loader = { resolve, load, NULL, BK_LOADER_ASYNC };
-    assert(bk_set_module_loader(rt, &async_loader) == BK_ERR_UNSUPPORTED);
+    bk_module_loader async_loader = { resolve, async_load, &resolves, BK_LOADER_ASYNC | BK_LOADER_NO_FILESYSTEM_FALLBACK };
+    assert(bk_set_module_loader(rt, &async_loader) == BK_OK);
+
+    /* A load answered inside the callback needs no wait. */
+    bk_value now = bk_import(ctx, "app:now", 7);
+    bk_run_jobs(rt);
+    assert(promise_state(ctx, now) == BK_PROMISE_FULFILLED);
+
+    /* Two imports of one pending module ask the host once and wait. */
+    bk_value a = bk_import(ctx, "app:slow", 8);
+    bk_value b = bk_import(ctx, "app:slow", 8);
+    bk_run_jobs(rt);
+    assert(async_loads == 2 && held_count == 1);
+    assert(promise_state(ctx, a) == BK_PROMISE_PENDING && promise_state(ctx, b) == BK_PROMISE_PENDING);
+    assert(bk_module_provide(take("app:slow"), "export default 'slow'", 21) == BK_OK);
+    bk_run_jobs(rt);
+    assert(promise_state(ctx, a) == BK_PROMISE_FULFILLED && promise_state(ctx, b) == BK_PROMISE_FULFILLED);
+    assert(async_loads == 2);
+
+    /* A dependency still being fetched holds up the importer. */
+    const char *dep = "import s from 'app:inner'; export default s + 1";
+    assert(bk_define_module(ctx, "app:dep", 7, dep, strlen(dep)) == BK_OK);
+    bk_value c = bk_import(ctx, "app:dep", 7);
+    bk_run_jobs(rt);
+    assert(promise_state(ctx, c) == BK_PROMISE_PENDING);
+    assert(bk_module_provide(take("app:inner"), "export default 41", 17) == BK_OK);
+    bk_run_jobs(rt);
+    assert(promise_state(ctx, c) == BK_PROMISE_FULFILLED);
+
+    /* A failure rejects, a native answer fulfills, and an unanswered request
+     * is freed with the runtime. */
+    bk_value d = bk_import(ctx, "app:bad", 7);
+    bk_value e = bk_import(ctx, "app:nat", 7);
+    bk_value f = bk_import(ctx, "app:never", 9);
+    bk_run_jobs(rt);
+    assert(promise_state(ctx, d) == BK_PROMISE_PENDING);
+    assert(bk_module_fail(take("app:bad"), bk_new_error(ctx, BK_ERROR_RANGE, "refused")) == BK_OK);
+    bk_value exports = bk_eval_ex(ctx, "({ answer: 42 })", 16, NULL, BK_EVAL_GLOBAL);
+    assert(bk_module_provide_native(take("app:nat"), exports) == BK_OK);
+    bk_run_jobs(rt);
+    assert(promise_state(ctx, d) == BK_PROMISE_REJECTED);
+    bk_promise_mark_handled(ctx, d);
+    assert(promise_state(ctx, e) == BK_PROMISE_FULFILLED);
+    assert(promise_state(ctx, f) == BK_PROMISE_PENDING);
     assert(bk_set_module_loader(rt, NULL) == BK_OK);
 
     bk_destroy(ctx);

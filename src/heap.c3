@@ -1409,6 +1409,9 @@ struct Heap {
     // Results of the last host exotic hook (value, getter, setter), owned
     // until the next hook call like a call_fn result.
     TVal[3]        host_exotic_hold;
+    // Dynamic import jobs waiting on asynchronous host module loads, newest
+    // first, linked through a hidden slot of each job.
+    HObject*       module_waiters;
 }
 
 alias JobHookFn = fn void(void* runtime, void* opaque);
@@ -1716,6 +1719,7 @@ fn Heap*? create(
     h.host_fn_capacity      = 0;
     h.host_classes          = null;
     h.host_exotic_ops       = null;
+    h.module_waiters        = null;
     h.host_class_count      = 0;
     h.host_class_capacity   = 0;
     h.deferred_finals       = null;
@@ -4787,6 +4791,7 @@ fn void Heap.mark_roots(&self) {
     self.mark_tval(&self.error_value);
     self.mark_tval(&self.yield_value);
     foreach (&v : self.host_exotic_hold) self.mark_tval(v);
+    if (self.module_waiters != null) self.mark_hobject(self.module_waiters);
     for (uint i = 0; i < self.host_vals_len; i++) {
         if (self.host_vals[i].is_traced()) self.mark_tval(&self.host_vals[i]);
     }

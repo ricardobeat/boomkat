@@ -178,6 +178,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                 self.mark_tval(&self.error_value);
                 self.mark_tval(&self.yield_value);
                 foreach (&v : self.host_exotic_hold) self.mark_tval(v);
+                if (self.module_waiters != null) self.mark_hobject(self.module_waiters);
                 self.mark_generator_state(self.resume_gen);
                 self.mark_generator_state(self.gen_initial_gs);
                 self.mark_hobject((HObject*)self.gen_initial_obj);
