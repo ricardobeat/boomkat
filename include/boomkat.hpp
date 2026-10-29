@@ -2014,6 +2014,9 @@ inline bk_value invoke(const CallInfo& ci, F&& f, Self* self) {
     return invoke_with<Traits>(ci, std::forward<F>(f), self, *conv, std::make_index_sequence<N>());
 }
 
+template <class Tuple> struct has_this_param;
+template <class... A> struct has_this_param<std::tuple<A...>>
+    : std::bool_constant<(is_this<remove_cvref_t<A>>::value || ...)> {};
 template <class R, class Args> struct plain_traits {
     using ret = R; using args = Args; using cls = void; static constexpr bool member = false;
 };
@@ -2742,6 +2745,9 @@ bk_value method_trampoline(bk_ctx cx, bk_value self, unsigned argc, const bk_val
             } else {
                 return invoke<Tr>(ci, F, *obj);
             }
+        } else if constexpr (has_this_param<typename Tr::args>::value) {
+            /* A free function that takes the object as bk::This<T*>. */
+            return invoke<Tr>(ci, F, static_cast<void*>(nullptr));
         } else {
             /* A free function whose first parameter is the object. */
             using Args = typename Tr::args;
@@ -2880,7 +2886,8 @@ public:
 private:
     template <auto F> static int arity_of() {
         using Tr = detail::fn_traits<decltype(F)>;
-        if constexpr (Tr::member) return detail::arity<typename Tr::args>::value;
+        if constexpr (Tr::member || detail::has_this_param<typename Tr::args>::value)
+            return detail::arity<typename Tr::args>::value;
         else return detail::arity<typename Tr::args>::value - 1;
     }
     bool pre() {
