@@ -77,6 +77,10 @@ int main(void) {
     assert(bk_get_error_info(ctx, &info) == BK_OK && info.stack == NULL);
     bk_free_value(ctx, bk_get_exception(ctx));
 
+    /* An uncaught throw leaves the next script's native getters working. */
+    bk_value size = eval(ctx, "new Map([[1, 2]]).size");
+    assert(size && bk_to_number(ctx, size) == 1);
+
     bk_destroy(ctx);
     puts("errors: PASS");
     return 0;

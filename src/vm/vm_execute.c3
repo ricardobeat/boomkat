@@ -1924,6 +1924,9 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     Activation* entry_act = &vm.activations[0];
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
+    // An uncaught throw ends a run with the flag set; left stale, it would make
+    // the next run's native getters report a fault.
+    vm.has_error = false;
 
     entry_act.func = func;
     entry_act.parent = null;
@@ -2014,6 +2017,9 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     Activation* entry_act = &vm.activations[0];
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
+    // An uncaught throw ends a run with the flag set; left stale, it would make
+    // the next run's native getters report a fault.
+    vm.has_error = false;
 
     entry_act.func = func;
     entry_act.parent = null;
@@ -2116,6 +2122,9 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     Activation* entry_act = &vm.activations[0];
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
+    // An uncaught throw ends a run with the flag set; left stale, it would make
+    // the next run's native getters report a fault.
+    vm.has_error = false;
 
     entry_act.func = func;
     entry_act.parent = null;
