@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28.** Current implementation checkpoint: rat `3e837c64` (write dependencies; no new throughput milestone), previous performance checkpoint `456df4ef` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28.** Current implementation checkpoint: rat `68d7c01e` (profile-guided read refresh and frameless leaves), previous performance checkpoints `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -32,6 +32,12 @@ Workstream status: **A open; B open; C partial (FP spills); D open; E partial (b
 [Implementation, generated-code ranges, mini timing and validation](113-fifty-thousand-octane/write-dependencies-2026-10-28/report.md): `3e837c64` adds proper slot/layout dependencies, rooted owners, mutation invalidation and retirement outside active native frames. Compound SSA uses them for stable numeric global fields and inherited methods. The isolated uninstrumented DeltaBlue compound region shrinks **1564 → 948 bytes (391 → 237 ARM64 instruction words)**. The focused screen establishes **no throughput gain**; several minis show small costs. This is a capability checkpoint, not an accepted speed milestone. Full Octane remains at the earlier measured 6355 median.
 
 Workstream **A is now partial**, with real write dependencies and two bounded SSA consumers implemented; broad profitable guard/load elimination and safe extension to other object classes remain open. B open, C partial, D open, E partial. Historical “A open” statements above describe the earlier batch.
+
+## Profile-guided checkpoint, 2026-10-29
+
+[Profile, controlled experiments, full-suite pair and validation](113-fifty-thousand-octane/profiled-iteration-2026-10-29/report.md): `68d7c01e` adds bounded refresh of stale read assumptions, broader frameless SSA leaves and inherited array named-data reads. Long DeltaBlue timing improves about 9–10%; successful read-helper continuations fall 72%. Fifteen minis show a smaller Mandreel gain and mostly small changes elsewhere. One matched original full-Octane pair gives **6121 → 6257 (+2.22%)**; this is provisional single-pair evidence, not a replacement for the older multi-pair median or a 50K achievement.
+
+Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% of sampled CPU; Richards remains 97% generated code, with its hot scheduler/task bodies still using the baseline emitter. Larger effectful SSA prefixes are being tested in isolation. Early versions lose time; they are not delivered as successful optimizations. A/C/D remain partial or open as above; profitable large regions, cyclic CFG/effects, native continuations and broader memory traffic reduction remain required.
 
 ## Current evidence and target
 
