@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28.** Current implementation checkpoint: rat `68d7c01e` (profile-guided read refresh and frameless leaves), previous performance checkpoints `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `68d7c01e` (profile-guided read refresh and frameless leaves), previous performance checkpoints `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -17,7 +17,7 @@ Status: **ACTIVE — consolidated 2026-10-28.** Current implementation checkpoin
 | 117 | Measured native-body experiments and accepted small improvements | Broad guard/load elimination, useful region selection and register allocation |
 | 118 | JSC bytecode/native comparison; compound frameless SSA entry | Remove the specific excess machine work exposed by that comparison |
 
-## Latest accepted batch: parallel implementation, 2026-10-28
+## Historical accepted batch: parallel implementation, 2026-10-28
 
 [Full results and cloud-review closeout](113-fifty-thousand-octane/parallel-2026-10-28/report.md): three alternating original full-Octane pairs improve median aggregate **5752 → 6355 (+10.48%)**, all assertions pass. Standard JIT targets enable a bounded standalone-loop reserve: function admission stays below 1 MiB total native code, loops may continue to 2 MiB; ending native bytes increase **1.00 → 1.21 MiB**. No eviction or eager allocation is introduced. `-U SLJIT_LOOP_RESERVE` retains the old cap; the adaptive policy is independent.
 
@@ -37,7 +37,7 @@ Workstream **A is now partial**, with real write dependencies and two bounded SS
 
 [Profile, controlled experiments, full-suite pair and validation](113-fifty-thousand-octane/profiled-iteration-2026-10-29/report.md): `68d7c01e` adds bounded refresh of stale read assumptions, broader frameless SSA leaves and inherited array named-data reads. Long DeltaBlue timing improves about 9–10%; successful read-helper continuations fall 72%. Fifteen minis show a smaller Mandreel gain and mostly small changes elsewhere. One matched original full-Octane pair gives **6121 → 6257 (+2.22%)**; this is provisional single-pair evidence, not a replacement for the older multi-pair median or a 50K achievement.
 
-Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% of sampled CPU; Richards remains 97% generated code, with its hot scheduler/task bodies still using the baseline emitter. Larger effectful SSA prefixes are being tested in isolation. The standalone C-gateway version loses time. Later in-parent prototype screens had mismatched feature configuration and are being repeated; no unvalidated region prototype is delivered as a successful optimization. A/C/D remain partial or open as above; profitable large regions, cyclic CFG/effects, native continuations and broader memory traffic reduction remain required.
+Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% of sampled CPU; Richards remains 97% generated code, with its hot scheduler/task bodies still using the baseline emitter. Experimental effectful prefixes and acyclic nonzero regions are archived separately. The standalone C-gateway version loses time. Earlier mismatched-feature comparisons are invalid; later matched region screens show a Richards gain against the preceding prototype and neutral DeltaBlue. These experiments have not passed broad semantic gates and are not enabled in standard targets. A/C/D remain partial or open as above; profitable large regions, cyclic CFG/effects, native continuations and broader memory traffic reduction remain required.
 
 ## Architecture and workload reset, 2026-10-29
 
@@ -45,103 +45,115 @@ Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% o
 
 Experimental source is preserved at `8f875497` on `wip/function-ssa-regions`. It is not promoted to the validated `rat` branch. Detailed patches, mismatched-build correction and subsequent matched evidence are archived with the checkpoint.
 
-## Current evidence and target
+## Current status and acceptance model
 
-The [JSC comparison](118-jsc-codegen-comparison.md) supersedes historical descriptions below that say SSA is disabled or that all later benchmarks lack compiled code. Historical measurements remain valid for their recorded revisions only.
+The architecture reset governs the implementation order below. A–E remain stable workstream names, not a requirement to finish every item in A before starting B. Older checkpoint paragraphs above record status at their own revisions.
 
-Five alternating long mini pairs at the checkpoint give Richards **726 ms / 1000 runs**, DeltaBlue **1009 ms / 600 runs**. JSC default medians are **61 / 53 ms**; baseline-only JSC **413 / 467 ms**. The latest DeltaBlue change improves 1105 to 1009 ms; Richards is neutral. These are workload durations, not aggregate scores. No new full-Octane result is implied.
+| Workstream | Status | Next responsibility |
+|---|---|---|
+| A — Feedback, assumptions and dependencies | PARTIAL | Reuse delivered watches; represent facts and their invalidation in the shared graph |
+| B — CFG/SSA, effects and recovery | OPEN; bounded prototypes only | Main structural work: cyclic regions, calls and exact observable state |
+| C — Optimization and allocation | PARTIAL | Apply shared passes across realistic graphs, then reduce executed work |
+| D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
+| E — Coverage, measurement and budgets | PARTIAL | Start with fresh cross-suite attribution; retain compilation/memory controls throughout |
 
-| Checkpoint-relative target | Richards | DeltaBlue |
-|---|---:|---:|
-| 2x | <=363 ms | <=505 ms |
-| 5x | <=145 ms | <=202 ms |
-| 10x | <=73 ms | <=101 ms |
+Validated source is `rat` at `68d7c01e`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
-These are engineering gates, not predicted speedups. Re-establish the checkpoint controls on the same machine when measurements resume; use paired ratios if CPU frequency changes. Do not claim 50K from mini results. The last full-suite milestone in plan 117 did not establish a reliable aggregate gain over roughly 5.4K. A fresh controlled full-suite checkpoint is required at the first substantial milestone, not before every experiment.
+The latest matched full-suite pair is **6121 → 6257 (+2.22%)**, provisional. The earlier **5752 → 6355 (+10.48%)** result uses three pairs in a different timing window. Neither establishes 50K, and these absolute scores must not be compared across windows as a regression or gain. From roughly 6.3K, 50K requires roughly 8x aggregate improvement.
 
-### What must disappear from generated code
+The JSC comparison found similar bytecode sizes but excess checks, resolution, storage selection and frame traffic in Boomkat. Its historical isolated ranges (392/102/68 instructions, memory operations and conditional branches versus JSC 158/40/17) include cold code and different boundaries. Later dependencies reduced a Boomkat range to 237 instruction words without a throughput win. These are diagnostic observations, not current dynamic counts or speedup predictions. See [plan 118](118-jsc-codegen-comparison.md) for the exact revisions and evidence.
 
-Bytecode sizes already resemble JSC: execute 11 versus 11, schedule 24 versus 31. The captured Boomkat execute region contains **392 instructions, 102 loads/stores and 68 conditional branches**; the captured JSC DFG function has **158, 40 and 17**. These static ranges include cold paths and have different boundaries. They identify concrete excess work, not dynamic speedup factors.
+Performance acceptance is based on matched throughput and executed work across workload clusters. Richards and DeltaBlue remain regression consumers; their historical 2x/5x/10x mini targets no longer determine implementation order or completion. No optimizer pass is assigned an assumed multiplicative speedup.
 
-1. Repeated prototype traversal, class/shape checks and method identity/realm checks before already-inlined selectors.
-2. Global-binding epoch/flags/slot checks and property reads for Direction.FORWARD where JSC compares an immediate 1.
-3. Repeated receiver tag extraction, ordinary-object checks and shape checks despite an earlier dominating proof.
-4. Repeated selection between inline and allocated property storage.
-5. Spills/reloads through FunctionRun, scratch-register shuffling and redundant moves.
-6. Frame/call machinery and helper lookups around larger regions that remain outside optimized SSA.
+## Engine target and design constraints
 
-Richards samples are approximately 69% body/SSA and 28% entry/call/return machinery. Removing all transition overhead alone cannot deliver 5x. DeltaBlue has approximately 38% runtime samples, led by sljit_native_read; removing runtime alone also cannot deliver 5x. Both generated-body work and surrounding transitions/runtime must improve. The percentage partitions are short sampling estimates; inline CALL ranges can contain body work.
+Use one compact speculative optimizing pipeline over the existing baseline:
+
+`decoded bytecode + feedback → typed cyclic CFG/SSA + effects/frame states → optimization → representations/register allocation → SLJIT + exits/root maps`
+
+- Extend existing loop/function graph infrastructure. Share operand/use enumeration, liveness, recovery and lowering; remove superseded paths as consumers migrate. Avoid another pattern-specific optimizer or handwritten metadata table.
+- Treat numeric types/ranges, shapes/shape sets, callees and array/storage kinds as guarded runtime facts. Type hints seed speculation; they never change JavaScript semantics. Reuse watch ownership, rooted assumptions and safe code retirement.
+- Keep hot values unboxed and in registers across useful loops/calls. VM slots are recovery/storage locations, not mandatory destinations for every temporary. Root publication at safepoints must still obey string ownership, GC and helper contracts.
+- Model calls, stores, allocation and exceptions explicitly. Distinct descriptor IDs do not establish nonaliasing. Unknown operations conservatively invalidate facts and have an explicit continuation or exit; do not silently assume purity.
+- SLJIT supplies emission, register conventions, fragments and patchable linking. Select its context from actual allocation and clobber needs. Preserve incoming-link safety and active-code protection. Do not add bindings without a concrete consumer.
+- Keep compilation and memory bounded. Replace structural fixed-array/bitmask limitations with budgeted representations where measured consumers require it; simply raising all constants multiplies graph/frame memory. Use C3 stdlib containers/allocators where appropriate. No global object-layout or GC rewrite without evidence.
+- Keep parser/frontend and native library optimization separately attributable. Flat-AST folding can simplify bytecode and compilation, but cannot replace native loop, memory and call optimization.
 
 ## Implementation sequence
 
-### A. Remove repeated resolution in the existing compound region
+### E0. Establish broad attribution and select structural consumers
 
-First bounded deliverable: make EqualityConstraint.execute perform guarded field loads, a direction comparison and a store, without resolving the same global and methods on each invocation.
+Make one fresh diagnostic census of the unchanged original suite on the current build, with source/configuration/bundle hashes and maps from the sampled process. Separate interpreter, baseline, optimized body, helper, GC and frontend CPU. Record admission/rejection/exit reasons, compilation CPU, code/metadata bytes and phase order. Distinguish missing generated code from unmapped generated addresses; reject phase-crossing samples. This is a milestone measurement, not a full-Octane run for every edit.
 
-- Introduce compact dependency records for the exact global slot, prototype/property lookup and callee assumptions consumed by a plan. Reuse existing shape-generation checks, plan ownership and incoming call links; do not build a second code-retirement framework.
-- Identify and cover mutation entry points before enabling constant assumptions: JS stores, define/delete, prototype changes, builtin/C-API mutations and GC shape recycling. A mutable data value requires a value-write dependency, not merely a shape dependency.
-- Initially fold only observed, watched primitive constants such as FORWARD. Retain or safely revalidate object/callee dependencies; never embed unrooted movable or weak object pointers.
-- Invalidate entry links before stale code can be re-entered. Keep invalidated code alive while any compiled activation can execute it. An active helper/JS mutation must force a checked continuation or deopt before dependent assumptions are reused. Pure bounded regions have no callbacks/safepoints; do not extend that guarantee to general regions.
-- Encode established object/layout facts as SSA facts. Reuse them along dominated paths and kill them at effects that may change them. Hoist storage-address selection within an effect-free interval.
-- Inspect actual emitted operands and eliminate scratch round trips through shared emitter helpers; do not add benchmark-specific assembly patterns.
+Choose short reproducible kernels from the following groups based on the census. Reuse existing fixtures/runners and save exact commands; these are workload categories, never benchmark-name compiler special cases.
 
-Touchpoints: vm_sljit_ssa_field/proto/inline/opt, vm_sljit_inline/link, FunctionPlan lifecycle and relevant heap/object mutation paths.
+| Group | Initial candidates | Structural questions |
+|---|---|---|
+| Integer/buffer | Crypto, Mandreel, Gameboy, zlib | Cycles/nested loops, WIDE/high registers, shifts, typed accesses, captured bindings |
+| Floating-point | NavierStokes, RayTrace, Box2D | Unboxed doubles, invariant bases/lengths, numeric inlining, spills |
+| Object/allocation | Splay, RayTrace, Box2D | Field stores, constructor/allocation continuations, barriers and GC |
+| Application/closures | EarleyBoyer, TypeScript, PdfJS | Environment access, JS calls, shapes, strings and arrays |
+| Native library/startup | RegExp, CodeLoad | Regexp kernel versus surrounding JS; parser/compiler/metadata costs |
 
-Acceptance: no runtime global lookup or method-resolution chain on the accepted steady-state execute path; prove mutation-triggered fallback and safe retirement. Diagnostic goal: <=220 static instructions and <=60 memory instructions for the same isolated region, with dynamically executed paths recorded separately. Workload gate: seek >=15% additional DeltaBlue improvement against 8bd1e565. If assembly shrinks but the workload does not improve, reprofile before expanding this design. Counts are diagnostic targets, not sufficient acceptance.
+Compare equivalent hot kernels against JSC baseline-only and default tiers where useful. Match source semantics, warmup, tier configuration and disassembly boundaries; exclude diagnostic logging from timing. Static counts explain emitted work, while mapped samples, activation/completion counters and elapsed time establish relevance. Do not carry old broad runtime percentages forward as current measurements.
 
-### B. Compile the hot function loop and its effects in one SSA model
+Deliverable: a ranked blocker/CPU-share table and a small iteration panel containing at least an integer/buffer kernel, a floating-point kernel and an object/closure kernel. Include Richards/DeltaBlue as regression checks, not the whole panel. Select one real consumer blocked by each structural change before implementing it.
 
-First substantial Richards deliverable: optimize Scheduler.schedule and its hot run/predicate paths across iterations, rather than adding more leaf-only paths.
+### B1. Shared decoded CFG, canonical uses and cyclic SSA
 
-- Decode instruction boundaries once, including WIDE, and build block/predecessor/successor data consumed by the SSA builder. Reuse bytecode operand/effect metadata; remove duplicate opcode-effect lists as the decoded form replaces them.
-- Extend CFG construction to cyclic function regions. Implement loop headers/latches, phi construction/fixpoint representation inference and dominance valid for cycles; the present forward-DAG calculation is insufficient.
-- Add explicit memory/effect versions and operation summaries: pure/read-only, known-slot store, allocation, unknown JS call and throw. Use alias classes conservatively; distinct descriptor IDs do not prove distinct objects.
-- Attach recoverable frame state to effect boundaries. Deopt after a completed store/call at its continuation; never restart the region and replay effects. Represent inlined caller/callee state using the existing recovery ownership rules.
-- Inline the hot predicate and selected monomorphic run bodies under dependency guards and size budgets. For polymorphic run calls, test a small feedback-driven set; retain a native generic continuation rather than expanding all targets.
-- Maintain GC/interrupt budget polls at backedges and calls. Materialize roots and reload state only at real transitions that require them.
+1. Audit/reuse the current bytecode decoder and compiler liveness before introducing infrastructure. Decode WIDE and branch boundaries into one indexed view retaining original bytecode PCs. Use canonical register read/write roles; constant-pool operands must never become register uses. Decode target/fallthrough and exception boundaries explicitly.
+2. Build predecessor/successor edges and traversal order once. Generalize forward-only function joins to natural loops, headers/latches, multiple backedges and nested loops. Use cycle-valid dominance and phi construction/repair; representation inference converges to a fixed point. Unsupported irreducible/exception cases initially use explicit baseline exits with a recorded reason.
+3. Replace duplicated SSA operand walks with one canonical enumeration, including phi edge operands and recovery uses. Separate computational liveness from values required only for exits. Preserve definitions that are observable after a region even if unused in its body.
+4. Keep existing specialized loop behavior until shared lowering has proven parity, then remove duplicate analysis. Budget graph nodes, edges and snapshots independently of source register count. Handle WIDE/high-register mappings without blindly expanding dense per-PC frame matrices.
 
-Touchpoints: SSA graph/build/emit, function-region driver, inline recovery and existing loop metadata. Keep one shared SSA optimizer/lowering pipeline, with loop and function adapters.
+Touchpoints: bytecode operand/decode utilities, compiler liveness, `vm_sljit_ssa_graph/build`, region/loop adapters and SSA use/allocation code.
 
-Acceptance: counters and address maps prove the selected cyclic region executes and completes; method/field mutations, exceptions and post-effect exits resume correctly. Inspect one complete steady-state loop path. First cumulative throughput gate: **2x on both focused workloads** relative to 8bd1e565. If Richards remains a few-percent improvement after a complete optimized hot loop is active, stop broadening coverage and identify the dominant executed instructions before proceeding.
+Acceptance: prove an actual cyclic function region executes across repeated iterations, not merely an acyclic prefix at a loop header. Use minimized diamond/backedge/nested-loop and exit-only-live-value cases, including WIDE decoding where introduced. Demonstrate activation and equivalent results on selected integer and floating-point consumers. Record compile/memory costs and the precise remaining unsupported operations. This stage need not claim a throughput win by itself; it must unlock an identified blocked consumer and avoid material regressions.
 
-### C. Make larger regions generate substantially less work
+### B2/A. Effects, memory facts and exact recovery
 
-- Propagate guarded int32/F64/object and shape facts through joins and loops. Keep values unboxed across iterations; box at required recovery, call or externally visible storage boundaries.
-- Perform alias-aware load forwarding, redundant guard elimination, dead value/store elimination where semantically valid, loop invariant code motion and induction/range reasoning for bounds checks. Unknown calls invalidate the facts their effect summary cannot preserve.
-- Allocate GPR/FPR homes across blocks using actual liveness and next-use/cost information. Coalesce moves/phis and reuse dead operand homes where SLJIT operand constraints allow it. Separate VM ABI reservations from the register budget of an optimized region; use set_context/shared-register conventions only with explicit preservation rules.
-- Rematerialize cheap constants instead of spilling them. Measure spills, reloads, conversions, guards and VM-slot materializations per completed region/iteration.
-- Avoid a global object-layout redesign initially. Select inline/out-of-line storage once under a valid lifetime proof; pursue layout specialization only if address selection remains a measured bottleneck.
+1. Give operations explicit effect summaries: pure, heap read, known-location write, allocation, unknown call, throw/poll. Track memory/fact versions through joins and backedges. Begin with conservative kills; refine disjointness using proven receiver identity/location, not descriptor inequality.
+2. Attach sparse frame states at observable boundaries. A failed check before a store resumes before it; a later exit resumes after a completed store/call. Never replay effects. Include inline caller/callee state, exception destinations, live references and ownership. Recovery liveness participates in allocation.
+3. Reuse rooted watches and invalidation/retirement. Revalidate after operations that may mutate assumptions; avoid stale entry snapshots. Watch registration/metadata allocation failure declines specialization safely.
+4. Implement known-slot stores followed by further native computation and a guard. First consumers must include an object/allocation or closure workload beyond the two property/call benchmarks.
 
-Acceptance: demonstrably fewer dynamically executed guards and memory operations on the complete Richards/DeltaBlue paths, not merely fewer cold bytes. Cumulative goal: **3–5x on both workloads**. If code-generation metrics improve without corresponding wall-time gains, attribute the remaining runtime before adding more passes.
+Acceptance: counters prove continuation after an effect. Minimized tests force aliasing, disjoint writes, branch writes and late getter/method/global mutation; observe exactly-once effects. Audit strings, barriers, active-code lifetime and exits before broadening. Measure whether fewer repeated loads/checks improve the real selected kernel; do not expand a nonpaying specialization solely because its assembly is smaller.
 
-### D. Remove remaining helper/runtime and allocation bottlenecks
+### B3/D. Calls, safepoints and runtime continuations
 
-- Classify DeltaBlue ordinary-read misses by exact reason: shape polymorphism, prototype dependency invalidation, unsupported ownership/type, stale feedback or code retirement. Profile the actual hottest sites rather than installing a cache at every read.
-- Add bounded per-site fast paths or patchable targets only for demonstrated stable cases. Respect string ownership, accessors, proxies, realm and prototype semantics; existing generic continuations stay authoritative.
-- Extend the unified effect/recovery model to the allocation, constructor, array growth, environment and string/scanner paths prioritized by fresh profiles. Helpers report not-started/completed/throw/poll outcomes and root live values; completed effects are never retried.
-- Extend the successful representation/index optimizations to Crypto, NavierStokes, Mandreel and buffer/scanner consumers. Use fresh source/bytecode profiles to choose equivalent operations; no benchmark-name special cases.
+1. Add graph-level calls with argument/result locations, clobbers, effect summaries and recovery states. Inline profitable monomorphic callees under rooted dependencies and budgets; keep remaining calls explicit. One generic call must not disqualify the entire function from optimization.
+2. Define helper completion/exception/poll outcomes for allocation, object initialization, array growth and environment operations. Publish or describe roots, reload movable stack pointers after helpers, and resume at the correct compiled continuation. Arbitrary JS calls invalidate conservative heap facts; checked continuations handle invalidation of currently active code.
+3. Keep GC/interrupt polls on loops/calls, plus safe native entry/link/retirement ownership. Establish general root maps or precise root publication before keeping heap references live across collection. Use SLJIT context/fragments/linking only under the same ABI and lifetime contracts.
 
-Acceptance: material reduction in helper self time and transition counts, with generalizable consumers and no material regressions in the mini screen. **5x is the cumulative workload milestone; 10x is a stretch target that requires new evidence at this point.** Do not multiply independent microbenchmark speedups. If remaining time is parsing, native regex or GC, the next work must target those costs directly.
+Acceptance: a hot loop remains compiled across a non-inlined call, and a separate allocation/closure consumer resumes natively after a completing helper. Test collection, stack growth, exceptions, mutation and code retirement on those actual paths. Known incompleteness causes a supported exit, not silently incorrect code.
 
-### E. Make gains survive the full suite and the code budget
+### C. Optimize the connected computation
 
-- Measure useful region execution per byte, compile time, executable/metadata bytes, retirement/recompilation and GC cost. Admit/retain useful code; avoid letting early suites permanently exclude later workloads.
-- Reuse safe incoming-link tracking and active-code protection from A/B. Test small starting budgets and bounded growth as explicit policies; do not default to the prior losing reclamation or blind large-cache experiments.
-- At the first substantial workload milestone and at the 5x milestone, run the original full Octane suite with its warmup, assertions and latency results. Compare every result and its geometric mean.
-- Keep CodeLoad/frontend and RegExp/library work separately attributable. Gains in Richards and DeltaBlue alone cannot establish 50K: two 10x results in a 17-result geometric mean improve it only about 31%.
+Apply shared passes to the graphs enabled above: type/shape/range propagation, profitable inlining, constant propagation, alias-aware load elimination/store forwarding, redundant guards, dead computations, invariant hoisting and proven bounds-check elimination. Preserve integer overflow, signed/unsigned shifts, negative zero, NaN, holes, getters and coercion semantics. Keep integer/double/object values in useful representations across blocks; rematerialize cheap values instead of spilling.
 
-Acceptance: at least three alternating full-suite pairs against the checkpoint/control for a broad acceptance claim, with source/build/bundle hashes and memory/compile/GC costs. The overall objective remains open until the unchanged original suite actually reaches 50K under the agreed conditions.
+Allocate GPR/FPR homes across blocks using live ranges, call clobbers and target availability; coalesce copies/phis and reuse dead operands. Select ABI context after allocation. Defer escape analysis/scalar replacement until effects, roots and recovery can describe eliminated objects correctly.
 
-## Iteration rules and immediate next work
+Acceptance: show fewer executed checks/loads/stores/conversions or spills together with repeatable throughput improvement on relevant kernels. Require consumers in multiple clusters for a claim of general optimizer benefit. Treat static code size as supporting evidence. A pass that reduces compile/code complexity can justify a measured modest tradeoff, documented explicitly; avoid accumulating extra paths for noise-sized gains.
 
-1. Start A with a minimized execute-like script and the real DeltaBlue mini. Establish actual entry use and collect an uninstrumented native path before changing code. Existing report 118 is the starting evidence; avoid repeating the whole investigation.
-2. Implement one bounded dependency consumer and its invalidation/lifetime support. Measure compile-time constants and eliminated resolution on the real region. Do not enlarge general admission until the measured consumer pays off.
-3. During development, compare validated benchmark outputs and focused semantics first, then run alternating performance pairs with no concurrent build/profile/test load. Use short pairs to reject losers quickly; confirm winners with at least five longer pairs and report all samples. Never retain known wrong-output results as performance wins.
-4. After a promising change, run focused differential/mutation/recovery tests; broaden to embedding ARM64/x64, ASan, GC and relevant suites before committing. Broad test runs and full Octane are milestone gates, not the inner loop for every edit.
-5. Screen other minis after an accepted optimization layer. Investigate repeatable regressions above roughly 3%; keep losing variants isolated or remove them. A small change may land as a scoped win; it does not close a substantial milestone.
-6. Record each change against A–E with code hash, proven active path, timing ratios, native instruction/memory metrics and remaining blockers. A capability is complete only when its intended consumer runs and its semantic gates pass; a performance milestone also requires measured throughput.
+### D/E. Runtime costs, budgets and full-suite acceptance
 
-Do not create another overlapping JIT roadmap. Amend this plan as evidence changes; older plans remain completed historical records with scope carried here.
+Profile remaining allocation/GC, strings, environments, regexp and frontend work directly. Optimize the dominant runtime kernels where JS compilation cannot remove them. Measure code usefulness per byte, metadata/RSS, compile CPU, retirement/recompilation and GC costs. Test a 256 KiB starting budget with bounded growth as an experiment once usefulness signals exist; do not change the current default or revive losing eviction policies without matched evidence.
+
+Run original full Octane at substantial capability/performance milestones, with assertions and latency results intact. Broad acceptance needs at least three alternating pairs, all workload results and the geometric mean, matched hashes and memory/compilation costs. Two 10x results among 17 geometric-mean components yield only about 31% aggregate gain. The 50K objective stays open until actually measured under agreed conditions.
+
+## Immediate implementation slices and iteration protocol
+
+1. **Attribution and blocker inventory (E0):** establish the current mini panel and ranked real-function rejections. Reuse existing maps/runners; keep profiling separate from timing. No fresh benchmark framework or new numeric roadmap.
+2. **Canonical instruction/use view (B1):** consolidate decoding/operand roles and distinguish recovery from execution liveness. First reviewable change should remove duplicate metadata/analysis or demonstrably enable the next graph step; do not merely raise caps. Record consumers, source files and before/after rejection reasons.
+3. **One real cyclic graph (B1):** implement phi/dominance/fixpoint support and entry/exit lowering on the shared path. Choose its kernel from E0; include numeric/buffer consumers. Verify actual loop completion before adding more optimizations.
+4. **Post-effect continuation (B2):** integrate reusable pieces of `8f875497` selectively, fixing its ownership/global-watch limitations. Exercise a store, later guard and exact recovery on an object/closure consumer. Do not merge the prototype wholesale or substitute DAG prefixes for cyclic SSA.
+5. **Calls/helpers and optimization (B3/C/D):** preserve the graph around a generic call, then a completing allocation/helper; add load/guard and representation optimization against the exposed costs. Keep the broad mini panel as the performance gate.
+
+For each slice, capture a control and candidate with matched features/hashes, prove the intended generated path executes, check the benchmark result, and run short uninstrumented alternating timings without concurrent builds/profiling/tests. Reject losses quickly; confirm promising wins with longer pairs (normally five). Never count known wrong-output runs as wins. Infrastructure slices may land without speed claims only with a concrete enabled consumer and bounded cost.
+
+Use minimized recovery/mutation cases during development; after a promising change, complete appropriate interpreter/JIT/stress, embedding ARM64/x64, ASan/GC and differential gates before promotion. Full Octane is a milestone gate, not the edit loop. Investigate repeatable mini regressions above roughly 3%; document explicit simplicity/performance tradeoffs rather than hiding them.
+
+Record each slice under A–E with commit/configuration, activation/completion proof, performance samples, executed-work diagnostics, compilation/memory costs and remaining blockers. Maintain one canonical current status here; older plans remain completed evidence. No additional overlapping JIT roadmap.
 
 ---
 
