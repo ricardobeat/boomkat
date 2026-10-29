@@ -25,12 +25,35 @@ macro usz* account_header(void* ptr) => (usz*)((char*)ptr - ACCOUNT_HEADER);
 
 // True when `size` more bytes may be handed out. Records a crossing.
 fn bool Heap.account_admit(&self, usz size) @inline {
+    if (self.heap_bytes + size > self.heap_limit_gc_at) self.request_limit_gc();
     if (self.heap_bytes + size <= self.heap_limit) return true;
     if (!self.heap_limit_hit) {
         self.heap_limit_hit = true;
         self.interrupt_due = true;
     }
     return size < MEM_LIMIT_LARGE_BLOCK;
+}
+
+// Collect fully at the next quiescent safepoint, the next backward branch
+// included, so garbage is reclaimed before it can carry the heap past its
+// limit. Asked once until a cycle completes.
+fn void Heap.request_limit_gc(&self) @noinline {
+    self.heap_limit_gc_at = HEAP_UNLIMITED;
+    self.gc_full_requested = true;
+    self.bwd_gc_budget = 1;
+    self.request_gc();
+}
+
+// After a collection, ask for the next one once half the remaining headroom is
+// used. A heap without a limit never asks.
+fn void Heap.plan_limit_gc(&self) {
+    if (self.heap_limit == HEAP_UNLIMITED) {
+        self.heap_limit_gc_at = HEAP_UNLIMITED;
+    } else if (self.heap_bytes >= self.heap_limit) {
+        self.heap_limit_gc_at = self.heap_limit;
+    } else {
+        self.heap_limit_gc_at = self.heap_bytes + (self.heap_limit - self.heap_bytes) / 2;
+    }
 }
 
 fn void* accounted_alloc(void* udata, usz size) {
@@ -81,6 +104,7 @@ fn void Heap.enable_accounting(&self, ulong limit) {
     self.free_func = &accounted_free;
     self.heap_udata = self;
     self.heap_limit = limit;
+    self.plan_limit_gc();
 }
 
 // Change the budget of an accounting heap. A lower limit takes effect at the
@@ -88,6 +112,7 @@ fn void Heap.enable_accounting(&self, ulong limit) {
 fn void Heap.set_heap_limit(&self, ulong limit) {
     self.heap_limit = limit == 0 ? HEAP_UNLIMITED : limit;
     self.heap_limit_hit = false;
+    self.plan_limit_gc();
 }
 
 // After a heap-limit termination reaches the host: collect, then stay armed

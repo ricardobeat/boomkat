@@ -58,6 +58,17 @@ int main(void) {
     assert(v == 0 && bk_get_error_code(ctx) == BK_ERR_NOMEM);
     v = eval(ctx, "1 + 1");
     assert(v && bk_to_number(ctx, v) == 2);
+    /* A refusal whose RangeError ends the script leaves nothing pending for
+     * the next run. */
+    v = eval(ctx, "new ArrayBuffer(64 * 1024 * 1024)");
+    assert(v == 0 && bk_get_error_code(ctx) == BK_ERR_THROW);
+    v = eval(ctx, "2 + 2");
+    assert(v && bk_to_number(ctx, v) == 4);
+
+    /* Dropped buffers are collected before they reach the limit. */
+    v = eval(ctx, "{ let n = 0; for (let i = 0; i < 20000; i++) n += new ArrayBuffer(4096).byteLength;"
+                  " for (let i = 0; i < 200; i++) n += new Uint8Array(1 << 20).length; n }");
+    assert(v && bk_to_number(ctx, v) == 20000 * 4096.0 + 200 * 1048576.0);
 
     /* Raising the limit lets the work finish; removing it reports none. */
     assert(bk_set_heap_limit(rt, 0) == BK_OK && stats(rt).heap_limit == 0);

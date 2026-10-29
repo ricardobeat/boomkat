@@ -315,7 +315,7 @@ fn void env_pool_verify_restore(Heap* h) @feat(GC_VERIFY) {
             EnvRecord* e = &block.cells[i];
             if (!e.flags.allocated) continue;
             if (e.flags.mark_epoch == h.env_mark_epoch && e.verify_epoch != h.env_mark_epoch) {
-                h.fatal_func(h.heap_udata, "GC_VERIFY: incremental mark missed a live environment");
+                h.fatal("GC_VERIFY: incremental mark missed a live environment");
             }
             e.flags.mark_epoch = e.verify_epoch;
             e.gc_gray_next = null;

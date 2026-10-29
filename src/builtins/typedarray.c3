@@ -168,7 +168,7 @@ fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
 fn HObject* typedarray_alloc_buffer(BuiltinContext* ctx, uint byte_length) {
     char* data = null;
     if (byte_length > 0) {
-        data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)byte_length);
+        data = ctx.heap.alloc_buffer_data((usz)byte_length);
         if (data == null) return null;
         mem::clear(data, (sz)((usz)byte_length));
     }
@@ -203,7 +203,7 @@ fn HObject* bytes_module_view(Heap* heap, char[] bytes) {
     uint byte_length = (uint)bytes.len;
     char* data = null;
     if (byte_length > 0) {
-        data = (char*)heap.alloc_func(heap.heap_udata, (usz)byte_length);
+        data = heap.alloc_buffer_data((usz)byte_length);
         if (data == null) return null;
         mem::copy(data, bytes.ptr, (sz)((usz)byte_length));
     }

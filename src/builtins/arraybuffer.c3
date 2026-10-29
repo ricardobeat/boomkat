@@ -302,7 +302,7 @@ fn void arraybuffer_construct_impl(BuiltinContext* ctx, bool is_shared) {
             return;
         }
     } else if (alloc_len > 0) {
-        data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)alloc_len);
+        data = ctx.heap.alloc_buffer_data((usz)alloc_len);
         if (data == null) {
             arraybuffer_throw_range_error_pct(ctx, "Out of memory allocating %s", ctor_name);
             return;
@@ -429,7 +429,7 @@ fn void builtin_arraybuffer_proto_resize(BuiltinContext* ctx) {
     // Reallocate the backing store to the new length. Grow zero-fills the tail.
     char* new_data = null;
     if (new_len > 0) {
-        new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
+        new_data = ctx.heap.alloc_buffer_data((usz)new_len);
         if (new_data == null) {
             arraybuffer_throw_range_error(ctx, "Out of memory resizing ArrayBuffer");
             return;
@@ -538,7 +538,7 @@ fn void arraybuffer_transfer_impl(BuiltinContext* ctx, bool preserve_resizable, 
 
     char* new_data = null;
     if (new_len > 0) {
-        new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
+        new_data = ctx.heap.alloc_buffer_data((usz)new_len);
         if (new_data == null) {
             arraybuffer_throw_range_error(ctx, "Out of memory allocating ArrayBuffer");
             return;
@@ -651,7 +651,7 @@ fn void builtin_arraybuffer_proto_slice_to_immutable(BuiltinContext* ctx) {
 
     char* new_data = null;
     if (new_len > 0) {
-        new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
+        new_data = ctx.heap.alloc_buffer_data((usz)new_len);
         if (new_data == null) {
             arraybuffer_throw_range_error(ctx, "Out of memory allocating ArrayBuffer");
             return;
@@ -840,7 +840,7 @@ fn void arraybuffer_slice_impl(BuiltinContext* ctx, bool is_shared) {
         if (is_shared) {
             new_data = agent::block_alloc((uint)new_len, (uint)new_len);
         } else if (new_len > 0) {
-            new_data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)new_len);
+            new_data = ctx.heap.alloc_buffer_data((usz)new_len);
             if (new_data != null) mem::clear(new_data, (sz)((usz)new_len));
         }
         (*new_buf.extra_ptr()).ab.is_shared = is_shared;

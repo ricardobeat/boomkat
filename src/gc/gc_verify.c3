@@ -30,7 +30,7 @@ fn void Heap.verify_incremental_mark(&self) @feat(GC_VERIFY) {
         if (collected && node.is_reachable() && !node.gc.verify_live) {
             io::eprintfn("[GC_VERIFY] incremental mark missed reachable node %p type=%d",
                 node, (int)node.get_type());
-            self.fatal_func(self.heap_udata, "GC_VERIFY: incremental reachability mismatch");
+            self.fatal("GC_VERIFY: incremental reachability mismatch");
         }
         node.flags.reachable = node.gc.verify_live;
         node.gc.verify_live = false;

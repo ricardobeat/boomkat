@@ -1193,6 +1193,8 @@ struct Heap {
     void*               user_udata;
     ulong               heap_bytes;
     ulong               heap_limit;
+    // heap_bytes past which a full collection is requested before the limit.
+    ulong               heap_limit_gc_at;
     long                external_bytes;
     uint                gc_cycles;
     // Nesting depth of bk_gc_inhibit; a collection requested meanwhile waits.
@@ -1563,8 +1565,14 @@ const uint MEM_CHECK_INTERVAL = 1 << 16;
 // the limit.
 fn void Heap.check_mem_limit(&self, usz incoming) {
     if (self.mem_limit != 0 && boomkat_rss_bytes() + incoming > self.mem_limit) {
-        self.fatal_func(self.heap_udata, "memory limit exceeded");
+        self.fatal("memory limit exceeded");
     }
+}
+
+// Hand an unrecoverable error to the fatal handler with the opaque the host
+// registered, which accounting moves out of heap_udata.
+fn void Heap.fatal(&self, char* msg) {
+    self.fatal_func(self.accounting ? self.user_udata : self.heap_udata, msg);
 }
 
 fn void default_fatal(void* udata, char* msg) {
@@ -4156,7 +4164,7 @@ fn HObject* Heap.gray_pop(&self) {
 fn void Heap.reject_poison(&self, TVal* v, ZString where) @feat(SCAN_POISON) {
     if (v.is_poison()) {
         io::eprintf("[scan-poison] %s: slot %p holds the poison fill\n", where, v);
-        self.fatal_func(self.heap_udata, "scan-poison: poisoned slot reached the collector");
+        self.fatal("scan-poison: poisoned slot reached the collector");
     }
 }
 
@@ -4166,7 +4174,7 @@ fn void Heap.reject_poison(&self, TVal* v, ZString where) @feat(SCAN_POISON) {
 fn void Heap.reject_poison_ptr(&self, void* ptr, ZString where) @feat(SCAN_POISON) {
     if ((usz)ptr == (usz)types::POISON_PAYLOAD) {
         io::eprintf("[scan-poison] %s: pointer %p holds the poison fill\n", where, ptr);
-        self.fatal_func(self.heap_udata, "scan-poison: poisoned pointer reached the collector");
+        self.fatal("scan-poison: poisoned pointer reached the collector");
     }
 }
 
@@ -4177,7 +4185,7 @@ fn void Heap.verify_string_owner(&self, HString* value) @feat(GC_VERIFY) {
     if (value.refcount <= table_reference) {
         io::eprintfn("[GC_VERIFY] live string lacks an owner: refs=%d interned=%d bytes=%d",
             value.refcount, (int)value.flags.is_interned, value.length);
-        self.fatal_func(self.heap_udata, "GC_VERIFY: unowned live string");
+        self.fatal("GC_VERIFY: unowned live string");
     }
 }
 
@@ -5251,6 +5259,14 @@ fn void Heap.charge_allocation(&self, long units) @inline {
     if (self.gc_phase != GcPhase.IDLE) self.gc_alloc_since_begin += (ulong)units;
     self.gc_trigger_counter -= units;
     if (self.gc_trigger_counter <= 0) self.request_gc();
+}
+
+// Allocate `size` bytes of ArrayBuffer data. The bytes count toward GC
+// pressure in kilobyte units, as large strings do, so a loop that drops
+// buffers is collected before the garbage reaches the heap limit.
+fn char* Heap.alloc_buffer_data(&self, usz size) {
+    self.charge_allocation((long)(size >> 10));
+    return (char*)self.alloc_func(self.heap_udata, size);
 }
 
 /**

@@ -218,6 +218,7 @@ fn void Heap.gc_finish_cycle(&self) {
     // One read is cheap next to a cycle. Checking minor cycles too keeps the
     // overshoot small while a growing heap spaces its majors out.
     self.check_mem_limit(0);
+    if (self.accounting) self.plan_limit_gc();
     long by_nodes = (long)self.marked_obj_count * GC_TRIGGER_GROW_FACTOR;
     long by_work = (long)self.mark_work_last / GC_MARK_WORK_DIVISOR;
     long trigger = by_work > by_nodes ? by_work : by_nodes;

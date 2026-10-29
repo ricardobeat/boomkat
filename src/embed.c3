@@ -1465,6 +1465,8 @@ fn int run_script(Runtime* rt, CompiledFunction* f, TVal* out, bool* out_owned) 
 // Returns a BK_* status.
 fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_owned, bool strict = false) {
     *out_owned = false;
+    // Before compiling: the collection it may run would not see the new code.
+    settle_stale_limit(rt);
     CompiledFunction* f;
     int rc = compile_script(rt, src, name, strict, &f);
     if (rc != BK_OK) return rc;
@@ -1476,6 +1478,7 @@ fn int eval_source(Runtime* rt, char[] src, char[] name, TVal* out, bool* out_ow
 fn int eval_module(Runtime* rt, char[] src, char[] name, TVal* out) {
     clear_err(rt);
     if (name.len != 0) set_script_name(rt, &name[0], name.len);
+    settle_stale_limit(rt);
     rt.heap.uncatchable_throw = false;
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     rt.heap.has_error = false;
@@ -1519,6 +1522,7 @@ fn int module_failure(Runtime* rt, int code) @local {
 // Executes pending microtasks. Returns BK_OK or BK_ERR_INTERRUPT.
 fn int drain_microtasks(Runtime* rt) {
     clear_err(rt);
+    settle_stale_limit(rt);
     rt.heap.uncatchable_throw = false;
     rt.heap.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     // Settle Atomics.waitAsync notifications and timeouts first, so a host
@@ -1643,6 +1647,14 @@ fn void finish_interrupt(Runtime* rt) {
     rt.vm.throw_pending = false;
     rt.heap.decref_tval(&rt.vm.throw_value);
     rt.vm.throw_value.set_undefined();
+}
+
+// A heap-limit crossing that the last top-level run ended without reporting,
+// such as a refused large block whose RangeError ended the script, is settled
+// before the next run starts, so it terminates that run only while the heap is
+// still over budget.
+fn void settle_stale_limit(Runtime* rt) @inline {
+    if (rt.heap.heap_limit_hit && rt.vm.run_depth == 0) rt.heap.settle_heap_limit();
 }
 
 // Report an uncatchable termination, clearing it first: BK_ERR_NOMEM when the

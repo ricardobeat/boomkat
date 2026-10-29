@@ -267,6 +267,7 @@ fn ulong bk_run_script(void* ctxp, ulong id) @export("bk_run_script") {
         || (*o.extra_ptr()).host.class_id != rt.script_class - 1) {
         return fail_value(rt, BK_ERR_TYPE, "not a compiled script");
     }
+    embed::settle_stale_limit(rt);
     TVal result;
     bool owned;
     if (embed::run_script(rt, (bytecode::CompiledFunction*)(*o.extra_ptr()).host.payload, &result, &owned) != BK_OK) return 0;
@@ -636,6 +637,7 @@ fn int bk_execute_pending_job(void* rtp, void** context) @export("bk_execute_pen
     embed::select_context(ctx);
     if (context != null) *context = ctx;
     embed::clear_err(rt);
+    embed::settle_stale_limit(rt);
     h.uncatchable_throw = false;
     h.has_error = false;
     h.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
@@ -2533,6 +2535,7 @@ fn ulong bk_call(void* ctxp, ulong fn_id, ulong this_id, ulong* argv, uint argc)
     for (uint i = 0; i < argc; i++) {
         if (!resolve(ctxp, argv[i], &args[i])) return bad_handle(rt);
     }
+    embed::settle_stale_limit(rt);
     rt.heap.has_error = false;
     TVal result = rt.heap.call_fn(rt.vm, function, args, argc, this_value);
     if (rt.heap.has_error || rt.heap.uncatchable_throw) {
@@ -2594,6 +2597,7 @@ fn ulong bk_construct(void* ctxp, ulong ctor_id, ulong* argv, uint argc, ulong n
     TVal* args = resolve_args(ctxp, rt, argv, argc, &local_args);
     if (args == null && argc != 0) return 0;
     defer free_args(rt, args, &local_args);
+    embed::settle_stale_limit(rt);
     rt.heap.has_error = false;
     TVal result = rt.heap.construct_fn(rt.vm, ctor, args, argc, new_target);
     if (rt.heap.has_error || rt.heap.uncatchable_throw) {
@@ -3140,7 +3144,7 @@ fn ulong bk_new_array_buffer(void* ctxp, usz length, void** data_out) @export("b
     if (length > 0x7FFF_FFFF) return fail_value(rt, BK_ERR_INVALID, "ArrayBuffer length too large");
     char* data = null;
     if (length > 0) {
-        data = (char*)rt.heap.alloc_func(rt.heap.heap_udata, length);
+        data = rt.heap.alloc_buffer_data(length);
         if (data == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
         mem::clear(data, (sz)length);
     }
