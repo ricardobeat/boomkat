@@ -298,8 +298,14 @@ test-runtime-cycles: boomkat-stress
 install: out/boomkat.a out/boomkat.$(SHLIB_EXT)
 	install -d $(DESTDIR)$(PREFIX)/include $(DESTDIR)$(PREFIX)/lib
 	install -m 644 include/boomkat.h $(DESTDIR)$(PREFIX)/include/boomkat.h
+	install -m 644 $(CPP_HEADERS) $(DESTDIR)$(PREFIX)/include/
 	install -m 644 out/boomkat.a $(DESTDIR)$(PREFIX)/lib/libboomkat.a
 	install -m 755 out/boomkat.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/boomkat.$(SHLIB_EXT)
+	install -m 755 out/libboomkat.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/libboomkat.$(SHLIB_EXT)
+	install -d $(DESTDIR)$(PREFIX)/lib/cmake/boomkat $(DESTDIR)$(PREFIX)/lib/pkgconfig
+	install -m 644 cmake/boomkatConfig.cmake $(DESTDIR)$(PREFIX)/lib/cmake/boomkat/boomkatConfig.cmake
+	sed -e 's|@PREFIX@|$(PREFIX)|' -e "s|@VERSION@|$$(sed -n 's/.*\"version\": *\"\(.*\)\".*/\1/p' project.json | head -1)|" \
+	    -e 's|@LIBS_PRIVATE@|$(BK_LDLIBS)|' cmake/boomkat.pc.in > $(DESTDIR)$(PREFIX)/lib/pkgconfig/boomkat.pc
 
 # ---- C++ binding (include/boomkat.hpp) --------------------------------------
 # Header-only; nothing here goes into the C library. cpp-check builds every
