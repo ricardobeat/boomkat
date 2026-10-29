@@ -120,6 +120,18 @@ build t="boomkat" intl="default" temporal="default" collator="default":
 build-debug t="boomkat" intl="default" temporal="default" collator="default":
     python3 scripts/build.py "{{t}}" --intl "{{intl}}" --temporal "{{temporal}}" --collator "{{collator}}" --debug
 
+build-riscv:
+    c3c build boomkat_tiny --target linux-riscv64 --cc riscv64-linux-gnu-gcc --build-dir out/build/riscv64 --show-backtrace=no
+    mkdir -p out/riscv64
+    mv out/boomkat_tiny out/riscv64/boomkat_tiny
+    riscv64-linux-gnu-strip out/riscv64/boomkat_tiny
+
+build-riscv-musl:
+    c3c build boomkat_tiny --target linux-riscv64 --linux-libc=musl --linux-crt /usr/riscv64-linux-musl/lib/musl/lib --cc scripts/riscv64-musl-cc -L /usr/riscv64-linux-musl/lib/musl/lib -z `riscv64-linux-gnu-gcc -print-libgcc-file-name` --build-dir out/build/riscv64-musl --show-backtrace=no
+    mkdir -p out/riscv64-musl
+    mv out/boomkat_tiny out/riscv64-musl/boomkat_tiny
+    riscv64-linux-gnu-strip out/riscv64-musl/boomkat_tiny
+
 # Build the full bundled Intl and Temporal release CLI.
 build-full-icu:
     @make out/boomkat-full-icu

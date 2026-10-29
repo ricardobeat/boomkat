@@ -1,0 +1,2 @@
+#!/bin/sh
+exec clang --target=riscv64-linux-musl --sysroot=/usr/riscv64-linux-musl/lib/musl "$@"
