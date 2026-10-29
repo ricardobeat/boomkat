@@ -155,6 +155,20 @@ pub struct bk_class_def {
     pub arity: c_int,
     pub flags: c_uint,
     pub opaque: *mut c_void,
+    pub exotic: *const bk_exotic_hooks,
+}
+
+/// Exotic hooks for a class's instances; each returns 1 handled, 0 ordinary, -1 thrown.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct bk_exotic_hooks {
+    pub get_own: Option<unsafe extern "C" fn(bk_ctx, bk_value, bk_atom, *mut bk_property_descriptor, *mut c_void) -> c_int>,
+    pub define_own: Option<
+        unsafe extern "C" fn(bk_ctx, bk_value, bk_atom, *const bk_property_descriptor, *mut c_int, *mut c_void) -> c_int,
+    >,
+    pub remove: Option<unsafe extern "C" fn(bk_ctx, bk_value, bk_atom, *mut c_int, *mut c_void) -> c_int>,
+    pub own_keys: Option<unsafe extern "C" fn(bk_ctx, bk_value, *mut bk_value, *mut c_void) -> c_int>,
+    pub call: Option<unsafe extern "C" fn(bk_ctx, bk_value, bk_value, c_uint, *const bk_value, *mut c_void) -> bk_value>,
 }
 
 /// The all-zero entry that terminates a registration table.
@@ -524,6 +538,7 @@ extern "C" {
     pub fn bk_get_instance_payload(ctx: bk_ctx, value: bk_value, cls: bk_class) -> *mut c_void;
     pub fn bk_set_instance_payload(ctx: bk_ctx, value: bk_value, cls: bk_class, payload: *mut c_void) -> c_int;
     pub fn bk_get_instance_class(ctx: bk_ctx, value: bk_value) -> bk_class;
+    pub fn bk_new_proxy(ctx: bk_ctx, target: bk_value, handler: bk_value) -> bk_value;
     pub fn bk_run_finalizers(runtime: bk_runtime) -> c_uint;
     pub fn bk_get_intrinsic(ctx: bk_ctx, which: c_int) -> bk_value;
     pub fn bk_new_symbol(ctx: bk_ctx, description: *const c_char, length: usize) -> bk_value;

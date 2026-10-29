@@ -635,3 +635,59 @@ fn runtime_is_send_not_sync() {
     fn assert_sync<T: Sync>() {}
     assert_sync::<std::sync::Mutex<Runtime>>();
 }
+
+/// Counts drops of the value a closure captures.
+struct DropCount(std::rc::Rc<std::cell::Cell<u32>>);
+impl Drop for DropCount {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() + 1);
+    }
+}
+
+/// A closure is dropped once its function object is collected.
+#[test]
+fn closure_dropped_after_collection() {
+    let drops = std::rc::Rc::new(std::cell::Cell::new(0));
+    let rt = Runtime::new().unwrap();
+    let counter = DropCount(drops.clone());
+    rt.register_fn("f", 0, move |ctx| {
+        let _ = &counter;
+        Ok(ctx.undefined())
+    })
+    .unwrap();
+    rt.eval_unit("f(); delete globalThis.f").unwrap();
+    for _ in 0..8 {
+        if drops.get() == 1 {
+            break;
+        }
+        rt.gc();
+    }
+    assert_eq!(drops.get(), 1);
+}
+
+/// Closing a runtime drops closures that hold Persisted values, and a
+/// Persisted that outlives its runtime releases nothing.
+#[test]
+fn persisted_in_closure_survives_teardown() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    let drops = Rc::new(std::cell::Cell::new(0));
+    let outside: Rc<RefCell<Option<boomkat::Persisted>>> = Rc::new(RefCell::new(None));
+    {
+        let rt = Runtime::new().unwrap();
+        let held: RefCell<Option<boomkat::Persisted>> = RefCell::new(None);
+        let out = outside.clone();
+        let counter = DropCount(drops.clone());
+        rt.register_fn("keep", 1, move |ctx| {
+            let _ = &counter;
+            *held.borrow_mut() = Some(ctx.persist(ctx.arg(0))?);
+            *out.borrow_mut() = Some(ctx.persist(ctx.arg(0))?);
+            Ok(ctx.undefined())
+        })
+        .unwrap();
+        rt.eval_unit("keep({ a: 1 })").unwrap();
+    }
+    assert_eq!(drops.get(), 1);
+    outside.borrow_mut().take();
+}

@@ -200,13 +200,13 @@ Three things this layer handles that the raw ABI leaves to the caller:
   the guard is what lets a host function call JS in a loop: the slot goes back
   as the loop turns.
 
-The closure is leaked deliberately. It is boxed and its pointer handed to
-the engine as `udata`; the engine holds it for as long as the runtime lives and
-offers no way to unregister, so there is no later moment at which dropping it
-would be sound. This is bounded by the number of `register_fn` calls, never per
-JS call. It is also why the closure must be `'static`: it can run at any point
-up to `Runtime` drop, so it cannot borrow anything shorter-lived. Captured state
-therefore uses `move`, and mutable state a `Cell`/`RefCell`, since the closure
+The engine owns the closure through the function object. When that object is
+collected, or the runtime closes, the engine's finalizer hands the closure back,
+and the binding drops it at the next `Runtime::eval` or `Runtime::gc`, or when
+the `Runtime` drops, never from inside the engine. A `Persisted` the closure
+captured is released then; one that outlives its runtime releases nothing. The
+closure must be `'static` because it can run at any point up to then. Captured
+state therefore uses `move`, and mutable state a `Cell`/`RefCell`, since the closure
 is `Fn` (the engine may re-enter it) rather than `FnMut`.
 
 ## What the safe layer adds
@@ -263,8 +263,8 @@ runtime, and `&Runtime` is not `Send` precisely because `Runtime` is not `Sync`.
 
 These come from the C ABI, not from this binding.
 
-- Registration is permanent. There is no `unregister`, which is why leaking
-  the closure matches its actual lifetime.
+- There is no `unregister`. Deleting the function from JS lets the collector
+  free it and its closure.
 - A JS function cannot be called from outside a callback. `ctx.call` needs a
   live call context, so from plain Rust code wrap the call in a JS snippet and
   use `eval`.

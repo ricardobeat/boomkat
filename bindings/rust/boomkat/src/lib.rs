@@ -100,7 +100,7 @@
 //!
 //! Returning `Err` from the closure throws in JS, and a panic is caught at the
 //! boundary and converted to a throw rather than unwinding into C. See
-//! [`Runtime::register_fn`] for both, and for why the closure is leaked.
+//! [`Runtime::register_fn`] for both, and for when the closure is dropped.
 //!
 //! # Not covered
 //!
@@ -111,7 +111,9 @@
 use std::any::Any;
 use std::ffi::{CStr, CString};
 use std::fmt;
+use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
+use std::rc::Rc;
 use std::os::raw::{c_char, c_int, c_void};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -286,6 +288,7 @@ impl Type {
 /// argument.
 pub struct Runtime {
     raw: sys::bk_ctx,
+    shared: Rc<Shared>,
     /// `Send`, not `Sync`: a runtime may move between threads but must not be
     /// used from two at once. See the type's doc comment.
     _not_sync: PhantomData<std::cell::Cell<()>>,
@@ -318,6 +321,10 @@ impl Runtime {
 
         Ok(Runtime {
             raw,
+            shared: Rc::new(Shared {
+                alive: Cell::new(true),
+                released: RefCell::new(Vec::new()),
+            }),
             _not_sync: PhantomData,
         })
     }
@@ -335,6 +342,7 @@ impl Runtime {
     ///
     /// Pending promise jobs are drained before this returns.
     pub fn eval(&self, src: &str) -> Result<Value<'_>, Error> {
+        self.shared.drop_released();
         // The ABI takes a pointer plus an explicit length, so interior NULs
         // are fine and no CString round-trip is needed.
         // SAFETY: `src` is a valid slice for `src.len()` bytes; `self.raw` is
@@ -354,6 +362,13 @@ impl Runtime {
         }
 
         Ok(Value { rt: self, handle })
+    }
+
+    /// Run a full collection, then drop the closures of collected functions.
+    pub fn gc(&self) {
+        // SAFETY: `self.raw` is a live context.
+        unsafe { sys::bk_gc(sys::bk_get_runtime(self.raw), sys::BK_GC_FULL) };
+        self.shared.drop_released();
     }
 
     /// Run `src` purely for its side effects, discarding the result.
@@ -400,13 +415,13 @@ impl Runtime {
     ///
     /// # Lifetime of the closure
     ///
-    /// The closure is boxed and **deliberately leaked**. The engine holds a raw
-    /// pointer to it for as long as the runtime lives and offers no way to
-    /// unregister, so there is no later moment at which dropping it would be
-    /// sound. Leaking is the honest encoding of "lives as long as the runtime":
-    /// bounded by the number of `register_fn` calls, never per JS call. This is
-    /// also why the closure must be `'static` — it may run at any point up to
-    /// [`Runtime`] drop, so it cannot borrow anything shorter-lived.
+    /// The engine owns the closure through the function object. When that
+    /// object is collected, or the runtime closes, the engine's finalizer hands
+    /// the closure back, and it is dropped at the next [`Runtime::eval`] or when
+    /// the [`Runtime`] drops, never from inside the engine. A [`Persisted`]
+    /// captured by the closure is therefore released safely, and after the
+    /// runtime has closed it releases nothing. The closure must be `'static`
+    /// because it may run at any point up to then.
     ///
     /// # Panics
     ///
@@ -445,14 +460,11 @@ impl Runtime {
     where
         F: for<'a> Fn(&Ctx<'a>) -> Result<HostValue<'a>, Error> + 'static,
     {
-        // One leaked box per registration; see the doc comment above. The
-        // pointer rides in `udata` together with this runtime's context (v2
-        // gives a callback no way to reach its runtime otherwise); the
-        // trampoline recovers both.
-        let boxed: *mut F = Box::into_raw(Box::new(f));
+        // The engine owns `data` from here and returns it through `release`.
         let data: *mut TrampolineData<F> = Box::into_raw(Box::new(TrampolineData {
-            f: boxed,
+            f,
             rt: self.raw,
+            shared: self.shared.clone(),
         }));
 
         // The table ends at the first zeroed entry, so two entries suffice:
@@ -460,7 +472,6 @@ impl Runtime {
         let c_name = match CString::new(name) {
             Ok(s) => s,
             Err(_) => {
-                drop(unsafe { Box::from_raw(boxed) });
                 drop(unsafe { Box::from_raw(data) });
                 return Err(Error::new(
                     Kind::Encoding,
@@ -475,30 +486,21 @@ impl Runtime {
                 arity: arity as c_int,
                 flags: if constructable { sys::BK_CTOR } else { 0 },
                 udata: data as *mut c_void,
-                finalize: None,
+                finalize: Some(release::<F>),
                 finalize_opaque: std::ptr::null_mut(),
             },
             sys::BK_FN_END,
         ];
 
         // SAFETY: `c_name` outlives the call, which copies what it needs;
-        // `trampoline::<F>` has the required C signature; `data` outlives the
-        // runtime because it is never freed. The engine only passes `udata`
-        // back, never derefs it.
+        // `trampoline::<F>` and `release::<F>` have the required C
+        // signatures. The engine passes `udata` back and runs `release`
+        // exactly once, also when registration fails.
         let status = unsafe { sys::bk_set_function_list(self.raw, 0, defs.as_ptr()) };
-
         if status != sys::BK_OK {
-            // Registration failed, so the engine never took the pointers and we
-            // still own them uniquely. Reclaim them rather than leaking on a
-            // path that has no runtime-lifetime justification.
-            // SAFETY: both came from `Box::into_raw` above and, since
-            // registration failed, no copy of either escaped.
-            drop(unsafe { Box::from_raw(boxed) });
-            drop(unsafe { Box::from_raw(data) });
             return Err(self.error(status));
         }
         Ok(())
-        // `boxed` and `data` are intentionally not freed on the success path.
     }
 
     /// Build an [`Error`] from a status, copying the engine's message out
@@ -546,7 +548,11 @@ impl Drop for Runtime {
         // exactly once, since Runtime is neither Copy nor Clone. Every Value
         // borrows self, so none can be alive here. Other runtimes are
         // untouched: closing one frees only its own heap.
+        // Closures released while the runtime closes, and any Persisted
+        // they hold, are dropped after it is gone and touch nothing.
+        self.shared.alive.set(false);
         unsafe { sys::bk_free_runtime(sys::bk_get_runtime(self.raw)) };
+        self.shared.drop_released();
     }
 }
 
@@ -787,6 +793,8 @@ pub struct Ctx<'a> {
     /// (v2 gives a callback no engine-side way to reach it). Freeing a
     /// [`Ctx::call`] result needs it.
     rt: sys::bk_ctx,
+    /// The runtime's shared state, which a [`Persisted`] keeps.
+    shared: &'a Rc<Shared>,
     /// Values the host built, parked until one of them is returned. See
     /// [`Repr::Built`].
     built: std::cell::RefCell<Vec<Built>>,
@@ -801,6 +809,7 @@ impl<'a> Ctx<'a> {
     fn new(
         raw: sys::bk_ctx,
         rt: sys::bk_ctx,
+        shared: &'a Rc<Shared>,
         this_value: sys::bk_value,
         argv: &'a [sys::bk_value],
     ) -> Self {
@@ -809,6 +818,7 @@ impl<'a> Ctx<'a> {
             this_value,
             argv,
             rt,
+            shared,
             built: std::cell::RefCell::new(Vec::new()),
             kept: std::cell::RefCell::new(Vec::new()),
             _call: PhantomData,
@@ -895,6 +905,7 @@ impl<'a> Ctx<'a> {
         }
         Ok(Persisted {
             rt: self.rt,
+            shared: self.shared.clone(),
             handle: out,
         })
     }
@@ -1109,6 +1120,7 @@ impl fmt::Debug for Retained<'_, '_> {
 /// runtime must be driven from one thread at a time.
 pub struct Persisted {
     rt: sys::bk_ctx,
+    shared: Rc<Shared>,
     handle: sys::bk_value,
 }
 
@@ -1160,8 +1172,11 @@ impl Persisted {
 
 impl Drop for Persisted {
     fn drop(&mut self) {
-        // SAFETY: `self.rt` is the runtime that issued `handle`, and it must
-        // still be open; see the type's doc comment.
+        // A closed runtime took the slot with it.
+        if !self.shared.alive.get() {
+            return;
+        }
+        // SAFETY: `self.rt` is the open runtime that issued `handle`.
         unsafe { sys::bk_free_value(self.rt, self.handle) };
     }
 }
@@ -1301,14 +1316,14 @@ where
     // taken as a shared reference only; it is `Fn`, so re-entrant calls
     // (host -> JS -> same host) are fine.
     let data: &TrampolineData<F> = unsafe { &*(udata as *const TrampolineData<F>) };
-    let f: &F = unsafe { &*data.f };
+    let f: &F = &data.f;
 
     let args = if argc == 0 {
         &[]
     } else {
         unsafe { std::slice::from_raw_parts(argv, argc as usize) }
     };
-    let ctx = Ctx::new(raw, data.rt, this_value, args);
+    let ctx = Ctx::new(raw, data.rt, &data.shared, this_value, args);
 
     // AssertUnwindSafe: on a panic we touch `ctx` only to record a throw and
     // free handles, neither of which reads closure state that a panic could
@@ -1363,10 +1378,50 @@ where
 }
 
 /// What the trampoline recovers from `udata`: the closure and the runtime that
-/// registered it. One leaked allocation per registration.
+/// registered it. The engine owns it until `release`.
 struct TrampolineData<F> {
-    f: *mut F,
+    f: F,
     rt: sys::bk_ctx,
+    shared: Rc<Shared>,
+}
+
+/// State a runtime shares with its closures and [`Persisted`] values.
+struct Shared {
+    /// False once the runtime has closed.
+    alive: Cell<bool>,
+    /// Closures the engine has released, waiting to be dropped outside it.
+    released: RefCell<Vec<Box<dyn Any>>>,
+}
+
+impl Shared {
+    /// Drop released closures. Dropping one can release more, through a
+    /// [`Persisted`] it held, so this repeats until none are left.
+    fn drop_released(&self) {
+        loop {
+            let batch = std::mem::take(&mut *self.released.borrow_mut());
+            if batch.is_empty() {
+                return;
+            }
+            drop(batch);
+        }
+    }
+}
+
+/// The finalizer of a registered function: the engine is done with `udata`.
+/// It must not call the engine, so the closure is parked for
+/// [`Shared::drop_released`].
+///
+/// # Safety
+///
+/// `udata` is the `*mut TrampolineData<F>` from `register_fn_impl`, passed
+/// exactly once.
+unsafe extern "C" fn release<F: 'static>(udata: *mut c_void, _opaque: *mut c_void) {
+    if udata.is_null() {
+        return;
+    }
+    let data: Box<TrampolineData<F>> = unsafe { Box::from_raw(udata as *mut TrampolineData<F>) };
+    let shared = data.shared.clone();
+    shared.released.borrow_mut().push(data);
 }
 
 /// Record a JS throw carrying `msg`, tolerating a message with interior NULs by
