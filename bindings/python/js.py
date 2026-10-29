@@ -260,6 +260,18 @@ def _declare(lib):
                                  ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
         ("bk_get_typed_array", [ctx, val, ctypes.POINTER(_TypedArrayInfo)], ctypes.c_int),
         ("bk_call", [ctx, val, val, ctypes.POINTER(val), ctypes.c_uint], val),
+        # Compiled scripts and modules.
+        ("bk_compile", [ctx, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_uint], val),
+        ("bk_run_script", [ctx, val], val),
+        ("bk_set_module_loader", [ctx, ctypes.POINTER(_ModuleLoader)], ctypes.c_int),
+        ("bk_module_set_name", [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int),
+        ("bk_module_provide", [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int),
+        ("bk_module_fail", [ctypes.c_void_p, val], ctypes.c_int),
+        ("bk_define_native_module", [ctx, ctypes.c_char_p, ctypes.c_size_t, val], ctypes.c_int),
+        ("bk_invalidate_module", [ctx, ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int),
+        ("bk_import", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
+        ("bk_promise_state_get", [ctx, val, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
+        ("bk_promise_result", [ctx, val], val),
     ]
     for name, argtypes, restype in signatures:
         fn = getattr(lib, name)
@@ -518,6 +530,47 @@ def _bind(lib, name, owner):
 # embedder has dropped stays collectable; entries also go on close().
 _OPEN_RUNTIMES = weakref.WeakValueDictionary()
 
+_LOADER_NO_FILESYSTEM_FALLBACK = 2
+_PROMISE_FULFILLED = 1
+_PROMISE_REJECTED = 2
+_EVAL_STRICT = 2
+
+_RESOLVE_FN = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p,
+                               ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p)
+_LOAD_FN = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p,
+                            ctypes.c_void_p, ctypes.c_void_p)
+
+
+class _ModuleLoader(ctypes.Structure):
+    """Mirrors bk_module_loader in boomkat.h."""
+    _fields_ = [("resolve", _RESOLVE_FN), ("load", _LOAD_FN),
+                ("opaque", ctypes.c_void_p), ("flags", ctypes.c_uint)]
+
+
+class Script:
+    """Compiled script code from Runtime.compile, runnable any number of times."""
+
+    def __init__(self, runtime, handle):
+        self._runtime = runtime
+        self._handle = handle
+
+    def run(self):
+        """Run the script and return its completion value."""
+        rt = self._runtime
+        rt._check_open()
+        if not self._handle:
+            raise JsError(-5, "this Script is closed")
+        handle = rt._lib.bk_run_script(rt._rt, self._handle)
+        return rt._take(handle)
+
+    def close(self):
+        if self._handle and self._runtime._rt:
+            self._runtime._lib.bk_free_value(self._runtime._rt, self._handle)
+        self._handle = 0
+
+    def __del__(self):
+        self.close()
+
 
 class Runtime:
     """One JavaScript engine instance, usable as a context manager.
@@ -701,6 +754,126 @@ class Runtime:
             raise TypeError("no JS equivalent; return a number, string, bool, "
                             "None, or a value from call.raw")
         return handle
+
+    def compile(self, source, filename="<script>", strict=False):
+        """Compile a classic script once; Script.run() runs it.
+
+        Syntax errors raise JsError here, not at run time.
+        """
+        self._check_open()
+        encoded = source.encode("utf-8")
+        handle = self._lib.bk_compile(self._rt, encoded, len(encoded),
+                                      filename.encode("utf-8"),
+                                      _EVAL_STRICT if strict else 0)
+        if handle == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        return Script(self, handle)
+
+    def set_module_loader(self, resolve=None, load=None, filesystem_fallback=True):
+        """Serve module imports from Python.
+
+        resolve(referrer, specifier) returns the canonical module name, and
+        load(name) returns the module's source text. Either may return None to
+        use the filesystem (unless filesystem_fallback is False) or raise to
+        fail the import with that message. Passing neither removes the loader.
+        """
+        self._check_open()
+        if resolve is None and load is None:
+            self._loader = None
+            status = self._lib.bk_set_module_loader(self._runtime, None)
+        else:
+            def answer(request, fn, args, deliver):
+                try:
+                    result = fn(*args)
+                except Exception as exc:  # noqa: BLE001 - reported to JS
+                    self._last_host_exception = exc
+                    err = self._lib.bk_new_error(self._rt, 0, str(exc).encode("utf-8", "replace"))
+                    status = self._lib.bk_module_fail(request, err)
+                    self._lib.bk_free_value(self._rt, err)
+                    return status
+                if result is None:
+                    return 0
+                encoded = result.encode("utf-8")
+                return deliver(request, encoded, len(encoded))
+
+            def on_resolve(_ctx, referrer, specifier, request, _opaque):
+                return answer(request, resolve,
+                              ((referrer or b"").decode("utf-8", "replace"),
+                               specifier.decode("utf-8", "replace")),
+                              self._lib.bk_module_set_name)
+
+            def on_load(_ctx, name, request, _opaque):
+                return answer(request, load, (name.decode("utf-8", "replace"),),
+                              self._lib.bk_module_provide)
+
+            loader = _ModuleLoader(_RESOLVE_FN(on_resolve) if resolve else _RESOLVE_FN(),
+                                   _LOAD_FN(on_load) if load else _LOAD_FN(), None,
+                                   0 if filesystem_fallback else _LOADER_NO_FILESYSTEM_FALLBACK)
+            # The callbacks must outlive their registration.
+            self._loader = loader
+            status = self._lib.bk_set_module_loader(self._runtime, ctypes.byref(loader))
+        if status != 0:
+            raise JsError(status, self._error_message())
+
+    def define_native_module(self, name, exports):
+        """A module whose exports are the keys of `exports`, a JSON-compatible dict."""
+        self._check_open()
+        import json
+        source = "(" + json.dumps(exports) + ")"
+        encoded = source.encode("utf-8")
+        handle = self._lib.bk_eval_ex(self._rt, encoded, len(encoded), b"<exports>", 0)
+        if handle == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        try:
+            encoded = name.encode("utf-8")
+            status = self._lib.bk_define_native_module(self._rt, encoded, len(encoded), handle)
+        finally:
+            self._lib.bk_free_value(self._rt, handle)
+        if status != 0:
+            raise JsError(status, self._error_message())
+
+    def invalidate_module(self, name):
+        """Drop a cached module so the next import loads it again."""
+        self._check_open()
+        encoded = name.encode("utf-8")
+        status = self._lib.bk_invalidate_module(self._rt, encoded, len(encoded))
+        if status != 0:
+            raise JsError(status, self._error_message())
+
+    def import_module(self, specifier):
+        """Load and evaluate a module, as import(specifier) does.
+
+        Runs pending jobs until the import settles; raises JsError when it
+        rejects.
+        """
+        self._check_open()
+        encoded = specifier.encode("utf-8")
+        promise = self._lib.bk_import(self._rt, encoded, len(encoded))
+        if promise == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        try:
+            self._lib.bk_run_jobs(self._runtime)
+            state = ctypes.c_int(0)
+            self._lib.bk_promise_state_get(self._rt, promise, ctypes.byref(state))
+            if state.value == _PROMISE_REJECTED:
+                reason = self._lib.bk_promise_result(self._rt, promise)
+                buf = ctypes.create_string_buffer(512)
+                self._lib.bk_describe(self._rt, reason, buf, len(buf), None)
+                self._lib.bk_free_value(self._rt, reason)
+                raise JsError(-3, buf.value.decode("utf-8", "replace"))
+            if state.value != _PROMISE_FULFILLED:
+                raise JsError(-5, "import did not settle")
+        finally:
+            self._lib.bk_free_value(self._rt, promise)
+
+    def _take(self, handle):
+        """Convert and free a result handle, raising for 0."""
+        if handle == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        try:
+            return self._to_python(handle)
+        finally:
+            self._lib.bk_free_value(self._rt, handle)
 
     def gc(self, full=True):
         """Collect garbage now: a full collection, or a minor one."""
