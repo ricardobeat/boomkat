@@ -3,7 +3,8 @@
 The C interface is [boomkat.h](../include/boomkat.h). Build it with `make lib`
 for C toolchains or `make shared` for Rust, Zig, Python, and Ruby. Foreign
 linkers should use the shared library so C3 startup constructors resolve against
-the library's own image.
+the library's own image. C++ hosts can use the header-only `bk::` layer in
+[embedding-cpp.md](embedding-cpp.md).
 
 ## Quick start
 
