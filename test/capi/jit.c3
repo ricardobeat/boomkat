@@ -147,6 +147,62 @@ fn void check_write_dependencies(JsRuntime* rt, JsContext* ctx) {
     @check(rt.set_jit());
 }
 
+// A later stable receiver shape must refresh the compiled read, rather than
+// merely return correct values through the helper forever.
+fn void check_read_refresh(JsRuntime* rt, JsContext* ctx) @feat(SLJIT_READ_REFRESH) {
+    eval(ctx, "var rrFirst={x:1},rrSecond={y:0,x:2};function rrRead(o){return o.x+1;}");
+    for (uint i = 0; i < 160; i++) eval(ctx, "if(rrRead(rrFirst)!==2)throw 'first shape';");
+    CompiledFunction* cf = named_function(rt, "rrRead");
+    @check(cf != null && cf.sljit_function != null && cf.ic_entries != null);
+    uint read_pc;
+    bool found_read;
+    for (uint pc = 0; pc < cf.code_count; pc++) {
+        if (cf.code[pc].op == Opcode.GETPROPC || cf.code[pc].op == Opcode.GETPROPC_CACHED) {
+            read_pc = pc;
+            found_read = true;
+            break;
+        }
+    }
+    @check(found_read);
+    FunctionPlan* initial = cf.sljit_function;
+    @check(initial.hits > 0 && read_pc >= initial.begin && read_pc - initial.begin < vm::FUNCTION_OPS);
+    ulong previous_hits = initial.hits;
+    ulong old_misses;
+    bool replaced;
+    for (uint i = 0; i < 300 && !replaced; i++) {
+        eval(ctx, "if(rrRead(rrSecond)!==3)throw 'later shape';");
+        FunctionPlan* current = cf.sljit_function;
+        if (current == null) continue;
+        if (cf.sljit_read_refreshes != 0 && current.hits < previous_hits) {
+            replaced = true;
+        } else {
+            previous_hits = current.hits;
+            ulong misses = current.read_hits[read_pc - current.begin];
+            if (misses > old_misses) old_misses = misses;
+        }
+    }
+    @check(cf.sljit_read_refreshes > 0 && replaced && old_misses >= 32);
+    FunctionPlan* refreshed = cf.sljit_function;
+    @check(refreshed != null && !refreshed.read_refresh_requested);
+    HObject* globals = rt.rt.vm.global_env.bindings;
+    int index = globals.find_prop_idx(rt.rt.heap.str_intern("rrSecond"), rt.rt.heap);
+    @check(index >= 0);
+    HObject* receiver = globals.prop_values()[index].get().get_heapptr();
+    Shape* shape = receiver.get_shape(rt.rt.heap);
+    @check(shape != null);
+    FunctionPlan probe = { .read_refresh_pc = read_pc, .read_refresh_shape = receiver.shape_id,
+        .read_refresh_generation = shape.generation };
+    @check(vm::sljit_read_refresh_ready(rt.rt.heap, cf, &probe));
+    ulong misses_before = refreshed.read_hits[read_pc - refreshed.begin];
+    ulong hits_before = refreshed.hits;
+    for (uint i = 0; i < 80; i++) eval(ctx, "if(rrRead(rrSecond)!==3)throw 'refreshed shape';");
+    @check(cf.sljit_function == refreshed && refreshed.hits > hits_before);
+    @check(refreshed.read_hits[read_pc - refreshed.begin] - misses_before < 8);
+    eval(ctx, "rrSecond.x=9;if(rrRead(rrSecond)!==10)throw 'updated value';rrSecond.z=5;if(rrRead(rrSecond)!==10)throw 'new layout';Object.defineProperty(rrSecond,'x',{get:function(){return 12;},configurable:true});if(rrRead(rrSecond)!==13)throw 'accessor fallback';");
+    rt.rt.heap.mark_and_sweep(true, true);
+    eval(ctx, "if(rrRead(rrSecond)!==13)throw 'read after GC';");
+}
+
 // A watch is the sole root of an object, including one installed after the
 // incremental collector has passed its root list.
 fn void check_dependency_gc() {
@@ -685,6 +741,7 @@ fn void main() {
         eval(&a, RUN);
         @check(native_hits(&first) > before);
         check_write_dependencies(&first, &a);
+        $if $feat(SLJIT_READ_REFRESH): check_read_refresh(&first, &a); $endif
         eval(&isolated, RUN);
         @check(plans(&second) == 0);
         eval(&isolated, "var console={log:function(){}};");

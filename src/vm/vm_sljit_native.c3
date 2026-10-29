@@ -58,6 +58,7 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
     HObject* receiver = object;
     bool cacheable = receiver.mega_cacheable(key, cold.heap);
     PropValue* slot;
+    $if $feat(SLJIT_READ_REFRESH): HObject* cache_owner; int cache_index; $endif
     ICEntry* ic = (ICEntry*)cold.vm.current_func.ic_entries + offset;
     // Own slots remain usable on dictionary objects, even when the emitter
     // cannot embed that layout. Read current storage after validating the
@@ -83,7 +84,11 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
         // Reuse the bounded shared cache, including its shape-recycle and
         // prototype checks. Do not retarget a site's IC: existing generated
         // code may still embed the owners that entry keeps alive.
-        if (cacheable) hobject::mega_cache_store(cold.heap, receiver, key, object, index, false);
+        $if $feat(SLJIT_READ_REFRESH):
+            if (cacheable) { cache_owner = object; cache_index = index; }
+        $else
+            if (cacheable) hobject::mega_cache_store(cold.heap, receiver, key, object, index, false);
+        $endif
         break;
     }
     if (slot == null) return 0;
@@ -100,6 +105,12 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
     TVal value = slot.get();
     TVal* dest = regs + ins.a;
     if (!th_can_publish(cold.heap, value) || !th_can_release(dest)) return 0;
+    $if $feat(SLJIT_READ_REFRESH):
+        // Do not publish the result or populate a cache on the triggering
+        // execution: the interpreter performs this read and updates its IC.
+        if (sljit_read_refresh(cold, offset, receiver)) return 0;
+        if (cache_owner != null) hobject::mega_cache_store(cold.heap, receiver, key, cache_owner, cache_index, false);
+    $endif
     th_do_retain(&value);
     th_do_release(dest);
     *dest = value;
@@ -165,13 +176,6 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     e.mov(r0, 0, mem | r3, $reflect(Heap.shape_recycle_epoch).offset, jit::SLJIT_MOV_U32);
     e.mov(r1, 0, mem | r2, $reflect(FunctionPlan.shape_epoch).offset, jit::SLJIT_MOV_U32);
     guards.guard(jit::SLJIT_NOT_EQUAL, r0, 0, r1, 0, 0);
-    e.mov(vm, 0, mem | cold, $reflect(ColdCtx.vm).offset);
-    e.mov(r0, 0, mem | vm, $reflect(Vm.activation_count).offset, jit::SLJIT_MOV_U32);
-    e.mov(r1, 0, mem | vm, $reflect(Vm.activation_capacity).offset, jit::SLJIT_MOV_U32);
-    guards.guard(jit::SLJIT_GREATER_EQUAL, r0, 0, r1, 0, 0);
-    e.op(jit::SLJIT_ADD, r0, bottom, 0, imm, loop_value_offset(cf.num_regs + FRAME_SCRATCH_SLOTS));
-    e.mov(r1, 0, mem | vm, $reflect(Vm.valstack_end).offset);
-    guards.guard(jit::SLJIT_GREATER, r0, 0, r1, 0, 0);
     e.mov(r0, 0, mem | object, (char*)&layout.extra.func.var_env - (char*)&layout);
     guards.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, 0);
     e.mov(r0, 0, mem | object, (char*)&layout.extra.func.lex_env - (char*)&layout);
@@ -196,6 +200,16 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
         e.mov(receiver, 0, imm, (long)loop_bits(undef));
     }
     $if !$feat(SLJIT_NO_SSA_CALL_ENTRY): self.ssa_call_entry(cf); $endif
+    // Frameless SSA uses the caller-owned argument/result window and the run
+    // scratch area. Only the ordinary entry publishes a new VM frame and
+    // clears the callee's local and scratch slots.
+    e.mov(vm, 0, mem | cold, $reflect(ColdCtx.vm).offset);
+    e.mov(r0, 0, mem | vm, $reflect(Vm.activation_count).offset, jit::SLJIT_MOV_U32);
+    e.mov(r1, 0, mem | vm, $reflect(Vm.activation_capacity).offset, jit::SLJIT_MOV_U32);
+    guards.guard(jit::SLJIT_GREATER_EQUAL, r0, 0, r1, 0, 0);
+    e.op(jit::SLJIT_ADD, r0, bottom, 0, imm, loop_value_offset(cf.num_regs + FRAME_SCRATCH_SLOTS));
+    e.mov(r1, 0, mem | vm, $reflect(Vm.valstack_end).offset);
+    guards.guard(jit::SLJIT_GREATER, r0, 0, r1, 0, 0);
     for (uint i = cf.num_formals; i < cf.num_regs; i++) {
         e.mov(r0, 0, mem | bottom, loop_value_offset(i));
         e.op(jit::SLJIT_LSHR, r0, r0, 0, imm, 48);

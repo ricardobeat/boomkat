@@ -42,7 +42,9 @@
         "PRINT",
         "CONSOLE",
         "SLJIT",
-        "SLJIT_LOOP_RESERVE"
+        "SLJIT_LOOP_RESERVE",
+        "SLJIT_READ_REFRESH",
+        "SLJIT_ARRAY_NAMED_READ"
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
@@ -295,7 +297,9 @@
       "features": [
         "THREADED_DISPATCH",
         "SLJIT",
-        "SLJIT_LOOP_RESERVE"
+        "SLJIT_LOOP_RESERVE",
+        "SLJIT_READ_REFRESH",
+        "SLJIT_ARRAY_NAMED_READ"
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
@@ -325,7 +329,9 @@
       "features": [
         "THREADED_DISPATCH",
         "SLJIT",
-        "SLJIT_LOOP_RESERVE"
+        "SLJIT_LOOP_RESERVE",
+        "SLJIT_READ_REFRESH",
+        "SLJIT_ARRAY_NAMED_READ"
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
@@ -386,7 +392,9 @@
         "TEMPORAL",
         "INTL_COLLATOR",
         "SLJIT",
-        "SLJIT_LOOP_RESERVE"
+        "SLJIT_LOOP_RESERVE",
+        "SLJIT_READ_REFRESH",
+        "SLJIT_ARRAY_NAMED_READ"
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
@@ -706,7 +714,9 @@
         "TEMPORAL",
         "INTL_COLLATOR",
         "SLJIT",
-        "SLJIT_LOOP_RESERVE"
+        "SLJIT_LOOP_RESERVE",
+        "SLJIT_READ_REFRESH",
+        "SLJIT_ARRAY_NAMED_READ"
       ],
       "c-sources": [
         "vendor/sljit/sljit_src/sljitLir.c",
@@ -746,6 +756,8 @@
         "THREADED_DISPATCH",
         "SLJIT",
         "SLJIT_LOOP_RESERVE",
+        "SLJIT_READ_REFRESH",
+        "SLJIT_ARRAY_NAMED_READ",
         "SLJIT_STATS"
       ]
     }

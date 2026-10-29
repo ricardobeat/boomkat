@@ -17,13 +17,6 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
     Heap* h = self.cold.heap;
     LoopPlan* region = self.ssa_leaf(cf, h, true);
     if (region == null) return;
-    // Pure leaves already have a cheaper inline path. Spend another native
-    // body only on compound regions that remove calls and frame publication.
-    if (!region.ssa_commit || !region.ssa_calls) {
-        self.plan.ssa_leaves = region.next;
-        h.free_func(h.heap_udata, region);
-        return;
-    }
     TemplateEmitter* e = &self.out.e;
     JitWriteDependency* checkpoint = self.plan.dependencies;
     SsaGraph* graph = ssa_prepare(region, cf, h, true, true, e, 0, 0, true);
@@ -74,7 +67,7 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
             ssa_counter(e, &self.plan.direct_calls);
             ssa_counter(e, &self.plan.direct_returns);
             ssa_counter(e, &self.plan.ssa_fast_calls);
-            ssa_counter(e, &h.jit_ssa_call_commits);
+            if (region.ssa_commit) ssa_counter(e, &h.jit_ssa_call_commits);
         $endif
         if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, imm, 0) != 0) e.failed = true;
         e.bind(refused);

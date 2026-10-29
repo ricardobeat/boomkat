@@ -170,9 +170,26 @@ fn void sljit_retire_invalid_dependencies(Heap* h) @feat(SLJIT) {
         CompiledFunction* cf = h.compiled_funcs[i];
         if (cf == null || cf.sljit_function == null) continue;
         FunctionPlan* plan = cf.sljit_function;
-        if (plan.dependencies_live) continue;
+        bool refresh;
+        $if $feat(SLJIT_READ_REFRESH):
+            if (plan.read_refresh_requested) {
+                if (sljit_read_refresh_ready(h, cf, plan)) {
+                    refresh = true;
+                } else if (++plan.read_refresh_checks < READ_REFRESH_MAX_CHECKS) {
+                    h.jit_dependencies_dirty = true;
+                } else {
+                    plan.read_refresh_requested = false;
+                    plan.read_feedback[plan.read_refresh_pc & 3].hits = 0;
+                }
+            }
+        $endif
+        if (plan.dependencies_live && !refresh) continue;
+        $if $feat(SLJIT_STATS) && $feat(SLJIT_READ_REFRESH):
+            if (refresh) io::eprintfn("SLJIT read refresh retired line=%d pc=%d shape=%d",
+                cf.get_line(plan.read_refresh_pc), plan.read_refresh_pc, plan.read_refresh_shape);
+        $endif
         sljit_function_free(h, cf);
-        cf.sljit_function_calls = 0;
+        cf.sljit_function_calls = refresh ? sljit_warmup(h) - 1 : 0;
     }
 }
 
@@ -197,6 +214,11 @@ fn Instruction* sljit_function_entry(
     sljit_retire_invalid_dependencies(h);
     uint offset        = (uint)(pc - cf.code);
     FunctionPlan* plan = cf.sljit_function;
+    $if $feat(SLJIT_READ_REFRESH):
+        // A still-unrefreshed site must execute in the interpreter at least
+        // once; otherwise repeatedly entering the old plan prevents IC fill.
+        if (plan != null && plan.read_refresh_requested) return pc;
+    $endif
     if (plan != null && !plan.dependencies_live) {
         // The validity cell already diverts every dependent SSA entry. Retire
         // only outside all generated frames, including nested C gateways.

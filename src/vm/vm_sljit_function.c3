@@ -44,6 +44,12 @@ alias FunctionNative = fn Instruction*(TVal* regs, ColdCtx* cold, FunctionRun* r
 // live activations published. Calls and backedges bound native progress.
 struct FunctionPlan @feat(SLJIT) {
     FunctionNative native;
+    FunctionReadFeedback[4] read_feedback @if($feat(SLJIT_READ_REFRESH));
+    bool read_refresh_requested @if($feat(SLJIT_READ_REFRESH));
+    char read_refresh_checks @if($feat(SLJIT_READ_REFRESH));
+    uint read_refresh_pc @if($feat(SLJIT_READ_REFRESH));
+    uint read_refresh_shape @if($feat(SLJIT_READ_REFRESH));
+    uint read_refresh_generation @if($feat(SLJIT_READ_REFRESH));
     void* call_entry;
     FunctionCallLink* calls;
     // Watched assumptions remain allocated until this plan is retired. Native

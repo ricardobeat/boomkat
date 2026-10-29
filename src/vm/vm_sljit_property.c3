@@ -415,6 +415,61 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             }
         }
     }
+    // Array receivers normally record a bounded snapshot, not an epoch chain:
+    // their Array prototype is exotic too. A named data read can still use a
+    // one-link snapshot, provided neither length nor an indexed key is read.
+    void* array_done;
+    $if $feat(SLJIT_ARRAY_NAMED_READ):
+        HString* name = key;
+        bool array_snapshot = usable && !write && !computed && !known_shape
+            && ic.has_proto && ic.chain != null && ic.chain_len == 1 && name != null
+            && !name.is_arridx() && !name.is_hidden() && key != h.str(heap::BuiltinStr.LENGTH);
+        if (array_snapshot) {
+            // The IC roots its final owner. Do not add an array arm at sites
+            // whose cached prototype is an ordinary object.
+            HObject* owner = hobject::ic_cached_proto(ic);
+            array_snapshot = owner != null && owner.get_class() == ARRAY;
+        }
+        if (array_snapshot) {
+            if (saved_flow != null) {
+                self.flow_materialize();
+                self.out.flow = null;
+                tracking = false;
+            }
+            self.property_receiver(base_reg, receiver_this);
+            e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+            ObjFlags array_forbidden = forbidden;
+            array_forbidden.exotic_array = true;
+            array_forbidden.exotic_arguments = true;
+            array_forbidden.exotic_stringobj = true;
+            ObjFlags array_flags;
+            array_flags.obj_class = ARRAY;
+            array_flags.exotic_array = true;
+            uint array_mask = 0x003F0000U | (uint)array_forbidden;
+            e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+            e.op(jit::SLJIT_AND, r2, r2, 0, imm, array_mask);
+            void* non_array = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)array_flags);
+            e.mov(r2, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.shape_id, pc);
+            e.mov(r0, 0, mem | r0, proto_offset);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)ic.chain.snapshot.protos[0], pc);
+            e.mov(r2, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.chain.snapshot.shapes[0], pc);
+            // Array.prototype is an array with named properties in allocated
+            // storage. Other owner classes retain the ordinary fallback.
+            e.mov(r2, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
+            e.op(jit::SLJIT_AND, r2, r2, 0, imm, array_mask);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)array_flags, pc);
+            e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
+            self.out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
+            e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
+            self.property_store(ins.a, pc, ic);
+            array_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+            e.bind(non_array);
+            self.property_receiver(base_reg, receiver_this);
+            e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+        }
+    $endif
     if (!usable) {
         self.out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, true);
     } else if (poly_chain) {
@@ -580,6 +635,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         }
     }
     if (length_done != null) e.bind(length_done);
+    if (array_done != null) e.bind(array_done);
     return usable || length_done != null;
 }
 

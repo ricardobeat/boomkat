@@ -55,6 +55,8 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
             count = 0;
         }
     }
+    // New load aliases can expose common scalar expressions and guards.
+    ssa_invariant_cse(g);
 }
 
 // Snapshot bindings, identities and guarded ordinary layouts remain valid
@@ -65,12 +67,21 @@ fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
     uint count;
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op != BINDING && value.op != CHECKFN && value.op != CHECKPROTO && value.op != RECEIVER && value.op != CHECKSHAPE
+        // Scalar guards can be shared in direct in-place regions, where a
+        // refusal always resumes the untouched caller and the store is terminal.
+        bool constant = value.op == CONST_I || value.op == CONST_F;
+        bool conversion = value.op == TO_INT || value.op == TO_INDEX || value.op == TO_F64;
+        bool scalar = g.inplace && g.direct && (constant || conversion || value.op == COMPARE);
+        if (!scalar && value.op != BINDING && value.op != CHECKFN && value.op != CHECKPROTO && value.op != RECEIVER && value.op != CHECKSHAPE
             && value.op != STORAGE && value.op != CHECKWRITE && value.op != PROTO_STORAGE) continue;
         bool found;
         for (uint k = 0; k < count; k++) {
             SsaValue prior = g.values[seen[k]];
             if (value.op != prior.op || (g.dominators[value.block] & (1U << (uint)prior.block)) == 0) continue;
+            if (scalar && prior.rep != value.rep) continue;
+            if ((conversion || value.op == COMPARE) && ssa_alias(g, value.a) != ssa_alias(g, prior.a)) continue;
+            if (value.op == COMPARE && (value.branch_op != prior.branch_op
+                || ssa_alias(g, value.b) != ssa_alias(g, prior.b))) continue;
             if (value.op == CHECKSHAPE) {
                 LoopMemorySpec a = g.plan.memory[value.imm];
                 LoopMemorySpec b = g.plan.memory[prior.imm];
@@ -82,7 +93,7 @@ fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
             } else if (value.imm != prior.imm) { continue; }
             if ((value.op == CHECKFN || value.op == CHECKPROTO || value.op == CHECKSHAPE || value.op == STORAGE || value.op == CHECKWRITE || value.op == PROTO_STORAGE)
                 && ssa_alias(g, value.a) != ssa_alias(g, prior.a)) continue;
-            if (value.op == BINDING || value.op == RECEIVER || value.op == STORAGE || value.op == PROTO_STORAGE) {
+            if (scalar || value.op == BINDING || value.op == RECEIVER || value.op == STORAGE || value.op == PROTO_STORAGE) {
                 value.op = COPY;
                 value.a = seen[k];
                 value.b = 0;
