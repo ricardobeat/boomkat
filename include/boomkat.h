@@ -559,6 +559,28 @@ BK_API void      bk_set_root_tracer(bk_runtime runtime, bk_root_tracer callback,
 /* Host classes. Ids are per runtime; 0 is invalid. Instances carry a payload
  * pointer that the class's finalizer receives when the instance is freed. */
 enum { BK_CLASS_DEFER_FINALIZE = 1 };   /* hold finalizers for bk_run_finalizers */
+/* Exotic hooks give a class's instances custom own properties, as for
+ * indexed or named collections. Each hook returns 1 when it handled the
+ * operation, 0 for the ordinary behavior on the instance, or -1 after
+ * bk_throw or bk_throw_error. `self` is the instance and the hook's values
+ * are locals of its call. get, set and has follow the ordinary algorithms over
+ * get_own and define_own; the other operations are ordinary. Any hook may be
+ * NULL.
+ *   get_own:    fill *desc, or leave desc->flags 0 for "no such property".
+ *   define_own: set *ok to whether the definition was accepted.
+ *   remove:     set *ok to whether the property is gone.
+ *   own_keys:   set *keys_out to an array of string or symbol keys.
+ *   call:       makes instances callable; returns like a bk_c_function.
+ * The engine does not enforce the Proxy invariants on hook results. */
+typedef struct bk_exotic_hooks {
+    int (*get_own)(bk_ctx ctx, bk_value self, bk_atom key, bk_property_descriptor *desc, void *opaque);
+    int (*define_own)(bk_ctx ctx, bk_value self, bk_atom key, const bk_property_descriptor *desc,
+                      int *ok, void *opaque);
+    int (*remove)(bk_ctx ctx, bk_value self, bk_atom key, int *ok, void *opaque);
+    int (*own_keys)(bk_ctx ctx, bk_value self, bk_value *keys_out, void *opaque);
+    bk_value (*call)(bk_ctx ctx, bk_value self, bk_value this_value,
+                     unsigned argc, const bk_value *argv, void *opaque);
+} bk_exotic_hooks;
 typedef struct {
     const char   *name;
     bk_class      parent;      /* 0 = none; brand checks accept subclasses */
@@ -567,7 +589,8 @@ typedef struct {
     bk_c_function construct;   /* receives opaque; NULL = `new` throws TypeError */
     int           arity;
     unsigned      flags;
-    void         *opaque;
+    void         *opaque;     /* passed to construct, finalize, trace and the exotic hooks */
+    const bk_exotic_hooks *exotic;   /* copied; NULL = ordinary instances */
 } bk_class_def;
 /* Creates the class, its prototype (inheriting the parent's) and its
  * constructor in this context's realm. Either output may be NULL. */
@@ -581,6 +604,8 @@ BK_API void *bk_get_instance_payload(bk_ctx ctx, bk_value value, bk_class cls);
 /* Set the payload of an instance whose payload is NULL (the constructor's
  * `this`), or clear it to detach. Clearing does not run the finalizer. */
 BK_API bk_status bk_set_instance_payload(bk_ctx ctx, bk_value value, bk_class cls, void *payload);
+/* new Proxy(target, handler). */
+BK_API bk_value bk_new_proxy(bk_ctx ctx, bk_value target, bk_value handler);
 /* The class of a host instance, or 0. */
 BK_API bk_class bk_get_instance_class(bk_ctx ctx, bk_value value);
 /* Run finalizers deferred by BK_CLASS_DEFER_FINALIZE. Returns how many ran. */

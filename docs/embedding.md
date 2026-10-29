@@ -526,7 +526,7 @@ static bk_value vec_new(bk_ctx ctx, bk_value self, unsigned argc,
     return BK_UNDEFINED;
 }
 
-bk_class_def def = { "Vec", 0, free_vec, NULL, vec_new, 2, 0, NULL };
+bk_class_def def = { "Vec", 0, free_vec, NULL, vec_new, 2, 0, NULL, NULL };
 bk_value ctor, proto;
 vec_class = bk_define_class(app, &def, &ctor, &proto);
 ```
@@ -539,6 +539,37 @@ is destroyed; detaching with a NULL payload skips it. With
 `BK_CLASS_DEFER_FINALIZE`, finalizers wait until the host calls
 `bk_run_finalizers`, which gives engines such as Unreal or Godot a safe point to
 destroy native objects.
+
+### Exotic objects and proxies
+
+A class whose `exotic` field points at a `bk_exotic_hooks` table gets instances
+with custom own properties, such as the indexed and named properties of DOM
+collections. The table is copied, and each hook receives the instance as `self`
+and the class's `opaque`:
+
+- `get_own` fills the descriptor of an own property, or leaves its flags 0
+  to report that there is none.
+- `define_own` accepts or refuses a definition through `*ok`.
+- `remove` deletes, reporting through `*ok`.
+- `own_keys` returns an array of string and symbol keys.
+- `call` makes instances callable and returns like a `bk_c_function`.
+
+A hook returns 1 when it handled the operation, 0 to apply the ordinary
+operation to the instance, or -1 after `bk_throw` or `bk_throw_error`. Any hook
+may be NULL. Reads, writes and `in` follow the ordinary algorithms over
+`get_own` and `define_own`, so a property the hooks do not claim is looked up on
+the prototype, and `[[GetPrototypeOf]]`, `[[PreventExtensions]]` and the others
+are ordinary. The engine does not check the Proxy invariants on hook results:
+a hook that reports a non-configurable property and later drops it is the
+host's bug.
+
+Internally an exotic instance is a proxy over the ordinary instance, so the
+engine's fast paths, which already step aside for proxies, need no further
+checks, and classes without hooks pay nothing. Each instance costs one extra
+object. `bk_get_instance_payload` and the other class calls see through the
+wrapper.
+
+`bk_new_proxy(ctx, target, handler)` is `new Proxy(target, handler)`.
 
 ### Traced slots
 

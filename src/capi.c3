@@ -1351,20 +1351,13 @@ fn int accessor_of(void* ctxp, Runtime* rt, ulong id, TVal* out) {
     return fail(rt, BK_ERR_TYPE, "accessor must be a function or undefined");
 }
 
-fn int bk_define_property(void* ctxp, ulong obj_id, uint atom, BkPropertyDescriptor* desc, int* ok) @export("bk_define_property") {
-    Runtime* rt = rt_of(ctxp);
-    if (rt == null || desc == null || ok == null) return BK_ERR_INVALID;
-    embed::clear_err(rt);
+// Converts a C descriptor, whose handles `ctxp` resolves, to an engine one.
+fn int desc_from_bk(void* ctxp, Runtime* rt, BkPropertyDescriptor* desc, builtins::ProxyDesc* out) {
     uint f = desc.flags;
     if ((f & ~BK_PROP_ALL) != 0) return fail(rt, BK_ERR_INVALID, "unknown property flags");
     bool data = (f & (BK_PROP_HAS_VALUE | BK_PROP_HAS_WRITABLE)) != 0;
     bool accessor = (f & (BK_PROP_HAS_GET | BK_PROP_HAS_SET)) != 0;
     if (data && accessor) return fail(rt, BK_ERR_INVALID, "descriptor is both data and accessor");
-    HString* key = embed::atom_key(rt, atom);
-    if (key == null) return fail(rt, BK_ERR_INVALID, "invalid or freed atom");
-    TVal ov;
-    HObject* obj = as_object(ctxp, obj_id, &ov);
-    if (obj == null) return rt.errcode;
     builtins::ProxyDesc pd;
     pd.found = true;
     pd.getter.set_undefined();
@@ -1389,6 +1382,22 @@ fn int bk_define_property(void* ctxp, ulong obj_id, uint atom, BkPropertyDescrip
     pd.enumerable       = pd.has_enumerable && (f & BK_PROP_ENUMERABLE) != 0;
     pd.has_configurable = (f & BK_PROP_HAS_CONFIGURABLE) != 0;
     pd.configurable     = pd.has_configurable && (f & BK_PROP_CONFIGURABLE) != 0;
+    *out = pd;
+    return BK_OK;
+}
+
+fn int bk_define_property(void* ctxp, ulong obj_id, uint atom, BkPropertyDescriptor* desc, int* ok) @export("bk_define_property") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null || desc == null || ok == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HString* key = embed::atom_key(rt, atom);
+    if (key == null) return fail(rt, BK_ERR_INVALID, "invalid or freed atom");
+    TVal ov;
+    HObject* obj = as_object(ctxp, obj_id, &ov);
+    if (obj == null) return rt.errcode;
+    builtins::ProxyDesc pd;
+    int rc = desc_from_bk(ctxp, rt, desc, &pd);
+    if (rc != BK_OK) return rc;
     bool res;
     rt.heap.has_error = false;
     if (!builtins::object_define_own((void*)rt.vm, rt.heap, obj, key, &pd, &res)) return vm_fault(rt);
@@ -1821,6 +1830,7 @@ struct BkClassDef {
     int   arity;
     uint  flags;
     void* opaque;
+    BkExoticHooks* exotic;
 }
 
 // The entry of a class defined through bk_define_class, or null.
@@ -1831,11 +1841,19 @@ fn heap::HostClassEntry* api_class(Runtime* rt, uint cls) {
     return e;
 }
 
+// The class instance behind `v`: the object itself, or the target of a host
+// exotic object. Null for anything else.
+fn HObject* host_instance(TVal v) {
+    if (!v.is_object()) return null;
+    HObject* o = (HObject*)v.get_heapptr();
+    if (o.is_proxy() && builtins::proxy_host_hooks(o) != null) o = builtins::proxy_target(o);
+    return o.get_class() == hobject::ObjClass.HOST ? o : null;
+}
+
 // The class of a C API host instance, as id + 1, or 0.
 fn uint instance_class(Runtime* rt, TVal v) {
-    if (!v.is_object()) return 0;
-    HObject* o = (HObject*)v.get_heapptr();
-    if (o.get_class() != hobject::ObjClass.HOST) return 0;
+    HObject* o = host_instance(v);
+    if (o == null) return 0;
     uint cls = (*o.extra_ptr()).host.class_id + 1;
     return api_class(rt, cls) != null ? cls : 0;
 }
@@ -1885,6 +1903,14 @@ fn uint bk_define_class(void* ctxp, BkClassDef* def, ulong* ctor_out, ulong* pro
     // Registration may have grown the table; re-read entries by id from here.
     hp.host_class_at((uint)id).parent = def.parent;
     hp.host_class_at((uint)id).flags = heap::HOST_CLASS_C_API | (def.flags & BK_CLASS_DEFER_FINALIZE);
+    if (def.exotic != null) {
+        BkExoticHooks* hooks = (BkExoticHooks*)hp.alloc_func(hp.heap_udata, BkExoticHooks::size);
+        if (hooks == null) { fail(rt, BK_ERR_NOMEM, "out of memory"); return 0; }
+        *hooks = *def.exotic;
+        hp.host_class_at((uint)id).exotic = hooks;
+        if (hooks.call != null) hp.host_class_at((uint)id).flags |= heap::HOST_CLASS_EXOTIC_CALL;
+        hp.host_exotic_ops = &exotic_ops;
+    }
     void* construct = def.construct != null ? def.construct : (void*)&illegal_constructor;
     TVal ctor_tv;
     if (embed::make_c_function(rt, name, construct, def.opaque, null, null, def.arity, true, &ctor_tv, cls) != BK_OK) return 0;
@@ -1938,6 +1964,15 @@ fn ulong bk_new_instance(void* ctxp, uint cls, void* payload, ulong new_target) 
     (*inst.extra_ptr()).host.payload = payload;
     hp.set_prototype(inst, proto);
     TVal v; v.set_object(inst);
+    if (e.exotic != null) {
+        HObject* wrapped = builtins::host_exotic_create(hp, inst, e.exotic, (e.flags & heap::HOST_CLASS_EXOTIC_CALL) != 0);
+        if (wrapped == null) {
+            // The collector frees the instance; the caller keeps the payload.
+            (*inst.extra_ptr()).host.payload = null;
+            return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+        }
+        v.set_object(wrapped);
+    }
     return store(rt, v);
 }
 
@@ -1948,7 +1983,7 @@ fn void* bk_get_instance_payload(void* ctxp, ulong id, uint cls) @export("bk_get
     if (!resolve(ctxp, id, &v)) return null;
     uint have = instance_class(rt, v);
     if (have == 0 || !class_is_a(rt, have, cls)) return null;
-    return (*((HObject*)v.get_heapptr()).extra_ptr()).host.payload;
+    return (*host_instance(v).extra_ptr()).host.payload;
 }
 
 fn int bk_set_instance_payload(void* ctxp, ulong id, uint cls, void* payload) @export("bk_set_instance_payload") {
@@ -1959,7 +1994,7 @@ fn int bk_set_instance_payload(void* ctxp, ulong id, uint cls, void* payload) @e
     if (!resolve(ctxp, id, &v)) { bad_handle(rt); return BK_ERR_INVALID; }
     uint have = instance_class(rt, v);
     if (have == 0 || !class_is_a(rt, have, cls)) return fail(rt, BK_ERR_TYPE, "not an instance of the class");
-    HObject* o = (HObject*)v.get_heapptr();
+    HObject* o = host_instance(v);
     if (payload != null && (*o.extra_ptr()).host.payload != null) {
         return fail(rt, BK_ERR_INVALID, "instance already has a payload");
     }
@@ -1973,6 +2008,263 @@ fn uint bk_get_instance_class(void* ctxp, ulong id) @export("bk_get_instance_cla
     TVal v;
     if (!resolve(ctxp, id, &v)) return 0;
     return instance_class(rt, v);
+}
+
+// ============================================================================
+// Exotic hooks and Proxy creation
+// ============================================================================
+
+alias BkExoticGetOwn  = fn int(void* ctx, ulong self, uint key, BkPropertyDescriptor* desc, void* opaque);
+alias BkExoticDefine  = fn int(void* ctx, ulong self, uint key, BkPropertyDescriptor* desc, int* ok, void* opaque);
+alias BkExoticRemove  = fn int(void* ctx, ulong self, uint key, int* ok, void* opaque);
+alias BkExoticOwnKeys = fn int(void* ctx, ulong self, ulong* keys_out, void* opaque);
+alias BkExoticCall    = fn ulong(void* ctx, ulong self, ulong this_value, uint argc, ulong* argv, void* opaque);
+
+// Layout must match bk_exotic_hooks in include/boomkat.h.
+struct BkExoticHooks {
+    BkExoticGetOwn  get_own;
+    BkExoticDefine  define_own;
+    BkExoticRemove  remove;
+    BkExoticOwnKeys own_keys;
+    BkExoticCall    call;
+}
+
+builtins::HostExoticOps exotic_ops = {
+    .get_own  = &exotic_get_own,
+    .define   = &exotic_define,
+    .remove   = &exotic_remove,
+    .own_keys = &exotic_own_keys,
+    .call     = &exotic_call,
+};
+
+// The state a hook call runs in: the context of the current realm, a local
+// scope for the values it creates, and `self` as a local.
+struct HookFrame {
+    Runtime*     rt;
+    Ctx*         ctx;
+    Ctx*         previous;
+    heap::Realm* realm;
+    uint         scope;
+    ulong        self;
+    BkExoticHooks* hooks;
+    void*        opaque;
+}
+
+fn bool hook_enter(Heap* hp, HObject* self, HookFrame* f) {
+    Runtime* rt = (Runtime*)hp.capi_runtime;
+    HObject* inst = builtins::proxy_target(self);
+    heap::HostClassEntry* e = hp.host_class_at((*inst.extra_ptr()).host.class_id);
+    Ctx* ctx = embed::realm_context(rt, hp.realm);
+    if (ctx == null) { builtins::proxy_throw_type(hp, "missing host context"); return false; }
+    *f = { .rt = rt, .ctx = ctx, .previous = rt.active, .realm = hp.realm,
+           .hooks = (BkExoticHooks*)e.exotic, .opaque = e.udata };
+    embed::select_context(ctx);
+    f.scope = embed::scope_open(rt);
+    if (f.scope == 0) { hook_leave(f); builtins::proxy_throw_type(hp, "local scope full"); return false; }
+    TVal sv; sv.set_object(self);
+    f.self = embed::store_value(rt, sv);
+    if (f.self == 0) { hook_leave(f); builtins::proxy_throw_type(hp, "local scope full"); return false; }
+    return true;
+}
+
+fn void hook_leave(HookFrame* f) {
+    if (f.scope != 0) embed::scope_close(f.rt, f.scope);
+    f.scope = 0;
+    embed::select_context(f.previous);
+    f.rt.heap.enter_realm(f.realm);
+}
+
+// Turns a hook's -1 into the engine's pending error: the exception it threw,
+// or a TypeError when it threw nothing.
+fn int hook_threw(HookFrame* f) {
+    Runtime* rt = f.rt;
+    Heap* hp = rt.heap;
+    if (hp.uncatchable_throw) return -1;
+    if (rt.exception == 0 && rt.pending_code == 0) {
+        builtins::proxy_throw_type(hp, "exotic hook failed without an exception");
+        return -1;
+    }
+    ulong exception = embed::take_exception(rt);
+    TVal thrown;
+    if (!embed::slot_get(rt, exception, &thrown)) {
+        builtins::proxy_throw_type(hp, "exotic hook failed without an exception");
+        return -1;
+    }
+    hp.has_error = true;
+    hp.@set_edge(null, hp.error_value, thrown);
+    embed::slot_release(rt, exception);
+    return -1;
+}
+
+// An atom for `key` that the hook borrows, released by the caller.
+fn uint hook_atom(HookFrame* f, HString* key) {
+    uint atom = embed::atom_intern(f.rt, key);
+    if (atom == 0) builtins::proxy_throw_type(f.rt.heap, "out of memory");
+    return atom;
+}
+
+// Keeps a hook result alive past its scope, until the next hook call.
+fn void hold(Heap* hp, uint i, TVal v) {
+    hp.@set_edge(null, hp.host_exotic_hold[i], v);
+}
+
+fn int exotic_get_own(void* vm, Heap* hp, HObject* self, HString* key, builtins::ProxyDesc* out) {
+    HookFrame f;
+    if (!hook_enter(hp, self, &f)) return -1;
+    defer hook_leave(&f);
+    if (f.hooks.get_own == null) return 0;
+    uint atom = hook_atom(&f, key);
+    if (atom == 0) return -1;
+    defer embed::atom_release(f.rt, atom);
+    BkPropertyDescriptor desc = { .value = embed::IMM_UNDEFINED, .get = embed::IMM_UNDEFINED, .set = embed::IMM_UNDEFINED };
+    int r = f.hooks.get_own(f.ctx, f.self, atom, &desc, f.opaque);
+    if (r < 0) return hook_threw(&f);
+    if (r == 0) return 0;
+    *out = {};
+    if (desc.flags == 0) return 1;   // handled: no such property
+    builtins::ProxyDesc pd;
+    if (desc_from_bk(f.ctx, f.rt, &desc, &pd) != BK_OK) {
+        builtins::proxy_throw_type(hp, "get_own hook returned an invalid descriptor");
+        return -1;
+    }
+    pd.complete();
+    hold(hp, 0, pd.value);
+    hold(hp, 1, pd.getter);
+    hold(hp, 2, pd.setter);
+    *out = pd;
+    return 1;
+}
+
+// The C form of an engine descriptor, with its values as locals.
+fn bool desc_to_bk(Runtime* rt, builtins::ProxyDesc* pd, BkPropertyDescriptor* out) {
+    *out = { .value = embed::IMM_UNDEFINED, .get = embed::IMM_UNDEFINED, .set = embed::IMM_UNDEFINED };
+    uint fl;
+    if (pd.has_value) {
+        fl |= BK_PROP_HAS_VALUE;
+        out.value = store(rt, pd.value);
+        if (out.value == 0) return false;
+    }
+    if (pd.has_get) {
+        fl |= BK_PROP_HAS_GET;
+        out.get = store(rt, pd.getter);
+        if (out.get == 0) return false;
+    }
+    if (pd.has_set) {
+        fl |= BK_PROP_HAS_SET;
+        out.set = store(rt, pd.setter);
+        if (out.set == 0) return false;
+    }
+    if (pd.has_writable) fl |= BK_PROP_HAS_WRITABLE | (pd.writable ? BK_PROP_WRITABLE : 0);
+    if (pd.has_enumerable) fl |= BK_PROP_HAS_ENUMERABLE | (pd.enumerable ? BK_PROP_ENUMERABLE : 0);
+    if (pd.has_configurable) fl |= BK_PROP_HAS_CONFIGURABLE | (pd.configurable ? BK_PROP_CONFIGURABLE : 0);
+    out.flags = fl;
+    return true;
+}
+
+fn int exotic_define(void* vm, Heap* hp, HObject* self, HString* key, builtins::ProxyDesc* desc, bool* res) {
+    HookFrame f;
+    if (!hook_enter(hp, self, &f)) return -1;
+    defer hook_leave(&f);
+    if (f.hooks.define_own == null) return 0;
+    uint atom = hook_atom(&f, key);
+    if (atom == 0) return -1;
+    defer embed::atom_release(f.rt, atom);
+    BkPropertyDescriptor bd;
+    if (!desc_to_bk(f.rt, desc, &bd)) { builtins::proxy_throw_type(hp, "local scope full"); return -1; }
+    int ok = 0;
+    int r = f.hooks.define_own(f.ctx, f.self, atom, &bd, &ok, f.opaque);
+    if (r < 0) return hook_threw(&f);
+    if (r > 0) *res = ok != 0;
+    return r;
+}
+
+fn int exotic_remove(void* vm, Heap* hp, HObject* self, HString* key, bool* res) {
+    HookFrame f;
+    if (!hook_enter(hp, self, &f)) return -1;
+    defer hook_leave(&f);
+    if (f.hooks.remove == null) return 0;
+    uint atom = hook_atom(&f, key);
+    if (atom == 0) return -1;
+    defer embed::atom_release(f.rt, atom);
+    int ok = 0;
+    int r = f.hooks.remove(f.ctx, f.self, atom, &ok, f.opaque);
+    if (r < 0) return hook_threw(&f);
+    if (r > 0) *res = ok != 0;
+    return r;
+}
+
+fn int exotic_own_keys(void* vm, Heap* hp, HObject* self, TVal* list_out) {
+    HookFrame f;
+    if (!hook_enter(hp, self, &f)) return -1;
+    defer hook_leave(&f);
+    if (f.hooks.own_keys == null) return 0;
+    ulong keys = 0;
+    int r = f.hooks.own_keys(f.ctx, f.self, &keys, f.opaque);
+    if (r < 0) return hook_threw(&f);
+    if (r == 0) return 0;
+    if (!embed::resolve_handle(f.rt, keys, list_out)) {
+        builtins::proxy_throw_type(hp, "own_keys hook returned an invalid handle");
+        return -1;
+    }
+    hold(hp, 0, *list_out);
+    return 1;
+}
+
+fn void exotic_call(builtins::BuiltinContext* bctx, HObject* self) {
+    Heap* hp = bctx.heap;
+    HookFrame f;
+    if (!hook_enter(hp, self, &f)) {
+        builtins::host_throw(bctx, hp.error_value);
+        hp.has_error = false;
+        return;
+    }
+    defer hook_leave(&f);
+    Runtime* rt = f.rt;
+    uint argc = bctx.argc;
+    ulong[16] local_args;
+    ulong* args = &local_args;
+    if (argc > local_args.len) {
+        args = (ulong*)hp.alloc_func(hp.heap_udata, (usz)argc * ulong::size);
+        if (args == null) { builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "out of memory"); return; }
+    }
+    defer if (args != &local_args) hp.free_func(hp.heap_udata, args);
+    ulong this_h = store(rt, bctx.this_val);
+    if (this_h == 0) { builtins::host_throw_error(bctx, builtins::HOST_ERR_RANGE, "local scope full"); return; }
+    for (uint i = 0; i < argc; i++) {
+        args[i] = store(rt, bctx.regs[bctx.base_reg + i]);
+        if (args[i] == 0) { builtins::host_throw_error(bctx, builtins::HOST_ERR_RANGE, "local scope full"); return; }
+    }
+    ulong result = f.hooks.call(f.ctx, f.self, this_h, argc, args, f.opaque);
+    embed::select_context(f.ctx);
+    if (hp.uncatchable_throw) { builtins::host_throw(bctx, hp.error_value); return; }
+    if (result == 0) {
+        hook_threw(&f);
+        hp.has_error = false;
+        builtins::host_throw(bctx, hp.error_value);
+        return;
+    }
+    TVal value;
+    if (!embed::resolve_handle(rt, result, &value)) {
+        builtins::host_throw_error(bctx, builtins::HOST_ERR_TYPE, "call hook returned an invalid or freed handle");
+        return;
+    }
+    bctx.copy_result(value);
+}
+
+fn ulong bk_new_proxy(void* ctxp, ulong target, ulong handler) @export("bk_new_proxy") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return 0;
+    embed::clear_err(rt);
+    TVal t;
+    TVal h;
+    if (!resolve(ctxp, target, &t) || !resolve(ctxp, handler, &h)) return bad_handle(rt);
+    TVal result;
+    builtins::BuiltinContext call = { .heap = rt.heap, .vm = rt.vm, .result = builtins::result_slot(&result) };
+    HObject* p = builtins::proxy_create(&call, t, h);
+    if (call.should_throw) { embed::describe_error(rt, &call.throw_value); return 0; }
+    if (p == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    TVal pv; pv.set_object(p);
+    return store(rt, pv);
 }
 
 // ============================================================================

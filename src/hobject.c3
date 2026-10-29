@@ -883,7 +883,11 @@ struct HObjectIteratorHelper {
 struct HObjectProxy {
     HObject* target;
     HObject* handler;
-    void*    _reserved;          // keeps builtin_fn_index at the same offset as HObjectFunction
+    // Non-null on a host exotic object, an instance of a C API class with
+    // exotic hooks: its operations go to Heap.host_exotic_ops instead of
+    // handler traps. Pointer-sized, so builtin_fn_index keeps the offset it
+    // has in HObjectFunction.
+    void*    host_hooks;
     int      builtin_fn_index;
 }
 

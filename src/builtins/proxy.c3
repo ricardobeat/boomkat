@@ -29,6 +29,7 @@ import boomkat::esm;
 
 fn HObject* proxy_target(HObject* p)  @inline { return (*p.extra_ptr()).proxy.target; }
 fn HObject* proxy_handler(HObject* p) @inline { return (*p.extra_ptr()).proxy.handler; }
+fn void* proxy_host_hooks(HObject* p) @inline { return (*p.extra_ptr()).proxy.host_hooks; }
 
 // Hidden own-property key on a revoker function that points back at its proxy.
 // 0xFF-prefixed so it is treated as a symbol (invisible to string-key paths).
@@ -443,8 +444,12 @@ fn bool js_set_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
         cur = cur.prototype;
         depth++;
     }
-    // CreateDataProperty / set existing data prop on the receiver
-    // (OrdinarySet §10.1.9.2 steps 4-9).
+    return set_on_receiver(vm, heap, key, val, receiver, res);
+}
+
+// CreateDataProperty / set existing data prop on the receiver
+// (OrdinarySet §10.1.9.2 steps 4-9).
+fn bool set_on_receiver(void* vm, Heap* heap, HString* key, TVal val, TVal receiver, bool* res) {
     if (!receiver.is_object()) { *res = false; return true; }
     HObject* recv_obj = (HObject*)receiver.get_heapptr();
     if (recv_obj.is_proxy()) {
@@ -574,6 +579,9 @@ fn int proxy_find_trap(void* vm, Heap* heap, HObject* proxy, char[] name,
     }
     *target_out = target;
     *handler_out = handler;
+    // A host exotic object has no traps; what its hooks leave out goes to
+    // the target.
+    if (proxy_host_hooks(proxy) != null) return 1;
     HString* key = builtin_intern_string(heap, name);
     if (key == null) { proxy_throw_type(heap, "out of memory"); return 0; }
     TVal trap;
@@ -605,6 +613,7 @@ fn bool proxy_call_trap(void* vm, Heap* heap, TVal trap, HObject* handler,
 // ============================================================================
 
 fn bool proxy_mop_get(void* vm, Heap* heap, HObject* proxy, HString* key, TVal receiver, TVal* out) {
+    if (proxy_host_hooks(proxy) != null) return host_get(vm, heap, proxy, key, receiver, out);
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "get", &trap, &target, &handler);
     if (t == 0) return false;
@@ -639,6 +648,7 @@ fn bool proxy_mop_get(void* vm, Heap* heap, HObject* proxy, HString* key, TVal r
 // ============================================================================
 
 fn bool proxy_mop_set(void* vm, Heap* heap, HObject* proxy, HString* key, TVal val, TVal receiver, bool* res) {
+    if (proxy_host_hooks(proxy) != null) return host_set(vm, heap, proxy, key, val, receiver, res);
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "set", &trap, &target, &handler);
     if (t == 0) return false;
@@ -675,6 +685,7 @@ fn bool proxy_mop_set(void* vm, Heap* heap, HObject* proxy, HString* key, TVal v
 // ============================================================================
 
 fn bool proxy_mop_has(void* vm, Heap* heap, HObject* proxy, HString* key, bool* out) {
+    if (proxy_host_hooks(proxy) != null) return host_has(vm, heap, proxy, key, out);
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "has", &trap, &target, &handler);
     if (t == 0) return false;
@@ -712,6 +723,7 @@ fn bool proxy_mop_has(void* vm, Heap* heap, HObject* proxy, HString* key, bool* 
 // ============================================================================
 
 fn bool proxy_mop_delete(void* vm, Heap* heap, HObject* proxy, HString* key, bool* out) {
+    if (proxy_host_hooks(proxy) != null) return host_delete(vm, heap, proxy, key, out);
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "deleteProperty", &trap, &target, &handler);
     if (t == 0) return false;
@@ -1194,6 +1206,7 @@ fn bool object_define_own(void* vm, Heap* heap, HObject* obj, HString* key, Prox
 // ============================================================================
 
 fn bool proxy_mop_get_own(void* vm, Heap* heap, HObject* proxy, HString* key, ProxyDesc* out) {
+    if (proxy_host_hooks(proxy) != null) return host_get_own(vm, heap, proxy, key, out);
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "getOwnPropertyDescriptor", &trap, &target, &handler);
     if (t == 0) return false;
@@ -1254,6 +1267,7 @@ fn bool proxy_mop_get_own(void* vm, Heap* heap, HObject* proxy, HString* key, Pr
 // ============================================================================
 
 fn bool proxy_mop_define(void* vm, Heap* heap, HObject* proxy, HString* key, ProxyDesc* desc, bool* res) {
+    if (proxy_host_hooks(proxy) != null) return host_define(vm, heap, proxy, key, desc, res);
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "defineProperty", &trap, &target, &handler);
     if (t == 0) return false;
@@ -1301,6 +1315,54 @@ fn bool proxy_mop_define(void* vm, Heap* heap, HObject* proxy, HString* key, Pro
         }
     }
     *res = true;
+    return true;
+}
+
+// CreateListFromArrayLike for an ownKeys result: string and symbol keys,
+// interned, without duplicates. The caller frees *keys_out.
+fn bool key_list_from_array_like(void* vm, Heap* heap, HObject* res_obj, HString*** keys_out, uint* n_out) {
+    // CreateListFromArrayLike, string/symbol keys only, no duplicates.
+    HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
+    TVal len_tv;
+    if (!js_get(vm, heap, res_obj, len_key, &len_tv)) return false;
+    long len = 0;
+    if (len_tv.is_fastint()) { len = len_tv.get_fastint(); }
+    else if (len_tv.is_number()) { len = (long)len_tv.get_number(); }
+    if (len < 0) len = 0;
+    if (len > 0xFFFFFF) {
+        proxy_throw_type(heap, "'ownKeys' on proxy: trap result is too long");
+        return false;
+    }
+    uint n = (uint)len;
+    HString** keys = (HString**)heap.alloc_func(heap.heap_udata, (usz)(n + 1) * (usz)void*::size);
+    if (keys == null) { proxy_throw_type(heap, "out of memory"); return false; }
+    for (uint i = 0; i < n; i++) {
+        HString* ik = heap.int_to_hstring((long)i);
+        TVal kv;
+        if (ik == null || !js_get(vm, heap, res_obj, ik, &kv)) {
+            heap.free_func(heap.heap_udata, keys);
+            return false;
+        }
+        if (!kv.is_string()) {
+            heap.free_func(heap.heap_udata, keys);
+            proxy_throw_type(heap, "'ownKeys' on proxy: trap result must contain only strings and symbols");
+            return false;
+        }
+        // Duplicate and target-key checks below compare canonical identities.
+        keys[i] = heap.ensure_interned((HString*)kv.get_heapptr());
+    }
+    // Duplicate check (O(n^2); trap results are small in practice).
+    for (uint i = 0; i < n; i++) {
+        for (uint j = i + 1; j < n; j++) {
+            if (keys[i] == keys[j]) {
+                heap.free_func(heap.heap_udata, keys);
+                proxy_throw_type(heap, "'ownKeys' on proxy: trap returned duplicate entries");
+                return false;
+            }
+        }
+    }
+    *keys_out = keys;
+    *n_out = n;
     return true;
 }
 
@@ -1383,6 +1445,7 @@ fn uint ordinary_own_keys(Heap* heap, HObject* obj, HString*** buf_out) {
 
 // [[OwnPropertyKeys]]: writes a JS Array of keys to *arr_out.
 fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_out) {
+    if (proxy_host_hooks(proxy) != null) return host_own_keys(vm, heap, proxy, arr_out);
     TVal trap; HObject* target; HObject* handler;
     int t = proxy_find_trap(vm, heap, proxy, "ownKeys", &trap, &target, &handler);
     if (t == 0) return false;
@@ -1422,46 +1485,9 @@ fn bool proxy_mop_own_keys(void* vm, Heap* heap, HObject* proxy, HObject** arr_o
     }
     HObject* res_obj = (HObject*)result.get_heapptr();
 
-    // CreateListFromArrayLike, string/symbol keys only, no duplicates.
-    HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-    TVal len_tv;
-    if (!js_get(vm, heap, res_obj, len_key, &len_tv)) return false;
-    long len = 0;
-    if (len_tv.is_fastint()) { len = len_tv.get_fastint(); }
-    else if (len_tv.is_number()) { len = (long)len_tv.get_number(); }
-    if (len < 0) len = 0;
-    if (len > 0xFFFFFF) {
-        proxy_throw_type(heap, "'ownKeys' on proxy: trap result is too long");
-        return false;
-    }
-    uint n = (uint)len;
-    HString** keys = (HString**)heap.alloc_func(heap.heap_udata, (usz)(n + 1) * (usz)void*::size);
-    if (keys == null) { proxy_throw_type(heap, "out of memory"); return false; }
-    for (uint i = 0; i < n; i++) {
-        HString* ik = heap.int_to_hstring((long)i);
-        TVal kv;
-        if (ik == null || !js_get(vm, heap, res_obj, ik, &kv)) {
-            heap.free_func(heap.heap_udata, keys);
-            return false;
-        }
-        if (!kv.is_string()) {
-            heap.free_func(heap.heap_udata, keys);
-            proxy_throw_type(heap, "'ownKeys' on proxy: trap result must contain only strings and symbols");
-            return false;
-        }
-        // Duplicate and target-key checks below compare canonical identities.
-        keys[i] = heap.ensure_interned((HString*)kv.get_heapptr());
-    }
-    // Duplicate check (O(n^2); trap results are small in practice).
-    for (uint i = 0; i < n; i++) {
-        for (uint j = i + 1; j < n; j++) {
-            if (keys[i] == keys[j]) {
-                heap.free_func(heap.heap_udata, keys);
-                proxy_throw_type(heap, "'ownKeys' on proxy: trap returned duplicate entries");
-                return false;
-            }
-        }
-    }
+    HString** keys;
+    uint n;
+    if (!key_list_from_array_like(vm, heap, res_obj, &keys, &n)) return false;
 
     bool ext;
     if (!object_is_extensible(vm, heap, target, &ext)) {
@@ -2001,6 +2027,7 @@ fn void builtin_proxy_call(BuiltinContext* ctx) {
         builtin_throw(ctx, ctx.heap.type_err_proto, "proxy call on non-proxy");
         return;
     }
+    if (proxy_host_hooks(p) != null) { host_ops(ctx.heap).call(ctx, p); return; }
     Heap* heap = ctx.heap;
     char[] trap_name = ctx.is_constructor ? "construct" : "apply";
     TVal trap; HObject* target; HObject* handler;
@@ -2112,4 +2139,143 @@ fn bool register_proxy_constructor(EnvRecord* global_env, Heap* heap) {
 
     TVal ctor_tv; ctor_tv.set_object(ctor);
     return register_named_value(global_env, heap, "Proxy", ctor_tv);
+}
+
+// ============================================================================
+// Host exotic objects
+// ============================================================================
+
+// A host exotic object is an instance of a C API class with exotic hooks. It
+// is a proxy whose host_hooks is set: its target is the ordinary class
+// instance, which holds the payload and the [[Prototype]], and its handler is
+// the target too, so it never reads as revoked. Each hook returns 1 when it
+// handled the operation, 0 to apply the ordinary operation to the target,
+// and -1 after throwing. [[Get]], [[Set]] and [[HasProperty]] follow the
+// ordinary algorithms over the hooked [[GetOwnProperty]] and
+// [[DefineOwnProperty]]; the remaining operations go to the target.
+alias HostGetOwnFn  = fn int(void* vm, Heap* heap, HObject* self, HString* key, ProxyDesc* out);
+alias HostDefineFn  = fn int(void* vm, Heap* heap, HObject* self, HString* key, ProxyDesc* desc, bool* res);
+alias HostDeleteFn  = fn int(void* vm, Heap* heap, HObject* self, HString* key, bool* res);
+alias HostOwnKeysFn = fn int(void* vm, Heap* heap, HObject* self, TVal* list_out);
+alias HostCallFn    = fn void(BuiltinContext* ctx, HObject* self);
+
+struct HostExoticOps {
+    HostGetOwnFn  get_own;
+    HostDefineFn  define;
+    HostDeleteFn  remove;
+    HostOwnKeysFn own_keys;
+    HostCallFn    call;
+}
+
+macro HostExoticOps* host_ops(Heap* heap) => (HostExoticOps*)heap.host_exotic_ops;
+
+fn bool host_get_own(void* vm, Heap* heap, HObject* self, HString* key, ProxyDesc* out) {
+    int r = host_ops(heap).get_own(vm, heap, self, key, out);
+    if (r < 0) return false;
+    if (r == 0) return own_property_desc(vm, heap, proxy_target(self), key, out);
+    return true;
+}
+
+fn bool host_define(void* vm, Heap* heap, HObject* self, HString* key, ProxyDesc* desc, bool* res) {
+    int r = host_ops(heap).define(vm, heap, self, key, desc, res);
+    if (r < 0) return false;
+    if (r == 0) return object_define_own(vm, heap, proxy_target(self), key, desc, res);
+    return true;
+}
+
+fn bool host_delete(void* vm, Heap* heap, HObject* self, HString* key, bool* res) {
+    int r = host_ops(heap).remove(vm, heap, self, key, res);
+    if (r < 0) return false;
+    if (r == 0) return object_mop_delete(vm, heap, proxy_target(self), key, res);
+    return true;
+}
+
+// OrdinaryGet (§10.1.8.1).
+fn bool host_get(void* vm, Heap* heap, HObject* self, HString* key, TVal receiver, TVal* out) {
+    ProxyDesc d;
+    if (!host_get_own(vm, heap, self, key, &d)) return false;
+    if (!d.found) {
+        HObject* parent = proxy_target(self).prototype;
+        if (parent == null) { out.set_undefined(); return true; }
+        return js_get_with_receiver(vm, heap, parent, key, receiver, out);
+    }
+    if (!d.is_accessor_desc()) { *out = d.value; return true; }
+    if (!tval_is_callable(d.getter) || heap.call_fn == null) { out.set_undefined(); return true; }
+    *out = heap.call_fn(vm, d.getter, null, 0, receiver);
+    return !heap.has_error;
+}
+
+// OrdinarySet (§10.1.9.1).
+fn bool host_set(void* vm, Heap* heap, HObject* self, HString* key, TVal val, TVal receiver, bool* res) {
+    ProxyDesc d;
+    if (!host_get_own(vm, heap, self, key, &d)) return false;
+    if (!d.found) {
+        HObject* parent = proxy_target(self).prototype;
+        if (parent != null) return js_set_with_receiver(vm, heap, parent, key, val, receiver, res);
+        return set_on_receiver(vm, heap, key, val, receiver, res);
+    }
+    if (d.is_accessor_desc()) {
+        if (!tval_is_callable(d.setter) || heap.call_fn == null) { *res = false; return true; }
+        TVal[1] args = { val };
+        heap.call_fn(vm, d.setter, &args[0], 1, receiver);
+        if (heap.has_error) return false;
+        *res = true;
+        return true;
+    }
+    if (!d.writable) { *res = false; return true; }
+    return set_on_receiver(vm, heap, key, val, receiver, res);
+}
+
+// OrdinaryHasProperty (§10.1.7.1).
+fn bool host_has(void* vm, Heap* heap, HObject* self, HString* key, bool* out) {
+    ProxyDesc d;
+    if (!host_get_own(vm, heap, self, key, &d)) return false;
+    if (d.found) { *out = true; return true; }
+    HObject* parent = proxy_target(self).prototype;
+    if (parent == null) { *out = false; return true; }
+    return js_has_property(vm, heap, parent, key, out);
+}
+
+fn bool host_own_keys(void* vm, Heap* heap, HObject* self, HObject** arr_out) {
+    TVal list;
+    int r = host_ops(heap).own_keys(vm, heap, self, &list);
+    if (r < 0) return false;
+    if (r == 0) return proxy_mop_own_keys(vm, heap, proxy_target(self), arr_out);
+    if (!list.is_object()) {
+        proxy_throw_type(heap, "own_keys hook must return an array");
+        return false;
+    }
+    HString** keys;
+    uint n;
+    if (!key_list_from_array_like(vm, heap, (HObject*)list.get_heapptr(), &keys, &n)) return false;
+    defer if (keys != null) heap.free_func(heap.heap_udata, keys);
+    HObject*? arr_raw = heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch arr_raw) { proxy_throw_type(heap, "out of memory"); return false; }
+    HObject* arr = arr_raw;
+    heap.set_prototype(arr, heap.array_proto);
+    for (uint i = 0; i < n; i++) {
+        TVal kv; kv.set_string_borrowed(keys[i]);
+        array_set_elem(arr, i, kv, heap);
+    }
+    TVal len_tv; len_tv.set_fastint((long)n);
+    arr.put_prop((void*)(HString*)heap.strs[heap::BuiltinStr.LENGTH], len_tv, hobject::PROP_FLAGS_WC, heap);
+    *arr_out = arr;
+    return true;
+}
+
+// Wraps `instance`, an ordinary class instance, as a host exotic object.
+// `hooks` identifies the class's hooks; `callable` gives it [[Call]].
+fn HObject* host_exotic_create(Heap* heap, HObject* instance, void* hooks, bool callable) {
+    HObject*? raw = heap.alloc_object(hobject::ObjClass.PROXY);
+    if (catch raw) return null;
+    HObject* p = raw;
+    heap.@set_edge(p, (*p.extra_ptr()).proxy.target, instance);
+    heap.@set_edge(p, (*p.extra_ptr()).proxy.handler, instance);
+    (*p.extra_ptr()).proxy.host_hooks = hooks;
+    p.prototype = null;
+    if (callable) {
+        p.flags.callable = true;
+        (*p.extra_ptr()).proxy.builtin_fn_index = (int)Builtin.PROXY_CALL.ordinal;
+    }
+    return p;
 }

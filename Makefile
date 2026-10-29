@@ -517,6 +517,14 @@ out/weak_api: test/capi/weak.c include/boomkat.h out/boomkat.a
 test-weak-api: out/weak_api
 	./out/weak_api
 
+out/exotic_api: test/capi/exotic.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/exotic.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/exotic_api
+
+.PHONY: test-exotic-api
+test-exotic-api: out/exotic_api
+	./out/exotic_api
+
 out/gc_control_api: test/capi/gc_control.c include/boomkat.h out/boomkat.a
 	cc -std=c11 -Wall -Wextra -pedantic -Iinclude test/capi/gc_control.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/gc_control_api

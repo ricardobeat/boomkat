@@ -3766,6 +3766,15 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
                 }
             }
         }
+        if (cls != null && cls.exotic != null) {
+            inst = host_exotic_create(heap, inst, cls.exotic, (cls.flags & heap::HOST_CLASS_EXOTIC_CALL) != 0);
+            if (inst == null) {
+                heap.leave_native_frame();
+                ctx.should_throw = true;
+                ctx.throw_value.set_undefined();
+                return;
+            }
+        }
         ctx.this_val.set_object(inst);
         made_this = true;
     }

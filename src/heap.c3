@@ -523,12 +523,15 @@ struct HostClassEntry {
     HObject* ctor;       // constructor of a C API class, or null; marked as a root
     uint     parent;     // parent class id + 1, or 0
     uint     flags;      // HOST_CLASS_*
+    void*    exotic;     // the C API's copy of the class's exotic hooks, or null; freed with the table
 }
 
 // Finalizers of this class run from Heap.run_deferred_finalizers, not at free.
 const uint HOST_CLASS_DEFER_FINALIZE = 1;
 // Defined through the C API's bk_define_class, so visible to its brand checks.
 const uint HOST_CLASS_C_API = 0x100;
+// Instances of a class with exotic hooks are callable.
+const uint HOST_CLASS_EXOTIC_CALL = 0x200;
 
 // A finalizer call held back by HOST_CLASS_DEFER_FINALIZE.
 struct DeferredFinal {
@@ -1400,6 +1403,12 @@ struct Heap {
     JobHookFn      job_hook;
     void*          job_hook_runtime;
     void*          job_hook_opaque;
+    // builtins::HostExoticOps, installed by the C API; serves proxies whose
+    // host_hooks is set.
+    void*          host_exotic_ops;
+    // Results of the last host exotic hook (value, getter, setter), owned
+    // until the next hook call like a call_fn result.
+    TVal[3]        host_exotic_hold;
 }
 
 alias JobHookFn = fn void(void* runtime, void* opaque);
@@ -1706,6 +1715,7 @@ fn Heap*? create(
     h.host_fn_count         = 0;
     h.host_fn_capacity      = 0;
     h.host_classes          = null;
+    h.host_exotic_ops       = null;
     h.host_class_count      = 0;
     h.host_class_capacity   = 0;
     h.deferred_finals       = null;
@@ -2476,6 +2486,9 @@ fn void Heap.destroy(&self) {
         self.external_buffer_free = EXTERNAL_NONE;
     }
     if (self.host_classes != null) {
+        for (uint i = 0; i < self.host_class_count; i++) {
+            if (self.host_classes[i].exotic != null) self.free_func(self.heap_udata, self.host_classes[i].exotic);
+        }
         self.free_func(self.heap_udata, self.host_classes);
         self.host_classes = null;
         self.host_class_count = 0;
@@ -2927,6 +2940,7 @@ fn void Heap.reset(&self) {
     // These TVals can hold heap pointers.
     self.error_value.set_undefined();
     self.yield_value.set_undefined();
+    foreach (&v : self.host_exotic_hold) v.set_undefined();
     self.has_error = false;
 
     // gen_initial_obj points into the freed heap, and the GC mark phase
@@ -3103,6 +3117,7 @@ fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* ud
     self.host_classes[id].ctor      = null;
     self.host_classes[id].parent    = 0;
     self.host_classes[id].flags     = 0;
+    self.host_classes[id].exotic    = null;
     self.shade_root_object(proto);
     self.host_class_count++;
     return (long)id;
@@ -4771,6 +4786,7 @@ fn void Heap.mark_roots(&self) {
     // In-flight error and generator state held directly on the heap.
     self.mark_tval(&self.error_value);
     self.mark_tval(&self.yield_value);
+    foreach (&v : self.host_exotic_hold) self.mark_tval(v);
     for (uint i = 0; i < self.host_vals_len; i++) {
         if (self.host_vals[i].is_traced()) self.mark_tval(&self.host_vals[i]);
     }
