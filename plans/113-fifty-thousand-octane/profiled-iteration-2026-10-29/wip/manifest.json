@@ -1,0 +1,138 @@
+{
+  "effect-regions": {
+    "base": "68d7c01e",
+    "source": "/tmp/bk-function-regions-source",
+    "source_hash": "317cdf4976fb781ede3b91f0caf1301ef6cad5424b05cddb9bb8dc6679eea4be",
+    "project_hash": "509988d8e0794f5f61fe0713eba3225e5386a40709063d71e763cee37c78e52e",
+    "changed_files": [
+      "src/vm/vm_sljit_function.c3",
+      "src/vm/vm_sljit_function_runtime.c3",
+      "src/vm/vm_sljit_function_ssa.c3",
+      "src/vm/vm_sljit_inline.c3",
+      "src/vm/vm_sljit_loop.c3",
+      "src/vm/vm_sljit_map.c3",
+      "src/vm/vm_sljit_native.c3",
+      "src/vm/vm_sljit_resume.c3",
+      "src/vm/vm_sljit_ssa.c3",
+      "src/vm/vm_sljit_ssa_build.c3",
+      "src/vm/vm_sljit_ssa_dependency.c3",
+      "src/vm/vm_sljit_ssa_effect.c3",
+      "src/vm/vm_sljit_ssa_emit.c3",
+      "src/vm/vm_sljit_ssa_field.c3",
+      "src/vm/vm_sljit_ssa_graph.c3",
+      "src/vm/vm_sljit_ssa_inline.c3",
+      "src/vm/vm_sljit_ssa_opt.c3",
+      "src/vm/vm_sljit_ssa_prefix.c3",
+      "test/jit_effect_memory_cse.js"
+    ],
+    "status": "experimental; not enabled or validated for production"
+  },
+  "effect-fresh": {
+    "base": "68d7c01e",
+    "source": "/tmp/bk-effect-fresh-source",
+    "source_hash": "530ecfa0ce5ee8212097572028a5bfc98519a9d4e0acd2e95d74a032ee5bef18",
+    "project_hash": "509988d8e0794f5f61fe0713eba3225e5386a40709063d71e763cee37c78e52e",
+    "changed_files": [
+      "src/vm/vm_sljit_function.c3",
+      "src/vm/vm_sljit_function_runtime.c3",
+      "src/vm/vm_sljit_function_ssa.c3",
+      "src/vm/vm_sljit_loop.c3",
+      "src/vm/vm_sljit_map.c3",
+      "src/vm/vm_sljit_native.c3",
+      "src/vm/vm_sljit_resume.c3",
+      "src/vm/vm_sljit_ssa.c3",
+      "src/vm/vm_sljit_ssa_build.c3",
+      "src/vm/vm_sljit_ssa_dependency.c3",
+      "src/vm/vm_sljit_ssa_effect.c3",
+      "src/vm/vm_sljit_ssa_emit.c3",
+      "src/vm/vm_sljit_ssa_field.c3",
+      "src/vm/vm_sljit_ssa_graph.c3",
+      "src/vm/vm_sljit_ssa_inline.c3",
+      "src/vm/vm_sljit_ssa_opt.c3",
+      "src/vm/vm_sljit_ssa_prefix.c3",
+      "test/jit_effect_memory_cse.js"
+    ],
+    "status": "experimental; not enabled or validated for production"
+  },
+  "memory-cse": {
+    "base": "68d7c01e",
+    "source": "/tmp/bk-effect-memory-source",
+    "source_hash": "9fd179b00eee192aa59ffc306ae9dab2fb151f0e3738af0c047ef2c4342efd7a",
+    "project_hash": "509988d8e0794f5f61fe0713eba3225e5386a40709063d71e763cee37c78e52e",
+    "changed_files": [
+      "src/vm/vm_sljit_function.c3",
+      "src/vm/vm_sljit_function_runtime.c3",
+      "src/vm/vm_sljit_function_ssa.c3",
+      "src/vm/vm_sljit_loop.c3",
+      "src/vm/vm_sljit_map.c3",
+      "src/vm/vm_sljit_native.c3",
+      "src/vm/vm_sljit_resume.c3",
+      "src/vm/vm_sljit_ssa.c3",
+      "src/vm/vm_sljit_ssa_build.c3",
+      "src/vm/vm_sljit_ssa_dependency.c3",
+      "src/vm/vm_sljit_ssa_effect.c3",
+      "src/vm/vm_sljit_ssa_emit.c3",
+      "src/vm/vm_sljit_ssa_field.c3",
+      "src/vm/vm_sljit_ssa_graph.c3",
+      "src/vm/vm_sljit_ssa_inline.c3",
+      "src/vm/vm_sljit_ssa_opt.c3",
+      "src/vm/vm_sljit_ssa_prefix.c3",
+      "test/jit_effect_memory_cse.js"
+    ],
+    "status": "experimental; not enabled or validated for production"
+  },
+  "store-checks-dedup": {
+    "base": "68d7c01e",
+    "source": "/tmp/bk-effect-dedup-source",
+    "source_hash": "00d3a713936af9df12c5689cc7a67c0d8c60a8ad0841dac1635b0b4b9ba89355",
+    "project_hash": "509988d8e0794f5f61fe0713eba3225e5386a40709063d71e763cee37c78e52e",
+    "changed_files": [
+      "src/vm/vm_sljit_function.c3",
+      "src/vm/vm_sljit_function_runtime.c3",
+      "src/vm/vm_sljit_function_ssa.c3",
+      "src/vm/vm_sljit_loop.c3",
+      "src/vm/vm_sljit_map.c3",
+      "src/vm/vm_sljit_native.c3",
+      "src/vm/vm_sljit_property.c3",
+      "src/vm/vm_sljit_resume.c3",
+      "src/vm/vm_sljit_ssa.c3",
+      "src/vm/vm_sljit_ssa_build.c3",
+      "src/vm/vm_sljit_ssa_dependency.c3",
+      "src/vm/vm_sljit_ssa_effect.c3",
+      "src/vm/vm_sljit_ssa_emit.c3",
+      "src/vm/vm_sljit_ssa_field.c3",
+      "src/vm/vm_sljit_ssa_graph.c3",
+      "src/vm/vm_sljit_ssa_inline.c3",
+      "src/vm/vm_sljit_ssa_opt.c3",
+      "src/vm/vm_sljit_ssa_prefix.c3",
+      "src/vm/vm_sljit_store.c3",
+      "test/jit_effect_memory_cse.js"
+    ],
+    "status": "experimental; not enabled or validated for production"
+  },
+  "store-read-fusion": {
+    "base": "68d7c01e",
+    "source": "/tmp/bk-store-read-source",
+    "source_hash": "03b3ff91de21f4eff73b06598470ce5fb71bee7ae9a2f7f0a55bfdc1df7be544",
+    "project_hash": "509988d8e0794f5f61fe0713eba3225e5386a40709063d71e763cee37c78e52e",
+    "changed_files": [
+      "src/vm/vm_sljit_property.c3",
+      "test/jit_effect_memory_cse.js"
+    ],
+    "status": "experimental; not enabled or validated for production"
+  },
+  "global-numeric-watch": {
+    "base": "68d7c01e",
+    "source": "/tmp/bk-global-watch-source",
+    "source_hash": "dd8148325ba85b4fc4ac41f62507d63192559d6292742adddd88db84d7487d10",
+    "project_hash": "509988d8e0794f5f61fe0713eba3225e5386a40709063d71e763cee37c78e52e",
+    "changed_files": [
+      "src/vm/vm_sljit_ssa_build.c3",
+      "src/vm/vm_sljit_ssa_dependency.c3",
+      "src/vm/vm_sljit_ssa_inline.c3",
+      "test/jit_ssa_global_numeric_realm.js",
+      "test/jit_ssa_global_numeric_watch.js"
+    ],
+    "status": "experimental; not enabled or validated for production"
+  }
+}

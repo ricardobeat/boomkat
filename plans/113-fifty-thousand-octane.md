@@ -37,7 +37,13 @@ Workstream **A is now partial**, with real write dependencies and two bounded SS
 
 [Profile, controlled experiments, full-suite pair and validation](113-fifty-thousand-octane/profiled-iteration-2026-10-29/report.md): `68d7c01e` adds bounded refresh of stale read assumptions, broader frameless SSA leaves and inherited array named-data reads. Long DeltaBlue timing improves about 9–10%; successful read-helper continuations fall 72%. Fifteen minis show a smaller Mandreel gain and mostly small changes elsewhere. One matched original full-Octane pair gives **6121 → 6257 (+2.22%)**; this is provisional single-pair evidence, not a replacement for the older multi-pair median or a 50K achievement.
 
-Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% of sampled CPU; Richards remains 97% generated code, with its hot scheduler/task bodies still using the baseline emitter. Larger effectful SSA prefixes are being tested in isolation. Early versions lose time; they are not delivered as successful optimizations. A/C/D remain partial or open as above; profitable large regions, cyclic CFG/effects, native continuations and broader memory traffic reduction remain required.
+Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% of sampled CPU; Richards remains 97% generated code, with its hot scheduler/task bodies still using the baseline emitter. Larger effectful SSA prefixes are being tested in isolation. The standalone C-gateway version loses time. Later in-parent prototype screens had mismatched feature configuration and are being repeated; no unvalidated region prototype is delivered as a successful optimization. A/C/D remain partial or open as above; profitable large regions, cyclic CFG/effects, native continuations and broader memory traffic reduction remain required.
+
+## Architecture and workload reset, 2026-10-29
+
+[First-principles architecture assessment](113-fifty-thousand-octane/architecture-reset-2026-10-29.md) sets the next scope across all workload clusters. Build one compact typed/effect-aware optimizing pipeline with explicit recovery and target-derived allocation; measure numeric/buffer, object/allocation, closure/application, library and startup costs separately. Richards and DeltaBlue remain consumers, not the sole acceptance criteria. Obtain fresh suite-wide profiles before ranking further isolated changes; the old broad percentages predate recent admission improvements.
+
+Experimental source is preserved at `8f875497` on `wip/function-ssa-regions`. It is not promoted to the validated `rat` branch. Detailed patches, mismatched-build correction and subsequent matched evidence are archived with the checkpoint.
 
 ## Current evidence and target
 
