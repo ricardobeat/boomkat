@@ -61,7 +61,13 @@ template <> struct Convert<std::u16string> {
     static Result<std::u16string> from_js(Value v) {
         auto s = v.is_string() ? Result<String>(String(raw_tag, v.raw_context(), v.raw())) : v.to_string();
         if (!s) return std::move(s).error();
-        return s->visit([](auto units) { return std::u16string(units.begin(), units.end()); });
+        return s->visit([](auto units) {
+            std::u16string out(units.size(), u'\0');
+            for (size_t i = 0; i < units.size(); i++)
+                out[i] = sizeof(units[i]) == 1 ? static_cast<char16_t>(static_cast<unsigned char>(units[i]))
+                                               : static_cast<char16_t>(units[i]);
+            return out;
+        });
     }
     static Result<Value> to_js(Context cx, const std::u16string& s) {
         auto r = String::from_utf16(cx, s);
@@ -127,7 +133,7 @@ template <class T, class A> struct Convert<std::vector<T, A>> {
         BK_TRY_ASSIGN(uint64_t n, o->length());
         if (n > 0xFFFFFFFFu) return Error::range_error(v.raw_context(), "array too long");
         std::vector<T, A> out;
-        out.reserve(static_cast<size_t>(n));
+        out.reserve(static_cast<size_t>(n < 4096 ? n : 4096));
         for (uint32_t i = 0; i < n; i++) {
             BK_TRY_ASSIGN(T e, detail::element_from_js<T>(*o, i));
             out.push_back(std::move(e));
