@@ -598,6 +598,7 @@ fn JsValue? JsContext.root(&self, TVal tv) {
     if (self.rt == null) return NOT_CREATED~;
     ulong slot = embed::slot_alloc(self.rt, tv);
     if (slot == 0) return VALUE_TABLE_FULL~;
+    embed::release_parked_result(self.rt, tv);
     JsValue handle = { .slot = slot };
     if (self.scope_depth > 0) self.scoped.push(handle);
     return handle;

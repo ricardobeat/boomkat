@@ -914,13 +914,29 @@ fn heap::HostScope* local_scope(Runtime* rt) @inline {
     return sc.local ? sc : null;
 }
 
+// A run parks its result in vm.return_val, a GC root, until its caller reads
+// it. Once the host holds `v`, drop that park when it is `v`, so a result the
+// host frees does not stay reachable until the next run.
+fn void release_parked_result(Runtime* rt, TVal v) @inline {
+    if (v.is_heap_allocated() && v.same_bits(&rt.vm.return_val)) {
+        rt.heap.decref_tval(&rt.vm.return_val);
+        rt.vm.return_val.set_undefined();
+    }
+}
+
 // Stores `v` as a local of the innermost local scope, or as a registry root
 // when there is none. Returns 0 when the scope or the registry is full.
 fn ulong store_value(Runtime* rt, TVal v) {
-    if (local_scope(rt) == null) return slot_alloc(rt, v);
-    long index = rt.heap.host_scope_append(v);
-    if (index < 0) return 0;
-    return scope_handle(rt, rt.heap.host_scope_depth - 1, (ulong)index);
+    ulong id;
+    if (local_scope(rt) == null) {
+        id = slot_alloc(rt, v);
+    } else {
+        long index = rt.heap.host_scope_append(v);
+        if (index < 0) return 0;
+        id = scope_handle(rt, rt.heap.host_scope_depth - 1, (ulong)index);
+    }
+    if (id != 0) release_parked_result(rt, v);
+    return id;
 }
 
 // Opens a local scope and returns its id, or 0 when the scope stack is full.

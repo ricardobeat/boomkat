@@ -84,7 +84,7 @@ TEST(collected_instances_are_destroyed) {
         bk::Scope s(cx);
         REQUIRE_OK(auto vec3, bind_vec3(cx));
         CHECK_OK(cx.global().set("Vec3", vec3.constructor()));
-        CHECK_OK(cx.eval("for (let i = 0; i < 100; i++) new Vec3(i, i, i); 0" /* the completion value of the last eval stays reachable */));
+        CHECK_OK(cx.eval("for (let i = 0; i < 100; i++) new Vec3(i, i, i)"));
     }
     rt.gc();
     CHECK_EQ(vec_alive, 0);

@@ -64,6 +64,25 @@ int main(void) {
     assert(rounds < 50);
     bk_free_weak(ctx, ws);
 
+    /* A result the host frees is collectable at once: neither an eval's
+     * completion value nor a call's return value stays parked until the next
+     * run. */
+    bk_runtime rt = bk_get_runtime(ctx);
+    bk_value done = eval(ctx, "({ completion: true })");
+    bk_weak wc = bk_new_weak(ctx, done);
+    bk_free_value(ctx, done);
+    bk_gc(rt, BK_GC_FULL);
+    assert(bk_weak_get(ctx, wc) == BK_UNDEFINED);
+    bk_free_weak(ctx, wc);
+    bk_value once = eval(ctx, "(() => { let t = { returned: true }; return () => { const r = t; t = null; return r } })()");
+    bk_value ret = bk_call(ctx, once, BK_UNDEFINED, NULL, 0);
+    bk_weak wr = bk_new_weak(ctx, ret);
+    bk_free_value(ctx, ret);
+    bk_gc(rt, BK_GC_FULL);
+    assert(bk_weak_get(ctx, wr) == BK_UNDEFINED);
+    bk_free_weak(ctx, wr);
+    bk_free_value(ctx, once);
+
     /* Primitives and registered symbols are refused. */
     assert(bk_new_weak(ctx, bk_new_number(ctx, 1)) == 0 && bk_get_error_code(ctx) == BK_ERR_TYPE);
     assert(bk_new_weak(ctx, bk_symbol_for(ctx, "k", 1)) == 0 && bk_get_error_code(ctx) == BK_ERR_TYPE);

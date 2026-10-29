@@ -292,5 +292,3 @@ runtimes on separate threads share nothing but shared-memory blocks.
 - The compile-time check that a class with `bk::Traced` members declares
   `trace` is not possible without reflection; a missing `trace` shows up as a
   dangling slot under the GC stress build.
-- The completion value of the most recent top-level evaluation stays
-  reachable until the next one.
