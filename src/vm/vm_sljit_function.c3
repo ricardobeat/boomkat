@@ -878,6 +878,8 @@ fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
 // Larger generic bodies can displace the tighter loop tier without reducing
 // runtime work. Reserve extra fixups for regions dominated by sampled typed
 // memory accesses, whose buffer guards account for much of their code size.
+// Every other body gets eight fixups per bytecode, the density 2048 covers for
+// 256 ops, so a longer body is not rejected merely for being long.
 fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
     uint typed;
     uint named;
@@ -889,7 +891,9 @@ fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
         ICEntry* ic = (ICEntry*)cf.ic_entries + i;
         if (ic.typed_kind != 0 && ic.typed_kind != 255) typed++;
     }
-    return typed >= 8 && typed > named ? LOOP_LINK_LIMIT : 2048;
+    if (typed >= 8 && typed > named) return LOOP_LINK_LIMIT;
+    uint sized = cf.code_count * 8;
+    return sized < 2048 ? 2048 : sized > LOOP_LINK_LIMIT ? LOOP_LINK_LIMIT : sized;
 }
 
 fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act, ColdCtx* cold = null) @feat(SLJIT) {
