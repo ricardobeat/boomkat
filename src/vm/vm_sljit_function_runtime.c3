@@ -310,7 +310,10 @@ fn Instruction* sljit_function_entry(
         CompiledFunction* active = cold.vm.current_func;
         FunctionPlan* active_plan = active.sljit_function;
         uint exited = (uint)(resume - active.code);
-        if (active_plan != null && exited < active.code_count && exited < 512) active_plan.exit_pcs[exited]++;
+        if (active_plan != null && exited >= active_plan.begin) {
+            uint at = exited - active_plan.begin;
+            if (at < active_plan.count && at < 512) active_plan.exit_pcs[at]++;
+        }
         plan.hits++;
         $endif
         return resume;
@@ -334,7 +337,10 @@ fn Instruction* sljit_function_entry(
     }
     $if $feat(SLJIT_STATS):
     plan.hits++;
-    if (next < cf.code_count && next < 512) plan.exit_pcs[next]++;
+    if (next >= plan.begin) {
+        uint at = next - plan.begin;
+        if (at < plan.count && at < 512) plan.exit_pcs[at]++;
+    }
     if (next == offset) plan.stalled++;
     if (next < cf.code_count
         && (cf.code[next].op == Opcode.RET || cf.code[next].op == Opcode.RETUNDEF)) plan.completed++;
@@ -458,16 +464,17 @@ fn void sljit_stats_dump(Heap* h) {
                 );
                 for (uint pc = 0; pc < 512; pc++) {
                     if (plan.exit_pcs[pc] == 0) continue;
+                    uint at = plan.begin + pc;
                     io::printfn(
                         "SLJIT exit %s begin=%d pc=%d op=%d count=%d id=%d line=%d opcode=%s",
                         (String)cf.get_name(),
                         plan.begin,
-                        pc,
-                        pc < cf.code_count ? (int)cf.code[pc].op : -1,
+                        at,
+                        at < cf.code_count ? (int)cf.code[at].op : -1,
                         plan.exit_pcs[pc],
                         i,
-                        cf.get_line(pc),
-                        (ZString)(pc < cf.code_count ? bytecode::get_opcode_name(cf.code[pc].op) : "end")
+                        cf.get_line(at < cf.code_count ? at : 0),
+                        (ZString)(at < cf.code_count ? bytecode::get_opcode_name(cf.code[at].op) : "end")
                     );
                 }
                 $else
