@@ -143,6 +143,29 @@ The implementation is one mask. `TAG_BOOLEAN` is `TAG_FASTINT`'s neighbour: `0xF
 
 Aggregate across the fifteen minis is about **-0.8%**. The differential JIT suites, the local suite's 27 pre-existing failures and the module/rosetta suites are unchanged. `test/test_sljit_boolean_bitwise.js` covers `&`, `|`, `^` and `~` on booleans and the wide values that still leave native code.
 
+## Native coverage measurement, 2026-10-30
+
+A stats build now answers where the remaining work is. Summing the per-function interpreter counters (`threaded` plus `switch`, both counted in bytecodes) and the native bytecodes consumed (function `charged_edges` plus loop `iterations`) gives the split below. Both sides count bytecodes, so they are directly comparable; the interpreter counters include a function's executions before it was compiled, which biases slightly toward the interpreter on short runs.
+
+| Workload | Interpreted | Native | Interpreted share |
+|---|---:|---:|---:|
+| typescript | 188.7M | 1.2M | **99.4%** |
+| raytrace | 17.1M | 0.07M | **99.6%** |
+| regexp | 18.3M | 0.01M | **100%** |
+| earley-boyer | 26.8M | 0.46M | **98.3%** |
+| box2d | 34.9M | 0.38M | **98.9%** |
+| zlib | 840.9M | 30.7M | **96.5%** |
+| pdfjs | 38.9M | 1.4M | **96.5%** |
+| gbemu | 53.3M | 2.2M | **96.0%** |
+| splay | 11.7M | 0.7M | **94.1%** |
+| mandreel | 126.8M | 17.3M | 88.0% |
+| crypto | 13.5M | 4.9M | 73.3% |
+| deltablue | 2.0M | 2.6M | 43.2% |
+| navier-stokes | 3.7M | 8.8M | 29.4% |
+| richards | 0.06M | 2.5M | **2.3%** |
+
+Generated code still covers a small minority of executed bytecodes on eleven of the fifteen minis. Per-operation cost therefore governs only Richards, Navier-Stokes, DeltaBlue and partly Mandreel and Crypto; for everything else the first-order question remains which hot bytecodes never enter native code at all. Measured code density for the baseline function tier is 66 to 130 ARM64 words per bytecode op (zlib's `a6` 73, mandreel's `sortMaxDown` 130, deltablue's 39-op body 110), which is consistent with the earlier JSC comparison but is not itself the limiter while coverage is this low.
+
 ## Current status and acceptance model
 
 The architecture reset governs the implementation order below. A–E remain stable workstream names, not a requirement to finish every item in A before starting B. Older checkpoint paragraphs above record status at their own revisions.
@@ -151,9 +174,9 @@ The architecture reset governs the implementation order below. A–E remain stab
 |---|---|---|
 | A — Feedback, assumptions and dependencies | PARTIAL | Reuse delivered watches; represent facts and their invalidation in the shared graph |
 | B — CFG/SSA, effects and recovery | PARTIAL | Sparse window and aliased loop SSA landed; cyclic regions and effect information remain; call windows have no reachable consumer |
-| C — Optimization and allocation | PARTIAL | Boolean ToInt32 removed a whole guard class; apply shared passes across realistic graphs and keep reducing executed work |
+| C — Optimization and allocation | PARTIAL | Boolean ToInt32 removed a whole guard class; per-op cost now matters mainly on the five native-dominated workloads |
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
-| E — Coverage, measurement and budgets | PARTIAL | Mini census, admission controls and sparse loop mapping delivered; coverage-window growth remains exhausted until per-operation code cost falls |
+| E — Coverage, measurement and budgets | PARTIAL | Native/interpreted split measured: eleven of fifteen minis execute over 93% of their bytecodes interpreted, so coverage, not per-op cost, is the first-order gap |
 
 Validated source is `rat` at `d75838d9`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
