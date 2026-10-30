@@ -166,6 +166,14 @@ A stats build now answers where the remaining work is. Summing the per-function 
 
 Generated code still covers a small minority of executed bytecodes on eleven of the fifteen minis. Per-operation cost therefore governs only Richards, Navier-Stokes, DeltaBlue and partly Mandreel and Crypto; for everything else the first-order question remains which hot bytecodes never enter native code at all. Measured code density for the baseline function tier is 66 to 130 ARM64 words per bytecode op (zlib's `a6` 73, mandreel's `sortMaxDown` 130, deltablue's 39-op body 110), which is consistent with the earlier JSC comparison but is not itself the limiter while coverage is this low.
 
+## Link-budget admission attempt, 2026-10-30
+
+The coverage census named one concrete admission blocker: box2d has three hot functions (408, 382 and 350 bytecodes) rejected as `guard/link capacity`, together about 8.1M interpreted bytecodes. `function_link_limit` returns 8192 fixups only for typed-heavy bodies and 2048 otherwise, and these bodies need more than 2048. Raising the generic limit to 4096 removed the rejections and gave **box2d -2.8%** and **Navier-Stokes -8.9%**, but also **gbemu +8.2%** and **zlib +2.6%**; aggregate over fifteen minis was **+1.2% worse**, so it was reverted.
+
+Two refinements did not isolate the gain. Allowing 4096 only for bodies without a backedge kept gbemu's regression and lost box2d's gain, as did restricting it to bodies with no loop candidate under `LOOP_OPS`. Under 4096 gbemu compiles exactly the same 177 functions with the same hit count and code bytes as before, so its loss is not an admission change at all but a whole-binary layout sensitivity: a control rebuild of the unchanged source measured gbemu within 1.1%. That makes sub-3% single-workload results across *different* builds unreliable, which is worth remembering when reading the tables above.
+
+The concrete item remains: those three box2d bodies need a larger link budget than 2048 but do not qualify for the typed reserve. The next attempt should scope the extra budget to a measured consumer rather than raising it globally.
+
 ## Current status and acceptance model
 
 The architecture reset governs the implementation order below. A–E remain stable workstream names, not a requirement to finish every item in A before starting B. Older checkpoint paragraphs above record status at their own revisions.
@@ -176,7 +184,7 @@ The architecture reset governs the implementation order below. A–E remain stab
 | B — CFG/SSA, effects and recovery | PARTIAL | Sparse window and aliased loop SSA landed; cyclic regions and effect information remain; call windows have no reachable consumer |
 | C — Optimization and allocation | PARTIAL | Boolean ToInt32 removed a whole guard class; per-op cost now matters mainly on the five native-dominated workloads |
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
-| E — Coverage, measurement and budgets | PARTIAL | Native/interpreted split measured: eleven of fifteen minis execute over 93% of their bytecodes interpreted, so coverage, not per-op cost, is the first-order gap |
+| E — Coverage, measurement and budgets | PARTIAL | Native/interpreted split measured: eleven of fifteen minis execute over 93% of their bytecodes interpreted, so coverage, not per-op cost, is the first-order gap; box2d's three `guard/link capacity` bodies are the next named admission target |
 
 Validated source is `rat` at `d75838d9`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
