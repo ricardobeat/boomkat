@@ -139,7 +139,7 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan) @feat(SLJI
     cold.heap.jit_native_active++;
     uint resume = plan.native(&state, 1);
     cold.heap.jit_native_active--;
-    sljit_publish_state(cold, regs, &state, cf.num_regs);
+    sljit_publish_state(cold, regs, &state, cf.num_regs, plan);
     plan.hits++;
     $if $feat(SLJIT_STATS):
         if (resume == plan.end + 1) { plan.ssa_completed++; }

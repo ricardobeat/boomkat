@@ -25,6 +25,9 @@ module boomkat::compiler;
 
 import boomkat::bytecode;
 
+// The JIT loop window uses registers 0..63.
+const uint LOOP_REGS_MIN = 64;
+
 // Register bitset for the liveness pass, sized to the function's register
 // high-water mark rather than the full 16-bit register file (8 KB per slot).
 // `words` points into the liveness arena allocated in CompilerContext.finish;
@@ -282,6 +285,78 @@ fn void moveelim_init_roles() {
         moveelim_roles[op.ordinal] = r;
     }
     moveelim_roles_ready = true;
+}
+
+// Registers below 64 read or written by [begin, end]. Uses the same operand
+// roles as liveness, so branch offsets and constant indices do not appear.
+fn ulong bytecode_low_register_mask(Instruction* code, uint begin, uint end) @public {
+    if (!moveelim_roles_ready) moveelim_init_roles();
+    uint[8] words;
+    RegSet live = { .words = &words[0], .word_count = 8 };
+    for (uint i = begin; i <= end; i++) {
+        moveelim_add_uses(code[i], &live, true);
+        uint def;
+        if (moveelim_get_def(code[i], &def)) live.set(def);
+    }
+    return (ulong)words[0] | ((ulong)words[1] << 32);
+}
+
+// Whether [begin, end] reads or writes `reg`.
+fn bool bytecode_register_used(Instruction* code, uint begin, uint end, uint reg) @public {
+    if (!moveelim_roles_ready) moveelim_init_roles();
+    uint[8] words;
+    RegSet live = { .words = &words[0], .word_count = 8 };
+    for (uint i = begin; i <= end; i++) {
+        uint def;
+        if (moveelim_get_def(code[i], &def) && def == reg) return true;
+        live.clear();
+        moveelim_add_uses(code[i], &live, true);
+        if (live.test(reg)) return true;
+    }
+    return false;
+}
+
+// Rewrite register operands through `map`, which maps each high register to a
+// free low slot. Only plain ABC forms and the A field of A-BC/A-SBX forms are
+// rewritten; a high register inside a call/argument window or another combined
+// operand makes the range unsupported.
+fn bool bytecode_remap_registers(Instruction* code, uint begin, uint end, uint[256] map) @public {
+    if (!moveelim_roles_ready) moveelim_init_roles();
+    for (uint i = begin; i <= end; i++) {
+        Instruction ins = code[i];
+        if (ins.op == Opcode.WIDE || ins.op == Opcode.LDINTX) return false;
+        MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+        if (r.general) {
+            uint[8] words;
+            RegSet live = { .words = &words[0], .word_count = 8 };
+            moveelim_add_uses(ins, &live, true);
+            uint def;
+            if (moveelim_get_def(ins, &def)) live.set(def);
+            for (uint reg = LOOP_REGS_MIN; reg < 256; reg++) if (live.test(reg)) return false;
+            continue;
+        }
+        OpFormat fmt = bytecode::get_op_format(ins.op);
+        if (r.a_read || r.a_write) {
+            if (ins.a >= LOOP_REGS_MIN) {
+                if (map[ins.a] == ins.a) return false;
+                ins.a = (char)map[ins.a];
+            }
+        }
+        if (fmt == OpFormat.ABC) {
+            if (r.b_read && ins.b >= LOOP_REGS_MIN) {
+                if (map[ins.b] == ins.b) return false;
+                ins.b = (char)map[ins.b];
+            }
+            if (r.c_read && ins.c >= LOOP_REGS_MIN) {
+                if (map[ins.c] == ins.c) return false;
+                ins.c = (char)map[ins.c];
+            }
+        } else if ((r.b_read && ins.b >= LOOP_REGS_MIN) || (r.c_read && ins.c >= LOOP_REGS_MIN)) {
+            return false;
+        }
+        code[i] = ins;
+    }
+    return true;
 }
 
 fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) {

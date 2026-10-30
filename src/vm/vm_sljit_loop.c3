@@ -1,6 +1,7 @@
 module boomkat::vm;
 
 import boomkat::bytecode;
+import boomkat::compiler;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
@@ -124,6 +125,9 @@ struct LoopPlan @feat(SLJIT) {
     bool ssa;
     char[LOOP_REGS] cache;
     char[LOOP_REGS] float_cache;
+    // Loop slot -> VM register. Identity for a normal loop; a high-register
+    // loop aliases each high register to a free low slot.
+    int[LOOP_REGS] slot_reg;
     ulong hits;
     ulong iterations;
     ulong ssa_hits @if($feat(SLJIT_STATS));
@@ -482,7 +486,8 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     bool feedback = target_cf != null;
     CompiledFunction* cf = feedback ? target_cf : cold.vm.current_func;
     int begin            = region_begin >= 0 ? region_begin : loop_target(cf.code[end], end);
-    if (begin < 0 || begin >= (int)end || end - (uint)begin >= LOOP_OPS || cf.num_regs > LOOP_REGS
+    uint window = cf.num_regs < LOOP_REGS ? cf.num_regs : LOOP_REGS;
+    if (begin < 0 || begin >= (int)end || end - (uint)begin >= LOOP_OPS
         || cf.flags.is_generator
         || cf.flags.is_async
         || cf.flags.has_direct_eval
@@ -490,8 +495,9 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
         || cf.mapped_arguments()) return false;
     plan.begin = (uint)begin;
     plan.end = end;
+    for (uint i = 0; i < LOOP_REGS; i++) plan.slot_reg[i] = (int)i;
     LoopState sample;
-    for (uint i = 0; i < cf.num_regs; i++) sample.values[i] = regs[i];
+    for (uint i = 0; i < window; i++) sample.values[i] = regs[i];
     int[LOOP_REGS] origin;
     int[LOOP_REGS] method;
     for (uint i = 0; i < LOOP_REGS; i++) {
@@ -544,20 +550,20 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             if (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL
                 || (!feedback && (ins.op == Opcode.JMP_EQ || ins.op == Opcode.JMP_NEQ))) return false;
             uint b = ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE ? ins.a : ins.b;
-            if (b >= cf.num_regs) return false;
+            if (b >= window) return false;
             frequency[b]++;
             if (ins.op >= Opcode.JMP_NLT && ins.op <= Opcode.JMP_NEQ) {
-                if (ins.c >= cf.num_regs) return false;
+                if (ins.c >= window) return false;
                 frequency[ins.c]++;
             }
             continue;
         }
-        if (ins.a >= cf.num_regs) return false;
+        if (ins.a >= window) return false;
         frequency[ins.a]++;
         switch (ins.op) {
             case NOP: continue;
             case LDREG:
-                if (ins.b >= cf.num_regs) return false;
+                if (ins.b >= window) return false;
                 origin[ins.a] = origin[ins.b];
                 method[ins.a] = method[ins.b];
                 frequency[ins.b]++;
@@ -587,7 +593,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     bool write = ins.op == Opcode.PUTPROP;
                     uint base  = write ? ins.a : ins.b;
                     uint index = write ? ins.b : ins.c;
-                    if (base >= cf.num_regs || index >= cf.num_regs || (write && ins.c >= cf.num_regs)
+                    if (base >= window || index >= window || (write && ins.c >= window)
                         || origin[base] < 0) return false;
                     int memory = loop_memory(plan, origin[base], loop_source((uint)origin[base], &sample, cold));
                     if (memory < 0 || plan.memory[memory].kind == INTRINSIC
@@ -629,7 +635,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                 {
                     bool receiver = ins.op == Opcode.GETTHISC;
                     if (!receiver) {
-                        if (ins.b >= cf.num_regs || ins.c >= cf.const_count || !cf.constants[ins.c].is_string()
+                        if (ins.b >= window || ins.c >= cf.const_count || !cf.constants[ins.c].is_string()
                             || (!feedback && origin[ins.b] < 0)) return false;
                     }
                     int source = receiver ? (int)LOOP_THIS : origin[ins.b];
@@ -812,18 +818,18 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                         bool fused = ins.op == Opcode.CALL_GLOBAL || ins.op == Opcode.CALL_VAR;
                         uint base = fused ? ins.a : ins.b;
                         uint nargs = fused ? ins.b : ins.c;
-                        if (base + 1 + nargs >= cf.num_regs) return false;
+                        if (base + 1 + nargs >= window) return false;
                         if (fused) {
                             if (loop_record_binding(plan, pos, cold, &sample, feedback, cf) < 0) return false;
                         }
                         for (uint i = fused ? 2 : 0; i <= nargs + 1; i++) frequency[base + i]++;
                         break;
                     }
-                    if (ins.op != Opcode.CALL || (uint)ins.b + 2 >= cf.num_regs || method[ins.b] < 0) return false;
+                    if (ins.op != Opcode.CALL || (uint)ins.b + 2 >= window || method[ins.b] < 0) return false;
                     uint memory = (uint)method[ins.b];
                     int builtin = plan.memory[memory].builtin;
                     uint nargs  = builtin == (int)builtins::Builtin.MATH_IMUL.ordinal ? 2 : 1;
-                    if (ins.c != nargs || (uint)ins.b + 1 + nargs >= cf.num_regs
+                    if (ins.c != nargs || (uint)ins.b + 1 + nargs >= window
                         || origin[(uint)ins.b + 1] != (int)plan.memory[memory].source) return false;
                     plan.memory_at[at] = (char)(memory + 1);
                     for (uint i = 0; i <= nargs + 1; i++) integer_required |= 1UL << ((uint)ins.b + i);
@@ -877,7 +883,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     && ins.op != Opcode.INC
                     && ins.op != Opcode.INC_LT
                     && ins.op != Opcode.DEC) {
-                    if (ins.b >= cf.num_regs) return false;
+                    if (ins.b >= window) return false;
                     frequency[ins.b]++;
                 }
                 if (ins.op == Opcode.ADD || ins.op == Opcode.ADD_FUSED || ins.op == Opcode.SUB || ins.op == Opcode.MUL
@@ -896,7 +902,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     || ins.op == Opcode.SHL
                     || ins.op == Opcode.SHR
                     || ins.op == Opcode.USHR) {
-                    if (ins.c >= cf.num_regs) return false;
+                    if (ins.c >= window) return false;
                     frequency[ins.c]++;
                 }
                 if (ins.op == Opcode.LDCONST && ins.get_bc() >= cf.const_count) return false;
@@ -941,7 +947,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     }
     for (uint i = 0; i < 4; i++) {
         uint best = LOOP_REGS;
-        for (uint j = 0; j < cf.num_regs; j++) {
+        for (uint j = 0; j < window; j++) {
             if ((integer_required & (1UL << j)) != 0 || (!regs[j].is_number() && !regs[j].is_fastint())
                 || (!floating_memory && regs[j].is_fastint())) continue;
             if (best == LOOP_REGS || frequency[j] > frequency[best]) best = j;
@@ -954,7 +960,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     uint assigned;
     // A canonical counter needs a home so entry can rewrite its
     // representation without touching the interpreter's slot.
-    for (uint j = 0; j < cf.num_regs && assigned < 6; j++) {
+    for (uint j = 0; j < window && assigned < 6; j++) {
         if ((plan.canonical & (1UL << j)) == 0) continue;
         plan.cache[j] = (char)(assigned < 4 ? jit::reg_r((int)assigned + 4) : jit::reg_s((int)assigned - 1));
         frequency[j] = 0;
@@ -962,7 +968,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     }
     for (uint i = assigned; i < 6; i++) {
         uint best;
-        for (uint j = 1; j < cf.num_regs; j++) if (frequency[j] > frequency[best]) best = j;
+        for (uint j = 1; j < window; j++) if (frequency[j] > frequency[best]) best = j;
         if (frequency[best] < 2) break;
         plan.cache[best] = (char)(i < 4 ? jit::reg_r((int)i + 4) : jit::reg_s((int)i - 1));
         frequency[best] = 0;
@@ -1440,17 +1446,17 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
     e.mov(state, 0, r0, 0);
     e.mov(budget, 0, r1, 0);
     e.mov(dirty, 0, imm, 0);
-    for (uint i = 0; i < cf.num_regs; i++) if (plan.cache[i] != 0) e.mov(
+    for (uint i = 0; i < LOOP_REGS; i++) if (plan.cache[i] != 0) e.mov(
         plan.cache[i],
         0,
         mem | state,
         loop_value_offset(i)
     );
-    for (uint i = 0; i < cf.num_regs; i++) if (plan.float_cache[i] != 0) {
+    for (uint i = 0; i < LOOP_REGS; i++) if (plan.float_cache[i] != 0) {
         e.mov(r0, 0, mem | state, loop_value_offset(i));
         out.number(r0, plan.float_cache[i], plan.begin);
     }
-    for (uint i = 0; i < cf.num_regs; i++) if (plan.cache[i] != 0 && (plan.canonical & (1UL << i)) != 0) {
+    for (uint i = 0; i < LOOP_REGS; i++) if (plan.cache[i] != 0 && (plan.canonical & (1UL << i)) != 0) {
         out.canonicalize(plan.cache[i], plan.begin);
     }
     for (uint pos = plan.begin; pos <= plan.end; pos++) {
@@ -1736,13 +1742,13 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
     }
     void* epilog = e.label();
     for (uint i = 0; i < exit_count; i++) out.bind_to(epilog_jumps[i], epilog);
-    for (uint i = 0; i < cf.num_regs; i++) if (plan.cache[i] != 0) e.mov(
+    for (uint i = 0; i < LOOP_REGS; i++) if (plan.cache[i] != 0) e.mov(
         mem | state,
         loop_value_offset(i),
         plan.cache[i],
         0
     );
-    for (uint i = 0; i < cf.num_regs; i++) if (plan.float_cache[i] != 0) {
+    for (uint i = 0; i < LOOP_REGS; i++) if (plan.float_cache[i] != 0) {
         out.float_bits(plan.float_cache[i], r1);
         e.mov(mem | state, loop_value_offset(i), r1, 0);
     }
@@ -1779,25 +1785,95 @@ fn void sljit_loop_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     cf.sljit_loop_ready = 0;
 }
 fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @inline {
-    if (cf.num_regs > LOOP_REGS) return false;
     uint offset = (uint)(pc - cf.code);
     for (LoopPlan* plan = cf.sljit_loops; plan != null; plan = plan.next) {
         if (offset == plan.end) return true;
     }
     // Collisions only suppress compilation; the interpreter still executes the loop.
     if ((cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return false;
+    if (cf.num_regs > LOOP_REGS) {
+        int target = loop_target(*pc, offset);
+        if (target < 0 || target >= (int)offset || offset - (uint)target >= LOOP_OPS) {
+            cf.sljit_loop_rejected |= 1UL << (offset & 63);
+            return false;
+        }
+    }
     int target = loop_target(*pc, offset);
     return target >= 0 && target < (int)offset;
 }
+// Map every high register used by the loop to a free low slot. The chosen
+// slots are unused in the loop, so their interpreter values need no recovery.
+fn bool loop_highreg_prepare(CompiledFunction* cf, uint begin, uint end,
+    uint[256]* map, int[LOOP_REGS]* slot_reg, bool apply) @feat(SLJIT) {
+    for (uint i = 0; i < 256; i++) (*map)[i] = i;
+    for (uint i = 0; i < LOOP_REGS; i++) (*slot_reg)[i] = (int)i;
+    ulong low = compiler::bytecode_low_register_mask(cf.code, begin, end);
+    bool aliased;
+    for (uint reg = LOOP_REGS; reg < cf.num_regs; reg++) {
+        if (!compiler::bytecode_register_used(cf.code, begin, end, reg)) continue;
+        uint slot;
+        while (slot < LOOP_REGS && (low & (1UL << slot)) != 0) slot++;
+        if (slot == LOOP_REGS) return false;
+        (*map)[reg] = slot;
+        (*slot_reg)[slot] = (int)reg;
+        low |= 1UL << slot;
+        aliased = true;
+    }
+    if (!aliased) return true;
+    return !apply || compiler::bytecode_remap_registers(cf.code, begin, end, *map);
+}
+
+fn void loop_import_state(LoopPlan* plan, LoopState* state, TVal* regs, uint window) @feat(SLJIT) {
+    for (uint i = 0; i < window; i++) {
+        int reg = plan.slot_reg[i];
+        state.values[i] = reg >= 0 && (uint)reg != i ? regs[reg] : regs[i];
+    }
+}
+
+// Analyze and emit one loop whose high registers are aliased to free low
+// slots. The bytecode is remapped only while the graph and native body are
+// being built; the caller's interpreter code is restored before return.
+fn bool loop_highreg_compile(CompiledFunction* cf, uint offset, TVal* regs, ColdCtx* cold, Heap* h,
+    LoopPlan* draft) @feat(SLJIT) {
+    int target = loop_target(cf.code[offset], offset);
+    if (target < 0 || offset - (uint)target >= LOOP_OPS) return false;
+    uint[256] map;
+    int[LOOP_REGS] slot_reg;
+    Instruction[LOOP_OPS] saved;
+    if (!loop_highreg_prepare(cf, (uint)target, offset, &map, &slot_reg, false)) return false;
+    for (uint q = 0; q <= offset - (uint)target; q++) saved[q] = cf.code[(uint)target + q];
+    defer {
+        for (uint q = 0; q <= offset - (uint)target; q++) cf.code[(uint)target + q] = saved[q];
+    }
+    if (!loop_highreg_prepare(cf, (uint)target, offset, &map, &slot_reg, true)) return false;
+    TVal[LOOP_REGS] alias_regs;
+    for (uint i = 0; i < LOOP_REGS; i++) alias_regs[i] = regs[i];
+    for (uint i = 0; i < LOOP_REGS; i++) if (slot_reg[i] != (int)i) alias_regs[i] = regs[slot_reg[i]];
+    if (!loop_analyze(draft, offset, &alias_regs[0], cold, -1, SSA_ENABLED)) return false;
+    draft.slot_reg = slot_reg;
+    bool aliased;
+    for (uint i = 0; i < LOOP_REGS; i++) if (slot_reg[i] != (int)i) aliased = true;
+    // The shared SSA frame still indexes VM registers directly, so only the
+    // straight-line loop emitter understands alias slots today.
+    draft.native = !aliased && ssa_loop_eligible(draft, cf, h) ? ssa_loop_emit(draft, cf, h) : null;
+    draft.ssa = draft.native != null;
+    if (draft.native == null && !draft.ssa_calls) {
+        for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
+        draft.native = loop_emit(draft, cf);
+    }
+    return draft.native != null;
+}
+
 fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
     Heap* h              = cold.heap;
     $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
     CompiledFunction* cf = cold.vm.current_func;
-    if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || cf.num_regs > LOOP_REGS || h.uncatchable_throw
+    if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || h.uncatchable_throw
         || std::core::mem::@atomic_load(
         h.interrupt_requested
     ) != 0) return body;
     uint offset = (uint)(pc - cf.code);
+    uint window = cf.num_regs < LOOP_REGS ? cf.num_regs : LOOP_REGS;
     if (loop_target(*pc, offset) != (int)(body - cf.code)) return body;
     long budget     = h.bwd_gc_budget;
     bool interrupts = h.capi_runtime != null || h.capi_interrupt_fn != null;
@@ -1805,13 +1881,14 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     // Only the registers and descriptors filled below are read, so skip the
     // per-entry clear of a state area that is mostly scratch space.
     LoopState state @noinit;
-    for (uint i = 0; i < cf.num_regs; i++) state.values[i] = regs[i];
+    for (uint i = 0; i < window; i++) state.values[i] = regs[i];
     LoopPlan* plan;
     bool prepared;
     uint plans;
     for (LoopPlan* candidate = cf.sljit_loops; candidate != null; candidate = candidate.next) {
         plans++;
         if (offset != candidate.end) continue;
+        loop_import_state(candidate, &state, regs, window);
         if (loop_prepare(candidate, &state, cold)) {
             plan = candidate;
             prepared = true;
@@ -1828,17 +1905,23 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             return body;
         }
         LoopPlan draft;
-        if (!loop_analyze(&draft, offset, regs, cold, -1, SSA_ENABLED)) {
-            cf.sljit_loop_rejected |= 1UL << (offset & 63);
-            return body;
+        bool compiled;
+        if (cf.num_regs > LOOP_REGS) {
+            compiled = loop_highreg_compile(cf, offset, regs, cold, h, &draft);
+        } else {
+            if (!loop_analyze(&draft, offset, regs, cold, -1, SSA_ENABLED)) {
+                cf.sljit_loop_rejected |= 1UL << (offset & 63);
+                return body;
+            }
+            draft.native = ssa_loop_eligible(&draft, cf, h) ? ssa_loop_emit(&draft, cf, h) : null;
+            draft.ssa = draft.native != null;
+            if (draft.native == null && !draft.ssa_calls) {
+                for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
+                draft.native = loop_emit(&draft, cf);
+            }
+            compiled = draft.native != null;
         }
-        draft.native = ssa_loop_eligible(&draft, cf, h) ? ssa_loop_emit(&draft, cf, h) : null;
-        draft.ssa = draft.native != null;
-        if (draft.native == null && !draft.ssa_calls) {
-            for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
-            draft.native = loop_emit(&draft, cf);
-        }
-        if (draft.native == null) {
+        if (!compiled) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
@@ -1872,7 +1955,10 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         $endif
     }
     if (h.interrupt_due || budget <= 1) return body;
-    if (!prepared && !loop_prepare(plan, &state, cold)) return body;
+    if (!prepared) {
+        loop_import_state(plan, &state, regs, window);
+        if (!loop_prepare(plan, &state, cold)) return body;
+    }
     h.jit_native_active++;
     uint resume_pc = plan.native(&state, budget);
     h.jit_native_active--;
@@ -1952,7 +2038,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     h.bwd_gc_budget -= consumed;
     sljit_budget_progress(h, consumed);
     if (interrupts) h.interrupt_budget -= consumed;
-    sljit_publish_state(cold, regs, &state, cf.num_regs);
+    sljit_publish_state(cold, regs, &state, window, plan);
     plan.hits++;
     plan.iterations += consumed;
     return cf.code + resume_pc;
@@ -1960,7 +2046,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
 
 // Publish after native frames return. Retain incoming strings before releasing
 // any outgoing slot, preserving permutations and aliases in both SSA modes.
-fn void sljit_publish_state(ColdCtx* cold, TVal* regs, LoopState* state, uint count) @feat(SLJIT) {
+fn void sljit_publish_state(ColdCtx* cold, TVal* regs, LoopState* state, uint count, LoopPlan* plan = null) @feat(SLJIT) {
     Heap* h = cold.heap;
     for (uint i = 0; i < count; i++) {
         if ((state.dirty & (1UL << i)) != 0 && state.values[i].is_refcounted()
@@ -1968,8 +2054,9 @@ fn void sljit_publish_state(ColdCtx* cold, TVal* regs, LoopState* state, uint co
     }
     for (uint i = 0; i < count; i++) {
         if ((state.dirty & (1UL << i)) == 0) continue;
-        h.tval_copy_ref(regs + i, &state.values[i]);
+        uint reg = plan != null ? (uint)plan.slot_reg[i] : i;
+        h.tval_copy_ref(regs + reg, &state.values[i]);
         h.decref_tval(&state.values[i]);
-        if (regs[i].is_heap_allocated()) track_heap_store(cold.act, regs + i, i);
+        if (regs[reg].is_heap_allocated()) track_heap_store(cold.act, regs + reg, reg);
     }
 }

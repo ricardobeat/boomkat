@@ -350,9 +350,15 @@ fn Instruction* sljit_function_entry(
 // Large functions warm a bounded region at a taken loop header. Native
 // backedges return before the shared GC/interrupt budget reaches its poll.
 fn bool sljit_function_backedge(Instruction* pc, CompiledFunction* cf, Heap* h) @feat(SLJIT) @inline {
-    int target = loop_target(*pc, (uint)(pc - cf.code));
+    uint offset = (uint)(pc - cf.code);
+    int target = loop_target(*pc, offset);
     if (target < 0) return false;
-    if (cf.sljit_function != null) return sljit_function_resumes(cf.code + target, cf);
+    if (cf.sljit_function != null) {
+        if (sljit_function_resumes(cf.code + target, cf)) return true;
+        // A wider function's uncovered backedge must reach the loop tier.
+        // Once that tier rejects this edge, stop bailing to the switch.
+        return cf.num_regs > LOOP_REGS && (cf.sljit_loop_rejected & (1UL << (offset & 63))) == 0;
+    }
     return cf.sljit_function_calls != uint::max && ++cf.sljit_function_calls >= sljit_warmup(h);
 }
 fn Instruction* sljit_function_region(Instruction* pc, TVal* regs, ColdCtx* cold) @feat(SLJIT) @inline {
