@@ -63,6 +63,16 @@ SLIM_LINK_FLAGS := -z -Wl,-s -z -Wl,--gc-sections
 TINY_STRIP := strip
 endif
 
+# TINY also omits the compact unwind table: the engine catches JavaScript
+# exceptions itself and the build emits no native backtraces, so nothing in it
+# unwinds through these frames. DWARF unwind data stays in the binary, which is
+# what a debugger or sampling profiler falls back to.
+ifeq ($(UNAME_S),Darwin)
+TINY_LINK_FLAGS := $(SLIM_LINK_FLAGS) -z -Wl,-no_compact_unwind
+else
+TINY_LINK_FLAGS := $(SLIM_LINK_FLAGS)
+endif
+
 PREFIX ?= /usr/local
 
 .PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress clean \
@@ -124,12 +134,12 @@ out/boomkat_slim: Makefile project.json $(call target_sources,boomkat_slim) scri
 	@rm -f out/.profile-boomkat_slim
 
 out/boomkat_tiny: Makefile project.json $(call target_sources,boomkat_tiny) scripts/no_exports.exp
-	$(C3C_BUILD) boomkat_tiny $(C3C_BUILDFLAGS) --show-backtrace=no $(SLIM_LINK_FLAGS)
+	$(C3C_BUILD) boomkat_tiny $(C3C_BUILDFLAGS) --show-backtrace=no $(TINY_LINK_FLAGS)
 	$(if $(TINY_STRIP),$(TINY_STRIP) $@,)
 	@rm -f out/.profile-boomkat_tiny
 
 out/boomkat_tiny_compile: Makefile project.json $(call target_sources,boomkat_tiny_compile) scripts/no_exports.exp
-	$(C3C_BUILD) boomkat_tiny_compile $(C3C_BUILDFLAGS) $(SLIM_LINK_FLAGS)
+	$(C3C_BUILD) boomkat_tiny_compile $(C3C_BUILDFLAGS) $(TINY_LINK_FLAGS)
 	@rm -f out/.profile-boomkat_tiny_compile
 
 out/boomkat_debug: project.json $(call target_sources,boomkat_debug)

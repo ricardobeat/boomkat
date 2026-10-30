@@ -1335,6 +1335,16 @@ these guards away.
 
 ## TINY bytecode tools
 
+The macOS ARM64 runner links to about 785 KB with the compact unwind table
+omitted: the engine catches JavaScript exceptions itself and the build emits no
+native backtraces, so nothing in it unwinds through these frames. DWARF unwind
+data stays in the binary, which is what a debugger or sampling profiler falls
+back to. Host-only builtins (`$262`, the agent bridge, `evalScript`,
+`detachArrayBuffer`, `isHTMLDDA`) are linked only into profiles that can enable
+the test262 host (`features::TEST262_HOST`). Threaded dispatch accounts for
+about 66 KB of the size, and a switch dispatch build is 1.5-5.5x slower; measure
+both before trading one for the other.
+
 `boomkat_tiny_compile` is the ordinary source CLI built with TINY's capabilities
 and `BYTECODE_GENERATOR`. It exposes `--compile OUTPUT.bkbc INPUT.js`.
 `boomkat_tiny` selects `BYTECODE_ONLY` and runs the image directly. The normal

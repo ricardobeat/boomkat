@@ -2,6 +2,7 @@ module boomkat::heap;
 
 import boomkat::vm;
 import boomkat::types;
+import boomkat::features;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::env;
@@ -57,7 +58,9 @@ fn Realm*? Heap.create_realm(&self, HObject* global_object = null, HObject* glob
     self.register_gc_root(global.bindings.as_header());
     self.register_gc_root(v.global_lex_env.bindings.as_header());
     if (!builtins::register_builtins(global, self)) return types::ALLOC_ERROR~;
+    $if features::TEST262_HOST:
     if (vm::test262_host_enabled && !builtins::register_test262_host(global, self)) return types::ALLOC_ERROR~;
+    $endif
     if (global_object != null && global_proto != null) self.set_prototype(global_object, global_proto);
     return realm;
 }

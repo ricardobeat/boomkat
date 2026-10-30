@@ -215,25 +215,29 @@ macro init_builtin_handlers() {
     builtin_dispatch_table[Builtin.ARRAY_PROTO_REDUCE.ordinal] = &builtin_array_proto_reduce;
     builtin_dispatch_table[Builtin.ARRAY_PROTO_REDUCERIGHT.ordinal] = &builtin_array_proto_reduceRight;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_TOSTRING.ordinal] = &builtin_function_proto_toString;
-    builtin_dispatch_table[Builtin.HOST_GC.ordinal] = &builtin_host_gc;
-    builtin_dispatch_table[Builtin.DETACH_ARRAYBUFFER.ordinal] = &builtin_detach_arraybuffer;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_HASINSTANCE.ordinal] = &builtin_function_proto_hasInstance;
     builtin_dispatch_table[Builtin.DATE_PROTO_TOPRIMITIVE.ordinal] = &builtin_date_proto_toPrimitive;
-    builtin_dispatch_table[Builtin.CREATE_REALM.ordinal] = &builtin_create_realm;
-    builtin_dispatch_table[Builtin.AGENT_START.ordinal] = &builtin_agent_start;
-    builtin_dispatch_table[Builtin.AGENT_BROADCAST.ordinal] = &builtin_agent_broadcast;
-    builtin_dispatch_table[Builtin.AGENT_GET_REPORT.ordinal] = &builtin_agent_get_report;
-    builtin_dispatch_table[Builtin.AGENT_SLEEP.ordinal] = &builtin_agent_sleep;
-    builtin_dispatch_table[Builtin.AGENT_MONOTONIC_NOW.ordinal] = &builtin_agent_monotonic_now;
-    builtin_dispatch_table[Builtin.AGENT_RECEIVE_BROADCAST.ordinal] = &builtin_agent_receive_broadcast;
-    builtin_dispatch_table[Builtin.AGENT_REPORT.ordinal] = &builtin_agent_report;
-    builtin_dispatch_table[Builtin.AGENT_LEAVING.ordinal] = &builtin_agent_leaving;
-    builtin_dispatch_table[Builtin.EVAL_SCRIPT.ordinal] = &builtin_eval_script;
-    builtin_dispatch_table[Builtin.MODULE_BINDING_GETTER.ordinal] = &builtin_module_binding_getter;
-    builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal] = &builtin_abstract_module_source_ctor;
-    builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET.ordinal] = &builtin_abstract_module_source_tostringtag_get;
-    builtin_dispatch_table[Builtin.IS_HTML_DDA.ordinal] = &builtin_is_html_dda;
-    builtin_dispatch_table[Builtin.HTML_DDA_CALL.ordinal] = &builtin_html_dda_call;
+    $if features::TEST262_HOST:
+        builtin_dispatch_table[Builtin.HOST_GC.ordinal] = &builtin_host_gc;
+        builtin_dispatch_table[Builtin.DETACH_ARRAYBUFFER.ordinal] = &builtin_detach_arraybuffer;
+        builtin_dispatch_table[Builtin.CREATE_REALM.ordinal] = &builtin_create_realm;
+        builtin_dispatch_table[Builtin.AGENT_START.ordinal] = &builtin_agent_start;
+        builtin_dispatch_table[Builtin.AGENT_BROADCAST.ordinal] = &builtin_agent_broadcast;
+        builtin_dispatch_table[Builtin.AGENT_GET_REPORT.ordinal] = &builtin_agent_get_report;
+        builtin_dispatch_table[Builtin.AGENT_SLEEP.ordinal] = &builtin_agent_sleep;
+        builtin_dispatch_table[Builtin.AGENT_MONOTONIC_NOW.ordinal] = &builtin_agent_monotonic_now;
+        builtin_dispatch_table[Builtin.AGENT_RECEIVE_BROADCAST.ordinal] = &builtin_agent_receive_broadcast;
+        builtin_dispatch_table[Builtin.AGENT_REPORT.ordinal] = &builtin_agent_report;
+        builtin_dispatch_table[Builtin.AGENT_LEAVING.ordinal] = &builtin_agent_leaving;
+        builtin_dispatch_table[Builtin.EVAL_SCRIPT.ordinal] = &builtin_eval_script;
+        builtin_dispatch_table[Builtin.IS_HTML_DDA.ordinal] = &builtin_is_html_dda;
+        builtin_dispatch_table[Builtin.HTML_DDA_CALL.ordinal] = &builtin_html_dda_call;
+    $endif
+    $if features::MODULE_LOADING:
+        builtin_dispatch_table[Builtin.MODULE_BINDING_GETTER.ordinal] = &builtin_module_binding_getter;
+        builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_CTOR.ordinal] = &builtin_abstract_module_source_ctor;
+        builtin_dispatch_table[Builtin.ABSTRACT_MODULE_SOURCE_TOSTRINGTAG_GET.ordinal] = &builtin_abstract_module_source_tostringtag_get;
+    $endif
     builtin_dispatch_table[Builtin.ARRAY_SPECIES_GETTER.ordinal] = &builtin_array_species_getter;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_RESTRICTED_GETTER.ordinal] = &builtin_function_proto_restricted_getter;
     builtin_dispatch_table[Builtin.FUNCTION_PROTO_RESTRICTED_SETTER.ordinal] = &builtin_function_proto_restricted_setter;
