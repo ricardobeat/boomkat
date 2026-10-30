@@ -431,21 +431,21 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                                 rightw = 0;
                             }
                             if (v.op == MUL) self.e.op(jit::SLJIT_OR, r3, left, 0, right, rightw);
-                            self.e.op(
-                                v.op == SUB ? jit::SLJIT_SUB : v.op == MUL ? jit::SLJIT_MUL : jit::SLJIT_ADD,
-                                dst,
-                                left,
-                                0,
-                                right,
-                                rightw
-                            );
+                            // One 32-bit operation with the overflow flag
+                            // replaces two range compares: `adds w; b.vs`
+                            // instead of comparing against INT32_MIN and MAX.
+                            int arithmetic = v.op == SUB ? jit::SLJIT_SUB
+                                : v.op == MUL ? jit::SLJIT_MUL : jit::SLJIT_ADD;
+                            self.e.op(arithmetic | jit::SLJIT_32 | jit::SLJIT_SET_OVERFLOW, dst, left, 0, right,
+                                rightw);
+                            // The flag must be consumed before anything else
+                            // compares, because a compare replaces it.
+                            self.snapshot(self.e.jump_if(jit::SLJIT_OVERFLOW), self.pc);
                             if (v.op == MUL) {
                                 void* nonzero = self.e.cmp(jit::SLJIT_NOT_EQUAL, dst, 0, imm, 0);
                                 self.guard(jit::SLJIT_SIG_LESS, r3, 0, imm, 0, self.pc);
                                 self.e.bind(nonzero);
                             }
-                            self.guard(jit::SLJIT_SIG_LESS, dst, 0, imm, -2147483648L, self.pc);
-                            self.guard(jit::SLJIT_SIG_GREATER, dst, 0, imm, 2147483647L, self.pc);
                             self.e.mov(dst, 0, dst, 0, jit::SLJIT_MOV_S32);
                             if (v.home == 0) self.store_gpr((int)i, dst);
                             break;

@@ -57,6 +57,12 @@ fn void TemplateEmitter.equal_value(&self, int dst, int left, int right, bool ne
     if (jit::sljit_emit_op_flags(self.compiler, jit::SLJIT_MOV, dst, 0,
             negate ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL) != 0) self.failed = true;
 }
+// Jump on the condition flags left by the previous operation.
+fn void* TemplateEmitter.jump_if(&self, int condition) @feat(SLJIT) {
+    void* jump = jit::sljit_emit_jump(self.compiler, condition);
+    if (jump == null) self.failed = true;
+    return jump;
+}
 fn void* TemplateEmitter.cmp(&self, int condition, int left, long lw, int right, long rw) @feat(SLJIT) {
     void* jump = jit::sljit_emit_cmp(self.compiler, condition, left, lw, right, rw);
     if (jump == null) self.failed = true;
