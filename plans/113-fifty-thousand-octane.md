@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `8c421db8` (aliased loop SSA; previous `76e89fb6` added the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `d75838d9` (boolean ToInt32; previous `8c421db8` added aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -124,7 +124,24 @@ Five alternating pairs against the pre-change binary:
 
 Earley-Boyer recovers the small regression the sparse window introduced; zlib is unchanged because `a8`'s inner loop needs 117 spills and 23 phis, above the 128-entry SSA spill budget. Raising that budget to 192 admits the loop (SSA body 21,552 bytes against 9,140 straight-line) but zlib regressed **+3%**, so the budget stayed at 128 and the loop keeps the straight-line tier. The local suite's 27 failures, the differential JIT suites and the module/rosetta suites are unchanged. `test/test_sljit_highreg_loop.js` now also drives the wide-count path, which overflows, widens and finally falls back to the straight-line tier.
 
-The next B1 consumer is still the `a8` call loop: `bytecode_remap_registers` refuses any high register inside a call or argument window, so the `103..1083` loop with its `a3`/`a6` calls cannot be remapped yet.
+The next B1 consumer proposed at `76e89fb6` was `a8`'s `103..1083` call loop, on the theory that `bytecode_remap_registers` refusing call/argument windows was what blocked it. That premise does not hold. `LOOP_OPS` is 128, and `sljit_loop_probe` rejects a span of 128 or more before the remap is ever consulted, so `a8`'s 980-op and 543-op loops are out of reach for the loop tier regardless of call windows. A census over all fifteen minis (a stats build printing every `loop_highreg_compile` refusal) recorded **no refusals at all**: every wide loop that reached the sparse window could be mapped. Remapping call windows would need contiguity-preserving block allocation for the whole argument range, and has no measured consumer, so it is not implemented.
+
+## Boolean ToInt32, 2026-10-30
+
+`d75838d9` teaches the native ToInt32 conversion that a boolean is a number. Emscripten output combines comparisons with bitwise operators (`(a|0)!=-1&(b|0)!=-1`), so a boolean operand is common. The conversion guard accepted fastints and narrow doubles only, and a boolean exited, running the rest of the body in the interpreter. In zlib's 429-op `a6`, one such BAND site accounted for 749,214 exits; after the change the same function's native entries fall from 1,193,525 to 446,410 and the site disappears from the exit table.
+
+The implementation is one mask. `TAG_BOOLEAN` is `TAG_FASTINT`'s neighbour: `0xFFF5` against `0xFFF1`, one bit apart, so `tag & ~4` folds both onto the existing fastint tail, where a boolean's payload is already its 0 or 1. Null masks down to an unused tag below `TAG_FASTINT` and undefined stays above it, so the existing magnitude guard still rejects both, along with heap values and out-of-range doubles. A branch-based version that tested both tags separately was measured and rejected: it adds a compare on the double path and cost Earley-Boyer 2.6%.
+
+| Workload | Change |
+|---|---:|
+| zlib | **-1.5%** |
+| Mandreel | **-2.0%** |
+| gbemu | -0.4% |
+| typescript | **+0.8%** |
+| Earley-Boyer, regexp | +0.3% to +0.6% |
+| other eight minis | within ±0.3% |
+
+Aggregate across the fifteen minis is about **-0.8%**. The differential JIT suites, the local suite's 27 pre-existing failures and the module/rosetta suites are unchanged. `test/test_sljit_boolean_bitwise.js` covers `&`, `|`, `^` and `~` on booleans and the wide values that still leave native code.
 
 ## Current status and acceptance model
 
@@ -133,12 +150,12 @@ The architecture reset governs the implementation order below. A–E remain stab
 | Workstream | Status | Next responsibility |
 |---|---|---|
 | A — Feedback, assumptions and dependencies | PARTIAL | Reuse delivered watches; represent facts and their invalidation in the shared graph |
-| B — CFG/SSA, effects and recovery | PARTIAL | Sparse window and aliased loop SSA landed; next are call windows in the remap, then cyclic regions and effect information |
-| C — Optimization and allocation | PARTIAL | Apply shared passes across realistic graphs, then reduce executed work |
+| B — CFG/SSA, effects and recovery | PARTIAL | Sparse window and aliased loop SSA landed; cyclic regions and effect information remain; call windows have no reachable consumer |
+| C — Optimization and allocation | PARTIAL | Boolean ToInt32 removed a whole guard class; apply shared passes across realistic graphs and keep reducing executed work |
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
 | E — Coverage, measurement and budgets | PARTIAL | Mini census, admission controls and sparse loop mapping delivered; coverage-window growth remains exhausted until per-operation code cost falls |
 
-Validated source is `rat` at `8c421db8`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
+Validated source is `rat` at `d75838d9`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
 The latest matched full-suite pair is **6121 → 6257 (+2.22%)**, provisional. The earlier **5752 → 6355 (+10.48%)** result uses three pairs in a different timing window. Neither establishes 50K, and these absolute scores must not be compared across windows as a regression or gain. From roughly 6.3K, 50K requires roughly 8x aggregate improvement.
 
