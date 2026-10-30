@@ -298,6 +298,40 @@
         "THREADED_DISPATCH"
       ]
     },
+    "boomkat_esp32": {
+      "type": "static-lib",
+      "name": "boomkat_esp32",
+      "sources": [
+        "src"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH",
+        "NO_INSPECT",
+        "PRINT",
+        "STRICT_ONLY",
+        "NO_BIGINT",
+        "NO_TYPESCRIPT",
+        "NO_JSX",
+        "NO_PROXY",
+        "NO_ITERATOR_HELPERS",
+        "NO_WEAKREF",
+        "NO_SHARED_MEMORY",
+        "NO_REGEXP",
+        "NO_COLLECTIONS",
+        "NO_BUFFERS",
+        "NO_NORMALIZE",
+        "NO_MODULE_LOADING",
+        "CORE_BUILTINS_ONLY",
+        "SMALL_VM"
+      ],
+      "cflags": "-Os -ffunction-sections -fdata-sections -march=rv32imac_zicsr_zifencei -mabi=ilp32"
+    },
     "boomkat_example_c3": {
       "type": "executable",
       "sources": [

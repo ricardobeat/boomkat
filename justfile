@@ -132,6 +132,47 @@ build-riscv-musl:
     mv out/boomkat_tiny out/riscv64-musl/boomkat_tiny
     riscv64-linux-gnu-strip out/riscv64-musl/boomkat_tiny
 
+esp32_tools := `ls -d ~/Library/Arduino15/packages/esp32/tools/esp-rv32/*/bin ~/.arduino15/packages/esp32/tools/esp-rv32/*/bin 2>/dev/null | tail -1`
+# ESP-IDF links only local-exec TLS, which needs a c3c with --tls-model.
+esp32_c3c := env("C3C", "c3c")
+esp32c5_fqbn := "esp32:esp32:esp32c5:PartitionScheme=huge_app,PSRAM=enabled,UploadSpeed=460800"
+esp32c5_port := env("ESP32_PORT", "/dev/cu.usbserial-*")
+
+# Build the ESP32-C5 static library (out/esp32c5/libboomkat_esp32.a). C3 has
+# no newlib target, so this compiles for linux-riscv32 and renames the glibc
+# ABI symbols to the shims in examples/esp32c5/bk_newlib_shim.c. C3's
+# priority initializers touch thread-locals, which ESP-IDF only sets up per
+# task, so they move out of .init_array and run from bk_esp32_init().
+build-esp32:
+    mkdir -p out/build/esp32c5 out/esp32c5
+    {{esp32_c3c}} build boomkat_esp32 --target linux-riscv32 --riscv-cpu=rvimac --riscv-abi=int-only --reloc=none --tls-model=local-exec --cc {{esp32_tools}}/riscv32-esp-elf-gcc --build-dir out/build/esp32c5 --keep-obj --obj-out out/build/esp32c5/obj --show-backtrace=no
+    init_size=$({{esp32_tools}}/riscv32-esp-elf-readelf -S -W out/build/esp32c5/obj/boomkat.esm.o | awk '$2 == ".init_array.1" { print "0x" $6 }'); \
+    {{esp32_tools}}/riscv32-esp-elf-objcopy \
+        --redefine-sym __errno_location=bk_errno_location \
+        --redefine-sym stdout=bk_stdout --redefine-sym stderr=bk_stderr \
+        --redefine-sym clock_gettime=bk_clock_gettime --redefine-sym nanosleep=bk_nanosleep \
+        --redefine-sym localtime_r=bk_localtime_r --redefine-sym gmtime_r=bk_gmtime_r \
+        --redefine-sym pthread_cond_timedwait=bk_pthread_cond_timedwait \
+        --redefine-sym pthread_once=bk_pthread_once \
+        --rename-section .init_array.1=.data.bk_init_array \
+        --add-symbol bk_init_array_start=.data.bk_init_array:0,global \
+        --add-symbol bk_init_array_end=.data.bk_init_array:$init_size,global \
+        out/build/esp32c5/obj/boomkat.esm.o
+    rm -f out/boomkat_esp32.a out/esp32c5/libboomkat_esp32.a
+    {{esp32_tools}}/riscv32-esp-elf-ar rcs out/esp32c5/libboomkat_esp32.a out/build/esp32c5/obj/*.o out/build/esp32c5/obj/tmp_c_compile/*.o
+
+# Compile the ESP32-C5 example sketch against the static library.
+esp32c5-sketch: build-esp32
+    arduino-cli compile --fqbn "{{esp32c5_fqbn}}" --build-path out/esp32c5/sketch \
+        --build-property "compiler.cpp.extra_flags=-I{{justfile_directory()}}/include" \
+        --build-property "compiler.libraries.ldflags=-L{{justfile_directory()}}/out/esp32c5 -lboomkat_esp32" \
+        examples/esp32c5
+
+# Flash the ESP32-C5 example (port from ESP32_PORT) and open the serial monitor.
+esp32c5-flash: esp32c5-sketch
+    arduino-cli upload --fqbn "{{esp32c5_fqbn}}" --input-dir out/esp32c5/sketch --port {{esp32c5_port}} examples/esp32c5
+    arduino-cli monitor --port {{esp32c5_port}} --config baudrate=115200
+
 # Build the full bundled Intl and Temporal release CLI.
 build-full-icu:
     @make out/boomkat-full-icu
