@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `d75838d9` (boolean ToInt32; previous `8c421db8` added aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `66a735a0` (size-scaled function link budget; previous `d75838d9` added boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -172,7 +172,22 @@ The coverage census named one concrete admission blocker: box2d has three hot fu
 
 Two refinements did not isolate the gain. Allowing 4096 only for bodies without a backedge kept gbemu's regression and lost box2d's gain, as did restricting it to bodies with no loop candidate under `LOOP_OPS`. Under 4096 gbemu compiles exactly the same 177 functions with the same hit count and code bytes as before, so its loss is not an admission change at all but a whole-binary layout sensitivity: a control rebuild of the unchanged source measured gbemu within 1.1%. That makes sub-3% single-workload results across *different* builds unreliable, which is worth remembering when reading the tables above.
 
-The concrete item remains: those three box2d bodies need a larger link budget than 2048 but do not qualify for the typed reserve. The next attempt should scope the extra budget to a measured consumer rather than raising it globally.
+The concrete item remained: those box2d bodies need a larger link budget than 2048 but do not qualify for the typed reserve.
+
+## Size-scaled link budget, 2026-10-30
+
+`66a735a0` replaces the fixed generic limit with eight fixups per bytecode, floored at 2048 and capped at `LOOP_LINK_LIMIT`. The old constant already implied that density for a 256-op body, so shorter bodies keep exactly their previous budget and only longer ones grow. Five box2d bodies were being rejected at the 2048 cap; with their natural requirement measured at 2082-2826 fixups they now compile, and `guard/link capacity` disappears from the workload.
+
+| Workload | Change |
+|---|---:|
+| box2d | **-2.4%** (209 → 204 ms) |
+| typescript | -0.8% |
+| splay | -0.9% |
+| Earley-Boyer, Navier-Stokes, regexp | -0.3% to -0.6% |
+| gbemu, pdfjs | +0.5% to +0.7% |
+| other six minis | 0.0% |
+
+The differential JIT suites and the local suite's 27 pre-existing failures are unchanged. Unlike the earlier global increase, this one leaves every body shorter than 256 ops at its previous budget, which is why gbemu stays within the layout noise a control rebuild already measured.
 
 ## Current status and acceptance model
 
@@ -184,9 +199,9 @@ The architecture reset governs the implementation order below. A–E remain stab
 | B — CFG/SSA, effects and recovery | PARTIAL | Sparse window and aliased loop SSA landed; cyclic regions and effect information remain; call windows have no reachable consumer |
 | C — Optimization and allocation | PARTIAL | Boolean ToInt32 removed a whole guard class; per-op cost now matters mainly on the five native-dominated workloads |
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
-| E — Coverage, measurement and budgets | PARTIAL | Native/interpreted split measured: eleven of fifteen minis execute over 93% of their bytecodes interpreted, so coverage, not per-op cost, is the first-order gap; box2d's three `guard/link capacity` bodies are the next named admission target |
+| E — Coverage, measurement and budgets | PARTIAL | Native/interpreted split measured: eleven of fifteen minis execute over 93% of their bytecodes interpreted, so coverage, not per-op cost, is the first-order gap; box2d's rejected bodies now compile |
 
-Validated source is `rat` at `d75838d9`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
+Validated source is `rat` at `66a735a0`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
 The latest matched full-suite pair is **6121 → 6257 (+2.22%)**, provisional. The earlier **5752 → 6355 (+10.48%)** result uses three pairs in a different timing window. Neither establishes 50K, and these absolute scores must not be compared across windows as a regression or gain. From roughly 6.3K, 50K requires roughly 8x aggregate improvement.
 
