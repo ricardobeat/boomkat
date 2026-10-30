@@ -42,7 +42,8 @@ faultdef STACK_OVERFLOW;
 
 // Total live JavaScript frames, including native reentry. The heap-owned
 // storage keeps activation addresses stable across callbacks and stack growth.
-const uint MAX_CALLS        = 4096;
+// SMALL_VM lowers call depth to fit in microcontroller RAM.
+const uint MAX_CALLS        = $feat(SMALL_VM) ? 256 : 4096;
 const uint INITIAL_VALSTACK = 1024;
 
 // Cap on nested Vm.run invocations, counted by Vm.run_depth.

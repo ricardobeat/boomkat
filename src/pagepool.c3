@@ -16,7 +16,8 @@ module boomkat::pagepool;
 
 import std::core::mem::allocator;
 
-const sz PAGE_SIZE = 64 * 1024;
+// SMALL_VM shrinks pages to fit in microcontroller RAM.
+const sz PAGE_SIZE = $feat(SMALL_VM) ? 4 * 1024 : 64 * 1024;
 // Empty pages kept per pool so a pool hovering at a page boundary does not
 // return and fetch the same page over and over.
 const uint EMPTY_RESERVE = 4;
