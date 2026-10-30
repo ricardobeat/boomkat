@@ -4,7 +4,7 @@ import boomkat::heap;
 import boomkat::bytecode;
 
 const usz JIT_INITIAL_CODE_LIMIT = 256 * 1024;
-const usz JIT_MAX_CODE_LIMIT = 1024 * 1024;
+const usz JIT_MAX_CODE_LIMIT = 2 * 1024 * 1024;
 // A bounded reserve for hot standalone loops after function admission
 // saturates. The adaptive policy retains its independent limit.
 const usz JIT_LOOP_RESERVE_LIMIT = 2 * JIT_MAX_CODE_LIMIT;
