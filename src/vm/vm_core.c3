@@ -431,7 +431,9 @@ fn bool scan_activation_root_unit(Vm* vm, heap::Heap* h, Activation* act, bool s
                 TVal* next = vm.activations[vm.gc_root_act_index + 1].bottom;
                 if (next > end) end = next;
             } else if (!saved && vm.gc_root_act_index + 1 == vm.activation_count
-                       && vm.valstack_top > end) end = vm.valstack_top;
+                       && vm.valstack_top > end) {
+                end = vm.valstack_top;
+            }
             TVal* stack_end = saved ? ((ShadowActFrame*)vm.gc_root_shadow).stack_end : vm.valstack_end;
             if (end > stack_end) end = stack_end;
             if (act.bottom + vm.gc_root_reg_index >= end) return true;

@@ -384,7 +384,7 @@ fn void LocaleId.apply_replacement(&self, char[] replacement) {
         char[] p = parts[i];
         if (locale_is_script(p)) { if (self.script_len == 0) self.set_script(p); }
         else if (locale_is_region(p)) { if (self.region_len == 0) self.set_region(p); }
-        else if (locale_is_variant(p)) self.add_variant(p);
+        else if (locale_is_variant(p)) { self.add_variant(p); }
     }
 }
 

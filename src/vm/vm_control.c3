@@ -534,7 +534,9 @@ fn HObject* instantiate_closure(Vm* vm, CompiledFunction* template, EnvRecord* v
                 if (refs[i].owner != null) refs[i].owner.as_header().incref();
                 vm.heap.shade_root_object(refs[i].owner);
             }
-        } else if (requires_cells) return null;
+        } else if (requires_cells) {
+            return null;
+        }
     }
     // ECMA-262 [[ThisMode]] lexical: capture the enclosing activation's
     // `this` once, at closure-creation time, so it survives being called from

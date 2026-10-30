@@ -943,7 +943,9 @@ fn bool parse_iso_zoneddatetime_string(char[] text, ParsedIsoZonedDateTime* out)
         out.offset_seconds = offset / 1000000000;
         out.offset_nanos = offset % 1000000000;
         has_offset = true;
-    } else if (text[i] != '[') return false;
+    } else if (text[i] != '[') {
+        return false;
+    }
     out.has_time = has_time;
 
     // --- Annotations (required) ---
