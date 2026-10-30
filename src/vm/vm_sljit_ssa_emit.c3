@@ -183,6 +183,9 @@ fn void SsaEmitter.int32(&self, int reg, int dst, uint pc) @feat(SLJIT) {
     int r1 = jit::reg_r(1);
     int r3 = jit::reg_r(3);
     self.e.op(jit::SLJIT_LSHR, r3, reg, 0, jit::SLJIT_IMM, 48);
+    // TAG_BOOLEAN differs from TAG_FASTINT only in bit 2, so one mask folds a
+    // boolean onto the fastint tail, where its 0 or 1 payload unboxes exactly.
+    self.e.op(jit::SLJIT_AND, r3, r3, 0, jit::SLJIT_IMM, ~4L);
     void* integer = self.e.cmp(jit::SLJIT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT);
     self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
     self.e.op(jit::SLJIT_AND, r3, reg, 0, jit::SLJIT_IMM, 0x7FFFFFFFFFFFFFFFL);

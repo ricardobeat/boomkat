@@ -1179,12 +1179,19 @@ fn void LoopEmitter.number_reg(&self, uint reg, int freg, uint pc) @feat(SLJIT) 
         self.number(jit::reg_r(0), freg, pc);
     }
 }
-// Narrow floating inputs convert exactly under ToInt32. Other doubles take
-// the interpreter's modulo-2^32 conversion, including infinities and NaNs.
+// ToInt32 of a fastint, a boolean, or a double inside int32's range. Narrow
+// doubles convert exactly; anything else exits to the interpreter, which owns
+// the modulo-2^32 conversion, infinities and NaNs included. TAG_BOOLEAN
+// differs from TAG_FASTINT only in bit 2, so one mask folds both onto the
+// fastint tail: a boolean's payload is already its 0 or 1, and the low 32 bits
+// of a fastint are its ToInt32. Bitwise combinations of comparisons are the
+// common source. Null masks down to an unused tag below TAG_FASTINT and
+// undefined stays above it, so the magnitude guard rejects both.
 fn void LoopEmitter.int32(&self, uint reg, int dst, uint pc) @feat(SLJIT) {
     self.load(reg, dst);
     int temp = jit::reg_r(3);
     self.e.op(jit::SLJIT_LSHR, temp, dst, 0, jit::SLJIT_IMM, 48);
+    self.e.op(jit::SLJIT_AND, temp, temp, 0, jit::SLJIT_IMM, ~4L);
     void* integer = self.e.cmp(jit::SLJIT_EQUAL, temp, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT);
     self.guard(jit::SLJIT_GREATER, temp, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
     self.e.op(jit::SLJIT_AND, temp, dst, 0, jit::SLJIT_IMM, 0x7FFFFFFFFFFFFFFFL);
