@@ -69,6 +69,19 @@ Region-relative exit attribution (`12e9346e`, stats only) shows `a8`'s installed
 
 Plan review outcome: E0 (broad attribution) is complete for the mini panel, and the A/E parts of the admission work are recorded above. The implementation order stays B1 → B2/B3 → C, but the next consumer changes: the canonical decoded view must first support a real loop with a call and exact recovery (a8's 103..1083 loop), rather than another acyclic window. Until then, C should measure and reduce executed instructions per compiled operation on the existing 256-op regions, since that is the measured reason larger regions lose.
 
+## Capture-read caching rejection and probe gap, 2026-10-30
+
+Resolving a capture in a function region walks the capture-ref metadata, owner class, slot and initialized guard on every `GETCAP`. In `a8`'s compiled region one capture accounts for 43 such reads (`is_value=0`, `is_cell=0`, `guard_shadow=0`). Caching the resolved value in the native run block was prototyped with and without a runtime validity mask:
+
+| Variant | Result |
+|---|---|
+| Cache without validity mask | Matched timing until a resumed region entry read an uninitialized slot; TypeScript failed with a `TypeError` |
+| Cache with mask reset at entry and cleared on calls/writes | Region code grew 904 bytes; zlib **+2.7%**, Mandreel **+1.2%**, NavierStokes **0.186 s → 2.409 s**, TypeScript **-0.6%** |
+
+Both variants were reverted. The masked version also cleared on property writes and every call form, so the loss is the per-read mask test and the longer live values, not a missing invalidation. The conclusion is that capture resolution must be removed or simplified in lowering, not cached lazily in the region.
+
+The same diagnostic run fixed the loop-tier blocker precisely. `sljit_loop_probe` returns before analysis because `a8` has 68 VM registers and `LOOP_REGS` is 64. A canonical operand-role scan, reusing the compiler's liveness table rather than treating every A/B/C field as a register, shows the inner loop `796..890` touches register 67; the outer loops at `103..1083` and `109..652` touch 67 and 65. The loop tier is therefore not being starved by threaded dispatch; it cannot represent these loops at all. The next B1 consumer is a sparse high-register window that maps only the registers a loop actually uses, not another window, region, or dense `LOOP_REGS` increase. Enlarging the dense loops would push the per-PC frame and mask tables past their current 64-bit bounds and memory budget.
+
 ## Current status and acceptance model
 
 The architecture reset governs the implementation order below. A–E remain stable workstream names, not a requirement to finish every item in A before starting B. Older checkpoint paragraphs above record status at their own revisions.
@@ -79,7 +92,7 @@ The architecture reset governs the implementation order below. A–E remain stab
 | B — CFG/SSA, effects and recovery | OPEN; bounded prototypes only | Main structural work: cyclic regions, calls and exact observable state |
 | C — Optimization and allocation | PARTIAL | Apply shared passes across realistic graphs, then reduce executed work |
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
-| E — Coverage, measurement and budgets | PARTIAL | Mini census and admission controls delivered; coverage-window growth is exhausted until per-operation code cost falls |
+| E — Coverage, measurement and budgets | PARTIAL | Mini census and admission controls delivered; `a8`'s loop-tier block is the dense 64-register window (inner loop uses register 67), so the next coverage step is B1 sparse mapping; coverage-window growth is exhausted until per-operation code cost falls |
 
 Validated source is `rat` at `12e9346e`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
