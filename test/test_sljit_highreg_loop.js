@@ -128,10 +128,20 @@ for (var k = 0; k < 200; k++) {
   total += hot(1000);
   aliasTotal += hotAlias(1000);
 }
+// Wide counts overflow the integer accumulator, so the aliased loop leaves its
+// integer speculation, rebuilds itself wider and finally falls back to the
+// straight-line tier. Each rebuild must remap the bytecode it reads again.
+var wideExpected = 0, wideTotal = 0;
+for (var k = 0; k < 40; k++) {
+  wideExpected += refAlias(20000) + 45;
+  wideTotal += hotAlias(20000);
+}
 if (total !== expected) {
   print("FAIL: high-register loop total=" + total + " expected=" + expected);
 } else if (aliasTotal !== aliasExpected) {
   print("FAIL: aliased loop total=" + aliasTotal + " expected=" + aliasExpected);
+} else if (wideTotal !== wideExpected) {
+  print("FAIL: widening aliased loop total=" + wideTotal + " expected=" + wideExpected);
 } else {
   print("PASS");
 }

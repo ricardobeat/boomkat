@@ -1851,17 +1851,34 @@ fn bool loop_highreg_compile(CompiledFunction* cf, uint offset, TVal* regs, Cold
     for (uint i = 0; i < LOOP_REGS; i++) if (slot_reg[i] != (int)i) alias_regs[i] = regs[slot_reg[i]];
     if (!loop_analyze(draft, offset, &alias_regs[0], cold, -1, SSA_ENABLED)) return false;
     draft.slot_reg = slot_reg;
-    bool aliased;
-    for (uint i = 0; i < LOOP_REGS; i++) if (slot_reg[i] != (int)i) aliased = true;
-    // The shared SSA frame still indexes VM registers directly, so only the
-    // straight-line loop emitter understands alias slots today.
-    draft.native = !aliased && ssa_loop_eligible(draft, cf, h) ? ssa_loop_emit(draft, cf, h) : null;
+    draft.native = ssa_loop_eligible(draft, cf, h) ? ssa_loop_emit(draft, cf, h) : null;
     draft.ssa = draft.native != null;
     if (draft.native == null && !draft.ssa_calls) {
         for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
         draft.native = loop_emit(draft, cf);
     }
     return draft.native != null;
+}
+
+// Rebuild a plan's native body from the function's bytecode. The interpreter's
+// copy is never rewritten, so an aliased plan re-installs its slot mapping only
+// while the emitter reads it.
+fn LoopNative loop_reemit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool ssa) @feat(SLJIT) {
+    uint[256] map;
+    for (uint i = 0; i < 256; i++) map[i] = i;
+    bool aliased;
+    for (uint i = 0; i < LOOP_REGS; i++) {
+        int reg = plan.slot_reg[i];
+        if (reg < 0 || (uint)reg == i) continue;
+        map[reg] = i;
+        aliased = true;
+    }
+    Instruction[LOOP_OPS] saved;
+    uint span = plan.end - plan.begin;
+    if (aliased) for (uint q = 0; q <= span; q++) saved[q] = cf.code[plan.begin + q];
+    defer if (aliased) for (uint q = 0; q <= span; q++) cf.code[plan.begin + q] = saved[q];
+    if (aliased && !compiler::bytecode_remap_registers(cf.code, plan.begin, plan.end, map)) return null;
+    return ssa ? ssa_loop_emit(plan, cf, h) : loop_emit(plan, cf);
 }
 
 fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
@@ -2014,12 +2031,12 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         if (overflow && want != 0 && (want & ~plan.ssa_double) != 0 && plan.ssa_retries < 2) {
             plan.ssa_double |= want;
             plan.ssa_retries++;
-            plan.native = ssa_loop_emit(plan, cf, h);
+            plan.native = loop_reemit(plan, cf, h, true);
         }
         plan.ssa = plan.native != null;
         if (plan.native == null) {
             for (uint i = 0; i < plan.memory_count; i++) plan.memory[i].doubles = false;
-            plan.native = loop_emit(plan, cf);
+            plan.native = loop_reemit(plan, cf, h, false);
         }
         if (plan.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
