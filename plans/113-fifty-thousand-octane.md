@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `12e9346e` (larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `76e89fb6` (sparse loop register window; previous `12e9346e` added larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -84,6 +84,27 @@ The same diagnostic run fixed the loop-tier blocker precisely. `sljit_loop_probe
 
 A bounded approximation was then measured: admit loops in a wide function when the loop's own operand scan stays below 64 registers and the loop spans at least 32 bytecodes. It works on a synthetic wide function (123 registers, 41-byte loop): the loop compiles and the run drops **1.94 s → 1.22 s**. No mini benefited, however: `a1`'s loops also touch registers in the 230s, so they remain rejected, and `a8`'s inner loop still needs register 67. Crypto regressed **+3%** from the changed engine code layout with identical loop admissions, so the slice was reverted rather than kept as an unused capability. The next B1 consumer is therefore still the sparse high-register window that maps only the registers a loop actually uses; a per-loop max check alone cannot reach `a1` or `a8`. Enlarging the dense loops would push the per-PC frame and mask tables past their current 64-bit bounds and memory budget.
 
+## Sparse loop register window, 2026-10-30
+
+`76e89fb6` lets a loop in a function wider than 64 registers use the loop tier. The compiler's operand-role table identifies the high registers the loop actually touches, the loop tier aliases each to a free low slot, and the bytecode is remapped only during analysis and native emission. `LoopPlan.slot_reg` maps every dirty slot back to its original VM register at exit, so the interpreter frame is preserved.
+
+Measured on five alternating pairs against the pre-change binary:
+
+| Workload | Change |
+|---|---:|
+| zlib | **-6.9%** (4146 → 3861 ms), `a8`'s inner `796..890` loop now compiles |
+| box2d | -0.5% |
+| typescript | -0.5% |
+| raytrace | -0.6% |
+| richards | -1.3% |
+| mandreel | +1.0% |
+| earley-boyer | +1.3% |
+| other nine minis | within ±1% |
+
+The differential JIT suites, local suite (688 pass, 27 expected Intl/Temporal failures in the default build) and module/rosetta suites match the interpreter. `test/test_sljit_highreg_loop.js` covers both a wide function whose loop stays low and one whose counter/inputs are aliased from high registers.
+
+Aliased loops deliberately use the straight-line emitter: the shared SSA frame still indexes VM registers directly, and an early attempt to run it on alias slots produced wrong results and a crash. SSA aliasing is the next piece of B1, followed by inner-loop call graphs. The dense `LOOP_REGS` increase and per-loop max-only admission remain rejected.
+
 ## Current status and acceptance model
 
 The architecture reset governs the implementation order below. A–E remain stable workstream names, not a requirement to finish every item in A before starting B. Older checkpoint paragraphs above record status at their own revisions.
@@ -91,12 +112,12 @@ The architecture reset governs the implementation order below. A–E remain stab
 | Workstream | Status | Next responsibility |
 |---|---|---|
 | A — Feedback, assumptions and dependencies | PARTIAL | Reuse delivered watches; represent facts and their invalidation in the shared graph |
-| B — CFG/SSA, effects and recovery | OPEN; bounded prototypes only | Main structural work: cyclic regions, calls and exact observable state |
+| B — CFG/SSA, effects and recovery | PARTIAL | Sparse loop register window landed; SSA must become slot-aware, then cyclic regions and calls |
 | C — Optimization and allocation | PARTIAL | Apply shared passes across realistic graphs, then reduce executed work |
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
-| E — Coverage, measurement and budgets | PARTIAL | Mini census and admission controls delivered; `a8`'s loop-tier block is the dense 64-register window (inner loop uses register 67), so the next coverage step is B1 sparse mapping; coverage-window growth is exhausted until per-operation code cost falls |
+| E — Coverage, measurement and budgets | PARTIAL | Mini census, admission controls and sparse loop mapping delivered; coverage-window growth remains exhausted until per-operation code cost falls |
 
-Validated source is `rat` at `12e9346e`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
+Validated source is `rat` at `76e89fb6`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
 The latest matched full-suite pair is **6121 → 6257 (+2.22%)**, provisional. The earlier **5752 → 6355 (+10.48%)** result uses three pairs in a different timing window. Neither establishes 50K, and these absolute scores must not be compared across windows as a regression or gain. From roughly 6.3K, 50K requires roughly 8x aggregate improvement.
 
