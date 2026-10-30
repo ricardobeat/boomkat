@@ -223,7 +223,7 @@ fn void* bk_get_context_data(void* ctxp, uint slot) @export("bk_get_context_data
 }
 
 fn char* bk_version() @export("bk_version") {
-    return "0.2.0";
+    return "0.3.0";
 }
 
 // ============================================================================

@@ -5,21 +5,19 @@ of commits since the previous release. Newest first.
 
 ## [Unreleased]
 
-- Multiple agents: `Atomics.wait` blocks and `Atomics.notify` wakes waiters in
-  other agents, `Atomics.waitAsync` settles and times out through the host event
-  loop, and `Atomics` operations on a `SharedArrayBuffer` are atomic. The
-  SharedArrayBuffer's bytes are a refcounted block that outlives the heap that
-  created it. The test262 `$262.agent` host is implemented, so the 112 agent
-  files and the 2 `CanBlockIsFalse` files run: `built-ins/Atomics` is 389/389.
-  Stage 3 proposals are in scope in the docs again.
-- Threaded dispatch now covers `WIDE`-prefixed operands, typed array element
-  access, native builtin calls, constructors and `f.apply(this, arguments)`.
-- Property read caches handle megamorphic sites and several shapes per site.
-- Garbage collector grows the heap to three times its live set between cycles,
-  sweeps the nursery in generation order, and caps incremental slices.
-- String concatenation cache for short, immutable operand pairs.
-- Compiler: move elimination and fusion run on whole-function liveness.
-- `THIRD_PARTY` notices ship with releases; macOS executables are dead-stripped.
+## [0.3.0] - 2026-10-30 · 259 commits
+
+- Strings stored as Latin-1 or UTF-16; faster JSON on non-ASCII text.
+- C API: breaking cleanup of runtime/context options, handles and callbacks.
+- C API: host classes, proxies, weak handles, promises, modules, buffers, GC control.
+- C++ `bk::` header-only API with a CMake package.
+- Bindings gain compiled scripts and module loaders.
+- Multi-agent `Atomics` and `SharedArrayBuffer`; `built-ins/Atomics` 389/389.
+- Wider threaded dispatch and megamorphic property read caches.
+- GC: heap grows to 3x live set, generation-ordered sweeps, capped slices.
+- Compiler: whole-function liveness for move elimination and fusion.
+- Smaller TINY runner; macOS executables are dead-stripped.
+- `THIRD_PARTY` notices ship with releases.
 
 ## [0.2.0] - 2026-10-21 · 111 commits
 
