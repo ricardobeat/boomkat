@@ -13,7 +13,7 @@ import std::core::mem;
 const uint FUNCTION_OPS        = 512;
 const uint FUNCTION_BAIL       = uint::max;
 const uint FUNCTION_CAPTURES   = 8;
-const uint FUNCTION_REGION_OPS = 128;
+const uint FUNCTION_REGION_OPS = 256;
 // Callee bodies nested inside one another each own a register window in the
 // run block.
 const uint INLINE_DEPTH = 4;
