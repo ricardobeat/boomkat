@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `68d7c01e` (profile-guided read refresh and frameless leaves), previous performance checkpoints `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `047d0ef0` (larger hot regions and a 2 MiB function budget), previous checkpoints `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -45,6 +45,14 @@ Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% o
 
 Experimental source is preserved at `8f875497` on `wip/function-ssa-regions`. It is not promoted to the validated `rat` branch. Detailed patches, mismatched-build correction and subsequent matched evidence are archived with the checkpoint.
 
+## Coverage census and admission checkpoint, 2026-10-30
+
+A fresh `--jit --stats` census of all fifteen minis ranked interpreted functions by executed instructions and rejection reason. The largest loss was not a slow generated body: hot functions were emitted and then discarded once the 1 MiB function budget filled (Mandreel's 308-op `sortMaxDown`, its 489-op `insertleaf`, box2d's 611-op body, TypeScript's 15-op `Verify`). The second loss was the 128-bytecode window used when only a hot header of a large function is compiled; everything past the window ran in the interpreter on every iteration.
+
+Two bounded admission changes, `dd2e776d` and `047d0ef0`, raise the function budget to 2 MiB (reserve scaled with it) and the region window to 256 bytecodes. Five alternating pairs against `68d7c01e`: box2d **-9.8%**, gbemu **-3.3%**, zlib **-2.0%**, Mandreel **-0.5%**; the other eleven minis are flat, RSS is unchanged, and the differential JIT suites match. A 4 MiB budget, a 384-op window and a 512-op window each regressed, so those points are recorded as rejected, not retained.
+
+The census also fixes the next target. zlib still executes about 835M interpreter instructions: `a1` (37,098 ops, 518 registers) is rejected as WIDE and `a8` (1,370 ops, 68 registers) runs 376M interpreter instructions because its hot loop contains operations the loop tier cannot lower. High-register/WIDE decoding with a sparse register window, and effectful loop bodies, are therefore the dominant remaining coverage work rather than further budget tuning. Constructor wrapping idioms (`this.initialize.apply(this, arguments)`, `superConstructor.call`) also keep every allocation-heavy mini on the allocation exit path; parameter-default constructors were prototyped and reverted because no hot consumer reached the native allocation helper.
+
 ## Current status and acceptance model
 
 The architecture reset governs the implementation order below. A–E remain stable workstream names, not a requirement to finish every item in A before starting B. Older checkpoint paragraphs above record status at their own revisions.
@@ -57,7 +65,7 @@ The architecture reset governs the implementation order below. A–E remain stab
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
 | E — Coverage, measurement and budgets | PARTIAL | Start with fresh cross-suite attribution; retain compilation/memory controls throughout |
 
-Validated source is `rat` at `68d7c01e`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
+Validated source is `rat` at `047d0ef0`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
 The latest matched full-suite pair is **6121 → 6257 (+2.22%)**, provisional. The earlier **5752 → 6355 (+10.48%)** result uses three pairs in a different timing window. Neither establishes 50K, and these absolute scores must not be compared across windows as a regression or gain. From roughly 6.3K, 50K requires roughly 8x aggregate improvement.
 
