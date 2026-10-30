@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `047d0ef0` (larger hot regions and a 2 MiB function budget), previous checkpoints `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `12e9346e` (larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 ## Closeout and carried scope
 
@@ -49,9 +49,25 @@ Experimental source is preserved at `8f875497` on `wip/function-ssa-regions`. It
 
 A fresh `--jit --stats` census of all fifteen minis ranked interpreted functions by executed instructions and rejection reason. The largest loss was not a slow generated body: hot functions were emitted and then discarded once the 1 MiB function budget filled (Mandreel's 308-op `sortMaxDown`, its 489-op `insertleaf`, box2d's 611-op body, TypeScript's 15-op `Verify`). The second loss was the 128-bytecode window used when only a hot header of a large function is compiled; everything past the window ran in the interpreter on every iteration.
 
-Two bounded admission changes, `dd2e776d` and `047d0ef0`, raise the function budget to 2 MiB (reserve scaled with it) and the region window to 256 bytecodes. Five alternating pairs against `68d7c01e`: box2d **-9.8%**, gbemu **-3.3%**, zlib **-2.0%**, Mandreel **-0.5%**; the other eleven minis are flat, RSS is unchanged, and the differential JIT suites match. A 4 MiB budget, a 384-op window and a 512-op window each regressed, so those points are recorded as rejected, not retained.
+Two bounded admission changes, `dd2e776d` and `047d0ef0`, raise the function budget to 2 MiB (loop reserve 4 MiB, two times the function cap) and the region window to 256 bytecodes. Five alternating pairs against `68d7c01e`: box2d **-9.8%**, gbemu **-3.3%**, zlib **-2.0%**, Mandreel **-0.5%**; the other eleven minis are flat, RSS is unchanged, and the differential JIT suites match. A 4 MiB budget, a 384-op window and a 512-op window each regressed, so those points are recorded as rejected, not retained.
 
 The census also fixes the next target. zlib still executes about 835M interpreter instructions: `a1` (37,098 ops, 518 registers) is rejected as WIDE and `a8` (1,370 ops, 68 registers) runs 376M interpreter instructions because its hot loop contains operations the loop tier cannot lower. High-register/WIDE decoding with a sparse register window, and effectful loop bodies, are therefore the dominant remaining coverage work rather than further budget tuning. Constructor wrapping idioms (`this.initialize.apply(this, arguments)`, `superConstructor.call`) also keep every allocation-heavy mini on the allocation exit path; parameter-default constructors were prototyped and reverted because no hot consumer reached the native allocation helper.
+
+## a8 investigation and plan review, 2026-10-30
+
+`a8` is zlib's `deflate_slow`: 1,370 bytecodes, 68 registers, with loops at 103..1083 (980 ops), 109..652 (543 ops) and 796..890 (94 ops). The single installed region lands at 796 because the first hot backedge wins; the large loops exceed both `LOOP_OPS` and the region window and contain calls. Three coverage-shaped attempts were measured and all were rejected:
+
+| Attempt | Result |
+|---|---|
+| Up to four function regions per function | interpreter ops 835M → 802M, but zlib +1.8%, box2d +9.3%, navier-stokes +7.3%, pdfjs +4.4% |
+| Whole-function window raised to 1024 bytecodes | zlib -0.7%, box2d +7.5%, Mandreel +1.0%; 2048 exceeds C3's 64 KiB stack-object limit |
+| `ToInt32` accepting booleans in bitwise lowering | geomean -0.16%, zlib +1.5% |
+
+The 256 KiB adaptive budget policy was also re-measured: gbemu, Mandreel and TypeScript regressed, so the fixed 2 MiB cap remains.
+
+Region-relative exit attribution (`12e9346e`, stats only) shows `a8`'s installed 796..1051 region is not failing guards: it exits 3,940 times at the loop end (pc 890) and 60 times at a call (pc 934), so its inner loop and property work already run natively. The remaining 800M interpreter instructions are the outer loop's code outside the window (103..795 and 1052..1083), where the calls to `a3`/`a6` and the unhandled tail live. A second region at the outer header was tried in the multi-region experiment and exited at the boolean `BOR` at pc 356 on every iteration; accepting booleans in bitwise lowering removed that exit but did not pay for the extra branches elsewhere. This confirms the next consumer must be a loop-with-call graph, not another region or window. The consistent conclusion is that adding native coverage to these bodies is currently slower than the threaded interpreter. The cost is inside the generated region (per-operation guards, ownership and spills) and at calls, not at the admission boundary. Coverage-window increases are therefore exhausted until generated work per operation improves; retrying them without a code-quality change is not justified.
+
+Plan review outcome: E0 (broad attribution) is complete for the mini panel, and the A/E parts of the admission work are recorded above. The implementation order stays B1 → B2/B3 → C, but the next consumer changes: the canonical decoded view must first support a real loop with a call and exact recovery (a8's 103..1083 loop), rather than another acyclic window. Until then, C should measure and reduce executed instructions per compiled operation on the existing 256-op regions, since that is the measured reason larger regions lose.
 
 ## Current status and acceptance model
 
@@ -63,9 +79,9 @@ The architecture reset governs the implementation order below. A–E remain stab
 | B — CFG/SSA, effects and recovery | OPEN; bounded prototypes only | Main structural work: cyclic regions, calls and exact observable state |
 | C — Optimization and allocation | PARTIAL | Apply shared passes across realistic graphs, then reduce executed work |
 | D — Runtime and compiled continuations | PARTIAL | Integrate buffer, allocation, closure and helper consumers alongside B/C |
-| E — Coverage, measurement and budgets | PARTIAL | Start with fresh cross-suite attribution; retain compilation/memory controls throughout |
+| E — Coverage, measurement and budgets | PARTIAL | Mini census and admission controls delivered; coverage-window growth is exhausted until per-operation code cost falls |
 
-Validated source is `rat` at `047d0ef0`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
+Validated source is `rat` at `12e9346e`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
 
 The latest matched full-suite pair is **6121 → 6257 (+2.22%)**, provisional. The earlier **5752 → 6355 (+10.48%)** result uses three pairs in a different timing window. Neither establishes 50K, and these absolute scores must not be compared across windows as a regression or gain. From roughly 6.3K, 50K requires roughly 8x aggregate improvement.
 
@@ -151,11 +167,11 @@ Run original full Octane at substantial capability/performance milestones, with 
 
 ## Immediate implementation slices and iteration protocol
 
-1. **Attribution and blocker inventory (E0):** establish the current mini panel and ranked real-function rejections. Reuse existing maps/runners; keep profiling separate from timing. No fresh benchmark framework or new numeric roadmap.
+1. **Attribution and blocker inventory (E0): DONE 2026-10-30.** The mini panel and ranked rejections are recorded above. Keep profiling separate from timing; refresh the census after structural changes rather than adding a framework.
 2. **Canonical instruction/use view (B1):** consolidate decoding/operand roles and distinguish recovery from execution liveness. First reviewable change should remove duplicate metadata/analysis or demonstrably enable the next graph step; do not merely raise caps. Record consumers, source files and before/after rejection reasons.
 3. **One real cyclic graph (B1):** implement phi/dominance/fixpoint support and entry/exit lowering on the shared path. Choose its kernel from E0; include numeric/buffer consumers. Verify actual loop completion before adding more optimizations.
 4. **Post-effect continuation (B2):** integrate reusable pieces of `8f875497` selectively, fixing its ownership/global-watch limitations. Exercise a store, later guard and exact recovery on an object/closure consumer. Do not merge the prototype wholesale or substitute DAG prefixes for cyclic SSA.
-5. **Calls/helpers and optimization (B3/C/D):** preserve the graph around a generic call, then a completing allocation/helper; add load/guard and representation optimization against the exposed costs. Keep the broad mini panel as the performance gate.
+5. **Calls/helpers and optimization (B3/C/D):** preserve the graph around a generic call, then a completing allocation/helper; add load/guard and representation optimization against the exposed costs. Start with C on the existing 256-op regions: the a8 measurements show per-operation guard/ownership/spill work, not missing coverage, is what makes larger windows lose. Keep the broad mini panel as the performance gate.
 
 For each slice, capture a control and candidate with matched features/hashes, prove the intended generated path executes, check the benchmark result, and run short uninstrumented alternating timings without concurrent builds/profiling/tests. Reject losses quickly; confirm promising wins with longer pairs (normally five). Never count known wrong-output runs as wins. Infrastructure slices may land without speed claims only with a concrete enabled consumer and bounded cost.
 
