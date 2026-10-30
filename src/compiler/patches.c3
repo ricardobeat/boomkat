@@ -23,9 +23,9 @@ fn uint CompilerContext.add_patch(&self, uint chain_head, uint addr) {
 fn void CompilerContext.patch_chain(&self, uint chain_head) {
     uint current = chain_head;
     while (current != NO_PATCH) {
-        uint addr = self.patches[current].addr;
+        uint addr = self.patches[(sz)current].addr;
         self.patch_jump(addr);
-        current = self.patches[current].next;
+        current = self.patches[(sz)current].next;
     }
 }
 
@@ -62,7 +62,7 @@ fn void CompilerContext.push_loop(&self, uint continue_target, bool is_loop) {
 // routing it through the finally would pop the catcher and drop the parked
 // completion: `try { throw e } finally { while (1) break; }` would swallow `e`.
 fn Opcode CompilerContext.loop_jump_op(&self, uint loop_idx, Opcode crossing_op) {
-    if (loop_idx < self.loop_depth() && self.loop_stack[loop_idx].saved_try_depth >= self.try_depth) {
+    if (loop_idx < self.loop_depth() && self.loop_stack[(sz)loop_idx].saved_try_depth >= self.try_depth) {
         return Opcode.JUMP;
     }
     return crossing_op;
@@ -73,8 +73,8 @@ fn Opcode CompilerContext.loop_jump_op(&self, uint loop_idx, Opcode crossing_op)
 fn void CompilerContext.patch_continue_chain(&self, uint head, uint target) {
     uint current = head;
     while (current != NO_PATCH) {
-        uint next = self.patches[current].next;
-        uint addr = self.patches[current].addr;
+        uint next = self.patches[(sz)current].next;
+        uint addr = self.patches[(sz)current].addr;
         int offset = (int)target - (int)addr - 1;
         self.code[addr] = bytecode::make_sabc(self.code[addr].op, offset);
         current = next;
@@ -93,7 +93,7 @@ fn void CompilerContext.pop_loop(&self) {
 fn void CompilerContext.add_break_patch(&self, uint addr) {
     if (self.loop_depth() > 0) {
         uint top = self.loop_depth() - 1;
-        self.loop_stack[top].break_patch_head =
-            self.add_patch(self.loop_stack[top].break_patch_head, addr);
+        self.loop_stack[(sz)top].break_patch_head =
+            self.add_patch(self.loop_stack[(sz)top].break_patch_head, addr);
     }
 }

@@ -588,7 +588,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                     }
                 }
                 // Each entry is: name bytes + '\0' + scope byte (2 bytes minimum)
-                p += (long)(name_len + 2);
+                p += (sz)(name_len + 2);
             }
             TVal groups_val; groups_val.set_object(groups);
             arr.put_prop_new(ctx.heap.str(heap::BuiltinStr.GROUPS), groups_val, hobject::PROP_FLAGS_WEC, ctx.heap);
@@ -669,7 +669,7 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
                             }
                         }
                         // Each entry is: name bytes + '\0' + scope byte (2 bytes minimum)
-                        p += (long)(name_len + 2);
+                        p += (sz)(name_len + 2);
                     }
                     TVal igroups_tv; igroups_tv.set_object(igroups);
                     indices_arr.put_prop(ctx.heap.str(heap::BuiltinStr.GROUPS), igroups_tv, hobject::PROP_FLAGS_WEC, ctx.heap);

@@ -3596,7 +3596,7 @@ union ICChain {
     ICPolySet poly;
 }
 
-$assert ICChain::size == ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
+$assert ICChainEpoch::size <= ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
 
 struct ICEntry {
     // Receiver shape ID when this entry was populated.

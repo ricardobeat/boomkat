@@ -134,7 +134,7 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
         CompiledFunction* f = w.functions[i];
         foreach (inner : f.inner_funcs[:f.inner_count]) w.function_id(inner);
         w.function_id(f.field_init_func);
-        if (w.functions.len() > MAX_FUNCTIONS) return INVALID_IMAGE~;
+        if ((usz)w.functions.len() > MAX_FUNCTIONS) return INVALID_IMAGE~;
     }
     w.text("BKBC");
     w.word(VERSION);
@@ -206,7 +206,7 @@ fn char[]? encode(Heap* heap, CompiledFunction* root, ModuleDecl[] declarations)
         w.text(decl.name);
         w.word(w.function_id(decl.template));
     }
-    if (w.bytes.len() > MAX_IMAGE_BYTES) return INVALID_IMAGE~;
+    if ((usz)w.bytes.len() > MAX_IMAGE_BYTES) return INVALID_IMAGE~;
     return mem::@clone_slice(w.bytes.entries[:w.bytes.len()]);
 }
 
@@ -241,7 +241,7 @@ fn HString*? Reader.hstring(&self) {
     bool wide = (header & WIDE_STRING) != 0;
     if (count > hstring::MAX_STRING_LENGTH) return INVALID_IMAGE~;
     ulong byte_len = (ulong)count << (wide ? 1 : 0);
-    if (byte_len > self.bytes.len - self.offset) return INVALID_IMAGE~;
+    if (byte_len > (ulong)(self.bytes.len - self.offset)) return INVALID_IMAGE~;
     char[] data = self.bytes[self.offset:(usz)byte_len];
     self.offset += (uint)byte_len;
     HString* str;
@@ -275,7 +275,7 @@ fn void*? Reader.array(&self, uint count, usz element_size) {
 }
 fn uint? Reader.count(&self, uint min_bytes) {
     uint count = self.word()!;
-    if ((ulong)count * min_bytes > self.bytes.len - self.offset) return INVALID_IMAGE~;
+    if ((ulong)count * min_bytes > (ulong)(self.bytes.len - self.offset)) return INVALID_IMAGE~;
     return count;
 }
 fn CompiledFunction*? Reader.function_ref(&self) {
@@ -329,7 +329,7 @@ fn CompiledFunction*? decode(Heap* heap, char[] bytes, List{ModuleDecl}* declara
     if (capabilities != CAPABILITIES) return INVALID_IMAGE~;
     uint count = r.word()!;
     if (count == 0 || count > MAX_FUNCTIONS || count > bytes.len / 64) return INVALID_IMAGE~;
-    CompiledFunction** functions = mem::new_array(CompiledFunction*, count);
+    CompiledFunction** functions = mem::new_array(CompiledFunction*, (sz)count);
     defer mem::free(functions);
     r.functions = functions;
     r.function_count = count;

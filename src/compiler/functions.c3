@@ -18,14 +18,14 @@ const uint NO_PARAM_NAME = 0xFFFFFFFF;
 // Record `idx`'s name index, filling any skipped (destructured) slots with
 // NO_PARAM_NAME so the list stays addressable by arg index.
 fn void param_name_set(List{uint}* names, uint idx, uint name_idx) {
-    while (names.len() <= idx) names.push(NO_PARAM_NAME);
-    names.set(idx, name_idx);
+    while (names.len() <= (sz)idx) names.push(NO_PARAM_NAME);
+    names.set((sz)idx, name_idx);
 }
 
 // A slice covering every arg index, including trailing destructured params
 // that never recorded a name.
 fn uint[] param_name_view(List{uint}* names, uint arg_count) {
-    while (names.len() < arg_count) names.push(NO_PARAM_NAME);
+    while (names.len() < (sz)arg_count) names.push(NO_PARAM_NAME);
     return names.array_view();
 }
 
@@ -689,7 +689,7 @@ fn void? CompilerContext.emit_destruct_bindings(&self,
 
     // Each array pattern opens at most one iterator, so a pattern needs no
     // more states than it has binds.
-    DestructIterState[] iter_states = mem::new_array(DestructIterState, count);
+    DestructIterState[] iter_states = mem::new_array(DestructIterState, (sz)count);
     defer mem::free(iter_states);
     uint iter_count = 0;
 

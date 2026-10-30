@@ -305,7 +305,7 @@ fn void Parser.scratch_push(&self, uint id) @inline {
 fn uint Parser.scratch_list(&self, uint mark) {
     uint n = (uint)self.scratch.len - mark;
     uint at = self.ast.add_list(self.scratch.data[mark:n]);
-    self.scratch.truncate(mark);
+    self.scratch.truncate((sz)mark);
     return at;
 }
 

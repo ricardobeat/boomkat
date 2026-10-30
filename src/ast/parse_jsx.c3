@@ -380,7 +380,7 @@ fn uint? Parser.jsx_element(&self) {
         if (legacy) { self.jsx_used |= JSX_USES_CREATE; }
         callee = legacy ? self.node(NodeTag.IDENT, pos, self.atom("_createElement")) : self.jsx_ref(self.lex.jsx.factory, pos);
     }
-    self.scratch.truncate(mark);
+    self.scratch.truncate((sz)mark);
     return self.node(NodeTag.CALL, pos, callee, args);
 }
 

@@ -200,7 +200,7 @@ fn void CompilerContext.mark_scope_captured(&self, uint index) {
     ScopeEntry* entry = &self.scope_stack[index];
     if (entry.kind == SCOPEMARK) return;
     entry.is_captured = true;
-    if (entry.binding_id != 0 && entry.binding_id <= self.bindings.len()) {
+    if (entry.binding_id != 0 && entry.binding_id <= (usz)self.bindings.len()) {
         self.bindings[(sz)(entry.binding_id - 1)].is_captured = true;
     }
     self.has_captured_local = true;
@@ -211,7 +211,7 @@ fn void CompilerContext.mark_scope_catch_param(&self, uint index) {
     ScopeEntry* entry = &self.scope_stack[index];
     if (entry.kind == SCOPEMARK) return;
     entry.is_catch_param = true;
-    if (entry.binding_id != 0 && entry.binding_id <= self.bindings.len()) {
+    if (entry.binding_id != 0 && entry.binding_id <= (usz)self.bindings.len()) {
         self.bindings[(sz)(entry.binding_id - 1)].is_catch_param = true;
     }
 }

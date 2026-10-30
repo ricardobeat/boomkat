@@ -140,7 +140,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
-    char[][] private_names = mem::new_array(char[], parent_private_name_count);
+    char[][] private_names = mem::new_array(char[], (sz)parent_private_name_count);
     defer mem::free(private_names);
     for (uint i = 0; i < parent_private_name_count; i++) private_names[i] = ((PrivateNameEntry*)parent_private_names)[i].name;
     ast::AstIndex* cmp = null;

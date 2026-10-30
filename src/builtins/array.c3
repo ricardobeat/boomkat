@@ -1929,7 +1929,7 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
     TVal[] items;
     if (len > SORT_INLINE_ELEMS) {
         uint heap_len = len > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)len;
-        items = mem::temp_array(TVal, heap_len);
+        items = mem::temp_array(TVal, (sz)heap_len);
     } else {
         items = stack_items[0:(uint)len];
     }
@@ -1980,7 +1980,7 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         TVal[] temp;
         if (present_count > SORT_INLINE_ELEMS) {
             uint heap_count = present_count > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)present_count;
-            temp = mem::temp_array(TVal, heap_count);
+            temp = mem::temp_array(TVal, (sz)heap_count);
         } else {
             temp = stack_temp[0:(uint)present_count];
         }
@@ -2278,7 +2278,7 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     if (len <= STACK_THRESHOLD) {
         elements = elements_stack[:len];
     } else {
-        elements_heap = (TVal**)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal*::size * len);
+        elements_heap = (TVal**)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal*::size * (usz)len);
         if (elements_heap == null) {
             ctx.result_undefined();
             return;

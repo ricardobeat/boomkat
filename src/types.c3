@@ -489,7 +489,7 @@ $endif
 
 macro void* TVal.get_heapptr(&self) {
 $if USE_NANBOX:
-    return (void*)nanbox_get_payload(self.bits);
+    return (void*)(uptr)nanbox_get_payload(self.bits);
 $else
     return self.pointer;
 $endif

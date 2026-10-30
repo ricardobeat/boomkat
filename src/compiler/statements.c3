@@ -153,8 +153,8 @@ struct CompModuleDef {
 // name replaces the earlier inner_func_idx, mirroring last-wins hoisting).
 fn void mod_register_func_decl(CompModuleDef* mod, char[] name, uint inner_func_idx) {
     for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
-        if (str_eq(mod.func_decls[i].name, name)) {
-            mod.func_decls[i].inner_func_idx = inner_func_idx;
+        if (str_eq(mod.func_decls[(sz)i].name, name)) {
+            mod.func_decls[(sz)i].inner_func_idx = inner_func_idx;
             return;
         }
     }
@@ -167,17 +167,17 @@ fn uint mod_register_req_module(CompModuleDef* mod, char[] specifier, ModuleAttr
         // Imports of the same specifier under different `type` attributes are
         // distinct module requests (different [[Attributes]]), so only reuse
         // an entry whose type matches too.
-        if (mod.req_modules[i].attr_type == attr_type &&
-            str_eq(mod.req_modules[i].module_name, specifier)) {
+        if (mod.req_modules[(sz)i].attr_type == attr_type &&
+            str_eq(mod.req_modules[(sz)i].module_name, specifier)) {
             // The request stays deferred only while EVERY import of it is:
             // one eager import makes the module evaluate in dependency order
             // (test262 module-imported-defer-and-eager). It also takes that
             // eager import's POSITION -- the entry keeps its index, since
             // ImportEntry.req_module_idx points at it, and records the order
             // separately.
-            if (!deferred && mod.req_modules[i].deferred) {
-                mod.req_modules[i].deferred = false;
-                mod.req_modules[i].eval_order = (uint)mod.req_modules.len();
+            if (!deferred && mod.req_modules[(sz)i].deferred) {
+                mod.req_modules[(sz)i].deferred = false;
+                mod.req_modules[(sz)i].eval_order = (uint)mod.req_modules.len();
             }
             return i;
         }
@@ -206,7 +206,7 @@ fn void mod_register_import(CompModuleDef* mod, char[] local_name, char[] import
 // reach this path.
 fn bool mod_has_export_name(CompModuleDef* mod, char[] export_name) {
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
-        if (str_eq(mod.exports[i].export_name, export_name)) return true;
+        if (str_eq(mod.exports[(sz)i].export_name, export_name)) return true;
     }
     return false;
 }
@@ -238,7 +238,7 @@ fn void mod_register_export(CompModuleDef* mod, char[] local_name, char[] export
 // when `local_name` is an ordinary local binding.
 fn CompImportEntry* mod_find_import_by_local(CompModuleDef* mod, char[] local_name) {
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
-        if (str_eq(mod.imports[i].local_name, local_name)) return &mod.imports[i];
+        if (str_eq(mod.imports[(sz)i].local_name, local_name)) return &mod.imports[(sz)i];
     }
     return null;
 }
@@ -951,14 +951,14 @@ fn void? CompilerContext.emit_head_bind(&self, ForOfHead head, ushort val_slot) 
 // IteratorClose only after the abrupt completion is established, so a throw
 // from `.return()` must not be caught by any of them (ITER_CLOSE_ESCAPE).
 fn uint CompilerContext.iter_close_catcher_skip(&self, uint li) {
-    uint entered = self.loop_stack[li].saved_try_depth;
+    uint entered = self.loop_stack[(sz)li].saved_try_depth;
     return self.try_depth > entered ? self.try_depth - entered : 0;
 }
 
 fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
-    uint reg = (uint)self.loop_stack[li].iter_close_reg;
+    uint reg = (uint)self.loop_stack[(sz)li].iter_close_reg;
     uint skip = self.iter_close_catcher_skip(li);
-    if (self.loop_stack[li].deferred_close) {
+    if (self.loop_stack[(sz)li].deferred_close) {
         // A `using` head closes its iterator in the loop's own close boundary,
         // after the iteration's release. Nothing here closes: the boundary's
         // finally owns that. Disarm the catch clauses being escaped so a
@@ -982,7 +982,7 @@ fn void CompilerContext.emit_unwind_iter_close(&self, uint li) {
     } else {
         self.emit_abc(Opcode.ITER_CLOSE_ESCAPE, skip, reg, 0);
     }
-    if (self.loop_stack[li].is_await_loop) {
+    if (self.loop_stack[(sz)li].is_await_loop) {
         // Operand C names the register that reports whether `.return()` produced a result to await.
         ushort did_await_reg = self.alloc_reg();
         self.emit_abc(Opcode.ITER_CLOSE_ASYNC, reg, 0, (uint)did_await_reg);

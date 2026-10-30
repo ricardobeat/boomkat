@@ -765,7 +765,7 @@ fn int find_bytes(char[] haystack, char[] needle, uint from = 0) {
     if (needle.len == 0) return from <= haystack.len ? (int)from : -1;
     if (needle.len > haystack.len) return -1;
     sz last = haystack.len - needle.len;
-    sz i = from;
+    sz i = (sz)from;
     while (i <= last) {
         // Stop the scan where the needle no longer fits.
         char* hit = libc::memchr(&haystack[i], needle[0], (usz)(last - i + 1));

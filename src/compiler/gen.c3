@@ -522,7 +522,7 @@ fn void? CompilerContext.gen_switch(&self, uint n) {
     }
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
     List{SwitchClause} clauses;
-    clauses.init(mem, initial_capacity: count);
+    clauses.init(mem, initial_capacity: (sz)count);
     defer clauses.free();
     uint default_idx = count;
     for (uint i = 0; i < count; i++) {
@@ -553,7 +553,7 @@ fn void? CompilerContext.gen_switch(&self, uint n) {
     self.gen_line_end(n);
     if (default_idx + 1 < count) {
         uint jump = self.emit_jump(Opcode.JUMP);
-        self.code[jump] = bytecode::make_sabc(Opcode.JUMP, (int)clauses[default_idx].body_addr - (int)jump - 1);
+        self.code[jump] = bytecode::make_sabc(Opcode.JUMP, (int)clauses[(sz)default_idx].body_addr - (int)jump - 1);
     }
     uint end_pc = self.code_count;
     if (has_lex) {

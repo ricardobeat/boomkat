@@ -79,7 +79,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                     self.gc_root_stage++;
                     continue;
                 }
-                HeapHeader* hdr = (HeapHeader*)self.gc_roots[self.gc_root_index++];
+                HeapHeader* hdr = (HeapHeader*)self.gc_roots[(sz)self.gc_root_index++];
                 if (hdr != null) {
                     self.mark_header(hdr);
                 }

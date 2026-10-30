@@ -19,7 +19,7 @@ import std::math;
 // they are published to the collector.
 fn void relocate_saved_frames(Vm* vm, TVal* saved_valstack, TVal** saved_bottom,
                               TVal** saved_top) {
-    long reloc = (char*)vm.valstack - (char*)saved_valstack;
+    long reloc = (long)((char*)vm.valstack - (char*)saved_valstack);
     if (reloc == 0) return;
     *saved_bottom = (TVal*)((char*)*saved_bottom + reloc);
     *saved_top = (TVal*)((char*)*saved_top + reloc);
@@ -668,7 +668,7 @@ fn TVal vm_call_lean(Vm* vm, HObject* function, CompiledFunction* target, TVal f
     void* saved_initial_obj = vm.heap.gen_initial_obj;
     void* saved_initial_rv = vm.heap.gen_initial_retval;
 
-    vm.activations += saved_count;
+    vm.activations += (sz)saved_count;
     vm.activation_capacity -= saved_count;
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
@@ -1049,7 +1049,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
 
             TVal* frame = true_top;
 
-            vm.activations += saved_act_count;
+            vm.activations += (sz)saved_act_count;
             vm.activation_capacity -= saved_act_count;
             mem::clear(vm.activations, Activation::size);
 
@@ -1457,7 +1457,7 @@ fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
     TVal* saved_bottom = vm.valstack_bottom;
     TVal* saved_end = vm.valstack_end;
     GeneratorState* saved_owner = vm.async_stack_state;
-    vm.activations += saved_count;
+    vm.activations += (sz)saved_count;
     vm.activation_capacity -= saved_count;
     vm.activation_count = 0;
     vm.gc_root_active_replaced();
@@ -1477,7 +1477,7 @@ fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
     vm.valstack_end = saved_end;
     vm.async_stack_state = saved_owner;
     vm.heap.valstack_base = saved_stack;
-    vm.activations -= saved_count;
+    vm.activations -= (sz)saved_count;
     vm.activation_capacity += saved_count;
     vm.activation_count = saved_count;
     vm.gc_root_active_replaced();
@@ -1791,7 +1791,7 @@ fn TVal vm_construct_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TV
     defer if (roots_linked) vm.pop_activation_roots(&shadow_frame);
 
     TVal* frame = vm.valstack_top;
-    vm.activations += saved_act_count;
+    vm.activations += (sz)saved_act_count;
     vm.activation_capacity -= saved_act_count;
     mem::clear(vm.activations, Activation::size);
     vm.gc_root_active_replaced();
@@ -2318,7 +2318,7 @@ fn bool? Vm.execute_module_nested(Vm* vm, CompiledFunction* func, EnvRecord* env
 
     TVal* frame = true_top;
 
-    vm.activations += saved_act_count;
+    vm.activations += (sz)saved_act_count;
     vm.activation_capacity -= saved_act_count;
     mem::clear(vm.activations, Activation::size);
     Activation* act = &vm.activations[0];

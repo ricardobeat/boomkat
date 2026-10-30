@@ -64,7 +64,7 @@ fn void AtomTable.rehash(&self) {
     self.slots.zero(ncap);
     sz mask = ncap - 1;
     for (uint id = 1; id < (uint)self.entries.len; id++) {
-        sz at = self.entries.data[id].hash & mask;
+        sz at = (sz)self.entries.data[id].hash & mask;
         while (self.slots.data[at] != 0) at = (at + 1) & mask;
         self.slots.data[at] = id;
     }
@@ -74,7 +74,7 @@ fn void AtomTable.rehash(&self) {
 fn uint AtomTable.find(&self, char[] s) {
     uint h = hash_bytes(s);
     sz mask = self.slots.len - 1;
-    sz at = h & mask;
+    sz at = (sz)h & mask;
     while (true) {
         uint id = self.slots.data[at];
         if (id == 0) return 0;
@@ -87,7 +87,7 @@ fn uint AtomTable.find(&self, char[] s) {
 fn uint AtomTable.intern(&self, char[] s) {
     uint h = hash_bytes(s);
     sz mask = self.slots.len - 1;
-    sz at = h & mask;
+    sz at = (sz)h & mask;
     while (true) {
         uint id = self.slots.data[at];
         if (id == 0) break;

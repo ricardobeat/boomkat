@@ -27,9 +27,10 @@ struct OsThread {
     ulong handle;   // pthread_t is an unsigned long on Linux
 }
 
+// Matches libc's timespec as C3 declares it, so 32-bit targets agree with std.
 struct TimeSpecNs {
-    long sec;
-    long nsec;
+    Time_t sec;
+    CLong nsec;
 }
 
 const CInt CLOCK_MONOTONIC = 1;
@@ -86,8 +87,8 @@ fn void Cond.wait_ns(&self, Lock* lock, ulong ns) {
     TimeSpecNs ts;
     (void)sys_clock_gettime(CLOCK_MONOTONIC, &ts);
     ulong nsec = (ulong)ts.nsec + ns % 1_000_000_000;
-    ts.sec += (long)(ns / 1_000_000_000 + nsec / 1_000_000_000);
-    ts.nsec = (long)(nsec % 1_000_000_000);
+    ts.sec += (Time_t)(ns / 1_000_000_000 + nsec / 1_000_000_000);
+    ts.nsec = (CLong)(nsec % 1_000_000_000);
     (void)sys_cond_timedwait(&self.raw, &lock.raw, &ts);
 }
 

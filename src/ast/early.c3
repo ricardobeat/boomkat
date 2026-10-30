@@ -311,7 +311,7 @@ fn void Early.function(&self, uint n, bool is_arrow) {
     defer {
         self.ctx = outer;
         self.label_base = saved_label_base;
-        self.labels.truncate(saved_labels);
+        self.labels.truncate((sz)saved_labels);
         self.breakable = saved_breakable;
         self.iterating = saved_iterating;
     }
@@ -350,7 +350,7 @@ fn void Early.function(&self, uint n, bool is_arrow) {
     uint pc = self.ast.list_len(params);
     bool simple = (fnf & FNF_SIMPLE_PARAMS) != 0;
     uint mark = (uint)self.names.len;
-    defer self.names.truncate(mark);
+    defer self.names.truncate((sz)mark);
     for (uint i = 0; i < pc && !self.failed; i++) self.binding(self.ast.list_item(params, i), &self.names);
     if (self.failed) return;
     // UniqueFormalParameters, and the strict, non-simple and arrow cases of FormalParameters.
@@ -418,7 +418,7 @@ fn void Early.class_(&self, uint n) {
     uint members = self.ast.field(rec, CLS_MEMBERS);
     uint count = self.ast.list_len(members);
     uint mark = (uint)self.privates.len;
-    defer self.privates.truncate(mark);
+    defer self.privates.truncate((sz)mark);
     bool has_ctor = false;
     // Declare the private names first: a use may precede its declaration.
     for (uint i = 0; i < count && !self.failed; i++) {
@@ -511,7 +511,7 @@ fn void Early.static_block(&self, uint m) {
     defer {
         self.ctx = saved;
         self.label_base = saved_label_base;
-        self.labels.truncate(saved_labels);
+        self.labels.truncate((sz)saved_labels);
         self.breakable = saved_breakable;
         self.iterating = saved_iterating;
     }
@@ -730,13 +730,13 @@ fn void Early.binary_chain(&self, uint n) {
         cur = self.ast.lhs.data[cur];
     }
     self.node(cur);
-    while (self.names.len > mark && !self.failed) {
+    while (self.names.len > (sz)mark && !self.failed) {
         uint op_node = self.names.data[self.names.len - 1];
         self.names.truncate(self.names.len - 1);
         if (self.ast.tags.data[op_node] == NodeTag.LOGICAL) self.check_nullish_mix(op_node);
         if (!self.failed) self.node(self.ast.rhs.data[op_node]);
     }
-    self.names.truncate(mark);
+    self.names.truncate((sz)mark);
 }
 
 fn void Early.object(&self, uint n) {
@@ -856,7 +856,7 @@ fn void Early.for_in_of(&self, uint n) {
 fn void Early.labeled(&self, uint n) {
     uint atom = self.ast.lhs.data[n];
     uint at = self.ast.main_tok.data[n];
-    for (sz i = self.label_base; i < self.labels.len; i++) {
+    for (sz i = (sz)self.label_base; i < self.labels.len; i++) {
         if (self.labels.data[i].atom == atom) return self.fail_at(at, "label has already been declared");
     }
     if (self.is_keyword(atom)) return self.fail_at(at, "reserved word cannot be used as a label");
@@ -894,7 +894,7 @@ fn void Early.jump(&self, uint n) {
         if (!is_break && self.iterating == 0) return self.fail_at(at, "'continue' is only valid inside a loop");
         return;
     }
-    for (sz i = self.labels.len; i > self.label_base; i--) {
+    for (sz i = self.labels.len; i > (sz)self.label_base; i--) {
         EarlyLabel l = self.labels.data[i - 1];
         if (l.atom != label) continue;
         if (!is_break && !l.loop) return self.fail_at(at, "'continue' may only target a loop label");
@@ -930,7 +930,7 @@ fn void Early.try_(&self, uint n) {
     uint handler = self.ast.extra.data[t + 1];
     if (param != 0) {
         uint mark = (uint)self.names.len;
-        defer self.names.truncate(mark);
+        defer self.names.truncate((sz)mark);
         self.binding(param, &self.names);
         if (!self.failed && self.has_duplicate(mark)) {
             return self.fail_at(self.ast.main_tok.data[param], "duplicate catch parameter name");
@@ -987,7 +987,7 @@ fn void Early.add_exported_bindings(&self, uint n, uint at) {
 fn void Early.module_exports(&self, Resolver* r) {
     uint module_scope = 1;
     uint mark = (uint)self.names.len;
-    defer self.names.truncate(mark);
+    defer self.names.truncate((sz)mark);
     uint a_default = self.ast.atoms.intern("default");
     uint list = self.ast.lhs.data[self.root];
     uint count = self.ast.list_len(list);

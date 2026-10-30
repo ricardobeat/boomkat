@@ -286,8 +286,32 @@ fn ulong atomics_cell_rmw(char* p, uint width, AtomicOp op, ulong operand, ulong
         case 1: return atomics_cell_op(char, p, op, operand, expected);
         case 2: return atomics_cell_op(ushort, p, op, operand, expected);
         case 4: return atomics_cell_op(uint, p, op, operand, expected);
-        default: return atomics_cell_op(ulong, p, op, operand, expected);
+        default:
+            $if env::ARCH_32_BIT:
+                return atomics_cell_rmw_plain64(p, op, operand, expected);
+            $else
+                return atomics_cell_op(ulong, p, op, operand, expected);
+            $endif
     }
+}
+
+// 32-bit targets lack native 64-bit atomics. A plain read-modify-write is
+// only sound while a single agent touches the buffer, which holds on the
+// embedded builds that target them.
+fn ulong atomics_cell_rmw_plain64(char* p, AtomicOp op, ulong operand, ulong expected) {
+    ulong* cell = (ulong*)p;
+    ulong seen = *cell;
+    switch (op) {
+        case ADD: *cell = seen + operand;
+        case SUB: *cell = seen - operand;
+        case AND: *cell = seen & operand;
+        case OR:  *cell = seen | operand;
+        case XOR: *cell = seen ^ operand;
+        case COMPARE_EXCHANGE: if (seen == expected) *cell = operand;
+        case STORE: *cell = operand; return 0;
+        case EXCHANGE: *cell = operand;
+    }
+    return seen;
 }
 
 fn ulong atomics_width_mask(uint width) {

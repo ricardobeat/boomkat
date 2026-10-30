@@ -141,7 +141,7 @@ $if types::USE_NANBOX:
         return d != 0.0 && !math::is_nan(d);
     }
     if (tag == types::TAG_STRING) {
-        HString* s = (HString*)(val.bits & types::NANBOX_PAYLOAD_MASK);
+        HString* s = (HString*)(uptr)(val.bits & types::NANBOX_PAYLOAD_MASK);
         return s.is_truthy();
     }
     return true;
@@ -198,7 +198,7 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
     // pointers by tval_copy_ref's destination decref. vm_create zeroes its first allocation too.
     mem::clear((char*)new_raw + old_bytes, (sz)(new_bytes - old_bytes));
     TVal* new_base = (TVal*)new_raw;
-    long diff = (char*)new_base - (char*)old_base;
+    long diff = (long)((char*)new_base - (char*)old_base);
 
     vm.valstack = new_base;
     vm.valstack_size = new_size;

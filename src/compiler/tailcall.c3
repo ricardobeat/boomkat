@@ -136,7 +136,7 @@ fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, b
     //
     // So un-mark the finally bodies of each try, then re-mark whatever an
     // *enclosing* try still protects.
-    bool[] tail_in_try = mem::new_array(bool, code_count);
+    bool[] tail_in_try = mem::new_array(bool, (sz)code_count);
     defer mem::free(tail_in_try);
     for (uint i = 0; i < code_count; i++) { tail_in_try[i] = in_try[i]; }
     tailcall_unmark_finally_bodies(code, code_count, tail_in_try);

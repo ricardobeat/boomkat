@@ -334,8 +334,8 @@ fn bool fusion_reg_read_before_write(Instruction* code, uint from, uint to, uint
     bool found = false;
     @pool() {
         uint span = to - from;
-        bool[] seen = mem::temp_array(bool, span);
-        uint[] stack = mem::temp_array(uint, span);
+        bool[] seen = mem::temp_array(bool, (sz)span);
+        uint[] stack = mem::temp_array(uint, (sz)span);
         uint sp = 0;
         stack[sp++] = from;
         seen[0] = true;

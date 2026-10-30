@@ -408,7 +408,7 @@ fn void Resolver.function(&self, uint n, bool is_arrow) {
 // a parameter.
 fn void Resolver.hoist_annexb(&self, uint mark) {
     if ((self.scopes.data[self.cur].flags & SCOPE_STRICT) != 0) {
-        self.annexb.truncate(mark);
+        self.annexb.truncate((sz)mark);
         return;
     }
     uint fs = self.cur;
@@ -441,7 +441,7 @@ fn void Resolver.hoist_annexb(&self, uint mark) {
             self.sites.push({ .binding = b, .node = self.sites.data[c.site].node, .scope = c.scope, .kind = DeclKind.ANNEXB_VAR });
         }
     }
-    self.annexb.truncate(mark);
+    self.annexb.truncate((sz)mark);
 }
 
 fn void Resolver.class_(&self, uint n, bool is_decl) {

@@ -725,14 +725,14 @@ fn uint? Parser.paren_or_arrow(&self) {
         return self.arrow_from_list(list, false, open);
     }
     if (count == 0 || has_rest || trailing_comma) {
-        self.scratch.truncate(mark);
+        self.scratch.truncate((sz)mark);
         return self.fail("unexpected token in parenthesised expression")~;
     }
     if (self.cover_depth == 0) self.check_cover_init()!;
     uint inner;
     if (count == 1) {
         inner = self.scratch.data[mark];
-        self.scratch.truncate(mark);
+        self.scratch.truncate((sz)mark);
     } else {
         inner = self.node(NodeTag.SEQUENCE, open, self.scratch_list(mark));
     }

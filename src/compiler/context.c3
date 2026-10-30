@@ -1802,7 +1802,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         uint* de_buf = (uint*)h.alloc_func(h.heap_udata, (usz)de_count * uint::size);
         if (de_buf != null) {
             for (uint i = 0; i < de_count; i++) {
-                uint off = self.direct_eval_offsets[i];
+                uint off = self.direct_eval_offsets[(sz)i];
                 de_buf[i] = self.disable_optimize ? off : pc_map[off];
             }
             func.direct_eval_offsets = de_buf;

@@ -337,13 +337,13 @@ fn AstMark Ast.mark(&self) {
 }
 
 fn void Ast.truncate(&self, AstMark m) {
-    self.tags.truncate(m.nodes);
-    self.flags.truncate(m.nodes);
-    self.main_tok.truncate(m.nodes);
-    self.end_tok.truncate(m.nodes);
-    self.lhs.truncate(m.nodes);
-    self.rhs.truncate(m.nodes);
-    self.extra.truncate(m.extra);
+    self.tags.truncate((sz)m.nodes);
+    self.flags.truncate((sz)m.nodes);
+    self.main_tok.truncate((sz)m.nodes);
+    self.end_tok.truncate((sz)m.nodes);
+    self.lhs.truncate((sz)m.nodes);
+    self.rhs.truncate((sz)m.nodes);
+    self.extra.truncate((sz)m.extra);
 }
 
 // 1-based line and column of a byte offset. The line table covers the lines the lexer has passed,

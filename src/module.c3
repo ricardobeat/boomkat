@@ -449,7 +449,7 @@ fn bool define_module(Heap* heap, char[] name, char[] source) {
     if (catch err = name_copy) { mem::free(src_copy.ptr); return false; }
     if (heap.defined_module_count >= heap.defined_module_cap) {
         uint new_cap = heap.defined_module_cap == 0 ? 8 : heap.defined_module_cap * 2;
-        void* grown = mem::realloc(heap.defined_modules, (usz)new_cap * DefinedModule::size);
+        void* grown = mem::realloc(heap.defined_modules, (sz)new_cap * DefinedModule::size);
         if (grown == null) { mem::free(src_copy.ptr); mem::free(name_copy.ptr); return false; }
         heap.defined_modules = grown;
         heap.defined_module_cap = new_cap;
@@ -495,7 +495,7 @@ fn bool define_native_module(Heap* heap, char[] name, char[][] names, TVal[] val
     if (catch empty) { mem::free(name_copy.ptr); return false; }
     if (heap.defined_module_count >= heap.defined_module_cap) {
         uint new_cap = heap.defined_module_cap == 0 ? 8 : heap.defined_module_cap * 2;
-        void* grown = mem::realloc(heap.defined_modules, (usz)new_cap * DefinedModule::size);
+        void* grown = mem::realloc(heap.defined_modules, (sz)new_cap * DefinedModule::size);
         if (grown == null) { mem::free(name_copy.ptr); mem::free(empty.ptr); return false; }
         heap.defined_modules = grown;
         heap.defined_module_cap = new_cap;
@@ -1209,21 +1209,21 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
 // name compare equal bytewise. The module is never freed, so neither are they.
 fn void retain_names(Heap* heap, ModuleDef* mod) @local {
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
-        ReqModuleEntry* e = &mod.req_modules[i];
+        ReqModuleEntry* e = &mod.req_modules[(sz)i];
         e.module_name = retain_name(heap, mod, e.module_name);
     }
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
-        ImportEntry* e = &mod.imports[i];
+        ImportEntry* e = &mod.imports[(sz)i];
         e.local_name = retain_name(heap, mod, e.local_name);
         e.import_name = retain_name(heap, mod, e.import_name);
     }
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
-        ExportEntry* e = &mod.exports[i];
+        ExportEntry* e = &mod.exports[(sz)i];
         e.local_name = retain_name(heap, mod, e.local_name);
         e.export_name = retain_name(heap, mod, e.export_name);
     }
     for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
-        FuncDeclEntry* e = &mod.func_decls[i];
+        FuncDeclEntry* e = &mod.func_decls[(sz)i];
         e.name = retain_name(heap, mod, e.name);
     }
 }
@@ -1313,7 +1313,7 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
 fn ModuleDef*? load_dependencies(Heap* heap, ModuleDef* mod, char[] normalized, bool quiet) {
     mod.status = ModuleStatus.LOADING;
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
-        ReqModuleEntry* rme = &mod.req_modules[i];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)i];
         if (rme.resolved != null) continue;
         // A dependency of a quietly-resolved module is quiet too: its parse
         // failure reaches the same promise rejection.
@@ -1373,7 +1373,7 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
 
     // Step 4: local (direct, non-indirect) exports own their binding in `mod`.
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
-        ExportEntry* ee = &mod.exports[i];
+        ExportEntry* ee = &mod.exports[(sz)i];
         if (ee.is_indirect) continue;
         if (char_slice_eq(ee.export_name, export_name)) {
             return { ResolveExportKind.RESOLVED, mod, ee.local_name };
@@ -1383,11 +1383,11 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
     // Step 5: indirect exports (`export { x } from './other'`). Delegate to the
     // imported module's ResolveExport for the re-exported name.
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
-        ExportEntry* ee = &mod.exports[i];
+        ExportEntry* ee = &mod.exports[(sz)i];
         if (!ee.is_indirect) continue;
         if (!char_slice_eq(ee.export_name, export_name)) continue;
         if (ee.req_module_idx >= (uint)mod.req_modules.len()) return { ResolveExportKind.NULL, null, {} };
-        ReqModuleEntry* rme = &mod.req_modules[ee.req_module_idx];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)ee.req_module_idx];
         if (rme.resolved == null) return { ResolveExportKind.NULL, null, {} };
         ModuleDef* imported = (ModuleDef*)rme.resolved;
         // `export * as ns from` (local name "*") resolves to the imported
@@ -1417,9 +1417,9 @@ fn ResolveExportResult resolve_export(ModuleDef* mod, char[] export_name,
     // AMBIGUOUS.
     ResolveExportResult star_resolution = { ResolveExportKind.NULL, null, {} };
     for (uint i = 0; i < (uint)mod.star_exports.len(); i++) {
-        StarExportEntry* se = &mod.star_exports[i];
+        StarExportEntry* se = &mod.star_exports[(sz)i];
         if (se.req_module_idx >= (uint)mod.req_modules.len()) continue;
-        ReqModuleEntry* rme = &mod.req_modules[se.req_module_idx];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)se.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* imported = (ModuleDef*)rme.resolved;
         ResolveExportResult r = resolve_export(imported, export_name, set, set_len);
@@ -1452,7 +1452,7 @@ fn bool module_raise_link_error(Heap* heap, char[] msg) {
 // heap error channel and returns false.
 fn bool validate_indirect_exports(Heap* heap, ModuleDef* mod) {
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
-        ExportEntry* ee = &mod.exports[i];
+        ExportEntry* ee = &mod.exports[(sz)i];
         if (!ee.is_indirect) continue;
         ResolveSetEntry[RESOLVE_SET_MAX] set;
         ResolveExportResult r = resolve_export(mod, ee.export_name, &set[0], 0);
@@ -1490,12 +1490,12 @@ fn bool module_is_ts(ModuleDef* mod) {
 fn void mark_type_only_req_modules(ModuleDef* mod) {
     if (!module_is_ts(mod)) return;
     for (uint ri = 0; ri < (uint)mod.req_modules.len(); ri++) {
-        ReqModuleEntry* rme = &mod.req_modules[ri];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)ri];
         if (rme.resolved == null) continue;
         uint total = 0;
         uint elided = 0;
         for (uint i = 0; i < (uint)mod.imports.len(); i++) {
-            ImportEntry* ie = &mod.imports[i];
+            ImportEntry* ie = &mod.imports[(sz)i];
             if (ie.req_module_idx != ri) continue;
             total++;
             if (ie.is_star) continue;  // a namespace binding never elides
@@ -1514,7 +1514,7 @@ fn void mark_type_only_req_modules(ModuleDef* mod) {
 // module exports only `default`, so other names are checked here.
 fn bool validate_imports(Heap* heap, ModuleDef* mod) {
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
-        ImportEntry* ie = &mod.imports[i];
+        ImportEntry* ie = &mod.imports[(sz)i];
         if (ie.is_star) continue;
         // `import source x` resolves no export: the binding is the target's
         // Module Source object. But only a module with a source representation
@@ -1523,7 +1523,7 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
         // body has run.
         if (ie.is_source) {
             if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
-            ModuleDef* starget = (ModuleDef*)mod.req_modules[ie.req_module_idx].resolved;
+            ModuleDef* starget = (ModuleDef*)mod.req_modules[(sz)ie.req_module_idx].resolved;
             if (starget != null && !starget.has_source_repr) {
                 return module_raise_link_error(heap,
                     "module has no source phase representation");
@@ -1531,7 +1531,7 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
             continue;
         }
         if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
-        ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)ie.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
         if (source_mod.is_synthetic) {
@@ -1626,7 +1626,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
 
     // Link dependencies first with the same parent env.
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
-        ReqModuleEntry* rme = &mod.req_modules[i];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)i];
         if (rme.resolved == null) continue;
         ModuleDef* dep = (ModuleDef*)rme.resolved;
         if (dep.status != ModuleStatus.LINKED && dep.status != ModuleStatus.EVALUATED) {
@@ -1664,7 +1664,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // enclosing scope), exactly as the CLOSURE opcode would.
     if (mod.func != null) {
         for (uint i = 0; i < (uint)mod.func_decls.len(); i++) {
-            FuncDeclEntry* fd = &mod.func_decls[i];
+            FuncDeclEntry* fd = &mod.func_decls[(sz)i];
             if (fd.inner_func_idx >= mod.func.inner_count) continue;
             HString* key = heap.str_intern(fd.name);
             if (key == null) continue;
@@ -1695,7 +1695,7 @@ fn bool link_module(Heap* heap, vm::Vm* vm, ModuleDef* mod, EnvRecord* global_en
     // Function-declaration exports are already bound above and are skipped by
     // the env_has check.
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
-        ExportEntry* ee = &mod.exports[i];
+        ExportEntry* ee = &mod.exports[(sz)i];
         if (ee.is_indirect) continue;
         HString* key = heap.str_intern(ee.local_name);
         if (key == null) continue;
@@ -2411,7 +2411,7 @@ fn bool module_eval_async_deps_edge(Heap* heap, Vm* vm, ModuleDef* mod, ModuleDe
     if (target.defer_eager_mark == module_defer_eager_epoch) return true;
     target.defer_eager_mark = module_defer_eager_epoch;
     for (uint i = 0; i < (uint)target.req_modules.len(); i++) {
-        ReqModuleEntry* rme = &target.req_modules[i];
+        ReqModuleEntry* rme = &target.req_modules[(sz)i];
         if (rme.type_only || rme.resolved == null) continue;
         // A nested deferred edge keeps its own deferral entirely.
         if (rme.deferred) continue;
@@ -2443,7 +2443,7 @@ fn bool module_eval_async_deps_standalone(Heap* heap, Vm* vm, ModuleDef* target,
     if (target.defer_eager_mark == module_defer_eager_epoch) return true;
     target.defer_eager_mark = module_defer_eager_epoch;
     for (uint i = 0; i < (uint)target.req_modules.len(); i++) {
-        ReqModuleEntry* rme = &target.req_modules[i];
+        ReqModuleEntry* rme = &target.req_modules[(sz)i];
         if (rme.type_only || rme.resolved == null) continue;
         // A nested deferred edge keeps its own deferral entirely.
         if (rme.deferred) continue;
@@ -2542,7 +2542,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
     uint req_count = (uint)mod.req_modules.len();
     bool ordered = true;
     for (uint i = 1; i < req_count; i++) {
-        if (mod.req_modules[(sz)(i - 1)].eval_order > mod.req_modules[i].eval_order) {
+        if (mod.req_modules[(sz)(i - 1)].eval_order > mod.req_modules[(sz)i].eval_order) {
             ordered = false;
             break;
         }
@@ -2555,7 +2555,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             i = req_count;
             uint best = 0;
             for (uint j = 0; j < req_count; j++) {
-                uint ord = mod.req_modules[j].eval_order;
+                uint ord = mod.req_modules[(sz)j].eval_order;
                 if (slot != 0 && (ord < prev_order || (ord == prev_order && j <= prev_slot))) continue;
                 if (i == req_count || ord < best) { i = j; best = ord; }
             }
@@ -2563,7 +2563,7 @@ fn bool execute_module(Heap* heap, Vm* vm, ModuleDef* mod) {
             prev_order = best;
             prev_slot = i;
         }
-        ReqModuleEntry* rme = &mod.req_modules[i];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)i];
         if (rme.type_only || rme.resolved == null) continue;
         // A `import defer` edge contributes no evaluation and no ordering:
         // the target runs on first access to its deferred namespace, which
@@ -2642,9 +2642,9 @@ fn bool module_execute_continue(Heap* heap, Vm* vm, ModuleDef* mod) {
     // the namespace object without any re-copy step. See
     // install_live_binding for the shared implementation.
     for (uint i = 0; i < (uint)mod.imports.len(); i++) {
-        ImportEntry* ie = &mod.imports[i];
+        ImportEntry* ie = &mod.imports[(sz)i];
         if (ie.req_module_idx >= (uint)mod.req_modules.len()) continue;
-        ReqModuleEntry* rme = &mod.req_modules[ie.req_module_idx];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)ie.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
 
@@ -3515,7 +3515,7 @@ fn TVal module_error_with_proto(Heap* heap, HObject* proto, char[] msg) {
 // the compiler emits local_name="*default*" and export_name="default".
 fn char[] resolve_export_local_name(ModuleDef* mod, char[] export_name) {
     for (uint i = 0; i < (uint)mod.exports.len(); i++) {
-        ExportEntry* ee = &mod.exports[i];
+        ExportEntry* ee = &mod.exports[(sz)i];
         if (!ee.is_indirect && char_slice_eq(ee.export_name, export_name)) {
             return ee.local_name;
         }
@@ -3547,7 +3547,7 @@ fn ExportBindingSource resolve_export_binding_source(ModuleDef* mod, ExportEntry
     if (ee.req_module_idx >= (uint)mod.req_modules.len()) {
         return { null, {} };
     }
-    ReqModuleEntry* rme = &mod.req_modules[ee.req_module_idx];
+    ReqModuleEntry* rme = &mod.req_modules[(sz)ee.req_module_idx];
     if (rme.resolved == null) {
         return { null, {} };
     }
@@ -3663,13 +3663,13 @@ fn void collect_star_export_items_from(ModuleDef* root, ModuleDef* mod,
                                        List{NsExportItem}* items, uint depth) {
     if (depth > MAX_STAR_EXPORTS) return;
     for (uint si = 0; si < (uint)mod.star_exports.len(); si++) {
-        StarExportEntry* se = &mod.star_exports[si];
+        StarExportEntry* se = &mod.star_exports[(sz)si];
         if (se.req_module_idx >= (uint)mod.req_modules.len()) continue;
-        ReqModuleEntry* rme = &mod.req_modules[se.req_module_idx];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)se.req_module_idx];
         if (rme.resolved == null) continue;
         ModuleDef* target = (ModuleDef*)rme.resolved;
         for (uint ei = 0; ei < (uint)target.exports.len(); ei++) {
-            ExportEntry* ee = &target.exports[ei];
+            ExportEntry* ee = &target.exports[(sz)ei];
             // `export *` never re-exports the default binding.
             if (char_slice_eq(ee.export_name, "default")) continue;
             // A name reached through two or more distinct star paths with
@@ -3788,14 +3788,14 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     List{NsExportItem} items;
     items.allocator = mem;
     for (uint i = 0; i < (uint)source_mod.exports.len(); i++) {
-        ExportEntry* ee = &source_mod.exports[i];
+        ExportEntry* ee = &source_mod.exports[(sz)i];
         ns_add_export_item(&items, ee.export_name, source_mod, ee);
     }
     collect_star_export_items(source_mod, &items, 0);
 
     // Sort collected items by export_name into code-unit order.
     for (uint i = 1; i < (uint)items.len(); i++) {
-        NsExportItem tmp = items[i];
+        NsExportItem tmp = items[(sz)i];
         int j = (int)i - 1;
         while (j >= 0 && export_name_less(tmp.export_name, items[(sz)j].export_name)) {
             items[(sz)(j + 1)] = items[(sz)j];
@@ -3805,7 +3805,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
     }
 
     for (uint oi = 0; oi < (uint)items.len(); oi++) {
-        NsExportItem* it = &items[oi];
+        NsExportItem* it = &items[(sz)oi];
         HString* export_key = heap.str_intern(it.export_name);
         if (export_key == null) continue;
 
@@ -3816,7 +3816,7 @@ fn HObject*? build_namespace_object(Heap* heap, ModuleDef* source_mod, bool defe
         // live env binding accessor. (ECMA-262 GetModuleNamespace.)
         if (it.entry != null && it.entry.is_indirect && char_slice_eq(it.entry.local_name, "*")
             && it.entry.req_module_idx < (uint)it.owner_mod.req_modules.len()) {
-            ReqModuleEntry* rme = &it.owner_mod.req_modules[it.entry.req_module_idx];
+            ReqModuleEntry* rme = &it.owner_mod.req_modules[(sz)it.entry.req_module_idx];
             if (rme.resolved != null) {
                 ModuleDef* target = (ModuleDef*)rme.resolved;
                 HObject*? nested_opt = build_namespace_object(heap, target);
@@ -3970,7 +3970,7 @@ fn bool module_subgraph_is_async(ModuleDef* mod) {
     if (mod.defer_scan_mark == module_defer_scan_epoch) return false;
     mod.defer_scan_mark = module_defer_scan_epoch;
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
-        ReqModuleEntry* rme = &mod.req_modules[i];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)i];
         if (rme.type_only || rme.resolved == null) continue;
         // A nested `import defer` edge keeps its own deferral, so an async
         // module behind one does not make THIS subgraph async.
@@ -4012,7 +4012,7 @@ fn bool module_ready_for_sync_execution(ModuleDef* mod) {
     if (mod.func != null && mod.func.has_tla()) return false;
     mod.defer_scan_mark = module_defer_scan_epoch;
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
-        ReqModuleEntry* rme = &mod.req_modules[i];
+        ReqModuleEntry* rme = &mod.req_modules[(sz)i];
         if (rme.type_only || rme.resolved == null) continue;
         if (!module_ready_for_sync_execution((ModuleDef*)rme.resolved)) return false;
     }

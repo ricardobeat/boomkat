@@ -1853,7 +1853,7 @@ fn HString* Heap.str(&self, BuiltinStr which) @inline {
 // repeat calls are harmless.
 fn void Heap.init_builtin_strs(&self) {
     foreach (i, lit : BUILTIN_STR_LITERALS) {
-        HString* s = i >= BuiltinStr.CAP_RESOLVE.ordinal
+        HString* s = i >= (sz)BuiltinStr.CAP_RESOLVE.ordinal
             ? self.str_intern_hidden((char[])lit) : self.str_intern((char[])lit);
         self.strs[i] = s;
         // Pinning keeps these alive through refcounting and sweep, and makes
@@ -4700,7 +4700,7 @@ fn void Heap.mark_roots(&self) {
     }
 
     for (uint i = 0; i < (uint)self.gc_roots.len(); i++) {
-        HeapHeader* hdr = (HeapHeader*)self.gc_roots[i];
+        HeapHeader* hdr = (HeapHeader*)self.gc_roots[(sz)i];
         self.mark_header(hdr);
     }
 
@@ -5974,7 +5974,7 @@ fn HString* Heap.str_intern_span(&self, Units data) {
 fn HString* Heap.str_slice(&self, HString* s, uint from, uint to) {
     if (from >= to) return self.str(BuiltinStr.EMPTY);
     Units u = s.units();
-    u.ptr += (usz)from << (u.wide ? 1 : 0);
+    u.ptr += (sz)from << (u.wide ? 1 : 0);
     u.len = to - from;
     return self.str_intern_span(u);
 }

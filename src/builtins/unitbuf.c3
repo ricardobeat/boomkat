@@ -245,7 +245,7 @@ fn bool UnitBuf.append_hstring(&self, HString* s) {
 fn bool UnitBuf.append_hstring_range(&self, HString* s, uint from, uint to) {
     if (from >= to) return true;
     hstring::Units run = s.units();
-    run.ptr += (usz)from << (run.wide ? 1 : 0);
+    run.ptr += (sz)from << (run.wide ? 1 : 0);
     run.len = to - from;
     return self.append_units(run);
 }

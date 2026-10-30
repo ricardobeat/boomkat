@@ -269,7 +269,7 @@ fn void array_fill_elem(Heap* heap, HObject* arr, uint idx, TVal elem) @inline {
 // when the result is too long. The units are copied straight into a string of
 // the width they need.
 fn HString* join_hstrings(BuiltinContext* ctx, HString*[] strs, HString* sep) {
-    ulong total = (ulong)sep.unit_len() * (strs.len > 1 ? strs.len - 1 : 0);
+    ulong total = (ulong)sep.unit_len() * (ulong)(strs.len > 1 ? strs.len - 1 : 0);
     // The separator is only copied between pieces, and a wide string must hold a
     // unit above 0xFF to stay canonical.
     bool wide = strs.len > 1 && sep.is_wide();

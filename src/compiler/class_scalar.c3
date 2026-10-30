@@ -86,7 +86,7 @@ fn void ensure_scalar_classes() {
     if (idx == null || !idx.use || idx.scalar_classes_known) return;
     idx.scalar_classes_known = true;
     ast::Ast* tree = &idx.tree;
-    for (uint s = 1; s < idx.res.scopes.len; s++) {
+    for (uint s = 1; s < (uint)idx.res.scopes.len; s++) {
         ast::Scope scope = idx.res.scopes.data[s];
         if (scope.kind != ast::ScopeKind.CLASS || tree.tags.data[scope.node] != NodeTag.CLASS_DECL) continue;
         ast::ScalarClass fields;
