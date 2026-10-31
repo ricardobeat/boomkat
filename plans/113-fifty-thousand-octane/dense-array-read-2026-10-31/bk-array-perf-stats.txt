@@ -1,0 +1,30 @@
+SLJIT function compiled  pc=0..81 function_ops=81 regs=8 code_bytes=14136 plan_bytes=15721
+SLJIT function compiled readIndex pc=0..2 function_ops=2 regs=3 code_bytes=4436 plan_bytes=15010
+array-read: 1349 ms
+SLJIT coverage id=0 line=1 ops=2 regs=3 captures=0 name=readIndex threaded=10096 switch=0 attempts=10001 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=0 calls=0 returns=29999999
+SLJIT pipeline id=0 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=0 homes=0
+SLJIT SSA calls id=0 frameless=0
+SLJIT code id=0 start=0x104723748 bytes=4436 fragment=0 fragment_bytes=0
+SLJIT function readIndex begin=0 ops=2 bytes=4436 hits=9906 returns=9906 stalled=0 charged_edges=0 budget_exits=0 id=0 line=1
+SLJIT exit readIndex begin=0 pc=0 op=50 count=9904 id=0 line=1 opcode=GETPROP
+SLJIT exit readIndex begin=0 pc=1 op=65 count=9906 id=0 line=1 opcode=RET
+SLJIT coverage id=1 line=1 ops=81 regs=8 captures=0 name= threaded=120050422 switch=30010000 attempts=30009954 warmup=4294967295 retired=1 active=29 rejection=compiled
+SLJIT native id=1 calls=29999999 returns=0
+SLJIT pipeline id=1 inlined=0 recoveries=9938 allocations=0 pushes=0 links=1
+SLJIT numeric id=1 homes=0
+SLJIT SSA calls id=1 frameless=0
+SLJIT code id=1 start=0x1047248b0 bytes=14080 fragment=0x104718010 fragment_bytes=56
+SLJIT inline_exit id=1 frame=1 depth=1 target_line=1 pc=0 opcode=GETPROP count=9938
+SLJIT function  begin=0 ops=81 bytes=14136 hits=30009953 returns=1 stalled=5 charged_edges=30000000 budget_exits=58593 id=1 line=1
+SLJIT exit  begin=0 pc=34 op=78 count=8 id=1 line=3 opcode=PUTGLOBAL
+SLJIT exit  begin=0 pc=40 op=77 count=1 id=1 line=5 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=42 op=61 count=1 id=1 line=5 opcode=CALL
+SLJIT exit  begin=0 pc=46 op=73 count=1 id=1 line=6 opcode=DECLVAR
+SLJIT exit  begin=0 pc=49 op=77 count=2 id=1 line=6 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=56 op=78 count=30000000 id=1 line=6 opcode=PUTGLOBAL
+SLJIT exit  begin=0 pc=58 op=67 count=1 id=1 line=6 opcode=GETVAR
+SLJIT exit  begin=0 pc=80 op=66 count=1 id=1 line=8 opcode=RETUNDEF
+SLJIT totals functions=2 loops=0 templates=0 hits=30019859 code_bytes=18572
+SLJIT budget bytes=18572 limit=4194304 native_work=0 evictions=0
