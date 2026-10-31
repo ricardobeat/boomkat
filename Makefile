@@ -601,3 +601,9 @@ out/context_options_api: test/capi/context_options.c include/boomkat.h out/boomk
 .PHONY: test-context-options-api
 test-context-options-api: out/context_options_api
 	./out/context_options_api
+
+# Native C3 promise capabilities.
+.PHONY: test-deferred-api
+test-deferred-api:
+	$(C3C) build deferred_api --build-dir out/build/deferred_api
+	./out/deferred_api

@@ -405,6 +405,55 @@ fn JsValue? JsContext.call(&self, JsValue func, JsValue[] args = {},
     return self.root(res);
 }
 
+// A native promise capability. These three owned roots outlive @scope; copies
+// alias them. Release exactly once after completion or cancellation. Resolving
+// functions share the engine's first-call-wins latch, including during adoption.
+struct JsDeferred {
+    JsValue promise;
+    JsValue resolve;
+    JsValue reject;
+}
+
+fn JsDeferred? JsContext.deferred(&self) {
+    if (self.rt == null) return NOT_CREATED~;
+    embed::select_context(self.context);
+    Heap* h = self.rt.heap;
+    HObject* p = builtins::promise_create(h)!;
+    if (p == null) return OUT_OF_MEMORY~;
+    TVal tv; tv.set_object(p);
+    ValueRoot held;
+    h.push_value_root(&held, tv);
+    defer h.pop_value_root(&held);
+    builtins::PromiseCapability cap = builtins::promise_new_capability(h, p);
+    if (cap.promise == null) return OUT_OF_MEMORY~;
+    JsDeferred out;
+    bool complete;
+    defer if (!complete) self.release_deferred(out);
+    out.promise.slot = embed::slot_alloc(self.rt, tv);
+    if (!out.promise.slot) return VALUE_TABLE_FULL~;
+    tv.set_object(cap.resolve_func);
+    out.resolve.slot = embed::slot_alloc(self.rt, tv);
+    if (!out.resolve.slot) return VALUE_TABLE_FULL~;
+    tv.set_object(cap.reject_func);
+    out.reject.slot = embed::slot_alloc(self.rt, tv);
+    if (!out.reject.slot) return VALUE_TABLE_FULL~;
+    complete = true;
+    return out;
+}
+
+fn void JsContext.release_deferred(&self, JsDeferred deferred) {
+    self.release(deferred.promise);
+    self.release(deferred.resolve);
+    self.release(deferred.reject);
+}
+
+// Settlement runs synchronous resolution work only. The host owns checkpoints.
+fn void? JsContext.settle_deferred(&self, JsDeferred deferred, bool ok, JsValue value = {}) {
+    JsValue[1] args = { value };
+    JsValue result = self.call(ok ? deferred.resolve : deferred.reject, args[..])!;
+    self.release(result);
+}
+
 // ============================================================================
 // Objects and properties
 // ============================================================================

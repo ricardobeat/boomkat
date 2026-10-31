@@ -435,6 +435,13 @@
       ],
       "opt": "O0"
     },
+    "deferred_api": {
+      "type": "executable",
+      "sources": [ "src", "test/capi/deferred.c3" ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [ "THREADED_DISPATCH" ]
+    },
     "host_fn_phase1": {
       "type": "executable",
       "sources": [
