@@ -1089,6 +1089,9 @@ fn void LoopEmitter.labels_free(&self) @feat(SLJIT) {
     self.labels = null;
 }
 fn void LoopEmitter.add_link(&self, LoopLink link) @feat(SLJIT) {
+    // SLJIT silently returns null above 128 bytes (64 on 32-bit hosts).
+    // Growing a fixup must not accidentally disable all native compilation.
+    $assert(LOOP_LINK_BLOCK * LoopLink::size <= 16 * usz::size);
     $if $feat(SLJIT_STATS):
         if (self.link_count == self.link_capacity()) self.link_limit_reached = true;
     $endif
