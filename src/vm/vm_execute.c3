@@ -2956,10 +2956,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (@unlikely(word.op == Opcode.WIDE)) {
             Instruction payload = *ds.curr_pc;
             ds.curr_pc++;
-            insn.op = payload.op;
-            insn.a  = ((uint)word.a << 8) | payload.a;
-            insn.b  = ((uint)word.b << 8) | payload.b;
-            insn.c  = ((uint)word.c << 8) | payload.c;
+            insn.set_wide(word, payload);
         } else {
             insn.op = word.op;
             insn.a  = word.a;

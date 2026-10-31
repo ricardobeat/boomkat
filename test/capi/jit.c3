@@ -51,6 +51,35 @@ fn void check_parameter_alias_roles() {
     }
 }
 
+// The shared decoder retains the prefix PC while exposing effective operands.
+fn void check_decoded_bytecode() {
+    Instruction[5] code = {
+        bytecode::make_abc(Opcode.NOP, 0, 0, 0),
+        bytecode::make_wide(1, 2, 3),
+        bytecode::make_abc(Opcode.LDREG, 4, 5, 6),
+        bytecode::make_wide(0, 0, 0), bytecode::make_wide(0, 0, 0)
+    };
+    DecodedBytecode narrow = bytecode::decode_bytecode(&code[0], 5, 0);
+    @check(narrow.valid && !narrow.wide && narrow.pc == 0 && narrow.payload_pc == 0 && narrow.next_pc == 1);
+    DecodedBytecode wide = bytecode::decode_bytecode(&code[0], 5, 1);
+    @check(wide.valid && wide.wide && wide.pc == 1 && wide.payload_pc == 2 && wide.next_pc == 3);
+    @check(wide.insn.op == Opcode.LDREG && wide.insn.a == 260 && wide.insn.b == 517 && wide.insn.c == 774);
+    @check(wide.insn.get_bc() == 0x03020605);
+    uint cursor = 1;
+    DecodedBytecode once = bytecode::decode_bytecode(&code[0], 5, cursor++);
+    @check(cursor == 2 && once.valid && once.pc == 1 && once.next_pc == 3);
+    @check(!bytecode::decode_bytecode(&code[0], 2, 1).valid);
+    @check(!bytecode::decode_bytecode(&code[0], 5, 3).valid);
+    @check(!bytecode::decode_bytecode(&code[0], 5, 5).valid);
+
+    // GETVAR's BC is a constant-pool index, not two register operands.
+    Instruction[2] binding = { bytecode::make_wide(1, 0, 0), bytecode::make_a_bc(Opcode.GETVAR, 44, 0x1234) };
+    uint[32] words;
+    compiler::RegSet used = { .words = &words[0], .word_count = 32 };
+    compiler::bytecode_register_set(&binding[0], 0, 1, &used);
+    @check(used.test(300) && !used.test(0x34) && !used.test(0x12));
+}
+
 // A WIDE call has a register window, not individually remappable fields. A
 // refusal must conservatively reserve every low slot and every queried high
 // register, even when the next instruction uses an otherwise free register.
@@ -748,6 +777,7 @@ fn void check_function_missing_caches(JsRuntime* runtime) {
 fn void main() {
     check_dependency_gc();
     check_parameter_alias_roles();
+    check_decoded_bytecode();
     check_wide_alias_refusal();
     check_alias_register_set();
     check_register_effects();

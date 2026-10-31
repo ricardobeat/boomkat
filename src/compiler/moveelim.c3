@@ -309,31 +309,24 @@ struct BytecodeOperands {
 
 fn BytecodeOperands bytecode_operands(Instruction* code, uint pos, uint end) {
     BytecodeOperands o;
-    Instruction ins = code[pos];
-    uint pa;
-    uint pb;
-    uint pc;
-    o.next = pos + 1;
-    if (ins.op == Opcode.WIDE) {
-        if (pos + 1 > end) return o;
-        pa = (uint)code[pos].a;
-        pb = (uint)code[pos].b;
-        pc = (uint)code[pos].c;
-        ins = code[pos + 1];
-        o.next = pos + 2;
-    }
-    // WIDE payloads must not nest, and LDINTX carries a literal the tier does
-    // not rewrite. General instructions (calls, property access, STRJOIN) have
-    // operand windows rather than fields, so they cannot be decoded here.
-    if (ins.op == Opcode.WIDE || ins.op == Opcode.LDINTX) return o;
-    MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+    DecodedBytecode decoded = bytecode::decode_bytecode(code, end + 1, pos);
+    o.next = decoded.next_pc;
+    if (!decoded.valid) return o;
+    Opcode op = decoded.insn.op;
+    uint pa = decoded.insn.a >> 8;
+    uint pb = decoded.insn.b >> 8;
+    uint pc = decoded.insn.c >> 8;
+    // The shared decoder rejects nested WIDE prefixes. LDINTX and general
+    // instructions need paired or window semantics the alias pass cannot rewrite.
+    if (op == Opcode.LDINTX) return o;
+    MoveelimRoles r = moveelim_roles[op.ordinal];
     if (r.general) return o;
-    o.a = pa << 8 | (uint)ins.a;
-    o.b = pb << 8 | (uint)ins.b;
-    o.c = pc << 8 | (uint)ins.c;
+    o.a = decoded.insn.a;
+    o.b = decoded.insn.b;
+    o.c = decoded.insn.c;
     o.a_reg = r.a_read || r.a_write;
     o.b_reg = r.b_read;
-    o.c_reg = r.c_read && bytecode::get_op_format(ins.op) == OpFormat.ABC;
+    o.c_reg = r.c_read && bytecode::get_op_format(op) == OpFormat.ABC;
     // A field that is not a register cannot carry a widened value: its prefix
     // byte belongs to an index or immediate this pass does not rewrite.
     if ((!o.a_reg && pa != 0) || (!o.b_reg && pb != 0) || (!o.c_reg && pc != 0)) return o;

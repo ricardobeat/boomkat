@@ -1564,15 +1564,57 @@ macro Instruction from_raw(uint raw) {
 // values otherwise (identical for operands that never exceed 255).  The VM
 // builds one per dispatch and passes it to handlers in place of the packed
 // `Instruction`, so a handler reads the widened operands without any
-// per-opcode knowledge of the prefix.  The BC/ABC accessors mirror
-// Instruction's, and are only ever called on opcodes whose extension bytes
-// are zero by construction (the compiler widens exactly the fields that
-// hold register indices, never immediates or combined BC operands).
+// per-opcode knowledge of the prefix. Accessors preserve the encoded field
+// bits; each opcode determines whether those fields are registers, constants,
+// immediates, or a combined operand.
 struct DecodedInsn {
     Opcode op;
     uint   a;
     uint   b;
     uint   c;
+}
+
+// WIDE fields extend the corresponding payload fields by one byte. Assign
+// directly so the interpreter does not materialize a temporary struct.
+macro void DecodedInsn.set_wide(&self, Instruction prefix, Instruction payload) {
+    self.op = payload.op;
+    self.a = ((uint)prefix.a << 8) | payload.a;
+    self.b = ((uint)prefix.b << 8) | payload.b;
+    self.c = ((uint)prefix.c << 8) | payload.c;
+}
+
+// One instruction and its original word boundaries. The caller supplies an
+// instruction boundary, never a WIDE payload. Recovery and control-flow edges
+// use `pc`, while site caches attached to the opcode use `payload_pc`.
+struct DecodedBytecode {
+    DecodedInsn insn;
+    uint pc;
+    uint payload_pc;
+    uint next_pc;
+    bool wide;
+    bool valid;
+}
+
+macro DecodedBytecode decode_bytecode(Instruction* code, uint count, uint pc) {
+    Instruction* words = code;
+    uint limit = count;
+    uint start = pc;
+    DecodedBytecode decoded = { .pc = start, .payload_pc = start, .next_pc = start };
+    if (start >= limit) return decoded;
+    Instruction first = words[start];
+    decoded.next_pc = start + 1;
+    if (first.op == Opcode.WIDE) {
+        decoded.wide = true;
+        if (decoded.next_pc >= limit) return decoded;
+        decoded.payload_pc = decoded.next_pc++;
+        Instruction payload = words[decoded.payload_pc];
+        if (payload.op == Opcode.WIDE) return decoded;
+        decoded.insn.set_wide(first, payload);
+    } else {
+        decoded.insn = { first.op, first.a, first.b, first.c };
+    }
+    decoded.valid = true;
+    return decoded;
 }
 
 // Returns the opcode.
