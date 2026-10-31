@@ -1,0 +1,79 @@
+--- Inner function 9.2 ---
+[  0] LDINT               r13, 0
+[  1] SEQ                 r14 = r3, r13
+[  2] IF_FALSE            r14, +2
+[  3] LDINT               r15, +1
+[  4] SEQ                 r14 = r4, r15
+[  5] IF_FALSE            r14, +22
+[  6] LDINT               r5, +1
+[  7] JUMP                +13
+[  8] GETCAP              r16, 0
+[  9] MUL                 r6 = r5, r16
+[ 10] INC                 r6
+[ 11] LDINT               r7, 0
+[ 12] JUMP                +5
+[ 13] LDREG               r16 = r6, r0
+[ 14] GETPROP             r18 = r2, r6
+[ 15] PUTPROP             r1 = r16, r18
+[ 16] INC                 r6
+[ 17] INC                 r7
+[ 18] GETCAP              r16, 1
+[ 19] JMP_LT              -7, r7, r16
+[ 20] INC                 r5
+[ 21] GETCAP              r16, 2
+[ 22] LE                  r17 = r5, r16
+[ 23] IF_TRUE             r17, -16
+[ 24] LDREG               r18 = r0, r0
+[ 25] LDREG               r19 = r1, r0
+[ 26] CALL_VAR            r16, argc=2, K[16]
+[ 27] RETUNDEF            
+[ 28] LDINT               r16, +1
+[ 29] DIV                 r8 = r16, r4
+[ 30] LDINT               r9, 0
+[ 31] JUMP                +42
+[ 32] LDINT               r16, +1
+[ 33] LDREG               r5 = r16, r0
+[ 34] JUMP                +32
+[ 35] SUBI                r17 = r5, +1
+[ 36] GETCAP              r18, 0
+[ 37] MUL                 r10 = r17, r18
+[ 38] GETCAP              r16, 0
+[ 39] MUL                 r6 = r5, r16
+[ 40] ADDI                r17 = r5, +1
+[ 41] GETCAP              r18, 0
+[ 42] MUL                 r11 = r17, r18
+[ 43] GETPROP             r12 = r1, r6
+[ 44] INC                 r6
+[ 45] LDINT               r7, +1
+[ 46] JUMP                +17
+[ 47] LDREG               r16 = r6, r0
+[ 48] GETPROP             r18 = r2, r6
+[ 49] INC                 r6
+[ 50] GETPROP             r19 = r1, r6
+[ 51] ADD                 r20 = r12, r19
+[ 52] INC                 r10
+[ 53] GETPROP             r21 = r1, r10
+[ 54] ADD                 r22 = r20, r21
+[ 55] INC                 r11
+[ 56] GETPROP             r23 = r1, r11
+[ 57] ADD                 r24 = r22, r23
+[ 58] MUL                 r25 = r3, r24
+[ 59] ADD                 r26 = r18, r25
+[ 60] MUL                 r26 = r26, r8
+[ 61] PUTPROP             r1 = r16, r26
+[ 62] LDREG               r12 = r26, r0
+[ 63] INC                 r7
+[ 64] GETCAP              r16, 1
+[ 65] JMP_LE              -19, r7, r16
+[ 66] INC                 r5
+[ 67] GETCAP              r16, 2
+[ 68] LE                  r17 = r5, r16
+[ 69] IF_TRUE             r17, -35
+[ 70] LDREG               r18 = r0, r0
+[ 71] LDREG               r19 = r1, r0
+[ 72] CALL_VAR            r16, argc=2, K[16]
+[ 73] INC                 r9
+[ 74] GETCAP              r16, 3
+[ 75] JMP_LT              -44, r9, r16
+[ 76] RETUNDEF            
+

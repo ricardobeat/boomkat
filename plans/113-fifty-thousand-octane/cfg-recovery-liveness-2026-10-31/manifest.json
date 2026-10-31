@@ -1,0 +1,10 @@
+{
+  "control_commit": "5aae48bc",
+  "candidate_commit": "9da6427e",
+  "release_sha256": {
+    "control": "69827a9a2b7f7d9b7b8eadff036f5a0e1942e2c5f90d81f0e4d8bba0a6e72f13",
+    "candidate": "4107f72e35289ef2ebc843cc61840b7604e12a6fe8291a584ed670006e70c7d4"
+  },
+  "source_sha256": "aa56d59c56231e83f41cace494bf0d1105c205da56a6e4fa9fc77a58f97d7462",
+  "fixture_sha256": "edcc419f17a05047d47afc39b4dcbfce81a9259c10a771dc13260a6f9f8a495b"
+}

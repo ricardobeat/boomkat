@@ -1,0 +1,39 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALFUNC       r0, 1
+[  2] CLOSURE             r0, 0
+[  3] DECLGLOBALFUNC      r0, 1
+[  4] LDUNDEF             r0 = r0, r0
+[  5] DECLVAR_HOIST       r0, 0
+[  6] LDINT               r0, 0
+[  7] DECLVAR             r0, 0
+[  8] LDINT               r1, +400
+[  9] JUMP                +9
+[ 10] LDINT               r4, +30
+[ 11] CALL_GLOBAL         r2, argc=1, K[1]
+[ 12] LDINT               r3, +4
+[ 13] SNEQ                r2 = r2, r3
+[ 14] IF_FALSE            r2, +3
+[ 15] LDCONST             r4, 3
+[ 16] CALL_GLOBAL         r2, argc=1, K[2]
+[ 17] THROW               r2 = r0, r0
+[ 18] INC_GLOBAL          r2, 0
+[ 19] GETVAR              r2, 0
+[ 20] LT                  r3 = r2, r1
+[ 21] IF_TRUE             r3, -12
+[ 22] LDCONST             r2, 5
+[ 23] CALL_GLOBAL         r0, argc=1, K[4]
+[ 24] RETUNDEF            
+
+--- Inner function 0 ---
+[  0] LDINT               r3, 0
+[  1] LDINT               r3, 0
+[  2] LDINT               r1, 0
+[  3] JUMP                +3
+[  4] MULI                r4 = r1, +3
+[  5] BORI                r4 = r4, 0
+[  6] INC_LT              r1 = r0, r0
+[  7] JMP_LT              -4, r1, r0
+[  8] LDINT               r3, +4
+[  9] RET                 r3 = r0, r0
+--- End bytecode ---

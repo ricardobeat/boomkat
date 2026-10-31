@@ -1,0 +1,172 @@
+SLJIT function compiled  pc=0..221 function_ops=221 regs=9 code_bytes=37640 plan_bytes=16981
+SLJIT function compiled exitOnlyAlias pc=0..151 function_ops=151 regs=143 code_bytes=38432 plan_bytes=16351
+RECOVERY slot=1 original=71 livein=1 exitlive=1 phi=1
+RECOVERY slot=2 original=72 livein=0 exitlive=1 phi=2
+RECOVERY slot=3 original=74 livein=0 exitlive=1 phi=3
+RECOVERY slot=4 original=75 livein=0 exitlive=1 phi=4
+RECOVERY slot=5 original=77 livein=0 exitlive=1 phi=5
+SLJIT loop compiled exitOnlyAlias pc=74..79 code_bytes=1288 plan_bytes=3120 ssa=1 mem=0
+SLJIT SSA leaf reject line=19 stage=analysis
+SLJIT function compiled phiProbe pc=0..10 function_ops=10 regs=6 code_bytes=2884 plan_bytes=15082
+RECOVERY slot=1 original=1 livein=1 exitlive=1 phi=1
+RECOVERY slot=4 original=4 livein=0 exitlive=0 phi=-1
+SLJIT loop compiled phiProbe pc=4..7 code_bytes=796 plan_bytes=3120 ssa=1 mem=0
+SLJIT SSA leaf reject line=29 stage=analysis
+SLJIT function compiled nestedRecovery pc=0..30 function_ops=30 regs=10 code_bytes=6736 plan_bytes=15262
+SLJIT SSA leaf reject line=37 stage=analysis
+SLJIT function compiled observe pc=0..3 function_ops=3 regs=3 code_bytes=1652 plan_bytes=15019
+RECOVERY slot=4 original=4 livein=1 exitlive=1 phi=1
+RECOVERY slot=5 original=5 livein=0 exitlive=1 phi=2
+RECOVERY slot=8 original=8 livein=0 exitlive=0 phi=-1
+RECOVERY slot=9 original=9 livein=0 exitlive=0 phi=-1
+SLJIT loop compiled nestedRecovery pc=10..15 code_bytes=1116 plan_bytes=3120 ssa=1 mem=0
+SLJIT SSA leaf reject line=49 stage=analysis
+SLJIT function compiled handlerRecovery pc=0..20 function_ops=20 regs=7 code_bytes=7848 plan_bytes=15172
+RECOVERY slot=1 original=1 livein=0 exitlive=1 phi=0
+RECOVERY slot=2 original=2 livein=1 exitlive=1 phi=1
+RECOVERY slot=3 original=3 livein=1 exitlive=1 phi=2
+RECOVERY slot=5 original=5 livein=0 exitlive=1 phi=4
+RECOVERY slot=6 original=6 livein=0 exitlive=1 phi=5
+SLJIT loop compiled handlerRecovery pc=9..14 code_bytes=1440 plan_bytes=3120 ssa=1 mem=1
+SLJIT ssa fallback name=handlerRecovery begin=9 pc=11 opcode=ADD_FUSED iterations=4
+RECOVERY slot=1 original=1 livein=0 exitlive=1 phi=0
+RECOVERY slot=2 original=2 livein=1 exitlive=1 phi=1
+RECOVERY slot=3 original=3 livein=1 exitlive=1 phi=2
+RECOVERY slot=5 original=5 livein=0 exitlive=1 phi=4
+RECOVERY slot=6 original=6 livein=0 exitlive=1 phi=5
+SLJIT SSA leaf reject line=58 stage=analysis
+SLJIT function compiled valueOf pc=0..7 function_ops=7 regs=4 code_bytes=2368 plan_bytes=15055
+exit-only high register: PASS
+dead exit temporary: PASS
+nested continuation: PASS
+exception continuation: PASS
+SLJIT coverage id=0 line=4 ops=151 regs=143 captures=0 name=exitOnlyAlias threaded=4022 switch=47 attempts=123 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=0 calls=0 returns=249
+SLJIT pipeline id=0 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=0 homes=0
+SLJIT SSA calls id=0 frameless=0
+SLJIT code id=0 start=0x1028fc010 bytes=38432 fragment=0 fragment_bytes=0
+SLJIT function exitOnlyAlias begin=0 ops=151 bytes=38432 hits=15 returns=15 stalled=0 charged_edges=54 budget_exits=0 id=0 line=4
+SLJIT exit exitOnlyAlias begin=0 pc=79 op=170 count=11 id=0 line=6 opcode=JMP_LT
+SLJIT exit exitOnlyAlias begin=0 pc=150 op=65 count=15 id=0 line=7 opcode=RET
+SLJIT loop exitOnlyAlias begin=74 end=79 hits=47 iterations=1169
+SLJIT loop code id=0 begin=74 end=79 bytes=1288
+SLJIT ssa name=exitOnlyAlias begin=74 end=79 hits=47 iterations=1169
+SLJIT coverage id=1 line=19 ops=10 regs=6 captures=0 name=phiProbe threaded=412 switch=12 attempts=412 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=1 calls=0 returns=0
+SLJIT pipeline id=1 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1 homes=0
+SLJIT SSA calls id=1 frameless=0
+SLJIT code id=1 start=0x10290af90 bytes=2884 fragment=0 fragment_bytes=0
+SLJIT function phiProbe begin=0 ops=10 bytes=2884 hits=412 returns=400 stalled=0 charged_edges=11712 budget_exits=12 id=1 line=19
+SLJIT exit phiProbe begin=0 pc=7 op=170 count=12 id=1 line=20 opcode=JMP_LT
+SLJIT exit phiProbe begin=0 pc=9 op=65 count=400 id=1 line=21 opcode=RET
+SLJIT loop phiProbe begin=4 end=7 hits=12 iterations=288
+SLJIT loop code id=1 begin=4 end=7 bytes=796
+SLJIT ssa name=phiProbe begin=4 end=7 hits=12 iterations=288
+SLJIT coverage id=2 line=29 ops=30 regs=10 captures=0 name=nestedRecovery threaded=2166 switch=20 attempts=1967 warmup=4294967294 retired=0 active=12 rejection=compiled
+SLJIT native id=2 calls=0 returns=0
+SLJIT pipeline id=2 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=2 homes=0
+SLJIT SSA calls id=2 frameless=0
+SLJIT code id=2 start=0x102909200 bytes=6736 fragment=0 fragment_bytes=0
+SLJIT function nestedRecovery begin=0 ops=30 bytes=6736 hits=1967 returns=200 stalled=0 charged_edges=15767 budget_exits=13 id=2 line=29
+SLJIT exit nestedRecovery begin=0 pc=15 op=170 count=11 id=2 line=31 opcode=JMP_LT
+SLJIT exit nestedRecovery begin=0 pc=20 op=135 count=1030 id=2 line=32 opcode=CALL_UNDEF_THIS
+SLJIT exit nestedRecovery begin=0 pc=25 op=135 count=925 id=2 line=32 opcode=CALL_UNDEF_THIS
+SLJIT exit nestedRecovery begin=0 pc=29 op=65 count=200 id=2 line=34 opcode=RET
+SLJIT loop nestedRecovery begin=10 end=15 hits=11 iterations=43
+SLJIT loop code id=2 begin=10 end=15 bytes=1116
+SLJIT ssa name=nestedRecovery begin=10 end=15 hits=11 iterations=43
+SLJIT coverage id=3 line=37 ops=3 regs=3 captures=0 name=observe threaded=5864 switch=1 attempts=2 warmup=4294967295 retired=0 active=1 rejection=compiled
+SLJIT native id=3 calls=0 returns=0
+SLJIT pipeline id=3 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=3 homes=0
+SLJIT SSA calls id=3 frameless=0
+SLJIT code id=3 start=0x102908b78 bytes=1652 fragment=0 fragment_bytes=0
+SLJIT function observe begin=0 ops=3 bytes=1652 hits=1 returns=1 stalled=0 charged_edges=0 budget_exits=0 id=3 line=37
+SLJIT exit observe begin=0 pc=2 op=65 count=1 id=3 line=37 opcode=RET
+SLJIT coverage id=4 line=49 ops=20 regs=7 captures=0 name=handlerRecovery threaded=1609 switch=203 attempts=204 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=4 calls=0 returns=0
+SLJIT pipeline id=4 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=4 homes=0
+SLJIT SSA calls id=4 frameless=0
+SLJIT code id=4 start=0x102906850 bytes=7848 fragment=0 fragment_bytes=0
+SLJIT function handlerRecovery begin=0 ops=20 bytes=7848 hits=6 returns=1 stalled=1 charged_edges=3 budget_exits=0 id=4 line=49
+SLJIT exit handlerRecovery begin=0 pc=3 op=90 count=201 id=4 line=50 opcode=TRY
+SLJIT exit handlerRecovery begin=0 pc=15 op=91 count=3 id=4 line=52 opcode=ENDTRY
+SLJIT exit handlerRecovery begin=0 pc=18 op=65 count=1 id=4 line=52 opcode=RET
+SLJIT loop handlerRecovery begin=9 end=14 hits=201 iterations=1598
+SLJIT loop code id=4 begin=9 end=14 bytes=1440
+SLJIT ssa name=handlerRecovery begin=9 end=14 hits=201 iterations=1598
+SLJIT coverage id=5 line=58 ops=7 regs=4 captures=0 name=valueOf threaded=7 switch=4 attempts=2 warmup=4294967295 retired=0 active=2 rejection=compiled
+SLJIT native id=5 calls=0 returns=0
+SLJIT pipeline id=5 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=5 homes=0
+SLJIT SSA calls id=5 frameless=0
+SLJIT code id=5 start=0x102905950 bytes=2368 fragment=0 fragment_bytes=0
+SLJIT function valueOf begin=0 ops=7 bytes=2368 hits=1 returns=0 stalled=1 charged_edges=0 budget_exits=0 id=5 line=58
+SLJIT exit valueOf begin=0 pc=1 op=77 count=1 id=5 line=58 opcode=GETGLOBAL
+SLJIT coverage id=6 line=1 ops=221 regs=9 captures=0 name= threaded=18422 switch=4679 attempts=5476 warmup=4294967295 retired=0 active=72 rejection=compiled
+SLJIT native id=6 calls=658 returns=0
+SLJIT pipeline id=6 inlined=0 recoveries=0 allocations=1 pushes=0 links=0
+SLJIT numeric id=6 homes=0
+SLJIT SSA calls id=6 frameless=0
+SLJIT code id=6 start=0x1028f2cc8 bytes=37584 fragment=0x1028ec010 fragment_bytes=56
+SLJIT function  begin=0 ops=221 bytes=37640 hits=5259 returns=1 stalled=13 charged_edges=12383 budget_exits=13 id=6 line=1
+SLJIT exit  begin=0 pc=30 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=32 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=34 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=36 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=38 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=40 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=42 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=44 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=46 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=48 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=50 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=52 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=54 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=56 op=74 count=1 id=6 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=58 op=73 count=1 id=6 line=9 opcode=DECLVAR
+SLJIT exit  begin=0 pc=62 op=77 count=1 id=6 line=10 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=64 op=14 count=263 id=6 line=10 opcode=MOD
+SLJIT exit  begin=0 pc=67 op=77 count=1 id=6 line=10 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=69 op=70 count=263 id=6 line=10 opcode=PUTVAR
+SLJIT exit  begin=0 pc=70 op=77 count=1 id=6 line=11 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=80 op=70 count=263 id=6 line=11 opcode=PUTVAR
+SLJIT exit  begin=0 pc=81 op=77 count=1 id=6 line=12 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=83 op=135 count=3 id=6 line=12 opcode=CALL_UNDEF_THIS
+SLJIT exit  begin=0 pc=84 op=77 count=1 id=6 line=12 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=85 op=40 count=263 id=6 line=12 opcode=SNEQ
+SLJIT exit  begin=0 pc=94 op=67 count=1 id=6 line=9 opcode=GETVAR
+SLJIT exit  begin=0 pc=99 op=73 count=1 id=6 line=23 opcode=DECLVAR
+SLJIT exit  begin=0 pc=103 op=137 count=400 id=6 line=23 opcode=CALL_GLOBAL
+SLJIT exit  begin=0 pc=111 op=164 count=400 id=6 line=23 opcode=INC_GLOBAL
+SLJIT exit  begin=0 pc=112 op=67 count=1 id=6 line=23 opcode=GETVAR
+SLJIT exit  begin=0 pc=118 op=70 count=1 id=6 line=36 opcode=PUTVAR
+SLJIT exit  begin=0 pc=120 op=73 count=1 id=6 line=38 opcode=DECLVAR
+SLJIT exit  begin=0 pc=124 op=77 count=1 id=6 line=39 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=126 op=14 count=199 id=6 line=39 opcode=MOD
+SLJIT exit  begin=0 pc=130 op=70 count=200 id=6 line=39 opcode=PUTVAR
+SLJIT exit  begin=0 pc=132 op=73 count=200 id=6 line=40 opcode=DECLVAR
+SLJIT exit  begin=0 pc=134 op=77 count=2 id=6 line=40 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=138 op=77 count=2 id=6 line=40 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=147 op=78 count=1953 id=6 line=40 opcode=PUTGLOBAL
+SLJIT exit  begin=0 pc=149 op=77 count=1 id=6 line=40 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=152 op=77 count=1 id=6 line=41 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=154 op=77 count=1 id=6 line=42 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=158 op=77 count=1 id=6 line=42 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=159 op=40 count=199 id=6 line=42 opcode=SNEQ
+SLJIT exit  begin=0 pc=172 op=67 count=1 id=6 line=38 opcode=GETVAR
+SLJIT exit  begin=0 pc=178 op=70 count=1 id=6 line=55 opcode=PUTVAR
+SLJIT exit  begin=0 pc=180 op=73 count=1 id=6 line=56 opcode=DECLVAR
+SLJIT exit  begin=0 pc=183 op=77 count=2 id=6 line=56 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=187 op=40 count=200 id=6 line=56 opcode=SNEQ
+SLJIT exit  begin=0 pc=193 op=67 count=1 id=6 line=56 opcode=GETVAR
+SLJIT exit  begin=0 pc=198 op=77 count=1 id=6 line=58 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=204 op=77 count=1 id=6 line=59 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=210 op=77 count=1 id=6 line=59 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=220 op=66 count=1 id=6 line=60 opcode=RETUNDEF
+SLJIT totals functions=7 loops=4 templates=0 hits=7661 code_bytes=102200
+SLJIT budget bytes=102200 limit=4194304 native_work=0 evictions=0

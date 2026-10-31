@@ -1,0 +1,3 @@
+RECOVERY slot=1 original=1 livein=1 exitlive=1 phi=1
+RECOVERY slot=4 original=4 livein=0 exitlive=0 phi=-1
+SLJIT loop compiled phiProbe pc=4..7 code_bytes=796 plan_bytes=3120 ssa=1 mem=0

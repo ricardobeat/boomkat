@@ -1,0 +1,14 @@
+--- source
++++ instrumented
+@@ -138,6 +138,11 @@
+         }
+     }
+     for (uint reg = 0; reg < LOOP_REGS; reg++) g.header[reg] = g.current[reg];
++    if (!g.single_pass) {
++        for (uint reg = 0; reg < LOOP_REGS; reg++) if (written[reg]) {
++            io::eprintfn("RECOVERY slot=%d original=%d livein=%d exitlive=%d phi=%d", reg, plan.slot_reg[reg], live_in[reg], exit_live[reg], g.phi[reg]);
++        }
++    }
+     // The body may hold arms: a forward branch splits it into blocks, and a
+     // join merges the states its arms leave behind.
+     if (!ssa_split_blocks(g)) {

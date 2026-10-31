@@ -1,0 +1,16 @@
+RECOVERY slot=6 original=6 livein=1 exitlive=0 phi=1
+RECOVERY slot=7 original=7 livein=1 exitlive=1 phi=2
+RECOVERY slot=10 original=10 livein=1 exitlive=0 phi=4
+RECOVERY slot=11 original=11 livein=1 exitlive=0 phi=5
+RECOVERY slot=12 original=12 livein=1 exitlive=0 phi=6
+RECOVERY slot=16 original=16 livein=0 exitlive=1 phi=7
+RECOVERY slot=18 original=18 livein=0 exitlive=1 phi=8
+RECOVERY slot=19 original=19 livein=0 exitlive=0 phi=-1
+RECOVERY slot=20 original=20 livein=0 exitlive=0 phi=-1
+RECOVERY slot=21 original=21 livein=0 exitlive=0 phi=-1
+RECOVERY slot=22 original=22 livein=0 exitlive=0 phi=-1
+RECOVERY slot=23 original=23 livein=0 exitlive=0 phi=-1
+RECOVERY slot=24 original=24 livein=0 exitlive=0 phi=-1
+RECOVERY slot=25 original=25 livein=0 exitlive=0 phi=-1
+RECOVERY slot=26 original=26 livein=0 exitlive=0 phi=-1
+code_bytes=5736

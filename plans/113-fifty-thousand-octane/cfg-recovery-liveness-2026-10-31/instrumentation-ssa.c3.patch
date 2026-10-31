@@ -1,0 +1,14 @@
+--- source
++++ instrumented
+@@ -251,6 +251,11 @@
+     void* native = jit::sljit_generate_code(e.compiler, 0, null);
+     if (native != null) {
+         plan.code_bytes = jit::sljit_shim_code_size(e.compiler);
++        if (!single_pass) {
++            io::eprintf("MACHINE_CODE ");
++            for (usz ix = 0; ix < plan.code_bytes; ix++) io::eprintf("%02x", (uint)((char*)native)[ix]);
++            io::eprintfn("");
++        }
+         if (self.epoch_constant != null) {
+             plan.ssa_epoch_patch = jit::sljit_shim_const_addr(self.epoch_constant);
+             plan.ssa_executable_offset = jit::sljit_shim_executable_offset(e.compiler);
