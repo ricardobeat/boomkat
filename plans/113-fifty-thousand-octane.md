@@ -1,6 +1,23 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `4228a786` (fixup-allocation size assertion and scalar-recovery regression only; release binary identical to `fa11ea2d`); prior runtime checkpoint rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `ba119b09` (conservative handling of unsupported WIDE register windows; direct embedding coverage; removes unconditional remap diagnostics); prior checkpoint rat `4228a786` (fixup-allocation size assertion and scalar-recovery regression only; release binary identical to `fa11ea2d`); prior runtime checkpoint rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+
+## WIDE operand analysis checkpoint, 2026-10-31
+
+Rat `ba119b09` fixes a conservative-analysis hole in the loop register alias
+queries. When a WIDE payload cannot be decoded as individual register fields
+(for example a call window), the previous queries skipped the payload and its
+successor and could report live registers as unused. They now reserve all low
+slots and report queried registers as used. The remapper already refused these
+payloads; this change strengthens its prerequisite analysis. Normal refusal no
+longer prints unconditional `RMX` diagnostics.
+
+The embedding JIT test directly checks an unsupported WIDE call window and its
+successor; ARM64 embedding and 52 JIT/SLJIT fixtures pass. Five alternating mini
+pairs against the `4228a786` release control: Crypto 165→166 ms, Mandreel
+565→564 ms, Gameboy 278→278 ms; these are neutral, not a speed claim. No full
+Octane measurement was run for this correctness change. Canonical use analysis,
+cyclic function SSA, effect recovery, calls and the 50K goal remain open.
 
 ## Scalar register-cache checkpoint, 2026-10-31
 
