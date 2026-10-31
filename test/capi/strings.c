@@ -190,6 +190,22 @@ static void external_string_outlives_runtime(void) {
     assert(releases == 1 && released_data == wide && released_length == 2);
 }
 
+/* Long external keys must canonicalize to the same property-table key as
+ * independently created strings with equal content. */
+static void external_property_keys(void) {
+    bk_ctx cx = bk_create();
+    static uint8_t bytes[4096];
+    memset(bytes, 'x', sizeof bytes);
+    bk_value key = bk_new_external_string_latin1(cx, bytes, sizeof bytes, NULL, NULL);
+    bk_value copy = bk_new_string_latin1(cx, bytes, sizeof bytes);
+    bk_value global = bk_get_global_object(cx);
+    assert(bk_set_property(cx, global, "externalKey", 11, key) == BK_OK);
+    assert(bk_set_property(cx, global, "copiedKey", 9, copy) == BK_OK);
+    bk_value result = bk_eval(cx, "var keyed = {[externalKey]: 42}; keyed[copiedKey] === 42");
+    assert(result == BK_TRUE);
+    bk_destroy(cx);
+}
+
 int main(void) {
     ctx = bk_new_context(bk_new_runtime(NULL), NULL);
     assert(ctx);
@@ -297,6 +313,7 @@ int main(void) {
     }
 
     string_views();
+    external_property_keys();
     external_strings();
     external_string_outlives_runtime();
 
