@@ -399,7 +399,11 @@ fn int loop_memory_shape_layout(LoopPlan* plan, uint shape, uint generation, int
 fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool generated_fields = false) @feat(SLJIT) {
     Heap* h = cold.heap;
     for (EnvRecord* scope = cold.act.lex_env; scope != null; scope = scope.parent) if (scope.is_with()) return false;
-    for (uint i = 0; i < cold.vm.current_func.num_regs; i++) {
+    // Both tables are sized by the alias window, and an aliased register is
+    // published in a low slot, so the window is the whole domain here. Bounding
+    // this by the function's register count read past both arrays in a wide
+    // function and refused the loop on whatever followed them.
+    for (uint i = 0; i < LOOP_REGS; i++) {
         if (plan.float_cache[i] != 0 && !state.values[i].is_fastint() && !state.values[i].is_number()) return false;
     }
     for (uint i = 0; i < plan.binding_count; i++) {
@@ -558,7 +562,9 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             }
             continue;
         }
-        if (ins.a >= window) return false;
+        if (ins.a >= window) {
+            return false;
+        }
         frequency[ins.a]++;
         switch (ins.op) {
             case NOP: continue;
@@ -1811,8 +1817,8 @@ fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @in
 // Map every high register used by the loop to a free low slot. The chosen
 // slots are unused in the loop, so their interpreter values need no recovery.
 fn bool loop_highreg_prepare(CompiledFunction* cf, uint begin, uint end,
-    uint[256]* map, int[LOOP_REGS]* slot_reg, bool apply) @feat(SLJIT) {
-    for (uint i = 0; i < 256; i++) (*map)[i] = i;
+    uint[compiler::BYTECODE_REGS_MAX]* map, int[LOOP_REGS]* slot_reg, bool apply) @feat(SLJIT) {
+    for (uint i = 0; i < compiler::BYTECODE_REGS_MAX; i++) (*map)[i] = i;
     for (uint i = 0; i < LOOP_REGS; i++) (*slot_reg)[i] = (int)i;
     ulong low = compiler::bytecode_low_register_mask(cf.code, begin, end);
     bool aliased;
@@ -1844,7 +1850,7 @@ fn bool loop_highreg_compile(CompiledFunction* cf, uint offset, TVal* regs, Cold
     LoopPlan* draft) @feat(SLJIT) {
     int target = loop_target(cf.code[offset], offset);
     if (target < 0 || offset - (uint)target >= LOOP_OPS) return false;
-    uint[256] map;
+    uint[compiler::BYTECODE_REGS_MAX] map;
     int[LOOP_REGS] slot_reg;
     Instruction[LOOP_OPS] saved;
     if (!loop_highreg_prepare(cf, (uint)target, offset, &map, &slot_reg, false)) return false;
@@ -1871,8 +1877,8 @@ fn bool loop_highreg_compile(CompiledFunction* cf, uint offset, TVal* regs, Cold
 // copy is never rewritten, so an aliased plan re-installs its slot mapping only
 // while the emitter reads it.
 fn LoopNative loop_reemit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool ssa) @feat(SLJIT) {
-    uint[256] map;
-    for (uint i = 0; i < 256; i++) map[i] = i;
+    uint[compiler::BYTECODE_REGS_MAX] map;
+    for (uint i = 0; i < compiler::BYTECODE_REGS_MAX; i++) map[i] = i;
     bool aliased;
     for (uint i = 0; i < LOOP_REGS; i++) {
         int reg = plan.slot_reg[i];

@@ -24,6 +24,7 @@
 module boomkat::compiler;
 
 import boomkat::bytecode;
+import std::io;
 
 // The JIT loop window uses registers 0..63.
 const uint LOOP_REGS_MIN = 64;
@@ -287,31 +288,112 @@ fn void moveelim_init_roles() {
     moveelim_roles_ready = true;
 }
 
+// The alias window covers these registers. A function with more is left to the
+// interpreter rather than given an unbounded table.
+const uint BYTECODE_REGS_MAX = 1024;
+
+// Operands of the instruction at `pos`, including the high bytes a WIDE prefix
+// at pos - 1 contributes. `ok` is false when the operands are not a plain
+// role-decoded form the alias window can rewrite; `next` is the position after
+// the instruction, skipping a prefix pair.
+struct BytecodeOperands {
+    uint a;
+    uint b;
+    uint c;
+    bool a_reg;
+    bool b_reg;
+    bool c_reg;
+    bool ok;
+    uint next;
+}
+
+fn BytecodeOperands bytecode_operands(Instruction* code, uint pos, uint end) {
+    BytecodeOperands o;
+    Instruction ins = code[pos];
+    uint pa;
+    uint pb;
+    uint pc;
+    o.next = pos + 1;
+    if (ins.op == Opcode.WIDE) {
+        if (pos + 1 > end) return o;
+        pa = (uint)code[pos].a;
+        pb = (uint)code[pos].b;
+        pc = (uint)code[pos].c;
+        ins = code[pos + 1];
+        o.next = pos + 2;
+    }
+    // WIDE payloads must not nest, and LDINTX carries a literal the tier does
+    // not rewrite. General instructions (calls, property access, STRJOIN) have
+    // operand windows rather than fields, so they cannot be decoded here.
+    if (ins.op == Opcode.WIDE || ins.op == Opcode.LDINTX) return o;
+    MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+    if (r.general) return o;
+    o.a = pa << 8 | (uint)ins.a;
+    o.b = pb << 8 | (uint)ins.b;
+    o.c = pc << 8 | (uint)ins.c;
+    o.a_reg = r.a_read || r.a_write;
+    o.b_reg = r.b_read;
+    o.c_reg = r.c_read && bytecode::get_op_format(ins.op) == OpFormat.ABC;
+    // A field that is not a register cannot carry a widened value: its prefix
+    // byte belongs to an index or immediate this pass does not rewrite.
+    if ((!o.a_reg && pa != 0) || (!o.b_reg && pb != 0) || (!o.c_reg && pc != 0)) return o;
+    o.ok = true;
+    return o;
+}
+
 // Registers below 64 read or written by [begin, end]. Uses the same operand
 // roles as liveness, so branch offsets and constant indices do not appear.
 fn ulong bytecode_low_register_mask(Instruction* code, uint begin, uint end) @public {
     if (!moveelim_roles_ready) moveelim_init_roles();
-    uint[8] words;
-    RegSet live = { .words = &words[0], .word_count = 8 };
+    ulong low;
+    uint[32] words;
+    RegSet live = { .words = &words[0], .word_count = 32 };
     for (uint i = begin; i <= end; i++) {
-        moveelim_add_uses(code[i], &live, true);
-        uint def;
-        if (moveelim_get_def(code[i], &def)) live.set(def);
+        BytecodeOperands o = bytecode_operands(code, i, end);
+        if (!o.ok) {
+            // Undecodable forms stay visible through the role table, which is
+            // exact for every unprefixed instruction.
+            if (code[i].op == Opcode.WIDE) {
+                i = o.next;
+                continue;
+            }
+            live.clear();
+            moveelim_add_uses(code[i], &live, true);
+            uint def;
+            if (moveelim_get_def(code[i], &def)) live.set(def);
+            for (uint reg = 0; reg < LOOP_REGS_MIN; reg++) if (live.test(reg)) low |= 1UL << reg;
+            continue;
+        }
+        if (o.a_reg && o.a < LOOP_REGS_MIN) low |= 1UL << o.a;
+        if (o.b_reg && o.b < LOOP_REGS_MIN) low |= 1UL << o.b;
+        if (o.c_reg && o.c < LOOP_REGS_MIN) low |= 1UL << o.c;
+        i = o.next - 1;
     }
-    return (ulong)words[0] | ((ulong)words[1] << 32);
+    return low;
 }
 
 // Whether [begin, end] reads or writes `reg`.
 fn bool bytecode_register_used(Instruction* code, uint begin, uint end, uint reg) @public {
     if (!moveelim_roles_ready) moveelim_init_roles();
-    uint[8] words;
-    RegSet live = { .words = &words[0], .word_count = 8 };
+    if (reg >= BYTECODE_REGS_MAX) return true;
+    uint[32] words;
+    RegSet live = { .words = &words[0], .word_count = 32 };
     for (uint i = begin; i <= end; i++) {
-        uint def;
-        if (moveelim_get_def(code[i], &def) && def == reg) return true;
-        live.clear();
-        moveelim_add_uses(code[i], &live, true);
-        if (live.test(reg)) return true;
+        BytecodeOperands o = bytecode_operands(code, i, end);
+        if (!o.ok) {
+            if (code[i].op == Opcode.WIDE) {
+                i = o.next;
+                continue;
+            }
+            uint def;
+            if (moveelim_get_def(code[i], &def) && def == reg) return true;
+            live.clear();
+            moveelim_add_uses(code[i], &live, true);
+            if (live.test(reg)) return true;
+            continue;
+        }
+        if ((o.a_reg && o.a == reg) || (o.b_reg && o.b == reg) || (o.c_reg && o.c == reg)) return true;
+        i = o.next - 1;
     }
     return false;
 }
@@ -320,41 +402,53 @@ fn bool bytecode_register_used(Instruction* code, uint begin, uint end, uint reg
 // free low slot. Only plain ABC forms and the A field of A-BC/A-SBX forms are
 // rewritten; a high register inside a call/argument window or another combined
 // operand makes the range unsupported.
-fn bool bytecode_remap_registers(Instruction* code, uint begin, uint end, uint[256] map) @public {
+fn bool bytecode_remap_registers(Instruction* code, uint begin, uint end, uint[BYTECODE_REGS_MAX] map) @public {
     if (!moveelim_roles_ready) moveelim_init_roles();
     for (uint i = begin; i <= end; i++) {
         Instruction ins = code[i];
-        if (ins.op == Opcode.WIDE || ins.op == Opcode.LDINTX) return false;
+        if (ins.op == Opcode.LDINTX) { io::eprintfn("RMX ldintx pc=%d", i); return false; }
         MoveelimRoles r = moveelim_roles[ins.op.ordinal];
         if (r.general) {
-            uint[8] words;
-            RegSet live = { .words = &words[0], .word_count = 8 };
+            if (ins.op == Opcode.WIDE) { io::eprintfn("RMX wide-general pc=%d", i); return false; }
+            uint[32] words;
+            RegSet live = { .words = &words[0], .word_count = 32 };
             moveelim_add_uses(ins, &live, true);
             uint def;
             if (moveelim_get_def(ins, &def)) live.set(def);
-            for (uint reg = LOOP_REGS_MIN; reg < 256; reg++) if (live.test(reg)) return false;
+            for (uint reg = LOOP_REGS_MIN; reg < BYTECODE_REGS_MAX; reg++) if (live.test(reg)) {
+                io::eprintfn("RMX general-high pc=%d op=%s reg=%d", i, ins.op, reg);
+                return false;
+            }
             continue;
         }
-        OpFormat fmt = bytecode::get_op_format(ins.op);
-        if (r.a_read || r.a_write) {
-            if (ins.a >= LOOP_REGS_MIN) {
-                if (map[ins.a] == ins.a) return false;
-                ins.a = (char)map[ins.a];
+        BytecodeOperands o = bytecode_operands(code, i, end);
+        if (!o.ok) { io::eprintfn("RMX undecodable pc=%d op=%s", i, code[i].op); return false; }
+        // Every rewritten operand lands in a low slot, so the pair collapses to
+        // an ordinary instruction and a NOP. Below that, the analysis and the
+        // emitters only ever see the unchanged 8-bit form.
+        uint[3] field;
+        field[0] = o.a;
+        field[1] = o.b;
+        field[2] = o.c;
+        bool[3] is_reg;
+        is_reg[0] = o.a_reg;
+        is_reg[1] = o.b_reg;
+        is_reg[2] = o.c_reg;
+        for (uint f = 0; f < 3; f++) {
+            if (!is_reg[f] || field[f] < LOOP_REGS_MIN) continue;
+            if (field[f] >= BYTECODE_REGS_MAX || map[field[f]] == field[f]) {
+                io::eprintfn("RMX unmapped pc=%d op=%s field=%d reg=%d", i, code[i].op, f, field[f]);
+                return false;
             }
+            field[f] = map[field[f]];
         }
-        if (fmt == OpFormat.ABC) {
-            if (r.b_read && ins.b >= LOOP_REGS_MIN) {
-                if (map[ins.b] == ins.b) return false;
-                ins.b = (char)map[ins.b];
-            }
-            if (r.c_read && ins.c >= LOOP_REGS_MIN) {
-                if (map[ins.c] == ins.c) return false;
-                ins.c = (char)map[ins.c];
-            }
-        } else if ((r.b_read && ins.b >= LOOP_REGS_MIN) || (r.c_read && ins.c >= LOOP_REGS_MIN)) {
-            return false;
-        }
-        code[i] = ins;
+        Instruction payload = code[o.next - 1];
+        payload.a = (char)field[0];
+        payload.b = (char)field[1];
+        payload.c = (char)field[2];
+        code[o.next - 1] = payload;
+        if (ins.op == Opcode.WIDE) code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        i = o.next - 1;
     }
     return true;
 }
