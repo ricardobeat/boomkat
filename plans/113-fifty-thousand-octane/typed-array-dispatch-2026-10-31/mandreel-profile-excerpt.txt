@@ -1,0 +1,16 @@
+776:      372 boomkat.vm.vm_dispatch  (in boomkat) + 124  [0x1005af4a0]
+788:      + 8 boomkat.vm.th_get_typed_element  (in boomkat) + 20,32  [0x10064f058,0x10064f064]
+794:      + 5 boomkat.vm.th_put_typed_element  (in boomkat) + 28,12  [0x10064ea80,0x10064ea70]
+813:      + 16 boomkat.vm.th_put_typed_element  (in boomkat) + 28,12,...  [0x10064ea80,0x10064ea70,...]
+816:      + 8 boomkat.vm.th_get_typed_element  (in boomkat) + 20,32  [0x10064f058,0x10064f064]
+827:      67 boomkat.vm.th_get_typed_element  (in boomkat) + 356,172,...  [0x10064f1a8,0x10064f0f0,...]
+848:      57 boomkat.vm.th_get_typed_element  (in boomkat) + 256  [0x10064f144]
+849:      + 57 boomkat.builtins.ta_load_number  (in boomkat) + 0,8,...  [0x100574004,0x10057400c,...]
+850:      51 boomkat.vm.th_put_typed_element  (in boomkat) + 152,208,...  [0x10064eafc,0x10064eb34,...]
+871:      15 boomkat.vm.vm_dispatch  (in boomkat) + 84,156,...  [0x1005af478,0x1005af4c0,...]
+881:      6 boomkat.vm.th_put_typed_element  (in boomkat) + 248  [0x10064eb5c]
+903:      + 1 boomkat.builtins.ta_load_number  (in boomkat) + 0  [0x100574004]
+922:        boomkat.vm.th_get_typed_element  (in boomkat)        83
+925:        boomkat.vm.th_put_typed_element  (in boomkat)        72
+927:        boomkat.builtins.ta_load_number  (in boomkat)        58
+941:        boomkat.vm.vm_dispatch  (in boomkat)        15
