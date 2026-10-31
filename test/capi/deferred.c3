@@ -28,6 +28,7 @@ fn void main() {
     defer cx.release(late);
     cx.settle_deferred(d, false, late)!!;
     expect(&cx, "observed === 0");
+    cx.release_deferred(d); // the queued adoption job must retain everything it needs
     capi::bk_gc(cx.rt, 1);
     cx.owner.drain_microtasks()!!;
     expect(&cx, "observed === 42");
