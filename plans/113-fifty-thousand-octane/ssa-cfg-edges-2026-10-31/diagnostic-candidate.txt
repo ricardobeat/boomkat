@@ -1,0 +1,15 @@
+SLJIT SSA leaf line=2128 caller_depth=0 commit=0
+SLJIT SSA leaf line=2128 caller_depth=1 commit=0
+SLJIT SSA leaf line=2128 caller_depth=0 commit=0
+SLJIT SSA leaf line=2128 caller_depth=1 commit=0
+SLJIT SSA leaf line=2128 caller_depth=0 commit=0
+SLJIT SSA leaf line=2128 caller_depth=1 commit=0
+SLJIT leaf usage id=46 target_line=2128 hits=0 completed=0 commit=0
+SLJIT leaf usage id=47 target_line=2128 hits=199 completed=199 commit=0
+SLJIT leaf usage id=71 target_line=2128 hits=1594 completed=1594 commit=0
+SLJIT leaf usage id=129 target_line=2128 hits=144 completed=144 commit=0
+SLJIT leaf usage id=129 target_line=2128 hits=8 completed=8 commit=0
+SLJIT leaf usage id=151 target_line=2128 hits=1539 completed=1539 commit=0
+SLJIT leaf usage id=157 target_line=2128 hits=9 completed=9 commit=0
+SLJIT totals functions=163 loops=99 templates=0 hits=39794402 code_bytes=2371472
+SLJIT budget bytes=2371472 limit=4194304 native_work=0 evictions=0

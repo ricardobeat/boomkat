@@ -1,0 +1,186 @@
+== main name="" flags=60001 call_flags=1 regs=11 args=0 formals=0 arguments_reg=0 capture_parent_reg=0
+  [  0] L1 121/0/0/0 CHKGLOBALVAR        r0, 0
+  [  1] L1 121/0/1/0 CHKGLOBALVAR        r0, 1
+  [  2] L1 121/0/2/0 CHKGLOBALVAR        r0, 2
+  [  3] L1 121/0/3/0 CHKGLOBALVAR        r0, 3
+  [  4] L1 121/0/4/0 CHKGLOBALVAR        r0, 4
+  [  5] L1 121/0/5/0 CHKGLOBALVAR        r0, 5
+  [  6] L1 121/0/6/0 CHKGLOBALVAR        r0, 6
+  [  7] L1 121/0/7/0 CHKGLOBALVAR        r0, 7
+  [  8] L1 122/0/8/0 CHKGLOBALFUNC       r0, 8
+  [  9] L1 122/0/9/0 CHKGLOBALFUNC       r0, 9
+  [ 10] L8 86/0/0/0 CLOSURE             r0, 0
+  [ 11] L8 75/0/8/0 DECLGLOBALFUNC      r0, 8
+  [ 12] L9 86/0/1/0 CLOSURE             r0, 1
+  [ 13] L9 75/0/9/0 DECLGLOBALFUNC      r0, 9
+  [ 14] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 15] L1 74/0/0/0 DECLVAR_HOIST       r0, 0
+  [ 16] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 17] L1 74/0/1/0 DECLVAR_HOIST       r0, 1
+  [ 18] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 19] L1 74/0/2/0 DECLVAR_HOIST       r0, 2
+  [ 20] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 21] L1 74/0/3/0 DECLVAR_HOIST       r0, 3
+  [ 22] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 23] L1 74/0/4/0 DECLVAR_HOIST       r0, 4
+  [ 24] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 25] L1 74/0/5/0 DECLVAR_HOIST       r0, 5
+  [ 26] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 27] L1 74/0/6/0 DECLVAR_HOIST       r0, 6
+  [ 28] L1 5/0/0/0 LDUNDEF             r0 = r0, r0
+  [ 29] L1 74/0/7/0 DECLVAR_HOIST       r0, 7
+  [ 30] L10 3/0/0/128 LDINT               r0, 0
+  [ 31] L10 73/0/0/0 DECLVAR             r0, 0
+  [ 32] L10 3/1/136/147 LDINT               r1, +5000
+  [ 33] L10 47/83/0/128 JUMP                +83
+  [ 34] L11 77/3/0/0 GETGLOBAL           r3, 0
+  [ 35] L11 19/3/3/1 BANDI               r3 = r3, +1
+  [ 36] L11 3/4/0/128 LDINT               r4, 0
+  [ 37] L11 40/2/3/4 SNEQ                r2 = r3, r4
+  [ 38] L11 70/2/1/0 PUTVAR              r2, 1
+  [ 39] L11 77/4/0/0 GETGLOBAL           r4, 0
+  [ 40] L11 19/4/4/2 BANDI               r4 = r4, +2
+  [ 41] L11 3/5/0/128 LDINT               r5, 0
+  [ 42] L11 40/3/4/5 SNEQ                r3 = r4, r5
+  [ 43] L11 70/3/2/0 PUTVAR              r3, 2
+  [ 44] L11 77/5/0/0 GETGLOBAL           r5, 0
+  [ 45] L11 19/5/5/4 BANDI               r5 = r5, +4
+  [ 46] L11 3/6/0/128 LDINT               r6, 0
+  [ 47] L11 40/4/5/6 SNEQ                r4 = r5, r6
+  [ 48] L11 70/4/3/0 PUTVAR              r4, 3
+  [ 49] L12 77/3/0/0 GETGLOBAL           r3, 0
+  [ 50] L12 19/3/3/8 BANDI               r3 = r3, +8
+  [ 51] L12 3/4/0/128 LDINT               r4, 0
+  [ 52] L12 40/2/3/4 SNEQ                r2 = r3, r4
+  [ 53] L12 70/2/4/0 PUTVAR              r2, 4
+  [ 54] L12 77/4/0/0 GETGLOBAL           r4, 0
+  [ 55] L12 19/4/4/16 BANDI               r4 = r4, +16
+  [ 56] L12 3/5/0/128 LDINT               r5, 0
+  [ 57] L12 40/3/4/5 SNEQ                r3 = r4, r5
+  [ 58] L12 70/3/5/0 PUTVAR              r3, 5
+  [ 59] L13 77/3/9/0 GETGLOBAL           r3, 9
+  [ 60] L13 77/5/0/0 GETGLOBAL           r5, 0
+  [ 61] L13 77/6/1/0 GETGLOBAL           r6, 1
+  [ 62] L13 77/7/2/0 GETGLOBAL           r7, 2
+  [ 63] L13 77/8/3/0 GETGLOBAL           r8, 3
+  [ 64] L13 77/9/4/0 GETGLOBAL           r9, 4
+  [ 65] L13 77/10/5/0 GETGLOBAL           r10, 5
+  [ 66] L13 135/3/3/6 CALL_UNDEF_THIS     r3 = r3, r6
+  [ 67] L13 0/2/3/0 LDREG               r2 = r3, r0
+  [ 68] L13 70/2/6/0 PUTVAR              r2, 6
+  [ 69] L14 77/3/0/0 GETGLOBAL           r3, 0
+  [ 70] L14 77/4/1/0 GETGLOBAL           r4, 1
+  [ 71] L14 49/4/2/128 IF_FALSE            r4, +2
+  [ 72] L14 3/5/1/128 LDINT               r5, +1
+  [ 73] L14 47/2/0/128 JUMP                +2
+  [ 74] L14 3/6/0/128 LDINT               r6, 0
+  [ 75] L14 0/5/6/0 LDREG               r5 = r6, r0
+  [ 76] L14 10/3/3/5 ADD                 r3 = r3, r5
+  [ 77] L14 77/5/2/0 GETGLOBAL           r5, 2
+  [ 78] L14 49/5/2/128 IF_FALSE            r5, +2
+  [ 79] L14 3/6/2/128 LDINT               r6, +2
+  [ 80] L14 47/2/0/128 JUMP                +2
+  [ 81] L14 3/7/0/128 LDINT               r7, 0
+  [ 82] L14 0/6/7/0 LDREG               r6 = r7, r0
+  [ 83] L14 10/3/3/6 ADD                 r3 = r3, r6
+  [ 84] L14 77/6/3/0 GETGLOBAL           r6, 3
+  [ 85] L14 49/6/2/128 IF_FALSE            r6, +2
+  [ 86] L14 3/7/4/128 LDINT               r7, +4
+  [ 87] L14 47/2/0/128 JUMP                +2
+  [ 88] L14 3/8/0/128 LDINT               r8, 0
+  [ 89] L14 0/7/8/0 LDREG               r7 = r8, r0
+  [ 90] L14 10/3/3/7 ADD                 r3 = r3, r7
+  [ 91] L14 77/7/4/0 GETGLOBAL           r7, 4
+  [ 92] L14 49/7/2/128 IF_FALSE            r7, +2
+  [ 93] L14 3/8/8/128 LDINT               r8, +8
+  [ 94] L14 47/2/0/128 JUMP                +2
+  [ 95] L14 3/9/0/128 LDINT               r9, 0
+  [ 96] L14 0/8/9/0 LDREG               r8 = r9, r0
+  [ 97] L14 10/3/3/8 ADD                 r3 = r3, r8
+  [ 98] L14 77/8/5/0 GETGLOBAL           r8, 5
+  [ 99] L14 49/8/3/128 IF_FALSE            r8, +3
+  [100] L14 3/10/16/128 LDINT               r10, +16
+  [101] L14 0/9/10/0 LDREG               r9 = r10, r0
+  [102] L14 47/2/0/128 JUMP                +2
+  [103] L14 3/10/0/128 LDINT               r10, 0
+  [104] L14 0/9/10/0 LDREG               r9 = r10, r0
+  [105] L14 10/3/3/9 ADD                 r3 = r3, r9
+  [106] L14 18/3/3/2 MULI                r3 = r3, +2
+  [107] L14 16/2/3/1 ADDI                r2 = r3, +1
+  [108] L14 70/2/7/0 PUTVAR              r2, 7
+  [109] L15 77/2/6/0 GETGLOBAL           r2, 6
+  [110] L15 77/3/7/0 GETGLOBAL           r3, 7
+  [111] L15 40/2/2/3 SNEQ                r2 = r2, r3
+  [112] L15 49/2/3/128 IF_FALSE            r2, +3
+  [113] L15 1/4/11/0 LDCONST             r4, 11
+  [114] L15 137/2/1/10 CALL_GLOBAL         r2, argc=1, K[10]
+  [115] L15 92/2/0/0 THROW               r2 = r0, r0
+  [116] L10 164/2/0/0 INC_GLOBAL          r2, 0
+  [117] L10 67/2/0/0 GETVAR              r2, 0
+  [118] L10 170/171/2/1 JMP_LT              -85, r2, r1
+  [119] L17 1/2/13/0 LDCONST             r2, 13
+  [120] L17 137/0/1/12 CALL_GLOBAL         r0, argc=1, K[12]
+  [121] L17 66/0/0/0 RETUNDEF            
+  K[0] = "j"
+  K[1] = "a"
+  K[2] = "b"
+  K[3] = "c"
+  K[4] = "d"
+  K[5] = "e"
+  K[6] = "got"
+  K[7] = "expected"
+  K[8] = "manyBlocks"
+  K[9] = "driveBlocks"
+  K[10] = "Error"
+  K[11] = "many blocks"
+  K[12] = "print"
+  K[13] = "many blocks: PASS"
+== main.0 name="manyBlocks" flags=10001 call_flags=1 regs=8 args=6 formals=6 arguments_reg=0 capture_parent_reg=0
+  [  0] L2 49/1/2/128 IF_FALSE            r1, +2
+  [  1] L2 3/6/1/128 LDINT               r6, +1
+  [  2] L2 10/0/0/6 ADD                 r0 = r0, r6
+  [  3] L3 49/2/2/128 IF_FALSE            r2, +2
+  [  4] L3 3/6/2/128 LDINT               r6, +2
+  [  5] L3 10/0/0/6 ADD                 r0 = r0, r6
+  [  6] L4 49/3/2/128 IF_FALSE            r3, +2
+  [  7] L4 3/6/4/128 LDINT               r6, +4
+  [  8] L4 10/0/0/6 ADD                 r0 = r0, r6
+  [  9] L5 49/4/2/128 IF_FALSE            r4, +2
+  [ 10] L5 3/6/8/128 LDINT               r6, +8
+  [ 11] L5 10/0/0/6 ADD                 r0 = r0, r6
+  [ 12] L6 49/5/1/128 IF_FALSE            r5, +1
+  [ 13] L6 16/0/0/16 ADDI                r0 = r0, +16
+  [ 14] L7 18/7/0/2 MULI                r7 = r0, +2
+  [ 15] L7 65/7/0/0 RET                 r7 = r0, r0
+  K[0] = "x"
+  K[1] = "a"
+  K[2] = "b"
+  K[3] = "c"
+  K[4] = "d"
+  K[5] = "e"
+  src="function manyBlocks(x, a, b, c, d, e) {
+    if (a) x = x + 1;
+    if (b) x = x + 2;
+    if (c) x = x + 4;
+    if (d) x = x + 8;
+    if (e) x = x + 16;
+    return x * 2;
+}"
+== main.1 name="driveBlocks" flags=10001 call_flags=1 regs=14 args=6 formals=6 arguments_reg=0 capture_parent_reg=0
+  [  0] L9 0/8/0/0 LDREG               r8 = r0, r0
+  [  1] L9 0/9/1/0 LDREG               r9 = r1, r0
+  [  2] L9 0/10/2/0 LDREG               r10 = r2, r0
+  [  3] L9 0/11/3/0 LDREG               r11 = r3, r0
+  [  4] L9 0/12/4/0 LDREG               r12 = r4, r0
+  [  5] L9 0/13/5/0 LDREG               r13 = r5, r0
+  [  6] L9 137/6/6/6 CALL_GLOBAL         r6, argc=6, K[6]
+  [  7] L9 16/6/6/1 ADDI                r6 = r6, +1
+  [  8] L9 65/6/0/0 RET                 r6 = r0, r0
+  K[0] = "x"
+  K[1] = "a"
+  K[2] = "b"
+  K[3] = "c"
+  K[4] = "d"
+  K[5] = "e"
+  K[6] = "manyBlocks"
+  src="function driveBlocks(x, a, b, c, d, e) { return manyBlocks(x, a, b, c, d, e) + 1; }"

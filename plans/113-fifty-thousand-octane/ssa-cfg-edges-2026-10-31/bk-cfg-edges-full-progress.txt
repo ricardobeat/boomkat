@@ -1,0 +1,12 @@
+start 0 0
+done 0 0 score 6571 seconds 83.3
+start 0 1
+done 0 1 score 6565 seconds 83.2
+start 1 1
+done 1 1 score 6561 seconds 83.0
+start 1 0
+done 1 0 score 6573 seconds 83.4
+start 2 0
+done 2 0 score 6574 seconds 83.3
+start 2 1
+done 2 1 score 6589 seconds 82.9

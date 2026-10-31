@@ -1,0 +1,23 @@
+SLJIT SSA leaf reject line=2 stage=graph
+SLJIT function compiled  pc=0..122 function_ops=122 regs=11 code_bytes=26592 plan_bytes=16090
+many blocks: PASS
+SLJIT coverage id=0 line=2 ops=16 regs=8 captures=0 name=manyBlocks threaded=706 switch=0 attempts=62 warmup=46 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1 line=9 ops=9 regs=14 captures=0 name=driveBlocks threaded=558 switch=15 attempts=62 warmup=46 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=2 line=1 ops=122 regs=11 captures=0 name= threaded=172187 switch=35065 attempts=9926 warmup=4294967295 retired=6 active=32 rejection=compiled
+SLJIT native id=2 calls=0 returns=0
+SLJIT pipeline id=2 inlined=9876 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=2 homes=0
+SLJIT SSA calls id=2 frameless=0
+SLJIT code id=2 start=0x100ca0010 bytes=26592 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=122 bytes=26592 hits=9925 returns=1 stalled=1 charged_edges=0 budget_exits=0 id=2 line=1
+SLJIT exit  begin=0 pc=38 op=70 count=8 id=2 line=11 opcode=PUTVAR
+SLJIT exit  begin=0 pc=43 op=70 count=8 id=2 line=11 opcode=PUTVAR
+SLJIT exit  begin=0 pc=48 op=70 count=8 id=2 line=11 opcode=PUTVAR
+SLJIT exit  begin=0 pc=53 op=70 count=8 id=2 line=12 opcode=PUTVAR
+SLJIT exit  begin=0 pc=58 op=70 count=8 id=2 line=12 opcode=PUTVAR
+SLJIT exit  begin=0 pc=68 op=70 count=4938 id=2 line=13 opcode=PUTVAR
+SLJIT exit  begin=0 pc=108 op=70 count=4938 id=2 line=14 opcode=PUTVAR
+SLJIT exit  begin=0 pc=111 op=40 count=8 id=2 line=15 opcode=SNEQ
+SLJIT exit  begin=0 pc=121 op=66 count=1 id=2 line=17 opcode=RETUNDEF
+SLJIT totals functions=1 loops=0 templates=0 hits=9925 code_bytes=26592
+SLJIT budget bytes=26592 limit=4194304 native_work=0 evictions=0

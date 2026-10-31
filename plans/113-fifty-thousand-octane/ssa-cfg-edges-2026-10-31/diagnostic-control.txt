@@ -1,0 +1,9 @@
+SLJIT SSA leaf reject line=2128 stage=graph
+SLJIT SSA entry reject line=2128 stage=build pc=0
+SLJIT SSA leaf reject line=2128 stage=graph
+SLJIT SSA leaf reject line=2128 stage=graph
+SLJIT SSA leaf reject line=2128 stage=graph
+SLJIT SSA leaf reject line=2128 stage=graph
+SLJIT SSA leaf reject line=2128 stage=graph
+SLJIT totals functions=159 loops=98 templates=0 hits=39977648 code_bytes=2372852
+SLJIT budget bytes=2372852 limit=4194304 native_work=0 evictions=0

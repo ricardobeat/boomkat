@@ -1,0 +1,43 @@
+== main.20 name="nbits" flags=10001 call_flags=1 regs=6 args=1 formals=1 arguments_reg=0 capture_parent_reg=0
+  [  0] L705 3/1/1/128 LDINT               r1, +1
+  [  1] L706 24/2/0/16 USHRI               r2 = r0, +16
+  [  2] L706 3/4/0/128 LDINT               r4, 0
+  [  3] L706 176/3/2/4 JMP_EQ              +3, r2, r4
+  [  4] L706 0/0/2/0 LDREG               r0 = r2, r0
+  [  5] L706 3/5/16/128 LDINT               r5, +16
+  [  6] L706 10/1/1/5 ADD                 r1 = r1, r5
+  [  7] L707 23/2/0/8 SHRI                r2 = r0, +8
+  [  8] L707 3/4/0/128 LDINT               r4, 0
+  [  9] L707 176/3/2/4 JMP_EQ              +3, r2, r4
+  [ 10] L707 0/0/2/0 LDREG               r0 = r2, r0
+  [ 11] L707 3/5/8/128 LDINT               r5, +8
+  [ 12] L707 10/1/1/5 ADD                 r1 = r1, r5
+  [ 13] L708 23/2/0/4 SHRI                r2 = r0, +4
+  [ 14] L708 3/4/0/128 LDINT               r4, 0
+  [ 15] L708 176/3/2/4 JMP_EQ              +3, r2, r4
+  [ 16] L708 0/0/2/0 LDREG               r0 = r2, r0
+  [ 17] L708 3/5/4/128 LDINT               r5, +4
+  [ 18] L708 10/1/1/5 ADD                 r1 = r1, r5
+  [ 19] L709 23/2/0/2 SHRI                r2 = r0, +2
+  [ 20] L709 3/4/0/128 LDINT               r4, 0
+  [ 21] L709 176/3/2/4 JMP_EQ              +3, r2, r4
+  [ 22] L709 0/0/2/0 LDREG               r0 = r2, r0
+  [ 23] L709 3/5/2/128 LDINT               r5, +2
+  [ 24] L709 10/1/1/5 ADD                 r1 = r1, r5
+  [ 25] L710 23/2/0/1 SHRI                r2 = r0, +1
+  [ 26] L710 3/4/0/128 LDINT               r4, 0
+  [ 27] L710 176/2/2/4 JMP_EQ              +2, r2, r4
+  [ 28] L710 0/0/2/0 LDREG               r0 = r2, r0
+  [ 29] L710 16/1/1/1 ADDI                r1 = r1, +1
+  [ 30] L711 65/1/0/0 RET                 r1 = r0, r0
+  K[0] = "x"
+  K[1] = "r"
+  K[2] = "t"
+  src="function nbits(x) {
+  var r = 1, t;
+  if((t=x>>>16) != 0) { x = t; r += 16; }
+  if((t=x>>8) != 0) { x = t; r += 8; }
+  if((t=x>>4) != 0) { x = t; r += 4; }
+  if((t=x>>2) != 0) { x = t; r += 2; }
+  if((t=x>>1) != 0) { x = t; r += 1; }
+  return r;
