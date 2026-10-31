@@ -14,7 +14,14 @@ import std::io;
 // Native chunks cannot allocate or enter JS. Guard exits resume at the failing
 // instruction after publishing completed stores and dirty registers.
 const uint LOOP_REGS      = 64;
-const uint LOOP_OPS       = 128;
+// The straight-line tier keeps one label per bytecode in the loop, so its span
+// is bounded by the emitter's label table. Whole loops of this size are common
+// in generated code; a longer one stays in the interpreter.
+const uint LOOP_SPAN      = 512;
+// The shared SSA graph keeps an interpreter frame per bytecode and per register,
+// which costs 64 words per op, so its span is bounded separately and a longer
+// loop falls back to the straight-line tier.
+const uint SSA_SPAN       = 128;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
 const uint LOOP_THIS      = LOOP_REGS + LOOP_BINDINGS;
@@ -111,9 +118,9 @@ struct LoopPlan @feat(SLJIT) {
     uint[LOOP_BINDINGS] bindings;
     CompiledFunction*[LOOP_BINDINGS] binding_functions;
     uint binding_count;
-    char[LOOP_OPS] memory_at;
-    char[LOOP_OPS] binding_at;
-    char[LOOP_OPS] intrinsic_at;
+    char[LOOP_SPAN] memory_at;
+    char[LOOP_SPAN] binding_at;
+    char[LOOP_SPAN] intrinsic_at;
     // General registers hold boxed bits; floating registers hold numeric values.
     // Canonical registers are loop-carried integers: an integral double is
     // rewritten to the fastint representation once at entry.
@@ -130,6 +137,8 @@ struct LoopPlan @feat(SLJIT) {
     int[LOOP_REGS] slot_reg;
     ulong hits;
     ulong iterations;
+    // Consecutive entries that completed no iteration.
+    uint short_runs;
     ulong ssa_hits @if($feat(SLJIT_STATS));
     ulong ssa_iterations @if($feat(SLJIT_STATS));
 }
@@ -491,7 +500,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
     CompiledFunction* cf = feedback ? target_cf : cold.vm.current_func;
     int begin            = region_begin >= 0 ? region_begin : loop_target(cf.code[end], end);
     uint window = cf.num_regs < LOOP_REGS ? cf.num_regs : LOOP_REGS;
-    if (begin < 0 || begin >= (int)end || end - (uint)begin >= LOOP_OPS
+    if (begin < 0 || begin >= (int)end || end - (uint)begin >= LOOP_SPAN
         || cf.flags.is_generator
         || cf.flags.is_async
         || cf.flags.has_direct_eval
@@ -1806,7 +1815,7 @@ fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @in
     if ((cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return false;
     if (cf.num_regs > LOOP_REGS) {
         int target = loop_target(*pc, offset);
-        if (target < 0 || target >= (int)offset || offset - (uint)target >= LOOP_OPS) {
+        if (target < 0 || target >= (int)offset || offset - (uint)target >= LOOP_SPAN) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return false;
         }
@@ -1849,10 +1858,10 @@ fn void loop_import_state(LoopPlan* plan, LoopState* state, TVal* regs, uint win
 fn bool loop_highreg_compile(CompiledFunction* cf, uint offset, TVal* regs, ColdCtx* cold, Heap* h,
     LoopPlan* draft) @feat(SLJIT) {
     int target = loop_target(cf.code[offset], offset);
-    if (target < 0 || offset - (uint)target >= LOOP_OPS) return false;
+    if (target < 0 || offset - (uint)target >= LOOP_SPAN) return false;
     uint[compiler::BYTECODE_REGS_MAX] map;
     int[LOOP_REGS] slot_reg;
-    Instruction[LOOP_OPS] saved;
+    Instruction[LOOP_SPAN] saved;
     if (!loop_highreg_prepare(cf, (uint)target, offset, &map, &slot_reg, false)) return false;
     for (uint q = 0; q <= offset - (uint)target; q++) saved[q] = cf.code[(uint)target + q];
     defer {
@@ -1886,7 +1895,7 @@ fn LoopNative loop_reemit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool ss
         map[reg] = i;
         aliased = true;
     }
-    Instruction[LOOP_OPS] saved;
+    Instruction[LOOP_SPAN] saved;
     uint span = plan.end - plan.begin;
     if (aliased) for (uint q = 0; q <= span; q++) saved[q] = cf.code[plan.begin + q];
     defer if (aliased) for (uint q = 0; q <= span; q++) cf.code[plan.begin + q] = saved[q];
@@ -1905,6 +1914,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     uint offset = (uint)(pc - cf.code);
     uint window = cf.num_regs < LOOP_REGS ? cf.num_regs : LOOP_REGS;
     if (loop_target(*pc, offset) != (int)(body - cf.code)) return body;
+    // A retired edge stays retired: the plan may still be linked below, but
+    // re-entering it has been measured as a loss.
+    if ((cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return body;
     long budget     = h.bwd_gc_budget;
     bool interrupts = h.capi_runtime != null || h.capi_interrupt_fn != null;
     if (interrupts && (long)h.interrupt_budget < budget) budget = h.interrupt_budget;
@@ -2062,7 +2074,12 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     uint ready = 1U << (offset & 31);
     if (consumed == 0 && resume_pc >= plan.begin && resume_pc <= plan.end) {
         cf.sljit_loop_ready &= ~ready;
+        // The loop tier shares the function tier's rule: a plan that keeps
+        // being entered without completing an iteration only pays for an entry
+        // and a publication, so let the interpreter own the loop.
+        if (++plan.short_runs >= 8) cf.sljit_loop_rejected |= 1UL << (offset & 63);
     } else {
+        plan.short_runs = 0;
         cf.sljit_loop_ready |= ready;
     }
     h.bwd_gc_budget -= consumed;

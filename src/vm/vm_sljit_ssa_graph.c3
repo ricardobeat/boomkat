@@ -190,7 +190,7 @@ struct SsaGraph @feat(SLJIT) {
     int[LOOP_REGS] header;
     // Interpreter state before each bytecode, including values whose only
     // remaining use is recovery after a guard. IR-use liveness is insufficient.
-    int[LOOP_REGS][LOOP_OPS + 1] frames;
+    int[LOOP_REGS][SSA_SPAN + 1] frames;
     int[LOOP_REGS] phi;
     int[LOOP_REGS] arg;
     SsaRep[LOOP_REGS] rep;
@@ -444,6 +444,7 @@ fn int ssa_block_of(SsaGraph* g, uint pc) @feat(SLJIT) {
 fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
     // Unsupported graphs retain the straight-line loop implementation.
     if (!SSA_ENABLED || plan.memory_count > LOOP_MEMORY) return false;
+    if (plan.end - plan.begin >= SSA_SPAN) return false;
     for (uint i = 0; i < plan.memory_count; i++) {
         LoopMemoryKind kind = plan.memory[i].kind;
         if (kind == ASCII || kind == INTRINSIC) return false;

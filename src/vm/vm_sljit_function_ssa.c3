@@ -12,7 +12,7 @@ import std::io;
 // preparation is needed: guards can
 // restart the untouched baseline frame, and only the result is published.
 fn LoopPlan* sljit_function_ssa_compile(CompiledFunction* cf, ColdCtx* cold) @feat(SLJIT) {
-    if (cf.num_regs > LOOP_REGS || cf.code_count > LOOP_OPS || cf.code_count < 9) return null;
+    if (cf.num_regs > LOOP_REGS || cf.code_count > SSA_SPAN || cf.code_count < 9) return null;
     for (uint pc = 0; pc < cf.code_count; pc++) {
         if (function_call_op(cf.code[pc].op) && function_inline_ssa_candidate(cf, pc, cold.heap) == null) return null;
     }
