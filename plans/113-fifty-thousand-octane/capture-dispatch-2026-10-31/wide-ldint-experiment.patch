@@ -1,0 +1,28 @@
+diff --git a/src/vm/vm_execute_threaded.c3 b/src/vm/vm_execute_threaded.c3
+index 5f332d7c..b979a31d 100644
+--- a/src/vm/vm_execute_threaded.c3
++++ b/src/vm/vm_execute_threaded.c3
+@@ -1761,6 +1761,14 @@ fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
+     Instruction ext = pc[0];
+     Instruction insn = pc[1];
+     uint a = ((uint)ext.a << 8) | insn.a;
++    if (insn.op == Opcode.LDINT) {
++        TVal* ra = regs + a;
++        if (!th_can_release(ra)) return pc;
++        long result = th_wide_sbc(ext, insn);
++        th_do_release(ra);
++        ra.set_fastint(result);
++        return th_next(pc + 2, handlers, regs, cold);
++    }
+     TVal* rb = regs + (((uint)ext.b << 8) | insn.b);
+     TVal* rc = regs + (((uint)ext.c << 8) | insn.c);
+     TVal* ra = regs + a;
+@@ -1769,8 +1777,6 @@ fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
+         case Opcode.LDREG:
+             if (!th_move(regs, a, *rb, cold)) return pc;
+             return th_next(pc + 2, handlers, regs, cold);
+-        case Opcode.LDINT:
+-            result = th_wide_sbc(ext, insn);
+         case Opcode.ADD:
+         case Opcode.SUB:
+             if (!types::both_fastint(rb, rc)) return pc;

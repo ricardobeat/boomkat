@@ -1,0 +1,92 @@
+[31020]   (wide-prefix)
+[31023] LDREG               r386 = r485, r0
+[31022]   (wide-prefix)
+[31025] LDINT               r484, 0
+[31024]   (wide-prefix)
+[31027] USHR                r485 = r386, r484
+[31026]   (wide-prefix)
+[31029] LDINT               r486, +2
+[31028]   (wide-prefix)
+[31031] GT                  r485 = r485, r486
+[31030]   (wide-prefix)
+[31033] IF_FALSE            r485, +6
+[31032]   (wide-prefix)
+[31034] LDREG               r48 = r35, r0
+[31036] LDREG               r36 = r386, r0
+[31035]   (wide-prefix)
+[31038] LDREG               r54 = r385, r0
+[31037]   (wide-prefix)
+[31039] JUMP                +1
+[31040] JUMP                +4
+[31042] LDINT               r484, +1
+[31041]   (wide-prefix)
+[31044] IF_TRUE             r484, -127
+[31043]   (wide-prefix)
+[31046] LDINT               r484, 0
+[31045]   (wide-prefix)
+[31048] BOR                 r485 = r386, r484
+[31047]   (wide-prefix)
+[31050] LDINT               r486, 0
+[31049]   (wide-prefix)
+[31052] EQ                  r485 = r485, r486
+[31051]   (wide-prefix)
+[31054] IF_FALSE            r485, +9
+[31053]   (wide-prefix)
+[31056] LDREG               r387 = r380, r0
+[31055]   (wide-prefix)
+[31058] LDREG               r388 = r385, r0
+[31057]   (wide-prefix)
+[31060] LDREG               r389 = r383, r0
+[31059]   (wide-prefix)
+[31062] LDREG               r390 = r384, r0
+[31061]   (wide-prefix)
+[31063] JUMP                +931
+[31065] LDINT               r484, +4
+[31064]   (wide-prefix)
+[31067] ADD                 r485 = r54, r484
+[31066]   (wide-prefix)
+[31069] LDINT               r486, 0
+[31068]   (wide-prefix)
+[31071] BOR                 r485 = r485, r486
+[31070]   (wide-prefix)
+[31073] LDREG               r36 = r485, r0
+[31072]   (wide-prefix)
+[31075] GETVAR              r484, 485
+[31074]   (wide-prefix)
+[31077] LDREG               r485 = r36, r0
+[31076]   (wide-prefix)
+[31079] GETVAR              r487, 485
+[31078]   (wide-prefix)
+[31081] LDINT               r488, +4
+[31080]   (wide-prefix)
+[31083] ADD                 r489 = r48, r488
+[31082]   (wide-prefix)
+[31085] LDINT               r490, 0
+[31084]   (wide-prefix)
+[31087] BOR                 r489 = r489, r490
+[31086]   (wide-prefix)
+[31089] GETPROP             r490 = r487, r489
+[31088]   (wide-prefix)
+[31091] LDINT               r491, 0
+[31090]   (wide-prefix)
+[31093] BOR                 r490 = r490, r491
+[31092]   (wide-prefix)
+[31095] PUTPROP             r484 = r485, r490
+[31094]   (wide-prefix)
+[31097] LDREG               r491 = r490, r0
+[31096]   (wide-prefix)
+[31099] LDINT               r484, 0
+[31098]   (wide-prefix)
+[31101] USHR                r485 = r386, r484
+[31100]   (wide-prefix)
+[31103] LDINT               r486, +1
+[31102]   (wide-prefix)
+[31105] LE                  r485 = r485, r486
+[31104]   (wide-prefix)
+[31107] IF_FALSE            r485, +9
+[31106]   (wide-prefix)
+[31109] LDREG               r387 = r380, r0
+[31108]   (wide-prefix)
+[31111] LDREG               r388 = r36, r0
+[31110]   (wide-prefix)
+[31113] LDREG               r389 = r383, r0

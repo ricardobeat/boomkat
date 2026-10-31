@@ -1,0 +1,310 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALVAR        r0, 1
+[  2] CHKGLOBALVAR        r0, 2
+[  3] CHKGLOBALVAR        r0, 3
+[  4] CHKGLOBALVAR        r0, 4
+[  5] CHKGLOBALVAR        r0, 5
+[  6] CHKGLOBALFUNC       r0, 6
+[  7] CHKGLOBALFUNC       r0, 7
+[  8] CHKGLOBALFUNC       r0, 8
+[  9] CLOSURE             r0, 0
+[ 10] DECLGLOBALFUNC      r0, 6
+[ 11] CLOSURE             r0, 1
+[ 12] DECLGLOBALFUNC      r0, 7
+[ 13] CLOSURE             r0, 2
+[ 14] DECLGLOBALFUNC      r0, 8
+[ 15] LDUNDEF             r0 = r0, r0
+[ 16] DECLVAR_HOIST       r0, 0
+[ 17] LDUNDEF             r0 = r0, r0
+[ 18] DECLVAR_HOIST       r0, 1
+[ 19] LDUNDEF             r0 = r0, r0
+[ 20] DECLVAR_HOIST       r0, 2
+[ 21] LDUNDEF             r0 = r0, r0
+[ 22] DECLVAR_HOIST       r0, 3
+[ 23] LDUNDEF             r0 = r0, r0
+[ 24] DECLVAR_HOIST       r0, 4
+[ 25] LDUNDEF             r0 = r0, r0
+[ 26] DECLVAR_HOIST       r0, 5
+[ 27] GETGLOBAL           r1, 6
+[ 28] LDCONST             r3, 9
+[ 29] CALL_UNDEF_THIS     r1 = r1, r1
+[ 30] LDREG               r0 = r1, r0
+[ 31] PUTVAR              r0, 0
+[ 32] LDINT               r0, 0
+[ 33] DECLVAR             r0, 1
+[ 34] LDINT               r1, +5000
+[ 35] JUMP                +12
+[ 36] GETGLOBAL           r2, 0
+[ 37] LDINT               r3, 0
+[ 38] GETPROP             r4 = r2, r3
+[ 39] LDREG               r5 = r2, r0
+[ 40] CALL                r4 = r4, r0
+[ 41] LDCONST             r5, 10
+[ 42] SNEQ                r4 = r4, r5
+[ 43] IF_FALSE            r4, +3
+[ 44] LDCONST             r6, 12
+[ 45] CALL_GLOBAL         r4, argc=1, K[11]
+[ 46] THROW               r4 = r0, r0
+[ 47] INC_GLOBAL          r2, 1
+[ 48] GETVAR              r2, 1
+[ 49] JMP_LT              -14, r2, r1
+[ 50] GETGLOBAL           r0, 0
+[ 51] LDINT               r1, +1
+[ 52] GETPROP             r2 = r0, r1
+[ 53] LDREG               r3 = r0, r0
+[ 54] LDCONST             r4, 13
+[ 55] CALL                r2 = r2, r1
+[ 56] GETGLOBAL           r0, 0
+[ 57] LDINT               r1, 0
+[ 58] GETPROP             r2 = r0, r1
+[ 59] LDREG               r3 = r0, r0
+[ 60] CALL                r2 = r2, r0
+[ 61] LDINT               r3, -1
+[ 62] SNEQ                r2 = r2, r3
+[ 63] IF_FALSE            r2, +3
+[ 64] LDCONST             r4, 14
+[ 65] CALL_GLOBAL         r2, argc=1, K[11]
+[ 66] THROW               r2 = r0, r0
+[ 67] GETGLOBAL           r0, 0
+[ 68] LDINT               r1, +1
+[ 69] GETPROP             r2 = r0, r1
+[ 70] LDREG               r3 = r0, r0
+[ 71] LDCONST             r4, 15
+[ 72] CALL                r2 = r2, r1
+[ 73] GETGLOBAL           r0, 0
+[ 74] LDINT               r1, 0
+[ 75] GETPROP             r2 = r0, r1
+[ 76] LDREG               r3 = r0, r0
+[ 77] CALL                r2 = r2, r0
+[ 78] LDINT               r3, +3
+[ 79] SNEQ                r2 = r2, r3
+[ 80] IF_FALSE            r2, +3
+[ 81] LDCONST             r4, 16
+[ 82] CALL_GLOBAL         r2, argc=1, K[11]
+[ 83] THROW               r2 = r0, r0
+[ 84] LDINT               r1, 0
+[ 85] LDREG               r0 = r1, r0
+[ 86] PUTVAR              r0, 2
+[ 87] GETGLOBAL           r0, 0
+[ 88] LDINT               r1, +1
+[ 89] GETPROP             r2 = r0, r1
+[ 90] LDREG               r3 = r0, r0
+[ 91] NEWOBJ_SHAPE        r4, 17
+[ 92] CLOSURE             r6, 3
+[ 93] INIT_SLOT           r4 = r0, r6
+[ 94] CALL                r2 = r2, r1
+[ 95] GETGLOBAL           r0, 0
+[ 96] LDINT               r1, 0
+[ 97] GETPROP             r2 = r0, r1
+[ 98] LDREG               r3 = r0, r0
+[ 99] CALL                r2 = r2, r0
+[100] LDINT               r3, +10
+[101] SNEQ                r2 = r2, r3
+[102] IF_TRUE             r2, +3
+[103] GETGLOBAL           r3, 2
+[104] LDINT               r4, +1
+[105] SNEQ                r2 = r3, r4
+[106] IF_FALSE            r2, +3
+[107] LDCONST             r4, 18
+[108] CALL_GLOBAL         r2, argc=1, K[11]
+[109] THROW               r2 = r0, r0
+[110] GETGLOBAL           r0, 0
+[111] LDINT               r1, +1
+[112] GETPROP             r2 = r0, r1
+[113] LDREG               r3 = r0, r0
+[114] NEWOBJ_SHAPE        r4, 17
+[115] CLOSURE             r6, 4
+[116] INIT_SLOT           r4 = r0, r6
+[117] CALL                r2 = r2, r1
+[118] TRY                 r1, 14
+[119] NOP                 
+[120] GETGLOBAL           r0, 0
+[121] LDINT               r1, 0
+[122] GETPROP             r2 = r0, r1
+[123] LDREG               r3 = r0, r0
+[124] CALL                r2 = r2, r0
+[125] GETGLOBAL           r0, 11
+[126] LDREG               r1 = r0, r0
+[127] LDCONST             r3, 19
+[128] CALL_UNDEF_THIS     r1 = r1, r1
+[129] THROW               r1 = r0, r0
+[130] ENDTRY              
+[131] JUMP                +15
+[132] CATCH               r0 = r0, r0
+[133] PUSH_LEX            
+[134] PUTLEX              r0, 20
+[135] GETVAR              r1, 20
+[136] GETPROPC            r2 = r1, r21
+[137] LDCONST             r3, 22
+[138] SNEQ                r2 = r2, r3
+[139] IF_TRUE             r2, +3
+[140] GETVAR              r3, 2
+[141] LDINT               r4, +2
+[142] SNEQ                r2 = r3, r4
+[143] IF_FALSE            r2, +2
+[144] GETVAR              r2, 20
+[145] THROW               r2 = r0, r0
+[146] POP_LEX             
+[147] GETGLOBAL           r0, 0
+[148] LDINT               r1, +1
+[149] GETPROP             r2 = r0, r1
+[150] LDREG               r3 = r0, r0
+[151] LDINT               r4, +32
+[152] CALL                r2 = r2, r1
+[153] GETGLOBAL           r0, 0
+[154] LDINT               r1, 0
+[155] GETPROP             r2 = r0, r1
+[156] LDREG               r3 = r0, r0
+[157] CALL                r2 = r2, r0
+[158] LDINT               r3, +4
+[159] SNEQ                r2 = r2, r3
+[160] IF_FALSE            r2, +3
+[161] LDCONST             r4, 23
+[162] CALL_GLOBAL         r2, argc=1, K[11]
+[163] THROW               r2 = r0, r0
+[164] CALL_GLOBAL         r0, argc=0, K[7]
+[165] LDINT               r1, +2
+[166] SNEQ                r0 = r0, r1
+[167] IF_FALSE            r0, +3
+[168] LDCONST             r2, 24
+[169] CALL_GLOBAL         r0, argc=1, K[11]
+[170] THROW               r0 = r0, r0
+[171] GETGLOBAL           r1, 8
+[172] NEWARR_CONST        r3, 25
+[173] CALL_UNDEF_THIS     r1 = r1, r1
+[174] LDREG               r0 = r1, r0
+[175] PUTVAR              r0, 3
+[176] LDINT               r0, 0
+[177] DECLVAR             r0, 4
+[178] LDINT               r1, +5000
+[179] JUMP                +9
+[180] LDINT               r4, +8
+[181] CALL_GLOBAL         r2, argc=1, K[3]
+[182] LDINT               r3, +11
+[183] SNEQ                r2 = r2, r3
+[184] IF_FALSE            r2, +3
+[185] LDCONST             r4, 29
+[186] CALL_GLOBAL         r2, argc=1, K[11]
+[187] THROW               r2 = r0, r0
+[188] INC_GLOBAL          r2, 4
+[189] GETVAR              r2, 4
+[190] LT                  r3 = r2, r1
+[191] IF_TRUE             r3, -12
+[192] LDINT               r1, 0
+[193] LDREG               r0 = r1, r0
+[194] PUTVAR              r0, 5
+[195] GETGLOBAL           r0, 3
+[196] NEWOBJ_SHAPE        r2, 17
+[197] CLOSURE             r4, 5
+[198] INIT_SLOT           r2 = r0, r4
+[199] CALL_UNDEF_THIS     r0 = r0, r1
+[200] LDINT               r1, +13
+[201] SNEQ                r0 = r0, r1
+[202] IF_TRUE             r0, +4
+[203] GETGLOBAL           r1, 5
+[204] LDINT               r2, +1
+[205] SNEQ                r1 = r1, r2
+[206] LDREG               r0 = r1, r0
+[207] IF_FALSE            r0, +3
+[208] LDCONST             r2, 30
+[209] CALL_GLOBAL         r0, argc=1, K[11]
+[210] THROW               r0 = r0, r0
+[211] LDCONST             r2, 32
+[212] CALL_GLOBAL         r0, argc=1, K[31]
+[213] RETUNDEF            
+
+--- Inner function 0 ---
+[  0] NEWCELLS            r1, 1
+[  1] LDUNDEF             r2 = r0, r0
+[  2] SETCELL             r2 = r1, r0
+[  3] CLOSURE             r4, 1
+[  4] DECLGLOBALFUNC      r4, 3
+[  5] CLOSURE             r3, 0
+[  6] DECLGLOBALFUNC      r3, 2
+[  7] LDREG               r2 = r0, r0
+[  8] SETCELL             r2 = r1, r0
+[  9] NEWARR              r5, 2
+[ 10] INITELEM            r5 = r0, r3
+[ 11] INITELEM            r5 = r1, r4
+[ 12] RET                 r5 = r0, r0
+
+--- Inner function 0.0 ---
+[  0] GETCAP              r0, 0
+[  1] SHRI                r0 = r0, +3
+[  2] RET                 r0 = r0, r0
+
+--- Inner function 0.1 ---
+[  0] LDUNDEF             r2 = r0, r0
+[  1] NOP                 
+[  2] LDREG               r1 = r0, r0
+[  3] PUTCAP_SNAP         r1 = r2, r0
+[  4] RETUNDEF            
+
+--- Inner function 1 ---
+[  0] PUSH_LEX            
+[  1] INITTZ              r0, 1
+[  2] CLOSURE             r1, 0
+[  3] DECLGLOBALFUNC      r1, 0
+[  4] TRY                 r1, 9
+[  5] NOP                 
+[  6] LDREG               r2 = r1, r0
+[  7] CALL_UNDEF_THIS     r2 = r2, r0
+[  8] LDCONST             r4, 3
+[  9] CALL_GLOBAL         r2, argc=1, K[2]
+[ 10] THROW               r2 = r0, r0
+[ 11] ENDTRY              
+[ 12] JUMP                +5
+[ 13] CATCH               r2 = r0, r0
+[ 14] GETGLOBAL           r3, 5
+[ 15] INSTANCEOF          r4 = r2, r3
+[ 16] IF_TRUE             r4, +1
+[ 17] THROW               r2 = r0, r0
+[ 18] LDINT               r3, +16
+[ 19] LDREG               r2 = r3, r0
+[ 20] PUTLEX              r2, 1
+[ 21] LDREG               r3 = r1, r0
+[ 22] CALL_UNDEF_THIS     r3 = r3, r0
+[ 23] RET                 r3 = r0, r0
+[ 24] POP_LEX             
+[ 25] RETUNDEF            
+
+--- Inner function 1.0 ---
+[  0] GETVAR              r0, 0
+[  1] SHRI                r0 = r0, +3
+[  2] RET                 r0 = r0, r0
+
+--- Inner function 2 ---
+[  0] NEWCELLS            r1, 1
+[  1] LDUNDEF             r2 = r0, r0
+[  2] SETCELL             r2 = r1, r0
+[  3] LDREG               r2 = r0, r0
+[  4] SETCELL             r2 = r1, r0
+[  5] CLOSURE             r3, 0
+[  6] RET                 r3 = r0, r0
+
+--- Inner function 2.0 ---
+[  0] GETCAP              r1, 0
+[  1] SHRI                r3 = r0, +3
+[  2] GETPROP             r4 = r1, r3
+[  3] RET                 r4 = r0, r0
+
+--- Inner function 3 ---
+[  0] INC_GLOBAL          r0, 0
+[  1] LDINT               r0, +80
+[  2] RET                 r0 = r0, r0
+
+--- Inner function 4 ---
+[  0] INC_GLOBAL          r0, 0
+[  1] GETGLOBAL           r0, 1
+[  2] LDREG               r1 = r0, r0
+[  3] LDCONST             r3, 2
+[  4] NEW_OBJ             r1 = r1, r1
+[  5] THROW               r1 = r0, r0
+[  6] RETUNDEF            
+
+--- Inner function 5 ---
+[  0] INC_GLOBAL          r0, 0
+[  1] LDINT               r0, +16
+[  2] RET                 r0 = r0, r0
+--- End bytecode ---

@@ -1,0 +1,37 @@
+diff --git a/src/vm/vm_captures.c3 b/src/vm/vm_captures.c3
+index 578b990e..74e9fed1 100644
+--- a/src/vm/vm_captures.c3
++++ b/src/vm/vm_captures.c3
+@@ -20,7 +20,7 @@ fn CaptureRef* capture_ref(Activation* act, uint index) {
+ // The read side of capture_value_slot without the shadow-guarded walk, which
+ // returns null so the caller can fall back to capture_value_slot. It makes no
+ // calls, so a handler built on it needs no stack frame.
+-fn hobject::PropValue* capture_read_slot(Activation* act, uint index) {
++fn hobject::PropValue* capture_read_slot(Activation* act, uint index) @inline {
+     CaptureRef* ref = capture_ref(act, index);
+     if (ref == null) return null;
+     if (ref.is_value) return (hobject::PropValue*)&ref.value;
+diff --git a/src/vm/vm_execute_threaded.c3 b/src/vm/vm_execute_threaded.c3
+index 5f332d7c..0bf076f3 100644
+--- a/src/vm/vm_execute_threaded.c3
++++ b/src/vm/vm_execute_threaded.c3
+@@ -2247,6 +2247,19 @@ fn Instruction* th_getcap(Instruction* pc, HandlerTable* handlers, TVal* regs, C
+     if (slot == null) return pc;
+     TVal value = slot.get();
+     TVal* dst = regs + pc.a;
++    // Inert values and already-publishable objects do not need reference
++    // counting. Preserve the collector's root tracking for object values.
++    if (!dst.is_refcounted()) {
++        if (value.is_inert()) {
++            *dst = value;
++            return th_next(pc + 1, handlers, regs, cold);
++        }
++        if (value.is_object() && th_can_publish(cold.heap, value)) {
++            *dst = value;
++            track_heap_store(cold.act, dst, (uint)pc.a);
++            return th_next(pc + 1, handlers, regs, cold);
++        }
++    }
+     if (!th_can_publish(cold.heap, value)
+         || !th_can_release(dst)) return pc;
+     th_do_retain(&value);
