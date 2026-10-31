@@ -1,0 +1,56 @@
+SLJIT function compiled  pc=0..97 function_ops=97 regs=7 code_bytes=17648 plan_bytes=15865
+SLJIT function compiled boxedPressure pc=0..51 function_ops=51 regs=24 code_bytes=13264 plan_bytes=15451
+RECOVERY slot=1 original=1 livein=1 exitlive=0 phi=1
+RECOVERY slot=2 original=2 livein=0 exitlive=1 phi=2
+RECOVERY slot=3 original=3 livein=0 exitlive=1 phi=3
+RECOVERY slot=4 original=4 livein=0 exitlive=1 phi=4
+RECOVERY slot=5 original=5 livein=0 exitlive=1 phi=5
+RECOVERY slot=6 original=6 livein=0 exitlive=1 phi=6
+RECOVERY slot=7 original=7 livein=0 exitlive=1 phi=7
+RECOVERY slot=8 original=8 livein=0 exitlive=1 phi=8
+RECOVERY slot=9 original=9 livein=0 exitlive=1 phi=9
+RECOVERY slot=11 original=11 livein=0 exitlive=1 phi=10
+SLJIT loop compiled boxedPressure pc=11..28 code_bytes=3512 plan_bytes=3120 ssa=1 mem=0
+boxed latch: PASS
+SLJIT coverage id=0 line=3 ops=51 regs=24 captures=0 name=boxedPressure threaded=9103 switch=439 attempts=104 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=0 calls=0 returns=0
+SLJIT pipeline id=0 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=0 homes=0
+SLJIT SSA calls id=0 frameless=0
+SLJIT code id=0 start=0x10119c728 bytes=13264 fragment=0 fragment_bytes=0
+SLJIT function boxedPressure begin=0 ops=51 bytes=13264 hits=32 returns=0 stalled=30 charged_edges=3 budget_exits=0 id=0 line=3
+SLJIT exit boxedPressure begin=0 pc=28 op=170 count=15 id=0 line=5 opcode=JMP_LT
+SLJIT exit boxedPressure begin=0 pc=29 op=1 count=391 id=0 line=9 opcode=LDCONST
+SLJIT loop boxedPressure begin=11 end=28 hits=39 iterations=812
+SLJIT loop code id=0 begin=11 end=28 bytes=3512
+SLJIT ssa name=boxedPressure begin=11 end=28 hits=39 iterations=812
+SLJIT coverage id=1 line=1 ops=97 regs=7 captures=0 name= threaded=18019 switch=2463 attempts=2450 warmup=4294967295 retired=0 active=30 rejection=compiled
+SLJIT native id=1 calls=374 returns=0
+SLJIT pipeline id=1 inlined=0 recoveries=0 allocations=376 pushes=0 links=0
+SLJIT numeric id=1 homes=0
+SLJIT SSA calls id=1 frameless=0
+SLJIT code id=1 start=0x10119fb08 bytes=17592 fragment=0x101194010 fragment_bytes=56
+SLJIT function  begin=0 ops=97 bytes=17648 hits=2266 returns=1 stalled=4 charged_edges=15850 budget_exits=15 id=1 line=1
+SLJIT exit  begin=0 pc=9 op=74 count=1 id=1 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=11 op=74 count=1 id=1 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=13 op=74 count=1 id=1 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=15 op=74 count=1 id=1 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=17 op=74 count=1 id=1 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=19 op=73 count=1 id=1 line=11 opcode=DECLVAR
+SLJIT exit  begin=0 pc=23 op=77 count=1 id=1 line=12 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=25 op=14 count=375 id=1 line=12 opcode=MOD
+SLJIT exit  begin=0 pc=28 op=77 count=1 id=1 line=12 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=31 op=70 count=375 id=1 line=12 opcode=PUTVAR
+SLJIT exit  begin=0 pc=33 op=77 count=3 id=1 line=13 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=36 op=233 count=373 id=1 line=13 opcode=INITELEM
+SLJIT exit  begin=0 pc=67 op=61 count=1 id=1 line=14 opcode=CALL
+SLJIT exit  begin=0 pc=69 op=70 count=1 id=1 line=14 opcode=PUTVAR
+SLJIT exit  begin=0 pc=70 op=77 count=1 id=1 line=15 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=72 op=135 count=1 id=1 line=15 opcode=CALL_UNDEF_THIS
+SLJIT exit  begin=0 pc=74 op=70 count=376 id=1 line=15 opcode=PUTVAR
+SLJIT exit  begin=0 pc=75 op=77 count=1 id=1 line=16 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=77 op=40 count=375 id=1 line=16 opcode=SNEQ
+SLJIT exit  begin=0 pc=92 op=67 count=1 id=1 line=11 opcode=GETVAR
+SLJIT exit  begin=0 pc=96 op=66 count=1 id=1 line=18 opcode=RETUNDEF
+SLJIT totals functions=2 loops=1 templates=0 hits=2298 code_bytes=34424
+SLJIT budget bytes=34424 limit=4194304 native_work=0 evictions=0

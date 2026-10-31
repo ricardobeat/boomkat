@@ -1,0 +1,13 @@
+{
+  "control_commit": "9da6427e",
+  "candidate_commit": "34f224e0",
+  "release_sha256": {
+    "control": "4107f72e35289ef2ebc843cc61840b7604e12a6fe8291a584ed670006e70c7d4",
+    "candidate": "b61e1d4be9a518de8a734578c82c5c3d349e2810724930ac2e3c1e83b5ca9043"
+  },
+  "octane_sha256": "ef4c74d25100e6308436fb19b14eaefd5b4b690f30a799b60bc9bccbcefdce8e",
+  "source_sha256": {
+    "vm_sljit_ssa_build.c3": "0e243c343a8444c9177f02302dc47114693dbfbc0556b395ffac96895e4a86b1",
+    "vm_sljit_ssa_emit.c3": "0aff6ed2025123637916e09dbd1d3fd6d47721584cbfc079be803b3bd18a6108"
+  }
+}

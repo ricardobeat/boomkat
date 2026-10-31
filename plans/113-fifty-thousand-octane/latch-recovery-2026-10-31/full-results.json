@@ -1,0 +1,68 @@
+[
+  {
+    "pair": 0,
+    "mode": "control",
+    "command": [
+      "/tmp/bk-latch-before",
+      "--jit",
+      "--stats",
+      "--script",
+      "/tmp/boomkat-jit-next/octane-full.js"
+    ],
+    "status": 0,
+    "wall": 85.0523486668244,
+    "scores": {
+      "Richards": 4702,
+      "DeltaBlue": 3418,
+      "Crypto": 4686,
+      "RayTrace": 3123,
+      "EarleyBoyer": 3109,
+      "RegExp": 759,
+      "Splay": 8198,
+      "SplayLatency": 20760,
+      "NavierStokes": 7257,
+      "PdfJS": 7370,
+      "Mandreel": 2173,
+      "MandreelLatency": 24437,
+      "Gameboy": 12749,
+      "CodeLoad": 27818,
+      "Box2D": 4836,
+      "zlib": 3248,
+      "Typescript": 21633,
+      "Score (version 9)": 6233
+    }
+  },
+  {
+    "pair": 0,
+    "mode": "candidate",
+    "command": [
+      "out/boomkat",
+      "--jit",
+      "--stats",
+      "--script",
+      "/tmp/boomkat-jit-next/octane-full.js"
+    ],
+    "status": 0,
+    "wall": 83.29993037506938,
+    "scores": {
+      "Richards": 4685,
+      "DeltaBlue": 3405,
+      "Crypto": 4687,
+      "RayTrace": 3138,
+      "EarleyBoyer": 3100,
+      "RegExp": 772,
+      "Splay": 8369,
+      "SplayLatency": 21512,
+      "NavierStokes": 7214,
+      "PdfJS": 6548,
+      "Mandreel": 2128,
+      "MandreelLatency": 24200,
+      "Gameboy": 12912,
+      "CodeLoad": 28753,
+      "Box2D": 6945,
+      "zlib": 3382,
+      "Typescript": 21814,
+      "Score (version 9)": 6370
+    }
+  }
+]

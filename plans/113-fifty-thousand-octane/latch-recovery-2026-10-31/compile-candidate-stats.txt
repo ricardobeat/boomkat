@@ -1,0 +1,327 @@
+compile-window: 8 ms
+SLJIT function  begin=0 ops=60 bytes=9304 id=0 line=1
+SLJIT function  begin=0 ops=12 bytes=3412 id=2 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=300
+SLJIT loop  begin=5 end=10 hits=1 iterations=300
+SLJIT function  begin=0 ops=12 bytes=3412 id=8 line=3
+SLJIT loop  begin=5 end=10 hits=2 iterations=299
+SLJIT function  begin=0 ops=12 bytes=3412 id=10 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=12 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=14 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=63
+SLJIT function  begin=0 ops=12 bytes=3412 id=16 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=18 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=20 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=22 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=244
+SLJIT function  begin=0 ops=12 bytes=3412 id=24 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=26 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=28 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=124
+SLJIT function  begin=0 ops=12 bytes=3412 id=30 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=32 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=34 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=4
+SLJIT function  begin=0 ops=12 bytes=3400 id=36 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=38 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=40 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=42 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=185
+SLJIT function  begin=0 ops=12 bytes=3412 id=44 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=46 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=48 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=65
+SLJIT function  begin=0 ops=12 bytes=3412 id=50 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=52 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=54 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=56 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=246
+SLJIT function  begin=0 ops=12 bytes=3412 id=58 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=60 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=62 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=126
+SLJIT function  begin=0 ops=12 bytes=3412 id=64 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=66 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=68 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=6
+SLJIT function  begin=0 ops=12 bytes=3412 id=70 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=72 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=74 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=76 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=187
+SLJIT function  begin=0 ops=12 bytes=3412 id=78 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=80 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=82 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=67
+SLJIT function  begin=0 ops=12 bytes=3412 id=84 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=86 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=88 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=90 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=248
+SLJIT function  begin=0 ops=12 bytes=3412 id=92 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=94 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=96 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=128
+SLJIT function  begin=0 ops=12 bytes=3412 id=98 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=100 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=102 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=8
+SLJIT function  begin=0 ops=12 bytes=3412 id=104 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=106 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=108 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=110 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=189
+SLJIT function  begin=0 ops=12 bytes=3412 id=112 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=114 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=116 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=69
+SLJIT function  begin=0 ops=12 bytes=3412 id=118 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=120 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=122 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=124 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=250
+SLJIT function  begin=0 ops=12 bytes=3412 id=126 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=128 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=130 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=130
+SLJIT function  begin=0 ops=12 bytes=3412 id=132 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=134 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=136 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=10
+SLJIT function  begin=0 ops=12 bytes=3412 id=138 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=140 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=142 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=144 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=191
+SLJIT function  begin=0 ops=12 bytes=3412 id=146 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=148 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=150 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=71
+SLJIT function  begin=0 ops=12 bytes=3412 id=152 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=154 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=156 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=158 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=252
+SLJIT function  begin=0 ops=12 bytes=3412 id=160 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=162 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=164 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=132
+SLJIT function  begin=0 ops=12 bytes=3412 id=166 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=168 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=170 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=12
+SLJIT function  begin=0 ops=12 bytes=3412 id=172 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=174 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=176 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=178 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=193
+SLJIT function  begin=0 ops=12 bytes=3412 id=180 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=182 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=184 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=73
+SLJIT function  begin=0 ops=12 bytes=3412 id=186 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=188 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=190 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=192 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=254
+SLJIT function  begin=0 ops=12 bytes=3412 id=194 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=196 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=198 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=134
+SLJIT function  begin=0 ops=12 bytes=3412 id=200 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=202 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=204 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=14
+SLJIT function  begin=0 ops=12 bytes=3412 id=206 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=208 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=210 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=212 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=195
+SLJIT function  begin=0 ops=12 bytes=3412 id=214 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=216 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=218 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=75
+SLJIT function  begin=0 ops=12 bytes=3412 id=220 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=222 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=224 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=226 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=256
+SLJIT function  begin=0 ops=12 bytes=3412 id=228 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=230 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=232 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=136
+SLJIT function  begin=0 ops=12 bytes=3412 id=234 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=236 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=238 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=16
+SLJIT function  begin=0 ops=12 bytes=3412 id=240 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=242 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=244 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=246 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=197
+SLJIT function  begin=0 ops=12 bytes=3412 id=248 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=250 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=252 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=77
+SLJIT function  begin=0 ops=12 bytes=3412 id=254 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=256 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=258 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=260 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=258
+SLJIT function  begin=0 ops=12 bytes=3412 id=262 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=264 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=266 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=138
+SLJIT function  begin=0 ops=12 bytes=3412 id=268 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=270 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=272 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=18
+SLJIT function  begin=0 ops=12 bytes=3412 id=274 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=276 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=278 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=280 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=199
+SLJIT function  begin=0 ops=12 bytes=3412 id=282 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=284 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=286 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=79
+SLJIT function  begin=0 ops=12 bytes=3412 id=288 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=290 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=292 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=294 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=260
+SLJIT function  begin=0 ops=12 bytes=3412 id=296 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=298 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=300 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=140
+SLJIT function  begin=0 ops=12 bytes=3412 id=302 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=304 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=306 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=20
+SLJIT function  begin=0 ops=12 bytes=3412 id=308 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=310 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=312 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=314 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=201
+SLJIT function  begin=0 ops=12 bytes=3412 id=316 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=318 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=320 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=81
+SLJIT function  begin=0 ops=12 bytes=3412 id=322 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=324 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=326 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=328 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=262
+SLJIT function  begin=0 ops=12 bytes=3412 id=330 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=332 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=334 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=142
+SLJIT function  begin=0 ops=12 bytes=3412 id=336 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=338 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=340 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=22
+SLJIT function  begin=0 ops=12 bytes=3412 id=342 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=344 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=346 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=348 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=203
+SLJIT function  begin=0 ops=12 bytes=3412 id=350 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=352 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=354 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=83
+SLJIT function  begin=0 ops=12 bytes=3412 id=356 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=358 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=360 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=362 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=264
+SLJIT function  begin=0 ops=12 bytes=3412 id=364 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=366 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=368 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=144
+SLJIT function  begin=0 ops=12 bytes=3412 id=370 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=372 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=374 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=24
+SLJIT function  begin=0 ops=12 bytes=3412 id=376 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=378 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=380 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=382 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=205
+SLJIT function  begin=0 ops=12 bytes=3412 id=384 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=386 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=388 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=85
+SLJIT function  begin=0 ops=12 bytes=3412 id=390 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=392 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=394 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=396 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=266
+SLJIT function  begin=0 ops=12 bytes=3412 id=398 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=400 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=402 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=146
+SLJIT function  begin=0 ops=12 bytes=3412 id=404 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=406 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=408 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=26
+SLJIT function  begin=0 ops=12 bytes=3412 id=410 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=412 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=414 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=416 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=207
+SLJIT function  begin=0 ops=12 bytes=3412 id=418 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=420 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=422 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=87
+SLJIT function  begin=0 ops=12 bytes=3412 id=424 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=426 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=428 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=430 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=268
+SLJIT function  begin=0 ops=12 bytes=3412 id=432 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=434 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=436 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=148
+SLJIT function  begin=0 ops=12 bytes=3412 id=438 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=440 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=442 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=28
+SLJIT function  begin=0 ops=12 bytes=3412 id=444 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=446 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=448 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=450 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=209
+SLJIT function  begin=0 ops=12 bytes=3412 id=452 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=454 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=456 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=89
+SLJIT function  begin=0 ops=12 bytes=3412 id=458 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=460 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=462 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=464 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=270
+SLJIT function  begin=0 ops=12 bytes=3412 id=466 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=468 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=470 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=150
+SLJIT function  begin=0 ops=12 bytes=3412 id=472 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=474 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=476 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=30
+SLJIT function  begin=0 ops=12 bytes=3412 id=478 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=480 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=482 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=484 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=211
+SLJIT function  begin=0 ops=12 bytes=3412 id=486 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=488 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=490 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=91
+SLJIT function  begin=0 ops=12 bytes=3412 id=492 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=494 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=496 line=3
+SLJIT function  begin=0 ops=12 bytes=3412 id=498 line=3
+SLJIT loop  begin=5 end=10 hits=1 iterations=272
+SLJIT function  begin=0 ops=12 bytes=3412 id=500 line=3
+SLJIT totals functions=249 loops=75 templates=0 code_bytes=946668
+SLJIT budget bytes=946668 limit=4194304 native_work=0 evictions=0

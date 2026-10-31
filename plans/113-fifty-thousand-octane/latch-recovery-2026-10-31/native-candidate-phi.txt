@@ -1,0 +1,188 @@
+SLJIT function compiled  pc=0..323 function_ops=323 regs=8 code_bytes=50212 plan_bytes=17899
+SLJIT SSA leaf reject line=11 stage=analysis
+SLJIT function compiled jitNativeDrive pc=0..11 function_ops=11 regs=7 code_bytes=3128 plan_bytes=15091
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT function compiled jitNativeStep pc=0..14 function_ops=14 regs=6 code_bytes=3604 plan_bytes=15118
+RECOVERY slot=1 original=1 livein=1 exitlive=1 phi=0
+RECOVERY slot=2 original=2 livein=1 exitlive=0 phi=1
+RECOVERY slot=4 original=4 livein=0 exitlive=0 phi=-1
+SLJIT loop compiled jitNativeStep pc=7..10 code_bytes=1012 plan_bytes=3120 ssa=1 mem=0
+SLJIT read refresh requested line=12 pc=3 shape=19 generation=101 attempt=1
+SLJIT read refresh retired line=12 pc=3 shape=19
+SLJIT function jitNativeDrive hits=64 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=64 budget_exits=0 code_bytes=3128
+SLJIT SSA leaf reject line=11 stage=analysis
+SLJIT function compiled jitNativeDrive pc=0..11 function_ops=11 regs=7 code_bytes=3316 plan_bytes=15091
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT function compiled nativeCheck pc=0..15 function_ops=15 regs=9 code_bytes=3884 plan_bytes=15127
+SLJIT SSA leaf reject line=22 stage=analysis
+SLJIT function compiled valueOf pc=0..3 function_ops=3 regs=1 code_bytes=1356 plan_bytes=15019
+SLJIT SSA leaf reject line=30 stage=analysis
+SLJIT function compiled get pc=0..7 function_ops=7 regs=4 code_bytes=2272 plan_bytes=15055
+SLJIT SSA leaf reject line=46 stage=analysis
+SLJIT function compiled jitNativeRecurse pc=0..9 function_ops=9 regs=5 code_bytes=3452 plan_bytes=15073
+SLJIT read refresh requested line=47 pc=4 shape=26 generation=107 attempt=1
+SLJIT read refresh retired line=47 pc=4 shape=26
+SLJIT function jitNativeRecurse hits=1 returns=0 stalled=0 direct_calls=63 direct_returns=0 charged_edges=63 budget_exits=0 code_bytes=3452
+SLJIT SSA leaf reject line=46 stage=analysis
+SLJIT function compiled jitNativeRecurse pc=0..9 function_ops=9 regs=5 code_bytes=3640 plan_bytes=15073
+SLJIT SSA leaf reject line=56 stage=analysis
+SLJIT function compiled jitNativeSizes pc=0..11 function_ops=11 regs=6 code_bytes=3044 plan_bytes=15091
+SLJIT SSA leaf reject line=54 stage=analysis
+SLJIT function compiled jitNativePlanSize pc=0..6 function_ops=6 regs=5 code_bytes=2220 plan_bytes=15046
+SLJIT SSA leaf reject line=53 stage=analysis
+SLJIT function compiled jitNativeCollectionSize pc=0..3 function_ops=3 regs=3 code_bytes=1656 plan_bytes=15019
+SLJIT read refresh requested line=57 pc=4 shape=30 generation=111 attempt=1
+SLJIT read refresh retired line=57 pc=4 shape=30
+SLJIT function jitNativeSizes hits=64 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=64 budget_exits=0 code_bytes=3044
+SLJIT SSA leaf reject line=56 stage=analysis
+SLJIT function compiled jitNativeSizes pc=0..11 function_ops=11 regs=6 code_bytes=3228 plan_bytes=15091
+SLJIT SSA leaf reject line=67 stage=analysis
+SLJIT function compiled nativeArity pc=0..10 function_ops=10 regs=7 code_bytes=3748 plan_bytes=15082
+SLJIT read refresh requested line=72 pc=260 shape=31 generation=112 attempt=1
+SLJIT read refresh retired line=72 pc=260 shape=31
+SLJIT function  hits=340 returns=0 stalled=21 direct_calls=349 direct_returns=0 charged_edges=4212 budget_exits=5 code_bytes=50212
+SLJIT SSA leaf reject line=5 stage=analysis
+SLJIT SSA leaf reject line=67 stage=analysis
+SLJIT function compiled  pc=0..323 function_ops=323 regs=8 code_bytes=59584 plan_bytes=17899
+RECOVERY slot=2 original=2 livein=1 exitlive=1 phi=0
+RECOVERY slot=3 original=3 livein=1 exitlive=0 phi=1
+SLJIT loop compiled nativeArity pc=4..6 code_bytes=992 plan_bytes=3120 ssa=1 mem=0
+SLJIT SSA leaf reject line=75 stage=analysis
+SLJIT function compiled makeNativeClosure pc=0..4 function_ops=4 regs=3 code_bytes=1400 plan_bytes=15028
+SLJIT function compiled  pc=0..8 function_ops=8 regs=5 code_bytes=2760 plan_bytes=15064
+JIT native calls: PASS
+SLJIT coverage id=0 line=2 ops=15 regs=9 captures=0 name=nativeCheck threaded=2178 switch=3 attempts=12 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=0 calls=0 returns=0
+SLJIT pipeline id=0 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=0 homes=0
+SLJIT SSA calls id=0 frameless=0
+SLJIT readmiss id=0 pc=1 hits=722 changes=1 shape=64 class=3 rep=3 chain=0 cached=1
+SLJIT code id=0 start=0x1049f0010 bytes=3828 fragment=0x1049e3978 fragment_bytes=56
+SLJIT function nativeCheck begin=0 ops=15 bytes=3884 hits=12 returns=0 stalled=2 charged_edges=0 budget_exits=0 id=0 line=2
+SLJIT exit nativeCheck begin=0 pc=0 op=77 count=2 id=0 line=2 opcode=GETGLOBAL
+SLJIT exit nativeCheck begin=0 pc=4 op=61 count=723 id=0 line=2 opcode=CALL
+SLJIT coverage id=1 line=5 ops=14 regs=6 captures=0 name=jitNativeStep threaded=5289 switch=501 attempts=449 warmup=4294967295 retired=0 active=5 rejection=compiled
+SLJIT native id=1 calls=0 returns=0
+SLJIT pipeline id=1 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1 homes=0
+SLJIT SSA calls id=1 frameless=0
+SLJIT readmiss id=1 pc=11 hits=2 changes=1 shape=19 class=1 rep=3 chain=0 cached=1
+SLJIT code id=1 start=0x1049e1f38 bytes=3604 fragment=0 fragment_bytes=0
+SLJIT function jitNativeStep begin=0 ops=14 bytes=3604 hits=7 returns=3 stalled=1 charged_edges=7 budget_exits=0 id=1 line=5
+SLJIT exit jitNativeStep begin=0 pc=2 op=232 count=3 id=1 line=5 opcode=PUTTHISC
+SLJIT exit jitNativeStep begin=0 pc=12 op=10 count=1 id=1 line=8 opcode=ADD
+SLJIT exit jitNativeStep begin=0 pc=13 op=65 count=3 id=1 line=8 opcode=RET
+SLJIT loop jitNativeStep begin=7 end=10 hits=441 iterations=1759
+SLJIT loop code id=1 begin=7 end=10 bytes=1012
+SLJIT ssa name=jitNativeStep begin=7 end=10 hits=441 iterations=1759
+SLJIT coverage id=2 line=11 ops=11 regs=7 captures=0 name=jitNativeDrive threaded=648 switch=27 attempts=443 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=2 calls=0 returns=0
+SLJIT pipeline id=2 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=2 homes=0
+SLJIT SSA calls id=2 frameless=0
+SLJIT readmiss id=2 pc=3 hits=1 changes=1 shape=34 class=1 rep=3 chain=0 cached=1
+SLJIT code id=2 start=0x1049e0e20 bytes=3316 fragment=0 fragment_bytes=0
+SLJIT function jitNativeDrive begin=0 ops=11 bytes=3316 hits=339 returns=2 stalled=0 charged_edges=336 budget_exits=0 id=2 line=11
+SLJIT exit jitNativeDrive begin=0 pc=6 op=61 count=337 id=2 line=12 opcode=CALL
+SLJIT exit jitNativeDrive begin=0 pc=10 op=65 count=2 id=2 line=13 opcode=RET
+SLJIT coverage id=3 line=46 ops=9 regs=5 captures=0 name=jitNativeRecurse threaded=7884 switch=1 attempts=7823 warmup=4294967294 retired=0 active=5 rejection=compiled
+SLJIT native id=3 calls=8813 returns=1302
+SLJIT pipeline id=3 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=3 homes=0
+SLJIT SSA calls id=3 frameless=0
+SLJIT code id=3 start=0x1049fe328 bytes=3640 fragment=0 fragment_bytes=0
+SLJIT function jitNativeRecurse begin=0 ops=9 bytes=3640 hits=7822 returns=7758 stalled=0 charged_edges=5191 budget_exits=5 id=3 line=46
+SLJIT exit jitNativeRecurse begin=0 pc=6 op=61 count=123 id=3 line=47 opcode=CALL
+SLJIT exit jitNativeRecurse begin=0 pc=8 op=65 count=7758 id=3 line=47 opcode=RET
+SLJIT coverage id=4 line=53 ops=3 regs=3 captures=0 name=jitNativeCollectionSize threaded=30599 switch=1 attempts=2 warmup=4294967295 retired=0 active=2 rejection=compiled
+SLJIT native id=4 calls=0 returns=0
+SLJIT pipeline id=4 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=4 homes=0
+SLJIT SSA calls id=4 frameless=0
+SLJIT code id=4 start=0x1049fc7b0 bytes=1656 fragment=0 fragment_bytes=0
+SLJIT function jitNativeCollectionSize begin=0 ops=3 bytes=1656 hits=1 returns=1 stalled=0 charged_edges=0 budget_exits=0 id=4 line=53
+SLJIT exit jitNativeCollectionSize begin=0 pc=2 op=65 count=1 id=4 line=53 opcode=RET
+SLJIT coverage id=5 line=54 ops=6 regs=5 captures=0 name=jitNativePlanSize threaded=61198 switch=4 attempts=10202 warmup=4294967295 retired=0 active=2 rejection=compiled
+SLJIT native id=5 calls=0 returns=0
+SLJIT pipeline id=5 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=5 homes=0
+SLJIT SSA calls id=5 frameless=0
+SLJIT code id=5 start=0x1049fce50 bytes=2220 fragment=0 fragment_bytes=0
+SLJIT function jitNativePlanSize begin=0 ops=6 bytes=2220 hits=10201 returns=10200 stalled=10200 charged_edges=0 budget_exits=0 id=5 line=54
+SLJIT exit jitNativePlanSize begin=0 pc=4 op=61 count=1 id=5 line=54 opcode=CALL
+SLJIT exit jitNativePlanSize begin=0 pc=5 op=65 count=10200 id=5 line=54 opcode=RET
+SLJIT coverage id=6 line=56 ops=11 regs=6 captures=0 name=jitNativeSizes threaded=10255 switch=80 attempts=10202 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=6 calls=0 returns=0
+SLJIT pipeline id=6 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=6 homes=0
+SLJIT SSA calls id=6 frameless=0
+SLJIT code id=6 start=0x1049fbaf8 bytes=3228 fragment=0 fragment_bytes=0
+SLJIT function jitNativeSizes begin=0 ops=11 bytes=3228 hits=10138 returns=51 stalled=0 charged_edges=10086 budget_exits=9 id=6 line=56
+SLJIT exit jitNativeSizes begin=0 pc=6 op=61 count=10136 id=6 line=57 opcode=CALL
+SLJIT exit jitNativeSizes begin=0 pc=10 op=65 count=51 id=6 line=58 opcode=RET
+SLJIT coverage id=7 line=67 ops=10 regs=7 captures=0 name=nativeArity threaded=11 switch=2 attempts=6 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=7 calls=0 returns=63
+SLJIT pipeline id=7 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=7 homes=3
+SLJIT SSA calls id=7 frameless=0
+SLJIT code id=7 start=0x1049fac40 bytes=3748 fragment=0 fragment_bytes=0
+SLJIT function nativeArity begin=0 ops=10 bytes=3748 hits=6 returns=3 stalled=3 charged_edges=9 budget_exits=0 id=7 line=67
+SLJIT exit nativeArity begin=0 pc=0 op=3 count=1 id=7 line=67 opcode=LDINT
+SLJIT exit nativeArity begin=0 pc=7 op=234 count=2 id=7 line=69 opcode=ADD_FUSED
+SLJIT exit nativeArity begin=0 pc=9 op=65 count=3 id=7 line=69 opcode=RET
+SLJIT loop nativeArity begin=4 end=6 hits=1 iterations=3
+SLJIT loop code id=7 begin=4 end=6 bytes=992
+SLJIT ssa name=nativeArity begin=4 end=6 hits=1 iterations=3
+SLJIT coverage id=8 line=77 ops=8 regs=5 captures=1 name= threaded=2 switch=0 attempts=2 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=8 calls=0 returns=398
+SLJIT pipeline id=8 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=8 homes=1
+SLJIT SSA calls id=8 frameless=0
+SLJIT code id=8 start=0x104a0ebb0 bytes=2760 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=8 bytes=2760 hits=2 returns=2 stalled=0 charged_edges=6 budget_exits=0 id=8 line=77
+SLJIT exit  begin=0 pc=7 op=65 count=2 id=8 line=78 opcode=RET
+SLJIT coverage id=9 line=75 ops=4 regs=3 captures=0 name=makeNativeClosure threaded=8 switch=4 attempts=3 warmup=4294967295 retired=0 active=1 rejection=compiled
+SLJIT native id=9 calls=0 returns=0
+SLJIT pipeline id=9 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=9 homes=0
+SLJIT SSA calls id=9 frameless=0
+SLJIT code id=9 start=0x104a0f688 bytes=1400 fragment=0 fragment_bytes=0
+SLJIT function makeNativeClosure begin=0 ops=4 bytes=1400 hits=2 returns=2 stalled=2 charged_edges=0 budget_exits=0 id=9 line=75
+SLJIT exit makeNativeClosure begin=0 pc=3 op=65 count=2 id=9 line=79 opcode=RET
+SLJIT coverage id=10 line=22 ops=3 regs=1 captures=0 name=valueOf threaded=120 switch=1 attempts=2 warmup=4294967295 retired=0 active=1 rejection=compiled
+SLJIT native id=10 calls=0 returns=0
+SLJIT pipeline id=10 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=10 homes=0
+SLJIT SSA calls id=10 frameless=0
+SLJIT code id=10 start=0x1049ffaa0 bytes=1356 fragment=0 fragment_bytes=0
+SLJIT function valueOf begin=0 ops=3 bytes=1356 hits=1 returns=1 stalled=0 charged_edges=0 budget_exits=0 id=10 line=22
+SLJIT exit valueOf begin=0 pc=2 op=65 count=1 id=10 line=22 opcode=RET
+SLJIT coverage id=11 line=30 ops=7 regs=4 captures=0 name=get threaded=6 switch=4 attempts=2 warmup=4294967295 retired=0 active=2 rejection=compiled
+SLJIT native id=11 calls=0 returns=0
+SLJIT pipeline id=11 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=11 homes=0
+SLJIT SSA calls id=11 frameless=0
+SLJIT code id=11 start=0x1049ff180 bytes=2216 fragment=0x1049ffa48 fragment_bytes=56
+SLJIT function get begin=0 ops=7 bytes=2272 hits=1 returns=0 stalled=1 charged_edges=0 budget_exits=0 id=11 line=30
+SLJIT exit get begin=0 pc=1 op=77 count=1 id=11 line=30 opcode=GETGLOBAL
+SLJIT coverage id=12 line=1 ops=323 regs=8 captures=0 name= threaded=1827 switch=664 attempts=889 warmup=4294967295 retired=0 active=119 rejection=compiled
+SLJIT native id=12 calls=933 returns=0
+SLJIT pipeline id=12 inlined=135 recoveries=0 allocations=2 pushes=0 links=15
+SLJIT numeric id=12 homes=0
+SLJIT SSA calls id=12 frameless=0
+SLJIT code id=12 start=0x104a00010 bytes=59528 fragment=0x1049e0dc8 fragment_bytes=56
+SLJIT function  begin=0 ops=323 bytes=59584 hits=548 returns=0 stalled=5 charged_edges=2533 budget_exits=2 id=12 line=1
+SLJIT exit  begin=0 pc=265 op=135 count=1 id=12 line=72 opcode=CALL_UNDEF_THIS
+SLJIT exit  begin=0 pc=274 op=77 count=1 id=12 line=73 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=276 op=77 count=1 id=12 line=74 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=287 op=137 count=1 id=12 line=81 opcode=CALL_GLOBAL
+SLJIT exit  begin=0 pc=290 op=70 count=1 id=12 line=81 opcode=PUTVAR
+SLJIT exit  begin=0 pc=293 op=137 count=1 id=12 line=82 opcode=CALL_GLOBAL
+SLJIT exit  begin=0 pc=296 op=70 count=1 id=12 line=82 opcode=PUTVAR
+SLJIT exit  begin=0 pc=298 op=73 count=1 id=12 line=83 opcode=DECLVAR
+SLJIT exit  begin=0 pc=301 op=77 count=2 id=12 line=84 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=308 op=77 count=1 id=12 line=85 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=316 op=67 count=1 id=12 line=83 opcode=GETVAR
+SLJIT exit  begin=0 pc=321 op=61 count=1 id=12 line=87 opcode=CALL
+SLJIT totals functions=13 loops=2 templates=0 hits=29080 code_bytes=94672
+SLJIT budget bytes=94672 limit=4194304 native_work=0 evictions=0

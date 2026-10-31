@@ -1,0 +1,16 @@
+--- Inner function 1 ---
+[  0] GETTHISC            r5 = r0, r3
+[  1] INC                 r5
+[  2] PUTTHISC            r5 = r0, r3
+[  3] LDREG               r1 = r0, r0
+[  4] LDINT               r2, 0
+[  5] LDINT               r3, +4
+[  6] JUMP                +2
+[  7] ADD                 r1 = r1, r2
+[  8] INC                 r2
+[  9] LDREG               r4 = r2, r0
+[ 10] JMP_LT              -4, r4, r3
+[ 11] GETTHISC            r4 = r0, r4
+[ 12] ADD                 r5 = r1, r4
+[ 13] RET                 r5 = r0, r0
+

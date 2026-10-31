@@ -1,0 +1,5 @@
+boxed latch: PASS
+exit-only high register: PASS
+dead exit temporary: PASS
+nested continuation: PASS
+exception continuation: PASS

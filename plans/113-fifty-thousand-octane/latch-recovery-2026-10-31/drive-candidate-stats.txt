@@ -1,0 +1,40 @@
+SLJIT loop compiled step pc=7..10 code_bytes=1012 plan_bytes=3120 ssa=1 mem=0
+SLJIT SSA leaf reject line=2 stage=analysis
+SLJIT function compiled step pc=0..14 function_ops=14 regs=6 code_bytes=4164 plan_bytes=15118
+SLJIT SSA leaf reject line=8 stage=analysis
+SLJIT function compiled drive pc=0..11 function_ops=11 regs=7 code_bytes=3316 plan_bytes=15091
+SLJIT function compiled  pc=0..103 function_ops=103 regs=7 code_bytes=17008 plan_bytes=15919
+native-drive: 277 ms
+SLJIT coverage id=0 line=2 ops=14 regs=6 captures=0 name=step threaded=68003 switch=32033 attempts=35397 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=0 calls=0 returns=7984623
+SLJIT pipeline id=0 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=0 homes=0
+SLJIT SSA calls id=0 frameless=0
+SLJIT code id=0 start=0x10079af90 bytes=4164 fragment=0 fragment_bytes=0
+SLJIT function step begin=0 ops=14 bytes=4164 hits=35342 returns=35342 stalled=0 charged_edges=13364 budget_exits=0 id=0 line=2
+SLJIT exit step begin=0 pc=10 op=170 count=32001 id=0 line=4 opcode=JMP_LT
+SLJIT exit step begin=0 pc=13 op=65 count=35342 id=0 line=5 opcode=RET
+SLJIT loop step begin=7 end=10 hits=32021 iterations=82527
+SLJIT loop code id=0 begin=7 end=10 bytes=1012
+SLJIT ssa name=step begin=7 end=10 hits=32021 iterations=82527
+SLJIT coverage id=1 line=8 ops=11 regs=7 captures=0 name=drive threaded=30452 switch=6748 attempts=52083 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=1 calls=8016624 returns=0
+SLJIT pipeline id=1 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1 homes=0
+SLJIT SSA calls id=1 frameless=0
+SLJIT code id=1 start=0x10079a280 bytes=3316 fragment=0 fragment_bytes=0
+SLJIT function drive begin=0 ops=11 bytes=3316 hits=52082 returns=25032 stalled=4982 charged_edges=37802611 budget_exits=27079 id=1 line=8
+SLJIT exit drive begin=0 pc=6 op=61 count=3314 id=1 line=9 opcode=CALL
+SLJIT exit drive begin=0 pc=9 op=170 count=11723 id=1 line=9 opcode=JMP_LT
+SLJIT exit drive begin=0 pc=10 op=65 count=25032 id=1 line=10 opcode=RET
+SLJIT coverage id=2 line=1 ops=103 regs=7 captures=0 name= threaded=100625 switch=20032 attempts=19998 warmup=4294967295 retired=1 active=37 rejection=compiled
+SLJIT native id=2 calls=19988 returns=0
+SLJIT pipeline id=2 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=2 homes=0
+SLJIT SSA calls id=2 frameless=0
+SLJIT code id=2 start=0x100795f58 bytes=16952 fragment=0x10079a228 fragment_bytes=56
+SLJIT function  begin=0 ops=103 bytes=17008 hits=19997 returns=1 stalled=1 charged_edges=10231275 budget_exits=19988 id=2 line=1
+SLJIT exit  begin=0 pc=67 op=78 count=8 id=2 line=16 opcode=PUTGLOBAL
+SLJIT exit  begin=0 pc=102 op=66 count=1 id=2 line=18 opcode=RETUNDEF
+SLJIT totals functions=3 loops=1 templates=0 hits=107421 code_bytes=25500
+SLJIT budget bytes=25500 limit=4194304 native_work=0 evictions=0

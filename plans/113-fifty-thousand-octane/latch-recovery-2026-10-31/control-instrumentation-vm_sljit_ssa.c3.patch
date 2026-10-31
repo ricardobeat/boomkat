@@ -1,0 +1,34 @@
+--- source/vm_sljit_ssa.c3
++++ instrumented/vm_sljit_ssa.c3
+@@ -134,6 +134,19 @@
+         if (removed) ssa_function_liveness(graph);
+     }
+     ssa_allocate(graph);
++    if (!graph.single_pass) for (uint i = 0; i < LOOP_REGS; i++) {
++        int pi = graph.phi[i];
++        if (pi < 0) continue;
++        int ai = graph.values[pi].a;
++        for (uint j = 0; j < i; j++) {
++            int pj = graph.phi[j];
++            if (pj < 0) continue;
++            int aj = graph.values[pj].a;
++            if (ssa_alias(graph, ai) != ssa_alias(graph, aj) && ssa_same_location(graph.values[ai], graph.values[aj])) {
++                io::eprintfn("PHI_INPUT_COLLISION regs=%d,%d values=%d,%d", i, j, ai, aj);
++            }
++        }
++    }
+     uint phi_count;
+     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
+     if (graph.spill_count + phi_count + 2 > SSA_MAX_SPILL) return null;
+@@ -251,6 +264,11 @@
+     void* native = jit::sljit_generate_code(e.compiler, 0, null);
+     if (native != null) {
+         plan.code_bytes = jit::sljit_shim_code_size(e.compiler);
++        if (!single_pass) {
++            io::eprintf("MACHINE_CODE ");
++            for (usz ix = 0; ix < plan.code_bytes; ix++) io::eprintf("%02x", (uint)((char*)native)[ix]);
++            io::eprintfn("");
++        }
+         if (self.epoch_constant != null) {
+             plan.ssa_epoch_patch = jit::sljit_shim_const_addr(self.epoch_constant);
+             plan.ssa_executable_offset = jit::sljit_shim_executable_offset(e.compiler);
