@@ -1,0 +1,3 @@
+SLJIT region attempt ops=37098 regs=518 begin=31045 budget_used=2358872
+SLJIT coverage id=215436 line=1 ops=37098 regs=518 captures=0 name=a1 threaded=3000373671 switch=365642486 attempts=2090595 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT budget bytes=2373340 limit=4194304 native_work=0 evictions=0

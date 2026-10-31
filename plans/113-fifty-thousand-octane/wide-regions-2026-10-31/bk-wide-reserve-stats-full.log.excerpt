@@ -1,0 +1,14 @@
+SLJIT region attempt ops=37098 regs=518 begin=31045 budget_used=2357784
+SLJIT wide fragment begin=31045 emitted=129 end=256 bytes=33364
+SLJIT region result a1 ops=37098 analyzed=0 emitted=1 code_bytes=33364 budget_used=2357784 limit=4194304
+SLJIT function compiled a1 pc=31045..31301 function_ops=37098 regs=518 code_bytes=33364 plan_bytes=17296
+SLJIT coverage id=214836 line=1 ops=37098 regs=518 captures=0 name=a1 threaded=2938925287 switch=354152058 attempts=3814030 warmup=4294967295 retired=4 active=125 rejection=compiled
+SLJIT function a1 begin=31045 ops=256 bytes=33364 hits=1725725 returns=0 stalled=26 charged_edges=0 budget_exits=0 id=214836 line=1
+SLJIT exit a1 begin=31045 pc=31063 op=47 count=1836 id=214836 line=1 opcode=JUMP
+SLJIT exit a1 begin=31045 pc=31074 op=214 count=4 id=214836 line=1 opcode=WIDE
+SLJIT exit a1 begin=31045 pc=31078 op=214 count=598 id=214836 line=1 opcode=WIDE
+SLJIT exit a1 begin=31045 pc=31116 op=47 count=140029 id=214836 line=1 opcode=JUMP
+SLJIT exit a1 begin=31045 pc=31127 op=214 count=598 id=214836 line=1 opcode=WIDE
+SLJIT exit a1 begin=31045 pc=31131 op=214 count=8 id=214836 line=1 opcode=WIDE
+SLJIT exit a1 begin=31045 pc=31159 op=47 count=1582652 id=214836 line=1 opcode=JUMP
+SLJIT budget bytes=2406624 limit=4194304 native_work=0 evictions=0

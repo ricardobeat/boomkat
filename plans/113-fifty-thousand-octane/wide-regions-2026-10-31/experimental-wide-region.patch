@@ -1,0 +1,456 @@
+diff --git a/src/vm/vm_sljit_function_runtime.c3 b/src/vm/vm_sljit_function_runtime.c3
+index e211f0a0..f00625b7 100644
+--- a/src/vm/vm_sljit_function_runtime.c3
++++ b/src/vm/vm_sljit_function_runtime.c3
+@@ -46,6 +46,22 @@ macro bool sljit_function_resumes(Instruction* pc, CompiledFunction* cf) @feat(S
+     return plan != null && offset >= plan.begin && offset - plan.begin < plan.count
+         && plan.entries[offset - plan.begin] != null;
+ }
++// Bound hot widened regions admitted from the loop reserve separately.
++fn bool sljit_wide_reserve_room(Heap* h, usz bytes) @feat(SLJIT) {
++    $if $feat(SLJIT_LOOP_RESERVE) && !$feat(SLJIT_ADAPTIVE):
++        if (bytes > 64 * 1024 || !sljit_code_room(h, bytes, false)) return false;
++        usz used;
++        for (uint i = 0; i < h.compiled_func_count; i++) {
++            CompiledFunction* existing = h.compiled_funcs[i];
++            if (existing == null || existing.sljit_function == null) continue;
++            FunctionPlan* p = existing.sljit_function;
++            if (p.begin != 0 && p.begin < existing.code_count && existing.code[p.begin].op == Opcode.WIDE) used += p.code_bytes;
++        }
++        return used + bytes <= 128 * 1024;
++    $else
++        return false;
++    $endif
++}
+ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uint begin = 0) @feat(SLJIT) @noinline {
+     Heap* h = cold.heap;
+     $if $feat(SLJIT_STATS):
+@@ -57,7 +73,11 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+             h.jit_code_bytes
+         );
+     $endif
+-    if (begin >= cf.code_count || !sljit_code_room(h, 0, true)) {
++    // The interpreter can run without caches after allocation failure. Do not
++    // offset null cache pointers or compile sites against nonexistent entries.
++    if (cf.ic_entries == null || cf.var_ic_entries == null) return null;
++    bool wide_reserve = begin != 0 && begin < cf.code_count && cf.code[begin].op == Opcode.WIDE;
++    if (begin >= cf.code_count || (!sljit_code_room(h, 0, true) && !(wide_reserve && sljit_wide_reserve_room(h, 0)))) {
+         cf.sljit_budget_wait = begin < cf.code_count;
+         $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
+         return null;
+@@ -105,6 +125,10 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+     $endif
+     bool analyzed = function_analyze(&region, plan, h);
+     bool emitted  = analyzed && function_emit(plan, &region, h, cold.act, cold);
++    if (!analyzed && region.code[0].op == Opcode.WIDE && !region.flags.is_generator && !region.flags.is_async
++        && !region.flags.has_direct_eval && !region.mapped_arguments()) {
++        emitted = function_emit_wide(plan, &region, h);
++    }
+     $if $feat(SLJIT_STATS):
+         cf.sljit_rejection = emitted ? null : region.sljit_rejection;
+     $endif
+@@ -120,7 +144,8 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
+             sljit_code_limit(h)
+         );
+     $endif
+-    if (!emitted || !sljit_code_room(h, plan.code_bytes, true)) {
++    if (!emitted || (!sljit_code_room(h, plan.code_bytes, true)
++        && !(wide_reserve && sljit_wide_reserve_room(h, plan.code_bytes)))) {
+         cf.sljit_budget_wait = emitted;
+         $if $feat(SLJIT_STATS): if (emitted) cf.sljit_rejection = "code budget"; $endif
+         if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
+@@ -228,6 +253,8 @@ fn Instruction* sljit_function_entry(
+         plan = null;
+     }
+     if (plan == null) {
++        // A later interpreter frame entry can retry failed cache allocation.
++        if (cf.ic_entries == null || cf.var_ic_entries == null) return pc;
+         if (cf.sljit_function_calls == uint::max) return pc;
+         // Every function size warms on taken backedges as well as calls. A
+         // region may start at a hot header, not only at bytecode zero.
+diff --git a/test/capi/jit.c3 b/test/capi/jit.c3
+index 8f6dd3db..32855e79 100644
+--- a/test/capi/jit.c3
++++ b/test/capi/jit.c3
+@@ -728,6 +728,97 @@ fn void check_ssa_region(JsRuntime* runtime) {
+     }
+ }
+ 
++// Execute the widened region emitter directly so every recovery PC and the
++// real high-register homes are checked independently of JIT warmup policy.
++fn void check_wide_function_region(JsRuntime* runtime, JsContext* context) {
++    Instruction[15] code = {
++        bytecode::make_wide(1, 0, 0), bytecode::make_a_sbx(Opcode.LDINT, 44, 3),
++        bytecode::make_wide(1, 1, 1), bytecode::make_abc(Opcode.BOR, 45, 44, 144),
++        bytecode::make_wide(1, 1, 1), bytecode::make_abc(Opcode.ADD, 46, 45, 44),
++        bytecode::make_wide(1, 1, 1), bytecode::make_abc(Opcode.EQ, 47, 46, 46),
++        bytecode::make_wide(1, 0, 0), bytecode::make_a_sbx(Opcode.IF_FALSE, 47, 2),
++        bytecode::make_wide(1, 1, 0), bytecode::make_abc(Opcode.LDREG, 48, 46, 0),
++        bytecode::make_wide(1, 0, 0), bytecode::make_a_sbx(Opcode.LDINT, 49, 7),
++        bytecode::make_abc(Opcode.RET, 0, 0, 0)
++    };
++    CompiledFunction cf = { .code = &code[0], .code_count = 15, .num_regs = 512 };
++    // Cache allocation can fail independently of bytecode execution. A region
++    // beginning after PC 0 must not turn null cache pointers into fake entries.
++    ColdCtx no_cache = { .heap = runtime.rt.heap };
++    @check(vm::sljit_function_compile(&cf, &no_cache, 2) == null);
++    ICEntry only_property_cache; VarICEntry only_variable_cache;
++    cf.ic_entries = &only_property_cache;
++    @check(vm::sljit_function_compile(&cf, &no_cache, 2) == null);
++    cf.ic_entries = null; cf.var_ic_entries = &only_variable_cache;
++    @check(vm::sljit_function_compile(&cf, &no_cache, 2) == null);
++    cf.var_ic_entries = null;
++    void*[15] entries;
++    FunctionPlan plan = { .entries = &entries[0] };
++    @check(vm::function_emit_wide(&plan, &cf, runtime.rt.heap));
++    defer jit::sljit_free_code((void*)plan.native, null);
++    TVal[512] regs;
++    for (uint i = 0; i < regs.len; i++) regs[i].set_undefined();
++    FunctionRun run = { .entry = entries[0] };
++    regs[400].set_fastint(2);
++    @check(plan.native(&regs[0], null, &run) == &code[14]);
++    @check(regs[300].get_fastint() == 3 && regs[301].get_fastint() == 3);
++    @check(regs[302].get_fastint() == 6 && regs[304].get_fastint() == 6 && regs[305].get_fastint() == 7);
++    regs[400].set_undefined(); regs[301].set_fastint(91);
++    @check(plan.native(&regs[0], null, &run) == &code[2]);
++    @check(regs[300].get_fastint() == 3 && regs[301].get_fastint() == 91);
++    @check(entries[1] == null && entries[3] == null && entries[9] == null);
++    run.entry = entries[8]; regs[303].set_boolean(false); regs[304].set_fastint(91);
++    @check(plan.native(&regs[0], null, &run) == &code[14]);
++    @check(regs[304].get_fastint() == 91 && regs[305].get_fastint() == 7);
++    run.entry = entries[8]; regs[303].set_undefined();
++    @check(plan.native(&regs[0], null, &run) == &code[8]);
++
++    eval(context, "var wideNativeArray = new Int8Array([11,22,33]);");
++    Heap* h = runtime.rt.heap;
++    HObject* globals = runtime.rt.vm.global_env.bindings;
++    int array_idx = globals.find_prop_idx(h.str_intern("wideNativeArray"), h);
++    @check(array_idx >= 0);
++    TVal array = globals.prop_values()[array_idx].get();
++    @check(array.is_object());
++    Instruction[9] typed_code = {
++        bytecode::make_wide(1, 1, 1), bytecode::make_abc(Opcode.GETPROP, 44, 144, 145),
++        bytecode::make_wide(1, 0, 0), bytecode::make_a_sbx(Opcode.LDINT, 45, 77),
++        bytecode::make_wide(1, 1, 1), bytecode::make_abc(Opcode.PUTPROP, 144, 145, 45),
++        bytecode::make_wide(1, 1, 1), bytecode::make_abc(Opcode.GETPROP, 46, 144, 145),
++        bytecode::make_abc(Opcode.RET, 0, 0, 0)
++    };
++    ICEntry[9] feedback;
++    feedback[1].typed_kind = (char)(ObjClass.INT8ARRAY.ordinal + 1);
++    feedback[5].typed_kind = feedback[1].typed_kind;
++    feedback[7].typed_kind = feedback[1].typed_kind;
++    CompiledFunction typed_cf = { .code = &typed_code[0], .code_count = 9, .num_regs = 512,
++        .ic_entries = &feedback[0] };
++    void*[9] typed_entries;
++    FunctionPlan typed_plan = { .entries = &typed_entries[0] };
++    @check(vm::function_emit_wide(&typed_plan, &typed_cf, h));
++    defer jit::sljit_free_code((void*)typed_plan.native, null);
++    regs[400] = array; regs[401].set_fastint(1);
++    run.entry = typed_entries[0];
++    @check(typed_plan.native(&regs[0], null, &run) == &typed_code[8]);
++    @check(regs[300].get_fastint() == 22 && regs[302].get_fastint() == 77);
++    eval(context, "if(wideNativeArray[1]!==77)throw 'wide typed store';wideNativeArray[1]=22;");
++    // A later destination that owns its last string reference refuses after
++    // the typed store, preserving that already-completed effect exactly once.
++    void* unique = h.alloc_concat_string("wide-owned", 10);
++    @check(unique != null);
++    regs[302].set_string(unique);
++    @check(((HeapHeader*)unique).refcount == 1);
++    @check(typed_plan.native(&regs[0], null, &run) == &typed_code[6]);
++    @check(regs[302].get_heapptr() == unique);
++    eval(context, "if(wideNativeArray[1]!==77)throw 'wide committed store';");
++    h.decref_tval(&regs[302]); regs[302].set_undefined();
++    regs[401].set_fastint(-1); regs[300].set_fastint(123);
++    @check(typed_plan.native(&regs[0], null, &run) == &typed_code[0]);
++    @check(regs[300].get_fastint() == 123);
++    regs[400].set_fastint(7); regs[401].set_fastint(1);
++    @check(typed_plan.native(&regs[0], null, &run) == &typed_code[0]);
++}
++
+ fn void main() {
+     check_dependency_gc();
+     check_parameter_alias_roles();
+@@ -747,6 +838,7 @@ fn void main() {
+     JsContext a, b, isolated;
+     a.create(&first)!!;
+     defer a.destroy();
++    check_wide_function_region(&first, &a);
+     b.create(&first)!!;
+     defer b.destroy();
+     isolated.create(&second)!!;
+diff --git a/src/vm/vm_sljit_wide.c3 b/src/vm/vm_sljit_wide.c3
+new file mode 100644
+index 00000000..3ba35d9e
+--- /dev/null
++++ b/src/vm/vm_sljit_wide.c3
+@@ -0,0 +1,270 @@
++module boomkat::vm;
++
++import boomkat::bytecode;
++import boomkat::types;
++import boomkat::heap;
++import boomkat::hobject;
++import boomkat::builtins;
++import boomkat::jit;
++import std::io;
++
++// A fixed numeric typed-array access. Guards happen before the write; a
++// changed class, detached/resizable/shared buffer or non-numeric value resumes
++// the original prefixed bytecode in the interpreter.
++fn void function_wide_typed(LoopEmitter* out, DecodedInsn ins, uint pc, ObjClass cls, bool write) @feat(SLJIT) {
++    TemplateEmitter* e = &out.e;
++    int r0 = jit::reg_r(0); int r1 = jit::reg_r(1); int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
++    int mem = jit::SLJIT_MEM; int imm = jit::SLJIT_IMM;
++    HObjectBufferView view; HObjectArrayBuffer buffer;
++    long base = HObjectBase::size;
++    uint shift = builtins::ta_elem_shift(cls);
++    out.load(write ? ins.a : ins.b, r0);
++    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
++    out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, pc);
++    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
++    out.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, pc);
++    e.mov(r3, 0, mem | r0, 0, jit::SLJIT_MOV_U32);
++    ObjFlags proxy; proxy.exotic_proxyobj = true;
++    e.op(jit::SLJIT_AND, r3, r3, 0, imm, 0x003F0000U | (uint)proxy);
++    out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)(cls.ordinal << 16), pc);
++    out.integer(write ? ins.b : ins.c, r1, pc);
++    e.mov(r2, 0, mem | r0, base + (char*)&view.buffer - (char*)&view);
++    out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
++    e.mov(r3, 0, mem | r2, base + (char*)&buffer.resizable - (char*)&buffer, jit::SLJIT_MOV_U8);
++    out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
++    e.mov(r3, 0, mem | r2, base + (char*)&buffer.is_shared - (char*)&buffer, jit::SLJIT_MOV_U8);
++    out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
++    if (write) {
++        e.mov(r3, 0, mem | r2, base + (char*)&buffer.immutable - (char*)&buffer, jit::SLJIT_MOV_U8);
++        out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
++    }
++    e.mov(r2, 0, mem | r2, base + (char*)&buffer.data - (char*)&buffer);
++    out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, pc);
++    e.mov(r3, 0, mem | r0, base + (char*)&view.byte_offset - (char*)&view, jit::SLJIT_MOV_U32);
++    e.op(jit::SLJIT_ADD, r2, r2, 0, r3, 0);
++    e.mov(r3, 0, mem | r0, base + (char*)&view.byte_length - (char*)&view, jit::SLJIT_MOV_U32);
++    if (shift != 0) e.op(jit::SLJIT_LSHR, r3, r3, 0, imm, shift);
++    out.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, pc);
++    if (write) {
++        out.int32(ins.c, r0, pc);
++        e.mov(jit::mem_index(r2, r1), (long)shift, r0, 0, loop_load_op(cls));
++    } else {
++        e.mov(r0, 0, jit::mem_index(r2, r1), (long)shift, loop_load_op(cls));
++        out.box(r0);
++        function_store(out, ins.a, r0, pc, true);
++    }
++}
++
++// Experimental widened function fragment. Frame locations remain the original
++// VM register numbers, and every refusal names the prefix, never its payload.
++// Only straight-line, side-effect-free numeric operations are admitted here.
++fn bool function_emit_wide(FunctionPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
++    LoopPlan layout;
++    LoopEmitter out = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = &layout, .heap = h,
++        .function_mode = true };
++    TemplateEmitter* e = &out.e;
++    if (e.compiler == null) return false;
++    defer jit::sljit_free_compiler(e.compiler);
++    defer out.link_release();
++    out.labels = out.labels_alloc(cf.code_count);
++    if (out.labels == null) return false;
++    defer out.labels_free();
++    bool[FUNCTION_OPS] boundary;
++    bool[FUNCTION_OPS] supported;
++    for (uint scan = 0; scan < cf.code_count;) {
++        boundary[scan] = true;
++        scan += cf.code[scan].op == Opcode.WIDE && scan + 1 < cf.code_count ? 2 : 1;
++    }
++    if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS3WWW_R, 4 | (1 << 8), 2, 0) != 0) return false;
++    int r0 = jit::reg_r(0); int r1 = jit::reg_r(1); int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
++    int imm = jit::SLJIT_IMM; int mem = jit::SLJIT_MEM;
++    e.mov(jit::reg_s(0), 0, r0, 0);
++    e.mov(jit::reg_s(1), 0, r1, 0);
++    e.mov(r3, 0, mem | r2, $reflect(FunctionRun.entry).offset);
++    if (jit::sljit_emit_ijump(e.compiler, jit::SLJIT_JUMP, r3, 0) != 0) return false;
++    uint pos; uint emitted; bool saw_wide;
++    while (pos < cf.code_count) {
++        uint at = pos;
++        out.labels[at] = e.label();
++        Instruction first = cf.code[pos++];
++        Instruction raw = first;
++        DecodedInsn ins;
++        if (first.op == Opcode.WIDE) {
++            if (pos >= cf.code_count) {
++                out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), at, true);
++                break;
++            }
++            raw = cf.code[pos++];
++            if (raw.op == Opcode.WIDE) {
++                out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), at, true);
++                continue;
++            }
++            ins = { raw.op, ((uint)first.a << 8) | raw.a, ((uint)first.b << 8) | raw.b,
++                ((uint)first.c << 8) | raw.c };
++            saw_wide = true;
++        } else {
++            ins = { raw.op, raw.a, raw.b, raw.c };
++        }
++        bool binary = ins.op == Opcode.ADD || ins.op == Opcode.SUB || ins.op == Opcode.BAND
++            || ins.op == Opcode.BOR || ins.op == Opcode.BXOR || ins.op == Opcode.SHL
++            || ins.op == Opcode.SHR || ins.op == Opcode.USHR || ins.op == Opcode.EQ || ins.op == Opcode.NEQ
++            || ins.op == Opcode.LT || ins.op == Opcode.LE || ins.op == Opcode.GT || ins.op == Opcode.GE;
++        bool bitimm = ins.op == Opcode.BANDI || ins.op == Opcode.BORI || ins.op == Opcode.BXORI
++            || ins.op == Opcode.SHLI || ins.op == Opcode.SHRI || ins.op == Opcode.USHRI;
++        bool branch = ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE;
++        bool jump = ins.op == Opcode.JUMP && first.op != Opcode.WIDE;
++        bool binding = ins.op == Opcode.GETVAR || ins.op == Opcode.GETGLOBAL;
++        bool write = ins.op == Opcode.PUTPROP;
++        bool property = ins.op == Opcode.GETPROP || ins.op == Opcode.GETPROP_CACHE || write;
++        ObjClass cls = ObjClass.NONE;
++        if (property && cf.ic_entries != null) {
++            ICEntry* feedback = (ICEntry*)cf.ic_entries + pos - 1;
++            foreach (candidate : FUNCTION_TYPED_CLASSES) {
++                if (feedback.typed_kind == (char)(candidate.ordinal + 1) && candidate < ObjClass.FLOAT32ARRAY) {
++                    cls = candidate;
++                    break;
++                }
++            }
++        }
++        bool typed = property && cls != ObjClass.NONE;
++        bool valid = ins.op == Opcode.NOP || ins.op == Opcode.LDINT || ins.op == Opcode.LDREG
++            || binary || bitimm || branch || jump || binding || typed;
++        if (!valid || (!jump && ins.op != Opcode.NOP && ins.a >= cf.num_regs)
++            || ((ins.op == Opcode.LDREG || binary || bitimm || typed) && ins.b >= cf.num_regs)
++            || ((binary || typed) && ins.c >= cf.num_regs) || (bitimm && ins.c > 255)
++            || (binding && (cf.var_ic_entries == null || ins.get_bc() >= cf.const_count))) {
++            out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), at, true);
++            continue;
++        }
++        supported[at] = true;
++        if (jump || branch) {
++            int target = (int)pos + (jump ? raw.get_sabc() : ins.get_sbc());
++            bool internal = target > (int)at && target < (int)cf.code_count && boundary[target];
++            if (branch) {
++                out.load(ins.a, r0);
++                e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
++                void* boolean = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_BOOLEAN);
++                out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT, at);
++                e.bind(boolean);
++                e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
++                void* taken = e.cmp(ins.op == Opcode.IF_TRUE ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL, r0, 0, imm, 0);
++                out.link(taken, internal ? (uint)target : at, !internal);
++            } else {
++                out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), internal ? (uint)target : at, !internal);
++            }
++            emitted++;
++            continue;
++        }
++        if (ins.op == Opcode.NOP) { emitted++; continue; }
++        if (typed) { function_wide_typed(&out, ins, at, cls, write); emitted++; continue; }
++        bool inert = !binding && ins.op != Opcode.LDREG;
++        switch (ins.op) {
++            case LDINT:
++                TVal v; v.set_fastint((long)ins.get_sbc());
++                e.mov(r0, 0, imm, (long)loop_bits(v));
++            case LDREG:
++                out.load(ins.b, r0);
++            case GETVAR: case GETGLOBAL:
++                // The interpreter indexes site feedback by the payload word.
++                VarICEntry* vic = (VarICEntry*)cf.var_ic_entries + pos - 1;
++                VarICEntry view; Activation activation; Heap heap_view;
++                e.mov(r2, 0, imm, (long)vic);
++                if (ins.op == Opcode.GETVAR) {
++                    e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(1));
++                    e.mov(r3, 0, mem | r3, (char*)&activation.lex_env - (char*)&activation);
++                    out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, mem | r2, (char*)&view.search_head - (char*)&view, at);
++                }
++                e.mov(r3, 0, mem | jit::reg_s(1), function_cold_offset(0));
++                e.mov(r3, 0, mem | r3, (char*)&heap_view.shape_recycle_epoch - (char*)&heap_view, jit::SLJIT_MOV_U32);
++                e.mov(r1, 0, mem | r2, (char*)&view.recycle_epoch - (char*)&view, jit::SLJIT_MOV_U32);
++                out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, r1, 0, at);
++                e.mov(r3, 0, mem | r2, (char*)&view.prop_flags - (char*)&view, jit::SLJIT_MOV_U8);
++                e.op(jit::SLJIT_AND, r3, r3, 0, imm, 8);
++                out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, at);
++                e.mov(r2, 0, mem | r2, (char*)&view.slot_ptr - (char*)&view);
++                out.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, at);
++                e.mov(r0, 0, mem | r2, 0);
++                e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
++                void* initialized = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED);
++                out.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)(types::TAG_UNDEFINED << 48), at);
++                e.bind(initialized);
++            case ADD: case SUB:
++                out.integer(ins.b, r0, at);
++                out.integer(ins.c, r1, at);
++                e.op(ins.op == Opcode.ADD ? jit::SLJIT_ADD : jit::SLJIT_SUB, r0, r0, 0, r1, 0);
++                out.range(r0, at);
++                out.box(r0);
++            case EQ: case NEQ:
++                out.integer(ins.b, r0, at);
++                out.integer(ins.c, r1, at);
++                e.equal_value(r0, r0, r1, ins.op == Opcode.NEQ);
++                e.op(jit::SLJIT_OR, r0, r0, 0, imm, (long)(types::TAG_BOOLEAN << 48));
++            case LT: case LE: case GT: case GE:
++                out.integer(ins.b, r0, at);
++                out.integer(ins.c, r1, at);
++                int condition = ins.op == Opcode.LT ? jit::SLJIT_SIG_LESS
++                    : ins.op == Opcode.LE ? jit::SLJIT_SIG_LESS_EQUAL
++                    : ins.op == Opcode.GT ? jit::SLJIT_SIG_GREATER : jit::SLJIT_SIG_GREATER_EQUAL;
++                void* yes = e.cmp(condition, r0, 0, r1, 0);
++                e.mov(r0, 0, imm, (long)(types::TAG_BOOLEAN << 48));
++                void* done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
++                e.bind(yes);
++                e.mov(r0, 0, imm, (long)((types::TAG_BOOLEAN << 48) | 1));
++                e.bind(done);
++            default:
++                out.int32(ins.b, r0, at);
++                if (bitimm) { e.mov(r1, 0, imm, (long)ins.c); }
++                else { out.int32(ins.c, r1, at); }
++                if (ins.op == Opcode.BAND || ins.op == Opcode.BANDI || ins.op == Opcode.BOR
++                    || ins.op == Opcode.BORI || ins.op == Opcode.BXOR || ins.op == Opcode.BXORI) {
++                    int op = ins.op == Opcode.BAND || ins.op == Opcode.BANDI ? jit::SLJIT_AND
++                        : ins.op == Opcode.BOR || ins.op == Opcode.BORI ? jit::SLJIT_OR : jit::SLJIT_XOR;
++                    e.op(op, r0, r0, 0, r1, 0);
++                    e.mov(r0, 0, r0, 0, jit::SLJIT_MOV_S32);
++                } else {
++                    bool right = ins.op == Opcode.SHR || ins.op == Opcode.SHRI;
++                    bool unsigned_right = ins.op == Opcode.USHR || ins.op == Opcode.USHRI;
++                    e.op((right ? jit::SLJIT_MASHR : unsigned_right ? jit::SLJIT_MLSHR : jit::SLJIT_MSHL)
++                        | jit::SLJIT_32, r0, r0, 0, r1, 0);
++                    e.mov(r0, 0, r0, 0, unsigned_right ? jit::SLJIT_MOV_U32 : jit::SLJIT_MOV_S32);
++                }
++                out.box(r0);
++        }
++        function_store(&out, ins.a, r0, at, inert);
++        emitted++;
++    }
++    if (!saw_wide || emitted < 4 || e.failed) return false;
++    $if $feat(SLJIT_MAP): plan.map_pcs[cf.code_count] = e.label(); $endif
++    out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), cf.code_count, true);
++    // Multiple guards at one bytecode share the same exact recovery PC.
++    void*[FUNCTION_OPS + 1] exit_labels;
++    for (uint i = 0; i < out.link_count; i++) {
++        LoopLink* link = out.link_at(i);
++        if (!link.exit) {
++            out.bind_to(link.jump, out.labels[link.target]);
++            continue;
++        }
++        if (exit_labels[link.target] == null) {
++            exit_labels[link.target] = e.label();
++            e.mov(r0, 0, imm, (long)(cf.code + link.target));
++            if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;
++        }
++        out.bind_to(link.jump, exit_labels[link.target]);
++    }
++    if (e.failed) return false;
++    plan.native = (FunctionNative)jit::sljit_generate_code(e.compiler, 0, null);
++    if (plan.native == null) return false;
++    plan.code_bytes = jit::sljit_shim_code_size(e.compiler);
++    for (uint i = 0; i < cf.code_count; i++) if (supported[i]) {
++        plan.entries[i] = (void*)jit::sljit_shim_label_addr(out.labels[i]);
++    }
++    $if $feat(SLJIT_MAP):
++        for (uint i = 0; i < cf.code_count; i++) {
++            plan.map_pcs[i] = boundary[i] ? (void*)jit::sljit_shim_label_addr(out.labels[i]) : plan.map_pcs[i - 1];
++        }
++        plan.map_pcs[cf.code_count] = (void*)jit::sljit_shim_label_addr(plan.map_pcs[cf.code_count]);
++    $endif
++    plan.heap_regs = cf.num_regs;
++    $if $feat(SLJIT_STATS): io::eprintfn("SLJIT wide fragment begin=%d emitted=%d end=%d bytes=%d", plan.begin, emitted, pos, plan.code_bytes); $endif
++    return true;
++}
