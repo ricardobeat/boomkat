@@ -1,0 +1,12 @@
+PASS
+SLJIT function ref begin=0 ops=47 bytes=7896 id=0 line=6
+SLJIT loop ref begin=4 end=45 hits=195 iterations=99627
+SLJIT function hot begin=0 ops=167 bytes=36532 id=1 line=33
+SLJIT loop hot begin=4 end=45 hits=195 iterations=98064
+SLJIT function refAlias begin=0 ops=89 bytes=15412 id=2 line=66
+SLJIT loop refAlias begin=6 end=87 hits=490 iterations=367527
+SLJIT function hotAlias begin=0 ops=166 bytes=23492 id=3 line=94
+SLJIT loop hotAlias begin=74 end=155 hits=486 iterations=366592
+SLJIT function  begin=0 ops=157 bytes=23160 id=4 line=1
+SLJIT totals functions=5 loops=4 templates=0 code_bytes=140336
+SLJIT budget bytes=140336 limit=4194304 native_work=0 evictions=0
