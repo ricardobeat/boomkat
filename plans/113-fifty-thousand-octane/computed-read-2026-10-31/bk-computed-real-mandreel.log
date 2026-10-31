@@ -1,0 +1,757 @@
+SLJIT function compiled register_delegate pc=0..8 function_ops=8 regs=5 code_bytes=5264 plan_bytes=15064
+SLJIT loop compiled initHeap pc=57..65 code_bytes=924 plan_bytes=3120 ssa=1 mem=1
+SLJIT function compiled initHeap pc=0..67 function_ops=67 regs=7 code_bytes=11516 plan_bytes=15595
+SLJIT function compiled emit_32 pc=0..9 function_ops=9 regs=4 code_bytes=3644 plan_bytes=15073
+SLJIT function compiled emit_string pc=0..16 function_ops=16 regs=7 code_bytes=4984 plan_bytes=15136
+SLJIT function compiled emit_16 pc=0..9 function_ops=9 regs=4 code_bytes=3640 plan_bytes=15073
+SLJIT SSA leaf reject line=3643 stage=analysis
+SLJIT function compiled emit_start pc=0..5 function_ops=5 regs=3 code_bytes=1624 plan_bytes=15037
+SLJIT loop compiled my_mandreel_call_constructors pc=24..34 code_bytes=1412 plan_bytes=3120 ssa=1 mem=2
+SLJIT function compiled my_mandreel_call_constructors pc=0..40 function_ops=40 regs=10 code_bytes=9200 plan_bytes=15352
+SLJIT function compiled uint pc=0..5 function_ops=5 regs=3 code_bytes=2544 plan_bytes=15037
+SLJIT function compiled _GLOBAL__I__ZN5my_gl14glAttachShaderEjj pc=0..145 function_ops=145 regs=16 code_bytes=55660 plan_bytes=16297
+SLJIT region attempt ops=2054 regs=47 begin=38 budget_used=100412
+SLJIT region result __v_printf ops=2054 analyzed=1 emitted=1 code_bytes=83476 budget_used=100412 limit=4194304
+SLJIT function compiled __v_printf pc=38..294 function_ops=2054 regs=47 code_bytes=83476 plan_bytes=17296
+SLJIT SSA leaf reject line=4327 stage=analysis
+SLJIT function compiled get_string_from_ptr pc=0..26 function_ops=26 regs=9 code_bytes=10724 plan_bytes=15226
+SLJIT region attempt ops=11253 regs=58 begin=820 budget_used=194612
+SLJIT region result _ZN13BenchmarkDemo11initPhysicsEv ops=11253 analyzed=1 emitted=0 code_bytes=0 budget_used=194612 limit=4194304
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT function compiled _ZN31btDefaultCollisionConfiguration31getCollisionAlgorithmCreateFuncEii pc=0..141 function_ops=141 regs=18 code_bytes=35828 plan_bytes=16261
+SLJIT function compiled memset pc=0..35 function_ops=35 regs=16 code_bytes=12648 plan_bytes=15307
+SLJIT function compiled _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i pc=0..141 function_ops=141 regs=29 code_bytes=56480 plan_bytes=16261
+SLJIT loop compiled _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i pc=84..127 code_bytes=5116 plan_bytes=3120 ssa=0 mem=1
+SLJIT loop compiled _ZN17btConvexHullShape8addPointERK9btVector3 pc=81..120 code_bytes=4440 plan_bytes=3120 ssa=0 mem=1
+SLJIT function compiled _ZN17btConvexHullShape8addPointERK9btVector3 pc=0..218 function_ops=218 regs=28 code_bytes=85592 plan_bytes=16954
+SLJIT function compiled malloc pc=0..54 function_ops=54 regs=9 code_bytes=16560 plan_bytes=15478
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT function compiled tlsf_malloc pc=0..93 function_ops=93 regs=13 code_bytes=32872 plan_bytes=15829
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT function compiled block_locate_free pc=0..341 function_ops=341 regs=25 code_bytes=82124 plan_bytes=18061
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT function compiled block_prepare_used pc=0..266 function_ops=266 regs=21 code_bytes=87504 plan_bytes=17386
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT function compiled _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb pc=0..290 function_ops=290 regs=39 code_bytes=150732 plan_bytes=17602
+SLJIT function compiled _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss pc=0..425 function_ops=425 regs=28 code_bytes=194388 plan_bytes=18817
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT function compiled _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb pc=0..308 function_ops=308 regs=37 code_bytes=172716 plan_bytes=17764
+SLJIT function compiled _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ pc=0..489 function_ops=489 regs=36 code_bytes=214028 plan_bytes=19393
+SLJIT SSA leaf reject line=45831 stage=analysis
+SLJIT function compiled _ZNK21btConvexInternalShape9getMarginEv pc=0..16 function_ops=16 regs=11 code_bytes=6688 plan_bytes=15136
+SLJIT function compiled _ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i pc=0..143 function_ops=143 regs=20 code_bytes=63440 plan_bytes=16279
+SLJIT function compiled _ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ pc=0..81 function_ops=81 regs=18 code_bytes=43552 plan_bytes=15721
+SLJIT function compiled _Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_ pc=0..256 function_ops=256 regs=38 code_bytes=116708 plan_bytes=17296
+SLJIT loop compiled _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody pc=188..210 code_bytes=2256 plan_bytes=3120 ssa=0 mem=1
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT function compiled _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody pc=0..328 function_ops=328 regs=35 code_bytes=126348 plan_bytes=17944
+SLJIT function compiled _ZNK23btPolyhedralConvexShape21calculateLocalInertiaEfR9btVector3 pc=0..181 function_ops=181 regs=22 code_bytes=79556 plan_bytes=16621
+SLJIT function compiled _ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE pc=0..256 function_ops=680 regs=37 code_bytes=111316 plan_bytes=17296
+SLJIT function compiled _ZN17btCollisionObject17setCollisionShapeEP16btCollisionShape pc=0..17 function_ops=17 regs=11 code_bytes=8900 plan_bytes=15145
+SLJIT function compiled _ZN11btRigidBody12setMassPropsEfRK9btVector3 pc=0..131 function_ops=131 regs=20 code_bytes=55500 plan_bytes=16171
+SLJIT function compiled _ZN11btRigidBody19updateInertiaTensorEv pc=0..137 function_ops=137 regs=32 code_bytes=61500 plan_bytes=16225
+SLJIT function compiled _ZN23btDiscreteDynamicsWorld18addCollisionObjectEP17btCollisionObjectss pc=0..30 function_ops=30 regs=13 code_bytes=15248 plan_bytes=15262
+SLJIT SSA leaf reject line=485 stage=analysis
+SLJIT function compiled updateMandreelStats pc=0..14 function_ops=14 regs=5 code_bytes=3244 plan_bytes=15118
+SLJIT loop compiled _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ pc=46..132 code_bytes=10160 plan_bytes=3120 ssa=0 mem=2
+SLJIT loop compiled _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss pc=132..154 code_bytes=2448 plan_bytes=3120 ssa=0 mem=1
+SLJIT loop compiled runMandreel pc=10..20 code_bytes=1412 plan_bytes=3120 ssa=1 mem=2
+SLJIT function compiled runMandreel pc=0..70 function_ops=70 regs=8 code_bytes=19412 plan_bytes=15622
+SLJIT loop compiled __mandreel_internal_init pc=111..145 code_bytes=3988 plan_bytes=3120 ssa=0 mem=2
+SLJIT region attempt ops=2881 regs=58 begin=146 budget_used=2077316
+SLJIT region result __mandreel_internal_init ops=2881 analyzed=1 emitted=0 code_bytes=0 budget_used=2077316 limit=4194304
+SLJIT SSA leaf reject line=4240 stage=analysis
+SLJIT function compiled sqrtf pc=0..11 function_ops=11 regs=7 code_bytes=4352 plan_bytes=15091
+SLJIT SSA leaf reject line=4166 stage=analysis
+SLJIT function compiled powf pc=0..16 function_ops=16 regs=9 code_bytes=6508 plan_bytes=15136
+SLJIT SSA leaf reject line=4075 stage=analysis
+SLJIT function compiled cosf pc=0..11 function_ops=11 regs=7 code_bytes=4256 plan_bytes=15091
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT SSA leaf line=3878 caller_depth=0 commit=0
+SLJIT region attempt ops=2283 regs=50 begin=469 budget_used=2092432
+SLJIT region result _ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo ops=2283 analyzed=1 emitted=0 code_bytes=0 budget_used=2092432 limit=4194304
+SLJIT loop compiled _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii pc=43..57 code_bytes=1632 plan_bytes=3120 ssa=0 mem=1
+SLJIT loop compiled _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii pc=66..80 code_bytes=1636 plan_bytes=3120 ssa=0 mem=1
+SLJIT loop compiled _ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii pc=357..379 code_bytes=2440 plan_bytes=3120 ssa=0 mem=1
+SLJIT region attempt ops=829 regs=33 begin=380 budget_used=2098140
+SLJIT region attempt ops=637 regs=50 begin=26 budget_used=2098140
+SLJIT loop compiled Mandreel_checkState pc=4..13 code_bytes=1420 plan_bytes=3120 ssa=0 mem=1
+Mandreel: 656 ms
+SLJIT coverage id=2 line=64 ops=31 regs=14 captures=0 name=Benchmark threaded=23 switch=9 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=4 line=99 ops=10 regs=9 captures=0 name=BenchmarkSuite threaded=10 switch=6 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=5 line=449 ops=38 regs=5 captures=0 name=setupMandreel threaded=36 switch=17 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=6 line=462 ops=70 regs=8 captures=0 name=runMandreel threaded=4735 switch=3931 attempts=3923 warmup=4294967294 retired=1 active=17 rejection=compiled
+SLJIT native id=6 calls=0 returns=0
+SLJIT pipeline id=6 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=6 homes=0
+SLJIT SSA calls id=6 frameless=0
+SLJIT readmiss id=6 pc=62 opcode=GETPROPC_CACHED hits=7 changes=1 shape=221 class=1 rep=3 chain=0 cached=1
+SLJIT code id=6 start=0x105063d18 bytes=19412 fragment=0 fragment_bytes=0
+SLJIT function runMandreel begin=0 ops=70 bytes=19412 hits=37 returns=1 stalled=8 charged_edges=20 budget_exits=0 id=6 line=462
+SLJIT exit runMandreel begin=0 pc=23 op=69 count=1 id=6 line=468 opcode=THROW_UNRESOLVED
+SLJIT exit runMandreel begin=0 pc=26 op=77 count=1 id=6 line=469 opcode=GETGLOBAL
+SLJIT exit runMandreel begin=0 pc=29 op=77 count=1 id=6 line=470 opcode=GETGLOBAL
+SLJIT exit runMandreel begin=0 pc=34 op=77 count=1 id=6 line=471 opcode=GETGLOBAL
+SLJIT exit runMandreel begin=0 pc=45 op=77 count=1 id=6 line=474 opcode=GETGLOBAL
+SLJIT exit runMandreel begin=0 pc=50 op=77 count=1 id=6 line=475 opcode=GETGLOBAL
+SLJIT exit runMandreel begin=0 pc=58 op=137 count=20 id=6 line=477 opcode=CALL_GLOBAL
+SLJIT exit runMandreel begin=0 pc=60 op=77 count=1 id=6 line=479 opcode=GETGLOBAL
+SLJIT exit runMandreel begin=0 pc=63 op=61 count=8 id=6 line=479 opcode=CALL
+SLJIT exit runMandreel begin=0 pc=68 op=137 count=1 id=6 line=481 opcode=CALL_GLOBAL
+SLJIT exit runMandreel begin=0 pc=69 op=66 count=1 id=6 line=482 opcode=RETUNDEF
+SLJIT loop runMandreel begin=10 end=20 hits=3885 iterations=3973270
+SLJIT loop code id=6 begin=10 end=20 bytes=1412
+SLJIT ssa name=runMandreel begin=10 end=20 hits=3885 iterations=3973270
+SLJIT coverage id=7 line=485 ops=14 regs=5 captures=0 name=updateMandreelStats threaded=27162 switch=14 attempts=74 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=7 calls=0 returns=0
+SLJIT pipeline id=7 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=7 homes=0
+SLJIT SSA calls id=7 frameless=0
+SLJIT code id=7 start=0x10503b340 bytes=3244 fragment=0 fragment_bytes=0
+SLJIT function updateMandreelStats begin=0 ops=14 bytes=3244 hits=11 returns=1 stalled=2 charged_edges=0 budget_exits=0 id=7 line=485
+SLJIT exit updateMandreelStats begin=0 pc=3 op=68 count=8 id=7 line=486 opcode=RESOLVEVAR
+SLJIT exit updateMandreelStats begin=0 pc=7 op=77 count=1 id=7 line=487 opcode=GETGLOBAL
+SLJIT exit updateMandreelStats begin=0 pc=11 op=78 count=1 id=7 line=487 opcode=PUTGLOBAL
+SLJIT exit updateMandreelStats begin=0 pc=13 op=66 count=1 id=7 line=489 opcode=RETUNDEF
+SLJIT coverage id=8 line=492 ops=7 regs=4 captures=0 name=startMandreelTimer threaded=7 switch=4 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=10 line=500 ops=65 regs=3 captures=0 name=tearDownMandreel threaded=65 switch=32 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=12 line=525 ops=16 regs=4 captures=0 name=Mandreel_flushTimeouts threaded=160 switch=22 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=13 line=551 ops=1 regs=0 captures=0 name= threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=14 line=549 ops=4 regs=6 captures=0 name=Mandreel_Element threaded=16 switch=6 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=16 line=559 ops=1 regs=0 captures=0 name=Mandreel_Canvas threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=18 line=602 ops=1 regs=1 captures=0 name=dump threaded=3 switch=0 attempts=3 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=19 line=615 ops=40 regs=10 captures=0 name=my_mandreel_call_constructors threaded=4597 switch=3907 attempts=3887 warmup=4294967295 retired=0 active=9 rejection=compiled
+SLJIT native id=19 calls=0 returns=0
+SLJIT pipeline id=19 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=19 homes=0
+SLJIT SSA calls id=19 frameless=0
+SLJIT code id=19 start=0x100436e08 bytes=9144 fragment=0x1004391f8 fragment_bytes=56
+SLJIT function my_mandreel_call_constructors begin=0 ops=40 bytes=9200 hits=2 returns=1 stalled=1 charged_edges=0 budget_exits=0 id=19 line=615
+SLJIT exit my_mandreel_call_constructors begin=0 pc=38 op=137 count=1 id=19 line=622 opcode=CALL_GLOBAL
+SLJIT exit my_mandreel_call_constructors begin=0 pc=39 op=66 count=1 id=19 line=623 opcode=RETUNDEF
+SLJIT loop my_mandreel_call_constructors begin=24 end=34 hits=3885 iterations=3973270
+SLJIT loop code id=19 begin=24 end=34 bytes=1412
+SLJIT ssa name=my_mandreel_call_constructors begin=24 end=34 hits=3885 iterations=3973270
+SLJIT coverage id=20 line=629 ops=6 regs=3 captures=0 name=Date_now threaded=4488 switch=16 attempts=65 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=21 line=633 ops=21 regs=6 captures=0 name=Mandreel_checkState threaded=669 switch=105 attempts=41 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT loop Mandreel_checkState begin=4 end=13 hits=40 iterations=39671
+SLJIT loop code id=21 begin=4 end=13 bytes=1420
+SLJIT ssa name=Mandreel_checkState begin=4 end=13 hits=0 iterations=0
+SLJIT coverage id=22 line=653 ops=24 regs=6 captures=0 name=startApp threaded=24 switch=3 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=23 line=671 ops=33 regs=10 captures=0 name=appStartState threaded=66 switch=2 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=48 line=1345 ops=52 regs=10 captures=0 name=mandreelLoadMandreelJsScript threaded=39 switch=20 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=49 line=1373 ops=31 regs=5 captures=0 name=mandreelFatLoaded threaded=7 switch=3 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=51 line=1417 ops=20 regs=9 captures=0 name=mandreel_removecr threaded=6 switch=1 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=54 line=1522 ops=238 regs=30 captures=0 name= threaded=111 switch=23 attempts=1 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=55 line=1512 ops=34 regs=7 captures=0 name=mandreelLoadFat threaded=27 switch=16 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=57 line=1597 ops=458 regs=16 captures=0 name=mandreelAppStart threaded=121 switch=41 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=59 line=1832 ops=22 regs=6 captures=0 name=_mandreelAppStartReady threaded=15 switch=7 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=60 line=1849 ops=17 regs=5 captures=0 name=_mandreelAppAudioReady threaded=12 switch=5 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=61 line=1859 ops=39 regs=7 captures=0 name=mandreelAppInit threaded=36 switch=16 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=62 line=1877 ops=44 regs=9 captures=0 name=mandreelAppDraw threaded=520 switch=16 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=76 line=2166 ops=8 regs=3 captures=0 name=mandreelAppStartRenderWebGL threaded=8 switch=4 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=78 line=2210 ops=26 regs=7 captures=0 name=render threaded=520 switch=23 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=155 line=3632 ops=8 regs=5 captures=0 name=register_delegate threaded=5320 switch=10 attempts=120 warmup=4294967295 retired=1 active=1 rejection=compiled
+SLJIT native id=155 calls=0 returns=0
+SLJIT pipeline id=155 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=155 homes=0
+SLJIT SSA calls id=155 frameless=0
+SLJIT code id=155 start=0x100430010 bytes=5264 fragment=0 fragment_bytes=0
+SLJIT function register_delegate begin=0 ops=8 bytes=5264 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=155 line=3632
+SLJIT exit register_delegate begin=0 pc=3 op=53 count=8 id=155 line=3633 opcode=PUTPROP
+SLJIT coverage id=156 line=3643 ops=5 regs=3 captures=0 name=emit_start threaded=3485 switch=2 attempts=64 warmup=4294967295 retired=0 active=2 rejection=compiled
+SLJIT native id=156 calls=0 returns=0
+SLJIT pipeline id=156 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=156 homes=0
+SLJIT SSA calls id=156 frameless=0
+SLJIT code id=156 start=0x1004397e8 bytes=1624 fragment=0 fragment_bytes=0
+SLJIT function emit_start begin=0 ops=5 bytes=1624 hits=0 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=156 line=3643
+SLJIT coverage id=157 line=3648 ops=6 regs=4 captures=0 name=emit_8 threaded=12 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=158 line=3654 ops=9 regs=4 captures=0 name=emit_16 threaded=884696 switch=5 attempts=71 warmup=4294967295 retired=1 active=2 rejection=compiled
+SLJIT native id=158 calls=0 returns=0
+SLJIT pipeline id=158 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=158 homes=0
+SLJIT SSA calls id=158 frameless=0
+SLJIT code id=158 start=0x100439e50 bytes=3640 fragment=0 fragment_bytes=0
+SLJIT function emit_16 begin=0 ops=9 bytes=3640 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=158 line=3654
+SLJIT exit emit_16 begin=0 pc=5 op=68 count=8 id=158 line=3655 opcode=RESOLVEVAR
+SLJIT coverage id=159 line=3660 ops=9 regs=4 captures=0 name=emit_32 threaded=481703 switch=5 attempts=71 warmup=4294967295 retired=1 active=2 rejection=compiled
+SLJIT native id=159 calls=0 returns=0
+SLJIT pipeline id=159 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=159 homes=0
+SLJIT SSA calls id=159 frameless=0
+SLJIT code id=159 start=0x10043c068 bytes=3644 fragment=0 fragment_bytes=0
+SLJIT function emit_32 begin=0 ops=9 bytes=3644 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=159 line=3660
+SLJIT exit emit_32 begin=0 pc=5 op=68 count=8 id=159 line=3661 opcode=RESOLVEVAR
+SLJIT coverage id=160 line=3667 ops=10 regs=6 captures=0 name=emit_fill threaded=118 switch=3 attempts=7 warmup=22 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=161 line=3677 ops=16 regs=7 captures=0 name=emit_string threaded=157043 switch=21 attempts=427 warmup=4294967294 retired=1 active=7 rejection=compiled
+SLJIT native id=161 calls=0 returns=0
+SLJIT pipeline id=161 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=161 homes=0
+SLJIT SSA calls id=161 frameless=0
+SLJIT code id=161 start=0x10043ac98 bytes=4928 fragment=0x10043c010 fragment_bytes=56
+SLJIT function emit_string begin=0 ops=16 bytes=4984 hits=412 returns=0 stalled=8 charged_edges=404 budget_exits=0 id=161 line=3677
+SLJIT exit emit_string begin=0 pc=3 op=51 count=412 id=161 line=3682 opcode=GETPROPC
+SLJIT coverage id=166 line=3725 ops=3 regs=4 captures=0 name=_ZdlPv threaded=12 switch=2 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=168 line=3736 ops=3 regs=4 captures=0 name=_Znwj threaded=114 switch=2 attempts=38 warmup=38 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=170 line=3754 ops=67 regs=7 captures=0 name=initHeap threaded=4504 switch=3932 attempts=3887 warmup=4294967294 retired=0 active=14 rejection=compiled
+SLJIT native id=170 calls=0 returns=0
+SLJIT pipeline id=170 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=170 homes=0
+SLJIT SSA calls id=170 frameless=0
+SLJIT code id=170 start=0x10043ceb8 bytes=11460 fragment=0x10043fbf8 fragment_bytes=56
+SLJIT function initHeap begin=0 ops=67 bytes=11516 hits=2 returns=2 stalled=2 charged_edges=0 budget_exits=0 id=170 line=3754
+SLJIT exit initHeap begin=0 pc=66 op=66 count=2 id=170 line=3771 opcode=RETUNDEF
+SLJIT loop initHeap begin=57 end=65 hits=3885 iterations=3973270
+SLJIT loop code id=170 begin=57 end=65 bytes=924
+SLJIT ssa name=initHeap begin=57 end=65 hits=3885 iterations=3973270
+SLJIT coverage id=171 line=3775 ops=19 regs=7 captures=0 name=Malloc threaded=13260 switch=962 attempts=780 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=177 line=3878 ops=5 regs=3 captures=0 name=uint threaded=2051695 switch=0 attempts=2051632 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=177 calls=0 returns=0
+SLJIT pipeline id=177 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=177 homes=0
+SLJIT SSA calls id=177 frameless=0
+SLJIT leaf usage id=177 target_line=3878 hits=0 completed=0 commit=0
+SLJIT code id=177 start=0x100436408 bytes=2544 fragment=0 fragment_bytes=0
+SLJIT function uint begin=0 ops=5 bytes=2544 hits=2051569 returns=2051569 stalled=0 charged_edges=0 budget_exits=0 id=177 line=3878
+SLJIT exit uint begin=0 pc=1 op=65 count=2016906 id=177 line=3878 opcode=RET
+SLJIT exit uint begin=0 pc=4 op=65 count=34663 id=177 line=3879 opcode=RET
+SLJIT coverage id=178 line=3886 ops=11 regs=7 captures=0 name=puts threaded=44 switch=6 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=181 line=3913 ops=23 regs=10 captures=0 name=gettimeofday threaded=16721 switch=21 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=182 line=3923 ops=16 regs=8 captures=0 name=free threaded=4416 switch=95 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=189 line=4014 ops=54 regs=9 captures=0 name=malloc threaded=177643 switch=28826 attempts=8083 warmup=4294967295 retired=1 active=12 rejection=compiled
+SLJIT native id=189 calls=0 returns=0
+SLJIT pipeline id=189 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=189 homes=0
+SLJIT SSA calls id=189 frameless=0
+SLJIT code id=189 start=0x10049bf08 bytes=16504 fragment=0x10049ffa8 fragment_bytes=56
+SLJIT function malloc begin=0 ops=54 bytes=16560 hits=8020 returns=8008 stalled=2 charged_edges=0 budget_exits=0 id=189 line=4014
+SLJIT exit malloc begin=0 pc=15 op=77 count=1 id=189 line=4027 opcode=GETGLOBAL
+SLJIT exit malloc begin=0 pc=27 op=77 count=1 id=189 line=4030 opcode=GETGLOBAL
+SLJIT exit malloc begin=0 pc=41 op=137 count=9 id=189 line=4037 opcode=CALL_GLOBAL
+SLJIT exit malloc begin=0 pc=42 op=77 count=1 id=189 line=4039 opcode=GETGLOBAL
+SLJIT exit malloc begin=0 pc=53 op=66 count=8008 id=189 line=4044 opcode=RETUNDEF
+SLJIT coverage id=194 line=4075 ops=11 regs=7 captures=0 name=cosf threaded=422376 switch=9 attempts=73 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=194 calls=0 returns=0
+SLJIT pipeline id=194 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=194 homes=0
+SLJIT SSA calls id=194 frameless=0
+SLJIT code id=194 start=0x1050b8498 bytes=4256 fragment=0 fragment_bytes=0
+SLJIT function cosf begin=0 ops=11 bytes=4256 hits=10 returns=1 stalled=2 charged_edges=0 budget_exits=0 id=194 line=4075
+SLJIT exit cosf begin=0 pc=3 op=68 count=8 id=194 line=4076 opcode=RESOLVEVAR
+SLJIT exit cosf begin=0 pc=4 op=77 count=1 id=194 line=4076 opcode=GETGLOBAL
+SLJIT exit cosf begin=0 pc=10 op=66 count=1 id=194 line=4078 opcode=RETUNDEF
+SLJIT coverage id=208 line=4166 ops=16 regs=9 captures=0 name=powf threaded=346048 switch=11 attempts=38402 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=208 calls=0 returns=0
+SLJIT pipeline id=208 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=208 homes=0
+SLJIT SSA calls id=208 frameless=0
+SLJIT code id=208 start=0x1050b9558 bytes=6508 fragment=0 fragment_bytes=0
+SLJIT function powf begin=0 ops=16 bytes=6508 hits=38339 returns=1 stalled=3 charged_edges=0 budget_exits=0 id=208 line=4166
+SLJIT exit powf begin=0 pc=0 op=77 count=1 id=208 line=4166 opcode=GETGLOBAL
+SLJIT exit powf begin=0 pc=7 op=68 count=38336 id=208 line=4168 opcode=RESOLVEVAR
+SLJIT exit powf begin=0 pc=8 op=77 count=1 id=208 line=4168 opcode=GETGLOBAL
+SLJIT exit powf begin=0 pc=15 op=66 count=1 id=208 line=4169 opcode=RETUNDEF
+SLJIT coverage id=219 line=4240 ops=11 regs=7 captures=0 name=sqrtf threaded=1478376 switch=9 attempts=73 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=219 calls=0 returns=0
+SLJIT pipeline id=219 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=219 homes=0
+SLJIT SSA calls id=219 frameless=0
+SLJIT code id=219 start=0x1050baee0 bytes=4352 fragment=0 fragment_bytes=0
+SLJIT function sqrtf begin=0 ops=11 bytes=4352 hits=10 returns=1 stalled=2 charged_edges=0 budget_exits=0 id=219 line=4240
+SLJIT exit sqrtf begin=0 pc=3 op=68 count=8 id=219 line=4241 opcode=RESOLVEVAR
+SLJIT exit sqrtf begin=0 pc=4 op=77 count=1 id=219 line=4241 opcode=GETGLOBAL
+SLJIT exit sqrtf begin=0 pc=10 op=66 count=1 id=219 line=4242 opcode=RETUNDEF
+SLJIT coverage id=231 line=4327 ops=26 regs=9 captures=0 name=get_string_from_ptr threaded=4594 switch=456 attempts=20 warmup=4294967294 retired=1 active=9 rejection=compiled
+SLJIT native id=231 calls=0 returns=0
+SLJIT pipeline id=231 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=231 homes=1
+SLJIT SSA calls id=231 frameless=0
+SLJIT code id=231 start=0x10046d600 bytes=10724 fragment=0 fragment_bytes=0
+SLJIT function get_string_from_ptr begin=0 ops=26 bytes=10724 hits=16 returns=0 stalled=0 charged_edges=8 budget_exits=0 id=231 line=4327
+SLJIT exit get_string_from_ptr begin=0 pc=9 op=50 count=16 id=231 line=4335 opcode=GETPROP
+SLJIT coverage id=232 line=4349 ops=19 regs=10 captures=0 name=fill_ptr_from_string threaded=98 switch=3 attempts=2 warmup=10 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=241 line=4517 ops=1 regs=1 captures=0 name=_Z30mandreel_fopen_enable_checkfatb threaded=5 switch=0 attempts=5 warmup=5 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=243 line=4536 ops=49 regs=15 captures=0 name=mandreel_fopen threaded=140 switch=23 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=254 line=4779 ops=19 regs=13 captures=0 name=mandreel_call_constructors threaded=142 switch=11 attempts=2 warmup=12 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=283 line=5583 ops=3 regs=4 captures=0 name=__sandbox_OutputDebugString threaded=12 switch=2 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=296 line=5806 ops=1 regs=0 captures=0 name=iMandreelRegisterExternalCallback threaded=14 switch=0 attempts=14 warmup=14 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=297 line=5810 ops=1 regs=0 captures=0 name=__mandreel_internal_CreateWindow threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=300 line=5836 ops=72 regs=12 captures=0 name=__mandreel_process_async_calls threaded=180 switch=4 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=421 line=7595 ops=5 regs=4 captures=0 name=mandreel_audio_isLogEnabled threaded=10 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=422 line=7600 ops=5 regs=4 captures=0 name=_mandreel_audio_useMusicFunctions threaded=10 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=424 line=7611 ops=9 regs=6 captures=0 name=mandreel_audio_getAudioDriverName threaded=18 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=527 line=8885 ops=5 regs=4 captures=0 name=null_mandreel_audio threaded=110 switch=6 attempts=22 warmup=22 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=563 line=9375 ops=53 regs=12 captures=0 name=_GLOBAL__I_Landscape02Vtx threaded=106 switch=28 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=573 line=9651 ops=215 regs=43 captures=0 name=_ZNK20btDefaultMotionState17getWorldTransformER11btTransform threaded=430 switch=42 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=582 line=10489 ops=583 regs=25 captures=0 name=_ZN15DemoApplication20localCreateRigidBodyEfRK11btTransformP16btCollisionShape threaded=1092480 switch=184 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=584 line=10747 ops=533 regs=31 captures=0 name=_ZN13BenchmarkDemo20clientMoveAndDisplayEv threaded=1380 switch=32 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=589 line=11778 ops=11253 regs=58 captures=0 name=_ZN13BenchmarkDemo11initPhysicsEv threaded=742772 switch=916 attempts=32 warmup=4294967295 retired=0 active=0 rejection=guard/link capacity
+SLJIT coverage id=593 line=16240 ops=12 regs=9 captures=0 name=__draw threaded=240 switch=6 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=595 line=16320 ops=13 regs=10 captures=0 name=__init threaded=26 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=614 line=16611 ops=16 regs=10 captures=0 name=_ZN20btAxisSweep3InternalItE23getOverlappingPairCacheEv threaded=640 switch=8 attempts=40 warmup=40 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=621 line=16951 ops=143 regs=20 captures=0 name=_ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i threaded=3343248 switch=169250 attempts=42284 warmup=4294967294 retired=0 active=23 rejection=compiled
+SLJIT native id=621 calls=0 returns=0
+SLJIT pipeline id=621 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=621 homes=0
+SLJIT SSA calls id=621 frameless=0
+SLJIT code id=621 start=0x104f6c010 bytes=63440 fragment=0 fragment_bytes=0
+SLJIT function _ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i begin=0 ops=143 bytes=63440 hits=42221 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=621 line=16951
+SLJIT exit _ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i begin=0 pc=4 op=77 count=1 id=621 line=16965 opcode=GETGLOBAL
+SLJIT exit _ZNK20btAxisSweep3InternalItE8quantizeEPtRK9btVector3i begin=0 pc=44 op=50 count=42220 id=621 line=16981 opcode=GETPROP
+SLJIT coverage id=623 line=17325 ops=290 regs=39 captures=0 name=_ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb threaded=24692 switch=2037 attempts=19043 warmup=4294967294 retired=0 active=30 rejection=compiled
+SLJIT native id=623 calls=0 returns=0
+SLJIT pipeline id=623 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=623 homes=0
+SLJIT SSA calls id=623 frameless=0
+SLJIT leaf usage id=623 target_line=3878 hits=2268357 completed=2268357 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=2268356 completed=2268356 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=114984 completed=114984 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=114984 completed=114984 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=115008 completed=115008 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=115008 completed=115008 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=311344 completed=311344 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=311344 completed=311344 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=581668 completed=581668 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=581668 completed=581668 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=15051 completed=15051 commit=0
+SLJIT leaf usage id=623 target_line=3878 hits=15051 completed=15051 commit=0
+SLJIT code id=623 start=0x1004f0010 bytes=150732 fragment=0 fragment_bytes=0
+SLJIT function _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 ops=290 bytes=150732 hits=19017 returns=16802 stalled=1749 charged_edges=2260620 budget_exits=2221 id=623 line=17325
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 pc=4 op=77 count=1 id=623 line=17346 opcode=GETGLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 pc=33 op=137 count=1 id=623 line=17357 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 pc=89 op=77 count=1 id=623 line=17390 opcode=GETGLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 pc=281 op=66 count=7506 id=623 line=17464 opcode=RETUNDEF
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 pc=288 op=47 count=2212 id=623 line=17471 opcode=JUMP
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMinDownEitP12btDispatcherb begin=0 pc=289 op=66 count=9296 id=623 line=17473 opcode=RETUNDEF
+SLJIT coverage id=624 line=17479 ops=291 regs=38 captures=0 name=_ZN20btAxisSweep3InternalItE9sortMaxUpEitP12btDispatcherb threaded=2573401 switch=280 attempts=5 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=626 line=17796 ops=308 regs=37 captures=0 name=_ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb threaded=27004105 switch=8725 attempts=420830 warmup=4294967294 retired=7 active=23 rejection=compiled
+SLJIT native id=626 calls=0 returns=0
+SLJIT pipeline id=626 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=626 homes=0
+SLJIT SSA calls id=626 frameless=0
+SLJIT leaf usage id=626 target_line=3878 hits=1856654 completed=1856654 commit=0
+SLJIT leaf usage id=626 target_line=3878 hits=1531550 completed=1531550 commit=0
+SLJIT leaf usage id=626 target_line=3878 hits=14051 completed=14051 commit=0
+SLJIT leaf usage id=626 target_line=3878 hits=14051 completed=14051 commit=0
+SLJIT code id=626 start=0x100838010 bytes=172716 fragment=0 fragment_bytes=0
+SLJIT function _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 ops=308 bytes=172716 hits=420796 returns=14812 stalled=759 charged_edges=1851508 budget_exits=1804 id=626 line=17796
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=4 op=77 count=1 id=626 line=17815 opcode=GETGLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=33 op=137 count=1 id=626 line=17826 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=98 op=77 count=1 id=626 line=17862 opcode=GETGLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=122 op=137 count=404095 id=626 line=17872 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=124 op=137 count=8 id=626 line=17872 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=127 op=77 count=1 id=626 line=17874 opcode=GETGLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=136 op=137 count=196 id=626 line=17876 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=138 op=137 count=8 id=626 line=17876 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=147 op=77 count=1 id=626 line=17881 opcode=GETGLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=156 op=137 count=231 id=626 line=17883 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=158 op=137 count=8 id=626 line=17883 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=161 op=77 count=1 id=626 line=17885 opcode=GETGLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=170 op=137 count=7 id=626 line=17887 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=172 op=137 count=8 id=626 line=17887 opcode=CALL_GLOBAL
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=299 op=66 count=4579 id=626 line=17938 opcode=RETUNDEF
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=306 op=47 count=1417 id=626 line=17945 opcode=JUMP
+SLJIT exit _ZN20btAxisSweep3InternalItE11sortMaxDownEitP12btDispatcherb begin=0 pc=307 op=66 count=10233 id=626 line=17947 opcode=RETUNDEF
+SLJIT coverage id=627 line=17953 ops=331 regs=38 captures=0 name=_ZN20btAxisSweep3InternalItE7setAabbEP17btBroadphaseProxyRK9btVector3S5_P12btDispatcher threaded=8078528 switch=353 attempts=24 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=629 line=18260 ops=630 regs=36 captures=0 name=_ZN20btAxisSweep3InternalItE11createProxyERK9btVector3S3_iPvssP12btDispatcherS4_ threaded=1178186 switch=32737 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=631 line=18652 ops=366 regs=30 captures=0 name=_ZN20btAxisSweep3InternalItE25calculateOverlappingPairsEP12btDispatcher threaded=640 switch=15 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=643 line=19280 ops=489 regs=36 captures=0 name=_ZL10insertleafP6btDbvtP10btDbvtNodeS2_ threaded=3107125 switch=52316 attempts=28960 warmup=4294967294 retired=0 active=77 rejection=compiled
+SLJIT native id=643 calls=0 returns=0
+SLJIT pipeline id=643 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=643 homes=0
+SLJIT SSA calls id=643 frameless=0
+SLJIT code id=643 start=0x104f2c010 bytes=214028 fragment=0 fragment_bytes=0
+SLJIT function _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 ops=489 bytes=214028 hits=28948 returns=4 stalled=1 charged_edges=107965 budget_exits=107 id=643 line=19280
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=4 op=77 count=1 id=643 line=19303 opcode=GETGLOBAL
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=132 op=47 count=90 id=643 line=19394 opcode=JUMP
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=134 op=77 count=1 id=643 line=19397 opcode=GETGLOBAL
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=140 op=50 count=9589 id=643 line=19398 opcode=GETPROP
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=276 op=53 count=1909 id=643 line=19453 opcode=PUTPROP
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=339 op=50 count=17347 id=643 line=19486 opcode=GETPROP
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=473 op=66 count=2 id=643 line=19544 opcode=RETUNDEF
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=474 op=47 count=7 id=643 line=19546 opcode=JUMP
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=477 op=66 count=1 id=643 line=19549 opcode=RETUNDEF
+SLJIT exit _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=0 pc=487 op=66 count=1 id=643 line=19555 opcode=RETUNDEF
+SLJIT loop _ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=46 end=132 hits=91 iterations=447
+SLJIT loop code id=643 begin=46 end=132 bytes=10160
+SLJIT ssa name=_ZL10insertleafP6btDbvtP10btDbvtNodeS2_ begin=46 end=132 hits=0 iterations=0
+SLJIT coverage id=644 line=19562 ops=282 regs=31 captures=0 name=_ZL10removeleafP6btDbvtP10btDbvtNode threaded=2361060 switch=72294 attempts=47 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=645 line=19727 ops=269 regs=30 captures=0 name=_ZN6btDbvt6updateEP10btDbvtNodeR12btDbvtAabbMmRK9btVector3f threaded=2319049 switch=175 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=667 line=21380 ops=359 regs=31 captures=0 name=_ZN16btDbvtBroadphase11createProxyERK9btVector3S2_iPvssP12btDispatcherS3_ threaded=593890 switch=9666 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=672 line=22634 ops=698 regs=42 captures=0 name=_ZN16btDbvtBroadphase7setAabbEP17btBroadphaseProxyRK9btVector3S4_P12btDispatcher threaded=6439433 switch=214 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=681 line=23558 ops=10 regs=8 captures=0 name=_ZN28btHashedOverlappingPairCache18hasDeferredRemovalEv threaded=200 switch=4 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=690 line=23768 ops=16 regs=10 captures=0 name=_ZN28btHashedOverlappingPairCache26getOverlappingPairArrayPtrEv threaded=320 switch=8 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=692 line=23796 ops=16 regs=10 captures=0 name=_ZNK28btHashedOverlappingPairCache22getNumOverlappingPairsEv threaded=320 switch=8 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=693 line=23810 ops=105 regs=22 captures=0 name=_ZN28btHashedOverlappingPairCache26processAllOverlappingPairsEP17btOverlapCallbackP12btDispatcher threaded=440 switch=8 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=703 line=25219 ops=470 regs=28 captures=0 name=_ZN28btHashedOverlappingPairCache10growTablesEv threaded=640 switch=38 attempts=2 warmup=10 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=704 line=25548 ops=121 regs=17 captures=0 name=_ZN28btHashedOverlappingPairCacheC1Ev threaded=242 switch=30 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=735 line=33974 ops=52 regs=16 captures=0 name=_ZN21btCollisionDispatcher25dispatchAllCollisionPairsEP22btOverlappingPairCacheRK16btDispatcherInfoP12btDispatcher threaded=1040 switch=29 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=736 line=34007 ops=16 regs=10 captures=0 name=_ZNK21btCollisionDispatcher15getNumManifoldsEv threaded=640 switch=8 attempts=40 warmup=40 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=749 line=34947 ops=17 regs=11 captures=0 name=_ZN17btCollisionObject17setCollisionShapeEP16btCollisionShape threaded=2930 switch=4 attempts=1922 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=749 calls=0 returns=0
+SLJIT pipeline id=749 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=749 homes=0
+SLJIT SSA calls id=749 frameless=0
+SLJIT code id=749 start=0x104ff9d28 bytes=8900 fragment=0 fragment_bytes=0
+SLJIT function _ZN17btCollisionObject17setCollisionShapeEP16btCollisionShape begin=0 ops=17 bytes=8900 hits=1859 returns=1859 stalled=0 charged_edges=0 budget_exits=0 id=749 line=34947
+SLJIT exit _ZN17btCollisionObject17setCollisionShapeEP16btCollisionShape begin=0 pc=16 op=66 count=1859 id=749 line=34957 opcode=RETUNDEF
+SLJIT coverage id=758 line=35246 ops=16 regs=10 captures=0 name=_ZN16btCollisionWorld14getDebugDrawerEv threaded=1920 switch=8 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=783 line=36314 ops=433 regs=36 captures=0 name=_ZN16btCollisionWorld11updateAabbsEv threaded=3231060 switch=477 attempts=35 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=784 line=36569 ops=703 regs=43 captures=0 name=_ZN16btCollisionWorld14debugDrawWorldEv threaded=1000 switch=22 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=787 line=39496 ops=425 regs=28 captures=0 name=_ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss threaded=433952 switch=5871 attempts=6691 warmup=4294967294 retired=1 active=41 rejection=compiled
+SLJIT native id=787 calls=15 returns=0
+SLJIT pipeline id=787 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=787 homes=0
+SLJIT SSA calls id=787 frameless=0
+SLJIT code id=787 start=0x100520010 bytes=194388 fragment=0 fragment_bytes=0
+SLJIT function _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 ops=425 bytes=194388 hits=6681 returns=1913 stalled=0 charged_edges=922371 budget_exits=906 id=787 line=39496
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=23 op=50 count=1912 id=787 line=39519 opcode=GETPROP
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=47 op=47 count=901 id=787 line=39542 opcode=JUMP
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=69 op=50 count=1912 id=787 line=39554 opcode=GETPROP
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=154 op=47 count=2 id=787 line=39612 opcode=JUMP
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=162 op=50 count=16 id=787 line=39617 opcode=GETPROP
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=347 op=61 count=2 id=787 line=39676 opcode=CALL
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=402 op=61 count=8 id=787 line=39695 opcode=CALL
+SLJIT exit _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=407 op=66 count=1913 id=787 line=39697 opcode=RETUNDEF
+SLJIT loop _ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=132 end=154 hits=2 iterations=278
+SLJIT loop code id=787 begin=132 end=154 bytes=2448
+SLJIT ssa name=_ZN16btCollisionWorld18addCollisionObjectEP17btCollisionObjectss begin=132 end=154 hits=0 iterations=0
+SLJIT coverage id=789 line=39814 ops=410 regs=25 captures=0 name=_ZN16btCollisionWorld33performDiscreteCollisionDetectionEv threaded=8100 switch=203 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=799 line=41073 ops=231 regs=26 captures=0 name=_ZNK11btMatrix3x311getRotationER12btQuaternion threaded=3417600 switch=119 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=817 line=43957 ops=256 regs=38 captures=0 name=_Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_ threaded=3757314 switch=23108 attempts=23042 warmup=4294967294 retired=0 active=37 rejection=compiled
+SLJIT native id=817 calls=0 returns=0
+SLJIT pipeline id=817 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=817 homes=0
+SLJIT SSA calls id=817 frameless=0
+SLJIT code id=817 start=0x104f7c010 bytes=116708 fragment=0 fragment_bytes=0
+SLJIT function _Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_ begin=0 ops=256 bytes=116708 hits=22979 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=817 line=43957
+SLJIT exit _Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_ begin=0 pc=4 op=77 count=1 id=817 line=43987 opcode=GETGLOBAL
+SLJIT exit _Z15btTransformAabbRK9btVector3S1_fRK11btTransformRS_S5_ begin=0 pc=23 op=50 count=22978 id=817 line=43996 opcode=GETPROP
+SLJIT coverage id=825 line=45831 ops=16 regs=11 captures=0 name=_ZNK21btConvexInternalShape9getMarginEv threaded=125630 switch=41 attempts=153 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=825 calls=0 returns=0
+SLJIT pipeline id=825 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=825 homes=0
+SLJIT SSA calls id=825 frameless=0
+SLJIT code id=825 start=0x104f6a5d0 bytes=6688 fragment=0 fragment_bytes=0
+SLJIT function _ZNK21btConvexInternalShape9getMarginEv begin=0 ops=16 bytes=6688 hits=90 returns=1 stalled=1 charged_edges=0 budget_exits=0 id=825 line=45831
+SLJIT exit _ZNK21btConvexInternalShape9getMarginEv begin=0 pc=4 op=77 count=1 id=825 line=45836 opcode=GETGLOBAL
+SLJIT exit _ZNK21btConvexInternalShape9getMarginEv begin=0 pc=11 op=68 count=24922 id=825 line=45839 opcode=RESOLVEVAR
+SLJIT exit _ZNK21btConvexInternalShape9getMarginEv begin=0 pc=15 op=66 count=1 id=825 line=45840 opcode=RETUNDEF
+SLJIT coverage id=873 line=51764 ops=16 regs=10 captures=0 name=_ZN31btDefaultCollisionConfiguration25getPersistentManifoldPoolEv threaded=32 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=874 line=51778 ops=16 regs=10 captures=0 name=_ZN31btDefaultCollisionConfiguration25getCollisionAlgorithmPoolEv threaded=32 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=875 line=51792 ops=16 regs=10 captures=0 name=_ZN31btDefaultCollisionConfiguration17getStackAllocatorEv threaded=32 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=904 line=52724 ops=141 regs=18 captures=0 name=_ZN31btDefaultCollisionConfiguration31getCollisionAlgorithmCreateFuncEii threaded=110659 switch=2547 attempts=3778 warmup=4294967294 retired=1 active=46 rejection=compiled
+SLJIT native id=904 calls=0 returns=0
+SLJIT pipeline id=904 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=904 homes=0
+SLJIT SSA calls id=904 frameless=0
+SLJIT leaf usage id=904 target_line=3878 hits=578 completed=578 commit=0
+SLJIT leaf usage id=904 target_line=3878 hits=0 completed=0 commit=0
+SLJIT code id=904 start=0x1004649f8 bytes=35828 fragment=0 fragment_bytes=0
+SLJIT function _ZN31btDefaultCollisionConfiguration31getCollisionAlgorithmCreateFuncEii begin=0 ops=141 bytes=35828 hits=3715 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=904 line=52724
+SLJIT exit _ZN31btDefaultCollisionConfiguration31getCollisionAlgorithmCreateFuncEii begin=0 pc=12 op=50 count=2529 id=904 line=52733 opcode=GETPROP
+SLJIT exit _ZN31btDefaultCollisionConfiguration31getCollisionAlgorithmCreateFuncEii begin=0 pc=81 op=137 count=8 id=904 line=52791 opcode=CALL_GLOBAL
+SLJIT exit _ZN31btDefaultCollisionConfiguration31getCollisionAlgorithmCreateFuncEii begin=0 pc=136 op=68 count=1178 id=904 line=52837 opcode=RESOLVEVAR
+SLJIT coverage id=916 line=54445 ops=120 regs=25 captures=0 name=_ZN25btSimulationIslandManager26storeIslandActivationStateEP16btCollisionWorld threaded=1133860 switch=49 attempts=20 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=918 line=54687 ops=501 regs=32 captures=0 name=_ZN25btSimulationIslandManager21updateActivationStateEP16btCollisionWorldP12btDispatcher threaded=1289987 switch=120 attempts=40 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=931 line=55981 ops=154 regs=23 captures=0 name=_ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii threaded=1343896 switch=10410 attempts=10321 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT loop _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=66 end=80 hits=5152 iterations=62528
+SLJIT loop code id=931 begin=66 end=80 bytes=1636
+SLJIT ssa name=_ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=66 end=80 hits=0 iterations=0
+SLJIT loop _ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=43 end=57 hits=5159 iterations=60136
+SLJIT loop code id=931 begin=43 end=57 bytes=1632
+SLJIT ssa name=_ZN20btAlignedObjectArrayI9btElementE17quickSortInternalI31btUnionFindElementSortPredicateEEvT_ii begin=43 end=57 hits=0 iterations=0
+SLJIT coverage id=935 line=56737 ops=65 regs=17 captures=0 name=_ZNK10btBoxShape7getAabbERK11btTransformR9btVector3S4_ threaded=1430 switch=44 attempts=22 warmup=22 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=936 line=56773 ops=132 regs=27 captures=0 name=_Z15btTransformAabbRK9btVector3fRK11btTransformRS_S5_ threaded=2706 switch=57 attempts=22 warmup=22 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1007 line=61113 ops=141 regs=29 captures=0 name=_ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i threaded=29900 switch=3808 attempts=2066 warmup=4294967294 retired=0 active=24 rejection=compiled
+SLJIT native id=1007 calls=0 returns=0
+SLJIT pipeline id=1007 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1007 homes=0
+SLJIT SSA calls id=1007 frameless=0
+SLJIT code id=1007 start=0x100470010 bytes=56480 fragment=0 fragment_bytes=0
+SLJIT function _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=0 ops=141 bytes=56480 hits=2061 returns=168 stalled=83 charged_edges=2230 budget_exits=3 id=1007 line=61113
+SLJIT exit _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=0 pc=102 op=50 count=1893 id=1007 line=61192 opcode=GETPROP
+SLJIT exit _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=0 pc=136 op=66 count=166 id=1007 line=61216 opcode=RETUNDEF
+SLJIT exit _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=0 pc=140 op=66 count=2 id=1007 line=61221 opcode=RETUNDEF
+SLJIT loop _ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=84 end=127 hits=1888 iterations=7535
+SLJIT loop code id=1007 begin=84 end=127 bytes=5116
+SLJIT ssa name=_ZNK17btConvexHullShape49batchedUnitVectorGetSupportingVertexWithoutMarginEPK9btVector3PS0_i begin=84 end=127 hits=0 iterations=0
+SLJIT coverage id=1013 line=61441 ops=41 regs=17 captures=0 name=_ZN17btConvexHullShape15setLocalScalingERK9btVector3 threaded=82 switch=12 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1016 line=61673 ops=218 regs=28 captures=0 name=_ZN17btConvexHullShape8addPointERK9btVector3 threaded=6880 switch=113 attempts=155 warmup=4294967294 retired=0 active=26 rejection=compiled
+SLJIT native id=1016 calls=0 returns=0
+SLJIT pipeline id=1016 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1016 homes=0
+SLJIT SSA calls id=1016 frameless=0
+SLJIT code id=1016 start=0x100480010 bytes=85592 fragment=0 fragment_bytes=0
+SLJIT function _ZN17btConvexHullShape8addPointERK9btVector3 begin=0 ops=218 bytes=85592 hits=122 returns=54 stalled=54 charged_edges=57 budget_exits=0 id=1016 line=61673
+SLJIT exit _ZN17btConvexHullShape8addPointERK9btVector3 begin=0 pc=16 op=50 count=53 id=1016 line=61692 opcode=GETPROP
+SLJIT exit _ZN17btConvexHullShape8addPointERK9btVector3 begin=0 pc=130 op=50 count=7 id=1016 line=61759 opcode=GETPROP
+SLJIT exit _ZN17btConvexHullShape8addPointERK9btVector3 begin=0 pc=216 op=137 count=8 id=1016 line=61795 opcode=CALL_GLOBAL
+SLJIT exit _ZN17btConvexHullShape8addPointERK9btVector3 begin=0 pc=217 op=66 count=54 id=1016 line=61796 opcode=RETUNDEF
+SLJIT loop _ZN17btConvexHullShape8addPointERK9btVector3 begin=81 end=120 hits=1 iterations=26
+SLJIT loop code id=1016 begin=81 end=120 bytes=4440
+SLJIT ssa name=_ZN17btConvexHullShape8addPointERK9btVector3 begin=81 end=120 hits=0 iterations=0
+SLJIT coverage id=1017 line=61802 ops=214 regs=28 captures=0 name=_ZN20btAlignedObjectArrayI9btVector3E6resizeEiRKS0_ threaded=48 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1018 line=61942 ops=161 regs=23 captures=0 name=_ZN17btConvexHullShapeC1EPKfii threaded=240 switch=30 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1036 line=63758 ops=181 regs=22 captures=0 name=_ZNK23btPolyhedralConvexShape21calculateLocalInertiaEfR9btVector3 threaded=13262 switch=42 attempts=5640 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=1036 calls=3718 returns=0
+SLJIT pipeline id=1036 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1036 homes=0
+SLJIT SSA calls id=1036 frameless=0
+SLJIT code id=1036 start=0x104fbc010 bytes=79556 fragment=0 fragment_bytes=0
+SLJIT function _ZNK23btPolyhedralConvexShape21calculateLocalInertiaEfR9btVector3 begin=0 ops=181 bytes=79556 hits=5577 returns=1859 stalled=0 charged_edges=5574 budget_exits=5 id=1036 line=63758
+SLJIT exit _ZNK23btPolyhedralConvexShape21calculateLocalInertiaEfR9btVector3 begin=0 pc=180 op=66 count=1859 id=1036 line=63847 opcode=RETUNDEF
+SLJIT coverage id=1037 line=63853 ops=81 regs=18 captures=0 name=_ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ threaded=946161 switch=157 attempts=44155 warmup=4294967294 retired=1 active=5 rejection=compiled
+SLJIT native id=1037 calls=22975 returns=0
+SLJIT pipeline id=1037 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1037 homes=0
+SLJIT SSA calls id=1037 frameless=0
+SLJIT code id=1037 start=0x1005155d0 bytes=43552 fragment=0 fragment_bytes=0
+SLJIT function _ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ begin=0 ops=81 bytes=43552 hits=44092 returns=22979 stalled=22979 charged_edges=21104 budget_exits=11 id=1037 line=63853
+SLJIT exit _ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ begin=0 pc=4 op=77 count=1 id=1037 line=63862 opcode=GETGLOBAL
+SLJIT exit _ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ begin=0 pc=22 op=61 count=3 id=1037 line=63868 opcode=CALL
+SLJIT exit _ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ begin=0 pc=27 op=50 count=8 id=1037 line=63870 opcode=GETPROP
+SLJIT exit _ZNK34btPolyhedralConvexAabbCachingShape7getAabbERK11btTransformR9btVector3S4_ begin=0 pc=63 op=66 count=22979 id=1037 line=63885 opcode=RETUNDEF
+SLJIT coverage id=1038 line=63900 ops=207 regs=20 captures=0 name=_ZN34btPolyhedralConvexAabbCachingShape15recalcLocalAabbEv threaded=9654 switch=56 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=1098 line=67200 ops=298 regs=28 captures=0 name=_ZN15btTransformUtil18integrateTransformERK11btTransformRK9btVector3S5_fRS0_ threaded=9868800 switch=456 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=1163 line=85224 ops=5 regs=7 captures=0 name=_ZN18btConstraintSolver12prepareSolveEii threaded=100 switch=0 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1164 line=85233 ops=5 regs=7 captures=0 name=_ZN18btConstraintSolver9allSolvedERK19btContactSolverInfoP12btIDebugDrawP12btStackAlloc threaded=100 switch=0 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1201 line=91895 ops=16 regs=10 captures=0 name=_ZNK23btDiscreteDynamicsWorld17getNumConstraintsEv threaded=640 switch=8 attempts=40 warmup=40 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1203 line=91929 ops=68 regs=17 captures=0 name=_ZN23btDiscreteDynamicsWorld11clearForcesEv threaded=979460 switch=46 attempts=21 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1208 line=92234 ops=829 regs=33 captures=0 name=_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii threaded=2463800 switch=283 attempts=229 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT loop _ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii begin=357 end=379 hits=196 iterations=20034
+SLJIT loop code id=1208 begin=357 end=379 bytes=2440
+SLJIT ssa name=_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback13ProcessIslandEPP17btCollisionObjectiPP20btPersistentManifoldii begin=357 end=379 hits=0 iterations=0
+SLJIT coverage id=1212 line=93081 ops=207 regs=24 captures=0 name=_ZN23btDiscreteDynamicsWorld25predictUnconstraintMotionEf threaded=1595980 switch=323 attempts=2 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=1213 line=93205 ops=370 regs=32 captures=0 name=_ZN23btDiscreteDynamicsWorld26calculateSimulationIslandsEv threaded=3340 switch=86 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1214 line=93450 ops=348 regs=31 captures=0 name=_ZZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfoEN27InplaceSolverIslandCallback18processConstraintsEv threaded=1060 switch=18 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1216 line=93769 ops=637 regs=50 captures=0 name=_ZN23btDiscreteDynamicsWorld19integrateTransformsEf threaded=1845620 switch=640 attempts=2 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1217 line=94083 ops=2283 regs=50 captures=0 name=_ZN23btDiscreteDynamicsWorld16solveConstraintsER19btContactSolverInfo threaded=5986693 switch=682 attempts=116 warmup=4294967295 retired=0 active=0 rejection=guard/link capacity
+SLJIT coverage id=1220 line=95695 ops=343 regs=34 captures=0 name=_ZN23btDiscreteDynamicsWorld21updateActivationStateEf threaded=1864880 switch=370 attempts=2 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1221 line=95921 ops=425 regs=26 captures=0 name=_ZN23btDiscreteDynamicsWorld28internalSingleStepSimulationEf threaded=7060 switch=185 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1223 line=96330 ops=328 regs=35 captures=0 name=_ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody threaded=289136 switch=2003 attempts=3843 warmup=4294967294 retired=0 active=48 rejection=compiled
+SLJIT native id=1223 calls=0 returns=0
+SLJIT pipeline id=1223 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1223 homes=0
+SLJIT SSA calls id=1223 frameless=0
+SLJIT leaf usage id=1223 target_line=3878 hits=1 completed=1 commit=0
+SLJIT leaf usage id=1223 target_line=3878 hits=1 completed=1 commit=0
+SLJIT code id=1223 start=0x104f9c010 bytes=126348 fragment=0 fragment_bytes=0
+SLJIT function _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 ops=328 bytes=126348 hits=3809 returns=1889 stalled=1889 charged_edges=1693 budget_exits=1 id=1223 line=96330
+SLJIT exit _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 pc=20 op=50 count=1887 id=1223 line=96357 opcode=GETPROP
+SLJIT exit _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 pc=210 op=47 count=1 id=1223 line=96466 opcode=JUMP
+SLJIT exit _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 pc=220 op=50 count=15 id=1223 line=96471 opcode=GETPROP
+SLJIT exit _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 pc=254 op=53 count=16 id=1223 line=96489 opcode=PUTPROP
+SLJIT exit _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 pc=326 op=61 count=1 id=1223 line=96520 opcode=CALL
+SLJIT exit _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=0 pc=327 op=66 count=1889 id=1223 line=96522 opcode=RETUNDEF
+SLJIT loop _ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=188 end=210 hits=2 iterations=302
+SLJIT loop code id=1223 begin=188 end=210 bytes=2256
+SLJIT ssa name=_ZN23btDiscreteDynamicsWorld12addRigidBodyEP11btRigidBody begin=188 end=210 hits=0 iterations=0
+SLJIT coverage id=1224 line=96528 ops=137 regs=32 captures=0 name=_ZN23btDiscreteDynamicsWorld10setGravityERK9btVector3 threaded=84 switch=11 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1227 line=96714 ops=30 regs=13 captures=0 name=_ZN23btDiscreteDynamicsWorld18addCollisionObjectEP17btCollisionObjectss threaded=57436 switch=12 attempts=1930 warmup=4294967295 retired=1 active=1 rejection=compiled
+SLJIT native id=1227 calls=0 returns=0
+SLJIT pipeline id=1227 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1227 homes=0
+SLJIT SSA calls id=1227 frameless=0
+SLJIT code id=1227 start=0x104fd8460 bytes=15248 fragment=0 fragment_bytes=0
+SLJIT function _ZN23btDiscreteDynamicsWorld18addCollisionObjectEP17btCollisionObjectss begin=0 ops=30 bytes=15248 hits=1867 returns=1859 stalled=1859 charged_edges=0 budget_exits=0 id=1227 line=96714
+SLJIT exit _ZN23btDiscreteDynamicsWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=28 op=137 count=8 id=1227 line=96729 opcode=CALL_GLOBAL
+SLJIT exit _ZN23btDiscreteDynamicsWorld18addCollisionObjectEP17btCollisionObjectss begin=0 pc=29 op=66 count=1859 id=1227 line=96730 opcode=RETUNDEF
+SLJIT coverage id=1228 line=96736 ops=364 regs=24 captures=0 name=_ZN23btDiscreteDynamicsWorld14stepSimulationEfif threaded=5540 switch=156 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1229 line=96946 ops=114 regs=24 captures=0 name=_ZN23btDiscreteDynamicsWorld28synchronizeSingleMotionStateEP11btRigidBody threaded=345600 switch=4 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1230 line=97014 ops=213 regs=25 captures=0 name=_ZN23btDiscreteDynamicsWorld23synchronizeMotionStatesEv threaded=712800 switch=165 attempts=22 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1231 line=97162 ops=95 regs=28 captures=0 name=_ZN23btDiscreteDynamicsWorld12applyGravityEv threaded=1497860 switch=58 attempts=21 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=1232 line=97236 ops=4768 regs=77 captures=0 name=_ZN23btDiscreteDynamicsWorld14debugDrawWorldEv threaded=3140 switch=76 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1233 line=99180 ops=319 regs=39 captures=0 name=_ZN23btDiscreteDynamicsWorld18saveKinematicStateEf threaded=845880 switch=39 attempts=22 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=1239 line=99662 ops=131 regs=20 captures=0 name=_ZN11btRigidBody12setMassPropsEfRK9btVector3 threaded=198960 switch=1888 attempts=1922 warmup=4294967294 retired=0 active=12 rejection=compiled
+SLJIT native id=1239 calls=0 returns=0
+SLJIT pipeline id=1239 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1239 homes=0
+SLJIT SSA calls id=1239 frameless=0
+SLJIT code id=1239 start=0x104ffc010 bytes=55500 fragment=0 fragment_bytes=0
+SLJIT function _ZN11btRigidBody12setMassPropsEfRK9btVector3 begin=0 ops=131 bytes=55500 hits=1859 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=1239 line=99662
+SLJIT exit _ZN11btRigidBody12setMassPropsEfRK9btVector3 begin=0 pc=16 op=50 count=1859 id=1239 line=99678 opcode=GETPROP
+SLJIT coverage id=1240 line=99750 ops=137 regs=32 captures=0 name=_ZN11btRigidBody19updateInertiaTensorEv threaded=29822 switch=50 attempts=21122 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=1240 calls=0 returns=0
+SLJIT pipeline id=1240 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1240 homes=0
+SLJIT SSA calls id=1240 frameless=0
+SLJIT code id=1240 start=0x10500c010 bytes=61500 fragment=0 fragment_bytes=0
+SLJIT function _ZN11btRigidBody19updateInertiaTensorEv begin=0 ops=137 bytes=61500 hits=21059 returns=21058 stalled=0 charged_edges=0 budget_exits=0 id=1240 line=99750
+SLJIT exit _ZN11btRigidBody19updateInertiaTensorEv begin=0 pc=4 op=77 count=1 id=1240 line=99774 opcode=GETGLOBAL
+SLJIT exit _ZN11btRigidBody19updateInertiaTensorEv begin=0 pc=136 op=66 count=21058 id=1240 line=99854 opcode=RETUNDEF
+SLJIT coverage id=1241 line=99860 ops=594 regs=41 captures=0 name=_ZN11btRigidBody18proceedToTransformERK11btTransform threaded=7776000 switch=210 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1245 line=100225 ops=680 regs=37 captures=0 name=_ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE threaded=1071539 switch=2074 attempts=1922 warmup=4294967294 retired=0 active=2 rejection=compiled
+SLJIT native id=1245 calls=0 returns=0
+SLJIT pipeline id=1245 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1245 homes=0
+SLJIT SSA calls id=1245 frameless=0
+SLJIT code id=1245 start=0x104fdc010 bytes=111316 fragment=0 fragment_bytes=0
+SLJIT function _ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE begin=0 ops=256 bytes=111316 hits=1859 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=1245 line=100225
+SLJIT exit _ZN11btRigidBody14setupRigidBodyERKNS_27btRigidBodyConstructionInfoE begin=0 pc=47 op=53 count=1859 id=1245 line=100262 opcode=PUTPROP
+SLJIT coverage id=1250 line=100819 ops=170 regs=26 captures=0 name=_ZN11btRigidBody19integrateVelocitiesEf threaded=2822400 switch=143 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=1251 line=100930 ops=339 regs=25 captures=0 name=_ZN11btRigidBody12applyDampingEf threaded=1747200 switch=209 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=1252 line=101124 ops=68 regs=14 captures=0 name=_GLOBAL__I__ZN7btClockC2Ev threaded=136 switch=42 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1254 line=101176 ops=37 regs=13 captures=0 name=_ZN12CProfileNode5ResetEv threaded=8759 switch=18 attempts=37 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1256 line=101236 ops=167 regs=19 captures=0 name=_ZN15CProfileManager13Start_ProfileEPKc threaded=42572 switch=60 attempts=22 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1257 line=101336 ops=100 regs=18 captures=0 name=_ZN15CProfileManager5ResetEv threaded=1278 switch=43 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1258 line=101392 ops=122 regs=22 captures=0 name=_GLOBAL__I__ZN4__rw9__catfindEPNS_8__rw_catE threaded=204 switch=38 attempts=2 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1286 line=106223 ops=192 regs=27 captures=0 name=block_merge_next threaded=12556 switch=156 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1287 line=106357 ops=344 regs=26 captures=0 name=tlsf_free threaded=67912 switch=701 attempts=64 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1288 line=106581 ops=266 regs=21 captures=0 name=block_prepare_used threaded=1086325 switch=16126 attempts=16085 warmup=4294967294 retired=0 active=16 rejection=compiled
+SLJIT native id=1288 calls=0 returns=0
+SLJIT pipeline id=1288 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1288 homes=0
+SLJIT SSA calls id=1288 frameless=0
+SLJIT leaf usage id=1288 target_line=3878 hits=7977 completed=7977 commit=0
+SLJIT leaf usage id=1288 target_line=3878 hits=7977 completed=7977 commit=0
+SLJIT leaf usage id=1288 target_line=3878 hits=8008 completed=8008 commit=0
+SLJIT leaf usage id=1288 target_line=3878 hits=0 completed=0 commit=0
+SLJIT code id=1288 start=0x1004d0010 bytes=87504 fragment=0 fragment_bytes=0
+SLJIT function block_prepare_used begin=0 ops=266 bytes=87504 hits=16022 returns=1 stalled=1 charged_edges=0 budget_exits=0 id=1288 line=106581
+SLJIT exit block_prepare_used begin=0 pc=4 op=77 count=1 id=1288 line=106595 opcode=GETGLOBAL
+SLJIT exit block_prepare_used begin=0 pc=7 op=50 count=8008 id=1288 line=106595 opcode=GETPROP
+SLJIT exit block_prepare_used begin=0 pc=32 op=137 count=1 id=1288 line=106608 opcode=CALL_GLOBAL
+SLJIT exit block_prepare_used begin=0 pc=35 op=77 count=1 id=1288 line=106610 opcode=GETGLOBAL
+SLJIT exit block_prepare_used begin=0 pc=124 op=137 count=1 id=1288 line=106654 opcode=CALL_GLOBAL
+SLJIT exit block_prepare_used begin=0 pc=145 op=20 count=7911 id=1288 line=106671 opcode=BORI
+SLJIT exit block_prepare_used begin=0 pc=244 op=77 count=1 id=1288 line=106733 opcode=GETGLOBAL
+SLJIT exit block_prepare_used begin=0 pc=260 op=68 count=97 id=1288 line=106739 opcode=RESOLVEVAR
+SLJIT exit block_prepare_used begin=0 pc=264 op=66 count=1 id=1288 line=106740 opcode=RETUNDEF
+SLJIT coverage id=1289 line=106744 ops=341 regs=25 captures=0 name=block_locate_free threaded=1822780 switch=48247 attempts=16056 warmup=4294967294 retired=0 active=33 rejection=compiled
+SLJIT native id=1289 calls=0 returns=0
+SLJIT pipeline id=1289 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1289 homes=0
+SLJIT SSA calls id=1289 frameless=0
+SLJIT leaf usage id=1289 target_line=3878 hits=7979 completed=7979 commit=0
+SLJIT leaf usage id=1289 target_line=3878 hits=0 completed=0 commit=0
+SLJIT leaf usage id=1289 target_line=3878 hits=8008 completed=8008 commit=0
+SLJIT leaf usage id=1289 target_line=3878 hits=8008 completed=8008 commit=0
+SLJIT code id=1289 start=0x1004b0010 bytes=82124 fragment=0 fragment_bytes=0
+SLJIT function block_locate_free begin=0 ops=341 bytes=82124 hits=15993 returns=1 stalled=1 charged_edges=0 budget_exits=0 id=1289 line=106744
+SLJIT exit block_locate_free begin=0 pc=5 op=77 count=1 id=1289 line=106759 opcode=GETGLOBAL
+SLJIT exit block_locate_free begin=0 pc=17 op=137 count=1 id=1289 line=106764 opcode=CALL_GLOBAL
+SLJIT exit block_locate_free begin=0 pc=39 op=20 count=7980 id=1289 line=106781 opcode=BORI
+SLJIT exit block_locate_free begin=0 pc=80 op=137 count=1 id=1289 line=106803 opcode=CALL_GLOBAL
+SLJIT exit block_locate_free begin=0 pc=100 op=20 count=2053 id=1289 line=106819 opcode=BORI
+SLJIT exit block_locate_free begin=0 pc=151 op=77 count=1 id=1289 line=106857 opcode=GETGLOBAL
+SLJIT exit block_locate_free begin=0 pc=154 op=50 count=5955 id=1289 line=106857 opcode=GETPROP
+SLJIT exit block_locate_free begin=0 pc=331 op=66 count=1 id=1289 line=106964 opcode=RETUNDEF
+SLJIT coverage id=1290 line=106976 ops=93 regs=13 captures=0 name=tlsf_malloc threaded=469176 switch=17506 attempts=8123 warmup=4294967295 retired=6 active=12 rejection=compiled
+SLJIT native id=1290 calls=0 returns=0
+SLJIT pipeline id=1290 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1290 homes=0
+SLJIT SSA calls id=1290 frameless=0
+SLJIT leaf usage id=1290 target_line=3878 hits=8008 completed=8008 commit=0
+SLJIT leaf usage id=1290 target_line=3878 hits=8008 completed=8008 commit=0
+SLJIT leaf usage id=1290 target_line=3878 hits=32 completed=32 commit=0
+SLJIT leaf usage id=1290 target_line=3878 hits=24 completed=24 commit=0
+SLJIT leaf usage id=1290 target_line=3878 hits=16 completed=16 commit=0
+SLJIT leaf usage id=1290 target_line=3878 hits=8 completed=8 commit=0
+SLJIT code id=1290 start=0x1004a0010 bytes=32872 fragment=0 fragment_bytes=0
+SLJIT function tlsf_malloc begin=0 ops=93 bytes=32872 hits=8060 returns=1 stalled=2 charged_edges=0 budget_exits=0 id=1290 line=106976
+SLJIT exit tlsf_malloc begin=0 pc=42 op=137 count=40 id=1290 line=106998 opcode=CALL_GLOBAL
+SLJIT exit tlsf_malloc begin=0 pc=56 op=137 count=8 id=1290 line=107004 opcode=CALL_GLOBAL
+SLJIT exit tlsf_malloc begin=0 pc=57 op=77 count=1 id=1290 line=107005 opcode=GETGLOBAL
+SLJIT exit tlsf_malloc begin=0 pc=80 op=137 count=1 id=1290 line=107016 opcode=CALL_GLOBAL
+SLJIT exit tlsf_malloc begin=0 pc=84 op=77 count=1 id=1290 line=107018 opcode=GETGLOBAL
+SLJIT exit tlsf_malloc begin=0 pc=88 op=68 count=8008 id=1290 line=107020 opcode=RESOLVEVAR
+SLJIT exit tlsf_malloc begin=0 pc=92 op=66 count=1 id=1290 line=107021 opcode=RETUNDEF
+SLJIT coverage id=1292 line=107330 ops=315 regs=19 captures=0 name=tlsf_create threaded=5594 switch=118 attempts=2 warmup=46 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1296 line=107699 ops=154 regs=18 captures=0 name=strcmp threaded=148 switch=6 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1299 line=107986 ops=186 regs=19 captures=0 name=strncmp threaded=360 switch=18 attempts=8 warmup=8 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1305 line=109184 ops=35 regs=16 captures=0 name=memset threaded=1231 switch=16 attempts=101 warmup=4294967294 retired=0 active=9 rejection=compiled
+SLJIT native id=1305 calls=0 returns=0
+SLJIT pipeline id=1305 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1305 homes=0
+SLJIT SSA calls id=1305 frameless=0
+SLJIT code id=1305 start=0x100433290 bytes=12648 fragment=0 fragment_bytes=0
+SLJIT function memset begin=0 ops=35 bytes=12648 hits=100 returns=1 stalled=1 charged_edges=8478 budget_exits=9 id=1305 line=109184
+SLJIT exit memset begin=0 pc=29 op=47 count=9 id=1305 line=109210 opcode=JUMP
+SLJIT exit memset begin=0 pc=30 op=68 count=90 id=1305 line=109212 opcode=RESOLVEVAR
+SLJIT exit memset begin=0 pc=34 op=66 count=1 id=1305 line=109213 opcode=RETUNDEF
+SLJIT coverage id=1306 line=109216 ops=176 regs=22 captures=0 name=memcpy threaded=1442 switch=28 attempts=4 warmup=52 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1307 line=109367 ops=75 regs=17 captures=0 name=swrite threaded=292 switch=38 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1309 line=109430 ops=285 regs=27 captures=0 name=__muldi3 threaded=3703 switch=113 attempts=22 warmup=22 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1354 line=110799 ops=734 regs=26 captures=0 name=fopen threaded=2440 switch=66 attempts=4 warmup=56 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1358 line=111681 ops=853 regs=36 captures=0 name=__udivmoddi4 threaded=1160 switch=24 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1362 line=112388 ops=34 regs=15 captures=0 name=__udivdi3 threaded=680 switch=20 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1364 line=113515 ops=2054 regs=47 captures=0 name=__v_printf threaded=1466 switch=48 attempts=15 warmup=4294967295 retired=0 active=89 rejection=compiled
+SLJIT native id=1364 calls=0 returns=0
+SLJIT pipeline id=1364 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1364 homes=1
+SLJIT SSA calls id=1364 frameless=0
+SLJIT code id=1364 start=0x100450010 bytes=83476 fragment=0 fragment_bytes=0
+SLJIT function __v_printf begin=38 ops=256 bytes=83476 hits=13 returns=0 stalled=2 charged_edges=147 budget_exits=0 id=1364 line=113515
+SLJIT exit __v_printf begin=38 pc=71 op=77 count=2 id=1364 line=113592 opcode=GETGLOBAL
+SLJIT exit __v_printf begin=38 pc=77 op=137 count=2 id=1364 line=113594 opcode=CALL_GLOBAL
+SLJIT exit __v_printf begin=38 pc=79 op=137 count=3 id=1364 line=113594 opcode=CALL_GLOBAL
+SLJIT exit __v_printf begin=38 pc=87 op=77 count=1 id=1364 line=113602 opcode=GETGLOBAL
+SLJIT exit __v_printf begin=38 pc=107 op=61 count=2 id=1364 line=113607 opcode=CALL
+SLJIT exit __v_printf begin=38 pc=108 op=77 count=1 id=1364 line=113608 opcode=GETGLOBAL
+SLJIT coverage id=1366 line=115011 ops=93 regs=27 captures=0 name=vsnprintf threaded=332 switch=40 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1370 line=115424 ops=20 regs=13 captures=0 name=__mandreel_internal_SetResolution threaded=40 switch=12 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1380 line=115731 ops=46 regs=14 captures=0 name=printf threaded=92 switch=22 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1381 line=115760 ops=46 regs=14 captures=0 name=_printf_error threaded=92 switch=11 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1383 line=115818 ops=104 regs=21 captures=0 name=__mandreel_internal_preupdate threaded=624 switch=15 attempts=20 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1384 line=115873 ops=451 regs=33 captures=0 name=__mandreel_internal_update threaded=16700 switch=76 attempts=3 warmup=4294967295 retired=0 active=0 rejection=code budget or region bounds
+SLJIT coverage id=1385 line=116125 ops=2881 regs=58 captures=0 name=__mandreel_internal_init threaded=2714 switch=168 attempts=3 warmup=4294967295 retired=0 active=0 rejection=guard/link capacity
+SLJIT loop __mandreel_internal_init begin=111 end=145 hits=1 iterations=0
+SLJIT loop code id=1385 begin=111 end=145 bytes=3988
+SLJIT ssa name=__mandreel_internal_init begin=111 end=145 hits=0 iterations=0
+SLJIT coverage id=1413 line=120710 ops=15 regs=11 captures=0 name=_GLOBAL__I__mandreel_create_tcp_socket threaded=30 switch=10 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1420 line=121385 ops=145 regs=16 captures=0 name=_GLOBAL__I__ZN5my_gl14glAttachShaderEjj threaded=3381 switch=843 attempts=389 warmup=4294967294 retired=0 active=8 rejection=compiled
+SLJIT native id=1420 calls=0 returns=0
+SLJIT pipeline id=1420 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1420 homes=0
+SLJIT SSA calls id=1420 frameless=0
+SLJIT code id=1420 start=0x100440010 bytes=55660 fragment=0 fragment_bytes=0
+SLJIT function _GLOBAL__I__ZN5my_gl14glAttachShaderEjj begin=0 ops=145 bytes=55660 hits=387 returns=0 stalled=1 charged_edges=0 budget_exits=0 id=1420 line=121385
+SLJIT exit _GLOBAL__I__ZN5my_gl14glAttachShaderEjj begin=0 pc=4 op=77 count=1 id=1420 line=121393 opcode=GETGLOBAL
+SLJIT exit _GLOBAL__I__ZN5my_gl14glAttachShaderEjj begin=0 pc=56 op=77 count=1 id=1420 line=121408 opcode=GETGLOBAL
+SLJIT exit _GLOBAL__I__ZN5my_gl14glAttachShaderEjj begin=0 pc=136 op=53 count=385 id=1420 line=121437 opcode=PUTPROP
+SLJIT coverage id=1428 line=123233 ops=167 regs=20 captures=0 name=_ZN4__rw9__rb_treeIjSt4pairIKjPN5my_gl12TIndexBufferEENS_11__select1stIS6_jEESt4lessIjESaIS6_EE11_C_get_linkEv threaded=270 switch=56 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1431 line=124189 ops=406923 regs=6 captures=0 name=global_init threaded=406923 switch=155507 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1435 line=45 ops=18 regs=8 captures=0 name= threaded=18 switch=12 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1439 line=133 ops=8 regs=3 captures=0 name= threaded=8 switch=2 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1440 line=133 ops=5 regs=5 captures=0 name= threaded=5 switch=4 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1458 line=536 ops=2 regs=6 captures=0 name= threaded=2 switch=1 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1460 line=541 ops=12 regs=5 captures=0 name= threaded=12 switch=5 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1461 line=537 ops=7 regs=5 captures=0 name=Mandreel_XMLHttpRequest threaded=7 switch=6 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1462 line=565 ops=10 regs=8 captures=0 name=createElement threaded=20 switch=7 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1463 line=571 ops=15 regs=6 captures=0 name=getElementById threaded=23 switch=4 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1464 line=580 ops=10 regs=10 captures=0 name=getElementsByTagName threaded=9 switch=4 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1470 line=2400 ops=16 regs=4 captures=0 name= threaded=4 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1497 line=3098 ops=96 regs=14 captures=0 name= threaded=12 switch=8 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1507 line=277878 ops=64 regs=15 captures=0 name= threaded=70 switch=25 attempts=1 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1508 line=1 ops=17068 regs=19 captures=0 name= threaded=16993 switch=12057 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT totals functions=39 loops=13 templates=0 hits=2767638 code_bytes=2099560
+SLJIT budget bytes=2099560 limit=4194304 native_work=0 evictions=0

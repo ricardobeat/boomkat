@@ -1,0 +1,100 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALVAR        r0, 1
+[  2] CHKGLOBALVAR        r0, 2
+[  3] CHKGLOBALVAR        r0, 3
+[  4] CHKGLOBALVAR        r0, 4
+[  5] CHKGLOBALFUNC       r0, 5
+[  6] CLOSURE             r0, 0
+[  7] DECLGLOBALFUNC      r0, 5
+[  8] LDUNDEF             r0 = r0, r0
+[  9] DECLVAR_HOIST       r0, 0
+[ 10] LDUNDEF             r0 = r0, r0
+[ 11] DECLVAR_HOIST       r0, 1
+[ 12] LDUNDEF             r0 = r0, r0
+[ 13] DECLVAR_HOIST       r0, 2
+[ 14] LDUNDEF             r0 = r0, r0
+[ 15] DECLVAR_HOIST       r0, 3
+[ 16] LDUNDEF             r0 = r0, r0
+[ 17] DECLVAR_HOIST       r0, 4
+[ 18] NEWOBJ_SHAPE        r1, 18
+[ 19] LDINT               r3, +10
+[ 20] INIT_SLOT           r1 = r0, r3
+[ 21] LDINT               r3, +20
+[ 22] INIT_SLOT           r1 = r1, r3
+[ 23] LDREG               r0 = r1, r0
+[ 24] PUTVAR              r0, 0
+[ 25] LDINT               r0, 0
+[ 26] DECLVAR             r0, 1
+[ 27] LDINT               r1, +120
+[ 28] JUMP                +12
+[ 29] GETGLOBAL           r2, 5
+[ 30] GETGLOBAL           r4, 0
+[ 31] LDCONST             r5, 6
+[ 32] LDINT               r6, +1000
+[ 33] CALL_UNDEF_THIS     r2 = r2, r3
+[ 34] LDINT               r3, +10000
+[ 35] SNEQ                r2 = r2, r3
+[ 36] IF_FALSE            r2, +3
+[ 37] LDCONST             r4, 9
+[ 38] CALL_GLOBAL         r2, argc=1, K[8]
+[ 39] THROW               r2 = r0, r0
+[ 40] INC_GLOBAL          r2, 1
+[ 41] GETVAR              r2, 1
+[ 42] LT                  r3 = r2, r1
+[ 43] IF_TRUE             r3, -15
+[ 44] GETGLOBAL           r2, 10
+[ 45] GETPROPC            r1 = r2, r11
+[ 46] CALL                r1 = r1, r0
+[ 47] LDREG               r0 = r1, r0
+[ 48] PUTVAR              r0, 2
+[ 49] LDINT               r1, 0
+[ 50] PUTVAR              r1, 3
+[ 51] LDINT               r0, 0
+[ 52] DECLVAR             r0, 4
+[ 53] LDINT               r1, +200
+[ 54] JUMP                +9
+[ 55] GETGLOBAL           r2, 3
+[ 56] GETGLOBAL           r3, 5
+[ 57] GETGLOBAL           r5, 0
+[ 58] LDCONST             r6, 7
+[ 59] LDCONST             r7, 12
+[ 60] CALL_UNDEF_THIS     r3 = r3, r3
+[ 61] ADD                 r2 = r2, r3
+[ 62] PUTGLOBAL           r2, 3
+[ 63] INC_GLOBAL          r2, 4
+[ 64] GETVAR              r2, 4
+[ 65] JMP_LT              -11, r2, r1
+[ 66] GETGLOBAL           r0, 3
+[ 67] LDCONST             r1, 13
+[ 68] JMP_SEQ             +6, r0, r1
+[ 69] GETGLOBAL           r0, 8
+[ 70] LDCONST             r2, 14
+[ 71] GETGLOBAL           r3, 3
+[ 72] ADD                 r2 = r2, r3
+[ 73] CALL_UNDEF_THIS     r0 = r0, r1
+[ 74] THROW               r0 = r0, r0
+[ 75] GETGLOBAL           r0, 15
+[ 76] LDCONST             r2, 16
+[ 77] GETGLOBAL           r4, 10
+[ 78] GETPROPC            r3 = r4, r11
+[ 79] CALL                r3 = r3, r0
+[ 80] GETGLOBAL           r4, 2
+[ 81] SUB                 r3 = r3, r4
+[ 82] ADD                 r2 = r2, r3
+[ 83] LDCONST             r3, 17
+[ 84] ADD                 r2 = r2, r3
+[ 85] CALL_UNDEF_THIS     r0 = r0, r1
+[ 86] RETUNDEF            
+
+--- Inner function 0 ---
+[  0] LDINT               r3, 0
+[  1] LDINT               r4, 0
+[  2] JUMP                +4
+[  3] GETPROP             r5 = r0, r1
+[  4] ADD                 r6 = r3, r5
+[  5] BORI                r3 = r6, 0
+[  6] INC_LT              r4 = r0, r0
+[  7] JMP_LT              -5, r4, r2
+[  8] RET                 r3 = r0, r0
+--- End bytecode ---

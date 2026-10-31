@@ -1,0 +1,1005 @@
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=4444 plan_bytes=15064
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled  pc=0..3 function_ops=3 regs=3 code_bytes=1840 plan_bytes=15019
+SLJIT SSA leaf reject line=467 stage=analysis
+SLJIT function compiled  pc=0..7 function_ops=7 regs=7 code_bytes=3764 plan_bytes=15055
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=4444 plan_bytes=15064
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled  pc=0..39 function_ops=39 regs=8 code_bytes=13188 plan_bytes=15343
+SLJIT function compiled  pc=0..4 function_ops=4 regs=5 code_bytes=2776 plan_bytes=15028
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=1145 stage=analysis
+SLJIT function compiled  pc=0..26 function_ops=26 regs=10 code_bytes=8528 plan_bytes=15226
+SLJIT SSA leaf reject line=463 stage=analysis
+SLJIT function compiled OrderedCollection pc=0..4 function_ops=4 regs=6 code_bytes=2360 plan_bytes=15028
+SLJIT SSA leaf reject line=958 stage=analysis
+SLJIT function compiled  pc=0..7 function_ops=7 regs=7 code_bytes=3064 plan_bytes=15055
+SLJIT function compiled chainTest pc=0..72 function_ops=72 regs=18 code_bytes=15292 plan_bytes=15640
+SLJIT SSA leaf reject line=1032 stage=analysis
+SLJIT SSA leaf reject line=995 stage=analysis
+SLJIT function compiled  pc=0..17 function_ops=17 regs=6 code_bytes=5984 plan_bytes=15145
+SLJIT SSA leaf line=797 caller_depth=0 commit=0
+SLJIT SSA leaf line=811 caller_depth=1 commit=0
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT function compiled  pc=0..43 function_ops=43 regs=10 code_bytes=14752 plan_bytes=15379
+SLJIT function compiled  pc=0..80 function_ops=80 regs=16 code_bytes=19660 plan_bytes=15712
+SLJIT function compiled  pc=0..4 function_ops=4 regs=5 code_bytes=2780 plan_bytes=15028
+SLJIT SSA leaf reject line=479 stage=analysis
+SLJIT function compiled  pc=0..6 function_ops=6 regs=5 code_bytes=3324 plan_bytes=15046
+SLJIT SSA leaf line=811 caller_depth=0 commit=0
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf line=818 caller_depth=1 commit=0
+SLJIT SSA leaf line=811 caller_depth=1 commit=0
+SLJIT SSA leaf reject line=826 stage=analysis
+SLJIT function compiled  pc=0..23 function_ops=23 regs=8 code_bytes=11988 plan_bytes=15199
+SLJIT SSA leaf reject line=521 stage=analysis
+SLJIT function compiled  pc=0..9 function_ops=9 regs=6 code_bytes=3664 plan_bytes=15073
+SLJIT SSA leaf reject line=944 stage=analysis
+SLJIT function compiled Variable pc=0..18 function_ops=18 regs=8 code_bytes=6692 plan_bytes=15154
+SLJIT SSA leaf reject line=921 stage=analysis
+SLJIT function compiled EqualityConstraint pc=0..10 function_ops=10 regs=12 code_bytes=3944 plan_bytes=15082
+SLJIT SSA leaf reject line=748 stage=analysis
+SLJIT function compiled BinaryConstraint pc=0..16 function_ops=16 regs=10 code_bytes=6500 plan_bytes=15136
+SLJIT function compiled Constraint pc=0..2 function_ops=2 regs=4 code_bytes=1948 plan_bytes=15010
+SLJIT SSA leaf reject line=567 stage=analysis
+SLJIT function compiled  pc=0..12 function_ops=12 regs=5 code_bytes=4244 plan_bytes=15100
+SLJIT SSA leaf reject line=788 stage=analysis
+SLJIT function compiled  pc=0..16 function_ops=16 regs=6 code_bytes=5368 plan_bytes=15136
+SLJIT function compiled  pc=0..5 function_ops=5 regs=4 code_bytes=3472 plan_bytes=15037
+SLJIT SSA leaf line=811 caller_depth=0 commit=0
+SLJIT SSA watched method line=804 pc=1
+SLJIT SSA watched constant line=811 pc=2
+SLJIT SSA entry reject line=804 stage=build pc=3
+SLJIT function compiled  pc=0..5 function_ops=5 regs=4 code_bytes=3240 plan_bytes=15037
+SLJIT function compiled  pc=0..4 function_ops=4 regs=6 code_bytes=3052 plan_bytes=15028
+SLJIT read refresh requested line=1149 pc=11 shape=278 generation=237 attempt=1
+SLJIT read refresh retired line=1149 pc=11 shape=278
+SLJIT function  hits=4 returns=3 stalled=0 direct_calls=0 direct_returns=128 charged_edges=4 budget_exits=0 code_bytes=8528
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf line=797 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=1145 stage=analysis
+SLJIT function compiled  pc=0..26 function_ops=26 regs=10 code_bytes=9584 plan_bytes=15226
+SLJIT read refresh requested line=769 pc=25 shape=278 generation=237 attempt=1
+SLJIT read refresh retired line=769 pc=25 shape=278
+SLJIT function  hits=71 returns=2 stalled=2 direct_calls=0 direct_returns=35 charged_edges=65 budget_exits=0 code_bytes=19660
+SLJIT function compiled  pc=0..80 function_ops=80 regs=16 code_bytes=21536 plan_bytes=15712
+SLJIT read refresh requested line=764 pc=10 shape=278 generation=237 attempt=2
+SLJIT read refresh retired line=764 pc=10 shape=278
+SLJIT function  hits=69 returns=65 stalled=0 direct_calls=0 direct_returns=34 charged_edges=71 budget_exits=0 code_bytes=21536
+SLJIT function compiled  pc=0..80 function_ops=80 regs=16 code_bytes=21908 plan_bytes=15712
+SLJIT read refresh requested line=588 pc=27 shape=278 generation=237 attempt=1
+SLJIT read refresh retired line=588 pc=27 shape=278
+SLJIT function  hits=254 returns=207 stalled=2 direct_calls=201 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=14752
+SLJIT SSA leaf line=797 caller_depth=0 commit=0
+SLJIT SSA leaf line=811 caller_depth=1 commit=0
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf line=837 caller_depth=0 commit=1
+SLJIT function compiled  pc=0..43 function_ops=43 regs=10 code_bytes=16548 plan_bytes=15379
+SLJIT SSA leaf reject line=1032 stage=analysis
+SLJIT function compiled  pc=0..4 function_ops=4 regs=3 code_bytes=2056 plan_bytes=15028
+SLJIT SSA leaf reject line=1032 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled  pc=0..45 function_ops=45 regs=11 code_bytes=16724 plan_bytes=15397
+SLJIT SSA leaf reject line=1168 stage=analysis
+SLJIT function compiled  pc=0..7 function_ops=7 regs=7 code_bytes=3068 plan_bytes=15055
+SLJIT read refresh requested line=1150 pc=16 shape=268 generation=226 attempt=2
+SLJIT read refresh retired line=1150 pc=16 shape=268
+SLJIT function  hits=68 returns=66 stalled=2 direct_calls=63 direct_returns=138 charged_edges=185 budget_exits=1 code_bytes=9584
+SLJIT SSA leaf line=811 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=841 stage=analysis
+SLJIT function compiled  pc=0..13 function_ops=13 regs=8 code_bytes=5428 plan_bytes=15109
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf line=797 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=1145 stage=analysis
+SLJIT function compiled  pc=0..26 function_ops=26 regs=10 code_bytes=9904 plan_bytes=15226
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf line=811 caller_depth=0 commit=0
+SLJIT SSA watched method line=930 pc=1
+SLJIT SSA watched constant line=818 pc=2
+SLJIT SSA watched method line=930 pc=6
+SLJIT SSA watched constant line=811 pc=2
+SLJIT function compiled  pc=0..11 function_ops=11 regs=8 code_bytes=6852 plan_bytes=15091
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT function compiled  pc=0..3 function_ops=3 regs=4 code_bytes=4884 plan_bytes=15019
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=1179 stage=analysis
+SLJIT function compiled  pc=0..18 function_ops=18 regs=5 code_bytes=9352 plan_bytes=15154
+SLJIT function compiled  pc=0..2 function_ops=2 regs=2 code_bytes=1540 plan_bytes=15010
+SLJIT function compiled  pc=0..2 function_ops=2 regs=2 code_bytes=1540 plan_bytes=15010
+SLJIT SSA leaf reject line=640 stage=analysis
+SLJIT function compiled  pc=0..13 function_ops=13 regs=13 code_bytes=5120 plan_bytes=15109
+SLJIT SSA leaf reject line=619 stage=analysis
+SLJIT function compiled UnaryConstraint pc=0..15 function_ops=15 regs=9 code_bytes=5688 plan_bytes=15127
+SLJIT SSA leaf reject line=631 stage=analysis
+SLJIT function compiled  pc=0..9 function_ops=9 regs=6 code_bytes=3444 plan_bytes=15073
+SLJIT SSA leaf reject line=668 stage=analysis
+SLJIT function compiled  pc=0..16 function_ops=16 regs=7 code_bytes=6096 plan_bytes=15136
+SLJIT function compiled projectionTest pc=0..116 function_ops=116 regs=16 code_bytes=23932 plan_bytes=16036
+SLJIT SSA leaf reject line=700 stage=analysis
+SLJIT function compiled StayConstraint pc=0..9 function_ops=9 regs=10 code_bytes=3636 plan_bytes=15073
+SLJIT SSA leaf reject line=862 stage=analysis
+SLJIT function compiled ScaleConstraint pc=0..15 function_ops=15 regs=14 code_bytes=6340 plan_bytes=15127
+SLJIT SSA leaf reject line=874 stage=analysis
+SLJIT function compiled  pc=0..22 function_ops=22 regs=8 code_bytes=6940 plan_bytes=15190
+SLJIT read refresh requested line=788 pc=0 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=788 pc=0 shape=287
+SLJIT function  hits=66 returns=1 stalled=1 direct_calls=195 direct_returns=34 charged_edges=254 budget_exits=0 code_bytes=5368
+SLJIT read refresh requested line=797 pc=0 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=797 pc=0 shape=287
+SLJIT function  hits=130 returns=127 stalled=0 direct_calls=61 direct_returns=123 charged_edges=0 budget_exits=0 code_bytes=3472
+SLJIT SSA leaf reject line=886 stage=analysis
+SLJIT function compiled  pc=0..15 function_ops=15 regs=10 code_bytes=5232 plan_bytes=15127
+SLJIT SSA leaf line=811 caller_depth=0 commit=0
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=894 stage=analysis
+SLJIT SSA leaf reject line=906 stage=analysis
+SLJIT function compiled  pc=0..30 function_ops=30 regs=11 code_bytes=15844 plan_bytes=15262
+SLJIT SSA leaf reject line=788 stage=analysis
+SLJIT function compiled  pc=0..16 function_ops=16 regs=6 code_bytes=5684 plan_bytes=15136
+SLJIT function compiled  pc=0..5 function_ops=5 regs=4 code_bytes=3632 plan_bytes=15037
+SLJIT read refresh requested line=804 pc=1 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=804 pc=1 shape=287
+SLJIT function  hits=186 returns=181 stalled=3 direct_calls=62 direct_returns=0 charged_edges=62 budget_exits=0 code_bytes=3240
+SLJIT SSA leaf line=811 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=804 stage=analysis
+SLJIT function compiled  pc=0..5 function_ops=5 regs=4 code_bytes=3476 plan_bytes=15037
+SLJIT SSA leaf reject line=894 stage=analysis
+SLJIT function compiled  pc=0..26 function_ops=26 regs=15 code_bytes=8548 plan_bytes=15226
+SLJIT read refresh requested line=1106 pc=23 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=1106 pc=23 shape=287
+SLJIT function  hits=699 returns=473 stalled=0 direct_calls=2388 direct_returns=0 charged_edges=4900 budget_exits=6 code_bytes=13188
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled  pc=0..39 function_ops=39 regs=8 code_bytes=17880 plan_bytes=15343
+SLJIT read refresh requested line=841 pc=1 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=841 pc=1 shape=287
+SLJIT function  hits=3 returns=3 stalled=0 direct_calls=63 direct_returns=97 charged_edges=2 budget_exits=0 code_bytes=5428
+SLJIT SSA leaf line=811 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=841 stage=analysis
+SLJIT function compiled  pc=0..13 function_ops=13 regs=8 code_bytes=5852 plan_bytes=15109
+SLJIT read refresh requested line=1182 pc=9 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=1182 pc=9 shape=287
+SLJIT function  hits=163 returns=141 stalled=21 direct_calls=62 direct_returns=0 charged_edges=20103 budget_exits=20 code_bytes=9352
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=1172 stage=analysis
+SLJIT function compiled  pc=0..6 function_ops=6 regs=5 code_bytes=3460 plan_bytes=15046
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=1179 stage=analysis
+SLJIT function compiled  pc=0..18 function_ops=18 regs=5 code_bytes=9572 plan_bytes=15154
+SLJIT function compiled  pc=0..26 function_ops=26 regs=10 code_bytes=12668 plan_bytes=15226
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled  pc=0..77 function_ops=77 regs=13 code_bytes=25724 plan_bytes=15685
+SLJIT read refresh requested line=1106 pc=23 shape=278 generation=237 attempt=2
+SLJIT read refresh retired line=1106 pc=23 shape=278
+SLJIT function  hits=71 returns=65 stalled=0 direct_calls=938 direct_returns=0 charged_edges=2301 budget_exits=2 code_bytes=17880
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf line=818 caller_depth=0 commit=0
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled  pc=0..39 function_ops=39 regs=8 code_bytes=18152 plan_bytes=15343
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled change pc=0..33 function_ops=33 regs=12 code_bytes=15964 plan_bytes=15289
+SLJIT read refresh requested line=897 pc=21 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=897 pc=21 shape=287
+SLJIT function  hits=44 returns=43 stalled=0 direct_calls=0 direct_returns=4011 charged_edges=0 budget_exits=0 code_bytes=8548
+SLJIT SSA leaf reject line=894 stage=analysis
+SLJIT function compiled  pc=0..26 function_ops=26 regs=15 code_bytes=9296 plan_bytes=15226
+SLJIT read refresh requested line=818 pc=6 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=818 pc=6 shape=287
+SLJIT function  hits=583 returns=580 stalled=1 direct_calls=716 direct_returns=5397 charged_edges=0 budget_exits=0 code_bytes=4444
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=4952 plan_bytes=15064
+SLJIT read refresh requested line=818 pc=0 shape=287 generation=247 attempt=2
+SLJIT read refresh retired line=818 pc=0 shape=287
+SLJIT function  hits=1 returns=1 stalled=0 direct_calls=0 direct_returns=62 charged_edges=0 budget_exits=0 code_bytes=4952
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=5112 plan_bytes=15064
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT function compiled  pc=0..33 function_ops=33 regs=7 code_bytes=11324 plan_bytes=15289
+SLJIT function compiled  pc=0..2 function_ops=2 regs=1 code_bytes=1296 plan_bytes=15010
+SLJIT read refresh requested line=811 pc=6 shape=287 generation=247 attempt=1
+SLJIT read refresh retired line=811 pc=6 shape=287
+SLJIT function  hits=268 returns=265 stalled=1 direct_calls=0 direct_returns=4971 charged_edges=0 budget_exits=0 code_bytes=4444
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=4948 plan_bytes=15064
+SLJIT read refresh requested line=811 pc=0 shape=287 generation=247 attempt=2
+SLJIT read refresh retired line=811 pc=0 shape=287
+SLJIT function  hits=1 returns=1 stalled=0 direct_calls=0 direct_returns=62 charged_edges=0 budget_exits=0 code_bytes=4948
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=5108 plan_bytes=15064
+SLJIT SSA leaf reject line=677 stage=graph
+SLJIT SSA leaf reject line=471 stage=analysis
+SLJIT SSA leaf reject line=475 stage=analysis
+SLJIT SSA leaf line=529 caller_depth=0 commit=0
+SLJIT function compiled  pc=0..44 function_ops=44 regs=10 code_bytes=16660 plan_bytes=15388
+SLJIT SSA leaf reject line=718 stage=analysis
+SLJIT function compiled EditConstraint pc=0..9 function_ops=9 regs=10 code_bytes=3636 plan_bytes=15073
+SLJIT SSA leaf reject line=1164 stage=analysis
+SLJIT function compiled Plan pc=0..4 function_ops=4 regs=6 code_bytes=2360 plan_bytes=15028
+SLJIT function compiled  pc=0..2 function_ops=2 regs=1 code_bytes=1296 plan_bytes=15010
+SLJIT SSA entry reject line=677 stage=build pc=0
+SLJIT function compiled  pc=0..3 function_ops=3 regs=5 code_bytes=1848 plan_bytes=15019
+SLJIT SSA leaf reject line=597 stage=analysis
+SLJIT function compiled  pc=0..15 function_ops=15 regs=5 code_bytes=5388 plan_bytes=15127
+SLJIT SSA leaf reject line=685 stage=analysis
+SLJIT function compiled  pc=0..11 function_ops=11 regs=7 code_bytes=3860 plan_bytes=15091
+SLJIT SSA leaf reject line=965 stage=analysis
+SLJIT function compiled  pc=0..11 function_ops=11 regs=7 code_bytes=4176 plan_bytes=15091
+SLJIT function compiled  pc=0..31 function_ops=31 regs=4 code_bytes=8912 plan_bytes=15271
+SLJIT read refresh requested line=581 pc=9 shape=280 generation=239 attempt=2
+SLJIT read refresh retired line=581 pc=9 shape=280
+SLJIT function  hits=22494 returns=15813 stalled=1 direct_calls=29154 direct_returns=61 charged_edges=9743 budget_exits=13 code_bytes=16548
+SLJIT SSA leaf line=837 caller_depth=0 commit=1
+SLJIT function compiled  pc=0..43 function_ops=43 regs=10 code_bytes=15564 plan_bytes=15379
+SLJIT SSA leaf reject line=977 stage=analysis
+SLJIT function compiled Planner pc=0..3 function_ops=3 regs=5 code_bytes=2068 plan_bytes=15019
+DeltaBlue: 246 ms
+SLJIT coverage id=0 line=69 ops=1 regs=0 captures=0 name= threaded=1 switch=1 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1 line=70 ops=1 regs=0 captures=0 name= threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=2 line=64 ops=31 regs=14 captures=0 name=Benchmark threaded=23 switch=11 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=4 line=99 ops=10 regs=9 captures=0 name=BenchmarkSuite threaded=10 switch=6 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=5 line=463 ops=4 regs=6 captures=0 name=OrderedCollection threaded=200152 switch=50241 attempts=83 warmup=4294967295 retired=2 active=0 rejection=compiled
+SLJIT native id=5 calls=0 returns=0
+SLJIT pipeline id=5 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=5 homes=0
+SLJIT SSA calls id=5 frameless=0
+SLJIT code id=5 start=0x104e52dd0 bytes=2304 fragment=0x104e536f0 fragment_bytes=56
+SLJIT function OrderedCollection begin=0 ops=4 bytes=2360 hits=16 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=5 line=463
+SLJIT exit OrderedCollection begin=0 pc=1 op=63 count=8 id=5 line=463 opcode=NEW_OBJ
+SLJIT exit OrderedCollection begin=0 pc=2 op=232 count=8 id=5 line=463 opcode=PUTTHISC
+SLJIT coverage id=6 line=508 ops=3 regs=5 captures=0 name=Strength threaded=21 switch=3 attempts=7 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=7 line=560 ops=2 regs=4 captures=0 name=Constraint threaded=36720 switch=39 attempts=73 warmup=4294967295 retired=1 active=0 rejection=compiled
+SLJIT native id=7 calls=0 returns=0
+SLJIT pipeline id=7 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=7 homes=0
+SLJIT SSA calls id=7 frameless=0
+SLJIT code id=7 start=0x104e78f18 bytes=1948 fragment=0 fragment_bytes=0
+SLJIT function Constraint begin=0 ops=2 bytes=1948 hits=8 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=7 line=560
+SLJIT exit Constraint begin=0 pc=0 op=232 count=8 id=7 line=560 opcode=PUTTHISC
+SLJIT coverage id=8 line=619 ops=15 regs=9 captures=0 name=UnaryConstraint threaded=95583 switch=571 attempts=6384 warmup=4294967295 retired=3 active=3 rejection=compiled
+SLJIT native id=8 calls=0 returns=0
+SLJIT pipeline id=8 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=8 homes=0
+SLJIT SSA calls id=8 frameless=0
+SLJIT readmiss id=8 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=8 pc=2 opcode=GETPROPC_CACHED hits=8 changes=1 shape=26 class=3 rep=3 chain=1 cached=1
+SLJIT code id=8 start=0x104e54280 bytes=5688 fragment=0 fragment_bytes=0
+SLJIT function UnaryConstraint begin=0 ops=15 bytes=5688 hits=6269 returns=6245 stalled=6261 charged_edges=0 budget_exits=0 id=8 line=619
+SLJIT exit UnaryConstraint begin=0 pc=7 op=61 count=8 id=8 line=619 opcode=CALL
+SLJIT exit UnaryConstraint begin=0 pc=8 op=232 count=8 id=8 line=620 opcode=PUTTHISC
+SLJIT exit UnaryConstraint begin=0 pc=13 op=61 count=8 id=8 line=622 opcode=CALL
+SLJIT exit UnaryConstraint begin=0 pc=14 op=66 count=6245 id=8 line=623 opcode=RETUNDEF
+SLJIT coverage id=9 line=700 ops=9 regs=10 captures=0 name=StayConstraint threaded=54484 switch=9 attempts=6068 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=9 calls=0 returns=0
+SLJIT pipeline id=9 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=9 homes=0
+SLJIT SSA calls id=9 frameless=0
+SLJIT readmiss id=9 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=9 pc=2 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=1 cached=1
+SLJIT code id=9 start=0x104e9b1a0 bytes=3636 fragment=0 fragment_bytes=0
+SLJIT function StayConstraint begin=0 ops=9 bytes=3636 hits=5954 returns=5946 stalled=5946 charged_edges=0 budget_exits=0 id=9 line=700
+SLJIT exit StayConstraint begin=0 pc=7 op=61 count=8 id=9 line=700 opcode=CALL
+SLJIT exit StayConstraint begin=0 pc=8 op=66 count=5946 id=9 line=701 opcode=RETUNDEF
+SLJIT coverage id=10 line=718 ops=9 regs=10 captures=0 name=EditConstraint threaded=2644 switch=6 attempts=308 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=10 calls=0 returns=0
+SLJIT pipeline id=10 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=10 homes=0
+SLJIT SSA calls id=10 frameless=0
+SLJIT readmiss id=10 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=10 pc=2 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=1 cached=1
+SLJIT code id=10 start=0x104ecb1a0 bytes=3636 fragment=0 fragment_bytes=0
+SLJIT function EditConstraint begin=0 ops=9 bytes=3636 hits=245 returns=237 stalled=237 charged_edges=0 budget_exits=0 id=10 line=718
+SLJIT exit EditConstraint begin=0 pc=7 op=61 count=8 id=10 line=718 opcode=CALL
+SLJIT exit EditConstraint begin=0 pc=8 op=66 count=237 id=10 line=719 opcode=RETUNDEF
+SLJIT coverage id=11 line=748 ops=16 regs=10 captures=0 name=BinaryConstraint threaded=191953 switch=127 attempts=12017 warmup=4294967295 retired=2 active=5 rejection=compiled
+SLJIT native id=11 calls=0 returns=0
+SLJIT pipeline id=11 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=11 homes=0
+SLJIT SSA calls id=11 frameless=0
+SLJIT readmiss id=11 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=11 pc=2 opcode=GETPROPC_CACHED hits=8 changes=1 shape=26 class=3 rep=3 chain=1 cached=1
+SLJIT code id=11 start=0x104e796c8 bytes=6500 fragment=0 fragment_bytes=0
+SLJIT function BinaryConstraint begin=0 ops=16 bytes=6500 hits=11842 returns=11825 stalled=11834 charged_edges=0 budget_exits=0 id=11 line=748
+SLJIT exit BinaryConstraint begin=0 pc=6 op=61 count=8 id=11 line=748 opcode=CALL
+SLJIT exit BinaryConstraint begin=0 pc=7 op=232 count=8 id=11 line=749 opcode=PUTTHISC
+SLJIT exit BinaryConstraint begin=0 pc=14 op=61 count=1 id=11 line=752 opcode=CALL
+SLJIT exit BinaryConstraint begin=0 pc=15 op=66 count=11825 id=11 line=753 opcode=RETUNDEF
+SLJIT coverage id=12 line=862 ops=15 regs=14 captures=0 name=ScaleConstraint threaded=89984 switch=58 attempts=6011 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=12 calls=0 returns=0
+SLJIT pipeline id=12 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=12 homes=0
+SLJIT SSA calls id=12 frameless=0
+SLJIT code id=12 start=0x104e998a8 bytes=6340 fragment=0 fragment_bytes=0
+SLJIT function ScaleConstraint begin=0 ops=15 bytes=6340 hits=5897 returns=5889 stalled=5889 charged_edges=0 budget_exits=0 id=12 line=862
+SLJIT exit ScaleConstraint begin=0 pc=2 op=232 count=8 id=12 line=862 opcode=PUTTHISC
+SLJIT exit ScaleConstraint begin=0 pc=14 op=66 count=5889 id=12 line=866 opcode=RETUNDEF
+SLJIT coverage id=13 line=921 ops=10 regs=12 captures=0 name=EqualityConstraint threaded=59936 switch=9 attempts=6008 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=13 calls=0 returns=0
+SLJIT pipeline id=13 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=13 homes=0
+SLJIT SSA calls id=13 frameless=0
+SLJIT readmiss id=13 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=13 pc=2 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=1 cached=1
+SLJIT code id=13 start=0x104e7b070 bytes=3944 fragment=0 fragment_bytes=0
+SLJIT function EqualityConstraint begin=0 ops=10 bytes=3944 hits=5881 returns=5873 stalled=5873 charged_edges=0 budget_exits=0 id=13 line=921
+SLJIT exit EqualityConstraint begin=0 pc=8 op=61 count=8 id=13 line=921 opcode=CALL
+SLJIT exit EqualityConstraint begin=0 pc=9 op=66 count=5873 id=13 line=922 opcode=RETUNDEF
+SLJIT coverage id=14 line=944 ops=18 regs=8 captures=0 name=Variable threaded=315216 switch=185 attempts=82 warmup=4294967295 retired=2 active=3 rejection=compiled
+SLJIT native id=14 calls=0 returns=0
+SLJIT pipeline id=14 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=14 homes=0
+SLJIT SSA calls id=14 frameless=0
+SLJIT code id=14 start=0x104e6c010 bytes=6636 fragment=0x104e5e100 fragment_bytes=56
+SLJIT function Variable begin=0 ops=18 bytes=6692 hits=16 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=14 line=944
+SLJIT exit Variable begin=0 pc=3 op=232 count=8 id=14 line=944 opcode=PUTTHISC
+SLJIT exit Variable begin=0 pc=6 op=232 count=8 id=14 line=945 opcode=PUTTHISC
+SLJIT coverage id=15 line=977 ops=3 regs=5 captures=0 name=Planner threaded=352 switch=1 attempts=72 warmup=4294967295 retired=1 active=0 rejection=compiled
+SLJIT native id=15 calls=0 returns=0
+SLJIT pipeline id=15 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=15 homes=0
+SLJIT SSA calls id=15 frameless=0
+SLJIT code id=15 start=0x104ec3b50 bytes=2068 fragment=0 fragment_bytes=0
+SLJIT function Planner begin=0 ops=3 bytes=2068 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=15 line=977
+SLJIT exit Planner begin=0 pc=1 op=232 count=8 id=15 line=977 opcode=PUTTHISC
+SLJIT coverage id=16 line=1164 ops=4 regs=6 captures=0 name=Plan threaded=1192 switch=6 attempts=79 warmup=4294967295 retired=2 active=0 rejection=compiled
+SLJIT native id=16 calls=0 returns=0
+SLJIT pipeline id=16 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=16 homes=0
+SLJIT SSA calls id=16 frameless=0
+SLJIT code id=16 start=0x104eca828 bytes=2304 fragment=0x104ecb148 fragment_bytes=56
+SLJIT function Plan begin=0 ops=4 bytes=2360 hits=16 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=16 line=1164
+SLJIT exit Plan begin=0 pc=1 op=63 count=8 id=16 line=1164 opcode=NEW_OBJ
+SLJIT exit Plan begin=0 pc=2 op=232 count=8 id=16 line=1164 opcode=PUTTHISC
+SLJIT coverage id=17 line=1204 ops=72 regs=18 captures=0 name=chainTest threaded=87337 switch=132 attempts=12096 warmup=4294967295 retired=3 active=26 rejection=compiled
+SLJIT native id=17 calls=113 returns=0
+SLJIT pipeline id=17 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=17 homes=0
+SLJIT SSA calls id=17 frameless=0
+SLJIT readmiss id=17 pc=21 opcode=GETPROPC_CACHED hits=5875 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=17 pc=35 opcode=GETPROPC_CACHED hits=58 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=17 pc=41 opcode=GETPROPC_CACHED hits=6 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=17 pc=48 opcode=GETPROPC hits=60 changes=1 shape=268 class=1 rep=0 chain=0 cached=0
+SLJIT readmiss id=17 pc=53 opcode=GETPROPC_CACHED hits=58 changes=1 shape=267 class=1 rep=3 chain=255 cached=1
+SLJIT code id=17 start=0x104e4e518 bytes=15236 fragment=0x104e52158 fragment_bytes=56
+SLJIT function chainTest begin=0 ops=72 bytes=15292 hits=11962 returns=0 stalled=11 charged_edges=6050 budget_exits=3 id=17 line=1204
+SLJIT exit chainTest begin=0 pc=1 op=77 count=1 id=17 line=1204 opcode=GETGLOBAL
+SLJIT exit chainTest begin=0 pc=10 op=1 count=5884 id=17 line=1209 opcode=LDCONST
+SLJIT exit chainTest begin=0 pc=17 op=77 count=1 id=17 line=1212 opcode=GETGLOBAL
+SLJIT exit chainTest begin=0 pc=23 op=63 count=5875 id=17 line=1212 opcode=NEW_OBJ
+SLJIT exit chainTest begin=0 pc=32 op=77 count=2 id=17 line=1218 opcode=GETGLOBAL
+SLJIT exit chainTest begin=0 pc=37 op=63 count=59 id=17 line=1218 opcode=NEW_OBJ
+SLJIT exit chainTest begin=0 pc=38 op=77 count=2 id=17 line=1219 opcode=GETGLOBAL
+SLJIT exit chainTest begin=0 pc=43 op=63 count=7 id=17 line=1219 opcode=NEW_OBJ
+SLJIT exit chainTest begin=0 pc=45 op=77 count=2 id=17 line=1220 opcode=GETGLOBAL
+SLJIT exit chainTest begin=0 pc=46 op=63 count=6 id=17 line=1220 opcode=NEW_OBJ
+SLJIT exit chainTest begin=0 pc=52 op=77 count=2 id=17 line=1222 opcode=GETGLOBAL
+SLJIT exit chainTest begin=0 pc=55 op=61 count=6 id=17 line=1222 opcode=CALL
+SLJIT exit chainTest begin=0 pc=60 op=230 count=61 id=17 line=1224 opcode=PUTPROPC
+SLJIT exit chainTest begin=0 pc=63 op=61 count=1 id=17 line=1225 opcode=CALL
+SLJIT coverage id=18 line=1237 ops=116 regs=16 captures=0 name=projectionTest threaded=88190 switch=220 attempts=18181 warmup=4294967295 retired=4 active=35 rejection=compiled
+SLJIT native id=18 calls=16811 returns=0
+SLJIT pipeline id=18 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=18 homes=0
+SLJIT SSA calls id=18 frameless=0
+SLJIT readmiss id=18 pc=43 opcode=GETPROPC_CACHED hits=5890 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=18 pc=52 opcode=GETPROPC_CACHED hits=5888 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=18 pc=82 opcode=GETPROPC_CACHED hits=5521 changes=1 shape=268 class=1 rep=3 chain=1 cached=1
+SLJIT readmiss id=18 pc=86 opcode=GETPROPC_CACHED hits=5515 changes=1 shape=274 class=1 rep=2 chain=0 cached=1
+SLJIT readmiss id=18 pc=101 opcode=GETPROPC_CACHED hits=5411 changes=1 shape=268 class=1 rep=3 chain=1 cached=1
+SLJIT readmiss id=18 pc=105 opcode=GETPROPC_CACHED hits=5406 changes=1 shape=274 class=1 rep=2 chain=0 cached=1
+SLJIT code id=18 start=0x104e8c010 bytes=23876 fragment=0x104e7c490 fragment_bytes=56
+SLJIT function projectionTest begin=0 ops=116 bytes=23932 hits=17882 returns=51 stalled=2 charged_edges=33632 budget_exits=33 id=18 line=1237
+SLJIT exit projectionTest begin=0 pc=1 op=68 count=8 id=18 line=1238 opcode=RESOLVEVAR
+SLJIT exit projectionTest begin=0 pc=2 op=77 count=1 id=18 line=1238 opcode=GETGLOBAL
+SLJIT exit projectionTest begin=0 pc=6 op=77 count=1 id=18 line=1239 opcode=GETGLOBAL
+SLJIT exit projectionTest begin=0 pc=11 op=77 count=1 id=18 line=1240 opcode=GETGLOBAL
+SLJIT exit projectionTest begin=0 pc=14 op=63 count=7 id=18 line=1240 opcode=NEW_OBJ
+SLJIT exit projectionTest begin=0 pc=18 op=77 count=1 id=18 line=1243 opcode=GETGLOBAL
+SLJIT exit projectionTest begin=0 pc=19 op=63 count=7 id=18 line=1243 opcode=NEW_OBJ
+SLJIT exit projectionTest begin=0 pc=25 op=1 count=5890 id=18 line=1245 opcode=LDCONST
+SLJIT exit projectionTest begin=0 pc=31 op=1 count=8 id=18 line=1246 opcode=LDCONST
+SLJIT exit projectionTest begin=0 pc=45 op=63 count=5890 id=18 line=1248 opcode=NEW_OBJ
+SLJIT exit projectionTest begin=0 pc=54 op=63 count=5888 id=18 line=1249 opcode=NEW_OBJ
+SLJIT exit projectionTest begin=0 pc=60 op=137 count=60 id=18 line=1252 opcode=CALL_GLOBAL
+SLJIT exit projectionTest begin=0 pc=85 op=61 count=6 id=18 line=1258 opcode=CALL
+SLJIT exit projectionTest begin=0 pc=95 op=170 count=4 id=18 line=1257 opcode=JMP_LT
+SLJIT exit projectionTest begin=0 pc=98 op=137 count=50 id=18 line=1261 opcode=CALL_GLOBAL
+SLJIT exit projectionTest begin=0 pc=104 op=61 count=5 id=18 line=1263 opcode=CALL
+SLJIT exit projectionTest begin=0 pc=114 op=170 count=4 id=18 line=1262 opcode=JMP_LT
+SLJIT exit projectionTest begin=0 pc=115 op=66 count=51 id=18 line=1266 opcode=RETUNDEF
+SLJIT coverage id=19 line=1268 ops=33 regs=12 captures=0 name=change threaded=4635 switch=2072 attempts=3080 warmup=4294967294 retired=2 active=13 rejection=compiled
+SLJIT native id=19 calls=447 returns=0
+SLJIT pipeline id=19 inlined=20977 recoveries=2333 allocations=0 pushes=0 links=4
+SLJIT numeric id=19 homes=0
+SLJIT SSA calls id=19 frameless=0
+SLJIT readmiss id=19 pc=4 opcode=GETPROPC_CACHED hits=233 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT code id=19 start=0x104ea8120 bytes=15908 fragment=0x104eabfa8 fragment_bytes=56
+SLJIT inline_exit id=19 frame=1 depth=1 target_line=1179 pc=11 opcode=CALL count=2328
+SLJIT inline_exit id=19 frame=1 depth=1 target_line=1179 pc=16 opcode=JMP_LT count=5
+SLJIT function change begin=0 ops=33 bytes=15964 hits=3051 returns=234 stalled=234 charged_edges=5404 budget_exits=9 id=19 line=1268
+SLJIT exit change begin=0 pc=6 op=63 count=233 id=19 line=1269 opcode=NEW_OBJ
+SLJIT exit change begin=0 pc=9 op=63 count=8 id=19 line=1270 opcode=NEW_OBJ
+SLJIT exit change begin=0 pc=14 op=61 count=1 id=19 line=1271 opcode=CALL
+SLJIT exit change begin=0 pc=18 op=61 count=20 id=19 line=1272 opcode=CALL
+SLJIT exit change begin=0 pc=31 op=61 count=8 id=19 line=1277 opcode=CALL
+SLJIT exit change begin=0 pc=32 op=66 count=234 id=19 line=1278 opcode=RETUNDEF
+SLJIT coverage id=20 line=1284 ops=8 regs=4 captures=0 name=deltaBlue threaded=480 switch=6 attempts=60 warmup=59 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=24 line=45 ops=18 regs=8 captures=0 name= threaded=18 switch=12 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=28 line=133 ops=8 regs=3 captures=0 name= threaded=8 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=29 line=133 ops=5 regs=5 captures=0 name= threaded=5 switch=4 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=47 line=455 ops=1 regs=0 captures=0 name=Inheriter threaded=6 switch=1 attempts=6 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=48 line=454 ops=9 regs=7 captures=0 name=value threaded=57 switch=44 attempts=6 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=49 line=467 ops=7 regs=7 captures=0 name= threaded=6178 switch=196 attempts=1277 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=49 calls=0 returns=139442
+SLJIT pipeline id=49 inlined=0 recoveries=0 allocations=0 pushes=52179 links=0
+SLJIT numeric id=49 homes=0
+SLJIT SSA calls id=49 frameless=0
+SLJIT code id=49 start=0x104e5a9c0 bytes=3764 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=7 bytes=3764 hits=299 returns=299 stalled=1 charged_edges=0 budget_exits=0 id=49 line=467
+SLJIT exit  begin=0 pc=6 op=66 count=299 id=49 line=468 opcode=RETUNDEF
+SLJIT coverage id=50 line=471 ops=3 regs=4 captures=0 name= threaded=2819 switch=39 attempts=1677 warmup=4294967294 retired=0 active=2 rejection=compiled
+SLJIT native id=50 calls=0 returns=10921
+SLJIT pipeline id=50 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=50 homes=0
+SLJIT SSA calls id=50 frameless=0
+SLJIT code id=50 start=0x104e65558 bytes=4884 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=3 bytes=4884 hits=1106 returns=1106 stalled=0 charged_edges=0 budget_exits=0 id=50 line=471
+SLJIT exit  begin=0 pc=2 op=65 count=1106 id=50 line=471 opcode=RET
+SLJIT coverage id=51 line=475 ops=3 regs=3 captures=0 name= threaded=4669 switch=150 attempts=1824 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=51 calls=0 returns=0
+SLJIT pipeline id=51 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=51 homes=0
+SLJIT SSA calls id=51 frameless=0
+SLJIT code id=51 start=0x104e5b8a8 bytes=1840 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=3 bytes=1840 hits=388 returns=388 stalled=0 charged_edges=0 budget_exits=0 id=51 line=475
+SLJIT exit  begin=0 pc=2 op=65 count=388 id=51 line=475 opcode=RET
+SLJIT coverage id=52 line=479 ops=6 regs=5 captures=0 name= threaded=2313 switch=208 attempts=545 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=52 calls=0 returns=72747
+SLJIT pipeline id=52 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=52 homes=0
+SLJIT SSA calls id=52 frameless=0
+SLJIT code id=52 start=0x104e61f10 bytes=3324 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=6 bytes=3324 hits=153 returns=153 stalled=0 charged_edges=0 budget_exits=0 id=52 line=479
+SLJIT exit  begin=0 pc=5 op=65 count=153 id=52 line=479 opcode=RET
+SLJIT coverage id=53 line=483 ops=26 regs=10 captures=0 name= threaded=9889 switch=42 attempts=123 warmup=4294967294 retired=1 active=16 rejection=compiled
+SLJIT native id=53 calls=0 returns=160
+SLJIT pipeline id=53 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=53 homes=0
+SLJIT SSA calls id=53 frameless=0
+SLJIT code id=53 start=0x104ea2260 bytes=12668 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=26 bytes=12668 hits=109 returns=97 stalled=20 charged_edges=3376 budget_exits=4 id=53 line=483
+SLJIT exit  begin=0 pc=9 op=53 count=14 id=53 line=487 opcode=PUTPROP
+SLJIT exit  begin=0 pc=16 op=170 count=13 id=53 line=484 opcode=JMP_LT
+SLJIT exit  begin=0 pc=25 op=66 count=97 id=53 line=495 opcode=RETUNDEF
+SLJIT coverage id=54 line=513 ops=4 regs=5 captures=0 name= threaded=1669 switch=15 attempts=502 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=54 calls=41978 returns=41978
+SLJIT pipeline id=54 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=54 homes=0
+SLJIT SSA calls id=54 frameless=41978
+SLJIT leaf usage id=54 target_line=513 hits=41978 completed=41978 commit=0
+SLJIT code id=54 start=0x104e62c40 bytes=2780 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=4 bytes=2780 hits=113 returns=113 stalled=0 charged_edges=0 budget_exits=0 id=54 line=513
+SLJIT exit  begin=0 pc=3 op=65 count=113 id=54 line=513 opcode=RET
+SLJIT coverage id=55 line=517 ops=4 regs=5 captures=0 name= threaded=2327 switch=72 attempts=824 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=55 calls=71476 returns=71476
+SLJIT pipeline id=55 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=55 homes=0
+SLJIT SSA calls id=55 frameless=71476
+SLJIT leaf usage id=55 target_line=517 hits=71476 completed=71476 commit=0
+SLJIT code id=55 start=0x104e558f0 bytes=2776 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=4 bytes=2776 hits=323 returns=323 stalled=0 charged_edges=0 budget_exits=0 id=55 line=517
+SLJIT exit  begin=0 pc=3 op=65 count=323 id=55 line=517 opcode=RET
+SLJIT coverage id=56 line=521 ops=9 regs=6 captures=0 name= threaded=2348 switch=40 attempts=715 warmup=4294967294 retired=0 active=5 rejection=compiled
+SLJIT native id=56 calls=0 returns=47767
+SLJIT pipeline id=56 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=56 homes=0
+SLJIT SSA calls id=56 frameless=0
+SLJIT readmiss id=56 pc=1 opcode=GETPROPC_CACHED hits=47936 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT code id=56 start=0x104e5e158 bytes=3664 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=9 bytes=3664 hits=169 returns=167 stalled=0 charged_edges=120 budget_exits=0 id=56 line=521
+SLJIT exit  begin=0 pc=4 op=61 count=49 id=56 line=521 opcode=CALL
+SLJIT exit  begin=0 pc=7 op=65 count=167 id=56 line=521 opcode=RET
+SLJIT coverage id=58 line=529 ops=31 regs=4 captures=0 name= threaded=321 switch=2 attempts=65 warmup=4294967294 retired=0 active=20 rejection=compiled
+SLJIT native id=58 calls=0 returns=175
+SLJIT pipeline id=58 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=58 homes=0
+SLJIT SSA calls id=58 frameless=0
+SLJIT readmiss id=58 pc=3 opcode=GETPROPC_CACHED hits=176 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT leaf usage id=58 target_line=529 hits=0 completed=0 commit=0
+SLJIT code id=58 start=0x104ec4378 bytes=8912 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=31 bytes=8912 hits=1 returns=1 stalled=0 charged_edges=0 budget_exits=0 id=58 line=529
+SLJIT exit  begin=0 pc=4 op=65 count=1 id=58 line=530 opcode=RET
+SLJIT coverage id=59 line=567 ops=12 regs=5 captures=0 name= threaded=110756 switch=760 attempts=36726 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=59 calls=18458 returns=0
+SLJIT pipeline id=59 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=59 homes=0
+SLJIT SSA calls id=59 frameless=0
+SLJIT readmiss id=59 pc=1 opcode=GETPROPC_CACHED hits=7 changes=5 shape=280 class=1 rep=3 chain=255 cached=1
+SLJIT code id=59 start=0x104e77e58 bytes=4244 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=12 bytes=4244 hits=36333 returns=18133 stalled=18136 charged_edges=96900 budget_exits=94 id=59 line=567
+SLJIT exit  begin=0 pc=4 op=61 count=9 id=59 line=567 opcode=CALL
+SLJIT exit  begin=0 pc=5 op=77 count=3 id=59 line=568 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=11 op=66 count=18133 id=59 line=569 opcode=RETUNDEF
+SLJIT coverage id=60 line=578 ops=43 regs=10 captures=0 name= threaded=155997 switch=865 attempts=43779 warmup=4294967294 retired=1 active=22 rejection=compiled
+SLJIT native id=60 calls=29022 returns=56
+SLJIT pipeline id=60 inlined=8915 recoveries=0 allocations=0 pushes=0 links=6
+SLJIT numeric id=60 homes=0
+SLJIT SSA calls id=60 frameless=0
+SLJIT readmiss id=60 pc=2 opcode=GETPROPC_CACHED hits=141 changes=1 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=60 pc=6 opcode=GETPROPC_CACHED hits=8468 changes=111 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=60 pc=11 opcode=GETPROPC_CACHED hits=56 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=60 pc=18 opcode=GETPROPC_CACHED hits=141 changes=1 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=60 pc=22 opcode=GETPROPC_CACHED hits=13953 changes=5653 shape=287 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=60 pc=27 opcode=GETPROPC_CACHED hits=56 changes=1 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT leaf usage id=60 target_line=837 hits=5589 completed=29 commit=1
+SLJIT code id=60 start=0x104e82b58 bytes=15564 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=43 bytes=15564 hits=19794 returns=14093 stalled=0 charged_edges=6678 budget_exits=6 id=60 line=578
+SLJIT exit  begin=0 pc=4 op=61 count=20 id=60 line=579 opcode=CALL
+SLJIT exit  begin=0 pc=7 op=61 count=1 id=60 line=580 opcode=CALL
+SLJIT exit  begin=0 pc=20 op=61 count=1927 id=60 line=585 opcode=CALL
+SLJIT exit  begin=0 pc=23 op=61 count=11 id=60 line=586 opcode=CALL
+SLJIT exit  begin=0 pc=29 op=61 count=5560 id=60 line=588 opcode=CALL
+SLJIT exit  begin=0 pc=31 op=230 count=3 id=60 line=589 opcode=PUTPROPC
+SLJIT exit  begin=0 pc=36 op=61 count=8539 id=60 line=590 opcode=CALL
+SLJIT exit  begin=0 pc=42 op=65 count=14093 id=60 line=593 opcode=RET
+SLJIT coverage id=61 line=597 ops=15 regs=5 captures=0 name= threaded=2536 switch=7 attempts=256 warmup=4294967295 retired=2 active=7 rejection=compiled
+SLJIT native id=61 calls=0 returns=0
+SLJIT pipeline id=61 inlined=8 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=61 homes=0
+SLJIT SSA calls id=61 frameless=0
+SLJIT code id=61 start=0x104ec8680 bytes=5388 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=15 bytes=5388 hits=192 returns=176 stalled=176 charged_edges=0 budget_exits=0 id=61 line=597
+SLJIT exit  begin=0 pc=9 op=61 count=16 id=61 line=597 opcode=CALL
+SLJIT exit  begin=0 pc=10 op=66 count=176 id=61 line=598 opcode=RETUNDEF
+SLJIT coverage id=62 line=607 ops=2 regs=1 captures=0 name= threaded=220 switch=0 attempts=110 warmup=62 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=63 line=631 ops=9 regs=6 captures=0 name= threaded=7028 switch=41 attempts=6176 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=63 calls=6247 returns=236
+SLJIT pipeline id=63 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=63 homes=0
+SLJIT SSA calls id=63 frameless=0
+SLJIT code id=63 start=0x104e71028 bytes=3444 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=9 bytes=3444 hits=6013 returns=6011 stalled=0 charged_edges=12020 budget_exits=10 id=63 line=631
+SLJIT exit  begin=0 pc=8 op=66 count=6011 id=63 line=633 opcode=RETUNDEF
+SLJIT coverage id=64 line=640 ops=13 regs=13 captures=0 name= threaded=1484 switch=46 attempts=177 warmup=4294967294 retired=0 active=10 rejection=compiled
+SLJIT native id=64 calls=0 returns=6353
+SLJIT pipeline id=64 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=64 homes=0
+SLJIT SSA calls id=64 frameless=0
+SLJIT readmiss id=64 pc=5 opcode=GETPROPC_CACHED hits=6248 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT code id=64 start=0x104e64100 bytes=5120 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=13 bytes=5120 hits=14 returns=14 stalled=0 charged_edges=6 budget_exits=0 id=64 line=640
+SLJIT exit  begin=0 pc=9 op=61 count=8 id=64 line=641 opcode=CALL
+SLJIT exit  begin=0 pc=12 op=66 count=14 id=64 line=642 opcode=RETUNDEF
+SLJIT coverage id=65 line=648 ops=2 regs=2 captures=0 name= threaded=509 switch=7 attempts=391 warmup=4294967294 retired=0 active=2 rejection=compiled
+SLJIT native id=65 calls=0 returns=3949
+SLJIT pipeline id=65 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=65 homes=0
+SLJIT SSA calls id=65 frameless=0
+SLJIT code id=65 start=0x104e7c4e8 bytes=1540 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=2 bytes=1540 hits=273 returns=273 stalled=0 charged_edges=0 budget_exits=0 id=65 line=648
+SLJIT exit  begin=0 pc=1 op=65 count=273 id=65 line=648 opcode=RET
+SLJIT coverage id=66 line=653 ops=1 regs=1 captures=0 name= threaded=17 switch=0 attempts=17 warmup=14 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=67 line=659 ops=2 regs=2 captures=0 name= threaded=3886 switch=11 attempts=3666 warmup=4294967294 retired=0 active=2 rejection=compiled
+SLJIT native id=67 calls=0 returns=12699
+SLJIT pipeline id=67 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=67 homes=0
+SLJIT SSA calls id=67 frameless=0
+SLJIT code id=67 start=0x104e7cb08 bytes=1540 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=2 bytes=1540 hits=3446 returns=3446 stalled=0 charged_edges=0 budget_exits=0 id=67 line=659
+SLJIT exit  begin=0 pc=1 op=65 count=3446 id=67 line=659 opcode=RET
+SLJIT coverage id=68 line=668 ops=16 regs=7 captures=0 name= threaded=2690 switch=24 attempts=463 warmup=4294967294 retired=0 active=11 rejection=compiled
+SLJIT native id=68 calls=0 returns=38
+SLJIT pipeline id=68 inlined=78 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=68 homes=0
+SLJIT SSA calls id=68 frameless=0
+SLJIT readmiss id=68 pc=5 opcode=GETPROPC_CACHED hits=3 changes=1 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT code id=68 start=0x104e6f7f0 bytes=6096 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=16 bytes=6096 hits=298 returns=298 stalled=0 charged_edges=0 budget_exits=0 id=68 line=668
+SLJIT exit  begin=0 pc=5 op=190 count=294 id=68 line=669 opcode=GETPROPC_CACHED
+SLJIT exit  begin=0 pc=6 op=61 count=3 id=68 line=669 opcode=CALL
+SLJIT exit  begin=0 pc=15 op=66 count=298 id=68 line=671 opcode=RETUNDEF
+SLJIT coverage id=69 line=677 ops=3 regs=5 captures=0 name= threaded=380 switch=1 attempts=252 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=69 calls=0 returns=92
+SLJIT pipeline id=69 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=69 homes=0
+SLJIT SSA calls id=69 frameless=0
+SLJIT code id=69 start=0x104ec9bc0 bytes=1848 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=3 bytes=1848 hits=188 returns=188 stalled=0 charged_edges=0 budget_exits=0 id=69 line=677
+SLJIT exit  begin=0 pc=2 op=66 count=188 id=69 line=678 opcode=RETUNDEF
+SLJIT coverage id=70 line=681 ops=2 regs=1 captures=0 name= threaded=364 switch=1 attempts=300 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=70 calls=0 returns=0
+SLJIT pipeline id=70 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=70 homes=0
+SLJIT SSA calls id=70 frameless=0
+SLJIT code id=70 start=0x104eca308 bytes=1296 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=2 bytes=1296 hits=236 returns=236 stalled=0 charged_edges=0 budget_exits=0 id=70 line=681
+SLJIT exit  begin=0 pc=1 op=65 count=236 id=70 line=681 opcode=RET
+SLJIT coverage id=71 line=685 ops=11 regs=7 captures=0 name= threaded=881 switch=6 attempts=258 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=71 calls=175 returns=0
+SLJIT pipeline id=71 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=71 homes=0
+SLJIT SSA calls id=71 frameless=0
+SLJIT code id=71 start=0x104ec7738 bytes=3860 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=11 bytes=3860 hits=193 returns=176 stalled=0 charged_edges=8694 budget_exits=10 id=71 line=685
+SLJIT exit  begin=0 pc=7 op=61 count=1 id=71 line=685 opcode=CALL
+SLJIT exit  begin=0 pc=10 op=66 count=176 id=71 line=687 opcode=RETUNDEF
+SLJIT coverage id=72 line=707 ops=1 regs=0 captures=0 name= threaded=3 switch=0 attempts=3 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=73 line=727 ops=2 regs=1 captures=0 name= threaded=396 switch=1 attempts=331 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=73 calls=0 returns=0
+SLJIT pipeline id=73 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=73 homes=0
+SLJIT SSA calls id=73 frameless=0
+SLJIT code id=73 start=0x104e4cb68 bytes=1296 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=2 bytes=1296 hits=266 returns=266 stalled=0 charged_edges=0 budget_exits=0 id=73 line=727
+SLJIT exit  begin=0 pc=1 op=65 count=266 id=73 line=727 opcode=RET
+SLJIT coverage id=74 line=732 ops=1 regs=0 captures=0 name= threaded=8 switch=0 attempts=8 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=75 line=763 ops=80 regs=16 captures=0 name= threaded=22632 switch=105 attempts=1029 warmup=4294967294 retired=0 active=61 rejection=compiled
+SLJIT native id=75 calls=0 returns=17525
+SLJIT pipeline id=75 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=75 homes=0
+SLJIT SSA calls id=75 frameless=0
+SLJIT readmiss id=75 pc=0 opcode=GETTHISC hits=6010 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=9 opcode=GETPROPC_CACHED hits=5917 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=75 pc=22 opcode=GETTHISC hits=6010 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=25 opcode=GETTHISC hits=60 changes=1 shape=287 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=75 pc=30 opcode=GETPROPC_CACHED hits=5895 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=75 pc=31 opcode=GETTHISC hits=59 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=32 opcode=GETTHISC hits=59 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=44 opcode=GETPROPC_CACHED hits=23539 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=75 pc=45 opcode=GETTHISC hits=5949 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=48 opcode=GETPROPC_CACHED hits=5949 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=53 opcode=GETPROPC_CACHED hits=5895 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=75 pc=54 opcode=GETTHISC hits=59 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=55 opcode=GETTHISC hits=59 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=67 opcode=GETPROPC_CACHED hits=17704 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=75 pc=68 opcode=GETTHISC hits=5949 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=75 pc=69 opcode=GETTHISC hits=5950 changes=1 shape=287 class=1 rep=3 chain=254 cached=1
+SLJIT code id=75 start=0x104e868a0 bytes=21908 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=80 bytes=21908 hits=155 returns=66 stalled=0 charged_edges=173 budget_exits=0 id=75 line=763
+SLJIT exit  begin=0 pc=8 op=77 count=1 id=75 line=764 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=13 op=61 count=3 id=75 line=764 opcode=CALL
+SLJIT exit  begin=0 pc=16 op=77 count=1 id=75 line=765 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=29 op=77 count=1 id=75 line=769 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=34 op=61 count=3 id=75 line=769 opcode=CALL
+SLJIT exit  begin=0 pc=37 op=77 count=1 id=75 line=770 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=42 op=232 count=59 id=75 line=771 opcode=PUTTHISC
+SLJIT exit  begin=0 pc=43 op=77 count=1 id=75 line=773 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=50 op=61 count=23 id=75 line=773 opcode=CALL
+SLJIT exit  begin=0 pc=52 op=77 count=1 id=75 line=774 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=57 op=61 count=5 id=75 line=774 opcode=CALL
+SLJIT exit  begin=0 pc=59 op=77 count=1 id=75 line=775 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=64 op=232 count=59 id=75 line=776 opcode=PUTTHISC
+SLJIT exit  begin=0 pc=65 op=66 count=23 id=75 line=777 opcode=RETUNDEF
+SLJIT exit  begin=0 pc=66 op=77 count=1 id=75 line=778 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=71 op=61 count=23 id=75 line=778 opcode=CALL
+SLJIT exit  begin=0 pc=73 op=77 count=1 id=75 line=779 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=78 op=232 count=5949 id=75 line=780 opcode=PUTTHISC
+SLJIT exit  begin=0 pc=79 op=66 count=43 id=75 line=782 opcode=RETUNDEF
+SLJIT coverage id=76 line=788 ops=16 regs=6 captures=0 name= threaded=21017 switch=37 attempts=12061 warmup=4294967294 retired=2 active=6 rejection=compiled
+SLJIT native id=76 calls=23382 returns=0
+SLJIT pipeline id=76 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=76 homes=0
+SLJIT SSA calls id=76 frameless=0
+SLJIT code id=76 start=0x104e92810 bytes=5684 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=16 bytes=5684 hits=11704 returns=5850 stalled=49 charged_edges=46502 budget_exits=54 id=76 line=788
+SLJIT exit  begin=0 pc=0 op=231 count=24 id=76 line=788 opcode=GETTHISC
+SLJIT exit  begin=0 pc=6 op=231 count=17 id=76 line=789 opcode=GETTHISC
+SLJIT exit  begin=0 pc=11 op=61 count=9 id=76 line=789 opcode=CALL
+SLJIT exit  begin=0 pc=12 op=77 count=8 id=76 line=790 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=14 op=232 count=5829 id=76 line=790 opcode=PUTTHISC
+SLJIT exit  begin=0 pc=15 op=66 count=5850 id=76 line=791 opcode=RETUNDEF
+SLJIT coverage id=77 line=797 ops=5 regs=4 captures=0 name= threaded=2462 switch=37 attempts=680 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=77 calls=8326 returns=74662
+SLJIT pipeline id=77 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=77 homes=0
+SLJIT SSA calls id=77 frameless=8326
+SLJIT leaf usage id=77 target_line=797 hits=8326 completed=8326 commit=0
+SLJIT code id=77 start=0x104e6e998 bytes=3632 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=5 bytes=3632 hits=108 returns=108 stalled=0 charged_edges=0 budget_exits=0 id=77 line=797
+SLJIT exit  begin=0 pc=4 op=65 count=108 id=77 line=797 opcode=RET
+SLJIT coverage id=78 line=804 ops=5 regs=4 captures=0 name= threaded=7557 switch=68 attempts=6437 warmup=4294967294 retired=1 active=2 rejection=compiled
+SLJIT native id=78 calls=5914 returns=8322
+SLJIT pipeline id=78 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=78 homes=0
+SLJIT SSA calls id=78 frameless=0
+SLJIT leaf usage id=78 target_line=811 hits=14242 completed=8328 commit=0
+SLJIT code id=78 start=0x104e75be0 bytes=3476 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=5 bytes=3476 hits=5960 returns=5920 stalled=40 charged_edges=5914 budget_exits=7 id=78 line=804
+SLJIT exit  begin=0 pc=0 op=9 count=32 id=78 line=804 opcode=LDTHIS
+SLJIT exit  begin=0 pc=3 op=230 count=8 id=78 line=804 opcode=PUTPROPC
+SLJIT exit  begin=0 pc=4 op=66 count=5920 id=78 line=805 opcode=RETUNDEF
+SLJIT coverage id=79 line=811 ops=8 regs=7 captures=0 name= threaded=4112 switch=130 attempts=963 warmup=4294967294 retired=0 active=7 rejection=compiled
+SLJIT native id=79 calls=0 returns=43091
+SLJIT pipeline id=79 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=79 homes=0
+SLJIT SSA calls id=79 frameless=0
+SLJIT leaf usage id=79 target_line=811 hits=0 completed=0 commit=0
+SLJIT code id=79 start=0x104eb6490 bytes=5108 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=8 bytes=5108 hits=68 returns=68 stalled=0 charged_edges=0 budget_exits=0 id=79 line=811
+SLJIT exit  begin=0 pc=5 op=65 count=67 id=79 line=811 opcode=RET
+SLJIT exit  begin=0 pc=7 op=65 count=1 id=79 line=811 opcode=RET
+SLJIT coverage id=80 line=818 ops=8 regs=7 captures=0 name= threaded=7419 switch=109 attempts=1835 warmup=4294967294 retired=0 active=7 rejection=compiled
+SLJIT native id=80 calls=25395 returns=141144
+SLJIT pipeline id=80 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=80 homes=0
+SLJIT SSA calls id=80 frameless=25395
+SLJIT leaf usage id=80 target_line=818 hits=25395 completed=25395 commit=0
+SLJIT code id=80 start=0x104e4d0e0 bytes=5112 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=8 bytes=5112 hits=138 returns=138 stalled=0 charged_edges=0 budget_exits=0 id=80 line=818
+SLJIT exit  begin=0 pc=5 op=65 count=134 id=80 line=818 opcode=RET
+SLJIT exit  begin=0 pc=7 op=65 count=4 id=80 line=818 opcode=RET
+SLJIT coverage id=81 line=826 ops=23 regs=8 captures=0 name= threaded=4777 switch=203 attempts=822 warmup=4294967294 retired=0 active=14 rejection=compiled
+SLJIT native id=81 calls=17770 returns=17738
+SLJIT pipeline id=81 inlined=11809 recoveries=0 allocations=0 pushes=0 links=3
+SLJIT numeric id=81 homes=0
+SLJIT SSA calls id=81 frameless=0
+SLJIT readmiss id=81 pc=10 opcode=GETPROPC_CACHED hits=17793 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT leaf usage id=81 target_line=811 hits=11809 completed=11809 commit=0
+SLJIT leaf usage id=81 target_line=818 hits=11809 completed=11809 commit=0
+SLJIT leaf usage id=81 target_line=818 hits=17795 completed=17795 commit=0
+SLJIT leaf usage id=81 target_line=811 hits=17794 completed=17794 commit=0
+SLJIT code id=81 start=0x104e5efc8 bytes=11988 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=23 bytes=11988 hits=60 returns=55 stalled=0 charged_edges=32 budget_exits=0 id=81 line=826
+SLJIT exit  begin=0 pc=9 op=77 count=2 id=81 line=828 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=13 op=61 count=23 id=81 line=828 opcode=CALL
+SLJIT exit  begin=0 pc=22 op=66 count=55 id=81 line=831 opcode=RETUNDEF
+SLJIT coverage id=82 line=837 ops=4 regs=6 captures=0 name= threaded=22992 switch=8 attempts=143 warmup=4294967295 retired=1 active=1 rejection=compiled
+SLJIT native id=82 calls=36 returns=36
+SLJIT pipeline id=82 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=82 homes=0
+SLJIT SSA calls id=82 frameless=36
+SLJIT leaf usage id=82 target_line=837 hits=36 completed=36 commit=1
+SLJIT code id=82 start=0x104e74288 bytes=3052 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=4 bytes=3052 hits=80 returns=72 stalled=1 charged_edges=0 budget_exits=0 id=82 line=837
+SLJIT exit  begin=0 pc=0 op=77 count=1 id=82 line=837 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=2 op=232 count=8 id=82 line=837 opcode=PUTTHISC
+SLJIT exit  begin=0 pc=3 op=66 count=72 id=82 line=838 opcode=RETUNDEF
+SLJIT coverage id=83 line=841 ops=13 regs=8 captures=0 name= threaded=630 switch=6 attempts=98 warmup=4294967294 retired=0 active=8 rejection=compiled
+SLJIT native id=83 calls=12043 returns=17927
+SLJIT pipeline id=83 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=83 homes=0
+SLJIT SSA calls id=83 frameless=0
+SLJIT leaf usage id=83 target_line=811 hits=17955 completed=5900 commit=0
+SLJIT code id=83 start=0x104e580a8 bytes=5852 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=13 bytes=5852 hits=28 returns=28 stalled=0 charged_edges=11 budget_exits=0 id=83 line=841
+SLJIT exit  begin=0 pc=2 op=61 count=12 id=83 line=841 opcode=CALL
+SLJIT exit  begin=0 pc=12 op=65 count=28 id=83 line=842 opcode=RET
+SLJIT coverage id=85 line=874 ops=22 regs=8 captures=0 name= threaded=61347 switch=32 attempts=6126 warmup=4294967295 retired=1 active=11 rejection=compiled
+SLJIT native id=85 calls=11767 returns=0
+SLJIT pipeline id=85 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=85 homes=0
+SLJIT SSA calls id=85 frameless=0
+SLJIT readmiss id=85 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=219 class=3 rep=3 chain=0 cached=1
+SLJIT code id=85 start=0x104e97d18 bytes=6940 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=22 bytes=6940 hits=5910 returns=5887 stalled=9 charged_edges=23526 budget_exits=17 id=85 line=874
+SLJIT exit  begin=0 pc=2 op=190 count=8 id=85 line=874 opcode=GETPROPC_CACHED
+SLJIT exit  begin=0 pc=20 op=61 count=7 id=85 line=876 opcode=CALL
+SLJIT exit  begin=0 pc=21 op=66 count=5887 id=85 line=877 opcode=RETUNDEF
+SLJIT coverage id=87 line=886 ops=15 regs=10 captures=0 name= threaded=53104 switch=21 attempts=6120 warmup=4294967295 retired=1 active=7 rejection=compiled
+SLJIT native id=87 calls=0 returns=0
+SLJIT pipeline id=87 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=87 homes=0
+SLJIT SSA calls id=87 frameless=0
+SLJIT readmiss id=87 pc=1 opcode=GETPROPC_CACHED hits=4028 changes=1 shape=219 class=3 rep=3 chain=0 cached=1
+SLJIT code id=87 start=0x104e76990 bytes=5232 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=15 bytes=5232 hits=5956 returns=5948 stalled=0 charged_edges=0 budget_exits=0 id=87 line=886
+SLJIT exit  begin=0 pc=2 op=190 count=4028 id=87 line=886 opcode=GETPROPC_CACHED
+SLJIT exit  begin=0 pc=14 op=66 count=5948 id=87 line=888 opcode=RETUNDEF
+SLJIT coverage id=88 line=894 ops=26 regs=15 captures=0 name= threaded=6079 switch=19 attempts=2583 warmup=4294967294 retired=0 active=19 rejection=compiled
+SLJIT native id=88 calls=0 returns=114736
+SLJIT pipeline id=88 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=88 homes=0
+SLJIT SSA calls id=88 frameless=0
+SLJIT code id=88 start=0x104e9fd40 bytes=9296 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=26 bytes=9296 hits=2417 returns=2417 stalled=0 charged_edges=0 budget_exits=0 id=88 line=894
+SLJIT exit  begin=0 pc=14 op=66 count=676 id=88 line=896 opcode=RETUNDEF
+SLJIT exit  begin=0 pc=15 op=231 count=173 id=88 line=897 opcode=GETTHISC
+SLJIT exit  begin=0 pc=25 op=66 count=1741 id=88 line=899 opcode=RETUNDEF
+SLJIT coverage id=89 line=906 ops=30 regs=11 captures=0 name= threaded=5052 switch=89 attempts=852 warmup=4294967294 retired=0 active=21 rejection=compiled
+SLJIT native id=89 calls=90135 returns=29738
+SLJIT pipeline id=89 inlined=17829 recoveries=3 allocations=0 pushes=0 links=3
+SLJIT numeric id=89 homes=0
+SLJIT SSA calls id=89 frameless=0
+SLJIT readmiss id=89 pc=10 opcode=GETPROPC_CACHED hits=30078 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT leaf usage id=89 target_line=818 hits=30078 completed=0 commit=0
+SLJIT leaf usage id=89 target_line=811 hits=30077 completed=0 commit=0
+SLJIT code id=89 start=0x104e93e90 bytes=15844 fragment=0 fragment_bytes=0
+SLJIT inline_exit id=89 frame=1 depth=1 target_line=894 pc=15 opcode=GETTHISC count=179
+SLJIT function  begin=0 ops=30 bytes=15844 hits=343 returns=340 stalled=179 charged_edges=294 budget_exits=0 id=89 line=906
+SLJIT exit  begin=0 pc=3 op=61 count=33 id=89 line=907 opcode=CALL
+SLJIT exit  begin=0 pc=7 op=61 count=31 id=89 line=907 opcode=CALL
+SLJIT exit  begin=0 pc=13 op=61 count=36 id=89 line=908 opcode=CALL
+SLJIT exit  begin=0 pc=29 op=66 count=340 id=89 line=911 opcode=RETUNDEF
+SLJIT coverage id=90 line=930 ops=11 regs=8 captures=0 name= threaded=2559 switch=36 attempts=907 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=90 calls=599542 returns=599542
+SLJIT pipeline id=90 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=90 homes=0
+SLJIT SSA calls id=90 frameless=599542
+SLJIT leaf usage id=90 target_line=930 hits=599542 completed=599542 commit=1
+SLJIT leaf usage id=90 target_line=811 hits=458 completed=458 commit=0
+SLJIT leaf usage id=90 target_line=818 hits=458 completed=458 commit=0
+SLJIT code id=90 start=0x104e66888 bytes=6852 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=11 bytes=6852 hits=458 returns=458 stalled=0 charged_edges=0 budget_exits=0 id=90 line=930
+SLJIT exit  begin=0 pc=10 op=66 count=458 id=90 line=931 opcode=RETUNDEF
+SLJIT coverage id=91 line=958 ops=7 regs=7 captures=0 name= threaded=3507 switch=156 attempts=1193 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=91 calls=41878 returns=41555
+SLJIT pipeline id=91 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=91 homes=0
+SLJIT SSA calls id=91 frameless=0
+SLJIT code id=91 start=0x104e521b0 bytes=3064 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=7 bytes=3064 hits=364 returns=362 stalled=39 charged_edges=323 budget_exits=0 id=91 line=958
+SLJIT exit  begin=0 pc=5 op=61 count=38 id=91 line=958 opcode=CALL
+SLJIT exit  begin=0 pc=6 op=66 count=362 id=91 line=959 opcode=RETUNDEF
+SLJIT coverage id=92 line=965 ops=11 regs=7 captures=0 name= threaded=722 switch=5 attempts=82 warmup=4294967294 retired=0 active=7 rejection=compiled
+SLJIT native id=92 calls=175 returns=159
+SLJIT pipeline id=92 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=92 homes=0
+SLJIT SSA calls id=92 frameless=0
+SLJIT code id=92 start=0x104ec66b0 bytes=4176 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=11 bytes=4176 hits=17 returns=17 stalled=0 charged_edges=103 budget_exits=0 id=92 line=965
+SLJIT exit  begin=0 pc=5 op=61 count=1 id=92 line=965 opcode=CALL
+SLJIT exit  begin=0 pc=10 op=66 count=17 id=92 line=967 opcode=RETUNDEF
+SLJIT coverage id=93 line=995 ops=17 regs=6 captures=0 name= threaded=21371 switch=138 attempts=30920 warmup=4294967294 retired=0 active=10 rejection=compiled
+SLJIT native id=93 calls=30205 returns=0
+SLJIT pipeline id=93 inlined=18133 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=93 homes=0
+SLJIT SSA calls id=93 frameless=0
+SLJIT readmiss id=93 pc=4 opcode=GETPROPC_CACHED hits=12260 changes=11901 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=93 pc=10 opcode=GETPROPC_CACHED hits=180 changes=120 shape=287 class=1 rep=3 chain=255 cached=1
+SLJIT code id=93 start=0x104e5c010 bytes=5984 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=17 bytes=5984 hits=30120 returns=18134 stalled=0 charged_edges=88593 budget_exits=74 id=93 line=995
+SLJIT exit  begin=0 pc=7 op=61 count=17 id=93 line=996 opcode=CALL
+SLJIT exit  begin=0 pc=13 op=61 count=10 id=93 line=998 opcode=CALL
+SLJIT exit  begin=0 pc=16 op=66 count=18134 id=93 line=999 opcode=RETUNDEF
+SLJIT coverage id=94 line=1013 ops=44 regs=10 captures=0 name= threaded=3607 switch=17 attempts=512 warmup=4294967295 retired=3 active=22 rejection=compiled
+SLJIT native id=94 calls=382 returns=0
+SLJIT pipeline id=94 inlined=647 recoveries=0 allocations=0 pushes=0 links=7
+SLJIT numeric id=94 homes=0
+SLJIT SSA calls id=94 frameless=0
+SLJIT readmiss id=94 pc=16 opcode=GETPROPC_CACHED hits=207 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=94 pc=41 opcode=GETPROPC_CACHED hits=208 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT leaf usage id=94 target_line=529 hits=208 completed=0 commit=0
+SLJIT code id=94 start=0x104ebc010 bytes=16660 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=44 bytes=16660 hits=472 returns=208 stalled=0 charged_edges=589 budget_exits=0 id=94 line=1013
+SLJIT exit  begin=0 pc=9 op=61 count=24 id=94 line=1015 opcode=CALL
+SLJIT exit  begin=0 pc=38 op=61 count=33 id=94 line=1024 opcode=CALL
+SLJIT exit  begin=0 pc=43 op=66 count=208 id=94 line=1026 opcode=RETUNDEF
+SLJIT coverage id=95 line=1032 ops=4 regs=3 captures=0 name= threaded=1203 switch=17 attempts=519 warmup=4294967294 retired=0 active=2 rejection=compiled
+SLJIT native id=95 calls=0 returns=0
+SLJIT pipeline id=95 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=95 homes=0
+SLJIT SSA calls id=95 frameless=0
+SLJIT code id=95 start=0x104e81f58 bytes=2056 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=4 bytes=2056 hits=291 returns=291 stalled=0 charged_edges=0 budget_exits=0 id=95 line=1032
+SLJIT exit  begin=0 pc=3 op=65 count=291 id=95 line=1032 opcode=RET
+SLJIT coverage id=96 line=1055 ops=45 regs=11 captures=0 name= threaded=4766 switch=83 attempts=914 warmup=4294967295 retired=2 active=24 rejection=compiled
+SLJIT native id=96 calls=109367 returns=0
+SLJIT pipeline id=96 inlined=19556 recoveries=0 allocations=0 pushes=0 links=9
+SLJIT numeric id=96 homes=0
+SLJIT SSA calls id=96 frameless=0
+SLJIT readmiss id=96 pc=13 opcode=GETPROPC_CACHED hits=12119 changes=1 shape=287 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=96 pc=19 opcode=GETPROPC_CACHED hits=12119 changes=1 shape=287 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=96 pc=29 opcode=GETPROPC_CACHED hits=12119 changes=1 shape=287 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=96 pc=35 opcode=GETPROPC_CACHED hits=12119 changes=1 shape=287 class=1 rep=3 chain=253 cached=1
+SLJIT code id=96 start=0x104e7dd50 bytes=16668 fragment=0x104e81f00 fragment_bytes=56
+SLJIT function  begin=0 ops=45 bytes=16724 hits=884 returns=320 stalled=21 charged_edges=238446 budget_exits=234 id=96 line=1055
+SLJIT exit  begin=0 pc=4 op=77 count=1 id=96 line=1056 opcode=GETGLOBAL
+SLJIT exit  begin=0 pc=5 op=63 count=15 id=96 line=1056 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=11 op=61 count=12 id=96 line=1059 opcode=CALL
+SLJIT exit  begin=0 pc=15 op=61 count=20 id=96 line=1060 opcode=CALL
+SLJIT exit  begin=0 pc=22 op=61 count=319 id=96 line=1060 opcode=CALL
+SLJIT exit  begin=0 pc=28 op=61 count=33 id=96 line=1061 opcode=CALL
+SLJIT exit  begin=0 pc=31 op=61 count=19 id=96 line=1062 opcode=CALL
+SLJIT exit  begin=0 pc=37 op=61 count=19 id=96 line=1063 opcode=CALL
+SLJIT exit  begin=0 pc=39 op=61 count=15 id=96 line=1063 opcode=CALL
+SLJIT exit  begin=0 pc=43 op=186 count=22 id=96 line=1058 opcode=JMP_GTI
+SLJIT exit  begin=0 pc=44 op=65 count=320 id=96 line=1066 opcode=RET
+SLJIT coverage id=97 line=1074 ops=33 regs=7 captures=0 name= threaded=1971 switch=15 attempts=573 warmup=4294967294 retired=0 active=20 rejection=compiled
+SLJIT native id=97 calls=268 returns=0
+SLJIT pipeline id=97 inlined=1343 recoveries=0 allocations=0 pushes=0 links=6
+SLJIT numeric id=97 homes=0
+SLJIT SSA calls id=97 frameless=0
+SLJIT code id=97 start=0x104e9d0d8 bytes=11268 fragment=0x104e4d088 fragment_bytes=56
+SLJIT function  begin=0 ops=33 bytes=11324 hits=538 returns=268 stalled=268 charged_edges=536 budget_exits=0 id=97 line=1074
+SLJIT exit  begin=0 pc=1 op=63 count=268 id=97 line=1074 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=22 op=61 count=1 id=97 line=1079 opcode=CALL
+SLJIT exit  begin=0 pc=31 op=61 count=268 id=97 line=1081 opcode=CALL
+SLJIT exit  begin=0 pc=32 op=65 count=268 id=97 line=1081 opcode=RET
+SLJIT coverage id=98 line=1098 ops=39 regs=8 captures=0 name= threaded=102169 switch=845 attempts=34215 warmup=4294967295 retired=1 active=22 rejection=compiled
+SLJIT native id=98 calls=195299 returns=0
+SLJIT pipeline id=98 inlined=88755 recoveries=293 allocations=0 pushes=0 links=7
+SLJIT numeric id=98 homes=0
+SLJIT SSA calls id=98 frameless=0
+SLJIT readmiss id=98 pc=12 opcode=GETPROPC_CACHED hits=293 changes=1 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=98 pc=23 opcode=GETPROPC_CACHED hits=293 changes=1 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=98 pc=28 opcode=GETPROPC_CACHED hits=6204 changes=1 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT leaf usage id=98 target_line=818 hits=35213 completed=17493 commit=0
+SLJIT leaf usage id=98 target_line=818 hits=35213 completed=17494 commit=0
+SLJIT code id=98 start=0x104eb78c8 bytes=18096 fragment=0x104e597c8 fragment_bytes=56
+SLJIT inline_exit id=98 frame=1 depth=1 target_line=668 pc=5 opcode=GETPROPC_CACHED count=293
+SLJIT function  begin=0 ops=39 bytes=18152 hits=30331 returns=29606 stalled=0 charged_edges=425986 budget_exits=431 id=98 line=1098
+SLJIT exit  begin=0 pc=1 op=63 count=249 id=98 line=1098 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=6 op=61 count=5 id=98 line=1099 opcode=CALL
+SLJIT exit  begin=0 pc=10 op=61 count=59 id=98 line=1101 opcode=CALL
+SLJIT exit  begin=0 pc=14 op=61 count=21 id=98 line=1102 opcode=CALL
+SLJIT exit  begin=0 pc=25 op=61 count=34 id=98 line=1106 opcode=CALL
+SLJIT exit  begin=0 pc=30 op=61 count=32 id=98 line=1107 opcode=CALL
+SLJIT exit  begin=0 pc=32 op=61 count=48 id=98 line=1107 opcode=CALL
+SLJIT exit  begin=0 pc=36 op=186 count=42 id=98 line=1100 opcode=JMP_GTI
+SLJIT exit  begin=0 pc=38 op=65 count=29606 id=98 line=1109 opcode=RET
+SLJIT coverage id=99 line=1119 ops=77 regs=13 captures=0 name= threaded=2439 switch=94 attempts=736 warmup=4294967294 retired=1 active=46 rejection=compiled
+SLJIT native id=99 calls=85409 returns=0
+SLJIT pipeline id=99 inlined=135569 recoveries=176 allocations=0 pushes=0 links=13
+SLJIT numeric id=99 homes=0
+SLJIT SSA calls id=99 frameless=0
+SLJIT readmiss id=99 pc=3 opcode=GETPROPC_CACHED hits=236 changes=1 shape=213 class=3 rep=3 chain=0 cached=1
+SLJIT leaf usage id=99 target_line=818 hits=12117 completed=0 commit=0
+SLJIT code id=99 start=0x104eac010 bytes=25668 fragment=0x104e73480 fragment_bytes=56
+SLJIT function  begin=0 ops=77 bytes=25724 hits=684 returns=277 stalled=40 charged_edges=194886 budget_exits=193 id=99 line=1119
+SLJIT exit  begin=0 pc=9 op=63 count=236 id=99 line=1122 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=12 op=63 count=8 id=99 line=1123 opcode=NEW_OBJ
+SLJIT exit  begin=0 pc=21 op=61 count=12 id=99 line=1126 opcode=CALL
+SLJIT exit  begin=0 pc=32 op=61 count=26 id=99 line=1129 opcode=CALL
+SLJIT exit  begin=0 pc=42 op=170 count=25 id=99 line=1127 opcode=JMP_LT
+SLJIT exit  begin=0 pc=55 op=61 count=8 id=99 line=1135 opcode=CALL
+SLJIT exit  begin=0 pc=60 op=61 count=7 id=99 line=1136 opcode=CALL
+SLJIT exit  begin=0 pc=65 op=61 count=9 id=99 line=1137 opcode=CALL
+SLJIT exit  begin=0 pc=66 op=61 count=14 id=99 line=1137 opcode=CALL
+SLJIT exit  begin=0 pc=71 op=170 count=19 id=99 line=1133 opcode=JMP_LT
+SLJIT exit  begin=0 pc=75 op=186 count=13 id=99 line=1125 opcode=JMP_GTI
+SLJIT exit  begin=0 pc=76 op=65 count=277 id=99 line=1141 opcode=RET
+SLJIT coverage id=100 line=1145 ops=26 regs=10 captures=0 name= threaded=11174 switch=947 attempts=3207 warmup=4294967294 retired=0 active=17 rejection=compiled
+SLJIT native id=100 calls=54707 returns=60039
+SLJIT pipeline id=100 inlined=265496 recoveries=0 allocations=0 pushes=0 links=4
+SLJIT numeric id=100 homes=0
+SLJIT SSA calls id=100 frameless=0
+SLJIT readmiss id=100 pc=11 opcode=GETPROPC_CACHED hits=24736 changes=837 shape=280 class=1 rep=3 chain=253 cached=1
+SLJIT leaf usage id=100 target_line=797 hits=41794 completed=17655 commit=0
+SLJIT code id=100 start=0x104e68380 bytes=9904 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=26 bytes=9904 hits=288 returns=288 stalled=89 charged_edges=9838 budget_exits=0 id=100 line=1145
+SLJIT exit  begin=0 pc=13 op=61 count=24 id=100 line=1149 opcode=CALL
+SLJIT exit  begin=0 pc=19 op=61 count=20 id=100 line=1150 opcode=CALL
+SLJIT exit  begin=0 pc=24 op=170 count=89 id=100 line=1147 opcode=JMP_LT
+SLJIT exit  begin=0 pc=25 op=66 count=288 id=100 line=1152 opcode=RETUNDEF
+SLJIT coverage id=101 line=1168 ops=7 regs=7 captures=0 name= threaded=523 switch=4 attempts=117 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=101 calls=18337 returns=18305
+SLJIT pipeline id=101 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=101 homes=0
+SLJIT SSA calls id=101 frameless=0
+SLJIT code id=101 start=0x104e7d128 bytes=3068 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=7 bytes=3068 hits=50 returns=50 stalled=18 charged_edges=32 budget_exits=0 id=101 line=1168
+SLJIT exit  begin=0 pc=5 op=61 count=18 id=101 line=1168 opcode=CALL
+SLJIT exit  begin=0 pc=6 op=66 count=50 id=101 line=1169 opcode=RETUNDEF
+SLJIT coverage id=102 line=1172 ops=6 regs=5 captures=0 name= threaded=559 switch=21 attempts=124 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=102 calls=0 returns=0
+SLJIT pipeline id=102 inlined=1 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=102 homes=0
+SLJIT SSA calls id=102 frameless=0
+SLJIT code id=102 start=0x104e734d8 bytes=3460 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=6 bytes=3460 hits=1 returns=1 stalled=0 charged_edges=0 budget_exits=0 id=102 line=1172
+SLJIT exit  begin=0 pc=5 op=65 count=1 id=102 line=1172 opcode=RET
+SLJIT coverage id=103 line=1176 ops=7 regs=7 captures=0 name= threaded=574 switch=14 attempts=82 warmup=62 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=104 line=1179 ops=18 regs=5 captures=0 name= threaded=13297 switch=981 attempts=10808 warmup=4294967294 retired=0 active=10 rejection=compiled
+SLJIT native id=104 calls=118685 returns=0
+SLJIT pipeline id=104 inlined=2881410 recoveries=0 allocations=0 pushes=0 links=3
+SLJIT numeric id=104 homes=0
+SLJIT SSA calls id=104 frameless=0
+SLJIT code id=104 start=0x104ea5440 bytes=9572 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=18 bytes=9572 hits=10527 returns=9145 stalled=875 charged_edges=1422148 budget_exits=1391 id=104 line=1179
+SLJIT exit  begin=0 pc=11 op=61 count=2838 id=104 line=1182 opcode=CALL
+SLJIT exit  begin=0 pc=16 op=170 count=877 id=104 line=1180 opcode=JMP_LT
+SLJIT exit  begin=0 pc=17 op=66 count=9145 id=104 line=1184 opcode=RETUNDEF
+SLJIT coverage id=105 line=1358 ops=64 regs=15 captures=0 name= threaded=306 switch=27 attempts=1 warmup=62 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=106 line=1 ops=566 regs=15 captures=0 name= threaded=537 switch=456 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT totals functions=62 loops=0 templates=0 hits=246906 code_bytes=436052
+SLJIT budget bytes=436052 limit=4194304 native_work=0 evictions=0

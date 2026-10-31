@@ -1,0 +1,1984 @@
+SLJIT function compiled  pc=0..82 function_ops=82 regs=15 code_bytes=21304 plan_bytes=15730
+SLJIT function compiled buffer pc=0..21 function_ops=21 regs=9 code_bytes=5964 plan_bytes=15181
+SLJIT function compiled find pc=0..38 function_ops=38 regs=13 code_bytes=12032 plan_bytes=15334
+SLJIT function compiled Stream_getChar pc=0..18 function_ops=18 regs=11 code_bytes=5884 plan_bytes=15154
+SLJIT function compiled Stream_lookChar pc=0..14 function_ops=14 regs=9 code_bytes=4888 plan_bytes=15118
+SLJIT SSA leaf reject line=27693 stage=analysis
+SLJIT SSA leaf reject line=27688 stage=analysis
+SLJIT SSA leaf reject line=27688 stage=analysis
+SLJIT SSA leaf reject line=27688 stage=analysis
+SLJIT function compiled Lexer_getObj pc=0..209 function_ops=209 regs=10 code_bytes=49704 plan_bytes=16873
+SLJIT function compiled Stream_skip pc=0..6 function_ops=6 regs=4 code_bytes=1684 plan_bytes=15046
+SLJIT function compiled isCmd pc=0..9 function_ops=9 regs=7 code_bytes=3800 plan_bytes=15073
+SLJIT function compiled Lexer_getNumber pc=0..53 function_ops=53 regs=14 code_bytes=13644 plan_bytes=15469
+SLJIT SSA leaf reject line=1586 stage=analysis
+SLJIT function compiled isInt pc=0..7 function_ops=7 regs=4 code_bytes=3180 plan_bytes=15055
+SLJIT SSA leaf reject line=1586 stage=analysis
+SLJIT SSA leaf reject line=1586 stage=analysis
+SLJIT SSA leaf reject line=1594 stage=analysis
+SLJIT function compiled Parser_getObj pc=0..178 function_ops=178 regs=15 code_bytes=45600 plan_bytes=16594
+SLJIT function compiled Parser_shift pc=0..23 function_ops=23 regs=9 code_bytes=5476 plan_bytes=15199
+SLJIT SSA leaf reject line=26994 stage=analysis
+SLJIT function compiled toHexDigit pc=0..31 function_ops=31 regs=7 code_bytes=8460 plan_bytes=15271
+SLJIT function compiled Lexer_getName pc=0..73 function_ops=73 regs=11 code_bytes=23676 plan_bytes=15649
+SLJIT function compiled Cmd_get pc=0..11 function_ops=11 regs=9 code_bytes=8640 plan_bytes=15091
+SLJIT SSA leaf reject line=27693 stage=analysis
+SLJIT function compiled Lexer_getString pc=0..180 function_ops=180 regs=18 code_bytes=26768 plan_bytes=16612
+SLJIT function compiled stringToPDFString pc=0..56 function_ops=56 regs=15 code_bytes=22852 plan_bytes=15496
+SLJIT SSA leaf reject line=1594 stage=analysis
+SLJIT function compiled isString pc=0..4 function_ops=4 regs=3 code_bytes=2180 plan_bytes=15028
+SLJIT function compiled isEOF pc=0..3 function_ops=3 regs=3 code_bytes=2120 plan_bytes=15019
+SLJIT function compiled flateStreamGenerateHuffmanTable pc=0..57 function_ops=57 regs=18 code_bytes=18084 plan_bytes=15505
+SLJIT loop compiled flateStreamGenerateHuffmanTable pc=38..43 code_bytes=1344 plan_bytes=3120 ssa=1 mem=1
+SLJIT function compiled FlateStream_readBlock pc=0..310 function_ops=310 regs=40 code_bytes=103492 plan_bytes=17782
+SLJIT loop compiled FlateStream_readBlock pc=195..202 code_bytes=1152 plan_bytes=3120 ssa=1 mem=1
+SLJIT function compiled FlateStream_getCode pc=0..49 function_ops=49 regs=17 code_bytes=19876 plan_bytes=15433
+SLJIT loop compiled flateStreamGenerateHuffmanTable pc=4..8 code_bytes=1128 plan_bytes=3120 ssa=1 mem=1
+SLJIT loop compiled FlateStream_readBlock pc=301..307 code_bytes=1824 plan_bytes=3120 ssa=1 mem=1
+SLJIT function compiled FlateStream_getBits pc=0..30 function_ops=30 regs=11 code_bytes=9856 plan_bytes=15262
+SLJIT loop compiled DecodeStream_ensureBuffer pc=21..25 code_bytes=1028 plan_bytes=3120 ssa=1 mem=2
+SLJIT function compiled DecodeStream_ensureBuffer pc=0..28 function_ops=28 regs=10 code_bytes=7320 plan_bytes=15244
+SLJIT loop compiled DecodeStream_ensureBuffer pc=12..14 code_bytes=572 plan_bytes=3120 ssa=1 mem=0
+SLJIT function compiled isRef pc=0..3 function_ops=3 regs=3 code_bytes=1640 plan_bytes=15019
+SLJIT function compiled Font_buildToFontChar pc=0..27 function_ops=27 regs=10 code_bytes=11020 plan_bytes=15235
+SLJIT function compiled Type1Parser_extractFontHeader pc=0..128 function_ops=128 regs=24 code_bytes=45588 plan_bytes=16144
+SLJIT SSA entry reject line=17344 stage=build pc=0
+SLJIT function compiled isSeparator pc=0..9 function_ops=9 regs=6 code_bytes=3844 plan_bytes=15073
+SLJIT function Type1Parser_extractFontHeader hits=723 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=1 budget_exits=0 code_bytes=45588
+SLJIT SSA leaf reject line=17344 stage=graph
+SLJIT function compiled Type1Parser_extractFontHeader pc=0..128 function_ops=128 regs=24 code_bytes=46756 plan_bytes=16144
+SLJIT SSA leaf reject line=17344 stage=graph
+SLJIT SSA leaf reject line=17344 stage=graph
+SLJIT function compiled getToken pc=0..38 function_ops=38 regs=6 code_bytes=23660 plan_bytes=15334
+SLJIT loop compiled decrypt pc=10..22 code_bytes=2704 plan_bytes=3120 ssa=1 mem=2
+SLJIT ssa fallback name=decrypt begin=10 pc=15 opcode=PUTPROP iterations=0
+SLJIT function compiled decrypt pc=0..28 function_ops=28 regs=16 code_bytes=12104 plan_bytes=15244
+SLJIT function compiled Type1Parser_extractFontProgram pc=0..319 function_ops=319 regs=36 code_bytes=78312 plan_bytes=17863
+SLJIT function compiled readNumberArray pc=0..54 function_ops=54 regs=14 code_bytes=24172 plan_bytes=15478
+SLJIT function compiled Type1Font_flattenCharstring pc=0..61 function_ops=61 regs=15 code_bytes=31184 plan_bytes=15541
+SLJIT SSA leaf reject line=1614 stage=analysis
+SLJIT function compiled isArray pc=0..3 function_ops=3 regs=3 code_bytes=1584 plan_bytes=15019
+SLJIT SSA leaf reject line=1331 stage=analysis
+SLJIT function compiled assert pc=0..5 function_ops=5 regs=5 code_bytes=2032 plan_bytes=15037
+SLJIT function compiled Type1Font_getType2Subrs pc=0..42 function_ops=42 regs=13 code_bytes=12360 plan_bytes=15370
+SLJIT function compiled Type1Font_createCFFIndexHeader pc=0..60 function_ops=60 regs=16 code_bytes=34580 plan_bytes=15532
+SLJIT function compiled Type1Font_wrap pc=0..86 function_ops=86 regs=19 code_bytes=19364 plan_bytes=15766
+SLJIT function compiled stringToArray pc=0..14 function_ops=14 regs=9 code_bytes=6124 plan_bytes=15118
+SLJIT SSA leaf reject line=15391 stage=analysis
+SLJIT function compiled string16 pc=0..11 function_ops=11 regs=6 code_bytes=3832 plan_bytes=15091
+SLJIT function compiled createNameTable pc=0..126 function_ops=126 regs=28 code_bytes=44524 plan_bytes=16126
+SLJIT function compiled createTableEntry pc=0..57 function_ops=57 regs=19 code_bytes=26412 plan_bytes=15505
+SLJIT SSA leaf reject line=15372 stage=analysis
+SLJIT function compiled int32 pc=0..16 function_ops=16 regs=8 code_bytes=16516 plan_bytes=15136
+SLJIT SSA leaf reject line=15360 stage=analysis
+SLJIT function compiled arrayToString pc=0..12 function_ops=12 regs=7 code_bytes=6720 plan_bytes=15100
+SLJIT read refresh requested line=26742 pc=39 shape=2603 generation=0 attempt=1
+SLJIT read refresh retired line=26742 pc=39 shape=2603
+SLJIT function Parser_getObj hits=1440 returns=208 stalled=158 direct_calls=75 direct_returns=0 charged_edges=189 budget_exits=1 code_bytes=45600
+SLJIT SSA leaf reject line=1586 stage=analysis
+SLJIT SSA leaf reject line=1586 stage=analysis
+SLJIT SSA leaf reject line=1594 stage=analysis
+SLJIT function compiled Parser_getObj pc=0..178 function_ops=178 regs=15 code_bytes=46828 plan_bytes=16594
+SLJIT function compiled DecodeStream_getChar pc=0..23 function_ops=23 regs=10 code_bytes=6692 plan_bytes=15199
+SLJIT function compiled isName pc=0..3 function_ops=3 regs=3 code_bytes=1636 plan_bytes=15019
+SLJIT function compiled Dict_set pc=0..4 function_ops=4 regs=5 code_bytes=3524 plan_bytes=15028
+SLJIT function compiled Dict_get pc=0..58 function_ops=58 regs=13 code_bytes=28300 plan_bytes=15514
+SLJIT function compiled XRef_fetchIfRef pc=0..9 function_ops=9 regs=4 code_bytes=2496 plan_bytes=15073
+SLJIT function FlateStream_readBlock hits=12810 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=12125 budget_exits=9 code_bytes=103492
+SLJIT function flateStreamGenerateHuffmanTable hits=445 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=11932 budget_exits=12 code_bytes=18084
+SLJIT function compiled flateStreamGenerateHuffmanTable pc=0..57 function_ops=57 regs=18 code_bytes=16192 plan_bytes=15505
+SLJIT function compiled FlateStream_readBlock pc=0..310 function_ops=310 regs=40 code_bytes=93100 plan_bytes=17782
+SLJIT function decrypt hits=9 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=12104
+SLJIT function compiled decrypt pc=0..28 function_ops=28 regs=16 code_bytes=12104 plan_bytes=15244
+SLJIT function compiled DecodeStream_lookChar pc=0..19 function_ops=19 regs=8 code_bytes=5160 plan_bytes=15163
+SLJIT loop compiled PartialEvaluator_extractWidths pc=67..73 code_bytes=1532 plan_bytes=3120 ssa=1 mem=2
+SLJIT function compiled PartialEvaluator_extractWidths pc=0..102 function_ops=102 regs=23 code_bytes=38324 plan_bytes=15910
+SLJIT ssa fallback name=PartialEvaluator_extractWidths begin=67 pc=71 opcode=PUTPROP iterations=0
+SLJIT loop compiled Type1Parser_extractFontHeader pc=53..59 code_bytes=1356 plan_bytes=3120 ssa=1 mem=1
+SLJIT function compiled getToken pc=0..37 function_ops=37 regs=7 code_bytes=17388 plan_bytes=15325
+SLJIT function decrypt hits=8 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=12104
+SLJIT function compiled decodeCharString pc=0..318 function_ops=318 regs=33 code_bytes=130352 plan_bytes=17854
+SLJIT function compiled decrypt pc=0..28 function_ops=28 regs=16 code_bytes=10252 plan_bytes=15244
+SLJIT function compiled Type1Font_getOrderedCharStrings pc=0..40 function_ops=40 regs=15 code_bytes=13984 plan_bytes=15352
+SLJIT function compiled charstrings_sort pc=0..4 function_ops=4 regs=5 code_bytes=1320 plan_bytes=15028
+SLJIT function Type1Font_flattenCharstring hits=56 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=12 budget_exits=0 code_bytes=31184
+SLJIT function compiled Type1Font_flattenCharstring pc=0..61 function_ops=61 regs=15 code_bytes=29612 plan_bytes=15541
+SLJIT function compiled Type1Font_getType2Charstrings pc=0..20 function_ops=20 regs=12 code_bytes=7648 plan_bytes=15172
+SLJIT function Type1Font_getType2Subrs hits=12 returns=1 stalled=1 direct_calls=0 direct_returns=0 charged_edges=54 budget_exits=0 code_bytes=12360
+SLJIT function compiled Type1Font_getType2Subrs pc=0..42 function_ops=42 regs=13 code_bytes=11456 plan_bytes=15370
+SLJIT function Type1Font_wrap hits=15 returns=1 stalled=0 direct_calls=0 direct_returns=0 charged_edges=6 budget_exits=0 code_bytes=19364
+SLJIT function compiled charset pc=0..24 function_ops=24 regs=10 code_bytes=9056 plan_bytes=15208
+SLJIT function compiled Type1Font_wrap pc=0..86 function_ops=86 regs=19 code_bytes=18348 plan_bytes=15766
+SLJIT function compiled Font_convert pc=0..163 function_ops=163 regs=25 code_bytes=54204 plan_bytes=16459
+SLJIT function compiled getUnicodeRangeFor pc=0..17 function_ops=17 regs=10 code_bytes=8716 plan_bytes=15145
+SLJIT function compiled createOS2Table pc=0..241 function_ops=241 regs=26 code_bytes=60472 plan_bytes=17161
+SLJIT function compiled getRanges pc=0..58 function_ops=58 regs=14 code_bytes=28336 plan_bytes=15514
+SLJIT function compiled fontGetRangesSort pc=0..4 function_ops=4 regs=5 code_bytes=1320 plan_bytes=15028
+SLJIT function compiled fontFieldsHmtx pc=0..28 function_ops=28 regs=10 code_bytes=8752 plan_bytes=15244
+SLJIT function createNameTable hits=56 returns=0 stalled=42 direct_calls=0 direct_returns=0 charged_edges=6 budget_exits=0 code_bytes=44524
+SLJIT function compiled createNameTable pc=0..126 function_ops=126 regs=28 code_bytes=44016 plan_bytes=16126
+SLJIT function createTableEntry hits=2118 returns=1 stalled=32 direct_calls=0 direct_returns=0 charged_edges=1932 budget_exits=2 code_bytes=26412
+SLJIT function compiled createTableEntry pc=0..57 function_ops=57 regs=19 code_bytes=26168 plan_bytes=15505
+SLJIT SSA leaf reject line=15403 stage=analysis
+SLJIT function compiled string32 pc=0..23 function_ops=23 regs=7 code_bytes=6912 plan_bytes=15199
+SLJIT function compiled DecodeStream_skip pc=0..6 function_ops=6 regs=4 code_bytes=1684 plan_bytes=15046
+SLJIT SSA leaf reject line=1338 stage=analysis
+SLJIT function compiled assertWellFormed pc=0..5 function_ops=5 regs=5 code_bytes=2036 plan_bytes=15037
+SLJIT function compiled Font_rebuildToUnicode pc=0..48 function_ops=48 regs=17 code_bytes=27156 plan_bytes=15424
+SLJIT read refresh requested line=17754 pc=34 shape=0 generation=732 attempt=1
+SLJIT read refresh requested line=17754 pc=36 shape=0 generation=732 attempt=2
+SLJIT function compiled cffWrapPrivate pc=0..86 function_ops=86 regs=16 code_bytes=32144 plan_bytes=15766
+SLJIT function compiled Type1Font_encodeNumber pc=0..48 function_ops=48 regs=10 code_bytes=12912 plan_bytes=15424
+SLJIT function compiled PartialEvaluator_getOperatorList pc=0..256 function_ops=504 regs=70 code_bytes=72792 plan_bytes=17296
+SLJIT loop compiled getMaxPower2 pc=4..7 code_bytes=868 plan_bytes=3120 ssa=1 mem=0
+SLJIT SSA leaf reject line=15377 stage=analysis
+SLJIT function compiled getMaxPower2 pc=0..15 function_ops=15 regs=7 code_bytes=4036 plan_bytes=15127
+SLJIT SSA leaf reject line=15377 stage=analysis
+SLJIT function compiled createCMapTable pc=0..160 function_ops=160 regs=35 code_bytes=71796 plan_bytes=16432
+SLJIT loop compiled flateStreamGenerateHuffmanTable pc=29..35 code_bytes=1396 plan_bytes=3120 ssa=1 mem=0
+SLJIT SSA leaf reject line=17331 stage=analysis
+SLJIT function compiled readNumber pc=0..25 function_ops=25 regs=10 code_bytes=12728 plan_bytes=15217
+SLJIT function compiled fontLoaderBind pc=0..84 function_ops=84 regs=25 code_bytes=25216 plan_bytes=15748
+SLJIT function compiled  pc=0..96 function_ops=96 regs=25 code_bytes=40360 plan_bytes=15856
+SLJIT function fontLoaderBind hits=11 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=25216
+SLJIT function compiled fontLoaderBind pc=0..84 function_ops=84 regs=25 code_bytes=26020 plan_bytes=15748
+SLJIT SSA leaf reject line=1590 stage=analysis
+SLJIT function compiled isNum pc=0..4 function_ops=4 regs=3 code_bytes=2180 plan_bytes=15028
+SLJIT function compiled Font_charsToGlyphs pc=0..86 function_ops=86 regs=15 code_bytes=27916 plan_bytes=15766
+SLJIT function compiled CanvasGraphics_showText pc=0..362 function_ops=362 regs=40 code_bytes=102452 plan_bytes=18250
+SLJIT function compiled Util_sign pc=0..6 function_ops=6 regs=5 code_bytes=1984 plan_bytes=15046
+SLJIT SSA leaf reject line=713 stage=analysis
+SLJIT function compiled  pc=0..10 function_ops=10 regs=14 code_bytes=4168 plan_bytes=15082
+SLJIT function compiled CanvasGraphics_showSpacedText pc=0..168 function_ops=168 regs=25 code_bytes=34692 plan_bytes=16504
+SLJIT function compiled ctxTransform pc=0..67 function_ops=67 regs=40 code_bytes=57508 plan_bytes=15595
+SLJIT SSA leaf reject line=677 stage=analysis
+SLJIT function compiled  pc=0..13 function_ops=13 regs=19 code_bytes=5392 plan_bytes=15109
+SLJIT function compiled ctxScale pc=0..27 function_ops=27 regs=8 code_bytes=26972 plan_bytes=15235
+SLJIT SSA leaf reject line=683 stage=analysis
+SLJIT function compiled  pc=0..9 function_ops=9 regs=11 code_bytes=3992 plan_bytes=15073
+SLJIT function compiled ctxSave pc=0..19 function_ops=19 regs=8 code_bytes=5900 plan_bytes=15163
+SLJIT SSA leaf reject line=671 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=3592 plan_bytes=15064
+SLJIT function compiled CanvasGraphics_applyTextTransforms pc=0..36 function_ops=36 regs=9 code_bytes=8952 plan_bytes=15316
+SLJIT function compiled ctxTranslate pc=0..31 function_ops=31 regs=12 code_bytes=29856 plan_bytes=15271
+SLJIT SSA leaf reject line=680 stage=analysis
+SLJIT function compiled  pc=0..9 function_ops=9 regs=11 code_bytes=3992 plan_bytes=15073
+SLJIT function compiled ctxRestore pc=0..13 function_ops=13 regs=6 code_bytes=3912 plan_bytes=15109
+SLJIT SSA leaf reject line=674 stage=analysis
+SLJIT function compiled  pc=0..8 function_ops=8 regs=7 code_bytes=3436 plan_bytes=15064
+SLJIT SSA leaf reject line=4484 stage=analysis
+SLJIT function compiled CanvasGraphics_executeOperatorList pc=0..79 function_ops=79 regs=25 code_bytes=39980 plan_bytes=15703
+SLJIT function ctxRestore hits=1104 returns=552 stalled=552 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=3912
+SLJIT function CanvasGraphics_showText hits=5499 returns=606 stalled=0 direct_calls=0 direct_returns=0 charged_edges=605 budget_exits=2 code_bytes=102452
+SLJIT function ctxSave hits=562 returns=554 stalled=554 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=5900
+SLJIT function CanvasGraphics_applyTextTransforms hits=592 returns=552 stalled=552 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=8952
+SLJIT function ctxTransform hits=1177 returns=1169 stalled=1177 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=57508
+SLJIT function ctxScale hits=1335 returns=1167 stalled=1167 direct_calls=160 direct_returns=0 charged_edges=160 budget_exits=0 code_bytes=26972
+SLJIT function ctxTranslate hits=1104 returns=552 stalled=552 direct_calls=545 direct_returns=0 charged_edges=545 budget_exits=1 code_bytes=29856
+SLJIT function  hits=7 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=3992
+SLJIT function compiled CanvasGraphics_showText pc=0..362 function_ops=362 regs=40 code_bytes=101700 plan_bytes=18250
+SLJIT function compiled ctxTransform pc=0..67 function_ops=67 regs=40 code_bytes=57676 plan_bytes=15595
+SLJIT function compiled ctxScale pc=0..27 function_ops=27 regs=8 code_bytes=27140 plan_bytes=15235
+SLJIT function compiled ctxRestore pc=0..13 function_ops=13 regs=6 code_bytes=3912 plan_bytes=15109
+SLJIT function compiled ctxSave pc=0..19 function_ops=19 regs=8 code_bytes=6068 plan_bytes=15163
+SLJIT function compiled CanvasGraphics_applyTextTransforms pc=0..36 function_ops=36 regs=9 code_bytes=9288 plan_bytes=15316
+SLJIT function compiled ctxTranslate pc=0..31 function_ops=31 regs=12 code_bytes=30024 plan_bytes=15271
+SLJIT SSA leaf reject line=680 stage=analysis
+SLJIT function compiled  pc=0..9 function_ops=9 regs=11 code_bytes=4156 plan_bytes=15073
+SLJIT SSA leaf reject line=1586 stage=analysis
+SLJIT SSA leaf reject line=1586 stage=analysis
+SLJIT function compiled XRef_readXRefTable pc=0..125 function_ops=125 regs=20 code_bytes=38656 plan_bytes=16117
+SLJIT SSA leaf reject line=27652 stage=analysis
+SLJIT function compiled Stream pc=0..17 function_ops=17 regs=11 code_bytes=6292 plan_bytes=15145
+SLJIT SSA leaf reject line=15397 stage=analysis
+SLJIT function compiled safeString16 pc=0..22 function_ops=22 regs=8 code_bytes=5688 plan_bytes=15190
+SLJIT function compiled Stream_makeSubStream pc=0..8 function_ops=8 regs=10 code_bytes=2216 plan_bytes=15064
+SLJIT function compiled cffWrapTopDict pc=0..102 function_ops=102 regs=20 code_bytes=29328 plan_bytes=15910
+SLJIT SSA leaf reject line=3734 stage=analysis
+SLJIT function compiled Dict pc=0..25 function_ops=25 regs=8 code_bytes=6832 plan_bytes=15217
+SLJIT SSA leaf reject line=4305 stage=analysis
+SLJIT SSA leaf reject line=26711 stage=analysis
+SLJIT function compiled Parser pc=0..9 function_ops=9 regs=8 code_bytes=4140 plan_bytes=15073
+SLJIT function compiled Parser_refill pc=0..11 function_ops=11 regs=8 code_bytes=3544 plan_bytes=15091
+SLJIT SSA leaf reject line=1618 stage=analysis
+SLJIT function compiled isStream pc=0..10 function_ops=10 regs=4 code_bytes=3548 plan_bytes=15082
+SLJIT function compiled XRef_getEntry pc=0..12 function_ops=12 regs=5 code_bytes=6320 plan_bytes=15100
+SLJIT loop compiled getMaxPower2 pc=11..13 code_bytes=1020 plan_bytes=3120 ssa=1 mem=0
+SLJIT function fontLoaderBind hits=27 returns=1 stalled=1 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=26020
+SLJIT function compiled fontLoaderBind pc=0..84 function_ops=84 regs=25 code_bytes=25244 plan_bytes=15748
+SLJIT function fontLoaderBind hits=8 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=25244
+SLJIT function compiled fontLoaderBind pc=0..84 function_ops=84 regs=25 code_bytes=25056 plan_bytes=15748
+SLJIT loop compiled fontLoaderPrepareFontLoadEvent pc=82..89 code_bytes=1360 plan_bytes=3120 ssa=0 mem=1
+SLJIT function compiled fontLoaderPrepareFontLoadEvent pc=0..145 function_ops=145 regs=20 code_bytes=39644 plan_bytes=16297
+SLJIT loop compiled fontLoaderPrepareFontLoadEvent pc=108..115 code_bytes=1360 plan_bytes=3120 ssa=0 mem=1
+SLJIT function ctxSave hits=37 returns=29 stalled=29 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=6068
+SLJIT function Font_charsToGlyphs hits=1909 returns=0 stalled=8 direct_calls=0 direct_returns=0 charged_edges=1498 budget_exits=1 code_bytes=27916
+SLJIT function  hits=2 returns=0 stalled=0 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=4156
+SLJIT function ctxRestore hits=62 returns=31 stalled=31 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=3912
+SLJIT function compiled Font_charsToGlyphs pc=0..86 function_ops=86 regs=15 code_bytes=25884 plan_bytes=15766
+SLJIT function compiled ctxSave pc=0..19 function_ops=19 regs=8 code_bytes=5436 plan_bytes=15163
+SLJIT SSA leaf reject line=680 stage=analysis
+SLJIT function compiled  pc=0..9 function_ops=9 regs=11 code_bytes=3648 plan_bytes=15073
+SLJIT function compiled ctxRestore pc=0..13 function_ops=13 regs=6 code_bytes=3564 plan_bytes=15109
+SLJIT function compiled CanvasGraphics_moveText pc=0..13 function_ops=13 regs=11 code_bytes=4040 plan_bytes=15109
+SLJIT function ctxRestore hits=1102 returns=551 stalled=551 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=3564
+SLJIT function ctxSave hits=561 returns=553 stalled=553 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=5436
+SLJIT function CanvasGraphics_applyTextTransforms hits=685 returns=644 stalled=644 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=9288
+SLJIT function ctxTransform hits=1363 returns=1354 stalled=1363 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=57676
+SLJIT function ctxScale hits=1361 returns=1352 stalled=1352 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=27140
+SLJIT function ctxTranslate hits=679 returns=644 stalled=644 direct_calls=27 direct_returns=0 charged_edges=27 budget_exits=0 code_bytes=30024
+SLJIT function compiled ctxTransform pc=0..67 function_ops=67 regs=40 code_bytes=58004 plan_bytes=15595
+SLJIT function compiled ctxScale pc=0..27 function_ops=27 regs=8 code_bytes=27468 plan_bytes=15235
+SLJIT function compiled ctxRestore pc=0..13 function_ops=13 regs=6 code_bytes=3564 plan_bytes=15109
+SLJIT function compiled ctxSave pc=0..19 function_ops=19 regs=8 code_bytes=5032 plan_bytes=15163
+SLJIT function compiled CanvasGraphics_applyTextTransforms pc=0..36 function_ops=36 regs=9 code_bytes=9944 plan_bytes=15316
+SLJIT function compiled ctxTranslate pc=0..31 function_ops=31 regs=12 code_bytes=30184 plan_bytes=15271
+SLJIT function compiled hash pc=0..41 function_ops=41 regs=11 code_bytes=9680 plan_bytes=15361
+PdfJS: 487 ms
+SLJIT coverage id=2 line=73 ops=31 regs=14 captures=0 name=Benchmark threaded=23 switch=9 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=4 line=108 ops=10 regs=9 captures=0 name=BenchmarkSuite threaded=10 switch=6 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=5 line=448 ops=30 regs=10 captures=0 name=setupPdfJS threaded=28 switch=15 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=6 line=469 ops=30 regs=8 captures=2 name= threaded=60 switch=28 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=7 line=465 ops=26 regs=10 captures=3 name=renderPages threaded=64 switch=16 attempts=4 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=8 line=458 ops=42 regs=12 captures=0 name= threaded=84 switch=26 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=9 line=458 ops=14 regs=5 captures=0 name=runPdfJS threaded=29 switch=16 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=10 line=482 ops=55 regs=14 captures=0 name=tearDownPdfJS threaded=62 switch=8 attempts=1 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=11 line=502 ops=21 regs=9 captures=0 name=buffer threaded=998286 switch=121 attempts=117 warmup=4294967294 retired=1 active=9 rejection=compiled
+SLJIT native id=11 calls=0 returns=0
+SLJIT pipeline id=11 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=11 homes=0
+SLJIT SSA calls id=11 frameless=0
+SLJIT code id=11 start=0x10525a838 bytes=5908 fragment=0x10525bfa8 fragment_bytes=56
+SLJIT function buffer begin=0 ops=21 bytes=5964 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=11 line=502
+SLJIT exit buffer begin=0 pc=12 op=51 count=8 id=11 line=505 opcode=GETPROPC
+SLJIT coverage id=12 line=509 ops=41 regs=11 captures=0 name=hash threaded=1595560 switch=21343 attempts=21346 warmup=4294967294 retired=1 active=15 rejection=compiled
+SLJIT native id=12 calls=0 returns=0
+SLJIT pipeline id=12 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=12 homes=0
+SLJIT SSA calls id=12 frameless=0
+SLJIT code id=12 start=0x109a311d8 bytes=9624 fragment=0x1099f1ce0 fragment_bytes=56
+SLJIT function hash begin=0 ops=41 bytes=9680 hits=21268 returns=0 stalled=8 charged_edges=21259 budget_exits=26 id=12 line=509
+SLJIT exit hash begin=0 pc=8 op=61 count=1 id=12 line=510 opcode=CALL
+SLJIT exit hash begin=0 pc=16 op=51 count=21267 id=12 line=514 opcode=GETPROPC
+SLJIT coverage id=13 line=526 ops=8 regs=8 captures=0 name=PdfJS_windowInstall threaded=112 switch=20 attempts=14 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=14 line=799 ops=2 regs=1 captures=0 name=getPDF threaded=2 switch=1 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=19 line=54 ops=18 regs=8 captures=0 name= threaded=18 switch=12 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=23 line=142 ops=8 regs=3 captures=0 name= threaded=8 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=24 line=142 ops=5 regs=5 captures=0 name= threaded=5 switch=4 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=42 line=530 ops=7 regs=8 captures=0 name= threaded=35 switch=2 attempts=5 warmup=5 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=43 line=533 ops=28 regs=6 captures=0 name= threaded=123 switch=24 attempts=2 warmup=7 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=44 line=559 ops=96 regs=25 captures=0 name= threaded=3577562 switch=85 attempts=79 warmup=4294967294 retired=1 active=32 rejection=compiled
+SLJIT native id=44 calls=0 returns=0
+SLJIT pipeline id=44 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=44 homes=0
+SLJIT SSA calls id=44 frameless=0
+SLJIT code id=44 start=0x109974e00 bytes=40304 fragment=0x109996490 fragment_bytes=56
+SLJIT function  begin=0 ops=96 bytes=40360 hits=26 returns=0 stalled=8 charged_edges=17 budget_exits=0 id=44 line=559
+SLJIT exit  begin=0 pc=5 op=51 count=25 id=44 line=563 opcode=GETPROPC
+SLJIT exit  begin=0 pc=55 op=1 count=1 id=44 line=568 opcode=LDCONST
+SLJIT coverage id=45 line=587 ops=82 regs=15 captures=0 name= threaded=2883944 switch=5770 attempts=511 warmup=4294967294 retired=2 active=31 rejection=compiled
+SLJIT native id=45 calls=0 returns=0
+SLJIT pipeline id=45 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=45 homes=0
+SLJIT SSA calls id=45 frameless=0
+SLJIT code id=45 start=0x10524c010 bytes=21304 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=82 bytes=21304 hits=16 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=45 line=587
+SLJIT exit  begin=0 pc=5 op=51 count=16 id=45 line=590 opcode=GETPROPC
+SLJIT coverage id=46 line=608 ops=2 regs=6 captures=0 name= threaded=4 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=48 line=612 ops=15 regs=9 captures=0 name= threaded=30 switch=13 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=49 line=609 ops=7 regs=5 captures=0 name= threaded=14 switch=9 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=51 line=638 ops=2 regs=4 captures=0 name= threaded=4 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=52 line=639 ops=3 regs=5 captures=0 name= threaded=6 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=54 line=647 ops=4 regs=6 captures=0 name= threaded=8 switch=2 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=55 line=650 ops=4 regs=5 captures=0 name= threaded=8 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=56 line=653 ops=7 regs=7 captures=0 name= threaded=14 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=57 line=657 ops=1 regs=0 captures=0 name=appendChild threaded=2 switch=0 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=58 line=656 ops=10 regs=6 captures=0 name= threaded=162 switch=18 attempts=18 warmup=18 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=59 line=660 ops=1 regs=0 captures=0 name= threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=60 line=661 ops=1 regs=0 captures=0 name= threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=61 line=664 ops=1 regs=0 captures=0 name=insertRule threaded=1 switch=0 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=62 line=643 ops=24 regs=7 captures=0 name= threaded=1128 switch=389 attempts=47 warmup=44 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=63 line=671 ops=8 regs=7 captures=0 name= threaded=11312 switch=2 attempts=71 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=63 calls=0 returns=0
+SLJIT pipeline id=63 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=63 homes=0
+SLJIT SSA calls id=63 frameless=0
+SLJIT code id=63 start=0x1099cb210 bytes=3592 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=8 bytes=3592 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=63 line=671
+SLJIT exit  begin=0 pc=6 op=61 count=8 id=63 line=671 opcode=CALL
+SLJIT coverage id=64 line=674 ops=8 regs=7 captures=0 name= threaded=11312 switch=1 attempts=71 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=64 calls=0 returns=0
+SLJIT pipeline id=64 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=64 homes=0
+SLJIT SSA calls id=64 frameless=0
+SLJIT code id=64 start=0x1099fd320 bytes=3436 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=8 bytes=3436 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=64 line=674
+SLJIT exit  begin=0 pc=6 op=61 count=8 id=64 line=674 opcode=CALL
+SLJIT coverage id=65 line=677 ops=13 regs=19 captures=0 name= threaded=36780 switch=1 attempts=71 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=65 calls=0 returns=0
+SLJIT pipeline id=65 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=65 homes=0
+SLJIT SSA calls id=65 frameless=0
+SLJIT code id=65 start=0x1099eeac8 bytes=5392 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=13 bytes=5392 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=65 line=677
+SLJIT exit  begin=0 pc=11 op=61 count=8 id=65 line=677 opcode=CALL
+SLJIT coverage id=66 line=680 ops=9 regs=11 captures=0 name= threaded=8621 switch=1 attempts=208 warmup=4294967295 retired=1 active=2 rejection=compiled
+SLJIT native id=66 calls=0 returns=0
+SLJIT pipeline id=66 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=66 homes=0
+SLJIT SSA calls id=66 frameless=0
+SLJIT readmiss id=66 pc=1 opcode=GETPROPC_CACHED hits=8 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=66 start=0x1099f0ce8 bytes=3648 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=9 bytes=3648 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=66 line=680
+SLJIT exit  begin=0 pc=7 op=61 count=8 id=66 line=680 opcode=CALL
+SLJIT coverage id=67 line=683 ops=9 regs=11 captures=0 name= threaded=24312 switch=1 attempts=71 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=67 calls=0 returns=0
+SLJIT pipeline id=67 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=67 homes=0
+SLJIT SSA calls id=67 frameless=0
+SLJIT code id=67 start=0x1099cd7a8 bytes=3992 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=9 bytes=3992 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=67 line=683
+SLJIT exit  begin=0 pc=7 op=61 count=168 id=67 line=683 opcode=CALL
+SLJIT coverage id=71 line=695 ops=8 regs=7 captures=0 name= threaded=16 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=72 line=698 ops=8 regs=7 captures=0 name= threaded=16 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=74 line=704 ops=9 regs=11 captures=0 name= threaded=18 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=75 line=707 ops=9 regs=11 captures=0 name= threaded=18 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=77 line=713 ops=10 regs=14 captures=0 name= threaded=56296 switch=1 attempts=71 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=77 calls=0 returns=0
+SLJIT pipeline id=77 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=77 homes=0
+SLJIT SSA calls id=77 frameless=0
+SLJIT code id=77 start=0x1099ce7c0 bytes=4168 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=10 bytes=4168 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=77 line=713
+SLJIT exit  begin=0 pc=8 op=61 count=8 id=77 line=713 opcode=CALL
+SLJIT coverage id=80 line=723 ops=10 regs=13 captures=0 name= threaded=10 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=88 line=748 ops=11 regs=15 captures=0 name= threaded=22 switch=2 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=89 line=669 ops=55 regs=5 captures=0 name= threaded=165 switch=126 attempts=3 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=90 line=754 ops=4 regs=4 captures=0 name= threaded=12 switch=4 attempts=3 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=91 line=755 ops=11 regs=6 captures=0 name= threaded=33 switch=8 attempts=3 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=92 line=764 ops=19 regs=9 captures=0 name=createElement threaded=322 switch=10 attempts=23 warmup=22 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=93 line=775 ops=10 regs=6 captures=0 name=getElementById threaded=12 switch=4 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=95 line=786 ops=4 regs=4 captures=0 name=createEvent threaded=8 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=96 line=790 ops=5 regs=5 captures=0 name= threaded=10 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=97 line=865 ops=33 regs=12 captures=2 name=getPdfOnreadystatechange threaded=50 switch=10 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=98 line=847 ops=100 regs=26 captures=0 name=getPdf threaded=156 switch=34 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=105 line=1331 ops=5 regs=5 captures=0 name=assert threaded=19308 switch=325 attempts=14054 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=105 calls=0 returns=0
+SLJIT pipeline id=105 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=105 homes=0
+SLJIT SSA calls id=105 frameless=0
+SLJIT code id=105 start=0x10578f1c0 bytes=2032 fragment=0 fragment_bytes=0
+SLJIT function assert begin=0 ops=5 bytes=2032 hits=11427 returns=11427 stalled=0 charged_edges=0 budget_exits=0 id=105 line=1331
+SLJIT exit assert begin=0 pc=4 op=66 count=11427 id=105 line=1333 opcode=RETUNDEF
+SLJIT coverage id=106 line=1338 ops=5 regs=5 captures=0 name=assertWellFormed threaded=1474 switch=9 attempts=772 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=106 calls=0 returns=0
+SLJIT pipeline id=106 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=106 homes=0
+SLJIT SSA calls id=106 frameless=0
+SLJIT code id=106 start=0x10993f0f0 bytes=2036 fragment=0 fragment_bytes=0
+SLJIT function assertWellFormed begin=0 ops=5 bytes=2036 hits=629 returns=421 stalled=208 charged_edges=0 budget_exits=0 id=106 line=1338
+SLJIT exit assertWellFormed begin=0 pc=0 op=28 count=208 id=106 line=1338 opcode=LNOT
+SLJIT exit assertWellFormed begin=0 pc=4 op=66 count=421 id=106 line=1340 opcode=RETUNDEF
+SLJIT coverage id=107 line=1343 ops=14 regs=10 captures=0 name=shadow threaded=448 switch=17 attempts=32 warmup=19 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=110 line=1566 ops=56 regs=15 captures=1 name=stringToPDFString threaded=4431 switch=339 attempts=327 warmup=4294967294 retired=1 active=26 rejection=compiled
+SLJIT native id=110 calls=0 returns=0
+SLJIT pipeline id=110 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=110 homes=0
+SLJIT SSA calls id=110 frameless=0
+SLJIT code id=110 start=0x10528c010 bytes=22796 fragment=0x105283428 fragment_bytes=56
+SLJIT function stringToPDFString begin=0 ops=56 bytes=22852 hits=9 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=110 line=1566
+SLJIT exit stringToPDFString begin=0 pc=3 op=50 count=1 id=110 line=1567 opcode=GETPROP
+SLJIT exit stringToPDFString begin=0 pc=35 op=51 count=8 id=110 line=1574 opcode=GETPROPC
+SLJIT coverage id=112 line=1586 ops=7 regs=4 captures=0 name=isInt threaded=48646 switch=4388 attempts=71 warmup=4294967295 retired=1 active=2 rejection=compiled
+SLJIT native id=112 calls=0 returns=0
+SLJIT pipeline id=112 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=112 homes=0
+SLJIT SSA calls id=112 frameless=0
+SLJIT code id=112 start=0x105269d80 bytes=3180 fragment=0 fragment_bytes=0
+SLJIT function isInt begin=0 ops=7 bytes=3180 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=112 line=1586
+SLJIT exit isInt begin=0 pc=2 op=37 count=8 id=112 line=1586 opcode=EQ
+SLJIT coverage id=113 line=1590 ops=4 regs=3 captures=0 name=isNum threaded=42008 switch=0 attempts=71 warmup=4294967295 retired=1 active=0 rejection=compiled
+SLJIT native id=113 calls=0 returns=0
+SLJIT pipeline id=113 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=113 homes=0
+SLJIT SSA calls id=113 frameless=0
+SLJIT code id=113 start=0x1099af768 bytes=2180 fragment=0 fragment_bytes=0
+SLJIT function isNum begin=0 ops=4 bytes=2180 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=113 line=1590
+SLJIT exit isNum begin=0 pc=2 op=37 count=8 id=113 line=1590 opcode=EQ
+SLJIT coverage id=114 line=1594 ops=4 regs=3 captures=0 name=isString threaded=17322 switch=37 attempts=82 warmup=4294967295 retired=1 active=0 rejection=compiled
+SLJIT native id=114 calls=0 returns=0
+SLJIT pipeline id=114 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=114 homes=0
+SLJIT SSA calls id=114 frameless=0
+SLJIT code id=114 start=0x10529b768 bytes=2180 fragment=0 fragment_bytes=0
+SLJIT function isString begin=0 ops=4 bytes=2180 hits=8 returns=0 stalled=1 charged_edges=0 budget_exits=0 id=114 line=1594
+SLJIT exit isString begin=0 pc=0 op=29 count=1 id=114 line=1594 opcode=TYPEOF
+SLJIT exit isString begin=0 pc=2 op=37 count=7 id=114 line=1594 opcode=EQ
+SLJIT coverage id=116 line=1602 ops=3 regs=3 captures=1 name=isName threaded=1652 switch=12 attempts=85 warmup=4294967295 retired=1 active=1 rejection=compiled
+SLJIT native id=116 calls=0 returns=0
+SLJIT pipeline id=116 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=116 homes=0
+SLJIT SSA calls id=116 frameless=0
+SLJIT code id=116 start=0x10526c8a8 bytes=1636 fragment=0 fragment_bytes=0
+SLJIT function isName begin=0 ops=3 bytes=1636 hits=9 returns=1 stalled=1 charged_edges=0 budget_exits=0 id=116 line=1602
+SLJIT exit isName begin=0 pc=1 op=45 count=22 id=116 line=1602 opcode=INSTANCEOF
+SLJIT exit isName begin=0 pc=2 op=65 count=1 id=116 line=1602 opcode=RET
+SLJIT coverage id=117 line=1606 ops=9 regs=7 captures=1 name=isCmd threaded=130082 switch=2105 attempts=1724 warmup=4294967295 retired=1 active=6 rejection=compiled
+SLJIT native id=117 calls=0 returns=0
+SLJIT pipeline id=117 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=117 homes=0
+SLJIT SSA calls id=117 frameless=0
+SLJIT code id=117 start=0x10526aa58 bytes=3800 fragment=0 fragment_bytes=0
+SLJIT function isCmd begin=0 ops=9 bytes=3800 hits=1453 returns=1443 stalled=1435 charged_edges=0 budget_exits=0 id=117 line=1606
+SLJIT exit isCmd begin=0 pc=1 op=45 count=8 id=117 line=1606 opcode=INSTANCEOF
+SLJIT exit isCmd begin=0 pc=3 op=28 count=2 id=117 line=1606 opcode=LNOT
+SLJIT exit isCmd begin=0 pc=7 op=65 count=1435 id=117 line=1606 opcode=RET
+SLJIT exit isCmd begin=0 pc=8 op=65 count=8 id=117 line=1606 opcode=RET
+SLJIT coverage id=118 line=1610 ops=13 regs=8 captures=1 name=isDict threaded=232 switch=4 attempts=38 warmup=31 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=119 line=1614 ops=3 regs=3 captures=0 name=isArray threaded=42400 switch=330 attempts=713 warmup=4294967295 retired=1 active=1 rejection=compiled
+SLJIT native id=119 calls=0 returns=0
+SLJIT pipeline id=119 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=119 homes=0
+SLJIT SSA calls id=119 frameless=0
+SLJIT code id=119 start=0x10578f9c0 bytes=1584 fragment=0 fragment_bytes=0
+SLJIT function isArray begin=0 ops=3 bytes=1584 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=119 line=1614
+SLJIT exit isArray begin=0 pc=1 op=45 count=8 id=119 line=1614 opcode=INSTANCEOF
+SLJIT coverage id=120 line=1618 ops=10 regs=4 captures=0 name=isStream threaded=864 switch=90 attempts=97 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=120 calls=0 returns=0
+SLJIT pipeline id=120 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=120 homes=0
+SLJIT SSA calls id=120 frameless=0
+SLJIT code id=120 start=0x109a4d3b0 bytes=3548 fragment=0 fragment_bytes=0
+SLJIT function isStream begin=0 ops=10 bytes=3548 hits=16 returns=8 stalled=8 charged_edges=0 budget_exits=0 id=120 line=1618
+SLJIT exit isStream begin=0 pc=2 op=37 count=8 id=120 line=1618 opcode=EQ
+SLJIT exit isStream begin=0 pc=9 op=65 count=8 id=120 line=1618 opcode=RET
+SLJIT coverage id=122 line=1626 ops=3 regs=3 captures=1 name=isRef threaded=2182 switch=13 attempts=78 warmup=4294967295 retired=1 active=1 rejection=compiled
+SLJIT native id=122 calls=0 returns=0
+SLJIT pipeline id=122 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=122 homes=0
+SLJIT SSA calls id=122 frameless=0
+SLJIT code id=122 start=0x105282db0 bytes=1640 fragment=0 fragment_bytes=0
+SLJIT function isRef begin=0 ops=3 bytes=1640 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=122 line=1626
+SLJIT exit isRef begin=0 pc=1 op=45 count=8 id=122 line=1626 opcode=INSTANCEOF
+SLJIT coverage id=127 line=2522 ops=19 regs=8 captures=0 name=ctxSave threaded=26569 switch=25 attempts=1452 warmup=4294967295 retired=1 active=6 rejection=compiled
+SLJIT native id=127 calls=0 returns=0
+SLJIT pipeline id=127 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=127 homes=0
+SLJIT SSA calls id=127 frameless=0
+SLJIT readmiss id=127 pc=1 opcode=GETTHISC hits=8 changes=1 shape=3304 class=1 rep=3 chain=254 cached=1
+SLJIT readmiss id=127 pc=4 opcode=GETPROPC_CACHED hits=8 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=127 pc=9 opcode=GETPROPC_CACHED hits=8 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=127 start=0x1099f44c8 bytes=5032 fragment=0 fragment_bytes=0
+SLJIT function ctxSave begin=0 ops=19 bytes=5032 hits=37 returns=29 stalled=29 charged_edges=0 budget_exits=0 id=127 line=2522
+SLJIT exit ctxSave begin=0 pc=13 op=61 count=8 id=127 line=2525 opcode=CALL
+SLJIT exit ctxSave begin=0 pc=18 op=66 count=29 id=127 line=2528 opcode=RETUNDEF
+SLJIT coverage id=128 line=2530 ops=13 regs=6 captures=0 name=ctxRestore threaded=9144 switch=18 attempts=2585 warmup=4294967294 retired=0 active=6 rejection=compiled
+SLJIT native id=128 calls=0 returns=0
+SLJIT pipeline id=128 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=128 homes=0
+SLJIT SSA calls id=128 frameless=0
+SLJIT readmiss id=128 pc=3 opcode=GETPROPC_CACHED hits=31 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=128 start=0x1099f58c8 bytes=3564 fragment=0 fragment_bytes=0
+SLJIT function ctxRestore begin=0 ops=13 bytes=3564 hits=62 returns=31 stalled=31 charged_edges=0 budget_exits=0 id=128 line=2530
+SLJIT exit ctxRestore begin=0 pc=8 op=232 count=31 id=128 line=2533 opcode=PUTTHISC
+SLJIT exit ctxRestore begin=0 pc=12 op=66 count=31 id=128 line=2536 opcode=RETUNDEF
+SLJIT coverage id=129 line=2539 ops=31 regs=12 captures=0 name=ctxTranslate threaded=21145 switch=7 attempts=2011 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=129 calls=0 returns=0
+SLJIT pipeline id=129 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=129 homes=0
+SLJIT SSA calls id=129 frameless=0
+SLJIT code id=129 start=0x1099e74b8 bytes=30184 fragment=0 fragment_bytes=0
+SLJIT function ctxTranslate begin=0 ops=31 bytes=30184 hits=37 returns=29 stalled=29 charged_edges=0 budget_exits=0 id=129 line=2539
+SLJIT exit ctxTranslate begin=0 pc=29 op=61 count=8 id=129 line=2543 opcode=CALL
+SLJIT exit ctxTranslate begin=0 pc=30 op=66 count=29 id=129 line=2544 opcode=RETUNDEF
+SLJIT coverage id=130 line=2547 ops=27 regs=8 captures=0 name=ctxScale threaded=61113 switch=19 attempts=3017 warmup=4294967295 retired=1 active=3 rejection=compiled
+SLJIT native id=130 calls=0 returns=0
+SLJIT pipeline id=130 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=130 homes=0
+SLJIT SSA calls id=130 frameless=0
+SLJIT code id=130 start=0x1099f66f8 bytes=27468 fragment=0 fragment_bytes=0
+SLJIT function ctxScale begin=0 ops=27 bytes=27468 hits=130 returns=122 stalled=122 charged_edges=0 budget_exits=0 id=130 line=2547
+SLJIT exit ctxScale begin=0 pc=25 op=61 count=8 id=130 line=2553 opcode=CALL
+SLJIT exit ctxScale begin=0 pc=26 op=66 count=122 id=130 line=2554 opcode=RETUNDEF
+SLJIT coverage id=131 line=2557 ops=67 regs=40 captures=1 name=ctxTransform threaded=150312 switch=2860 attempts=2861 warmup=4294967295 retired=1 active=10 rejection=compiled
+SLJIT native id=131 calls=0 returns=0
+SLJIT pipeline id=131 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=131 homes=0
+SLJIT SSA calls id=131 frameless=0
+SLJIT code id=131 start=0x109a337c8 bytes=57948 fragment=0x1099fd270 fragment_bytes=56
+SLJIT function ctxTransform begin=0 ops=67 bytes=58004 hits=130 returns=122 stalled=130 charged_edges=0 budget_exits=0 id=131 line=2557
+SLJIT exit ctxTransform begin=0 pc=0 op=231 count=8 id=131 line=2557 opcode=GETTHISC
+SLJIT exit ctxTransform begin=0 pc=66 op=66 count=122 id=131 line=2568 opcode=RETUNDEF
+SLJIT coverage id=133 line=2479 ops=72 regs=11 captures=0 name=addContextCurrentTransform threaded=144 switch=50 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=135 line=15208 ops=17 regs=10 captures=1 name=getUnicodeRangeFor threaded=1059 switch=25 attempts=397 warmup=4294967294 retired=0 active=11 rejection=compiled
+SLJIT native id=135 calls=0 returns=0
+SLJIT pipeline id=135 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=135 homes=0
+SLJIT SSA calls id=135 frameless=0
+SLJIT code id=135 start=0x10992ddc0 bytes=8716 fragment=0 fragment_bytes=0
+SLJIT function getUnicodeRangeFor begin=0 ops=17 bytes=8716 hits=343 returns=343 stalled=0 charged_edges=1017 budget_exits=0 id=135 line=15208
+SLJIT exit getUnicodeRangeFor begin=0 pc=12 op=65 count=343 id=135 line=15211 opcode=RET
+SLJIT coverage id=140 line=26706 ops=3 regs=3 captures=1 name=isEOF threaded=10510 switch=4442 attempts=1764 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=140 calls=0 returns=389
+SLJIT pipeline id=140 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=140 homes=0
+SLJIT SSA calls id=140 frameless=0
+SLJIT code id=140 start=0x10529af10 bytes=2120 fragment=0 fragment_bytes=0
+SLJIT function isEOF begin=0 ops=3 bytes=2120 hits=1024 returns=648 stalled=0 charged_edges=0 budget_exits=0 id=140 line=26706
+SLJIT exit isEOF begin=0 pc=1 op=37 count=3821 id=140 line=26706 opcode=EQ
+SLJIT exit isEOF begin=0 pc=2 op=65 count=648 id=140 line=26706 opcode=RET
+SLJIT coverage id=144 line=29959 ops=84 regs=17 captures=2 name=messageHandlerComObjOnMessage threaded=1020 switch=127 attempts=30 warmup=25 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=145 line=29945 ops=37 regs=10 captures=0 name=MessageHandler threaded=74 switch=19 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=146 line=883 ops=7 regs=9 captures=0 name=Page threaded=14 switch=5 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=147 line=893 ops=7 regs=7 captures=0 name=Page_getPageProp threaded=12 switch=3 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=148 line=896 ops=22 regs=6 captures=0 name=Page_inheritPageProp threaded=156 switch=28 attempts=8 warmup=12 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=149 line=907 ops=10 regs=8 captures=0 name=get content threaded=18 switch=6 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=150 line=910 ops=10 regs=8 captures=0 name=get resources threaded=18 switch=6 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=151 line=912 ops=22 regs=6 captures=0 name=get mediaBox threaded=38 switch=7 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=152 line=919 ops=40 regs=11 captures=0 name=get view threaded=34 switch=9 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=154 line=938 ops=31 regs=7 captures=0 name=get rotate threaded=38 switch=5 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=155 line=954 ops=59 regs=20 captures=0 name=Page_getOperatorList threaded=62 switch=22 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=160 line=881 ops=39 regs=9 captures=0 name=PageClosure threaded=39 switch=25 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=161 line=1131 ops=24 regs=9 captures=1 name=PDFDocument threaded=18 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=162 line=1140 ops=19 regs=11 captures=0 name=init threaded=38 switch=12 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=163 line=1147 ops=38 regs=13 captures=0 name=find threaded=20435 switch=4092 attempts=22 warmup=4294967294 retired=2 active=16 rejection=compiled
+SLJIT native id=163 calls=0 returns=0
+SLJIT pipeline id=163 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=163 homes=1
+SLJIT SSA calls id=163 frameless=0
+SLJIT code id=163 start=0x1052578e0 bytes=12032 fragment=0 fragment_bytes=0
+SLJIT function find begin=0 ops=38 bytes=12032 hits=21 returns=0 stalled=8 charged_edges=3 budget_exits=0 id=163 line=1147
+SLJIT exit find begin=0 pc=11 op=61 count=11 id=163 line=1153 opcode=CALL
+SLJIT exit find begin=0 pc=12 op=10 count=8 id=163 line=1153 opcode=ADD
+SLJIT exit find begin=0 pc=20 op=61 count=1 id=163 line=1155 opcode=CALL
+SLJIT exit find begin=0 pc=26 op=61 count=1 id=163 line=1155 opcode=CALL
+SLJIT coverage id=164 line=1163 ops=20 regs=7 captures=0 name=get linearization threaded=38 switch=9 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=165 line=1174 ops=85 regs=14 captures=0 name=get startXRef threaded=294 switch=54 attempts=2 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=166 line=1213 ops=13 regs=7 captures=0 name=get mainXRefEntriesOffset threaded=20 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=167 line=1223 ops=15 regs=6 captures=0 name=PDFDocument_checkHeader threaded=28 switch=9 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=168 line=1234 ops=16 regs=10 captures=0 name=PDFDocument_setup threaded=32 switch=15 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=169 line=1241 ops=15 regs=7 captures=0 name=get numPages threaded=22 switch=6 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=170 line=1254 ops=12 regs=10 captures=1 name= threaded=118 switch=7 attempts=12 warmup=6 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=171 line=1247 ops=30 regs=13 captures=0 name=PDFDocument_getDocumentInfo threaded=58 switch=19 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=172 line=1267 ops=14 regs=9 captures=1 name= threaded=480 switch=124 attempts=32 warmup=16 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=173 line=1261 ops=63 regs=15 captures=0 name=PDFDocument_getFingerprint threaded=64 switch=24 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=174 line=1283 ops=7 regs=7 captures=0 name=PDFDocument_getPage threaded=25 switch=8 attempts=4 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=175 line=1129 ops=37 regs=11 captures=0 name=PDFDocumentClosure threaded=37 switch=26 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=186 line=1473 ops=6 regs=5 captures=0 name=Util_sign threaded=5762 switch=0 attempts=5636 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=186 calls=0 returns=0
+SLJIT pipeline id=186 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=186 homes=0
+SLJIT SSA calls id=186 frameless=0
+SLJIT code id=186 start=0x1099cf830 bytes=1984 fragment=0 fragment_bytes=0
+SLJIT function Util_sign begin=0 ops=6 bytes=1984 hits=5573 returns=5573 stalled=0 charged_edges=0 budget_exits=0 id=186 line=1473
+SLJIT exit Util_sign begin=0 pc=4 op=65 count=5573 id=186 line=1473 opcode=RET
+SLJIT coverage id=187 line=1368 ops=32 regs=6 captures=0 name=UtilClosure threaded=32 switch=30 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=188 line=1483 ops=161 regs=28 captures=0 name=PageViewport threaded=182 switch=16 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=192 line=1479 ops=12 regs=7 captures=0 name=PageViewportClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=193 line=1662 ops=23 regs=8 captures=1 name=Promise threaded=478 switch=12 attempts=26 warmup=23 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=197 line=1709 ops=24 regs=7 captures=1 name=set data threaded=96 switch=17 attempts=8 warmup=6 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=198 line=1725 ops=12 regs=6 captures=1 name=get data threaded=230 switch=4 attempts=46 warmup=44 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=200 line=1739 ops=34 regs=10 captures=0 name=Promise_resolve threaded=156 switch=13 attempts=8 warmup=10 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=203 line=1780 ops=50 regs=13 captures=0 name=Promise_then threaded=141 switch=11 attempts=8 warmup=6 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=204 line=1654 ops=39 regs=10 captures=0 name=PromiseClosure threaded=39 switch=25 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=206 line=1813 ops=7 regs=5 captures=0 name=StatTimer threaded=14 switch=4 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=207 line=1819 ops=16 regs=7 captures=0 name=StatTimer_time threaded=24 switch=2 attempts=8 warmup=6 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=208 line=1826 ops=27 regs=13 captures=0 name=StatTimer_timeEnd threaded=24 switch=1 attempts=8 warmup=8 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=210 line=1806 ops=14 regs=8 captures=0 name=StatTimerClosure threaded=14 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=213 line=1893 ops=5 regs=4 captures=1 name=getPDFLoad threaded=10 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=214 line=1872 ops=35 regs=8 captures=1 name=getDocument threaded=63 switch=28 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=215 line=1908 ops=3 regs=5 captures=0 name=PDFDocumentProxy threaded=3 switch=2 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=216 line=1916 ops=3 regs=3 captures=0 name=get numPages threaded=6 switch=2 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=218 line=1931 ops=7 regs=7 captures=0 name=PDFDocumentProxy_getPage threaded=12 switch=4 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=223 line=1906 ops=27 regs=9 captures=0 name=PDFDocumentProxyClosure threaded=27 switch=17 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=224 line=1989 ops=17 regs=12 captures=0 name=PDFPageProxy threaded=34 switch=14 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=225 line=2001 ops=4 regs=4 captures=0 name=get pageNumber threaded=8 switch=1 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=226 line=2007 ops=3 regs=3 captures=0 name=get rotate threaded=6 switch=2 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=228 line=2021 ops=3 regs=3 captures=0 name=get view threaded=6 switch=2 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=229 line=2030 ops=15 regs=11 captures=0 name=PDFPageProxy_getViewport threaded=30 switch=14 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=231 line=2079 ops=22 regs=6 captures=2 name=complete threaded=22 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=232 line=2093 ops=33 regs=8 captures=3 name=pageDisplayReadyPromise threaded=52 switch=10 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=234 line=2059 ops=54 regs=19 captures=0 name=PDFPageProxy_render threaded=108 switch=46 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=235 line=2127 ops=7 regs=5 captures=0 name=pageSetTimeout threaded=14 switch=5 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=236 line=2126 ops=7 regs=5 captures=0 name=pageDisplayContinuation threaded=14 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=237 line=2133 ops=4 regs=3 captures=1 name=pageStartRenderingFromOperatorListEnsureFonts threaded=8 switch=2 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=238 line=2119 ops=17 regs=8 captures=0 name=PDFPageProxy_startRenderingFromOperatorList threaded=34 switch=15 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=239 line=2151 ops=11 regs=7 captures=1 name=pageEnsureFontsFontObjs threaded=22 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=240 line=2140 ops=27 regs=13 captures=0 name=PDFPageProxy_ensureFonts threaded=182 switch=16 attempts=2 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=241 line=2178 ops=35 regs=8 captures=8 name=next threaded=85 switch=17 attempts=3 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=242 line=2160 ops=58 regs=19 captures=0 name=PDFPageProxy_display threaded=82 switch=38 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=246 line=1987 ops=45 regs=9 captures=0 name=PDFPageProxyClosure threaded=45 switch=29 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=248 line=2228 ops=123 regs=20 captures=0 name=WorkerTransport threaded=68 switch=23 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=250 line=2301 ops=6 regs=5 captures=1 name=WorkerTransport_postMessage threaded=180 switch=32 attempts=30 warmup=25 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=252 line=2297 ops=24 regs=7 captures=0 name=WorkerTransport_setupFakeWorker threaded=48 switch=18 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=253 line=2318 ops=14 regs=9 captures=0 name=transportDoc threaded=28 switch=9 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=254 line=2325 ops=18 regs=9 captures=0 name=transportPage threaded=36 switch=13 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=256 line=2340 ops=14 regs=7 captures=0 name=transportRender threaded=28 switch=11 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=257 line=2347 ops=75 regs=17 captures=0 name=transportObj threaded=882 switch=118 attempts=18 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=261 line=2316 ops=43 regs=6 captures=0 name=WorkerTransport_setupMessageHandler threaded=86 switch=30 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=262 line=2428 ops=7 regs=8 captures=0 name=WorkerTransport_sendData threaded=14 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=263 line=2432 ops=24 regs=11 captures=0 name=WorkerTransport_getPage threaded=42 switch=14 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=265 line=2227 ops=18 regs=7 captures=0 name=WorkerTransportClosure threaded=18 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=266 line=2592 ops=57 regs=7 captures=0 name=CanvasExtraState threaded=228 switch=56 attempts=4 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=267 line=2629 ops=7 regs=5 captures=0 name=CanvasExtraState_clone threaded=14 switch=2 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=268 line=2632 ops=3 regs=5 captures=0 name=CanvasExtraState_setCurrentPoint threaded=12 switch=2 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=269 line=2589 ops=9 regs=6 captures=0 name=CanvasExtraStateClosure threaded=9 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=270 line=2645 ops=20 regs=9 captures=0 name=CanvasGraphics threaded=76 switch=13 attempts=4 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=271 line=2694 ops=20 regs=10 captures=0 name=CanvasGraphics_beginDrawing threaded=32 switch=10 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=272 line=2706 ops=79 regs=25 captures=1 name=CanvasGraphics_executeOperatorList threaded=3858 switch=490 attempts=423 warmup=4294967294 retired=0 active=43 rejection=compiled
+SLJIT native id=272 calls=0 returns=0
+SLJIT pipeline id=272 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=272 homes=0
+SLJIT SSA calls id=272 frameless=0
+SLJIT readmiss id=272 pc=10 opcode=GETPROPC_CACHED hits=1 changes=1 shape=364 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=272 pc=64 opcode=GETPROP hits=2 changes=1 shape=252 class=1 rep=0 chain=0 cached=1
+SLJIT readmiss id=272 pc=67 opcode=GETPROPC_CACHED hits=77 changes=1 shape=364 class=3 rep=3 chain=0 cached=1
+SLJIT code id=272 start=0x109a00010 bytes=39980 fragment=0 fragment_bytes=0
+SLJIT function CanvasGraphics_executeOperatorList begin=0 ops=79 bytes=39980 hits=422 returns=3 stalled=1 charged_edges=16 budget_exits=0 id=272 line=2706
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=9 op=77 count=1 id=272 line=2717 opcode=GETGLOBAL
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=11 op=61 count=1 id=272 line=2717 opcode=CALL
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=30 op=174 count=192 id=272 line=2731 opcode=JMP_SEQ
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=49 op=61 count=17 id=272 line=2740 opcode=CALL
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=61 op=65 count=2 id=272 line=2751 opcode=RET
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=64 op=50 count=130 id=272 line=2757 opcode=GETPROP
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=66 op=77 count=1 id=272 line=2757 opcode=GETGLOBAL
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=68 op=61 count=77 id=272 line=2757 opcode=CALL
+SLJIT exit CanvasGraphics_executeOperatorList begin=0 pc=76 op=65 count=1 id=272 line=2759 opcode=RET
+SLJIT coverage id=273 line=2768 ops=12 regs=6 captures=0 name=CanvasGraphics_endDrawing threaded=16 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=274 line=2776 ops=5 regs=5 captures=0 name=CanvasGraphics_setLineWidth threaded=10 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=275 line=2780 ops=5 regs=8 captures=1 name=CanvasGraphics_setLineCap threaded=10 switch=5 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=278 line=2789 ops=9 regs=6 captures=0 name=CanvasGraphics_setDash threaded=18 switch=12 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=282 line=2841 ops=17 regs=7 captures=0 name=CanvasGraphics_save threaded=34 switch=9 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=283 line=2847 ops=14 regs=6 captures=0 name=CanvasGraphics_restore threaded=28 switch=5 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=284 line=2855 ops=12 regs=17 captures=0 name=CanvasGraphics_transform threaded=24 switch=3 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=285 line=2860 ops=15 regs=9 captures=0 name=CanvasGraphics_moveTo threaded=31 switch=9 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=286 line=2864 ops=15 regs=9 captures=0 name=CanvasGraphics_lineTo threaded=31 switch=9 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=292 line=2887 ops=62 regs=11 captures=0 name=CanvasGraphics_stroke threaded=79 switch=23 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=303 line=2972 ops=16 regs=11 captures=0 name=CanvasGraphics_beginText threaded=64 switch=12 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=304 line=2977 ops=1 regs=0 captures=0 name=CanvasGraphics_endText threaded=4 switch=0 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=309 line=2991 ops=130 regs=20 captures=0 name=CanvasGraphics_setFont threaded=2016 switch=123 attempts=24 warmup=24 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=312 line=3053 ops=13 regs=11 captures=0 name=CanvasGraphics_moveText threaded=1248 switch=10 attempts=71 warmup=4294967295 retired=1 active=6 rejection=compiled
+SLJIT native id=312 calls=0 returns=0
+SLJIT pipeline id=312 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=312 homes=0
+SLJIT SSA calls id=312 frameless=0
+SLJIT code id=312 start=0x1099a0ac8 bytes=4040 fragment=0 fragment_bytes=0
+SLJIT function CanvasGraphics_moveText begin=0 ops=13 bytes=4040 hits=8 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=312 line=3053
+SLJIT exit CanvasGraphics_moveText begin=0 pc=0 op=231 count=8 id=312 line=3053 opcode=GETTHISC
+SLJIT coverage id=316 line=3069 ops=36 regs=9 captures=0 name=CanvasGraphics_applyTextTransforms threaded=48869 switch=4273 attempts=1537 warmup=4294967295 retired=5 active=17 rejection=compiled
+SLJIT native id=316 calls=0 returns=0
+SLJIT pipeline id=316 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=316 homes=0
+SLJIT SSA calls id=316 frameless=0
+SLJIT readmiss id=316 pc=9 opcode=GETPROPC_CACHED hits=8 changes=1 shape=1669 class=3 rep=3 chain=1 cached=1
+SLJIT readmiss id=316 pc=26 opcode=GETPROPC_CACHED hits=8 changes=1 shape=1669 class=3 rep=3 chain=1 cached=1
+SLJIT code id=316 start=0x1099f1d38 bytes=9944 fragment=0 fragment_bytes=0
+SLJIT function CanvasGraphics_applyTextTransforms begin=0 ops=36 bytes=9944 hits=69 returns=29 stalled=29 charged_edges=0 budget_exits=0 id=316 line=3069
+SLJIT exit CanvasGraphics_applyTextTransforms begin=0 pc=12 op=61 count=8 id=316 line=3075 opcode=CALL
+SLJIT exit CanvasGraphics_applyTextTransforms begin=0 pc=17 op=61 count=8 id=316 line=3076 opcode=CALL
+SLJIT exit CanvasGraphics_applyTextTransforms begin=0 pc=24 op=61 count=8 id=316 line=3077 opcode=CALL
+SLJIT exit CanvasGraphics_applyTextTransforms begin=0 pc=29 op=61 count=8 id=316 line=3078 opcode=CALL
+SLJIT exit CanvasGraphics_applyTextTransforms begin=0 pc=34 op=61 count=8 id=316 line=3079 opcode=CALL
+SLJIT exit CanvasGraphics_applyTextTransforms begin=0 pc=35 op=66 count=29 id=316 line=3080 opcode=RETUNDEF
+SLJIT coverage id=318 line=3098 ops=362 regs=40 captures=0 name=CanvasGraphics_showText threaded=335612 switch=16127 attempts=13408 warmup=4294967295 retired=4 active=171 rejection=compiled
+SLJIT native id=318 calls=0 returns=0
+SLJIT pipeline id=318 inlined=0 recoveries=0 allocations=16 pushes=0 links=2
+SLJIT numeric id=318 homes=0
+SLJIT SSA calls id=318 frameless=0
+SLJIT code id=318 start=0x1099b2088 bytes=101644 fragment=0x1099fd2c8 fragment_bytes=56
+SLJIT function CanvasGraphics_showText begin=0 ops=362 bytes=101700 hits=7886 returns=789 stalled=0 charged_edges=173 budget_exits=0 id=318 line=3098
+SLJIT exit CanvasGraphics_showText begin=0 pc=7 op=61 count=8 id=318 line=3102 opcode=CALL
+SLJIT exit CanvasGraphics_showText begin=0 pc=163 op=61 count=8 id=318 line=3158 opcode=CALL
+SLJIT exit CanvasGraphics_showText begin=0 pc=166 op=61 count=8 id=318 line=3159 opcode=CALL
+SLJIT exit CanvasGraphics_showText begin=0 pc=168 op=77 count=1 id=318 line=3162 opcode=GETGLOBAL
+SLJIT exit CanvasGraphics_showText begin=0 pc=204 op=230 count=614 id=318 line=3176 opcode=PUTPROPC
+SLJIT exit CanvasGraphics_showText begin=0 pc=226 op=1 count=2348 id=318 line=3188 opcode=LDCONST
+SLJIT exit CanvasGraphics_showText begin=0 pc=228 op=67 count=788 id=318 line=3189 opcode=GETVAR
+SLJIT exit CanvasGraphics_showText begin=0 pc=243 op=67 count=46 id=318 line=3195 opcode=GETVAR
+SLJIT exit CanvasGraphics_showText begin=0 pc=255 op=61 count=140 id=318 line=3197 opcode=CALL
+SLJIT exit CanvasGraphics_showText begin=0 pc=303 op=175 count=3136 id=318 line=3215 opcode=JMP_SNEQ
+SLJIT exit CanvasGraphics_showText begin=0 pc=361 op=65 count=789 id=318 line=3234 opcode=RET
+SLJIT coverage id=319 line=3237 ops=168 regs=25 captures=0 name=CanvasGraphics_showSpacedText threaded=48552 switch=1632 attempts=48 warmup=4294967295 retired=5 active=75 rejection=compiled
+SLJIT native id=319 calls=0 returns=0
+SLJIT pipeline id=319 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=319 homes=0
+SLJIT SSA calls id=319 frameless=0
+SLJIT code id=319 start=0x1099d0010 bytes=34636 fragment=0x1099ce768 fragment_bytes=56
+SLJIT function CanvasGraphics_showSpacedText begin=0 ops=168 bytes=34692 hits=40 returns=0 stalled=40 charged_edges=0 budget_exits=0 id=319 line=3237
+SLJIT exit CanvasGraphics_showSpacedText begin=0 pc=0 op=231 count=8 id=319 line=3237 opcode=GETTHISC
+SLJIT exit CanvasGraphics_showSpacedText begin=0 pc=75 op=50 count=8 id=319 line=3264 opcode=GETPROP
+SLJIT exit CanvasGraphics_showSpacedText begin=0 pc=79 op=49 count=8 id=319 line=3265 opcode=IF_FALSE
+SLJIT exit CanvasGraphics_showSpacedText begin=0 pc=121 op=49 count=8 id=319 line=3280 opcode=IF_FALSE
+SLJIT exit CanvasGraphics_showSpacedText begin=0 pc=127 op=0 count=8 id=319 line=3281 opcode=LDREG
+SLJIT coverage id=354 line=3627 ops=29 regs=7 captures=1 name=CanvasGraphics_consumePath threaded=16 switch=4 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=358 line=2639 ops=269 regs=14 captures=0 name=CanvasGraphicsClosure threaded=269 switch=99 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=361 line=3704 ops=2 regs=4 captures=0 name=Name threaded=2 switch=1 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=362 line=3702 ops=5 regs=5 captures=0 name=NameClosure threaded=5 switch=3 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=363 line=3714 ops=2 regs=4 captures=0 name=Cmd threaded=2 switch=1 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=364 line=3722 ops=11 regs=9 captures=2 name=Cmd_get threaded=3701 switch=31 attempts=429 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=364 calls=0 returns=0
+SLJIT pipeline id=364 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=364 homes=0
+SLJIT SSA calls id=364 frameless=0
+SLJIT readmiss id=364 pc=1 opcode=GETPROP hits=183 changes=6 shape=3099 class=1 rep=0 chain=0 cached=1
+SLJIT code id=364 start=0x105289df8 bytes=8584 fragment=0x10528bfa8 fragment_bytes=56
+SLJIT function Cmd_get begin=0 ops=11 bytes=8640 hits=349 returns=183 stalled=0 charged_edges=0 budget_exits=0 id=364 line=3722
+SLJIT exit Cmd_get begin=0 pc=1 op=50 count=166 id=364 line=3722 opcode=GETPROP
+SLJIT exit Cmd_get begin=0 pc=3 op=65 count=183 id=364 line=3724 opcode=RET
+SLJIT coverage id=365 line=3715 ops=15 regs=7 captures=0 name=CmdClosure threaded=15 switch=11 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=366 line=3739 ops=5 regs=3 captures=1 name=Dict_assignXref threaded=10 switch=2 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=367 line=3745 ops=58 regs=13 captures=2 name=Dict_get threaded=8641 switch=745 attempts=96 warmup=4294967295 retired=3 active=25 rejection=compiled
+SLJIT native id=367 calls=0 returns=0
+SLJIT pipeline id=367 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=367 homes=0
+SLJIT SSA calls id=367 frameless=0
+SLJIT readmiss id=367 pc=1 opcode=GETPROP hits=6 changes=3 shape=2886 class=1 rep=0 chain=0 cached=1
+SLJIT code id=367 start=0x1098e0010 bytes=28300 fragment=0 fragment_bytes=0
+SLJIT function Dict_get begin=0 ops=58 bytes=28300 hits=24 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=367 line=3745
+SLJIT exit Dict_get begin=0 pc=1 op=50 count=2 id=367 line=3745 opcode=GETPROP
+SLJIT exit Dict_get begin=0 pc=4 op=38 count=6 id=367 line=3745 opcode=NEQ
+SLJIT exit Dict_get begin=0 pc=9 op=29 count=2 id=367 line=3746 opcode=TYPEOF
+SLJIT exit Dict_get begin=0 pc=11 op=37 count=6 id=367 line=3746 opcode=EQ
+SLJIT exit Dict_get begin=0 pc=33 op=37 count=8 id=367 line=3750 opcode=EQ
+SLJIT coverage id=370 line=3773 ops=4 regs=5 captures=1 name=Dict_set threaded=1992 switch=12 attempts=82 warmup=4294967295 retired=1 active=0 rejection=compiled
+SLJIT native id=370 calls=0 returns=0
+SLJIT pipeline id=370 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=370 homes=0
+SLJIT SSA calls id=370 frameless=0
+SLJIT code id=370 start=0x1057ab138 bytes=3524 fragment=0 fragment_bytes=0
+SLJIT function Dict_set begin=0 ops=4 bytes=3524 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=370 line=3773
+SLJIT exit Dict_set begin=0 pc=2 op=53 count=8 id=370 line=3773 opcode=PUTPROP
+SLJIT coverage id=371 line=3777 ops=3 regs=3 captures=1 name=Dict_has threaded=72 switch=24 attempts=24 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=372 line=3781 ops=14 regs=11 captures=1 name=Dict_forEach threaded=142 switch=35 attempts=2 warmup=13 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=373 line=3734 ops=25 regs=8 captures=0 name=Dict threaded=2350 switch=781 attempts=143 warmup=4294967295 retired=7 active=4 rejection=compiled
+SLJIT native id=373 calls=0 returns=0
+SLJIT pipeline id=373 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=373 homes=0
+SLJIT SSA calls id=373 frameless=0
+SLJIT code id=373 start=0x109a2e530 bytes=6832 fragment=0 fragment_bytes=0
+SLJIT function Dict begin=0 ops=25 bytes=6832 hits=56 returns=0 stalled=56 charged_edges=0 budget_exits=0 id=373 line=3734
+SLJIT exit Dict begin=0 pc=11 op=232 count=8 id=373 line=3740 opcode=PUTTHISC
+SLJIT exit Dict begin=0 pc=13 op=232 count=8 id=373 line=3755 opcode=PUTTHISC
+SLJIT exit Dict begin=0 pc=15 op=232 count=8 id=373 line=3760 opcode=PUTTHISC
+SLJIT exit Dict begin=0 pc=17 op=232 count=8 id=373 line=3770 opcode=PUTTHISC
+SLJIT exit Dict begin=0 pc=19 op=232 count=8 id=373 line=3774 opcode=PUTTHISC
+SLJIT exit Dict begin=0 pc=21 op=232 count=8 id=373 line=3778 opcode=PUTTHISC
+SLJIT exit Dict begin=0 pc=23 op=232 count=8 id=373 line=3784 opcode=PUTTHISC
+SLJIT coverage id=374 line=3732 ops=4 regs=2 captures=0 name=DictClosure threaded=4 switch=3 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=375 line=3792 ops=3 regs=5 captures=0 name=Ref threaded=3 switch=2 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=376 line=3790 ops=5 regs=5 captures=0 name=RefClosure threaded=5 switch=3 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=380 line=3803 ops=9 regs=6 captures=0 name=RefSetClosure threaded=9 switch=5 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=381 line=3823 ops=12 regs=7 captures=0 name=Catalog threaded=24 switch=9 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=382 line=3830 ops=55 regs=15 captures=0 name=get metadata threaded=34 switch=5 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=383 line=3845 ops=18 regs=7 captures=0 name=get toplevelPagesDict threaded=34 switch=9 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=384 line=3851 ops=203 regs=19 captures=0 name=get documentOutline threaded=58 switch=9 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=385 line=3905 ops=18 regs=7 captures=0 name=get numPages threaded=34 switch=10 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=386 line=3915 ops=66 regs=19 captures=0 name=Catalog_traverseKids threaded=96 switch=26 attempts=2 warmup=3 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=389 line=3938 ops=126 regs=25 captures=0 name=get destinations threaded=68 switch=16 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=390 line=3984 ops=13 regs=7 captures=0 name=Catalog_getPage threaded=38 switch=9 attempts=4 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=391 line=3821 ops=27 regs=9 captures=0 name=CatalogClosure threaded=27 switch=18 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=392 line=3998 ops=46 regs=15 captures=0 name=XRef threaded=64 switch=16 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=393 line=4020 ops=125 regs=20 captures=0 name=XRef_readXRefTable threaded=4574 switch=597 attempts=243 warmup=4294967294 retired=0 active=62 rejection=compiled
+SLJIT native id=393 calls=0 returns=0
+SLJIT pipeline id=393 inlined=0 recoveries=0 allocations=7 pushes=0 links=9
+SLJIT numeric id=393 homes=0
+SLJIT SSA calls id=393 frameless=0
+SLJIT code id=393 start=0x109a10010 bytes=38600 fragment=0x1099f0ae8 fragment_bytes=56
+SLJIT function XRef_readXRefTable begin=0 ops=125 bytes=38656 hits=50 returns=0 stalled=13 charged_edges=0 budget_exits=0 id=393 line=4020
+SLJIT exit XRef_readXRefTable begin=0 pc=25 op=61 count=7 id=393 line=4043 opcode=CALL
+SLJIT exit XRef_readXRefTable begin=0 pc=26 op=230 count=7 id=393 line=4043 opcode=PUTPROPC
+SLJIT exit XRef_readXRefTable begin=0 pc=30 op=230 count=6 id=393 line=4044 opcode=PUTPROPC
+SLJIT exit XRef_readXRefTable begin=0 pc=37 op=136 count=6 id=393 line=4047 opcode=CALL_VAR
+SLJIT exit XRef_readXRefTable begin=0 pc=44 op=136 count=6 id=393 line=4049 opcode=CALL_VAR
+SLJIT exit XRef_readXRefTable begin=0 pc=47 op=230 count=6 id=393 line=4050 opcode=PUTPROPC
+SLJIT exit XRef_readXRefTable begin=0 pc=55 op=135 count=6 id=393 line=4053 opcode=CALL_UNDEF_THIS
+SLJIT exit XRef_readXRefTable begin=0 pc=58 op=190 count=6 id=393 line=4054 opcode=GETPROPC_CACHED
+SLJIT coverage id=398 line=4246 ops=133 regs=16 captures=0 name=XRef_readXRef threaded=104 switch=27 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=399 line=4305 ops=12 regs=5 captures=0 name=XRef_getEntry threaded=580 switch=94 attempts=84 warmup=4294967295 retired=1 active=5 rejection=compiled
+SLJIT native id=399 calls=0 returns=0
+SLJIT pipeline id=399 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=399 homes=0
+SLJIT SSA calls id=399 frameless=0
+SLJIT code id=399 start=0x109a4bad8 bytes=6320 fragment=0 fragment_bytes=0
+SLJIT function XRef_getEntry begin=0 ops=12 bytes=6320 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=399 line=4305
+SLJIT exit XRef_getEntry begin=0 pc=1 op=50 count=8 id=399 line=4305 opcode=GETPROP
+SLJIT coverage id=400 line=4311 ops=9 regs=4 captures=0 name=XRef_fetchIfRef threaded=1938 switch=686 attempts=580 warmup=4294967295 retired=1 active=5 rejection=compiled
+SLJIT native id=400 calls=0 returns=0
+SLJIT pipeline id=400 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=400 homes=0
+SLJIT SSA calls id=400 frameless=0
+SLJIT code id=400 start=0x1098ef620 bytes=2496 fragment=0 fragment_bytes=0
+SLJIT function XRef_fetchIfRef begin=0 ops=9 bytes=2496 hits=426 returns=351 stalled=0 charged_edges=0 budget_exits=0 id=400 line=4311
+SLJIT exit XRef_fetchIfRef begin=0 pc=1 op=136 count=8 id=400 line=4311 opcode=CALL_VAR
+SLJIT exit XRef_fetchIfRef begin=0 pc=3 op=65 count=351 id=400 line=4312 opcode=RET
+SLJIT exit XRef_fetchIfRef begin=0 pc=7 op=218 count=67 id=400 line=4313 opcode=TAILCALL_CALL
+SLJIT coverage id=401 line=4315 ops=253 regs=26 captures=0 name=XRef_fetch threaded=7755 switch=1310 attempts=77 warmup=4294967295 retired=0 active=0 rejection=code budget
+SLJIT coverage id=402 line=4404 ops=2 regs=2 captures=0 name=XRef_getCatalogObj threaded=4 switch=1 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=403 line=3996 ops=22 regs=7 captures=0 name=XRefClosure threaded=22 switch=11 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=404 line=4419 ops=3 regs=5 captures=0 name=PDFObjects threaded=6 switch=1 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=405 line=4431 ops=15 regs=11 captures=0 name=PDFObjects_ensureObj threaded=216 switch=29 attempts=18 warmup=18 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=406 line=4448 ops=23 regs=8 captures=0 name=PDFObjects_get threaded=240 switch=3 attempts=24 warmup=24 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=407 line=4469 ops=14 regs=7 captures=0 name=PDFObjects_resolve threaded=162 switch=29 attempts=18 warmup=18 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=409 line=4484 ops=10 regs=5 captures=0 name=PDFObjects_isResolved threaded=144 switch=4 attempts=24 warmup=24 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=410 line=4493 ops=10 regs=5 captures=0 name=PDFObjects_hasData threaded=90 switch=10 attempts=18 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=412 line=4417 ops=22 regs=7 captures=0 name=PDFObjectsClosure threaded=22 switch=10 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=432 line=4519 ops=43 regs=7 captures=0 name=PDFFunctionClosure threaded=43 switch=20 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=437 line=4897 ops=16 regs=7 captures=0 name=FunctionCacheClosure threaded=16 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=444 line=4922 ops=20 regs=8 captures=0 name=PostScriptStackClosure threaded=20 switch=10 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=447 line=4967 ops=8 regs=7 captures=0 name=PostScriptEvaluatorClosure threaded=8 switch=4 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=455 line=5199 ops=18 regs=7 captures=0 name=PostScriptParserClosure threaded=18 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=456 line=5289 ops=3 regs=5 captures=0 name=PostScriptToken threaded=3 switch=3 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=458 line=5291 ops=47 regs=10 captures=1 name=PostScriptTokenClosure threaded=47 switch=28 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=462 line=5313 ops=10 regs=7 captures=0 name=PostScriptLexerClosure threaded=10 switch=5 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=470 line=12437 ops=24 regs=7 captures=0 name=ColorSpaceClosure threaded=24 switch=19 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=475 line=12629 ops=12 regs=7 captures=0 name=AlternateCSClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=477 line=12674 ops=5 regs=5 captures=0 name=PatternCSClosure threaded=5 switch=3 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=482 line=12684 ops=12 regs=7 captures=0 name=IndexedCSClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=483 line=12746 ops=7 regs=5 captures=0 name=DeviceGrayCS threaded=56 switch=3 attempts=8 warmup=6 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=487 line=12744 ops=12 regs=7 captures=0 name=DeviceGrayCSClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=492 line=12775 ops=12 regs=7 captures=0 name=DeviceRgbCSClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=497 line=12802 ops=12 regs=7 captures=0 name=DeviceCmykCSClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=503 line=12854 ops=14 regs=8 captures=0 name=LabCSClosure threaded=14 switch=8 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=506 line=12970 ops=12 regs=7 captures=0 name=ARCFourCipherClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=508 line=13011 ops=17 regs=7 captures=0 name=calculateMD5Closure threaded=17 switch=10 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=511 line=13095 ops=7 regs=6 captures=0 name=NullCipherClosure threaded=7 switch=4 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=517 line=13108 ops=43 regs=14 captures=0 name=AES128CipherClosure threaded=43 switch=26 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=522 line=13361 ops=9 regs=6 captures=0 name=CipherTransformClosure threaded=9 switch=5 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=532 line=13453 ops=20 regs=10 captures=1 name=CipherTransformFactoryClosure threaded=20 switch=14 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=533 line=13569 ops=12 regs=9 captures=0 name=PartialEvaluator threaded=24 switch=10 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=535 line=13697 ops=27 regs=7 captures=3 name=insertDependency threaded=624 switch=2 attempts=24 warmup=48 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=536 line=13708 ops=93 regs=15 captures=7 name=handleSetFont threaded=1900 switch=231 attempts=24 warmup=23 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=540 line=13688 ops=504 regs=70 captures=1 name=PartialEvaluator_getOperatorList threaded=25083 switch=2303 attempts=796 warmup=4294967295 retired=4 active=114 rejection=compiled
+SLJIT native id=540 calls=0 returns=0
+SLJIT pipeline id=540 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=540 homes=0
+SLJIT SSA calls id=540 frameless=0
+SLJIT code id=540 start=0x109960010 bytes=72736 fragment=0x10995cce0 fragment_bytes=56
+SLJIT function PartialEvaluator_getOperatorList begin=0 ops=256 bytes=72792 hits=709 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=540 line=13688
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=96 op=67 count=1 id=540 line=13830 opcode=GETVAR
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=111 op=61 count=1 id=540 line=13840 opcode=CALL
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=114 op=136 count=8 id=540 line=13841 opcode=CALL_VAR
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=118 op=136 count=8 id=540 line=13845 opcode=CALL_VAR
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=122 op=50 count=198 id=540 line=13847 opcode=GETPROP
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=125 op=28 count=8 id=540 line=13848 opcode=LNOT
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=152 op=37 count=8 id=540 line=13862 opcode=EQ
+SLJIT exit PartialEvaluator_getOperatorList begin=0 pc=250 op=37 count=182 id=540 line=13895 opcode=EQ
+SLJIT coverage id=541 line=14042 ops=141 regs=27 captures=0 name=partialEvaluatorExtractDataStructures threaded=648 switch=116 attempts=18 warmup=14 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=544 line=14246 ops=102 regs=23 captures=0 name=PartialEvaluator_extractWidths threaded=6027 switch=2703 attempts=62 warmup=4294967295 retired=4 active=45 rejection=compiled
+SLJIT native id=544 calls=0 returns=0
+SLJIT pipeline id=544 inlined=0 recoveries=0 allocations=8 pushes=0 links=0
+SLJIT numeric id=544 homes=0
+SLJIT SSA calls id=544 frameless=0
+SLJIT readmiss id=544 pc=3 opcode=GETPROPC_CACHED hits=8 changes=1 shape=714 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=544 pc=55 opcode=GETPROPC_CACHED hits=8 changes=1 shape=714 class=1 rep=2 chain=0 cached=1
+SLJIT code id=544 start=0x1098f0010 bytes=38268 fragment=0x1052968b8 fragment_bytes=56
+SLJIT function PartialEvaluator_extractWidths begin=0 ops=102 bytes=38324 hits=43 returns=0 stalled=16 charged_edges=0 budget_exits=0 id=544 line=14246
+SLJIT exit PartialEvaluator_extractWidths begin=0 pc=60 op=61 count=8 id=544 line=14272 opcode=CALL
+SLJIT exit PartialEvaluator_extractWidths begin=0 pc=68 op=212 count=1 id=544 line=14276 opcode=TONUMERIC
+SLJIT exit PartialEvaluator_extractWidths begin=0 pc=71 op=53 count=7 id=544 line=14276 opcode=PUTPROP
+SLJIT exit PartialEvaluator_extractWidths begin=0 pc=73 op=170 count=11 id=544 line=14275 opcode=JMP_LT
+SLJIT exit PartialEvaluator_extractWidths begin=0 pc=79 op=135 count=8 id=544 line=14277 opcode=CALL_UNDEF_THIS
+SLJIT exit PartialEvaluator_extractWidths begin=0 pc=80 op=48 count=8 id=544 line=14277 opcode=IF_TRUE
+SLJIT loop PartialEvaluator_extractWidths begin=67 end=73 hits=8 iterations=0
+SLJIT loop code id=544 begin=67 end=73 bytes=1164
+SLJIT ssa name=PartialEvaluator_extractWidths begin=67 end=73 hits=1 iterations=0
+SLJIT coverage id=546 line=14312 ops=333 regs=39 captures=0 name=PartialEvaluator_translateFont threaded=2970 switch=486 attempts=18 warmup=16 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=547 line=13576 ops=173 regs=9 captures=0 name=PartialEvaluatorClosure threaded=173 switch=14 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=548 line=14456 ops=23 regs=5 captures=0 name=EvalState threaded=46 switch=16 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=549 line=14453 ops=5 regs=5 captures=0 name=EvalStateClosure threaded=5 switch=3 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=550 line=14886 ops=26 regs=12 captures=2 name=checkFontsLoaded threaded=152 switch=9 attempts=4 warmup=24 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=551 line=14885 ops=84 regs=25 captures=2 name=fontLoaderBind threaded=947515 switch=263 attempts=228 warmup=4294967295 retired=2 active=36 rejection=compiled
+SLJIT native id=551 calls=0 returns=0
+SLJIT pipeline id=551 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=551 homes=0
+SLJIT SSA calls id=551 frameless=0
+SLJIT readmiss id=551 pc=37 opcode=GETPROPC_CACHED hits=8 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=551 start=0x1099a2600 bytes=25000 fragment=0x1099a88c0 fragment_bytes=56
+SLJIT function fontLoaderBind begin=0 ops=84 bytes=25056 hits=25 returns=1 stalled=1 charged_edges=0 budget_exits=0 id=551 line=14885
+SLJIT exit fontLoaderBind begin=0 pc=17 op=190 count=7 id=551 line=14909 opcode=GETPROPC_CACHED
+SLJIT exit fontLoaderBind begin=0 pc=39 op=61 count=8 id=551 line=14921 opcode=CALL
+SLJIT exit fontLoaderBind begin=0 pc=48 op=49 count=8 id=551 line=14924 opcode=IF_FALSE
+SLJIT exit fontLoaderBind begin=0 pc=74 op=77 count=1 id=551 line=14937 opcode=GETGLOBAL
+SLJIT exit fontLoaderBind begin=0 pc=83 op=66 count=1 id=551 line=14940 opcode=RETUNDEF
+SLJIT coverage id=552 line=14995 ops=37 regs=13 captures=1 name=fontLoaderMessage threaded=154 switch=15 attempts=2 warmup=20 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=553 line=14947 ops=145 regs=20 captures=1 name=fontLoaderPrepareFontLoadEvent threaded=634 switch=42 attempts=16 warmup=4294967295 retired=0 active=62 rejection=compiled
+SLJIT native id=553 calls=0 returns=0
+SLJIT pipeline id=553 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=553 homes=0
+SLJIT SSA calls id=553 frameless=0
+SLJIT code id=553 start=0x109a41a58 bytes=39588 fragment=0x1099a2048 fragment_bytes=56
+SLJIT function fontLoaderPrepareFontLoadEvent begin=0 ops=145 bytes=39644 hits=4 returns=0 stalled=2 charged_edges=0 budget_exits=0 id=553 line=14947
+SLJIT exit fontLoaderPrepareFontLoadEvent begin=0 pc=108 op=1 count=2 id=553 line=15029 opcode=LDCONST
+SLJIT exit fontLoaderPrepareFontLoadEvent begin=0 pc=125 op=1 count=1 id=553 line=15033 opcode=LDCONST
+SLJIT exit fontLoaderPrepareFontLoadEvent begin=0 pc=131 op=1 count=1 id=553 line=15035 opcode=LDCONST
+SLJIT loop fontLoaderPrepareFontLoadEvent begin=108 end=115 hits=8 iterations=0
+SLJIT loop code id=553 begin=108 end=115 bytes=1360
+SLJIT ssa name=fontLoaderPrepareFontLoadEvent begin=108 end=115 hits=0 iterations=0
+SLJIT loop fontLoaderPrepareFontLoadEvent begin=82 end=89 hits=2 iterations=0
+SLJIT loop code id=553 begin=82 end=89 bytes=1360
+SLJIT ssa name=fontLoaderPrepareFontLoadEvent begin=82 end=89 hits=0 iterations=0
+SLJIT coverage id=554 line=15241 ops=237 regs=21 captures=0 name=Font threaded=2286 switch=250 attempts=18 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=556 line=15352 ops=14 regs=9 captures=0 name=stringToArray threaded=1223025 switch=2970 attempts=2368 warmup=4294967294 retired=1 active=7 rejection=compiled
+SLJIT native id=556 calls=0 returns=0
+SLJIT pipeline id=556 inlined=0 recoveries=0 allocations=79 pushes=0 links=0
+SLJIT numeric id=556 homes=0
+SLJIT SSA calls id=556 frameless=0
+SLJIT code id=556 start=0x105799a98 bytes=6068 fragment=0x10579b290 fragment_bytes=56
+SLJIT function stringToArray begin=0 ops=14 bytes=6124 hits=59 returns=0 stalled=2 charged_edges=49 budget_exits=0 id=556 line=15352
+SLJIT exit stringToArray begin=0 pc=6 op=51 count=87 id=556 line=15354 opcode=GETPROPC
+SLJIT exit stringToArray begin=0 pc=10 op=53 count=2 id=556 line=15354 opcode=PUTPROP
+SLJIT coverage id=557 line=15360 ops=12 regs=7 captures=0 name=arrayToString threaded=929900 switch=2325 attempts=2324 warmup=4294967294 retired=1 active=6 rejection=compiled
+SLJIT native id=557 calls=0 returns=0
+SLJIT pipeline id=557 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=557 homes=0
+SLJIT SSA calls id=557 frameless=0
+SLJIT readmiss id=557 pc=5 opcode=GETPROPC_CACHED hits=151 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=557 start=0x10578a610 bytes=6720 fragment=0 fragment_bytes=0
+SLJIT function arrayToString begin=0 ops=12 bytes=6720 hits=151 returns=0 stalled=0 charged_edges=143 budget_exits=0 id=557 line=15360
+SLJIT exit arrayToString begin=0 pc=7 op=61 count=151 id=557 line=15362 opcode=CALL
+SLJIT coverage id=559 line=15372 ops=16 regs=8 captures=0 name=int32 threaded=52361 switch=127 attempts=38754 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=559 calls=0 returns=0
+SLJIT pipeline id=559 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=559 homes=0
+SLJIT SSA calls id=559 frameless=0
+SLJIT code id=559 start=0x1057abf10 bytes=16516 fragment=0 fragment_bytes=0
+SLJIT function int32 begin=0 ops=16 bytes=16516 hits=37517 returns=37517 stalled=0 charged_edges=0 budget_exits=0 id=559 line=15372
+SLJIT exit int32 begin=0 pc=15 op=65 count=37517 id=559 line=15373 opcode=RET
+SLJIT coverage id=560 line=15377 ops=15 regs=7 captures=0 name=getMaxPower2 threaded=328 switch=5 attempts=46 warmup=4294967294 retired=0 active=7 rejection=compiled
+SLJIT native id=560 calls=0 returns=0
+SLJIT pipeline id=560 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=560 homes=0
+SLJIT SSA calls id=560 frameless=0
+SLJIT code id=560 start=0x10997ecb0 bytes=4036 fragment=0 fragment_bytes=0
+SLJIT function getMaxPower2 begin=0 ops=15 bytes=4036 hits=24 returns=24 stalled=1 charged_edges=104 budget_exits=0 id=560 line=15377
+SLJIT exit getMaxPower2 begin=0 pc=14 op=65 count=24 id=560 line=15387 opcode=RET
+SLJIT loop getMaxPower2 begin=11 end=13 hits=2 iterations=3
+SLJIT loop code id=560 begin=11 end=13 bytes=1020
+SLJIT ssa name=getMaxPower2 begin=11 end=13 hits=2 iterations=3
+SLJIT loop getMaxPower2 begin=4 end=7 hits=3 iterations=8
+SLJIT loop code id=560 begin=4 end=7 bytes=868
+SLJIT ssa name=getMaxPower2 begin=4 end=7 hits=3 iterations=8
+SLJIT coverage id=561 line=15391 ops=11 regs=6 captures=0 name=string16 threaded=50216 switch=6085 attempts=847 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=561 calls=0 returns=0
+SLJIT pipeline id=561 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=561 homes=0
+SLJIT SSA calls id=561 frameless=0
+SLJIT readmiss id=561 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=561 start=0x105798b78 bytes=3832 fragment=0 fragment_bytes=0
+SLJIT function string16 begin=0 ops=11 bytes=3832 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=561 line=15391
+SLJIT exit string16 begin=0 pc=4 op=61 count=8 id=561 line=15391 opcode=CALL
+SLJIT coverage id=562 line=15397 ops=22 regs=8 captures=0 name=safeString16 threaded=1856 switch=342 attempts=89 warmup=4294967295 retired=1 active=10 rejection=compiled
+SLJIT native id=562 calls=0 returns=0
+SLJIT pipeline id=562 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=562 homes=0
+SLJIT SSA calls id=562 frameless=0
+SLJIT readmiss id=562 pc=12 opcode=GETPROPC_CACHED hits=8 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=562 start=0x109a1d0a8 bytes=5688 fragment=0 fragment_bytes=0
+SLJIT function safeString16 begin=0 ops=22 bytes=5688 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=562 line=15397
+SLJIT exit safeString16 begin=0 pc=15 op=61 count=8 id=562 line=15398 opcode=CALL
+SLJIT coverage id=563 line=15403 ops=23 regs=7 captures=0 name=string32 threaded=14044 switch=1064 attempts=241 warmup=4294967295 retired=1 active=8 rejection=compiled
+SLJIT native id=563 calls=0 returns=0
+SLJIT pipeline id=563 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=563 homes=0
+SLJIT SSA calls id=563 frameless=0
+SLJIT readmiss id=563 pc=1 opcode=GETPROPC_CACHED hits=8 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=563 start=0x10579c070 bytes=6912 fragment=0 fragment_bytes=0
+SLJIT function string32 begin=0 ops=23 bytes=6912 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=563 line=15403
+SLJIT exit string32 begin=0 pc=4 op=61 count=8 id=563 line=15403 opcode=CALL
+SLJIT coverage id=564 line=15411 ops=42 regs=12 captures=1 name=createOpenTypeHeader threaded=702 switch=63 attempts=18 warmup=16 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=565 line=15437 ops=57 regs=19 captures=1 name=createTableEntry threaded=563352 switch=43050 attempts=38756 warmup=4294967294 retired=4 active=24 rejection=compiled
+SLJIT native id=565 calls=0 returns=0
+SLJIT pipeline id=565 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=565 homes=0
+SLJIT SSA calls id=565 frameless=0
+SLJIT readmiss id=565 pc=3 opcode=GETPROPC_CACHED hits=93 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=565 start=0x1099471b8 bytes=26112 fragment=0x1057affa8 fragment_bytes=56
+SLJIT function createTableEntry begin=0 ops=57 bytes=26168 hits=35425 returns=0 stalled=32 charged_edges=32603 budget_exits=31 id=565 line=15437
+SLJIT exit createTableEntry begin=0 pc=21 op=221 count=32714 id=565 line=15452 opcode=GETCAP
+SLJIT exit createTableEntry begin=0 pc=36 op=20 count=2675 id=565 line=15453 opcode=BORI
+SLJIT exit createTableEntry begin=0 pc=41 op=136 count=132 id=565 line=15455 opcode=CALL_VAR
+SLJIT exit createTableEntry begin=0 pc=42 op=10 count=8 id=565 line=15455 opcode=ADD
+SLJIT exit createTableEntry begin=0 pc=45 op=10 count=8 id=565 line=15456 opcode=ADD
+SLJIT exit createTableEntry begin=0 pc=48 op=10 count=8 id=565 line=15456 opcode=ADD
+SLJIT coverage id=566 line=15469 ops=4 regs=5 captures=0 name=fontGetRangesSort threaded=1278 switch=2 attempts=1062 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=566 calls=0 returns=0
+SLJIT pipeline id=566 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=566 homes=0
+SLJIT SSA calls id=566 frameless=0
+SLJIT code id=566 start=0x10994fab0 bytes=1320 fragment=0 fragment_bytes=0
+SLJIT function fontGetRangesSort begin=0 ops=4 bytes=1320 hits=990 returns=990 stalled=0 charged_edges=0 budget_exits=0 id=566 line=15469
+SLJIT exit fontGetRangesSort begin=0 pc=3 op=65 count=990 id=566 line=15469 opcode=RET
+SLJIT coverage id=567 line=15464 ops=58 regs=14 captures=0 name=getRanges threaded=8316 switch=45 attempts=47 warmup=4294967294 retired=2 active=27 rejection=compiled
+SLJIT native id=567 calls=0 returns=0
+SLJIT pipeline id=567 inlined=0 recoveries=0 allocations=324 pushes=25 links=0
+SLJIT numeric id=567 homes=0
+SLJIT SSA calls id=567 frameless=0
+SLJIT readmiss id=567 pc=5 opcode=GETPROPC_CACHED hits=302 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=567 pc=15 opcode=GETPROPC_CACHED hits=14 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=567 start=0x109940010 bytes=28280 fragment=0x10993ffa8 fragment_bytes=56
+SLJIT function getRanges begin=0 ops=58 bytes=28336 hits=30 returns=0 stalled=8 charged_edges=302 budget_exits=0 id=567 line=15464
+SLJIT exit getRanges begin=0 pc=17 op=86 count=14 id=567 line=15470 opcode=CLOSURE
+SLJIT exit getRanges begin=0 pc=18 op=61 count=8 id=567 line=15468 opcode=CALL
+SLJIT exit getRanges begin=0 pc=28 op=233 count=8 id=567 line=15476 opcode=INITELEM
+SLJIT coverage id=568 line=15491 ops=160 regs=35 captures=3 name=createCMapTable threaded=6074 switch=296 attempts=128 warmup=4294967295 retired=15 active=30 rejection=compiled
+SLJIT native id=568 calls=0 returns=0
+SLJIT pipeline id=568 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=568 homes=0
+SLJIT SSA calls id=568 frameless=0
+SLJIT code id=568 start=0x109980010 bytes=71740 fragment=0x10997ec58 fragment_bytes=56
+SLJIT function createCMapTable begin=0 ops=160 bytes=71796 hits=120 returns=0 stalled=88 charged_edges=0 budget_exits=0 id=568 line=15491
+SLJIT exit createCMapTable begin=0 pc=1 op=136 count=8 id=568 line=15491 opcode=CALL_VAR
+SLJIT exit createCMapTable begin=0 pc=6 op=136 count=8 id=568 line=15495 opcode=CALL_VAR
+SLJIT exit createCMapTable begin=0 pc=7 op=10 count=8 id=568 line=15495 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=17 op=10 count=8 id=568 line=15498 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=27 op=61 count=8 id=568 line=15503 opcode=CALL
+SLJIT exit createCMapTable begin=0 pc=102 op=136 count=8 id=568 line=15538 opcode=CALL_VAR
+SLJIT exit createCMapTable begin=0 pc=103 op=10 count=8 id=568 line=15538 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=106 op=10 count=8 id=568 line=15539 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=113 op=10 count=8 id=568 line=15540 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=116 op=10 count=8 id=568 line=15541 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=132 op=10 count=8 id=568 line=15551 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=135 op=10 count=8 id=568 line=15552 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=138 op=10 count=8 id=568 line=15553 opcode=ADD
+SLJIT exit createCMapTable begin=0 pc=141 op=234 count=8 id=568 line=15554 opcode=ADD_FUSED
+SLJIT exit createCMapTable begin=0 pc=156 op=234 count=8 id=568 line=15560 opcode=ADD_FUSED
+SLJIT coverage id=569 line=15565 ops=241 regs=26 captures=1 name=createOS2Table threaded=10436 switch=211 attempts=148 warmup=4294967295 retired=18 active=91 rejection=compiled
+SLJIT native id=569 calls=0 returns=0
+SLJIT pipeline id=569 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=569 homes=1
+SLJIT SSA calls id=569 frameless=0
+SLJIT code id=569 start=0x109930010 bytes=60416 fragment=0x10992dd68 fragment_bytes=56
+SLJIT function createOS2Table begin=0 ops=241 bytes=60472 hits=144 returns=0 stalled=144 charged_edges=0 budget_exits=0 id=569 line=15565
+SLJIT exit createOS2Table begin=0 pc=0 op=0 count=8 id=569 line=15565 opcode=LDREG
+SLJIT exit createOS2Table begin=0 pc=24 op=50 count=8 id=569 line=15583 opcode=GETPROP
+SLJIT exit createOS2Table begin=0 pc=36 op=0 count=8 id=569 line=15589 opcode=LDREG
+SLJIT exit createOS2Table begin=0 pc=169 op=10 count=8 id=569 line=15645 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=172 op=10 count=8 id=569 line=15646 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=175 op=10 count=8 id=569 line=15647 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=178 op=10 count=8 id=569 line=15648 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=190 op=10 count=8 id=569 line=15650 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=196 op=10 count=8 id=569 line=15652 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=202 op=10 count=8 id=569 line=15653 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=205 op=10 count=8 id=569 line=15654 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=208 op=10 count=8 id=569 line=15655 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=213 op=10 count=8 id=569 line=15657 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=216 op=10 count=8 id=569 line=15658 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=224 op=10 count=8 id=569 line=15661 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=228 op=10 count=8 id=569 line=15662 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=231 op=10 count=8 id=569 line=15663 opcode=ADD
+SLJIT exit createOS2Table begin=0 pc=237 op=10 count=8 id=569 line=15664 opcode=ADD
+SLJIT coverage id=570 line=15668 ops=33 regs=9 captures=1 name=createPostTable threaded=594 switch=49 attempts=18 warmup=16 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=571 line=15682 ops=126 regs=28 captures=1 name=createNameTable threaded=23264 switch=2839 attempts=542 warmup=4294967295 retired=9 active=43 rejection=compiled
+SLJIT native id=571 calls=0 returns=0
+SLJIT pipeline id=571 inlined=0 recoveries=0 allocations=8 pushes=15 links=0
+SLJIT numeric id=571 homes=0
+SLJIT SSA calls id=571 frameless=0
+SLJIT readmiss id=571 pc=40 opcode=GETPROPC_CACHED hits=15 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=571 start=0x1057a0428 bytes=43960 fragment=0x1057ab0e0 fragment_bytes=56
+SLJIT function createNameTable begin=0 ops=126 bytes=44016 hits=231 returns=0 stalled=56 charged_edges=174 budget_exits=1 id=571 line=15682
+SLJIT exit createNameTable begin=0 pc=2 op=233 count=8 id=571 line=15683 opcode=INITELEM
+SLJIT exit createNameTable begin=0 pc=31 op=221 count=137 id=571 line=15703 opcode=GETCAP
+SLJIT exit createNameTable begin=0 pc=37 op=10 count=8 id=571 line=15703 opcode=ADD
+SLJIT exit createNameTable begin=0 pc=75 op=10 count=8 id=571 line=15715 opcode=ADD
+SLJIT exit createNameTable begin=0 pc=80 op=10 count=8 id=571 line=15716 opcode=ADD
+SLJIT exit createNameTable begin=0 pc=94 op=10 count=38 id=571 line=15726 opcode=ADD
+SLJIT exit createNameTable begin=0 pc=99 op=10 count=8 id=571 line=15728 opcode=ADD
+SLJIT exit createNameTable begin=0 pc=103 op=10 count=8 id=571 line=15729 opcode=ADD
+SLJIT exit createNameTable begin=0 pc=106 op=10 count=8 id=571 line=15730 opcode=ADD
+SLJIT coverage id=591 line=16621 ops=14 regs=10 captures=0 name=isFixedPitch threaded=198 switch=0 attempts=18 warmup=34 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=592 line=16682 ops=54 regs=10 captures=1 name=fontFieldsHead threaded=918 switch=69 attempts=18 warmup=16 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=593 line=16704 ops=63 regs=10 captures=2 name=fontFieldsHhea threaded=1116 switch=121 attempts=18 warmup=16 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=594 line=16726 ops=28 regs=10 captures=1 name=fontFieldsHmtx threaded=6244 switch=446 attempts=50 warmup=4294967294 retired=4 active=9 rejection=compiled
+SLJIT native id=594 calls=0 returns=0
+SLJIT pipeline id=594 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=594 homes=0
+SLJIT SSA calls id=594 frameless=0
+SLJIT code id=594 start=0x10994d858 bytes=8752 fragment=0 fragment_bytes=0
+SLJIT function fontFieldsHmtx begin=0 ops=28 bytes=8752 hits=46 returns=0 stalled=8 charged_edges=14 budget_exits=0 id=594 line=16726
+SLJIT exit fontFieldsHmtx begin=0 pc=9 op=46 count=22 id=594 line=16730 opcode=IN
+SLJIT exit fontFieldsHmtx begin=0 pc=17 op=136 count=8 id=594 line=16731 opcode=CALL_VAR
+SLJIT exit fontFieldsHmtx begin=0 pc=19 op=136 count=8 id=594 line=16731 opcode=CALL_VAR
+SLJIT exit fontFieldsHmtx begin=0 pc=20 op=234 count=8 id=594 line=16731 opcode=ADD_FUSED
+SLJIT coverage id=595 line=16738 ops=11 regs=9 captures=1 name=fontFieldsMaxp threaded=180 switch=34 attempts=18 warmup=16 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=596 line=16619 ops=163 regs=25 captures=5 name=Font_convert threaded=7024 switch=966 attempts=525 warmup=4294967295 retired=21 active=58 rejection=compiled
+SLJIT native id=596 calls=150 returns=0
+SLJIT pipeline id=596 inlined=0 recoveries=0 allocations=22 pushes=0 links=0
+SLJIT numeric id=596 homes=0
+SLJIT SSA calls id=596 frameless=0
+SLJIT readmiss id=596 pc=144 opcode=GETPROP hits=120 changes=1 shape=971 class=1 rep=0 chain=0 cached=1
+SLJIT readmiss id=596 pc=151 opcode=GETPROP hits=7 changes=1 shape=971 class=1 rep=0 chain=0 cached=1
+SLJIT code id=596 start=0x109920010 bytes=54148 fragment=0x10579dbb0 fragment_bytes=56
+SLJIT function Font_convert begin=0 ops=163 bytes=54204 hits=497 returns=0 stalled=64 charged_edges=511 budget_exits=0 id=596 line=16619
+SLJIT exit Font_convert begin=0 pc=16 op=136 count=8 id=596 line=16639 opcode=CALL_VAR
+SLJIT exit Font_convert begin=0 pc=18 op=73 count=8 id=596 line=16641 opcode=DECLVAR
+SLJIT exit Font_convert begin=0 pc=19 op=67 count=8 id=596 line=16642 opcode=GETVAR
+SLJIT exit Font_convert begin=0 pc=32 op=53 count=16 id=596 line=16647 opcode=PUTPROP
+SLJIT exit Font_convert begin=0 pc=34 op=67 count=14 id=596 line=16645 opcode=GETVAR
+SLJIT exit Font_convert begin=0 pc=96 op=135 count=8 id=596 line=16674 opcode=CALL_UNDEF_THIS
+SLJIT exit Font_convert begin=0 pc=99 op=67 count=8 id=596 line=16677 opcode=GETVAR
+SLJIT exit Font_convert begin=0 pc=110 op=135 count=8 id=596 line=16677 opcode=CALL_UNDEF_THIS
+SLJIT exit Font_convert begin=0 pc=112 op=86 count=8 id=596 line=16700 opcode=CLOSURE
+SLJIT exit Font_convert begin=0 pc=113 op=135 count=8 id=596 line=16681 opcode=CALL_UNDEF_THIS
+SLJIT exit Font_convert begin=0 pc=115 op=86 count=8 id=596 line=16723 opcode=CLOSURE
+SLJIT exit Font_convert begin=0 pc=116 op=135 count=8 id=596 line=16703 opcode=CALL_UNDEF_THIS
+SLJIT exit Font_convert begin=0 pc=118 op=86 count=8 id=596 line=16734 opcode=CLOSURE
+SLJIT exit Font_convert begin=0 pc=119 op=135 count=8 id=596 line=16726 opcode=CALL_UNDEF_THIS
+SLJIT exit Font_convert begin=0 pc=121 op=86 count=8 id=596 line=16741 opcode=CLOSURE
+SLJIT exit Font_convert begin=0 pc=122 op=135 count=8 id=596 line=16737 opcode=CALL_UNDEF_THIS
+SLJIT exit Font_convert begin=0 pc=126 op=136 count=8 id=596 line=16744 opcode=CALL_VAR
+SLJIT exit Font_convert begin=0 pc=132 op=67 count=8 id=596 line=16747 opcode=GETVAR
+SLJIT exit Font_convert begin=0 pc=137 op=88 count=8 id=596 line=16750 opcode=INITFOR
+SLJIT exit Font_convert begin=0 pc=138 op=89 count=135 id=596 line=16750 opcode=NEXTFOR
+SLJIT exit Font_convert begin=0 pc=145 op=135 count=15 id=596 line=16751 opcode=CALL_UNDEF_THIS
+SLJIT exit Font_convert begin=0 pc=147 op=88 count=15 id=596 line=16753 opcode=INITFOR
+SLJIT exit Font_convert begin=0 pc=155 op=136 count=8 id=596 line=16755 opcode=CALL_VAR
+SLJIT exit Font_convert begin=0 pc=156 op=10 count=8 id=596 line=16755 opcode=ADD
+SLJIT coverage id=597 line=16762 ops=27 regs=10 captures=0 name=Font_buildToFontChar threaded=22090 switch=837 attempts=44 warmup=4294967295 retired=2 active=9 rejection=compiled
+SLJIT native id=597 calls=0 returns=0
+SLJIT pipeline id=597 inlined=0 recoveries=0 allocations=8 pushes=0 links=0
+SLJIT numeric id=597 homes=0
+SLJIT SSA calls id=597 frameless=0
+SLJIT code id=597 start=0x1052bc010 bytes=10964 fragment=0x1052b5ac8 fragment_bytes=56
+SLJIT function Font_buildToFontChar begin=0 ops=27 bytes=11020 hits=34 returns=0 stalled=8 charged_edges=18 budget_exits=0 id=597 line=16762
+SLJIT exit Font_buildToFontChar begin=0 pc=2 op=67 count=8 id=597 line=16763 opcode=GETVAR
+SLJIT exit Font_buildToFontChar begin=0 pc=6 op=50 count=8 id=597 line=16765 opcode=GETPROP
+SLJIT exit Font_buildToFontChar begin=0 pc=10 op=175 count=18 id=597 line=16766 opcode=JMP_SNEQ
+SLJIT coverage id=598 line=16775 ops=48 regs=17 captures=0 name=Font_rebuildToUnicode threaded=14364 switch=4814 attempts=1065 warmup=4294967294 retired=3 active=24 rejection=compiled
+SLJIT native id=598 calls=0 returns=0
+SLJIT pipeline id=598 inlined=0 recoveries=0 allocations=14 pushes=0 links=0
+SLJIT numeric id=598 homes=0
+SLJIT SSA calls id=598 frameless=0
+SLJIT readmiss id=598 pc=42 opcode=GETPROP hits=6 changes=1 shape=2196 class=1 rep=0 chain=0 cached=1
+SLJIT code id=598 start=0x1052ef688 bytes=27100 fragment=0x1057a03d0 fragment_bytes=56
+SLJIT function Font_rebuildToUnicode begin=0 ops=48 bytes=27156 hits=778 returns=0 stalled=16 charged_edges=740 budget_exits=1 id=598 line=16775
+SLJIT exit Font_rebuildToUnicode begin=0 pc=30 op=50 count=740 id=598 line=16786 opcode=GETPROP
+SLJIT exit Font_rebuildToUnicode begin=0 pc=34 op=28 count=8 id=598 line=16789 opcode=LNOT
+SLJIT exit Font_rebuildToUnicode begin=0 pc=41 op=67 count=1 id=598 line=16790 opcode=GETVAR
+SLJIT exit Font_rebuildToUnicode begin=0 pc=43 op=53 count=7 id=598 line=16790 opcode=PUTPROP
+SLJIT exit Font_rebuildToUnicode begin=0 pc=44 op=158 count=8 id=598 line=16785 opcode=INC
+SLJIT exit Font_rebuildToUnicode begin=0 pc=46 op=232 count=14 id=598 line=16793 opcode=PUTTHISC
+SLJIT coverage id=599 line=16796 ops=74 regs=18 captures=0 name=Font_loadCidToUnicode threaded=72 switch=2 attempts=18 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=600 line=16846 ops=62 regs=17 captures=0 name=Font_bindDOM threaded=990 switch=98 attempts=18 warmup=18 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=602 line=16897 ops=215 regs=19 captures=0 name=Font_charToGlyph threaded=275784 switch=27221 attempts=64 warmup=4294967295 retired=0 active=0 rejection=guard/link capacity
+SLJIT coverage id=603 line=16984 ops=86 regs=15 captures=1 name=Font_charsToGlyphs threaded=53914 switch=4245 attempts=3837 warmup=4294967295 retired=2 active=39 rejection=compiled
+SLJIT native id=603 calls=0 returns=0
+SLJIT pipeline id=603 inlined=0 recoveries=0 allocations=0 pushes=390 links=1
+SLJIT numeric id=603 homes=0
+SLJIT SSA calls id=603 frameless=0
+SLJIT readmiss id=603 pc=9 opcode=GETPROPC_CACHED hits=4 changes=1 shape=64 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=603 pc=71 opcode=GETPROPC_CACHED hits=1888 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=603 start=0x1099a9160 bytes=25828 fragment=0x1099f1b50 fragment_bytes=56
+SLJIT function Font_charsToGlyphs begin=0 ops=86 bytes=25884 hits=1908 returns=0 stalled=8 charged_edges=1497 budget_exits=5 id=603 line=16984
+SLJIT exit Font_charsToGlyphs begin=0 pc=3 op=50 count=8 id=603 line=16989 opcode=GETPROP
+SLJIT exit Font_charsToGlyphs begin=0 pc=11 op=61 count=4 id=603 line=16996 opcode=CALL
+SLJIT exit Font_charsToGlyphs begin=0 pc=61 op=51 count=1505 id=603 line=17018 opcode=GETPROPC
+SLJIT exit Font_charsToGlyphs begin=0 pc=84 op=53 count=391 id=603 line=17027 opcode=PUTPROP
+SLJIT coverage id=604 line=15344 ops=81 regs=26 captures=0 name=FontClosure threaded=81 switch=59 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=605 line=17049 ops=28 regs=16 captures=0 name=decrypt threaded=2864882 switch=13127 attempts=1449 warmup=4294967294 retired=1 active=6 rejection=compiled
+SLJIT native id=605 calls=0 returns=0
+SLJIT pipeline id=605 inlined=0 recoveries=0 allocations=602 pushes=0 links=0
+SLJIT numeric id=605 homes=0
+SLJIT SSA calls id=605 frameless=0
+SLJIT code id=605 start=0x1052d8fe0 bytes=10196 fragment=0x10991ffa8 fragment_bytes=56
+SLJIT function decrypt begin=0 ops=28 bytes=10252 hits=624 returns=0 stalled=0 charged_edges=601 budget_exits=1 id=605 line=17049
+SLJIT exit decrypt begin=0 pc=5 op=0 count=1 id=605 line=17050 opcode=LDREG
+SLJIT exit decrypt begin=0 pc=7 op=51 count=14 id=605 line=17053 opcode=GETPROPC
+SLJIT exit decrypt begin=0 pc=15 op=53 count=609 id=605 line=17056 opcode=PUTPROP
+SLJIT loop decrypt begin=10 end=22 hits=8 iterations=0
+SLJIT loop code id=605 begin=10 end=22 bytes=1964
+SLJIT ssa name=decrypt begin=10 end=22 hits=1 iterations=0
+SLJIT coverage id=606 line=17164 ops=318 regs=33 captures=2 name=decodeCharString threaded=585634 switch=60515 attempts=65789 warmup=4294967294 retired=1 active=122 rejection=compiled
+SLJIT native id=606 calls=0 returns=0
+SLJIT pipeline id=606 inlined=0 recoveries=0 allocations=1194 pushes=6106 links=0
+SLJIT numeric id=606 homes=0
+SLJIT SSA calls id=606 frameless=0
+SLJIT readmiss id=606 pc=22 opcode=GETPROPC_CACHED hits=37 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=26 opcode=GETPROPC_CACHED hits=37 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=32 opcode=GETPROPC_CACHED hits=37 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=42 opcode=GETPROPC_CACHED hits=4 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=67 opcode=GETPROPC_CACHED hits=9 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=90 opcode=GETPROPC_CACHED hits=226 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=157 opcode=GETPROPC_CACHED hits=1521 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=208 opcode=GETPROPC_CACHED hits=1224 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=606 pc=306 opcode=GETPROPC_CACHED hits=23658 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=606 start=0x109900010 bytes=130296 fragment=0x1052db7e8 fragment_bytes=56
+SLJIT function decodeCharString begin=0 ops=318 bytes=130352 hits=12035 returns=599 stalled=8 charged_edges=25097 budget_exits=29 id=606 line=17164
+SLJIT exit decodeCharString begin=0 pc=75 op=61 count=9 id=606 line=17207 opcode=CALL
+SLJIT exit decodeCharString begin=0 pc=94 op=61 count=226 id=606 line=17218 opcode=CALL
+SLJIT exit decodeCharString begin=0 pc=162 op=189 count=1183 id=606 line=17237 opcode=JMP_SNEQI
+SLJIT exit decodeCharString begin=0 pc=212 op=61 count=1224 id=606 line=17257 opcode=CALL
+SLJIT exit decodeCharString begin=0 pc=215 op=50 count=5407 id=606 line=17260 opcode=GETPROP
+SLJIT exit decodeCharString begin=0 pc=216 op=28 count=8 id=606 line=17265 opcode=LNOT
+SLJIT exit decodeCharString begin=0 pc=260 op=3 count=3339 id=606 line=17288 opcode=LDINT
+SLJIT exit decodeCharString begin=0 pc=279 op=3 count=21 id=606 line=17292 opcode=LDINT
+SLJIT exit decodeCharString begin=0 pc=312 op=48 count=19 id=606 line=17172 opcode=IF_TRUE
+SLJIT exit decodeCharString begin=0 pc=317 op=65 count=599 id=606 line=17301 opcode=RET
+SLJIT coverage id=607 line=17309 ops=54 regs=14 captures=0 name=readNumberArray threaded=17041 switch=2123 attempts=174 warmup=4294967294 retired=5 active=18 rejection=compiled
+SLJIT native id=607 calls=0 returns=0
+SLJIT pipeline id=607 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=607 homes=0
+SLJIT SSA calls id=607 frameless=0
+SLJIT code id=607 start=0x1052f6148 bytes=24172 fragment=0 fragment_bytes=0
+SLJIT function readNumberArray begin=0 ops=54 bytes=24172 hits=162 returns=0 stalled=8 charged_edges=0 budget_exits=0 id=607 line=17309
+SLJIT exit readNumberArray begin=0 pc=6 op=50 count=130 id=607 line=17310 opcode=GETPROP
+SLJIT exit readNumberArray begin=0 pc=16 op=50 count=8 id=607 line=17315 opcode=GETPROP
+SLJIT exit readNumberArray begin=0 pc=33 op=61 count=8 id=607 line=17322 opcode=CALL
+SLJIT exit readNumberArray begin=0 pc=46 op=48 count=8 id=607 line=17326 opcode=IF_TRUE
+SLJIT exit readNumberArray begin=0 pc=50 op=53 count=8 id=607 line=17326 opcode=PUTPROP
+SLJIT coverage id=608 line=17331 ops=25 regs=10 captures=0 name=readNumber threaded=1581 switch=258 attempts=59 warmup=4294967295 retired=4 active=8 rejection=compiled
+SLJIT native id=608 calls=0 returns=0
+SLJIT pipeline id=608 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=608 homes=0
+SLJIT SSA calls id=608 frameless=0
+SLJIT code id=608 start=0x10999c8a0 bytes=12728 fragment=0 fragment_bytes=0
+SLJIT function readNumber begin=0 ops=25 bytes=12728 hits=50 returns=18 stalled=26 charged_edges=0 budget_exits=0 id=608 line=17331
+SLJIT exit readNumber begin=0 pc=2 op=50 count=24 id=608 line=17331 opcode=GETPROP
+SLJIT exit readNumber begin=0 pc=12 op=50 count=8 id=608 line=17337 opcode=GETPROP
+SLJIT exit readNumber begin=0 pc=24 op=65 count=18 id=608 line=17340 opcode=RET
+SLJIT coverage id=609 line=17344 ops=9 regs=6 captures=0 name=isSeparator threaded=1268656 switch=3456 attempts=71 warmup=4294967295 retired=1 active=4 rejection=compiled
+SLJIT native id=609 calls=0 returns=0
+SLJIT pipeline id=609 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=609 homes=0
+SLJIT SSA calls id=609 frameless=0
+SLJIT code id=609 start=0x1052bfe58 bytes=3844 fragment=0 fragment_bytes=0
+SLJIT function isSeparator begin=0 ops=9 bytes=3844 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=609 line=17344
+SLJIT exit isSeparator begin=0 pc=1 op=37 count=8 id=609 line=17344 opcode=EQ
+SLJIT coverage id=610 line=17371 ops=37 regs=7 captures=3 name=getToken threaded=220858 switch=31368 attempts=349 warmup=4294967295 retired=6 active=7 rejection=compiled
+SLJIT native id=610 calls=0 returns=0
+SLJIT pipeline id=610 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=610 homes=0
+SLJIT SSA calls id=610 frameless=0
+SLJIT code id=610 start=0x1098fb6a0 bytes=17388 fragment=0 fragment_bytes=0
+SLJIT function getToken begin=0 ops=37 bytes=17388 hits=116 returns=11 stalled=48 charged_edges=35 budget_exits=0 id=610 line=17371
+SLJIT exit getToken begin=0 pc=0 op=5 count=8 id=610 line=17371 opcode=LDUNDEF
+SLJIT exit getToken begin=0 pc=2 op=162 count=8 id=610 line=17373 opcode=INC_VAR
+SLJIT exit getToken begin=0 pc=3 op=221 count=8 id=610 line=17372 opcode=GETCAP
+SLJIT exit getToken begin=0 pc=7 op=67 count=11 id=610 line=17372 opcode=GETVAR
+SLJIT exit getToken begin=0 pc=10 op=50 count=11 id=610 line=17372 opcode=GETPROP
+SLJIT exit getToken begin=0 pc=13 op=0 count=8 id=610 line=17372 opcode=LDREG
+SLJIT exit getToken begin=0 pc=17 op=221 count=8 id=610 line=17377 opcode=GETCAP
+SLJIT exit getToken begin=0 pc=22 op=50 count=24 id=610 line=17377 opcode=GETPROP
+SLJIT exit getToken begin=0 pc=28 op=67 count=11 id=610 line=17376 opcode=GETVAR
+SLJIT exit getToken begin=0 pc=34 op=28 count=8 id=610 line=17376 opcode=LNOT
+SLJIT exit getToken begin=0 pc=36 op=65 count=11 id=610 line=17379 opcode=RET
+SLJIT coverage id=611 line=17347 ops=319 regs=36 captures=5 name=Type1Parser_extractFontProgram threaded=6991623 switch=1595098 attempts=214130 warmup=4294967295 retired=44 active=87 rejection=compiled
+SLJIT native id=611 calls=0 returns=0
+SLJIT pipeline id=611 inlined=0 recoveries=0 allocations=230 pushes=63 links=0
+SLJIT numeric id=611 homes=0
+SLJIT SSA calls id=611 frameless=0
+SLJIT readmiss id=611 pc=20 opcode=GETPROPC_CACHED hits=24 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=611 pc=93 opcode=GETPROPC_CACHED hits=230 changes=1 shape=984 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=611 pc=94 opcode=GETPROPC_CACHED hits=230 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=611 pc=97 opcode=GETPROPC_CACHED hits=230 changes=1 shape=979 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=611 pc=99 opcode=GETPROPC_CACHED hits=230 changes=1 shape=979 class=1 rep=1 chain=0 cached=1
+SLJIT readmiss id=611 pc=101 opcode=GETPROPC_CACHED hits=230 changes=1 shape=979 class=1 rep=1 chain=0 cached=1
+SLJIT readmiss id=611 pc=233 opcode=GETPROPC_CACHED hits=44 changes=1 shape=984 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=611 pc=234 opcode=GETPROPC_CACHED hits=44 changes=1 shape=981 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=611 pc=253 opcode=GETPROPC_CACHED hits=8 changes=1 shape=984 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=611 pc=254 opcode=GETPROPC_CACHED hits=8 changes=1 shape=981 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=611 pc=287 opcode=GETPROPC hits=26 changes=1 shape=984 class=1 rep=0 chain=0 cached=0
+SLJIT readmiss id=611 pc=288 opcode=GETPROPC hits=26 changes=1 shape=981 class=1 rep=0 chain=0 cached=0
+SLJIT code id=611 start=0x1052dc010 bytes=78256 fragment=0x1052d8848 fragment_bytes=56
+SLJIT function Type1Parser_extractFontProgram begin=0 ops=319 bytes=78312 hits=173555 returns=12 stalled=47 charged_edges=3315 budget_exits=3 id=611 line=17347
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=1 op=74 count=8 id=611 line=17347 opcode=DECLVAR_HOIST
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=13 op=73 count=8 id=611 line=17349 opcode=DECLVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=15 op=70 count=8 id=611 line=17350 opcode=PUTVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=24 op=61 count=24 id=611 line=17351 opcode=CALL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=25 op=10 count=1 id=611 line=17351 opcode=ADD
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=28 op=67 count=16 id=611 line=17350 opcode=GETVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=54 op=70 count=8 id=611 line=17370 opcode=PUTVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=56 op=86 count=3288 id=611 line=17380 opcode=CLOSURE
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=58 op=67 count=1 id=611 line=17381 opcode=GETVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=60 op=50 count=7 id=611 line=17381 opcode=GETPROP
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=90 op=136 count=8 id=611 line=17389 opcode=CALL_VAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=109 op=67 count=11 id=611 line=17401 opcode=GETVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=111 op=71 count=219 id=611 line=17401 opcode=PUTVAR_ASSIGN
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=120 op=137 count=15069 id=611 line=17404 opcode=CALL_GLOBAL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=125 op=10 count=71136 id=611 line=17407 opcode=ADD
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=134 op=175 count=8 id=611 line=17413 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=136 op=77 count=7 id=611 line=17415 opcode=GETGLOBAL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=138 op=135 count=1 id=611 line=17415 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=140 op=135 count=8 id=611 line=17415 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=143 op=135 count=8 id=611 line=17416 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=147 op=135 count=19 id=611 line=17418 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=148 op=0 count=7 id=611 line=17418 opcode=LDREG
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=150 op=37 count=1 id=611 line=17419 opcode=EQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=156 op=37 count=8 id=611 line=17419 opcode=EQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=159 op=77 count=1 id=611 line=17421 opcode=GETGLOBAL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=161 op=135 count=7 id=611 line=17421 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=163 op=135 count=8 id=611 line=17421 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=167 op=77 count=1 id=611 line=17424 opcode=GETGLOBAL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=169 op=135 count=7 id=611 line=17424 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=171 op=135 count=8 id=611 line=17424 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=174 op=135 count=8 id=611 line=17425 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=193 op=136 count=8 id=611 line=17429 opcode=CALL_VAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=195 op=67 count=1 id=611 line=17430 opcode=GETVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=199 op=71 count=7 id=611 line=17430 opcode=PUTVAR_ASSIGN
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=201 op=135 count=8 id=611 line=17431 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=204 op=177 count=8 id=611 line=17432 opcode=JMP_NEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=217 op=175 count=8 id=611 line=17437 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=220 op=175 count=8 id=611 line=17438 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=223 op=175 count=8 id=611 line=17439 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=226 op=175 count=8 id=611 line=17440 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=229 op=175 count=8 id=611 line=17441 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=232 op=175 count=8 id=611 line=17442 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=235 op=51 count=44 id=611 line=17443 opcode=GETPROPC
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=238 op=61 count=1 id=611 line=17443 opcode=CALL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=245 op=53 count=8 id=611 line=17444 opcode=PUTPROP
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=249 op=175 count=8 id=611 line=17446 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=252 op=175 count=8 id=611 line=17447 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=255 op=51 count=8 id=611 line=17448 opcode=GETPROPC
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=258 op=61 count=1 id=611 line=17448 opcode=CALL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=267 op=53 count=8 id=611 line=17449 opcode=PUTPROP
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=271 op=175 count=8 id=611 line=17451 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=274 op=175 count=8 id=611 line=17452 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=277 op=175 count=8 id=611 line=17453 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=280 op=175 count=8 id=611 line=17454 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=283 op=175 count=8 id=611 line=17455 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=286 op=175 count=8 id=611 line=17456 opcode=JMP_SNEQ
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=289 op=51 count=26 id=611 line=17457 opcode=GETPROPC
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=292 op=61 count=1 id=611 line=17457 opcode=CALL
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=298 op=53 count=8 id=611 line=17458 opcode=PUTPROP
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=307 op=10 count=8 id=611 line=17464 opcode=ADD
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=310 op=50 count=8 id=611 line=17463 opcode=GETPROP
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=313 op=162 count=83341 id=611 line=17370 opcode=INC_VAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=314 op=67 count=18 id=611 line=17370 opcode=GETVAR
+SLJIT exit Type1Parser_extractFontProgram begin=0 pc=318 op=65 count=12 id=611 line=17469 opcode=RET
+SLJIT coverage id=612 line=17481 ops=38 regs=6 captures=3 name=getToken threaded=218516 switch=26209 attempts=4115 warmup=4294967295 retired=6 active=11 rejection=compiled
+SLJIT native id=612 calls=0 returns=0
+SLJIT pipeline id=612 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=612 homes=0
+SLJIT SSA calls id=612 frameless=0
+SLJIT code id=612 start=0x1052c6328 bytes=23660 fragment=0 fragment_bytes=0
+SLJIT function getToken begin=0 ops=38 bytes=23660 hits=3189 returns=76 stalled=8 charged_edges=1312 budget_exits=0 id=612 line=17481
+SLJIT exit getToken begin=0 pc=4 op=50 count=8 id=612 line=17482 opcode=GETPROP
+SLJIT exit getToken begin=0 pc=8 op=50 count=1320 id=612 line=17484 opcode=GETPROP
+SLJIT exit getToken begin=0 pc=14 op=136 count=8 id=612 line=17483 opcode=CALL_VAR
+SLJIT exit getToken begin=0 pc=17 op=37 count=1570 id=612 line=17483 opcode=EQ
+SLJIT exit getToken begin=0 pc=22 op=10 count=8 id=612 line=17488 opcode=ADD
+SLJIT exit getToken begin=0 pc=31 op=136 count=8 id=612 line=17487 opcode=CALL_VAR
+SLJIT exit getToken begin=0 pc=34 op=37 count=191 id=612 line=17487 opcode=EQ
+SLJIT exit getToken begin=0 pc=37 op=65 count=76 id=612 line=17492 opcode=RET
+SLJIT coverage id=613 line=17473 ops=128 regs=24 captures=1 name=Type1Parser_extractFontHeader threaded=719524 switch=63735 attempts=25885 warmup=4294967295 retired=16 active=34 rejection=compiled
+SLJIT native id=613 calls=0 returns=0
+SLJIT pipeline id=613 inlined=0 recoveries=0 allocations=8 pushes=0 links=0
+SLJIT numeric id=613 homes=0
+SLJIT SSA calls id=613 frameless=0
+SLJIT readmiss id=613 pc=14 opcode=GETPROPC_CACHED hits=21 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=613 start=0x1052cc010 bytes=46700 fragment=0x1052cbfa8 fragment_bytes=56
+SLJIT function Type1Parser_extractFontHeader begin=0 ops=128 bytes=46756 hits=19973 returns=0 stalled=14 charged_edges=395 budget_exits=0 id=613 line=17473
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=1 op=74 count=8 id=613 line=17473 opcode=DECLVAR_HOIST
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=9 op=70 count=8 id=613 line=17475 opcode=PUTVAR
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=10 op=190 count=8 id=613 line=17475 opcode=GETPROPC_CACHED
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=12 op=67 count=2 id=613 line=17476 opcode=GETVAR
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=18 op=61 count=21 id=613 line=17476 opcode=CALL
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=22 op=67 count=15 id=613 line=17475 opcode=GETVAR
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=29 op=70 count=8 id=613 line=17480 opcode=PUTVAR
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=31 op=86 count=15 id=613 line=17493 opcode=CLOSURE
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=35 op=50 count=8 id=613 line=17495 opcode=GETPROP
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=41 op=39 count=2568 id=613 line=17498 opcode=SEQ
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=65 op=230 count=7 id=613 line=17508 opcode=PUTPROPC
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=71 op=135 count=8 id=613 line=17511 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=73 op=124 count=8 id=613 line=17513 opcode=RETEST
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=83 op=137 count=8 id=613 line=17518 opcode=CALL_GLOBAL
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=86 op=135 count=8 id=613 line=17519 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=90 op=135 count=283 id=613 line=17522 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=91 op=0 count=4 id=613 line=17522 opcode=LDREG
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=93 op=37 count=4 id=613 line=17523 opcode=EQ
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=99 op=135 count=8 id=613 line=17524 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=102 op=135 count=8 id=613 line=17525 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=105 op=53 count=8 id=613 line=17526 opcode=PUTPROP
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=118 op=1 count=1 id=613 line=17537 opcode=LDCONST
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=121 op=10 count=16926 id=613 line=17539 opcode=ADD
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=122 op=162 count=16 id=613 line=17480 opcode=INC_VAR
+SLJIT exit Type1Parser_extractFontHeader begin=0 pc=123 op=67 count=15 id=613 line=17480 opcode=GETVAR
+SLJIT loop Type1Parser_extractFontHeader begin=53 end=59 hits=2 iterations=12
+SLJIT loop code id=613 begin=53 end=59 bytes=1356
+SLJIT ssa name=Type1Parser_extractFontHeader begin=53 end=59 hits=2 iterations=12
+SLJIT coverage id=614 line=17039 ops=114 regs=14 captures=0 name=type1Parser threaded=114 switch=49 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=615 line=17622 ops=57 regs=20 captures=1 name=Type1Font threaded=1062 switch=216 attempts=18 warmup=34 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=616 line=17644 ops=60 regs=16 captures=0 name=Type1Font_createCFFIndexHeader threaded=1391913 switch=6699 attempts=5636 warmup=4294967294 retired=4 active=23 rejection=compiled
+SLJIT native id=616 calls=0 returns=0
+SLJIT pipeline id=616 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=616 homes=0
+SLJIT SSA calls id=616 frameless=0
+SLJIT readmiss id=616 pc=6 opcode=GETPROPC_CACHED hits=45 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=616 pc=18 opcode=GETPROPC_CACHED hits=8 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT readmiss id=616 pc=45 opcode=GETPROPC_CACHED hits=2500 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=616 start=0x105790010 bytes=34524 fragment=0x10578c078 fragment_bytes=56
+SLJIT function Type1Font_createCFFIndexHeader begin=0 ops=60 bytes=34580 hits=2719 returns=15 stalled=16 charged_edges=2592 budget_exits=4 id=616 line=17644
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=4 op=65 count=15 id=616 line=17649 opcode=RET
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=5 op=77 count=13 id=616 line=17651 opcode=GETGLOBAL
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=10 op=61 count=45 id=616 line=17651 opcode=CALL
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=26 op=61 count=8 id=616 line=17661 opcode=CALL
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=44 op=77 count=22 id=616 line=17672 opcode=GETGLOBAL
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=49 op=61 count=2500 id=616 line=17672 opcode=CALL
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=53 op=50 count=108 id=616 line=17673 opcode=GETPROP
+SLJIT exit Type1Font_createCFFIndexHeader begin=0 pc=54 op=10 count=8 id=616 line=17673 opcode=ADD
+SLJIT coverage id=617 line=17682 ops=48 regs=10 captures=0 name=Type1Font_encodeNumber threaded=8632 switch=853 attempts=134 warmup=4294967295 retired=1 active=16 rejection=compiled
+SLJIT native id=617 calls=0 returns=0
+SLJIT pipeline id=617 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=617 homes=0
+SLJIT SSA calls id=617 frameless=0
+SLJIT readmiss id=617 pc=10 opcode=GETPROPC_CACHED hits=8 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=617 start=0x10995cd38 bytes=12912 fragment=0 fragment_bytes=0
+SLJIT function Type1Font_encodeNumber begin=0 ops=48 bytes=12912 hits=8 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=617 line=17682
+SLJIT exit Type1Font_encodeNumber begin=0 pc=13 op=61 count=8 id=617 line=17685 opcode=CALL
+SLJIT coverage id=618 line=17717 ops=4 regs=5 captures=0 name=charstrings_sort threaded=2539 switch=51 attempts=1132 warmup=4294967294 retired=0 active=3 rejection=compiled
+SLJIT native id=618 calls=0 returns=0
+SLJIT pipeline id=618 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=618 homes=0
+SLJIT SSA calls id=618 frameless=0
+SLJIT code id=618 start=0x1052d8a90 bytes=1320 fragment=0 fragment_bytes=0
+SLJIT function charstrings_sort begin=0 ops=4 bytes=1320 hits=663 returns=663 stalled=0 charged_edges=0 budget_exits=0 id=618 line=17717
+SLJIT exit charstrings_sort begin=0 pc=3 op=65 count=663 id=618 line=17717 opcode=RET
+SLJIT coverage id=619 line=17698 ops=40 regs=15 captures=2 name=Type1Font_getOrderedCharStrings threaded=8927 switch=538 attempts=157 warmup=4294967294 retired=3 active=22 rejection=compiled
+SLJIT native id=619 calls=0 returns=0
+SLJIT pipeline id=619 inlined=0 recoveries=0 allocations=11 pushes=0 links=0
+SLJIT numeric id=619 homes=0
+SLJIT SSA calls id=619 frameless=0
+SLJIT code id=619 start=0x1098ebee8 bytes=13928 fragment=0x10991ff50 fragment_bytes=56
+SLJIT function Type1Font_getOrderedCharStrings begin=0 ops=40 bytes=13984 hits=35 returns=0 stalled=8 charged_edges=11 budget_exits=0 id=619 line=17698
+SLJIT exit Type1Font_getOrderedCharStrings begin=0 pc=10 op=46 count=19 id=619 line=17704 opcode=IN
+SLJIT exit Type1Font_getOrderedCharStrings begin=0 pc=13 op=50 count=8 id=619 line=17705 opcode=GETPROP
+SLJIT exit Type1Font_getOrderedCharStrings begin=0 pc=38 op=61 count=8 id=619 line=17716 opcode=CALL
+SLJIT coverage id=620 line=17724 ops=20 regs=12 captures=0 name=Type1Font_getType2Charstrings threaded=2466 switch=553 attempts=506 warmup=4294967294 retired=0 active=11 rejection=compiled
+SLJIT native id=620 calls=0 returns=0
+SLJIT pipeline id=620 inlined=0 recoveries=0 allocations=11 pushes=58 links=1
+SLJIT numeric id=620 homes=0
+SLJIT SSA calls id=620 frameless=0
+SLJIT readmiss id=620 pc=7 opcode=GETPROPC_CACHED hits=240 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=620 pc=10 opcode=GETPROPC_CACHED hits=240 changes=0 shape=0 class=1 rep=3 chain=255 cached=1
+SLJIT readmiss id=620 pc=11 opcode=GETPROPC_CACHED hits=240 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=620 start=0x1098f9888 bytes=7592 fragment=0x105781758 fragment_bytes=56
+SLJIT function Type1Font_getType2Charstrings begin=0 ops=20 bytes=7648 hits=254 returns=14 stalled=0 charged_edges=239 budget_exits=1 id=620 line=17724
+SLJIT exit Type1Font_getType2Charstrings begin=0 pc=13 op=61 count=240 id=620 line=17728 opcode=CALL
+SLJIT exit Type1Font_getType2Charstrings begin=0 pc=19 op=65 count=14 id=620 line=17731 opcode=RET
+SLJIT coverage id=621 line=17735 ops=42 regs=13 captures=0 name=Type1Font_getType2Subrs threaded=4112 switch=911 attempts=1059 warmup=4294967294 retired=0 active=23 rejection=compiled
+SLJIT native id=621 calls=0 returns=0
+SLJIT pipeline id=621 inlined=0 recoveries=0 allocations=1243 pushes=55 links=1
+SLJIT numeric id=621 homes=0
+SLJIT SSA calls id=621 frameless=0
+SLJIT readmiss id=621 pc=17 opcode=GETPROPC_CACHED hits=1230 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=621 pc=31 opcode=GETPROPC_CACHED hits=512 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=621 pc=34 opcode=GETPROPC_CACHED hits=512 changes=0 shape=0 class=1 rep=3 chain=255 cached=1
+SLJIT readmiss id=621 pc=36 opcode=GETTHISC hits=511 changes=0 shape=0 class=1 rep=3 chain=255 cached=1
+SLJIT code id=621 start=0x10578c458 bytes=11400 fragment=0x10578f168 fragment_bytes=56
+SLJIT function Type1Font_getType2Subrs begin=0 ops=42 bytes=11456 hits=533 returns=14 stalled=4 charged_edges=1738 budget_exits=3 id=621 line=17735
+SLJIT exit Type1Font_getType2Subrs begin=0 pc=22 op=170 count=3 id=621 line=17746 opcode=JMP_LT
+SLJIT exit Type1Font_getType2Subrs begin=0 pc=34 op=190 count=1 id=621 line=17754 opcode=GETPROPC_CACHED
+SLJIT exit Type1Font_getType2Subrs begin=0 pc=36 op=231 count=1 id=621 line=17754 opcode=GETTHISC
+SLJIT exit Type1Font_getType2Subrs begin=0 pc=37 op=61 count=514 id=621 line=17754 opcode=CALL
+SLJIT exit Type1Font_getType2Subrs begin=0 pc=41 op=65 count=14 id=621 line=17757 opcode=RET
+SLJIT coverage id=622 line=17786 ops=61 regs=15 captures=1 name=Type1Font_flattenCharstring threaded=967904 switch=79813 attempts=6738 warmup=4294967294 retired=4 active=18 rejection=compiled
+SLJIT native id=622 calls=0 returns=0
+SLJIT pipeline id=622 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=622 homes=0
+SLJIT SSA calls id=622 frameless=0
+SLJIT readmiss id=622 pc=16 opcode=GETPROPC_CACHED hits=12 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=622 pc=47 opcode=GETPROPC_CACHED hits=8 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=622 start=0x1057817b0 bytes=29556 fragment=0x1052f60f0 fragment_bytes=56
+SLJIT function Type1Font_flattenCharstring begin=0 ops=61 bytes=29612 hits=842 returns=0 stalled=0 charged_edges=796 budget_exits=0 id=622 line=17786
+SLJIT exit Type1Font_flattenCharstring begin=0 pc=5 op=51 count=804 id=622 line=17790 opcode=GETPROPC
+SLJIT exit Type1Font_flattenCharstring begin=0 pc=14 op=136 count=8 id=622 line=17794 opcode=CALL_VAR
+SLJIT exit Type1Font_flattenCharstring begin=0 pc=28 op=61 count=12 id=622 line=17795 opcode=CALL
+SLJIT exit Type1Font_flattenCharstring begin=0 pc=31 op=53 count=10 id=622 line=17797 opcode=PUTPROP
+SLJIT exit Type1Font_flattenCharstring begin=0 pc=54 op=61 count=8 id=622 line=17805 opcode=CALL
+SLJIT coverage id=623 line=17821 ops=102 regs=20 captures=1 name=cffWrapTopDict threaded=2092 switch=330 attempts=55 warmup=4294967294 retired=2 active=43 rejection=compiled
+SLJIT native id=623 calls=0 returns=0
+SLJIT pipeline id=623 inlined=0 recoveries=0 allocations=0 pushes=0 links=5
+SLJIT numeric id=623 homes=0
+SLJIT SSA calls id=623 frameless=0
+SLJIT code id=623 start=0x109a20010 bytes=29272 fragment=0x109a1c750 fragment_bytes=56
+SLJIT function cffWrapTopDict begin=0 ops=102 bytes=29328 hits=36 returns=0 stalled=24 charged_edges=0 budget_exits=0 id=623 line=17821
+SLJIT exit cffWrapTopDict begin=0 pc=2 op=1 count=4 id=623 line=17824 opcode=LDCONST
+SLJIT exit cffWrapTopDict begin=0 pc=21 op=61 count=8 id=623 line=17833 opcode=CALL
+SLJIT exit cffWrapTopDict begin=0 pc=22 op=10 count=8 id=623 line=17833 opcode=ADD
+SLJIT exit cffWrapTopDict begin=0 pc=61 op=1 count=4 id=623 line=17851 opcode=LDCONST
+SLJIT exit cffWrapTopDict begin=0 pc=73 op=1 count=4 id=623 line=17854 opcode=LDCONST
+SLJIT exit cffWrapTopDict begin=0 pc=86 op=10 count=4 id=623 line=17857 opcode=ADD
+SLJIT exit cffWrapTopDict begin=0 pc=91 op=1 count=4 id=623 line=17858 opcode=LDCONST
+SLJIT coverage id=624 line=17820 ops=3 regs=2 captures=0 name=topDict threaded=54 switch=19 attempts=18 warmup=15 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=625 line=17865 ops=17 regs=5 captures=1 name=strings threaded=288 switch=18 attempts=18 warmup=15 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=626 line=17878 ops=24 regs=10 captures=2 name=charset threaded=5932 switch=76 attempts=47 warmup=4294967294 retired=2 active=10 rejection=compiled
+SLJIT native id=626 calls=0 returns=0
+SLJIT pipeline id=626 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=626 homes=0
+SLJIT SSA calls id=626 frameless=0
+SLJIT readmiss id=626 pc=6 opcode=GETPROPC_CACHED hits=8 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=626 start=0x10579dc60 bytes=9056 fragment=0 fragment_bytes=0
+SLJIT function charset begin=0 ops=24 bytes=9056 hits=29 returns=0 stalled=8 charged_edges=13 budget_exits=0 id=626 line=17878
+SLJIT exit charset begin=0 pc=5 op=67 count=13 id=626 line=17882 opcode=GETVAR
+SLJIT exit charset begin=0 pc=10 op=61 count=16 id=626 line=17882 opcode=CALL
+SLJIT coverage id=627 line=17900 ops=86 regs=16 captures=1 name=cffWrapPrivate threaded=6168 switch=602 attempts=93 warmup=4294967295 retired=8 active=35 rejection=compiled
+SLJIT native id=627 calls=0 returns=0
+SLJIT pipeline id=627 inlined=0 recoveries=0 allocations=0 pushes=0 links=4
+SLJIT numeric id=627 homes=0
+SLJIT SSA calls id=627 frameless=0
+SLJIT code id=627 start=0x109950010 bytes=32088 fragment=0x1057a0378 fragment_bytes=56
+SLJIT function cffWrapPrivate begin=0 ops=86 bytes=32144 hits=70 returns=0 stalled=40 charged_edges=0 budget_exits=0 id=627 line=17900
+SLJIT exit cffWrapPrivate begin=0 pc=0 op=1 count=8 id=627 line=17900 opcode=LDCONST
+SLJIT exit cffWrapPrivate begin=0 pc=39 op=61 count=8 id=627 line=17916 opcode=CALL
+SLJIT exit cffWrapPrivate begin=0 pc=46 op=136 count=6 id=627 line=17920 opcode=CALL_VAR
+SLJIT exit cffWrapPrivate begin=0 pc=53 op=61 count=7 id=627 line=17921 opcode=CALL
+SLJIT exit cffWrapPrivate begin=0 pc=54 op=10 count=8 id=627 line=17921 opcode=ADD
+SLJIT exit cffWrapPrivate begin=0 pc=64 op=61 count=8 id=627 line=17923 opcode=CALL
+SLJIT exit cffWrapPrivate begin=0 pc=65 op=10 count=8 id=627 line=17923 opcode=ADD
+SLJIT exit cffWrapPrivate begin=0 pc=72 op=61 count=1 id=627 line=17925 opcode=CALL
+SLJIT exit cffWrapPrivate begin=0 pc=73 op=10 count=8 id=627 line=17925 opcode=ADD
+SLJIT exit cffWrapPrivate begin=0 pc=82 op=1 count=8 id=627 line=17930 opcode=LDCONST
+SLJIT coverage id=628 line=17813 ops=86 regs=19 captures=0 name=Type1Font_wrap threaded=1382402 switch=6982 attempts=6746 warmup=4294967295 retired=14 active=31 rejection=compiled
+SLJIT native id=628 calls=0 returns=0
+SLJIT pipeline id=628 inlined=0 recoveries=0 allocations=24 pushes=0 links=4
+SLJIT numeric id=628 homes=0
+SLJIT SSA calls id=628 frameless=0
+SLJIT readmiss id=628 pc=70 opcode=GETPROP hits=112 changes=1 shape=1032 class=1 rep=0 chain=0 cached=1
+SLJIT readmiss id=628 pc=74 opcode=GETPROPC_CACHED hits=113 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT code id=628 start=0x1098e7620 bytes=18292 fragment=0x10579dc08 fragment_bytes=56
+SLJIT function Type1Font_wrap begin=0 ops=86 bytes=18348 hits=253 returns=15 stalled=16 charged_edges=113 budget_exits=0 id=628 line=17813
+SLJIT exit Type1Font_wrap begin=0 pc=16 op=86 count=8 id=628 line=17862 opcode=CLOSURE
+SLJIT exit Type1Font_wrap begin=0 pc=18 op=135 count=8 id=628 line=17820 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Font_wrap begin=0 pc=20 op=86 count=8 id=628 line=17873 opcode=CLOSURE
+SLJIT exit Type1Font_wrap begin=0 pc=22 op=135 count=8 id=628 line=17864 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Font_wrap begin=0 pc=27 op=61 count=8 id=628 line=17875 opcode=CALL
+SLJIT exit Type1Font_wrap begin=0 pc=29 op=86 count=8 id=628 line=17893 opcode=CLOSURE
+SLJIT exit Type1Font_wrap begin=0 pc=31 op=135 count=8 id=628 line=17877 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Font_wrap begin=0 pc=37 op=233 count=8 id=628 line=17895 opcode=INITELEM
+SLJIT exit Type1Font_wrap begin=0 pc=44 op=86 count=8 id=628 line=17933 opcode=CLOSURE
+SLJIT exit Type1Font_wrap begin=0 pc=46 op=135 count=8 id=628 line=17898 opcode=CALL_UNDEF_THIS
+SLJIT exit Type1Font_wrap begin=0 pc=53 op=61 count=8 id=628 line=17935 opcode=CALL
+SLJIT exit Type1Font_wrap begin=0 pc=56 op=73 count=8 id=628 line=17936 opcode=DECLVAR
+SLJIT exit Type1Font_wrap begin=0 pc=57 op=67 count=8 id=628 line=17937 opcode=GETVAR
+SLJIT exit Type1Font_wrap begin=0 pc=61 op=230 count=8 id=628 line=17937 opcode=PUTPROPC
+SLJIT exit Type1Font_wrap begin=0 pc=69 op=67 count=13 id=628 line=17942 opcode=GETVAR
+SLJIT exit Type1Font_wrap begin=0 pc=76 op=51 count=113 id=628 line=17944 opcode=GETPROPC
+SLJIT exit Type1Font_wrap begin=0 pc=85 op=65 count=15 id=628 line=17947 opcode=RET
+SLJIT coverage id=633 line=17951 ops=10 regs=7 captures=0 name=CFFFontClosure threaded=10 switch=5 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=650 line=18041 ops=30 regs=7 captures=0 name=CFFParserClosure threaded=30 switch=15 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=652 line=18497 ops=3 regs=1 captures=0 name=CFFClosure threaded=3 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=654 line=18518 ops=3 regs=1 captures=0 name=CFFHeaderClosure threaded=3 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=659 line=18528 ops=14 regs=7 captures=0 name=CFFStringsClosure threaded=14 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=664 line=18550 ops=14 regs=7 captures=0 name=CFFIndexClosure threaded=14 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=671 line=18570 ops=16 regs=7 captures=0 name=CFFDictClosure threaded=16 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=673 line=18635 ops=389 regs=9 captures=1 name=CFFTopDictClosure threaded=389 switch=14 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=675 line=18683 ops=199 regs=9 captures=1 name=CFFPrivateDictClosure threaded=199 switch=11 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=677 line=18725 ops=3 regs=1 captures=0 name=CFFCharsetClosure threaded=3 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=679 line=18743 ops=3 regs=1 captures=0 name=CFFEncodingClosure threaded=3 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=681 line=18753 ops=3 regs=1 captures=0 name=CFFFDSelectClosure threaded=3 switch=2 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=687 line=18763 ops=14 regs=7 captures=0 name=CFFOffsetTrackerClosure threaded=14 switch=7 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=708 line=18812 ops=42 regs=8 captures=0 name=CFFCompilerClosure threaded=42 switch=22 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=724 line=23379 ops=41 regs=11 captures=0 name=PDFImageClosure threaded=41 switch=31 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=725 line=26711 ops=9 regs=8 captures=0 name=Parser threaded=810 switch=99 attempts=101 warmup=4294967295 retired=1 active=2 rejection=compiled
+SLJIT native id=725 calls=0 returns=0
+SLJIT pipeline id=725 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=725 homes=0
+SLJIT SSA calls id=725 frameless=0
+SLJIT code id=725 start=0x109a4efb8 bytes=4140 fragment=0 fragment_bytes=0
+SLJIT function Parser begin=0 ops=9 bytes=4140 hits=21 returns=13 stalled=21 charged_edges=0 budget_exits=0 id=725 line=26711
+SLJIT exit Parser begin=0 pc=0 op=232 count=8 id=725 line=26711 opcode=PUTTHISC
+SLJIT exit Parser begin=0 pc=8 op=66 count=13 id=725 line=26716 opcode=RETUNDEF
+SLJIT coverage id=726 line=26720 ops=11 regs=8 captures=0 name=Parser_refill threaded=990 switch=186 attempts=96 warmup=4294967295 retired=2 active=4 rejection=compiled
+SLJIT native id=726 calls=0 returns=0
+SLJIT pipeline id=726 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=726 homes=0
+SLJIT SSA calls id=726 frameless=0
+SLJIT code id=726 start=0x109a4e1a0 bytes=3544 fragment=0 fragment_bytes=0
+SLJIT function Parser_refill begin=0 ops=11 bytes=3544 hits=16 returns=0 stalled=16 charged_edges=0 budget_exits=0 id=726 line=26720
+SLJIT exit Parser_refill begin=0 pc=4 op=232 count=8 id=726 line=26720 opcode=PUTTHISC
+SLJIT exit Parser_refill begin=0 pc=9 op=232 count=8 id=726 line=26721 opcode=PUTTHISC
+SLJIT coverage id=727 line=26724 ops=23 regs=9 captures=0 name=Parser_shift threaded=89711 switch=7318 attempts=215 warmup=4294967295 retired=3 active=8 rejection=compiled
+SLJIT native id=727 calls=0 returns=0
+SLJIT pipeline id=727 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=727 homes=0
+SLJIT SSA calls id=727 frameless=0
+SLJIT code id=727 start=0x10527aa38 bytes=5476 fragment=0 fragment_bytes=0
+SLJIT function Parser_shift begin=0 ops=23 bytes=5476 hits=148 returns=121 stalled=19 charged_edges=0 budget_exits=0 id=727 line=26724
+SLJIT exit Parser_shift begin=0 pc=0 op=67 count=8 id=727 line=26724 opcode=GETVAR
+SLJIT exit Parser_shift begin=0 pc=20 op=61 count=8 id=727 line=26731 opcode=CALL
+SLJIT exit Parser_shift begin=0 pc=21 op=232 count=11 id=727 line=26731 opcode=PUTTHISC
+SLJIT exit Parser_shift begin=0 pc=22 op=66 count=121 id=727 line=26733 opcode=RETUNDEF
+SLJIT coverage id=728 line=26734 ops=178 regs=15 captures=0 name=Parser_getObj threaded=193624 switch=17705 attempts=30103 warmup=4294967295 retired=14 active=100 rejection=compiled
+SLJIT native id=728 calls=3773 returns=0
+SLJIT pipeline id=728 inlined=0 recoveries=0 allocations=118 pushes=4 links=20
+SLJIT numeric id=728 homes=0
+SLJIT SSA calls id=728 frameless=0
+SLJIT readmiss id=728 pc=26 opcode=GETPROPC_CACHED hits=3246 changes=0 shape=0 class=2 rep=3 chain=1 cached=1
+SLJIT readmiss id=728 pc=79 opcode=GETTHISC hits=16 changes=1 shape=2603 class=1 rep=2 chain=0 cached=1
+SLJIT readmiss id=728 pc=116 opcode=GETPROPC_CACHED hits=15 changes=1 shape=2603 class=1 rep=3 chain=1 cached=1
+SLJIT code id=728 start=0x10526cf20 bytes=46772 fragment=0x105278810 fragment_bytes=56
+SLJIT function Parser_getObj begin=0 ops=178 bytes=46828 hits=24371 returns=2971 stalled=1438 charged_edges=7407 budget_exits=6 id=728 line=26734
+SLJIT exit Parser_getObj begin=0 pc=2 op=67 count=8 id=728 line=26735 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=15 op=67 count=4512 id=728 line=26739 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=22 op=61 count=118 id=728 line=26740 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=30 op=61 count=3246 id=728 line=26743 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=32 op=67 count=118 id=728 line=26742 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=35 op=135 count=8 id=728 line=26742 opcode=CALL_UNDEF_THIS
+SLJIT exit Parser_getObj begin=0 pc=38 op=67 count=116 id=728 line=26742 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=43 op=67 count=117 id=728 line=26744 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=51 op=61 count=8 id=728 line=26746 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=52 op=65 count=117 id=728 line=26747 opcode=RET
+SLJIT exit Parser_getObj begin=0 pc=53 op=67 count=4393 id=728 line=26749 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=60 op=61 count=49 id=728 line=26750 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=61 op=67 count=8 id=728 line=26751 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=66 op=67 count=49 id=728 line=26753 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=68 op=135 count=325 id=728 line=26753 opcode=CALL_UNDEF_THIS
+SLJIT exit Parser_getObj begin=0 pc=77 op=61 count=8 id=728 line=26757 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=78 op=67 count=49 id=728 line=26758 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=89 op=61 count=90 id=728 line=26760 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=90 op=61 count=8 id=728 line=26760 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=91 op=67 count=49 id=728 line=26752 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=94 op=135 count=8 id=728 line=26752 opcode=CALL_UNDEF_THIS
+SLJIT exit Parser_getObj begin=0 pc=97 op=67 count=49 id=728 line=26752 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=99 op=135 count=49 id=728 line=26752 opcode=CALL_UNDEF_THIS
+SLJIT exit Parser_getObj begin=0 pc=102 op=67 count=48 id=728 line=26762 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=108 op=67 count=8 id=728 line=26767 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=119 op=218 count=15 id=728 line=26769 opcode=TAILCALL_CALL
+SLJIT exit Parser_getObj begin=0 pc=121 op=65 count=1 id=728 line=26769 opcode=RET
+SLJIT exit Parser_getObj begin=0 pc=125 op=61 count=32 id=728 line=26771 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=126 op=65 count=31 id=728 line=26772 opcode=RET
+SLJIT exit Parser_getObj begin=0 pc=127 op=67 count=4345 id=728 line=26774 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=134 op=61 count=17 id=728 line=26776 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=135 op=67 count=8 id=728 line=26777 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=139 op=67 count=63 id=728 line=26777 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=145 op=67 count=49 id=728 line=26778 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=155 op=61 count=8 id=728 line=26780 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=156 op=65 count=49 id=728 line=26781 opcode=RET
+SLJIT exit Parser_getObj begin=0 pc=157 op=65 count=355 id=728 line=26783 opcode=RET
+SLJIT exit Parser_getObj begin=0 pc=158 op=67 count=13 id=728 line=26785 opcode=GETVAR
+SLJIT exit Parser_getObj begin=0 pc=165 op=61 count=2 id=728 line=26787 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=172 op=65 count=1250 id=728 line=26790 opcode=RET
+SLJIT exit Parser_getObj begin=0 pc=176 op=61 count=6 id=728 line=26795 opcode=CALL
+SLJIT exit Parser_getObj begin=0 pc=177 op=65 count=1168 id=728 line=26796 opcode=RET
+SLJIT coverage id=730 line=26862 ops=11 regs=9 captures=0 name=Parser_fetchIfRef threaded=240 switch=62 attempts=60 warmup=51 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=731 line=26865 ops=65 regs=12 captures=0 name=Parser_makeStream threaded=1020 switch=207 attempts=20 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=732 line=26893 ops=67 regs=15 captures=0 name=Parser_filter threaded=560 switch=121 attempts=20 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=733 line=26916 ops=140 regs=17 captures=0 name=Parser_makeFilter threaded=200 switch=40 attempts=20 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=734 line=26709 ops=22 regs=7 captures=0 name=ParserClosure threaded=22 switch=11 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=735 line=26965 ops=2 regs=4 captures=0 name=Lexer threaded=2 switch=1 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=736 line=26994 ops=31 regs=7 captures=0 name=toHexDigit threaded=2130 switch=472 attempts=310 warmup=4294967294 retired=0 active=15 rejection=compiled
+SLJIT native id=736 calls=0 returns=0
+SLJIT pipeline id=736 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=736 homes=0
+SLJIT SSA calls id=736 frameless=0
+SLJIT code id=736 start=0x1052788c0 bytes=8404 fragment=0x10527a9e0 fragment_bytes=56
+SLJIT function toHexDigit begin=0 ops=31 bytes=8460 hits=2 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=736 line=26994
+SLJIT exit toHexDigit begin=0 pc=1 op=44 count=1 id=736 line=26994 opcode=GE
+SLJIT exit toHexDigit begin=0 pc=6 op=51 count=1 id=736 line=26995 opcode=GETPROPC
+SLJIT coverage id=737 line=26969 ops=12 regs=7 captures=0 name=Lexer_isSpace threaded=48 switch=0 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=738 line=27004 ops=53 regs=14 captures=0 name=Lexer_getNumber threaded=319796 switch=49634 attempts=80 warmup=4294967295 retired=7 active=21 rejection=compiled
+SLJIT native id=738 calls=0 returns=0
+SLJIT pipeline id=738 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=738 homes=1
+SLJIT SSA calls id=738 frameless=0
+SLJIT code id=738 start=0x105251880 bytes=13588 fragment=0x10526aa00 fragment_bytes=56
+SLJIT function Lexer_getNumber begin=0 ops=53 bytes=13644 hits=56 returns=0 stalled=56 charged_edges=0 budget_exits=0 id=738 line=27004
+SLJIT exit Lexer_getNumber begin=0 pc=0 op=8 count=8 id=738 line=27004 opcode=LDFALSE
+SLJIT exit Lexer_getNumber begin=0 pc=3 op=190 count=8 id=738 line=27008 opcode=GETPROPC_CACHED
+SLJIT exit Lexer_getNumber begin=0 pc=6 op=0 count=8 id=738 line=27008 opcode=LDREG
+SLJIT exit Lexer_getNumber begin=0 pc=26 op=49 count=8 id=738 line=27016 opcode=IF_FALSE
+SLJIT exit Lexer_getNumber begin=0 pc=41 op=47 count=8 id=738 line=27025 opcode=JUMP
+SLJIT exit Lexer_getNumber begin=0 pc=44 op=0 count=8 id=738 line=27026 opcode=LDREG
+SLJIT exit Lexer_getNumber begin=0 pc=47 op=49 count=8 id=738 line=27027 opcode=IF_FALSE
+SLJIT coverage id=739 line=27031 ops=180 regs=18 captures=0 name=Lexer_getString threaded=114127 switch=10494 attempts=8556 warmup=4294967295 retired=8 active=89 rejection=compiled
+SLJIT native id=739 calls=0 returns=0
+SLJIT pipeline id=739 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=739 homes=0
+SLJIT SSA calls id=739 frameless=0
+SLJIT readmiss id=739 pc=5 opcode=GETPROPC_CACHED hits=6 changes=1 shape=2806 class=1 rep=3 chain=253 cached=1
+SLJIT readmiss id=739 pc=126 opcode=GETPROPC_CACHED hits=8 changes=1 shape=2806 class=1 rep=3 chain=255 cached=1
+SLJIT readmiss id=739 pc=143 opcode=GETPROPC_CACHED hits=8 changes=1 shape=2806 class=1 rep=3 chain=255 cached=1
+SLJIT code id=739 start=0x105283480 bytes=26712 fragment=0x105289da0 fragment_bytes=56
+SLJIT function Lexer_getString begin=0 ops=180 bytes=26768 hits=7496 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=739 line=27031
+SLJIT exit Lexer_getString begin=0 pc=7 op=61 count=18 id=739 line=27038 opcode=CALL
+SLJIT exit Lexer_getString begin=0 pc=10 op=77 count=18 id=739 line=27040 opcode=GETGLOBAL
+SLJIT exit Lexer_getString begin=0 pc=19 op=175 count=7378 id=739 line=27044 opcode=JMP_SNEQ
+SLJIT exit Lexer_getString begin=0 pc=21 op=10 count=1 id=739 line=27046 opcode=ADD
+SLJIT exit Lexer_getString begin=0 pc=39 op=61 count=1 id=739 line=27056 opcode=CALL
+SLJIT exit Lexer_getString begin=0 pc=42 op=77 count=7 id=739 line=27058 opcode=GETGLOBAL
+SLJIT exit Lexer_getString begin=0 pc=51 op=175 count=21 id=739 line=27062 opcode=JMP_SNEQ
+SLJIT exit Lexer_getString begin=0 pc=118 op=61 count=1 id=739 line=27085 opcode=CALL
+SLJIT exit Lexer_getString begin=0 pc=121 op=44 count=8 id=739 line=27086 opcode=GE
+SLJIT exit Lexer_getString begin=0 pc=128 op=61 count=9 id=739 line=27087 opcode=CALL
+SLJIT exit Lexer_getString begin=0 pc=130 op=1 count=8 id=739 line=27088 opcode=LDCONST
+SLJIT exit Lexer_getString begin=0 pc=135 op=61 count=1 id=739 line=27089 opcode=CALL
+SLJIT exit Lexer_getString begin=0 pc=138 op=44 count=8 id=739 line=27090 opcode=GE
+SLJIT exit Lexer_getString begin=0 pc=145 op=61 count=9 id=739 line=27091 opcode=CALL
+SLJIT exit Lexer_getString begin=0 pc=147 op=1 count=8 id=739 line=27092 opcode=LDCONST
+SLJIT coverage id=740 line=27116 ops=73 regs=11 captures=2 name=Lexer_getName threaded=116799 switch=10708 attempts=611 warmup=4294967295 retired=4 active=33 rejection=compiled
+SLJIT native id=740 calls=0 returns=0
+SLJIT pipeline id=740 inlined=0 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=740 homes=1
+SLJIT SSA calls id=740 frameless=0
+SLJIT code id=740 start=0x10527c010 bytes=23620 fragment=0x105278868 fragment_bytes=56
+SLJIT function Lexer_getName begin=0 ops=73 bytes=23676 hits=32 returns=0 stalled=32 charged_edges=0 budget_exits=0 id=740 line=27116
+SLJIT exit Lexer_getName begin=0 pc=0 op=1 count=8 id=740 line=27116 opcode=LDCONST
+SLJIT exit Lexer_getName begin=0 pc=3 op=190 count=8 id=740 line=27119 opcode=GETPROPC_CACHED
+SLJIT exit Lexer_getName begin=0 pc=6 op=1 count=8 id=740 line=27120 opcode=LDCONST
+SLJIT exit Lexer_getName begin=0 pc=47 op=0 count=8 id=740 line=27118 opcode=LDREG
+SLJIT coverage id=741 line=27143 ops=67 regs=11 captures=1 name=Lexer_getHexString threaded=3112 switch=308 attempts=7 warmup=66 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=742 line=27171 ops=209 regs=10 captures=1 name=Lexer_getObj threaded=442127 switch=23063 attempts=2775 warmup=4294967295 retired=12 active=103 rejection=compiled
+SLJIT native id=742 calls=0 returns=0
+SLJIT pipeline id=742 inlined=0 recoveries=0 allocations=0 pushes=0 links=7
+SLJIT numeric id=742 homes=0
+SLJIT SSA calls id=742 frameless=0
+SLJIT code id=742 start=0x10525c010 bytes=49648 fragment=0x105254dd8 fragment_bytes=56
+SLJIT function Lexer_getObj begin=0 ops=209 bytes=49704 hits=1037 returns=0 stalled=24 charged_edges=0 budget_exits=0 id=742 line=27171
+SLJIT exit Lexer_getObj begin=0 pc=6 op=61 count=17 id=742 line=27177 opcode=CALL
+SLJIT exit Lexer_getObj begin=0 pc=8 op=48 count=8 id=742 line=27177 opcode=IF_TRUE
+SLJIT exit Lexer_getObj begin=0 pc=114 op=177 count=8 id=742 line=27206 opcode=JMP_NEQ
+SLJIT exit Lexer_getObj begin=0 pc=118 op=67 count=8 id=742 line=27209 opcode=GETVAR
+SLJIT exit Lexer_getObj begin=0 pc=126 op=218 count=1 id=742 line=27211 opcode=TAILCALL_CALL
+SLJIT exit Lexer_getObj begin=0 pc=136 op=177 count=8 id=742 line=27215 opcode=JMP_NEQ
+SLJIT exit Lexer_getObj begin=0 pc=140 op=67 count=8 id=742 line=27217 opcode=GETVAR
+SLJIT exit Lexer_getObj begin=0 pc=167 op=61 count=8 id=742 line=27230 opcode=CALL
+SLJIT exit Lexer_getObj begin=0 pc=176 op=10 count=939 id=742 line=27234 opcode=ADD
+SLJIT exit Lexer_getObj begin=0 pc=181 op=28 count=8 id=742 line=27229 opcode=LNOT
+SLJIT exit Lexer_getObj begin=0 pc=197 op=177 count=8 id=742 line=27238 opcode=JMP_NEQ
+SLJIT exit Lexer_getObj begin=0 pc=201 op=177 count=8 id=742 line=27240 opcode=JMP_NEQ
+SLJIT exit Lexer_getObj begin=0 pc=204 op=67 count=8 id=742 line=27242 opcode=GETVAR
+SLJIT coverage id=743 line=27244 ops=26 regs=6 captures=0 name=Lexer_skipToNextLine threaded=240 switch=23 attempts=20 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=745 line=26966 ops=31 regs=9 captures=0 name=LexerClosure threaded=31 switch=16 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=746 line=27266 ops=68 regs=15 captures=0 name=Linearization threaded=132 switch=28 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=749 line=27304 ops=14 regs=5 captures=0 name=get length threaded=14 switch=2 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=759 line=27265 ops=42 regs=9 captures=0 name=LinearizationClosure threaded=42 switch=27 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=764 line=27351 ops=12 regs=6 captures=0 name=PatternClosure threaded=12 switch=8 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=769 line=27391 ops=11 regs=7 captures=0 name=RadialAxialClosure threaded=11 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=773 line=27511 ops=9 regs=6 captures=0 name=DummyClosure threaded=9 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=777 line=27528 ops=24 regs=9 captures=0 name=TilingPatternClosure threaded=24 switch=10 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=778 line=27652 ops=17 regs=11 captures=0 name=Stream threaded=1912 switch=309 attempts=101 warmup=4294967295 retired=3 active=5 rejection=compiled
+SLJIT native id=778 calls=0 returns=0
+SLJIT pipeline id=778 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=778 homes=0
+SLJIT SSA calls id=778 frameless=0
+SLJIT code id=778 start=0x109a1e708 bytes=6236 fragment=0x109a1ffa8 fragment_bytes=56
+SLJIT function Stream begin=0 ops=17 bytes=6292 hits=24 returns=0 stalled=16 charged_edges=0 budget_exits=0 id=778 line=27652
+SLJIT exit Stream begin=0 pc=2 op=63 count=8 id=778 line=27652 opcode=NEW_OBJ
+SLJIT exit Stream begin=0 pc=3 op=232 count=8 id=778 line=27652 opcode=PUTTHISC
+SLJIT exit Stream begin=0 pc=14 op=232 count=8 id=778 line=27655 opcode=PUTTHISC
+SLJIT coverage id=779 line=27663 ops=4 regs=4 captures=0 name=get length threaded=16 switch=2 attempts=4 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=781 line=27673 ops=20 regs=9 captures=0 name=Stream_getBytes threaded=668 switch=19 attempts=56 warmup=49 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=782 line=27688 ops=14 regs=9 captures=0 name=Stream_lookChar threaded=58911 switch=29458 attempts=15624 warmup=4294967294 retired=0 active=9 rejection=compiled
+SLJIT native id=782 calls=0 returns=0
+SLJIT pipeline id=782 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=782 homes=0
+SLJIT SSA calls id=782 frameless=0
+SLJIT readmiss id=782 pc=6 opcode=GETPROPC_CACHED hits=11970 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=782 start=0x105254e30 bytes=4888 fragment=0 fragment_bytes=0
+SLJIT function Stream_lookChar begin=0 ops=14 bytes=4888 hits=11985 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=782 line=27688
+SLJIT exit Stream_lookChar begin=0 pc=5 op=77 count=15 id=782 line=27690 opcode=GETGLOBAL
+SLJIT exit Stream_lookChar begin=0 pc=11 op=50 count=11952 id=782 line=27690 opcode=GETPROP
+SLJIT exit Stream_lookChar begin=0 pc=12 op=218 count=18 id=782 line=27690 opcode=TAILCALL_CALL
+SLJIT coverage id=783 line=27693 ops=18 regs=11 captures=0 name=Stream_getChar threaded=68380 switch=36944 attempts=13195 warmup=4294967294 retired=0 active=9 rejection=compiled
+SLJIT native id=783 calls=0 returns=0
+SLJIT pipeline id=783 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=783 homes=0
+SLJIT SSA calls id=783 frameless=0
+SLJIT readmiss id=783 pc=6 opcode=GETPROPC_CACHED hits=10833 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=783 start=0x105256198 bytes=5884 fragment=0 fragment_bytes=0
+SLJIT function Stream_getChar begin=0 ops=18 bytes=5884 hits=10847 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=783 line=27693
+SLJIT exit Stream_getChar begin=0 pc=5 op=77 count=14 id=783 line=27695 opcode=GETGLOBAL
+SLJIT exit Stream_getChar begin=0 pc=12 op=212 count=6733 id=783 line=27695 opcode=TONUMERIC
+SLJIT exit Stream_getChar begin=0 pc=16 op=218 count=4100 id=783 line=27695 opcode=TAILCALL_CALL
+SLJIT coverage id=784 line=27698 ops=6 regs=4 captures=0 name=Stream_skip threaded=18499 switch=182 attempts=11000 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=784 calls=0 returns=0
+SLJIT pipeline id=784 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=784 homes=0
+SLJIT SSA calls id=784 frameless=0
+SLJIT code id=784 start=0x10526b950 bytes=1684 fragment=0 fragment_bytes=0
+SLJIT function Stream_skip begin=0 ops=6 bytes=1684 hits=9500 returns=9500 stalled=0 charged_edges=0 budget_exits=0 id=784 line=27698
+SLJIT exit Stream_skip begin=0 pc=5 op=66 count=9500 id=784 line=27701 opcode=RETUNDEF
+SLJIT coverage id=785 line=27703 ops=3 regs=6 captures=0 name=Stream_reset threaded=6 switch=2 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=786 line=27706 ops=3 regs=6 captures=0 name=Stream_moveStart threaded=6 switch=2 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=787 line=27709 ops=8 regs=10 captures=1 name=Stream_makeSubStream threaded=792 switch=126 attempts=120 warmup=4294967295 retired=2 active=1 rejection=compiled
+SLJIT native id=787 calls=0 returns=0
+SLJIT pipeline id=787 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=787 homes=0
+SLJIT SSA calls id=787 frameless=0
+SLJIT code id=787 start=0x109a1c7a8 bytes=2160 fragment=0x109a1d050 fragment_bytes=56
+SLJIT function Stream_makeSubStream begin=0 ops=8 bytes=2216 hits=41 returns=25 stalled=25 charged_edges=0 budget_exits=0 id=787 line=27709
+SLJIT exit Stream_makeSubStream begin=0 pc=2 op=190 count=8 id=787 line=27709 opcode=GETPROPC_CACHED
+SLJIT exit Stream_makeSubStream begin=0 pc=6 op=63 count=8 id=787 line=27709 opcode=NEW_OBJ
+SLJIT exit Stream_makeSubStream begin=0 pc=7 op=65 count=25 id=787 line=27709 opcode=RET
+SLJIT coverage id=788 line=27650 ops=37 regs=9 captures=0 name=StreamClosure threaded=37 switch=24 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=790 line=27717 ops=6 regs=6 captures=1 name=StringStreamClosure threaded=6 switch=3 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=791 line=27734 ops=9 regs=5 captures=0 name=DecodeStream threaded=180 switch=7 attempts=20 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=792 line=27742 ops=28 regs=10 captures=0 name=DecodeStream_ensureBuffer threaded=2267 switch=1023 attempts=1050 warmup=4294967295 retired=3 active=11 rejection=compiled
+SLJIT native id=792 calls=0 returns=0
+SLJIT pipeline id=792 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=792 homes=0
+SLJIT SSA calls id=792 frameless=0
+SLJIT code id=792 start=0x105291f18 bytes=7264 fragment=0x1052b5d70 fragment_bytes=56
+SLJIT function DecodeStream_ensureBuffer begin=0 ops=28 bytes=7320 hits=352 returns=60 stalled=22 charged_edges=364 budget_exits=0 id=792 line=27742
+SLJIT exit DecodeStream_ensureBuffer begin=0 pc=2 op=190 count=12 id=792 line=27743 opcode=GETPROPC_CACHED
+SLJIT exit DecodeStream_ensureBuffer begin=0 pc=8 op=65 count=2 id=792 line=27745 opcode=RET
+SLJIT exit DecodeStream_ensureBuffer begin=0 pc=17 op=63 count=129 id=792 line=27749 opcode=NEW_OBJ
+SLJIT exit DecodeStream_ensureBuffer begin=0 pc=25 op=170 count=136 id=792 line=27750 opcode=JMP_LT
+SLJIT exit DecodeStream_ensureBuffer begin=0 pc=26 op=232 count=15 id=792 line=27752 opcode=PUTTHISC
+SLJIT exit DecodeStream_ensureBuffer begin=0 pc=27 op=65 count=58 id=792 line=27752 opcode=RET
+SLJIT loop DecodeStream_ensureBuffer begin=12 end=14 hits=19 iterations=57
+SLJIT loop code id=792 begin=12 end=14 bytes=572
+SLJIT ssa name=DecodeStream_ensureBuffer begin=12 end=14 hits=19 iterations=57
+SLJIT loop DecodeStream_ensureBuffer begin=21 end=25 hits=662 iterations=528834
+SLJIT loop code id=792 begin=21 end=25 bytes=1028
+SLJIT ssa name=DecodeStream_ensureBuffer begin=21 end=25 hits=662 iterations=528834
+SLJIT coverage id=794 line=27763 ops=44 regs=11 captures=0 name=DecodeStream_getBytes threaded=712 switch=27 attempts=36 warmup=51 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=795 line=27791 ops=19 regs=8 captures=0 name=DecodeStream_lookChar threaded=26170 switch=13114 attempts=6884 warmup=4294967294 retired=0 active=13 rejection=compiled
+SLJIT native id=795 calls=0 returns=0
+SLJIT pipeline id=795 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=795 homes=0
+SLJIT SSA calls id=795 frameless=0
+SLJIT readmiss id=795 pc=13 opcode=GETPROPC_CACHED hits=5471 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=795 start=0x10529d948 bytes=5160 fragment=0 fragment_bytes=0
+SLJIT function DecodeStream_lookChar begin=0 ops=19 bytes=5160 hits=5486 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=795 line=27791
+SLJIT exit DecodeStream_lookChar begin=0 pc=12 op=77 count=15 id=795 line=27798 opcode=GETGLOBAL
+SLJIT exit DecodeStream_lookChar begin=0 pc=16 op=50 count=5451 id=795 line=27798 opcode=GETPROP
+SLJIT exit DecodeStream_lookChar begin=0 pc=17 op=218 count=20 id=795 line=27798 opcode=TAILCALL_CALL
+SLJIT coverage id=796 line=27800 ops=23 regs=10 captures=0 name=DecodeStream_getChar threaded=79999 switch=44894 attempts=12130 warmup=4294967294 retired=0 active=14 rejection=compiled
+SLJIT native id=796 calls=0 returns=0
+SLJIT pipeline id=796 inlined=0 recoveries=0 allocations=0 pushes=0 links=1
+SLJIT numeric id=796 homes=0
+SLJIT SSA calls id=796 frameless=0
+SLJIT readmiss id=796 pc=13 opcode=GETPROPC_CACHED hits=9608 changes=1 shape=246 class=3 rep=3 chain=0 cached=1
+SLJIT code id=796 start=0x105788b88 bytes=6692 fragment=0 fragment_bytes=0
+SLJIT function DecodeStream_getChar begin=0 ops=23 bytes=6692 hits=9630 returns=6 stalled=0 charged_edges=6 budget_exits=0 id=796 line=27800
+SLJIT exit DecodeStream_getChar begin=0 pc=6 op=65 count=6 id=796 line=27804 opcode=RET
+SLJIT exit DecodeStream_getChar begin=0 pc=12 op=77 count=16 id=796 line=27807 opcode=GETGLOBAL
+SLJIT exit DecodeStream_getChar begin=0 pc=17 op=212 count=9578 id=796 line=27807 opcode=TONUMERIC
+SLJIT exit DecodeStream_getChar begin=0 pc=21 op=218 count=30 id=796 line=27807 opcode=TAILCALL_CALL
+SLJIT coverage id=798 line=27816 ops=6 regs=4 captures=0 name=DecodeStream_skip threaded=7424 switch=70 attempts=4464 warmup=4294967294 retired=0 active=4 rejection=compiled
+SLJIT native id=798 calls=0 returns=0
+SLJIT pipeline id=798 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=798 homes=0
+SLJIT SSA calls id=798 frameless=0
+SLJIT code id=798 start=0x10993f8f8 bytes=1684 fragment=0 fragment_bytes=0
+SLJIT function DecodeStream_skip begin=0 ops=6 bytes=1684 hits=3872 returns=3872 stalled=0 charged_edges=0 budget_exits=0 id=798 line=27816
+SLJIT exit DecodeStream_skip begin=0 pc=5 op=66 count=3872 id=798 line=27819 opcode=RETUNDEF
+SLJIT coverage id=799 line=27821 ops=3 regs=5 captures=0 name=DecodeStream_reset threaded=6 switch=1 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=800 line=27732 ops=22 regs=7 captures=0 name=DecodeStreamClosure threaded=22 switch=11 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=804 line=27828 ops=17 regs=7 captures=1 name=FakeStreamClosure threaded=17 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=807 line=27867 ops=14 regs=7 captures=1 name=StreamsSequenceStreamClosure threaded=14 switch=7 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=808 line=27989 ops=71 regs=13 captures=0 name=FlateStream threaded=860 switch=32 attempts=20 warmup=17 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=809 line=28016 ops=30 regs=11 captures=0 name=FlateStream_getBits threaded=45958 switch=4154 attempts=9426 warmup=4294967294 retired=0 active=10 rejection=compiled
+SLJIT native id=809 calls=0 returns=0
+SLJIT pipeline id=809 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=809 homes=1
+SLJIT SSA calls id=809 frameless=0
+SLJIT code id=809 start=0x105293bb0 bytes=9856 fragment=0 fragment_bytes=0
+SLJIT function FlateStream_getBits begin=0 ops=30 bytes=9856 hits=6264 returns=4902 stalled=0 charged_edges=1362 budget_exits=2 id=809 line=28016
+SLJIT exit FlateStream_getBits begin=0 pc=12 op=37 count=1362 id=809 line=28023 opcode=EQ
+SLJIT exit FlateStream_getBits begin=0 pc=29 op=65 count=4902 id=809 line=28032 opcode=RET
+SLJIT coverage id=810 line=28036 ops=49 regs=17 captures=0 name=FlateStream_getCode threaded=1877957 switch=396837 attempts=420688 warmup=4294967294 retired=0 active=16 rejection=compiled
+SLJIT native id=810 calls=0 returns=0
+SLJIT pipeline id=810 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=810 homes=0
+SLJIT SSA calls id=810 frameless=0
+SLJIT code id=810 start=0x1052b6d88 bytes=19876 fragment=0 fragment_bytes=0
+SLJIT function FlateStream_getCode begin=0 ops=49 bytes=19876 hits=361316 returns=180287 stalled=0 charged_edges=181017 budget_exits=189 id=810 line=28036
+SLJIT exit FlateStream_getCode begin=0 pc=16 op=37 count=181029 id=810 line=28045 opcode=EQ
+SLJIT exit FlateStream_getCode begin=0 pc=48 op=65 count=180287 id=810 line=28058 opcode=RET
+SLJIT coverage id=811 line=28063 ops=57 regs=18 captures=0 name=flateStreamGenerateHuffmanTable threaded=72517 switch=25721 attempts=45738 warmup=4294967295 retired=3 active=20 rejection=compiled
+SLJIT native id=811 calls=0 returns=0
+SLJIT pipeline id=811 inlined=0 recoveries=0 allocations=41 pushes=0 links=0
+SLJIT numeric id=811 homes=0
+SLJIT SSA calls id=811 frameless=0
+SLJIT code id=811 start=0x105296f78 bytes=16136 fragment=0x10529aeb8 fragment_bytes=56
+SLJIT function flateStreamGenerateHuffmanTable begin=0 ops=57 bytes=16192 hits=4229 returns=0 stalled=22 charged_edges=87102 budget_exits=95 id=811 line=28063
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=0 op=190 count=8 id=811 line=28063 opcode=GETPROPC_CACHED
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=8 op=170 count=45 id=811 line=28067 opcode=JMP_LT
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=11 op=77 count=2 id=811 line=28074 opcode=GETGLOBAL
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=13 op=63 count=7 id=811 line=28074 opcode=NEW_OBJ
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=35 op=170 count=39 id=811 line=28083 opcode=JMP_LT
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=43 op=170 count=4034 id=811 line=28089 opcode=JMP_LT
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=46 op=170 count=53 id=811 line=28078 opcode=JMP_LT
+SLJIT exit flateStreamGenerateHuffmanTable begin=0 pc=54 op=233 count=41 id=811 line=28097 opcode=INITELEM
+SLJIT loop flateStreamGenerateHuffmanTable begin=29 end=35 hits=1291 iterations=9924
+SLJIT loop code id=811 begin=29 end=35 bytes=1396
+SLJIT ssa name=flateStreamGenerateHuffmanTable begin=29 end=35 hits=1291 iterations=9924
+SLJIT loop flateStreamGenerateHuffmanTable begin=4 end=8 hits=63 iterations=5902
+SLJIT loop code id=811 begin=4 end=8 bytes=1128
+SLJIT ssa name=flateStreamGenerateHuffmanTable begin=4 end=8 hits=63 iterations=5902
+SLJIT loop flateStreamGenerateHuffmanTable begin=38 end=43 hits=5975 iterations=318712
+SLJIT loop code id=811 begin=38 end=43 bytes=1344
+SLJIT ssa name=flateStreamGenerateHuffmanTable begin=38 end=43 hits=5975 iterations=318712
+SLJIT coverage id=812 line=28100 ops=310 regs=40 captures=5 name=FlateStream_readBlock threaded=574614 switch=238153 attempts=241452 warmup=4294967295 retired=14 active=90 rejection=compiled
+SLJIT native id=812 calls=0 returns=0
+SLJIT pipeline id=812 inlined=0 recoveries=0 allocations=0 pushes=0 links=13
+SLJIT numeric id=812 homes=0
+SLJIT SSA calls id=812 frameless=0
+SLJIT readmiss id=812 pc=18 opcode=GETTHISC hits=2 changes=1 shape=2806 class=1 rep=0 chain=0 cached=0
+SLJIT readmiss id=812 pc=19 opcode=GETTHISC hits=2 changes=1 shape=2806 class=1 rep=0 chain=0 cached=0
+SLJIT readmiss id=812 pc=225 opcode=GETTHISC hits=8 changes=1 shape=2806 class=1 rep=3 chain=0 cached=1
+SLJIT readmiss id=812 pc=232 opcode=GETTHISC hits=8 changes=1 shape=2806 class=1 rep=1 chain=0 cached=1
+SLJIT code id=812 start=0x10529edd8 bytes=93044 fragment=0x105296f20 fragment_bytes=56
+SLJIT function FlateStream_readBlock begin=0 ops=310 bytes=93100 hits=179048 returns=18 stalled=9 charged_edges=167101 budget_exits=157 id=812 line=28100
+SLJIT exit FlateStream_readBlock begin=0 pc=8 op=61 count=8 id=812 line=28102 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=26 op=37 count=2 id=812 line=28112 opcode=EQ
+SLJIT exit FlateStream_readBlock begin=0 pc=77 op=232 count=1 id=812 line=28128 opcode=PUTTHISC
+SLJIT exit FlateStream_readBlock begin=0 pc=82 op=61 count=2 id=812 line=28131 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=85 op=232 count=2 id=812 line=28133 opcode=PUTTHISC
+SLJIT exit FlateStream_readBlock begin=0 pc=94 op=177 count=4720 id=812 line=28135 opcode=JMP_NEQ
+SLJIT exit FlateStream_readBlock begin=0 pc=103 op=66 count=1 id=812 line=28142 opcode=RETUNDEF
+SLJIT exit FlateStream_readBlock begin=0 pc=115 op=61 count=12 id=812 line=28151 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=121 op=61 count=8 id=812 line=28152 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=126 op=61 count=8 id=812 line=28153 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=128 op=77 count=6 id=812 line=28156 opcode=GETGLOBAL
+SLJIT exit FlateStream_readBlock begin=0 pc=130 op=190 count=2 id=812 line=28156 opcode=GETPROPC_CACHED
+SLJIT exit FlateStream_readBlock begin=0 pc=132 op=63 count=8 id=812 line=28156 opcode=NEW_OBJ
+SLJIT exit FlateStream_readBlock begin=0 pc=141 op=61 count=202 id=812 line=28159 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=148 op=61 count=12 id=812 line=28160 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=153 op=77 count=10 id=812 line=28166 opcode=GETGLOBAL
+SLJIT exit FlateStream_readBlock begin=0 pc=155 op=63 count=2 id=812 line=28166 opcode=NEW_OBJ
+SLJIT exit FlateStream_readBlock begin=0 pc=161 op=61 count=979 id=812 line=28168 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=192 op=61 count=191 id=812 line=28180 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=200 op=212 count=438 id=812 line=28181 opcode=TONUMERIC
+SLJIT exit FlateStream_readBlock begin=0 pc=206 op=190 count=5 id=812 line=28186 opcode=GETPROPC_CACHED
+SLJIT exit FlateStream_readBlock begin=0 pc=215 op=190 count=8 id=812 line=28188 opcode=GETPROPC_CACHED
+SLJIT exit FlateStream_readBlock begin=0 pc=236 op=61 count=165937 id=812 line=28197 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=245 op=61 count=97 id=812 line=28200 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=247 op=190 count=8 id=812 line=28201 opcode=GETPROPC_CACHED
+SLJIT exit FlateStream_readBlock begin=0 pc=256 op=66 count=17 id=812 line=28208 opcode=RETUNDEF
+SLJIT exit FlateStream_readBlock begin=0 pc=260 op=50 count=3154 id=812 line=28211 opcode=GETPROP
+SLJIT exit FlateStream_readBlock begin=0 pc=275 op=61 count=8 id=812 line=28216 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=285 op=61 count=8 id=812 line=28220 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=295 op=61 count=33 id=812 line=28223 opcode=CALL
+SLJIT exit FlateStream_readBlock begin=0 pc=297 op=190 count=8 id=812 line=28224 opcode=GETPROPC_CACHED
+SLJIT exit FlateStream_readBlock begin=0 pc=303 op=50 count=2 id=812 line=28227 opcode=GETPROP
+SLJIT exit FlateStream_readBlock begin=0 pc=307 op=170 count=3149 id=812 line=28226 opcode=JMP_LT
+SLJIT loop FlateStream_readBlock begin=301 end=307 hits=4913 iterations=31156
+SLJIT loop code id=812 begin=301 end=307 bytes=1824
+SLJIT ssa name=FlateStream_readBlock begin=301 end=307 hits=4913 iterations=31156
+SLJIT loop FlateStream_readBlock begin=195 end=202 hits=637 iterations=3611
+SLJIT loop code id=812 begin=195 end=202 bytes=1152
+SLJIT ssa name=FlateStream_readBlock begin=195 end=202 hits=637 iterations=3611
+SLJIT coverage id=813 line=27895 ops=1358 regs=13 captures=1 name=FlateStreamClosure threaded=1358 switch=46 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=817 line=28234 ops=17 regs=7 captures=1 name=PredictorStreamClosure threaded=17 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=826 line=28419 ops=30 regs=9 captures=1 name=JpegStreamClosure threaded=30 switch=19 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=830 line=28529 ops=17 regs=7 captures=1 name=JpxStreamClosure threaded=17 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=833 line=28633 ops=19 regs=8 captures=1 name=DecryptStreamClosure threaded=19 switch=10 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=836 line=28659 ops=14 regs=7 captures=1 name=Ascii85StreamClosure threaded=14 switch=7 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=839 line=28734 ops=91 regs=8 captures=1 name=AsciiHexStreamClosure threaded=91 switch=33 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=842 line=28798 ops=14 regs=7 captures=1 name=RunLengthStreamClosure threaded=14 switch=7 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=854 line=28843 ops=3014 regs=24 captures=1 name=CCITTFaxStreamClosure threaded=3014 switch=218 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=858 line=29810 ops=17 regs=7 captures=1 name=LZWStreamClosure threaded=17 switch=9 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=859 line=29993 ops=15 regs=9 captures=1 name=messageHandlerOn threaded=216 switch=36 attempts=24 warmup=24 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=860 line=30006 ops=21 regs=11 captures=0 name=messageHandlerSend threaded=330 switch=33 attempts=30 warmup=25 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=862 line=30027 ops=44 regs=15 captures=2 name=wphSetupDoc threaded=88 switch=28 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=863 line=30043 ops=24 regs=9 captures=2 name=wphSetupGetPage threaded=48 switch=12 attempts=2 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=865 line=30063 ops=105 regs=20 captures=2 name=wphSetupRenderPage threaded=326 switch=18 attempts=2 warmup=19 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=866 line=30020 ops=32 regs=7 captures=0 name=wphSetup threaded=64 switch=29 attempts=2 warmup=2 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=896 line=30178 ops=59 regs=19 captures=0 name=jpegImage threaded=59 switch=33 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=929 line=32128 ops=12 regs=7 captures=0 name=TagTreeClosure threaded=12 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=935 line=32187 ops=14 regs=7 captures=0 name=InclusionTreeClosure threaded=14 switch=7 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=942 line=32266 ops=492 regs=8 captures=0 name=ArithmeticDecoderClosure threaded=492 switch=14 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=952 line=32429 ops=103 regs=12 captures=0 name=BitModelClosure threaded=103 switch=26 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=956 line=32736 ops=9 regs=6 captures=0 name=TransformClosure threaded=9 switch=6 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=959 line=32865 ops=14 regs=7 captures=1 name=IrreversibleTransformClosure threaded=14 switch=7 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=962 line=32919 ops=14 regs=7 captures=1 name=ReversibleTransformClosure threaded=14 switch=7 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=963 line=31087 ops=102 regs=32 captures=0 name=JpxImageClosure threaded=102 switch=70 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=971 line=32950 ops=1049 regs=11 captures=0 name=bidiClosure threaded=1049 switch=28 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=979 line=33383 ops=14 regs=8 captures=0 name=MetadataClosure threaded=14 switch=8 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=980 line=813 ops=208277 regs=174 captures=0 name=pdfjsWrapper threaded=208250 switch=7386 attempts=1 warmup=0 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=981 line=33537 ops=64 regs=15 captures=0 name= threaded=74 switch=23 attempts=1 warmup=4 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=982 line=1 ops=500 regs=19 captures=0 name= threaded=459 switch=229 attempts=1 warmup=1 retired=0 active=0 rejection=not attempted
+SLJIT totals functions=106 loops=14 templates=0 hits=981338 code_bytes=2095672
+SLJIT budget bytes=2095672 limit=4194304 native_work=0 evictions=0
