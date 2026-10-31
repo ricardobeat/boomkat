@@ -1,0 +1,343 @@
+SLJIT live line=1 native=0x104da4010 bytes=3944
+SLJIT function compiled  pc=0..28 function_ops=28 regs=5 code_bytes=3944 plan_bytes=19356
+SLJIT live line=2 native=0x104da9fb8 bytes=41012
+SLJIT function compiled wideContinuation pc=0..256 function_ops=296 regs=266 code_bytes=41012 plan_bytes=21408
+SLJIT live line=1 native=0x104da9b50 bytes=1108
+SLJIT function compiled sink pc=0..1 function_ops=1 regs=1 code_bytes=1108 plan_bytes=19113
+WIDE_CFG_EXIT_LIVE 0 2
+WIDE_CFG_CODE fd7bbaa9f35305a9f55b04a9f76303a9f96b02a9fb0f00f9fd030091f30300aaf40301aa600240f903fc70d32afe9fd27f000aeb281100542afe9fd27f000aeba100005400bc70d300fc50930000629e020000140000679e0340601e600640f903fc70d32afe9fd27f000aeb400300542afe9fd27f000aeb080f00540000679e0020601ea60e0054013cf8d22100679e0020611e240e0054013ce8d22100679e0020611eaa0d005403f87fd3630000b51f0000f12b0d00540000789e0100629e0020611ee9079f9a247940fa610c005407000014037c409301bc70d321fc50933f0003eba10b0054e00301aae40300aa600a40f903fc70d32afe9fd27f000aebc80a00542afe9fd27f000aeba100005400bc70d300fc50930000629e020000140000679e0240601ee00304aa0400629e4528641e050080d2a040601e0020601e460a0054013cf8d22100679e0020611ec4090054013ce8d22100679e0020611e4a0900540600789ec67c4093c7001faae77c409386040031460e0054c67c4093e00306aa0400629e8040601e6140601e0020611e64000054a0feffd203000014200080d2a0fefff2f50300aae00307aa0400629e9f0600f149110054940600d1e00315aa60da01f9e40306aa8240601e60da41f9600e00f960da41f901fc70d3aafe9fd23f000aeb2113005400bc4092c0f9ffb5e00304aa00bc40922afeffd200000aaa600600f94040601e0000669e03fc70d32afe9fd27f000aeb43000054e02f4db2600a00f9c90180d269ca01f974ce01f9a00280d2fd7b40a9f35345a9f55b44a9f76343a9f96b42a9fb0f40f9ff830191c0035fd6090180d269ca01f974ce01f9c00180d2fd7b40a9f35345a9f55b44a9f76343a9f96b42a9fb0f40f9ff830191c0035fd66040601e0000669e03fc70d32afe9fd27f000aeb43000054e02f4db2600200f9e00304aa00bc40922afeffd200000aaa600600f94040601e0000669e03fc70d32afe9fd27f000aeb43000054e02f4db2600a00f9a040601e0000669e03fc70d32afe9fd27f000aeb43000054e02f4db2600e00f9e00305aa00bc40922afeffd200000aaa601200f9e90380d269ca01f974ce01f9000280d2fd7b40a9f35345a9f55b44a9f76343a9f96b42a9fb0f40f9ff830191c0035fd66040601e0000669e03fc70d32afe9fd27f000aeb43000054e02f4db2600200f9e00304aa00bc40922afeffd200000aaa600600f9e00307aa00bc40922afeffd200000aaa600a00f9e00307aa00bc40922afeffd200000aaa600e00f9e00305aa00bc40922afeffd200000aaa601200f9e90380d269ca01f974ce01f9400280d2fd7b40a9f35345a9f55b44a9f76343a9f96b42a9fb0f40f9ff830191c0035fd6e00306aa00bc40922afeffd200000aaa600600f98040601e0000669e03fc70d32afe9fd27f000aeb43000054e02f4db2600a00f9e00315aa600e00f9c90180d269ca01f974ce01f9800280d2fd7b40a9f35345a9f55b44a9f76343a9f96b42a9fb0f40f9ff830191c0035fd6e00304aa00bc40922afeffd200000aaa600600f94040601e0000669e03fc70d32afe9fd27f000aeb43000054e02f4db2600a00f9c90180d269ca01f974ce01f9800280d2fd7b40a9f35345a9f55b44a9f76343a9f96b42a9fb0f40f9ff830191c0035fd6
+SLJIT loop compiled wideContinuation pc=14..20 code_bytes=1200 plan_bytes=3144 ssa=1 mem=0
+PASS
+SLJIT coverage id=0 line=1 ops=1 regs=1 captures=0 name=sink threaded=300 switch=0 attempts=300 warmup=4294967294 retired=0 active=1 rejection=compiled
+SLJIT native id=0 calls=0 returns=0
+SLJIT pipeline id=0 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=0 homes=0
+SLJIT SSA calls id=0 frameless=0
+SLJIT code id=0 start=0x104da9b50 bytes=1108 fragment=0 fragment_bytes=0
+SLJIT function sink begin=0 ops=1 bytes=1108 hits=300 returns=300 stalled=300 charged_edges=0 budget_exits=0 id=0 line=1
+SLJIT exit sink begin=0 pc=0 op=65 count=300 id=0 line=1 opcode=RET
+SLJIT map id=0 kind=entry start=0x104da9b50 end=0x104da9b9c
+SLJIT map id=0 kind=exit start=0x104da9ccc end=0x104da9d10
+SLJIT map id=0 kind=call_entry start=0x104da9d10 end=0x104da9fa4
+SLJIT map id=0 kind=body depth=0 frame=0 pc=0 opcode=RET start=0x104da9b9c end=0x104da9ccc
+SLJIT coverage id=1 line=2 ops=296 regs=266 captures=0 name=wideContinuation threaded=12154 switch=1197 attempts=897 warmup=4294967295 retired=0 active=8 rejection=compiled
+SLJIT native id=1 calls=0 returns=0
+SLJIT pipeline id=1 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=1 homes=0
+SLJIT SSA calls id=1 frameless=0
+SLJIT code id=1 start=0x104da9fb8 bytes=41012 fragment=0 fragment_bytes=0
+SLJIT function wideContinuation begin=0 ops=256 bytes=41012 hits=896 returns=0 stalled=2 charged_edges=149465 budget_exits=293 id=1 line=2
+SLJIT exit wideContinuation begin=0 pc=2 op=74 count=2 id=1 line=2 opcode=DECLVAR_HOIST
+SLJIT exit wideContinuation begin=0 pc=4 op=74 count=2 id=1 line=2 opcode=DECLVAR_HOIST
+SLJIT exit wideContinuation begin=0 pc=7 op=73 count=1 id=1 line=2 opcode=DECLVAR
+SLJIT exit wideContinuation begin=0 pc=10 op=73 count=300 id=1 line=2 opcode=DECLVAR
+SLJIT exit wideContinuation begin=0 pc=20 op=48 count=290 id=1 line=2 opcode=IF_TRUE
+SLJIT exit wideContinuation begin=0 pc=21 op=77 count=3 id=1 line=2 opcode=GETGLOBAL
+SLJIT map id=1 kind=entry start=0x104da9fb8 end=0x104daa004
+SLJIT map id=1 kind=exit start=0x104db1fb0 end=0x104db3fec
+SLJIT map id=1 kind=body depth=0 frame=0 pc=0 opcode=DECLVAR start=0x104daa004 end=0x104daa020
+SLJIT map id=1 kind=body depth=0 frame=0 pc=1 opcode=LDUNDEF start=0x104daa020 end=0x104daa0a0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=2 opcode=DECLVAR_HOIST start=0x104daa0a0 end=0x104daa0bc
+SLJIT map id=1 kind=body depth=0 frame=0 pc=3 opcode=LDUNDEF start=0x104daa0bc end=0x104daa13c
+SLJIT map id=1 kind=body depth=0 frame=0 pc=4 opcode=DECLVAR_HOIST start=0x104daa13c end=0x104daa158
+SLJIT map id=1 kind=body depth=0 frame=0 pc=5 opcode=LDINT start=0x104daa158 end=0x104daa1d8
+SLJIT map id=1 kind=body depth=0 frame=0 pc=6 opcode=LDREG start=0x104daa1d8 end=0x104daa258
+SLJIT map id=1 kind=body depth=0 frame=0 pc=7 opcode=DECLVAR start=0x104daa258 end=0x104daa274
+SLJIT map id=1 kind=body depth=0 frame=0 pc=8 opcode=LDINT start=0x104daa274 end=0x104daa2f4
+SLJIT map id=1 kind=body depth=0 frame=0 pc=9 opcode=LDREG start=0x104daa2f4 end=0x104daa374
+SLJIT map id=1 kind=body depth=0 frame=0 pc=10 opcode=DECLVAR start=0x104daa374 end=0x104daa390
+SLJIT map id=1 kind=body depth=0 frame=0 pc=11 opcode=LDINT start=0x104daa390 end=0x104daa410
+SLJIT map id=1 kind=body depth=0 frame=0 pc=12 opcode=LDREG start=0x104daa410 end=0x104daa490
+SLJIT map id=1 kind=body depth=0 frame=0 pc=13 opcode=JUMP start=0x104daa490 end=0x104daa494
+SLJIT map id=1 kind=body depth=0 frame=0 pc=14 opcode=ADD start=0x104daa494 end=0x104daa538
+SLJIT map id=1 kind=body depth=0 frame=0 pc=15 opcode=LDINT start=0x104daa538 end=0x104daa5b8
+SLJIT map id=1 kind=body depth=0 frame=0 pc=16 opcode=BOR start=0x104daa5b8 end=0x104daa664
+SLJIT map id=1 kind=body depth=0 frame=0 pc=17 opcode=LDREG start=0x104daa664 end=0x104daa6e4
+SLJIT map id=1 kind=body depth=0 frame=0 pc=18 opcode=INC start=0x104daa6e4 end=0x104daa79c
+SLJIT map id=1 kind=body depth=0 frame=0 pc=19 opcode=LT start=0x104daa79c end=0x104daa8d0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=20 opcode=IF_TRUE start=0x104daa8d0 end=0x104daa960
+SLJIT map id=1 kind=body depth=0 frame=0 pc=21 opcode=GETGLOBAL start=0x104daa960 end=0x104daaa70
+SLJIT map id=1 kind=body depth=0 frame=0 pc=22 opcode=LDREG start=0x104daaa70 end=0x104daab30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=23 opcode=LDINT start=0x104daab30 end=0x104daabb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=24 opcode=LDINT start=0x104daabb0 end=0x104daac30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=25 opcode=LDINT start=0x104daac30 end=0x104daacb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=26 opcode=LDINT start=0x104daacb0 end=0x104daad30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=27 opcode=LDINT start=0x104daad30 end=0x104daadb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=28 opcode=LDINT start=0x104daadb0 end=0x104daae30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=29 opcode=LDINT start=0x104daae30 end=0x104daaeb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=30 opcode=LDINT start=0x104daaeb0 end=0x104daaf30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=31 opcode=LDINT start=0x104daaf30 end=0x104daafb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=32 opcode=LDINT start=0x104daafb0 end=0x104dab030
+SLJIT map id=1 kind=body depth=0 frame=0 pc=33 opcode=LDINT start=0x104dab030 end=0x104dab0b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=34 opcode=LDINT start=0x104dab0b0 end=0x104dab130
+SLJIT map id=1 kind=body depth=0 frame=0 pc=35 opcode=LDINT start=0x104dab130 end=0x104dab1b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=36 opcode=LDINT start=0x104dab1b0 end=0x104dab230
+SLJIT map id=1 kind=body depth=0 frame=0 pc=37 opcode=LDINT start=0x104dab230 end=0x104dab2b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=38 opcode=LDINT start=0x104dab2b0 end=0x104dab330
+SLJIT map id=1 kind=body depth=0 frame=0 pc=39 opcode=LDINT start=0x104dab330 end=0x104dab3b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=40 opcode=LDINT start=0x104dab3b0 end=0x104dab430
+SLJIT map id=1 kind=body depth=0 frame=0 pc=41 opcode=LDINT start=0x104dab430 end=0x104dab4b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=42 opcode=LDINT start=0x104dab4b0 end=0x104dab530
+SLJIT map id=1 kind=body depth=0 frame=0 pc=43 opcode=LDINT start=0x104dab530 end=0x104dab5b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=44 opcode=LDINT start=0x104dab5b0 end=0x104dab630
+SLJIT map id=1 kind=body depth=0 frame=0 pc=45 opcode=LDINT start=0x104dab630 end=0x104dab6b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=46 opcode=LDINT start=0x104dab6b0 end=0x104dab730
+SLJIT map id=1 kind=body depth=0 frame=0 pc=47 opcode=LDINT start=0x104dab730 end=0x104dab7b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=48 opcode=LDINT start=0x104dab7b0 end=0x104dab830
+SLJIT map id=1 kind=body depth=0 frame=0 pc=49 opcode=LDINT start=0x104dab830 end=0x104dab8b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=50 opcode=LDINT start=0x104dab8b0 end=0x104dab930
+SLJIT map id=1 kind=body depth=0 frame=0 pc=51 opcode=LDINT start=0x104dab930 end=0x104dab9b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=52 opcode=LDINT start=0x104dab9b0 end=0x104daba30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=53 opcode=LDINT start=0x104daba30 end=0x104dabab0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=54 opcode=LDINT start=0x104dabab0 end=0x104dabb30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=55 opcode=LDINT start=0x104dabb30 end=0x104dabbb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=56 opcode=LDINT start=0x104dabbb0 end=0x104dabc30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=57 opcode=LDINT start=0x104dabc30 end=0x104dabcb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=58 opcode=LDINT start=0x104dabcb0 end=0x104dabd30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=59 opcode=LDINT start=0x104dabd30 end=0x104dabdb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=60 opcode=LDINT start=0x104dabdb0 end=0x104dabe30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=61 opcode=LDINT start=0x104dabe30 end=0x104dabeb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=62 opcode=LDINT start=0x104dabeb0 end=0x104dabf30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=63 opcode=LDINT start=0x104dabf30 end=0x104dabfb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=64 opcode=LDINT start=0x104dabfb0 end=0x104dac030
+SLJIT map id=1 kind=body depth=0 frame=0 pc=65 opcode=LDINT start=0x104dac030 end=0x104dac0b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=66 opcode=LDINT start=0x104dac0b0 end=0x104dac130
+SLJIT map id=1 kind=body depth=0 frame=0 pc=67 opcode=LDINT start=0x104dac130 end=0x104dac1b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=68 opcode=LDINT start=0x104dac1b0 end=0x104dac230
+SLJIT map id=1 kind=body depth=0 frame=0 pc=69 opcode=LDINT start=0x104dac230 end=0x104dac2b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=70 opcode=LDINT start=0x104dac2b0 end=0x104dac330
+SLJIT map id=1 kind=body depth=0 frame=0 pc=71 opcode=LDINT start=0x104dac330 end=0x104dac3b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=72 opcode=LDINT start=0x104dac3b0 end=0x104dac430
+SLJIT map id=1 kind=body depth=0 frame=0 pc=73 opcode=LDINT start=0x104dac430 end=0x104dac4b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=74 opcode=LDINT start=0x104dac4b0 end=0x104dac530
+SLJIT map id=1 kind=body depth=0 frame=0 pc=75 opcode=LDINT start=0x104dac530 end=0x104dac5b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=76 opcode=LDINT start=0x104dac5b0 end=0x104dac630
+SLJIT map id=1 kind=body depth=0 frame=0 pc=77 opcode=LDINT start=0x104dac630 end=0x104dac6b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=78 opcode=LDINT start=0x104dac6b0 end=0x104dac730
+SLJIT map id=1 kind=body depth=0 frame=0 pc=79 opcode=LDINT start=0x104dac730 end=0x104dac7b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=80 opcode=LDINT start=0x104dac7b0 end=0x104dac830
+SLJIT map id=1 kind=body depth=0 frame=0 pc=81 opcode=LDINT start=0x104dac830 end=0x104dac8b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=82 opcode=LDINT start=0x104dac8b0 end=0x104dac930
+SLJIT map id=1 kind=body depth=0 frame=0 pc=83 opcode=LDINT start=0x104dac930 end=0x104dac9b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=84 opcode=LDINT start=0x104dac9b0 end=0x104daca30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=85 opcode=LDINT start=0x104daca30 end=0x104dacab0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=86 opcode=LDINT start=0x104dacab0 end=0x104dacb30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=87 opcode=LDINT start=0x104dacb30 end=0x104dacbb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=88 opcode=LDINT start=0x104dacbb0 end=0x104dacc30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=89 opcode=LDINT start=0x104dacc30 end=0x104daccb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=90 opcode=LDINT start=0x104daccb0 end=0x104dacd30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=91 opcode=LDINT start=0x104dacd30 end=0x104dacdb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=92 opcode=LDINT start=0x104dacdb0 end=0x104dace30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=93 opcode=LDINT start=0x104dace30 end=0x104daceb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=94 opcode=LDINT start=0x104daceb0 end=0x104dacf30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=95 opcode=LDINT start=0x104dacf30 end=0x104dacfb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=96 opcode=LDINT start=0x104dacfb0 end=0x104dad030
+SLJIT map id=1 kind=body depth=0 frame=0 pc=97 opcode=LDINT start=0x104dad030 end=0x104dad0b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=98 opcode=LDINT start=0x104dad0b0 end=0x104dad130
+SLJIT map id=1 kind=body depth=0 frame=0 pc=99 opcode=LDINT start=0x104dad130 end=0x104dad1b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=100 opcode=LDINT start=0x104dad1b0 end=0x104dad230
+SLJIT map id=1 kind=body depth=0 frame=0 pc=101 opcode=LDINT start=0x104dad230 end=0x104dad2b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=102 opcode=LDINT start=0x104dad2b0 end=0x104dad330
+SLJIT map id=1 kind=body depth=0 frame=0 pc=103 opcode=LDINT start=0x104dad330 end=0x104dad3b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=104 opcode=LDINT start=0x104dad3b0 end=0x104dad430
+SLJIT map id=1 kind=body depth=0 frame=0 pc=105 opcode=LDINT start=0x104dad430 end=0x104dad4b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=106 opcode=LDINT start=0x104dad4b0 end=0x104dad530
+SLJIT map id=1 kind=body depth=0 frame=0 pc=107 opcode=LDINT start=0x104dad530 end=0x104dad5b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=108 opcode=LDINT start=0x104dad5b0 end=0x104dad630
+SLJIT map id=1 kind=body depth=0 frame=0 pc=109 opcode=LDINT start=0x104dad630 end=0x104dad6b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=110 opcode=LDINT start=0x104dad6b0 end=0x104dad730
+SLJIT map id=1 kind=body depth=0 frame=0 pc=111 opcode=LDINT start=0x104dad730 end=0x104dad7b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=112 opcode=LDINT start=0x104dad7b0 end=0x104dad830
+SLJIT map id=1 kind=body depth=0 frame=0 pc=113 opcode=LDINT start=0x104dad830 end=0x104dad8b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=114 opcode=LDINT start=0x104dad8b0 end=0x104dad930
+SLJIT map id=1 kind=body depth=0 frame=0 pc=115 opcode=LDINT start=0x104dad930 end=0x104dad9b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=116 opcode=LDINT start=0x104dad9b0 end=0x104dada30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=117 opcode=LDINT start=0x104dada30 end=0x104dadab0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=118 opcode=LDINT start=0x104dadab0 end=0x104dadb30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=119 opcode=LDINT start=0x104dadb30 end=0x104dadbb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=120 opcode=LDINT start=0x104dadbb0 end=0x104dadc30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=121 opcode=LDINT start=0x104dadc30 end=0x104dadcb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=122 opcode=LDINT start=0x104dadcb0 end=0x104dadd30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=123 opcode=LDINT start=0x104dadd30 end=0x104daddb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=124 opcode=LDINT start=0x104daddb0 end=0x104dade30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=125 opcode=LDINT start=0x104dade30 end=0x104dadeb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=126 opcode=LDINT start=0x104dadeb0 end=0x104dadf30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=127 opcode=LDINT start=0x104dadf30 end=0x104dadfb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=128 opcode=LDINT start=0x104dadfb0 end=0x104dae030
+SLJIT map id=1 kind=body depth=0 frame=0 pc=129 opcode=LDINT start=0x104dae030 end=0x104dae0b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=130 opcode=LDINT start=0x104dae0b0 end=0x104dae130
+SLJIT map id=1 kind=body depth=0 frame=0 pc=131 opcode=LDINT start=0x104dae130 end=0x104dae1b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=132 opcode=LDINT start=0x104dae1b0 end=0x104dae230
+SLJIT map id=1 kind=body depth=0 frame=0 pc=133 opcode=LDINT start=0x104dae230 end=0x104dae2b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=134 opcode=LDINT start=0x104dae2b0 end=0x104dae330
+SLJIT map id=1 kind=body depth=0 frame=0 pc=135 opcode=LDINT start=0x104dae330 end=0x104dae3b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=136 opcode=LDINT start=0x104dae3b0 end=0x104dae430
+SLJIT map id=1 kind=body depth=0 frame=0 pc=137 opcode=LDINT start=0x104dae430 end=0x104dae4b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=138 opcode=LDINT start=0x104dae4b0 end=0x104dae530
+SLJIT map id=1 kind=body depth=0 frame=0 pc=139 opcode=LDINT start=0x104dae530 end=0x104dae5b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=140 opcode=LDINT start=0x104dae5b0 end=0x104dae630
+SLJIT map id=1 kind=body depth=0 frame=0 pc=141 opcode=LDINT start=0x104dae630 end=0x104dae6b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=142 opcode=LDINT start=0x104dae6b0 end=0x104dae730
+SLJIT map id=1 kind=body depth=0 frame=0 pc=143 opcode=LDINT start=0x104dae730 end=0x104dae7b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=144 opcode=LDINT start=0x104dae7b0 end=0x104dae830
+SLJIT map id=1 kind=body depth=0 frame=0 pc=145 opcode=LDINT start=0x104dae830 end=0x104dae8b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=146 opcode=LDINT start=0x104dae8b0 end=0x104dae930
+SLJIT map id=1 kind=body depth=0 frame=0 pc=147 opcode=LDINT start=0x104dae930 end=0x104dae9b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=148 opcode=LDINT start=0x104dae9b0 end=0x104daea30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=149 opcode=LDINT start=0x104daea30 end=0x104daeab0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=150 opcode=LDINT start=0x104daeab0 end=0x104daeb30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=151 opcode=LDINT start=0x104daeb30 end=0x104daebb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=152 opcode=LDINT start=0x104daebb0 end=0x104daec30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=153 opcode=LDINT start=0x104daec30 end=0x104daecb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=154 opcode=LDINT start=0x104daecb0 end=0x104daed30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=155 opcode=LDINT start=0x104daed30 end=0x104daedb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=156 opcode=LDINT start=0x104daedb0 end=0x104daee30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=157 opcode=LDINT start=0x104daee30 end=0x104daeeb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=158 opcode=LDINT start=0x104daeeb0 end=0x104daef30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=159 opcode=LDINT start=0x104daef30 end=0x104daefb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=160 opcode=LDINT start=0x104daefb0 end=0x104daf030
+SLJIT map id=1 kind=body depth=0 frame=0 pc=161 opcode=LDINT start=0x104daf030 end=0x104daf0b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=162 opcode=LDINT start=0x104daf0b0 end=0x104daf130
+SLJIT map id=1 kind=body depth=0 frame=0 pc=163 opcode=LDINT start=0x104daf130 end=0x104daf1b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=164 opcode=LDINT start=0x104daf1b0 end=0x104daf230
+SLJIT map id=1 kind=body depth=0 frame=0 pc=165 opcode=LDINT start=0x104daf230 end=0x104daf2b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=166 opcode=LDINT start=0x104daf2b0 end=0x104daf330
+SLJIT map id=1 kind=body depth=0 frame=0 pc=167 opcode=LDINT start=0x104daf330 end=0x104daf3b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=168 opcode=LDINT start=0x104daf3b0 end=0x104daf430
+SLJIT map id=1 kind=body depth=0 frame=0 pc=169 opcode=LDINT start=0x104daf430 end=0x104daf4b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=170 opcode=LDINT start=0x104daf4b0 end=0x104daf530
+SLJIT map id=1 kind=body depth=0 frame=0 pc=171 opcode=LDINT start=0x104daf530 end=0x104daf5b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=172 opcode=LDINT start=0x104daf5b0 end=0x104daf630
+SLJIT map id=1 kind=body depth=0 frame=0 pc=173 opcode=LDINT start=0x104daf630 end=0x104daf6b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=174 opcode=LDINT start=0x104daf6b0 end=0x104daf730
+SLJIT map id=1 kind=body depth=0 frame=0 pc=175 opcode=LDINT start=0x104daf730 end=0x104daf7b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=176 opcode=LDINT start=0x104daf7b0 end=0x104daf830
+SLJIT map id=1 kind=body depth=0 frame=0 pc=177 opcode=LDINT start=0x104daf830 end=0x104daf8b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=178 opcode=LDINT start=0x104daf8b0 end=0x104daf930
+SLJIT map id=1 kind=body depth=0 frame=0 pc=179 opcode=LDINT start=0x104daf930 end=0x104daf9b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=180 opcode=LDINT start=0x104daf9b0 end=0x104dafa30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=181 opcode=LDINT start=0x104dafa30 end=0x104dafab0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=182 opcode=LDINT start=0x104dafab0 end=0x104dafb30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=183 opcode=LDINT start=0x104dafb30 end=0x104dafbb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=184 opcode=LDINT start=0x104dafbb0 end=0x104dafc30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=185 opcode=LDINT start=0x104dafc30 end=0x104dafcb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=186 opcode=LDINT start=0x104dafcb0 end=0x104dafd30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=187 opcode=LDINT start=0x104dafd30 end=0x104dafdb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=188 opcode=LDINT start=0x104dafdb0 end=0x104dafe30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=189 opcode=LDINT start=0x104dafe30 end=0x104dafeb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=190 opcode=LDINT start=0x104dafeb0 end=0x104daff30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=191 opcode=LDINT start=0x104daff30 end=0x104daffb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=192 opcode=LDINT start=0x104daffb0 end=0x104db0030
+SLJIT map id=1 kind=body depth=0 frame=0 pc=193 opcode=LDINT start=0x104db0030 end=0x104db00b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=194 opcode=LDINT start=0x104db00b0 end=0x104db0130
+SLJIT map id=1 kind=body depth=0 frame=0 pc=195 opcode=LDINT start=0x104db0130 end=0x104db01b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=196 opcode=LDINT start=0x104db01b0 end=0x104db0230
+SLJIT map id=1 kind=body depth=0 frame=0 pc=197 opcode=LDINT start=0x104db0230 end=0x104db02b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=198 opcode=LDINT start=0x104db02b0 end=0x104db0330
+SLJIT map id=1 kind=body depth=0 frame=0 pc=199 opcode=LDINT start=0x104db0330 end=0x104db03b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=200 opcode=LDINT start=0x104db03b0 end=0x104db0430
+SLJIT map id=1 kind=body depth=0 frame=0 pc=201 opcode=LDINT start=0x104db0430 end=0x104db04b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=202 opcode=LDINT start=0x104db04b0 end=0x104db0530
+SLJIT map id=1 kind=body depth=0 frame=0 pc=203 opcode=LDINT start=0x104db0530 end=0x104db05b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=204 opcode=LDINT start=0x104db05b0 end=0x104db0630
+SLJIT map id=1 kind=body depth=0 frame=0 pc=205 opcode=LDINT start=0x104db0630 end=0x104db06b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=206 opcode=LDINT start=0x104db06b0 end=0x104db0730
+SLJIT map id=1 kind=body depth=0 frame=0 pc=207 opcode=LDINT start=0x104db0730 end=0x104db07b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=208 opcode=LDINT start=0x104db07b0 end=0x104db0830
+SLJIT map id=1 kind=body depth=0 frame=0 pc=209 opcode=LDINT start=0x104db0830 end=0x104db08b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=210 opcode=LDINT start=0x104db08b0 end=0x104db0930
+SLJIT map id=1 kind=body depth=0 frame=0 pc=211 opcode=LDINT start=0x104db0930 end=0x104db09b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=212 opcode=LDINT start=0x104db09b0 end=0x104db0a30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=213 opcode=LDINT start=0x104db0a30 end=0x104db0ab0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=214 opcode=LDINT start=0x104db0ab0 end=0x104db0b30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=215 opcode=LDINT start=0x104db0b30 end=0x104db0bb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=216 opcode=LDINT start=0x104db0bb0 end=0x104db0c30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=217 opcode=LDINT start=0x104db0c30 end=0x104db0cb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=218 opcode=LDINT start=0x104db0cb0 end=0x104db0d30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=219 opcode=LDINT start=0x104db0d30 end=0x104db0db0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=220 opcode=LDINT start=0x104db0db0 end=0x104db0e30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=221 opcode=LDINT start=0x104db0e30 end=0x104db0eb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=222 opcode=LDINT start=0x104db0eb0 end=0x104db0f30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=223 opcode=LDINT start=0x104db0f30 end=0x104db0fb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=224 opcode=LDINT start=0x104db0fb0 end=0x104db1030
+SLJIT map id=1 kind=body depth=0 frame=0 pc=225 opcode=LDINT start=0x104db1030 end=0x104db10b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=226 opcode=LDINT start=0x104db10b0 end=0x104db1130
+SLJIT map id=1 kind=body depth=0 frame=0 pc=227 opcode=LDINT start=0x104db1130 end=0x104db11b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=228 opcode=LDINT start=0x104db11b0 end=0x104db1230
+SLJIT map id=1 kind=body depth=0 frame=0 pc=229 opcode=LDINT start=0x104db1230 end=0x104db12b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=230 opcode=LDINT start=0x104db12b0 end=0x104db1330
+SLJIT map id=1 kind=body depth=0 frame=0 pc=231 opcode=LDINT start=0x104db1330 end=0x104db13b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=232 opcode=LDINT start=0x104db13b0 end=0x104db1430
+SLJIT map id=1 kind=body depth=0 frame=0 pc=233 opcode=LDINT start=0x104db1430 end=0x104db14b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=234 opcode=LDINT start=0x104db14b0 end=0x104db1530
+SLJIT map id=1 kind=body depth=0 frame=0 pc=235 opcode=LDINT start=0x104db1530 end=0x104db15b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=236 opcode=LDINT start=0x104db15b0 end=0x104db1630
+SLJIT map id=1 kind=body depth=0 frame=0 pc=237 opcode=LDINT start=0x104db1630 end=0x104db16b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=238 opcode=LDINT start=0x104db16b0 end=0x104db1730
+SLJIT map id=1 kind=body depth=0 frame=0 pc=239 opcode=LDINT start=0x104db1730 end=0x104db17b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=240 opcode=LDINT start=0x104db17b0 end=0x104db1830
+SLJIT map id=1 kind=body depth=0 frame=0 pc=241 opcode=LDINT start=0x104db1830 end=0x104db18b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=242 opcode=LDINT start=0x104db18b0 end=0x104db1930
+SLJIT map id=1 kind=body depth=0 frame=0 pc=243 opcode=LDINT start=0x104db1930 end=0x104db19b0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=244 opcode=LDINT start=0x104db19b0 end=0x104db1a30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=245 opcode=LDINT start=0x104db1a30 end=0x104db1ab0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=246 opcode=LDINT start=0x104db1ab0 end=0x104db1b30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=247 opcode=LDINT start=0x104db1b30 end=0x104db1bb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=248 opcode=LDINT start=0x104db1bb0 end=0x104db1c30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=249 opcode=LDINT start=0x104db1c30 end=0x104db1cb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=250 opcode=LDINT start=0x104db1cb0 end=0x104db1d30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=251 opcode=LDINT start=0x104db1d30 end=0x104db1db0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=252 opcode=LDINT start=0x104db1db0 end=0x104db1e30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=253 opcode=LDINT start=0x104db1e30 end=0x104db1eb0
+SLJIT map id=1 kind=body depth=0 frame=0 pc=254 opcode=LDINT start=0x104db1eb0 end=0x104db1f30
+SLJIT map id=1 kind=body depth=0 frame=0 pc=255 opcode=LDINT start=0x104db1f30 end=0x104db1fb0
+SLJIT map id=1 kind=loop pc=14 start=0x104da9690 end=0x104da9b40
+SLJIT loop wideContinuation begin=14 end=20 hits=290 iterations=150535
+SLJIT loop code id=1 begin=14 end=20 bytes=1200
+SLJIT ssa name=wideContinuation begin=14 end=20 hits=290 iterations=150535
+SLJIT coverage id=2 line=1 ops=28 regs=5 captures=0 name= threaded=2095 switch=613 attempts=606 warmup=4294967295 retired=0 active=9 rejection=compiled
+SLJIT native id=2 calls=0 returns=0
+SLJIT pipeline id=2 inlined=0 recoveries=0 allocations=0 pushes=0 links=0
+SLJIT numeric id=2 homes=0
+SLJIT SSA calls id=2 frameless=0
+SLJIT code id=2 start=0x104da4010 bytes=3944 fragment=0 fragment_bytes=0
+SLJIT function  begin=0 ops=28 bytes=3944 hits=605 returns=1 stalled=2 charged_edges=0 budget_exits=0 id=2 line=1
+SLJIT exit  begin=0 pc=8 op=74 count=1 id=2 line=1 opcode=DECLVAR_HOIST
+SLJIT exit  begin=0 pc=10 op=73 count=1 id=2 line=3 opcode=DECLVAR
+SLJIT exit  begin=0 pc=14 op=137 count=300 id=2 line=3 opcode=CALL_GLOBAL
+SLJIT exit  begin=0 pc=16 op=40 count=290 id=2 line=3 opcode=SNEQ
+SLJIT exit  begin=0 pc=21 op=164 count=10 id=2 line=3 opcode=INC_GLOBAL
+SLJIT exit  begin=0 pc=22 op=67 count=2 id=2 line=3 opcode=GETVAR
+SLJIT exit  begin=0 pc=27 op=66 count=1 id=2 line=3 opcode=RETUNDEF
+SLJIT map id=2 kind=entry start=0x104da4010 end=0x104da405c
+SLJIT map id=2 kind=exit start=0x104da4bf4 end=0x104da4f78
+SLJIT map id=2 kind=body depth=0 frame=0 pc=0 opcode=CHKGLOBALVAR start=0x104da405c end=0x104da4078
+SLJIT map id=2 kind=body depth=0 frame=0 pc=1 opcode=CHKGLOBALFUNC start=0x104da4078 end=0x104da4094
+SLJIT map id=2 kind=body depth=0 frame=0 pc=2 opcode=CHKGLOBALFUNC start=0x104da4094 end=0x104da40b0
+SLJIT map id=2 kind=body depth=0 frame=0 pc=3 opcode=CLOSURE start=0x104da40b0 end=0x104da40cc
+SLJIT map id=2 kind=body depth=0 frame=0 pc=4 opcode=DECLGLOBALFUNC start=0x104da40cc end=0x104da40e8
+SLJIT map id=2 kind=body depth=0 frame=0 pc=5 opcode=CLOSURE start=0x104da40e8 end=0x104da4104
+SLJIT map id=2 kind=body depth=0 frame=0 pc=6 opcode=DECLGLOBALFUNC start=0x104da4104 end=0x104da4120
+SLJIT map id=2 kind=body depth=0 frame=0 pc=7 opcode=LDUNDEF start=0x104da4120 end=0x104da41a0
+SLJIT map id=2 kind=body depth=0 frame=0 pc=8 opcode=DECLVAR_HOIST start=0x104da41a0 end=0x104da41bc
+SLJIT map id=2 kind=body depth=0 frame=0 pc=9 opcode=LDINT start=0x104da41bc end=0x104da423c
+SLJIT map id=2 kind=body depth=0 frame=0 pc=10 opcode=DECLVAR start=0x104da423c end=0x104da4258
+SLJIT map id=2 kind=body depth=0 frame=0 pc=11 opcode=LDINT start=0x104da4258 end=0x104da42dc
+SLJIT map id=2 kind=body depth=0 frame=0 pc=12 opcode=JUMP start=0x104da42dc end=0x104da42e0
+SLJIT map id=2 kind=body depth=0 frame=0 pc=13 opcode=LDINT start=0x104da42e0 end=0x104da4364
+SLJIT map id=2 kind=body depth=0 frame=0 pc=14 opcode=CALL_GLOBAL start=0x104da4364 end=0x104da4380
+SLJIT map id=2 kind=body depth=0 frame=0 pc=15 opcode=LDCONST start=0x104da4380 end=0x104da4408
+SLJIT map id=2 kind=body depth=0 frame=0 pc=16 opcode=SNEQ start=0x104da4408 end=0x104da44e8
+SLJIT map id=2 kind=body depth=0 frame=0 pc=17 opcode=IF_FALSE start=0x104da44e8 end=0x104da4564
+SLJIT map id=2 kind=body depth=0 frame=0 pc=18 opcode=LDCONST start=0x104da4564 end=0x104da4630
+SLJIT map id=2 kind=body depth=0 frame=0 pc=19 opcode=CALL_GLOBAL start=0x104da4630 end=0x104da464c
+SLJIT map id=2 kind=body depth=0 frame=0 pc=20 opcode=THROW start=0x104da464c end=0x104da4668
+SLJIT map id=2 kind=body depth=0 frame=0 pc=21 opcode=INC_GLOBAL start=0x104da4668 end=0x104da4684
+SLJIT map id=2 kind=body depth=0 frame=0 pc=22 opcode=GETVAR start=0x104da4684 end=0x104da47a8
+SLJIT map id=2 kind=body depth=0 frame=0 pc=23 opcode=LT start=0x104da47a8 end=0x104da48dc
+SLJIT map id=2 kind=body depth=0 frame=0 pc=24 opcode=IF_TRUE start=0x104da48dc end=0x104da496c
+SLJIT map id=2 kind=body depth=0 frame=0 pc=25 opcode=LDCONST start=0x104da496c end=0x104da4a38
+SLJIT map id=2 kind=body depth=0 frame=0 pc=26 opcode=CALL_GLOBAL start=0x104da4a38 end=0x104da4a54
+SLJIT map id=2 kind=body depth=0 frame=0 pc=27 opcode=RETUNDEF start=0x104da4a54 end=0x104da4bf4
+SLJIT totals functions=3 loops=1 templates=0 hits=1801 code_bytes=47264
+SLJIT budget bytes=47264 limit=4194304 native_work=0 evictions=0
