@@ -642,7 +642,7 @@ fn int bk_execute_pending_job(void* rtp, void** context) @export("bk_execute_pen
     h.has_error = false;
     h.interrupt_budget = heap::INTERRUPT_BUDGET_INIT;
     h.drain_microtasks(rt.vm, report: false, max_jobs: 1, force: true);
-    if (h.uncatchable_throw) return vm_fault(rt);
+    if (h.uncatchable_throw || h.host_job_error) return vm_fault(rt);
     return 1;
 }
 
@@ -1847,6 +1847,20 @@ fn ulong bk_promise_then(void* ctxp, ulong id, ulong on_fulfilled, ulong on_reje
     TVal out;
     if (call_builtin(rt, builtins::Builtin.PROMISE_PROTO_THEN, p, &args, 2, &out) != BK_OK) return 0;
     return store(rt, out);
+}
+
+// Observe native promises without invoking then/species or making a chain.
+fn int bk_promise_observe(void* ctxp, ulong id, ulong fulfilled, ulong rejected) @export("bk_promise_observe") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    HObject* p = promise_of(ctxp, rt, id);
+    if (p == null) return rt.errcode;
+    TVal f, r;
+    if (!resolve(ctxp, fulfilled, &f) || !resolve(ctxp, rejected, &r)) return fail(rt, BK_ERR_INVALID, "invalid observer handle");
+    if (!builtins::is_callable_tval(f) || !builtins::is_callable_tval(r)) return fail(rt, BK_ERR_TYPE, "promise observers must be callable");
+    if (!builtins::promise_observe(rt.heap, p, f, r)) return fail(rt, BK_ERR_NOMEM, "out of memory");
+    return BK_OK;
 }
 
 // ============================================================================

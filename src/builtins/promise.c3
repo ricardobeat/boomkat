@@ -137,12 +137,33 @@ fn HObject*? promise_make_cap_wrapper(Heap* heap, TVal cap_resolve, TVal cap_rej
 
 // Missing handlers still consume a job: Identity/Thrower preserve the
 // ordering of chained reactions and await continuations (ES §27.2.2.1).
-fn void promise_enqueue_reaction(Heap* heap, uint state, TVal handler, TVal result, TVal downstream) {
+fn bool promise_enqueue_reaction(Heap* heap, uint state, TVal handler, TVal result, TVal downstream) {
     if (!is_callable_tval(handler)) {
         handler = types::make_lightfunc((void*)(usz)(state == PROMISE_FULFILLED
             ? Builtin.PROMISE_IDENTITY.ordinal : Builtin.PROMISE_THROWER.ordinal));
     }
-    heap.enqueue_microtask(handler, result, downstream);
+    return heap.enqueue_microtask(handler, result, downstream);
+}
+
+// Host observation is terminal: no species lookup and no downstream promise.
+// Both callbacks are validated by the embedding layer. A boolean downstream
+// marks a host job whose exceptions must escape through the job runner.
+fn bool promise_observe(Heap* heap, HObject* promise, TVal fulfilled, TVal rejected) {
+    uint state = promise_get_state(promise, PROMISE_PENDING);
+    TVal terminal; terminal.set_boolean(true);
+    if (state == PROMISE_PENDING) {
+        HObject*? reaction = promise_create_reaction(heap);
+        if (catch reaction) return false;
+        reaction_set(reaction, 0, fulfilled, heap);
+        reaction_set(reaction, 1, rejected, heap);
+        reaction_set(reaction, 2, terminal, heap);
+        promise_add_reaction(promise, reaction, heap);
+    } else {
+        promise_mark_handled(promise, heap);
+        return promise_enqueue_reaction(heap, state, state == PROMISE_FULFILLED ? fulfilled : rejected,
+            promise_get_result(promise), terminal);
+    }
+    return true;
 }
 
 fn void promise_enqueue_continuation(Heap* heap, HObject* promise, HObject* job) {
