@@ -1519,7 +1519,7 @@ fn int module_failure(Runtime* rt, int code) @local {
     return code;
 }
 
-// Executes pending microtasks. Returns BK_OK or BK_ERR_INTERRUPT.
+// Executes pending microtasks. Host callbacks can also report BK_ERR_THROW.
 fn int drain_microtasks(Runtime* rt) {
     clear_err(rt);
     settle_stale_limit(rt);
@@ -1532,6 +1532,7 @@ fn int drain_microtasks(Runtime* rt) {
     if (rt.heap.uncatchable_throw) {
         return interrupt_status(rt);
     }
+    if (rt.heap.host_job_error) return throw_status(rt);
     return BK_OK;
 }
 

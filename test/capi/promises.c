@@ -83,6 +83,51 @@ int main(void) {
     bk_run_jobs(rt);
     assert(state(ctx, from_js) == BK_PROMISE_FULFILLED);
 
+    /* Terminal observers keep their handlers alive, ignore species and do
+     * not assimilate callback return values into a downstream promise. */
+    bk_value observer = eval(ctx, "globalThis.observed = []; v => { observed.push(v); return { get then() { throw 'unused'; } }; }");
+    bk_value observer_bad = eval(ctx, "e => { observed.push('rejected:' + e); }");
+    bk_value observed = bk_new_promise(ctx, &resolve, &reject);
+    assert(bk_promise_observe(ctx, observed, observer, observer_bad) == BK_OK);
+    assert(bk_promise_observe(ctx, observed, observer, observer_bad) == BK_OK);
+    bk_free_value(ctx, observer); bk_free_value(ctx, observer_bad);
+    bk_gc(rt, BK_GC_FULL);
+    v = bk_new_number(ctx, 7);
+    assert(bk_call(ctx, resolve, BK_UNDEFINED, &v, 1));
+    assert(bk_to_bool(ctx, eval(ctx, "observed.length === 0")));
+    assert(bk_run_jobs(rt) == BK_OK);
+    assert(bk_to_bool(ctx, eval(ctx, "observed.join(',') === '7,7'")));
+    observer = eval(ctx, "v => observed.push(v)");
+    observer_bad = eval(ctx, "e => observed.push('rejected:' + e)");
+    bk_value unusual = eval(ctx, "Object.defineProperty(Promise.resolve(8), 'constructor', { get() { throw 'species'; } })");
+    assert(bk_promise_observe(ctx, unusual, observer, observer_bad) == BK_OK);
+    assert(bk_run_jobs(rt) == BK_OK);
+    assert(bk_to_bool(ctx, eval(ctx, "observed.join(',') === '7,7,8'")));
+    int tracked_before = rejections;
+    bk_value observed_reject = bk_new_promise(ctx, NULL, &reject);
+    assert(bk_promise_observe(ctx, observed_reject, observer, observer_bad) == BK_OK);
+    v = bk_new_number(ctx, 9);
+    assert(bk_call(ctx, reject, BK_UNDEFINED, &v, 1));
+    assert(bk_run_jobs(rt) == BK_OK && rejections == tracked_before);
+    assert(bk_to_bool(ctx, eval(ctx, "observed[3] === 'rejected:9'")));
+    /* A terminal callback throw escapes the checkpoint; later jobs survive. */
+    bk_value throwing = eval(ctx, "() => { throw 'observer throw'; }");
+    assert(bk_promise_observe(ctx, observed, throwing, observer_bad) == BK_OK);
+    assert(bk_promise_observe(ctx, unusual, observer, observer_bad) == BK_OK);
+    assert(bk_run_jobs(rt) == BK_ERR_THROW);
+    bk_value thrown = bk_get_exception(ctx);
+    assert(bk_strict_equals(ctx, thrown, eval(ctx, "'observer throw'")));
+    bk_free_value(ctx, thrown);
+    assert(bk_is_job_pending(rt));
+    assert(bk_run_jobs(rt) == BK_OK);
+    assert(bk_to_bool(ctx, eval(ctx, "observed[4] === 8")));
+    assert(bk_promise_observe(ctx, observed, throwing, observer_bad) == BK_OK);
+    bk_ctx job_ctx = NULL;
+    assert(bk_execute_pending_job(rt, &job_ctx) == BK_ERR_THROW && job_ctx == ctx);
+    bk_free_value(ctx, bk_get_exception(ctx));
+    assert(bk_promise_observe(ctx, observed, BK_UNDEFINED, observer_bad) == BK_ERR_TYPE);
+    assert(bk_promise_observe(ctx, BK_TRUE, observer, observer_bad) == BK_ERR_TYPE);
+
     /* Type checks. */
     bk_promise_state s;
     assert(bk_promise_state_get(ctx, bk_new_number(ctx, 1), &s) == BK_ERR_TYPE);

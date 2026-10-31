@@ -482,6 +482,12 @@ BK_API bk_value  bk_promise_resolve(bk_ctx ctx, bk_value value);   /* Promise.re
 /* Promise.prototype.then; a reaction of 0 means none. */
 BK_API bk_value  bk_promise_then(bk_ctx ctx, bk_value promise, bk_value on_fulfilled, bk_value on_rejected);
 
+/* Terminal observation of a native promise. Both callbacks must be callable;
+ * the engine retains them until delivery. No .then/@@species lookup and no
+ * downstream promise. Callback results are ignored; callback throws are
+ * returned by bk_run_jobs/bk_execute_pending_job as BK_ERR_THROW. */
+BK_API bk_status bk_promise_observe(bk_ctx ctx, bk_value promise, bk_value on_fulfilled, bk_value on_rejected);
+
 /* Module loading. A loader answers each question before its callback
  * returns, through the request it receives (valid only during the call).
  * resolve: turn `specifier` from `referrer` into a canonical name with

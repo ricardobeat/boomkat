@@ -369,6 +369,14 @@ its own event loop. Resolving runs the spec's resolution procedure, so a
 thenable is adopted. `bk_promise_state_get` and `bk_promise_result` read a
 settled promise, `bk_promise_then` attaches reactions (0 for none) and
 `bk_promise_resolve` is `Promise.resolve`. Reactions run in `bk_run_jobs`.
+
+`bk_promise_observe` is terminal host observation: both callbacks are required,
+no `.then` or `Symbol.species` property is read, and no downstream promise is
+created. The engine retains the callbacks through delivery and ignores their
+return values. A callback throw makes the job runner return `BK_ERR_THROW`;
+retrieve it with `bk_get_exception`. Remaining jobs stay queued for the next
+checkpoint. The C3 equivalent is `JsContext.observe_promise`.
+
 `bk_promise_mark_handled` keeps a rejection the host deals with itself away
 from the rejection tracker.
 

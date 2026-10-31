@@ -287,7 +287,7 @@ fn void? JsContext.exec(&self, String source, String name = "<eval>") {
 
 // Run a host-selected promise job checkpoint.
 //
-// Faults: INTERRUPTED
+// Faults: INTERRUPTED, JS_EXCEPTION
 fn void? JsRuntime.drain_microtasks(&self) {
     if (self.rt == null) return;
     int rc = embed::drain_microtasks(self.rt);
@@ -452,6 +452,19 @@ fn void? JsContext.settle_deferred(&self, JsDeferred deferred, bool ok, JsValue 
     JsValue[1] args = { value };
     JsValue result = self.call(ok ? deferred.resolve : deferred.reject, args[..])!;
     self.release(result);
+}
+
+// Observe an intrinsic promise without reading .then or @@species and without
+// creating a downstream promise. The engine retains callbacks until delivery.
+// Return values are ignored; throws escape through the host's job checkpoint.
+fn void? JsContext.observe_promise(&self, JsValue promise, JsValue fulfilled, JsValue rejected) {
+    if (self.rt == null) return NOT_CREATED~;
+    embed::select_context(self.context);
+    TVal p, f, r;
+    if (!self.load(promise, &p) || !self.load(fulfilled, &f) || !self.load(rejected, &r)) return STALE_VALUE~;
+    if (!p.is_object() || ((HObject*)p.get_heapptr()).get_class() != PROMISE
+        || !builtins::is_callable_tval(f) || !builtins::is_callable_tval(r)) return WRONG_TYPE~;
+    if (!builtins::promise_observe(self.rt.heap, p.get_heapptr(), f, r)) return OUT_OF_MEMORY~;
 }
 
 // ============================================================================

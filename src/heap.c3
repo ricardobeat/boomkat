@@ -1248,7 +1248,7 @@ struct Heap {
     // Microtask queue, filled by promise_trigger_reactions and drained after
     // each top-level script execution and after vm_call_fn_impl returns. Every
     // entry occupies 3 TVal slots: handler, arg, and the downstream promise to
-    // resolve with the handler's return value, or undefined.
+    // resolve with the handler's return value, undefined, or true for a terminal host job.
     // Jobs [microtask_head, microtask_count) are pending; the drain releases the
     // slots before the head, and a full queue slides the pending jobs down.
     TVal*     microtask_queue;
@@ -1257,6 +1257,7 @@ struct Heap {
     uint      microtask_capacity;
     bool      microtask_draining;  // re-entrancy guard
     bool      host_managed_jobs;
+    bool      host_job_error; // terminal host callback threw at the last checkpoint
 
     // Promises rejected with [[PromiseIsHandled]] still false. Recording one
     // here is provisional: a handler attached later in the same tick clears its
@@ -6048,7 +6049,7 @@ fn uint Heap.xorshift32(&self) {
 // Enqueue a promise reaction job as a (handler, argument, downstream) triple.
 // The queue drains after each top-level script and after vm_call_fn_impl
 // returns from a compiled function.
-fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
+fn bool Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     // Make room for the new entry; each takes 3 TVal slots. A queue whose first
     // half is already drained slides down instead of growing, so a drain that
     // keeps enqueuing its own successor runs in constant space.
@@ -6066,7 +6067,7 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
         uint new_cap = self.microtask_capacity == 0 ? 16 : self.microtask_capacity * 2;
         usz new_bytes = (usz)new_cap * TVal::size * 3;
         TVal* new_q = (TVal*)self.realloc_func(self.heap_udata, self.microtask_queue, new_bytes);
-        if (new_q == null) { return; }
+        if (new_q == null) { return false; }
         mem::clear(new_q + self.microtask_capacity * 3, (sz)((long)(new_cap - self.microtask_capacity) * TVal::size * 3));
         self.microtask_queue = new_q;
         self.microtask_capacity = new_cap;
@@ -6078,6 +6079,7 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     bool was_empty = self.microtask_count == self.microtask_head;
     self.microtask_count++;
     if (was_empty && self.job_hook != null) self.job_hook(self.job_hook_runtime, self.job_hook_opaque);
+    return true;
 }
 
 // Release the three references that queue slot `job` owns.
@@ -6100,6 +6102,7 @@ fn void Heap.release_microtask_slot(&self, uint job) {
 fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs = 0xFFFF_FFFFu, bool force = false) {
     if (self.host_managed_jobs && !force) return;
     if (self.microtask_draining) { return; }
+    self.host_job_error = false;
     // An empty queue still has to fall through to the report: a top-level
     // `Promise.reject(x)` with no `.then` anywhere queues no job at all, and
     // is precisely the rejection most in need of reporting.
@@ -6145,6 +6148,8 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
             // resume half-dead promise state.
             if (self.uncatchable_throw) {
                 interrupted = true;
+            } else if (downstream.is_boolean() && downstream.get_boolean()) {
+                self.host_job_error = self.has_error;
             } else if (downstream.is_object() && downstream.get_heapptr() != null &&
                        self.microtask_after_fn != null && vm != null) {
                 self.microtask_after_fn((void*)self, vm, result, downstream);
@@ -6154,6 +6159,7 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
             // The queue owns one reference to each value until the job has
             // completed. Release those references before advancing.
             self.release_microtask_slot(self.microtask_head++);
+            if (self.host_job_error) break; // preserve later jobs for the next checkpoint
 
             if (interrupted) {
                 // Drop the remainder of the queue.
@@ -6168,7 +6174,7 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
         }
     }
 
-    if (report && self.microtask_count == 0) self.report_unhandled_rejections(vm);
+    if (report && !self.host_job_error && self.microtask_count == 0) self.report_unhandled_rejections(vm);
 }
 
 // ============================================================================
