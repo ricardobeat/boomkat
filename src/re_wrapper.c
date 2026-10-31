@@ -38,6 +38,8 @@ struct ReCompiled {
     int      anchored;
     int      prefix_len;
     char     prefix[16];
+    int      required_len;
+    char     required[16];
 };
 
 static const char* re_find_prefix(const char* input, size_t len,
@@ -83,6 +85,68 @@ static void re_scan_prefix(ReCompiled* re, const char* pattern, size_t len, int 
     if (i < len && n > 0 && strchr("?*+{", pattern[i])) n--;
     re->prefix_len = n;
     if (n == 0) re->anchored = 0;
+}
+
+/* Find a mandatory ASCII substring outside groups, classes and top-level
+ * alternatives. This is only a rejection filter: unlike a prefix, the bytes
+ * may occur after the actual match start, so they must never advance it.
+ * Declining an unfamiliar escape or quantified brace keeps this analysis
+ * conservative as regexp syntax evolves. */
+static void re_scan_required(ReCompiled* re, const char* pattern, size_t len, int flags)
+{
+    re->required_len = 0;
+    if (re->prefix_len || (flags & (LRE_FLAG_IGNORECASE | LRE_FLAG_UNICODE_SETS))) return;
+    char run[sizeof(re->required)], best[sizeof(re->required)];
+    size_t run_len = 0, best_len = 0;
+    int depth = 0, in_class = 0;
+#define KEEP_RUN() do { \
+    size_t n = run_len < sizeof(run) ? run_len : sizeof(run); \
+    if (n > best_len) { memcpy(best, run, n); best_len = n; } \
+    run_len = 0; \
+} while (0)
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)pattern[i];
+        if (c == '\\') {
+            if (++i == len) return;
+            c = (unsigned char)pattern[i];
+            if (depth || in_class) continue;
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                /* These assertions and classes consume no literal bytes. */
+                if (c == 'b' || c == 'B' || c == 'd' || c == 'D' ||
+                    c == 's' || c == 'S' || c == 'w' || c == 'W') {
+                    KEEP_RUN();
+                    continue;
+                }
+                return;
+            }
+            if (c < 0x20 || c >= 0x7f) return;
+        } else {
+            if (in_class) { if (c == ']') in_class = 0; continue; }
+            if (c == '[') { if (!depth) KEEP_RUN(); in_class = 1; continue; }
+            if (c == '(') { if (!depth) KEEP_RUN(); depth++; continue; }
+            if (c == ')') { if (--depth < 0) return; continue; }
+            if (depth) continue;
+            if (c == '|' || c == '{') return;
+            if (c == '?' || c == '*' || c == '+') {
+                /* Conservatively drop even the one-or-more case. */
+                if (run_len) run_len--;
+                KEEP_RUN();
+                continue;
+            }
+            if (c == '.' || c == '^' || c == '$' || c == ']' ||
+                c < 0x20 || c >= 0x7f) { KEEP_RUN(); continue; }
+        }
+        if (run_len < sizeof(run)) run[run_len] = (char)c;
+        run_len++;
+    }
+    if (depth || in_class) return;
+    KEEP_RUN();
+#undef KEEP_RUN
+    /* Tiny searches cost more than they save on ordinary short inputs. */
+    if (best_len >= 3) {
+        memcpy(re->required, best, best_len);
+        re->required_len = (int)best_len;
+    }
 }
 
 static uint8_t* cesu8_pattern_to_utf8(const char* input, size_t input_len, size_t* out_len);
@@ -152,6 +216,7 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
     re->capture_count = lre_get_capture_count(bc);
     re->refcount = 1;
     re_scan_prefix(re, pattern, pattern_len, lre_flags);
+    re_scan_required(re, pattern, pattern_len, lre_flags);
 
     if (error_msg && error_msg_size > 0) error_msg[0] = '\0';
     return re;
@@ -287,6 +352,12 @@ int re_run_interruptible(ReCompiled* re, const char* input, int input_len,
             if (!(lre_get_flags(re->bc) & LRE_FLAG_STICKY))
                 start_offset = (int)(candidate - input);
         }
+    }
+
+    if (start_offset >= 0 && re->required_len > 0) {
+        if (start_offset > input_len || !re_find_prefix(input + start_offset,
+            (size_t)(input_len - start_offset), re->required, (size_t)re->required_len))
+            return RE_NO_MATCH;
     }
 
     int total_captures = re->capture_count;
