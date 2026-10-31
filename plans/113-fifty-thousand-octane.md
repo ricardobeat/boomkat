@@ -1,6 +1,39 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+
+## Generic-code quality checkpoint, 2026-10-31
+
+The dominant cost of the function tier was found to be the register store,
+not coverage. `function_store` emitted a full release/retain pair for every
+assignment (about twenty instructions), so generic native code ran at roughly
+the threaded interpreter's speed and every increase in native coverage was
+neutral or a loss. Moving the release/retain path out of line, behind one tag
+check per operand, is the first change that makes generated code beat the
+interpreter: zlib -3.8%, mandreel -6.8%, gbemu -2.4%, pdfjs -2.1%, box2d
+-1.9%, typescript -0.8%, crypto -0.6%, regexp +0.6%.
+
+Measured alongside it, and *not* shipped, because each was a net loss until
+the store cost is gone:
+
+| Experiment | Result |
+|---|---|
+| Whole-body compile up to 2048 ops with a 24-fixups-per-op table | zlib -5%, mandreel -3%, but gbemu +8%, typescript +6% |
+| 4 MiB function admission cap | typescript +5% (icache pressure); reverted |
+| Static property-density admission filter | mandreel +26%; the ratio does not predict IC hits |
+| Raising the loop window past 512 | no gain: a1's and a8's hot loops use all 64 low slots, so aliasing has no room |
+
+Two structural facts for the next step:
+
+1. Each property read emits several hundred bytes of inline-cache code
+   (a 3-op accessor compiles to 2.4 KiB, about 800 bytes per bytecode). With
+   2 MiB of code the hot set already exceeds the instruction cache, which is
+   why "compile less" can beat "compile more".
+2. The function tier keeps every VM register in the interpreter frame, so an
+   operation is load/guard/operate/store. Register caching across a basic
+   block, as the loop tier already does with its 64-slot window, is the
+   change that would make large-body compilation profitable and then unlock
+   WIDE support for a1 (297M interpreted bytecodes).
 
 ## Closeout and carried scope
 
