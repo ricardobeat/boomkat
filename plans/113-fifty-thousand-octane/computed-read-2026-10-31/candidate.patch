@@ -1,0 +1,110 @@
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index 80873ba5..b0b304b6 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -936,7 +936,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+     if (plan.ssa_region != null) f.blocks[plan.ssa_region.end + 1] = true;
+     for (uint i = 0; i < cf.code_count; i++) {
+         int target = loop_target(cf.code[i], i);
+-        if ((function_call_op(cf.code[i].op) || function_read_op(cf.code[i].op) || function_alloc_op(cf.code[i].op)
++        if ((function_call_op(cf.code[i].op) || function_continuable_read_at(cf, i) || function_alloc_op(cf.code[i].op)
+             || function_string_add_candidate(cf, i))
+             && i + 1 < cf.code_count) f.blocks[i + 1] = true;
+         if (target >= 0 && target < (int)cf.code_count) f.blocks[target] = true;
+@@ -1497,7 +1497,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+             if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return false;
+             e.bind(refused);
+         }
+-        if (link.target < cf.code_count && function_read_op(cf.code[link.target].op)
++        if (link.target < cf.code_count && function_continuable_read_at(cf, link.target)
+             && link.target + 1 < cf.code_count) {
+             e.mov(r0, 0, jit::reg_s(1), 0);
+             e.mov(r1, 0, imm, (long)(plan.begin + link.target));
+diff --git a/src/vm/vm_sljit_native.c3 b/src/vm/vm_sljit_native.c3
+index a909003b..4b78476d 100644
+--- a/src/vm/vm_sljit_native.c3
++++ b/src/vm/vm_sljit_native.c3
+@@ -12,6 +12,18 @@ fn bool function_read_op(Opcode op) @feat(SLJIT) {
+     return op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED || op == Opcode.GETTHISC;
+ }
+ 
++// Computed reads are admitted only at sites whose existing feedback names a
++// non-index key. Numeric element sites should not acquire a helper join that
++// cannot serve them. Every actual key remains checked by the helper.
++fn bool function_continuable_read_at(CompiledFunction* cf, uint pc) @feat(SLJIT) {
++    Instruction ins = cf.code[pc];
++    if (function_read_op(ins.op)) return true;
++    if ((ins.op != Opcode.GETPROP && ins.op != Opcode.GETPROP_CACHE) || cf.ic_entries == null) return false;
++    ICEntry* ic = (ICEntry*)cf.ic_entries + pc;
++    HString* key = ic.key.borrow();
++    return key != null && !key.is_arridx();
++}
++
+ // Only the named data-property portion of these classes is ordinary. Keep
+ // lazy function fields and array length/indices with their exotic handlers.
+ fn bool native_data_object(HObject* object, HString* key, Heap* h) @feat(SLJIT) @inline {
+@@ -36,8 +48,19 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
+     Instruction ins = cold.vm.current_func.code[offset];
+     TVal* regs = cold.act.bottom;
+     TVal base = ins.op == Opcode.GETTHISC ? cold.act.this_binding : regs[ins.b];
+-    HString* key = cold.vm.current_func.constants[ins.c].get_heapptr();
+-    if (key == null) return 0;
++    bool computed = ins.op == Opcode.GETPROP || ins.op == Opcode.GETPROP_CACHE;
++    HString* key;
++    if (computed) {
++        TVal key_value = regs[ins.c];
++        if (!key_value.is_string()) return 0;
++        key = key_value.get_heapptr();
++        // Pointer-based shape lookup is exact only for interned keys and
++        // unique symbols. Never intern or coerce in this no-effect helper.
++        if (key == null || (!key.is_interned() && !key.is_symbol())) return 0;
++    } else {
++        key = cold.vm.current_func.constants[ins.c].get_heapptr();
++        if (key == null) return 0;
++    }
+     HObject* object;
+     if (base.is_object()) {
+         object = base.get_heapptr();
+@@ -108,7 +131,7 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
+     $if $feat(SLJIT_READ_REFRESH):
+         // Do not publish the result or populate a cache on the triggering
+         // execution: the interpreter performs this read and updates its IC.
+-        if (sljit_read_refresh(cold, offset, receiver)) return 0;
++        if (!computed && sljit_read_refresh(cold, offset, receiver)) return 0;
+         if (cache_owner != null) hobject::mega_cache_store(cold.heap, receiver, key, cache_owner, cache_index, false);
+     $endif
+     th_do_retain(&value);
+diff --git a/test/capi/jit.c3 b/test/capi/jit.c3
+index 8f6dd3db..d03fedd4 100644
+--- a/test/capi/jit.c3
++++ b/test/capi/jit.c3
+@@ -96,6 +96,21 @@ fn void eval(JsContext* ctx, String source) {
+     ctx.release(value);
+ }
+ 
++// Prove the computed-key miss actually returns through the native helper.
++fn void check_computed_read_continuation(JsRuntime* rt, JsContext* ctx) {
++    eval(ctx, "function computedContinue(o,k){return o[k]+1;}var computedRecord={alpha:10,beta:20};for(var i=0;i<300;i++)if(computedContinue(computedRecord,'alpha')!==11)throw 'warm';");
++    CompiledFunction* cf = named_function(rt, "computedContinue");
++    @check(cf != null && cf.sljit_function != null);
++    FunctionPlan* plan = cf.sljit_function;
++    ulong before;
++    for (uint i = 0; i < vm::FUNCTION_OPS; i++) before += plan.read_hits[i];
++    eval(ctx, "for(var i=0;i<80;i++)if(computedContinue(computedRecord,'beta')!==21)throw 'computed';");
++    @check(cf.sljit_function == plan);
++    ulong after;
++    for (uint i = 0; i < vm::FUNCTION_OPS; i++) after += plan.read_hits[i];
++    @check(after > before);
++}
++
+ // Exercise real interpreter and generated stores against registered watches.
+ // An unrelated own slot must preserve the value dependency; changing layout
+ // must invalidate both slot and layout dependencies before storage can move.
+@@ -777,6 +792,7 @@ fn void main() {
+         @check(first.set_jit());
+         eval(&a, RUN);
+         @check(native_hits(&first) > before);
++        check_computed_read_continuation(&first, &a);
+         check_write_dependencies(&first, &a);
+         $if $feat(SLJIT_READ_REFRESH): check_read_refresh(&first, &a); $endif
+         eval(&isolated, RUN);
