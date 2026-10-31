@@ -60,12 +60,19 @@ fn void* FunctionEmitter.dense_element(&self, CompiledFunction* cf, uint pc, boo
     e.op(jit::SLJIT_SHL, r3, r3, 0, imm, 3);
     e.op(jit::SLJIT_ADD, r2, r2, 0, r3, 0);
     e.bind(base_ready);
-    e.op(jit::SLJIT_SHL, r1, r1, 0, imm, 3);
-    e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
-    e.mov(r3, 0, mem | r2, 0);
+    // Reads can load directly with a scaled index and keep the loaded value
+    // through the hole check. Writes still need the element address for the
+    // ownership and write-barrier checks in slot_store.
+    if (write) {
+        e.op(jit::SLJIT_SHL, r1, r1, 0, imm, 3);
+        e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
+        e.mov(r3, 0, mem | r2, 0);
+    } else {
+        e.mov(r0, 0, jit::mem_index(r2, r1), 3);
+    }
     // A hole or a promoted index requires prototype/descriptor lookup. This
     // path only replaces a present element, leaving length and usage intact.
-    e.op(jit::SLJIT_LSHR, r3, r3, 0, imm, 48);
+    e.op(jit::SLJIT_LSHR, r3, write ? r3 : r0, 0, imm, 48);
     out.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED, pc);
     if (write) {
         out.load(ins.c, r1);
@@ -74,7 +81,6 @@ fn void* FunctionEmitter.dense_element(&self, CompiledFunction* cf, uint pc, boo
         if (out.flow != null) out.flow.heap_write();
         self.slot_store(r0, r2, 0, ins.c, pc);
     } else {
-        e.mov(r0, 0, mem | r2, 0);
         self.store(ins.a, pc);
     }
     void* done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
