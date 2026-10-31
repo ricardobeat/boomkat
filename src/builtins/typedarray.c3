@@ -292,7 +292,7 @@ fn TVal ta_read_element_checked(Heap* heap, HObject* obj, uint idx) {
 
 // The element at `ep` of a typed array of any class but the two BigInt ones,
 // whose reads allocate.
-fn TVal ta_load_number(char* ep, hobject::ObjClass cls) {
+fn TVal ta_load_number(char* ep, hobject::ObjClass cls) @inline {
     TVal out;
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY: {
@@ -519,7 +519,7 @@ fn TAScalar ta_coerce_element(hobject::ObjClass cls, TVal* val, BuiltinContext* 
 
 // Store the integer `v` at byte pointer `p`. An integer element keeps its low
 // bits, which is ToInt32 and its narrower forms for any integral value.
-fn void ta_store_int(char* p, hobject::ObjClass cls, long v) {
+fn void ta_store_int(char* p, hobject::ObjClass cls, long v) @inline {
     switch (cls) {
         case hobject::ObjClass.INT8ARRAY:
         case hobject::ObjClass.UINT8ARRAY:

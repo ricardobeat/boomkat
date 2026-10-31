@@ -2601,6 +2601,18 @@ fn Instruction* th_put_typed_element(Instruction* pc, HandlerTable* handlers, TV
         || builtins::is_bigint_typed_array_class(cls)) return pc;
     char* ep = base + ((uint)idx << builtins::ta_elem_shift(cls));
     if (!value.is_fastint()) return th_put_typed_double(pc, handlers, regs, cold, ep, cls, value.get_number());
+    $if !types::USE_NANBOX:
+        // The alternate representation can hold a wider payload; preserve
+        // the generic integer path for values outside the 48-bit range.
+        if (!types::fits_fastint(value.get_fastint())) return pc;
+    $endif
+    // Float arrays use the existing scalar conversion, including Float16.
+    // A fastint is exactly representable as double. Keep that uncommon path
+    // out of the integer handler so the latter can tail-dispatch without a frame.
+    if (cls < hobject::ObjClass.INT8ARRAY) return pc;
+    if (cls > hobject::ObjClass.UINT32ARRAY) {
+        return th_put_typed_double(pc, handlers, regs, cold, ep, cls, (double)value.get_fastint());
+    }
     builtins::ta_store_int(ep, cls, value.get_fastint());
     return th_next(pc + 1, handlers, regs, cold);
 }
