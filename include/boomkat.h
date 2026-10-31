@@ -475,7 +475,9 @@ BK_API void     bk_free_weak(bk_ctx ctx, bk_weak weak);
  * bk_call; resolve follows the spec's resolution procedure, thenables
  * included. */
 typedef enum { BK_PROMISE_PENDING, BK_PROMISE_FULFILLED, BK_PROMISE_REJECTED } bk_promise_state;
-/* A pending promise and its resolving functions; either output may be NULL. */
+/* A pending promise and its resolving functions; either output may be NULL.
+ * Non-NULL output pointers must be distinct. On failure, both outputs are
+ * BK_EXCEPTION and no partial handles remain registered. */
 BK_API bk_value  bk_new_promise(bk_ctx ctx, bk_value *resolve_out, bk_value *reject_out);
 BK_API bk_status bk_promise_state_get(bk_ctx ctx, bk_value promise, bk_promise_state *out);
 /* The value or reason, or BK_UNDEFINED while pending. */

@@ -607,3 +607,9 @@ test-context-options-api: out/context_options_api
 test-deferred-api:
 	$(C3C) build deferred_api --build-dir out/build/deferred_api
 	./out/deferred_api
+
+# Partial promise-capability registration must release every root/local.
+.PHONY: test-promise-failures
+test-promise-failures:
+	$(C3C) build promise_failures --build-dir out/build/promise_failures
+	./out/promise_failures

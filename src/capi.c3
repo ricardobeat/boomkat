@@ -1779,23 +1779,50 @@ fn ulong bk_new_promise(void* ctxp, ulong* resolve_out, ulong* reject_out) @expo
     Runtime* rt = rt_of(ctxp);
     if (rt == null) return 0;
     embed::clear_err(rt);
+    if (resolve_out != null && resolve_out == reject_out) return fail_value(rt, BK_ERR_INVALID, "resolver outputs must be distinct");
     HObject*? made = builtins::promise_create(rt.heap);
     if (catch made) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    if (made == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
+    TVal pv; pv.set_object(made);
+    heap::ValueRoot held;
+    rt.heap.push_value_root(&held, pv);
+    defer rt.heap.pop_value_root(&held);
     builtins::PromiseCapability cap = builtins::promise_new_capability(rt.heap, made);
     if (cap.promise == null) return fail_value(rt, BK_ERR_NOMEM, "out of memory");
-    TVal pv; pv.set_object(cap.promise);
     TVal rv; rv.set_object(cap.resolve_func);
     TVal jv; jv.set_object(cap.reject_func);
-    ulong p = store(rt, pv);
+    // No handle escapes until all requested outputs have registered. Roll back
+    // both registry roots and appended locals if any later registration fails.
+    heap::HostScope* scope = embed::local_scope(rt);
+    uint mark = scope != null ? scope.count : 0;
+    ulong p, r, j;
+    bool complete;
+    defer if (!complete) {
+        embed::slot_release(rt, p);
+        embed::slot_release(rt, r);
+        embed::slot_release(rt, j);
+        if (scope != null) {
+            while (scope.count > mark) {
+                TVal* value = &rt.heap.host_vals[scope.base + --scope.count];
+                rt.heap.decref_tval(value);
+                value.set_undefined();
+            }
+            rt.heap.host_vals_len = scope.base + mark;
+        }
+    }
+    p = store(rt, pv);
     if (p == 0) return 0;
     if (resolve_out != null) {
-        *resolve_out = store(rt, rv);
-        if (*resolve_out == 0) return 0;
+        r = store(rt, rv);
+        if (r == 0) return 0;
     }
     if (reject_out != null) {
-        *reject_out = store(rt, jv);
-        if (*reject_out == 0) return 0;
+        j = store(rt, jv);
+        if (j == 0) return 0;
     }
+    if (resolve_out != null) *resolve_out = r;
+    if (reject_out != null) *reject_out = j;
+    complete = true;
     return p;
 }
 

@@ -433,7 +433,9 @@ fn JsDeferred? JsContext.deferred(&self) {
     if (self.rt == null) return NOT_CREATED~;
     embed::select_context(self.context);
     Heap* h = self.rt.heap;
-    HObject* p = builtins::promise_create(h)!;
+    HObject*? created = builtins::promise_create(h);
+    if (catch created) return OUT_OF_MEMORY~;
+    HObject* p = created;
     if (p == null) return OUT_OF_MEMORY~;
     TVal tv; tv.set_object(p);
     ValueRoot held;
