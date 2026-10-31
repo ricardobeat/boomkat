@@ -1,0 +1,33 @@
+JOINALLOC name=[110, 98, 105, 116, 115] values=42 spills=5 joins=5
+JOIN phi=8 reg=0 rep=1 home=7 spill=0 begin=4 last=13 def=8 in=0/1/5/0/5 in=5/1/7/0/8
+JOIN phi=9 reg=1 rep=1 home=6 spill=0 begin=4 last=15 def=9 in=1/1/6/0/7 in=7/1/0/1/8
+JOIN phi=16 reg=0 rep=1 home=5 spill=0 begin=12 last=21 def=16 in=8/1/7/0/13 in=13/1/5/0/16
+JOIN phi=17 reg=1 rep=1 home=6 spill=0 begin=12 last=23 def=17 in=9/1/6/0/15 in=15/1/0/2/16
+JOIN phi=24 reg=0 rep=1 home=7 spill=0 begin=20 last=29 def=24 in=16/1/5/0/21 in=21/1/7/0/24
+JOIN phi=25 reg=1 rep=1 home=6 spill=0 begin=20 last=31 def=25 in=17/1/6/0/23 in=23/1/0/3/24
+JOIN phi=32 reg=0 rep=1 home=5 spill=0 begin=28 last=37 def=32 in=24/1/7/0/29 in=29/1/5/0/32
+JOIN phi=33 reg=1 rep=1 home=6 spill=0 begin=28 last=38 def=33 in=25/1/6/0/31 in=31/1/0/4/32
+JOIN phi=39 reg=0 rep=1 home=7 spill=0 begin=36 last=39 def=39 in=32/1/5/0/37 in=37/1/7/0/39
+JOIN phi=40 reg=1 rep=1 home=6 spill=0 begin=36 last=41 def=40 in=33/1/6/0/38 in=38/1/5/0/39
+JOINALLOC name=[110, 98, 105, 116, 115] values=42 spills=5 joins=5
+JOIN phi=8 reg=0 rep=1 home=7 spill=0 begin=4 last=13 def=8 in=0/1/5/0/5 in=5/1/7/0/8
+JOIN phi=9 reg=1 rep=1 home=6 spill=0 begin=4 last=15 def=9 in=1/1/6/0/7 in=7/1/0/1/8
+JOIN phi=16 reg=0 rep=1 home=5 spill=0 begin=12 last=21 def=16 in=8/1/7/0/13 in=13/1/5/0/16
+JOIN phi=17 reg=1 rep=1 home=6 spill=0 begin=12 last=23 def=17 in=9/1/6/0/15 in=15/1/0/2/16
+JOIN phi=24 reg=0 rep=1 home=7 spill=0 begin=20 last=29 def=24 in=16/1/5/0/21 in=21/1/7/0/24
+JOIN phi=25 reg=1 rep=1 home=6 spill=0 begin=20 last=31 def=25 in=17/1/6/0/23 in=23/1/0/3/24
+JOIN phi=32 reg=0 rep=1 home=5 spill=0 begin=28 last=37 def=32 in=24/1/7/0/29 in=29/1/5/0/32
+JOIN phi=33 reg=1 rep=1 home=6 spill=0 begin=28 last=38 def=33 in=25/1/6/0/31 in=31/1/0/4/32
+JOIN phi=39 reg=0 rep=1 home=7 spill=0 begin=36 last=39 def=39 in=32/1/5/0/37 in=37/1/7/0/39
+JOIN phi=40 reg=1 rep=1 home=6 spill=0 begin=36 last=41 def=40 in=33/1/6/0/38 in=38/1/5/0/39
+JOINALLOC name=[110, 98, 105, 116, 115] values=42 spills=5 joins=5
+JOIN phi=8 reg=0 rep=1 home=7 spill=0 begin=4 last=13 def=8 in=0/1/5/0/5 in=5/1/7/0/8
+JOIN phi=9 reg=1 rep=1 home=6 spill=0 begin=4 last=15 def=9 in=1/1/6/0/7 in=7/1/0/1/8
+JOIN phi=16 reg=0 rep=1 home=5 spill=0 begin=12 last=21 def=16 in=8/1/7/0/13 in=13/1/5/0/16
+JOIN phi=17 reg=1 rep=1 home=6 spill=0 begin=12 last=23 def=17 in=9/1/6/0/15 in=15/1/0/2/16
+JOIN phi=24 reg=0 rep=1 home=7 spill=0 begin=20 last=29 def=24 in=16/1/5/0/21 in=21/1/7/0/24
+JOIN phi=25 reg=1 rep=1 home=6 spill=0 begin=20 last=31 def=25 in=17/1/6/0/23 in=23/1/0/3/24
+JOIN phi=32 reg=0 rep=1 home=5 spill=0 begin=28 last=37 def=32 in=24/1/7/0/29 in=29/1/5/0/32
+JOIN phi=33 reg=1 rep=1 home=6 spill=0 begin=28 last=38 def=33 in=25/1/6/0/31 in=31/1/0/4/32
+JOIN phi=39 reg=0 rep=1 home=7 spill=0 begin=36 last=39 def=39 in=32/1/5/0/37 in=37/1/7/0/39
+JOIN phi=40 reg=1 rep=1 home=6 spill=0 begin=36 last=41 def=40 in=33/1/6/0/38 in=38/1/5/0/39

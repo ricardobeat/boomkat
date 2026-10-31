@@ -1,0 +1,42 @@
+JOINALLOC name=[112, 104, 105, 83, 119, 97, 112] values=35 spills=6 joins=3
+JOIN phi=18 reg=4 rep=2 home=0 spill=4 begin=13 last=25 def=18 in=11/2/4/0/14 in=14/2/0/3/18
+JOIN phi=19 reg=5 rep=2 home=0 spill=5 begin=13 last=25 def=19 in=12/2/0/2/14 in=17/2/3/0/18
+JOIN phi=20 reg=7 rep=1 home=5 spill=0 begin=13 last=20 def=20 in=4/1/0/0/14 in=15/1/5/0/18
+JOIN phi=25 reg=4 rep=2 home=3 spill=0 begin=21 last=28 def=25 in=18/2/0/4/25 in=23/2/0/5/25
+JOIN phi=26 reg=5 rep=2 home=4 spill=0 begin=21 last=29 def=26 in=19/2/0/5/25 in=24/2/0/4/25
+JOIN phi=30 reg=4 rep=2 home=5 spill=0 begin=27 last=32 def=30 in=25/2/3/0/28 in=28/2/5/0/30
+JOIN phi=31 reg=5 rep=2 home=4 spill=0 begin=27 last=33 def=31 in=26/2/4/0/29 in=29/2/3/0/30
+SLJIT SSA leaf line=2 caller_depth=1 commit=0
+JOINALLOC name=[114, 101, 102, 101, 114, 101, 110, 99, 101] values=34 spills=4 joins=3
+JOIN phi=16 reg=4 rep=2 home=6 spill=0 begin=11 last=23 def=16 in=9/2/6/0/12 in=12/2/0/2/16
+JOIN phi=17 reg=5 rep=2 home=0 spill=3 begin=11 last=23 def=17 in=10/2/0/1/12 in=15/2/3/0/16
+JOIN phi=18 reg=7 rep=1 home=5 spill=0 begin=11 last=18 def=18 in=4/1/0/0/12 in=13/1/5/0/16
+JOIN phi=23 reg=4 rep=2 home=6 spill=0 begin=19 last=26 def=23 in=16/2/6/0/23 in=22/2/0/3/23
+JOIN phi=24 reg=5 rep=2 home=3 spill=0 begin=19 last=27 def=24 in=17/2/0/3/23 in=21/2/6/0/23
+JOIN phi=28 reg=4 rep=2 home=6 spill=0 begin=25 last=30 def=28 in=23/2/6/0/26 in=26/2/4/0/28
+JOIN phi=29 reg=5 rep=2 home=3 spill=0 begin=25 last=31 def=29 in=24/2/3/0/27 in=27/2/5/0/28
+SLJIT SSA leaf line=10 caller_depth=0 commit=0
+SLJIT function compiled  pc=0..211 function_ops=211 regs=18 code_bytes=39596 plan_bytes=16891
+Uncaught Error: join mismatch 0 6 7 75161927785 75161927821
+SLJIT coverage id=0 line=2 ops=21 regs=10 captures=0 name=phiSwap threaded=832 switch=55 attempts=54 warmup=44 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=1 line=8 ops=7 regs=10 captures=0 name=phiDrive threaded=378 switch=30 attempts=54 warmup=44 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=2 line=10 ops=21 regs=11 captures=0 name=reference threaded=832 switch=94 attempts=54 warmup=43 retired=0 active=0 rejection=not attempted
+SLJIT coverage id=4 line=1 ops=211 regs=18 captures=0 name= threaded=2588 switch=446 attempts=15 warmup=4294967295 retired=0 active=73 rejection=compiled
+SLJIT native id=4 calls=0 returns=0
+SLJIT pipeline id=4 inlined=2 recoveries=0 allocations=0 pushes=0 links=2
+SLJIT numeric id=4 homes=0
+SLJIT SSA calls id=4 frameless=0
+SLJIT readmiss id=4 pc=131 hits=2 changes=1 shape=64 class=3 rep=3 chain=0 cached=1
+SLJIT leaf usage id=4 target_line=10 hits=2 completed=2 commit=0
+SLJIT leaf usage id=4 target_line=2 hits=2 completed=2 commit=0
+SLJIT code id=4 start=0x104c0e4e8 bytes=39540 fragment=0x104c08010 fragment_bytes=56
+SLJIT function  begin=0 ops=211 bytes=39596 hits=14 returns=0 stalled=0 charged_edges=0 budget_exits=0 id=4 line=1
+SLJIT exit  begin=0 pc=99 op=70 count=2 id=4 line=18 opcode=PUTVAR
+SLJIT exit  begin=0 pc=104 op=70 count=2 id=4 line=18 opcode=PUTVAR
+SLJIT exit  begin=0 pc=109 op=70 count=2 id=4 line=18 opcode=PUTVAR
+SLJIT exit  begin=0 pc=113 op=70 count=2 id=4 line=18 opcode=PUTVAR
+SLJIT exit  begin=0 pc=121 op=70 count=2 id=4 line=19 opcode=PUTVAR
+SLJIT exit  begin=0 pc=129 op=70 count=2 id=4 line=19 opcode=PUTVAR
+SLJIT exit  begin=0 pc=134 op=61 count=2 id=4 line=20 opcode=CALL
+SLJIT totals functions=1 loops=0 templates=0 hits=14 code_bytes=39596
+SLJIT budget bytes=39596 limit=4194304 native_work=0 evictions=0
