@@ -1,0 +1,7 @@
+code-load 153 153 0.0
+zlib 3714 3733 0.51
+mandreel 554 556 0.36
+typescript 1220 1223 0.25
+crypto 164 164 0.0
+gbemu 275 276 0.36
+deltablue 89 89 0.0

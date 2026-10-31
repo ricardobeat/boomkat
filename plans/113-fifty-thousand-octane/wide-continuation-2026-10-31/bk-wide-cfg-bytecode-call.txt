@@ -1,0 +1,331 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALFUNC       r0, 1
+[  2] CHKGLOBALFUNC       r0, 2
+[  3] CLOSURE             r0, 0
+[  4] DECLGLOBALFUNC      r0, 1
+[  5] CLOSURE             r0, 1
+[  6] DECLGLOBALFUNC      r0, 2
+[  7] LDUNDEF             r0 = r0, r0
+[  8] DECLVAR_HOIST       r0, 0
+[  9] LDINT               r0, 0
+[ 10] DECLVAR             r0, 0
+[ 11] LDINT               r1, +300
+[ 12] JUMP                +9
+[ 13] LDINT               r4, +1000
+[ 14] CALL_GLOBAL         r2, argc=1, K[2]
+[ 15] LDCONST             r3, 3
+[ 16] SNEQ                r2 = r2, r3
+[ 17] IF_FALSE            r2, +3
+[ 18] LDCONST             r4, 5
+[ 19] CALL_GLOBAL         r2, argc=1, K[4]
+[ 20] THROW               r2 = r0, r0
+[ 21] INC_GLOBAL          r2, 0
+[ 22] GETVAR              r2, 0
+[ 23] LT                  r3 = r2, r1
+[ 24] IF_TRUE             r3, -12
+[ 25] LDCONST             r2, 7
+[ 26] CALL_GLOBAL         r0, argc=1, K[6]
+[ 27] RETUNDEF            
+
+--- Inner function 0 ---
+[  0] RET                 r0 = r0, r0
+
+--- Inner function 1 ---
+[  0] DECLVAR             r0, 0
+[  1] LDUNDEF             r1 = r0, r0
+[  2] DECLVAR_HOIST       r1, 1
+[  3] LDUNDEF             r2 = r0, r0
+[  4] DECLVAR_HOIST       r2, 2
+[  5] LDINT               r3, 0
+[  6] LDREG               r1 = r3, r0
+[  7] DECLVAR             r1, 1
+[  8] LDINT               r3, 0
+[  9] LDREG               r2 = r3, r0
+[ 10] DECLVAR             r2, 2
+[ 11] LDINT               r3, 0
+[ 12] LDREG               r1 = r3, r0
+[ 13] JUMP                +5
+[ 14] ADD                 r3 = r2, r1
+[ 15] LDINT               r4, 0
+[ 16] BOR                 r3 = r3, r4
+[ 17] LDREG               r2 = r3, r0
+[ 18] INC                 r1
+[ 19] LT                  r3 = r1, r0
+[ 20] IF_TRUE             r3, -7
+[ 21] GETGLOBAL           r3, 3
+[ 22] LDREG               r5 = r2, r0
+[ 23] LDINT               r6, 0
+[ 24] LDINT               r7, 0
+[ 25] LDINT               r8, 0
+[ 26] LDINT               r9, 0
+[ 27] LDINT               r10, 0
+[ 28] LDINT               r11, 0
+[ 29] LDINT               r12, 0
+[ 30] LDINT               r13, 0
+[ 31] LDINT               r14, 0
+[ 32] LDINT               r15, 0
+[ 33] LDINT               r16, 0
+[ 34] LDINT               r17, 0
+[ 35] LDINT               r18, 0
+[ 36] LDINT               r19, 0
+[ 37] LDINT               r20, 0
+[ 38] LDINT               r21, 0
+[ 39] LDINT               r22, 0
+[ 40] LDINT               r23, 0
+[ 41] LDINT               r24, 0
+[ 42] LDINT               r25, 0
+[ 43] LDINT               r26, 0
+[ 44] LDINT               r27, 0
+[ 45] LDINT               r28, 0
+[ 46] LDINT               r29, 0
+[ 47] LDINT               r30, 0
+[ 48] LDINT               r31, 0
+[ 49] LDINT               r32, 0
+[ 50] LDINT               r33, 0
+[ 51] LDINT               r34, 0
+[ 52] LDINT               r35, 0
+[ 53] LDINT               r36, 0
+[ 54] LDINT               r37, 0
+[ 55] LDINT               r38, 0
+[ 56] LDINT               r39, 0
+[ 57] LDINT               r40, 0
+[ 58] LDINT               r41, 0
+[ 59] LDINT               r42, 0
+[ 60] LDINT               r43, 0
+[ 61] LDINT               r44, 0
+[ 62] LDINT               r45, 0
+[ 63] LDINT               r46, 0
+[ 64] LDINT               r47, 0
+[ 65] LDINT               r48, 0
+[ 66] LDINT               r49, 0
+[ 67] LDINT               r50, 0
+[ 68] LDINT               r51, 0
+[ 69] LDINT               r52, 0
+[ 70] LDINT               r53, 0
+[ 71] LDINT               r54, 0
+[ 72] LDINT               r55, 0
+[ 73] LDINT               r56, 0
+[ 74] LDINT               r57, 0
+[ 75] LDINT               r58, 0
+[ 76] LDINT               r59, 0
+[ 77] LDINT               r60, 0
+[ 78] LDINT               r61, 0
+[ 79] LDINT               r62, 0
+[ 80] LDINT               r63, 0
+[ 81] LDINT               r64, 0
+[ 82] LDINT               r65, 0
+[ 83] LDINT               r66, 0
+[ 84] LDINT               r67, 0
+[ 85] LDINT               r68, 0
+[ 86] LDINT               r69, 0
+[ 87] LDINT               r70, 0
+[ 88] LDINT               r71, 0
+[ 89] LDINT               r72, 0
+[ 90] LDINT               r73, 0
+[ 91] LDINT               r74, 0
+[ 92] LDINT               r75, 0
+[ 93] LDINT               r76, 0
+[ 94] LDINT               r77, 0
+[ 95] LDINT               r78, 0
+[ 96] LDINT               r79, 0
+[ 97] LDINT               r80, 0
+[ 98] LDINT               r81, 0
+[ 99] LDINT               r82, 0
+[100] LDINT               r83, 0
+[101] LDINT               r84, 0
+[102] LDINT               r85, 0
+[103] LDINT               r86, 0
+[104] LDINT               r87, 0
+[105] LDINT               r88, 0
+[106] LDINT               r89, 0
+[107] LDINT               r90, 0
+[108] LDINT               r91, 0
+[109] LDINT               r92, 0
+[110] LDINT               r93, 0
+[111] LDINT               r94, 0
+[112] LDINT               r95, 0
+[113] LDINT               r96, 0
+[114] LDINT               r97, 0
+[115] LDINT               r98, 0
+[116] LDINT               r99, 0
+[117] LDINT               r100, 0
+[118] LDINT               r101, 0
+[119] LDINT               r102, 0
+[120] LDINT               r103, 0
+[121] LDINT               r104, 0
+[122] LDINT               r105, 0
+[123] LDINT               r106, 0
+[124] LDINT               r107, 0
+[125] LDINT               r108, 0
+[126] LDINT               r109, 0
+[127] LDINT               r110, 0
+[128] LDINT               r111, 0
+[129] LDINT               r112, 0
+[130] LDINT               r113, 0
+[131] LDINT               r114, 0
+[132] LDINT               r115, 0
+[133] LDINT               r116, 0
+[134] LDINT               r117, 0
+[135] LDINT               r118, 0
+[136] LDINT               r119, 0
+[137] LDINT               r120, 0
+[138] LDINT               r121, 0
+[139] LDINT               r122, 0
+[140] LDINT               r123, 0
+[141] LDINT               r124, 0
+[142] LDINT               r125, 0
+[143] LDINT               r126, 0
+[144] LDINT               r127, 0
+[145] LDINT               r128, 0
+[146] LDINT               r129, 0
+[147] LDINT               r130, 0
+[148] LDINT               r131, 0
+[149] LDINT               r132, 0
+[150] LDINT               r133, 0
+[151] LDINT               r134, 0
+[152] LDINT               r135, 0
+[153] LDINT               r136, 0
+[154] LDINT               r137, 0
+[155] LDINT               r138, 0
+[156] LDINT               r139, 0
+[157] LDINT               r140, 0
+[158] LDINT               r141, 0
+[159] LDINT               r142, 0
+[160] LDINT               r143, 0
+[161] LDINT               r144, 0
+[162] LDINT               r145, 0
+[163] LDINT               r146, 0
+[164] LDINT               r147, 0
+[165] LDINT               r148, 0
+[166] LDINT               r149, 0
+[167] LDINT               r150, 0
+[168] LDINT               r151, 0
+[169] LDINT               r152, 0
+[170] LDINT               r153, 0
+[171] LDINT               r154, 0
+[172] LDINT               r155, 0
+[173] LDINT               r156, 0
+[174] LDINT               r157, 0
+[175] LDINT               r158, 0
+[176] LDINT               r159, 0
+[177] LDINT               r160, 0
+[178] LDINT               r161, 0
+[179] LDINT               r162, 0
+[180] LDINT               r163, 0
+[181] LDINT               r164, 0
+[182] LDINT               r165, 0
+[183] LDINT               r166, 0
+[184] LDINT               r167, 0
+[185] LDINT               r168, 0
+[186] LDINT               r169, 0
+[187] LDINT               r170, 0
+[188] LDINT               r171, 0
+[189] LDINT               r172, 0
+[190] LDINT               r173, 0
+[191] LDINT               r174, 0
+[192] LDINT               r175, 0
+[193] LDINT               r176, 0
+[194] LDINT               r177, 0
+[195] LDINT               r178, 0
+[196] LDINT               r179, 0
+[197] LDINT               r180, 0
+[198] LDINT               r181, 0
+[199] LDINT               r182, 0
+[200] LDINT               r183, 0
+[201] LDINT               r184, 0
+[202] LDINT               r185, 0
+[203] LDINT               r186, 0
+[204] LDINT               r187, 0
+[205] LDINT               r188, 0
+[206] LDINT               r189, 0
+[207] LDINT               r190, 0
+[208] LDINT               r191, 0
+[209] LDINT               r192, 0
+[210] LDINT               r193, 0
+[211] LDINT               r194, 0
+[212] LDINT               r195, 0
+[213] LDINT               r196, 0
+[214] LDINT               r197, 0
+[215] LDINT               r198, 0
+[216] LDINT               r199, 0
+[217] LDINT               r200, 0
+[218] LDINT               r201, 0
+[219] LDINT               r202, 0
+[220] LDINT               r203, 0
+[221] LDINT               r204, 0
+[222] LDINT               r205, 0
+[223] LDINT               r206, 0
+[224] LDINT               r207, 0
+[225] LDINT               r208, 0
+[226] LDINT               r209, 0
+[227] LDINT               r210, 0
+[228] LDINT               r211, 0
+[229] LDINT               r212, 0
+[230] LDINT               r213, 0
+[231] LDINT               r214, 0
+[232] LDINT               r215, 0
+[233] LDINT               r216, 0
+[234] LDINT               r217, 0
+[235] LDINT               r218, 0
+[236] LDINT               r219, 0
+[237] LDINT               r220, 0
+[238] LDINT               r221, 0
+[239] LDINT               r222, 0
+[240] LDINT               r223, 0
+[241] LDINT               r224, 0
+[242] LDINT               r225, 0
+[243] LDINT               r226, 0
+[244] LDINT               r227, 0
+[245] LDINT               r228, 0
+[246] LDINT               r229, 0
+[247] LDINT               r230, 0
+[248] LDINT               r231, 0
+[249] LDINT               r232, 0
+[250] LDINT               r233, 0
+[251] LDINT               r234, 0
+[252] LDINT               r235, 0
+[253] LDINT               r236, 0
+[254] LDINT               r237, 0
+[255] LDINT               r238, 0
+[256] LDINT               r239, 0
+[257] LDINT               r240, 0
+[258] LDINT               r241, 0
+[259] LDINT               r242, 0
+[260] LDINT               r243, 0
+[261] LDINT               r244, 0
+[262] LDINT               r245, 0
+[263] LDINT               r246, 0
+[264] LDINT               r247, 0
+[265] LDINT               r248, 0
+[266] LDINT               r249, 0
+[267] LDINT               r250, 0
+[268] LDINT               r251, 0
+[269] LDINT               r252, 0
+[270] LDINT               r253, 0
+[271] LDINT               r254, 0
+[272] LDINT               r255, 0
+[274] LDINT               r256, 0
+[273]   (wide-prefix)
+[276] LDINT               r257, 0
+[275]   (wide-prefix)
+[278] LDINT               r258, 0
+[277]   (wide-prefix)
+[280] LDINT               r259, 0
+[279]   (wide-prefix)
+[282] LDINT               r260, 0
+[281]   (wide-prefix)
+[284] LDINT               r261, 0
+[283]   (wide-prefix)
+[286] LDINT               r262, 0
+[285]   (wide-prefix)
+[288] LDINT               r263, 0
+[287]   (wide-prefix)
+[290] LDINT               r264, 0
+[289]   (wide-prefix)
+[292] LDINT               r265, 0
+[291]   (wide-prefix)
+[294] CALL_UNDEF_THIS     r3 = r3, r261
+[293]   (wide-prefix)
+[295] RET                 r3 = r0, r0
+--- End bytecode ---
