@@ -619,6 +619,21 @@ fn ulong bk_import(void* ctxp, char* specifier, usz len) @export("bk_import") {
     return out;
 }
 
+// Queue a terminal host job. No Promise or mutable JS factory is involved.
+fn int bk_enqueue_job(void* ctxp, ulong callback) @export("bk_enqueue_job") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    TVal f;
+    if (!resolve(ctxp, callback, &f)) return fail(rt, BK_ERR_INVALID, "invalid job handle");
+    if (!builtins::is_callable_tval(f)) return fail(rt, BK_ERR_TYPE, "job must be callable");
+    TVal arg, terminal;
+    arg.set_undefined();
+    terminal.set_boolean(false);
+    if (!rt.heap.enqueue_microtask(f, arg, terminal)) return fail(rt, BK_ERR_NOMEM, "out of memory");
+    return BK_OK;
+}
+
 fn int bk_is_job_pending(void* rtp) @export("bk_is_job_pending") {
     if (rtp == null) return 0;
     Heap* h = ((Runtime*)rtp).heap;

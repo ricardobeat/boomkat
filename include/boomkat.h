@@ -164,6 +164,10 @@ BK_API bk_status bk_set_jsx(bk_ctx ctx, int enable, bk_jsx_runtime runtime,
 /* execute_pending_job returns 1 for a job, 0 for an empty/reentrant queue, or a
  * negative status. *ctx names the job's realm, including on failure.
  * run_jobs drains to completion and reports unhandled rejections at that checkpoint. */
+/* Enqueue a callable with no arguments and undefined this. Its result is
+ * ignored; a throw is returned by the job runner as BK_ERR_THROW. The queue
+ * retains the callback until delivery. No promise is created. */
+BK_API bk_status bk_enqueue_job(bk_ctx ctx, bk_value callback);
 BK_API int bk_is_job_pending(bk_runtime runtime);
 BK_API int bk_execute_pending_job(bk_runtime runtime, bk_ctx *ctx);
 BK_API bk_status bk_run_jobs(bk_runtime runtime);

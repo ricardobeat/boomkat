@@ -1517,7 +1517,7 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
             return vm_run_async_continuation(vm, job, *arg);
         }
     }
-    return vm_call_fn_impl(vm_ptr, handler, arg, 1, undef);
+    return vm_call_fn_impl(vm_ptr, handler, arg, arg != null ? 1 : 0, undef);
 }
 
 // Heap.construct_fn's implementation: `new Fn(args)` semantics.
