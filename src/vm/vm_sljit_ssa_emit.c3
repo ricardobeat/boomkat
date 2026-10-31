@@ -722,6 +722,7 @@ fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
                 if (incoming < 0) continue;
                 SsaValue pv = self.g.values[phi];
                 SsaValue sv = self.g.values[incoming];
+                if (pv.rep == sv.rep && ssa_same_location(pv, sv)) continue;
                 // The merged values may differ in representation, so the copy
                 // converts the incoming value to the phi's.
                 if (pv.rep == F64) {

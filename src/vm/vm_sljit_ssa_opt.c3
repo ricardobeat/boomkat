@@ -314,6 +314,40 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
         if (value.op == PHI || value.op == COPY || !ssa_has_result(value.op)) continue;
+        // An in-place direct region can reuse a dying incoming value's register
+        // for the join. Its untouched caller frame remains the recovery source.
+        if (value.op == JOIN && g.inplace && g.direct && g.single_pass) {
+            SsaJoin* join = &g.joins[value.a];
+            for (uint p = 0; p < join.pred_count && value.home == 0; p++) {
+                int source = ssa_alias(g, join.incoming[p][value.b]);
+                if (source < 0 || source >= (int)i) continue;
+                SsaValue input = g.values[source];
+                // No conversion may overwrite the source, and it must not be
+                // used after the join. Spills are not candidates here.
+                if (input.rep != value.rep || input.home == 0 || input.last > value.def) continue;
+                bool free = true;
+                for (uint j = 0; j < g.value_count; j++) {
+                    if (j == (uint)source || j == i) continue;
+                    SsaValue other = g.values[j];
+                    if (other.home != input.home || !ssa_same_class(other.rep, value.rep)) continue;
+                    if (other.alloc_begin <= value.last && value.alloc_begin <= other.last) { free = false; break; }
+                }
+                // On another edge this phi may overwrite the coalesced home
+                // before a later parallel copy has read that same location.
+                for (uint edge = 0; edge < join.pred_count && free; edge++) {
+                    int own = ssa_alias(g, join.incoming[edge][value.b]);
+                    if (own >= 0 && g.values[own].home == input.home && g.values[own].rep == value.rep) continue;
+                    for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                        if ((int)reg == value.b || join.phi[reg] < 0) continue;
+                        int other = ssa_alias(g, join.incoming[edge][reg]);
+                        if (other >= 0 && g.values[other].home == input.home
+                            && ssa_same_class(g.values[other].rep, value.rep)) { free = false; break; }
+                    }
+                }
+                if (free) value.home = input.home;
+            }
+        }
+        if (value.home != 0) continue;
         uint homes = value.rep == F64 ? g.fpr_homes : g.registers.scratch_homes + g.registers.saved_homes;
         for (uint s = 0; s < homes; s++) {
             int home  = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
