@@ -1,0 +1,21 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] LDUNDEF             r0 = r0, r0
+[  2] DECLVAR_HOIST       r0, 0
+[  3] NEWREGEXP           r1, 1
+[  4] LDREG               r0 = r1, r0
+[  5] PUTVAR              r0, 0
+[  6] GETGLOBAL           r0, 2
+[  7] GETGLOBAL           r3, 0
+[  8] GETPROPC            r2 = r3, r3
+[  9] LDCONST             r4, 4
+[ 10] CALL                r2 = r2, r1
+[ 11] CALL_UNDEF_THIS     r0 = r0, r1
+[ 12] GETGLOBAL           r0, 2
+[ 13] GETGLOBAL           r3, 0
+[ 14] GETPROPC            r2 = r3, r3
+[ 15] LDCONST             r4, 5
+[ 16] CALL                r2 = r2, r1
+[ 17] CALL_UNDEF_THIS     r0 = r0, r1
+[ 18] RETUNDEF            
+--- End bytecode ---

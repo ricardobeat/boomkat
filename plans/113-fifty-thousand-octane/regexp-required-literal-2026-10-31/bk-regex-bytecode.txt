@@ -1,0 +1,68 @@
+RE_REQUIRED pattern=(^|[^\\])"\\\/Qngr\((-?[0-9]+)\)\\\/" literal="\/Qngr(
+RE_REQUIRED pattern=(^|[^\\])"\\\/Qngr\((-?[0-9]+)\)\\\/" literal="\/Qngr(
+flags: 0x0 capture_count=3 reg_count=0
+bytecode_len=102
+    0: split_goto_first 11
+    5: any
+    6: goto 0
+   11: save_start 0
+   13: save_start 1
+   15: split_next_first 26
+   20: line_start
+   21: goto 37
+   26: range 0x0000 0x005b 0x005d 0xffff
+   37: save_end 1
+   39: char '"'
+   42: char '\'
+   45: char '/'
+   48: char 'Q'
+   51: char 'n'
+   54: char 'g'
+   57: char 'r'
+   60: char '('
+   63: save_start 2
+   65: split_next_first 73
+   70: char '-'
+   73: range 0x0030 0x0039
+   80: split_goto_first 73
+   85: save_end 2
+   87: char ')'
+   90: char '\'
+   93: char '/'
+   96: char '"'
+   99: save_end 0
+  101: match
+flags: 0x0 capture_count=3 reg_count=0
+bytecode_len=102
+    0: split_goto_first 11
+    5: any
+    6: goto 0
+   11: save_start 0
+   13: save_start 1
+   15: split_next_first 26
+   20: line_start
+   21: goto 37
+   26: range 0x0000 0x005b 0x005d 0xffff
+   37: save_end 1
+   39: char '"'
+   42: char '\'
+   45: char '/'
+   48: char 'Q'
+   51: char 'n'
+   54: char 'g'
+   57: char 'r'
+   60: char '('
+   63: save_start 2
+   65: split_next_first 73
+   70: char '-'
+   73: range 0x0030 0x0039
+   80: split_goto_first 73
+   85: save_end 2
+   87: char ')'
+   90: char '\'
+   93: char '/'
+   96: char '"'
+   99: save_end 0
+  101: match
+false
+true

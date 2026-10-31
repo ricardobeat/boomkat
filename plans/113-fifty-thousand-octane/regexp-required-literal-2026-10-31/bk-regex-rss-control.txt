@@ -1,0 +1,3 @@
+RegExp: 360 ms
+        0.50 real         0.49 user         0.00 sys
+time: sysctl kern.clockrate: Operation not permitted
