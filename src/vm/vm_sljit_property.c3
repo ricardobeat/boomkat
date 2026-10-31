@@ -494,7 +494,14 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             void* other   = e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, shape_id);
             e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
             void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
-            e.op(jit::SLJIT_ADD, r2, r0, 0, imm, HObjectBase::size);
+            // Shapes can be shared by different object classes. Inline slots
+            // follow each class's payload, not always the common header.
+            // GcBits.inline_words occupies bits 11..15; shifting by eight
+            // converts that word offset directly into a byte offset.
+            e.mov(r2, 0, mem | r0, (char*)&obj.gc - (char*)&obj, jit::SLJIT_MOV_U32);
+            e.op(jit::SLJIT_LSHR, r2, r2, 0, imm, 8);
+            e.op(jit::SLJIT_AND, r2, r2, 0, imm, 0xf8);
+            e.op(jit::SLJIT_ADD, r2, r0, 0, r2, 0);
             e.bind(allocated);
             e.mov(r0, 0, mem | r2, (long)slot * 8);
             self.property_store(ins.a, pc, ic);
@@ -547,7 +554,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             e.mov(r1, 0, imm, (long)owner);
             e.mov(r2, 0, mem | r1, (char*)&obj.prop_alloc - (char*)&obj);
             void* allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
-            e.op(jit::SLJIT_ADD, r2, r1, 0, imm, HObjectBase::size);
+            e.op(jit::SLJIT_ADD, r2, r1, 0, imm, (long)owner.gc.inline_words * 8);
             e.bind(allocated);
             e.mov(r0, 0, mem | r2, (long)slot * 8);
             self.property_store(ins.a, pc, ic);
@@ -598,7 +605,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             e.mov(r1, 0, imm, (long)ic.chain.epoch.owner);
             e.mov(r2, 0, mem | r1, (char*)&obj.prop_alloc - (char*)&obj);
             void* owner_allocated = e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
-            e.op(jit::SLJIT_ADD, r2, r1, 0, imm, HObjectBase::size);
+            e.op(jit::SLJIT_ADD, r2, r1, 0, imm, (long)ic.chain.epoch.owner.gc.inline_words * 8);
             e.bind(owner_allocated);
             e.mov(r0, 0, mem | r2, (long)ic.prop_idx * 8);
             self.property_store(ins.a, pc, ic);
