@@ -728,6 +728,23 @@ fn void check_ssa_region(JsRuntime* runtime) {
     }
 }
 
+// Failed inline-cache allocation must not create fake nonnull region pointers.
+fn void check_function_missing_caches(JsRuntime* runtime) {
+    Instruction[3] code = {
+        bytecode::make_abc(Opcode.NOP, 0, 0, 0),
+        bytecode::make_abc(Opcode.NOP, 0, 0, 0),
+        bytecode::make_abc(Opcode.RET, 0, 0, 0)
+    };
+    CompiledFunction cf = { .code = &code[0], .code_count = 3, .num_regs = 1 };
+    ColdCtx cold = { .heap = runtime.rt.heap };
+    @check(vm::sljit_function_compile(&cf, &cold, 1) == null);
+    ICEntry only_property_cache; VarICEntry only_variable_cache;
+    cf.ic_entries = &only_property_cache;
+    @check(vm::sljit_function_compile(&cf, &cold, 1) == null);
+    cf.ic_entries = null; cf.var_ic_entries = &only_variable_cache;
+    @check(vm::sljit_function_compile(&cf, &cold, 1) == null);
+}
+
 fn void main() {
     check_dependency_gc();
     check_parameter_alias_roles();
@@ -747,6 +764,7 @@ fn void main() {
     JsContext a, b, isolated;
     a.create(&first)!!;
     defer a.destroy();
+    check_function_missing_caches(&first);
     b.create(&first)!!;
     defer b.destroy();
     isolated.create(&second)!!;

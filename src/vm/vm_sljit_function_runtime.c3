@@ -57,6 +57,9 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
             h.jit_code_bytes
         );
     $endif
+    // The interpreter can run without caches after allocation failure. Do not
+    // offset null cache pointers or compile sites against nonexistent entries.
+    if (cf.ic_entries == null || cf.var_ic_entries == null) return null;
     if (begin >= cf.code_count || !sljit_code_room(h, 0, true)) {
         cf.sljit_budget_wait = begin < cf.code_count;
         $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
@@ -228,6 +231,8 @@ fn Instruction* sljit_function_entry(
         plan = null;
     }
     if (plan == null) {
+        // A later interpreter frame entry can retry failed cache allocation.
+        if (cf.ic_entries == null || cf.var_ic_entries == null) return pc;
         if (cf.sljit_function_calls == uint::max) return pc;
         // Every function size warms on taken backedges as well as calls. A
         // region may start at a hot header, not only at bytecode zero.
