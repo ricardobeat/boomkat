@@ -353,10 +353,9 @@ fn ulong bytecode_low_register_mask(Instruction* code, uint begin, uint end) @pu
         if (!o.ok) {
             // Undecodable forms stay visible through the role table, which is
             // exact for every unprefixed instruction.
-            if (code[i].op == Opcode.WIDE) {
-                i = o.next;
-                continue;
-            }
+            // Unknown widened operands may refer to any register. Refuse all
+            // aliases rather than overlooking the payload or its successor.
+            if (code[i].op == Opcode.WIDE) return ulong::max;
             live.clear();
             moveelim_add_uses(code[i], &live, true);
             uint def;
@@ -381,10 +380,7 @@ fn bool bytecode_register_used(Instruction* code, uint begin, uint end, uint reg
     for (uint i = begin; i <= end; i++) {
         BytecodeOperands o = bytecode_operands(code, i, end);
         if (!o.ok) {
-            if (code[i].op == Opcode.WIDE) {
-                i = o.next;
-                continue;
-            }
+            if (code[i].op == Opcode.WIDE) return true;
             uint def;
             if (moveelim_get_def(code[i], &def) && def == reg) return true;
             live.clear();
@@ -406,23 +402,22 @@ fn bool bytecode_remap_registers(Instruction* code, uint begin, uint end, uint[B
     if (!moveelim_roles_ready) moveelim_init_roles();
     for (uint i = begin; i <= end; i++) {
         Instruction ins = code[i];
-        if (ins.op == Opcode.LDINTX) { io::eprintfn("RMX ldintx pc=%d", i); return false; }
+        if (ins.op == Opcode.LDINTX) return false;
         MoveelimRoles r = moveelim_roles[ins.op.ordinal];
         if (r.general) {
-            if (ins.op == Opcode.WIDE) { io::eprintfn("RMX wide-general pc=%d", i); return false; }
+            if (ins.op == Opcode.WIDE) return false;
             uint[32] words;
             RegSet live = { .words = &words[0], .word_count = 32 };
             moveelim_add_uses(ins, &live, true);
             uint def;
             if (moveelim_get_def(ins, &def)) live.set(def);
             for (uint reg = LOOP_REGS_MIN; reg < BYTECODE_REGS_MAX; reg++) if (live.test(reg)) {
-                io::eprintfn("RMX general-high pc=%d op=%s reg=%d", i, ins.op, reg);
                 return false;
             }
             continue;
         }
         BytecodeOperands o = bytecode_operands(code, i, end);
-        if (!o.ok) { io::eprintfn("RMX undecodable pc=%d op=%s", i, code[i].op); return false; }
+        if (!o.ok) return false;
         // Every rewritten operand lands in a low slot, so the pair collapses to
         // an ordinary instruction and a NOP. Below that, the analysis and the
         // emitters only ever see the unchanged 8-bit form.
@@ -437,7 +432,6 @@ fn bool bytecode_remap_registers(Instruction* code, uint begin, uint end, uint[B
         for (uint f = 0; f < 3; f++) {
             if (!is_reg[f] || field[f] < LOOP_REGS_MIN) continue;
             if (field[f] >= BYTECODE_REGS_MAX || map[field[f]] == field[f]) {
-                io::eprintfn("RMX unmapped pc=%d op=%s field=%d reg=%d", i, code[i].op, f, field[f]);
                 return false;
             }
             field[f] = map[field[f]];

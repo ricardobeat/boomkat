@@ -51,6 +51,20 @@ fn void check_parameter_alias_roles() {
     }
 }
 
+// A WIDE call has a register window, not individually remappable fields. A
+// refusal must conservatively reserve every low slot and every queried high
+// register, even when the next instruction uses an otherwise free register.
+fn void check_wide_alias_refusal() {
+    Instruction[3] code = {
+        bytecode::make_wide(1, 0, 0),
+        bytecode::make_abc(Opcode.CALL, 0, 1, 0),
+        bytecode::make_abc(Opcode.LDREG, 5, 7, 0)
+    };
+    @check(compiler::bytecode_low_register_mask(&code[0], 0, 2) == ulong::max);
+    @check(compiler::bytecode_register_used(&code[0], 0, 2, 300));
+    @check(compiler::bytecode_register_used(&code[0], 0, 2, 7));
+}
+
 fn void eval(JsContext* ctx, String source) {
     JsValue? value = ctx.eval(source);
     if (catch err = value) {
@@ -696,6 +710,7 @@ fn void check_ssa_region(JsRuntime* runtime) {
 fn void main() {
     check_dependency_gc();
     check_parameter_alias_roles();
+    check_wide_alias_refusal();
     check_register_effects();
     check_native_convention();
     check_ic_gc_roots();
