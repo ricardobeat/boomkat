@@ -5784,7 +5784,12 @@ fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length, bool wide) 
 fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
     if (s.flags.is_interned || s.flags.is_symbol) return s;
     // The table holds only strings it can own, so an external string interns as a copy.
-    if (s.flags.has_extdata) return self.str_intern_units(s.units());
+    if (s.flags.has_extdata) {
+        HString* copy = self.str_intern_units(s.units());
+        // Large copies start in the non-interned registry. Property tables use
+        // pointer identity, so they must still pass through canonicalization.
+        return copy == null ? null : self.ensure_interned(copy);
+    }
     // A large concat result reaches here with its hash still deferred, and the
     // table both probes and stores by hash, so materialize it first.
     HString* existing = self.str_table_lookup(s.units(), self.content_hash(s));
