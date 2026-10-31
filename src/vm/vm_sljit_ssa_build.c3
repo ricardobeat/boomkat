@@ -10,6 +10,44 @@ import boomkat::jit;
 import std::core::mem;
 import std::io;
 
+// Compute the live frame at the loop's ordinary fallthrough using the same
+// backwards CFG analysis as move elimination. Restrict this to instructions
+// with modeled control flow and an unaliased bytecode window: aliased loops
+// temporarily rewrite only their body, so whole-function liveness would mix
+// physical and original register numbers. All refusals use the conservative
+// continuation scan below.
+fn bool ssa_continuation_live(SsaGraph* g, bool[LOOP_REGS]* exit_live) @feat(SLJIT) {
+    CompiledFunction* cf = g.cf;
+    LoopPlan* plan = g.plan;
+    if (g.single_pass || cf.code_count > 512 || cf.num_regs >= compiler::BYTECODE_REGS_MAX
+        || cf.flags.has_direct_eval || cf.mapped_arguments() || cf.flags.is_generator || cf.flags.is_async) return false;
+    for (uint reg = 0; reg < LOOP_REGS; reg++) if (plan.slot_reg[reg] != (int)reg) return false;
+    for (uint pc = 0; pc < cf.code_count; pc++) {
+        Opcode op = cf.code[pc].op;
+        if (!function_op(op) && !function_call_op(op)) return false;
+    }
+    uint count = cf.code_count;
+    uint word_count = (cf.num_regs + 32) / 32;
+    if (word_count < 2) word_count = 2;
+    usz set_bytes = (usz)count * 2 * compiler::RegSet::size;
+    usz word_bytes = ((usz)count * 2 + 1) * word_count * uint::size;
+    compiler::RegSet* sets = (compiler::RegSet*)g.heap.alloc_func(g.heap.heap_udata, set_bytes);
+    if (sets == null) return false;
+    defer g.heap.free_func(g.heap.heap_udata, sets);
+    uint* words = (uint*)g.heap.alloc_func(g.heap.heap_udata, word_bytes);
+    if (words == null) return false;
+    defer g.heap.free_func(g.heap.heap_udata, words);
+    for (uint i = 0; i < count * 2; i++) {
+        sets[i].words = words + (usz)i * word_count;
+        sets[i].word_count = word_count;
+    }
+    compiler::RegSet scratch = { .words = words + (usz)count * 2 * word_count, .word_count = word_count };
+    compiler::moveelim_compute_liveness(cf.code, count, sets, sets + count, true, &scratch);
+    compiler::RegSet* input = &sets[count + plan.end + 1];
+    for (uint reg = 0; reg < LOOP_REGS; reg++) (*exit_live)[reg] = input.test(reg);
+    return true;
+}
+
 // Rename bytecode definitions into the analyzed SSA graph.
 
 fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
@@ -42,11 +80,44 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     // and later code reads them. They become loop-carried phis for that
     // reason alone; nothing else about them is loop-carried.
     bool[LOOP_REGS] exit_live;
-    for (uint pos = plan.end + 1; pos < cf.code_count; pos++) {
-        Instruction after = cf.code[pos];
-        if (after.a < LOOP_REGS) exit_live[after.a] = true;
-        if (after.b < LOOP_REGS) exit_live[after.b] = true;
-        if (after.c < LOOP_REGS) exit_live[after.c] = true;
+    if (plan.end + 1 < cf.code_count && !ssa_continuation_live(g, &exit_live)) {
+        // The continuation may read implicit call windows; raw operand bytes
+        // also include constant indices and offsets that are not registers.
+        // Keep all continuation uses and definitions conservatively until a
+        // recovery-aware CFG can prove which ones are live on a given exit.
+        uint start = plan.end + 1;
+        for (uint pc = start; pc < cf.code_count; pc++) {
+            int target = loop_target(cf.code[pc], pc);
+            if (target >= 0 && target < (int)start) { start = 0; break; }
+        }
+        uint[32] words;
+        compiler::RegSet used = { .words = &words[0], .word_count = 32 };
+        compiler::bytecode_register_set(cf.code, start, cf.code_count - 1, &used);
+        for (uint reg = 0; reg < LOOP_REGS; reg++) {
+            // The loop window may alias a high VM register to this low slot;
+            // continuation bytecode still names the original register.
+            int origin = plan.slot_reg[reg];
+            exit_live[reg] = origin < 0 || (uint)origin >= compiler::BYTECODE_REGS_MAX || used.test((uint)origin);
+        }
+    }
+    // Exception handlers can observe locals after a guard resumes inside the
+    // loop. The ordinary continuation alone does not describe those edges.
+    // Until exception frame states are modeled, preserve every written slot.
+    for (uint pc = 0; pc < cf.code_count; pc++) if (cf.code[pc].op == Opcode.TRY) {
+        for (uint reg = 0; reg < LOOP_REGS; reg++) exit_live[reg] = true;
+        break;
+    }
+    if (!g.single_pass) {
+        // Budget and guard exits at the latch replay its branch, so its
+        // operands are recovery-live even when the fallthrough overwrites
+        // them. snapshot_phis publishes these operands on that exit.
+        Instruction latch = cf.code[plan.end];
+        if (latch.op == Opcode.IF_TRUE || latch.op == Opcode.IF_FALSE) {
+            if (latch.a < LOOP_REGS) exit_live[latch.a] = true;
+        } else if (ssa_comparison_op(latch.op)) {
+            if (latch.b < LOOP_REGS) exit_live[latch.b] = true;
+            if (latch.op < Opcode.JMP_NLTI && latch.c < LOOP_REGS) exit_live[latch.c] = true;
+        }
     }
     g.current_pc = plan.begin;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {

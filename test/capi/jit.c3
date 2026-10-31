@@ -81,6 +81,9 @@ fn void check_alias_register_set() {
     ulong low = compiler::bytecode_low_register_mask(&code[0], 0, 3);
     @check((low & ((1UL << 4) | (1UL << 5))) == ((1UL << 4) | (1UL << 5)));
     @check((low & ((1UL << 7) | (1UL << 2) | (1UL << 3))) == 0);
+    Instruction[1] call = { bytecode::make_abc(Opcode.CALL, 4, 10, 2) };
+    compiler::bytecode_register_set(&call[0], 0, 0, &used);
+    @check(used.test(4) && used.test(10) && used.test(11) && used.test(12) && used.test(13));
 }
 
 fn void eval(JsContext* ctx, String source) {
