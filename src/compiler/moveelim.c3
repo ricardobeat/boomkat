@@ -341,57 +341,44 @@ fn BytecodeOperands bytecode_operands(Instruction* code, uint pos, uint end) {
     return o;
 }
 
-// Registers below 64 read or written by [begin, end]. Uses the same operand
-// roles as liveness, so branch offsets and constant indices do not appear.
-fn ulong bytecode_low_register_mask(Instruction* code, uint begin, uint end) @public {
+// Collect every register touched by [begin, end] in a single pass. Unknown
+// WIDE payloads conservatively reserve the entire set, including when the
+// prefix is truncated at the end of the window.
+fn void bytecode_register_set(Instruction* code, uint begin, uint end, RegSet* used) @public {
     if (!moveelim_roles_ready) moveelim_init_roles();
-    ulong low;
-    uint[32] words;
-    RegSet live = { .words = &words[0], .word_count = 32 };
+    used.clear();
     for (uint i = begin; i <= end; i++) {
         BytecodeOperands o = bytecode_operands(code, i, end);
         if (!o.ok) {
-            // Undecodable forms stay visible through the role table, which is
-            // exact for every unprefixed instruction.
-            // Unknown widened operands may refer to any register. Refuse all
-            // aliases rather than overlooking the payload or its successor.
-            if (code[i].op == Opcode.WIDE) return ulong::max;
-            live.clear();
-            moveelim_add_uses(code[i], &live, true);
+            if (code[i].op == Opcode.WIDE) {
+                for (uint word = 0; word < used.word_count; word++) used.words[word] = uint::max;
+                return;
+            }
+            moveelim_add_uses(code[i], used, true);
             uint def;
-            if (moveelim_get_def(code[i], &def)) live.set(def);
-            for (uint reg = 0; reg < LOOP_REGS_MIN; reg++) if (live.test(reg)) low |= 1UL << reg;
+            if (moveelim_get_def(code[i], &def)) used.set(def);
             continue;
         }
-        if (o.a_reg && o.a < LOOP_REGS_MIN) low |= 1UL << o.a;
-        if (o.b_reg && o.b < LOOP_REGS_MIN) low |= 1UL << o.b;
-        if (o.c_reg && o.c < LOOP_REGS_MIN) low |= 1UL << o.c;
+        if (o.a_reg) used.set(o.a);
+        if (o.b_reg) used.set(o.b);
+        if (o.c_reg) used.set(o.c);
         i = o.next - 1;
     }
-    return low;
 }
 
-// Whether [begin, end] reads or writes `reg`.
+fn ulong bytecode_low_register_mask(Instruction* code, uint begin, uint end) @public {
+    uint[32] words;
+    RegSet used = { .words = &words[0], .word_count = 32 };
+    bytecode_register_set(code, begin, end, &used);
+    return (ulong)words[0] | ((ulong)words[1] << 32);
+}
+
 fn bool bytecode_register_used(Instruction* code, uint begin, uint end, uint reg) @public {
-    if (!moveelim_roles_ready) moveelim_init_roles();
     if (reg >= BYTECODE_REGS_MAX) return true;
     uint[32] words;
-    RegSet live = { .words = &words[0], .word_count = 32 };
-    for (uint i = begin; i <= end; i++) {
-        BytecodeOperands o = bytecode_operands(code, i, end);
-        if (!o.ok) {
-            if (code[i].op == Opcode.WIDE) return true;
-            uint def;
-            if (moveelim_get_def(code[i], &def) && def == reg) return true;
-            live.clear();
-            moveelim_add_uses(code[i], &live, true);
-            if (live.test(reg)) return true;
-            continue;
-        }
-        if ((o.a_reg && o.a == reg) || (o.b_reg && o.b == reg) || (o.c_reg && o.c == reg)) return true;
-        i = o.next - 1;
-    }
-    return false;
+    RegSet used = { .words = &words[0], .word_count = 32 };
+    bytecode_register_set(code, begin, end, &used);
+    return used.test(reg);
 }
 
 // Rewrite register operands through `map`, which maps each high register to a

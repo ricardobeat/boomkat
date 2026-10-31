@@ -1859,12 +1859,16 @@ fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @in
 // slots are unused in the loop, so their interpreter values need no recovery.
 fn bool loop_highreg_prepare(CompiledFunction* cf, uint begin, uint end,
     uint[compiler::BYTECODE_REGS_MAX]* map, int[LOOP_REGS]* slot_reg, bool apply) @feat(SLJIT) {
+    if (cf.num_regs > compiler::BYTECODE_REGS_MAX) return false;
     for (uint i = 0; i < compiler::BYTECODE_REGS_MAX; i++) (*map)[i] = i;
     for (uint i = 0; i < LOOP_REGS; i++) (*slot_reg)[i] = (int)i;
-    ulong low = compiler::bytecode_low_register_mask(cf.code, begin, end);
+    uint[32] used_words;
+    compiler::RegSet used = { .words = &used_words[0], .word_count = 32 };
+    compiler::bytecode_register_set(cf.code, begin, end, &used);
+    ulong low = (ulong)used_words[0] | ((ulong)used_words[1] << 32);
     bool aliased;
     for (uint reg = LOOP_REGS; reg < cf.num_regs; reg++) {
-        if (!compiler::bytecode_register_used(cf.code, begin, end, reg)) continue;
+        if (!used.test(reg)) continue;
         uint slot;
         while (slot < LOOP_REGS && (low & (1UL << slot)) != 0) slot++;
         if (slot == LOOP_REGS) return false;

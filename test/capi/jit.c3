@@ -65,6 +65,24 @@ fn void check_wide_alias_refusal() {
     @check(compiler::bytecode_register_used(&code[0], 0, 2, 7));
 }
 
+// The alias window consumes one set for all low and high-register queries.
+fn void check_alias_register_set() {
+    Instruction[4] code = {
+        bytecode::make_wide(1, 1, 0),
+        bytecode::make_abc(Opcode.LDREG, 2, 3, 0),
+        bytecode::make_abc(Opcode.GETPROPC, 4, 5, 7),
+        bytecode::make_abc(Opcode.RET, 4, 0, 0)
+    };
+    uint[32] words;
+    compiler::RegSet used = { .words = &words[0], .word_count = 32 };
+    compiler::bytecode_register_set(&code[0], 0, 3, &used);
+    @check(used.test(258) && used.test(259) && used.test(4) && used.test(5));
+    @check(!used.test(7) && !used.test(2) && !used.test(3));
+    ulong low = compiler::bytecode_low_register_mask(&code[0], 0, 3);
+    @check((low & ((1UL << 4) | (1UL << 5))) == ((1UL << 4) | (1UL << 5)));
+    @check((low & ((1UL << 7) | (1UL << 2) | (1UL << 3))) == 0);
+}
+
 fn void eval(JsContext* ctx, String source) {
     JsValue? value = ctx.eval(source);
     if (catch err = value) {
@@ -711,6 +729,7 @@ fn void main() {
     check_dependency_gc();
     check_parameter_alias_roles();
     check_wide_alias_refusal();
+    check_alias_register_set();
     check_register_effects();
     check_native_convention();
     check_ic_gc_roots();
