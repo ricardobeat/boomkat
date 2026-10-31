@@ -100,6 +100,108 @@ fn void check_decoded_register_uses() {
     @check(!compiler::moveelim_get_decoded_def(call, &def));
 }
 
+// Independent path-exclusion oracle for four-block control-flow graphs.
+fn uint dominance_reachable(uint edges, int excluded) {
+    if (excluded == 0) return 0;
+    uint reached = 1;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (uint from = 0; from < 4; from++) {
+            if ((reached & (1U << from)) == 0) continue;
+            for (uint to = 0; to < 4; to++) {
+                if ((int)to == excluded || (edges & (1U << (from * 4 + to))) == 0) continue;
+                if ((reached & (1U << to)) == 0) { reached |= 1U << to; changed = true; }
+            }
+        }
+    }
+    return reached;
+}
+
+fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
+    Heap* h = runtime.rt.heap;
+    SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
+    @check(graph != null);
+    defer h.free_func(h.heap_udata, graph);
+    std::core::mem::clear(graph, (sz)SsaGraph::size);
+    // The real splitter must not invent a successor to entry for a missing
+    // second edge. A loop has only its actual latch as an entry predecessor.
+    Instruction[5] code = {
+        bytecode::make_a_sbx(Opcode.IF_FALSE, 0, 2),
+        bytecode::make_abc(Opcode.LDINT, 1, 0, 0),
+        bytecode::make_sabc(Opcode.JUMP, 1),
+        bytecode::make_abc(Opcode.LDINT, 1, 0, 0),
+        bytecode::make_abc(Opcode.LDINT, 2, 0, 0)
+    };
+    CompiledFunction cf = { .code = &code[0], .code_count = code.len };
+    LoopPlan plan = { .begin = 0, .end = 4 };
+    graph.cf = &cf; graph.plan = &plan; graph.single_pass = true;
+    @check(vm::ssa_split_blocks(graph));
+    @check(graph.block_count == 4 && graph.blocks[0].pred_count == 0);
+    @check(graph.blocks[1].succ1 == vm::SSA_BLOCKS && graph.blocks[2].succ1 == vm::SSA_BLOCKS);
+    @check(graph.blocks[3].succ0 == vm::SSA_BLOCKS && graph.blocks[3].succ1 == vm::SSA_BLOCKS);
+    code[4] = bytecode::make_a_sbx(Opcode.IF_TRUE, 0, -5);
+    graph.single_pass = false;
+    @check(vm::ssa_split_blocks(graph));
+    @check(graph.blocks[0].pred_count == 1 && graph.blocks[0].preds[0] == 3);
+
+    // Several diamonds previously overflowed entry's four-predecessor
+    // limit solely because each fallthrough block invented an entry edge.
+    Instruction[11] diamonds = {
+        bytecode::make_a_sbx(Opcode.IF_FALSE, 0, 1), bytecode::make_abc(Opcode.LDINT, 1, 0, 0),
+        bytecode::make_a_sbx(Opcode.IF_FALSE, 0, 1), bytecode::make_abc(Opcode.LDINT, 1, 0, 0),
+        bytecode::make_a_sbx(Opcode.IF_FALSE, 0, 1), bytecode::make_abc(Opcode.LDINT, 1, 0, 0),
+        bytecode::make_a_sbx(Opcode.IF_FALSE, 0, 1), bytecode::make_abc(Opcode.LDINT, 1, 0, 0),
+        bytecode::make_a_sbx(Opcode.IF_FALSE, 0, 1), bytecode::make_abc(Opcode.LDINT, 1, 0, 0),
+        bytecode::make_abc(Opcode.LDINT, 2, 0, 0)
+    };
+    cf.code = &diamonds[0]; cf.code_count = diamonds.len;
+    plan.end = diamonds.len - 1; graph.single_pass = true;
+    @check(vm::ssa_split_blocks(graph));
+    @check(graph.block_count == 11 && graph.blocks[0].pred_count == 0);
+
+    graph.block_count = 4;
+    // Exhaust all four-node graphs, including irreducible cycles, multiple
+    // backedges, self loops, forward diamonds and unreachable blocks.
+    for (uint edges = 0; edges < 65536; edges++) {
+        uint reachable = dominance_reachable(edges, -1);
+        for (uint b = 0; b < 4; b++) graph.blocks[b].pred_count = 0;
+        for (uint from = 0; from < 4; from++) for (uint to = 0; to < 4; to++) {
+            if ((edges & (1U << (from * 4 + to))) == 0) continue;
+            SsaBlock* block = &graph.blocks[to];
+            block.preds[block.pred_count++] = from;
+        }
+        vm::ssa_dominators(graph);
+        for (uint b = 0; b < 4; b++) {
+            if ((reachable & (1U << b)) == 0) {
+                @check(graph.dominators[b] == (1U << b));
+                continue;
+            }
+            uint expected;
+            for (uint d = 0; d < 4; d++) {
+                if ((dominance_reachable(edges, (int)d) & (1U << b)) == 0) expected |= 1U << d;
+            }
+            @check(graph.dominators[b] == expected);
+        }
+    }
+    // An unreachable predecessor does not remove a reachable dominator.
+    graph.block_count = 4;
+    for (uint b = 0; b < 4; b++) graph.blocks[b].pred_count = 0;
+    graph.blocks[1].preds[0] = 2; graph.blocks[1].pred_count = 1;
+    graph.blocks[2].preds[0] = 0; graph.blocks[2].preds[1] = 1;
+    graph.blocks[2].preds[2] = 3; graph.blocks[2].pred_count = 3;
+    vm::ssa_dominators(graph);
+    @check(graph.dominators[1] == 7 && graph.dominators[2] == 5 && graph.dominators[3] == 8);
+    // The load optimizer consumes these dominance facts: block 2 dominates
+    // block 1 even though its number is greater and the graph has a backedge.
+    graph.value_count = 3;
+    graph.values[0] = { .op = CONST_I, .rep = INT32, .block = 0 };
+    graph.values[1] = { .op = LOAD, .rep = INT32, .a = 0, .imm = 0, .block = 2 };
+    graph.values[2] = { .op = LOAD, .rep = INT32, .a = 0, .imm = 0, .block = 1 };
+    vm::ssa_cse(graph);
+    @check(graph.values[2].op == SsaOp.COPY && graph.values[2].a == 1);
+}
+
 // Verify WIDE-aware CFG joins, loop fixed points and recovery from the real
 // SSA continuation consumer. Targets into WIDE payloads must refuse.
 fn void check_decoded_liveness(JsRuntime* runtime) {
@@ -892,6 +994,7 @@ fn void main() {
     a.create(&first)!!;
     defer a.destroy();
     check_function_missing_caches(&first);
+    check_ssa_cyclic_dominance(&first);
     check_decoded_liveness(&first);
     b.create(&first)!!;
     defer b.destroy();

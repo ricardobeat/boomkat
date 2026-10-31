@@ -12,15 +12,67 @@ import std::io;
 
 // SSA optimization and register allocation.
 
-// Forward body edges form a DAG (the latch owns the only backedge). Reuse a
-// load only if its definition dominates this use, and no possibly aliased
-// store intervenes. Distinct memory descriptors do not prove disjoint objects.
+// Reuse a load only if its definition dominates this use, and no possibly
+// aliased store intervenes. Distinct memory descriptors do not prove disjoint
+// objects. Forward graphs use the existing single sweep; a general graph
+// needs a fixed point and must ignore unreachable predecessors.
 fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
-    for (uint b = 0; b < g.block_count; b++) {
-        uint mask = b == 0 || g.blocks[b].pred_count == 0 ? 0 : uint::max;
-        if (b != 0) for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-            mask &= g.dominators[g.blocks[b].preds[p]];
+    bool forward = true;
+    for (uint b = 1; b < g.block_count; b++) {
+        for (uint p = 0; p < g.blocks[b].pred_count; p++) {
+            if (g.blocks[b].preds[p] >= b) forward = false;
         }
+    }
+    if (!forward) {
+        uint reachable = 1;
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (uint b = 1; b < g.block_count; b++) {
+                if ((reachable & (1U << b)) != 0) continue;
+                for (uint p = 0; p < g.blocks[b].pred_count; p++) {
+                    if ((reachable & (1U << g.blocks[b].preds[p])) != 0) {
+                        reachable |= 1U << b;
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+        }
+        for (uint b = 0; b < g.block_count; b++) {
+            g.dominators[b] = b == 0 || (reachable & (1U << b)) == 0 ? 1U << b : reachable;
+        }
+        changed = true;
+        while (changed) {
+            changed = false;
+            for (uint b = 1; b < g.block_count; b++) {
+                if ((reachable & (1U << b)) == 0) continue;
+                uint mask = reachable;
+                for (uint p = 0; p < g.blocks[b].pred_count; p++) {
+                    uint pred = g.blocks[b].preds[p];
+                    if ((reachable & (1U << pred)) != 0) mask &= g.dominators[pred];
+                }
+                mask |= 1U << b;
+                if (mask != g.dominators[b]) {
+                    g.dominators[b] = mask;
+                    changed = true;
+                }
+            }
+        }
+        return;
+    }
+    uint reachable = 1;
+    for (uint b = 0; b < g.block_count; b++) {
+        uint mask = uint::max;
+        bool has_reachable_pred;
+        if (b != 0) for (uint p = 0; p < g.blocks[b].pred_count; p++) {
+            uint pred = g.blocks[b].preds[p];
+            if ((reachable & (1U << pred)) == 0) continue;
+            has_reachable_pred = true;
+            mask &= g.dominators[pred];
+        }
+        if (has_reachable_pred) { reachable |= 1U << b; }
+        else { mask = 0; }
         g.dominators[b] = mask | (1U << b);
     }
 }

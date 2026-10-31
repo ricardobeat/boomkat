@@ -369,8 +369,8 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         block.end = e <= limit ? e : limit;
         block.conditional = false;
         block.jump = false;
-        block.succ0 = 0;
-        block.succ1 = 0;
+        block.succ0 = SSA_BLOCKS;
+        block.succ1 = SSA_BLOCKS;
         if (block.branch_pc != uint::max) {
             Instruction ins = cf.code[block.branch_pc];
             if (ins.op == Opcode.JUMP) {
@@ -389,13 +389,12 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
             continue;
         }
         if (block.branch_pc == uint::max) {
-            block.succ0 = i + 1 < count ? i + 1 : 0;
+            block.succ0 = i + 1 < count ? i + 1 : SSA_BLOCKS;
             continue;
         }
         Instruction ins = cf.code[block.branch_pc];
         int target      = loop_target(ins, block.branch_pc);
         if (block.jump) {
-            block.succ0 = 0;
             for (uint j = 0; j < count; j++) {
                 if (g.blocks[j].begin == (uint)target) {
                     block.succ0 = j;
@@ -406,8 +405,7 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         }
         // A conditional branch: the arm that falls through is the next block,
         // the other one is the block the target names.
-        block.succ0 = i + 1 < count ? i + 1 : 0;
-        block.succ1 = 0;
+        block.succ0 = i + 1 < count ? i + 1 : SSA_BLOCKS;
         for (uint j = 0; j < count; j++) {
             if (g.blocks[j].begin == (uint)target) {
                 block.succ1 = j;
