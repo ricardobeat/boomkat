@@ -294,6 +294,21 @@ fn void? JsRuntime.drain_microtasks(&self) {
     if (rc != embed::BK_OK) return fault_of(rc)~;
 }
 
+// Queue a callable with no arguments and undefined this. The queue owns the
+// callback until delivery, ignores its result, and reports exceptions through
+// drain_microtasks. No promise is created and no JS factory is consulted.
+fn void? JsContext.enqueue_job(&self, JsValue callback) {
+    if (self.rt == null) return NOT_CREATED~;
+    embed::select_context(self.context);
+    TVal f;
+    if (!self.load(callback, &f)) return STALE_VALUE~;
+    if (!builtins::is_callable_tval(f)) return NOT_CALLABLE~;
+    TVal arg, terminal;
+    arg.set_undefined();
+    terminal.set_boolean(false);
+    if (!self.rt.heap.enqueue_microtask(f, arg, terminal)) return OUT_OF_MEMORY~;
+}
+
 // ============================================================================
 // Building values
 // ============================================================================

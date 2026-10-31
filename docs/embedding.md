@@ -361,6 +361,13 @@ BigInts convert through `int64_t`, `uint64_t`, or sign-and-magnitude arrays of
 lost; `bk_read_bigint_words` measures with a NULL buffer. Builds without BigInt
 fail with `BK_ERR_UNSUPPORTED`.
 
+`bk_enqueue_job(ctx, callback)` queues a callable without allocating a promise.
+It runs at the host's next checkpoint, in FIFO order with promise reactions,
+with no arguments and `undefined` as `this`. The queue retains the callback;
+its return value is ignored. Throws reach the host through the job runner as
+`BK_ERR_THROW`, with later jobs preserved for another checkpoint. The C3
+counterpart is `JsContext.enqueue_job`.
+
 ### Promises
 
 `bk_new_promise` returns a pending promise with its resolve and reject

@@ -58,6 +58,34 @@ int main(void) {
     assert(hooks == 3);
     bk_run_jobs(rt);
 
+    /* Native jobs share FIFO order with reactions, take no arguments, and
+     * retain their callbacks after the caller frees its handle. */
+    bk_value job = eval(ctx, "globalThis.jobs = []; function job() { 'use strict'; jobs.push(arguments.length + ':' + (this === undefined)); return { get then() { throw 'ignored'; } }; } job");
+    assert(bk_enqueue_job(ctx, job) == BK_OK);
+    bk_free_value(ctx, job);
+    eval(ctx, "Promise.resolve().then(() => jobs.push('reaction'))");
+    bk_gc(rt, BK_GC_FULL);
+    assert(bk_to_bool(ctx, eval(ctx, "jobs.length === 0")));
+    assert(bk_run_jobs(rt) == BK_OK);
+    assert(bk_to_bool(ctx, eval(ctx, "jobs.join(',') === '0:true,reaction'")));
+    assert(bk_enqueue_job(ctx, BK_UNDEFINED) == BK_ERR_TYPE);
+    assert(bk_enqueue_job(ctx, (bk_value)UINT64_MAX) == BK_ERR_INVALID);
+    job = eval(ctx, "() => { throw 'job failure'; }");
+    assert(bk_enqueue_job(ctx, job) == BK_OK);
+    assert(bk_enqueue_job(ctx, eval(ctx, "() => jobs.push('after failure')")) == BK_OK);
+    bk_ctx job_ctx = NULL;
+    assert(bk_execute_pending_job(rt, &job_ctx) == BK_ERR_THROW && job_ctx == ctx);
+    bk_value thrown = bk_get_exception(ctx);
+    assert(bk_strict_equals(ctx, thrown, eval(ctx, "'job failure'")));
+    bk_free_value(ctx, thrown);
+    assert(bk_is_job_pending(rt));
+    assert(bk_run_jobs(rt) == BK_OK);
+    assert(bk_to_bool(ctx, eval(ctx, "jobs[2] === 'after failure'")));
+    assert(bk_enqueue_job(ctx, job) == BK_OK);
+    assert(bk_run_jobs(rt) == BK_ERR_THROW);
+    bk_free_value(ctx, bk_get_exception(ctx));
+    bk_free_value(ctx, job);
+
     /* Poll and timeout. */
     assert(bk_wait_events(rt, 0) == 0);
     double t0 = now_ms();

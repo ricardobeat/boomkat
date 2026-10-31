@@ -1248,7 +1248,7 @@ struct Heap {
     // Microtask queue, filled by promise_trigger_reactions and drained after
     // each top-level script execution and after vm_call_fn_impl returns. Every
     // entry occupies 3 TVal slots: handler, arg, and the downstream promise to
-    // resolve with the handler's return value, undefined, or true for a terminal host job.
+    // resolve with the handler's return value, undefined, or a boolean for a terminal host job.
     // Jobs [microtask_head, microtask_count) are pending; the drain releases the
     // slots before the head, and a full queue slides the pending jobs down.
     TVal*     microtask_queue;
@@ -6133,7 +6133,10 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
 
             TVal result;
             if (self.call_handler_fn != null && vm != null) {
-                result = self.call_handler_fn(vm, handler, &arg);
+                // Observer callbacks receive the settlement value; host jobs
+                // marked false are called with no arguments (queueMicrotask).
+                TVal* job_arg = downstream.is_boolean() && !downstream.get_boolean() ? null : &arg;
+                result = self.call_handler_fn(vm, handler, job_arg);
             } else {
                 result = arg;
             }
@@ -6148,7 +6151,7 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
             // resume half-dead promise state.
             if (self.uncatchable_throw) {
                 interrupted = true;
-            } else if (downstream.is_boolean() && downstream.get_boolean()) {
+            } else if (downstream.is_boolean()) {
                 self.host_job_error = self.has_error;
             } else if (downstream.is_object() && downstream.get_heapptr() != null &&
                        self.microtask_after_fn != null && vm != null) {
