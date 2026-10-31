@@ -107,18 +107,6 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         for (uint reg = 0; reg < LOOP_REGS; reg++) exit_live[reg] = true;
         break;
     }
-    if (!g.single_pass) {
-        // Budget and guard exits at the latch replay its branch, so its
-        // operands are recovery-live even when the fallthrough overwrites
-        // them. snapshot_phis publishes these operands on that exit.
-        Instruction latch = cf.code[plan.end];
-        if (latch.op == Opcode.IF_TRUE || latch.op == Opcode.IF_FALSE) {
-            if (latch.a < LOOP_REGS) exit_live[latch.a] = true;
-        } else if (ssa_comparison_op(latch.op)) {
-            if (latch.b < LOOP_REGS) exit_live[latch.b] = true;
-            if (latch.op < Opcode.JMP_NLTI && latch.c < LOOP_REGS) exit_live[latch.c] = true;
-        }
-    }
     g.current_pc = plan.begin;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
         if (!g.single_pass && written[reg] && (live_in[reg] || exit_live[reg])) {
@@ -518,6 +506,9 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     // them in the final block before parallel copies, and retain recovery
     // operands through any guards they emit at the backedge bytecode.
     g.block_last[g.block_count - 1] = g.value_count;
+    // All converted phi inputs are consumed together by the latch. A later
+    // conversion must not reuse an earlier input's home before that point.
+    foreach (phi : g.phi) if (phi >= 0) ssa_use(g, g.values[phi].a);
     foreach (value : g.frames[plan.end - plan.begin]) if (value >= 0) ssa_use(g, value);
     for (uint i = 0; i < g.value_count; i++) {
         if (g.values[i].op == ARG || g.values[i].op == PHI) g.values[i].last = g.stamp;

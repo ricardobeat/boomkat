@@ -1290,6 +1290,25 @@ fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {
 fn void SsaEmitter.latch(&self) @feat(SLJIT) {
     int r0         = jit::reg_r(0);
     int r1         = jit::reg_r(1);
+    // Exit before phi copies so the bytecode frame is still available in
+    // its original homes. This makes the latch operands recovery uses, not
+    // artificial loop-carried phis when fallthrough does not need them.
+    self.at_def = self.g.stamp;
+    int[LOOP_REGS] recovery;
+    for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        int phi = self.g.phi[reg];
+        recovery[reg] = phi < 0 ? -1 : self.g.values[phi].a;
+    }
+    Instruction latch = self.cf.code[self.plan.end];
+    int[LOOP_REGS]* frame = &self.g.frames[self.plan.end - self.plan.begin];
+    if (latch.op == Opcode.IF_TRUE || latch.op == Opcode.IF_FALSE) {
+        if (latch.a < LOOP_REGS) recovery[latch.a] = (*frame)[latch.a];
+    } else if (ssa_comparison_op(latch.op)) {
+        if (latch.b < LOOP_REGS) recovery[latch.b] = (*frame)[latch.b];
+        if (latch.op < Opcode.JMP_NLTI && latch.c < LOOP_REGS) recovery[latch.c] = (*frame)[latch.c];
+    }
+    self.snapshot_frame(self.e.cmp(jit::SLJIT_LESS_EQUAL, self.budget, 0, jit::SLJIT_IMM, 1), self.plan.end, &recovery);
+    self.e.op(jit::SLJIT_SUB, self.budget, self.budget, 0, jit::SLJIT_IMM, 1);
     // A postfix comparison may still read a header value whose home the phi
     // copies replace (while (count-- > 0)). Save the predicate before copies.
     bool truth = self.g.cmp_op == Opcode.IF_TRUE || self.g.cmp_op == Opcode.IF_FALSE;
@@ -1406,11 +1425,6 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
         self.e.mov(jit::SLJIT_MEM | self.state, loop_value_offset(reg), r0, 0);
         self.dirty_mask |= 1UL << reg;
     }
-    // A failed budget polls the interpreter at the backedge; post-body values
-    // are published, not the edge copies.
-    self.at_def = self.g.stamp;
-    self.snapshot_phis(self.e.cmp(jit::SLJIT_LESS_EQUAL, self.budget, 0, jit::SLJIT_IMM, 1), self.plan.end);
-    self.e.op(jit::SLJIT_SUB, self.budget, self.budget, 0, jit::SLJIT_IMM, 1);
     int r2       = jit::reg_r(2);
     SsaValue lhs = self.g.values[self.g.cmp_lhs];
     if (truth) {
