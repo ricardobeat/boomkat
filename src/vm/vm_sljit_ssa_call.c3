@@ -29,7 +29,8 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
     }
     defer h.free_func(h.heap_udata, graph);
     LoopPlan layout;
-    LoopEmitter checks = { .e = *e, .plan = &layout };
+    LoopEmitter checks = { .e = *e, .plan = &layout, .heap = h };
+    defer checks.link_release();
     int r0 = jit::reg_r(0);
     int r3 = jit::reg_r(3);
     int regs = jit::reg_s(0);

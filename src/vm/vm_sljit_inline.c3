@@ -905,6 +905,7 @@ fn bool FunctionEmitter.inline_general(&self, CompiledFunction* cf, uint pc, Hea
     FunctionEmitter inner;
     inner.out.e.compiler = out.e.compiler;
     inner.out.plan = &inner_loop;
+    inner.out.heap = out.heap;
     inner.out.function_mode = true;
     inner.out.raw_store = true;
     inner.out.state_reg = window;

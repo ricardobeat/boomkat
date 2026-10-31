@@ -10,6 +10,8 @@ import boomkat::jit;
 import std::io;
 import std::core::mem;
 
+// Bodies compile as one unit while they fit this window; a larger one compiles
+// a bounded region entered at a hot header.
 const uint FUNCTION_OPS        = 512;
 const uint FUNCTION_BAIL       = uint::max;
 const uint FUNCTION_CAPTURES   = 8;
@@ -286,7 +288,23 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
         e.mov(mem | out.state_base(), loop_value_offset(reg), r0, 0);
         return;
     }
+    // Only heap strings are refcounted, so an assignment of two numeric values
+    // needs one tag check each. The first string either side sends both to the
+    // shared release/retain path below, which is where every previous store
+    // started; the common case now skips it entirely.
     out.load(reg, r1);
+    e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
+    void* old_string = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
+    void* new_string;
+    if (!inert) {
+        e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+        new_string = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING);
+    }
+    int cached = out.cached(reg);
+    e.mov(cached != 0 ? cached : mem | out.state_base(), cached != 0 ? 0 : loop_value_offset(reg), r0, 0);
+    void* stored = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(old_string);
+    if (new_string != null) e.bind(new_string);
     HeapHeader header;
     long refs = (char*)&header.refcount - (char*)&header;
     e.op(jit::SLJIT_LSHR, r3, r1, 0, imm, 48);
@@ -323,8 +341,8 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
     e.bind(release_pinned);
     e.bind(release_null);
     e.bind(release_inert);
-    int cached = out.cached(reg);
     e.mov(cached != 0 ? cached : mem | out.state_base(), cached != 0 ? 0 : loop_value_offset(reg), r0, 0);
+    e.bind(stored);
 }
 fn void FunctionEmitter.store(&self, uint reg, uint pc, bool known = false) @feat(SLJIT) {
     if (self.out.flow != null && self.flow_hint(reg, pc)) {
@@ -875,12 +893,10 @@ fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
     if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;
 }
 
-// Larger generic bodies can displace the tighter loop tier without reducing
-// runtime work. Reserve extra fixups for regions dominated by sampled typed
-// memory accesses, whose buffer guards account for much of their code size.
-// Every other body gets eight fixups per bytecode, the density 2048 covers for
-// 256 ops, so a longer body is not rejected merely for being long.
-fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
+// Typed memory reads and writes, sampled during interpreter warmup, outnumber
+// named property sites in asm.js-shaped code. Those bodies are the ones whose
+// generated code beats the interpreter, so they alone earn the extra fixups.
+fn bool function_typed_body(CompiledFunction* cf) @feat(SLJIT) {
     uint typed;
     uint named;
     for (uint i = 0; i < cf.code_count; i++) {
@@ -891,16 +907,22 @@ fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
         ICEntry* ic = (ICEntry*)cf.ic_entries + i;
         if (ic.typed_kind != 0 && ic.typed_kind != 255) typed++;
     }
-    if (typed >= 8 && typed > named) return LOOP_LINK_LIMIT;
-    uint sized = cf.code_count * 8;
-    return sized < 2048 ? 2048 : sized > LOOP_LINK_LIMIT ? LOOP_LINK_LIMIT : sized;
+    return typed >= 8 && typed > named;
 }
-
+// Every guard and every exit records a fixup, and typed-memory reads record
+// several each, so a typed body gets three times the eight fixups per bytecode
+// that every other body is allowed.
+const uint REGION_LINK_LIMIT = 8192;
+fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
+    if (function_typed_body(cf)) return LINK_LIMIT_MAX;
+    uint sized = cf.code_count * 8;
+    return sized < 2048 ? 2048 : sized > REGION_LINK_LIMIT ? REGION_LINK_LIMIT : sized;
+}
 fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activation* act, ColdCtx* cold = null) @feat(SLJIT) {
     $if $feat(SLJIT_STATS): cf.sljit_rejection = "emission failed"; $endif
     LoopPlan layout_plan;
     FunctionEmitter emitter = {
-        .out = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = &layout_plan },
+        .out = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = &layout_plan, .heap = h },
         .plan = plan
     };
     FunctionEmitter* f = &emitter;
@@ -932,6 +954,10 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     TemplateEmitter* e = &out.e;
     if (e.compiler == null) return false;
     defer jit::sljit_free_compiler(e.compiler);
+    out.labels = out.labels_alloc(cf.code_count);
+    if (out.labels == null) return false;
+    defer out.labels_free();
+    defer out.link_release();
     // s0..s4 are the state, cold context, run block, `this` and captures;
     // inlining also keeps an inline window base.
     // Only the outer gateway follows the C ABI. Internal calls keep the

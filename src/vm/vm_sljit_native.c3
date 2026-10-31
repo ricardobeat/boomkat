@@ -127,7 +127,8 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     if (self.plan.begin != 0 || !cf.call_flags.lean_call || cf.arguments_in_reg()
         || cf.num_formals > 255) return null;
     TemplateEmitter* e = &self.out.e;
-    LoopEmitter guards = { .e = *e };
+    LoopEmitter guards = { .e = *e, .heap = self.out.heap };
+    defer guards.link_release();
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);
     int r2 = jit::reg_r(2);

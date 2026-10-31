@@ -185,7 +185,8 @@ fn void FunctionEmitter.flow_materialize(&self) @feat(SLJIT) {
 // exits at the following bytecode without publishing partially reloaded lanes.
 fn void FunctionEmitter.flow_reload(&self, uint pc) @feat(SLJIT) {
     if (self.flow.pinned == 0) return;
-    LoopEmitter reload = { .e = self.out.e };
+    LoopEmitter reload = { .e = self.out.e, .heap = self.out.heap };
+    defer reload.link_release();
     for (uint lane = 0; lane < 4; lane++) {
         if ((self.flow.pinned & (1U << lane)) == 0) continue;
         reload.e.mov(jit::reg_r(0), 0, jit::SLJIT_MEM | self.out.state_base(),

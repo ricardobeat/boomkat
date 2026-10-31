@@ -25,7 +25,9 @@ const uint SSA_SPAN       = 128;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
 const uint LOOP_THIS      = LOOP_REGS + LOOP_BINDINGS;
-const uint LOOP_LINK_LIMIT = 8192;
+// A fixup costs one arena block per four records; the directory that indexes
+// them is heap-allocated per emitter, so this ceiling only bounds memory.
+const uint LINK_LIMIT_MAX = 65536;
 const uint LOOP_LINK_BLOCK = usz::size == 8 ? 4 : 2;
 
 alias LoopNative = fn uint(void* state, long budget);
@@ -153,10 +155,12 @@ struct LoopLink @feat(SLJIT) {
 struct LoopEmitter @feat(SLJIT) {
     TemplateEmitter e;
     LoopPlan* plan;
-    void*[512] labels;
-    // Small chunks belong to the SLJIT compiler arena. Nested emitters keep
-    // only this index on the stack; unused fixup capacity allocates nothing.
-    LoopLink*[LOOP_LINK_LIMIT / LOOP_LINK_BLOCK] link_blocks;
+    Heap* heap;
+    // One label per emitted position, and a directory into arena-allocated
+    // fixup blocks. Both are allocated by the emitter that records them, so a
+    // nested emitter that only binds guards already set costs two pointers.
+    void** labels;
+    LoopLink** link_blocks;
     uint link_count;
     uint link_limit;
     bool link_limit_reached @if($feat(SLJIT_STATS));
@@ -1069,6 +1073,21 @@ fn LoopLink* LoopEmitter.link_at(&self, uint index) @feat(SLJIT) {
     return self.link_blocks[index / LOOP_LINK_BLOCK] + index % LOOP_LINK_BLOCK;
 }
 fn uint LoopEmitter.link_capacity(&self) @feat(SLJIT) => self.link_limit != 0 ? self.link_limit : 2048;
+fn void LoopEmitter.link_release(&self) @feat(SLJIT) {
+    if (self.link_blocks != null) self.heap.free_func(self.heap.heap_udata, self.link_blocks);
+    self.link_blocks = null;
+    self.link_count = 0;
+}
+fn void** LoopEmitter.labels_alloc(&self, uint count) @feat(SLJIT) {
+    void** labels = (void**)self.heap.alloc_func(self.heap.heap_udata, (usz)(count + 1) * void*::size);
+    if (labels != null) for (uint i = 0; i <= count; i++) labels[i] = null;
+    return labels;
+}
+fn void LoopEmitter.labels_free(&self) @feat(SLJIT) {
+    if (self.labels == null) return;
+    self.heap.free_func(self.heap.heap_udata, self.labels);
+    self.labels = null;
+}
 fn void LoopEmitter.add_link(&self, LoopLink link) @feat(SLJIT) {
     $if $feat(SLJIT_STATS):
         if (self.link_count == self.link_capacity()) self.link_limit_reached = true;
@@ -1076,6 +1095,12 @@ fn void LoopEmitter.add_link(&self, LoopLink link) @feat(SLJIT) {
     if (link.jump == null || self.link_count == self.link_capacity()) {
         self.e.failed = true;
         return;
+    }
+    if (self.link_blocks == null) {
+        uint blocks = (self.link_capacity() + LOOP_LINK_BLOCK - 1) / LOOP_LINK_BLOCK;
+        self.link_blocks = (LoopLink**)self.heap.alloc_func(self.heap.heap_udata, (usz)blocks * void*::size);
+        if (self.link_blocks == null) { self.e.failed = true; return; }
+        for (uint i = 0; i < blocks; i++) self.link_blocks[i] = null;
     }
     uint block = self.link_count / LOOP_LINK_BLOCK;
     if (self.link_blocks[block] == null) {
@@ -1450,11 +1475,15 @@ fn int loop_float_condition(Opcode op) @feat(SLJIT) {
         default: unreachable("loop_float_condition relation opcode");
     }
 }
-fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
-    LoopEmitter out    = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = plan };
+fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
+    LoopEmitter out    = { .e = { .compiler = jit::sljit_create_compiler(null) }, .plan = plan, .heap = h };
     TemplateEmitter* e = &out.e;
     if (!e.compiler) return null;
     defer jit::sljit_free_compiler(e.compiler);
+    out.labels = out.labels_alloc(plan.end - plan.begin);
+    if (out.labels == null) return null;
+    defer out.labels_free();
+    defer out.link_release();
     if (jit::sljit_emit_enter(e.compiler, 0, jit::SLJIT_ARGS2WWW_R, 8 | (6 << 8), 5, 0) != 0) return null;
     int r0     = jit::reg_r(0);
     int r1     = jit::reg_r(1);
@@ -1877,7 +1906,7 @@ fn bool loop_highreg_compile(CompiledFunction* cf, uint offset, TVal* regs, Cold
     draft.ssa = draft.native != null;
     if (draft.native == null && !draft.ssa_calls) {
         for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
-        draft.native = loop_emit(draft, cf);
+        draft.native = loop_emit(draft, cf, h);
     }
     return draft.native != null;
 }
@@ -1900,7 +1929,7 @@ fn LoopNative loop_reemit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool ss
     if (aliased) for (uint q = 0; q <= span; q++) saved[q] = cf.code[plan.begin + q];
     defer if (aliased) for (uint q = 0; q <= span; q++) cf.code[plan.begin + q] = saved[q];
     if (aliased && !compiler::bytecode_remap_registers(cf.code, plan.begin, plan.end, map)) return null;
-    return ssa ? ssa_loop_emit(plan, cf, h) : loop_emit(plan, cf);
+    return ssa ? ssa_loop_emit(plan, cf, h) : loop_emit(plan, cf, h);
 }
 
 fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
@@ -1959,7 +1988,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             draft.ssa = draft.native != null;
             if (draft.native == null && !draft.ssa_calls) {
                 for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
-                draft.native = loop_emit(&draft, cf);
+                draft.native = loop_emit(&draft, cf, h);
             }
             compiled = draft.native != null;
         }

@@ -25,7 +25,7 @@ fn FunctionNumericIR function_numeric_ir(CompiledFunction* cf, bool whole) @feat
         Opcode op = cf.code[pc].op;
         if (!function_op(op) && !function_call_op(op)) return ir;
     }
-    ulong[4][FUNCTION_OPS + 1] live;
+    ulong[4][FUNCTION_REGION_OPS + 1] live;
     bool[256] excluded;
     uint[256] weight;
     for (uint pc = 0; pc < cf.code_count; pc++) {
