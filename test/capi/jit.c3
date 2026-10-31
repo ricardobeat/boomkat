@@ -80,6 +80,102 @@ fn void check_decoded_bytecode() {
     @check(used.test(300) && !used.test(0x34) && !used.test(0x12));
 }
 
+// Decoded uses include high-register windows and keep property constants and
+// string-join counts distinct from register operands.
+fn void check_decoded_register_uses() {
+    if (!compiler::moveelim_roles_ready) compiler::moveelim_init_roles();
+    uint[32] words;
+    compiler::RegSet used = { .words = &words[0], .word_count = 32 };
+    DecodedInsn property = { Opcode.GETPROPC, 300, 301, 23 };
+    used.clear(); compiler::moveelim_add_decoded_uses(property, &used, true);
+    @check(used.test(301) && !used.test(300) && !used.test(23));
+    uint def;
+    @check(compiler::moveelim_get_decoded_def(property, &def) && def == 300);
+    DecodedInsn join = { Opcode.STRJOIN, 300, 500, 3 };
+    used.clear(); compiler::moveelim_add_decoded_uses(join, &used, true);
+    @check(used.test(500) && used.test(501) && used.test(502) && !used.test(503) && !used.test(3));
+    DecodedInsn call = { Opcode.CALL, 300, 400, 3 };
+    used.clear(); compiler::moveelim_add_decoded_uses(call, &used, true);
+    @check(used.test(400) && used.test(401) && used.test(402) && used.test(403) && used.test(404));
+    @check(!compiler::moveelim_get_decoded_def(call, &def));
+}
+
+// Verify WIDE-aware CFG joins, loop fixed points and recovery from the real
+// SSA continuation consumer. Targets into WIDE payloads must refuse.
+fn void check_decoded_liveness(JsRuntime* runtime) {
+    Instruction[11] code = {
+        bytecode::make_wide(1, 0, 0), bytecode::make_a_sbx(Opcode.IF_FALSE, 44, 3),
+        bytecode::make_wide(1, 0, 0), bytecode::make_abc(Opcode.LDREG, 45, 6, 0),
+        bytecode::make_sabc(Opcode.JUMP, 2),
+        bytecode::make_wide(1, 0, 0), bytecode::make_abc(Opcode.LDREG, 45, 7, 0),
+        bytecode::make_wide(1, 1, 0), bytecode::make_abc(Opcode.LDREG, 48, 45, 0),
+        bytecode::make_wide(1, 0, 0), bytecode::make_abc(Opcode.RET, 48, 0, 0)
+    };
+    compiler::RegSet[22] sets;
+    uint[736] words;
+    for (uint i = 0; i < sets.len; i++) sets[i] = { .words = &words[i * 32], .word_count = 32 };
+    compiler::RegSet scratch = { .words = &words[704], .word_count = 32 };
+    bool[11] boundary;
+    @check(compiler::moveelim_compute_decoded_liveness(&code[0], code.len, &sets[0], &sets[11], &scratch, &boundary[0]));
+    @check(sets[11].test(300) && sets[11].test(6) && sets[11].test(7) && !sets[11].test(301));
+    @check(sets[18].test(301) && !sets[18].test(6) && !sets[18].test(7));
+    @check(boundary[0] && !boundary[1] && boundary[5] && !boundary[6]);
+
+    CompiledFunction cf = { .code = &code[0], .code_count = code.len, .num_regs = 512 };
+    LoopPlan plan = { .end = 4 };
+    for (uint i = 0; i < vm::LOOP_REGS; i++) plan.slot_reg[i] = (int)i;
+    Heap* h = runtime.rt.heap;
+    SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
+    @check(graph != null);
+    defer h.free_func(h.heap_udata, graph);
+    std::core::mem::clear(graph, (sz)SsaGraph::size);
+    graph.cf = &cf; graph.plan = &plan; graph.heap = h;
+    bool[vm::LOOP_REGS] live;
+    @check(vm::ssa_continuation_live(graph, &live));
+    @check(live[7] && !live[6]);
+    // Aliased loop bodies are temporarily rewritten; their surrounding
+    // bytecode still names original registers and must use the fallback.
+    plan.slot_reg[0] = 300;
+    @check(!vm::ssa_continuation_live(graph, &live));
+    plan.slot_reg[0] = 0;
+
+    // This edge targets the LDREG payload, not its prefix.
+    code[1] = bytecode::make_a_sbx(Opcode.IF_FALSE, 44, 4);
+    @check(!compiler::moveelim_compute_decoded_liveness(&code[0], code.len, &sets[0], &sets[11], &scratch, &boundary[0]));
+    @check(!vm::ssa_continuation_live(graph, &live));
+
+    Instruction[3] cyclic = {
+        bytecode::make_wide(1, 1, 0), bytecode::make_abc(Opcode.LDREG, 44, 45, 0),
+        bytecode::make_sabc(Opcode.JUMP, -3)
+    };
+    @check(compiler::moveelim_compute_decoded_liveness(&cyclic[0], cyclic.len, &sets[0], &sets[11], &scratch, &boundary[0]));
+    @check(sets[2].test(301) && sets[11].test(301));
+    Instruction[5] wide_backedge = {
+        bytecode::make_wide(1, 1, 0), bytecode::make_abc(Opcode.LDREG, 44, 45, 0),
+        bytecode::make_wide(1, 0, 0), bytecode::make_a_sbx(Opcode.IF_TRUE, 44, -4),
+        bytecode::make_abc(Opcode.RET, 0, 0, 0)
+    };
+    @check(compiler::moveelim_compute_decoded_liveness(&wide_backedge[0], wide_backedge.len, &sets[0], &sets[11], &scratch, &boundary[0]));
+    @check(sets[2].test(301) && sets[13].test(300) && sets[13].test(301));
+
+    // On narrow bytecode, compare the decoded CFG against the established
+    // liveness engine across a conditional and a backedge.
+    Instruction[5] narrow = {
+        bytecode::make_abc(Opcode.LDREG, 1, 0, 0), bytecode::make_a_sbx(Opcode.IF_FALSE, 1, 2),
+        bytecode::make_abc(Opcode.ADD, 2, 1, 3), bytecode::make_sabc(Opcode.JUMP, -3),
+        bytecode::make_abc(Opcode.RET, 2, 0, 0)
+    };
+    compiler::RegSet[10] original;
+    uint[352] old_words;
+    for (uint i = 0; i < original.len; i++) original[i] = { .words = &old_words[i * 32], .word_count = 32 };
+    compiler::RegSet old_scratch = { .words = &old_words[320], .word_count = 32 };
+    compiler::moveelim_compute_liveness(&narrow[0], narrow.len, &original[0], &original[5], true, &old_scratch);
+    @check(compiler::moveelim_compute_decoded_liveness(&narrow[0], narrow.len, &sets[0], &sets[11], &scratch, &boundary[0]));
+    for (uint i = 0; i < narrow.len; i++) {
+        @check(sets[i].equals(&original[i]) && sets[11 + i].equals(&original[5 + i]));
+    }
+}
+
 // A WIDE call has a register window, not individually remappable fields. A
 // refusal must conservatively reserve every low slot and every queried high
 // register, even when the next instruction uses an otherwise free register.
@@ -778,6 +874,7 @@ fn void main() {
     check_dependency_gc();
     check_parameter_alias_roles();
     check_decoded_bytecode();
+    check_decoded_register_uses();
     check_wide_alias_refusal();
     check_alias_register_set();
     check_register_effects();
@@ -795,6 +892,7 @@ fn void main() {
     a.create(&first)!!;
     defer a.destroy();
     check_function_missing_caches(&first);
+    check_decoded_liveness(&first);
     b.create(&first)!!;
     defer b.destroy();
     isolated.create(&second)!!;

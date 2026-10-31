@@ -24,6 +24,7 @@
 module boomkat::compiler;
 
 import boomkat::bytecode;
+import boomkat::heap;
 import std::io;
 
 // The JIT loop window uses registers 0..63.
@@ -427,18 +428,42 @@ fn bool bytecode_remap_registers(Instruction* code, uint begin, uint end, uint[B
     return true;
 }
 
+// Both packed and decoded instructions use the same per-field roles.
+macro void moveelim_add_role_uses(MoveelimRoles roles, uint a, uint b, uint c, RegSet* live) {
+    if (roles.a_read) live.set(a);
+    if (roles.b_read) live.set(b);
+    if (roles.c_read) live.set(c);
+}
+
+// The role table and general window logic are shared with decoded WIDE
+// bytecode, whose effective register fields can exceed one byte. The caller
+// initializes moveelim_roles before the first use, as for packed bytecode.
+fn void moveelim_add_decoded_uses(DecodedInsn ins, RegSet* live, bool mark_call_windows) {
+    MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+    if (r.general) {
+        moveelim_add_decoded_uses_general(ins, live, mark_call_windows);
+        return;
+    }
+    moveelim_add_role_uses(r, ins.a, ins.b, ins.c, live);
+}
+
+// Keep the ordinary bytecode's common role checks on packed fields; only the
+// less common window instructions need a widened temporary.
 fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) {
     MoveelimRoles r = moveelim_roles[ins.op.ordinal];
     if (r.general) {
         moveelim_add_uses_general(ins, live, mark_call_windows);
         return;
     }
-    if (r.a_read) live.set((uint)ins.a);
-    if (r.b_read) live.set((uint)ins.b);
-    if (r.c_read) live.set((uint)ins.c);
+    moveelim_add_role_uses(r, (uint)ins.a, (uint)ins.b, (uint)ins.c, live);
 }
 
 fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_windows) {
+    DecodedInsn decoded = { ins.op, ins.a, ins.b, ins.c };
+    moveelim_add_decoded_uses_general(decoded, live, mark_call_windows);
+}
+
+fn void moveelim_add_decoded_uses_general(DecodedInsn ins, RegSet* live, bool mark_call_windows) {
     Opcode op = ins.op;
 
     // Call-family argument windows. The VM reads every register from the callee
@@ -547,10 +572,18 @@ fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_
 // Compute the register this instruction WRITES as a plain destination, if
 // any (per `moveelim_a_is_write`). Returns true and fills `out_reg` when
 // there is one.
-fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
-    if (!moveelim_roles[ins.op.ordinal].a_write) { return false; }
-    *out_reg = (uint)ins.a;
+macro bool moveelim_get_role_def(MoveelimRoles roles, uint a, uint* out_reg) {
+    if (!roles.a_write) return false;
+    *out_reg = a;
     return true;
+}
+
+fn bool moveelim_get_decoded_def(DecodedInsn ins, uint* out_reg) {
+    return moveelim_get_role_def(moveelim_roles[ins.op.ordinal], ins.a, out_reg);
+}
+
+fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
+    return moveelim_get_role_def(moveelim_roles[ins.op.ordinal], (uint)ins.a, out_reg);
 }
 
 // Build the jump-target bitset AND record, for TRY/ENDTRY pairs, the
@@ -769,6 +802,127 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
         }
         first = false;
     }
+}
+
+// The caller supplies a positively validated instruction set with no exception
+// handlers, suspension or indirect control flow. Branches must land on decoded
+// boundaries. Malformed input refuses so callers can use conservative recovery.
+fn bool moveelim_decoded_branch(DecodedBytecode view, long* target) {
+    Opcode op = view.insn.op;
+    if (op == Opcode.JUMP || op == Opcode.BREAK || op == Opcode.CONTINUE) {
+        *target = (long)view.next_pc + (long)view.insn.get_sabc();
+        return true;
+    }
+    if (op == Opcode.IF_TRUE || op == Opcode.IF_FALSE) {
+        *target = (long)view.next_pc + (long)view.insn.get_sbc();
+        return true;
+    }
+    if (op >= Opcode.JMP_NLT && op <= Opcode.JMP_SNEQI) {
+        *target = (long)view.next_pc + (long)(ichar)view.insn.a;
+        return true;
+    }
+    return false;
+}
+
+fn bool moveelim_compute_decoded_liveness(Instruction* code, uint code_count,
+    RegSet* live_out, RegSet* live_in, RegSet* scratch, bool* boundary) {
+    if (!moveelim_roles_ready) moveelim_init_roles();
+    for (uint pc = 0; pc < code_count; pc++) {
+        boundary[pc] = false;
+        live_out[pc].clear();
+        live_in[pc].clear();
+    }
+    for (uint pc = 0; pc < code_count;) {
+        DecodedBytecode view = bytecode::decode_bytecode(code, code_count, pc);
+        if (!view.valid || view.insn.op == Opcode.TRY) return false;
+        boundary[pc] = true;
+        pc = view.next_pc;
+    }
+    // Validate all targets before computing liveness; in particular, a target
+    // into a WIDE payload is not a valid independently decoded instruction.
+    bool has_back_edge;
+    for (uint pc = 0; pc < code_count;) {
+        DecodedBytecode view = bytecode::decode_bytecode(code, code_count, pc);
+        long target;
+        if (moveelim_decoded_branch(view, &target)) {
+            if (target < 0 || target >= (long)code_count || !boundary[(uint)target]) return false;
+            if (target <= (long)pc) has_back_edge = true;
+        }
+        pc = view.next_pc;
+    }
+    bool changed = true;
+    bool first = true;
+    while (changed) {
+        if (!first && !has_back_edge) break;
+        // The first sweep can introduce a use at a loop header after its
+        // backedge was visited, even when every outgoing set was empty.
+        changed = first;
+        uint pc = code_count;
+        while (pc > 0) {
+            pc--;
+            if (!boundary[pc]) continue;
+            DecodedBytecode view = bytecode::decode_bytecode(code, code_count, pc);
+            Opcode op = view.insn.op;
+            scratch.clear();
+            bool falls_through = !(op == Opcode.JUMP || op == Opcode.BREAK || op == Opcode.CONTINUE
+                || op == Opcode.RET || op == Opcode.RET_GEN || op == Opcode.RETUNDEF
+                || op == Opcode.RETUNDEF_GEN || op == Opcode.THROW || op == Opcode.THROW_REF
+                || op == Opcode.THROW_SYNTAX);
+            if (falls_through && view.next_pc < code_count) scratch.union_with(&live_in[view.next_pc]);
+            long target;
+            if (moveelim_decoded_branch(view, &target)) scratch.union_with(&live_in[(uint)target]);
+            if (!scratch.equals(&live_out[pc])) {
+                live_out[pc].copy_from(scratch);
+                changed = true;
+            } else if (!first) { continue; }
+            live_in[pc].copy_from(scratch);
+            uint def;
+            if (moveelim_get_decoded_def(view.insn, &def)) live_in[pc].unset(def);
+            moveelim_add_decoded_uses(view.insn, &live_in[pc], true);
+        }
+        first = false;
+    }
+    return true;
+}
+
+// Bounded wide-continuation adapter. The VM supplies the positively reviewed
+// opcode predicate, so unsupported control flow stays on its old fallback.
+// Variable declarations are fallthrough reads and are also admitted.
+alias DecodedOpAllowed = fn bool(Opcode op);
+fn bool moveelim_wide_continuation(Instruction* code, uint count, uint num_regs,
+    uint continuation, heap::Heap* h, DecodedOpAllowed allowed, bool* live, uint live_count) {
+    if (count == 0 || count > 512 || num_regs >= BYTECODE_REGS_MAX || continuation >= count) return false;
+    bool has_wide;
+    for (uint pc = 0; pc < count;) {
+        DecodedBytecode view = bytecode::decode_bytecode(code, count, pc);
+        if (!view.valid) return false;
+        Opcode op = view.insn.op;
+        if (!allowed(op) && op != Opcode.DECLVAR && op != Opcode.DECLVAR_HOIST) return false;
+        has_wide |= view.wide;
+        pc = view.next_pc;
+    }
+    if (!has_wide) return false;
+    uint word_count = (num_regs + 32) / 32;
+    if (word_count < 2) word_count = 2;
+    usz set_bytes = (usz)count * 2 * RegSet::size;
+    usz word_bytes = ((usz)count * 2 + 1) * word_count * uint::size;
+    RegSet* sets = (RegSet*)h.alloc_func(h.heap_udata, set_bytes);
+    if (sets == null) return false;
+    defer h.free_func(h.heap_udata, sets);
+    uint* words = (uint*)h.alloc_func(h.heap_udata, word_bytes);
+    if (words == null) return false;
+    defer h.free_func(h.heap_udata, words);
+    for (uint i = 0; i < count * 2; i++) {
+        sets[i].words = words + (usz)i * word_count;
+        sets[i].word_count = word_count;
+    }
+    RegSet scratch = { .words = words + (usz)count * 2 * word_count, .word_count = word_count };
+    bool[512] boundary;
+    if (!moveelim_compute_decoded_liveness(code, count, sets, sets + count, &scratch, &boundary[0])
+        || !boundary[continuation]) return false;
+    RegSet* input = &sets[count + continuation];
+    for (uint reg = 0; reg < live_count; reg++) live[reg] = input.test(reg);
+    return true;
 }
 
 // Run liveness-based move elimination over `code[0..code_count)`.

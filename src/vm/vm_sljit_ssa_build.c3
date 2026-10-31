@@ -16,16 +16,28 @@ import std::io;
 // temporarily rewrite only their body, so whole-function liveness would mix
 // physical and original register numbers. All refusals use the conservative
 // continuation scan below.
+fn bool ssa_wide_continuation_op(Opcode op) @feat(SLJIT) {
+    return function_op(op) || function_call_op(op);
+}
 fn bool ssa_continuation_live(SsaGraph* g, bool[LOOP_REGS]* exit_live) @feat(SLJIT) {
     CompiledFunction* cf = g.cf;
     LoopPlan* plan = g.plan;
     if (g.single_pass || cf.code_count > 512 || cf.num_regs >= compiler::BYTECODE_REGS_MAX
         || cf.flags.has_direct_eval || cf.mapped_arguments() || cf.flags.is_generator || cf.flags.is_async) return false;
     for (uint reg = 0; reg < LOOP_REGS; reg++) if (plan.slot_reg[reg] != (int)reg) return false;
+    bool declaration;
     for (uint pc = 0; pc < cf.code_count; pc++) {
         Opcode op = cf.code[pc].op;
-        if (!function_op(op) && !function_call_op(op)) return false;
+        if (op == Opcode.WIDE) {
+            return compiler::moveelim_wide_continuation(cf.code, cf.code_count, cf.num_regs,
+                plan.end + 1, g.heap, &ssa_wide_continuation_op, &(*exit_live)[0], LOOP_REGS);
+        }
+        if (!function_op(op) && !function_call_op(op)) {
+            if (op != Opcode.DECLVAR && op != Opcode.DECLVAR_HOIST) return false;
+            declaration = true;
+        }
     }
+    if (declaration) return false;
     uint count = cf.code_count;
     uint word_count = (cf.num_regs + 32) / 32;
     if (word_count < 2) word_count = 2;
