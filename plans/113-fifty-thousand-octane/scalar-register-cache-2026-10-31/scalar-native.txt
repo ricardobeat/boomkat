@@ -1,0 +1,10 @@
+scalar cache: PASS
+SLJIT function scalar begin=0 ops=18 bytes=3580 id=0 line=5
+SLJIT function recover begin=0 ops=6 bytes=2812 id=1 line=13
+SLJIT function mutate begin=0 ops=6 bytes=2472 id=2 line=19
+SLJIT function check begin=0 ops=12 bytes=2936 id=3 line=25
+SLJIT function valueOf begin=0 ops=3 bytes=1288 id=4 line=33
+SLJIT function  begin=0 ops=2 bytes=1124 id=5 line=38
+SLJIT function  begin=0 ops=135 bytes=23108 id=6 line=1
+SLJIT totals functions=7 loops=0 templates=0 code_bytes=37320
+SLJIT budget bytes=37320 limit=4194304 native_work=0 evictions=0

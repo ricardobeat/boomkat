@@ -1,0 +1,276 @@
+diff --git a/src/vm/vm_sljit_flow.c3 b/src/vm/vm_sljit_flow.c3
+index f66dc961..86e76df6 100644
+--- a/src/vm/vm_sljit_flow.c3
++++ b/src/vm/vm_sljit_flow.c3
+@@ -13,6 +13,16 @@ struct FunctionFlowLoad @feat(SLJIT) { uint base; uint value; void* key; }
+ // Block-local typed values. FP1/2 are temporaries; FP3..6 retain proven
+ // numbers. Dirty values own no strings and are published at spills/exits.
+ struct FunctionFlow @feat(SLJIT) {
++    // Boxed homes for straight-line scalar code. Only inert replacements
++    // may stay dirty; guard snapshots publish them before interpreter recovery.
++    char[256] boxed;
++    bool[256] fastints;
++    uint[3] boxed_owners;
++    uint boxed_used;
++    uint boxed_dirty;
++    CompiledFunction* boxed_cf;
++    bool[FUNCTION_OPS]* boxed_blocks;
++    bool boxed_enabled;
+     // Numbers/objects and permanently pinned strings need no refcount release.
+     bool[256] unowned;
+     char[256] registers;
+@@ -28,6 +38,9 @@ struct FunctionFlow @feat(SLJIT) {
+     uint next_load;
+ }
+ fn void FunctionFlow.forget(&self, uint reg) @feat(SLJIT) {
++    if (self.boxed[reg] != 0) self.boxed_dirty &= ~(1U << (reg % 3));
++    self.boxed[reg] = 0;
++    self.fastints[reg] = false;
+     self.unowned[reg] = false;
+     self.shapes[reg] = 0;
+     self.versions[reg] = ++self.next_version;
+@@ -84,6 +97,8 @@ fn void FunctionEmitter.flow_exit(&self, ulong state) @feat(SLJIT) {
+     }
+ }
+ fn void FunctionEmitter.flow_flush(&self) @feat(SLJIT) {
++    self.boxed_exit(self.flow.boxed_snapshot());
++    self.flow.boxed_clear();
+     ulong state = self.flow.snapshot();
+     state &= ~((ulong)self.flow.pinned << 32);
+     self.flow_exit(state);
+@@ -201,3 +216,77 @@ fn void FunctionEmitter.flow_reload(&self, uint pc) @feat(SLJIT) {
+     reload.e.bind(done);
+     if (reload.e.failed) self.out.e.failed = true;
+ }
++
++// Only these emitters reserve R4..R6. Every other operation is a barrier,
++// including helper joins, inline SSA, property accesses and native calls.
++fn bool function_boxed_op(Opcode op) @feat(SLJIT) {
++    switch (op) {
++        case NOP: case LDREG: case LDINT: case LDCONST:
++        case LDTRUE: case LDFALSE: case LDNULL: case LDUNDEF: case VOID:
++        case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
++        case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
++        case BNOT: case UNM: case UNP: case TONUMERIC:
++        case INC: case INC_LT: case DEC:
++        case ADD: case ADD_FUSED: case ADDI: case SUB: case SUBI:
++        case MUL: case MULI: case DIV:
++            return true;
++        default: return false;
++    }
++}
++fn void FunctionFlow.boxed_clear(&self) @feat(SLJIT) {
++    for (uint i = 0; i < 3; i++) {
++        if ((self.boxed_used & (1U << i)) != 0) self.boxed[self.boxed_owners[i]] = 0;
++    }
++    for (uint i = 0; i < 256; i++) self.fastints[i] = false;
++    self.boxed_used = 0;
++    self.boxed_dirty = 0;
++}
++fn bool LoopEmitter.boxed_store(&self, uint reg, uint pc, bool dirty = false) @feat(SLJIT) {
++    FunctionFlow* flow = self.flow;
++    if (flow == null || !flow.boxed_enabled) return false;
++    // Avoid a move for dead definitions or a use beyond a cache barrier.
++    bool used;
++    for (uint pos = pc + 1; pos < flow.boxed_cf.code_count && pos < pc + 9; pos++) {
++        Instruction ins = flow.boxed_cf.code[pos];
++        if ((*flow.boxed_blocks)[pos] || !function_boxed_op(ins.op)) break;
++        if (ins.b == reg || ins.c == reg || ((ins.op == Opcode.INC || ins.op == Opcode.INC_LT || ins.op == Opcode.DEC) && ins.a == reg)) { used = true; break; }
++        if (ins.a == reg && ins.op != Opcode.NOP) break;
++    }
++    if (!used) return false;
++    uint slot = reg % 3;
++    if ((flow.boxed_dirty & (1U << slot)) != 0) {
++        self.e.mov(jit::SLJIT_MEM | self.state_base(), loop_value_offset(flow.boxed_owners[slot]), jit::reg_r((int)slot + 4), 0);
++    }
++    flow.boxed_dirty &= ~(1U << slot);
++    if ((flow.boxed_used & (1U << slot)) != 0) flow.boxed[flow.boxed_owners[slot]] = 0;
++    flow.boxed_used |= 1U << slot;
++    flow.boxed_owners[slot] = reg;
++    flow.boxed[reg] = (char)jit::reg_r((int)slot + 4);
++    self.e.mov(flow.boxed[reg], 0, jit::reg_r(0), 0);
++    if (dirty) flow.boxed_dirty |= 1U << slot;
++    return true;
++}
++
++fn ulong FunctionFlow.boxed_snapshot(&self) @feat(SLJIT) {
++    ulong state = (ulong)self.boxed_dirty << 32;
++    for (uint i = 0; i < 3; i++) if ((self.boxed_dirty & (1U << i)) != 0) state |= (ulong)self.boxed_owners[i] << (i * 8);
++    return self.boxed_dirty != 0 ? state : 0;
++}
++fn void FunctionEmitter.boxed_exit(&self, ulong state) @feat(SLJIT) {
++    for (uint i = 0; i < 3; i++) if (((state >> 32) & (1UL << i)) != 0) {
++        self.out.e.mov(jit::SLJIT_MEM | self.out.state_base(), loop_value_offset((uint)((state >> (i * 8)) & 255)), jit::reg_r((int)i + 4), 0);
++    }
++}
++
++fn bool FunctionFlow.boxed_integer(&self, uint reg, uint pc) @feat(SLJIT) {
++    if (!self.boxed_enabled || self.boxed_cf == null) return false;
++    Instruction ins = self.boxed_cf.code[pc];
++    if (ins.a != reg) return false;
++    switch (ins.op) {
++        case LDINT: case TONUMERIC: case INC: case INC_LT: case DEC:
++        case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
++        case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI: case BNOT: return true;
++        case LDREG: return self.fastints[ins.b];
++        default: return false;
++    }
++}
+diff --git a/src/vm/vm_sljit_function.c3 b/src/vm/vm_sljit_function.c3
+index 80873ba5..cd7a3d39 100644
+--- a/src/vm/vm_sljit_function.c3
++++ b/src/vm/vm_sljit_function.c3
+@@ -250,8 +250,16 @@ fn long function_cold_offset(uint field) @feat(SLJIT) {
+ }
+ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool inert = false) @feat(SLJIT) {
+     TemplateEmitter* e = &out.e;
++    bool integer = out.flow != null && out.flow.boxed_integer(reg, pc);
++    defer { if (out.flow != null) out.flow.fastints[reg] = integer; }
+     bool old_inert = out.flow != null && out.flow.unowned[reg];
+     if (out.flow != null) {
++        // Preserve a previous delayed definition if a later owning store can
++        // refuse before replacing it. Inert-to-inert stores cannot refuse.
++        if (!(old_inert && inert) && out.flow.boxed[reg] != 0
++            && (out.flow.boxed_dirty & (1U << (reg % 3))) != 0) {
++            e.mov(jit::SLJIT_MEM | out.state_base(), loop_value_offset(reg), out.flow.boxed[reg], 0);
++        }
+         out.flow.drop(reg);
+         out.flow.unowned[reg] = inert;
+     }
+@@ -285,6 +293,7 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
+     // can change, and no release guard is needed. Calls and entries clear
+     // these facts; a later string definition restores the owning store.
+     if (old_inert && inert) {
++        if (out.boxed_store(reg, pc, true)) return;
+         e.mov(mem | out.state_base(), loop_value_offset(reg), r0, 0);
+         return;
+     }
+@@ -343,6 +352,7 @@ fn void function_store(LoopEmitter* out, uint reg, int source, uint pc, bool ine
+     e.bind(release_inert);
+     e.mov(cached != 0 ? cached : mem | out.state_base(), cached != 0 ? 0 : loop_value_offset(reg), r0, 0);
+     e.bind(stored);
++    out.boxed_store(reg, pc);
+ }
+ fn void FunctionEmitter.store(&self, uint reg, uint pc, bool known = false) @feat(SLJIT) {
+     if (self.out.flow != null && self.flow_hint(reg, pc)) {
+@@ -1000,10 +1010,17 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+     FunctionRun run_layout;
+     e.mov(r0, 0, mem | jit::reg_s(2), (char*)&run_layout.entry - (char*)&run_layout);
+     if (jit::sljit_emit_ijump(e.compiler, jit::SLJIT_JUMP, r0, 0) != 0) return false;
++    f.flow.boxed_cf = cf;
++    f.flow.boxed_blocks = &f.blocks;
+     bool[FUNCTION_OPS] supported;
+     for (uint pos = 0; pos < cf.code_count; pos++) {
+         Instruction ins = cf.code[pos];
+         if (out.flow != null && f.blocks[pos]) f.flow_flush();
++        if (!function_boxed_op(ins.op)) {
++            f.boxed_exit(f.flow.boxed_snapshot());
++            f.flow.boxed_clear();
++        }
++        f.flow.boxed_enabled = function_boxed_op(ins.op);
+         out.labels[pos] = e.label();
+         if (pos == 0 && plan.ssa_region != null) f.ssa_entry();
+         bool active = function_op(
+@@ -1441,7 +1458,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+         void* existing;
+         while (exit_table[slot] != 0) {
+             LoopLink* prev = out.link_at(exit_table[slot] - 1);
+-            if (prev.target == link.target && prev.flow == link.flow && prev.inline_id == link.inline_id) {
++            if (prev.target == link.target && prev.flow == link.flow && prev.boxed == link.boxed && prev.inline_id == link.inline_id) {
+                 existing = prev.resolved;
+                 break;
+             }
+@@ -1462,6 +1479,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+             int saved_base = out.state_reg;
+             out.state_reg = jit::reg_s(5);
+             f.flow_exit(link.flow);
++            f.boxed_exit(link.boxed);
+             out.state_reg = saved_base;
+             $if $feat(SLJIT_STATS):
+                 if (link.target < frame.exits.len) {
+@@ -1478,6 +1496,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
+             continue;
+         }
+         f.flow_exit(link.flow);
++        f.boxed_exit(link.boxed);
+         if (link.target < cf.code_count && cf.code[link.target].op == Opcode.CALL
+             && function_array_candidate(cf, link.target) >= 0) {
+             e.mov(r0, 0, jit::reg_s(1), 0);
+diff --git a/src/vm/vm_sljit_loop.c3 b/src/vm/vm_sljit_loop.c3
+index 3a4a94e8..1f9283a0 100644
+--- a/src/vm/vm_sljit_loop.c3
++++ b/src/vm/vm_sljit_loop.c3
+@@ -25,10 +25,10 @@ const uint SSA_SPAN       = 128;
+ const uint LOOP_MEMORY    = 8;
+ const uint LOOP_BINDINGS  = 16;
+ const uint LOOP_THIS      = LOOP_REGS + LOOP_BINDINGS;
+-// A fixup costs one arena block per four records; the directory that indexes
+-// them is heap-allocated per emitter, so this ceiling only bounds memory.
++// Fixup blocks fit SLJIT's auxiliary allocation limit (128/64 bytes). The
++// directory is heap-allocated per emitter, so this ceiling only bounds memory.
+ const uint LINK_LIMIT_MAX = 65536;
+-const uint LOOP_LINK_BLOCK = usz::size == 8 ? 4 : 2;
++const uint LOOP_LINK_BLOCK = usz::size == 8 ? 2 : 1;
+ 
+ alias LoopNative = fn uint(void* state, long budget);
+ enum LoopMemoryKind : char {
+@@ -150,6 +150,7 @@ struct LoopLink @feat(SLJIT) {
+     bool exit;
+     ushort inline_id;
+     ulong flow;
++    ulong boxed;
+     void* resolved;
+ }
+ struct LoopEmitter @feat(SLJIT) {
+@@ -1034,6 +1035,10 @@ fn void LoopEmitter.load(&self, uint reg, int dst) @feat(SLJIT) {
+         self.float_bits(self.float_cached(reg), dst);
+         return;
+     }
++    if (self.flow != null && self.flow.boxed[reg] != 0) {
++        self.e.mov(dst, 0, self.flow.boxed[reg], 0);
++        return;
++    }
+     int cached = self.cached(reg);
+     self.e.mov(
+         dst,
+@@ -1067,6 +1072,7 @@ fn void LoopEmitter.mark(&self, uint reg) @feat(SLJIT) {
+ fn void LoopEmitter.link(&self, void* jump, uint target, bool exit) @feat(SLJIT) {
+     self.add_link({ .jump = jump, .target = target, .exit = exit,
+         .inline_id = exit && self.inline_frame != null ? self.inline_frame.id : 0,
++        .boxed = self.flow != null && exit ? self.flow.boxed_snapshot() : 0,
+         .flow = self.flow != null && exit ? self.flow.snapshot() : 0 });
+ }
+ fn LoopLink* LoopEmitter.link_at(&self, uint index) @feat(SLJIT) {
+@@ -1089,6 +1095,7 @@ fn void LoopEmitter.labels_free(&self) @feat(SLJIT) {
+     self.labels = null;
+ }
+ fn void LoopEmitter.add_link(&self, LoopLink link) @feat(SLJIT) {
++    $assert(LOOP_LINK_BLOCK * LoopLink::size <= 16 * usz::size);
+     $if $feat(SLJIT_STATS):
+         if (self.link_count == self.link_capacity()) self.link_limit_reached = true;
+     $endif
+@@ -1122,8 +1129,11 @@ fn void LoopEmitter.guard(&self, int condition, int left, long lw, int right, lo
+ }
+ fn void LoopEmitter.integer(&self, uint reg, int dst, uint pc) @feat(SLJIT) {
+     self.load(reg, dst);
+-    self.e.op(jit::SLJIT_LSHR, jit::reg_r(3), dst, 0, jit::SLJIT_IMM, 48);
+-    self.guard(jit::SLJIT_NOT_EQUAL, jit::reg_r(3), 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
++    if (self.flow == null || !self.flow.boxed_enabled || !self.flow.fastints[reg]) {
++        self.e.op(jit::SLJIT_LSHR, jit::reg_r(3), dst, 0, jit::SLJIT_IMM, 48);
++        self.guard(jit::SLJIT_NOT_EQUAL, jit::reg_r(3), 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
++    }
++    if (self.flow != null && self.flow.boxed_enabled) self.flow.fastints[reg] = true;
+     self.e.op(jit::SLJIT_SHL, dst, dst, 0, jit::SLJIT_IMM, 16);
+     self.e.op(jit::SLJIT_ASHR, dst, dst, 0, jit::SLJIT_IMM, 16);
+ }
+@@ -1229,6 +1239,10 @@ fn void LoopEmitter.number_reg(&self, uint reg, int freg, uint pc) @feat(SLJIT)
+ // undefined stays above it, so the magnitude guard rejects both.
+ fn void LoopEmitter.int32(&self, uint reg, int dst, uint pc) @feat(SLJIT) {
+     self.load(reg, dst);
++    if (self.flow != null && self.flow.boxed_enabled && self.flow.fastints[reg]) {
++        self.e.mov(dst, 0, dst, 0, jit::SLJIT_MOV_S32);
++        return;
++    }
+     int temp = jit::reg_r(3);
+     self.e.op(jit::SLJIT_LSHR, temp, dst, 0, jit::SLJIT_IMM, 48);
+     self.e.op(jit::SLJIT_AND, temp, temp, 0, jit::SLJIT_IMM, ~4L);

@@ -1,0 +1,12 @@
+{
+  "baseline": "fa11ea2db76484b0d9c437ca65910c8fa5d438cc",
+  "files": {
+    "src/vm/vm_sljit_flow.c3": "b9eac3198a562f8916231b3352397f262e3ac380378159b7eb769ef751c6da7b",
+    "src/vm/vm_sljit_function.c3": "aca3400ed188bb6bda9c369063c90d5565f1bd34c18ced4d1a81b992aefc9e7c",
+    "src/vm/vm_sljit_loop.c3": "f5020026b7880502643da17f96fc4b6500f331a57c264a8c2cb39270a160de80",
+    "test/jit_scalar_cache.js": "49776c1b6543ec13b479195de73dd1fe02f87cea3ad7d5af1c04124ead4b2041",
+    "out/boomkat": "408be1dbc0921635ea081285c9e1941d562a12a19c3bd9831305314cb883e52a",
+    "/tmp/bk-register-control-source/out/boomkat": "7ac7219b82c2b05ef454f1dd8222dd86e56f0a9d96279058739e9a465b07bf0b",
+    "/tmp/boomkat-jit-next/octane-full.js": "ef4c74d25100e6308436fb19b14eaefd5b4b690f30a799b60bc9bccbcefdce8e"
+  }
+}
