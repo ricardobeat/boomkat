@@ -1164,6 +1164,12 @@ struct Heap {
     bool                jit_stress @if($feat(SLJIT));
     usz                 jit_code_bytes @if($feat(SLJIT));
     usz                 jit_code_limit @if($feat(SLJIT));
+    JitArtifact*        jit_artifacts @if($feat(SLJIT));
+    JitArtifact*        jit_retired_artifacts @if($feat(SLJIT));
+    usz                 jit_retired_code_bytes @if($feat(SLJIT));
+    usz                 jit_metadata_bytes @if($feat(SLJIT));
+    ulong               jit_artifact_generation @if($feat(SLJIT));
+    ulong               jit_capacity_generation @if($feat(SLJIT));
     ulong               jit_native_work @if($feat(SLJIT));
     ulong               jit_clock @if($feat(SLJIT));
     uint                jit_evictions @if($feat(SLJIT));
