@@ -179,7 +179,10 @@ fn SsaFrameId ssa_frame_after_pc(SsaGraph* g, uint pc) @feat(SLJIT) {
     // After states are attached explicitly to effectful definitions. They
     // cannot be guessed from PC+1 because WIDE and calls have distinct bounds.
     for (uint id = 0; id < g.value_count; id++) {
-        if (g.values[id].pc == pc && g.values[id].after_frame != SSA_NO_FRAME) return g.values[id].after_frame;
+        SsaFrameId after = g.values[id].after_frame;
+        if (g.values[id].pc == pc && after != SSA_NO_FRAME
+            && g.frame_table[after].parent == SSA_NO_FRAME && g.frame_table[after].function == g.cf
+            && g.values[id].inline_target == null) return after;
     }
     return SSA_NO_FRAME;
 }

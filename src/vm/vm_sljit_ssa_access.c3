@@ -187,14 +187,15 @@ struct SsaFieldAccess @feat(SLJIT) {
     bool write;
 }
 
-fn bool ssa_access_field_spec(SsaGraph* g, DecodedBytecode view, SsaFieldAccess* access) @feat(SLJIT) {
+fn bool ssa_access_field_spec(SsaGraph* g, DecodedBytecode view, SsaFieldAccess* access, CompiledFunction* source = null) @feat(SLJIT) {
+    if (source == null) source = g.cf;
     DecodedInsn ins = view.insn;
     bool write = ins.op == Opcode.PUTPROPC;
     if (!write && ins.op != Opcode.GETPROPC && ins.op != Opcode.GETPROPC_CACHED) return false;
-    if (g.cf.ic_entries == null || view.payload_pc >= g.cf.ic_count || ins.c >= g.cf.const_count) return false;
-    TVal key = g.cf.constants[ins.c];
+    if (source.ic_entries == null || view.payload_pc >= source.ic_count || ins.c >= source.const_count) return false;
+    TVal key = source.constants[ins.c];
     if (!key.is_string()) return false;
-    ICEntry* ic = (ICEntry*)g.cf.ic_entries + view.payload_pc;
+    ICEntry* ic = (ICEntry*)source.ic_entries + view.payload_pc;
     if (ic.key.borrow() != key.get_heapptr() || ic.has_proto || ic.chain_len != 0
         || ic.prop_idx >= hobject::IC_PROP_MISSING || ic.prop_flags.is_accessor) return false;
     Shape* shape = g.heap.get_shape(ic.shape_id);

@@ -8,6 +8,16 @@ import std::io;
 // contains its expanded callee bodies. Prologue, exits and callee entry are
 // separate ranges so frame overhead cannot be mistaken for bytecode work.
 fn void sljit_address_map(FunctionPlan* plan, CompiledFunction* cf, uint id) @feat(SLJIT_MAP) {
+    if (plan.native == null) {
+        // Full SSA wrappers have a dynamic entry directory and no baseline
+        // per-word label table. Never index the fixed baseline map by count.
+        if (plan.ssa_region != null && plan.ssa_region.native != null) {
+            void* code = (void*)plan.ssa_region.native;
+            io::printfn("SLJIT map id=%d kind=ssa_body depth=0 target_line=%d start=%p end=%p", id,
+                cf.get_line(0), code, (char*)code + (sz)plan.ssa_region.code_bytes);
+        }
+        return;
+    }
     io::printfn("SLJIT map id=%d kind=entry start=%p end=%p", id, plan.native, plan.map_pcs[0]);
     void* end = (char*)(void*)plan.native + (sz)(plan.code_bytes - plan.resume_bytes
         - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0));

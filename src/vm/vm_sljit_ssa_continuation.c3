@@ -2,6 +2,8 @@ module boomkat::vm;
 
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hobject;
+import boomkat::env;
 import boomkat::types;
 import std::core::mem;
 
@@ -10,6 +12,7 @@ import std::core::mem;
 // faulting instruction, with the before frame still authoritative.
 enum SsaHelperOutcome : uint { COMPLETE, THROW, YIELD, REPLAY }
 enum SsaEffectPhase : char { BEFORE, AFTER }
+enum SsaHelperKind : char { OPERATION, RESOLVE_CALLEE, INLINE_RESERVE }
 
 struct SsaPublishedValue @feat(SLJIT) {
     uint reg;
@@ -24,6 +27,11 @@ struct SsaHelperSite @feat(SLJIT) {
     usz allocated_bytes;
     uint pc;
     uint next_pc;
+    SsaHelperKind kind;
+    uint reserve_regs;
+    uint reserve_depth;
+    uint callee_value;
+    CompiledFunction* inline_target;
     SsaFrameId before_frame;
     SsaFrameId after_frame;
     uint* live_values;
@@ -48,7 +56,7 @@ fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     allocation.copy(after, allocation.live);
     allocation.remove(after, node);
     allocation.remove(allocation.live, node);
-    allocation.recovery(allocation.live, g.values[node].pc);
+    allocation.recovery(allocation.live, g.values[node].pc, g.values[node].before_frame);
     if (!ssa_record_safepoint(g, node, g.values[node].before_frame, g.values[node].after_frame,
             allocation.live, after, allocation.words)) return;
     SsaSafepoint* point = ssa_live_at_helper(g, node);
@@ -76,8 +84,18 @@ fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     site.native_resume = true;
     site.pc = g.values[node].pc;
     site.next_pc = ssa_decoded_view(g, site.pc).next_pc;
+    site.kind = (SsaHelperKind)g.values[node].imm;
+    site.reserve_regs = (uint)g.values[node].target;
+    site.reserve_depth = (uint)g.values[node].fallto;
+    site.callee_value = (uint)ssa_alias(g, g.values[node].a);
+    site.inline_target = g.values[node].inline_target;
     site.before_frame = point.before_frame;
     site.after_frame = point.after_frame;
+    if (site.before_frame != SSA_NO_FRAME && g.frame_table[site.before_frame].parent != SSA_NO_FRAME) {
+        // A virtual child must be materialized before a general helper can
+        // operate on its real activation and frame-local register numbers.
+        site.native_resume = false;
+    }
     foreach (id : point.live_after[:point.after_count]) {
         if (g.values[id].rep == RAW) site.native_resume = false;
         site.live_values[site.live_count++] = id;
@@ -208,6 +226,18 @@ fn bool ssa_execution_reload(SsaExecution* execution) @feat(SLJIT) {
     return true;
 }
 
+// Native saved homes contain NaN-boxed bits. The alternate value build keeps
+// the interpreter available while JIT admission remains disabled.
+fn bool ssa_decode_boxed_bits(ulong bits, TVal* value) @feat(SLJIT) @inline {
+    $if types::USE_NANBOX:
+        *value = bitcast(bits, TVal);
+        return true;
+    $else
+        value.set_undefined();
+        return false;
+    $endif
+}
+
 // Anchor the entire new root map before releasing ANY prior native root.
 // Keeping one stable descriptor per value avoids cursor invalidation when an
 // incremental collection is partway through the native root chain.
@@ -217,14 +247,16 @@ fn bool ssa_execution_roots(SsaExecution* execution, SsaHelperSite* site) @feat(
     for (uint i = 0; i < site.root_count; i++) if (site.root_values[i] >= execution.value_capacity) return false;
     for (uint i = 0; i < site.root_count; i++) {
         uint value = site.root_values[i];
-        TVal boxed = bitcast(execution.saved_bits[value], TVal);
+        TVal boxed;
+        if (!ssa_decode_boxed_bits(execution.saved_bits[value], &boxed)) return false;
         if (boxed.is_refcounted() && boxed.get_heapptr() != null) ((HeapHeader*)boxed.get_heapptr()).incref();
     }
     // The temporary reference above keeps cross-slot swaps alive while the
     // ordinary owning root update shades the new value and releases the old.
     for (uint i = 0; i < site.root_count; i++) {
         uint value = site.root_values[i];
-        TVal boxed = bitcast(execution.saved_bits[value], TVal);
+        TVal boxed;
+        if (!ssa_decode_boxed_bits(execution.saved_bits[value], &boxed)) return false;
         h.tval_copy_ref(&execution.roots[value].value, &boxed);
         h.decref_tval(&boxed);
     }
@@ -281,6 +313,36 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
     if (!view.valid) return REPLAY;
     DecodedInsn ins = view.insn;
     cold.act.curr_pc = cf.code + site.pc;
+    if (site.kind != OPERATION) {
+        if (site.kind == RESOLVE_CALLEE) {
+            TVal callee;
+            if (!loop_binding_effective(cf.code + view.payload_pc, ins, cold, &callee)) return REPLAY;
+            cold.heap.tval_copy_ref(cold.act.bottom + ins.a, &callee);
+            track_heap_store(cold.act, cold.act.bottom + ins.a, ins.a);
+        } else {
+            if (site.callee_value >= execution.value_capacity) return REPLAY;
+            TVal callee = execution.roots[site.callee_value].value;
+            if (!callee.is_object() || callee.get_heapptr() == null) return REPLAY;
+            HObject* function = callee.get_heapptr();
+            if (!function.is_callable() || function.is_bound() || function.is_proxy()
+                || function.callable_kind() != hobject::CallableKind.COMPILED_FN) return REPLAY;
+            CompiledFunction* target = function.extra.func.comp_func;
+            EnvRecord* lex = function.extra.func.lex_env;
+            if (target != site.inline_target || target.realm != cold.heap.realm
+                || !target.call_flags.lean_plain || !target.call_flags.ignores_this
+                || function.extra.func.var_env == null || (lex != null && lex.is_with())) return REPLAY;
+            if (site.reserve_depth > cold.vm.activation_capacity - cold.vm.activation_count) return REPLAY;
+            TVal* top = callback_frame_top(cold.vm);
+            usz needed = (usz)(top - cold.vm.valstack) + site.reserve_regs;
+            if (needed > uint::max || !ensure_valstack(cold.vm, (uint)needed)) return REPLAY;
+        }
+        if (!ssa_execution_reload(execution)) return REPLAY;
+        cold.heap.safepoint_gc_on_call();
+        if (!sljit_artifact_is_live(execution.owner, execution.owner_generation)) return REPLAY;
+        $if $feat(SLJIT_STATS): if (site.kind == INLINE_RESERVE) execution.plan.ssa_inline_entries++; $endif
+        execution.outcome = COMPLETE;
+        return COMPLETE;
+    }
     if (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS
         || ins.op == Opcode.CALL_VAR || ins.op == Opcode.CALL_GLOBAL) {
         bool fused = ins.op == Opcode.CALL_VAR || ins.op == Opcode.CALL_GLOBAL;
@@ -290,7 +352,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
         TVal callee = execution.input_values[base];
         // The shared non-observable binding resolver refuses accessors/with
         // scopes before invoking anything. Those sites retain exact VM EXIT.
-        if (fused && !loop_binding(cf.code + site.pc, cold, &callee)) return REPLAY;
+        if (fused && !loop_binding_effective(cf.code + view.payload_pc, ins, cold, &callee)) return REPLAY;
         ValueRoot callee_root;
         cold.heap.push_value_root(&callee_root, callee);
         defer cold.heap.pop_value_root(&callee_root);

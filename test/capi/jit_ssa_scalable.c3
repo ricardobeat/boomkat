@@ -19,6 +19,15 @@ fn void scalable_int(Instruction* code, uint* count, uint reg, int value) {
 // 150 live loop values occupy registers157..306; the full body exceeds512
 // words, imports high WIDE operands, spills beyond128 and copies over64 phis.
 fn void check_scalable_ssa_gateway() {
+    Instruction[2] invalid = { bytecode::make_wide(1, 0, 0), bytecode::make_abc(Opcode.RET, 0, 0, 0) };
+    CompiledFunction malformed = { .code = &invalid[0], .code_count = 2, .num_regs = 4 };
+    LoopPlan malformed_plan = { .end = 1 };
+    @check(!vm::ssa_decoded_body_supported(&malformed_plan, &malformed));
+    invalid[0] = bytecode::make_abc(Opcode.CALL_UNDEF_THIS, 0, 3, 0);
+    invalid[1] = bytecode::make_abc(Opcode.RETUNDEF, 0, 0, 0);
+    @check(!vm::ssa_decoded_body_supported(&malformed_plan, &malformed));
+    invalid[0] = bytecode::make_abc(Opcode.INIT_SLOT, 0, 0, 7);
+    @check(!vm::ssa_decoded_body_supported(&malformed_plan, &malformed));
     JsRuntime runtime;
     runtime.create()!!;
     defer runtime.destroy();
@@ -64,6 +73,7 @@ fn void check_scalable_ssa_gateway() {
     @check(plan.ssa_region.ssa_data != null && plan.ssa_region.ssa_data.reg_count == 310);
     @check(plan.ssa_region.ssa_data.spill_count > 128 && plan.ssa_region.ssa_data.edge_count > 64);
     @check(vm::ssa_plan_resumes(plan.ssa_region, header));
+    $if $feat(SLJIT_MAP): vm::sljit_address_map(plan, cf, 0); $endif
     @check(!vm::ssa_plan_resumes(plan.ssa_region, count - 1)); // WIDE RET payload
     // Fractional input traverses the same high-register loop and exact prefix
     // recovery. Every local must be reimported when an interpreter poll resumes.
