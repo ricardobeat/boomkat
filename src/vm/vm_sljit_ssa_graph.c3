@@ -207,6 +207,7 @@ struct SsaGraph @feat(SLJIT) {
     SsaSafepoint* safepoints;
     uint safepoint_count;
     uint safepoint_capacity;
+    SsaValue failed_value; // safe sink for builders unwinding an admission/allocation failure
     SsaValue* values;
     uint value_capacity;
     int* conv;
@@ -309,6 +310,7 @@ fn int ssa_value(SsaGraph* g, SsaOp op, SsaRep rep, int a, int b, long imm) @fea
     return (int)index;
 }
 fn void ssa_use(SsaGraph* g, int value) @feat(SLJIT) {
+    if (g.failed) return;
     if (value < 0 || value >= (int)g.value_count) {
         g.failed = true;
         return;
@@ -316,10 +318,12 @@ fn void ssa_use(SsaGraph* g, int value) @feat(SLJIT) {
     if (g.stamp > g.values[value].last) g.values[value].last = g.stamp;
 }
 fn void ssa_result(SsaGraph* g, int value, uint reg, uint pc) @feat(SLJIT) {
+    if (g.failed) return;
     g.values[value].dst_reg = (int)reg;
     g.values[value].pc = pc;
 }
 fn int ssa_convert(SsaGraph* g, int value, SsaRep rep, bool exact) @feat(SLJIT) {
+    if (g.failed) return 0;
     if (value < 0) {
         g.failed = true;
         return 0;
