@@ -246,8 +246,20 @@ fn bool ssa_inert_value(SsaGraph* g, int value, uint depth = 0) @feat(SLJIT) {
 // Copies are pure aliases of their source: both hold the same value, so the
 // allocator coalesces them onto one home and codegen drops the move.
 fn int ssa_alias(SsaGraph* g, int value) @feat(SLJIT) {
+    if (value < 0) return value;
+    if ((uint)value >= g.value_count) { g.failed = true; return 0; }
+    int original = value;
     uint guard;
-    while (value >= 0 && guard++ < g.value_count && g.values[value].op == COPY) value = g.values[value].a;
+    if (!ssa_charge_work(g, 1)) return original;
+    while (g.values[value].op == COPY) {
+        if (guard++ == g.value_count || !ssa_charge_work(g, 1)) {
+            g.failed = true;
+            return original;
+        }
+        int next = g.values[value].a;
+        if (next < 0 || (uint)next >= g.value_count) { g.failed = true; return original; }
+        value = next;
+    }
     return value;
 }
 fn void ssa_allocate_linear(SsaGraph* g) @feat(SLJIT) {
