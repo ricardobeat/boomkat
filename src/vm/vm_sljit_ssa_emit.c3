@@ -67,16 +67,24 @@ fn long SsaEmitter.spill_offset(&self, uint spill) @feat(SLJIT) => self.g.recove
         + (long)spill * double::size : ssa_spill_offset(spill);
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
-    if (v.home != 0) {
+    if (ssa_rematerialized(v)) {
+        self.e.mov(dst, 0, jit::SLJIT_IMM, v.imm);
+    } else if (v.home != 0) {
         self.e.mov(dst, 0, v.home, 0);
     } else {
         self.e.mov(dst, 0, jit::SLJIT_MEM | self.state, self.spill_offset(v.spill));
     }
 }
 fn void SsaEmitter.load_fpr(&self, int value, int dst) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
-    if (v.home != 0) {
+    if (ssa_rematerialized(v)) {
+        int scratch = jit::reg_r(3);
+        self.e.mov(scratch, 0, jit::SLJIT_IMM, v.imm);
+        if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, scratch) != 0) self.e.failed = true;
+    } else if (v.home != 0) {
         if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, dst, 0, v.home, 0) != 0) self.e.failed = true;
     } else {
         if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, dst, 0,
@@ -110,14 +118,17 @@ fn void SsaEmitter.store_fpr(&self, int value, int src) @feat(SLJIT) {
 // when the value has no home. Returning the home directly lets operations
 // consume operands in place instead of copying them through a scratch pair.
 fn int SsaEmitter.gpr_slot(&self, int value, int scratch) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
+    if (ssa_rematerialized(v)) { self.gpr(value, scratch); return scratch; }
     if (v.home != 0) return v.home;
     self.e.mov(scratch, 0, jit::SLJIT_MEM | self.state, self.spill_offset(v.spill));
     return scratch;
 }
 fn int SsaEmitter.fpr_slot(&self, int value, int scratch) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
-    if (v.home != 0) return v.home;
+    if (!ssa_rematerialized(v) && v.home != 0) return v.home;
     self.load_fpr(value, scratch);
     return scratch;
 }
@@ -403,6 +414,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case COPY:
 
                     {
+                        if (ssa_rematerialized(v)) break;
                         SsaValue from = self.g.values[v.a];
                         if (ssa_same_location(v, from)) break;
                         if (v.rep == F64) {
@@ -418,6 +430,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case CONST_BOXED:
 
                     {
+                        if (ssa_rematerialized(v)) break;
                         int dst = v.home != 0 ? v.home : r0;
                         self.e.mov(dst, 0, imm, v.imm);
                         if (v.home == 0) self.store_gpr((int)i, dst);
@@ -426,6 +439,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case CONST_F:
 
                     {
+                        if (ssa_rematerialized(v)) break;
                         int dst = v.home != 0 ? v.home : 1;
                         self.e.mov(r0, 0, imm, v.imm);
                         if (jit::sljit_emit_fcopy(

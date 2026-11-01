@@ -218,6 +218,7 @@ fn void ssa_function_liveness(SsaGraph* g) @feat(SLJIT) {
     }
 }
 fn bool ssa_same_location(SsaValue a, SsaValue b) @feat(SLJIT) {
+    if (ssa_rematerialized(a) || ssa_rematerialized(b)) return false;
     if (!ssa_same_class(a.rep, b.rep)) return false;
     if (a.home != 0 || b.home != 0) return a.home != 0 && a.home == b.home;
     return a.spill == b.spill;
@@ -321,7 +322,7 @@ fn void ssa_allocate_linear(SsaGraph* g) @feat(SLJIT) {
     }
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op == PHI || value.op == COPY || !ssa_has_result(value.op)) continue;
+        if (value.op == PHI || value.op == COPY || ssa_rematerialized(*value) || !ssa_has_result(value.op)) continue;
         if (g.cyclic && value.op == JOIN) continue;
         // An in-place direct region can reuse a dying incoming value's register
         // for the join. Its untouched caller frame remains the recovery source.
@@ -389,6 +390,8 @@ fn void ssa_allocate_linear(SsaGraph* g) @feat(SLJIT) {
 // General cyclic graphs require CFG liveness; flat definition stamps are not
 // live ranges across a backedge. Keep the established acyclic allocation.
 fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+    ssa_rematerialize(g);
+    if (g.failed) return;
     if (g.recoverable || (g.cyclic && !$feat(SLJIT_NO_CFG_ALLOCATION))) { ssa_allocate_cfg(g); }
     else { ssa_allocate_linear(g); }
     $if $feat(SLJIT_STATS):
