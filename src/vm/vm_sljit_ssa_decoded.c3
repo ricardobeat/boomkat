@@ -8,7 +8,7 @@ import std::io;
 // opcode contract is distinct from storage capacities and uses the existing
 // shared helper boundary for operations with runtime effects.
 fn bool ssa_decoded_helper_op(Opcode op) @feat(SLJIT) {
-    return function_call_op(op) || function_alloc_op(op);
+    return function_call_op(op) || function_alloc_op(op) || ssa_vm_step_supported(op);
 }
 fn bool ssa_decoded_body_op(Opcode op) @feat(SLJIT) {
     if (ssa_decoded_helper_op(op)) return true;
