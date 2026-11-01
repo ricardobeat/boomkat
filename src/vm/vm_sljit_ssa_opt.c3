@@ -377,7 +377,7 @@ fn void ssa_allocate_linear(SsaGraph* g) @feat(SLJIT) {
 // General cyclic graphs require CFG liveness; flat definition stamps are not
 // live ranges across a backedge. Keep the established acyclic allocation.
 fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
-    if (g.cyclic && !$feat(SLJIT_NO_CFG_ALLOCATION)) { ssa_allocate_cfg(g); }
+    if (g.recoverable || (g.cyclic && !$feat(SLJIT_NO_CFG_ALLOCATION))) { ssa_allocate_cfg(g); }
     else { ssa_allocate_linear(g); }
     $if $feat(SLJIT_STATS):
         if (g.cyclic) io::eprintfn("SLJIT cyclic allocation line=%d values=%d joins=%d spills=%d cfg=%d",
