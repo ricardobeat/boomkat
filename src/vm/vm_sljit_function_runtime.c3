@@ -165,7 +165,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         }
     $endif
     cf.sljit_function = plan;
-    for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_link_target(link);
+    for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_register_call(link);
     sljit_relink_calls(h, cf);
     sljit_artifact_publish(h, &plan.artifact, cf, plan, FUNCTION_CODE,
         plan.code_bytes, sljit_function_metadata_bytes(plan, bytes), &sljit_function_release);
