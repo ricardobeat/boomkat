@@ -62,7 +62,7 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
     // the compiled body that was expanded here.
     int callee;
     if (fused) {
-        int binding = (int)g.plan.binding_at[pos - g.plan.begin] - 1;
+        int binding = (int)ssa_binding_site(g.plan, pos - g.plan.begin) - 1;
         if (binding < 0) return -1;
         callee = ssa_value(g, BINDING, BOXED, -1, -1, binding);
     } else { callee = g.current[base]; }

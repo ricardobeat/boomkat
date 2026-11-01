@@ -17,6 +17,9 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
 // The caller owns the region's descriptor preparation and frame publication.
 // A span excludes its terminal RET and may contain forward branches only.
 fn bool ssa_region_supported(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
+    if (plan.ssa_recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body) {
+        return ssa_decoded_body_supported(plan, cf);
+    }
     if (plan.begin > plan.end || plan.end >= cf.code_count || plan.end - plan.begin >= SSA_SPAN
         || cf.num_regs > LOOP_REGS
         || !ssa_loop_eligible(
@@ -108,10 +111,16 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
 
 fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pass, bool direct = false, TemplateEmitter* parent = null, uint inline_base = 0, uint inline_depth = 0, bool callee_entry = false) @feat(SLJIT) {
     bool emitted;
-    defer if (!emitted) ssa_helper_sites_free(h, plan);
+    defer if (!emitted) { ssa_helper_sites_free(h, plan); ssa_deopt_free(h, plan); }
     SsaGraph* graph = ssa_prepare(plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry);
     if (graph == null) return null;
     defer ssa_graph_free(graph);
+    if (plan.ssa_data != null) {
+        plan.ssa_data.native_accesses = 0;
+        foreach (value : graph.values[:graph.value_count]) {
+            if (value.op == ACCESS_LOAD || value.op == ACCESS_STORE) plan.ssa_data.native_accesses++;
+        }
+    }
     void* code = ssa_emit_graph(graph, parent);
     emitted = code != null;
     return code;
@@ -184,7 +193,10 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     }
     ssa_dominators(graph);
     if ((graph.cyclic || graph.recoverable) && !$feat(SLJIT_NO_CFG_OPT)) {
-        if (graph.reg_count <= LOOP_REGS && graph.value_count <= SSA_MAX_VALUES && graph.block_count <= SSA_BLOCKS) ssa_optimize_cfg(graph);
+        uint common = ssa_optimize_cfg(graph);
+        $if $feat(SLJIT_STATS):
+            if (common != 0) io::eprintfn("SLJIT SSA CSE line=%d blocks=%d values=%d reused=%d", cf.get_line(0), graph.block_count, graph.value_count, common);
+        $endif
         ssa_numeric_loads(graph);
     } else if (!graph.cyclic && !graph.recoverable) {
         ssa_invariant_cse(graph);
@@ -210,6 +222,10 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         }
         if (removed) ssa_function_liveness(graph);
     }
+    uint dead = ssa_dce(graph);
+    $if $feat(SLJIT_STATS):
+        if (dead != 0) io::eprintfn("SLJIT SSA DCE line=%d removed=%d", cf.get_line(0), dead);
+    $endif
     ssa_allocate(graph);
     if (graph.failed) return null;
     uint phi_count;
@@ -217,10 +233,11 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     // The latch and JOIN edges use these temporary slots at different times.
     // Packed in-place state has no LoopState.ssa_edge array of its own.
     uint copy_temps = ssa_edge_copy_temps(graph);
+    if (graph.failed) return null;
     if (copy_temps < phi_count) copy_temps = phi_count;
     if (graph.recoverable && plan.ssa_data != null) {
-        plan.ssa_data.spill_count = graph.spill_count + copy_temps + 2;
-        plan.ssa_data.edge_count = graph.reg_count;
+        plan.ssa_data.spill_count = graph.spill_count + 2;
+        plan.ssa_data.edge_count = copy_temps;
         plan.ssa_value_capacity = graph.value_count;
     } else if (graph.spill_count + copy_temps + 2 > SSA_MAX_SPILL) return null;
     uint scratch_window = inline_depth == 0 ? 0 : inline_depth + 1;
@@ -294,6 +311,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     self.budget = jit::reg_s(1);
     self.run = jit::reg_s(2);
     self.at_def = 0;
+    self.frame_id = SSA_NO_FRAME;
     for (uint i = 0; i < graph.reg_count; i++) self.live[i] = graph.header[i];
     if (graph.direct_fields && parent != null) {
         // Address spills from the shared run directly, freeing R6 for values.
@@ -355,9 +373,9 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
         for (uint i = 0; i < self.done_count; i++) jit::sljit_set_label(self.done_jumps[i], done);
         plan.ssa_epoch_constant = self.epoch_constant;
         *parent = *e;
-        return e.failed ? null : (void*)1;
+        return e.failed || graph.failed ? null : (void*)1;
     }
-    if (e.failed) return null;
+    if (e.failed || graph.failed) return null;
     void* native = jit::sljit_generate_code(e.compiler, 0, null);
     if (native != null) {
         plan.code_bytes = jit::sljit_shim_code_size(e.compiler);

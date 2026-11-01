@@ -75,6 +75,10 @@ enum SsaOp : char {
     BOX_F,
     LOAD,
     STORE,
+    // Scalable accesses use SSA receivers and indices, never LoopMemory slots.
+    ACCESS_ADDRESS,
+    ACCESS_LOAD,
+    ACCESS_STORE,
     // Identity guard: the value must be a function whose compiled body is the
     // one the call was expanded from.
     CHECKFN,
@@ -100,7 +104,7 @@ enum SsaOp : char {
 
 fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
     switch (op) {
-        case NOP: case STORE: case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: case EXIT: return false;
+        case NOP: case STORE: case ACCESS_STORE: case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: case EXIT: return false;
         default: return true;
     }
 }
@@ -213,6 +217,9 @@ struct SsaGraph @feat(SLJIT) {
     SsaFrameEntry* recovery_entries;
     uint recovery_count;
     uint recovery_capacity;
+    SsaDeoptHome* deopt_homes;
+    uint deopt_home_count;
+    SsaDeoptFrame** deopt_frames;
     SsaSafepoint* safepoints;
     uint safepoint_count;
     uint safepoint_capacity;
@@ -615,7 +622,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case GETCAP:
             case GETVAR:
             case GETGLOBAL:
-                if (plan.binding_at[pos - plan.begin] == 0) return false;
+                if (ssa_binding_site(plan, pos - plan.begin) == 0) return false;
                 continue;
             case LDREG:
             case LDINT:
@@ -651,7 +658,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case GETPROP:
             case GETPROP_CACHE:
             case PUTPROP:
-                if (plan.memory_at[pos - plan.begin] == 0) return false;
+                if (ssa_memory_site(plan, pos - plan.begin) == 0) return false;
                 continue;
             case GETPROPC:
             case GETPROPC_CACHED:
@@ -659,9 +666,9 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
 
                 {
                     uint at = pos - plan.begin;
-                    if (plan.memory_at[at] == 0 && plan.ssa_recoverable) continue;
-                    if (plan.memory_at[at] == 0 || plan.intrinsic_at[at] != 0) return false;
-                    LoopMemoryKind kind = plan.memory[(uint)plan.memory_at[at] - 1].kind;
+                    if (ssa_memory_site(plan, at) == 0 && plan.ssa_recoverable) continue;
+                    if (ssa_memory_site(plan, at) == 0 || ssa_intrinsic_site(plan, at) != 0) return false;
+                    LoopMemoryKind kind = plan.memory[(uint)ssa_memory_site(plan, at) - 1].kind;
                     if (kind != FIELD && kind != SHAPE_FIELD && kind != PROTO_FIELD) return false;
                     continue;
                 }
@@ -670,7 +677,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case CALL_GLOBAL:
             case CALL_VAR:
                 // Expanded in place, so the callee body must be a leaf.
-                if (plan.memory_at[pos - plan.begin] != 0) return false;
+                if (ssa_memory_site(plan, pos - plan.begin) != 0) return false;
                 if (!plan.ssa_recoverable && function_inline_ssa_candidate(cf, pos, h, plan.ssa_function != null) == null) return false;
                 continue;
             case NEWOBJ:
@@ -791,8 +798,8 @@ fn void ssa_infer(
             case GETPROPC:
             case GETPROPC_CACHED:
             case GETTHISC:
-                if (g.direct_fields && plan.memory_at[pos - plan.begin] != 0) {
-                    LoopMemorySpec spec = plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1];
+                if (g.direct_fields && ssa_memory_site(plan, pos - plan.begin) != 0) {
+                    LoopMemorySpec spec = plan.memory[(uint)ssa_memory_site(plan, pos - plan.begin) - 1];
                     if (spec.kind == FIELD && spec.source < LOOP_REGS) {
                         uint source = spec.source;
                         read[source] = true;
@@ -800,9 +807,9 @@ fn void ssa_infer(
                         if (!assigned[source]) live_in[source] = true;
                     }
                 }
-                if (plan.memory_at[pos - plan.begin] != 0
-                    && (plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1].kind == SHAPE_FIELD
-                        || plan.memory[(uint)plan.memory_at[pos - plan.begin] - 1].kind == PROTO_FIELD)
+                if (ssa_memory_site(plan, pos - plan.begin) != 0
+                    && (plan.memory[(uint)ssa_memory_site(plan, pos - plan.begin) - 1].kind == SHAPE_FIELD
+                        || plan.memory[(uint)ssa_memory_site(plan, pos - plan.begin) - 1].kind == PROTO_FIELD)
                     && ins.op != Opcode.GETTHISC) {
                     read[ins.b] = true;
                     value_read[ins.b] = true;
@@ -953,7 +960,7 @@ fn bool ssa_op_is_int(SsaGraph* g, DecodedInsn ins, uint pos, bool* int_reg) @fe
         case GETPROP_CACHE:
 
             {
-                uint memory = plan.memory_at[pos - plan.begin];
+                uint memory = ssa_memory_site(plan, pos - plan.begin);
                 if (memory == 0) return false;
                 LoopMemorySpec spec = plan.memory[memory - 1];
                 if (spec.kind == FIELD || spec.kind == SHAPE_FIELD) return false;

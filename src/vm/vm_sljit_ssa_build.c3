@@ -210,7 +210,25 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 g.cmp_op = ins.op;
                 continue;
             }
+            if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
+                && ssa_access_build(g, view)) continue;
+            if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
+                && ssa_vm_step_supported(ins.op)) {
+                int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
+                uint destination;
+                compiler::MoveelimRoles roles = compiler::bytecode_cfg_roles(ins.op);
+                if (compiler::moveelim_get_role_def(roles, ins.a, &destination)) {
+                    ssa_result(g, value, destination, pos);
+                    g.current[destination] = value;
+                }
+                g.values[value].before_frame = g.frames[at];
+                g.values[value].after_frame = ssa_frame_capture(g, view.next_pc, g.current, g.reg_count,
+                    view.next_pc <= plan.end ? g.recovery_live[view.next_pc - plan.begin].words : null, g.reg_words);
+                if (g.failed) return false;
+                continue;
+            }
             switch (ins.op) {
+                case NOP: continue;
                 case LDTHIS:
                     {
                         if (!g.direct_fields) return false;
@@ -246,7 +264,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         if (value < 0 || g.values[value].rep == RAW) return false;
                         value = ssa_convert(g, value, BOXED, false);
                         ssa_use(g, value);
-                        uint memory = (uint)plan.memory_at[at] - 1;
+                        uint memory = (uint)ssa_memory_site(plan, at) - 1;
                         int receiver = g.direct_fields ? ssa_field_storage(g, memory,
                             ins.op == Opcode.PUTPROPC ? g.current[ins.a] : -1) : -1;
                         if (g.direct_fields) ssa_use(g, receiver);
@@ -285,7 +303,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                 view.next_pc <= plan.end ? g.recovery_live[view.next_pc - plan.begin].words : null, g.reg_words);
                             break;
                         }
-                        int binding = (int)plan.binding_at[pos - plan.begin] - 1;
+                        int binding = (int)ssa_binding_site(plan, pos - plan.begin) - 1;
                         int value;
                         if ((plan.ssa_binding_mask & (1UL << (uint)binding)) != 0) {
                             TVal constant = plan.ssa_binding_constants[binding];
@@ -426,14 +444,15 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case GETTHISC:
 
                     {
-                        uint memory = (uint)plan.memory_at[at] - 1;
+                        uint memory = (uint)ssa_memory_site(plan, at) - 1;
                         if (memory >= plan.memory_count) {
                             if (!g.recoverable) return false;
                             int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
                             ssa_result(g, value, ins.a, pos);
                             g.current[ins.a] = value;
                             g.values[value].before_frame = g.frames[at];
-                            g.values[value].after_frame = ssa_frame_capture(g, pos + 1, &g.current[0], LOOP_REGS);
+                            g.values[value].after_frame = ssa_frame_capture(g, view.next_pc, g.current, g.reg_count,
+                                view.next_pc <= plan.end ? g.recovery_live[view.next_pc - plan.begin].words : null, g.reg_words);
                             break;
                         }
                         LoopMemorySpec spec =  plan.memory[memory];
@@ -460,7 +479,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case GETPROP_CACHE:
 
                     {
-                        uint memory = (uint)plan.memory_at[at] - 1;
+                        uint memory = (uint)ssa_memory_site(plan, at) - 1;
                         if (memory >= plan.memory_count || g.current[ins.c] < 0) {
                             g.failed = true;
                             return false;
@@ -483,7 +502,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case PUTPROP:
 
                     {
-                        uint memory = (uint)plan.memory_at[at] - 1;
+                        uint memory = (uint)ssa_memory_site(plan, at) - 1;
                         if (memory >= plan.memory_count || g.current[ins.b] < 0 || g.current[ins.c] < 0) {
                             g.failed = true;
                             return false;

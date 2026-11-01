@@ -36,7 +36,7 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     if (!site.native_resume) {
         // A RAW address still needed across an unknown mutation has no valid
         // continuation. This individual bytecode uses the exact VM fallback.
-        self.publish_id(ssa_frame_at_pc(self.g, self.pc), self.pc);
+        self.publish_id(site.before_frame, site.pc);
         return;
     }
     foreach (id : site.live_values[:site.live_count]) self.helper_save(id);
@@ -78,6 +78,7 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     self.addr_reg = 0;
     self.addr_memory = -1;
     self.addr_numeric_load = false;
+    if (self.g.values[value].dst_reg < 0) return;
     if (self.plan.ssa_data != null) {
         self.e.mov(r0, 0, mem | self.state, $reflect(LoopState.execution).offset);
         self.e.mov(r0, 0, mem | r0, $reflect(SsaExecution.input_values).offset);

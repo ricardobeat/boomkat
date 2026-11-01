@@ -8,6 +8,9 @@ import boomkat::jit;
 // executable offsets survive the temporary SLJIT compiler, not its handles.
 struct FunctionCallLink @feat(SLJIT) {
     FunctionCallLink* next;
+    FunctionCallLink* target_previous;
+    FunctionCallLink* target_next;
+    bool registered;
     CompiledFunction* target;
     void* jump;
     usz patch;
@@ -21,17 +24,27 @@ fn void sljit_link_target(FunctionCallLink* link, bool invalidate = false) @feat
     jit::sljit_set_jump_addr(link.patch, (usz)entry, link.executable_offset);
 }
 
-// Compilation and retirement occur only after native frames have unwound.
-// Unlink incoming calls before freeing their destination, then relink when a
-// replacement plan is published. A cold/missing plan resumes the original call.
+// Each published caller registers its patch sites with their target. A target
+// replacement visits only real incoming edges, including suspended retired
+// callers whose owner still pins their patch storage.
+fn void sljit_register_call(FunctionCallLink* link) @feat(SLJIT) {
+    assert(!link.registered);
+    link.target_next = link.target.sljit_incoming_calls;
+    if (link.target_next != null) link.target_next.target_previous = link;
+    link.target.sljit_incoming_calls = link;
+    link.registered = true;
+    sljit_link_target(link);
+}
+fn void sljit_unregister_call(FunctionCallLink* link) @feat(SLJIT) {
+    if (!link.registered) return;
+    if (link.target_previous != null) { link.target_previous.target_next = link.target_next; }
+    else { link.target.sljit_incoming_calls = link.target_next; }
+    if (link.target_next != null) link.target_next.target_previous = link.target_previous;
+    link.registered = false;
+}
 fn void sljit_relink_calls(Heap* h, CompiledFunction* target, bool invalidate = false) @feat(SLJIT) {
-    for (uint i = 0; i < h.compiled_func_count; i++) {
-        CompiledFunction* cf = h.compiled_funcs[i];
-        if (cf == null || cf.sljit_function == null) continue;
-        FunctionPlan* plan = cf.sljit_function;
-        for (FunctionCallLink* link = plan.calls; link != null; link = link.next) {
-            if (link.target == target) sljit_link_target(link, invalidate);
-        }
+    for (FunctionCallLink* link = target.sljit_incoming_calls; link != null; link = link.target_next) {
+        sljit_link_target(link, invalidate);
     }
 }
 
@@ -39,6 +52,7 @@ fn void sljit_call_links_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
     while (plan.calls != null) {
         FunctionCallLink* link = plan.calls;
         plan.calls = link.next;
+        sljit_unregister_call(link);
         h.free_func(h.heap_udata, link);
     }
 }

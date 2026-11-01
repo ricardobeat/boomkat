@@ -2,6 +2,7 @@ module boomkat::vm;
 
 import boomkat::heap;
 import boomkat::bytecode;
+import std::core::mem;
 
 const usz JIT_INITIAL_CODE_LIMIT = 256 * 1024;
 const usz JIT_MAX_CODE_LIMIT = 2 * 1024 * 1024;
@@ -55,8 +56,27 @@ fn void sljit_budget_retry_function(Heap* h, CompiledFunction* cf) @feat(SLJIT) 
         cf.sljit_template_budget_wait = false;
         if (cf.sljit_template == null) cf.sljit_template_calls = 0;
     }
-    cf.sljit_loop_rejected &= ~cf.sljit_loop_budget_wait;
-    cf.sljit_loop_budget_wait = 0;
+    if (cf.sljit_loop_budget_wait && cf.sljit_loop_admission != null) {
+        for (uint pc = 0; pc < cf.code_count; pc++) cf.sljit_loop_admission[pc] &= 0xFD;
+        cf.sljit_loop_budget_wait = false;
+    }
+}
+
+// Admission is indexed by the exact bytecode PC. Hash collisions must not
+// disable another loop or turn an unsupported site into a budget retry.
+fn bool sljit_loop_blocked(CompiledFunction* cf, uint pc) @feat(SLJIT) @inline {
+    return cf.sljit_loop_admission_oom || pc >= cf.code_count
+        || (cf.sljit_loop_admission != null && cf.sljit_loop_admission[pc] != 0);
+}
+fn void sljit_loop_decline(Heap* h, CompiledFunction* cf, uint pc, bool capacity = false) @feat(SLJIT) {
+    if (pc >= cf.code_count || cf.sljit_loop_admission_oom) return;
+    if (cf.sljit_loop_admission == null) {
+        cf.sljit_loop_admission = (char*)h.alloc_func(h.heap_udata, cf.code_count);
+        if (cf.sljit_loop_admission == null) { cf.sljit_loop_admission_oom = true; return; }
+        mem::clear(cf.sljit_loop_admission, (sz)cf.code_count);
+    }
+    cf.sljit_loop_admission[pc] |= capacity ? 2 : 1;
+    if (capacity) cf.sljit_loop_budget_wait = true;
 }
 
 fn bool sljit_code_room(Heap* h, usz bytes, bool function = false) @feat(SLJIT) @inline {
