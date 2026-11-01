@@ -1958,6 +1958,61 @@ instructions. Keep patching and retirement policy in the engine, separate from
 these mechanical bindings.
 
 
+### Recoverable cyclic SSA
+
+The function gateway can compile a decoded body through the shared cyclic SSA
+compiler. Canonical bytecode roles and liveness include WIDE operands, closure
+results and compact cells. Graph nodes, blocks, edges, register maps and sparse
+immutable frame states use budgeted dynamic storage. Work and memory exhaustion
+decline compilation; they do not truncate register mappings or recovery state.
+
+Native dense-array, typed-array and own-field accesses consume actual SSA
+receivers. They validate live class, layout generation and backing storage; no
+entry snapshot or raw element pointer survives an unknown mutation. Generic
+calls and allocation operations publish an exact before-state, preserve typed
+live homes and boxed roots, and resume from an explicit completed outcome.
+The continuation reloads movable VM state. Exceptions and unsupported operations
+use the same exact-PC recovery boundary. Sparse root membership updates retain
+all incoming references before releasing previous ones.
+
+Explicit external-import blocks and shared preheaders distinguish native
+backedges from interpreter entry. Guard-safe DCE, effect-aware CSE, scalar
+interval facts and total-operation LICM operate on this CFG. Bounds elimination
+requires a dominating successful access and stops at possible mutation. LICM
+requires preheader dominance and conservatively declines loops with bypassing
+side entries. These proofs never treat observed input values as static facts.
+
+Global allocation accounts for cyclic liveness, phi-edge copies and recovery-only
+uses. Numeric constants and their aliases have no physical home: operands and
+recovery reconstruct their bits, without spills or helper save/restore traffic.
+Shared deoptimization freezes locations and logical frame chains once; guards
+use small stubs and a common publication bridge. Executable owners remain pinned
+through native execution and recovery, with deferred retirement and accounted
+code/metadata storage.
+
+Recoverable whole-function SSA also has an effectful inline consumer in
+`vm_sljit_ssa_inline_effect.c3`. It expands a decoded straight-line callee prefix
+containing scalar numeric operations and guarded numeric stores to existing own
+fields. Callee register maps and liveness use budgeted dynamic storage, including
+WIDE operands. The initial policy admits this-ignoring lean compiled functions
+with exact argument counts, no captures or scope setup, and the caller's realm.
+Fused binding calls resolve only validated data slots; accessor, proxy and with
+lookups fall back before effects. A rooted helper validates the actual callee
+and reserves activation and value-stack space before any inline store.
+
+Every child instruction has an immutable logical frame linking its local SSA
+values and exact child PC to the caller's before-call state, callee, receiver,
+callsite and return destination. A late guard or unsupported callee operation
+uses the common frozen-location deopt bridge to publish the caller and push a
+real child activation at that PC. Previously committed child stores are not
+replayed, and callback returns and throws follow the VM's ordinary frame paths.
+A fully expanded return merges its SSA result into the caller's after-call
+state. Child helpers currently materialize the chain rather than continuing
+inside a virtual activation; branches, loops and nested calls terminate the
+expanded prefix. This policy does not provide arbitrary cyclic-callee inlining.
+The C embedding regressions check actual native inline entries, child recovery,
+WIDE callee locals, late coercion, callback throws and stack growth.
+
 ### Function-region SSA bring-up
 
 `SLJIT_FUNCTION_SSA` enables an experimental function adapter in
@@ -1983,29 +2038,6 @@ untouched entry frame. Success publishes only the result before the baseline
 return continuation. String results or replacement of an owned string slot
 use baseline execution to preserve reference ownership. Captured bindings
 retain the C adapter and exact snapshot publication.
-
-Recoverable whole-function SSA also has an effectful inline consumer in
-`vm_sljit_ssa_inline_effect.c3`. It expands a decoded straight-line callee prefix
-containing scalar numeric operations and guarded numeric stores to existing own
-fields. Callee register maps and liveness use budgeted dynamic storage, including
-WIDE operands. The initial policy admits this-ignoring lean compiled functions
-with exact argument counts, no captures or scope setup, and the caller's realm.
-Fused binding calls resolve only validated data slots; accessor, proxy and with
-lookups fall back before effects. A rooted helper validates the actual callee
-and reserves activation and value-stack space before any inline store.
-
-Every child instruction has an immutable logical frame linking its local SSA
-values and exact child PC to the caller's before-call state, callee, receiver,
-callsite and return destination. A late guard or unsupported callee operation
-uses the common frozen-location deopt bridge to publish the caller and push a
-real child activation at that PC. Previously committed child stores are not
-replayed, and callback returns and throws follow the VM's ordinary frame paths.
-A fully expanded return merges its SSA result into the caller's after-call
-state. Child helpers currently materialize the chain rather than continuing
-inside a virtual activation; branches, loops and nested calls terminate the
-expanded prefix. This policy does not provide arbitrary cyclic-callee inlining.
-The C embedding regressions check actual native inline entries, child recovery,
-WIDE callee locals, late coercion, callback throws and stack growth.
 
 The adapter remains opt-in. A long arithmetic microbenchmark measured 20–21 ms
 with copied live inputs versus 18 ms with shared-register entry in five
