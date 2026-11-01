@@ -103,6 +103,60 @@ inherit lane claims it did not produce. A completing helper must also not run
 inside an expanded callee's private register window (the helper addresses the
 VM frame), which the attempt already gated on `depth == 0`.
 
+## Flow barrier for read continuation, 2026-10-31 (implemented, measured, rejected)
+
+Implemented the recommended flow-barrier design in full and removed it after
+measurement: same-tree binaries with the barrier disabled are 5.5% faster on
+Gameboy, 2% on Box2D and 1.5% on DeltaBlue (three paired runs each; the other
+minis are flat). Coverage is not the problem: the barrier raises native read
+completions by 26% (Box2D) and 34% (Gameboy), so the reads it keeps in native
+code were previously exits.
+
+The final design, which is worth reusing where the continuation is the hot
+tier, is an out-of-line slow block:
+
+* `LoopEmitter` gains an opt-in redirect set. While a barrier read is being
+  emitted, `link(jump, redirect_pc, exit)` collects the guard miss instead of
+  recording an exit fixup, up to `LOOP_REDIRECT_JUMPS` (32). The excess falls
+  back to an ordinary exit, so a guard-rich site still compiles.
+* `FunctionEmitter.property` admits a barrier only for a named read
+  (`GETPROPC`, `GETPROPC_CACHED`, `GETTHISC`), in the outer emitter
+  (`depth == 0`, `state_reg == 0`), with a flow state, no `length` special
+  case, a destination distinct from the receiver, no lane claim on the
+  destination, and `!flow_hint(dest)` so the fast path can neither claim nor
+  steal a lane. That last condition is what makes the shared state sound: the
+  slow block republishes lanes with the owner map captured before the read.
+* Close creates the reconvergence label where the fast path falls through and
+  queues a slow block for the function epilogue, so no cold code sits between
+  hot instructions. The epilogue block publishes the pre-instruction dirty
+  lanes (`flow_exit(snapshot)`), enters `sljit_resume_fragment`, reloads every
+  lane the state claimed (`flow_reload_lanes`), and jumps back to the queued
+  label. The compile-time state after the read is the pre-read state with the
+  destination dropped, so neither path inherits a lane or "unowned" claim.
+* `sljit_native_operation` now dispatches the three named read opcodes to the
+  existing `sljit_native_read` helper, which the straight-line tier already
+  uses from exit stubs.
+
+The first two attempts failed and are recorded here as traps. A version that
+materialized every lane before the read and another that materialized at the
+fast path's end both regressed 4-6% because they moved frame publication into
+the hot path or interleaved the slow block with it. A correctness bug in the
+same area is worth remembering: when the converged state is materialized but
+the fast path is not, any lane that was already dirty before the read keeps its
+value only in a register, so a later load of that register reads a stale frame
+slot. The shipped design instead republishes exactly those lanes in the slow
+block and keeps the same lane claims on both paths.
+
+Why it loses: the straight-line function tier is not the hot tier for these
+loops. Exiting the read hands the rest of the loop iteration to the interpreter
+and then back to the loop-region or re-specialized plan, which is faster than
+continuing in the whole-body straight-line body. The adaptive read-refresh path
+(`SLJIT_READ_REFRESH`) also depends on the interpreter executing the read at
+least once to fill the site's IC; a native continuation reduces those
+opportunities. The same barrier applied inside the SSA region, where the
+continuation is the compiled hot path, remains untested and is the only version
+worth revisiting.
+
 ## Shared bytecode decoder, 2026-10-31
 
 [Actual bytecode, ARM64 dispatch, high-register execution and timing evidence](113-fifty-thousand-octane/shared-decoder-2026-10-31/report.md): rat `9966cd7f` shares WIDE operand construction between the interpreter and a bounded decoded view consumed by loop alias analysis; the view preserves prefix, opcode and next PCs and rejects invalid prefixes. It does not implement CFG edges, general operand windows or SSA recovery. A temporary aggregate-return form added a WIDE dispatch stack store and regressed several minis, so it was replaced with direct field assignment; final switch WIDE and threaded WIDE ARM64 instructions are byte-for-byte unchanged. The actual high-register alias fixture completes the same 366,592 native iterations; ARM64 ASan, x86-64 and local/Rosetta/modules differential checks pass. Final zlib pairs were 3727→3743 ms and a reversed-order confirmation 3713→3727 ms (+0.38%); the difference has not been attributed to a dispatch change. This is bounded groundwork, not an Octane throughput gain, and 50K remains open.
