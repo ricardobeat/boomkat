@@ -1,6 +1,8 @@
 module boomkat::vm;
 
 import boomkat::heap;
+import boomkat::compiler;
+import boomkat::bytecode;
 import std::core::mem;
 
 // Admission policy is separate from representation. Every graph allocation is
@@ -15,8 +17,9 @@ struct SsaBudget {
     uint max_frames;
     uint max_recovery_entries;
     usz max_bytes;
+    ulong max_work;
 }
-const SsaBudget SSA_DEFAULT_BUDGET = { 65536, 65536, 262144, 8192, 65536, 131072, 1048576, 16 * 1024 * 1024 };
+const SsaBudget SSA_DEFAULT_BUDGET = { 65536, 65536, 262144, 8192, 65536, 131072, 1048576, 16 * 1024 * 1024, 50000000 };
 alias SsaFrameId = uint;
 const SsaFrameId SSA_NO_FRAME = uint::max;
 const uint SSA_NO_BLOCK = uint::max;
@@ -65,6 +68,7 @@ fn void* ssa_storage_alloc(SsaGraph* g, usz count, usz item_size) @feat(SLJIT) {
     return data;
 }
 fn void ssa_storage_free(SsaGraph* g) @feat(SLJIT) {
+    compiler::bytecode_cfg_free(&g.decoded);
     while (g.storage != null) {
         SsaStorageChunk* chunk = g.storage;
         g.storage = chunk.next;
@@ -94,6 +98,7 @@ fn void* ssa_storage_grow(SsaGraph* g, void* prior, uint used, uint* capacity,
 fn SsaFrameId ssa_frame_capture(SsaGraph* g, uint pc, int* values, uint reg_count,
     uint* live_words = null, uint word_count = 0) @feat(SLJIT) {
     if (g.budget.max_bytes == 0) g.budget = SSA_DEFAULT_BUDGET;
+    if (!ssa_charge_work(g, reg_count)) return SSA_NO_FRAME;
     uint count;
     for (uint reg = 0; reg < reg_count; reg++) {
         if (values[reg] < 0) continue;
@@ -198,6 +203,7 @@ fn bool ssa_reserve_values(SsaGraph* g, uint needed) @feat(SLJIT) {
     // It is never emitted, assigned a frame or treated as a successful node.
     if (g.values == null) g.values = &g.failed_value;
     if (needed <= g.value_capacity) return !g.failed;
+    if (g.budget.max_bytes == 0) g.budget = SSA_DEFAULT_BUDGET;
     uint prior = g.value_capacity;
     uint capacity = prior;
     SsaValue* values = (SsaValue*)ssa_storage_grow(g, g.values, g.value_count,
@@ -223,7 +229,19 @@ fn bool ssa_graph_tables(SsaGraph* g, uint span) @feat(SLJIT) {
     g.block_capacity = blocks;
     g.blocks = (SsaBlock*)ssa_storage_alloc(g, blocks, SsaBlock::size);
     g.joins = (SsaJoin*)ssa_storage_alloc(g, blocks, SsaJoin::size);
-    g.cyclic_live = (ulong*)ssa_storage_alloc(g, blocks, ulong::size);
+    g.cyclic_live = (compiler::RegSet*)ssa_storage_alloc(g, blocks, compiler::RegSet::size);
+    g.recovery_live = (compiler::RegSet*)ssa_storage_alloc(g, span, compiler::RegSet::size);
+    uint* live_words = (uint*)ssa_storage_alloc(g, (usz)(blocks + span + 1) * g.reg_words, uint::size);
+    if (g.failed) return false;
+    for (uint b = 0; b < blocks; b++) g.cyclic_live[b] = { .words = live_words + (usz)b * g.reg_words, .word_count = g.reg_words };
+    for (uint pc = 0; pc < span; pc++) g.recovery_live[pc] = { .words = live_words + (usz)(blocks + pc) * g.reg_words, .word_count = g.reg_words };
+    g.force_f64 = { .words = live_words + (usz)(blocks + span) * g.reg_words, .word_count = g.reg_words };
+    g.current = (int*)ssa_storage_alloc(g, g.reg_count, int::size);
+    g.header = (int*)ssa_storage_alloc(g, g.reg_count, int::size);
+    g.phi = (int*)ssa_storage_alloc(g, g.reg_count, int::size);
+    g.arg = (int*)ssa_storage_alloc(g, g.reg_count, int::size);
+    g.rep = (SsaRep*)ssa_storage_alloc(g, g.reg_count, SsaRep::size);
+    g.int_reg = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
     g.cyclic_order = (uint*)ssa_storage_alloc(g, blocks, uint::size);
     g.block_built = (bool*)ssa_storage_alloc(g, blocks, bool::size);
     g.block_first = (uint*)ssa_storage_alloc(g, blocks, uint::size);
@@ -255,13 +273,40 @@ fn bool ssa_collect_predecessors(SsaGraph* g) @feat(SLJIT) {
 }
 fn bool ssa_join_storage(SsaGraph* g, SsaJoin* join, SsaBlock* block) @feat(SLJIT) {
     join.preds = block.preds;
-    join.phi = (int*)ssa_storage_alloc(g, LOOP_REGS, int::size);
-    join.entry_incoming = (int*)ssa_storage_alloc(g, LOOP_REGS, int::size);
+    join.phi = (int*)ssa_storage_alloc(g, g.reg_count, int::size);
+    join.entry_incoming = (int*)ssa_storage_alloc(g, g.reg_count, int::size);
     join.incoming = (int**)ssa_storage_alloc(g, block.pred_count, int*::size);
     if (g.failed) return false;
     for (uint p = 0; p < block.pred_count; p++) {
-        join.incoming[p] = (int*)ssa_storage_alloc(g, LOOP_REGS, int::size);
+        join.incoming[p] = (int*)ssa_storage_alloc(g, g.reg_count, int::size);
         if (g.failed) return false;
     }
     return true;
 }
+
+// Canonical prefix PCs are the only SSA bytecode identities. Legacy loop
+// adapters borrow a rewritten window but still use the same decoder contract.
+fn DecodedBytecode ssa_decoded_view(SsaGraph* g, uint pc) @feat(SLJIT) {
+    if (g.decoded.storage != null && pc < g.decoded.word_count) {
+        uint index = g.decoded.pc_to_index[pc];
+        if (index != compiler::CFG_NO_INSTRUCTION) return g.decoded.nodes[index].view;
+        return {};
+    }
+    return bytecode::decode_bytecode(g.cf.code, g.cf.code_count, pc);
+}
+fn int ssa_decoded_target(DecodedBytecode view) @feat(SLJIT) {
+    long target;
+    if (!compiler::bytecode_cfg_branch(view, &target)) return -1;
+    return target < 0 || target > int::max ? -1 : (int)target;
+}
+
+// Account compile work as well as memory. Callers charge a complete sweep
+// before entering it, so adversarial CFGs cannot hide unbounded fixed points.
+fn bool ssa_charge_work(SsaGraph* g, usz amount) @feat(SLJIT) {
+    if (g.failed) return false;
+    ulong limit = g.budget.max_work == 0 ? SSA_DEFAULT_BUDGET.max_work : g.budget.max_work;
+    if (g.work > limit || (ulong)amount > limit - g.work) { g.failed = true; return false; }
+    g.work += (ulong)amount;
+    return true;
+}
+fn bool ssa_cfg_charge_work(void* data, usz amount) @feat(SLJIT) => ssa_charge_work((SsaGraph*)data, amount);
