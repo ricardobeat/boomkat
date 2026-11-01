@@ -45,6 +45,7 @@ fn void* ssa_function_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(
 
 fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Heap* h,
     bool single_pass, bool direct, TemplateEmitter* parent, uint inline_base, uint inline_depth, bool callee_entry, ulong forced = 0) @feat(SLJIT) {
+    ssa_storage_free(graph);
     mem::clear(graph, (sz)SsaGraph::size);
     graph.plan = plan;
     graph.cf = cf;
@@ -94,7 +95,7 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     defer if (!emitted) ssa_helper_sites_free(h, plan);
     SsaGraph* graph = ssa_prepare(plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry);
     if (graph == null) return null;
-    defer h.free_func(h.heap_udata, graph);
+    defer ssa_graph_free(graph);
     void* code = ssa_emit_graph(graph, parent);
     emitted = code != null;
     return code;
@@ -105,8 +106,10 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
 fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pass, bool direct, TemplateEmitter* parent, uint inline_base, uint inline_depth, bool callee_entry) @feat(SLJIT) {
     SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
     if (graph == null) return null;
+    mem::clear(graph, (sz)SsaGraph::size);
+    graph.heap = h;
     bool prepared;
-    defer if (!prepared) h.free_func(h.heap_udata, graph);
+    defer if (!prepared) ssa_graph_free(graph);
     ssa_configure(graph, plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry);
     if (!ssa_build(graph)) {
         $if $feat(SLJIT_STATS): if (callee_entry) io::eprintfn("SLJIT SSA entry reject line=%d stage=build pc=%d", cf.get_line(0), graph.current_pc); $endif
