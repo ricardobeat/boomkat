@@ -194,6 +194,9 @@ fn void ssa_graph_free(SsaGraph* g) @feat(SLJIT) {
 // Dynamic tables retain stable numeric identities. Builder code reacquires
 // pointers after adding values; optimization runs only after construction.
 fn bool ssa_reserve_values(SsaGraph* g, uint needed) @feat(SLJIT) {
+    // Failed builders may still inspect their returned sink ID while unwinding.
+    // It is never emitted, assigned a frame or treated as a successful node.
+    if (g.values == null) g.values = &g.failed_value;
     if (needed <= g.value_capacity) return !g.failed;
     uint prior = g.value_capacity;
     uint capacity = prior;
