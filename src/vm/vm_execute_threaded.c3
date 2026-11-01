@@ -982,6 +982,11 @@ macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private 
     return (hobject::VarICEntry*)(cold.var_ic_bias + (usz)pc * TH_VAR_IC_SCALE);
 }
 
+// The flags a frame may carry and still be entered, replaced and returned
+// from by the lean threaded handlers.
+const uint TH_LEAN_FRAME_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
+    | ACT_FLAG_THIS_VALID | ACT_FLAG_TAIL_CALLED;
+
 fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
@@ -1037,7 +1042,7 @@ macro bool th_frame_is_plain(Vm* vm, Activation* fa) @private {
 // registers: plain apart from those.
 macro bool th_frame_is_replaceable(Vm* vm, Activation* fa) @private {
     return vm.activation_count >= 2 && fa.retval != null
-        && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
+        && (fa.flags & ~TH_LEAN_FRAME_FLAGS) == 0
         && fa.cat == null && fa.forin == null
         && fa.func == vm.current_func
         && !((CompiledFunction*)fa.func).maps_formals();
@@ -1091,6 +1096,9 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
 
     if (tracked) th_tail_release_regs(vm, fa, regs, callee_reg, nargs);
     for (uint i = 0; i < nargs; i++) regs[i] = args[i];
+    // Keep the replaced caller for stack traces, paused just past this call.
+    fa.tail_caller = fa.func;
+    fa.tail_caller_pc = pc + 1;
     fa.func = target;
     fa.var_env = env;
     fa.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
@@ -1098,7 +1106,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     fa.async_promise = null;
     fa.new_target = null;
     fa.curr_pc = target.code;
-    fa.flags = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED;
+    fa.flags = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_TAIL_CALLED;
     if (this_valid) fa.flags |= ACT_FLAG_THIS_VALID;
     fa.tv_func.set_object_borrowed(function);
     fa.this_binding = this_value;
@@ -3319,7 +3327,7 @@ fn Instruction* th_return_entry(Instruction* pc, ColdCtx* cold, TVal value,
     Activation* fa = cold.act;
     if (fa.cat != null || fa.forin != null
         || ((CompiledFunction*)fa.func).maps_formals()
-        || (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) != 0
+        || (fa.flags & ~TH_LEAN_FRAME_FLAGS) != 0
         || vm.heap.gc_safepoint_due(false)) {
         return pc;
     }
@@ -3409,7 +3417,7 @@ fn Instruction* th_return_outermost(Instruction* pc, ColdCtx* cold, TVal value,
     Activation* fa = cold.act;
     if (fa.heap_reg_count == 0
         && (is_undefined || !value.is_heap_allocated())
-        && (fa.flags & ~(ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED | ACT_FLAG_THIS_VALID)) == 0
+        && (fa.flags & ~TH_LEAN_FRAME_FLAGS) == 0
         && fa.cat == null && fa.forin == null
         && !((CompiledFunction*)fa.func).maps_formals()
         && !vm.heap.gc_safepoint_due(false)) {

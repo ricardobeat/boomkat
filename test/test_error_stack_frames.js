@@ -104,6 +104,30 @@ check('AggregateError', makeAggregate().stack, ['makeAggregate']);
 function makeRange() { return new RangeError('r'); }
 check('RangeError', makeRange().stack, ['makeRange']);
 
+// --- frames below a native callback boundary --------------------------------
+// A builtin that calls back into JS runs the callback in a fresh activation
+// segment; the callers below the builtin must still appear.
+function viaMap() { [1].map(function mapped() { throw new Error('cb'); }); }
+var caught3 = null;
+try { viaMap(); } catch (e) { caught3 = e; }
+check('native boundary', caught3 && caught3.stack, ['mapped', 'viaMap']);
+
+// --- a proper tail call keeps its replaced caller ---------------------------
+// Strict code reuses the caller's frame for `return f()`, and for an arrow's
+// expression body. The trace still names the caller that made the call.
+var tailStacks = (function () {
+    'use strict';
+    function thrower() { throw new Error('tail'); }
+    function tailCaller() { return thrower(); }
+    var arrowCaller = () => thrower();
+    var out = [];
+    try { tailCaller(); } catch (e) { out.push(e.stack); }
+    try { arrowCaller(); } catch (e) { out.push(e.stack); }
+    return out;
+})();
+check('tail call', tailStacks[0], ['thrower', 'tailCaller']);
+check('arrow tail call', tailStacks[1], ['thrower', 'arrowCaller']);
+
 if (failures === 0) {
     print('PASS: error.stack carries ordered call frames');
 }
