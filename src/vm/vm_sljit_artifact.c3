@@ -130,3 +130,18 @@ fn bool sljit_artifact_retire_fragment(Heap* h, JitArtifact* owner, void* code, 
     sljit_artifact_retire(h, &fragment.artifact);
     return true;
 }
+
+// Persistent metadata follows executable ownership. Compiler arenas and
+// invocation scratch have separate, shorter lifetimes and are not included.
+fn usz sljit_loop_metadata_bytes(LoopPlan* plan) @feat(SLJIT) {
+    return LoopPlan::size + ssa_helper_metadata_bytes(plan);
+}
+fn usz sljit_function_metadata_bytes(FunctionPlan* plan, usz allocation) @feat(SLJIT) {
+    usz bytes = allocation;
+    if (plan.ssa_region != null) bytes += sljit_loop_metadata_bytes(plan.ssa_region);
+    for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) bytes += sljit_loop_metadata_bytes(leaf);
+    for (FunctionCallLink* link = plan.calls; link != null; link = link.next) bytes += FunctionCallLink::size;
+    for (FunctionInlineFrame* frame = plan.inline_frames; frame != null; frame = frame.next) bytes += FunctionInlineFrame::size;
+    for (JitWriteDependency* watch = plan.dependencies; watch != null; watch = watch.next_client) bytes += JitWriteDependency::size;
+    return bytes;
+}

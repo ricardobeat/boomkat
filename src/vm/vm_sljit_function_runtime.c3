@@ -175,7 +175,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_link_target(link);
     sljit_relink_calls(h, cf);
     sljit_artifact_publish(h, &plan.artifact, cf, plan, FUNCTION_CODE,
-        plan.code_bytes, bytes, &sljit_function_release);
+        plan.code_bytes, sljit_function_metadata_bytes(plan, bytes), &sljit_function_release);
     if (plan.ssa_region != null) plan.ssa_region.code_owner = &plan.artifact;
     for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) leaf.code_owner = &plan.artifact;
     plan.shape_clock = h.shape_gen_clock;
