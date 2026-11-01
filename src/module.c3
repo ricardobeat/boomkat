@@ -1199,7 +1199,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         && (heap.module_hooks == null || ((ModuleHostHooks*)heap.module_hooks).read_source == null);
     return compile_module_source(heap, mod, normalized, source, quiet, owned);
     $else
-        return module_load_failed(heap, mod);
+        return MODULE_ERROR~;
     $endif
 }
 
