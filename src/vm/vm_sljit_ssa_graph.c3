@@ -121,6 +121,8 @@ struct SsaValue @feat(SLJIT) {
     int block;
     int target;
     int fallto;
+    SsaFrameId before_frame;
+    SsaFrameId after_frame;
     Opcode branch_op;
 }
 
@@ -187,6 +189,18 @@ struct SsaGraph @feat(SLJIT) {
     LoopPlan* plan;
     CompiledFunction* cf;
     Heap* heap;
+    SsaBudget budget;
+    SsaStorageChunk* storage;
+    usz storage_bytes;
+    SsaFrame* frame_table;
+    uint frame_count;
+    uint frame_capacity;
+    SsaFrameEntry* recovery_entries;
+    uint recovery_count;
+    uint recovery_capacity;
+    SsaSafepoint* safepoints;
+    uint safepoint_count;
+    uint safepoint_capacity;
     SsaValue[SSA_MAX_VALUES] values;
     int[SSA_MAX_VALUES * 4] conv;
     uint value_count;
@@ -272,6 +286,8 @@ fn int ssa_value(SsaGraph* g, SsaOp op, SsaRep rep, int a, int b, long imm) @fea
     g.values[index].imm = imm;
     g.values[index].def = g.stamp;
     g.values[index].last = g.stamp;
+    g.values[index].before_frame = SSA_NO_FRAME;
+    g.values[index].after_frame = SSA_NO_FRAME;
     g.values[index].arg_reg = -1;
     g.values[index].dst_reg = -1;
     g.values[index].pc = g.current_pc;
