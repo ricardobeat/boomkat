@@ -16,6 +16,7 @@ struct DecodedCfgBudget {
 }
 const DecodedCfgBudget DEFAULT_CFG_BUDGET = { 4096, 4096, 1024 * 1024 };
 alias DecodedOpAllowed = fn bool(Opcode op);
+alias DecodedWorkCharge = fn bool(void* data, usz amount);
 
 struct DecodedCfgNode {
     DecodedBytecode view;
@@ -255,13 +256,15 @@ fn bool DecodedCfgNode.must_def(&self, uint* reg) {
 // By default liveness arrays are indexed by canonical instruction index.
 // word_slots adapts existing callers whose arrays and recovery queries use PCs;
 // WIDE payload slots are cleared but never traversed as instructions.
-fn void bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in,
-    RegSet* scratch, bool call_windows = true, bool word_slots = false) {
+fn bool bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in,
+    RegSet* scratch, bool call_windows = true, bool word_slots = false,
+    DecodedWorkCharge charge = null, void* charge_data = null) {
     uint slots = word_slots ? cfg.word_count : cfg.instruction_count;
     for (uint i = 0; i < slots; i++) { live_out[i].clear(); live_in[i].clear(); }
     bool first = true;
     bool changed = true;
     while (changed) {
+        if (charge != null && !charge(charge_data, (usz)cfg.instruction_count * (usz)(scratch.word_count * 4 + 1))) return false;
         if (!first && !cfg.has_backedge) break;
         changed = first;
         uint index = cfg.instruction_count;
@@ -285,4 +288,5 @@ fn void bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in
         }
         first = false;
     }
+    return true;
 }

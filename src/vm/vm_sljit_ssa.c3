@@ -24,8 +24,11 @@ fn bool ssa_region_supported(LoopPlan* plan, CompiledFunction* cf, Heap* h) @fea
         cf,
         h
     )) return false;
-    for (uint pc = plan.begin; pc <= plan.end; pc++) {
-        int target = loop_target(cf.code[pc], pc);
+    for (uint pc = plan.begin; pc <= plan.end;) {
+        DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+        if (!view.valid) return false;
+        defer pc = view.next_pc;
+        int target = ssa_decoded_target(view);
         if (target >= 0 && ((!plan.ssa_recoverable && target <= (int)pc)
             || target < (int)plan.begin || target > (int)plan.end)) return false;
     }
@@ -44,13 +47,19 @@ fn void* ssa_function_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(
 }
 
 fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Heap* h,
-    bool single_pass, bool direct, TemplateEmitter* parent, uint inline_base, uint inline_depth, bool callee_entry, ulong forced = 0) @feat(SLJIT) {
+    bool single_pass, bool direct, TemplateEmitter* parent, uint inline_base, uint inline_depth, bool callee_entry, uint* forced = null, uint forced_words = 0) @feat(SLJIT) {
+    ulong work = graph.work;
+    SsaBudget budget = graph.budget.max_bytes == 0 ? SSA_DEFAULT_BUDGET : graph.budget;
     ssa_storage_free(graph);
     mem::clear(graph, (sz)SsaGraph::size);
+    graph.budget = budget;
+    graph.work = work;
     graph.plan = plan;
     graph.cf = cf;
     graph.heap = h;
     graph.single_pass = single_pass;
+    graph.reg_count = plan.ssa_recoverable ? cf.num_regs : LOOP_REGS;
+    graph.reg_words = (graph.reg_count + 31) / 32;
     graph.recoverable = plan.ssa_recoverable;
     graph.direct = direct;
     graph.result_reg = direct ? cf.code[plan.ssa_function != null ? plan.end : plan.end + 1].a : 0;
@@ -59,8 +68,11 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     graph.inplace = parent != null;
     graph.direct_fields = (parent != null || graph.recoverable) && !$feat(SLJIT_NO_SSA_FIELD_IR);
     graph.callee_entry = callee_entry;
-    if (SSA_CYCLIC) for (uint pc = plan.begin; pc <= plan.end; pc++) {
-        int to = loop_target(cf.code[pc], pc);
+    if (SSA_CYCLIC) for (uint pc = plan.begin; pc <= plan.end;) {
+        DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+        if (!view.valid) { graph.failed = true; break; }
+        defer pc = view.next_pc;
+        int to = ssa_decoded_target(view);
         if (to < 0 || to > (int)pc) continue;
         // A frameless callee compiles its whole body, so any backedge makes
         // the graph cyclic. A loop region keeps its outer latch separate and
@@ -87,9 +99,9 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
         graph.registers.scratch_homes = graph.direct_fields ? graph.registers.scratches - 4 : 2;
         graph.registers.saved_homes = 0;
     }
-    graph.force_f64 = forced;
     uint span = plan.end - plan.begin + 1;
     if (!ssa_graph_tables(graph, span)) return;
+    for (uint w = 0; w < forced_words && w < graph.reg_words; w++) graph.force_f64.words[w] = forced[w];
     graph.frames = (SsaFrameId*)ssa_storage_alloc(graph, span, SsaFrameId::size);
     if (graph.frames != null) for (uint pc = 0; pc < span; pc++) graph.frames[pc] = SSA_NO_FRAME;
 }
@@ -122,12 +134,24 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     // Backedges can reveal a wider input after a header has been built.
     // Widening is monotone: each rebuilding round adds at least one of the
     // bounded register bits. Emit only after those representations converge.
-    ulong forced;
+    // This rebuild input must outlive the graph arena it replaces.
+    uint* retry = (uint*)h.alloc_func(h.heap_udata, (usz)graph.reg_words * uint::size);
+    if (retry == null) return null;
+    defer h.free_func(h.heap_udata, retry);
+    mem::clear(retry, (sz)((usz)graph.reg_words * uint::size));
     uint rounds;
-    while (graph.force_f64 != forced) {
-        if (rounds++ == LOOP_REGS || (graph.force_f64 & forced) != forced) return null;
-        forced = graph.force_f64;
-        ssa_configure(graph, plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry, forced);
+    while (true) {
+        bool changed;
+        for (uint w = 0; w < graph.reg_words; w++) {
+            uint current = graph.force_f64.words[w];
+            if ((current & retry[w]) != retry[w]) return null;
+            if (current != retry[w]) changed = true;
+        }
+        if (!changed) break;
+        if (rounds++ == graph.reg_count) return null;
+        uint words = graph.reg_words;
+        mem::copy(retry, graph.force_f64.words, (sz)((usz)words * uint::size));
+        ssa_configure(graph, plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry, retry, words);
         if (!ssa_build(graph)) return null;
     }
     ssa_schedule_init(graph);
@@ -159,7 +183,7 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     }
     ssa_dominators(graph);
     if ((graph.cyclic || graph.recoverable) && !$feat(SLJIT_NO_CFG_OPT)) {
-        if (graph.value_count <= SSA_MAX_VALUES && graph.block_count <= SSA_BLOCKS) ssa_optimize_cfg(graph);
+        if (graph.reg_count <= LOOP_REGS && graph.value_count <= SSA_MAX_VALUES && graph.block_count <= SSA_BLOCKS) ssa_optimize_cfg(graph);
         ssa_numeric_loads(graph);
     } else if (!graph.cyclic && !graph.recoverable) {
         ssa_invariant_cse(graph);
@@ -188,7 +212,7 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     ssa_allocate(graph);
     if (graph.failed) return null;
     uint phi_count;
-    for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
+    for (uint reg = 0; reg < cf.num_regs && reg < graph.reg_count; reg++) if (graph.phi[reg] >= 0) phi_count++;
     // The latch and JOIN edges use these temporary slots at different times.
     // Packed in-place state has no LoopState.ssa_edge array of its own.
     uint copy_temps = ssa_edge_copy_temps(graph);
@@ -238,6 +262,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
         floats = 10;
     }
     SsaEmitter self    = { .g = graph, .plan = plan, .cf = cf };
+    self.live = (int*)ssa_storage_alloc(graph, graph.reg_count, int::size);
     self.done_capacity = graph.value_count + 1;
     self.pending_capacity = graph.block_count * 3 + 1;
     self.done_jumps = (void**)ssa_storage_alloc(graph, self.done_capacity, void*::size);
@@ -264,7 +289,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     self.budget = jit::reg_s(1);
     self.run = jit::reg_s(2);
     self.at_def = 0;
-    for (uint i = 0; i < LOOP_REGS; i++) self.live[i] = graph.header[i];
+    for (uint i = 0; i < graph.reg_count; i++) self.live[i] = graph.header[i];
     if (graph.direct_fields && parent != null) {
         // Address spills from the shared run directly, freeing R6 for values.
         self.state_bias = function_inline_offset(scratch_window * 32);
@@ -309,9 +334,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
             self.pending_jump[self.pending_count++] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
             e.bind(next);
         }
-        int[LOOP_REGS] untouched;
-        foreach (&value : untouched) *value = -1;
-        self.publish(&untouched, SSA_ENTRY_BAIL);
+        self.publish_id(SSA_NO_FRAME, SSA_ENTRY_BAIL);
     } else { self.entry_copies(); }
     self.header = e.label();
     self.body();
@@ -319,9 +342,8 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     self.resolve_blocks();
     // Normal completion falls through the backedge condition.
     self.at_def = graph.stamp;
-    int[LOOP_REGS] final;
-    final = single_pass ? graph.current : graph.phi;
-    if (plan.ssa_function == null) self.publish(&final, plan.end + 1);
+    int* final = single_pass ? graph.current : graph.phi;
+    if (plan.ssa_function == null) self.publish(final, plan.end + 1);
     self.exit_stubs();
     if (parent != null) {
         void* done = e.label();

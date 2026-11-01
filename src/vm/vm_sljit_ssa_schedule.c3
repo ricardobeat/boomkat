@@ -83,6 +83,7 @@ fn bool ssa_value_dominates(SsaGraph* g, int definition, int use) @feat(SLJIT) {
     if (a.block != b.block) return ssa_dominates(g, (uint)a.block, (uint)b.block);
     if (a.op == ARG || a.op == PHI || a.op == JOIN) return true;
     for (int id = ssa_block_first_value(g, (uint)b.block); id >= 0; id = ssa_next_value(g, id)) {
+        if (!ssa_charge_work(g, 1)) return false;
         if (id == definition) return true;
         if (id == use) return false;
     }
