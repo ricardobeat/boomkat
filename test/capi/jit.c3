@@ -207,6 +207,51 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     @check(graph.values[2].op == SsaOp.COPY && graph.values[2].a == 1);
 }
 
+// Exercise structural boundaries independently of JavaScript register reuse.
+fn void check_ssa_dynamic_storage(JsRuntime* runtime) {
+    Heap* h = runtime.rt.heap;
+    SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
+    @check(graph != null);
+    *graph = { .heap = h };
+    defer vm::ssa_graph_free(graph);
+    @check(vm::ssa_graph_tables(graph, 70));
+    graph.block_count = 70;
+    for (uint b = 0; b < graph.block_count; b++) {
+        graph.blocks[b].succ0 = b == 69 ? 32 : b + 1;
+        graph.blocks[b].succ1 = vm::SSA_NO_BLOCK;
+    }
+    @check(vm::ssa_collect_predecessors(graph));
+    vm::ssa_dominators(graph);
+    @check(!graph.failed && graph.dominator_words == 3);
+    @check(vm::ssa_dominates(graph, 0, 69) && vm::ssa_dominates(graph, 32, 69));
+    @check(vm::ssa_dominates(graph, 64, 69) && !vm::ssa_dominates(graph, 64, 32));
+    graph.blocks[40].external = true;
+    vm::ssa_dominators(graph);
+    @check(!vm::ssa_dominates(graph, 0, 69) && !vm::ssa_dominates(graph, 32, 69));
+    @check(vm::ssa_dominates(graph, 40, 69));
+    int first = vm::ssa_value(graph, SsaOp.CONST_I, SsaRep.INT32, -1, -1, 123);
+    int[2] registers = { first, -1 };
+    SsaFrameId frame = vm::ssa_frame_capture(graph, 7, &registers[0], 2);
+    for (uint value = 0; value < 1024; value++) {
+        int id = vm::ssa_value(graph, SsaOp.CONST_I, SsaRep.INT32, -1, -1, value);
+        @check(id == (int)value + 1);
+    }
+    @check(!graph.failed && graph.value_count == 1025);
+    @check(graph.values[first].imm == 123 && graph.values[1024].imm == 1023);
+    @check(vm::ssa_frame_lookup(graph, frame, 0) == first && vm::ssa_frame_lookup(graph, frame, 1) == -1);
+    graph.budget.max_values = graph.value_count;
+    @check(!vm::ssa_reserve_values(graph, graph.value_capacity + 1) && graph.failed);
+    vm::ssa_result(graph, 0, 1, 2);
+    vm::ssa_use(graph, 0);
+    @check(vm::ssa_convert(graph, 0, SsaRep.F64, false) == 0);
+    SsaGraph failed = { .heap = h, .budget = vm::SSA_DEFAULT_BUDGET };
+    failed.budget.max_bytes = 1;
+    @check(vm::ssa_value(&failed, SsaOp.CONST_I, SsaRep.INT32, -1, -1, 1) == 0);
+    @check(failed.failed && failed.value_count == 0 && failed.values != null);
+    vm::ssa_result(&failed, 0, 0, 0);
+    vm::ssa_storage_free(&failed);
+}
+
 // Verify WIDE-aware CFG joins, loop fixed points and recovery from the real
 // SSA continuation consumer. Targets into WIDE payloads must refuse.
 fn void check_decoded_liveness(JsRuntime* runtime) {
@@ -1190,6 +1235,7 @@ fn void main() {
     defer a.destroy();
     check_function_missing_caches(&first);
     check_ssa_cyclic_dominance(&first);
+    check_ssa_dynamic_storage(&first);
     check_decoded_liveness(&first);
     b.create(&first)!!;
     defer b.destroy();
