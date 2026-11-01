@@ -97,7 +97,7 @@ fn void ssa_effect_step(SsaCfgEffects* facts, uint id, SsaAvailable* available) 
 }
 fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
     for (uint b = 0; b < g.block_count; b++) {
-        facts.boundary[b] = b == 0 || g.blocks[b].external;
+        facts.boundary[b] = (!g.recoverable && b == 0) || g.blocks[b].external;
         facts.reachable[b] = facts.boundary[b];
         for (uint p = 0; p < ssa_pred_count(g, b); p++) {
             if (ssa_pred(g, b, p) >= b) facts.boundary[b] = true;

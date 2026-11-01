@@ -18,8 +18,8 @@ fn bool ssa_edge_states(SsaGraph* g) @feat(SLJIT) {
         out.edge_state = { ssa_frame_at_pc(g, pc), pc };
         out.edge_ready = true;
         if (!g.recoverable || out.returns || out.branch_pc != uint::max) continue;
-        uint next = ssa_decoded_view(g, out.end).next_pc;
-        SsaFrameId frame = ssa_frame_after_pc(g, out.end);
+        uint next = out.synthetic ? out.begin : ssa_decoded_view(g, out.end).next_pc;
+        SsaFrameId frame = out.synthetic ? SSA_NO_FRAME : ssa_frame_after_pc(g, out.end);
         if (frame == SSA_NO_FRAME) {
             // block_exit holds source IDs before any successor JOIN is written.
             // Filter dead boxed borrows: retention by compiler metadata alone

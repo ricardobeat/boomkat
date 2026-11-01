@@ -31,6 +31,7 @@ fn void check_scalable_ssa_gateway() {
     JsRuntime runtime;
     runtime.create()!!;
     defer runtime.destroy();
+    check_ssa_alias_queries(&runtime);
     JsContext context;
     context.create(&runtime)!!;
     defer context.destroy();
@@ -104,4 +105,26 @@ fn void check_scalable_ssa_gateway() {
     @check(vm::ssa_plan_resumes(plan.ssa_region, after_call));
     io::printfn("scalable acyclic helper: PASS words=%d calls=%d continuations=%d", count,
         plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
+}
+
+// COPY queries share the graph's work ceiling and never return an invalid
+// negative ID on exhaustion; deopt freezing uses this same query contract.
+fn void check_ssa_alias_queries(JsRuntime* runtime) {
+    SsaGraph graph = { .heap = runtime.rt.heap, .budget = vm::SSA_DEFAULT_BUDGET, .value_count = 1025 };
+    graph.values = vm::ssa_storage_alloc(&graph, graph.value_count, SsaValue::size);
+    @check(graph.values != null);
+    defer vm::ssa_storage_free(&graph);
+    graph.values[0] = { .op = SsaOp.CONST_I, .rep = SsaRep.INT32, .imm = 7 };
+    for (uint id = 1; id < graph.value_count; id++) {
+        graph.values[id] = { .op = SsaOp.COPY, .rep = SsaRep.INT32, .a = (int)id - 1 };
+    }
+    @check(vm::ssa_alias(&graph, 1024) == 0 && !graph.failed);
+    graph.budget.max_work = graph.work + 4;
+    @check(vm::ssa_alias(&graph, 1024) == 1024 && graph.failed);
+    graph.failed = false;
+    graph.work = 0;
+    graph.budget.max_work = vm::SSA_DEFAULT_BUDGET.max_work;
+    graph.values[1].a = 2;
+    @check(vm::ssa_alias(&graph, 1024) == 1024 && graph.failed);
+    io::printn("SSA alias work budget: PASS");
 }
