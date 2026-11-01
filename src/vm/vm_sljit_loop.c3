@@ -93,8 +93,13 @@ struct LoopState @feat(SLJIT) {
     // Edge conversions finish before any phi home is changed. Raw bits here
     // are borrowed only while native code cannot collect or release strings.
     double[LOOP_REGS] ssa_edge;
+    SsaExecution* execution;
 }
 struct LoopPlan @feat(SLJIT) {
+    SsaHelperSite* ssa_helpers;
+    uint ssa_value_capacity;
+    ulong ssa_helper_calls @if($feat(SLJIT_STATS));
+    ulong ssa_helper_continued @if($feat(SLJIT_STATS));
     LoopNative native;
     JitArtifact artifact;
     JitArtifact* code_owner;
@@ -904,6 +909,11 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     for (uint i = 0; i <= nargs + 1; i++) integer_required |= 1UL << ((uint)ins.b + i);
                     for (uint i = 0; i <= nargs + 1; i++) frequency[(uint)ins.b + i]++;
                 }
+            case NEWOBJ:
+            case NEWOBJ_SHAPE:
+            case NEWARR:
+            case NEWARR_CONST:
+                if (!plan.ssa_recoverable) return false;
             case LDTRUE:
             case LDFALSE:
             case LDNULL:

@@ -53,6 +53,7 @@ fn LoopPlan* sljit_function_ssa_recoverable_compile(CompiledFunction* cf, ColdCt
     LoopPlan* plan = cold.heap.alloc_func(cold.heap.heap_udata, LoopPlan::size);
     if (plan == null) {
         jit::sljit_free_code((void*)draft.native, null);
+        ssa_helper_sites_free(cold.heap, &draft);
         return null;
     }
     *plan = draft;
@@ -117,13 +118,16 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
         LoopPlan* leaf = plan.ssa_leaves;
         plan.ssa_leaves = leaf.next;
         if (leaf.ssa_entry != null) jit::sljit_free_code(leaf.ssa_entry, null);
+        ssa_helper_sites_free(h, leaf);
         h.free_func(h.heap_udata, leaf);
     }
     if (plan.ssa_region == null) return;
     $if $feat(SLJIT_STATS):
-        io::eprintfn("SLJIT function SSA hits=%d", plan.ssa_region.hits);
+        io::eprintfn("SLJIT function SSA hits=%d helpers=%d continued=%d", plan.ssa_region.hits,
+            plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
     $endif
     jit::sljit_free_code(plan.ssa_region.ssa_entry != null ? plan.ssa_region.ssa_entry : (void*)plan.ssa_region.native, null);
+    ssa_helper_sites_free(h, plan.ssa_region);
     h.free_func(h.heap_udata, plan.ssa_region);
     plan.ssa_region = null;
 }
@@ -181,6 +185,13 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     // Exits publish a fresh dirty mask; untouched interpreter slots stay owned
     // by the original frame, so no blanket scratch clear/copy is necessary.
     LoopState state @noinit;
+    SsaExecution execution;
+    state.execution = null;
+    if (plan.ssa_helpers != null) {
+        if (!ssa_execution_init(&execution, cold, plan, plan.ssa_value_capacity, 0, 0)) return entry_pc;
+        state.execution = &execution;
+    }
+    defer if (state.execution != null) ssa_execution_dispose(&execution);
     state.receiver = cold.act.this_binding;
     state.shape_epoch = cold.heap.shape_recycle_epoch;
     state.resume_pc = resume_pc;
@@ -196,6 +207,8 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     long budget = plan.ssa_recoverable && run != null ? run.budget : 1;
     uint resume = plan.native(&state, budget);
     if (plan.ssa_recoverable && run != null) run.budget = state.budget;
+    // A collecting callback may have relocated every VM register window.
+    regs = cold.act.bottom;
     sljit_publish_state(cold, regs, &state, cf.num_regs, plan);
     plan.hits++;
     $if $feat(SLJIT_STATS):
@@ -259,6 +272,20 @@ fn void FunctionEmitter.ssa_entry(&self, uint entry_pc = 0) @feat(SLJIT) {
         if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS4WWWW,
                 imm, (long)&sljit_function_ssa_run) != 0) e.failed = true;
         if (plan.ssa_region.ssa_recoverable) {
+            // Nested JS can grow the value stack while this baseline native
+            // frame remains active. Its register-base saved register must be
+            // reloaded before flow_reload or any bytecode label reads slots.
+            e.mov(jit::reg_s(0), 0, jit::SLJIT_MEM | jit::reg_s(1), $reflect(ColdCtx.act).offset);
+            e.mov(jit::reg_s(0), 0, jit::SLJIT_MEM | jit::reg_s(0), $reflect(Activation.bottom).offset);
+            // A helper throw is already committed. Return to the threaded
+            // exception handoff before a call label can execute it again.
+            $if $feat(THREADED_DISPATCH):
+                e.mov(r1, 0, jit::SLJIT_MEM | jit::reg_s(1), $reflect(ColdCtx.vm).offset);
+                e.mov(r1, 0, jit::SLJIT_MEM | r1, $reflect(Vm.threaded_handoff).offset, jit::SLJIT_MOV_U8);
+                void* ordinary = e.cmp(jit::SLJIT_EQUAL, r1, 0, imm, 0);
+                if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;
+                e.bind(ordinary);
+            $endif
             // A normal return and a pending call can use the native baseline
             // with the fully published VM slots. Keep every FP lane canonical
             // before jumping to its bytecode label.
