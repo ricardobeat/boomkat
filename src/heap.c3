@@ -2402,6 +2402,7 @@ fn void Heap.free_compiled_funcs(&self) {
             vm::sljit_template_free(self, cf);
             vm::sljit_loop_free(self, cf);
             vm::sljit_function_free(self, cf);
+            if (cf.sljit_loop_admission != null) self.free_func(self.heap_udata, cf.sljit_loop_admission);
         $endif
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }

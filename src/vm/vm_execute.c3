@@ -2500,7 +2500,7 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
         if (offset < 0 && ds.vm.heap.jit_enabled
             && !(ds.vm.heap.gc_phase == heap::GcPhase.IDLE
                 && sljit_function_ssa_resumes(ds.curr_pc, ds.vm.current_func))
-            && sljit_loop_probe(branch, ds.vm.current_func)) {
+            && sljit_loop_probe(branch, ds.vm.current_func, ds.vm.heap)) {
             ds.curr_pc = sljit_loop_entry(branch, ds.curr_pc, ds.regs_base, &ds.cold);
         }
         if (offset < 0 && ds.vm.heap.jit_enabled && !ds.needs_restart) {

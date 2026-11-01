@@ -1956,8 +1956,9 @@ struct CompiledFunction {
     bool            sljit_budget_wait @if($feat(SLJIT));
     ulong           sljit_capacity_seen @if($feat(SLJIT));
     bool            sljit_template_budget_wait @if($feat(SLJIT));
-    ulong           sljit_loop_budget_wait @if($feat(SLJIT));
-    ulong           sljit_loop_rejected @if($feat(SLJIT));
+    char*           sljit_loop_admission @if($feat(SLJIT));
+    bool            sljit_loop_budget_wait @if($feat(SLJIT));
+    bool            sljit_loop_admission_oom @if($feat(SLJIT));
     uint            sljit_template_calls @if($feat(SLJIT));
     uint            sljit_loop_ready @if($feat(SLJIT));
     // Diagnostic builds count dispatch attempts separately from native runs.

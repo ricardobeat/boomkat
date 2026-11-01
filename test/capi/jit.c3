@@ -122,8 +122,11 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     Heap* h = runtime.rt.heap;
     SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
     @check(graph != null);
-    defer h.free_func(h.heap_udata, graph);
+    defer vm::ssa_graph_free(graph);
     std::core::mem::clear(graph, (sz)SsaGraph::size);
+    graph.heap = h;
+    @check(vm::ssa_graph_tables(graph, 11));
+    @check(vm::ssa_reserve_values(graph, 3));
     // The real splitter must not invent a successor to entry for a missing
     // second edge. A loop has only its actual latch as an entry predecessor.
     Instruction[5] code = {
@@ -138,8 +141,8 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     graph.cf = &cf; graph.plan = &plan; graph.single_pass = true;
     @check(vm::ssa_split_blocks(graph));
     @check(graph.block_count == 4 && graph.blocks[0].pred_count == 0);
-    @check(graph.blocks[1].succ1 == vm::SSA_BLOCKS && graph.blocks[2].succ1 == vm::SSA_BLOCKS);
-    @check(graph.blocks[3].succ0 == vm::SSA_BLOCKS && graph.blocks[3].succ1 == vm::SSA_BLOCKS);
+    @check(graph.blocks[1].succ1 == vm::SSA_NO_BLOCK && graph.blocks[2].succ1 == vm::SSA_NO_BLOCK);
+    @check(graph.blocks[3].succ0 == vm::SSA_NO_BLOCK && graph.blocks[3].succ1 == vm::SSA_NO_BLOCK);
     code[4] = bytecode::make_a_sbx(Opcode.IF_TRUE, 0, -5);
     graph.single_pass = false;
     @check(vm::ssa_split_blocks(graph));
@@ -161,6 +164,8 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     @check(graph.block_count == 11 && graph.blocks[0].pred_count == 0);
 
     graph.block_count = 4;
+    uint[16] predecessors;
+    for (uint b = 0; b < 4; b++) graph.blocks[b].preds = &predecessors[b * 4];
     // Exhaust all four-node graphs, including irreducible cycles, multiple
     // backedges, self loops, forward diamonds and unreachable blocks.
     for (uint edges = 0; edges < 65536; edges++) {
@@ -751,6 +756,18 @@ fn void check_artifact_retirement() @feat(SLJIT) {
     context.create(&runtime)!!;
     defer context.destroy();
     @check(runtime.set_jit());
+    // These PCs collide in the former modulo-64 rejection mask. Capacity
+    // retry must preserve the unsupported site and leave a third site open.
+    CompiledFunction admission = { .code_count = 130 };
+    Heap* admission_heap = runtime.rt.heap;
+    vm::sljit_loop_decline(admission_heap, &admission, 1, true);
+    vm::sljit_loop_decline(admission_heap, &admission, 65);
+    @check(vm::sljit_loop_blocked(&admission, 1) && vm::sljit_loop_blocked(&admission, 65));
+    @check(!vm::sljit_loop_blocked(&admission, 129));
+    vm::sljit_budget_retry(admission_heap);
+    vm::sljit_budget_retry_function(admission_heap, &admission);
+    @check(!vm::sljit_loop_blocked(&admission, 1) && vm::sljit_loop_blocked(&admission, 65));
+    admission_heap.free_func(admission_heap.heap_udata, admission.sljit_loop_admission);
     eval(&context, "function ownerTarget(x){return x+3;}");
     for (uint i = 0; i < 160; i++) eval(&context, "if(ownerTarget(4)!==7)throw 'owner';");
     Heap* h = runtime.rt.heap;
