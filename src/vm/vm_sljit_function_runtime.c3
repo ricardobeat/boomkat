@@ -12,10 +12,9 @@ import std::core::mem;
 
 // Compiled function lifetime, admission, execution and diagnostics.
 
-fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
-    FunctionPlan* plan = cf.sljit_function;
-    if (plan == null) return;
-    sljit_relink_calls(h, cf, true);
+fn void sljit_function_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
+    FunctionPlan* plan = artifact.payload;
+    CompiledFunction* cf = artifact.function;
     $if $feat(SLJIT_STATS):
         io::eprintfn(
             "SLJIT function %s hits=%d returns=%d stalled=%d direct_calls=%d direct_returns=%d charged_edges=%d budget_exits=%d code_bytes=%d",
@@ -36,9 +35,15 @@ fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     sljit_inline_frames_free(h, plan);
     sljit_call_links_free(h, plan);
     sljit_dependencies_free(h, plan);
-    h.jit_code_bytes -= plan.code_bytes;
     h.free_func(h.heap_udata, plan);
+}
+fn void sljit_function_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
+    FunctionPlan* plan = cf.sljit_function;
+    if (plan == null) return;
+    sljit_relink_calls(h, cf, true);
     cf.sljit_function = null;
+    plan.dependencies_live = false;
+    sljit_artifact_retire(h, &plan.artifact);
 }
 macro bool sljit_function_resumes(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) {
     FunctionPlan* plan = cf.sljit_function;
@@ -160,9 +165,12 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         }
     $endif
     cf.sljit_function = plan;
-    for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_link_target(link);
+    for (FunctionCallLink* link = plan.calls; link != null; link = link.next) sljit_register_call(link);
     sljit_relink_calls(h, cf);
-    h.jit_code_bytes += plan.code_bytes;
+    sljit_artifact_publish(h, &plan.artifact, cf, plan, FUNCTION_CODE,
+        plan.code_bytes, sljit_function_metadata_bytes(plan, bytes), &sljit_function_release);
+    if (plan.ssa_region != null) plan.ssa_region.code_owner = &plan.artifact;
+    for (LoopPlan* leaf = plan.ssa_leaves; leaf != null; leaf = leaf.next) leaf.code_owner = &plan.artifact;
     plan.shape_clock = h.shape_gen_clock;
     plan.shape_epoch = h.shape_recycle_epoch;
     if (begin == 0 && plan.entries[0] != null) cf.sljit_function_calls = uint::max - 1;
@@ -224,6 +232,7 @@ fn Instruction* sljit_function_entry(
     Heap* h              = cold.heap;
     $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
     CompiledFunction* cf = cold.vm.current_func;
+    sljit_budget_retry_function(h, cf);
     $if $feat(SLJIT_STATS): cf.sljit_entry_attempts++; $endif
     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || h.gc_phase != heap::GcPhase.IDLE
         || h.uncatchable_throw
@@ -307,8 +316,8 @@ fn Instruction* sljit_function_entry(
     run.budget = budget;
     run.typed[0].receiver = null;
     run.typed[1].receiver = null;
-    h.jit_native_active++;
-    defer h.jit_native_active--;
+    if (sljit_artifact_enter(h, &plan.artifact) == 0) return pc;
+    defer sljit_artifact_leave(h, &plan.artifact);
     Instruction* resume = plan.native(regs, cold, &run);
     if (run.recover_frame != null) {
         $if $feat(SLJIT_STATS): plan.inline_recoveries++; $endif
@@ -371,6 +380,7 @@ fn Instruction* sljit_function_entry(
 // Large functions warm a bounded region at a taken loop header. Native
 // backedges return before the shared GC/interrupt budget reaches its poll.
 fn bool sljit_function_backedge(Instruction* pc, CompiledFunction* cf, Heap* h) @feat(SLJIT) @inline {
+    sljit_budget_retry_function(h, cf);
     uint offset = (uint)(pc - cf.code);
     int target = loop_target(*pc, offset);
     if (target < 0) return false;
@@ -378,7 +388,7 @@ fn bool sljit_function_backedge(Instruction* pc, CompiledFunction* cf, Heap* h) 
         if (sljit_function_resumes(cf.code + target, cf)) return true;
         // A wider function's uncovered backedge must reach the loop tier.
         // Once that tier rejects this edge, stop bailing to the switch.
-        return cf.num_regs > LOOP_REGS && (cf.sljit_loop_rejected & (1UL << (offset & 63))) == 0;
+        return cf.num_regs > LOOP_REGS && !sljit_loop_blocked(cf, offset);
     }
     return cf.sljit_function_calls != uint::max && ++cf.sljit_function_calls >= sljit_warmup(h);
 }

@@ -1164,6 +1164,12 @@ struct Heap {
     bool                jit_stress @if($feat(SLJIT));
     usz                 jit_code_bytes @if($feat(SLJIT));
     usz                 jit_code_limit @if($feat(SLJIT));
+    JitArtifact*        jit_artifacts @if($feat(SLJIT));
+    JitArtifact*        jit_retired_artifacts @if($feat(SLJIT));
+    usz                 jit_retired_code_bytes @if($feat(SLJIT));
+    usz                 jit_metadata_bytes @if($feat(SLJIT));
+    ulong               jit_artifact_generation @if($feat(SLJIT));
+    ulong               jit_capacity_generation @if($feat(SLJIT));
     ulong               jit_native_work @if($feat(SLJIT));
     ulong               jit_clock @if($feat(SLJIT));
     uint                jit_evictions @if($feat(SLJIT));
@@ -2389,13 +2395,25 @@ fn hobject::Shape* Heap.get_shape(&self, uint shape_id) {
  * interned strings.
  */
 fn void Heap.free_compiled_funcs(&self) {
+    // Incoming native links can refer to any compiled function. Release all
+    // executable owners while every target's metadata is still alive.
+    $if $feat(SLJIT):
+        assert(self.jit_native_active == 0);
+        for (uint i = 0; i < self.compiled_func_count; i++) {
+            bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
+            if (cf == null) continue;
+            vm::sljit_template_free(self, cf);
+            vm::sljit_loop_free(self, cf);
+            vm::sljit_function_free(self, cf);
+        }
+        vm::sljit_artifact_drain(self);
+        assert(self.jit_artifacts == null && self.jit_retired_artifacts == null);
+    $endif
     for (uint i = 0; i < self.compiled_func_count; i++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
         if (cf == null) continue;
         $if $feat(SLJIT):
-            vm::sljit_template_free(self, cf);
-            vm::sljit_loop_free(self, cf);
-            vm::sljit_function_free(self, cf);
+            if (cf.sljit_loop_admission != null) self.free_func(self.heap_udata, cf.sljit_loop_admission);
         $endif
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }

@@ -15,7 +15,7 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         usz bytes = (usz)cf.code_count * (compiler::DecodedCfgNode::size + uint::size);
         if (bytes > g.budget.max_bytes - g.storage_bytes) { g.failed = true; return false; }
         compiler::DecodedCfgBudget budget = { g.budget.max_words, g.budget.max_instructions, bytes };
-        if (!compiler::bytecode_cfg_build(cfg, cf.code, cf.code_count, g.heap, null, true, budget)) return false;
+        if (!compiler::bytecode_cfg_build(cfg, cf.code, cf.code_count, g.heap, null, true, budget, null, &ssa_cfg_extra_reads, cf)) return false;
         g.storage_bytes += bytes;
     }
     if (cfg.block_count > g.block_capacity) return false;
@@ -41,7 +41,10 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         if (node.block_entry) {
             block.begin = node.view.pc;
             block.external = node.external || loop_roots[node.block];
-            if (block.external && block.begin < SSA_SPAN) g.plan.ssa_resume_pcs[block.begin >> 6] |= 1UL << (block.begin & 63);
+            if (block.external) {
+                if (g.plan.ssa_data != null) g.plan.ssa_data.resume_words[block.begin / 32] |= 1U << (block.begin % 32);
+                if (block.begin < SSA_SPAN) g.plan.ssa_resume_pcs[block.begin >> 6] |= 1UL << (block.begin & 63);
+            }
         }
         block.end = node.view.pc;
         if (i + 1 < cfg.instruction_count && cfg.nodes[i + 1].block == node.block) continue;
@@ -87,4 +90,18 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         g.cyclic_live[b].copy_from(&g.recovery_live[g.blocks[b].begin - g.plan.begin]);
     }
     return true;
+}
+
+// The canonical instruction roles can depend on function metadata. Closure
+// creation reads its parent capture owner/value even though no operand names it.
+fn void ssa_cfg_extra_reads(void* context, DecodedBytecode view, compiler::RegSet* reads) @feat(SLJIT) {
+    CompiledFunction* cf = (CompiledFunction*)context;
+    if (view.insn.op != Opcode.CLOSURE) return;
+    uint index = view.insn.get_bc();
+    if (index >= cf.inner_count) return;
+    CompiledFunction* child = cf.inner_funcs[index];
+    if (child.capture_cells == null) return;
+    for (uint i = 0; i < child.capture_count; i++) {
+        if (child.capture_cells[i] != 0) { reads.set(child.capture_parent_reg); return; }
+    }
 }

@@ -2491,13 +2491,16 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
             if (vm_poll_interrupt(ds.vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return ds.needs_restart;
         }
     }
+    $if $feat(SLJIT):
+        if (offset < 0) sljit_budget_retry_function(ds.vm.heap, ds.vm.current_func);
+    $endif
     Instruction* branch = ds.curr_pc - 1;
     ds.curr_pc += offset;
     $if $feat(SLJIT) && $feat(THREADED_DISPATCH):
         if (offset < 0 && ds.vm.heap.jit_enabled
             && !(ds.vm.heap.gc_phase == heap::GcPhase.IDLE
                 && sljit_function_ssa_resumes(ds.curr_pc, ds.vm.current_func))
-            && sljit_loop_probe(branch, ds.vm.current_func)) {
+            && sljit_loop_probe(branch, ds.vm.current_func, ds.vm.heap)) {
             ds.curr_pc = sljit_loop_entry(branch, ds.curr_pc, ds.regs_base, &ds.cold);
         }
         if (offset < 0 && ds.vm.heap.jit_enabled && !ds.needs_restart) {

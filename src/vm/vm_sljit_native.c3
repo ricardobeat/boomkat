@@ -200,6 +200,12 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     } else {
         e.mov(receiver, 0, imm, (long)loop_bits(undef));
     }
+    // A successful frameless entry returns before ordinary frame publication.
+    // Both paths must keep their owning plan recent for adaptive reclamation.
+    $if $feat(SLJIT_ADAPTIVE):
+        e.mov(r0, 0, mem | run, $reflect(FunctionRun.clock).offset);
+        e.mov(mem, (long)&self.plan.last_use, r0, 0);
+    $endif
     $if !$feat(SLJIT_NO_SSA_CALL_ENTRY): self.ssa_call_entry(cf); $endif
     // Frameless SSA uses the caller-owned argument/result window and the run
     // scratch area. Only the ordinary entry publishes a new VM frame and
@@ -216,12 +222,8 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
         e.op(jit::SLJIT_LSHR, r0, r0, 0, imm, 48);
         guards.guard(jit::SLJIT_EQUAL, r0, 0, imm, (long)types::TAG_STRING, 0);
     }
-    // All refusals precede the first mutation. There are no allocations,
-    // callbacks or safepoints between publication and a body side exit.
-    $if $feat(SLJIT_ADAPTIVE):
-        e.mov(r0, 0, mem | run, $reflect(FunctionRun.clock).offset);
-        e.mov(mem, (long)&self.plan.last_use, r0, 0);
-    $endif
+    // All ordinary-entry refusals precede VM frame mutation. There are no
+    // allocations, callbacks or safepoints between publication and a body exit.
     e.mov(r0, 0, mem | vm, $reflect(Vm.activation_count).offset, jit::SLJIT_MOV_U32);
     e.op(jit::SLJIT_MUL, r1, r0, 0, imm, Activation::size);
     e.mov(act, 0, mem | vm, $reflect(Vm.activations).offset);

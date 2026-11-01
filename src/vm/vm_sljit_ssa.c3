@@ -174,7 +174,7 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         }
         plan.ssa_inputs = 0;
         for (uint reg = 0; reg < cf.num_regs; reg++) {
-            if (graph.arg[reg] >= 0) plan.ssa_inputs |= 1UL << reg;
+            if (reg < 64 && graph.arg[reg] >= 0) plan.ssa_inputs |= 1UL << reg;
         }
         for (uint memory = 0; memory < plan.memory_count; memory++) {
             uint source = plan.memory[memory].source;
@@ -224,7 +224,11 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     // Packed in-place state has no LoopState.ssa_edge array of its own.
     uint copy_temps = ssa_edge_copy_temps(graph);
     if (copy_temps < phi_count) copy_temps = phi_count;
-    if (graph.spill_count + copy_temps + 2 > SSA_MAX_SPILL) return null;
+    if (graph.recoverable && plan.ssa_data != null) {
+        plan.ssa_data.spill_count = graph.spill_count + copy_temps + 2;
+        plan.ssa_data.edge_count = graph.reg_count;
+        plan.ssa_value_capacity = graph.value_count;
+    } else if (graph.spill_count + copy_temps + 2 > SSA_MAX_SPILL) return null;
     uint scratch_window = inline_depth == 0 ? 0 : inline_depth + 1;
     if (parent != null && ((usz)plan.memory_count * LoopMemory::size + (usz)plan.binding_count * TVal::size
         + (usz)(graph.spill_count + copy_temps + 2) * double::size > (usz)(INLINE_DEPTH - scratch_window) * 32 * double::size)) return null;
