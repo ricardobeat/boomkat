@@ -55,6 +55,7 @@ enum ModuleStatus : char {
     EVALUATING_ASYNC,
     EVALUATED,     // fully executed
     ERRORED,       // evaluation threw; eval_error holds the cached rejection reason
+    LOAD_FAILED,   // it or a dependency failed to load; eval_error holds the error
 }
 // ECMA-262 [[AsyncEvaluationOrder]]. UNSET before a module is known to be
 // async; ORDERED once it is, with async_eval_index holding its position in the
@@ -1078,6 +1079,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     ModuleDef* cached = heap_find_loaded_module(heap, normalized, attr_type);
     if (cached != null) {
         if (cached.status == ModuleStatus.LOAD_PENDING) return load_dependencies(heap, cached, normalized, quiet);
+        if (cached.status == ModuleStatus.LOAD_FAILED) return module_reraise_load_error(heap, cached);
         return cached;
     }
 
@@ -1139,7 +1141,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
                     heap.shade_root_tval(json_err);
                     heap.error_value = json_err;
                     heap.has_error = true;
-                    return MODULE_ERROR~;
+                    return module_load_failed(heap, mod);
                 }
                 synth = parsed;
             case compiler::ModuleAttrType.TEXT:
@@ -1148,17 +1150,17 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
                 // MAX_INTERN_BYTES un-interned -- so a large text module does
                 // not pile into the string table.
                 HString* str = heap.str_intern(source);
-                if (str == null) return MODULE_ERROR~;
+                if (str == null) return module_load_failed(heap, mod);
                 synth.set_string(str);
             case compiler::ModuleAttrType.BYTES:
                 HObject* view = builtins::bytes_module_view(heap, source);
-                if (view == null) return MODULE_ERROR~;
+                if (view == null) return module_load_failed(heap, mod);
                 synth.set_object(view);
             default:
                 // An unrecognized `type` is a load-phase failure, not a parse
                 // error: the grammar accepts any attribute value and the host
                 // decides which types it supports.
-                return MODULE_ERROR~;
+                return module_load_failed(heap, mod);
         }
         mod.is_synthetic = true;
         mod.synth_value = synth;
@@ -1175,7 +1177,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         // and install_live_binding see the value even before link_module runs. A
         // synthetic module never runs code, so its env needs no scope-chain parent.
         EnvRecord*? env_opt = env::env_create_declarative(heap, null);
-        if (catch err = env_opt) return MODULE_ERROR~;
+        if (catch err = env_opt) return module_load_failed(heap, mod);
         mod.env = env_opt;
         heap.shade_root_env(mod.env);
         mod.env.flags.is_module = true;
@@ -1197,7 +1199,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         && (heap.module_hooks == null || ((ModuleHostHooks*)heap.module_hooks).read_source == null);
     return compile_module_source(heap, mod, normalized, source, quiet, owned);
     $else
-        return MODULE_ERROR~;
+        return module_load_failed(heap, mod);
     $endif
 }
 
@@ -1249,7 +1251,7 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     bytecode::SourceBuf* source_buf = owned ? bytecode::source_buf_adopt(source) : null;
     if (owned && source_buf == null) {
         mem::free(source.ptr);
-        return MODULE_ERROR~;
+        return module_load_failed(heap, mod);
     }
     lex.source_buf = source_buf;
     defer bytecode::source_buf_release(source_buf);
@@ -1284,12 +1286,16 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
         // dynamic `import()` to reject with a SyntaxError rather than a
         // generic load failure. Callers that don't surface the parked value
         // (run_module_file's rc-2 path) clear the channel themselves.
-        TVal parse_error = module_syntax_error(
-            heap, msg_slice.len > 0 ? msg_slice : (char[])"module compile error");
+        char[] parse_msg = msg_slice.len > 0 ? msg_slice : (char[])"module compile error";
+        TVal parse_error = module_syntax_error(heap, parse_msg);
+        if (parse_error.is_object()) {
+            builtins::error_set_source_stack((HObject*)parse_error.get_heapptr(), heap, "SyntaxError",
+                                             parse_msg, normalized, lex.err_line, lex.err_col);
+        }
         heap.shade_root_tval(parse_error);
         heap.error_value = parse_error;
         heap.has_error = true;
-        return MODULE_ERROR~;
+        return module_load_failed(heap, mod);
     }
     mod.func = func_opt;
     retain_names(heap, mod);
@@ -1323,12 +1329,35 @@ fn ModuleDef*? load_dependencies(Heap* heap, ModuleDef* mod, char[] normalized, 
                 mod.status = ModuleStatus.LOAD_PENDING;
                 return MODULE_PENDING~;
             }
-            return MODULE_ERROR~;
+            return module_load_failed(heap, mod);
         }
         rme.resolved = dep;
     }
     mod.status = ModuleStatus.LOADED;
     return mod;
+}
+
+// Mark `mod` LOAD_FAILED, keeping the error parked on the heap channel so
+// every later import of it fails the same way instead of finding a module
+// stuck in LOADING, which reads as a cycle and links an empty namespace.
+fn ModuleDef*? module_load_failed(Heap* heap, ModuleDef* mod) @local {
+    mod.status = ModuleStatus.LOAD_FAILED;
+    if (!mod.has_eval_error && heap_has_thrown(heap)) {
+        mod.eval_error.set_undefined();
+        heap.tval_copy_ref(&mod.eval_error, &heap.error_value);
+        mod.has_eval_error = true;
+    }
+    return MODULE_ERROR~;
+}
+
+// Park a LOAD_FAILED module's error on the heap channel again and fail.
+fn ModuleDef*? module_reraise_load_error(Heap* heap, ModuleDef* mod) @local {
+    if (mod.has_eval_error) {
+        heap.error_value.set_undefined();
+        heap.tval_copy_ref(&heap.error_value, &mod.eval_error);
+        heap.has_error = true;
+    }
+    return MODULE_ERROR~;
 }
 
 // ECMA-262 ResolveExport outcome. NULL means the name is not

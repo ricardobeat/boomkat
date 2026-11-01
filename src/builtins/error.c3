@@ -57,6 +57,27 @@ fn void error_append_frame(UnitBuf* out, char[] name, char[] file, bytecode::Sou
     }
 }
 
+// Give an error raised outside any running code, such as a module that
+// failed to parse, a stack pointing at the source location instead:
+// `SyntaxError: <msg>\n    at <file>:<line>:<col>`.
+fn void error_set_source_stack(HObject* err, Heap* heap, char[] name, char[] msg,
+                               char[] file, uint line, uint col) {
+    UnitBuf out;
+    out.init(heap);
+    defer out.free();
+    out.append_text(name);
+    out.append_latin1(": ");
+    out.append_text(msg);
+    out.append_latin1("\n    at ");
+    out.append_text(file);
+    if (line != 0) {
+        error_append_coordinate(&out, line);
+        if (col != 0) error_append_coordinate(&out, col);
+    }
+    HString* stack = out.intern(heap);
+    if (stack != null) error_set_captured_stack(err, heap, stack);
+}
+
 // Append the current JS call stack to `out`, innermost frame first.
 //
 // Walks the active segment of Vm.activations from the top down, then each

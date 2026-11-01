@@ -44,6 +44,7 @@ TESTS=(
   "t30_disposable_stacks:AsyncDisposableStack await rules and error folding"
   "t31_using_declarations:module disposal, and release before iterator close"
   "t32_dependency_order:eager upgrades preserve dependency order, tied positions, and deferred evaluation"
+  "t33_syntax_error_location:import() of a module that fails to parse rejects with its location"
 )
 
 for entry in "${TESTS[@]}"; do
