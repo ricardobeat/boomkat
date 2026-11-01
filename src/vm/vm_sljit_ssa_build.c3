@@ -19,14 +19,14 @@ import std::io;
 fn bool ssa_wide_continuation_op(Opcode op) @feat(SLJIT) {
     return function_op(op) || function_call_op(op);
 }
-fn bool ssa_continuation_live(SsaGraph* g, bool[LOOP_REGS]* exit_live) @feat(SLJIT) {
+fn bool ssa_continuation_live(SsaGraph* g, bool* exit_live) @feat(SLJIT) {
     CompiledFunction* cf = g.cf;
     LoopPlan* plan = g.plan;
     if (g.single_pass || cf.code_count > 512 || cf.num_regs >= compiler::BYTECODE_REGS_MAX
         || cf.flags.has_direct_eval || cf.mapped_arguments() || cf.flags.is_generator || cf.flags.is_async) return false;
-    for (uint reg = 0; reg < LOOP_REGS; reg++) if (plan.slot_reg[reg] != (int)reg) return false;
+    for (uint reg = 0; reg < g.reg_count; reg++) if (plan.slot_reg[reg] != (int)reg) return false;
     return compiler::moveelim_decoded_continuation(cf.code, cf.code_count, cf.num_regs,
-        plan.end + 1, g.heap, &ssa_wide_continuation_op, &(*exit_live)[0], LOOP_REGS);
+        plan.end + 1, g.heap, &ssa_wide_continuation_op, exit_live, LOOP_REGS);
 }
 
 // Rename bytecode definitions into the analyzed SSA graph.
@@ -35,22 +35,26 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     if (g.failed) return false;
     CompiledFunction* cf = g.cf;
     LoopPlan* plan       = g.plan;
-    bool[LOOP_REGS] read;
-    bool[LOOP_REGS] value_read;
-    bool[LOOP_REGS] written;
-    bool[LOOP_REGS] live_in;
-    bool[LOOP_REGS] base;
-    bool[LOOP_REGS] int_need;
-    bool[LOOP_REGS] f64_need;
-    ssa_infer(g, &read, &value_read, &written, &live_in, &base, &int_need, &f64_need);
+    if (!ssa_charge_work(g, (usz)(plan.end - plan.begin + 1) + g.reg_count)) return false;
+    bool* read = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    bool* value_read = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    bool* written = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    bool* live_in = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    bool* base = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    bool* int_need = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    bool* f64_need = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    if (g.failed) return false;
+    ssa_infer(g, read, value_read, written, live_in, base, int_need, f64_need);
+    if (g.failed) return false;
     ssa_int_fixpoint(g);
-    for (uint i = 0; i < LOOP_REGS; i++) {
+    if (g.failed) return false;
+    for (uint i = 0; i < g.reg_count; i++) {
         g.current[i] = -1;
         g.phi[i] = -1;
         g.arg[i] = -1;
         // A register the loop rewrites but never uses as a number holds an
         // arbitrary value, not an integer.
-        g.rep[i] = ((g.plan.ssa_double | g.force_f64) & (1UL << i)) != 0 ? F64
+        g.rep[i] = (g.force_f64.test(i) || (i < 64 && (g.plan.ssa_double & (1UL << i)) != 0)) ? F64
             : g.int_reg[i] ? INT32
             : ssa_rep_for(int_need[i], f64_need[i], false);
     }
@@ -61,9 +65,10 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     // definition still need their final value published when the loop exits
     // and later code reads them. They become loop-carried phis for that
     // reason alone; nothing else about them is loop-carried.
-    bool[LOOP_REGS] exit_live;
-    foreach (&entry : exit_live) *entry = false;
-    if (plan.end + 1 < cf.code_count && !ssa_continuation_live(g, &exit_live)) {
+    bool* exit_live = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    if (g.failed) return false;
+    foreach (&entry : exit_live[0:g.reg_count]) *entry = false;
+    if (plan.end + 1 < cf.code_count && !ssa_continuation_live(g, exit_live)) {
         // The continuation may read implicit call windows; raw operand bytes
         // also include constant indices and offsets that are not registers.
         // Keep all continuation uses and definitions conservatively until a
@@ -76,7 +81,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         uint[32] words;
         compiler::RegSet used = { .words = &words[0], .word_count = 32 };
         compiler::bytecode_register_set(cf.code, start, cf.code_count - 1, &used);
-        for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        for (uint reg = 0; reg < g.reg_count; reg++) {
             // The loop window may alias a high VM register to this low slot;
             // continuation bytecode still names the original register.
             int origin = plan.slot_reg[reg];
@@ -87,11 +92,11 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     // loop. The ordinary continuation alone does not describe those edges.
     // Until exception frame states are modeled, preserve every written slot.
     for (uint pc = 0; pc < cf.code_count; pc++) if (cf.code[pc].op == Opcode.TRY) {
-        for (uint reg = 0; reg < LOOP_REGS; reg++) exit_live[reg] = true;
+        for (uint reg = 0; reg < g.reg_count; reg++) exit_live[reg] = true;
         break;
     }
     g.current_pc = plan.begin;
-    for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < cf.num_regs && reg < g.reg_count; reg++) {
         if (!g.single_pass && written[reg] && (live_in[reg] || exit_live[reg])) {
             // Recovery-only inputs can hold any value on entry. Their old
             // contents are overwritten before use, so imposing the body's
@@ -108,7 +113,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             g.current[reg] = arg;
         }
     }
-    for (uint reg = 0; reg < LOOP_REGS; reg++) g.header[reg] = g.current[reg];
+    for (uint reg = 0; reg < g.reg_count; reg++) g.header[reg] = g.current[reg];
     // The body may hold arms: a forward branch splits it into blocks, and a
     // join merges the states its arms leave behind.
     if (!ssa_split_blocks(g)) {
@@ -141,26 +146,28 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         }
         g.block_first[b] = g.value_count;
         SsaBlock* block = &g.blocks[b];
-        for (uint pos = block.begin; pos <= block.end; pos++) {
-            Instruction ins = cf.code[pos];
+        for (uint pos = block.begin; pos <= block.end;) {
+            DecodedBytecode view = ssa_decoded_view(g, pos);
+            if (!view.valid) return false;
+            defer pos = view.next_pc;
+            DecodedInsn ins = view.insn;
             uint at         = pos - plan.begin;
-            uint[2] live = { (uint)g.recovery_live[at], (uint)(g.recovery_live[at] >> 32) };
             if (g.recoverable) {
                 // Dead slots remain owned by the VM frame. Sparse states hold
                 // only semantic inputs required at this exact prefix PC.
-                for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
-                    if ((g.recovery_live[at] & (1UL << reg)) != 0 && g.current[reg] < 0) return false;
+                for (uint reg = 0; reg < cf.num_regs && reg < g.reg_count; reg++) {
+                    if (g.recovery_live[at].test(reg) && g.current[reg] < 0) return false;
                 }
             }
-            g.frames[at] = ssa_frame_capture(g, pos, &g.current[0], LOOP_REGS,
-                g.recoverable ? &live[0] : null, g.recoverable ? 2 : 0);
+            g.frames[at] = ssa_frame_capture(g, pos, g.current, g.reg_count,
+                g.recoverable ? g.recovery_live[at].words : null, g.recoverable ? g.reg_words : 0);
             if (g.failed) return false;
             // Conversions can consume a bytecode operand before a later guard in
             // the same operation. Keep the original value until that operation
             // commits, so replay observes the exact pre-instruction frame.
             defer if (!g.direct) { foreach (entry : ssa_frame_entries(g, g.frames[at])) ssa_use(g, entry.value); }
             g.current_pc = pos;
-            int target = loop_target(ins, pos);
+            int target = ssa_decoded_target(view);
             if (target >= 0) {
                 if (pos != plan.end) {
                     if (!ssa_arm_branch(g, b, pos, ins)) {
@@ -380,7 +387,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                             ssa_value(g, EXIT, BOXED, -1, -1, 0);
                             break;
                         }
-                        int value = ssa_inline_call(g, ins, pos);
+                        int value = ssa_inline_call(g, cf.code[view.payload_pc], pos);
                         if (value < 0) return false;
                         g.current[ins.a] = value;
                         break;
@@ -541,7 +548,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             }
         }
         g.block_last[b] = g.value_count;
-        g.block_exit[b] = ssa_frame_capture(g, SSA_ENTRY_BAIL, &g.current[0], LOOP_REGS);
+        g.block_exit[b] = ssa_frame_capture(g, SSA_ENTRY_BAIL, g.current, g.reg_count);
         if (g.failed) return false;
         g.block_built[b] = true;
     }
@@ -549,16 +556,16 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         for (uint j = 0; j < g.join_count; j++) {
             SsaJoin* join = &g.joins[j];
             if (join.entry) {
-                for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                for (uint reg = 0; reg < g.reg_count; reg++) {
                     int phi = join.phi[reg];
                     int incoming = join.entry_incoming[reg];
                     if (phi >= 0 && incoming >= 0 && g.values[phi].rep == INT32 && g.values[incoming].rep == F64) {
-                        g.force_f64 |= 1UL << reg;
+                        g.force_f64.set(reg);
                     }
                 }
             }
             for (uint p = 0; p < join.pred_count; p++) {
-                for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                for (uint reg = 0; reg < g.reg_count; reg++) {
                     int phi = join.phi[reg];
                     if (phi < 0) continue;
                     int incoming = join.incoming[p][reg];
@@ -572,7 +579,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     // available. A numeric-use guess must never narrow a real
                     // double producer; rebuild until these representations agree.
                     if (g.values[phi].rep == INT32 && g.values[incoming].rep == F64) {
-                        g.force_f64 |= 1UL << reg;
+                        g.force_f64.set(reg);
                     }
                 }
             }
@@ -587,27 +594,27 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         // A function region publishes its final definitions directly. There
         // are no loop-carried phis or backedge representation conversions.
         if (g.direct) {
-            if (g.result_reg < LOOP_REGS) {
+            if (g.result_reg < g.reg_count) {
                 if (g.current[g.result_reg] < 0) return false;
                 ssa_use(g, g.current[g.result_reg]);
             }
         } else if (!g.recoverable) {
             // Recoverable CALL/RET exits already consume their exact live
             // pre-bytecode frame; no final whole-frame completion is emitted.
-            foreach (value : g.current) if (value >= 0) ssa_use(g, value);
+            foreach (value : g.current[0:g.reg_count]) if (value >= 0) ssa_use(g, value);
         }
         return !g.failed;
     }
     // Latch inputs for loop phis.
     g.current_pc = plan.end;
-    for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < cf.num_regs && reg < g.reg_count; reg++) {
         if (g.phi[reg] < 0) continue;
         int value = g.current[reg];
         if (value < 0) {
             g.failed = true;
             return false;
         }
-        if (live_in[reg] && g.values[value].rep == F64 && g.values[g.phi[reg]].rep != F64) g.force_f64 |= 1UL << reg;
+        if (live_in[reg] && g.values[value].rep == F64 && g.values[g.phi[reg]].rep != F64) g.force_f64.set(reg);
         value = ssa_convert(g, value, g.values[g.phi[reg]].rep, false);
         g.values[g.phi[reg]].a = value;
         ssa_use(g, value);
@@ -619,7 +626,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     g.block_last[g.block_count - 1] = g.value_count;
     // All converted phi inputs are consumed together by the latch. A later
     // conversion must not reuse an earlier input's home before that point.
-    foreach (phi : g.phi) if (phi >= 0) ssa_use(g, g.values[phi].a);
+    foreach (phi : g.phi[0:g.reg_count]) if (phi >= 0) ssa_use(g, g.values[phi].a);
     foreach (entry : ssa_frame_entries(g, g.frames[plan.end - plan.begin])) ssa_use(g, entry.value);
     for (uint i = 0; i < g.value_count; i++) {
         if (g.values[i].op == ARG || g.values[i].op == PHI) g.values[i].last = g.stamp;

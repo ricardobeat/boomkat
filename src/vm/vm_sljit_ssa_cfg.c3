@@ -10,11 +10,15 @@ import boomkat::types;
 fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
     CompiledFunction* cf = g.cf;
     if (g.plan.begin != 0 || g.plan.end + 1 != cf.code_count) return false;
-    compiler::DecodedCfg cfg;
-    compiler::DecodedCfgBudget budget = { SSA_SPAN, SSA_SPAN, 128 * 1024 };
-    if (!compiler::bytecode_cfg_build(&cfg, cf.code, cf.code_count, g.heap, null, true, budget)) return false;
-    defer compiler::bytecode_cfg_free(&cfg);
-    if (cfg.has_wide || cfg.block_count > g.block_capacity) return false;
+    compiler::DecodedCfg* cfg = &g.decoded;
+    if (cfg.storage == null) {
+        usz bytes = (usz)cf.code_count * (compiler::DecodedCfgNode::size + uint::size);
+        if (bytes > g.budget.max_bytes - g.storage_bytes) { g.failed = true; return false; }
+        compiler::DecodedCfgBudget budget = { g.budget.max_words, g.budget.max_instructions, bytes };
+        if (!compiler::bytecode_cfg_build(cfg, cf.code, cf.code_count, g.heap, null, true, budget)) return false;
+        g.storage_bytes += bytes;
+    }
+    if (cfg.block_count > g.block_capacity) return false;
     bool* loop_roots = (bool*)ssa_storage_alloc(g, cfg.block_count, bool::size);
     if (g.failed) return false;
     $if !$feat(SLJIT_NO_SSA_LOOP_ENTRY):
@@ -37,7 +41,7 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         if (node.block_entry) {
             block.begin = node.view.pc;
             block.external = node.external || loop_roots[node.block];
-            if (block.external) g.plan.ssa_resume_pcs[block.begin >> 6] |= 1UL << (block.begin & 63);
+            if (block.external && block.begin < SSA_SPAN) g.plan.ssa_resume_pcs[block.begin >> 6] |= 1UL << (block.begin & 63);
         }
         block.end = node.view.pc;
         if (i + 1 < cfg.instruction_count && cfg.nodes[i + 1].block == node.block) continue;
@@ -68,20 +72,19 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
     // Mapped arguments are rejected by loop analysis. Own locals observed by
     // closures require CELL/environment/closure opcodes, which eligibility
     // refuses; importing captures does not itself make these locals observable.
-    compiler::RegSet[SSA_SPAN * 2] sets;
-    uint[2][SSA_SPAN * 2 + 1] words;
-    for (uint i = 0; i < cfg.instruction_count * 2; i++) {
-        sets[i] = { .words = &words[i][0], .word_count = 2 };
-    }
-    compiler::RegSet scratch = { .words = &words[cfg.instruction_count * 2][0], .word_count = 2 };
-    compiler::bytecode_cfg_liveness(&cfg, &sets[0], &sets[cfg.instruction_count], &scratch);
-    for (uint index = 0; index < cfg.instruction_count; index++) {
-        uint* live = sets[cfg.instruction_count + index].words;
+    uint count = cfg.instruction_count;
+    compiler::RegSet* sets = (compiler::RegSet*)ssa_storage_alloc(g, (usz)count * 2, compiler::RegSet::size);
+    uint* words = (uint*)ssa_storage_alloc(g, ((usz)count * 2 + 1) * g.reg_words, uint::size);
+    if (g.failed) return false;
+    for (uint i = 0; i < count * 2; i++) sets[i] = { .words = words + (usz)i * g.reg_words, .word_count = g.reg_words };
+    compiler::RegSet scratch = { .words = words + (usz)count * 2 * g.reg_words, .word_count = g.reg_words };
+    if (!compiler::bytecode_cfg_liveness(cfg, sets, sets + count, &scratch, true, false, &ssa_cfg_charge_work, g)) return false;
+    for (uint index = 0; index < count; index++) {
         uint pc = cfg.nodes[index].view.pc;
-        g.recovery_live[pc - g.plan.begin] = (ulong)live[0] | ((ulong)live[1] << 32);
+        g.recovery_live[pc - g.plan.begin].copy_from(&sets[count + index]);
     }
     for (uint b = 0; b < g.block_count; b++) {
-        g.cyclic_live[b] = g.recovery_live[g.blocks[b].begin - g.plan.begin];
+        g.cyclic_live[b].copy_from(&g.recovery_live[g.blocks[b].begin - g.plan.begin]);
     }
     return true;
 }

@@ -6,6 +6,9 @@ import boomkat::bytecode;
 // kill set and retargetable producers. Unknown instructions invalidate all
 // homes; adding an opcode never silently preserves a stale typed value.
 fn void register_may_writes(Instruction ins, RegSet* writes) {
+    register_decoded_may_writes({ ins.op, ins.a, ins.b, ins.c }, writes);
+}
+fn void register_decoded_may_writes(DecodedInsn ins, RegSet* writes) {
     if (moveelim_a_is_write(ins.op)) { writes.set(ins.a); return; }
     switch (ins.op) {
         case Opcode.NEWOBJ:
