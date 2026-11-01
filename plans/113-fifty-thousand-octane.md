@@ -157,6 +157,53 @@ opportunities. The same barrier applied inside the SSA region, where the
 continuation is the compiled hot path, remains untested and is the only version
 worth revisiting.
 
+## Nested-loop cyclic regions re-enabled, 2026-11-01
+
+`SSA_CYCLIC_REGIONS` is back on (rat `bf6626c1`). The flag was disabled when
+whole-region admission measured slower on Navier-Stokes, but that predates
+whole-function cyclic SSA. Now a loop region compiles its nested loops as one
+cyclic graph and Navier-Stokes falls from 172-184 ms to 158-168 ms across five
+interleaved pairs with `/tmp/bk_final4` (about 9%). Box2D, Mandreel, Crypto,
+zlib, Richards, DeltaBlue, Splay, Raytrace, EarleyBoyer, pdfjs, Gameboy,
+TypeScript, CodeLoad and RegExp are flat within noise in the same panel.
+
+Verified with the differential JIT suites (test-local, rosetta, modules),
+Test262 language/expressions, language/statements and built-ins/Array, the
+local suite (39/39), `just test-slim` (1,742,992 bytes), `embedding_jit` and
+`jit_api`.
+
+## Cyclic-region redundancy elimination, 2026-11-01 (blocked, no consumer)
+
+Tried store-to-load forwarding as the first optimization pass on the existing
+graphs: a `LOAD` of the identical descriptor and aliased index after the
+`STORE` that wrote it becomes a `COPY` of the stored value, with the stored
+value's live range extended to the load. The rule is sound both across a
+dominated path on forward graphs and within one straight-line block on any
+graph, because `STORE` is the only admitted memory write.
+
+The pass never fired on any mini benchmark or on focused store-then-read
+probes. Two gates explain it:
+
+1. `ssa_cse` (and therefore every load reuse) only runs when `!graph.cyclic`.
+   Cyclic regions get no CSE at all, not even within one block.
+2. A single-pass SSA region rejects a written memory unless `plan.ssa_commit`
+   is set, so most bodies with stores do not reach the SSA graph in the first
+   place.
+
+Forwarding within a block is implemented once cyclic graphs can run it, but
+the useful version is cross-block and needs a fixed point over joins and
+backedges; that is the "effect summaries and memory versions" item, and it is
+the real prerequisite for any redundancy elimination in a cyclic region.
+The pass was removed rather than kept unused.
+
+## Named-read fixture, 2026-11-01
+
+Added `test/sljit_property_read.js` (rat `078e74b2`): polymorphic receivers,
+a receiver replaced mid-loop so the site's shape never settles, two reads in
+one block, reads feeding loop-carried accumulators, and reads mixing with
+canonical numeric lanes. Every case checks an interpreted reference, so the
+differential run compares the function and SSA tiers with the interpreter.
+
 ## Shared bytecode decoder, 2026-10-31
 
 [Actual bytecode, ARM64 dispatch, high-register execution and timing evidence](113-fifty-thousand-octane/shared-decoder-2026-10-31/report.md): rat `9966cd7f` shares WIDE operand construction between the interpreter and a bounded decoded view consumed by loop alias analysis; the view preserves prefix, opcode and next PCs and rejects invalid prefixes. It does not implement CFG edges, general operand windows or SSA recovery. A temporary aggregate-return form added a WIDE dispatch stack store and regressed several minis, so it was replaced with direct field assignment; final switch WIDE and threaded WIDE ARM64 instructions are byte-for-byte unchanged. The actual high-register alias fixture completes the same 366,592 native iterations; ARM64 ASan, x86-64 and local/Rosetta/modules differential checks pass. Final zlib pairs were 3727→3743 ms and a reversed-order confirmation 3713→3727 ms (+0.38%); the difference has not been attributed to a dispatch change. This is bounded groundwork, not an Octane throughput gain, and 50K remains open.
