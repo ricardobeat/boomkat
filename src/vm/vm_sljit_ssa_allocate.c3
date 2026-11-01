@@ -54,7 +54,7 @@ fn void SsaAllocation.interfere(&self, uint value, ulong* live) @feat(SLJIT) {
 fn void SsaAllocation.recovery(&self, ulong* live, uint pc) @feat(SLJIT) {
     SsaGraph* g = self.g;
     if (g.direct || pc < g.plan.begin || pc > g.plan.end) return;
-    foreach (value : g.frames[pc - g.plan.begin]) self.add(live, value);
+    foreach (entry : ssa_frame_entries(g, ssa_frame_at_pc(g, pc))) self.add(live, entry.value);
 }
 fn void SsaAllocation.operands(&self, ulong* live, SsaValue v) @feat(SLJIT) {
     switch (v.op) {
