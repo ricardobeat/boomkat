@@ -29,7 +29,7 @@ fn SsaEffect ssa_effect(SsaOp op) @feat(SLJIT) {
         case RECEIVER: case BINDING: case STORAGE: case PROTO_STORAGE:
         case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: return LAYOUT;
         case LOAD: return READ;
-        case STORE: return WRITE;
+        case STORE: case ACCESS_STORE: return WRITE;
         case PHI: case JOIN: return ITERATION;
         default: return UNKNOWN;
     }

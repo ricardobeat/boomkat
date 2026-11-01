@@ -211,6 +211,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 continue;
             }
             if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
+                && ssa_access_build(g, view)) continue;
+            if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
                 && ssa_vm_step_supported(ins.op)) {
                 int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
                 uint destination;

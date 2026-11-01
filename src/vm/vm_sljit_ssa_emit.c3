@@ -705,6 +705,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         self.store(memory, v.a, v.b);
                         break;
                     }
+                case ACCESS_ADDRESS: self.access_address((int)i); break;
+                case ACCESS_LOAD: self.access_load((int)i); break;
+                case ACCESS_STORE: self.access_store((int)i); break;
                 case JOIN: break;
                 case BRANCH: self.branch((int)i); break;
                 case GOTO: self.goto_block((int)i); break;

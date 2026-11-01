@@ -115,6 +115,12 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     SsaGraph* graph = ssa_prepare(plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry);
     if (graph == null) return null;
     defer ssa_graph_free(graph);
+    if (plan.ssa_data != null) {
+        plan.ssa_data.native_accesses = 0;
+        foreach (value : graph.values[:graph.value_count]) {
+            if (value.op == ACCESS_LOAD || value.op == ACCESS_STORE) plan.ssa_data.native_accesses++;
+        }
+    }
     void* code = ssa_emit_graph(graph, parent);
     emitted = code != null;
     return code;

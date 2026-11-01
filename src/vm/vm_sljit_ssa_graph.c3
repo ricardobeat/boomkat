@@ -75,6 +75,10 @@ enum SsaOp : char {
     BOX_F,
     LOAD,
     STORE,
+    // Scalable accesses use SSA receivers and indices, never LoopMemory slots.
+    ACCESS_ADDRESS,
+    ACCESS_LOAD,
+    ACCESS_STORE,
     // Identity guard: the value must be a function whose compiled body is the
     // one the call was expanded from.
     CHECKFN,
@@ -100,7 +104,7 @@ enum SsaOp : char {
 
 fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
     switch (op) {
-        case NOP: case STORE: case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: case EXIT: return false;
+        case NOP: case STORE: case ACCESS_STORE: case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: case EXIT: return false;
         default: return true;
     }
 }

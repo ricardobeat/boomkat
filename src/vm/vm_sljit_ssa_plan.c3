@@ -12,6 +12,7 @@ struct SsaPlanData @feat(SLJIT) {
     uint word_count;
     uint spill_count;
     uint edge_count;
+    uint native_accesses;
     uint* resume_words;
     usz bytes;
     bool decoded_body;
