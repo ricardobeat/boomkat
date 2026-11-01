@@ -36,7 +36,7 @@ struct SsaDeoptSite @feat(SLJIT) {
     uint pc;
     usz allocated_bytes;
 }
-alias SsaDeoptChain = fn Instruction*(SsaExecution* execution, SsaDeoptSite* site);
+alias SsaDeoptChain @feat(SLJIT) = fn Instruction*(SsaExecution* execution, SsaDeoptSite* site);
 struct SsaDeoptHome @feat(SLJIT) { int reg; bool floating; }
 struct SsaDeoptStub @feat(SLJIT) { SsaDeoptSite* site; void* label; }
 
@@ -180,7 +180,7 @@ fn bool ssa_deopt_read(SsaExecution* execution, SsaDeoptLocation location, TVal*
         case CONSTANT: break;
     }
     switch (location.rep) {
-        case BOXED: *value = bitcast(bits, TVal);
+        case BOXED: if (!ssa_decode_boxed_bits(bits, value)) return false;
         case INT32: value.set_fastint((long)(int)bits);
         case F64: value.set_number(bitcast(bits, double));
         case RAW: return false;
