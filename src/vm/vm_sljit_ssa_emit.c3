@@ -327,9 +327,8 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
         self.addr_reg = 0;
         self.live = self.g.frames[self.g.blocks[b].begin - self.plan.begin];
         self.block_label[b] = e.label();
-        uint first = self.g.block_first[b];
-        uint last  = self.g.block_last[b];
-        for (uint i = first; i < last; i++) {
+        for (int node = ssa_block_first_value(self.g, b); node >= 0; node = ssa_next_value(self.g, node)) {
+            uint i = (uint)node;
             SsaValue v = self.g.values[i];
             self.at_def = v.def;
             self.pc = v.pc;

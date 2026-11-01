@@ -166,7 +166,7 @@ fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
             incoming.exclude(&facts.iteration_kill[b]);
             facts.input[b] = incoming;
             SsaAvailable outgoing = incoming;
-            for (uint i = g.block_first[b]; i < g.block_last[b]; i++) ssa_effect_step(facts, i, &outgoing);
+            for (int node = ssa_block_first_value(g, b); node >= 0; node = ssa_next_value(g, node)) ssa_effect_step(facts, (uint)node, &outgoing);
             if (!outgoing.same(&facts.output[b])) {
                 facts.output[b] = outgoing;
                 changed = true;
@@ -178,8 +178,7 @@ fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
 fn bool ssa_effect_dominates(SsaGraph* g, uint prior, uint current) @feat(SLJIT) {
     SsaValue a = g.values[prior];
     SsaValue b = g.values[current];
-    if (a.block == b.block) return prior < current;
-    return (g.dominators[b.block] & (1U << (uint)a.block)) != 0;
+    return ssa_value_dominates(g, (int)prior, (int)current);
 }
 
 // Freeze keys to the analyzed graph. New COPY aliases cannot change the
@@ -247,7 +246,8 @@ fn void ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
     for (uint b = 0; b < g.block_count; b++) {
         if ((facts.reachable & (1U << b)) == 0) continue;
         SsaAvailable available = facts.input[b];
-        for (uint i = g.block_first[b]; i < g.block_last[b]; i++) {
+        for (int node = ssa_block_first_value(g, b); node >= 0; node = ssa_next_value(g, node)) {
+            uint i = (uint)node;
             // A LOAD (or any other definition) can execute again on a cycle
             // even without a nearby PHI. Its old dependent expressions belong
             // to that earlier execution and must expire before matching.

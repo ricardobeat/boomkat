@@ -121,12 +121,16 @@ struct SsaValue @feat(SLJIT) {
     uint spill;
     int arg_reg;
     bool watched_method;
+    uint proof_bits;
     // A branch names the block it leaves and the block its other arm takes.
     int block;
     int target;
     int fallto;
     SsaFrameId before_frame;
     SsaFrameId after_frame;
+    int schedule_prev;
+    int schedule_next;
+    int schedule_block;
     Opcode branch_op;
 }
 
@@ -144,6 +148,8 @@ struct SsaBlock @feat(SLJIT) {
     bool jump;
     bool returns;
     bool external;
+    int first_value;
+    int last_value;
 }
 
 // A block with more than one predecessor: the registers its predecessors
@@ -213,6 +219,7 @@ struct SsaGraph @feat(SLJIT) {
     uint current_block;
     uint spill_count;
     bool failed;
+    bool schedule_ready;
     bool single_pass;
     bool cyclic;
     ulong[SSA_BLOCKS] cyclic_live;
@@ -283,6 +290,7 @@ fn int ssa_value(SsaGraph* g, SsaOp op, SsaRep rep, int a, int b, long imm) @fea
         return 0;
     }
     uint index = g.value_count++;
+    g.values[index].proof_bits = 0;
     g.values[index].op = op;
     g.values[index].rep = rep;
     g.values[index].a = a;
@@ -290,6 +298,9 @@ fn int ssa_value(SsaGraph* g, SsaOp op, SsaRep rep, int a, int b, long imm) @fea
     g.values[index].imm = imm;
     g.values[index].def = g.stamp;
     g.values[index].last = g.stamp;
+    g.values[index].schedule_prev = -1;
+    g.values[index].schedule_next = -1;
+    g.values[index].schedule_block = -1;
     g.values[index].before_frame = SSA_NO_FRAME;
     g.values[index].after_frame = SSA_NO_FRAME;
     g.values[index].arg_reg = -1;
@@ -297,6 +308,7 @@ fn int ssa_value(SsaGraph* g, SsaOp op, SsaRep rep, int a, int b, long imm) @fea
     g.values[index].pc = g.current_pc;
     g.values[index].block = (int)g.current_block;
     g.stamp++;
+    if (g.schedule_ready && op != ARG && op != PHI && op != JOIN) ssa_schedule_append(g, g.current_block, (int)index);
     return (int)index;
 }
 fn void ssa_use(SsaGraph* g, int value) @feat(SLJIT) {

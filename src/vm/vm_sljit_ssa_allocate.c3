@@ -110,8 +110,8 @@ fn void SsaAllocation.transfer_edge(&self, uint pred, uint succ, bool record) @f
     } else {
         // A conversion emitted by an edge copy can fail at the last emitted
         // bytecode's PC. Match the emitter's PC even for a fallthrough block.
-        uint last = g.block_last[pred];
-        uint pc = last > g.block_first[pred] ? g.values[last - 1].pc : g.blocks[pred].begin;
+        int last = ssa_block_last_value(g, pred);
+        uint pc = last >= 0 ? g.values[last].pc : g.blocks[pred].begin;
         self.recovery(self.edge, pc);
     }
     if (record) for (uint i = 0; i < g.value_count; i++) {
@@ -161,9 +161,8 @@ fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
             }
         }
     }
-    uint first = g.block_first[block];
-    for (uint at = g.block_last[block]; at > first; at--) {
-        uint i = at - 1;
+    for (int node = ssa_block_last_value(g, block); node >= 0; node = ssa_previous_value(g, node)) {
+        uint i = (uint)node;
         SsaValue v = g.values[i];
         // COPY is a pure alias, so neither a machine definition nor a kill.
         if (v.op == COPY) continue;
