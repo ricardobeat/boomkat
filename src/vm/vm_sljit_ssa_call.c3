@@ -22,12 +22,12 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
     SsaGraph* graph = ssa_prepare(region, cf, h, true, true, e, 0, 0, true);
     if (graph == null || (cf.num_args < LOOP_REGS && (region.ssa_inputs >> cf.num_args) != 0)) {
         sljit_dependencies_rollback(h, self.plan, checkpoint);
-        if (graph != null) h.free_func(h.heap_udata, graph);
+        if (graph != null) ssa_graph_free(graph);
         self.plan.ssa_leaves = region.next;
         h.free_func(h.heap_udata, region);
         return;
     }
-    defer h.free_func(h.heap_udata, graph);
+    defer ssa_graph_free(graph);
     LoopPlan layout;
     LoopEmitter checks = { .e = *e, .plan = &layout, .heap = h };
     defer checks.link_release();
