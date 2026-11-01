@@ -74,7 +74,7 @@ fn uint ssa_succ(SsaGraph* g, uint block, uint index) @feat(SLJIT) {
     return b.succ1;
 }
 fn bool ssa_dominates(SsaGraph* g, uint definition_block, uint use_block) @feat(SLJIT) {
-    return (g.dominators[use_block] & (1U << definition_block)) != 0;
+    return (g.dominators[(usz)use_block * g.dominator_words + definition_block / 32] & (1U << (definition_block % 32))) != 0;
 }
 fn bool ssa_value_dominates(SsaGraph* g, int definition, int use) @feat(SLJIT) {
     if (definition < 0 || use < 0) return false;
