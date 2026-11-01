@@ -2183,7 +2183,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         plan.next = cf.sljit_loops;
         cf.sljit_loops = plan;
         sljit_artifact_publish(h, &plan.artifact, cf, plan, LOOP_CODE,
-            plan.code_bytes, LoopPlan::size, &sljit_loop_release);
+            plan.code_bytes, sljit_loop_metadata_bytes(plan), &sljit_loop_release);
         plan.code_owner = &plan.artifact;
         $if $feat(SLJIT_STATS):
             io::eprintfn(

@@ -125,6 +125,8 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     defer vm::ssa_graph_free(graph);
     std::core::mem::clear(graph, (sz)SsaGraph::size);
     graph.heap = h;
+    graph.reg_count = vm::LOOP_REGS;
+    graph.reg_words = (graph.reg_count + 31) / 32;
     @check(vm::ssa_graph_tables(graph, 11));
     @check(vm::ssa_reserve_values(graph, 3));
     // The real splitter must not invent a successor to entry for a missing
@@ -212,7 +214,7 @@ fn void check_ssa_dynamic_storage(JsRuntime* runtime) {
     Heap* h = runtime.rt.heap;
     SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
     @check(graph != null);
-    *graph = { .heap = h };
+    *graph = { .heap = h, .reg_count = 70, .reg_words = 3 };
     defer vm::ssa_graph_free(graph);
     @check(vm::ssa_graph_tables(graph, 70));
     graph.block_count = 70;
@@ -282,6 +284,8 @@ fn void check_decoded_liveness(JsRuntime* runtime) {
     defer h.free_func(h.heap_udata, graph);
     std::core::mem::clear(graph, (sz)SsaGraph::size);
     graph.cf = &cf; graph.plan = &plan; graph.heap = h;
+    graph.reg_count = vm::LOOP_REGS;
+    graph.reg_words = (graph.reg_count + 31) / 32;
     bool[vm::LOOP_REGS] live;
     @check(vm::ssa_continuation_live(graph, &live));
     @check(live[7] && !live[6]);
