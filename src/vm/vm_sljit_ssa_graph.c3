@@ -217,6 +217,9 @@ struct SsaGraph @feat(SLJIT) {
     SsaFrameEntry* recovery_entries;
     uint recovery_count;
     uint recovery_capacity;
+    SsaDeoptHome* deopt_homes;
+    uint deopt_home_count;
+    SsaDeoptFrame** deopt_frames;
     SsaSafepoint* safepoints;
     uint safepoint_count;
     uint safepoint_capacity;
