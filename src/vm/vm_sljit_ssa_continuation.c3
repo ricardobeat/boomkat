@@ -155,6 +155,9 @@ struct SsaExecution @feat(SLJIT) {
     uint* live_roots;
     bool* root_marks;
     uint live_root_count;
+    uint* root_order;
+    bool* root_registered;
+    uint root_count;
     bool active;
     bool caller_lost;
     Instruction* vm_resume;
@@ -175,7 +178,7 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.value_capacity = values;
     usz runtime_bytes = LoopState::size + ((usz)spills + edges) * ulong::size
         + (usz)execution.register_count * (TVal::size + SsaPublishedValue::size)
-        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size + uint::size + bool::size);
+        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size + uint::size * 2 + bool::size * 2);
     if (runtime_bytes > SSA_DEFAULT_BUDGET.max_bytes) return false;
     execution.input_values = h.alloc_func(h.heap_udata, (usz)execution.register_count * TVal::size);
     execution.outputs = h.alloc_func(h.heap_udata, (usz)execution.register_count * SsaPublishedValue::size);
@@ -183,6 +186,8 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ValueRoot::size);
     execution.live_roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * uint::size);
     execution.root_marks = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * bool::size);
+    execution.root_order = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * uint::size);
+    execution.root_registered = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * bool::size);
     usz state_bytes = LoopState::size + ((usz)spills + edges) * ulong::size;
     if (state_bytes > SSA_DEFAULT_BUDGET.max_bytes) { ssa_execution_dispose(execution); return false; }
     execution.state_storage = (LoopState*)h.alloc_func(h.heap_udata, state_bytes);
@@ -190,15 +195,14 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.edge = execution.spills == null ? null : execution.spills + spills;
     if (execution.input_values == null || execution.outputs == null || execution.saved_bits == null
         || execution.roots == null || execution.live_roots == null || execution.root_marks == null
+        || execution.root_order == null || execution.root_registered == null
         || execution.spills == null || execution.edge == null) {
         ssa_execution_dispose(execution);
         return false;
     }
     mem::clear(execution.root_marks, (sz)max(values, 1u) * bool::size);
+    mem::clear(execution.root_registered, (sz)max(values, 1u) * bool::size);
     mem::copy(execution.input_values, cold.act.bottom, (sz)execution.register_count * TVal::size);
-    TVal undefined;
-    undefined.set_undefined();
-    for (uint i = 0; i < values; i++) h.push_value_root(&execution.roots[i], undefined);
     // Protect both the calling body and all linked artifacts throughout a
     // collecting/reentrant helper. Retirement may invalidate, never free it.
     execution.active = true;
@@ -207,10 +211,25 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     return true;
 }
 
+// A descriptor is linked only when its SSA value first needs an owning root.
+// Its address stays stable until invocation disposal, including while an
+// incremental collector cursor points into this native root chain.
+fn bool ssa_execution_root(SsaExecution* execution, uint value) @feat(SLJIT) {
+    if (!execution.active || value >= execution.value_capacity) return false;
+    if (execution.root_registered[value]) return true;
+    assert(execution.root_count < execution.value_capacity);
+    TVal undefined;
+    undefined.set_undefined();
+    execution.cold.heap.push_value_root(&execution.roots[value], undefined);
+    execution.root_order[execution.root_count++] = value;
+    execution.root_registered[value] = true;
+    return true;
+}
+
 fn void ssa_execution_dispose(SsaExecution* execution) @feat(SLJIT) {
     Heap* h = execution.cold.heap;
     if (execution.active) {
-        for (uint i = execution.value_capacity; i > 0; i--) h.pop_value_root(&execution.roots[i - 1]);
+        for (uint i = execution.root_count; i > 0; i--) h.pop_value_root(&execution.roots[execution.root_order[i - 1]]);
     }
     if (execution.input_values != null) h.free_func(h.heap_udata, execution.input_values);
     if (execution.outputs != null) h.free_func(h.heap_udata, execution.outputs);
@@ -218,6 +237,8 @@ fn void ssa_execution_dispose(SsaExecution* execution) @feat(SLJIT) {
     if (execution.roots != null) h.free_func(h.heap_udata, execution.roots);
     if (execution.live_roots != null) h.free_func(h.heap_udata, execution.live_roots);
     if (execution.root_marks != null) h.free_func(h.heap_udata, execution.root_marks);
+    if (execution.root_order != null) h.free_func(h.heap_udata, execution.root_order);
+    if (execution.root_registered != null) h.free_func(h.heap_udata, execution.root_registered);
     if (execution.state_storage != null) h.free_func(h.heap_udata, execution.state_storage);
     if (execution.owner_generation != 0) sljit_artifact_leave(h, execution.owner);
     *execution = {};
@@ -256,6 +277,7 @@ fn bool ssa_execution_roots(SsaExecution* execution, SsaHelperSite* site) @feat(
     Heap* h = execution.cold.heap;
     if (site.root_count > execution.value_capacity) return false;
     for (uint i = 0; i < site.root_count; i++) if (site.root_values[i] >= execution.value_capacity) return false;
+    for (uint i = 0; i < site.root_count; i++) if (!ssa_execution_root(execution, site.root_values[i])) return false;
     for (uint i = 0; i < site.root_count; i++) {
         uint value = site.root_values[i];
         TVal boxed;
@@ -337,7 +359,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
             cold.heap.tval_copy_ref(cold.act.bottom + ins.a, &callee);
             track_heap_store(cold.act, cold.act.bottom + ins.a, ins.a);
         } else {
-            if (site.callee_value >= execution.value_capacity) return REPLAY;
+            if (site.callee_value >= execution.value_capacity || !execution.root_registered[site.callee_value]) return REPLAY;
             TVal callee = execution.roots[site.callee_value].value;
             if (!callee.is_object() || callee.get_heapptr() == null) return REPLAY;
             HObject* function = callee.get_heapptr();
