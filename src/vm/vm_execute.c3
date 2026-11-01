@@ -2920,6 +2920,7 @@ fn TVal? Vm.run(Vm* vm) {
 // result or fault.
 fn TVal? vm_dispatch(Dispatch* ds) {
     Vm* vm = ds.vm;
+    $if $feat(SLJIT): bool stepped; $endif
     // The loop tests neither of two conditions per instruction, which relies
     // on invariants worth stating:
     //
@@ -2932,7 +2933,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     // sub-dispatch helpers in vm_control.c3 and vm_generators.c3, so it is
     // checked right after those call sites instead.
     for (; !ds.needs_restart; ) {
+    $if $feat(SLJIT):
+        if (ds.single_step) {
+            if (stepped) return (TVal){};
+            stepped = true;
+        }
+    $endif
     $if $feat(THREADED_DISPATCH):
+        if (!ds.single_step) {
         if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) {
             ThreadedHandoff handoff = vm.threaded_handoff;
             vm.threaded_handoff = ThreadedHandoff.NONE;
@@ -2954,6 +2962,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (ds.needs_restart) break;
         ds.sync_code();
         if (@unlikely(vm.threaded_handoff != ThreadedHandoff.NONE)) continue;
+        }
     $endif
 
         Instruction word = *ds.curr_pc;

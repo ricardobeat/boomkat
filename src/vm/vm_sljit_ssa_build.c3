@@ -397,6 +397,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case NEWOBJ_SHAPE:
                 case NEWARR:
                 case NEWARR_CONST:
+                case CLOSURE:
                     {
                         if (!g.recoverable) return false;
                         int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
@@ -414,8 +415,14 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     {
                         uint memory = (uint)plan.memory_at[at] - 1;
                         if (memory >= plan.memory_count) {
-                            g.failed = true;
-                            return false;
+                            if (!g.recoverable) return false;
+                            int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
+                            ssa_result(g, value, ins.a, pos);
+                            g.current[ins.a] = value;
+                            g.values[value].before_frame = g.frames[at];
+                            g.values[value].after_frame = ssa_frame_capture(g, view.next_pc, g.current, g.reg_count,
+                                view.next_pc <= plan.end ? g.recovery_live[view.next_pc - plan.begin].words : null, g.reg_words);
+                            break;
                         }
                         LoopMemorySpec spec =  plan.memory[memory];
                         int base_value      = -1;

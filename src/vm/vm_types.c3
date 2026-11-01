@@ -424,6 +424,9 @@ struct Vm {
     // checked by opcode handlers that call vm_to_number)
     TVal throw_value;
     bool throw_pending;
+    // A collecting native helper borrows one switch-dispatch operation. Its
+    // throw must unwind generated frames before searching caller catchers.
+    Activation* native_step_activation @if($feat(SLJIT));
 
     // Number of Vm.run invocations currently on the C stack. Nonzero means
     // the VM is mid-dispatch, so any module evaluation must go through the
@@ -492,6 +495,7 @@ struct Dispatch {
     // ordinary "continue to next instruction" of an empty optional return.
     bool halt;
     TVal halt_value;
+    bool single_step;
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first

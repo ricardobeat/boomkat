@@ -127,6 +127,8 @@ struct SsaExecution @feat(SLJIT) {
     uint output_count;
     ValueRoot* roots;
     bool active;
+    bool caller_lost;
+    Instruction* vm_resume;
 }
 
 // All arrays are allocated before entering generated code. In particular no
@@ -269,7 +271,9 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
     if (!ssa_execution_roots(execution, site) || !ssa_execution_publish(execution)) return REPLAY;
     CompiledFunction* cf = execution.function;
     if (site.pc >= cf.code_count || site.next_pc > cf.code_count) return REPLAY;
-    Instruction ins = cf.code[site.pc];
+    DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, site.pc);
+    if (!view.valid) return REPLAY;
+    DecodedInsn ins = view.insn;
     cold.act.curr_pc = cf.code + site.pc;
     if (ins.op == Opcode.CALL || ins.op == Opcode.CALL_UNDEF_THIS
         || ins.op == Opcode.CALL_VAR || ins.op == Opcode.CALL_GLOBAL) {
@@ -306,14 +310,15 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
         // call_fn returns a borrow from vm.return_val (including strings).
         // The VM result slot keeps its reference after the caller copies it.
         track_heap_store(cold.act, cold.act.bottom + ins.a, ins.a);
-    } else if (function_alloc_op(ins.op)) {
+    } else if (function_alloc_op(ins.op) && !view.wide) {
         long status = sljit_native_operation(cold, site.pc);
         if (status == 0) return REPLAY;
     } else {
-        return REPLAY;
+        SsaHelperOutcome outcome = ssa_vm_step(execution, site);
+        if (outcome != COMPLETE) { execution.outcome = outcome; return outcome; }
     }
     execution.phase = AFTER;
-    cold.act.curr_pc = cf.code + site.next_pc;
+    cold.act.curr_pc = cf.code + execution.after_pc;
     // Results are already owned and shaded by the VM frame before collection.
     cold.heap.safepoint_gc_on_call();
     if (!ssa_execution_reload(execution)) { execution.outcome = YIELD; return YIELD; }
@@ -330,7 +335,7 @@ fn SsaHelperOutcome ssa_helper_state(LoopState* state, SsaHelperSite* site) @fea
     $if $feat(SLJIT_STATS): execution.plan.ssa_helper_calls++; $endif
     SsaHelperOutcome outcome = ssa_helper_execute(execution, site);
     state.dirty = 0;
-    state.resume_pc = execution.phase == AFTER ? site.next_pc : site.pc;
+    state.resume_pc = execution.phase == AFTER ? execution.after_pc : site.pc;
     ColdCtx* cold = execution.cold;
     if (!ssa_execution_reload(execution)) return YIELD;
     for (uint reg = 0; reg < execution.register_count && reg < LOOP_REGS; reg++) state.values[reg] = execution.input_values[reg];
