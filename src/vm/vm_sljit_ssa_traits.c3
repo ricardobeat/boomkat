@@ -59,7 +59,7 @@ fn SsaOpTraits ssa_op_traits(SsaGraph* g, SsaValue v) @feat(SLJIT) {
         case STORAGE: case PROTO_STORAGE:
         case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE:
             return { .reads = SSA_DOMAIN_LAYOUT, .may_deopt = true };
-        case ACCESS_ADDRESS: case ACCESS_LOAD:
+        case ACCESS_ADDRESS: case ACCESS_FIELD: case ACCESS_LOAD:
         case LOAD:
             return { .reads = SSA_DOMAIN_HEAP | SSA_DOMAIN_LAYOUT, .may_deopt = true };
         case ACCESS_STORE: case STORE:
@@ -85,7 +85,7 @@ fn uint ssa_value_operands(SsaValue v, int[3]* operands) @feat(SLJIT) {
         case NOP: case ARG: case PHI: case JOIN: case RECEIVER: case BINDING:
         case CONST_I: case CONST_F: case CONST_BOXED: case GOTO: case EXIT:
             return 0;
-        case COPY: case STORAGE: case PROTO_STORAGE:
+        case COPY: case STORAGE: case PROTO_STORAGE: case ACCESS_FIELD:
         case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE:
         case BNOT: case NEG: case TO_INT: case TO_INDEX: case TO_F64:
         case BOX_I: case BOX_F: case LOAD: case ACCESS_LOAD: case RETURN:
