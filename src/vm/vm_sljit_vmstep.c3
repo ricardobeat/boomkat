@@ -9,6 +9,7 @@ import boomkat::bytecode;
 fn bool ssa_vm_step_supported(Opcode op) @feat(SLJIT) {
     switch (op) {
         case CLOSURE: case INIT_SLOT:
+        case NEWCELLS: case GETCELL: case SETCELL: case MOVECELL:
         case GETVAR: case GETGLOBAL: case GETCAP: case GETBOUND: case TYPEOFIDENT:
         case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC: case DECLB33GLOBAL:
         case PUTVAR: case PUTVAR_ASSIGN: case PUTGLOBAL: case PUTCAP:

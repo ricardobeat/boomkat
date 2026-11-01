@@ -111,10 +111,16 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
 
 fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pass, bool direct = false, TemplateEmitter* parent = null, uint inline_base = 0, uint inline_depth = 0, bool callee_entry = false) @feat(SLJIT) {
     bool emitted;
-    defer if (!emitted) ssa_helper_sites_free(h, plan);
+    defer if (!emitted) { ssa_helper_sites_free(h, plan); ssa_deopt_free(h, plan); }
     SsaGraph* graph = ssa_prepare(plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry);
     if (graph == null) return null;
     defer ssa_graph_free(graph);
+    if (plan.ssa_data != null) {
+        plan.ssa_data.native_accesses = 0;
+        foreach (value : graph.values[:graph.value_count]) {
+            if (value.op == ACCESS_LOAD || value.op == ACCESS_STORE) plan.ssa_data.native_accesses++;
+        }
+    }
     void* code = ssa_emit_graph(graph, parent);
     emitted = code != null;
     return code;
@@ -305,6 +311,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     self.budget = jit::reg_s(1);
     self.run = jit::reg_s(2);
     self.at_def = 0;
+    self.frame_id = SSA_NO_FRAME;
     for (uint i = 0; i < graph.reg_count; i++) self.live[i] = graph.header[i];
     if (graph.direct_fields && parent != null) {
         // Address spills from the shared run directly, freeing R6 for values.

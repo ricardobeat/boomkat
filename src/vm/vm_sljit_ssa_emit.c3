@@ -28,6 +28,7 @@ struct SsaEmitter @feat(SLJIT) {
     int* live;
     uint at_def;
     uint pc;
+    SsaFrameId frame_id;
     void* header;
     void* epoch_constant;
     void** done_jumps;
@@ -142,7 +143,9 @@ fn void SsaEmitter.snapshot_phis(&self, void* jump, uint pc) @feat(SLJIT) => sel
 fn void SsaEmitter.snapshot(&self, void* jump, uint pc) @feat(SLJIT) {
     if (self.edge_snapshot) { self.snapshot_id(jump, self.edge_state.pc, self.edge_state.frame); }
     else if (self.g.direct || self.entry_copy) { self.snapshot_none(jump, self.plan.begin); }
-    else { self.snapshot_id(jump, pc, ssa_frame_at_pc(self.g, pc)); }
+    else if (self.frame_id != SSA_NO_FRAME) {
+        self.snapshot_id(jump, self.g.frame_table[self.frame_id].pc, self.frame_id);
+    } else { self.snapshot_id(jump, pc, ssa_frame_at_pc(self.g, pc)); }
 }
 fn void SsaEmitter.guard(&self, int condition, int left, long lw, int right, long rw, uint pc) @feat(SLJIT) {
     self.snapshot(self.e.cmp(condition, left, lw, right, rw), pc);
@@ -345,6 +348,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
             SsaValue v = self.g.values[i];
             self.at_def = v.def;
             self.pc = v.pc;
+            self.frame_id = v.before_frame;
             if (v.op != LOAD && v.op != STORE) self.addr_reg = 0;
             switch (v.op) {
                 case NOP:
@@ -705,12 +709,15 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         self.store(memory, v.a, v.b);
                         break;
                     }
+                case ACCESS_ADDRESS: self.access_address((int)i); break;
+                case ACCESS_LOAD: self.access_load((int)i); break;
+                case ACCESS_STORE: self.access_store((int)i); break;
                 case JOIN: break;
                 case BRANCH: self.branch((int)i); break;
                 case GOTO: self.goto_block((int)i); break;
                 case RETURN: self.direct_return(v.a); break;
                 case EXIT:
-                    self.publish_id(ssa_frame_at_pc(self.g, self.pc), self.pc);
+                    self.publish_id(self.frame_id != SSA_NO_FRAME ? self.frame_id : ssa_frame_at_pc(self.g, self.pc), self.pc);
                     break;
                 case HELPER: self.helper(i); break;
             }
@@ -1398,25 +1405,7 @@ fn void SsaEmitter.publish_id(&self, SsaFrameId frame, uint pc) @feat(SLJIT) {
 
     LoopState layout;
     if (self.g.recoverable && self.plan.ssa_data != null) {
-        uint count;
-        foreach (entry : ssa_frame_entries(self.g, frame)) {
-            self.output(entry.value, pc);
-            int r2 = jit::reg_r(2);
-            self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.execution).offset);
-            self.e.mov(r2, 0, jit::SLJIT_MEM | r2, $reflect(SsaExecution.outputs).offset);
-            self.e.mov(jit::SLJIT_MEM | r2, (long)count * SsaPublishedValue::size + $reflect(SsaPublishedValue.reg).offset,
-                jit::SLJIT_IMM, entry.reg, jit::SLJIT_MOV_U32);
-            self.e.mov(jit::SLJIT_MEM | r2, (long)count * SsaPublishedValue::size + $reflect(SsaPublishedValue.value).offset, r0, 0);
-            count++;
-        }
-        self.e.mov(jit::reg_r(2), 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.execution).offset);
-        self.e.mov(jit::SLJIT_MEM | jit::reg_r(2), $reflect(SsaExecution.output_count).offset,
-            jit::SLJIT_IMM, count, jit::SLJIT_MOV_U32);
-        self.e.mov(jit::SLJIT_MEM | self.state, $reflect(LoopState.budget).offset, self.budget, 0);
-        if (pc == SSA_ENTRY_BAIL) {
-            self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.resume_pc).offset, jit::SLJIT_MOV_U32);
-        } else { self.e.mov(r0, 0, jit::SLJIT_IMM, pc); }
-        if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
+        self.snapshot_id(jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP), pc, frame);
         return;
     }
     ulong dirty = self.dirty_mask;
@@ -1436,6 +1425,7 @@ fn void SsaEmitter.publish_id(&self, SsaFrameId frame, uint pc) @feat(SLJIT) {
     if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
 }
 fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {
+    if (self.g.recoverable && self.plan.ssa_data != null) { self.deopt_stubs(); return; }
     void** labels = (void**)ssa_storage_alloc(self.g, self.g.exit_count, void*::size);
     if (self.g.failed) { self.e.failed = true; return; }
     for (uint i = 0; i < self.g.exit_count; i++) {

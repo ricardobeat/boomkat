@@ -36,7 +36,7 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     if (!site.native_resume) {
         // A RAW address still needed across an unknown mutation has no valid
         // continuation. This individual bytecode uses the exact VM fallback.
-        self.publish_id(ssa_frame_at_pc(self.g, self.pc), self.pc);
+        self.publish_id(site.before_frame, site.pc);
         return;
     }
     foreach (id : site.live_values[:site.live_count]) self.helper_save(id);

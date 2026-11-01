@@ -32,6 +32,12 @@ struct SsaFrame @feat(SLJIT) {
     uint first;
     uint count;
     uint pc;
+    CompiledFunction* function;
+    SsaFrameId parent;
+    uint callsite_pc;
+    uint return_reg;
+    int callee_value;
+    int receiver_value;
 }
 struct SsaStorageChunk @feat(SLJIT) {
     SsaStorageChunk* next;
@@ -118,13 +124,35 @@ fn SsaFrameId ssa_frame_capture(SsaGraph* g, uint pc, int* values, uint reg_coun
         g.recovery_entries = entries;
     }
     SsaFrameId id = g.frame_count++;
-    g.frame_table[id] = { g.recovery_count, count, pc };
+    g.frame_table[id] = { .first = g.recovery_count, .count = count, .pc = pc,
+        .function = g.cf, .parent = SSA_NO_FRAME, .callsite_pc = uint::max,
+        .return_reg = uint::max, .callee_value = -1, .receiver_value = -1 };
     for (uint reg = 0; reg < reg_count; reg++) {
         if (values[reg] < 0) continue;
         if (live_words != null && (reg / 32 >= word_count || (live_words[reg / 32] & (1U << (reg % 32))) == 0)) continue;
         g.recovery_entries[g.recovery_count++] = { reg, values[reg] };
     }
     return id;
+}
+
+// A logical inlined activation uses frame-local register numbers and links to
+// the suspended caller's exact call state. Locations remain ordinary SSA IDs.
+fn SsaFrameId ssa_frame_capture_child(SsaGraph* g, CompiledFunction* function,
+    SsaFrameId parent, uint callsite_pc, uint return_reg, int callee, int receiver,
+    uint pc, int* values, uint reg_count, uint* live_words = null, uint word_count = 0) @feat(SLJIT) {
+    if (parent == SSA_NO_FRAME || parent >= g.frame_count || function == null) {
+        g.failed = true;
+        return SSA_NO_FRAME;
+    }
+    SsaFrameId frame = ssa_frame_capture(g, pc, values, reg_count, live_words, word_count);
+    if (frame == SSA_NO_FRAME) return frame;
+    g.frame_table[frame].function = function;
+    g.frame_table[frame].parent = parent;
+    g.frame_table[frame].callsite_pc = callsite_pc;
+    g.frame_table[frame].return_reg = return_reg;
+    g.frame_table[frame].callee_value = callee;
+    g.frame_table[frame].receiver_value = receiver;
+    return frame;
 }
 fn SsaFrameEntry[] ssa_frame_entries(SsaGraph* g, SsaFrameId id) @feat(SLJIT) {
     if (id == SSA_NO_FRAME || id >= g.frame_count) return {};

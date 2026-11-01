@@ -10,7 +10,11 @@ import boomkat::hobject;
 fn int ssa_field_storage(SsaGraph* g, uint memory, int dynamic = -1) @feat(SLJIT) {
     LoopMemorySpec spec = g.plan.memory[memory];
     int receiver;
-    if (spec.kind == PROTO_FIELD && dynamic >= 0) {
+    if (g.recoverable && dynamic >= 0) {
+        // The binding helper may have produced a different receiver since
+        // entry. Its current SSA value is the authority after aliasing stores.
+        receiver = dynamic;
+    } else if (spec.kind == PROTO_FIELD && dynamic >= 0) {
         receiver = dynamic;
     } else if (spec.kind == SHAPE_FIELD) {
         receiver = dynamic;

@@ -97,6 +97,9 @@ struct LoopState @feat(SLJIT) {
 }
 struct LoopPlan @feat(SLJIT) {
     SsaPlanData* ssa_data;
+    SsaDeoptSite* ssa_deopt_sites;
+    SsaDeoptFrame* ssa_deopt_frames;
+    SsaDeoptChain ssa_deopt_chain;
     SsaHelperSite* ssa_helpers;
     uint ssa_value_capacity;
     ulong ssa_helper_calls @if($feat(SLJIT_STATS));
@@ -925,8 +928,12 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case NEWARR_CONST:
                 if (!plan.ssa_recoverable) return false;
             case CLOSURE:
-                if (!plan.ssa_recoverable || ins.get_bc() >= cf.inner_count
-                    || cf.inner_funcs[ins.get_bc()].capture_count != 0) return false;
+                if (!plan.ssa_recoverable || ins.get_bc() >= cf.inner_count) return false;
+            case NEWCELLS:
+            case GETCELL:
+            case SETCELL:
+            case MOVECELL:
+                if (!plan.ssa_recoverable) return false;
             case LDTRUE:
             case LDFALSE:
             case LDNULL:
