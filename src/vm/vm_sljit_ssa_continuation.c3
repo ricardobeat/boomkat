@@ -134,6 +134,10 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.activation_slot = (uint)(cold.act - &cold.vm.activation_storage[0]);
     execution.register_count = execution.function.num_regs;
     execution.value_capacity = values;
+    usz runtime_bytes = LoopState::size + ((usz)spills + edges) * ulong::size
+        + (usz)execution.register_count * (TVal::size + SsaPublishedValue::size)
+        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size);
+    if (runtime_bytes > SSA_DEFAULT_BUDGET.max_bytes) return false;
     execution.input_values = h.alloc_func(h.heap_udata, (usz)execution.register_count * TVal::size);
     execution.outputs = h.alloc_func(h.heap_udata, (usz)execution.register_count * SsaPublishedValue::size);
     execution.saved_bits = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ulong::size);

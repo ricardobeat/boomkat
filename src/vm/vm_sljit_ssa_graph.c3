@@ -203,6 +203,7 @@ struct SsaGraph @feat(SLJIT) {
     compiler::DecodedCfg decoded;
     SsaStorageChunk* storage;
     usz storage_bytes;
+    usz persistent_bytes;
     ulong work;
     SsaFrame* frame_table;
     uint frame_count;
