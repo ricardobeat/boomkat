@@ -725,10 +725,15 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
             }
             if (v.dst_reg >= 0) self.live[v.dst_reg] = (int)i;
         }
-        // A block without a branch hands its state to the block that follows
-        // it, so the join's values are written on that path too.
-        if (!self.g.blocks[b].returns && self.g.blocks[b].branch_pc == uint::max && b + 1 < self.g.block_count) {
-            self.join_copies(b, b + 1);
+        // Synthetic import/preheader edges need not follow bytecode order.
+        SsaBlock out = self.g.blocks[b];
+        if (!out.returns && out.branch_pc == uint::max && out.succ0 < self.g.block_count) {
+            self.join_copies(b, out.succ0);
+            if (out.succ0 != b + 1) {
+                if (self.pending_count == self.pending_capacity) { self.e.failed = true; return; }
+                self.pending_jump[self.pending_count] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+                self.pending_target[self.pending_count++] = out.succ0;
+            }
         }
     }
 }

@@ -53,7 +53,7 @@ fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
     }
     if (g.single_pass && g.direct && g.result_reg < g.reg_count) mark.keep(g.current[g.result_reg]);
     if (g.single_pass && g.plan.ssa_function == null && !g.direct) {
-        foreach (value : g.current[:g.reg_count]) mark.keep(value);
+        foreach (value : g.current[0:g.reg_count]) mark.keep(value);
     }
     mark.keep(g.cmp_lhs);
     mark.keep(g.cmp_rhs);

@@ -123,7 +123,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     g.block_exit = (SsaFrameId*)ssa_storage_alloc(g, g.block_count, SsaFrameId::size);
     if (g.failed) return false;
     for (uint b = 0; b < g.block_count; b++) g.block_exit[b] = SSA_NO_FRAME;
-    if (g.cyclic && !ssa_cyclic_liveness(g)) return false;
+    if ((g.cyclic || g.recoverable) && !ssa_cyclic_liveness(g)) return false;
     if (g.cyclic && !g.single_pass && g.block_count > 1) {
         // The outer latch must be built last: its register state is the
         // loop-carried input the final phi wiring below reads.
@@ -136,7 +136,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         g.cyclic_order[g.block_count - 1] = latch;
     }
     for (uint step = 0; step < g.block_count; step++) {
-        uint b = g.cyclic ? g.cyclic_order[step] : step;
+        uint b = g.cyclic || g.recoverable ? g.cyclic_order[step] : step;
         g.current_block = b;
         // A conversion emitted in one arm need not execute on another arm.
         if (!ssa_charge_work(g, (usz)g.value_capacity * 4)) return false;
@@ -147,7 +147,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         }
         g.block_first[b] = g.value_count;
         SsaBlock* block = &g.blocks[b];
-        for (uint pos = block.begin; pos <= block.end;) {
+        for (uint pos = block.begin; !block.synthetic && pos <= block.end;) {
             DecodedBytecode view = ssa_decoded_view(g, pos);
             if (!view.valid) return false;
             defer pos = view.next_pc;
