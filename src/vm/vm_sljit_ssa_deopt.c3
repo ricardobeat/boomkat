@@ -36,7 +36,7 @@ struct SsaDeoptSite @feat(SLJIT) {
     uint pc;
     usz allocated_bytes;
 }
-alias SsaDeoptChain = fn Instruction*(SsaExecution* execution, SsaDeoptSite* site);
+alias SsaDeoptChain @feat(SLJIT) = fn Instruction*(SsaExecution* execution, SsaDeoptSite* site);
 struct SsaDeoptHome @feat(SLJIT) { int reg; bool floating; }
 struct SsaDeoptStub @feat(SLJIT) { SsaDeoptSite* site; void* label; }
 

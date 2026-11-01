@@ -186,7 +186,7 @@ struct SsaFieldAccess @feat(SLJIT) {
     bool write;
 }
 
-fn bool ssa_access_field_build(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
+fn bool ssa_access_field_spec(SsaGraph* g, DecodedBytecode view, SsaFieldAccess* access) @feat(SLJIT) {
     DecodedInsn ins = view.insn;
     bool write = ins.op == Opcode.PUTPROPC;
     if (!write && ins.op != Opcode.GETPROPC && ins.op != Opcode.GETPROPC_CACHED) return false;
@@ -201,12 +201,27 @@ fn bool ssa_access_field_build(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
     PropFlags flags;
     int slot = function_shape_slot(shape, key.get_heapptr(), &flags);
     if (slot < 0 || (uint)slot != ic.prop_idx || flags.is_accessor || (write && !flags.writable)) return false;
+    *access = { ic.shape_id, ic.shape_gen, (uint)slot, write };
+    return true;
+}
+
+fn bool ssa_access_native_site(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
+    if (view.insn.op == Opcode.GETPROP || view.insn.op == Opcode.GETPROP_CACHE || view.insn.op == Opcode.PUTPROP) return true;
+    SsaFieldAccess access;
+    return ssa_access_field_spec(g, view, &access);
+}
+
+fn bool ssa_access_field_build(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
+    SsaFieldAccess spec;
+    if (!ssa_access_field_spec(g, view, &spec)) return false;
+    DecodedInsn ins = view.insn;
+    bool write = spec.write;
     int receiver = g.current[write ? ins.a : ins.b];
     int stored = write ? g.current[ins.b] : -1;
     if (receiver < 0 || (write && stored < 0)) return false;
     SsaFieldAccess* access = (SsaFieldAccess*)ssa_storage_alloc(g, 1, SsaFieldAccess::size);
     if (access == null) return false;
-    *access = { ic.shape_id, ic.shape_gen, (uint)slot, write };
+    *access = spec;
     receiver = ssa_convert(g, receiver, BOXED, false);
     if (write) stored = ssa_convert(g, stored, BOXED, false);
     ssa_use(g, receiver);
