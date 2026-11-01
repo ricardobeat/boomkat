@@ -10,6 +10,8 @@ fn bool ssa_vm_step_supported(Opcode op) @feat(SLJIT) {
     switch (op) {
         case CLOSURE: case INIT_SLOT:
         case GETVAR: case GETGLOBAL: case GETCAP: case GETBOUND: case TYPEOFIDENT:
+        case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC: case DECLB33GLOBAL:
+        case PUTVAR: case PUTVAR_ASSIGN: case PUTGLOBAL: case PUTCAP:
         case GETPROP: case GETPROP_CACHE: case GETPROPC: case GETPROPC_CACHED:
         case GETTHISC: case PUTPROP: case PUTPROPC: case PUTTHISC:
         case DELPROP: case TOSTR: case TOPROPKEY:
