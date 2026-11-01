@@ -20,13 +20,14 @@ fn void SsaMark.keep(&self, int id) @feat(SLJIT) {
 // are real users independent of ordinary instruction operands.
 fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
     if (g.value_count == 0) return 0;
-    bool* live = (bool*)g.heap.alloc_func(g.heap.heap_udata, (usz)g.value_count * bool::size);
-    if (live == null) return 0;
-    defer g.heap.free_func(g.heap.heap_udata, live);
-    mem::clear(live, (sz)(g.value_count * bool::size));
-    uint* work = (uint*)g.heap.alloc_func(g.heap.heap_udata, (usz)g.value_count * uint::size);
+    usz bytes = (usz)g.value_count * (bool::size + uint::size);
+    usz remaining = g.budget.max_bytes > g.storage_bytes ? g.budget.max_bytes - g.storage_bytes : 0;
+    if (bytes > remaining) return 0;
+    uint* work = (uint*)g.heap.alloc_func(g.heap.heap_udata, bytes);
     if (work == null) return 0;
     defer g.heap.free_func(g.heap.heap_udata, work);
+    mem::clear(work, (sz)bytes);
+    bool* live = (bool*)(work + g.value_count);
     SsaMark mark = { .graph = g, .live = live, .work = work };
     for (uint id = 0; id < g.value_count; id++) {
         SsaValue value = g.values[id];

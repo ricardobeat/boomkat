@@ -155,7 +155,10 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     }
     ssa_dominators(graph);
     if ((graph.cyclic || graph.recoverable) && !$feat(SLJIT_NO_CFG_OPT)) {
-        if (graph.value_count <= SSA_MAX_VALUES && graph.block_count <= SSA_BLOCKS) ssa_optimize_cfg(graph);
+        uint common = ssa_optimize_cfg(graph);
+        $if $feat(SLJIT_STATS):
+            if (common != 0) io::eprintfn("SLJIT SSA CSE line=%d blocks=%d values=%d reused=%d", cf.get_line(0), graph.block_count, graph.value_count, common);
+        $endif
         ssa_numeric_loads(graph);
     } else if (!graph.cyclic && !graph.recoverable) {
         ssa_invariant_cse(graph);

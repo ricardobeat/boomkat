@@ -35,160 +35,109 @@ fn SsaEffect ssa_effect(SsaOp op) @feat(SLJIT) {
     }
 }
 
-const uint SSA_EFFECT_WORDS = (SSA_MAX_VALUES + 63) / 64;
-struct SsaAvailable @feat(SLJIT) { ulong[SSA_EFFECT_WORDS] words; }
+// Cycle-entry boundaries discard all facts, including scalar expressions.
+// Every directed cycle has a non-increasing numbered edge, so clearing at each
+// such destination prevents facts from describing a previous dynamic execution
+// of a static SSA definition. LICM, rather than this availability pass, owns
+// proofs that a computation is genuinely invariant across those boundaries.
+struct SsaAvailable @feat(SLJIT) { ulong* words; uint count; }
 struct SsaCfgEffects @feat(SLJIT) {
-    SsaValue[SSA_MAX_VALUES] original;
-    SsaAvailable[SSA_MAX_VALUES] dependencies;
-    SsaAvailable[SSA_MAX_VALUES] definition_kill;
-    SsaAvailable[SSA_BLOCKS] input;
-    SsaAvailable[SSA_BLOCKS] output;
-    SsaAvailable[SSA_BLOCKS] iteration_kill;
+    SsaValue* original;
+    uint value_count;
+    SsaAvailable* input;
+    SsaAvailable* output;
     SsaAvailable candidates;
     SsaAvailable memory;
-    uint reachable;
+    SsaAvailable work_in;
+    SsaAvailable work_out;
+    bool* reachable;
+    bool* boundary;
+    uint* buckets;
+    uint* next;
+    uint bucket_count;
+    bool local_only;
 }
-
-fn void SsaAvailable.include(&self, uint id) @feat(SLJIT) {
-    self.words[id >> 6] |= 1UL << (id & 63);
-}
-fn bool SsaAvailable.contains(&self, uint id) @feat(SLJIT) {
-    return (self.words[id >> 6] & (1UL << (id & 63))) != 0;
-}
-fn void SsaAvailable.merge(&self, SsaAvailable* other) @feat(SLJIT) {
-    for (uint w = 0; w < SSA_EFFECT_WORDS; w++) self.words[w] |= other.words[w];
+fn void SsaAvailable.include(&self, uint id) @feat(SLJIT) { self.words[id >> 6] |= 1UL << (id & 63); }
+fn bool SsaAvailable.contains(&self, uint id) @feat(SLJIT) => (self.words[id >> 6] & (1UL << (id & 63))) != 0;
+fn void SsaAvailable.clear(&self) @feat(SLJIT) { for (uint w = 0; w < self.count; w++) self.words[w] = 0; }
+fn void SsaAvailable.copy(&self, SsaAvailable* other) @feat(SLJIT) {
+    for (uint w = 0; w < self.count; w++) self.words[w] = other.words[w];
 }
 fn void SsaAvailable.intersect(&self, SsaAvailable* other) @feat(SLJIT) {
-    for (uint w = 0; w < SSA_EFFECT_WORDS; w++) self.words[w] &= other.words[w];
+    for (uint w = 0; w < self.count; w++) self.words[w] &= other.words[w];
 }
 fn void SsaAvailable.exclude(&self, SsaAvailable* other) @feat(SLJIT) {
-    for (uint w = 0; w < SSA_EFFECT_WORDS; w++) self.words[w] &= ~other.words[w];
+    for (uint w = 0; w < self.count; w++) self.words[w] &= ~other.words[w];
 }
 fn bool SsaAvailable.same(&self, SsaAvailable* other) @feat(SLJIT) {
-    for (uint w = 0; w < SSA_EFFECT_WORDS; w++) if (self.words[w] != other.words[w]) return false;
+    for (uint w = 0; w < self.count; w++) if (self.words[w] != other.words[w]) return false;
     return true;
 }
-
-// Unlike normal operands, JOIN.a/b name a join record and a bytecode register.
-// Its incoming values do not belong to the current dynamic iteration yet.
-fn void ssa_effect_dependencies(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
-    for (uint i = 0; i < g.value_count; i++) {
-        SsaValue v = facts.original[i];
-        SsaAvailable* deps = &facts.dependencies[i];
-        // Every execution replaces this static definition's dynamic value.
-        deps.include(i);
-        if (v.op == JOIN || v.op == PHI) {
-            continue;
-        }
-        switch (v.op) {
-            case ARG: case RECEIVER: case BINDING: case CONST_I: case CONST_F:
-            case CONST_BOXED: case NOP: case GOTO: break;
-            default:
-                if (v.a >= 0 && v.a < (int)i) deps.merge(&facts.dependencies[v.a]);
-                if (v.b >= 0 && v.b < (int)i) deps.merge(&facts.dependencies[v.b]);
-                if (v.op == SELECT && v.imm >= 0 && v.imm < (long)i) deps.merge(&facts.dependencies[v.imm]);
-                break;
-        }
-    }
-    for (uint i = 0; i < g.value_count; i++) {
-        if (!facts.candidates.contains(i)) continue;
-        for (uint definition = 0; definition < g.value_count; definition++) {
-            if (facts.dependencies[i].contains(definition)) facts.definition_kill[definition].include(i);
-        }
-    }
-    // JOIN values are emitted by incoming edges, before block_first. Killing
-    // here also handles headers whose value IDs were built after a later block.
-    for (uint b = 0; b < g.block_count; b++) {
-        SsaAvailable definitions;
-        for (uint i = 0; i < g.value_count; i++) {
-            SsaValue v = facts.original[i];
-            if ((v.op == JOIN || v.op == PHI) && v.block == (int)b) definitions.include(i);
-        }
-        for (uint i = 0; i < g.value_count; i++) {
-            for (uint w = 0; w < SSA_EFFECT_WORDS; w++) {
-                if ((facts.dependencies[i].words[w] & definitions.words[w]) == 0) continue;
-                facts.iteration_kill[b].include(i);
-                break;
-            }
-        }
-    }
-}
-
 fn void ssa_effect_step(SsaCfgEffects* facts, uint id, SsaAvailable* available) @feat(SLJIT) {
-    available.exclude(&facts.definition_kill[id]);
     SsaEffect effect = ssa_effect(facts.original[id].op);
-    if (effect == UNKNOWN) { *available = {}; return; }
+    if (effect == UNKNOWN) { available.clear(); return; }
     if (effect == WRITE) available.exclude(&facts.memory);
     if (facts.candidates.contains(id)) available.include(id);
 }
-
-// Facts are reaching expression definitions and reaching store versions. A
-// read/store fact survives a join only when that exact version survives EVERY
-// reachable predecessor, including backedges. Entry's empty boundary prevents
-// a self-supporting loop fact from becoming available on its first iteration.
 fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
-    facts.reachable = 1;
     for (uint b = 0; b < g.block_count; b++) {
-        if (g.blocks[b].external) facts.reachable |= 1U << b;
+        facts.boundary[b] = b == 0 || g.blocks[b].external;
+        facts.reachable[b] = facts.boundary[b];
+        for (uint p = 0; p < ssa_pred_count(g, b); p++) {
+            if (ssa_pred(g, b, p) >= b) facts.boundary[b] = true;
+        }
     }
     bool changed = true;
     while (changed) {
         changed = false;
-        for (uint b = 1; b < g.block_count; b++) {
-            if ((facts.reachable & (1U << b)) != 0) continue;
-            for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-                if ((facts.reachable & (1U << g.blocks[b].preds[p])) == 0) continue;
-                facts.reachable |= 1U << b;
+        for (uint b = 0; b < g.block_count; b++) {
+            if (facts.reachable[b]) continue;
+            for (uint p = 0; p < ssa_pred_count(g, b); p++) {
+                if (!facts.reachable[ssa_pred(g, b, p)]) continue;
+                facts.reachable[b] = true;
                 changed = true;
                 break;
             }
         }
     }
+    if (facts.local_only) return;
     for (uint b = 0; b < g.block_count; b++) {
-        if (b != 0 && !g.blocks[b].external && (facts.reachable & (1U << b)) != 0) facts.output[b] = facts.candidates;
+        if (facts.reachable[b] && !facts.boundary[b]) facts.output[b].copy(&facts.candidates);
     }
     changed = true;
     while (changed) {
         changed = false;
         for (uint b = 0; b < g.block_count; b++) {
-            if ((facts.reachable & (1U << b)) == 0) continue;
-            SsaAvailable incoming;
-            // Every external invocation imports fresh interpreter state.
-            // Its synthetic predecessor contributes no facts, even when a
-            // native backedge also targets this block.
-            if (b != 0 && !g.blocks[b].external) {
-                incoming = facts.candidates;
-                for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-                    uint pred = g.blocks[b].preds[p];
-                    if ((facts.reachable & (1U << pred)) != 0) incoming.intersect(&facts.output[pred]);
+            if (!facts.reachable[b]) continue;
+            facts.work_in.clear();
+            if (!facts.boundary[b]) {
+                facts.work_in.copy(&facts.candidates);
+                for (uint p = 0; p < ssa_pred_count(g, b); p++) {
+                    uint pred = ssa_pred(g, b, p);
+                    if (facts.reachable[pred]) facts.work_in.intersect(&facts.output[pred]);
                 }
             }
-            incoming.exclude(&facts.iteration_kill[b]);
-            facts.input[b] = incoming;
-            SsaAvailable outgoing = incoming;
-            for (int node = ssa_block_first_value(g, b); node >= 0; node = ssa_next_value(g, node)) ssa_effect_step(facts, (uint)node, &outgoing);
-            if (!outgoing.same(&facts.output[b])) {
-                facts.output[b] = outgoing;
+            facts.input[b].copy(&facts.work_in);
+            facts.work_out.copy(&facts.work_in);
+            for (int id = ssa_block_first_value(g, b); id >= 0; id = ssa_next_value(g, id)) {
+                ssa_effect_step(facts, (uint)id, &facts.work_out);
+            }
+            if (!facts.work_out.same(&facts.output[b])) {
+                facts.output[b].copy(&facts.work_out);
                 changed = true;
             }
         }
     }
 }
-
-fn bool ssa_effect_dominates(SsaGraph* g, uint prior, uint current) @feat(SLJIT) {
-    SsaValue a = g.values[prior];
-    SsaValue b = g.values[current];
-    return ssa_value_dominates(g, (int)prior, (int)current);
-}
-
-// Freeze keys to the analyzed graph. New COPY aliases cannot change the
-// dependency relation underneath the fixed-point facts while rewriting.
+fn bool ssa_effect_dominates(SsaGraph* g, uint prior, uint current) @feat(SLJIT)
+    => ssa_value_dominates(g, (int)prior, (int)current);
 fn int ssa_effect_alias(SsaCfgEffects* facts, int value) @feat(SLJIT) {
     uint guard;
-    while (value >= 0 && guard++ < SSA_MAX_VALUES && facts.original[value].op == COPY) value = facts.original[value].a;
+    while (value >= 0 && guard++ < facts.value_count && facts.original[value].op == COPY) {
+        value = facts.original[value].a;
+    }
     return value;
 }
-
 fn bool ssa_effect_address(SsaCfgEffects* facts, int left, int right) @feat(SLJIT) {
     left = ssa_effect_alias(facts, left);
     right = ssa_effect_alias(facts, right);
@@ -226,59 +175,125 @@ fn int ssa_effect_forward(SsaGraph* g, SsaCfgEffects* facts, SsaValue store, Ssa
     return -1;
 }
 
-// No instruction moves and no store disappears. Failed guards still publish
-// their original pre-bytecode frame. Replacing a repeated successful guard is
-// safe only while its dominating proof remains available for the same values.
-// Frame and edge references keep their IDs; the CFG allocator resolves COPY.
-fn void ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
-    SsaCfgEffects* facts = (SsaCfgEffects*)g.heap.alloc_func(g.heap.heap_udata, SsaCfgEffects::size);
-    if (facts == null) return;
-    defer g.heap.free_func(g.heap.heap_udata, facts);
-    mem::clear(facts, (sz)SsaCfgEffects::size);
-    for (uint i = 0; i < g.value_count; i++) {
-        facts.original[i] = g.values[i];
-        SsaEffect effect = ssa_effect(g.values[i].op);
-        if (effect == SCALAR || effect == LAYOUT || effect == READ || effect == WRITE) facts.candidates.include(i);
-        if (effect == READ || effect == WRITE) facts.memory.include(i);
+fn uint ssa_effect_hash(SsaCfgEffects* facts, SsaValue value) @feat(SLJIT) {
+    uint hash = 2166136261;
+    bool address = value.op == LOAD || value.op == STORE;
+    hash = (hash ^ (uint)(address ? SsaOp.LOAD : value.op)) * 16777619;
+    hash = (hash ^ (uint)value.imm) * 16777619;
+    hash = (hash ^ (uint)((ulong)value.imm >> 32)) * 16777619;
+    int a = ssa_effect_alias(facts, value.a);
+    if (address && a >= 0 && (facts.original[a].op == STORAGE || facts.original[a].op == PROTO_STORAGE)) {
+        SsaValue storage = facts.original[a];
+        hash = (hash ^ (uint)storage.op) * 16777619;
+        hash = (hash ^ (uint)storage.imm) * 16777619;
+        a = ssa_effect_alias(facts, storage.a);
     }
-    ssa_effect_dependencies(g, facts);
-    ssa_effect_available(g, facts);
+    hash = (hash ^ (uint)a) * 16777619;
+    if (!address) {
+        hash = (hash ^ (uint)value.rep) * 16777619;
+        hash = (hash ^ (uint)ssa_effect_alias(facts, value.b)) * 16777619;
+        hash = (hash ^ (uint)value.target) * 16777619;
+        hash = (hash ^ (uint)value.branch_op) * 16777619;
+    }
+    return hash & (facts.bucket_count - 1);
+}
+
+// Global facts are budgeted dynamically. If a large block/value product would
+// exceed analysis workspace, keep the same guard-safe CSE within each block;
+// there is no fixed graph-size refusal and no unbounded dependency matrix.
+fn uint ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
+    if (g.value_count == 0 || g.block_count == 0) return 0;
+    uint words = (g.value_count + 63) / 64;
+    uint buckets = 1;
+    while (buckets < g.value_count * 2) buckets *= 2;
+    usz fixed_bytes = (usz)g.value_count * SsaValue::size
+        + (usz)g.block_count * 2 * SsaAvailable::size
+        + (usz)(buckets + g.value_count) * uint::size
+        + (usz)g.block_count * 2 * bool::size;
+    usz remaining = g.budget.max_bytes > g.storage_bytes ? g.budget.max_bytes - g.storage_bytes : 0;
+    uint rows = g.block_count * 2 + 4;
+    usz bytes = fixed_bytes + (usz)rows * words * ulong::size;
+    bool local_only = bytes > remaining;
+    if (local_only) { rows = 4; bytes = fixed_bytes + (usz)rows * words * ulong::size; }
+    if (bytes > remaining) return 0;
+    char* arena = (char*)g.heap.alloc_func(g.heap.heap_udata, bytes);
+    if (arena == null) return 0;
+    defer g.heap.free_func(g.heap.heap_udata, arena);
+    mem::clear(arena, (sz)bytes);
+    SsaCfgEffects facts;
+    facts.value_count = g.value_count;
+    facts.bucket_count = buckets;
+    facts.local_only = local_only;
+    char* cursor = arena;
+    facts.original = (SsaValue*)cursor; cursor += (usz)g.value_count * SsaValue::size;
+    facts.input = (SsaAvailable*)cursor; cursor += (usz)g.block_count * SsaAvailable::size;
+    facts.output = (SsaAvailable*)cursor; cursor += (usz)g.block_count * SsaAvailable::size;
+    ulong* bits = (ulong*)cursor; cursor += (usz)rows * words * ulong::size;
+    facts.work_in = { bits, words };
+    facts.work_out = { bits + words, words };
+    facts.candidates = { bits + words * 2, words };
+    facts.memory = { bits + words * 3, words };
+    if (!local_only) for (uint b = 0; b < g.block_count; b++) {
+        facts.input[b] = { bits + (usz)(4 + b * 2) * words, words };
+        facts.output[b] = { bits + (usz)(5 + b * 2) * words, words };
+    }
+    facts.buckets = (uint*)cursor; cursor += (usz)buckets * uint::size;
+    facts.next = (uint*)cursor; cursor += (usz)g.value_count * uint::size;
+    facts.reachable = (bool*)cursor; cursor += g.block_count * bool::size;
+    facts.boundary = (bool*)cursor;
+    for (uint id = 0; id < g.value_count; id++) facts.original[id] = g.values[id];
+    for (uint id = 0; id < g.value_count; id++) {
+        SsaEffect effect = ssa_effect(facts.original[id].op);
+        if (effect == READ || effect == WRITE) facts.memory.include(id);
+        if (effect != SCALAR && effect != LAYOUT && effect != READ && effect != WRITE) continue;
+        facts.candidates.include(id);
+        uint bucket = ssa_effect_hash(&facts, facts.original[id]);
+        facts.next[id] = facts.buckets[bucket];
+        facts.buckets[bucket] = id + 1;
+    }
+    ssa_effect_available(g, &facts);
+    uint rewritten;
     for (uint b = 0; b < g.block_count; b++) {
-        if ((facts.reachable & (1U << b)) == 0) continue;
-        SsaAvailable available = facts.input[b];
+        if (!facts.reachable[b]) continue;
+        facts.work_in.clear();
+        if (!local_only) facts.work_in.copy(&facts.input[b]);
         for (int node = ssa_block_first_value(g, b); node >= 0; node = ssa_next_value(g, node)) {
-            uint i = (uint)node;
-            // A LOAD (or any other definition) can execute again on a cycle
-            // even without a nearby PHI. Its old dependent expressions belong
-            // to that earlier execution and must expire before matching.
-            available.exclude(&facts.definition_kill[i]);
-            SsaValue original = facts.original[i];
+            uint id = (uint)node;
+            SsaValue original = facts.original[id];
             SsaEffect effect = ssa_effect(original.op);
             if (effect == SCALAR || effect == LAYOUT || effect == READ) {
-                for (uint prior = 0; prior < g.value_count; prior++) {
-                    if (!available.contains(prior) || !ssa_effect_dominates(g, prior, i)) continue;
+                uint bucket = ssa_effect_hash(&facts, original);
+                for (uint item = facts.buckets[bucket]; item != 0; item = facts.next[item - 1]) {
+                    uint prior = item - 1;
+                    if (prior == id || !facts.work_in.contains(prior) || !ssa_effect_dominates(g, prior, id)) continue;
                     SsaValue earlier = facts.original[prior];
                     int replacement = -1;
                     if (effect == READ && earlier.op == STORE) {
-                        replacement = ssa_effect_forward(g, facts, earlier, original);
-                    } else if (ssa_effect_same(facts, earlier, original)) {
+                        replacement = ssa_effect_forward(g, &facts, earlier, original);
+                    } else if (ssa_effect_same(&facts, earlier, original)) {
                         replacement = (int)prior;
                     }
                     if (replacement < 0) continue;
                     if (ssa_has_result(original.op)) {
                         replacement = ssa_alias(g, replacement);
-                        if (!ssa_effect_dominates(g, (uint)replacement, i)) continue;
-                        SsaValue* value = &g.values[i];
+                        if (!ssa_effect_dominates(g, (uint)replacement, id)) continue;
+                        SsaValue* value = &g.values[id];
                         value.op = COPY;
                         value.a = replacement;
                         value.b = 0;
                         value.imm = 0;
+                        value.proof_bits = 0;
                         if (g.values[replacement].last < value.last) g.values[replacement].last = value.last;
-                    } else { g.values[i].op = NOP; }
+                    } else {
+                        g.values[id].op = NOP;
+                        g.values[id].proof_bits = 0;
+                    }
+                    rewritten++;
                     break;
                 }
             }
-            ssa_effect_step(facts, i, &available);
+            ssa_effect_step(&facts, id, &facts.work_in);
         }
     }
+    return rewritten;
 }

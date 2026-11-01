@@ -34,3 +34,24 @@ try {
 }
 optimizationCheck(throws === 1 && state.count === 3, 'exact state before throw');
 console.log('SSA optimization semantics: PASS');
+// More than sixteen blocks exercises dynamically sized cyclic fact tables.
+function optimizedManyBlocks(state, count) {
+    for (var index = 0; index < count; index++) {
+        var added = 0;
+        if (index & 1) added = added + 1;
+        if (index & 2) added = added + 1;
+        if (index & 4) added = added + 1;
+        if (index & 8) added = added + 1;
+        if (index & 16) added = added + 1;
+        if (index & 1) added = added + 1;
+        if (index & 2) added = added + 1;
+        if (index & 4) added = added + 1;
+        state.count = state.count + added;
+    }
+    return state.count;
+}
+for (var warm = 0; warm < 96; warm++) {
+    var state = {count: 0};
+    optimizationCheck(optimizedManyBlocks(state, 32) === 128, 'dynamic cyclic facts');
+}
+console.log('SSA dynamic effects: PASS');
