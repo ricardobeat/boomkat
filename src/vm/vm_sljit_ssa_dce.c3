@@ -48,6 +48,8 @@ fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
         SsaFrameEntry[] entries = ssa_frame_entries(g, frame);
         if (!ssa_charge_work(g, entries.len + 1)) return 0;
         foreach (entry : entries) mark.keep(entry.value);
+        mark.keep(g.frame_table[frame].callee_value);
+        mark.keep(g.frame_table[frame].receiver_value);
     }
     if (g.single_pass && g.direct && g.result_reg < g.reg_count) mark.keep(g.current[g.result_reg]);
     if (g.single_pass && g.plan.ssa_function == null && !g.direct) {

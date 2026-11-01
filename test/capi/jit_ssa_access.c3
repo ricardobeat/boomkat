@@ -125,3 +125,27 @@ fn void check_scalable_ssa_memory_callbacks() {
     $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued > 0); $endif
     io::printn("scalable SSA memory callbacks: PASS native continuation after storage mutation");
 }
+
+fn void check_effectful_ssa_inline() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    eval(&context, $embed("../jit_ssa_effect_inline.js"));
+    String[2] names = { "effectInlineCaller", "effectCallbackCaller" };
+    foreach (name : names) {
+        CompiledFunction* cf = named_function(&runtime, name);
+        @check(cf != null && cf.sljit_function != null);
+        LoopPlan* body = ((FunctionPlan*)cf.sljit_function).ssa_region;
+        @check(body != null && body.hits > 0 && body.ssa_inline_sites == 1);
+        @check(body.ssa_deopt_chain != null);
+        $if $feat(SLJIT_STATS):
+            @check(body.ssa_inline_entries > 0 && body.ssa_inline_recoveries > 0);
+            io::printfn("effectful SSA inline: PASS %s entries=%d recoveries=%d", name,
+                body.ssa_inline_entries, body.ssa_inline_recoveries);
+        $endif
+    }
+}

@@ -397,6 +397,9 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case CALL_VAR:
                     {
                         if (g.recoverable) {
+                            int inlined = ssa_effect_inline_call(g, view);
+                            if (g.failed) return false;
+                            if (inlined >= 0) break;
                             if (function_call_op(ins.op)) {
                                 int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
                                 ssa_result(g, value, ins.a, pos);

@@ -128,6 +128,7 @@ struct SsaValue @feat(SLJIT) {
     int block;
     int target;
     int fallto;
+    CompiledFunction* inline_target;
     SsaFrameId before_frame;
     SsaFrameId after_frame;
     int schedule_prev;

@@ -4,6 +4,7 @@ import boomkat::bytecode;
 import boomkat::compiler;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::env;
 import boomkat::types;
 
 // This first effectful consumer expands a straight-line numeric/store prefix.
@@ -36,7 +37,8 @@ fn CompiledFunction* ssa_effect_inline_target(SsaGraph* g, DecodedBytecode view)
         }
     }
     if (value.op == CONST_BOXED) {
-        TVal boxed = bitcast((ulong)value.imm, TVal);
+        TVal boxed;
+        if (!ssa_decode_boxed_bits((ulong)value.imm, &boxed)) return null;
         if (boxed.is_object() && boxed.get_heapptr() != null) {
             HObject* function = boxed.get_heapptr();
             if (function.is_callable() && !function.is_bound() && !function.is_proxy()
@@ -61,7 +63,14 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
     if (target == null || target == g.cf || !target.call_flags.lean_call || !target.call_flags.ignores_this
         || target.needs_env() || target.capture_count != 0 || target.is_class_ctor()
         || target.arguments_in_reg() || target.uses_arguments() || target.realm != g.cf.realm
-        || argc != target.num_formals || target.code_count < 2 || target.num_regs == 0) return -1;
+        || argc != target.num_formals || target.code_count < 2 || target.code_count > g.budget.max_words
+        || target.num_regs == 0 || target.num_regs > 65536) return -1;
+    for (uint pc = 0; pc < target.code_count;) {
+        DecodedBytecode view = bytecode::decode_bytecode(target.code, target.code_count, pc);
+        if (!view.valid || !ssa_decoded_registers_fit(target, view)
+            || (view.insn.op == Opcode.LDCONST && view.insn.get_bc() >= target.const_count)) return -1;
+        pc = view.next_pc;
+    }
     // Inspect the admitted prefix before changing the graph. Warm own-slot
     // feedback is only a hypothesis; ACCESS_FIELD emits the actual guards.
     bool effect;
@@ -101,25 +110,28 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
         callee = ssa_value(g, HELPER, BOXED, -1, -1, (long)SsaHelperKind.RESOLVE_CALLEE.ordinal);
         ssa_result(g, callee, call.insn.a, call.pc);
         g.values[callee].before_frame = parent;
-        g.values[callee].after_frame = parent;
     } else { callee = g.current[base]; }
     ssa_use(g, callee);
     int check = ssa_value(g, CHECKFN, BOXED, callee, -1, (long)target);
     g.values[check].before_frame = parent;
-    int reserve = ssa_value(g, HELPER, BOXED, -1, -1, (long)SsaHelperKind.INLINE_RESERVE.ordinal);
+    int reserve = ssa_value(g, HELPER, BOXED, callee, -1, (long)SsaHelperKind.INLINE_RESERVE.ordinal);
+    g.values[reserve].inline_target = target;
     g.values[reserve].before_frame = parent;
     g.values[reserve].target = (int)target.num_regs + (int)FRAME_SCRATCH_SLOTS;
     g.values[reserve].fallto = 1;
     int undefined = ssa_value(g, CONST_BOXED, BOXED, -1, -1, (long)(types::TAG_UNDEFINED << 48));
+    int receiver = call.insn.op == Opcode.CALL ? g.current[base + 1] : undefined;
     for (uint reg = 0; reg < target.num_regs; reg++) mapped[reg] = undefined;
     for (uint reg = 0; reg < argc; reg++) mapped[reg] = g.current[base + 2 + reg];
     int result = undefined;
     bool returned;
     g.plan.ssa_deopt_chain = &ssa_inline_materialize_chain;
+    defer g.current_pc = call.pc;
     for (uint index = 0; index < count; index++) {
         DecodedBytecode view = cfg.nodes[index].view;
         DecodedInsn ins = view.insn;
-        SsaFrameId before = ssa_effect_child_frame(g, target, parent, call, callee, undefined,
+        g.current_pc = view.pc;
+        SsaFrameId before = ssa_effect_child_frame(g, target, parent, call, callee, receiver,
             view.pc, mapped, &sets[count + index]);
         if (g.failed) return -1;
         uint first = g.value_count;
@@ -196,6 +208,7 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
     // A marker belongs to the completed caller call, not to the preflight or
     // one of the child's coincidentally equal numeric PCs.
     ssa_use(g, result);
+    g.current_pc = call.pc;
     int marker = ssa_value(g, COPY, g.values[result].rep, result, -1, 0);
     ssa_result(g, marker, call.insn.a, call.pc);
     g.values[marker].before_frame = parent;
@@ -203,6 +216,7 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
     if (call.insn.op != Opcode.CALL && base + 1 != call.insn.a) g.current[base + 1] = undefined;
     g.values[marker].after_frame = ssa_frame_capture(g, call.next_pc, g.current, g.reg_count,
         call.next_pc <= g.plan.end ? g.recovery_live[call.next_pc - g.plan.begin].words : null, g.reg_words);
+    g.plan.ssa_inline_sites++;
     return marker;
 }
 
@@ -211,6 +225,7 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
 // uses the normal activation initializer and owning VM publication operations.
 fn Instruction* ssa_inline_materialize_chain(SsaExecution* execution, SsaDeoptSite* site) @feat(SLJIT) {
     ColdCtx* cold = execution.cold;
+    $if $feat(SLJIT_STATS): execution.plan.ssa_inline_recoveries++; $endif
     Vm* vm = cold.vm;
     Heap* h = cold.heap;
     uint depth;
@@ -246,6 +261,7 @@ fn Instruction* ssa_inline_materialize_chain(SsaExecution* execution, SsaDeoptSi
             h.set_reg_undefined(caller.bottom + base + 1);
         }
         Activation* act = activation_begin(vm, callee);
+        if (callee.is_refcounted()) ((HeapHeader*)function).incref();
         act.parent = caller;
         act.func = target;
         act.var_env = function.extra.func.var_env;

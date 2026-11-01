@@ -2,6 +2,8 @@ module boomkat::vm;
 
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hobject;
+import boomkat::env;
 import boomkat::types;
 import std::core::mem;
 
@@ -28,6 +30,8 @@ struct SsaHelperSite @feat(SLJIT) {
     SsaHelperKind kind;
     uint reserve_regs;
     uint reserve_depth;
+    uint callee_value;
+    CompiledFunction* inline_target;
     SsaFrameId before_frame;
     SsaFrameId after_frame;
     uint* live_values;
@@ -83,6 +87,8 @@ fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     site.kind = (SsaHelperKind)g.values[node].imm;
     site.reserve_regs = (uint)g.values[node].target;
     site.reserve_depth = (uint)g.values[node].fallto;
+    site.callee_value = (uint)ssa_alias(g, g.values[node].a);
+    site.inline_target = g.values[node].inline_target;
     site.before_frame = point.before_frame;
     site.after_frame = point.after_frame;
     if (site.before_frame != SSA_NO_FRAME && g.frame_table[site.before_frame].parent != SSA_NO_FRAME) {
@@ -314,6 +320,17 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
             cold.heap.tval_copy_ref(cold.act.bottom + ins.a, &callee);
             track_heap_store(cold.act, cold.act.bottom + ins.a, ins.a);
         } else {
+            if (site.callee_value >= execution.value_capacity) return REPLAY;
+            TVal callee = execution.roots[site.callee_value].value;
+            if (!callee.is_object() || callee.get_heapptr() == null) return REPLAY;
+            HObject* function = callee.get_heapptr();
+            if (!function.is_callable() || function.is_bound() || function.is_proxy()
+                || function.callable_kind() != hobject::CallableKind.COMPILED_FN) return REPLAY;
+            CompiledFunction* target = function.extra.func.comp_func;
+            EnvRecord* lex = function.extra.func.lex_env;
+            if (target != site.inline_target || target.realm != cold.heap.realm
+                || !target.call_flags.lean_plain || !target.call_flags.ignores_this
+                || function.extra.func.var_env == null || (lex != null && lex.is_with())) return REPLAY;
             if (site.reserve_depth > cold.vm.activation_capacity - cold.vm.activation_count) return REPLAY;
             TVal* top = callback_frame_top(cold.vm);
             usz needed = (usz)(top - cold.vm.valstack) + site.reserve_regs;
@@ -322,6 +339,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
         if (!ssa_execution_reload(execution)) return REPLAY;
         cold.heap.safepoint_gc_on_call();
         if (!sljit_artifact_is_live(execution.owner, execution.owner_generation)) return REPLAY;
+        $if $feat(SLJIT_STATS): if (site.kind == INLINE_RESERVE) execution.plan.ssa_inline_entries++; $endif
         execution.outcome = COMPLETE;
         return COMPLETE;
     }

@@ -104,6 +104,9 @@ struct LoopPlan @feat(SLJIT) {
     uint ssa_value_capacity;
     ulong ssa_helper_calls @if($feat(SLJIT_STATS));
     ulong ssa_helper_continued @if($feat(SLJIT_STATS));
+    uint ssa_inline_sites;
+    ulong ssa_inline_entries @if($feat(SLJIT_STATS));
+    ulong ssa_inline_recoveries @if($feat(SLJIT_STATS));
     LoopNative native;
     JitArtifact artifact;
     JitArtifact* code_owner;
