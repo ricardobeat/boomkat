@@ -142,10 +142,68 @@ fn void check_effectful_ssa_inline() {
         LoopPlan* body = ((FunctionPlan*)cf.sljit_function).ssa_region;
         @check(body != null && body.hits > 0 && body.ssa_inline_sites == 1);
         @check(body.ssa_deopt_chain != null);
+        @check(body.ssa_data.native_accesses >= 2);
+        for (SsaHelperSite* helper = body.ssa_helpers; helper != null; helper = helper.next) {
+            // Binding resolution and reservation are internal preflight;
+            // the callee call itself must not be a generic runtime helper.
+            @check(helper.kind != SsaHelperKind.OPERATION);
+        }
         $if $feat(SLJIT_STATS):
             @check(body.ssa_inline_entries > 0 && body.ssa_inline_recoveries > 0);
             io::printfn("effectful SSA inline: PASS %s entries=%d recoveries=%d", name,
                 body.ssa_inline_entries, body.ssa_inline_recoveries);
         $endif
     }
+    runtime.rt.heap.jit_stress = true;
+    eval(&context, "for(var q=0;q<24;q++){var a={x:1};if(effectInlineCaller(a,2,2)!==4||a.x!==2)throw 'inline stress';}"
+        "var a={x:1},stressCalls=0;if(effectCallbackCaller(a,function(v){stressCalls++;return v+3;},2)!==5||a.x!==2||stressCalls!==1)throw 'inline callback stress';");
+    runtime.rt.heap.jit_stress = false;
+    // The callee has its own WIDE register space. Its local 300 must never
+    // index the caller's eight-register emitter live map.
+    CompiledFunction* child = named_function(&runtime, "effectInlineChild");
+    CompiledFunction* caller = named_function(&runtime, "effectInlineCaller");
+    Instruction* saved_code = child.code;
+    uint saved_count = child.code_count;
+    ushort saved_regs = child.num_regs;
+    void* saved_ic = child.ic_entries;
+    void* saved_var_ic = child.var_ic_entries;
+    uint saved_ic_count = child.ic_count;
+    uint saved_var_ic_count = child.var_ic_count;
+    uint key;
+    for (uint pc = 0; pc < child.code_count; pc++) {
+        if (child.code[pc].op == Opcode.GETPROPC || child.code[pc].op == Opcode.GETPROPC_CACHED) {
+            key = child.code[pc].c;
+            break;
+        }
+    }
+    vm::sljit_function_free(runtime.rt.heap, child);
+    vm::sljit_function_free(runtime.rt.heap, caller);
+    child.sljit_function_calls = 0;
+    caller.sljit_function_calls = 0;
+    Instruction[32] code;
+    ICEntry[32] caches;
+    VarICEntry[32] bindings;
+    uint count;
+    scalable_abc(&code[0], &count, Opcode.LDREG, 300, 0, 0);
+    scalable_abc(&code[0], &count, Opcode.GETPROPC, 301, 300, key);
+    scalable_abc(&code[0], &count, Opcode.ADDI, 302, 301, 1);
+    scalable_abc(&code[0], &count, Opcode.PUTPROPC, 300, 302, key);
+    scalable_abc(&code[0], &count, Opcode.ADD, 303, 302, 1);
+    scalable_abc(&code[0], &count, Opcode.RET, 303, 0, 0);
+    child.code = &code[0]; child.code_count = count; child.num_regs = 304;
+    child.ic_entries = &caches[0]; child.ic_count = count;
+    child.var_ic_entries = &bindings[0]; child.var_ic_count = count;
+    defer {
+        if (caller.sljit_function != null) vm::sljit_function_free(runtime.rt.heap, caller);
+        if (child.sljit_function != null) vm::sljit_function_free(runtime.rt.heap, child);
+        child.code = saved_code; child.code_count = saved_count; child.num_regs = saved_regs;
+        child.ic_entries = saved_ic; child.ic_count = saved_ic_count;
+        child.var_ic_entries = saved_var_ic; child.var_ic_count = saved_var_ic_count;
+    }
+    eval(&context, "for(var q=0;q<160;q++){var a={x:1};if(effectInlineCaller(a,2,2)!==4||a.x!==2)throw 'wide inline';}"
+        "var wideCalls=0,a={x:1};if(effectInlineCaller(a,{valueOf:function(){wideCalls++;return 2;}},2)!==4||a.x!==2||wideCalls!==1)throw 'wide inline recovery';");
+    LoopPlan* wide_body = ((FunctionPlan*)caller.sljit_function).ssa_region;
+    @check(wide_body != null && wide_body.ssa_inline_sites == 1 && wide_body.hits > 0);
+    $if $feat(SLJIT_STATS): @check(wide_body.ssa_inline_entries > 0 && wide_body.ssa_inline_recoveries > 0); $endif
+    io::printn("effectful SSA inline: PASS WIDE child registers + exact late recovery");
 }

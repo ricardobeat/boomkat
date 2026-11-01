@@ -25,6 +25,7 @@ fn bool ssa_effect_inline_op(Opcode op) @feat(SLJIT) {
 fn CompiledFunction* ssa_effect_inline_target(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
     DecodedInsn ins = view.insn;
     if (ins.op == Opcode.CALL_VAR || ins.op == Opcode.CALL_GLOBAL) {
+        if (view.payload_pc >= g.cf.var_ic_count) return null;
         return function_inline_binding(g.cf, view.payload_pc, g.heap);
     }
     int callee = ssa_alias(g, g.current[ins.b]);
@@ -33,6 +34,7 @@ fn CompiledFunction* ssa_effect_inline_target(SsaGraph* g, DecodedBytecode view)
     if (value.op == HELPER) {
         DecodedBytecode source = ssa_decoded_view(g, value.pc);
         if (source.insn.op == Opcode.GETVAR || source.insn.op == Opcode.GETGLOBAL) {
+            if (source.payload_pc >= g.cf.var_ic_count) return null;
             return function_inline_binding(g.cf, source.payload_pc, g.heap);
         }
     }
@@ -62,7 +64,8 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
     uint argc = fused ? call.insn.b : call.insn.c;
     if (target == null || target == g.cf || !target.call_flags.lean_call || !target.call_flags.ignores_this
         || target.needs_env() || target.capture_count != 0 || target.is_class_ctor()
-        || target.arguments_in_reg() || target.uses_arguments() || target.realm != g.cf.realm
+        || target.arguments_in_reg() || target.uses_arguments() || target.call_flags.rest_length_only
+        || target.realm != g.cf.realm
         || argc != target.num_formals || target.code_count < 2 || target.code_count > g.budget.max_words
         || target.num_regs == 0 || target.num_regs > 65536) return -1;
     for (uint pc = 0; pc < target.code_count;) {
@@ -120,7 +123,7 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
     g.values[reserve].target = (int)target.num_regs + (int)FRAME_SCRATCH_SLOTS;
     g.values[reserve].fallto = 1;
     int undefined = ssa_value(g, CONST_BOXED, BOXED, -1, -1, (long)(types::TAG_UNDEFINED << 48));
-    int receiver = call.insn.op == Opcode.CALL ? g.current[base + 1] : undefined;
+    int call_receiver = call.insn.op == Opcode.CALL ? g.current[base + 1] : undefined;
     for (uint reg = 0; reg < target.num_regs; reg++) mapped[reg] = undefined;
     for (uint reg = 0; reg < argc; reg++) mapped[reg] = g.current[base + 2 + reg];
     int result = undefined;
@@ -131,7 +134,7 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
         DecodedBytecode view = cfg.nodes[index].view;
         DecodedInsn ins = view.insn;
         g.current_pc = view.pc;
-        SsaFrameId before = ssa_effect_child_frame(g, target, parent, call, callee, receiver,
+        SsaFrameId before = ssa_effect_child_frame(g, target, parent, call, callee, call_receiver,
             view.pc, mapped, &sets[count + index]);
         if (g.failed) return -1;
         uint first = g.value_count;
@@ -235,16 +238,19 @@ fn Instruction* ssa_inline_materialize_chain(SsaExecution* execution, SsaDeoptSi
     execution.output_count = 0;
     foreach (i, entry : root.entries[:root.count]) {
         execution.outputs[i].reg = entry.reg;
-        assert(ssa_deopt_read(execution, entry.location, &execution.outputs[i].value));
+        bool read = ssa_deopt_read(execution, entry.location, &execution.outputs[i].value);
+        assert(read);
     }
     execution.output_count = root.count;
-    assert(ssa_execution_publish(execution));
+    bool published = ssa_execution_publish(execution);
+    assert(published);
     for (uint level = depth; level > 0; level--) {
         SsaDeoptFrame* frame = site.frame;
         for (uint up = 1; up < level; up++) frame = frame.parent;
         TVal callee, receiver;
-        assert(ssa_deopt_read(execution, frame.callee, &callee));
-        assert(ssa_deopt_read(execution, frame.receiver, &receiver));
+        bool callee_read = ssa_deopt_read(execution, frame.callee, &callee);
+        bool receiver_read = ssa_deopt_read(execution, frame.receiver, &receiver);
+        assert(callee_read && receiver_read);
         HObject* function = callee.get_heapptr();
         CompiledFunction* target = frame.function;
         assert(callee.is_object() && function != null && function.extra.func.comp_func == target);
@@ -276,7 +282,8 @@ fn Instruction* ssa_inline_materialize_chain(SsaExecution* execution, SsaDeoptSi
         act.set_this_owned(h, receiver);
         foreach (entry : frame.entries[:frame.count]) {
             TVal value;
-            assert(entry.reg < target.num_regs && ssa_deopt_read(execution, entry.location, &value));
+            bool read = ssa_deopt_read(execution, entry.location, &value);
+            assert(entry.reg < target.num_regs && read);
             h.tval_copy_ref(bottom + entry.reg, &value);
             track_heap_store(act, bottom + entry.reg, entry.reg);
         }
