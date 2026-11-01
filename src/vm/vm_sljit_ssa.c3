@@ -173,6 +173,10 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         }
         if (removed) ssa_function_liveness(graph);
     }
+    uint dead = ssa_dce(graph);
+    $if $feat(SLJIT_STATS):
+        if (dead != 0) io::eprintfn("SLJIT SSA DCE line=%d removed=%d", cf.get_line(0), dead);
+    $endif
     ssa_allocate(graph);
     if (graph.failed) return null;
     uint phi_count;
