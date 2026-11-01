@@ -27,13 +27,9 @@ const bool SSA_CYCLIC     = !$feat(SLJIT_NO_SSA_CYCLIC);
 // slower before whole-function cyclic SSA existed; with it, Navier-Stokes drops
 // about 9% in paired mini runs and the rest of the panel is unchanged.
 const bool SSA_CYCLIC_REGIONS = true;
-const uint SSA_MAX_VALUES = 512;
 const uint SSA_MAX_SPILL  = 128;
 const uint SSA_HOMES      = 8;
-const uint SSA_EXITS      = 128;
 const uint SSA_CSE        = 64;
-const uint SSA_BLOCKS     = 16;
-const uint SSA_JOINS      = 16;
 
 enum SsaRep : char {
     BOXED,
