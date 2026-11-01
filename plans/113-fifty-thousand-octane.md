@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `fe88ada7` (frameless capture and global reads, multi-field leaf writes, grown function fixup directories); prior checkpoint rat `de24cf29` (whole function bodies with cyclic SSA: loop-header joins, late-bound backedge inputs, converting parallel copies and a per-backedge budget poll); prior checkpoint rat `ac7abcb7` (frameless threaded numeric typed-array reads and integer stores); prior checkpoint rat `95fbeb07` (edge-safe in-place SSA join coalescing); prior checkpoint rat `a132b1ef` (correct SSA predecessor edges and cycle-correct dominance); prior checkpoint rat `be81dac9` (bounded WIDE-aware continuation liveness), preceded by `f4efb2a2` (correct polymorphic and inherited inline property offsets); previous checkpoint rat `9966cd7f` (shared bounded WIDE decoding for interpreter and loop operand analysis); prior checkpoint rat `48fb7172` (safe JIT refusal and retry when inline-cache allocation fails); prior checkpoint rat `c74029b2` (mandatory regexp substring rejection); prior checkpoint rat `2a063511` (one-load scaled dense-array reads); prior checkpoint rat `34f224e0` (SSA latch budget recovery without artificial branch-operand phis); prior checkpoint rat `9da6427e` (bounded CFG-based SSA loop continuation liveness with explicit latch and exception recovery); prior checkpoint rat `5aae48bc` (single-pass shared register-use collection for loop alias analysis); prior checkpoint rat `ba119b09` (conservative handling of unsupported WIDE register windows; direct embedding coverage; removes unconditional remap diagnostics); prior checkpoint rat `4228a786` (fixup-allocation size assertion and scalar-recovery regression only; release binary identical to `fa11ea2d`); prior runtime checkpoint rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `ec422de6` (native remainder and census/bench tooling); prior checkpoint rat `b049ee6c` (native remainder in loop and function bodies); prior checkpoint rat `bf6626c1` (nested loops as one cyclic SSA region again) and `078e74b2` (named-read fixture coverage); prior checkpoint rat `fe88ada7` (frameless capture and global reads, multi-field leaf writes, grown function fixup directories); prior checkpoint rat `de24cf29` (whole function bodies with cyclic SSA: loop-header joins, late-bound backedge inputs, converting parallel copies and a per-backedge budget poll); prior checkpoint rat `ac7abcb7` (frameless threaded numeric typed-array reads and integer stores); prior checkpoint rat `95fbeb07` (edge-safe in-place SSA join coalescing); prior checkpoint rat `a132b1ef` (correct SSA predecessor edges and cycle-correct dominance); prior checkpoint rat `be81dac9` (bounded WIDE-aware continuation liveness), preceded by `f4efb2a2` (correct polymorphic and inherited inline property offsets); previous checkpoint rat `9966cd7f` (shared bounded WIDE decoding for interpreter and loop operand analysis); prior checkpoint rat `48fb7172` (safe JIT refusal and retry when inline-cache allocation fails); prior checkpoint rat `c74029b2` (mandatory regexp substring rejection); prior checkpoint rat `2a063511` (one-load scaled dense-array reads); prior checkpoint rat `34f224e0` (SSA latch budget recovery without artificial branch-operand phis); prior checkpoint rat `9da6427e` (bounded CFG-based SSA loop continuation liveness with explicit latch and exception recovery); prior checkpoint rat `5aae48bc` (single-pass shared register-use collection for loop alias analysis); prior checkpoint rat `ba119b09` (conservative handling of unsupported WIDE register windows; direct embedding coverage; removes unconditional remap diagnostics); prior checkpoint rat `4228a786` (fixup-allocation size assertion and scalar-recovery regression only; release binary identical to `fa11ea2d`); prior runtime checkpoint rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 [Typed-array bytecode, fresh profile, ARM64, correctness and full scores](113-fifty-thousand-octane/typed-array-dispatch-2026-10-31/report.md): rat `ac7abcb7` removes the helper frame from the common numeric read and integer-store handlers while preserving float and unusual-buffer fallbacks. Mandreel mini improves 554→544 ms in two paired screens; three full-Octane pairs give median 6552→6563, too variable for a suite gain. A full-suite Box2D swing did not reproduce in nine mini or five ten-times-longer pairs; longer Gameboy changed +0.45%. The 50K target and cyclic function SSA remain open.
 
@@ -203,6 +203,50 @@ a receiver replaced mid-loop so the site's shape never settles, two reads in
 one block, reads feeding loop-carried accumulators, and reads mixing with
 canonical numeric lanes. Every case checks an interpreted reference, so the
 differential run compares the function and SSA tiers with the interpreter.
+
+## Native remainder, 2026-11-01
+
+`%` was the largest single interpreter-exit source in the panel: gbemu's
+`putImageData` checksum loop bailed at its one MOD bytecode on every
+iteration (about 553,000 native-to-interpreter round trips, and the census
+had the JIT slower than the interpreter for gbemu, 255 ms vs 232 ms). MOD
+is now compiled in the loop and function tiers (rat `b049ee6c`).
+
+JavaScript's remainder is fmod, which SLJIT cannot express, so the
+truncated quotient runs only for exact integer operands and everything
+else exits to the interpreter, which computes those cases exactly.
+Operands arrive as fastints or as integral doubles from the function
+tier's canonical numeric homes, so each operand is first canonicalized to
+an exact 48-bit integer (fastints sign-extend; doubles need range,
+integrality and -0 guards) and anything else, including non-integral
+doubles and references, exits. The two integral results fmod would
+rewrite are written directly: a zero divisor yields the canonical NaN and
+a zero remainder of a negative dividend yields the NaN-boxed -0. The
+quotient uses `SLJIT_DIVMOD_SW` on the sign-extended payloads, which
+cannot trap because a fastint is never integer-min. The result is always
+an integer remainder, -0 or NaN, so it matches the interpreter's
+canonical representations.
+
+Measured with five interleaved `--jit` pairs against `bf6626c1`: gbemu's
+MOD exits drop from 552,898 to 0 and gbemu runs 273 to 255 ms (-6.6%);
+the rest of the mini panel is flat within noise. Box2d and Mandreel
+compile no MOD at all, so their code is bit-identical and the few-ms
+movement there is layout noise (Richards alone swings 79-167 ms on both
+sides). Slow-operand loops pay about two exits per iteration through the
+resume protocol (guard miss, interpreter runs the op, re-entry at the
+block start misses the guard again); this is the existing guard-miss
+protocol, and a resume that skips the already-executed op is the
+worthwhile follow-up before pursuing hot `%` on doubles. The fixture
+`test/sljit_mod.js` covers the sign and zero-divisor rules, the -0
+results, non-fastint operands, and the hashing, wrapping, signed and
+typed-array loop shapes.
+
+Tooling (rat `ec422de6`): the census no longer needs project.json edits
+or binary copies; `just sljit-stats --jit --script <file>` builds the
+`boomkat_sljitstats` target and reports coverage, exits by opcode and
+code budget. `scripts/bench_interleaved.py` gains `--jit` and
+`--engine-args` and normalizes benchmark self-timing lines, so the
+Octane minis can be A/B'd directly instead of through ad-hoc loops.
 
 ## Shared bytecode decoder, 2026-10-31
 
