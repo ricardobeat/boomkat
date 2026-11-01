@@ -918,6 +918,33 @@ fn void check_artifact_inventory(Heap* h) @feat(SLJIT) {
     @check(code == h.jit_code_bytes && metadata == h.jit_metadata_bytes && retired == h.jit_retired_code_bytes);
 }
 
+// Expose the lexical binding object's ordinary slots as a receiver. Native
+// object stores and GETVAR then genuinely name the same backing slot.
+fn void check_helper_binding_store_alias() @feat(SLJIT) {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    eval(&context, "let aliasLexicalValue=1;function aliasLexicalLoop(o,n){var sum=0;for(var i=0;i<n;i++){o.aliasLexicalValue=o.aliasLexicalValue+1;sum=sum+aliasLexicalValue;}return sum;}");
+    TVal bindings;
+    bindings.set_object(runtime.rt.vm.global_lex_env.bindings);
+    JsValue object = context.root(bindings)!!;
+    defer context.release(object);
+    JsValue global = context.global()!!;
+    defer context.release(global);
+    context.set(global, "aliasLexicalObject", object)!!;
+    @check(runtime.set_jit());
+    for (uint i = 0; i < 160; i++) eval(&context,
+        "aliasLexicalValue=1;if(aliasLexicalLoop(aliasLexicalObject,8)!==44||aliasLexicalValue!==9)throw 'binding/store alias';");
+    CompiledFunction* cf = named_function(&runtime, "aliasLexicalLoop");
+    @check(cf != null && cf.sljit_function != null);
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan.ssa_region != null && plan.ssa_region.ssa_helpers != null);
+    $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued != 0); $endif
+}
+
 fn void check_numeric_pipeline() @feat(SLJIT) {
     // Earlier fixtures deliberately poison indexed prototypes. Use a fresh
     // runtime so this check requires successful compiled push continuations.
@@ -1292,6 +1319,7 @@ fn void main() {
     check_dependency_gc();
     check_artifact_retirement();
     check_helper_result_receiver_alias();
+    check_helper_binding_store_alias();
     check_parameter_alias_roles();
     check_decoded_bytecode();
     check_decoded_register_uses();

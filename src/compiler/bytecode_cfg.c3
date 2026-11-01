@@ -108,6 +108,7 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
         case GETPROTO: case GETCAP: case PUTCAP: case TONUMERIC:
         case NEWOBJ_SHAPE: case INIT_SLOT: case PUTPROPC: case GETTHISC: case PUTTHISC:
         case CLOSURE:
+        case NEWCELLS: case GETCELL: case SETCELL: case MOVECELL:
         case ADD_FUSED: case INC_LT: return true;
         default: return false;
     }
@@ -122,19 +123,24 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
     switch (op) {
         case LDREG: case UNP: case UNM: case BNOT: case LNOT: case TYPEOF: case GETPROTO: case TONUMERIC:
         case GETPROPC: case GETPROPC_CACHED:
+        case GETCELL:
             return { .b_read = true, .a_write = true };
         case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case LDTHIS: case GETTHISC: case VOID:
         case GETVAR: case GETGLOBAL: case GETBOUND: case GETCAP: case TYPEOFIDENT:
         case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL:
         case NEWOBJ: case NEWARR: case NEWARR_CONST: case NEWOBJ_SHAPE:
+        case NEWCELLS:
             return { .a_write = true };
         case INC: case INC_LT: case DEC: case TOPROPKEY: case TOSTR:
             return { .a_read = true, .a_write = true };
         case GETPROP: case GETPROP_CACHE: case DELPROP:
             return { .b_read = true, .c_read = true, .a_write = true };
         case PUTPROPC:
+        case SETCELL:
             return { .a_read = true, .b_read = true };
+        case MOVECELL:
+            return { .a_read = true, .b_read = true, .a_write = true };
         case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC:
             return { .a_read = true };
         case PUTVAR: case PUTVAR_ASSIGN: case PUTGLOBAL: case PUTCAP: case DECLB33GLOBAL:
