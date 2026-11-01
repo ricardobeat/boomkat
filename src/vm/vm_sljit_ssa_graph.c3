@@ -215,6 +215,9 @@ struct SsaGraph @feat(SLJIT) {
     // Interpreter state before each bytecode, including values whose only
     // remaining use is recovery after a guard. IR-use liveness is insufficient.
     int[LOOP_REGS][SSA_SPAN + 1] frames;
+    // Registers semantically observable when recovery resumes this bytecode.
+    // Only recoverable whole-function graphs populate these canonical masks.
+    ulong[SSA_SPAN] recovery_live;
     int[LOOP_REGS] phi;
     int[LOOP_REGS] arg;
     SsaRep[LOOP_REGS] rep;
@@ -1012,6 +1015,10 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
     }
     for (uint reg = 0; reg < LOOP_REGS; reg++) join.phi[reg] = -1;
     for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        if (g.recoverable && (g.cyclic_live[b] & (1UL << reg)) == 0) {
+            g.current[reg] = -1;
+            continue;
+        }
         int first   = g.block_exit[block.preds[0]][reg];
         bool differ = false;
         for (uint p = 1; p < block.pred_count; p++) {

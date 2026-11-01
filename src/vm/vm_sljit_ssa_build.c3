@@ -141,6 +141,17 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             Instruction ins = cf.code[pos];
             uint at         = pos - plan.begin;
             g.frames[at] = g.current;
+            if (g.recoverable) {
+                // Dead slots remain owned by the real VM frame. Only current
+                // semantic inputs need publication before this bytecode runs.
+                for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
+                    if ((g.recovery_live[at] & (1UL << reg)) == 0) {
+                        g.frames[at][reg] = -1;
+                    } else if (g.frames[at][reg] < 0) {
+                        return false;
+                    }
+                }
+            }
             // Conversions can consume a bytecode operand before a later guard in
             // the same operation. Keep the original value until that operation
             // commits, so replay observes the exact pre-instruction frame.
@@ -547,7 +558,9 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 if (g.current[g.result_reg] < 0) return false;
                 ssa_use(g, g.current[g.result_reg]);
             }
-        } else {
+        } else if (!g.recoverable) {
+            // Recoverable CALL/RET exits already consume their exact live
+            // pre-bytecode frame; no final whole-frame completion is emitted.
             foreach (value : g.current) if (value >= 0) ssa_use(g, value);
         }
         return !g.failed;

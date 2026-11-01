@@ -79,10 +79,13 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
     }
     compiler::RegSet scratch = { .words = &words[cfg.instruction_count * 2][0], .word_count = 2 };
     compiler::bytecode_cfg_liveness(&cfg, &sets[0], &sets[cfg.instruction_count], &scratch);
-    for (uint b = 0; b < g.block_count; b++) {
-        uint index = cfg.pc_to_index[g.blocks[b].begin];
+    for (uint index = 0; index < cfg.instruction_count; index++) {
         uint* live = sets[cfg.instruction_count + index].words;
-        g.cyclic_live[b] = (ulong)live[0] | ((ulong)live[1] << 32);
+        uint pc = cfg.nodes[index].view.pc;
+        g.recovery_live[pc - g.plan.begin] = (ulong)live[0] | ((ulong)live[1] << 32);
+    }
+    for (uint b = 0; b < g.block_count; b++) {
+        g.cyclic_live[b] = g.recovery_live[g.blocks[b].begin - g.plan.begin];
     }
     return true;
 }
