@@ -397,7 +397,7 @@ fn bool sljit_function_backedge(Instruction* pc, CompiledFunction* cf, Heap* h) 
         if (sljit_function_resumes(cf.code + target, cf)) return true;
         // A wider function's uncovered backedge must reach the loop tier.
         // Once that tier rejects this edge, stop bailing to the switch.
-        return cf.num_regs > LOOP_REGS && (cf.sljit_loop_rejected & (1UL << (offset & 63))) == 0;
+        return cf.num_regs > LOOP_REGS && !sljit_loop_blocked(cf, offset);
     }
     return cf.sljit_function_calls != uint::max && ++cf.sljit_function_calls >= sljit_warmup(h);
 }

@@ -122,8 +122,13 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     Heap* h = runtime.rt.heap;
     SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
     @check(graph != null);
-    defer h.free_func(h.heap_udata, graph);
+    defer vm::ssa_graph_free(graph);
     std::core::mem::clear(graph, (sz)SsaGraph::size);
+    graph.heap = h;
+    graph.reg_count = vm::LOOP_REGS;
+    graph.reg_words = (graph.reg_count + 31) / 32;
+    @check(vm::ssa_graph_tables(graph, 11));
+    @check(vm::ssa_reserve_values(graph, 3));
     // The real splitter must not invent a successor to entry for a missing
     // second edge. A loop has only its actual latch as an entry predecessor.
     Instruction[5] code = {
@@ -138,8 +143,8 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     graph.cf = &cf; graph.plan = &plan; graph.single_pass = true;
     @check(vm::ssa_split_blocks(graph));
     @check(graph.block_count == 4 && graph.blocks[0].pred_count == 0);
-    @check(graph.blocks[1].succ1 == vm::SSA_BLOCKS && graph.blocks[2].succ1 == vm::SSA_BLOCKS);
-    @check(graph.blocks[3].succ0 == vm::SSA_BLOCKS && graph.blocks[3].succ1 == vm::SSA_BLOCKS);
+    @check(graph.blocks[1].succ1 == vm::SSA_NO_BLOCK && graph.blocks[2].succ1 == vm::SSA_NO_BLOCK);
+    @check(graph.blocks[3].succ0 == vm::SSA_NO_BLOCK && graph.blocks[3].succ1 == vm::SSA_NO_BLOCK);
     code[4] = bytecode::make_a_sbx(Opcode.IF_TRUE, 0, -5);
     graph.single_pass = false;
     @check(vm::ssa_split_blocks(graph));
@@ -161,6 +166,8 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     @check(graph.block_count == 11 && graph.blocks[0].pred_count == 0);
 
     graph.block_count = 4;
+    uint[16] predecessors;
+    for (uint b = 0; b < 4; b++) graph.blocks[b].preds = &predecessors[b * 4];
     // Exhaust all four-node graphs, including irreducible cycles, multiple
     // backedges, self loops, forward diamonds and unreachable blocks.
     for (uint edges = 0; edges < 65536; edges++) {
@@ -202,6 +209,51 @@ fn void check_ssa_cyclic_dominance(JsRuntime* runtime) {
     @check(graph.values[2].op == SsaOp.COPY && graph.values[2].a == 1);
 }
 
+// Exercise structural boundaries independently of JavaScript register reuse.
+fn void check_ssa_dynamic_storage(JsRuntime* runtime) {
+    Heap* h = runtime.rt.heap;
+    SsaGraph* graph = (SsaGraph*)h.alloc_func(h.heap_udata, SsaGraph::size);
+    @check(graph != null);
+    *graph = { .heap = h, .reg_count = 70, .reg_words = 3 };
+    defer vm::ssa_graph_free(graph);
+    @check(vm::ssa_graph_tables(graph, 70));
+    graph.block_count = 70;
+    for (uint b = 0; b < graph.block_count; b++) {
+        graph.blocks[b].succ0 = b == 69 ? 32 : b + 1;
+        graph.blocks[b].succ1 = vm::SSA_NO_BLOCK;
+    }
+    @check(vm::ssa_collect_predecessors(graph));
+    vm::ssa_dominators(graph);
+    @check(!graph.failed && graph.dominator_words == 3);
+    @check(vm::ssa_dominates(graph, 0, 69) && vm::ssa_dominates(graph, 32, 69));
+    @check(vm::ssa_dominates(graph, 64, 69) && !vm::ssa_dominates(graph, 64, 32));
+    graph.blocks[40].external = true;
+    vm::ssa_dominators(graph);
+    @check(!vm::ssa_dominates(graph, 0, 69) && !vm::ssa_dominates(graph, 32, 69));
+    @check(vm::ssa_dominates(graph, 40, 69));
+    int first = vm::ssa_value(graph, SsaOp.CONST_I, SsaRep.INT32, -1, -1, 123);
+    int[2] registers = { first, -1 };
+    SsaFrameId frame = vm::ssa_frame_capture(graph, 7, &registers[0], 2);
+    for (uint value = 0; value < 1024; value++) {
+        int id = vm::ssa_value(graph, SsaOp.CONST_I, SsaRep.INT32, -1, -1, value);
+        @check(id == (int)value + 1);
+    }
+    @check(!graph.failed && graph.value_count == 1025);
+    @check(graph.values[first].imm == 123 && graph.values[1024].imm == 1023);
+    @check(vm::ssa_frame_lookup(graph, frame, 0) == first && vm::ssa_frame_lookup(graph, frame, 1) == -1);
+    graph.budget.max_values = graph.value_count;
+    @check(!vm::ssa_reserve_values(graph, graph.value_capacity + 1) && graph.failed);
+    vm::ssa_result(graph, 0, 1, 2);
+    vm::ssa_use(graph, 0);
+    @check(vm::ssa_convert(graph, 0, SsaRep.F64, false) == 0);
+    SsaGraph failed = { .heap = h, .budget = vm::SSA_DEFAULT_BUDGET };
+    failed.budget.max_bytes = 1;
+    @check(vm::ssa_value(&failed, SsaOp.CONST_I, SsaRep.INT32, -1, -1, 1) == 0);
+    @check(failed.failed && failed.value_count == 0 && failed.values != null);
+    vm::ssa_result(&failed, 0, 0, 0);
+    vm::ssa_storage_free(&failed);
+}
+
 // Verify WIDE-aware CFG joins, loop fixed points and recovery from the real
 // SSA continuation consumer. Targets into WIDE payloads must refuse.
 fn void check_decoded_liveness(JsRuntime* runtime) {
@@ -232,6 +284,8 @@ fn void check_decoded_liveness(JsRuntime* runtime) {
     defer h.free_func(h.heap_udata, graph);
     std::core::mem::clear(graph, (sz)SsaGraph::size);
     graph.cf = &cf; graph.plan = &plan; graph.heap = h;
+    graph.reg_count = vm::LOOP_REGS;
+    graph.reg_words = (graph.reg_count + 31) / 32;
     bool[vm::LOOP_REGS] live;
     @check(vm::ssa_continuation_live(graph, &live[0]));
     @check(live[7] && !live[6]);
@@ -751,6 +805,18 @@ fn void check_artifact_retirement() @feat(SLJIT) {
     context.create(&runtime)!!;
     defer context.destroy();
     @check(runtime.set_jit());
+    // These PCs collide in the former modulo-64 rejection mask. Capacity
+    // retry must preserve the unsupported site and leave a third site open.
+    CompiledFunction admission = { .code_count = 130 };
+    Heap* admission_heap = runtime.rt.heap;
+    vm::sljit_loop_decline(admission_heap, &admission, 1, true);
+    vm::sljit_loop_decline(admission_heap, &admission, 65);
+    @check(vm::sljit_loop_blocked(&admission, 1) && vm::sljit_loop_blocked(&admission, 65));
+    @check(!vm::sljit_loop_blocked(&admission, 129));
+    vm::sljit_budget_retry(admission_heap);
+    vm::sljit_budget_retry_function(admission_heap, &admission);
+    @check(!vm::sljit_loop_blocked(&admission, 1) && vm::sljit_loop_blocked(&admission, 65));
+    admission_heap.free_func(admission_heap.heap_udata, admission.sljit_loop_admission);
     eval(&context, "function ownerTarget(x){return x+3;}");
     for (uint i = 0; i < 160; i++) eval(&context, "if(ownerTarget(4)!==7)throw 'owner';");
     Heap* h = runtime.rt.heap;
@@ -817,6 +883,68 @@ fn void check_helper_result_receiver_alias() @feat(SLJIT) {
     $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued != 0); $endif
 }
 
+fn void check_artifact_inventory(Heap* h) @feat(SLJIT) {
+    usz code, metadata, retired;
+    JitArtifact* previous;
+    for (JitArtifact* owner = h.jit_artifacts; owner != null; owner = owner.next) {
+        @check(owner.previous == previous && owner.state == JitArtifactState.LIVE);
+        code += owner.code_bytes;
+        metadata += owner.metadata_bytes;
+        previous = owner;
+        if (owner.kind == JitArtifactKind.FUNCTION_CODE) {
+            FunctionPlan* plan = owner.payload;
+            @check(owner == &plan.artifact && owner.code_bytes == plan.code_bytes);
+            @check(owner.function.sljit_function == plan);
+            if (plan.ssa_region != null) {
+                @check(plan.ssa_region.code_owner == owner);
+                @check(owner.metadata_bytes >= FunctionPlan::size + vm::sljit_loop_metadata_bytes(plan.ssa_region));
+            }
+            for (FunctionCallLink* link = plan.calls; link != null; link = link.next) {
+                @check(link.registered);
+                bool found;
+                for (FunctionCallLink* incoming = link.target.sljit_incoming_calls; incoming != null; incoming = incoming.target_next) {
+                    if (incoming == link) { found = true; break; }
+                }
+                @check(found);
+            }
+        }
+    }
+    for (JitArtifact* owner = h.jit_retired_artifacts; owner != null; owner = owner.retired_next) {
+        @check(owner.state == JitArtifactState.RETIRED);
+        code += owner.code_bytes;
+        metadata += owner.metadata_bytes;
+        retired += owner.code_bytes;
+    }
+    @check(code == h.jit_code_bytes && metadata == h.jit_metadata_bytes && retired == h.jit_retired_code_bytes);
+}
+
+// Expose the lexical binding object's ordinary slots as a receiver. Native
+// object stores and GETVAR then genuinely name the same backing slot.
+fn void check_helper_binding_store_alias() @feat(SLJIT) {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    eval(&context, "let aliasLexicalValue=1;function aliasLexicalLoop(o,n){var sum=0;for(var i=0;i<n;i++){o.aliasLexicalValue=o.aliasLexicalValue+1;sum=sum+aliasLexicalValue;}return sum;}");
+    TVal bindings;
+    bindings.set_object(runtime.rt.vm.global_lex_env.bindings);
+    JsValue object = context.root(bindings)!!;
+    defer context.release(object);
+    JsValue global = context.global()!!;
+    defer context.release(global);
+    context.set(global, "aliasLexicalObject", object)!!;
+    @check(runtime.set_jit());
+    for (uint i = 0; i < 160; i++) eval(&context,
+        "aliasLexicalValue=1;if(aliasLexicalLoop(aliasLexicalObject,8)!==44||aliasLexicalValue!==9)throw 'binding/store alias';");
+    CompiledFunction* cf = named_function(&runtime, "aliasLexicalLoop");
+    @check(cf != null && cf.sljit_function != null);
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan.ssa_region != null && plan.ssa_region.ssa_helpers != null);
+    $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued != 0); $endif
+}
+
 fn void check_numeric_pipeline() @feat(SLJIT) {
     // Earlier fixtures deliberately poison indexed prototypes. Use a fresh
     // runtime so this check requires successful compiled push continuations.
@@ -831,7 +959,9 @@ fn void check_numeric_pipeline() @feat(SLJIT) {
     eval(&context, CFG_SOURCE);
     CompiledFunction* numeric = named_function(&runtime, "jitCfgNumbers");
     @check(numeric != null && numeric.sljit_function != null);
-    @check(((FunctionPlan*)numeric.sljit_function).numeric_homes != 0);
+    FunctionPlan* numeric_plan = numeric.sljit_function;
+    @check(numeric_plan.numeric_homes != 0
+        || (numeric_plan.ssa_region != null && numeric_plan.ssa_region.hits != 0));
     CompiledFunction* calls = named_function(&runtime, "jitCfgCalls");
     @check(calls != null && calls.sljit_function != null);
     FunctionPlan* plan = calls.sljit_function;
@@ -1095,6 +1225,15 @@ fn void check_ssa_call_regions(JsRuntime* runtime, JsContext* context) {
         $if $feat(SLJIT_STATS): ulong calls_before = watched_plan.ssa_fast_calls; $endif
         for (uint i = 0; i < 100; i++) eval(context, "regionWatchDrive(regionWatch);");
         $if $feat(SLJIT_STATS): @check(watched_plan.ssa_fast_calls > calls_before); $endif
+        $if $feat(SLJIT_ADAPTIVE) && $feat(SLJIT_STATS):
+            // This completion returns before the ordinary call entry publishes
+            // a frame. Its owning plan must still be marked as recently used.
+            watched_plan.last_use = 0;
+            ulong fast_before = watched_plan.ssa_fast_calls;
+            eval(context, "regionWatchDrive(regionWatch);");
+            @check(watched_plan.ssa_fast_calls == fast_before + 1);
+            @check(watched_plan.last_use != 0);
+        $endif
         // Both first prototypes have an empty own layout; only their identity
         // distinguishes the two chains.
         eval(context, "Object.setPrototypeOf(regionWatch,regionAlt);regionWatch.v2.value=0;regionWatchDrive(regionWatch);if(regionWatch.v2.value!==91)throw 'watched first prototype';Object.setPrototypeOf(regionWatch,regionOriginProto);");
@@ -1173,12 +1312,15 @@ fn void check_function_missing_caches(JsRuntime* runtime) {
 
 fn void main() {
     check_scalable_ssa_gateway();
+    check_scalable_ssa_access();
+    check_scalable_ssa_fields();
     $if $feat(SSA_SCALABLE_ONLY):
         return;
     $endif
     check_dependency_gc();
     check_artifact_retirement();
     check_helper_result_receiver_alias();
+    check_helper_binding_store_alias();
     check_parameter_alias_roles();
     check_decoded_bytecode();
     check_decoded_register_uses();
@@ -1200,6 +1342,7 @@ fn void main() {
     defer a.destroy();
     check_function_missing_caches(&first);
     check_ssa_cyclic_dominance(&first);
+    check_ssa_dynamic_storage(&first);
     check_decoded_liveness(&first);
     b.create(&first)!!;
     defer b.destroy();
@@ -1410,5 +1553,7 @@ fn void main() {
     check_ssa_calls(&first, &a);
     check_ssa_leaf(&first, &a);
     check_ssa_call_regions(&first, &a);
+    check_artifact_inventory(first.rt.heap);
+    check_artifact_inventory(second.rt.heap);
     io::printn("embedding JIT: PASS");
 }

@@ -184,7 +184,10 @@ fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
         bool definition = ssa_has_result(v.op) && v.op != ARG && v.op != PHI && v.op != JOIN;
         if (record && v.op == HELPER) ssa_helper_capture(self, i);
         self.operands(self.live, v);
-        self.recovery(self.live, v.pc, v.before_frame);
+        // A total computation has no recovery edge at its source bytecode.
+        // Importing that old frame after motion would create uses before defs.
+        SsaOpTraits traits = ssa_op_traits(g, v);
+        if (traits.needs_recovery()) self.recovery(self.live, v.pc, v.before_frame);
         if (definition) {
             // Inclusive operand interference also protects lowering sequences
             // that write their destination before their final guard executes.

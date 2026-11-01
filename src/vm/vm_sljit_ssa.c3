@@ -115,6 +115,12 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     SsaGraph* graph = ssa_prepare(plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry);
     if (graph == null) return null;
     defer ssa_graph_free(graph);
+    if (plan.ssa_data != null) {
+        plan.ssa_data.native_accesses = 0;
+        foreach (value : graph.values[:graph.value_count]) {
+            if (value.op == ACCESS_LOAD || value.op == ACCESS_STORE) plan.ssa_data.native_accesses++;
+        }
+    }
     void* code = ssa_emit_graph(graph, parent);
     emitted = code != null;
     return code;
@@ -187,7 +193,10 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     }
     ssa_dominators(graph);
     if ((graph.cyclic || graph.recoverable) && !$feat(SLJIT_NO_CFG_OPT)) {
-        if (graph.reg_count <= LOOP_REGS && graph.value_count <= SSA_MAX_VALUES && graph.block_count <= SSA_BLOCKS) ssa_optimize_cfg(graph);
+        uint common = ssa_optimize_cfg(graph);
+        $if $feat(SLJIT_STATS):
+            if (common != 0) io::eprintfn("SLJIT SSA CSE line=%d blocks=%d values=%d reused=%d", cf.get_line(0), graph.block_count, graph.value_count, common);
+        $endif
         ssa_numeric_loads(graph);
     } else if (!graph.cyclic && !graph.recoverable) {
         ssa_invariant_cse(graph);
@@ -213,6 +222,10 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         }
         if (removed) ssa_function_liveness(graph);
     }
+    uint dead = ssa_dce(graph);
+    $if $feat(SLJIT_STATS):
+        if (dead != 0) io::eprintfn("SLJIT SSA DCE line=%d removed=%d", cf.get_line(0), dead);
+    $endif
     ssa_allocate(graph);
     if (graph.failed) return null;
     uint phi_count;

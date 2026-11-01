@@ -928,8 +928,12 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case NEWARR_CONST:
                 if (!plan.ssa_recoverable) return false;
             case CLOSURE:
-                if (!plan.ssa_recoverable || ins.get_bc() >= cf.inner_count
-                    || cf.inner_funcs[ins.get_bc()].capture_count != 0) return false;
+                if (!plan.ssa_recoverable || ins.get_bc() >= cf.inner_count) return false;
+            case NEWCELLS:
+            case GETCELL:
+            case SETCELL:
+            case MOVECELL:
+                if (!plan.ssa_recoverable) return false;
             case LDTRUE:
             case LDFALSE:
             case LDNULL:
@@ -1982,6 +1986,8 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJ
 fn void sljit_loop_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
     LoopPlan* plan = artifact.payload;
     if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
+    ssa_helper_sites_free(h, plan);
+    ssa_plan_data_free(h, plan);
     h.free_func(h.heap_udata, plan);
 }
 
@@ -2008,17 +2014,17 @@ fn void sljit_loop_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     cf.sljit_loops = null;
     cf.sljit_loop_ready = 0;
 }
-fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) @inline {
+fn bool sljit_loop_probe(Instruction* pc, CompiledFunction* cf, Heap* h) @feat(SLJIT) @inline {
     uint offset = (uint)(pc - cf.code);
     for (LoopPlan* plan = cf.sljit_loops; plan != null; plan = plan.next) {
         if (offset == plan.end) return true;
     }
-    // Collisions only suppress compilation; the interpreter still executes the loop.
-    if ((cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return false;
+    // Unsupported and capacity-rejected sites are tracked independently by PC.
+    if (sljit_loop_blocked(cf, offset)) return false;
     if (cf.num_regs > LOOP_REGS) {
         int target = loop_target(*pc, offset);
         if (target < 0 || target >= (int)offset || offset - (uint)target >= LOOP_SPAN) {
-            cf.sljit_loop_rejected |= 1UL << (offset & 63);
+            sljit_loop_decline(h, cf, offset);
             return false;
         }
     }
@@ -2133,7 +2139,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     if (loop_target(*pc, offset) != (int)(body - cf.code)) return body;
     // A retired edge stays retired: the plan may still be linked below, but
     // re-entering it has been measured as a loss.
-    if ((cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return body;
+    if (sljit_loop_blocked(cf, offset)) return body;
     long budget     = h.bwd_gc_budget;
     bool interrupts = h.capi_runtime != null || h.capi_interrupt_fn != null;
     if (interrupts && (long)h.interrupt_budget < budget) budget = h.interrupt_budget;
@@ -2157,10 +2163,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     if (plan == null) {
         cf.sljit_loop_ready &= ~(1U << (offset & 31));
         int target = loop_target(*pc, offset);
-        if (target < 0 || target >= (int)offset || (cf.sljit_loop_rejected & (1UL << (offset & 63))) != 0) return body;
+        if (target < 0 || target >= (int)offset || sljit_loop_blocked(cf, offset)) return body;
         if (plans >= 4 || !sljit_code_room(h, 0)) {
-            if (plans < 4) cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
-            cf.sljit_loop_rejected |= 1UL << (offset & 63);
+            sljit_loop_decline(h, cf, offset, true);
             return body;
         }
         LoopPlan draft;
@@ -2169,7 +2174,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             compiled = loop_highreg_compile(cf, offset, regs, cold, h, &draft);
         } else {
             if (!loop_analyze(&draft, offset, regs, cold, -1, SSA_ENABLED, null, SSA_CYCLIC && SSA_CYCLIC_REGIONS)) {
-                cf.sljit_loop_rejected |= 1UL << (offset & 63);
+                sljit_loop_decline(h, cf, offset);
                 return body;
             }
             draft.ssa_cyclic = SSA_CYCLIC && SSA_CYCLIC_REGIONS && loop_inner_backedge(&draft, cf);
@@ -2182,19 +2187,18 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             compiled = draft.native != null;
         }
         if (!compiled) {
-            cf.sljit_loop_rejected |= 1UL << (offset & 63);
+            sljit_loop_decline(h, cf, offset);
             return body;
         }
         if (!sljit_code_room(h, draft.code_bytes)) {
-            cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
+            sljit_loop_decline(h, cf, offset, true);
             jit::sljit_free_code((void*)draft.native, null);
-            cf.sljit_loop_rejected |= 1UL << (offset & 63);
             return body;
         }
         plan = (LoopPlan*)h.alloc_func(h.heap_udata, LoopPlan::size);
         if (plan == null) {
             jit::sljit_free_code((void*)draft.native, null);
-            cf.sljit_loop_rejected |= 1UL << (offset & 63);
+            sljit_loop_decline(h, cf, offset);
             return body;
         }
         *plan = draft;
@@ -2290,10 +2294,10 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             jit::sljit_free_code((void*)plan.native, null);
             plan.native = null;
             plan.code_bytes = 0;
-            cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
+            sljit_loop_decline(h, cf, offset, true);
         }
         if (plan.native == null) {
-            cf.sljit_loop_rejected |= 1UL << (offset & 63);
+            if (!sljit_loop_blocked(cf, offset)) sljit_loop_decline(h, cf, offset);
         } else {
             h.jit_code_bytes += plan.code_bytes;
             plan.artifact.code_bytes += plan.code_bytes;
@@ -2311,7 +2315,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         // The loop tier shares the function tier's rule: a plan that keeps
         // being entered without completing an iteration only pays for an entry
         // and a publication, so let the interpreter own the loop.
-        if (++plan.short_runs >= 8) cf.sljit_loop_rejected |= 1UL << (offset & 63);
+        if (++plan.short_runs >= 8) sljit_loop_decline(h, cf, offset);
     } else {
         plan.short_runs = 0;
         cf.sljit_loop_ready |= ready;

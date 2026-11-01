@@ -11,7 +11,7 @@ enum JitArtifactKind : char { FUNCTION_CODE, LOOP_CODE, TEMPLATE_CODE }
 enum JitArtifactState : char { DRAFT, LIVE, RETIRED, RELEASED }
 alias JitArtifactRelease = fn void(Heap* h, JitArtifact* artifact);
 
-struct JitArtifact @feat(SLJIT) {
+struct JitArtifact {
     JitArtifact* previous;
     JitArtifact* next;
     JitArtifact* retired_next;

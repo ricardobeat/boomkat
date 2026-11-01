@@ -75,6 +75,11 @@ enum SsaOp : char {
     BOX_F,
     LOAD,
     STORE,
+    // Scalable accesses use SSA receivers and indices, never LoopMemory slots.
+    ACCESS_ADDRESS,
+    ACCESS_FIELD,
+    ACCESS_LOAD,
+    ACCESS_STORE,
     // Identity guard: the value must be a function whose compiled body is the
     // one the call was expanded from.
     CHECKFN,
@@ -100,13 +105,14 @@ enum SsaOp : char {
 
 fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
     switch (op) {
-        case NOP: case STORE: case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: case EXIT: return false;
+        case NOP: case STORE: case ACCESS_STORE: case CHECKFN: case CHECKPROTO: case CHECKSHAPE: case CHECKWRITE: case BRANCH: case GOTO: case RETURN: case EXIT: return false;
         default: return true;
     }
 }
 
 struct SsaValue @feat(SLJIT) {
     SsaHelperSite* helper;
+    SsaFieldAccess* field_access;
     SsaOp op;
     SsaRep rep;
     int a;
@@ -681,6 +687,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case NEWARR:
             case NEWARR_CONST:
             case CLOSURE:
+            case NEWCELLS: case GETCELL: case SETCELL: case MOVECELL:
                 if (!plan.ssa_recoverable) return false;
                 continue;
             default:
