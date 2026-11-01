@@ -227,10 +227,11 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     // The latch and JOIN edges use these temporary slots at different times.
     // Packed in-place state has no LoopState.ssa_edge array of its own.
     uint copy_temps = ssa_edge_copy_temps(graph);
+    if (graph.failed) return null;
     if (copy_temps < phi_count) copy_temps = phi_count;
     if (graph.recoverable && plan.ssa_data != null) {
-        plan.ssa_data.spill_count = graph.spill_count + copy_temps + 2;
-        plan.ssa_data.edge_count = graph.reg_count;
+        plan.ssa_data.spill_count = graph.spill_count + 2;
+        plan.ssa_data.edge_count = copy_temps;
         plan.ssa_value_capacity = graph.value_count;
     } else if (graph.spill_count + copy_temps + 2 > SSA_MAX_SPILL) return null;
     uint scratch_window = inline_depth == 0 ? 0 : inline_depth + 1;
@@ -365,9 +366,9 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
         for (uint i = 0; i < self.done_count; i++) jit::sljit_set_label(self.done_jumps[i], done);
         plan.ssa_epoch_constant = self.epoch_constant;
         *parent = *e;
-        return e.failed ? null : (void*)1;
+        return e.failed || graph.failed ? null : (void*)1;
     }
-    if (e.failed) return null;
+    if (e.failed || graph.failed) return null;
     void* native = jit::sljit_generate_code(e.compiler, 0, null);
     if (native != null) {
         plan.code_bytes = jit::sljit_shim_code_size(e.compiler);
