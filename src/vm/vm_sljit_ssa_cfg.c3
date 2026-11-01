@@ -41,7 +41,9 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         block.end = node.view.pc;
         if (i + 1 < cfg.instruction_count && cfg.nodes[i + 1].block == node.block) continue;
         Opcode op = node.view.insn.op;
-        block.returns = op == Opcode.RET || op == Opcode.RETUNDEF || node.call;
+        bool native_helper = op == Opcode.CALL || op == Opcode.CALL_UNDEF_THIS
+            || op == Opcode.CALL_GLOBAL || op == Opcode.CALL_VAR;
+        block.returns = op == Opcode.RET || op == Opcode.RETUNDEF || (node.call && !native_helper);
         block.branch_pc = node.branch_target == compiler::CFG_NO_INSTRUCTION ? uint::max : node.view.pc;
         block.jump = op == Opcode.JUMP;
         block.conditional = block.branch_pc != uint::max && !block.jump;

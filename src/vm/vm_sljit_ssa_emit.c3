@@ -700,6 +700,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case EXIT:
                     self.publish(&self.g.frames[self.pc - self.plan.begin], self.pc);
                     break;
+                case HELPER: self.helper(i); break;
             }
             if (v.dst_reg >= 0) self.live[v.dst_reg] = (int)i;
         }

@@ -356,6 +356,19 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case CALL_VAR:
                     {
                         if (g.recoverable) {
+                            if (function_call_op(ins.op)) {
+                                int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
+                                ssa_result(g, value, ins.a, pos);
+                                g.current[ins.a] = value;
+                                if (ins.op != Opcode.CALL) {
+                                    uint receiver = ins.op == Opcode.CALL_UNDEF_THIS ? (uint)ins.b + 1 : (uint)ins.a + 1;
+                                    int undefined = ssa_value(g, CONST_BOXED, BOXED, -1, -1,
+                                        (long)(types::TAG_UNDEFINED << 48));
+                                    ssa_result(g, undefined, receiver, pos);
+                                    g.current[receiver] = undefined;
+                                }
+                                break;
+                            }
                             // Its successor is a fresh external entry importing
                             // the real post-call result from the VM register.
                             ssa_value(g, EXIT, BOXED, -1, -1, 0);
@@ -363,6 +376,17 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         }
                         int value = ssa_inline_call(g, ins, pos);
                         if (value < 0) return false;
+                        g.current[ins.a] = value;
+                        break;
+                    }
+                case NEWOBJ:
+                case NEWOBJ_SHAPE:
+                case NEWARR:
+                case NEWARR_CONST:
+                    {
+                        if (!g.recoverable) return false;
+                        int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
+                        ssa_result(g, value, ins.a, pos);
                         g.current[ins.a] = value;
                         break;
                     }
