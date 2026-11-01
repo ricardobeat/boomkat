@@ -908,6 +908,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case MUL:
             case MULI:
             case DIV:
+            case MOD:
             case UNM:
             case BNOT:
             case LT:
@@ -942,6 +943,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                 }
                 if (ins.op == Opcode.ADD || ins.op == Opcode.ADD_FUSED || ins.op == Opcode.SUB || ins.op == Opcode.MUL
                     || ins.op == Opcode.DIV
+                    || ins.op == Opcode.MOD
                     || ins.op == Opcode.LT
                     || ins.op == Opcode.LE
                     || ins.op == Opcode.GT
@@ -1307,12 +1309,69 @@ fn void LoopEmitter.int32(&self, uint reg, int dst, uint pc) @feat(SLJIT) {
     self.e.bind(integer);
     self.e.mov(dst, 0, dst, 0, jit::SLJIT_MOV_S32);
 }
+// Modulo operands arrive as NaN-boxed values, but numeric homes hold doubles
+// and counters are fastints. Take either: a fastint sign-extends, and a double
+// is accepted only when it is exactly integral in fastint range (not -0).
+// Everything else, including what fmod would need, exits to the interpreter.
+fn void LoopEmitter.mod_operand(&self, int dst, uint pc) @feat(SLJIT) {
+    int temp = jit::reg_r(3);
+    int imm  = jit::SLJIT_IMM;
+    self.e.op(jit::SLJIT_LSHR, temp, dst, 0, imm, 48);
+    void* integer = self.e.cmp(jit::SLJIT_EQUAL, temp, 0, imm, (long)types::TAG_FASTINT);
+    self.guard(jit::SLJIT_GREATER, temp, 0, imm, (long)types::TAG_FASTINT, pc);
+    self.fcopy(jit::SLJIT_COPY_TO_F64, 1, dst);
+    self.link(self.fcmp(jit::SLJIT_UNORDERED, 1, 1), pc, true);
+    self.e.mov(temp, 0, imm, (long)bitcast((double)types::FASTINT_MIN, ulong));
+    self.fcopy(jit::SLJIT_COPY_TO_F64, 2, temp);
+    self.link(self.fcmp(jit::SLJIT_ORDERED_LESS, 1, 2), pc, true);
+    self.e.mov(temp, 0, imm, (long)bitcast((double)(types::FASTINT_MAX + 1), ulong));
+    self.fcopy(jit::SLJIT_COPY_TO_F64, 2, temp);
+    self.link(self.fcmp(jit::SLJIT_ORDERED_GREATER_EQUAL, 1, 2), pc, true);
+    self.e.op(jit::SLJIT_SHL, temp, dst, 0, imm, 1);
+    void* nonzero = self.e.cmp(jit::SLJIT_NOT_EQUAL, temp, 0, imm, 0);
+    self.guard(jit::SLJIT_SIG_LESS, dst, 0, imm, 0, pc);
+    self.e.bind(nonzero);
+    self.fop(jit::SLJIT_CONV_SW_FROM_F64, dst, 0, 1, 0);
+    self.fop(jit::SLJIT_CONV_F64_FROM_SW, 2, 0, dst, 0);
+    self.link(self.fcmp(jit::SLJIT_ORDERED_NOT_EQUAL, 1, 2), pc, true);
+    self.e.bind(integer);
+    self.e.op(jit::SLJIT_SHL, dst, dst, 0, imm, 16);
+    self.e.op(jit::SLJIT_ASHR, dst, dst, 0, imm, 16);
+}
 fn void LoopEmitter.numeric(&self, Instruction ins, uint pc) @feat(SLJIT) {
     int r0               = jit::reg_r(0);
     int r1               = jit::reg_r(1);
     int r2               = jit::reg_r(2);
     int r3               = jit::reg_r(3);
     int imm              = jit::SLJIT_IMM;
+    if (ins.op == Opcode.MOD) {
+        // JavaScript's remainder is fmod, which SLJIT cannot express, so the
+        // quotient runs only for exact integer operands and everything else
+        // exits to the interpreter. The two integral results fmod would
+        // rewrite are written directly: a zero divisor yields the canonical
+        // NaN and a zero remainder of a negative dividend yields the boxed -0.
+        self.load(ins.b, r0);
+        self.load(ins.c, r1);
+        self.mod_operand(r0, pc);
+        self.mod_operand(r1, pc);
+        void* divisor = self.e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0);
+        self.e.mov(r1, 0, imm, 0x7FF8000000000000L);
+        void* done = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+        self.e.bind(divisor);
+        self.e.mov(r2, 0, r0, 0);
+        if (jit::sljit_emit_op0(self.e.compiler, jit::SLJIT_DIVMOD_SW) != 0) self.e.failed = true;
+        void* negative = self.e.cmp(jit::SLJIT_SIG_GREATER_EQUAL, r2, 0, imm, 0);
+        void* nonzero = self.e.cmp(jit::SLJIT_NOT_EQUAL, r1, 0, imm, 0);
+        self.e.mov(r1, 0, imm, (long)(1UL << 63));
+        void* finish = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+        self.e.bind(nonzero);
+        self.e.bind(negative);
+        self.box(r1);
+        self.e.bind(finish);
+        self.e.bind(done);
+        self.store(ins.a, r1, pc);
+        return;
+    }
     int op_float         = ins.op == Opcode.SUB || ins.op == Opcode.SUBI ? jit::SLJIT_SUB_F64
         : (ins.op == Opcode.MUL || ins.op == Opcode.MULI ? jit::SLJIT_MUL_F64
             : (ins.op == Opcode.DIV ? jit::SLJIT_DIV_F64 : jit::SLJIT_ADD_F64));
@@ -1789,6 +1848,7 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJ
             case MUL:
             case MULI:
             case DIV:
+            case MOD:
                 out.numeric(ins, pos);
                 continue;
             case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:

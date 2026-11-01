@@ -183,6 +183,7 @@ fn bool function_op(Opcode op) @feat(SLJIT) {
         case MUL:
         case MULI:
         case DIV:
+        case MOD:
         case LT:
         case LE:
         case GT:
