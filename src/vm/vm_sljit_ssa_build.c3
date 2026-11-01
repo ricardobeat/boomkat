@@ -211,6 +211,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 continue;
             }
             switch (ins.op) {
+                case NOP: continue;
                 case LDTHIS:
                     {
                         if (!g.direct_fields) return false;

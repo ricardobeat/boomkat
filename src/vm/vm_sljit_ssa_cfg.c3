@@ -13,9 +13,10 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
     compiler::DecodedCfg* cfg = &g.decoded;
     if (cfg.storage == null) {
         usz bytes = (usz)cf.code_count * (compiler::DecodedCfgNode::size + uint::size);
-        if (bytes > g.budget.max_bytes - g.storage_bytes) { g.failed = true; return false; }
+        if (g.persistent_bytes > g.budget.max_bytes - g.storage_bytes
+            || bytes > g.budget.max_bytes - g.storage_bytes - g.persistent_bytes) { g.failed = true; return false; }
         compiler::DecodedCfgBudget budget = { g.budget.max_words, g.budget.max_instructions, bytes };
-        if (!compiler::bytecode_cfg_build(cfg, cf.code, cf.code_count, g.heap, null, true, budget, null, &ssa_cfg_extra_reads, cf)) return false;
+        if (!compiler::bytecode_cfg_build(cfg, cf.code, cf.code_count, g.heap, null, true, budget, &ssa_decoded_helper_op, &ssa_cfg_extra_reads, cf)) return false;
         g.storage_bytes += bytes;
     }
     if (cfg.block_count > g.block_capacity) return false;
