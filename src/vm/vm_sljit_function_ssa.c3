@@ -15,25 +15,31 @@ import std::io;
 // Native effects commit in bytecode order; every refusal publishes the frame
 // before the next unperformed operation rather than replaying the function.
 fn LoopPlan* sljit_function_ssa_recoverable_compile(CompiledFunction* cf, ColdCtx* cold) @feat(SLJIT) {
-    if (cf.num_regs > LOOP_REGS || cf.code_count > SSA_SPAN || cf.code_count < 4
-        || cf.is_class_ctor()
-        || (cf.code[cf.code_count - 1].op != Opcode.RET
-            && cf.code[cf.code_count - 1].op != Opcode.RETUNDEF)) return null;
-    bool effect, cyclic;
-    for (uint pc = 0; pc < cf.code_count; pc++) {
-        Opcode op = cf.code[pc].op;
+    if (cf.code_count < 4 || cf.code_count > SSA_DEFAULT_BUDGET.max_words || cf.is_class_ctor()) return null;
+    bool effect, cyclic, wide;
+    for (uint pc = 0; pc < cf.code_count;) {
+        DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+        if (!view.valid) return null;
+        Opcode op = view.insn.op;
         if (op == Opcode.PUTPROP || op == Opcode.PUTPROPC || op == Opcode.PUTTHISC) effect = true;
-        int target = loop_target(cf.code[pc], pc);
+        int target = ssa_decoded_target(view);
         if (target >= 0 && target <= (int)pc) cyclic = true;
+        wide |= view.wide;
+        pc = view.next_pc;
     }
-    if (!effect || !cyclic) return null;
+    bool decoded_body = wide || cf.num_regs > LOOP_REGS || cf.code_count > SSA_SPAN;
+    if (!decoded_body && (!effect || !cyclic)) return null;
     LoopPlan draft;
     if (!ssa_plan_data_init(&draft, cf, cold.heap)) return null;
     bool retained;
     defer if (!retained) ssa_plan_data_free(cold.heap, &draft);
     draft.ssa_recoverable = true;
     draft.ssa_function = cf;
-    if (!loop_analyze(&draft, cf.code_count - 1, cold.act.bottom, cold, 0, true, cf, true)) {
+    draft.begin = 0;
+    draft.end = cf.code_count - 1;
+    draft.ssa_data.decoded_body = decoded_body;
+    if (decoded_body ? !ssa_decoded_body_supported(&draft, cf)
+        : !loop_analyze(&draft, cf.code_count - 1, cold.act.bottom, cold, 0, true, cf, true)) {
         $if $feat(SLJIT_STATS): io::eprintfn("SLJIT recoverable reject name=%s stage=analysis", (String)cf.get_name()); $endif
         return null;
     }

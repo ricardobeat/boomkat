@@ -17,6 +17,9 @@ fn LoopNative ssa_loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat
 // The caller owns the region's descriptor preparation and frame publication.
 // A span excludes its terminal RET and may contain forward branches only.
 fn bool ssa_region_supported(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
+    if (plan.ssa_recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body) {
+        return ssa_decoded_body_supported(plan, cf);
+    }
     if (plan.begin > plan.end || plan.end >= cf.code_count || plan.end - plan.begin >= SSA_SPAN
         || cf.num_regs > LOOP_REGS
         || !ssa_loop_eligible(

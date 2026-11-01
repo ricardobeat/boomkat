@@ -29,7 +29,7 @@ fn void sljit_function_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
             plan.code_bytes
         );
     $endif
-    jit::sljit_free_code((void*)plan.native, null);
+    if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
     if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
     sljit_function_ssa_free(h, plan);
     sljit_inline_frames_free(h, plan);
@@ -58,8 +58,7 @@ macro bool sljit_function_ssa_resumes(Instruction* pc, CompiledFunction* cf) @fe
     FunctionPlan* plan = cf.sljit_function;
     uint offset = (uint)(pc - cf.code);
     return plan != null && plan.ssa_region != null && plan.ssa_region.ssa_recoverable
-        && !plan.ssa_region.ssa_invalid && offset < SSA_SPAN
-        && (plan.ssa_region.ssa_resume_pcs[offset >> 6] & (1UL << (offset & 63))) != 0
+        && !plan.ssa_region.ssa_invalid && ssa_plan_resumes(plan.ssa_region, offset)
         && sljit_function_resumes(pc, cf);
 }
 fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uint begin = 0) @feat(SLJIT) @noinline {
@@ -80,6 +79,14 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         cf.sljit_budget_wait = begin < cf.code_count;
         $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
         return null;
+    }
+    if (SSA_ENABLED && !$feat(SLJIT_NO_RECOVERABLE_SSA)) {
+        bool full = cf.code_count > SSA_SPAN || cf.num_regs > LOOP_REGS;
+        if (!full) for (uint pc = 0; pc < cf.code_count; pc++) if (cf.code[pc].op == Opcode.WIDE) { full = true; break; }
+        if (full) {
+            LoopPlan* body = sljit_function_ssa_recoverable_compile(cf, cold);
+            if (body != null) return ssa_function_wrap(cf, cold, body);
+        }
     }
     // The view borrows the original bytecode, constants and site caches. Only
     // the region's instruction window consumes compiler tables/code budget.
@@ -318,7 +325,9 @@ fn Instruction* sljit_function_entry(
     run.typed[1].receiver = null;
     if (sljit_artifact_enter(h, &plan.artifact) == 0) return pc;
     defer sljit_artifact_leave(h, &plan.artifact);
-    Instruction* resume = plan.native(regs, cold, &run);
+    Instruction* resume = plan.native == null && plan.ssa_region != null
+        ? sljit_function_ssa_run(cold, plan.ssa_region, &run, offset)
+        : plan.native(regs, cold, &run);
     if (run.recover_frame != null) {
         $if $feat(SLJIT_STATS): plan.inline_recoveries++; $endif
         resume = sljit_inline_recover(cold, &run);
