@@ -138,8 +138,8 @@ fn int ssa_frame_lookup(SsaGraph* g, SsaFrameId id, uint reg) @feat(SLJIT) {
     return lo < entries.len && entries[lo].reg == reg ? entries[lo].value : -1;
 }
 fn SsaFrameId ssa_frame_at_pc(SsaGraph* g, uint pc) @feat(SLJIT) {
-    for (uint id = 0; id < g.frame_count; id++) if (g.frame_table[id].pc == pc) return id;
-    return SSA_NO_FRAME;
+    if (pc < g.plan.begin || pc > g.plan.end || g.frames == null) return SSA_NO_FRAME;
+    return g.frames[pc - g.plan.begin];
 }
 fn SsaFrameId ssa_frame_after_pc(SsaGraph* g, uint pc) @feat(SLJIT) {
     // After states are attached explicitly to effectful definitions. They

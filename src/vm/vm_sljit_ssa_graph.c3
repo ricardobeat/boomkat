@@ -170,7 +170,7 @@ struct SsaJoin @feat(SLJIT) {
 struct SsaExit @feat(SLJIT) {
     void* jump;
     uint pc;
-    int[LOOP_REGS] regs;
+    SsaFrameId frame;
 }
 
 // Reserve R0..R3 for emission and S0/S1 for state and budget. Homes and
@@ -239,7 +239,7 @@ struct SsaGraph @feat(SLJIT) {
     int[LOOP_REGS] header;
     // Interpreter state before each bytecode, including values whose only
     // remaining use is recovery after a guard. IR-use liveness is insufficient.
-    int[LOOP_REGS][SSA_SPAN + 1] frames;
+    SsaFrameId* frames;
     // Registers semantically observable when recovery resumes this bytecode.
     // Only recoverable whole-function graphs populate these canonical masks.
     ulong[SSA_SPAN] recovery_live;
@@ -274,7 +274,7 @@ struct SsaGraph @feat(SLJIT) {
     SsaJoin[SSA_JOINS] joins;
     uint join_count;
     // The register state at the end of each block.
-    int[LOOP_REGS][SSA_BLOCKS] block_exit;
+    SsaFrameId* block_exit;
     // The values each block owns, in the order they were built.
     uint[SSA_BLOCKS] block_first;
     uint[SSA_BLOCKS] block_last;
@@ -1009,7 +1009,7 @@ fn bool ssa_cyclic_header(SsaGraph* g, uint b) @feat(SLJIT) {
         for (uint p = 0; p < block.pred_count; p++) {
             uint pred = block.preds[p];
             if (!g.block_built[pred]) continue;
-            int incoming = g.block_exit[pred][reg];
+            int incoming = ssa_frame_lookup(g, g.block_exit[pred], reg);
             if (incoming < 0) return false;
             join.incoming[p][reg] = incoming;
             ssa_use(g, incoming);
@@ -1043,7 +1043,7 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
     if (b == 0) return true;
     if (block.pred_count == 1) {
         uint pred = block.preds[0];
-        for (uint reg = 0; reg < LOOP_REGS; reg++) g.current[reg] = g.block_exit[pred][reg];
+        ssa_frame_restore(g, g.block_exit[pred], &g.current[0], LOOP_REGS);
         return true;
     }
     if (g.join_count == SSA_JOINS) return false;
@@ -1061,10 +1061,10 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
             g.current[reg] = -1;
             continue;
         }
-        int first   = g.block_exit[block.preds[0]][reg];
+        int first   = ssa_frame_lookup(g, g.block_exit[block.preds[0]], reg);
         bool differ = false;
         for (uint p = 1; p < block.pred_count; p++) {
-            if (g.block_exit[block.preds[p]][reg] != first) {
+            if (ssa_frame_lookup(g, g.block_exit[block.preds[p]], reg) != first) {
                 differ = true;
                 break;
             }
@@ -1078,7 +1078,7 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
         // header keeps in a phi.
         bool missing = false;
         for (uint p = 0; p < block.pred_count; p++) {
-            if (g.block_exit[block.preds[p]][reg] < 0) missing = true;
+            if (ssa_frame_lookup(g, g.block_exit[block.preds[p]], reg) < 0) missing = true;
         }
         if (missing) {
             g.current[reg] = -1;
@@ -1088,14 +1088,14 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
         // double arms merge as F64; an arbitrary tagged arm keeps the join boxed.
         SsaRep rep = g.values[first].rep;
         for (uint p = 1; p < block.pred_count; p++) {
-            SsaRep incoming = g.values[g.block_exit[block.preds[p]][reg]].rep;
+            SsaRep incoming = g.values[ssa_frame_lookup(g, g.block_exit[block.preds[p]], reg)].rep;
             if (rep != incoming) rep = ssa_numeric_rep(rep) && ssa_numeric_rep(incoming) ? F64 : BOXED;
         }
         int phi = ssa_value(g, JOIN, rep, (int)index, (int)reg, 0);
         ssa_result(g, phi, (uint)reg, block.begin);
         join.phi[reg] = phi;
         for (uint p = 0; p < block.pred_count; p++) {
-            int incoming = g.block_exit[block.preds[p]][reg];
+            int incoming = ssa_frame_lookup(g, g.block_exit[block.preds[p]], reg);
             join.incoming[p][reg] = incoming;
             // The incoming value lives until the join copies it, so its range
             // reaches past the join and keeps it out of the phi's home.

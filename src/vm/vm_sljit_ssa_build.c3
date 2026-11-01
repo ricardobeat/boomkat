@@ -32,6 +32,7 @@ fn bool ssa_continuation_live(SsaGraph* g, bool[LOOP_REGS]* exit_live) @feat(SLJ
 // Rename bytecode definitions into the analyzed SSA graph.
 
 fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
+    if (g.failed) return false;
     CompiledFunction* cf = g.cf;
     LoopPlan* plan       = g.plan;
     bool[LOOP_REGS] read;
@@ -114,6 +115,9 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         g.failed = true;
         return false;
     }
+    g.block_exit = (SsaFrameId*)ssa_storage_alloc(g, g.block_count, SsaFrameId::size);
+    if (g.failed) return false;
+    for (uint b = 0; b < g.block_count; b++) g.block_exit[b] = SSA_NO_FRAME;
     if (g.cyclic && !ssa_cyclic_liveness(g)) return false;
     if (g.cyclic && !g.single_pass && g.block_count > 1) {
         // The outer latch must be built last: its register state is the
@@ -140,22 +144,21 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         for (uint pos = block.begin; pos <= block.end; pos++) {
             Instruction ins = cf.code[pos];
             uint at         = pos - plan.begin;
-            g.frames[at] = g.current;
+            uint[2] live = { (uint)g.recovery_live[at], (uint)(g.recovery_live[at] >> 32) };
             if (g.recoverable) {
-                // Dead slots remain owned by the real VM frame. Only current
-                // semantic inputs need publication before this bytecode runs.
+                // Dead slots remain owned by the VM frame. Sparse states hold
+                // only semantic inputs required at this exact prefix PC.
                 for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) {
-                    if ((g.recovery_live[at] & (1UL << reg)) == 0) {
-                        g.frames[at][reg] = -1;
-                    } else if (g.frames[at][reg] < 0) {
-                        return false;
-                    }
+                    if ((g.recovery_live[at] & (1UL << reg)) != 0 && g.current[reg] < 0) return false;
                 }
             }
+            g.frames[at] = ssa_frame_capture(g, pos, &g.current[0], LOOP_REGS,
+                g.recoverable ? &live[0] : null, g.recoverable ? 2 : 0);
+            if (g.failed) return false;
             // Conversions can consume a bytecode operand before a later guard in
             // the same operation. Keep the original value until that operation
             // commits, so replay observes the exact pre-instruction frame.
-            defer if (!g.direct) { foreach (value : g.frames[at]) if (value >= 0) ssa_use(g, value); }
+            defer if (!g.direct) { foreach (entry : ssa_frame_entries(g, g.frames[at])) ssa_use(g, entry.value); }
             g.current_pc = pos;
             int target = loop_target(ins, pos);
             if (target >= 0) {
@@ -533,7 +536,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             }
         }
         g.block_last[b] = g.value_count;
-        for (uint reg = 0; reg < LOOP_REGS; reg++) g.block_exit[b][reg] = g.current[reg];
+        g.block_exit[b] = ssa_frame_capture(g, SSA_ENTRY_BAIL, &g.current[0], LOOP_REGS);
+        if (g.failed) return false;
         g.block_built[b] = true;
     }
     if (g.cyclic) {
@@ -554,7 +558,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     if (phi < 0) continue;
                     int incoming = join.incoming[p][reg];
                     if (incoming < 0) {
-                        incoming = g.block_exit[join.preds[p]][reg];
+                        incoming = ssa_frame_lookup(g, g.block_exit[join.preds[p]], reg);
                         if (incoming < 0) return false;
                         join.incoming[p][reg] = incoming;
                         ssa_use(g, incoming);
@@ -611,7 +615,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     // All converted phi inputs are consumed together by the latch. A later
     // conversion must not reuse an earlier input's home before that point.
     foreach (phi : g.phi) if (phi >= 0) ssa_use(g, g.values[phi].a);
-    foreach (value : g.frames[plan.end - plan.begin]) if (value >= 0) ssa_use(g, value);
+    foreach (entry : ssa_frame_entries(g, g.frames[plan.end - plan.begin])) ssa_use(g, entry.value);
     for (uint i = 0; i < g.value_count; i++) {
         if (g.values[i].op == ARG || g.values[i].op == PHI) g.values[i].last = g.stamp;
     }
