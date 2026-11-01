@@ -122,6 +122,7 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         ssa_configure(graph, plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry, forced);
         if (!ssa_build(graph)) return null;
     }
+    ssa_schedule_init(graph);
     if (single_pass) {
         for (uint memory = 0; memory < plan.memory_count; memory++) {
             LoopMemorySpec spec = plan.memory[memory];
