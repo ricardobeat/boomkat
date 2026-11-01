@@ -58,7 +58,7 @@ fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     if (site.after_count != 0) mem::copy(site.after_entries, after_entries.ptr, (sz)site.after_count * SsaFrameEntry::size);
     site.native_resume = true;
     site.pc = g.values[node].pc;
-    site.next_pc = site.pc + 1;
+    site.next_pc = ssa_decoded_view(g, site.pc).next_pc;
     site.before_frame = g.values[node].before_frame;
     site.after_frame = g.values[node].after_frame;
     ulong* after = ssa_storage_alloc(g, allocation.words, ulong::size);
@@ -111,6 +111,7 @@ struct SsaExecution @feat(SLJIT) {
     SsaEffectPhase phase;
     SsaHelperOutcome outcome;
     TVal* input_values;
+    LoopState* state_storage;
     ulong* spills;
     ulong* edge;
     ulong* saved_bits;
@@ -137,8 +138,11 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.outputs = h.alloc_func(h.heap_udata, (usz)execution.register_count * SsaPublishedValue::size);
     execution.saved_bits = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ulong::size);
     execution.roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ValueRoot::size);
-    execution.spills = h.alloc_func(h.heap_udata, (usz)max(spills, 1u) * ulong::size);
-    execution.edge = h.alloc_func(h.heap_udata, (usz)max(edges, 1u) * ulong::size);
+    usz state_bytes = LoopState::size + ((usz)spills + edges) * ulong::size;
+    if (state_bytes > SSA_DEFAULT_BUDGET.max_bytes) { ssa_execution_dispose(execution); return false; }
+    execution.state_storage = (LoopState*)h.alloc_func(h.heap_udata, state_bytes);
+    execution.spills = execution.state_storage == null ? null : (ulong*)((char*)execution.state_storage + LoopState::size);
+    execution.edge = execution.spills == null ? null : execution.spills + spills;
     if (execution.input_values == null || execution.outputs == null || execution.saved_bits == null
         || execution.roots == null || execution.spills == null || execution.edge == null) {
         ssa_execution_dispose(execution);
@@ -165,8 +169,7 @@ fn void ssa_execution_dispose(SsaExecution* execution) @feat(SLJIT) {
     if (execution.outputs != null) h.free_func(h.heap_udata, execution.outputs);
     if (execution.saved_bits != null) h.free_func(h.heap_udata, execution.saved_bits);
     if (execution.roots != null) h.free_func(h.heap_udata, execution.roots);
-    if (execution.spills != null) h.free_func(h.heap_udata, execution.spills);
-    if (execution.edge != null) h.free_func(h.heap_udata, execution.edge);
+    if (execution.state_storage != null) h.free_func(h.heap_udata, execution.state_storage);
     if (execution.owner_generation != 0) sljit_artifact_leave(h, execution.owner);
     *execution = {};
 }
@@ -318,7 +321,7 @@ fn SsaHelperOutcome ssa_helper_state(LoopState* state, SsaHelperSite* site) @fea
     state.resume_pc = execution.phase == AFTER ? site.next_pc : site.pc;
     ColdCtx* cold = execution.cold;
     if (!ssa_execution_reload(execution)) return YIELD;
-    for (uint reg = 0; reg < execution.register_count; reg++) state.values[reg] = execution.input_values[reg];
+    for (uint reg = 0; reg < execution.register_count && reg < LOOP_REGS; reg++) state.values[reg] = execution.input_values[reg];
     state.receiver = cold.act.this_binding;
     state.shape_epoch = cold.heap.shape_recycle_epoch;
     if (outcome == THROW) {
