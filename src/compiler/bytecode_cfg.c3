@@ -125,6 +125,8 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
         case GETPROPC: case GETPROPC_CACHED:
         case GETCELL:
             return { .b_read = true, .a_write = true };
+        // Closure creation writes A even though producer retargeting refuses
+        // it. Native helpers must import this result before publishing again.
         case CLOSURE: case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case LDTHIS: case GETTHISC: case VOID:
         case GETVAR: case GETGLOBAL: case GETBOUND: case GETCAP: case TYPEOFIDENT:
