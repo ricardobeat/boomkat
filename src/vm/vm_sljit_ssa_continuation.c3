@@ -21,6 +21,7 @@ struct SsaPublishedValue @feat(SLJIT) {
 // subset (plus before-only boxed operands needed during the helper).
 struct SsaHelperSite @feat(SLJIT) {
     SsaHelperSite* next;
+    usz allocated_bytes;
     uint pc;
     uint next_pc;
     SsaFrameId before_frame;
@@ -43,11 +44,12 @@ fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     Heap* h = g.heap;
     SsaFrameEntry[] before_entries = ssa_frame_entries(g, g.values[node].before_frame);
     SsaFrameEntry[] after_entries = ssa_frame_entries(g, g.values[node].after_frame);
-    SsaHelperSite* site = h.alloc_func(h.heap_udata,
-        SsaHelperSite::size + (usz)g.value_count * uint::size * 2
-            + (before_entries.len + after_entries.len) * SsaFrameEntry::size);
+    usz bytes = SsaHelperSite::size + (usz)g.value_count * uint::size * 2
+        + (before_entries.len + after_entries.len) * SsaFrameEntry::size;
+    SsaHelperSite* site = h.alloc_func(h.heap_udata, bytes);
     if (site == null) { g.failed = true; return; }
     *site = {};
+    site.allocated_bytes = bytes;
     site.live_values = (uint*)((char*)site + SsaHelperSite::size);
     site.root_values = site.live_values + g.value_count;
     site.before_entries = (SsaFrameEntry*)(site.root_values + g.value_count);
@@ -90,6 +92,12 @@ fn void ssa_helper_sites_free(Heap* h, LoopPlan* plan) @feat(SLJIT) {
         h.free_func(h.heap_udata, site);
     }
     plan.ssa_value_capacity = 0;
+}
+
+fn usz ssa_helper_metadata_bytes(LoopPlan* plan) @feat(SLJIT) {
+    usz bytes;
+    for (SsaHelperSite* site = plan.ssa_helpers; site != null; site = site.next) bytes += site.allocated_bytes;
+    return bytes;
 }
 
 // An invocation owns this storage until its generated frame unwinds. Pointers
