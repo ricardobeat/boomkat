@@ -286,12 +286,21 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
         if (root < 0 || root == (int)i) continue;
         if (g.values[root].last < g.values[i].last) g.values[root].last = g.values[i].last;
     }
+    // A cyclic join is live across the backedge, where the next iteration may
+    // still be reading its incoming values. Extend every such join over the
+    // whole graph so no ordinary value can take a phi home and be clobbered by
+    // an edge copy that still has to read it.
+    if (g.cyclic) for (uint i = 0; i < g.value_count; i++) {
+        if (g.values[i].op == JOIN) g.values[i].last = g.stamp;
+    }
     // Loop phis live across the backedge. Ordinary joins use bounded intervals
     // and may reuse homes once an earlier join has died.
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
         value.home = 0;
-        if (value.op != PHI) continue;
+        // A cyclic join lives across a backedge: the value written on this
+        // iteration is read by the next. Give it a private home.
+        if (value.op != PHI && !(g.cyclic && value.op == JOIN)) continue;
         uint homes = value.rep == F64 ? g.fpr_homes : g.registers.scratch_homes + g.registers.saved_homes;
         for (uint s = 0; s < homes; s++) {
             int home = value.rep == F64 ? 3 + (int)s : ssa_gpr_home(g, s);
@@ -314,9 +323,10 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
         if (value.op == PHI || value.op == COPY || !ssa_has_result(value.op)) continue;
+        if (g.cyclic && value.op == JOIN) continue;
         // An in-place direct region can reuse a dying incoming value's register
         // for the join. Its untouched caller frame remains the recovery source.
-        if (value.op == JOIN && g.inplace && g.direct && g.single_pass) {
+        if (value.op == JOIN && !g.cyclic && g.inplace && g.direct && g.single_pass) {
             SsaJoin* join = &g.joins[value.a];
             for (uint p = 0; p < join.pred_count && value.home == 0; p++) {
                 int source = ssa_alias(g, join.incoming[p][value.b]);

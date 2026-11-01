@@ -15,7 +15,7 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
     CompiledFunction* cf = self.cold.vm.current_func;
     if (cf.code != view.code || cf.code_count != view.code_count) return;
     Heap* h = self.cold.heap;
-    LoopPlan* region = self.ssa_leaf(cf, h, true);
+    LoopPlan* region = self.ssa_leaf(cf, h, true, SSA_CYCLIC);
     if (region == null) return;
     TemplateEmitter* e = &self.out.e;
     JitWriteDependency* checkpoint = self.plan.dependencies;
@@ -52,6 +52,8 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
     e.mov(mem | run, $reflect(FunctionRun.ssa_receiver).offset, receiver, 0);
     e.mov(regs, 0, bottom, 0);
     e.mov(object, 0, receiver, 0);
+    e.mov(r0, 0, mem | run, $reflect(FunctionRun.budget).offset);
+    e.mov(mem | run, $reflect(FunctionRun.ssa_budget).offset, r0, 0);
     if (ssa_emit_graph(graph, e) == null) { e.failed = true; return; }
     void* refused = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, (long)SSA_REFUSED);
     {
@@ -73,6 +75,11 @@ fn void FunctionEmitter.ssa_call_entry(&self, CompiledFunction* view) @feat(SLJI
         if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, imm, 0) != 0) e.failed = true;
         e.bind(refused);
     }
+    $if $feat(SLJIT_STATS): ssa_counter(e, &region.ssa_entry_misses); $endif
+    // The fast path is pure; give the ordinary entry the budget it would have
+    // had if the fast path had not run and exited part way through the body.
+    e.mov(r0, 0, mem | run, $reflect(FunctionRun.ssa_budget).offset);
+    e.mov(mem | run, $reflect(FunctionRun.budget).offset, r0, 0);
     e.mov(object, 0, mem | run, $reflect(FunctionRun.ssa_callee).offset);
     e.mov(receiver, 0, mem | run, $reflect(FunctionRun.ssa_receiver).offset);
     e.mov(r0, 0, mem | cold, $reflect(ColdCtx.act).offset);

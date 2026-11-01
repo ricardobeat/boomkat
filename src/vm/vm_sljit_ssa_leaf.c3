@@ -10,20 +10,55 @@ import std::io;
 // Pure callees and callees with one terminal numeric write can refuse before
 // any observable effect. The original argument window remains authoritative
 // for interpreter recovery. Both reuse the complete SSA pipeline.
-fn LoopPlan* FunctionEmitter.ssa_leaf(&self, CompiledFunction* target, Heap* h, bool calls = false) @feat(SLJIT) {
-    if (target == null || target.code_count < 3 || target.code_count > 32 || target.num_regs > LOOP_REGS
+fn LoopPlan* FunctionEmitter.ssa_leaf(&self, CompiledFunction* target, Heap* h, bool calls = false, bool cyclic = false) @feat(SLJIT) {
+    uint limit = cyclic ? 128 : 32;
+    if (target == null || target.code_count < 3 || target.code_count > limit || target.num_regs > LOOP_REGS
         || target.capture_count != 0 || (target.code[target.code_count - 1].op != Opcode.RET
             && target.code[target.code_count - 1].op != Opcode.RETUNDEF)
         || target.is_class_ctor() || target.flags.is_generator || target.flags.is_async
         || target.flags.has_direct_eval || target.mapped_arguments()) return null;
+    bool has_backedge;
+    for (uint pc = 0; pc < target.code_count; pc++) {
+        int to = loop_target(target.code[pc], pc);
+        if (to >= 0 && to <= (int)pc) has_backedge = true;
+    }
+    if (has_backedge) {
+        if (!cyclic) return null;
+        for (uint pc = 0; pc < target.code_count; pc++) {
+            Instruction ins = target.code[pc];
+            int to = loop_target(ins, pc);
+            if (to >= 0) {
+                if (to >= (int)target.code_count ||
+                    (ins.op != Opcode.JUMP && ins.op != Opcode.IF_TRUE && ins.op != Opcode.IF_FALSE && !ssa_comparison_op(ins.op))) return null;
+                continue;
+            }
+            switch (ins.op) {
+                // Field reads are pure: a refusal before any write can replay
+                // the whole body. Stores stay out of the frameless tier.
+                case LDREG: case LDINT: case LDCONST: case TONUMERIC: case LDTHIS:
+                case GETPROPC: case GETPROPC_CACHED: case GETTHISC:
+                case INC: case DEC: case ADD: case ADDI: case SUB: case SUBI:
+                case MUL: case MULI: case DIV: case LT: case LE: case GT: case GE:
+                case EQ: case NEQ: case SEQ: case SNEQ: case BAND: case BOR: case BXOR:
+                case SHL: case SHR: case USHR: case BNOT: case BANDI: case BORI:
+                case BXORI: case SHLI: case SHRI: case USHRI: continue;
+                case ADD_FUSED: case INC_LT: case UNM: continue;
+                case RET: case RETUNDEF: if (pc + 1 == target.code_count) continue; return null;
+                default: return null;
+            }
+        }
+    }
     for (uint pc = 0; pc < target.code_count - 1; pc++) {
         Opcode op = target.code[pc].op;
-        if ((function_call_op(op) && !calls) || op == Opcode.GETVAR || op == Opcode.GETCAP
-            || op == Opcode.PUTPROP) return null;
+        // A whole body with a backedge may be replayed after a refusal, so a
+        // cyclic leaf must be free of observable writes. Single-pass leaves
+        // still commit one terminal field write.
+        bool write = op == Opcode.PUTPROP || (has_backedge && (op == Opcode.PUTPROPC || op == Opcode.PUTTHISC));
+        if ((function_call_op(op) && !calls) || op == Opcode.GETVAR || op == Opcode.GETCAP || write) return null;
     }
     TVal[LOOP_REGS] values;
     LoopPlan draft;
-    if (!loop_analyze(&draft, target.code_count - 1, &values[0], self.cold, 0, calls, target)) {
+    if (!loop_analyze(&draft, target.code_count - 1, &values[0], self.cold, 0, calls, target, cyclic)) {
         $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA leaf reject line=%d stage=analysis", target.get_line(0)); $endif
         return null;
     }

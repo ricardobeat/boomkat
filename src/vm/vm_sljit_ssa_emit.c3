@@ -21,6 +21,7 @@ struct SsaEmitter @feat(SLJIT) {
     long state_bias;
     int regs;
     int budget;
+    int run;
     ulong dirty_mask;
     int[LOOP_REGS] live;
     uint at_def;
@@ -703,13 +704,79 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
     }
 }
 
+
+// Move an incoming value into the phi that merges it, converting between
+// representations when the arms disagree.
+fn void SsaEmitter.copy_phi(&self, int phi, int incoming) @feat(SLJIT) {
+    TemplateEmitter* e = &self.e;
+    int r0             = jit::reg_r(0);
+    SsaValue pv        = self.g.values[phi];
+    SsaValue sv        = self.g.values[incoming];
+    if (pv.rep == sv.rep && ssa_same_location(pv, sv)) return;
+    if (pv.rep == F64) {
+        if (sv.rep == F64) {
+            if (sv.home != 0 && pv.home != 0) {
+                if (jit::sljit_emit_fop1(e.compiler, jit::SLJIT_MOV_F64, pv.home, 0, sv.home, 0) != 0) e.failed = true;
+            } else {
+                self.load_fpr(incoming, 1);
+                self.store_fpr(phi, 1);
+            }
+        } else {
+            int dst = pv.home != 0 ? pv.home : 1;
+            if (sv.rep == INT32) {
+                int src = self.gpr_slot(incoming, r0);
+                if (jit::sljit_emit_fop1(e.compiler, jit::SLJIT_CONV_F64_FROM_SW, dst, 0, src, 0) != 0) e.failed = true;
+            } else {
+                self.gpr(incoming, r0);
+                self.number(r0, dst, self.pc);
+            }
+            if (pv.home == 0) self.store_fpr(phi, dst);
+        }
+    } else if (pv.rep == BOXED) {
+        if (sv.rep == BOXED) {
+            if (sv.home != 0 && pv.home != 0) {
+                e.mov(pv.home, 0, sv.home, 0);
+            } else {
+                self.gpr(incoming, r0);
+                self.store_gpr(phi, r0);
+            }
+        } else if (sv.rep == INT32) {
+            int dst = pv.home != 0 ? pv.home : r0;
+            self.gpr(incoming, r0);
+            self.box_gpr(r0);
+            if (dst != r0) e.mov(dst, 0, r0, 0);
+            if (pv.home == 0) self.store_gpr(phi, dst);
+        } else {
+            int src = self.fpr_slot(incoming, 1);
+            int dst = pv.home != 0 ? pv.home : r0;
+            self.bits_fpr(src, dst);
+            if (pv.home == 0) self.store_gpr(phi, dst);
+        }
+    } else if (sv.rep == INT32) {
+        if (sv.home != 0 && pv.home != 0) {
+            e.mov(pv.home, 0, sv.home, 0);
+        } else {
+            self.gpr(incoming, r0);
+            self.store_gpr(phi, r0);
+        }
+    } else {
+        int dst = pv.home != 0 ? pv.home : r0;
+        if (sv.rep == F64) {
+            self.load_fpr(incoming, 1);
+            self.trunc_int_f64(1, dst, self.pc);
+        } else {
+            self.gpr(incoming, r0);
+            self.exact_int(r0, dst, self.pc);
+        }
+        if (pv.home == 0) self.store_gpr(phi, dst);
+    }
+}
+
 // Copy the values a join merges into the phi's home. Each predecessor
 // writes the home before it arrives, so the path that reaches the join
 // carries its own value.
 fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
     if (succ >= self.g.block_count) return;
-    TemplateEmitter* e = &self.e;
-    int r0             = jit::reg_r(0);
     for (uint j = 0; j < self.g.join_count; j++) {
         SsaJoin* join = &self.g.joins[j];
         if (join.block != succ) continue;
@@ -719,86 +786,28 @@ fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
                 int phi = join.phi[reg];
                 if (phi < 0) continue;
                 int incoming = join.incoming[p][reg];
-                if (incoming < 0) continue;
-                SsaValue pv = self.g.values[phi];
-                SsaValue sv = self.g.values[incoming];
-                if (pv.rep == sv.rep && ssa_same_location(pv, sv)) continue;
-                // The merged values may differ in representation, so the copy
-                // converts the incoming value to the phi's.
-                if (pv.rep == F64) {
-                    if (sv.rep == F64) {
-                        if (sv.home != 0 && pv.home != 0) {
-                            if (jit::sljit_emit_fop1(
-                                e.compiler,
-                                jit::SLJIT_MOV_F64,
-                                pv.home,
-                                0,
-                                sv.home,
-                                0
-                            ) != 0) e.failed = true;
-                        } else {
-                            self.load_fpr(incoming, 1);
-                            self.store_fpr(phi, 1);
-                        }
-                    } else {
-                        int dst = pv.home != 0 ? pv.home : 1;
-                        if (sv.rep == INT32) {
-                            int src = self.gpr_slot(incoming, r0);
-                            if (jit::sljit_emit_fop1(
-                                e.compiler,
-                                jit::SLJIT_CONV_F64_FROM_SW,
-                                dst,
-                                0,
-                                src,
-                                0
-                            ) != 0) e.failed = true;
-                        } else {
-                            self.gpr(incoming, r0);
-                            self.number(r0, dst, self.pc);
-                        }
-                        if (pv.home == 0) self.store_fpr(phi, dst);
-                    }
-                } else if (pv.rep == BOXED) {
-                    if (sv.rep == BOXED) {
-                        if (sv.home != 0 && pv.home != 0) {
-                            e.mov(pv.home, 0, sv.home, 0);
-                        } else {
-                            self.gpr(incoming, r0);
-                            self.store_gpr(phi, r0);
-                        }
-                    } else if (sv.rep == INT32) {
-                        int dst = pv.home != 0 ? pv.home : r0;
-                        self.gpr(incoming, r0);
-                        self.box_gpr(r0);
-                        if (dst != r0) e.mov(dst, 0, r0, 0);
-                        if (pv.home == 0) self.store_gpr(phi, dst);
-                    } else {
-                        int src = self.fpr_slot(incoming, 1);
-                        int dst = pv.home != 0 ? pv.home : r0;
-                        self.bits_fpr(src, dst);
-                        if (pv.home == 0) self.store_gpr(phi, dst);
-                    }
-                } else {
-                    if (sv.rep == INT32) {
-                        if (sv.home != 0 && pv.home != 0) {
-                            e.mov(pv.home, 0, sv.home, 0);
-                        } else {
-                            self.gpr(incoming, r0);
-                            self.store_gpr(phi, r0);
-                        }
-                    } else {
-                        int dst = pv.home != 0 ? pv.home : r0;
-                        if (sv.rep == F64) {
-                            self.load_fpr(incoming, 1);
-                            self.trunc_int_f64(1, dst, self.pc);
-                        } else {
-                            self.gpr(incoming, r0);
-                            self.exact_int(r0, dst, self.pc);
-                        }
-                        if (pv.home == 0) self.store_gpr(phi, dst);
-                    }
-                }
+                if (incoming < 0) { self.e.failed = true; return; }
+                self.copy_phi(phi, incoming);
             }
+        }
+    }
+}
+
+// A loop header at the body's entry receives its first values from the
+// function's entry state rather than a bytecode predecessor.
+fn void SsaEmitter.entry_copies(&self) @feat(SLJIT) {
+    uint saved = self.pc;
+    self.pc = self.plan.begin;
+    defer self.pc = saved;
+    for (uint j = 0; j < self.g.join_count; j++) {
+        SsaJoin* join = &self.g.joins[j];
+        if (!join.entry) continue;
+        for (uint reg = 0; reg < LOOP_REGS; reg++) {
+            int phi = join.phi[reg];
+            if (phi < 0) continue;
+            int incoming = join.entry_incoming[reg];
+            if (incoming < 0) { self.e.failed = true; return; }
+            self.copy_phi(phi, incoming);
         }
     }
 }
@@ -889,6 +898,7 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
     self.join_copies((uint)v.block, (uint)v.fallto);
     void* fall = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
     e.bind(taken);
+    if (self.g.cyclic && v.target <= v.block) self.cyclic_poll();
     self.join_copies((uint)v.block, (uint)v.target);
     void* target = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
     if (self.pending_count + 2 > (uint)self.pending_jump.len) {
@@ -906,6 +916,7 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
 // The end of an arm: the block continues at the block the jump names.
 fn void SsaEmitter.goto_block(&self, int value) @feat(SLJIT) {
     SsaValue v = self.g.values[value];
+    if (self.g.cyclic && v.target <= v.block) self.cyclic_poll();
     self.join_copies((uint)v.block, (uint)v.target);
     void* jump = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
     if (jump == null || self.pending_count + 1 > (uint)self.pending_jump.len) {
@@ -915,6 +926,23 @@ fn void SsaEmitter.goto_block(&self, int value) @feat(SLJIT) {
     self.pending_jump[self.pending_count] = jump;
     self.pending_target[self.pending_count] = (uint)v.target;
     self.pending_count++;
+}
+
+// Spend one iteration of the enclosing run budget at every backedge. A
+// cyclic body is pure, so refusing here replays it from the start in the
+// interpreter without duplicating an effect.
+fn void SsaEmitter.cyclic_poll(&self) @feat(SLJIT) {
+    int r0 = jit::reg_r(0);
+    if (self.g.callee_entry) {
+        self.e.mov(r0, 0, jit::SLJIT_MEM | self.run, $reflect(FunctionRun.budget).offset);
+        self.snapshot(self.e.cmp(jit::SLJIT_LESS_EQUAL, r0, 0, jit::SLJIT_IMM, 1), self.pc);
+        self.e.op(jit::SLJIT_SUB, r0, r0, 0, jit::SLJIT_IMM, 1);
+        self.e.mov(jit::SLJIT_MEM | self.run, $reflect(FunctionRun.budget).offset, r0, 0);
+    } else {
+        // A loop region keeps the run's remaining budget in a register.
+        self.snapshot(self.e.cmp(jit::SLJIT_LESS_EQUAL, self.budget, 0, jit::SLJIT_IMM, 1), self.pc);
+        self.e.op(jit::SLJIT_SUB, self.budget, self.budget, 0, jit::SLJIT_IMM, 1);
+    }
 }
 
 // Bind the jumps that reach a block to the label it starts at.

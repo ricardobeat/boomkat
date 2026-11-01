@@ -19,6 +19,13 @@ import std::io;
 // Keep an opt-out for differential measurements of the straight-line tier.
 const ulong SSA_REFUSED = types::TAG_POISON << 48;
 const bool SSA_ENABLED    = !$feat(SLJIT_NO_SSA);
+// General cyclic graphs compile a whole function body, including backedges.
+// Disable at build time to compare against the straight-line tier.
+const bool SSA_CYCLIC     = !$feat(SLJIT_NO_SSA_CYCLIC);
+// A loop region with a nested loop is still usually served better by the
+// inner region, and whole-region admission measured slower on Navier-Stokes.
+// The graph handles it; keep the consumer opt-in until it pays its way.
+const bool SSA_CYCLIC_REGIONS = false;
 const uint SSA_MAX_VALUES = 512;
 const uint SSA_MAX_SPILL  = 128;
 const uint SSA_HOMES      = 8;
@@ -134,6 +141,11 @@ struct SsaJoin @feat(SLJIT) {
     uint[4] preds;
     int[LOOP_REGS] phi;
     int[LOOP_REGS][4] incoming;
+    // A loop header at the body's entry has no bytecode predecessor for its
+    // forward edge. The entry state plays that role and is copied before the
+    // header label.
+    bool entry;
+    int[LOOP_REGS] entry_incoming;
 }
 
 struct SsaExit @feat(SLJIT) {
@@ -177,6 +189,10 @@ struct SsaGraph @feat(SLJIT) {
     uint spill_count;
     bool failed;
     bool single_pass;
+    bool cyclic;
+    ulong[SSA_BLOCKS] cyclic_live;
+    uint[SSA_BLOCKS] cyclic_order;
+    bool[SSA_BLOCKS] block_built;
     bool direct;
     bool inplace;
     bool direct_fields;
@@ -318,8 +334,10 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         int target      = loop_target(ins, pos);
         if (target < 0) continue;
         if (!g.single_pass && target == (int)plan.begin) continue;
-        // A branch inside the body must move forward and stay inside it.
-        if (target <= (int)pos || target > (int)plan.end) return false;
+        // A branch inside an acyclic body must move forward and stay inside it.
+        // A cyclic body may branch backwards to a loop header.
+        if (target < (int)plan.begin || target > (int)plan.end) return false;
+        if (target <= (int)pos && !g.cyclic) return false;
         if (ins.op != Opcode.JUMP && pos + 1 <= plan.end) {
             bool found = false;
             for (uint i = 0; i < count; i++) {
@@ -414,8 +432,10 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         }
     }
     // The last block ends at the backedge, which the latch owns.
-    g.blocks[count - 1].succ0 = g.single_pass ? SSA_BLOCKS : 0;
-    g.blocks[count - 1].succ1 = g.single_pass ? SSA_BLOCKS : 0;
+    if (!g.cyclic) {
+        g.blocks[count - 1].succ0 = g.single_pass ? SSA_BLOCKS : 0;
+        g.blocks[count - 1].succ1 = g.single_pass ? SSA_BLOCKS : 0;
+    }
     // Collect the predecessors.
     for (uint i = 0; i < count; i++) {
         SsaBlock* block = &g.blocks[i];
@@ -439,6 +459,72 @@ fn int ssa_block_of(SsaGraph* g, uint pc) @feat(SLJIT) {
     return -1;
 }
 
+fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
+    if (!compiler::moveelim_roles_ready) compiler::moveelim_init_roles();
+    uint reachable = 1;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (uint b = 0; b < g.block_count; b++) {
+            if ((reachable & (1U << b)) == 0) continue;
+            SsaBlock* block = &g.blocks[b];
+            uint next = reachable;
+            if (block.succ0 < g.block_count) next |= 1U << block.succ0;
+            if (block.succ1 < g.block_count) next |= 1U << block.succ1;
+            if (next != reachable) { reachable = next; changed = true; }
+        }
+    }
+    if (reachable != (1U << g.block_count) - 1) return false;
+    uint scheduled = 1;
+    g.cyclic_order[0] = 0;
+    for (uint n = 1; n < g.block_count; n++) {
+        bool found = false;
+        for (uint b = 1; b < g.block_count; b++) {
+            if ((scheduled & (1U << b)) != 0) continue;
+            for (uint p = 0; p < g.blocks[b].pred_count; p++) {
+                if ((scheduled & (1U << g.blocks[b].preds[p])) == 0) continue;
+                g.cyclic_order[n] = b;
+                scheduled |= 1U << b;
+                found = true;
+                break;
+            }
+            if (found) break;
+        }
+        if (!found) return false;
+    }
+    uint[2][SSA_BLOCKS] live;
+    uint[2] words;
+    compiler::RegSet set = { .words = &words[0], .word_count = 2 };
+    changed = true;
+    while (changed) {
+        changed = false;
+        uint b = g.block_count;
+        while (b > 0) {
+            b--;
+            SsaBlock* block = &g.blocks[b];
+            set.clear();
+            if (block.succ0 < g.block_count) {
+                words[0] |= live[block.succ0][0]; words[1] |= live[block.succ0][1];
+            }
+            if (block.succ1 < g.block_count) {
+                words[0] |= live[block.succ1][0]; words[1] |= live[block.succ1][1];
+            }
+            uint pc = block.end + 1;
+            while (pc > block.begin) {
+                Instruction ins = g.cf.code[--pc];
+                uint def;
+                if (compiler::moveelim_get_def(ins, &def)) set.unset(def);
+                compiler::moveelim_add_uses(ins, &set, true);
+            }
+            if (live[b][0] != words[0] || live[b][1] != words[1]) {
+                live[b][0] = words[0]; live[b][1] = words[1]; changed = true;
+            }
+        }
+    }
+    for (uint b = 0; b < g.block_count; b++) g.cyclic_live[b] = (ulong)live[b][0] | ((ulong)live[b][1] << 32);
+    return true;
+}
+
 fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJIT) {
     // Unsupported graphs retain the straight-line loop implementation.
     if (!SSA_ENABLED || plan.memory_count > LOOP_MEMORY) return false;
@@ -460,8 +546,10 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             }
             // An arm's branch: a comparison, a truthiness test, or the jump
             // that ends an arm. A branch that leaves the body is not
-            // supported.
-            if (target <= (int)pos || target > (int)plan.end) return false;
+            // supported. A nested loop may branch back inside the body.
+            if (target <= (int)pos) {
+                if (!SSA_CYCLIC || !SSA_CYCLIC_REGIONS || target <= (int)plan.begin) return false;
+            } else if (target > (int)plan.end) return false;
             if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) continue;
             if (ins.op == Opcode.JUMP) continue;
             if (!ssa_comparison_op(ins.op)) return false;
@@ -564,6 +652,8 @@ fn void ssa_infer(
     for (uint pos = plan.begin; pos <= plan.end; pos++) {
         Instruction ins = cf.code[pos];
         if (loop_target(ins, pos) >= 0) {
+            // An unconditional jump carries an offset in A, not a register.
+            if (ins.op == Opcode.JUMP) continue;
             // A comparison branch reads two numbers; a truthiness test reads
             // one value and does not use it as a number.
             bool comparison = ssa_comparison_op(ins.op);
@@ -843,13 +933,63 @@ fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < LOOP_REGS; i++) g.int_reg[i] = int_reg[i];
 }
 
+// A loop header reached from a block that has not been built yet: the
+// backedge carries values from later in the body. The header keeps one phi
+// per register live at its entry. Forward edges are bound now; backedge
+// inputs are bound once every block has been built.
+fn bool ssa_cyclic_header(SsaGraph* g, uint b) @feat(SLJIT) {
+    SsaBlock* block = &g.blocks[b];
+    if (g.join_count == SSA_JOINS) return false;
+    uint index = g.join_count++;
+    SsaJoin* join = &g.joins[index];
+    join.block = b;
+    join.pred_count = block.pred_count;
+    join.entry = b == 0;
+    for (uint p = 0; p < block.pred_count; p++) {
+        join.preds[p] = block.preds[p];
+        for (uint reg = 0; reg < LOOP_REGS; reg++) join.incoming[p][reg] = -1;
+    }
+    for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        join.phi[reg] = -1;
+        join.entry_incoming[reg] = b == 0 ? g.current[reg] : -1;
+        g.current[reg] = -1;
+        if ((g.cyclic_live[b] & (1UL << reg)) == 0) continue;
+        bool available = b == 0 && join.entry_incoming[reg] >= 0;
+        if (available) ssa_use(g, join.entry_incoming[reg]);
+        for (uint p = 0; p < block.pred_count; p++) {
+            uint pred = block.preds[p];
+            if (!g.block_built[pred]) continue;
+            int incoming = g.block_exit[pred][reg];
+            if (incoming < 0) return false;
+            join.incoming[p][reg] = incoming;
+            ssa_use(g, incoming);
+            available = true;
+        }
+        if (!available) return false;
+        int phi = ssa_value(g, JOIN, g.rep[reg], (int)index, (int)reg, 0);
+        ssa_result(g, phi, reg, block.begin);
+        join.phi[reg] = phi;
+        g.current[reg] = phi;
+    }
+    return true;
+}
+
 // Enter a block: its register state is the merge of its predecessors' states.
 // Where the predecessors disagree, the join holds a value each of them
 // writes before it arrives.
 fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
     SsaBlock* block = &g.blocks[b];
-    if (b == 0) return true;
     if (block.pred_count == 0) return true;
+    // A loop region's own header already has its phis.
+    if (!g.single_pass && b == 0) return true;
+    if (g.cyclic) {
+        bool cyclic_header;
+        for (uint p = 0; p < block.pred_count; p++) {
+            if (!g.block_built[block.preds[p]]) cyclic_header = true;
+        }
+        if (cyclic_header) return ssa_cyclic_header(g, b);
+    }
+    if (b == 0) return true;
     if (block.pred_count == 1) {
         uint pred = block.preds[0];
         for (uint reg = 0; reg < LOOP_REGS; reg++) g.current[reg] = g.block_exit[pred][reg];

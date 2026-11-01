@@ -92,6 +92,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     // and later code reads them. They become loop-carried phis for that
     // reason alone; nothing else about them is loop-carried.
     bool[LOOP_REGS] exit_live;
+    foreach (&entry : exit_live) *entry = false;
     if (plan.end + 1 < cf.code_count && !ssa_continuation_live(g, &exit_live)) {
         // The continuation may read implicit call windows; raw operand bytes
         // also include constant indices and offsets that are not registers.
@@ -130,8 +131,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             g.phi[reg] = phi;
             g.values[phi].arg_reg = (int)reg;
             g.current[reg] = phi;
-        } else if ((g.single_pass && (live_in[reg] || exit_live[reg])) || (!written[reg] && value_read[reg])) {
-            int arg = ssa_value(g, ARG, g.single_pass && !live_in[reg] ? BOXED : g.rep[reg], -1, 0, 0);
+        } else if ((g.cyclic && reg < cf.num_args) || (g.single_pass && (live_in[reg] || exit_live[reg])) || (!written[reg] && value_read[reg])) {
+            int arg = ssa_value(g, ARG, g.cyclic || (g.single_pass && !live_in[reg]) ? BOXED : g.rep[reg], -1, 0, 0);
             g.values[arg].arg_reg = (int)reg;
             g.arg[reg] = arg;
             g.current[reg] = arg;
@@ -144,7 +145,20 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         g.failed = true;
         return false;
     }
-    for (uint b = 0; b < g.block_count; b++) {
+    if (g.cyclic && !ssa_cyclic_liveness(g)) return false;
+    if (g.cyclic && !g.single_pass && g.block_count > 1) {
+        // The outer latch must be built last: its register state is the
+        // loop-carried input the final phi wiring below reads.
+        uint latch = g.block_count - 1;
+        uint at = 0;
+        for (uint step = 0; step < g.block_count; step++) {
+            if (g.cyclic_order[step] == latch) { at = step; break; }
+        }
+        g.cyclic_order[at] = g.cyclic_order[g.block_count - 1];
+        g.cyclic_order[g.block_count - 1] = latch;
+    }
+    for (uint step = 0; step < g.block_count; step++) {
+        uint b = g.cyclic ? g.cyclic_order[step] : step;
         g.current_block = b;
         // A conversion emitted in one arm need not execute on another arm.
         foreach (&entry : g.conv) *entry = 0;
@@ -480,6 +494,21 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         }
         g.block_last[b] = g.value_count;
         for (uint reg = 0; reg < LOOP_REGS; reg++) g.block_exit[b][reg] = g.current[reg];
+        g.block_built[b] = true;
+    }
+    if (g.cyclic) {
+        for (uint j = 0; j < g.join_count; j++) {
+            SsaJoin* join = &g.joins[j];
+            for (uint p = 0; p < join.pred_count; p++) {
+                for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                    if (join.phi[reg] < 0 || join.incoming[p][reg] >= 0) continue;
+                    int incoming = g.block_exit[join.preds[p]][reg];
+                    if (incoming < 0) return false;
+                    join.incoming[p][reg] = incoming;
+                    ssa_use(g, incoming);
+                }
+            }
+        }
     }
     for (uint i = 0; i < plan.memory_count && i < LOOP_MEMORY; i++) {
         uint source = plan.memory[i].source;

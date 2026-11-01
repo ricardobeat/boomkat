@@ -254,7 +254,10 @@ bool moveelim_roles_ready;
 fn void moveelim_init_roles() {
     foreach (op : Opcode::values) {
         MoveelimRoles r;
-        r.a_write = moveelim_a_is_write(op);
+        // Read-modify-write opcodes still define A; keeping them out of the
+        // def-kill would overstate liveness at every loop header.
+        r.a_write = moveelim_a_is_write(op) || op == Opcode.INC
+            || op == Opcode.INC_LT || op == Opcode.DEC || op == Opcode.ADD_FUSED;
         switch (op) {
             case Opcode.CLASS_SCALAR_GUARD:
             case Opcode.CALL:
@@ -284,6 +287,9 @@ fn void moveelim_init_roles() {
                 r.b_read = probe.test(2);
                 r.c_read = probe.test(3);
         }
+        // The fused add derives both results from B and C; it does not read
+        // the intermediate it writes into A.
+        if (op == Opcode.ADD_FUSED) r.a_read = false;
         moveelim_roles[op.ordinal] = r;
     }
     moveelim_roles_ready = true;

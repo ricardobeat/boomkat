@@ -35,6 +35,9 @@ struct FunctionRun {
     ulong clock;
     FunctionTypedCache[2] typed;
     double[32 * INLINE_DEPTH] inline_values;
+    // Entry budget saved across a frameless fast path, which is refunded if
+    // that path exits so the ordinary entry does not start with nothing left.
+    long ssa_budget @if($feat(SLJIT));
     LoopState* ssa_state @if($feat(SLJIT));
     void* ssa_callee @if($feat(SLJIT));
     ulong ssa_receiver @if($feat(SLJIT));

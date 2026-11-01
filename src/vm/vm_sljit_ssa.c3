@@ -56,6 +56,15 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     graph.inplace = parent != null;
     graph.direct_fields = parent != null && !$feat(SLJIT_NO_SSA_FIELD_IR);
     graph.callee_entry = callee_entry;
+    if (SSA_CYCLIC) for (uint pc = plan.begin; pc <= plan.end; pc++) {
+        int to = loop_target(cf.code[pc], pc);
+        if (to < 0 || to > (int)pc) continue;
+        // A frameless callee compiles its whole body, so any backedge makes
+        // the graph cyclic. A loop region keeps its outer latch separate and
+        // only becomes cyclic for a nested loop inside the body.
+        if (callee_entry) { graph.cyclic = true; }
+        else if (SSA_CYCLIC_REGIONS && !single_pass && pc < plan.end && to > (int)plan.begin) { graph.cyclic = true; }
+    }
     graph.inline_base = inline_base;
     graph.inline_depth = inline_depth;
     graph.fpr_homes = parent != null ? 4 : SSA_HOMES;
@@ -111,13 +120,15 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         }
     }
     ssa_dominators(graph);
-    ssa_invariant_cse(graph);
-    ssa_cse(graph);
-    ssa_numeric_loads(graph);
-    ssa_function_liveness(graph);
+    if (!graph.cyclic) {
+        ssa_invariant_cse(graph);
+        ssa_cse(graph);
+        ssa_numeric_loads(graph);
+        ssa_function_liveness(graph);
+    }
     // Only method reads replaced by a watched call proof may lose their
     // faulting load and its chain walk. Other guarded reads stay observable.
-    if (graph.inplace) {
+    if (graph.inplace && !graph.cyclic) {
         bool removed;
         for (uint i = 0; i < graph.value_count; i++) {
             SsaValue* value = &graph.values[i];
@@ -134,6 +145,7 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         if (removed) ssa_function_liveness(graph);
     }
     ssa_allocate(graph);
+    if (graph.failed) return null;
     uint phi_count;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
     if (graph.spill_count + phi_count + 2 > SSA_MAX_SPILL) return null;
@@ -198,6 +210,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     self.state = graph.direct_fields ? jit::reg_s(2) : parent != null ? jit::reg_r(6) : jit::reg_s(direct ? 5 : 0);
     self.regs = jit::reg_s(parent != null && inline_depth != 0 ? 5 : 0);
     self.budget = jit::reg_s(1);
+    self.run = jit::reg_s(2);
     self.at_def = 0;
     for (uint i = 0; i < LOOP_REGS; i++) self.live[i] = graph.header[i];
     if (graph.direct_fields) {
@@ -230,6 +243,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     for (uint i = (uint)saved_count; i < graph.exit_count; i++) {
         for (uint reg = 0; reg < LOOP_REGS; reg++) graph.exits[i].regs[reg] = -1;
     }
+    self.entry_copies();
     self.header = e.label();
     self.body();
     if (!single_pass) self.latch();

@@ -93,6 +93,9 @@ struct LoopPlan @feat(SLJIT) {
     bool ssa_fields;
     bool ssa_calls;
     bool ssa_commit;
+    // The region contains a nested loop, so only the cyclic SSA emitter can
+    // describe it and the straight-line template emitter must not try.
+    bool ssa_cyclic;
     void* ssa_entry;
     CompiledFunction* ssa_function;
     void* ssa_map_begin @if($feat(SLJIT_MAP));
@@ -499,7 +502,7 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool gener
     return true;
 }
 
-fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int region_begin = -1, bool inline_calls = false, CompiledFunction* target_cf = null) @feat(SLJIT) {
+fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int region_begin = -1, bool inline_calls = false, CompiledFunction* target_cf = null, bool allow_backedges = false) @feat(SLJIT) {
     bool feedback = target_cf != null;
     CompiledFunction* cf = feedback ? target_cf : cold.vm.current_func;
     int begin            = region_begin >= 0 ? region_begin : loop_target(cf.code[end], end);
@@ -559,7 +562,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
         }
         int target = loop_target(ins, pos);
         if (target >= 0) {
-            if ((uint)target >= cf.code_count || (target <= (int)pos && pos != end)) return false;
+            if ((uint)target >= cf.code_count || (target <= (int)pos && pos != end && !allow_backedges)) return false;
             if (ins.op == Opcode.JUMP) continue;
             // The template emitter's condition path carries the numeric
             // relations only, so the equality and null branches stay out of
@@ -1888,6 +1891,15 @@ fn void loop_import_state(LoopPlan* plan, LoopState* state, TVal* regs, uint win
     }
 }
 
+// Whether the region contains a backedge other than its own latch.
+fn bool loop_inner_backedge(LoopPlan* plan, CompiledFunction* cf) @feat(SLJIT) {
+    for (uint pos = plan.begin; pos < plan.end; pos++) {
+        int target = loop_target(cf.code[pos], pos);
+        if (target >= 0 && target <= (int)pos) return true;
+    }
+    return false;
+}
+
 // Analyze and emit one loop whose high registers are aliased to free low
 // slots. The bytecode is remapped only while the graph and native body are
 // being built; the caller's interpreter code is restored before return.
@@ -1907,11 +1919,12 @@ fn bool loop_highreg_compile(CompiledFunction* cf, uint offset, TVal* regs, Cold
     TVal[LOOP_REGS] alias_regs;
     for (uint i = 0; i < LOOP_REGS; i++) alias_regs[i] = regs[i];
     for (uint i = 0; i < LOOP_REGS; i++) if (slot_reg[i] != (int)i) alias_regs[i] = regs[slot_reg[i]];
-    if (!loop_analyze(draft, offset, &alias_regs[0], cold, -1, SSA_ENABLED)) return false;
+    if (!loop_analyze(draft, offset, &alias_regs[0], cold, -1, SSA_ENABLED, null, SSA_CYCLIC && SSA_CYCLIC_REGIONS)) return false;
     draft.slot_reg = slot_reg;
+    draft.ssa_cyclic = SSA_CYCLIC && SSA_CYCLIC_REGIONS && loop_inner_backedge(draft, cf);
     draft.native = ssa_loop_eligible(draft, cf, h) ? ssa_loop_emit(draft, cf, h) : null;
     draft.ssa = draft.native != null;
-    if (draft.native == null && !draft.ssa_calls) {
+    if (draft.native == null && !draft.ssa_calls && !draft.ssa_cyclic) {
         for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
         draft.native = loop_emit(draft, cf, h);
     }
@@ -1987,13 +2000,14 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         if (cf.num_regs > LOOP_REGS) {
             compiled = loop_highreg_compile(cf, offset, regs, cold, h, &draft);
         } else {
-            if (!loop_analyze(&draft, offset, regs, cold, -1, SSA_ENABLED)) {
+            if (!loop_analyze(&draft, offset, regs, cold, -1, SSA_ENABLED, null, SSA_CYCLIC && SSA_CYCLIC_REGIONS)) {
                 cf.sljit_loop_rejected |= 1UL << (offset & 63);
                 return body;
             }
+            draft.ssa_cyclic = SSA_CYCLIC && SSA_CYCLIC_REGIONS && loop_inner_backedge(&draft, cf);
             draft.native = ssa_loop_eligible(&draft, cf, h) ? ssa_loop_emit(&draft, cf, h) : null;
             draft.ssa = draft.native != null;
-            if (draft.native == null && !draft.ssa_calls) {
+            if (draft.native == null && !draft.ssa_calls && !draft.ssa_cyclic) {
                 for (uint i = 0; i < draft.memory_count; i++) draft.memory[i].doubles = false;
                 draft.native = loop_emit(&draft, cf, h);
             }
@@ -2095,7 +2109,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             plan.native = loop_reemit(plan, cf, h, true);
         }
         plan.ssa = plan.native != null;
-        if (plan.native == null) {
+        if (plan.native == null && !plan.ssa_cyclic) {
             for (uint i = 0; i < plan.memory_count; i++) plan.memory[i].doubles = false;
             plan.native = loop_reemit(plan, cf, h, false);
         }
