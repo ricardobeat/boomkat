@@ -88,6 +88,9 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
         graph.registers.saved_homes = 0;
     }
     graph.force_f64 = forced;
+    uint span = plan.end - plan.begin + 1;
+    graph.frames = (SsaFrameId*)ssa_storage_alloc(graph, span, SsaFrameId::size);
+    if (graph.frames != null) for (uint pc = 0; pc < span; pc++) graph.frames[pc] = SSA_NO_FRAME;
 }
 
 fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pass, bool direct = false, TemplateEmitter* parent = null, uint inline_base = 0, uint inline_depth = 0, bool callee_entry = false) @feat(SLJIT) {
@@ -278,7 +281,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     self.header_guards();
     self.prologue();
     for (uint i = (uint)saved_count; i < graph.exit_count; i++) {
-        for (uint reg = 0; reg < LOOP_REGS; reg++) graph.exits[i].regs[reg] = -1;
+        graph.exits[i].frame = SSA_NO_FRAME;
     }
     if (graph.recoverable) {
         // Each VM continuation imports a fresh frame. The shared body has a
