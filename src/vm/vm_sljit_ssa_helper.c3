@@ -47,14 +47,12 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     int mem = jit::SLJIT_MEM;
     int imm = jit::SLJIT_IMM;
     uint outputs;
-    foreach (entry : ssa_frame_entries(self.g, ssa_frame_at_pc(self.g, self.pc))) {
-        uint reg = entry.reg;
-        int source = entry.value;
-        self.output(source, self.pc);
+    foreach (entry : ssa_frame_entries(self.g, site.before_frame)) {
+        self.output(entry.value, self.pc);
         self.e.mov(r2, 0, mem | self.state, $reflect(LoopState.execution).offset);
         self.e.mov(r2, 0, mem | r2, $reflect(SsaExecution.outputs).offset);
         self.e.mov(mem | r2, (long)outputs * SsaPublishedValue::size + $reflect(SsaPublishedValue.reg).offset,
-            imm, reg, jit::SLJIT_MOV_U32);
+            imm, entry.reg, jit::SLJIT_MOV_U32);
         self.e.mov(mem | r2, (long)outputs * SsaPublishedValue::size + $reflect(SsaPublishedValue.value).offset, r0, 0);
         outputs++;
     }
