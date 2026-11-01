@@ -273,6 +273,18 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case GETGLOBAL:
 
                     {
+                        if (g.recoverable) {
+                            // A slot store can alias a global/capture binding.
+                            // Read the real binding at this operation instead
+                            // of reusing an invocation-entry snapshot.
+                            int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
+                            ssa_result(g, value, ins.a, pos);
+                            g.current[ins.a] = value;
+                            g.values[value].before_frame = g.frames[at];
+                            g.values[value].after_frame = ssa_frame_capture(g, view.next_pc, g.current, g.reg_count,
+                                view.next_pc <= plan.end ? g.recovery_live[view.next_pc - plan.begin].words : null, g.reg_words);
+                            break;
+                        }
                         int binding = (int)plan.binding_at[pos - plan.begin] - 1;
                         int value;
                         if ((plan.ssa_binding_mask & (1UL << (uint)binding)) != 0) {
@@ -398,6 +410,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case NEWARR:
                 case NEWARR_CONST:
                 case CLOSURE:
+                case NEWCELLS: case GETCELL: case SETCELL: case MOVECELL:
                     {
                         if (!g.recoverable) return false;
                         int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
@@ -426,7 +439,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         LoopMemorySpec spec =  plan.memory[memory];
                         int base_value      = -1;
                         if (g.direct_fields && spec.kind == FIELD) {
-                            base_value = ssa_field_storage(g, memory);
+                            base_value = ssa_field_storage(g, memory,
+                                g.recoverable && ins.op != Opcode.GETTHISC ? g.current[ins.b] : -1);
                             ssa_use(g, base_value);
                         } else if (spec.kind == SHAPE_FIELD || spec.kind == PROTO_FIELD) {
                             base_value = g.current[ins.b];

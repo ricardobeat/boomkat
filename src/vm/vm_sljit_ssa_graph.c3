@@ -678,6 +678,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case NEWARR:
             case NEWARR_CONST:
             case CLOSURE:
+            case NEWCELLS: case GETCELL: case SETCELL: case MOVECELL:
                 if (!plan.ssa_recoverable) return false;
                 continue;
             default:
