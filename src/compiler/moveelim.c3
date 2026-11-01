@@ -24,6 +24,11 @@
 module boomkat::compiler;
 
 import boomkat::bytecode;
+import boomkat::heap;
+import std::io;
+
+// The JIT loop window uses registers 0..63.
+const uint LOOP_REGS_MIN = 64;
 
 // Register bitset for the liveness pass, sized to the function's register
 // high-water mark rather than the full 16-bit register file (8 KB per slot).
@@ -80,22 +85,14 @@ fn bool RegSet.equals(&self, RegSet* other) {
 // write-only, meaning never simultaneously read as a value, a branch
 // condition, or an assignment source. This is the exhaustive
 // write-only-A allow-list (`moveelim_producer_allowed`'s opcode set, the
-// opcodes this pass proves safe to retarget, plus the fused property loads);
+// opcodes this pass proves safe to retarget, including fused property loads);
 // every opcode outside it is conservatively treated as
 // reading A (see `moveelim_a_is_read` below) even for opcodes where A is
 // actually unused (e.g. INITTZ, YIELD's B/C=0-only forms), marking an
 // unused field as "read" only adds a harmless spurious liveness entry for
 // register 0, since unused fields are always encoded as 0.
 fn bool moveelim_a_is_write_only(Opcode op) {
-    return moveelim_producer_allowed(op) || moveelim_fused_load(op);
-}
-
-// The fused property loads write A and read none of A, B-as-key or C-as-key:
-// GETPROPC reads only its object register B, GETTHISC reads none. They are
-// not producers move elimination retargets, but a read of their destination
-// before the load would otherwise keep it live through the load.
-fn bool moveelim_fused_load(Opcode op) {
-    return op == Opcode.GETPROPC || op == Opcode.GETPROPC_CACHED || op == Opcode.GETTHISC;
+    return moveelim_producer_allowed(op);
 }
 
 // Whether `op` reads its A field as a register (an input, an assignment
@@ -116,8 +113,7 @@ fn bool moveelim_a_is_read(Opcode op) {
 // Missing a def keeps a register live too far back, which can only suppress a
 // retarget, never permit an unsafe one.
 fn bool moveelim_a_is_write(Opcode op) {
-    // The producer allow-list, plus LDINTX (it spans two instruction words) and
-    // the fused property loads, which are excluded from producer retargeting.
+    // The producer allow-list, plus LDINTX (it spans two instruction words).
     return op == Opcode.LDINTX || moveelim_a_is_write_only(op);
 }
 
@@ -166,10 +162,15 @@ fn bool moveelim_producer_allowed(Opcode op) {
         case Opcode.INSTANCEOF:
         case Opcode.IN:
         case Opcode.GETPROP:
+        case Opcode.GETPROPC:
+        case Opcode.GETPROPC_CACHED:
+        case Opcode.GETTHISC:
         case Opcode.GETPROTO:
         case Opcode.GETVAR:
         case Opcode.GETBOUND:
         case Opcode.GETGLOBAL:
+        case Opcode.GETCAP:
+        case Opcode.TONUMERIC:
         case Opcode.TYPEOFIDENT:
             return true;
         default:
@@ -255,7 +256,10 @@ bool moveelim_roles_ready;
 fn void moveelim_init_roles() {
     foreach (op : Opcode::values) {
         MoveelimRoles r;
-        r.a_write = moveelim_a_is_write(op);
+        // Read-modify-write opcodes still define A; keeping them out of the
+        // def-kill would overstate liveness at every loop header.
+        r.a_write = moveelim_a_is_write(op) || op == Opcode.INC
+            || op == Opcode.INC_LT || op == Opcode.DEC || op == Opcode.ADD_FUSED;
         switch (op) {
             case Opcode.CLASS_SCALAR_GUARD:
             case Opcode.CALL:
@@ -285,23 +289,189 @@ fn void moveelim_init_roles() {
                 r.b_read = probe.test(2);
                 r.c_read = probe.test(3);
         }
+        // The fused add derives both results from B and C; it does not read
+        // the intermediate it writes into A.
+        if (op == Opcode.ADD_FUSED) r.a_read = false;
         moveelim_roles[op.ordinal] = r;
     }
     moveelim_roles_ready = true;
 }
 
+// The alias window covers these registers. A function with more is left to the
+// interpreter rather than given an unbounded table.
+const uint BYTECODE_REGS_MAX = 1024;
+
+// Operands of the instruction at `pos`, including the high bytes a WIDE prefix
+// at pos - 1 contributes. `ok` is false when the operands are not a plain
+// role-decoded form the alias window can rewrite; `next` is the position after
+// the instruction, skipping a prefix pair.
+struct BytecodeOperands {
+    uint a;
+    uint b;
+    uint c;
+    bool a_reg;
+    bool b_reg;
+    bool c_reg;
+    bool ok;
+    uint next;
+}
+
+fn BytecodeOperands bytecode_operands(Instruction* code, uint pos, uint end) {
+    BytecodeOperands o;
+    DecodedBytecode decoded = bytecode::decode_bytecode(code, end + 1, pos);
+    o.next = decoded.next_pc;
+    if (!decoded.valid) return o;
+    Opcode op = decoded.insn.op;
+    uint pa = decoded.insn.a >> 8;
+    uint pb = decoded.insn.b >> 8;
+    uint pc = decoded.insn.c >> 8;
+    // The shared decoder rejects nested WIDE prefixes. LDINTX and general
+    // instructions need paired or window semantics the alias pass cannot rewrite.
+    if (op == Opcode.LDINTX) return o;
+    MoveelimRoles r = moveelim_roles[op.ordinal];
+    if (r.general) return o;
+    o.a = decoded.insn.a;
+    o.b = decoded.insn.b;
+    o.c = decoded.insn.c;
+    o.a_reg = r.a_read || r.a_write;
+    o.b_reg = r.b_read;
+    o.c_reg = r.c_read && bytecode::get_op_format(op) == OpFormat.ABC;
+    // A field that is not a register cannot carry a widened value: its prefix
+    // byte belongs to an index or immediate this pass does not rewrite.
+    if ((!o.a_reg && pa != 0) || (!o.b_reg && pb != 0) || (!o.c_reg && pc != 0)) return o;
+    o.ok = true;
+    return o;
+}
+
+// Collect every register touched by [begin, end] in a single pass. Unknown
+// WIDE payloads conservatively reserve the entire set, including when the
+// prefix is truncated at the end of the window.
+fn void bytecode_register_set(Instruction* code, uint begin, uint end, RegSet* used) @public {
+    if (!moveelim_roles_ready) moveelim_init_roles();
+    used.clear();
+    for (uint i = begin; i <= end; i++) {
+        BytecodeOperands o = bytecode_operands(code, i, end);
+        if (!o.ok) {
+            if (code[i].op == Opcode.WIDE) {
+                for (uint word = 0; word < used.word_count; word++) used.words[word] = uint::max;
+                return;
+            }
+            moveelim_add_uses(code[i], used, true);
+            uint def;
+            if (moveelim_get_def(code[i], &def)) used.set(def);
+            continue;
+        }
+        if (o.a_reg) used.set(o.a);
+        if (o.b_reg) used.set(o.b);
+        if (o.c_reg) used.set(o.c);
+        i = o.next - 1;
+    }
+}
+
+fn ulong bytecode_low_register_mask(Instruction* code, uint begin, uint end) @public {
+    uint[32] words;
+    RegSet used = { .words = &words[0], .word_count = 32 };
+    bytecode_register_set(code, begin, end, &used);
+    return (ulong)words[0] | ((ulong)words[1] << 32);
+}
+
+fn bool bytecode_register_used(Instruction* code, uint begin, uint end, uint reg) @public {
+    if (reg >= BYTECODE_REGS_MAX) return true;
+    uint[32] words;
+    RegSet used = { .words = &words[0], .word_count = 32 };
+    bytecode_register_set(code, begin, end, &used);
+    return used.test(reg);
+}
+
+// Rewrite register operands through `map`, which maps each high register to a
+// free low slot. Only plain ABC forms and the A field of A-BC/A-SBX forms are
+// rewritten; a high register inside a call/argument window or another combined
+// operand makes the range unsupported.
+fn bool bytecode_remap_registers(Instruction* code, uint begin, uint end, uint[BYTECODE_REGS_MAX] map) @public {
+    if (!moveelim_roles_ready) moveelim_init_roles();
+    for (uint i = begin; i <= end; i++) {
+        Instruction ins = code[i];
+        if (ins.op == Opcode.LDINTX) return false;
+        MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+        if (r.general) {
+            if (ins.op == Opcode.WIDE) return false;
+            uint[32] words;
+            RegSet live = { .words = &words[0], .word_count = 32 };
+            moveelim_add_uses(ins, &live, true);
+            uint def;
+            if (moveelim_get_def(ins, &def)) live.set(def);
+            for (uint reg = LOOP_REGS_MIN; reg < BYTECODE_REGS_MAX; reg++) if (live.test(reg)) {
+                return false;
+            }
+            continue;
+        }
+        BytecodeOperands o = bytecode_operands(code, i, end);
+        if (!o.ok) return false;
+        // Every rewritten operand lands in a low slot, so the pair collapses to
+        // an ordinary instruction and a NOP. Below that, the analysis and the
+        // emitters only ever see the unchanged 8-bit form.
+        uint[3] field;
+        field[0] = o.a;
+        field[1] = o.b;
+        field[2] = o.c;
+        bool[3] is_reg;
+        is_reg[0] = o.a_reg;
+        is_reg[1] = o.b_reg;
+        is_reg[2] = o.c_reg;
+        for (uint f = 0; f < 3; f++) {
+            if (!is_reg[f] || field[f] < LOOP_REGS_MIN) continue;
+            if (field[f] >= BYTECODE_REGS_MAX || map[field[f]] == field[f]) {
+                return false;
+            }
+            field[f] = map[field[f]];
+        }
+        Instruction payload = code[o.next - 1];
+        payload.a = (char)field[0];
+        payload.b = (char)field[1];
+        payload.c = (char)field[2];
+        code[o.next - 1] = payload;
+        if (ins.op == Opcode.WIDE) code[i] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+        i = o.next - 1;
+    }
+    return true;
+}
+
+// Both packed and decoded instructions use the same per-field roles.
+macro void moveelim_add_role_uses(MoveelimRoles roles, uint a, uint b, uint c, RegSet* live) {
+    if (roles.a_read) live.set(a);
+    if (roles.b_read) live.set(b);
+    if (roles.c_read) live.set(c);
+}
+
+// The role table and general window logic are shared with decoded WIDE
+// bytecode, whose effective register fields can exceed one byte. The caller
+// initializes moveelim_roles before the first use, as for packed bytecode.
+fn void moveelim_add_decoded_uses(DecodedInsn ins, RegSet* live, bool mark_call_windows) {
+    MoveelimRoles r = moveelim_roles[ins.op.ordinal];
+    if (r.general) {
+        moveelim_add_decoded_uses_general(ins, live, mark_call_windows);
+        return;
+    }
+    moveelim_add_role_uses(r, ins.a, ins.b, ins.c, live);
+}
+
+// Keep the ordinary bytecode's common role checks on packed fields; only the
+// less common window instructions need a widened temporary.
 fn void moveelim_add_uses(Instruction ins, RegSet* live, bool mark_call_windows) {
     MoveelimRoles r = moveelim_roles[ins.op.ordinal];
     if (r.general) {
         moveelim_add_uses_general(ins, live, mark_call_windows);
         return;
     }
-    if (r.a_read) live.set((uint)ins.a);
-    if (r.b_read) live.set((uint)ins.b);
-    if (r.c_read) live.set((uint)ins.c);
+    moveelim_add_role_uses(r, (uint)ins.a, (uint)ins.b, (uint)ins.c, live);
 }
 
 fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_windows) {
+    DecodedInsn decoded = { ins.op, ins.a, ins.b, ins.c };
+    moveelim_add_decoded_uses_general(decoded, live, mark_call_windows);
+}
+
+fn void moveelim_add_decoded_uses_general(DecodedInsn ins, RegSet* live, bool mark_call_windows) {
     Opcode op = ins.op;
 
     // Call-family argument windows. The VM reads every register from the callee
@@ -410,10 +580,18 @@ fn void moveelim_add_uses_general(Instruction ins, RegSet* live, bool mark_call_
 // Compute the register this instruction WRITES as a plain destination, if
 // any (per `moveelim_a_is_write`). Returns true and fills `out_reg` when
 // there is one.
-fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
-    if (!moveelim_roles[ins.op.ordinal].a_write) { return false; }
-    *out_reg = (uint)ins.a;
+macro bool moveelim_get_role_def(MoveelimRoles roles, uint a, uint* out_reg) {
+    if (!roles.a_write) return false;
+    *out_reg = a;
     return true;
+}
+
+fn bool moveelim_get_decoded_def(DecodedInsn ins, uint* out_reg) {
+    return moveelim_get_role_def(moveelim_roles[ins.op.ordinal], ins.a, out_reg);
+}
+
+fn bool moveelim_get_def(Instruction ins, uint* out_reg) {
+    return moveelim_get_role_def(moveelim_roles[ins.op.ordinal], (uint)ins.a, out_reg);
 }
 
 // Build the jump-target bitset AND record, for TRY/ENDTRY pairs, the
@@ -632,6 +810,67 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
         }
         first = false;
     }
+}
+
+// Compatibility adapters retain word-PC-indexed outputs while consuming the
+// shared canonical decoded CFG. No fixed-point sweep decodes bytecode again.
+fn bool moveelim_decoded_branch(DecodedBytecode view, long* target) {
+    return bytecode_cfg_branch(view, target);
+}
+
+fn bool moveelim_compute_decoded_liveness(Instruction* code, uint code_count,
+    RegSet* live_out, RegSet* live_in, RegSet* scratch, bool* boundary,
+    heap::Heap* h = null) {
+    for (uint pc = 0; pc < code_count; pc++) boundary[pc] = false;
+    DecodedCfg cfg;
+    if (!bytecode_cfg_build(&cfg, code, code_count, h)) return false;
+    defer bytecode_cfg_free(&cfg);
+    for (uint i = 0; i < cfg.instruction_count; i++) boundary[cfg.nodes[i].view.pc] = true;
+    bytecode_cfg_liveness(&cfg, live_out, live_in, scratch, true, true);
+    return true;
+}
+
+// Both narrow and WIDE continuations use canonical instruction slots. The VM
+// provides a positive opcode predicate; unsupported control flow or exhausted
+// memory/graph budgets refuses to its conservative recovery path.
+fn bool moveelim_decoded_continuation(Instruction* code, uint count, uint num_regs,
+    uint continuation, heap::Heap* h, DecodedOpAllowed allowed, bool* live, uint live_count,
+    bool require_wide = false) {
+    if (count == 0 || count > 512 || num_regs >= BYTECODE_REGS_MAX || continuation >= count) return false;
+    DecodedCfg cfg;
+    if (!bytecode_cfg_build(&cfg, code, count, h)) return false;
+    defer bytecode_cfg_free(&cfg);
+    if ((require_wide && !cfg.has_wide) || cfg.pc_to_index[continuation] == CFG_NO_INSTRUCTION) return false;
+    for (uint i = 0; i < cfg.instruction_count; i++) {
+        Opcode op = cfg.nodes[i].view.insn.op;
+        if (!allowed(op) && op != Opcode.DECLVAR && op != Opcode.DECLVAR_HOIST) return false;
+    }
+    uint slots = cfg.instruction_count;
+    uint word_count = (num_regs + 32) / 32;
+    if (word_count < 2) word_count = 2;
+    usz set_bytes = (usz)slots * 2 * RegSet::size;
+    usz word_bytes = ((usz)slots * 2 + 1) * word_count * uint::size;
+    if (set_bytes + word_bytes > 8 * 1024 * 1024) return false;
+    RegSet* sets = (RegSet*)h.alloc_func(h.heap_udata, set_bytes);
+    if (sets == null) return false;
+    defer h.free_func(h.heap_udata, sets);
+    uint* words = (uint*)h.alloc_func(h.heap_udata, word_bytes);
+    if (words == null) return false;
+    defer h.free_func(h.heap_udata, words);
+    for (uint i = 0; i < slots * 2; i++) {
+        sets[i].words = words + (usz)i * word_count;
+        sets[i].word_count = word_count;
+    }
+    RegSet scratch = { .words = words + (usz)slots * 2 * word_count, .word_count = word_count };
+    bytecode_cfg_liveness(&cfg, sets, sets + slots, &scratch);
+    RegSet* input = &sets[slots + cfg.pc_to_index[continuation]];
+    for (uint reg = 0; reg < live_count; reg++) live[reg] = input.test(reg);
+    return true;
+}
+
+fn bool moveelim_wide_continuation(Instruction* code, uint count, uint num_regs,
+    uint continuation, heap::Heap* h, DecodedOpAllowed allowed, bool* live, uint live_count) {
+    return moveelim_decoded_continuation(code, count, num_regs, continuation, h, allowed, live, live_count, true);
 }
 
 // Run liveness-based move elimination over `code[0..code_count)`.
