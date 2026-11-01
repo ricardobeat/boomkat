@@ -41,7 +41,10 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         if (node.block_entry) {
             block.begin = node.view.pc;
             block.external = node.external || loop_roots[node.block];
-            if (block.external && block.begin < SSA_SPAN) g.plan.ssa_resume_pcs[block.begin >> 6] |= 1UL << (block.begin & 63);
+            if (block.external) {
+                if (g.plan.ssa_data != null) g.plan.ssa_data.resume_words[block.begin / 32] |= 1U << (block.begin % 32);
+                if (block.begin < SSA_SPAN) g.plan.ssa_resume_pcs[block.begin >> 6] |= 1UL << (block.begin & 63);
+            }
         }
         block.end = node.view.pc;
         if (i + 1 < cfg.instruction_count && cfg.nodes[i + 1].block == node.block) continue;

@@ -96,6 +96,7 @@ struct LoopState @feat(SLJIT) {
     SsaExecution* execution;
 }
 struct LoopPlan @feat(SLJIT) {
+    SsaPlanData* ssa_data;
     SsaHelperSite* ssa_helpers;
     uint ssa_value_capacity;
     ulong ssa_helper_calls @if($feat(SLJIT_STATS));

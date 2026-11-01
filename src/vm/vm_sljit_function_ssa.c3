@@ -28,6 +28,9 @@ fn LoopPlan* sljit_function_ssa_recoverable_compile(CompiledFunction* cf, ColdCt
     }
     if (!effect || !cyclic) return null;
     LoopPlan draft;
+    if (!ssa_plan_data_init(&draft, cf, cold.heap)) return null;
+    bool retained;
+    defer if (!retained) ssa_plan_data_free(cold.heap, &draft);
     draft.ssa_recoverable = true;
     draft.ssa_function = cf;
     if (!loop_analyze(&draft, cf.code_count - 1, cold.act.bottom, cold, 0, true, cf, true)) {
@@ -57,6 +60,7 @@ fn LoopPlan* sljit_function_ssa_recoverable_compile(CompiledFunction* cf, ColdCt
         return null;
     }
     *plan = draft;
+    retained = true;
     $if $feat(SLJIT_STATS):
         io::eprintfn("SLJIT recoverable SSA line=%d begin=%d end=%d bytes=%d", cf.get_line(0), plan.begin, plan.end, plan.code_bytes);
     $endif
@@ -119,6 +123,7 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
         plan.ssa_leaves = leaf.next;
         if (leaf.ssa_entry != null) jit::sljit_free_code(leaf.ssa_entry, null);
         ssa_helper_sites_free(h, leaf);
+        ssa_plan_data_free(h, leaf);
         h.free_func(h.heap_udata, leaf);
     }
     if (plan.ssa_region == null) return;
@@ -128,6 +133,7 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
     $endif
     jit::sljit_free_code(plan.ssa_region.ssa_entry != null ? plan.ssa_region.ssa_entry : (void*)plan.ssa_region.native, null);
     ssa_helper_sites_free(h, plan.ssa_region);
+    ssa_plan_data_free(h, plan.ssa_region);
     h.free_func(h.heap_udata, plan.ssa_region);
     plan.ssa_region = null;
 }
@@ -184,11 +190,15 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     // Prologue arguments and every defined spill are written before use.
     // Exits publish a fresh dirty mask; untouched interpreter slots stay owned
     // by the original frame, so no blanket scratch clear/copy is necessary.
-    LoopState state @noinit;
+    LoopState legacy_state @noinit;
+    LoopState* state = &legacy_state;
     SsaExecution execution;
     state.execution = null;
-    if (plan.ssa_helpers != null) {
-        if (!ssa_execution_init(&execution, cold, plan, plan.ssa_value_capacity, 0, 0)) return entry_pc;
+    if (plan.ssa_data != null || plan.ssa_helpers != null) {
+        uint spills = plan.ssa_data == null ? 0 : plan.ssa_data.spill_count;
+        uint edges = plan.ssa_data == null ? 0 : plan.ssa_data.edge_count;
+        if (!ssa_execution_init(&execution, cold, plan, plan.ssa_value_capacity, spills, edges)) return entry_pc;
+        state = execution.state_storage;
         state.execution = &execution;
     }
     defer if (state.execution != null) ssa_execution_dispose(&execution);
@@ -197,19 +207,21 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     state.resume_pc = resume_pc;
     state.dirty = 0;
     state.budget = plan.ssa_recoverable && run != null ? run.budget : 1;
-    for (uint i = 0; i < cf.num_regs; i++) {
+    for (uint i = 0; i < cf.num_regs && i < LOOP_REGS; i++) {
         if (plan.ssa_recoverable || (plan.ssa_inputs & (1UL << i)) != 0) state.values[i] = regs[i];
     }
     if ((plan.ssa_recoverable || plan.binding_count != 0)
-        && !loop_prepare(plan, &state, cold, plan.ssa_fields)) return entry_pc;
+        && !loop_prepare(plan, state, cold, plan.ssa_fields)) return entry_pc;
     if (state.execution == null && sljit_artifact_enter(cold.heap, plan.code_owner) == 0) return entry_pc;
     defer if (state.execution == null) sljit_artifact_leave(cold.heap, plan.code_owner);
     long budget = plan.ssa_recoverable && run != null ? run.budget : 1;
-    uint resume = plan.native(&state, budget);
+    uint resume = plan.native(state, budget);
     if (plan.ssa_recoverable && run != null) run.budget = state.budget;
     // A collecting callback may have relocated every VM register window.
     regs = cold.act.bottom;
-    sljit_publish_state(cold, regs, &state, cf.num_regs, plan);
+    if (plan.ssa_data != null) {
+        if (!ssa_execution_publish(&execution)) return entry_pc;
+    } else { sljit_publish_state(cold, regs, state, cf.num_regs, plan); }
     plan.hits++;
     $if $feat(SLJIT_STATS):
         if (resume == plan.end + 1 || (plan.ssa_recoverable && resume < cf.code_count
