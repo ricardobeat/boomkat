@@ -5,44 +5,39 @@
 [  3] LDTRUE              r2 = r0, r0
 [  4] IF_FALSE            r2, +2
 [  5] LDINT               r3, +1
-[  6] JUMP                +2
-[  7] LDINT               r4, +2
-[  8] LDREG               r3 = r4, r0
-[  9] TOPROPKEY           r3 = r0, r0
-[ 10] LDINT               r4, +2
-[ 11] INITPROP            r1 = r3, r4
-[ 12] LDREG               r0 = r1, r0
-[ 13] PUTLEX              r0, 0
-[ 14] GETGLOBAL           r1, 1
-[ 15] GETPROPC            r2 = r1, r2
-[ 16] LDREG               r3 = r1, r0
-[ 17] GETGLOBAL           r4, 0
-[ 18] LDTRUE              r5 = r0, r0
-[ 19] IF_FALSE            r5, +2
-[ 20] LDINT               r6, +1
-[ 21] JUMP                +2
-[ 22] LDINT               r7, +2
-[ 23] LDREG               r6 = r7, r0
-[ 24] GETPROP             r7 = r4, r6
-[ 25] LDREG               r4 = r7, r0
-[ 26] LDINT               r5, +2
-[ 27] CALL                r2 = r2, r2
-[ 28] GETGLOBAL           r1, 1
-[ 29] GETPROPC            r2 = r1, r2
-[ 30] LDREG               r3 = r1, r0
-[ 31] GETGLOBAL           r4, 0
-[ 32] GETGLOBAL           r5, 3
-[ 33] LDTRUE              r7 = r0, r0
-[ 34] IF_FALSE            r7, +2
-[ 35] LDINT               r8, +1
-[ 36] JUMP                +2
-[ 37] LDINT               r9, +2
-[ 38] LDREG               r8 = r9, r0
-[ 39] LDREG               r7 = r8, r0
-[ 40] CALL_UNDEF_THIS     r5 = r5, r1
-[ 41] GETPROP             r6 = r4, r5
-[ 42] LDREG               r4 = r6, r0
-[ 43] LDINT               r5, +2
-[ 44] CALL                r2 = r2, r2
-[ 45] RETUNDEF
+[  6] JUMP                +1
+[  7] LDINT               r3, +2
+[  8] TOPROPKEY           r3 = r0, r0
+[  9] LDINT               r4, +2
+[ 10] INITPROP            r1 = r3, r4
+[ 11] LDREG               r0 = r1, r0
+[ 12] PUTLEX              r0, 0
+[ 13] GETGLOBAL           r2, 1
+[ 14] GETPROPC            r1 = r2, r2
+[ 15] GETGLOBAL           r3, 0
+[ 16] LDTRUE              r4 = r0, r0
+[ 17] IF_FALSE            r4, +2
+[ 18] LDINT               r5, +1
+[ 19] JUMP                +1
+[ 20] LDINT               r5, +2
+[ 21] GETPROP             r6 = r3, r5
+[ 22] LDREG               r3 = r6, r0
+[ 23] LDINT               r4, +2
+[ 24] CALL                r1 = r1, r2
+[ 25] GETGLOBAL           r2, 1
+[ 26] GETPROPC            r1 = r2, r2
+[ 27] GETGLOBAL           r3, 0
+[ 28] GETGLOBAL           r4, 3
+[ 29] LDTRUE              r6 = r0, r0
+[ 30] IF_FALSE            r6, +2
+[ 31] LDINT               r7, +1
+[ 32] JUMP                +1
+[ 33] LDINT               r7, +2
+[ 34] LDREG               r6 = r7, r0
+[ 35] CALL_UNDEF_THIS     r4 = r4, r1
+[ 36] GETPROP             r5 = r3, r4
+[ 37] LDREG               r3 = r5, r0
+[ 38] LDINT               r4, +2
+[ 39] CALL                r1 = r1, r2
+[ 40] RETUNDEF
 --- End bytecode ---

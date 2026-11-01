@@ -10,9 +10,8 @@
 [  0] LDINT               r1, +7
 [  1] IF_FALSE            r0, +2
 [  2] LDINT               r2, +10
-[  3] JUMP                +2
-[  4] LDINT               r3, +20
-[  5] LDREG               r2 = r3, r0
-[  6] ADD                 r1 = r1, r2
-[  7] RET                 r1 = r0, r0
+[  3] JUMP                +1
+[  4] LDINT               r2, +20
+[  5] ADD                 r1 = r1, r2
+[  6] RET                 r1 = r0, r0
 --- End bytecode ---
