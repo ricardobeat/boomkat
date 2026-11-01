@@ -154,6 +154,9 @@ struct SsaBlock @feat(SLJIT) {
     bool jump;
     bool returns;
     bool external;
+    bool synthetic; // import/preheader: no bytecode executes here
+    bool preheader;
+    uint loop_header;
     int first_value;
     int last_value;
 }
@@ -494,7 +497,7 @@ fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
     bool* reachable = (bool*)ssa_storage_alloc(g, g.block_count, bool::size);
     bool* scheduled = (bool*)ssa_storage_alloc(g, g.block_count, bool::size);
     if (g.failed) return false;
-    reachable[0] = true;
+    reachable[0] = !g.recoverable;
     if (g.recoverable) for (uint b = 0; b < g.block_count; b++) {
         if (g.blocks[b].external) reachable[b] = true;
     }
@@ -510,13 +513,11 @@ fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
         }
     }
     for (uint b = 0; b < g.block_count; b++) if (!reachable[b]) return false;
-    scheduled[0] = true;
-    g.cyclic_order[0] = 0;
-    for (uint n = 1; n < g.block_count; n++) {
+    for (uint n = 0; n < g.block_count; n++) {
         bool found;
-        for (uint b = 1; b < g.block_count; b++) {
+        for (uint b = 0; b < g.block_count; b++) {
             if (scheduled[b]) continue;
-            bool ready = g.recoverable && g.blocks[b].external;
+            bool ready = g.recoverable ? g.blocks[b].external : b == 0;
             for (uint p = 0; p < g.blocks[b].pred_count && !ready; p++) ready = scheduled[g.blocks[b].preds[p]];
             if (!ready) continue;
             g.cyclic_order[n] = b;
@@ -1058,10 +1059,10 @@ fn bool ssa_cyclic_header(SsaGraph* g, uint b) @feat(SLJIT) {
 // writes before it arrives.
 fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
     SsaBlock* block = &g.blocks[b];
-    if (g.recoverable && block.external) return ssa_cyclic_header(g, b);
+    if (g.recoverable && (block.external || block.preheader)) return ssa_cyclic_header(g, b);
     if (block.pred_count == 0) return true;
     // A loop region's own header already has its phis.
-    if (!g.single_pass && b == 0) return true;
+    if (!g.recoverable && !g.single_pass && b == 0) return true;
     if (g.cyclic) {
         bool cyclic_header;
         for (uint p = 0; p < block.pred_count; p++) {
@@ -1069,7 +1070,7 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
         }
         if (cyclic_header) return ssa_cyclic_header(g, b);
     }
-    if (b == 0) return true;
+    if (!g.recoverable && b == 0) return true;
     if (block.pred_count == 1) {
         uint pred = block.preds[0];
         ssa_frame_restore(g, g.block_exit[pred], g.current, g.reg_count);

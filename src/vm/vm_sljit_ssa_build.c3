@@ -146,7 +146,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         }
         g.block_first[b] = g.value_count;
         SsaBlock* block = &g.blocks[b];
-        for (uint pos = block.begin; pos <= block.end;) {
+        for (uint pos = block.begin; !block.synthetic && pos <= block.end;) {
             DecodedBytecode view = ssa_decoded_view(g, pos);
             if (!view.valid) return false;
             defer pos = view.next_pc;

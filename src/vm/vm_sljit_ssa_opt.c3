@@ -24,7 +24,7 @@ fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
     bool* reachable = (bool*)ssa_storage_alloc(g, count, bool::size);
     uint* mask = (uint*)ssa_storage_alloc(g, words, uint::size);
     if (g.failed) return;
-    reachable[0] = true;
+    reachable[0] = !g.recoverable;
     for (uint b = 0; b < count; b++) if (g.blocks[b].external) reachable[b] = true;
     bool changed = true;
     while (changed) {
@@ -40,15 +40,15 @@ fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
     }
     for (uint b = 0; b < count; b++) {
         uint* row = g.dominators + (usz)b * words;
-        if (b == 0 || g.blocks[b].external || !reachable[b]) { row[b / 32] |= 1U << (b % 32); }
+        if ((!g.recoverable && b == 0) || g.blocks[b].external || !reachable[b]) { row[b / 32] |= 1U << (b % 32); }
         else { for (uint d = 0; d < count; d++) if (reachable[d]) row[d / 32] |= 1U << (d % 32); }
     }
     changed = true;
     while (changed) {
         if (!ssa_charge_work(g, (usz)count * words + (usz)count * 2)) return;
         changed = false;
-        for (uint b = 1; b < count; b++) {
-            if (g.blocks[b].external || !reachable[b]) continue;
+        for (uint b = 0; b < count; b++) {
+            if ((!g.recoverable && b == 0) || g.blocks[b].external || !reachable[b]) continue;
             for (uint w = 0; w < words; w++) mask[w] = uint::max;
             for (uint p = 0; p < g.blocks[b].pred_count; p++) {
                 uint pred = g.blocks[b].preds[p];

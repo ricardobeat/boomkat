@@ -80,6 +80,7 @@ fn bool ssa_value_dominates(SsaGraph* g, int definition, int use) @feat(SLJIT) {
     if (definition < 0 || use < 0) return false;
     SsaValue a = g.values[definition];
     SsaValue b = g.values[use];
+    if (a.op == ARG) return true; // imported before every external dispatch
     if (a.block != b.block) return ssa_dominates(g, (uint)a.block, (uint)b.block);
     if (a.op == ARG || a.op == PHI || a.op == JOIN) return true;
     for (int id = ssa_block_first_value(g, (uint)b.block); id >= 0; id = ssa_next_value(g, id)) {

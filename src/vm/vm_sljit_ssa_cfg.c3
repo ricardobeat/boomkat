@@ -90,7 +90,7 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
     for (uint b = 0; b < g.block_count; b++) {
         g.cyclic_live[b].copy_from(&g.recovery_live[g.blocks[b].begin - g.plan.begin]);
     }
-    return true;
+    return ssa_normalize_entries(g);
 }
 
 // The canonical instruction roles can depend on function metadata. Closure

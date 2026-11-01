@@ -222,6 +222,13 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         }
         if (removed) ssa_function_liveness(graph);
     }
+    uint hoisted = ssa_licm(graph);
+    if (hoisted != 0) {
+        ssa_schedule_uses(graph);
+        $if $feat(SLJIT_STATS):
+            io::eprintfn("SLJIT SSA LICM line=%d moved=%d", cf.get_line(0), hoisted);
+        $endif
+    }
     uint dead = ssa_dce(graph);
     $if $feat(SLJIT_STATS):
         if (dead != 0) io::eprintfn("SLJIT SSA DCE line=%d removed=%d", cf.get_line(0), dead);
