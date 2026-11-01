@@ -1,0 +1,18 @@
+[
+  {
+    "index": 0,
+    "native": "0x10524a740",
+    "size": 33460,
+    "path": "/tmp/bk-remat-native/native-000-33460",
+    "recent_stderr": [
+      "SLJIT function  hits=225 returns=1 stalled=0 direct_calls=0 direct_returns=0 charged_edges=70 budget_exits=5 code_bytes=5648",
+      "SLJIT function  hits=4 returns=0 stalled=1 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=3532",
+      "SLJIT function boundsNoop hits=140 returns=140 stalled=140 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=1092",
+      "SLJIT function  hits=374 returns=1 stalled=0 direct_calls=0 direct_returns=0 charged_edges=111 budget_exits=0 code_bytes=5648",
+      "SLJIT function boundsShrink hits=2 returns=1 stalled=2 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=1960",
+      "SLJIT function  hits=9 returns=0 stalled=1 direct_calls=0 direct_returns=0 charged_edges=0 budget_exits=0 code_bytes=7188",
+      "SLJIT function compiled  pc=0..34 function_ops=34 regs=6 code_bytes=5580 plan_bytes=15394",
+      "SLJIT SSA DCE line=1 removed=1"
+    ]
+  }
+]

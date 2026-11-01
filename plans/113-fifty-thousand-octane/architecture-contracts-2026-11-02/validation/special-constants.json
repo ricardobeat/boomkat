@@ -1,0 +1,45 @@
+[
+  {
+    "binary": "/tmp/bk-architecture-final-full/boomkat-full-icu",
+    "mode": [],
+    "status": 0,
+    "stdout": "special constant helper/deopt: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-architecture-final-full/boomkat-full-icu",
+    "mode": [
+      "--jit"
+    ],
+    "status": 0,
+    "stdout": "special constant helper/deopt: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-architecture-final-full/boomkat-full-icu",
+    "mode": [
+      "--jit-stress"
+    ],
+    "status": 0,
+    "stdout": "special constant helper/deopt: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-architecture-final-gc/boomkat",
+    "mode": [
+      "--jit"
+    ],
+    "status": 0,
+    "stdout": "special constant helper/deopt: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-architecture-final-gc/boomkat",
+    "mode": [
+      "--jit-stress"
+    ],
+    "status": 0,
+    "stdout": "special constant helper/deopt: PASS\n",
+    "stderr": ""
+  }
+]

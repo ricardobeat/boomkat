@@ -1,0 +1,14 @@
+scalable SSA closure startup: PASS registers=66 hits=237 helpers=238 continuations=1
+SSA alias work budget: PASS
+scalable SSA gateway: PASS words=714 registers=310 spills=900 edges=153 hits=160
+scalable acyclic helper: PASS words=605 calls=128 continuations=128
+scalable SSA access: PASS dense + 8 typed classes, WIDE, normal/stress
+scalable SSA bounds: PASS helper=0 proofs=1 hits=102
+scalable SSA bounds: PASS helper=1 proofs=0 hits=158
+scalable SSA rematerialization: PASS constants=141 hits=24 helpers=23 continued=2
+scalable SSA fields: PASS live shapes, native loads/stores, exact fallback
+scalable SSA memory callbacks: PASS native continuation after storage mutation
+effectful SSA inline: PASS effectInlineCaller entries=92 recoveries=1
+effectful SSA inline: PASS effectCallbackCaller entries=93 recoveries=93
+effectful SSA inline: PASS WIDE child registers + exact late recovery
+embedding JIT: PASS

@@ -1,0 +1,6 @@
+00 payload=01 LDINT              A=300 B=7 C=128 signed immediate=7
+02 payload=03 GETPROP            A=301 B=0 C=300
+04 payload=05 BANDI              A=302 B=1 C=7
+06 payload=07 GETPROP            A=303 B=0 C=302
+08 payload=09 ADD                A=304 B=301 C=303
+10 payload=11 RET                A=304 B=0 C=0

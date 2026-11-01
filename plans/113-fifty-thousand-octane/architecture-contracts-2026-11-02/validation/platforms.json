@@ -1,0 +1,30 @@
+{
+  "source": "b5ca8c66",
+  "validation_merge": "2160796bb6aa0ddc7735b7e224bdc0bb9ffa955d",
+  "tree_matches_checkpoint": true,
+  "artifacts": [
+    {
+      "binary": "/tmp/bk-ssa-final-x64-b5ca/embedding_jit",
+      "sha256": "1c6a8c1560449b13c75ede091c7bb60fe1726f7d6f493baaccd62ea79aa4a61b",
+      "c3c_flags": "--target macos-x64 --cc /tmp/bk-clang-x64 build embedding_jit"
+    },
+    {
+      "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+      "sha256": "0cd06894cb123f3b35cd2b52785f42adaadd156434912392dc04420f33fc6708",
+      "c3c_flags": "-D NONANBOX build boomkat"
+    },
+    {
+      "binary": "/tmp/bk-ssa-final-nojit-b5ca/boomkat_threaded",
+      "sha256": "2739b346bc9a754079ed7c73926391762c23618c08c6eef960bb1807cd278e60",
+      "c3c_flags": "build boomkat_threaded"
+    }
+  ],
+  "x64_embedding": "PASS full embedding_jit, actual native counters recorded in test stdout",
+  "NONANBOX": "7 semantic smokes PASS; JIT unavailable by representation design",
+  "no_JIT": "5 semantic smokes PASS",
+  "logs": [
+    "/tmp/bk-ssa-final-x64-b5ca-test.out",
+    "/tmp/bk-ssa-final-x64-b5ca-test.err",
+    "/tmp/bk-ssa-final-b5ca-smoke.json"
+  ]
+}

@@ -1,0 +1,98 @@
+[
+  {
+    "index": 0,
+    "native": "0x1048b0010",
+    "size": 1600,
+    "path": "/tmp/bk-ssa-licm-native/native-000-1600",
+    "recent_stderr": []
+  },
+  {
+    "index": 1,
+    "native": "0x1048bf9a8",
+    "size": 1596,
+    "path": "/tmp/bk-ssa-licm-native/native-001-1596",
+    "recent_stderr": [
+      "SLJIT loop compiled invariantEffects pc=4..15 code_bytes=1600 plan_bytes=3328 ssa=1 mem=1",
+      "SLJIT SSA CSE line=4 blocks=10 values=51 reused=1",
+      "SLJIT SSA LICM line=4 moved=5",
+      "SLJIT cyclic allocation line=4 values=51 joins=4 spills=6 cfg=1"
+    ]
+  },
+  {
+    "index": 2,
+    "native": "0x1048bd5a8",
+    "size": 9172,
+    "path": "/tmp/bk-ssa-licm-native/native-002-9172",
+    "recent_stderr": [
+      "SLJIT loop compiled invariantEffects pc=4..15 code_bytes=1600 plan_bytes=3328 ssa=1 mem=1",
+      "SLJIT SSA CSE line=4 blocks=10 values=51 reused=1",
+      "SLJIT SSA LICM line=4 moved=5",
+      "SLJIT cyclic allocation line=4 values=51 joins=4 spills=6 cfg=1",
+      "SLJIT recoverable SSA line=4 begin=0 end=16 bytes=1596"
+    ]
+  },
+  {
+    "index": 3,
+    "native": "0x1048bd550",
+    "size": 56,
+    "path": "/tmp/bk-ssa-licm-native/native-003-56",
+    "recent_stderr": [
+      "SLJIT SSA LICM line=4 moved=5",
+      "SLJIT cyclic allocation line=4 values=51 joins=4 spills=6 cfg=1",
+      "SLJIT recoverable SSA line=4 begin=0 end=16 bytes=1596",
+      "SLJIT function compiled invariantEffects pc=0..17 function_ops=17 regs=11 code_bytes=10768 plan_bytes=15241",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis"
+    ]
+  },
+  {
+    "index": 4,
+    "native": "0x1048b46a0",
+    "size": 36416,
+    "path": "/tmp/bk-ssa-licm-native/native-004-36416",
+    "recent_stderr": [
+      "SLJIT cyclic allocation line=4 values=51 joins=4 spills=6 cfg=1",
+      "SLJIT recoverable SSA line=4 begin=0 end=16 bytes=1596",
+      "SLJIT function compiled invariantEffects pc=0..17 function_ops=17 regs=11 code_bytes=10768 plan_bytes=15241",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT SSA leaf reject line=15 stage=analysis"
+    ]
+  },
+  {
+    "index": 5,
+    "native": "0x1048b4648",
+    "size": 56,
+    "path": "/tmp/bk-ssa-licm-native/native-005-56",
+    "recent_stderr": [
+      "SLJIT recoverable SSA line=4 begin=0 end=16 bytes=1596",
+      "SLJIT function compiled invariantEffects pc=0..17 function_ops=17 regs=11 code_bytes=10768 plan_bytes=15241",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT SSA leaf reject line=15 stage=analysis",
+      "SLJIT function compiled  pc=0..148 function_ops=148 regs=10 code_bytes=36472 plan_bytes=16420"
+    ]
+  },
+  {
+    "index": 6,
+    "native": "0x1048b3dc0",
+    "size": 2152,
+    "path": "/tmp/bk-ssa-licm-native/native-006-2152",
+    "recent_stderr": [
+      "SLJIT function compiled invariantEffects pc=0..17 function_ops=17 regs=11 code_bytes=10768 plan_bytes=15241",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT SSA leaf reject line=15 stage=analysis",
+      "SLJIT function compiled  pc=0..148 function_ops=148 regs=10 code_bytes=36472 plan_bytes=16420",
+      "SLJIT SSA leaf reject line=15 stage=analysis"
+    ]
+  }
+]

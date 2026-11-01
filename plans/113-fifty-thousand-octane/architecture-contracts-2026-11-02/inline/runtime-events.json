@@ -1,0 +1,102 @@
+[
+  {
+    "kind": "helper",
+    "return_address": "0x10055f170",
+    "native": 5,
+    "site": "0x75114f00c0",
+    "helper_kind": 1,
+    "pc": 2,
+    "count": 98
+  },
+  {
+    "kind": "helper",
+    "return_address": "0x10055f310",
+    "native": 5,
+    "site": "0x75114f0000",
+    "helper_kind": 2,
+    "pc": 2,
+    "count": 98
+  },
+  {
+    "kind": "helper",
+    "return_address": "0x10055e070",
+    "native": 6,
+    "site": "0x75114f0540",
+    "helper_kind": 1,
+    "pc": 2,
+    "count": 100
+  },
+  {
+    "kind": "helper",
+    "return_address": "0x10055e214",
+    "native": 6,
+    "site": "0x75114f0480",
+    "helper_kind": 2,
+    "pc": 2,
+    "count": 99
+  },
+  {
+    "kind": "child_recovery",
+    "return_address": "0x100261258",
+    "native": null,
+    "pc": 5,
+    "frames": [
+      {
+        "frame": "0x75114f0780",
+        "pc": 5,
+        "callsite": 2,
+        "function": "0x7510c75c00",
+        "instruction": "0x1020287",
+        "opcode": 135,
+        "opcode_name": "CALL_UNDEF_THIS"
+      },
+      {
+        "frame": "0x100b810d0",
+        "pc": 2,
+        "callsite": 4294967295,
+        "function": "0x7510c75e00",
+        "instruction": "0x5020589",
+        "opcode": 137,
+        "opcode_name": "CALL_GLOBAL"
+      }
+    ],
+    "stack": [
+      "0x10029709c",
+      "0x100261258",
+      "0x10055ee60"
+    ],
+    "count": 99
+  },
+  {
+    "kind": "child_recovery",
+    "return_address": "0x100261258",
+    "native": null,
+    "pc": 4,
+    "frames": [
+      {
+        "frame": "0x75114f0300",
+        "pc": 4,
+        "callsite": 2,
+        "function": "0x7510c75600",
+        "instruction": "0x102030a",
+        "opcode": 10,
+        "opcode_name": "ADD"
+      },
+      {
+        "frame": "0x100b8f3d0",
+        "pc": 2,
+        "callsite": 4294967295,
+        "function": "0x7510c75a00",
+        "instruction": "0x5020589",
+        "opcode": 137,
+        "opcode_name": "CALL_GLOBAL"
+      }
+    ],
+    "stack": [
+      "0x10029709c",
+      "0x100261258",
+      "0x10055ffd8"
+    ],
+    "count": 1
+  }
+]

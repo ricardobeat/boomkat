@@ -1,0 +1,8 @@
+(lldb) target create /tmp/bk-inline-native-review/boomkat
+Current executable set to '/tmp/bk-inline-native-review/boomkat' (arm64).
+(lldb) image lookup --address 0x10026b934
+      Address: boomkat[0x000000010026b934] (boomkat.__TEXT.__text + 2535548)
+      Summary: boomkat`boomkat.vm.ssa_helper_state
+(lldb) image lookup --address 0x100261148
+      Address: boomkat[0x0000000100261148] (boomkat.__TEXT.__text + 2492560)
+      Summary: boomkat`boomkat.vm.ssa_deopt_execute

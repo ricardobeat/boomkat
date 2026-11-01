@@ -1,0 +1,132 @@
+[
+  {
+    "index": 0,
+    "native": "0x10055c010",
+    "size": 56,
+    "path": "/tmp/bk-inline-native-evidence/native-000-56",
+    "recent_stderr": [
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis"
+    ]
+  },
+  {
+    "index": 1,
+    "native": "0x100561d88",
+    "size": 41288,
+    "path": "/tmp/bk-inline-native-evidence/native-001-41288",
+    "recent_stderr": [
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis"
+    ]
+  },
+  {
+    "index": 2,
+    "native": "0x100561260",
+    "size": 2812,
+    "path": "/tmp/bk-inline-native-evidence/native-002-2812",
+    "recent_stderr": [
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT function compiled  pc=0..257 function_ops=257 regs=7 code_bytes=41344 plan_bytes=17401"
+    ]
+  },
+  {
+    "index": 3,
+    "native": "0x100560680",
+    "size": 2996,
+    "path": "/tmp/bk-inline-native-evidence/native-003-2996",
+    "recent_stderr": [
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT function compiled  pc=0..257 function_ops=257 regs=7 code_bytes=41344 plan_bytes=17401",
+      "SLJIT function compiled effectInlineChild pc=0..6 function_ops=6 regs=8 code_bytes=2812 plan_bytes=15142"
+    ]
+  },
+  {
+    "index": 4,
+    "native": "0x100560028",
+    "size": 1608,
+    "path": "/tmp/bk-inline-native-evidence/native-004-1608",
+    "recent_stderr": [
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT function compiled  pc=0..257 function_ops=257 regs=7 code_bytes=41344 plan_bytes=17401",
+      "SLJIT function compiled effectInlineChild pc=0..6 function_ops=6 regs=8 code_bytes=2812 plan_bytes=15142",
+      "SLJIT function compiled effectCallbackChild pc=0..7 function_ops=7 regs=8 code_bytes=2996 plan_bytes=15151"
+    ]
+  },
+  {
+    "index": 5,
+    "native": "0x10055eeb0",
+    "size": 4416,
+    "path": "/tmp/bk-inline-native-evidence/native-005-4416",
+    "recent_stderr": [
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT function compiled  pc=0..257 function_ops=257 regs=7 code_bytes=41344 plan_bytes=17401",
+      "SLJIT function compiled effectInlineChild pc=0..6 function_ops=6 regs=8 code_bytes=2812 plan_bytes=15142",
+      "SLJIT function compiled effectCallbackChild pc=0..7 function_ops=7 regs=8 code_bytes=2996 plan_bytes=15151",
+      "SLJIT function compiled effectCallback pc=0..2 function_ops=2 regs=3 code_bytes=1608 plan_bytes=15106",
+      "SLJIT SSA CSE line=5 blocks=4 values=582 reused=269",
+      "SLJIT SSA ranges line=5 proven=270"
+    ]
+  },
+  {
+    "index": 6,
+    "native": "0x10055ddb0",
+    "size": 4296,
+    "path": "/tmp/bk-inline-native-evidence/native-006-4296",
+    "recent_stderr": [
+      "SLJIT function compiled effectInlineChild pc=0..6 function_ops=6 regs=8 code_bytes=2812 plan_bytes=15142",
+      "SLJIT function compiled effectCallbackChild pc=0..7 function_ops=7 regs=8 code_bytes=2996 plan_bytes=15151",
+      "SLJIT function compiled effectCallback pc=0..2 function_ops=2 regs=3 code_bytes=1608 plan_bytes=15106",
+      "SLJIT SSA CSE line=5 blocks=4 values=582 reused=269",
+      "SLJIT SSA ranges line=5 proven=270",
+      "SLJIT recoverable SSA line=5 begin=0 end=546 bytes=4416",
+      "SLJIT SSA CSE line=281 blocks=4 values=580 reused=269",
+      "SLJIT SSA ranges line=281 proven=270"
+    ]
+  },
+  {
+    "index": 7,
+    "native": "0x10055dd58",
+    "size": 56,
+    "path": "/tmp/bk-inline-native-evidence/native-007-56",
+    "recent_stderr": [
+      "SLJIT function compiled effectCallbackChild pc=0..7 function_ops=7 regs=8 code_bytes=2996 plan_bytes=15151",
+      "SLJIT function compiled effectCallback pc=0..2 function_ops=2 regs=3 code_bytes=1608 plan_bytes=15106",
+      "SLJIT SSA CSE line=5 blocks=4 values=582 reused=269",
+      "SLJIT SSA ranges line=5 proven=270",
+      "SLJIT recoverable SSA line=5 begin=0 end=546 bytes=4416",
+      "SLJIT SSA CSE line=281 blocks=4 values=580 reused=269",
+      "SLJIT SSA ranges line=281 proven=270",
+      "SLJIT recoverable SSA line=281 begin=0 end=546 bytes=4296"
+    ]
+  },
+  {
+    "index": 8,
+    "native": "0x10056c010",
+    "size": 11808,
+    "path": "/tmp/bk-inline-native-evidence/native-008-11808",
+    "recent_stderr": [
+      "SLJIT function compiled effectCallbackChild pc=0..7 function_ops=7 regs=8 code_bytes=2996 plan_bytes=15151",
+      "SLJIT function compiled effectCallback pc=0..2 function_ops=2 regs=3 code_bytes=1608 plan_bytes=15106",
+      "SLJIT SSA CSE line=5 blocks=4 values=582 reused=269",
+      "SLJIT SSA ranges line=5 proven=270",
+      "SLJIT recoverable SSA line=5 begin=0 end=546 bytes=4416",
+      "SLJIT SSA CSE line=281 blocks=4 values=580 reused=269",
+      "SLJIT SSA ranges line=281 proven=270",
+      "SLJIT recoverable SSA line=281 begin=0 end=546 bytes=4296"
+    ]
+  }
+]

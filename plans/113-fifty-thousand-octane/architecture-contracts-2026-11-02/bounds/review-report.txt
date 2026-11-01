@@ -1,0 +1,67 @@
+Revision: c93c0cff, clean rat-ssa-continuations worktree. No repository edits.
+
+Result: native bounds-proof consumer verified; no concrete defect found.
+Fresh ARM64 O0 embedding_jit + SLJIT_STATS + SSA_SCALABLE_ONLY run exits 0.
+CAPI stdout:
+  scalable SSA bounds: PASS helper=0 proofs=1 hits=102
+  scalable SSA bounds: PASS helper=1 proofs=0 hits=158
+
+Exact captured bytecode, test/capi/jit_ssa_bounds.c3:
+Case0, 12 words (bounds-case-0.bytecode.txt/.bin):
+  PC0 LDINT r300,7
+  PC2 GETPROP r301,r0,r300
+  PC4 BANDI r302,r1,7
+  PC6 GETPROP r303,r0,r302
+  PC8 ADD r304,r301,r303
+  PC10 RET r304
+WIDE prefixes retain semantic prefix PCs and full register IDs.
+Case1, 15 words (bounds-case-1.bytecode.txt/.bin) inserts:
+  PC4 LDUNDEF r3
+  PC5 CALL_UNDEF_THIS r305,base=r2,argc=0
+The masked second access is now PC9. Receiver is the same r0.
+
+Positive native artifact:
+  positive-native.asm/.bin = native-036-5680.asm/.bin, 5680 bytes.
+  +0x1420 cmp x1,x3; +0x1424 b.hs = first array_size check for index7.
+  +0x142c cmp x1,x3; +0x1430 b.hs = first logical-length check.
+  +0x1480 and x6,x5,#7 computes the second index in [0,7].
+  Second access retains object tag/null guard +0x1498/+0x14a0,
+  array/exotic class guard +0x14b8/+0x14bc, live storage reload +0x14c8,
+  external/inline storage branch +0x14cc and inline storage guard +0x14d4.
+  The array_size and length loads at +0x14c0/+0x14c4 have NO following
+  comparisons or branches. The two downstream bounds comparisons are absent.
+  Numeric slot-value guards remain at +0x1508/+0x150c.
+The proof comes from a dominating successful live index7 access plus [0,7]
+mask range, not a sampled length or imported storage pointer.
+
+Callback-negative native artifact:
+  callback-native.asm/.bin = native-041-6304.asm/.bin, 6304 bytes.
+  First checks remain at +0x14fc/+0x1508.
+  +0x1648 bl ssa_helper_state executes the callback.
+  After helper continuation the second access retains object/class guards
+  +0x16d4/+0x16dc/+0x16f8 and BOTH native bounds checks:
+    +0x1700 cmp x1,x3; +0x1704 b.hs (array_size)
+    +0x170c cmp x1,x3; +0x1710 b.hs (logical length)
+  It also reloads storage at +0x1714 and retains storage guards.
+The helper is a proof barrier. CAPI checks a callback shrinks length8 to2,
+returns NaN from the subsequent missing element, and runs the callback once.
+
+Direct runtime proof of callback-shrunk native comparison:
+Supplementary matching source fixture is callback-shrink/fixture.js. It passes
+array explicitly to the callback and avoids unrelated global counter writes,
+so the native helper continuation itself reaches the second length check.
+  callback-shrink/native-002-3760.asm/.bin is the actual generated body.
+  Bytecode PC4 CALL_UNDEF_THIS receives the array; PC6 performs second GETPROP.
+  Native helper call is +0x03d0. The later masked index is +0x0444.
+  At +0x0488 the capacity comparison observes index7, limit8 (does not exit).
+  At +0x0494 the logical-length comparison observes index7, limit2 (must exit).
+  The next instruction +0x0498 is b.hs to the common exact deopt stub.
+  These values were read from live CPU registers under LLDB, once each for
+  the mutating callback. Prior warm continuations compare index0, limit8.
+  Runtime events are callback-shrink/post-callback-bounds-events.json.
+  Process exits0 and prints 'native callback shrink: PASS'.
+
+Manifest correlation is exact: bytecode-cases.json records each native return
+address/capture index from ssa_region_emit. The .asm files disassemble bytes
+read from generated executable memory; matching .bin files retain those bytes.
+lldb.log and callback-shrink/lldb.log record successful process exits.

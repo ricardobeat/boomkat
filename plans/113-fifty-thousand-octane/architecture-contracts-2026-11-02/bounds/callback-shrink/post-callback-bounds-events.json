@@ -1,0 +1,30 @@
+[
+  {
+    "offset": "0x488",
+    "index": 0,
+    "limit": 8,
+    "would_exit": false,
+    "count": 73
+  },
+  {
+    "offset": "0x494",
+    "index": 0,
+    "limit": 8,
+    "would_exit": false,
+    "count": 73
+  },
+  {
+    "offset": "0x488",
+    "index": 7,
+    "limit": 8,
+    "would_exit": false,
+    "count": 1
+  },
+  {
+    "offset": "0x494",
+    "index": 7,
+    "limit": 2,
+    "would_exit": true,
+    "count": 1
+  }
+]

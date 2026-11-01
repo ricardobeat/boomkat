@@ -1,0 +1,65 @@
+Numeric constant rematerialization: native evidence
+
+Source checkpoint: f3316b22 (rat-ssa-optimization).
+Captured executable: /tmp/bk-ssa-remat-embed/embedding_jit
+Executable SHA256: 2f5b63cf249e497da7d9cf1a20f21238b9fc3a94a38ff9fb6693411d1d8d3d57
+Generated body: /tmp/bk-remat-native/native-000-33460.asm and .bin
+Native bytes SHA256: f37ba41f2fcd9460adb4ff74a23892bbe332030725ea4a31bc9abd1b182aaccb
+Size: 33460 bytes. Base during capture: 0x10524a740. Offsets below are relative.
+Capture: LLDB breakpoints at sljit_generate_code and sljit_shim_code_size;
+only this generated size retained. Manifest/recent compiler stderr identifies
+the raw rematRaw body; complete embedding execution under LLDB exited 0.
+
+The CAPI body defines 70 distinct INT32 constants, 70 distinct F64 constants
+(i+1.25), and a zero sum seed. They remain semantically live across an unknown
+callback before numeric consumption. Compile metadata reports 141 locationless
+constant definitions. CSE aliases and frozen recovery maps resolve to the same
+constant bits; the constants have neither native register homes nor spill homes.
+
+Observed helper boundary:
+- 0x5730..0x573c saves exactly one BOXED callee root. The saved_bits pointer is
+  loaded at 0x5738 from SsaExecution+0x70, and 0x573c stores saved_bits[900]
+  (offset 0x1c20). Scanning the fixed helper_save/helper_restore x3 addressing finds exactly
+  one such pointer load/store and zero restores. The shared deopt stub
+  separately saves actual register homes through x2; those homes belong
+  to ARG/JOIN/ordinary definitions, not locationless constants. No numeric constants are
+  saved to or restored from helper homes.
+- 0x5758 onward reconstructs integer constants immediately for required VM-frame
+  publication. Example: immediate1 at 0x5758, NaN-box tag formation, then output
+  entry reg 200/value at 0x5770..0x5778. Floating constants likewise use immediate
+  raw bits and fmov before output-buffer publication (e.g. 0x6504..0x6538).
+  These output-buffer stores preserve observable VM state; they are not SSA
+  constant spill homes and are intentionally retained.
+- Native helper call is 0x70a8. COMPLETE branches at 0x70ac to0x70dc.
+- 0x70f0..0x7434 reconstructs all70 integer constants from immediate literals
+  and scvtf. Count: 70 scvtf, zero loads in that range.
+- 0x7438..0x7878 reconstructs all70 F64 constants from their immediate bit
+  patterns. Count: 70 fmov d0,x3, zero loads in that range. Example 1.25 is
+  mov x3,#0x3ff4000000000000 at 0x7438 then fmov at 0x743c.
+- The zero seed is reconstructed at 0x787c..0x7884.
+
+The successor has independent VM reentry, so its JOIN definitions still require
+physical homes: the reconstruction sequences write JOIN spills, and arithmetic
+0x788c..0x7cec reads those JOIN homes. The experiment does NOT eliminate these
+import/merge homes or ordinary ARG prologue traffic. It eliminates the constant
+definition homes and helper save/restore traffic; it does not establish a
+throughput improvement.
+
+The late callback-result guard is 0x7cf0..0x7d20, followed by fadd at 0x7d24.
+Frozen recovery preserves all constant values at this phase without reading
+nonexistent constant spill homes. The complete CAPI regression checks one
+callback and one valueOf on late coercion, and one throw with no replay.
+
+Execution evidence (same captured run):
+  scalable SSA rematerialization: PASS constants=141 hits=24 helpers=23 continued=2
+  embedding JIT: PASS
+Focused semantic panel: 78/78 normal/stress checks passed. Additional standalone
+special-value fixture uses four actual LDCONST producers (-0,NaN,+Inf,-Inf)
+through an unknown callback and late coercion/throw; normal/stress both pass,
+with 128 native SSA entries. Parent retained this fixture permanently.
+
+Count method: parse each disassembly line by relative hexadecimal offset,
+count mnemonics in the three reconstruction intervals, and independently scan
+all instructions for saved_bits base loads and x3-based saved-value stores or
+restores. Counts distinguish VM publication and post-call JOIN stores from
+constant homes.

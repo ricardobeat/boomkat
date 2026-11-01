@@ -1,0 +1,29 @@
+{
+  "engine_source": "b5ca8c66",
+  "rat_checkpoint": "fec58fc1",
+  "checkpoint_difference": "Documentation and standalone special-value regression only; engine sources unchanged.",
+  "compiler": "C3 Compiler Version:       0.8.5\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.3\nLLVM default target:       arm64-apple-darwin27.0.0",
+  "artifacts": [
+    {
+      "binary": "/tmp/bk-architecture-final-asan/embedding_jit",
+      "sha256": "278dfb8d22fa903e29f52cd54a0cdb13d13840e4e34701bfc8d97f2c6c71ed7f",
+      "c3c": "build embedding_jit --sanitize=address"
+    },
+    {
+      "binary": "/tmp/bk-architecture-final-full/boomkat-full-icu",
+      "sha256": "6ac33a8127826185090e5181c4cc60e9d2ac5ab7e84fe599687b948d0c0822ae",
+      "c3c": "build boomkat-full-icu"
+    },
+    {
+      "binary": "/tmp/bk-architecture-final-gc/boomkat",
+      "sha256": "6124f5ea4acab486e042f60edc59a7fbc2cf181b2838e65f96a538fc172f6936",
+      "c3c": "build boomkat --sanitize=address -D GC_STRESS -D GC_VERIFY -D POOL_BYPASS"
+    }
+  ],
+  "native_sources": {
+    "inline": "c93c0cff",
+    "bounds": "c93c0cff",
+    "licm": "f638ac8f",
+    "rematerialization": "f3316b22"
+  }
+}

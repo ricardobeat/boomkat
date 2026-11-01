@@ -1,0 +1,2246 @@
+{
+  "engine": "/tmp/bk-architecture-final-full/boomkat-full-icu",
+  "cases": [
+    {
+      "file": "test/jit_alloc_continuations.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT allocation continuations: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT allocation continuations: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT allocation continuations: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_append_property.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "2012 passed, 0 failed\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "2012 passed, 0 failed\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "2012 passed, 0 failed\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_array_element_access.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_array_named_inherited.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "jit_array_named_inherited: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "jit_array_named_inherited: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "jit_array_named_inherited: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_array_read_index.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "array indexed read ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "array indexed read ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "array indexed read ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_cfg_numbers.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT CFG numbers: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT CFG numbers: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT CFG numbers: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_function_ssa.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "Function SSA: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "Function SSA: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "Function SSA: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_function_ssa_calls.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "Function SSA calls: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "Function SSA calls: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "Function SSA calls: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_function_ssa_fields.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "Function SSA fields: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "Function SSA fields: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "Function SSA fields: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_inline_branches.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_inline_property_write.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_inline_recovery.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT inline recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT inline recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT inline recovery: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_integer_equality.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "Integer equality: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "Integer equality: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "Integer equality: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_kernel_links.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT kernel fixups: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT kernel fixups: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT kernel fixups: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_linked_calls.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT linked calls: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT linked calls: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT linked calls: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_loop_arms.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_loop_receiver_join.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "dynamic receiver ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "dynamic receiver ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "dynamic receiver ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_loose_equality.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_named_read_moves.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "named read moves ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "named read moves ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "named read moves ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_native_call.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "jit_native_call: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "jit_native_call: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "jit_native_call: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_native_calls.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT native calls: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT native calls: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT native calls: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_nested_inline.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_numeric_locals.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "numeric locals ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "numeric locals ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "numeric locals ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_poly_own_reads.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "polymorphic own reads ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "polymorphic own reads ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "polymorphic own reads ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_proto_read_shapes.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "jit_proto_read_shapes: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "jit_proto_read_shapes: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "jit_proto_read_shapes: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_read_miss_cache.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT read miss cache: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT read miss cache: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT read miss cache: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_read_refresh.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "read refresh ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "read refresh ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "read refresh ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_read_result_types.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "read result types ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "read result types ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "read result types ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_review_regressions.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "ok\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_scalar_recovery.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "scalar recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "scalar recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "scalar recovery: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_binding_store_alias.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA binding/store aliases: PASS\nSSA own mutable capture: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA binding/store aliases: PASS\nSSA own mutable capture: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA binding/store aliases: PASS\nSSA own mutable capture: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_call_regions.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA call regions: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA call regions: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA call regions: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_cfg_allocation.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_closure_startup.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_cyclic_effects.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "jit cyclic effects ok 373600\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "jit cyclic effects ok 373600\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "jit cyclic effects ok 373600\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_edge_phase.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA edge phases: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA edge phases: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA edge phases: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_effect_inline.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_effect_recovery.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_exit_only_highreg.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "exit-only high register: PASS\ndead exit temporary: PASS\nnested continuation: PASS\nexception continuation: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "exit-only high register: PASS\ndead exit temporary: PASS\nnested continuation: PASS\nexception continuation: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "exit-only high register: PASS\ndead exit temporary: PASS\nnested continuation: PASS\nexception continuation: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_float_spills.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA float spills: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA float spills: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA float spills: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_fractional_bounds.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_global_dependency.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA global dependency: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA global dependency: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA global dependency: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_handoff.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA handoff: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA handoff: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA handoff: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_helper_continuations.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT SSA helper continuations: PASS\nJIT SSA helper stack growth: PASS\nJIT SSA closure helpers: PASS\nJIT SSA generic getter helpers: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT SSA helper continuations: PASS\nJIT SSA helper stack growth: PASS\nJIT SSA closure helpers: PASS\nJIT SSA generic getter helpers: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT SSA helper continuations: PASS\nJIT SSA helper stack growth: PASS\nJIT SSA closure helpers: PASS\nJIT SSA generic getter helpers: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_join_coalescing.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "join coalescing: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "join coalescing: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "join coalescing: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_latch_boxed.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "boxed latch: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "boxed latch: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "boxed latch: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_leaves.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA leaves: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA leaves: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA leaves: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_licm.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA external preheader invariants: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA external preheader invariants: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA external preheader invariants: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_loop_recovery.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT cyclic loop recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT cyclic loop recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT cyclic loop recovery: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_many_blocks.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "many blocks: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "many blocks: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "many blocks: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_memory_callbacks.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "scalable SSA memory callbacks: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "scalable SSA memory callbacks: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "scalable SSA memory callbacks: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_nested_store_budget.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT nested store budget: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT nested store budget: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT nested store budget: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_optimization.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA optimization semantics: PASS\nSSA dynamic effects: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA optimization semantics: PASS\nSSA dynamic effects: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA optimization semantics: PASS\nSSA dynamic effects: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_pure_swap.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_ranges.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA scalar ranges: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA scalar ranges: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA scalar ranges: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_scalable_fields.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "scalable SSA fields: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "scalable SSA fields: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "scalable SSA fields: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_ssa_wide_continuation.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/jit_string_continuations.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "JIT string continuations: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "JIT string continuations: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "JIT string continuations: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_cyclic_ssa.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "sljit cyclic ssa ok 2865000 1004000000\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "sljit cyclic ssa ok 2865000 1004000000\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "sljit cyclic ssa ok 2865000 1004000000\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_function.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SLJIT functions: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SLJIT functions: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SLJIT functions: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_inline_clamp.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "sljit inline clamp: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "sljit inline clamp: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "sljit inline clamp: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_leaf_coverage.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "sljit leaf coverage ok 175076 657232852\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "sljit leaf coverage ok 175076 657232852\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "sljit leaf coverage ok 175076 657232852\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_loop.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SLJIT loops: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SLJIT loops: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SLJIT loops: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_mod.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "sljit mod ok 28\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "sljit mod ok 28\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "sljit mod ok 28\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_parseint.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "sljit parseInt: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "sljit parseInt: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "sljit parseInt: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_property_read.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "sljit property read ok 5\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "sljit property read ok 5\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "sljit property read ok 5\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_regions.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SLJIT regions: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SLJIT regions: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SLJIT regions: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_smallfunc.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "smallfunc: 93 ms result=Infinity\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "smallfunc: 32 ms result=Infinity\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "smallfunc: 47 ms result=Infinity\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "sljit SSA: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "sljit SSA: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "sljit SSA: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_bindings.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA bindings: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA bindings: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA bindings: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_cfg.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA CFG: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA CFG: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA CFG: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_comparisons.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "mixed comparison PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "mixed comparison PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "mixed comparison PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_dense.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA dense numeric guard: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA dense numeric guard: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA dense numeric guard: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_latch.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "latch float PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "latch float PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "latch float PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_mixed_numbers.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA mixed numbers: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA mixed numbers: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA mixed numbers: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_numbers.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA numeric guards: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA numeric guards: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA numeric guards: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_postfix.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA postfix branch: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA postfix branch: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA postfix branch: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_recovery.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SSA recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SSA recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SSA recovery: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_ssa_spills.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "cycle PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "cycle PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "cycle PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "file": "test/sljit_template.js",
+      "match": true,
+      "runs": [
+        {
+          "mode": [],
+          "status": 0,
+          "stdout": "SLJIT template: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit"
+          ],
+          "status": 0,
+          "stdout": "SLJIT template: PASS\n",
+          "stderr": ""
+        },
+        {
+          "mode": [
+            "--jit-stress"
+          ],
+          "status": 0,
+          "stdout": "SLJIT template: PASS\n",
+          "stderr": ""
+        }
+      ]
+    }
+  ],
+  "normalization": "Elapsed milliseconds normalized, matching scripts/run_jit_diff.sh; raw output retained."
+}

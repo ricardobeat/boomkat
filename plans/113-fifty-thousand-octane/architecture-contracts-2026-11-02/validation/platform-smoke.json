@@ -1,0 +1,148 @@
+[
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [
+      "--jit-stress"
+    ],
+    "fixture": "test/jit_ssa_closure_startup.js",
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "boomkat: JIT is not available in this build\n"
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [
+      "--jit-stress"
+    ],
+    "fixture": "test/jit_ssa_ranges.js",
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "boomkat: JIT is not available in this build\n"
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [
+      "--jit-stress"
+    ],
+    "fixture": "test/jit_ssa_cfg_allocation.js",
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "boomkat: JIT is not available in this build\n"
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [
+      "--jit-stress"
+    ],
+    "fixture": "test/jit_ssa_pure_swap.js",
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "boomkat: JIT is not available in this build\n"
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [
+      "--jit-stress"
+    ],
+    "fixture": "test/modules/t11_colord/main.js",
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "boomkat: JIT is not available in this build\n"
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nojit-b5ca/boomkat_threaded",
+    "flags": [],
+    "fixture": "test/jit_ssa_closure_startup.js",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nojit-b5ca/boomkat_threaded",
+    "flags": [],
+    "fixture": "test/jit_ssa_ranges.js",
+    "returncode": 0,
+    "stdout": "SSA scalar ranges: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nojit-b5ca/boomkat_threaded",
+    "flags": [],
+    "fixture": "test/jit_ssa_cfg_allocation.js",
+    "returncode": 0,
+    "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nojit-b5ca/boomkat_threaded",
+    "flags": [],
+    "fixture": "test/jit_ssa_pure_swap.js",
+    "returncode": 0,
+    "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nojit-b5ca/boomkat_threaded",
+    "flags": [],
+    "fixture": "test/modules/t11_colord/main.js",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [],
+    "fixture": "test/jit_ssa_closure_startup.js",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [],
+    "fixture": "test/jit_ssa_ranges.js",
+    "returncode": 0,
+    "stdout": "SSA scalar ranges: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [],
+    "fixture": "test/jit_ssa_cfg_allocation.js",
+    "returncode": 0,
+    "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [],
+    "fixture": "test/jit_ssa_pure_swap.js",
+    "returncode": 0,
+    "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [],
+    "fixture": "test/jit_ssa_effect_recovery.js",
+    "returncode": 0,
+    "stdout": "JIT effect recovery: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [],
+    "fixture": "test/jit_ssa_fractional_bounds.js",
+    "returncode": 0,
+    "stdout": "JIT fractional bounds: PASS\n",
+    "stderr": ""
+  },
+  {
+    "binary": "/tmp/bk-ssa-final-nonanbox-b5ca/boomkat",
+    "flags": [],
+    "fixture": "test/modules/t11_colord/main.js",
+    "returncode": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

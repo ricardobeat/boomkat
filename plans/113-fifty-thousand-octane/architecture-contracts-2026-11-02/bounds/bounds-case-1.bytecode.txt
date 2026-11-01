@@ -1,0 +1,8 @@
+00 payload=01 LDINT              A=300 B=7 C=128 signed immediate=7
+02 payload=03 GETPROP            A=301 B=0 C=300
+04 payload=04 LDUNDEF            A=3 B=0 C=0
+05 payload=06 CALL_UNDEF_THIS    A=305 B=2 C=0
+07 payload=08 BANDI              A=302 B=1 C=7
+09 payload=10 GETPROP            A=303 B=0 C=302
+11 payload=12 ADD                A=304 B=301 C=303
+13 payload=14 RET                A=304 B=0 C=0

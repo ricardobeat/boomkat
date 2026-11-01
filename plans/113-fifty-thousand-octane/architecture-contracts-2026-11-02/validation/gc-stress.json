@@ -1,0 +1,128 @@
+[
+  {
+    "file": "jit_ssa_memory_callbacks.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "scalable SSA memory callbacks: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_memory_callbacks.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "scalable SSA memory callbacks: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_scalable_fields.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "scalable SSA fields: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_scalable_fields.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "scalable SSA fields: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_binding_store_alias.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "SSA binding/store aliases: PASS\nSSA own mutable capture: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_binding_store_alias.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "SSA binding/store aliases: PASS\nSSA own mutable capture: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_helper_continuations.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "JIT SSA helper continuations: PASS\nJIT SSA helper stack growth: PASS\nJIT SSA closure helpers: PASS\nJIT SSA generic getter helpers: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_helper_continuations.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "JIT SSA helper continuations: PASS\nJIT SSA helper stack growth: PASS\nJIT SSA closure helpers: PASS\nJIT SSA generic getter helpers: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_edge_phase.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "SSA edge phases: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_edge_phase.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "SSA edge phases: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_effect_inline.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_effect_inline.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_ranges.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "SSA scalar ranges: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_ranges.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "SSA scalar ranges: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_licm.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "SSA external preheader invariants: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_licm.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "SSA external preheader invariants: PASS\n",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_closure_startup.js",
+    "mode": "--jit",
+    "status": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "file": "jit_ssa_closure_startup.js",
+    "mode": "--jit-stress",
+    "status": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

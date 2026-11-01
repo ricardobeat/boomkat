@@ -1,6 +1,6 @@
 # 113: The 50,000 full-Octane target
 
-Status: **ACTIVE — architecture implementation, 2026-11-01.**
+Status: **ACTIVE — architecture contracts accepted; performance phase pending, 2026-11-02.**
 50K remains unachieved. This is the active roadmap for plans 107–108, 110–112 and 116–118.
 
 ## Objective and design
@@ -18,12 +18,12 @@ Wider windows and isolated opcode improvements do not substitute for these contr
 
 ## Current phase: finish the architecture
 
-Throughput tuning is deferred by user instruction. Complete and integrate the
-contracts below before resuming benchmark sweeps. Keep one SSA compiler and SLJIT;
+Throughput tuning remains deferred by user instruction. Milestones 2–4 now meet
+the architecture acceptance below; benchmark sweeps have not resumed. Keep one SSA compiler and SLJIT;
 scale the shared IR and runtime boundary instead of adding another specialized tier.
 Work is confined to `rat`; plans remain on `plans/archive`.
 
-Implemented foundations (individual milestones remain partial):
+Accepted architecture:
 
 - Canonical decoded CFG, semantic operand roles and continuation liveness;
   effectful cyclic SSA with exact recovery after committed stores.
@@ -31,27 +31,32 @@ Implemented foundations (individual milestones remain partial):
   state and sparse immutable recovery frames; stable IDs separate from scheduling.
   Decoded lowering, work budgets, WIDE/high-register gateway activation and
   dynamic invocation storage are integrated. Shared deopt freezes locations
-  once and uses small guard stubs; scalable admission auditing continues.
+  once and uses small guard stubs; decoded operand validation and compilation
+  work/memory budgets bound admission.
 - Generic call/allocation continuation with typed live-home preservation,
   boxed roots, stable activation lookup after stack growth, explicit
   before/after outcomes and exception handoff. Capturing closures, compact
   cells and the single-operation interpreter bridge are integrated. Fresh
-  binding reads handle aliases with native stores. Effectful inlining remains
-  in progress; logical caller/callee recovery frames are now represented.
+  binding reads handle aliases with native stores. Effectful inline prefixes
+  execute native stores and reconstruct logical caller/callee frames at the
+  exact unsupported or failing child instruction.
 - Native dense/typed/own-field access nodes use actual SSA receivers and live
   storage/generation guards, including after a callback moves array storage.
-- Guard-safe DCE and CFG effects/CSE; dynamic effects, range proofs and LICM
-  are being integrated. Cyclic allocation includes recovery and phi-edge uses.
+- Guard-safe DCE, CFG effects/CSE, scalar interval facts and proven native
+  bounds removal. Explicit import/preheader topology enables real LICM. Cyclic
+  allocation includes recovery and phi-edge uses; numeric constant
+  rematerialization removes constant homes and helper save/restore traffic.
 - Shared executable owners for function, loop and template code; pins through
   native recovery/publication; deferred retirement and exact code accounting.
   Capacity-generation retries and exact-PC loop admission replace sticky waits
   and colliding rejection masks. Policy defaults remain unchanged.
 
-Current evidence: [scalable memory/recovery contracts](113-fifty-thousand-octane/ssa-architecture-2026-11-01/contracts/scalable-memory/report.md).
+Evidence: [combined architecture acceptance](113-fifty-thousand-octane/architecture-contracts-2026-11-02/report.md)
+and [scalable memory/recovery contracts](113-fifty-thousand-octane/ssa-architecture-2026-11-01/contracts/scalable-memory/report.md).
 Earlier full-suite scores are roughly 6.4K; 50K is not achieved. Isolated native
 activation or lower instruction counts are evidence of mechanism, not a full-suite win.
 
-## Remaining milestones and acceptance
+## Milestones and acceptance
 
 ### 1. Attribute the remaining cost — performance phase
 
@@ -61,7 +66,7 @@ Record source/configuration hashes, compilation CPU, native/metadata bytes and R
 Keep Richards/DeltaBlue as regression checks and identify a blocked real consumer
 for each architectural change below.
 
-### 2. Complete shared scalable CFG and recovery analysis — partial
+### 2. Shared scalable CFG and recovery analysis — architecture accepted
 
 Consume WIDE/high-register operands throughout SSA lowering. Replace dense fixed
 PC/register structures with budgeted nodes, edges and sparse frame states; preserve
@@ -72,7 +77,7 @@ Acceptance: large real consumers, diamonds, multiple backedges, nested loops,
 WIDE/high registers and exit-only values agree with the interpreter. Unsupported
 exception/irreducible cases have explicit safe exits. Raising caps alone is insufficient.
 
-### 3. Complete calls, effects and runtime continuations — partial
+### 3. Calls, effects and runtime continuations — architecture accepted
 
 Add graph-level argument/result locations and clobbers, effectful inlining with
 caller/callee recovery, and allocation/helper continuations. Model throw/poll
@@ -85,12 +90,18 @@ call; and a separate allocation/closure consumer continuing after a completed
 helper. Exercise aliasing, coercion, mutation, stack growth, collection, exceptions,
 interrupts and invalidation. A single call must not disqualify surrounding work.
 
-### 4. Complete cyclic optimization and allocation — partial
+### 4. Cyclic optimization and allocation — architecture accepted
 
 Extend fixed-point facts with type/range reasoning, DCE, LICM and proven bounds
 removal. Preserve overflow, shifts, -0, NaN, holes and coercion semantics. Add
 call-aware allocation, safe edge coalescing, rematerialization and contexts selected
 from actual allocation. Scalar replacement waits for object reconstruction at exits.
+
+Conservative scope: effectful inlining currently handles straight-line prefixes;
+unsupported child instructions resume in a materialized callee. LICM requires a
+shared dominating preheader and declines rotated loops with bypassing side
+entries. Bounds proofs stop at potentially mutating callbacks. These cases use
+the same recovery contracts; widening optimization coverage is follow-up work.
 
 Architecture acceptance: bytecode and disassembly demonstrate working motion,
 guard removal, call preservation and allocation on actual native paths; focused
