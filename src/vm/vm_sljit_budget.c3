@@ -32,21 +32,31 @@ fn void sljit_budget_progress(Heap* h, uint edges) @feat(SLJIT) @inline {
 }
 
 fn void sljit_budget_grow(Heap* h, usz limit) @feat(SLJIT) @noinline {
+    if (limit <= h.jit_code_limit) return;
     h.jit_code_limit = limit;
     sljit_budget_retry(h);
 }
 
 fn void sljit_budget_retry(Heap* h) @feat(SLJIT) {
-    for (uint i = 0; i < h.compiled_func_count; i++) {
-        CompiledFunction* cf = h.compiled_funcs[i];
-        if (cf == null) continue;
-        if (cf.sljit_budget_wait) {
-            cf.sljit_budget_wait = false;
-            if (cf.sljit_function == null) cf.sljit_function_calls = 0;
-        }
-        cf.sljit_loop_rejected &= ~cf.sljit_loop_budget_wait;
-        cf.sljit_loop_budget_wait = 0;
+    h.jit_capacity_generation++;
+}
+
+// A temporary capacity rejection is reconsidered lazily at the next relevant
+// gateway. Unsupported code keeps its rejection; an unchanged budget never
+// causes repeated compilation attempts or a full function-registry sweep.
+fn void sljit_budget_retry_function(Heap* h, CompiledFunction* cf) @feat(SLJIT) @inline {
+    if (cf.sljit_capacity_seen == h.jit_capacity_generation) return;
+    cf.sljit_capacity_seen = h.jit_capacity_generation;
+    if (cf.sljit_budget_wait) {
+        cf.sljit_budget_wait = false;
+        if (cf.sljit_function == null) cf.sljit_function_calls = 0;
     }
+    if (cf.sljit_template_budget_wait) {
+        cf.sljit_template_budget_wait = false;
+        if (cf.sljit_template == null) cf.sljit_template_calls = 0;
+    }
+    cf.sljit_loop_rejected &= ~cf.sljit_loop_budget_wait;
+    cf.sljit_loop_budget_wait = 0;
 }
 
 fn bool sljit_code_room(Heap* h, usz bytes, bool function = false) @feat(SLJIT) @inline {
@@ -65,28 +75,43 @@ fn bool sljit_code_room(Heap* h, usz bytes, bool function = false) @feat(SLJIT) 
 // look cold merely because it never crosses the C gateway. Unlink before free.
 fn bool sljit_budget_reclaim(Heap* h, usz bytes) @feat(SLJIT) @noinline {
     if (bytes >= sljit_code_limit(h) || h.jit_native_active != 0) return false;
-    bool reclaimed;
     while (h.jit_code_bytes + bytes >= sljit_code_limit(h)) {
-        CompiledFunction* victim;
+        JitArtifact* victim;
         ulong oldest = h.jit_clock > 65536 ? h.jit_clock - 65536 : 0;
-        for (uint i = 0; i < h.compiled_func_count; i++) {
-            CompiledFunction* cf = h.compiled_funcs[i];
-            if (cf == null || cf.sljit_function == null) continue;
-            FunctionPlan* plan = cf.sljit_function;
-            if (plan.last_use >= oldest) continue;
-            oldest = plan.last_use;
-            victim = cf;
+        for (JitArtifact* artifact = h.jit_artifacts; artifact != null; artifact = artifact.next) {
+            if (artifact.pins != 0) continue;
+            ulong last_use = artifact.last_use;
+            if (artifact.kind == FUNCTION_CODE) {
+                // Linked calls stamp the plan directly from generated code.
+                FunctionPlan* plan = artifact.payload;
+                if (plan.last_use > last_use) last_use = plan.last_use;
+            }
+            if (last_use >= oldest) continue;
+            oldest = last_use;
+            victim = artifact;
         }
         if (victim == null) break;
-        FunctionPlan* retired = victim.sljit_function;
-        bool disabled = retired.begin == 0 && retired.short_runs[0] >= 8;
-        sljit_function_free(h, victim);
-        // An unproductive entry that was already disabled must not be
-        // repeatedly recompiled merely because its code was reclaimed.
-        if (!disabled) victim.sljit_function_calls = 0;
+        CompiledFunction* cf = victim.function;
+        switch (victim.kind) {
+            case FUNCTION_CODE:
+                FunctionPlan* plan = victim.payload;
+                bool disabled = plan.begin == 0 && plan.short_runs[0] >= 8;
+                sljit_function_free(h, cf);
+                if (!disabled) cf.sljit_function_calls = 0;
+            case LOOP_CODE:
+                LoopPlan* plan = victim.payload;
+                LoopPlan** link = &cf.sljit_loops;
+                while (*link != null && *link != plan) link = &(*link).next;
+                assert(*link == plan);
+                *link = plan.next;
+                cf.sljit_loop_ready &= ~(1U << (plan.end & 31));
+                sljit_artifact_retire(h, victim);
+            case TEMPLATE_CODE:
+                sljit_template_free(h, cf);
+                cf.sljit_template_calls = 0;
+        }
         h.jit_evictions++;
-        reclaimed = true;
     }
-    if (reclaimed) sljit_budget_retry(h);
+    // Each actual artifact release already advances capacity generation.
     return h.jit_code_bytes + bytes < sljit_code_limit(h);
 }
