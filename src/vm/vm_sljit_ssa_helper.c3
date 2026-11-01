@@ -78,6 +78,10 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     self.addr_reg = 0;
     self.addr_memory = -1;
     self.addr_numeric_load = false;
-    self.e.mov(r0, 0, mem | self.state, loop_value_offset((uint)self.g.values[value].dst_reg));
+    if (self.plan.ssa_data != null) {
+        self.e.mov(r0, 0, mem | self.state, $reflect(LoopState.execution).offset);
+        self.e.mov(r0, 0, mem | r0, $reflect(SsaExecution.input_values).offset);
+        self.e.mov(r0, 0, mem | r0, (long)self.g.values[value].dst_reg * TVal::size);
+    } else { self.e.mov(r0, 0, mem | self.state, loop_value_offset((uint)self.g.values[value].dst_reg)); }
     self.store_gpr((int)value, r0);
 }

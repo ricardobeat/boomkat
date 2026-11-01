@@ -58,7 +58,8 @@ fn long SsaEmitter.binding_offset(&self, uint binding) @feat(SLJIT) {
     return self.g.inplace ? self.state_bias + (long)self.plan.memory_count * LoopMemory::size + (long)binding * TVal::size
         : (char*)&state.bindings[binding] - (char*)&state;
 }
-fn long SsaEmitter.spill_offset(&self, uint spill) @feat(SLJIT) => self.g.inplace
+fn long SsaEmitter.spill_offset(&self, uint spill) @feat(SLJIT) => self.g.recoverable && self.plan.ssa_data != null
+    ? (long)LoopState::size + (long)spill * ulong::size : self.g.inplace
     ? self.state_bias + (long)self.plan.memory_count * LoopMemory::size + (long)self.plan.binding_count * TVal::size
         + (long)spill * double::size : ssa_spill_offset(spill);
 
@@ -288,7 +289,13 @@ fn void SsaEmitter.prologue(&self) @feat(SLJIT) {
         int value = self.g.phi[reg] >= 0 ? self.g.phi[reg] : self.g.arg[reg];
         if (value < 0 || (self.g.direct && self.g.values[value].last == self.g.values[value].def)) continue;
         SsaRep rep = self.g.values[value].rep;
-        self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(reg + (self.g.inplace && !self.g.callee_entry ? self.g.inline_base + 2 : 0)));
+        if (self.g.recoverable && self.plan.ssa_data != null) {
+            self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.execution).offset);
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r0, $reflect(SsaExecution.input_values).offset);
+            self.e.mov(r0, 0, jit::SLJIT_MEM | r0, (long)reg * TVal::size);
+        } else {
+            self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(reg + (self.g.inplace && !self.g.callee_entry ? self.g.inline_base + 2 : 0)));
+        }
         if (rep == INT32) {
             self.exact_int(r0, r0, self.plan.begin);
             self.store_gpr(value, r0);
@@ -784,7 +791,8 @@ fn void SsaEmitter.copy_phi(&self, int phi, int incoming) @feat(SLJIT) {
 
 // Inline SSA has packed invocation scratch rather than a complete LoopState.
 // Dense temporary indices are bounded by ssa_edge_copy_temps during preparation.
-fn long SsaEmitter.edge_offset(&self, uint slot) @feat(SLJIT) => self.g.inplace
+fn long SsaEmitter.edge_offset(&self, uint slot) @feat(SLJIT) => self.g.recoverable && self.plan.ssa_data != null
+    ? (long)LoopState::size + (long)(self.plan.ssa_data.spill_count + slot) * ulong::size : self.g.inplace
     ? self.spill_offset(self.g.spill_count + slot)
     : $reflect(LoopState.ssa_edge).offset + (long)slot * double::size;
 
@@ -1379,6 +1387,28 @@ fn void SsaEmitter.publish_id(&self, SsaFrameId frame, uint pc) @feat(SLJIT) {
     }
 
     LoopState layout;
+    if (self.g.recoverable && self.plan.ssa_data != null) {
+        uint count;
+        foreach (entry : ssa_frame_entries(self.g, frame)) {
+            self.output(entry.value, pc);
+            int r2 = jit::reg_r(2);
+            self.e.mov(r2, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.execution).offset);
+            self.e.mov(r2, 0, jit::SLJIT_MEM | r2, $reflect(SsaExecution.outputs).offset);
+            self.e.mov(jit::SLJIT_MEM | r2, (long)count * SsaPublishedValue::size + $reflect(SsaPublishedValue.reg).offset,
+                jit::SLJIT_IMM, entry.reg, jit::SLJIT_MOV_U32);
+            self.e.mov(jit::SLJIT_MEM | r2, (long)count * SsaPublishedValue::size + $reflect(SsaPublishedValue.value).offset, r0, 0);
+            count++;
+        }
+        self.e.mov(jit::reg_r(2), 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.execution).offset);
+        self.e.mov(jit::SLJIT_MEM | jit::reg_r(2), $reflect(SsaExecution.output_count).offset,
+            jit::SLJIT_IMM, count, jit::SLJIT_MOV_U32);
+        self.e.mov(jit::SLJIT_MEM | self.state, $reflect(LoopState.budget).offset, self.budget, 0);
+        if (pc == SSA_ENTRY_BAIL) {
+            self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.resume_pc).offset, jit::SLJIT_MOV_U32);
+        } else { self.e.mov(r0, 0, jit::SLJIT_IMM, pc); }
+        if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
+        return;
+    }
     ulong dirty = self.dirty_mask;
     foreach (entry : ssa_frame_entries(self.g, frame)) {
         if (entry.reg >= self.cf.num_regs) continue;
