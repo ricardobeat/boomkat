@@ -7,6 +7,7 @@ import boomkat::types;
 // Callee-saved homes use the same contract, so target ABI details cannot leak
 // into graph allocation. Reserved emitter temporaries are never value homes.
 fn void SsaEmitter.helper_save(&self, uint value) @feat(SLJIT) {
+    if (ssa_rematerialized(self.g.values[value])) return;
     int r0 = jit::reg_r(0);
     int r3 = jit::reg_r(3);
     if (self.g.values[value].rep == F64) {
@@ -19,6 +20,7 @@ fn void SsaEmitter.helper_save(&self, uint value) @feat(SLJIT) {
 }
 
 fn void SsaEmitter.helper_restore(&self, uint value) @feat(SLJIT) {
+    if (ssa_rematerialized(self.g.values[value])) return;
     int r0 = jit::reg_r(0);
     int r3 = jit::reg_r(3);
     self.e.mov(r3, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.execution).offset);

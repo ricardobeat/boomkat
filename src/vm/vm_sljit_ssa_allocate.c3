@@ -20,6 +20,7 @@ struct SsaAllocation @feat(SLJIT) {
 fn void SsaAllocation.add(&self, ulong* set, int value) @feat(SLJIT) {
     value = ssa_alias(self.g, value);
     if (value < 0 || value >= (int)self.g.value_count) return;
+    if (ssa_rematerialized(self.g.values[value])) return;
     set[(uint)value / 64] |= 1UL << ((uint)value % 64);
 }
 fn bool SsaAllocation.contains(&self, ulong* set, uint value) @feat(SLJIT) {
@@ -39,6 +40,7 @@ fn void SsaAllocation.merge(&self, ulong* dest, ulong* source) @feat(SLJIT) {
 }
 fn void SsaAllocation.interfere(&self, uint value, ulong* live) @feat(SLJIT) {
     SsaGraph* g = self.g;
+    if (ssa_rematerialized(g.values[value])) return;
     if (!ssa_charge_work(g, g.value_count)) return;
     ulong* row = self.conflicts + (usz)value * self.words;
     for (uint other = 0; other < g.value_count; other++) {
@@ -275,7 +277,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
     // interference graph. Non-overlapping joins can now reuse the same home.
     for (uint pass = 0; pass < 2; pass++) for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
-        if (value.op == COPY || !ssa_has_result(value.op)) continue;
+        if (value.op == COPY || ssa_rematerialized(*value) || !ssa_has_result(value.op)) continue;
         bool join = value.op == PHI || value.op == JOIN;
         if (join != (pass == 0)) continue;
         uint homes = value.rep == F64 ? g.fpr_homes : g.registers.scratch_homes + g.registers.saved_homes;
