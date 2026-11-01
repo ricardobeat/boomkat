@@ -42,17 +42,32 @@ struct SsaHelperSite @feat(SLJIT) {
 fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     SsaGraph* g = allocation.g;
     Heap* h = g.heap;
-    SsaFrameEntry[] before_entries = ssa_frame_entries(g, g.values[node].before_frame);
-    SsaFrameEntry[] after_entries = ssa_frame_entries(g, g.values[node].after_frame);
-    usz bytes = SsaHelperSite::size + (usz)g.value_count * uint::size * 2
+    if (!ssa_charge_work(g, (usz)g.value_count * 3)) return;
+    ulong* after = ssa_storage_alloc(g, allocation.words, ulong::size);
+    if (after == null) return;
+    allocation.copy(after, allocation.live);
+    allocation.remove(after, node);
+    allocation.remove(allocation.live, node);
+    allocation.recovery(allocation.live, g.values[node].pc);
+    if (!ssa_record_safepoint(g, node, g.values[node].before_frame, g.values[node].after_frame,
+            allocation.live, after, allocation.words)) return;
+    SsaSafepoint* point = ssa_live_at_helper(g, node);
+    uint roots;
+    foreach (id : point.live_before[:point.before_count]) {
+        if (id != node && g.values[id].rep == BOXED) roots++;
+    }
+    SsaFrameEntry[] before_entries = ssa_frame_entries(g, point.before_frame);
+    SsaFrameEntry[] after_entries = ssa_frame_entries(g, point.after_frame);
+    usz bytes = SsaHelperSite::size + ((usz)point.after_count + roots) * uint::size
         + (before_entries.len + after_entries.len) * SsaFrameEntry::size;
+    if (!ssa_persistent_reserve(g, bytes)) return;
     SsaHelperSite* site = h.alloc_func(h.heap_udata, bytes);
-    if (site == null) { g.failed = true; return; }
+    if (site == null) { ssa_persistent_release(g, bytes); g.failed = true; return; }
     *site = {};
     site.allocated_bytes = bytes;
     site.live_values = (uint*)((char*)site + SsaHelperSite::size);
-    site.root_values = site.live_values + g.value_count;
-    site.before_entries = (SsaFrameEntry*)(site.root_values + g.value_count);
+    site.root_values = site.live_values + point.after_count;
+    site.before_entries = (SsaFrameEntry*)(site.root_values + roots);
     site.before_count = (uint)before_entries.len;
     site.after_entries = site.before_entries + site.before_count;
     site.after_count = (uint)after_entries.len;
@@ -61,23 +76,14 @@ fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     site.native_resume = true;
     site.pc = g.values[node].pc;
     site.next_pc = ssa_decoded_view(g, site.pc).next_pc;
-    site.before_frame = g.values[node].before_frame;
-    site.after_frame = g.values[node].after_frame;
-    ulong* after = ssa_storage_alloc(g, allocation.words, ulong::size);
-    if (after == null) { h.free_func(h.heap_udata, site); return; }
-    allocation.copy(after, allocation.live);
-    allocation.remove(after, node);
-    allocation.remove(allocation.live, node);
-    allocation.recovery(allocation.live, site.pc);
-    if (!ssa_record_safepoint(g, node, site.before_frame, site.after_frame,
-            allocation.live, after, allocation.words)) { h.free_func(h.heap_udata, site); return; }
-    SsaSafepoint* point = ssa_live_at_helper(g, node);
-    foreach (i : point.live_after[:point.after_count]) {
-        if (g.values[i].rep == RAW) site.native_resume = false;
-        site.live_values[site.live_count++] = i;
+    site.before_frame = point.before_frame;
+    site.after_frame = point.after_frame;
+    foreach (id : point.live_after[:point.after_count]) {
+        if (g.values[id].rep == RAW) site.native_resume = false;
+        site.live_values[site.live_count++] = id;
     }
-    foreach (i : point.live_before[:point.before_count]) {
-        if (i != node && g.values[i].rep == BOXED) site.root_values[site.root_count++] = i;
+    foreach (id : point.live_before[:point.before_count]) {
+        if (id != node && g.values[id].rep == BOXED) site.root_values[site.root_count++] = id;
     }
     site.next = g.plan.ssa_helpers;
     g.plan.ssa_helpers = site;

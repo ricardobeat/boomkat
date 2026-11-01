@@ -107,12 +107,11 @@ fn void SsaAllocation.transfer_edge(&self, uint pred, uint succ, bool record) @f
     }
     if (pred == SSA_NO_BLOCK) {
         self.recovery(self.edge, g.blocks[succ].begin);
-    } else {
-        // A conversion emitted by an edge copy can fail at the last emitted
-        // bytecode's PC. Match the emitter's PC even for a fallthrough block.
-        int last = ssa_block_last_value(g, pred);
-        uint pc = last >= 0 ? g.values[last].pc : g.blocks[pred].begin;
-        self.recovery(self.edge, pc);
+    } else if (!g.direct) {
+        // Match the emitter's exact phase: an unperformed branch uses its
+        // before state; a completed helper/fallthrough uses its after state.
+        SsaEdgeState state = ssa_edge_state(g, pred, succ);
+        foreach (entry : ssa_frame_entries(g, state.frame)) self.add(self.edge, entry.value);
     }
     if (record) for (uint i = 0; i < g.value_count; i++) {
         if (!self.contains(self.destinations, i)) continue;
