@@ -17,7 +17,7 @@ const long SSA_ACCESS_WRITE = 256;
 fn bool ssa_access_build(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
     DecodedInsn ins = view.insn;
     bool write = ins.op == Opcode.PUTPROP;
-    if (!write && ins.op != Opcode.GETPROP && ins.op != Opcode.GETPROP_CACHE) return false;
+    if (!write && ins.op != Opcode.GETPROP && ins.op != Opcode.GETPROP_CACHE) return ssa_access_field_build(g, view);
     ObjClass cls = ARRAY;
     if (g.cf.ic_entries != null && view.payload_pc < g.cf.ic_count) {
         ICEntry* ic = (ICEntry*)g.cf.ic_entries + view.payload_pc;
@@ -143,8 +143,8 @@ fn void SsaEmitter.access_load(&self, int id) @feat(SLJIT) {
         if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_CONV_F64_FROM_SW, dst, 0, r0, 0) != 0) self.e.failed = true;
         if (value.home == 0) self.store_fpr(id, dst);
     } else {
-        self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0, cls == ARRAY ? jit::SLJIT_MOV : loop_load_op(cls));
-        if (cls == ARRAY) {
+        self.e.mov(r0, 0, jit::SLJIT_MEM | r2, 0, (cls == ARRAY || cls == OBJECT) ? jit::SLJIT_MOV : loop_load_op(cls));
+        if ((cls == ARRAY || cls == OBJECT)) {
             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
             self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, self.pc);
         }
@@ -166,7 +166,7 @@ fn void SsaEmitter.access_store(&self, int id) @feat(SLJIT) {
             jit::SLJIT_MEM | r2, 0, 1, 0) != 0) self.e.failed = true;
     } else {
         self.gpr(value.b, r0);
-        if (cls == ARRAY) {
+        if ((cls == ARRAY || cls == OBJECT)) {
             self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
             self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, self.pc);
             self.e.mov(r3, 0, jit::SLJIT_MEM | r2, 0);
@@ -175,6 +175,79 @@ fn void SsaEmitter.access_store(&self, int id) @feat(SLJIT) {
             // bookkeeping. Holes and reference-bearing slots use the VM.
             self.guard(jit::SLJIT_GREATER, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, self.pc);
         }
-        self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0, cls == ARRAY ? jit::SLJIT_MOV : loop_load_op(cls));
+        self.e.mov(jit::SLJIT_MEM | r2, 0, r0, 0, (cls == ARRAY || cls == OBJECT) ? jit::SLJIT_MOV : loop_load_op(cls));
     }
+}
+
+struct SsaFieldAccess @feat(SLJIT) {
+    uint shape;
+    uint generation;
+    uint slot;
+    bool write;
+}
+
+fn bool ssa_access_field_build(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
+    DecodedInsn ins = view.insn;
+    bool write = ins.op == Opcode.PUTPROPC;
+    if (!write && ins.op != Opcode.GETPROPC && ins.op != Opcode.GETPROPC_CACHED) return false;
+    if (g.cf.ic_entries == null || view.payload_pc >= g.cf.ic_count || ins.c >= g.cf.const_count) return false;
+    TVal key = g.cf.constants[ins.c];
+    if (!key.is_string()) return false;
+    ICEntry* ic = (ICEntry*)g.cf.ic_entries + view.payload_pc;
+    if (ic.key.borrow() != key.get_heapptr() || ic.has_proto || ic.chain_len != 0
+        || ic.prop_idx >= hobject::IC_PROP_MISSING || ic.prop_flags.is_accessor) return false;
+    Shape* shape = g.heap.get_shape(ic.shape_id);
+    if (shape == null || shape.dict || shape.generation != ic.shape_gen) return false;
+    PropFlags flags;
+    int slot = function_shape_slot(shape, key.get_heapptr(), &flags);
+    if (slot < 0 || (uint)slot != ic.prop_idx || flags.is_accessor || (write && !flags.writable)) return false;
+    int receiver = g.current[write ? ins.a : ins.b];
+    int stored = write ? g.current[ins.b] : -1;
+    if (receiver < 0 || (write && stored < 0)) return false;
+    SsaFieldAccess* access = (SsaFieldAccess*)ssa_storage_alloc(g, 1, SsaFieldAccess::size);
+    if (access == null) return false;
+    *access = { ic.shape_id, ic.shape_gen, (uint)slot, write };
+    receiver = ssa_convert(g, receiver, BOXED, false);
+    if (write) stored = ssa_convert(g, stored, BOXED, false);
+    ssa_use(g, receiver);
+    int address = ssa_value(g, ACCESS_FIELD, RAW, receiver, -1, 0);
+    g.values[address].field_access = access;
+    ssa_use(g, address);
+    if (write) {
+        ssa_use(g, stored);
+        ssa_value(g, ACCESS_STORE, BOXED, address, stored, (long)ObjClass.OBJECT.ordinal);
+    } else {
+        int result = ssa_value(g, ACCESS_LOAD, BOXED, address, -1, (long)ObjClass.OBJECT.ordinal);
+        ssa_result(g, result, ins.a, view.pc);
+        g.current[ins.a] = result;
+    }
+    return true;
+}
+
+fn void SsaEmitter.access_field(&self, int id) @feat(SLJIT) {
+    SsaValue value = self.g.values[id];
+    SsaFieldAccess* access = value.field_access;
+    int r0 = jit::reg_r(0); int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
+    int mem = jit::SLJIT_MEM; int imm = jit::SLJIT_IMM;
+    HObject object; Shape shape;
+    self.gpr(value.a, r0);
+    self.e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT, self.pc);
+    self.e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    self.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, self.pc);
+    self.ordinary_receiver(r0, self.pc);
+    if (access.write) self.commit_receiver(r0);
+    self.e.mov(r3, 0, mem | r0, (char*)&object.shape_id - (char*)&object, jit::SLJIT_MOV_U32);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, access.shape, self.pc);
+    // Shape IDs can be recycled and private shapes can change in place. Load
+    // the live directory after every helper; never embed its movable address.
+    self.e.mov(r2, 0, imm, (long)&self.g.heap.shapes);
+    self.e.mov(r2, 0, mem | r2, 0);
+    self.e.mov(r2, 0, mem | r2, (long)access.shape * void*::size);
+    self.guard(jit::SLJIT_EQUAL, r2, 0, imm, 0, self.pc);
+    self.e.mov(r3, 0, mem | r2, (char*)&shape.generation - (char*)&shape, jit::SLJIT_MOV_U32);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, access.generation, self.pc);
+    self.field_address(r0, r2);
+    self.e.op(jit::SLJIT_ADD, r2, r2, 0, imm, (long)access.slot * TVal::size);
+    self.store_gpr(id, r2);
 }
