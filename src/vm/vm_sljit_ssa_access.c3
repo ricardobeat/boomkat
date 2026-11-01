@@ -56,6 +56,7 @@ fn void SsaEmitter.access_address(&self, int id) @feat(SLJIT) {
     SsaValue value = self.g.values[id];
     ObjClass cls = (ObjClass)(value.imm & 255);
     bool write = (value.imm & SSA_ACCESS_WRITE) != 0;
+    bool bounds = (value.proof_bits & SSA_PROOF_INDEX_BOUNDS) != 0;
     int r0 = jit::reg_r(0); int r1 = jit::reg_r(1);
     int r2 = jit::reg_r(2); int r3 = jit::reg_r(3);
     int mem = jit::SLJIT_MEM; int imm = jit::SLJIT_IMM;
@@ -82,9 +83,9 @@ fn void SsaEmitter.access_address(&self, int id) @feat(SLJIT) {
             self.commit_receiver(r0);
         }
         self.e.mov(r3, 0, mem | r0, (char*)&object.array_size - (char*)&object, jit::SLJIT_MOV_U32);
-        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
+        if (!bounds) self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
         self.e.mov(r3, 0, mem | r0, HObjectBase::size, jit::SLJIT_MOV_U32);
-        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
+        if (!bounds) self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
         self.e.mov(r2, 0, mem | r0, (char*)&object.prop_alloc - (char*)&object);
         void* external = self.e.cmp(jit::SLJIT_NOT_EQUAL, r2, 0, imm, 0);
         self.e.mov(r3, 0, mem | r0, HObjectBase::size + uint::size, jit::SLJIT_MOV_U32);
@@ -117,7 +118,7 @@ fn void SsaEmitter.access_address(&self, int id) @feat(SLJIT) {
         self.e.mov(r3, 0, mem | r0, base + (char*)&view.byte_length - (char*)&view, jit::SLJIT_MOV_U32);
         uint shift = builtins::ta_elem_shift(cls);
         if (shift != 0) self.e.op(jit::SLJIT_LSHR, r3, r3, 0, imm, shift);
-        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
+        if (!bounds) self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
         if (shift != 0) self.e.op(jit::SLJIT_SHL, r1, r1, 0, imm, shift);
     }
     self.e.op(jit::SLJIT_ADD, r2, r2, 0, r1, 0);
