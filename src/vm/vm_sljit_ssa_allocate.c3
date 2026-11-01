@@ -99,7 +99,7 @@ fn void SsaAllocation.transfer_edge(&self, uint pred, uint succ, bool record) @f
             }
             if (edge < 0) continue;
         }
-        for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        for (uint reg = 0; reg < g.reg_count; reg++) {
             if (join.phi[reg] < 0) continue;
             self.add(self.destinations, join.phi[reg]);
             self.add(self.edge, pred == SSA_NO_BLOCK ? join.entry_incoming[reg] : join.incoming[edge][reg]);
@@ -129,7 +129,7 @@ fn void SsaAllocation.latch(&self, bool record) @feat(SLJIT) {
     SsaGraph* g = self.g;
     self.copy(self.edge, self.inputs);
     self.clear(self.destinations);
-    foreach (phi : g.phi) {
+    foreach (phi : g.phi[0:g.reg_count]) {
         if (phi < 0) continue;
         self.add(self.destinations, phi);
         self.add(self.edge, g.values[phi].a);
@@ -155,9 +155,9 @@ fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
             self.latch(record);
         } else if (g.plan.ssa_function == null) {
             if (g.direct) {
-                if (g.result_reg < LOOP_REGS) self.add(self.live, g.current[g.result_reg]);
+                if (g.result_reg < g.reg_count) self.add(self.live, g.current[g.result_reg]);
             } else {
-                foreach (value : g.current) self.add(self.live, value);
+                foreach (value : g.current[0:g.reg_count]) self.add(self.live, value);
             }
         }
     }
@@ -183,10 +183,10 @@ fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
     self.clear(self.destinations);
     for (uint j = 0; j < g.join_count; j++) {
         if (g.joins[j].block != block) continue;
-        foreach (phi : g.joins[j].phi[0:LOOP_REGS]) if (phi >= 0) self.add(self.destinations, phi);
+        foreach (phi : g.joins[j].phi[0:g.reg_count]) if (phi >= 0) self.add(self.destinations, phi);
     }
     if (block == 0 && !g.single_pass) {
-        foreach (phi : g.phi) if (phi >= 0) self.add(self.destinations, phi);
+        foreach (phi : g.phi[0:g.reg_count]) if (phi >= 0) self.add(self.destinations, phi);
     }
     if (record) for (uint i = 0; i < g.value_count; i++) {
         if (!self.contains(self.destinations, i)) continue;
@@ -218,6 +218,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
     // latch. The finite value sets converge even for nested/multiple backedges.
     bool changed = true;
     while (changed) {
+        if (!ssa_charge_work(g, (usz)g.block_count * (usz)(g.value_count + g.reg_count) + (usz)g.block_count * words)) return;
         changed = false;
         for (uint b = g.block_count; b > 0; b--) {
             a.block(b - 1, false);
@@ -227,6 +228,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
             }
         }
     }
+    if (!ssa_charge_work(g, (usz)g.value_count * g.value_count + (usz)g.block_count * g.value_count)) return;
     for (uint b = 0; b < g.block_count; b++) a.block(b, true);
     // Every synthetic entry (initial entry or a resumed call successor)
     // consumes arguments initialized by that entry's prologue, then copies
@@ -236,7 +238,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
         a.clear(a.live);
         a.transfer_edge(SSA_NO_BLOCK, g.joins[j].block, true);
     }
-    for (uint reg = 0; reg < g.cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < g.cf.num_regs && reg < g.reg_count; reg++) {
         int value = g.phi[reg] >= 0 ? g.phi[reg] : g.arg[reg];
         if (value < 0 || (g.direct && g.values[value].last == g.values[value].def)) continue;
         a.add(a.initial, value);
@@ -283,14 +285,14 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
 // Share this predicate with preparation so packed inline state reserves exactly
 // the temporary storage the emitter can use after allocation.
 fn bool ssa_phi_staging(SsaGraph* g, SsaJoin* join, int* incoming) @feat(SLJIT) {
-    for (uint reg = 0; reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < g.reg_count; reg++) {
         if (join.phi[reg] < 0 || incoming[reg] < 0) continue;
         SsaValue dest = g.values[join.phi[reg]];
         SsaValue source = g.values[incoming[reg]];
         if ((dest.rep == F64 && source.rep != F64 && source.rep != INT32)
             || (dest.rep == INT32 && source.rep != INT32)) return true;
         if (dest.rep == source.rep && ssa_same_location(dest, source)) continue;
-        for (uint other = 0; other < LOOP_REGS; other++) {
+        for (uint other = 0; other < g.reg_count; other++) {
             if (join.phi[other] < 0 || incoming[other] < 0) continue;
             SsaValue read = g.values[incoming[other]];
             if (ssa_same_location(dest, read)) return true;
@@ -310,7 +312,7 @@ fn uint ssa_edge_copy_temps(SsaGraph* g) @feat(SLJIT) {
         }
         if (!staged) continue;
         uint count;
-        foreach (phi : join.phi[0:LOOP_REGS]) if (phi >= 0) count++;
+        foreach (phi : join.phi[0:g.reg_count]) if (phi >= 0) count++;
         if (count > maximum) maximum = count;
     }
     return maximum;

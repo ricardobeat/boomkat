@@ -28,6 +28,7 @@ fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
     for (uint b = 0; b < count; b++) if (g.blocks[b].external) reachable[b] = true;
     bool changed = true;
     while (changed) {
+        if (!ssa_charge_work(g, (usz)count * words + (usz)count * 2)) return;
         changed = false;
         for (uint b = 0; b < count; b++) {
             if (reachable[b]) continue;
@@ -44,6 +45,7 @@ fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
     }
     changed = true;
     while (changed) {
+        if (!ssa_charge_work(g, (usz)count * words + (usz)count * 2)) return;
         changed = false;
         for (uint b = 1; b < count; b++) {
             if (g.blocks[b].external || !reachable[b]) continue;

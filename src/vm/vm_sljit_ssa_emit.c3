@@ -23,7 +23,7 @@ struct SsaEmitter @feat(SLJIT) {
     int budget;
     int run;
     ulong dirty_mask;
-    int[LOOP_REGS] live;
+    int* live;
     uint at_def;
     uint pc;
     void* header;
@@ -129,13 +129,13 @@ fn void SsaEmitter.snapshot_id(&self, void* jump, uint pc, SsaFrameId frame) @fe
     item.pc = pc;
     item.frame = frame;
 }
-fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int[LOOP_REGS]* regs = null) @feat(SLJIT) {
-    SsaFrameId frame = regs == null ? SSA_NO_FRAME : ssa_frame_capture(self.g, pc, &(*regs)[0], LOOP_REGS);
+fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int* regs = null) @feat(SLJIT) {
+    SsaFrameId frame = regs == null ? SSA_NO_FRAME : ssa_frame_capture(self.g, pc, regs, self.g.reg_count);
     if (self.g.failed) { self.e.failed = true; return; }
     self.snapshot_id(jump, pc, frame);
 }
 fn void SsaEmitter.snapshot_none(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, self.g.recoverable ? SSA_ENTRY_BAIL : pc);
-fn void SsaEmitter.snapshot_phis(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc, &self.g.phi);
+fn void SsaEmitter.snapshot_phis(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc, self.g.phi);
 fn void SsaEmitter.snapshot(&self, void* jump, uint pc) @feat(SLJIT) {
     if (self.g.direct || self.entry_copy) { self.snapshot_none(jump, self.plan.begin); }
     else { self.snapshot_id(jump, pc, ssa_frame_at_pc(self.g, pc)); }
@@ -284,7 +284,7 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
 }
 fn void SsaEmitter.prologue(&self) @feat(SLJIT) {
     int r0 = jit::reg_r(0);
-    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < self.cf.num_regs && reg < self.g.reg_count; reg++) {
         int value = self.g.phi[reg] >= 0 ? self.g.phi[reg] : self.g.arg[reg];
         if (value < 0 || (self.g.direct && self.g.values[value].last == self.g.values[value].def)) continue;
         SsaRep rep = self.g.values[value].rep;
@@ -328,7 +328,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
     self.addr_reg = 0;
     for (uint b = 0; b < self.g.block_count; b++) {
         self.addr_reg = 0;
-        ssa_frame_restore(self.g, ssa_frame_at_pc(self.g, self.g.blocks[b].begin), &self.live[0], LOOP_REGS);
+        ssa_frame_restore(self.g, ssa_frame_at_pc(self.g, self.g.blocks[b].begin), self.live, self.g.reg_count);
         self.block_label[b] = e.label();
         for (int node = ssa_block_first_value(self.g, b); node >= 0; node = ssa_next_value(self.g, node)) {
             uint i = (uint)node;
@@ -857,7 +857,7 @@ fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
             if (join.preds[p] != block) continue;
             bool staged = self.g.cyclic && self.phi_staging(join, join.incoming[p]);
             uint slot;
-            for (uint reg = 0; reg < LOOP_REGS; reg++) {
+            for (uint reg = 0; reg < self.g.reg_count; reg++) {
                 int phi = join.phi[reg];
                 if (phi < 0) continue;
                 int incoming = join.incoming[p][reg];
@@ -867,7 +867,7 @@ fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
             }
             if (staged) {
                 slot = 0;
-                for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                for (uint reg = 0; reg < self.g.reg_count; reg++) {
                     if (join.phi[reg] >= 0) self.commit_phi(join.phi[reg], slot++);
                 }
             }
@@ -887,7 +887,7 @@ fn void SsaEmitter.entry_copies(&self, uint entry_block = 0) @feat(SLJIT) {
         if (!join.entry || join.block != entry_block) continue;
         bool staged = self.g.cyclic && self.phi_staging(join, join.entry_incoming);
         uint slot;
-        for (uint reg = 0; reg < LOOP_REGS; reg++) {
+        for (uint reg = 0; reg < self.g.reg_count; reg++) {
             int phi = join.phi[reg];
             if (phi < 0) continue;
             int incoming = join.entry_incoming[reg];
@@ -897,7 +897,7 @@ fn void SsaEmitter.entry_copies(&self, uint entry_block = 0) @feat(SLJIT) {
         }
         if (staged) {
             slot = 0;
-            for (uint reg = 0; reg < LOOP_REGS; reg++) {
+            for (uint reg = 0; reg < self.g.reg_count; reg++) {
                 if (join.phi[reg] >= 0) self.commit_phi(join.phi[reg], slot++);
             }
         }
@@ -1274,7 +1274,7 @@ fn void SsaEmitter.store(&self, uint memory, int index, int value) @feat(SLJIT) 
         self.e.mov(jit::SLJIT_MEM | r2, offset, r0, 0);
         return;
     }
-    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < self.cf.num_regs && reg < self.g.reg_count; reg++) {
         int live = ssa_alias(self.g, self.live[reg]);
         if (live >= 0 && self.g.values[live].rep == BOXED && self.g.values[live].op == LOAD
             && self.g.values[live].last >= self.at_def) {
@@ -1366,15 +1366,15 @@ fn void SsaEmitter.direct_return(&self, int value, bool refused = false) @feat(S
     } else if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
 }
 
-fn void SsaEmitter.publish(&self, int[LOOP_REGS]* regs, uint pc) @feat(SLJIT) {
-    SsaFrameId frame = ssa_frame_capture(self.g, pc, &(*regs)[0], LOOP_REGS);
+fn void SsaEmitter.publish(&self, int* regs, uint pc) @feat(SLJIT) {
+    SsaFrameId frame = ssa_frame_capture(self.g, pc, regs, self.g.reg_count);
     if (self.g.failed) { self.e.failed = true; return; }
     self.publish_id(frame, pc);
 }
 fn void SsaEmitter.publish_id(&self, SsaFrameId frame, uint pc) @feat(SLJIT) {
     int r0      = jit::reg_r(0);
     if (self.g.direct) {
-        self.direct_return(self.g.result_reg < LOOP_REGS ? self.g.current[self.g.result_reg] : -1, pc != self.plan.end + 1);
+        self.direct_return(self.g.result_reg < self.g.reg_count ? self.g.current[self.g.result_reg] : -1, pc != self.plan.end + 1);
         return;
     }
 
@@ -1436,8 +1436,9 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
     // its original homes. This makes the latch operands recovery uses, not
     // artificial loop-carried phis when fallthrough does not need them.
     self.at_def = self.g.stamp;
-    int[LOOP_REGS] recovery;
-    for (uint reg = 0; reg < LOOP_REGS; reg++) {
+    int* recovery = (int*)ssa_storage_alloc(self.g, self.g.reg_count, int::size);
+    if (self.g.failed) { self.e.failed = true; return; }
+    for (uint reg = 0; reg < self.g.reg_count; reg++) {
         int phi = self.g.phi[reg];
         recovery[reg] = phi < 0 ? -1 : self.g.values[phi].a;
     }
@@ -1449,19 +1450,19 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
         if (latch.b < LOOP_REGS) recovery[latch.b] = ssa_frame_lookup(self.g, frame, latch.b);
         if (latch.op < Opcode.JMP_NLTI && latch.c < LOOP_REGS) recovery[latch.c] = ssa_frame_lookup(self.g, frame, latch.c);
     }
-    self.snapshot_frame(self.e.cmp(jit::SLJIT_LESS_EQUAL, self.budget, 0, jit::SLJIT_IMM, 1), self.plan.end, &recovery);
+    self.snapshot_frame(self.e.cmp(jit::SLJIT_LESS_EQUAL, self.budget, 0, jit::SLJIT_IMM, 1), self.plan.end, recovery);
     self.e.op(jit::SLJIT_SUB, self.budget, self.budget, 0, jit::SLJIT_IMM, 1);
     // A postfix comparison may still read a header value whose home the phi
     // copies replace (while (count-- > 0)). Save the predicate before copies.
     bool truth = self.g.cmp_op == Opcode.IF_TRUE || self.g.cmp_op == Opcode.IF_FALSE;
     bool[2] saved_predicate;
     uint predicate = self.g.spill_count;
-    foreach (phi : self.g.phi) if (phi >= 0) predicate++;
+    foreach (phi : self.g.phi[0:self.g.reg_count]) if (phi >= 0) predicate++;
     for (uint operand = 0; operand < 2; operand++) {
         int value = operand == 0 ? self.g.cmp_lhs : self.g.cmp_rhs;
         if (value < 0) continue;
         if (truth && operand == 0) saved_predicate[operand] = true;
-        foreach (phi : self.g.phi) {
+        foreach (phi : self.g.phi[0:self.g.reg_count]) {
             if (phi < 0) continue;
             SsaValue dest = self.g.values[phi];
             if (ssa_same_location(
@@ -1482,7 +1483,7 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
     // is not a temporary: another pending phi may still need its old value.
     bool[LOOP_REGS] pending;
     uint remaining;
-    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < self.cf.num_regs && reg < self.g.reg_count; reg++) {
         int phi = self.g.phi[reg];
         if (phi < 0) continue;
         if (ssa_same_location(self.g.values[phi], self.g.values[self.g.values[phi].a])) continue;
@@ -1491,7 +1492,7 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
     }
     while (remaining > 0) {
         bool progress;
-        for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+        for (uint reg = 0; reg < self.cf.num_regs && reg < self.g.reg_count; reg++) {
             if (!pending[reg]) continue;
             int phi       = self.g.phi[reg];
             SsaValue dest = self.g.values[phi];
@@ -1535,7 +1536,7 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
     }
     // Break all remaining cycles before mutating any destination.
     uint temp = self.g.spill_count;
-    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < self.cf.num_regs && reg < self.g.reg_count; reg++) {
         if (!pending[reg]) continue;
         int source = self.g.values[self.g.phi[reg]].a;
         if (self.g.values[source].rep == F64) {
@@ -1547,7 +1548,7 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
         self.e.mov(jit::SLJIT_MEM | self.state, self.spill_offset(temp++), r0, 0);
     }
     temp = self.g.spill_count;
-    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
+    for (uint reg = 0; reg < self.cf.num_regs && reg < self.g.reg_count; reg++) {
         if (!pending[reg]) continue;
         int phi = self.g.phi[reg];
         self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, self.spill_offset(temp++));
