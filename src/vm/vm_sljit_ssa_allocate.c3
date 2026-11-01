@@ -302,7 +302,7 @@ fn bool ssa_phi_staging(SsaGraph* g, SsaJoin* join, int* incoming) @feat(SLJIT) 
 }
 
 fn uint ssa_edge_copy_temps(SsaGraph* g) @feat(SLJIT) {
-    if (!g.inplace || !g.cyclic) return 0;
+    if ((!g.inplace && !g.recoverable) || !g.cyclic) return 0;
     uint maximum;
     for (uint j = 0; j < g.join_count; j++) {
         SsaJoin* join = &g.joins[j];

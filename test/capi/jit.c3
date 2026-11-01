@@ -233,12 +233,12 @@ fn void check_decoded_liveness(JsRuntime* runtime) {
     std::core::mem::clear(graph, (sz)SsaGraph::size);
     graph.cf = &cf; graph.plan = &plan; graph.heap = h;
     bool[vm::LOOP_REGS] live;
-    @check(vm::ssa_continuation_live(graph, &live));
+    @check(vm::ssa_continuation_live(graph, &live[0]));
     @check(live[7] && !live[6]);
     // Aliased loop bodies are temporarily rewritten; their surrounding
     // bytecode still names original registers and must use the fallback.
     plan.slot_reg[0] = 300;
-    @check(!vm::ssa_continuation_live(graph, &live));
+    @check(!vm::ssa_continuation_live(graph, &live[0]));
     plan.slot_reg[0] = 0;
 
     // Shared canonical nodes retain recovery/cache PCs and high register roles.
@@ -360,7 +360,7 @@ fn void check_decoded_liveness(JsRuntime* runtime) {
     // This edge targets the LDREG payload, not its prefix.
     code[1] = bytecode::make_a_sbx(Opcode.IF_FALSE, 44, 4);
     @check(!compiler::moveelim_compute_decoded_liveness(&code[0], code.len, &sets[0], &sets[11], &scratch, &boundary[0]));
-    @check(!vm::ssa_continuation_live(graph, &live));
+    @check(!vm::ssa_continuation_live(graph, &live[0]));
 
     Instruction[3] cyclic = {
         bytecode::make_wide(1, 1, 0), bytecode::make_abc(Opcode.LDREG, 44, 45, 0),
@@ -1172,6 +1172,10 @@ fn void check_function_missing_caches(JsRuntime* runtime) {
 }
 
 fn void main() {
+    check_scalable_ssa_gateway();
+    $if $feat(SSA_SCALABLE_ONLY):
+        return;
+    $endif
     check_dependency_gc();
     check_artifact_retirement();
     check_helper_result_receiver_alias();
