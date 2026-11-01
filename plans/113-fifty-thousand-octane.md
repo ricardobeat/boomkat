@@ -1,842 +1,149 @@
-# 113: The 50,000 Octane target — active JIT master roadmap
-
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `ec422de6` (native remainder and census/bench tooling); prior checkpoint rat `b049ee6c` (native remainder in loop and function bodies); prior checkpoint rat `bf6626c1` (nested loops as one cyclic SSA region again) and `078e74b2` (named-read fixture coverage); prior checkpoint rat `fe88ada7` (frameless capture and global reads, multi-field leaf writes, grown function fixup directories); prior checkpoint rat `de24cf29` (whole function bodies with cyclic SSA: loop-header joins, late-bound backedge inputs, converting parallel copies and a per-backedge budget poll); prior checkpoint rat `ac7abcb7` (frameless threaded numeric typed-array reads and integer stores); prior checkpoint rat `95fbeb07` (edge-safe in-place SSA join coalescing); prior checkpoint rat `a132b1ef` (correct SSA predecessor edges and cycle-correct dominance); prior checkpoint rat `be81dac9` (bounded WIDE-aware continuation liveness), preceded by `f4efb2a2` (correct polymorphic and inherited inline property offsets); previous checkpoint rat `9966cd7f` (shared bounded WIDE decoding for interpreter and loop operand analysis); prior checkpoint rat `48fb7172` (safe JIT refusal and retry when inline-cache allocation fails); prior checkpoint rat `c74029b2` (mandatory regexp substring rejection); prior checkpoint rat `2a063511` (one-load scaled dense-array reads); prior checkpoint rat `34f224e0` (SSA latch budget recovery without artificial branch-operand phis); prior checkpoint rat `9da6427e` (bounded CFG-based SSA loop continuation liveness with explicit latch and exception recovery); prior checkpoint rat `5aae48bc` (single-pass shared register-use collection for loop alias analysis); prior checkpoint rat `ba119b09` (conservative handling of unsupported WIDE register windows; direct embedding coverage; removes unconditional remap diagnostics); prior checkpoint rat `4228a786` (fixup-allocation size assertion and scalar-recovery regression only; release binary identical to `fa11ea2d`); prior runtime checkpoint rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
-
-[Typed-array bytecode, fresh profile, ARM64, correctness and full scores](113-fifty-thousand-octane/typed-array-dispatch-2026-10-31/report.md): rat `ac7abcb7` removes the helper frame from the common numeric read and integer-store handlers while preserving float and unusual-buffer fallbacks. Mandreel mini improves 554→544 ms in two paired screens; three full-Octane pairs give median 6552→6563, too variable for a suite gain. A full-suite Box2D swing did not reproduce in nine mini or five ten-times-longer pairs; longer Gameboy changed +0.45%. The 50K target and cyclic function SSA remain open.
-
-[SSA join allocation, bytecode/native code, safety and timing evidence](113-fifty-thousand-octane/ssa-join-coalescing-2026-10-31/report.md): rat `95fbeb07` coalesces a dying incoming register with an in-place direct join only when no other copy on any incoming edge needs it. A first prototype failed a parallel-copy swap and was corrected. The real Crypto `nbits` leaf drops from 245 to 215 ARM64 instructions and 11 to 5 spills; nearly ten million completed leaf calls measure 376→374 ms, and the full mini panel is essentially flat. The prior full-Octane median remains approximately 6,565; cyclic function SSA and 50K remain open.
-
-[SSA CFG edges, cyclic dominance, bytecode, native code and full-suite evidence](113-fifty-thousand-octane/ssa-cfg-edges-2026-10-31/report.md): rat `a132b1ef` removes nonexistent edges to entry that rejected branch-heavy graphs and makes dominance correct for cycles and unreachable predecessors. Crypto’s `nbits` is newly admitted and completed 3,493 instrumented full-suite calls; a five-diamond focused workload improves 914→777 ms. Three alternating original full-Octane pairs pass with median 6573→6565, establishing no aggregate gain. Cyclic function SSA, loop-aware allocation, effect recovery and 50K remain open.
-
-[WIDE continuation CFG, native disassembly, correctness and paired measurements](113-fifty-thousand-octane/wide-continuation-2026-10-31/report.md): bounded decoded liveness keeps only r0 and r2 in the focused WIDE continuation fixture, reduces its native SSA region from 322 to 300 instructions, and leaves the selected release mini panel within 0.51%. Full Octane diagnostics showed no accepted WIDE continuation event, so no suite speedup is claimed. Validation also found and fixed a pre-existing non-plain inline-property offset bug that caused 29 JIT-only Array Test262 failures; the selected Test262 differential suites now match. Cyclic function SSA and the 50K target remain open.
-
-## Frameless leaves and link growth, 2026-10-31
-
-Two changes on rat, both verified by the differential JIT suites, the local
-suite (27 pre-existing failures), `test-slim`, `embedding_jit`, `jit_api` and
-the Test262 JIT differential slices (language/expressions, language/statements,
-built-ins/Array).
-
-`de24cf29` compiles a frameless callee whose body contains backedges as one SSA
-graph: loop-header joins, late-bound backedge inputs, representation-converting
-parallel copies, and a per-backedge poll that refuses and replays from the call.
-Only effect-free bodies are admitted, because a refusal replays the call.
-
-`fe88ada7`:
-
-- Grows a whole-function body's fixup directory instead of refusing the body
-  when its admission estimate is exhausted. Growth is limited to whole-function
-  bodies of at most 256 bytecodes; larger bodies and hot regions keep the hard
-  bound, because spending the shared code budget on them starves functions that
-  pay (measured earlier in this plan as gbemu/zlib losses).
-- Navier-Stokes `set_bnd` (200 bytecodes, about 2.5M interpreted calls) needs
-  more than eight fixups per bytecode and previously never compiled. Seven
-  alternating mini pairs measure navier-stokes 191→176 ms (-8%). The other
-  fourteen minis stay inside the layout noise a control rebuild already showed:
-  zlib +0.2%, gbemu -1.5%, everything else within about 1%.
-- Whole-body leaves may now read captures through the callee object's closure
-  refs (with the same ref guards the function tier uses) and globals through the
-  variable IC, and may write several fields when the body never reads memory.
-  A replay then recomputes the same values and rewrites the same slots in the
-  same order, so it is idempotent; the store guard itself refuses references,
-  before anything is released.
-- `GETCAP` and `TONUMERIC` joined the move-elimination A-write allow-list. A
-  capture read was treated as live-in at every loop header, which rejected
-  cyclic bodies that read captures.
-
-These are mini-panel results; full-Octane alternating pairs were not rerun for
-this checkpoint, so no suite-level gain is claimed. The 50K target and
-effect-carrying cyclic bodies (property and element stores inside loops, calls)
-remain open: those need a refusal that resumes in the interpreter rather than
-replaying the call.
-
-`b85ef0ba` widens the same tier further: null, undefined and boolean constants
-lower to a boxed SSA constant, and a cyclic whole-body leaf may call a
-straight-line pure helper that is expanded in place. Both are coverage only;
-the differential suites, the local suite and the mini panel are unchanged.
-Bumping the non-cyclic leaf span from 32 to 96 bytecodes was measured on the
-minis and showed no gain, so it was reverted. Mini timings at this point are
-within a few percent of each other across rebuilds, and one box2d run spiked
-33% on unrelated load, so sub-5% single-workload differences here are not
-evidence either way.
-
-The next structural item remains native property access that continues instead
-of exiting: `sljit_resume_fragment` plus `sljit_native_operation` already
-provide the "may complete an operation and jump back into the compiled body"
-contract (0 = no effect and resume at pc, 1 = continue natively, 2 = completed
-and resume at pc+1), and the same shape could carry a data-only property read
-that cannot call JS. The function tier's read site is `FunctionEmitter.property`
-in `vm_sljit_property.c3`, whose shape miss currently links straight to an
-interpreter exit.
-
-## Property-read continuation attempt, 2026-10-31 (rejected, reverted)
-
-Tried the identified next step: a compiled `GETPROPC`/`GETPROPC_CACHED`/
-`GETTHISC` whose baked-in shape misses jumps to a block that calls
-`sljit_native_operation` through `sljit_resume_fragment`, completes the read
-from the site cache or the receiver's own data slot, and returns into the
-compiled body at the next bytecode. The helper used the documented 0/1/2
-contract (0 = no effect and resume at the instruction, 1 = continue natively,
-2 = completed and resume at the next instruction) and reused the threaded
-publication rules (`th_can_publish`, `th_can_release`, retain/release,
-`track_heap_store`).
-
-Two real defects were found and fixed along the way:
-
-1. `hobject::ic_resolve_slot` does not compare the receiver's shape with the
-   entry's. Callers in the threaded handlers check `hobj.shape_id` first; a
-   helper must do the same. Without it the read returned whatever lived in the
-   stale slot (an accessor pair, a number in place of a method), which surfaced
-   as `Cannot convert object to primitive value` and `number is not a function`.
-2. The resume fragment clobbers the emitter's cached lanes, and a fast/slow
-   split shares one `FunctionFlow` state. Materializing before the read and
-   reloading pinned lanes after the helper was not enough: after the second
-   fix, the local suite still failed broadly (`array_literal_elements`,
-   async, class-field and GC-lifetime tests), so a value register was still
-   being read from a lane the slow path never defined.
-
-The experiment was removed rather than kept behind a flag. The next attempt
-should make a slow-capable read a **flow barrier**: emit the fast and slow
-paths with separate flow states, reconverge only at the following bytecode
-label, and have that label consume a fully flushed state so neither path can
-inherit lane claims it did not produce. A completing helper must also not run
-inside an expanded callee's private register window (the helper addresses the
-VM frame), which the attempt already gated on `depth == 0`.
-
-## Flow barrier for read continuation, 2026-10-31 (implemented, measured, rejected)
-
-Implemented the recommended flow-barrier design in full and removed it after
-measurement: same-tree binaries with the barrier disabled are 5.5% faster on
-Gameboy, 2% on Box2D and 1.5% on DeltaBlue (three paired runs each; the other
-minis are flat). Coverage is not the problem: the barrier raises native read
-completions by 26% (Box2D) and 34% (Gameboy), so the reads it keeps in native
-code were previously exits.
-
-The final design, which is worth reusing where the continuation is the hot
-tier, is an out-of-line slow block:
-
-* `LoopEmitter` gains an opt-in redirect set. While a barrier read is being
-  emitted, `link(jump, redirect_pc, exit)` collects the guard miss instead of
-  recording an exit fixup, up to `LOOP_REDIRECT_JUMPS` (32). The excess falls
-  back to an ordinary exit, so a guard-rich site still compiles.
-* `FunctionEmitter.property` admits a barrier only for a named read
-  (`GETPROPC`, `GETPROPC_CACHED`, `GETTHISC`), in the outer emitter
-  (`depth == 0`, `state_reg == 0`), with a flow state, no `length` special
-  case, a destination distinct from the receiver, no lane claim on the
-  destination, and `!flow_hint(dest)` so the fast path can neither claim nor
-  steal a lane. That last condition is what makes the shared state sound: the
-  slow block republishes lanes with the owner map captured before the read.
-* Close creates the reconvergence label where the fast path falls through and
-  queues a slow block for the function epilogue, so no cold code sits between
-  hot instructions. The epilogue block publishes the pre-instruction dirty
-  lanes (`flow_exit(snapshot)`), enters `sljit_resume_fragment`, reloads every
-  lane the state claimed (`flow_reload_lanes`), and jumps back to the queued
-  label. The compile-time state after the read is the pre-read state with the
-  destination dropped, so neither path inherits a lane or "unowned" claim.
-* `sljit_native_operation` now dispatches the three named read opcodes to the
-  existing `sljit_native_read` helper, which the straight-line tier already
-  uses from exit stubs.
-
-The first two attempts failed and are recorded here as traps. A version that
-materialized every lane before the read and another that materialized at the
-fast path's end both regressed 4-6% because they moved frame publication into
-the hot path or interleaved the slow block with it. A correctness bug in the
-same area is worth remembering: when the converged state is materialized but
-the fast path is not, any lane that was already dirty before the read keeps its
-value only in a register, so a later load of that register reads a stale frame
-slot. The shipped design instead republishes exactly those lanes in the slow
-block and keeps the same lane claims on both paths.
-
-Why it loses: the straight-line function tier is not the hot tier for these
-loops. Exiting the read hands the rest of the loop iteration to the interpreter
-and then back to the loop-region or re-specialized plan, which is faster than
-continuing in the whole-body straight-line body. The adaptive read-refresh path
-(`SLJIT_READ_REFRESH`) also depends on the interpreter executing the read at
-least once to fill the site's IC; a native continuation reduces those
-opportunities. The same barrier applied inside the SSA region, where the
-continuation is the compiled hot path, remains untested and is the only version
-worth revisiting.
-
-## Nested-loop cyclic regions re-enabled, 2026-11-01
-
-`SSA_CYCLIC_REGIONS` is back on (rat `bf6626c1`). The flag was disabled when
-whole-region admission measured slower on Navier-Stokes, but that predates
-whole-function cyclic SSA. Now a loop region compiles its nested loops as one
-cyclic graph and Navier-Stokes falls from 172-184 ms to 158-168 ms across five
-interleaved pairs with `/tmp/bk_final4` (about 9%). Box2D, Mandreel, Crypto,
-zlib, Richards, DeltaBlue, Splay, Raytrace, EarleyBoyer, pdfjs, Gameboy,
-TypeScript, CodeLoad and RegExp are flat within noise in the same panel.
-
-Verified with the differential JIT suites (test-local, rosetta, modules),
-Test262 language/expressions, language/statements and built-ins/Array, the
-local suite (39/39), `just test-slim` (1,742,992 bytes), `embedding_jit` and
-`jit_api`.
-
-## Cyclic-region redundancy elimination, 2026-11-01 (blocked, no consumer)
-
-Tried store-to-load forwarding as the first optimization pass on the existing
-graphs: a `LOAD` of the identical descriptor and aliased index after the
-`STORE` that wrote it becomes a `COPY` of the stored value, with the stored
-value's live range extended to the load. The rule is sound both across a
-dominated path on forward graphs and within one straight-line block on any
-graph, because `STORE` is the only admitted memory write.
-
-The pass never fired on any mini benchmark or on focused store-then-read
-probes. Two gates explain it:
-
-1. `ssa_cse` (and therefore every load reuse) only runs when `!graph.cyclic`.
-   Cyclic regions get no CSE at all, not even within one block.
-2. A single-pass SSA region rejects a written memory unless `plan.ssa_commit`
-   is set, so most bodies with stores do not reach the SSA graph in the first
-   place.
-
-Forwarding within a block is implemented once cyclic graphs can run it, but
-the useful version is cross-block and needs a fixed point over joins and
-backedges; that is the "effect summaries and memory versions" item, and it is
-the real prerequisite for any redundancy elimination in a cyclic region.
-The pass was removed rather than kept unused.
-
-## Named-read fixture, 2026-11-01
-
-Added `test/sljit_property_read.js` (rat `078e74b2`): polymorphic receivers,
-a receiver replaced mid-loop so the site's shape never settles, two reads in
-one block, reads feeding loop-carried accumulators, and reads mixing with
-canonical numeric lanes. Every case checks an interpreted reference, so the
-differential run compares the function and SSA tiers with the interpreter.
-
-## Native remainder, 2026-11-01
-
-`%` was the largest single interpreter-exit source in the panel: gbemu's
-`putImageData` checksum loop bailed at its one MOD bytecode on every
-iteration (about 553,000 native-to-interpreter round trips, and the census
-had the JIT slower than the interpreter for gbemu, 255 ms vs 232 ms). MOD
-is now compiled in the loop and function tiers (rat `b049ee6c`).
-
-JavaScript's remainder is fmod, which SLJIT cannot express, so the
-truncated quotient runs only for exact integer operands and everything
-else exits to the interpreter, which computes those cases exactly.
-Operands arrive as fastints or as integral doubles from the function
-tier's canonical numeric homes, so each operand is first canonicalized to
-an exact 48-bit integer (fastints sign-extend; doubles need range,
-integrality and -0 guards) and anything else, including non-integral
-doubles and references, exits. The two integral results fmod would
-rewrite are written directly: a zero divisor yields the canonical NaN and
-a zero remainder of a negative dividend yields the NaN-boxed -0. The
-quotient uses `SLJIT_DIVMOD_SW` on the sign-extended payloads, which
-cannot trap because a fastint is never integer-min. The result is always
-an integer remainder, -0 or NaN, so it matches the interpreter's
-canonical representations.
-
-Measured with five interleaved `--jit` pairs against `bf6626c1`: gbemu's
-MOD exits drop from 552,898 to 0 and gbemu runs 273 to 255 ms (-6.6%);
-the rest of the mini panel is flat within noise. Box2d and Mandreel
-compile no MOD at all, so their code is bit-identical and the few-ms
-movement there is layout noise (Richards alone swings 79-167 ms on both
-sides). Slow-operand loops pay about two exits per iteration through the
-resume protocol (guard miss, interpreter runs the op, re-entry at the
-block start misses the guard again); this is the existing guard-miss
-protocol, and a resume that skips the already-executed op is the
-worthwhile follow-up before pursuing hot `%` on doubles. The fixture
-`test/sljit_mod.js` covers the sign and zero-divisor rules, the -0
-results, non-fastint operands, and the hashing, wrapping, signed and
-typed-array loop shapes.
-
-Tooling (rat `ec422de6`): the census no longer needs project.json edits
-or binary copies; `just sljit-stats --jit --script <file>` builds the
-`boomkat_sljitstats` target and reports coverage, exits by opcode and
-code budget. `scripts/bench_interleaved.py` gains `--jit` and
-`--engine-args` and normalizes benchmark self-timing lines, so the
-Octane minis can be A/B'd directly instead of through ad-hoc loops.
-
-## Shared bytecode decoder, 2026-10-31
-
-[Actual bytecode, ARM64 dispatch, high-register execution and timing evidence](113-fifty-thousand-octane/shared-decoder-2026-10-31/report.md): rat `9966cd7f` shares WIDE operand construction between the interpreter and a bounded decoded view consumed by loop alias analysis; the view preserves prefix, opcode and next PCs and rejects invalid prefixes. It does not implement CFG edges, general operand windows or SSA recovery. A temporary aggregate-return form added a WIDE dispatch stack store and regressed several minis, so it was replaced with direct field assignment; final switch WIDE and threaded WIDE ARM64 instructions are byte-for-byte unchanged. The actual high-register alias fixture completes the same 366,592 native iterations; ARM64 ASan, x86-64 and local/Rosetta/modules differential checks pass. Final zlib pairs were 3727→3743 ms and a reversed-order confirmation 3713→3727 ms (+0.38%); the difference has not been attributed to a dispatch change. This is bounded groundwork, not an Octane throughput gain, and 50K remains open.
-
-## Widened region and admission experiments, 2026-10-31
-
-[Bytecode, machine code, recovery checks, raw scores and saved patch](113-fifty-thousand-octane/wide-regions-2026-10-31/report.md): a bounded WIDE-capable baseline fragment reached zlib's 518-register `a1` using actual frame slots and prefix recovery, but the full-suite 2 MiB function cap prevented admission. A constrained share of the loop reserve admitted it and confirmed 1.7 million native entries. Shared exit stubs reduced the fragment from 33,364 to 27,484 ARM64 bytes and improved the zlib mini by about 0.5–0.8%, but three full pairs did not establish a zlib win (median score 3404→3392). The extra separate emitter and reserve policy were rejected and preserved as a patch. This reinforces the need for the shared decoded CFG/SSA and register allocation rather than more baseline coverage. ARM64 ASan, x86-64 and direct recovery checks passed. Rat `48fb7172` retains an independent fix for null inline caches on JIT compilation; local/Rosetta/modules differential checks match the interpreter. The local suite's default build omits Intl/Temporal and exits nonzero in both modes. The 50K goal is not reached.
-
-## Capture and WIDE dispatch experiments, 2026-10-31
-
-[Bytecode, native disassembly, opcode counts and rejected changes](113-fifty-thousand-octane/capture-dispatch-2026-10-31/report.md): fresh zlib profiling found 78.6M capture reads, 58.6M GETCAP→SHRI pairs, and 292M WIDE handler entries (including retries). Inlining capture resolution removed its helper call but was neutral. A guarded fusion executed 58.6M times yet was 0.6% slower in the release mini; a publication fast path was neutral across confirmation pairs. Early WIDE LDINT/LDREG dispatch reduced static work but regressed zlib 1.5–2.1%. All variants were removed. Further work needs widened native regions with precise recovery and better generated code, not simply more interpreter fusion.
-
-## Mandatory regexp substring rejection, 2026-10-31
-
-[Regexp and JS bytecode, native disassembly, validation and full scores](113-fifty-thousand-octane/regexp-required-literal-2026-10-31/report.md): rat `c74029b2` rejects inputs lacking a conservatively proven mandatory literal before entering libregexp, without moving the match start. The inspected hot bytecode contains an unanchored search and branch before eight mandatory characters. Three alternating original full-Octane pairs pass: median aggregate **6400→6552 (+2.38%)**, RegExp **769→1135 (+47.6%)**; seven exact-build mini pairs give 339→225 ms. A synthetic construction-only case is **655→705 ms (+7.6%)** and each 64-bit compiled regexp grows 16 bytes, so the tradeoff is explicit. 3,192 selected Test262 cases, a 51,000-result Node/control differential matrix, ASan, x86-64, embedding and local/Rosetta/modules checks pass. This is an engine runtime gain, not completion of the JIT roadmap or the 50K objective.
-
-## Dense-array read lowering, 2026-10-31
-
-[Bytecode, generated ARM64, validation and all full-suite scores](113-fifty-thousand-octane/dense-array-read-2026-10-31/report.md): rat `2a063511` avoids a duplicate element load and uses indexed addressing on the function-tier dense-read fast path. The actual ARM64 successful path loses three instructions; a focused workload confirms 29,999,999 direct native returns but seven alternating pairs are neutral (1250→1251 ms). Three full-Octane pairs pass with medians **6374→6362 (-0.19%)**; PdfJS varies widely across pairs, so no broad speedup or stable PdfJS effect is claimed. ARM64/x64 embedding, x64 and ASan fixture checks, 55 focused fixtures, and local/Rosetta/modules JIT differential checks pass. This is code-quality groundwork, not a throughput milestone; 50K remains open.
-
-## Computed property continuation experiment, 2026-10-31
-
-[Bytecode, ARM64 disassembly, instrumentation and rejected patch](113-fifty-thousand-octane/computed-read-2026-10-31/report.md): a guarded non-index computed-read miss continuation keeps a focused loop compiled for 10 million reads (132→123 ms median in five synthetic pairs), whereas the control retires after repeated GETPROP exits. Opcode-attributed real-workload counters show only 436 helper attempts in PdfJS and four in TypeScript across seven screened minis, so the prototype was removed; the noisy mini panel establishes no production gain. 50K remains unmet.
-
-## SSA latch recovery, 2026-10-31
-
-[Bytecode, generated ARM64 code, validation and measurements](113-fifty-thousand-octane/latch-recovery-2026-10-31/report.md): rat `34f224e0` takes the loop budget exit before parallel phi copies, snapshots post-body phi inputs and branch operands, and holds converted phi inputs live through the latch. This removes recovery-only branch phis without losing the interpreter's replay operands. 54 focused fixtures, ARM64/x64 embedding, x64/ASan regressions and local/Rosetta/modules differential checks pass (local status 1 matches the existing feature-limited baseline).
-
-`jitNativeStep`'s SSA loop goes from 1036→1012 bytes and 259→253 static ARM64 instructions, including cold exits; the old hot path boxed the branch temporary into an artificial phi. A `project` loop grows 7812→7960 bytes due to its cold recovery snapshot. Mini and longer workload timings are neutral. One full-Octane pair passes and scores 6233→6370, but large opposing Box2D/PdfJS swings make it inconclusive; no full-suite gain or 50K achievement is claimed. Cyclic function SSA, effect/call continuations and exact WIDE/aliased recovery remain open.
-
-## CFG-based loop continuation liveness, 2026-10-31
-
-[Bytecode, generated ARM64 disassembly, validation and raw timings](113-fifty-thousand-octane/cfg-recovery-liveness-2026-10-31/report.md): rat `9da6427e` reuses compiler operand roles and backward CFG liveness for bounded unaliased SSA-loop fallthroughs, with conservative fallback for WIDE/aliased/unsupported cases. Latch operands remain live for budget recovery and TRY functions retain every written slot for exception recovery. An initial implementation failed a native-call embedding check by omitting a latch operand; the corrected path passes ARM64/x64 embedding, ASan, 53 focused fixtures and local/Rosetta/modules differential checks. Local status 1 matches the existing feature-limited baseline.
-
-Disassembly of the real Navier–Stokes `lin_solve` loop shows 5828→5736 bytes, 1457→1434 static instructions and 348→329 static loads/stores, including cold exits. The false recovery phi in an isolated immediate-operand case disappears, producing 852→796 bytes. Five alternating long Navier–Stokes pairs give 2035→2033 ms median; mini and compile-heavy screens are essentially neutral. This is recovery-aware graph groundwork, not a claim of throughput improvement or 50K. Cyclic function SSA, richer effects and call continuations remain open.
-
-## Single-pass loop register analysis, 2026-10-31
-
-Rat `5aae48bc` consolidates low/high register queries onto one shared operand
-scan and has the high-register loop tier consume the resulting bitset. The old
-path scanned the same bytecode window for each candidate high register; the
-new path scans it once. Unsupported WIDE operands still conservatively reserve
-all slots, and functions exceeding the 1024-register table explicitly refuse
-aliasing. A direct embedding test verifies widened register operands and a
-property-key constant; the existing high-register fixture matches the
-interpreter, with its aliased native loop completing 366592 iterations under
-stress. ARM64 embedding and 52 JIT/SLJIT fixtures pass.
-
-Five alternating mini pairs against `ba119b09`: Mandreel 586→588 ms, Gameboy
-286→287, PdfJS 371→373, TypeScript 1297→1268. This is a compilation-work
-reduction and a narrow timing screen, not evidence of an Octane throughput
-improvement; compile CPU and memory have not been independently measured. The
-canonical analysis still needs a decoded CFG and recovery-aware uses, and
-cyclic function SSA, effect recovery, call continuations and 50K remain open.
-
-## WIDE operand analysis checkpoint, 2026-10-31
-
-Rat `ba119b09` fixes a conservative-analysis hole in the loop register alias
-queries. When a WIDE payload cannot be decoded as individual register fields
-(for example a call window), the previous queries skipped the payload and its
-successor and could report live registers as unused. They now reserve all low
-slots and report queried registers as used. The remapper already refused these
-payloads; this change strengthens its prerequisite analysis. Normal refusal no
-longer prints unconditional `RMX` diagnostics.
-
-The embedding JIT test directly checks an unsupported WIDE call window and its
-successor; ARM64 embedding and 52 JIT/SLJIT fixtures pass. Five alternating mini
-pairs against the `4228a786` release control: Crypto 165→166 ms, Mandreel
-565→564 ms, Gameboy 278→278 ms; these are neutral, not a speed claim. No full
-Octane measurement was run for this correctness change. Canonical use analysis,
-cyclic function SSA, effect recovery, calls and the 50K goal remain open.
-
-## Scalar register-cache checkpoint, 2026-10-31
-
-[Implementation experiment, complete scores and validation](113-fifty-thousand-octane/scalar-register-cache-2026-10-31/report.md): a three-GPR scalar cache, delayed inert stores and block-local integer facts reduced focused generated code but failed the full-suite performance gate. Three alternating original Octane pairs give control median **6309**, candidate **6219 (-1.43%)**; all checks pass. PdfJS improves 9.12%, Box2D loses 15.47%. The runtime candidate is **rejected and removed**, with its patch and raw evidence preserved. A more aggressive first-store variant failed Crypto validation and stalled zlib, and was also removed.
-
-Rat `4228a786` keeps only a compile-time check against SLJIT's auxiliary allocation limit (growing fixup records had silently disabled compilation during the experiment) and a scalar-recovery fixture. The final release binary is byte-identical to the fa11ea2d control. 52 focused fixtures agree across interpreter/JIT/stress; the experimental candidate also passed broad local/Rosetta/modules differential checks, ARM64/x64 embedding and optimized ASan embedding. No throughput gain or 50K achievement is claimed.
-
-This rejects the measured direct-mapped scalar whitelist, not all register caching. Calls/property operations remained barriers, leaving most real consumer work unchanged. Further caching must cover those hot operations with precise recovery and demonstrated admission/code-size economics; the existing canonical decoding/CFG/effect work remains open. No massive non-JIT engine win was identified in this slice.
-
-## Generic-code quality checkpoint, 2026-10-31
-
-The dominant cost of the function tier was found to be the register store,
-not coverage. `function_store` emitted a full release/retain pair for every
-assignment (about twenty instructions), so generic native code ran at roughly
-the threaded interpreter's speed and every increase in native coverage was
-neutral or a loss. Moving the release/retain path out of line, behind one tag
-check per operand, is the first change that makes generated code beat the
-interpreter: zlib -3.8%, mandreel -6.8%, gbemu -2.4%, pdfjs -2.1%, box2d
--1.9%, typescript -0.8%, crypto -0.6%, regexp +0.6%.
-
-Measured alongside it, and *not* shipped, because each was a net loss until
-the store cost is gone:
-
-| Experiment | Result |
-|---|---|
-| Whole-body compile up to 2048 ops with a 24-fixups-per-op table | zlib -5%, mandreel -3%, but gbemu +8%, typescript +6% |
-| 4 MiB function admission cap | typescript +5% (icache pressure); reverted |
-| Static property-density admission filter | mandreel +26%; the ratio does not predict IC hits |
-| Raising the loop window past 512 | no gain: a1's and a8's hot loops use all 64 low slots, so aliasing has no room |
-
-Two structural facts for the next step:
-
-1. Each property read emits several hundred bytes of inline-cache code
-   (a 3-op accessor compiles to 2.4 KiB, about 800 bytes per bytecode). With
-   2 MiB of code the hot set already exceeds the instruction cache, which is
-   why "compile less" can beat "compile more".
-2. The function tier keeps every VM register in the interpreter frame, so an
-   operation is load/guard/operate/store. Register caching across a basic
-   block, as the loop tier already does with its 64-slot window, is the
-   change that would make large-body compilation profitable and then unlock
-   WIDE support for a1 (297M interpreted bytecodes).
-
-## Closeout and carried scope
-
-“Completed” on an older document closes that investigation or implementation cycle. It does not mean every proposal in its historical text shipped. The unfinished work is explicitly owned here.
-
-| Closed plan | Delivered evidence or implementation | Unfinished scope owned here |
-|---|---|---|
-| 107 | Hot-path/blocker investigation and selected opcode coverage | Profitable property/call-heavy native regions |
-| 108 | Correctness review followed by later fixes and gates | Recovery and ownership invariants for new optimizations |
-| 110 | Shared native ABI, recoverable inlining, selected allocation continuations, patchable links | Reliable baseline coverage and general compact optimizer |
-| 111 | Shared-workflow profiles and controlled experiments | Cross-workload buffer, scanner, construction and miss-path optimizations |
-| 112 | Selected buffer and continuation consumers | WIDE/high-register regions, environment calls, scanner specialization |
-| 116 | Bounded numeric-loop SSA repair and activation | Cyclic function SSA, effect/alias information and richer frame states |
-| 117 | Measured native-body experiments and accepted small improvements | Broad guard/load elimination, useful region selection and register allocation |
-| 118 | JSC bytecode/native comparison; compound frameless SSA entry | Remove the specific excess machine work exposed by that comparison |
-
-## Historical accepted batch: parallel implementation, 2026-10-28
-
-[Full results and cloud-review closeout](113-fifty-thousand-octane/parallel-2026-10-28/report.md): three alternating original full-Octane pairs improve median aggregate **5752 → 6355 (+10.48%)**, all assertions pass. Standard JIT targets enable a bounded standalone-loop reserve: function admission stays below 1 MiB total native code, loops may continue to 2 MiB; ending native bytes increase **1.00 → 1.21 MiB**. No eviction or eager allocation is introduced. `-U SLJIT_LOOP_RESERVE` retains the old cap; the adaptive policy is independent.
-
-NavierStokes improves 86.6%, Mandreel 12.7%, Gameboy 10.7%, MandreelLatency 2.18x. Richards/DeltaBlue/Crypto are flat. PdfJS median is 3.5% lower with mixed pair directions and needs follow-up. Metadata/RSS, compilation CPU and GC-pause costs remain unmeasured; this does not close plan E or the 50K objective.
-
-All eight cloud-review findings were addressed in `72db32f4`, including a negative-control test of alias operand roles and preservation of intentional tiny-callee admission. The direct FP-spill change simplifies emission and reduces generated code. Register coalescing and inherited-read experiments were removed: their tradeoffs did not justify retention. Existing shape/prototype epochs do not cover value-only writes; plan A still requires live value guards or real write dependencies.
-
-Workstream status: **A open; B open; C partial (FP spills); D open; E partial (bounded reserve)**. Next work remains the sequence below, with PdfJS's reserve interaction added to the admission follow-up. Do not describe this batch as a general optimizing tier or a 5–10x gain. The following long-mini targets retain their explicitly named 8bd1e565 reference; the full-suite checkpoint above is newer.
-
-## Write dependencies checkpoint, 2026-10-28
-
-[Implementation, generated-code ranges, mini timing and validation](113-fifty-thousand-octane/write-dependencies-2026-10-28/report.md): `3e837c64` adds proper slot/layout dependencies, rooted owners, mutation invalidation and retirement outside active native frames. Compound SSA uses them for stable numeric global fields and inherited methods. The isolated uninstrumented DeltaBlue compound region shrinks **1564 → 948 bytes (391 → 237 ARM64 instruction words)**. The focused screen establishes **no throughput gain**; several minis show small costs. This is a capability checkpoint, not an accepted speed milestone. Full Octane remains at the earlier measured 6355 median.
-
-Workstream **A is now partial**, with real write dependencies and two bounded SSA consumers implemented; broad profitable guard/load elimination and safe extension to other object classes remain open. B open, C partial, D open, E partial. Historical “A open” statements above describe the earlier batch.
-
-## Profile-guided checkpoint, 2026-10-29
-
-[Profile, controlled experiments, full-suite pair and validation](113-fifty-thousand-octane/profiled-iteration-2026-10-29/report.md): `68d7c01e` adds bounded refresh of stale read assumptions, broader frameless SSA leaves and inherited array named-data reads. Long DeltaBlue timing improves about 9–10%; successful read-helper continuations fall 72%. Fifteen minis show a smaller Mandreel gain and mostly small changes elsewhere. One matched original full-Octane pair gives **6121 → 6257 (+2.22%)**; this is provisional single-pair evidence, not a replacement for the older multi-pair median or a 50K achievement.
-
-Fresh profiles show the small optimized DeltaBlue execute region is only 3.63% of sampled CPU; Richards remains 97% generated code, with its hot scheduler/task bodies still using the baseline emitter. Experimental effectful prefixes and acyclic nonzero regions are archived separately. The standalone C-gateway version loses time. Earlier mismatched-feature comparisons are invalid; later matched region screens show a Richards gain against the preceding prototype and neutral DeltaBlue. These experiments have not passed broad semantic gates and are not enabled in standard targets. A/C/D remain partial or open as above; profitable large regions, cyclic CFG/effects, native continuations and broader memory traffic reduction remain required.
-
-## Architecture and workload reset, 2026-10-29
-
-[First-principles architecture assessment](113-fifty-thousand-octane/architecture-reset-2026-10-29.md) sets the next scope across all workload clusters. Build one compact typed/effect-aware optimizing pipeline with explicit recovery and target-derived allocation; measure numeric/buffer, object/allocation, closure/application, library and startup costs separately. Richards and DeltaBlue remain consumers, not the sole acceptance criteria. Obtain fresh suite-wide profiles before ranking further isolated changes; the old broad percentages predate recent admission improvements.
-
-Experimental source is preserved at `8f875497` on `wip/function-ssa-regions`. It is not promoted to the validated `rat` branch. Detailed patches, mismatched-build correction and subsequent matched evidence are archived with the checkpoint.
-
-## Coverage census and admission checkpoint, 2026-10-30
-
-A fresh `--jit --stats` census of all fifteen minis ranked interpreted functions by executed instructions and rejection reason. The largest loss was not a slow generated body: hot functions were emitted and then discarded once the 1 MiB function budget filled (Mandreel's 308-op `sortMaxDown`, its 489-op `insertleaf`, box2d's 611-op body, TypeScript's 15-op `Verify`). The second loss was the 128-bytecode window used when only a hot header of a large function is compiled; everything past the window ran in the interpreter on every iteration.
-
-Two bounded admission changes, `dd2e776d` and `047d0ef0`, raise the function budget to 2 MiB (loop reserve 4 MiB, two times the function cap) and the region window to 256 bytecodes. Five alternating pairs against `68d7c01e`: box2d **-9.8%**, gbemu **-3.3%**, zlib **-2.0%**, Mandreel **-0.5%**; the other eleven minis are flat, RSS is unchanged, and the differential JIT suites match. A 4 MiB budget, a 384-op window and a 512-op window each regressed, so those points are recorded as rejected, not retained.
-
-The census also fixes the next target. zlib still executes about 835M interpreter instructions: `a1` (37,098 ops, 518 registers) is rejected as WIDE and `a8` (1,370 ops, 68 registers) runs 376M interpreter instructions because its hot loop contains operations the loop tier cannot lower. High-register/WIDE decoding with a sparse register window, and effectful loop bodies, are therefore the dominant remaining coverage work rather than further budget tuning. Constructor wrapping idioms (`this.initialize.apply(this, arguments)`, `superConstructor.call`) also keep every allocation-heavy mini on the allocation exit path; parameter-default constructors were prototyped and reverted because no hot consumer reached the native allocation helper.
-
-## a8 investigation and plan review, 2026-10-30
-
-`a8` is zlib's `deflate_slow`: 1,370 bytecodes, 68 registers, with loops at 103..1083 (980 ops), 109..652 (543 ops) and 796..890 (94 ops). The single installed region lands at 796 because the first hot backedge wins; the large loops exceed both `LOOP_OPS` and the region window and contain calls. Three coverage-shaped attempts were measured and all were rejected:
-
-| Attempt | Result |
-|---|---|
-| Up to four function regions per function | interpreter ops 835M → 802M, but zlib +1.8%, box2d +9.3%, navier-stokes +7.3%, pdfjs +4.4% |
-| Whole-function window raised to 1024 bytecodes | zlib -0.7%, box2d +7.5%, Mandreel +1.0%; 2048 exceeds C3's 64 KiB stack-object limit |
-| `ToInt32` accepting booleans in bitwise lowering | geomean -0.16%, zlib +1.5% |
-
-The 256 KiB adaptive budget policy was also re-measured: gbemu, Mandreel and TypeScript regressed, so the fixed 2 MiB cap remains.
-
-Region-relative exit attribution (`12e9346e`, stats only) shows `a8`'s installed 796..1051 region is not failing guards: it exits 3,940 times at the loop end (pc 890) and 60 times at a call (pc 934), so its inner loop and property work already run natively. The remaining 800M interpreter instructions are the outer loop's code outside the window (103..795 and 1052..1083), where the calls to `a3`/`a6` and the unhandled tail live. A second region at the outer header was tried in the multi-region experiment and exited at the boolean `BOR` at pc 356 on every iteration; accepting booleans in bitwise lowering removed that exit but did not pay for the extra branches elsewhere. This confirms the next consumer must be a loop-with-call graph, not another region or window. The consistent conclusion is that adding native coverage to these bodies is currently slower than the threaded interpreter. The cost is inside the generated region (per-operation guards, ownership and spills) and at calls, not at the admission boundary. Coverage-window increases are therefore exhausted until generated work per operation improves; retrying them without a code-quality change is not justified.
-
-Plan review outcome: E0 (broad attribution) is complete for the mini panel, and the A/E parts of the admission work are recorded above. The implementation order stays B1 → B2/B3 → C, but the next consumer changes: the canonical decoded view must first support a real loop with a call and exact recovery (a8's 103..1083 loop), rather than another acyclic window. Until then, C should measure and reduce executed instructions per compiled operation on the existing 256-op regions, since that is the measured reason larger regions lose.
-
-## Capture-read caching rejection and probe gap, 2026-10-30
-
-Resolving a capture in a function region walks the capture-ref metadata, owner class, slot and initialized guard on every `GETCAP`. In `a8`'s compiled region one capture accounts for 43 such reads (`is_value=0`, `is_cell=0`, `guard_shadow=0`). Caching the resolved value in the native run block was prototyped with and without a runtime validity mask:
-
-| Variant | Result |
-|---|---|
-| Cache without validity mask | Matched timing until a resumed region entry read an uninitialized slot; TypeScript failed with a `TypeError` |
-| Cache with mask reset at entry and cleared on calls/writes | Region code grew 904 bytes; zlib **+2.7%**, Mandreel **+1.2%**, NavierStokes **0.186 s → 2.409 s**, TypeScript **-0.6%** |
-
-Both variants were reverted. The masked version also cleared on property writes and every call form, so the loss is the per-read mask test and the longer live values, not a missing invalidation. The conclusion is that capture resolution must be removed or simplified in lowering, not cached lazily in the region.
-
-The same diagnostic run fixed the loop-tier blocker precisely. `sljit_loop_probe` returns before analysis because `a8` has 68 VM registers and `LOOP_REGS` is 64. A canonical operand-role scan, reusing the compiler's liveness table rather than treating every A/B/C field as a register, shows the inner loop `796..890` touches register 67; the outer loops at `103..1083` and `109..652` touch 67 and 65. The loop tier is therefore not being starved by threaded dispatch; it cannot represent these loops at all.
-
-A bounded approximation was then measured: admit loops in a wide function when the loop's own operand scan stays below 64 registers and the loop spans at least 32 bytecodes. It works on a synthetic wide function (123 registers, 41-byte loop): the loop compiles and the run drops **1.94 s → 1.22 s**. No mini benefited, however: `a1`'s loops also touch registers in the 230s, so they remain rejected, and `a8`'s inner loop still needs register 67. Crypto regressed **+3%** from the changed engine code layout with identical loop admissions, so the slice was reverted rather than kept as an unused capability. The next B1 consumer is therefore still the sparse high-register window that maps only the registers a loop actually uses; a per-loop max check alone cannot reach `a1` or `a8`. Enlarging the dense loops would push the per-PC frame and mask tables past their current 64-bit bounds and memory budget.
-
-## Sparse loop register window, 2026-10-30
-
-`76e89fb6` lets a loop in a function wider than 64 registers use the loop tier. The compiler's operand-role table identifies the high registers the loop actually touches, the loop tier aliases each to a free low slot, and the bytecode is remapped only during analysis and native emission. `LoopPlan.slot_reg` maps every dirty slot back to its original VM register at exit, so the interpreter frame is preserved.
-
-Measured on five alternating pairs against the pre-change binary:
-
-| Workload | Change |
-|---|---:|
-| zlib | **-6.9%** (4146 → 3861 ms), `a8`'s inner `796..890` loop now compiles |
-| box2d | -0.5% |
-| typescript | -0.5% |
-| raytrace | -0.6% |
-| richards | -1.3% |
-| mandreel | +1.0% |
-| earley-boyer | +1.3% |
-| other nine minis | within ±1% |
-
-The differential JIT suites, local suite (688 pass, 27 expected Intl/Temporal failures in the default build) and module/rosetta suites match the interpreter. `test/test_sljit_highreg_loop.js` covers both a wide function whose loop stays low and one whose counter/inputs are aliased from high registers.
-
-Aliased loops deliberately used the straight-line emitter at this checkpoint: the shared SSA frame appeared to index VM registers directly. SSA aliasing followed immediately, and the dense `LOOP_REGS` increase and per-loop max-only admission remain rejected.
-
-## Aliased loop SSA, 2026-10-30
-
-`8c421db8` removes the refusal that kept aliased loops on the straight-line emitter. The suspicion behind that refusal was wrong: because the sparse window remaps the bytecode into low slots before analysis, the shared SSA frames are already slot-relative and needed no rewriting. Only the explicit guard stood in the way.
-
-The real hazard was the rebuild path. When an SSA loop guard exits inside the body, the tier frees the native body and re-emits it, either wider after an integer overflow or through the straight-line emitter. Those rebuilds read `cf.code`, which `loop_highreg_compile` restores to the interpreter's copy on return, so an aliased plan would have been re-emitted for the wrong registers. A new `loop_reemit` re-installs the plan's own slot mapping for the duration of each rebuild. The mapping is derived from `LoopPlan.slot_reg`, so no rescan is needed.
-
-Five alternating pairs against the pre-change binary:
-
-| Workload | Change |
-|---|---:|
-| earley-boyer | **-2.5%** (159 → 155 ms) |
-| box2d | -0.9% |
-| mandreel | -0.8% |
-| typescript | -0.6% |
-| zlib, gbemu, navier-stokes, raytrace | +0.2% to +0.6%, within noise |
-| other seven minis | 0.0% |
-
-Earley-Boyer recovers the small regression the sparse window introduced; zlib is unchanged because `a8`'s inner loop needs 117 spills and 23 phis, above the 128-entry SSA spill budget. Raising that budget to 192 admits the loop (SSA body 21,552 bytes against 9,140 straight-line) but zlib regressed **+3%**, so the budget stayed at 128 and the loop keeps the straight-line tier. The local suite's 27 failures, the differential JIT suites and the module/rosetta suites are unchanged. `test/test_sljit_highreg_loop.js` now also drives the wide-count path, which overflows, widens and finally falls back to the straight-line tier.
-
-The next B1 consumer proposed at `76e89fb6` was `a8`'s `103..1083` call loop, on the theory that `bytecode_remap_registers` refusing call/argument windows was what blocked it. That premise does not hold. `LOOP_OPS` is 128, and `sljit_loop_probe` rejects a span of 128 or more before the remap is ever consulted, so `a8`'s 980-op and 543-op loops are out of reach for the loop tier regardless of call windows. A census over all fifteen minis (a stats build printing every `loop_highreg_compile` refusal) recorded **no refusals at all**: every wide loop that reached the sparse window could be mapped. Remapping call windows would need contiguity-preserving block allocation for the whole argument range, and has no measured consumer, so it is not implemented.
-
-## Boolean ToInt32, 2026-10-30
-
-`d75838d9` teaches the native ToInt32 conversion that a boolean is a number. Emscripten output combines comparisons with bitwise operators (`(a|0)!=-1&(b|0)!=-1`), so a boolean operand is common. The conversion guard accepted fastints and narrow doubles only, and a boolean exited, running the rest of the body in the interpreter. In zlib's 429-op `a6`, one such BAND site accounted for 749,214 exits; after the change the same function's native entries fall from 1,193,525 to 446,410 and the site disappears from the exit table.
-
-The implementation is one mask. `TAG_BOOLEAN` is `TAG_FASTINT`'s neighbour: `0xFFF5` against `0xFFF1`, one bit apart, so `tag & ~4` folds both onto the existing fastint tail, where a boolean's payload is already its 0 or 1. Null masks down to an unused tag below `TAG_FASTINT` and undefined stays above it, so the existing magnitude guard still rejects both, along with heap values and out-of-range doubles. A branch-based version that tested both tags separately was measured and rejected: it adds a compare on the double path and cost Earley-Boyer 2.6%.
-
-| Workload | Change |
-|---|---:|
-| zlib | **-1.5%** |
-| Mandreel | **-2.0%** |
-| gbemu | -0.4% |
-| typescript | **+0.8%** |
-| Earley-Boyer, regexp | +0.3% to +0.6% |
-| other eight minis | within ±0.3% |
-
-Aggregate across the fifteen minis is about **-0.8%**. The differential JIT suites, the local suite's 27 pre-existing failures and the module/rosetta suites are unchanged. `test/test_sljit_boolean_bitwise.js` covers `&`, `|`, `^` and `~` on booleans and the wide values that still leave native code.
-
-## Native coverage measurement, 2026-10-30
-
-A stats build now answers where the remaining work is. Summing the per-function interpreter counters (`threaded` plus `switch`, both counted in bytecodes) and the native bytecodes consumed (function `charged_edges` plus loop `iterations`) gives the split below. Both sides count bytecodes, so they are directly comparable; the interpreter counters include a function's executions before it was compiled, which biases slightly toward the interpreter on short runs.
-
-| Workload | Interpreted | Native | Interpreted share |
-|---|---:|---:|---:|
-| typescript | 188.7M | 1.2M | **99.4%** |
-| raytrace | 17.1M | 0.07M | **99.6%** |
-| regexp | 18.3M | 0.01M | **100%** |
-| earley-boyer | 26.8M | 0.46M | **98.3%** |
-| box2d | 34.9M | 0.38M | **98.9%** |
-| zlib | 840.9M | 30.7M | **96.5%** |
-| pdfjs | 38.9M | 1.4M | **96.5%** |
-| gbemu | 53.3M | 2.2M | **96.0%** |
-| splay | 11.7M | 0.7M | **94.1%** |
-| mandreel | 126.8M | 17.3M | 88.0% |
-| crypto | 13.5M | 4.9M | 73.3% |
-| deltablue | 2.0M | 2.6M | 43.2% |
-| navier-stokes | 3.7M | 8.8M | 29.4% |
-| richards | 0.06M | 2.5M | **2.3%** |
-
-Generated code still covers a small minority of executed bytecodes on eleven of the fifteen minis. Per-operation cost therefore governs only Richards, Navier-Stokes, DeltaBlue and partly Mandreel and Crypto; for everything else the first-order question remains which hot bytecodes never enter native code at all. Measured code density for the baseline function tier is 66 to 130 ARM64 words per bytecode op (zlib's `a6` 73, mandreel's `sortMaxDown` 130, deltablue's 39-op body 110), which is consistent with the earlier JSC comparison but is not itself the limiter while coverage is this low.
-
-## Link-budget admission attempt, 2026-10-30
-
-The coverage census named one concrete admission blocker: box2d has three hot functions (408, 382 and 350 bytecodes) rejected as `guard/link capacity`, together about 8.1M interpreted bytecodes. `function_link_limit` returns 8192 fixups only for typed-heavy bodies and 2048 otherwise, and these bodies need more than 2048. Raising the generic limit to 4096 removed the rejections and gave **box2d -2.8%** and **Navier-Stokes -8.9%**, but also **gbemu +8.2%** and **zlib +2.6%**; aggregate over fifteen minis was **+1.2% worse**, so it was reverted.
-
-Two refinements did not isolate the gain. Allowing 4096 only for bodies without a backedge kept gbemu's regression and lost box2d's gain, as did restricting it to bodies with no loop candidate under `LOOP_OPS`. Under 4096 gbemu compiles exactly the same 177 functions with the same hit count and code bytes as before, so its loss is not an admission change at all but a whole-binary layout sensitivity: a control rebuild of the unchanged source measured gbemu within 1.1%. That makes sub-3% single-workload results across *different* builds unreliable, which is worth remembering when reading the tables above.
-
-The concrete item remained: those box2d bodies need a larger link budget than 2048 but do not qualify for the typed reserve.
-
-## Size-scaled link budget, 2026-10-30
-
-`66a735a0` replaces the fixed generic limit with eight fixups per bytecode, floored at 2048 and capped at `LOOP_LINK_LIMIT`. The old constant already implied that density for a 256-op body, so shorter bodies keep exactly their previous budget and only longer ones grow. Five box2d bodies were being rejected at the 2048 cap; with their natural requirement measured at 2082-2826 fixups they now compile, and `guard/link capacity` disappears from the workload.
-
-| Workload | Change |
-|---|---:|
-| box2d | **-2.4%** (209 → 204 ms) |
-| typescript | -0.8% |
-| splay | -0.9% |
-| Earley-Boyer, Navier-Stokes, regexp | -0.3% to -0.6% |
-| gbemu, pdfjs | +0.5% to +0.7% |
-| other six minis | 0.0% |
-
-The differential JIT suites and the local suite's 27 pre-existing failures are unchanged. Unlike the earlier global increase, this one leaves every body shorter than 256 ops at its previous budget, which is why gbemu stays within the layout noise a control rebuild already measured.
-
-## Machine-code comparison with JavaScriptCore, 2026-10-30
-
-Worked backwards from the goal instead of from our code. JavaScriptCore's bundled `jsc` dumps its optimizing tier (`JSC_dumpDFGDisassembly=true`), and a temporary engine dump wrote our generated bytes to stderr for `llvm-mc` to disassemble. Both were run on the same eight-bytecode function, `function sum(n){var s=0;for(var i=0;i<n;i++)s=(s+i)|0;return s;}`.
-
-The comparison found the loop body is not where we lose. JSC's DFG loop is about 15 instructions (`ldur`/`add`/`stur`, `adds`/`b.vs` for the increment, a load of `n`, `cmp`, `b.lt`) plus a tier-up check and an operation-count update. Ours was about 30: the same arithmetic, but each int32 operation compared its result against INT32_MIN and INT32_MAX (two compares, two branches and two constant loads per operation), plus redundant `sxtw`/`orr` copies. `86abd083` replaces the range compares with the arithmetic overflow flag; the body is now 15 instructions and matches the DFG shape instruction for instruction.
-
-That parity produced **no measurable suite gain**. Even a pure 100M-iteration integer loop is unchanged, because these workloads spend their loop bodies in property and element access, not arithmetic. Code size per operation was never the limiter; the limiter is what runs and what does not.
-
-### Where the interpreted work actually is
-
-Summing the interpreter counters of every function by its rejection reason across the fifteen minis:
-
-| Reason | Share of 1,365M interpreted bytecodes |
-|---|---:|
-| `WIDE` bytecode | **24.7%** |
-| `code budget` | **11.3%** |
-| everything else | 64.0% |
-
-`WIDE` is almost entirely zlib: `a1` is 37,098 bytecodes, 518 registers, and **40.3% of zlib's own interpreted work**. A register at or above 256 needs a `WIDE` prefix word, and every JIT analysis pass and emitter reads the 8-bit `Instruction` fields directly, so `function_analyze` refuses the whole body. The loop tier refuses it too: `bytecode_remap_registers` rejects any `WIDE` inside the loop, and that is the real reason `a1`'s loops stay interpreted. The earlier note that call/argument windows blocked it was measured on the wrong call site; the refusal is `WIDE`.
-
-`code budget` is TypeScript (54.4% of its interpreted work) and Mandreel (39.4%). Three attempts to admit those functions were measured and all were rejected:
-
-| Attempt | Result |
-|---|---|
-| Function budget 2 MiB → 4 MiB | typescript **+5.2%**, mandreel +1.7%, box2d +1.5% |
-| 512 KiB reserve for bodies ≤ 4 KiB | typescript +1.1%, mandreel flat |
-| Continue after a call through a native call instead of exiting | zlib +0.2%, typescript +0.9%, crypto +0.7%, mandreel +0.5% |
-
-The budget is not the disease. A 15-op TypeScript function with 14M interpreted bytecodes was measured exiting native code 613 times at a single `GETPROPC`: such a body pays a native entry and leaves at the first property access, so compiling it is a loss whether or not it fits. Native calls are not the answer either: the call entry publishes a VM activation, which costs more than the small callee it saves.
-
-A related aliasing bug was found and left unfixed on purpose. Loop rejection was a 64-bit mask keyed by the backedge offset, so in `a1` the cold backedge at 35,988 sets the same bit as the hot one at 31,044 and blocks it permanently. Widening the mask to 256 bits was implemented and measured: it admits two more box2d loops and one more pdfjs function, changes no workload beyond layout noise, and is inert until `WIDE` lets those loops compile. It is recorded here rather than kept.
-
-### The two builds that can double throughput
-
-1. **A `WIDE`-aware JIT.** Decode the prefix into 16-bit operands for analysis, remapping and emission instead of refusing it. This is the single largest coverage item (24.7% of interpreted work, 40% of zlib) and it is bounded, mechanical work: an operand view over `pc`/`pc-1` replacing direct `ins.a`/`ins.b`/`ins.c` reads in the loop and function tiers, plus a remap that re-encodes a widened operand into an 8-bit field and drops the prefix when it lands in a low slot.
-2. **Native property access that does not bail.** Object-heavy workloads are at 93-100% interpreted not because they cannot compile but because a compiled body leaves at the first uncached `GETPROPC`/`GETPROP` and never re-enters. A polymorphic inline cache (two to four shapes) plus a call into the interpreter's megamorphic path, with the body continuing afterwards, is what addresses the remaining 64%.
-
-## Current status and acceptance model
-
-The architecture reset governs the implementation order below. A–E remain stable workstream names, not a requirement to finish every item in A before starting B. Older checkpoint paragraphs above record status at their own revisions.
-
-| Workstream | Status | Next responsibility |
-|---|---|---|
-| A — Feedback, assumptions and dependencies | PARTIAL | Reuse delivered watches; represent facts and their invalidation in the shared graph |
-| B — CFG/SSA, effects and recovery | PARTIAL | Sparse window and aliased loop SSA landed; cyclic regions and effect information remain; the loop body now matches JSC's DFG shape |
-| C — Optimization and allocation | PARTIAL | Boolean ToInt32 and the overflow-flag checks landed; measured loop bodies are at JSC parity, so remaining cost is in property and element access |
-| D — Runtime and compiled continuations | PARTIAL | Native calls publish an activation and do not pay for small callees; the open item is a native property path that continues instead of exiting |
-| E — Coverage, measurement and budgets | PARTIAL | 24.7% of interpreted bytecodes are `WIDE`-refused and 11.3% are budget-blocked; a `WIDE`-aware tier is the next coverage step, and the budget increase itself was measured as a loss |
-
-Validated source is `rat` at `86abd083`. Experimental `8f875497` is a source of reusable pieces, not a branch to merge wholesale. In particular, entry-only global snapshots after intervening effects need guaranteed dependency ownership or effect-aware reloads; failed registration must refuse specialization. Broad recovery, ownership, mutation and GC validation remains open.
-
-The latest matched full-suite pair is **6121 → 6257 (+2.22%)**, provisional. The earlier **5752 → 6355 (+10.48%)** result uses three pairs in a different timing window. Neither establishes 50K, and these absolute scores must not be compared across windows as a regression or gain. From roughly 6.3K, 50K requires roughly 8x aggregate improvement.
-
-The JSC comparison found similar bytecode sizes but excess checks, resolution, storage selection and frame traffic in Boomkat. Its historical isolated ranges (392/102/68 instructions, memory operations and conditional branches versus JSC 158/40/17) include cold code and different boundaries. Later dependencies reduced a Boomkat range to 237 instruction words without a throughput win. These are diagnostic observations, not current dynamic counts or speedup predictions. See [plan 118](118-jsc-codegen-comparison.md) for the exact revisions and evidence.
-
-Performance acceptance is based on matched throughput and executed work across workload clusters. Richards and DeltaBlue remain regression consumers; their historical 2x/5x/10x mini targets no longer determine implementation order or completion. No optimizer pass is assigned an assumed multiplicative speedup.
-
-## Engine target and design constraints
-
-Use one compact speculative optimizing pipeline over the existing baseline:
-
-`decoded bytecode + feedback → typed cyclic CFG/SSA + effects/frame states → optimization → representations/register allocation → SLJIT + exits/root maps`
-
-- Extend existing loop/function graph infrastructure. Share operand/use enumeration, liveness, recovery and lowering; remove superseded paths as consumers migrate. Avoid another pattern-specific optimizer or handwritten metadata table.
-- Treat numeric types/ranges, shapes/shape sets, callees and array/storage kinds as guarded runtime facts. Type hints seed speculation; they never change JavaScript semantics. Reuse watch ownership, rooted assumptions and safe code retirement.
-- Keep hot values unboxed and in registers across useful loops/calls. VM slots are recovery/storage locations, not mandatory destinations for every temporary. Root publication at safepoints must still obey string ownership, GC and helper contracts.
-- Model calls, stores, allocation and exceptions explicitly. Distinct descriptor IDs do not establish nonaliasing. Unknown operations conservatively invalidate facts and have an explicit continuation or exit; do not silently assume purity.
-- SLJIT supplies emission, register conventions, fragments and patchable linking. Select its context from actual allocation and clobber needs. Preserve incoming-link safety and active-code protection. Do not add bindings without a concrete consumer.
-- Keep compilation and memory bounded. Replace structural fixed-array/bitmask limitations with budgeted representations where measured consumers require it; simply raising all constants multiplies graph/frame memory. Use C3 stdlib containers/allocators where appropriate. No global object-layout or GC rewrite without evidence.
-- Keep parser/frontend and native library optimization separately attributable. Flat-AST folding can simplify bytecode and compilation, but cannot replace native loop, memory and call optimization.
-
-## Implementation sequence
-
-### E0. Establish broad attribution and select structural consumers
-
-Make one fresh diagnostic census of the unchanged original suite on the current build, with source/configuration/bundle hashes and maps from the sampled process. Separate interpreter, baseline, optimized body, helper, GC and frontend CPU. Record admission/rejection/exit reasons, compilation CPU, code/metadata bytes and phase order. Distinguish missing generated code from unmapped generated addresses; reject phase-crossing samples. This is a milestone measurement, not a full-Octane run for every edit.
-
-Choose short reproducible kernels from the following groups based on the census. Reuse existing fixtures/runners and save exact commands; these are workload categories, never benchmark-name compiler special cases.
-
-| Group | Initial candidates | Structural questions |
-|---|---|---|
-| Integer/buffer | Crypto, Mandreel, Gameboy, zlib | Cycles/nested loops, WIDE/high registers, shifts, typed accesses, captured bindings |
-| Floating-point | NavierStokes, RayTrace, Box2D | Unboxed doubles, invariant bases/lengths, numeric inlining, spills |
-| Object/allocation | Splay, RayTrace, Box2D | Field stores, constructor/allocation continuations, barriers and GC |
-| Application/closures | EarleyBoyer, TypeScript, PdfJS | Environment access, JS calls, shapes, strings and arrays |
-| Native library/startup | RegExp, CodeLoad | Regexp kernel versus surrounding JS; parser/compiler/metadata costs |
-
-Compare equivalent hot kernels against JSC baseline-only and default tiers where useful. Match source semantics, warmup, tier configuration and disassembly boundaries; exclude diagnostic logging from timing. Static counts explain emitted work, while mapped samples, activation/completion counters and elapsed time establish relevance. Do not carry old broad runtime percentages forward as current measurements.
-
-Deliverable: a ranked blocker/CPU-share table and a small iteration panel containing at least an integer/buffer kernel, a floating-point kernel and an object/closure kernel. Include Richards/DeltaBlue as regression checks, not the whole panel. Select one real consumer blocked by each structural change before implementing it.
-
-### B1. Shared decoded CFG, canonical uses and cyclic SSA
-
-1. Audit/reuse the current bytecode decoder and compiler liveness before introducing infrastructure. Decode WIDE and branch boundaries into one indexed view retaining original bytecode PCs. Use canonical register read/write roles; constant-pool operands must never become register uses. Decode target/fallthrough and exception boundaries explicitly.
-2. Build predecessor/successor edges and traversal order once. Generalize forward-only function joins to natural loops, headers/latches, multiple backedges and nested loops. Use cycle-valid dominance and phi construction/repair; representation inference converges to a fixed point. Unsupported irreducible/exception cases initially use explicit baseline exits with a recorded reason.
-3. Replace duplicated SSA operand walks with one canonical enumeration, including phi edge operands and recovery uses. Separate computational liveness from values required only for exits. Preserve definitions that are observable after a region even if unused in its body.
-4. Keep existing specialized loop behavior until shared lowering has proven parity, then remove duplicate analysis. Budget graph nodes, edges and snapshots independently of source register count. Handle WIDE/high-register mappings without blindly expanding dense per-PC frame matrices.
-
-Touchpoints: bytecode operand/decode utilities, compiler liveness, `vm_sljit_ssa_graph/build`, region/loop adapters and SSA use/allocation code.
-
-Acceptance: prove an actual cyclic function region executes across repeated iterations, not merely an acyclic prefix at a loop header. Use minimized diamond/backedge/nested-loop and exit-only-live-value cases, including WIDE decoding where introduced. Demonstrate activation and equivalent results on selected integer and floating-point consumers. Record compile/memory costs and the precise remaining unsupported operations. This stage need not claim a throughput win by itself; it must unlock an identified blocked consumer and avoid material regressions.
-
-### B2/A. Effects, memory facts and exact recovery
-
-1. Give operations explicit effect summaries: pure, heap read, known-location write, allocation, unknown call, throw/poll. Track memory/fact versions through joins and backedges. Begin with conservative kills; refine disjointness using proven receiver identity/location, not descriptor inequality.
-2. Attach sparse frame states at observable boundaries. A failed check before a store resumes before it; a later exit resumes after a completed store/call. Never replay effects. Include inline caller/callee state, exception destinations, live references and ownership. Recovery liveness participates in allocation.
-3. Reuse rooted watches and invalidation/retirement. Revalidate after operations that may mutate assumptions; avoid stale entry snapshots. Watch registration/metadata allocation failure declines specialization safely.
-4. Implement known-slot stores followed by further native computation and a guard. First consumers must include an object/allocation or closure workload beyond the two property/call benchmarks.
-
-Acceptance: counters prove continuation after an effect. Minimized tests force aliasing, disjoint writes, branch writes and late getter/method/global mutation; observe exactly-once effects. Audit strings, barriers, active-code lifetime and exits before broadening. Measure whether fewer repeated loads/checks improve the real selected kernel; do not expand a nonpaying specialization solely because its assembly is smaller.
-
-### B3/D. Calls, safepoints and runtime continuations
-
-1. Add graph-level calls with argument/result locations, clobbers, effect summaries and recovery states. Inline profitable monomorphic callees under rooted dependencies and budgets; keep remaining calls explicit. One generic call must not disqualify the entire function from optimization.
-2. Define helper completion/exception/poll outcomes for allocation, object initialization, array growth and environment operations. Publish or describe roots, reload movable stack pointers after helpers, and resume at the correct compiled continuation. Arbitrary JS calls invalidate conservative heap facts; checked continuations handle invalidation of currently active code.
-3. Keep GC/interrupt polls on loops/calls, plus safe native entry/link/retirement ownership. Establish general root maps or precise root publication before keeping heap references live across collection. Use SLJIT context/fragments/linking only under the same ABI and lifetime contracts.
-
-Acceptance: a hot loop remains compiled across a non-inlined call, and a separate allocation/closure consumer resumes natively after a completing helper. Test collection, stack growth, exceptions, mutation and code retirement on those actual paths. Known incompleteness causes a supported exit, not silently incorrect code.
-
-### C. Optimize the connected computation
-
-Apply shared passes to the graphs enabled above: type/shape/range propagation, profitable inlining, constant propagation, alias-aware load elimination/store forwarding, redundant guards, dead computations, invariant hoisting and proven bounds-check elimination. Preserve integer overflow, signed/unsigned shifts, negative zero, NaN, holes, getters and coercion semantics. Keep integer/double/object values in useful representations across blocks; rematerialize cheap values instead of spilling.
-
-Allocate GPR/FPR homes across blocks using live ranges, call clobbers and target availability; coalesce copies/phis and reuse dead operands. Select ABI context after allocation. Defer escape analysis/scalar replacement until effects, roots and recovery can describe eliminated objects correctly.
-
-Acceptance: show fewer executed checks/loads/stores/conversions or spills together with repeatable throughput improvement on relevant kernels. Require consumers in multiple clusters for a claim of general optimizer benefit. Treat static code size as supporting evidence. A pass that reduces compile/code complexity can justify a measured modest tradeoff, documented explicitly; avoid accumulating extra paths for noise-sized gains.
-
-### D/E. Runtime costs, budgets and full-suite acceptance
-
-Profile remaining allocation/GC, strings, environments, regexp and frontend work directly. Optimize the dominant runtime kernels where JS compilation cannot remove them. Measure code usefulness per byte, metadata/RSS, compile CPU, retirement/recompilation and GC costs. Test a 256 KiB starting budget with bounded growth as an experiment once usefulness signals exist; do not change the current default or revive losing eviction policies without matched evidence.
-
-Run original full Octane at substantial capability/performance milestones, with assertions and latency results intact. Broad acceptance needs at least three alternating pairs, all workload results and the geometric mean, matched hashes and memory/compilation costs. Two 10x results among 17 geometric-mean components yield only about 31% aggregate gain. The 50K objective stays open until actually measured under agreed conditions.
-
-## Immediate implementation slices and iteration protocol
-
-1. **Attribution and blocker inventory (E0): DONE 2026-10-30.** The mini panel and ranked rejections are recorded above. Keep profiling separate from timing; refresh the census after structural changes rather than adding a framework.
-2. **Canonical instruction/use view (B1):** consolidate decoding/operand roles and distinguish recovery from execution liveness. First reviewable change should remove duplicate metadata/analysis or demonstrably enable the next graph step; do not merely raise caps. Record consumers, source files and before/after rejection reasons.
-3. **One real cyclic graph (B1):** implement phi/dominance/fixpoint support and entry/exit lowering on the shared path. Choose its kernel from E0; include numeric/buffer consumers. Verify actual loop completion before adding more optimizations.
-4. **Post-effect continuation (B2):** integrate reusable pieces of `8f875497` selectively, fixing its ownership/global-watch limitations. Exercise a store, later guard and exact recovery on an object/closure consumer. Do not merge the prototype wholesale or substitute DAG prefixes for cyclic SSA.
-5. **Calls/helpers and optimization (B3/C/D):** preserve the graph around a generic call, then a completing allocation/helper; add load/guard and representation optimization against the exposed costs. Start with C on the existing 256-op regions: the a8 measurements show per-operation guard/ownership/spill work, not missing coverage, is what makes larger windows lose. Keep the broad mini panel as the performance gate.
-
-For each slice, capture a control and candidate with matched features/hashes, prove the intended generated path executes, check the benchmark result, and run short uninstrumented alternating timings without concurrent builds/profiling/tests. Reject losses quickly; confirm promising wins with longer pairs (normally five). Never count known wrong-output runs as wins. Infrastructure slices may land without speed claims only with a concrete enabled consumer and bounded cost.
-
-Use minimized recovery/mutation cases during development; after a promising change, complete appropriate interpreter/JIT/stress, embedding ARM64/x64, ASan/GC and differential gates before promotion. Full Octane is a milestone gate, not the edit loop. Investigate repeatable mini regressions above roughly 3%; document explicit simplicity/performance tradeoffs rather than hiding them.
-
-Record each slice under A–E with commit/configuration, activation/completion proof, performance samples, executed-work diagnostics, compilation/memory costs and remaining blockers. Maintain one canonical current status here; older plans remain completed evidence. No additional overlapping JIT roadmap.
-
----
-
-## Historical baseline study (fa1e7f7a)
-
-The remainder preserves the original study. Its “current,” implementation-status and policy statements refer to that historical baseline. The active roadmap and iteration protocol above take precedence for ongoing work.
-
-The user raised the target to 50,000, alongside a reported JSC score of 70,000.
-This is an active engineering target, not an achieved result or a guarantee.
-Engine baseline: `fa1e7f7a`. No experimental runtime-policy changes from this
-study are enabled or retained in the engine worktree.
-
-## Comparable baseline and controlled capacity experiments
-
-Same machine and original complete Octane bundle/settings/checks. One sequential
-run per variant; the JSC adapter only supplies console.log from the shell's print.
-No builds, tests or CPU sampling ran alongside these timings. These are controlled
-single runs, not confidence intervals or a claim of stable improvement.
-
-| Score | Current 1 MiB | 16 MiB | 1 MiB + cold reclamation | System JSC |
-|---|---:|---:|---:|---:|
-| Richards | 3993 | 3986 | 3971 | 60324 |
-| DeltaBlue | 2922 | 2906 | 2909 | 104142 |
-| Crypto | 3068 | 3064 | 3065 | 108332 |
-| RayTrace | 3059 | 3034 | 3034 | 258404 |
-| EarleyBoyer | 3064 | 3070 | 3059 | 170169 |
-| RegExp | 767 | 769 | 766 | 28338 |
-| Splay | 8703 | 7717 | 8157 | 109948 |
-| SplayLatency | 21969 | 20872 | 21595 | 205515 |
-| NavierStokes | 3948 | 7185 | 7185 | 54260 |
-| PdfJS | 6047 | 7003 | 6969 | 134999 |
-| Mandreel | 1919 | 2741 | 2050 | 120347 |
-| MandreelLatency | 11078 | 22660 | 15245 | 199408 |
-| Gameboy | 12103 | 9656 | 12506 | 230416 |
-| CodeLoad | 28281 | 28686 | 26623 | 118832 |
-| Box2D | 6890 | 5796 | 4432 | 203730 |
-| zlib | 2884 | 2886 | 3362 | 140973 |
-| Typescript | 21476 | 21473 | 10641 | 237441 |
-| Score (version 9) | 5482 | 5901 | 5483 | 127586 |
-
-System JSC scores **127,586** here. The user's 70K figure is not reproduced by
-this shell comparison; browser/version/harness differences remain unverified.
-50K requires **9.12×** the current aggregate of 5482 and is 39.2% of this JSC run.
-The 16 MiB experiment scores **5901 (+7.6%)**; cold reclamation scores **5483**.
-All full-suite assertions pass in all four runs. Neither experiment received a
-full semantic release gate or is being shipped as a new default.
-
-Capacity admits useful Navier–Stokes and Mandreel code, but also makes Gameboy,
-Box2D and Splay slower. Reclamation cuts TypeScript's score roughly in half and
-Box2D by 36%. Enabling more of today's generated code does not establish the
-optimizing tier needed for 50K. Default code policy remains unchanged.
-
-## Why the previous mini gains disappeared
-
-The normal, uninstrumented build ends with 1,048,440 bytes of native code out of
-1,048,576. Its 103 function plans have source lines no later than Crypto's
-`pkcs1pad2` at line 3304. In the diagnostic run, compilation stops after Crypto:
-22 Richards functions, 63 DeltaBlue functions, then 13 Crypto functions and eight
-loops consume 1,048,504 bytes. None of the remaining twelve suites installs a
-native function or loop. Their valid later CPU samples are runtime/interpreter
-work. Instrumentation changes code size, so its exact byte counts are diagnostic;
-the uninstrumented full-run report independently confirms arena exhaustion.
-
-The default arena never reclaims cold compiled functions. Reclamation exists only
-inside the opt-in adaptive policy. The experimental patch separates reclamation
-from growth to test it at a fixed 1 MiB; a second switch tests fixed 16 MiB. Both
-patches were removed from the worktree after measurement and retained as evidence.
-
-## What the present optimizer actually does
-
-`vm_sljit_ir.c3` is restricted representation analysis with three canonical F64
-homes. `vm_sljit_flow.c3` keeps four block-local numeric values and shape/load
-facts; `flow_flush` clears these at block boundaries. Named-read helper joins,
-calls and branches cause frequent resets. This is not a general SSA optimizer.
-Regions are normally 128 instructions and at most 512, and WIDE is rejected.
-
-There is a separate ~3K-line numeric-loop SSA implementation in
-`vm_sljit_ssa.c3`, but `SSA_ENABLED` is hardcoded false. Plans 107–108 record wrong
-output for a growing-array/constant-store case. Its availability in source is
-not evidence that it is production-ready or active. Reuse must start by
-reproducing and fixing its known correctness failure, with long-run differential
-checks and explicit evidence that generated SSA code actually ran.
-
-## Original implementation sequence (historical)
-
-1. Establish a correct optimizing-tier foundation: decoded instruction boundaries
-   including WIDE, CFG and phi values, typed SSA, and frame-state snapshots tied to
-   bytecode PCs. Audit/reuse the existing SSA implementation rather than count its
-   disabled code as a finished optimizer. Preserve exact side effects on exit.
-2. Lower that IR to SLJIT with representation selection and register allocation
-   across blocks. Keep int32/F64 values unboxed until a real materialization
-   point. Preserve shape and load facts through justified joins; use dominance
-   and alias/effect information to remove repeated guards and loads.
-3. Optimize loops and call graphs: invariant guards and buffer metadata, induction
-   ranges, redundant bounds checks, and profitable inlining with recoverable
-   caller/callee state. Integrate normal/wide calls and constructor/scanner
-   continuations with the same effect and recovery model.
-4. Admit code by measured usefulness and size, retire safely through incoming-link
-   tracking, and define an optional throughput memory policy. The experiments
-   reject both blind capacity growth and the existing reclaim policy as defaults.
-5. Address runtime-heavy paths separately: allocation/GC, string scanning and
-   regex execution. JS code generation alone cannot remove native regex-library
-   work or frontend parsing/compilation costs.
-
-These are required capabilities, not multiplicative speedup promises. The
-benchmark suite is a geometric mean across 17 results: isolated 10× wins in two
-results increase the aggregate by only about 31%. Each optimization stage must
-measure the entire suite as well as its isolated kernels.
-
-## Original acceptance and evidence (historical)
-
-Use the original full suite with its warmup, validation and latency results.
-Run at least three alternating comparisons for acceptance, report every result,
-code size and compilation/GC costs, and retain correctness/ASan/embedding gates.
-Do not change benchmark algorithms, suppress checks, special-case benchmark
-names, or compare mini timings to a full-suite aggregate. 50K is not reached.
-
-All raw scores, exact commands, build/source hashes and the rejected experiment
-patch are alongside this report. CPU-profile timings are not used as scores.
-The profiler rejects samples crossing a suite boundary; short suites cannot be
-reliably attributed by a queued sample request without this check. Earlier
-unvalidated phase labels were discarded and recollected.
-
-## Phase-checked CPU samples
-
-One one-second sample per eligible phase; samples crossing a suite boundary are
-excluded. Counts describe the sampled interval, not an entire-suite CPU census.
-
-| Phase | Generated-code share of self samples | Runtime share |
-|---|---:|---:|
-| Richards | 97.4% | 2.6% |
-| DeltaBlue | 53.7% | 46.3% |
-| Crypto | 71.2% | 28.9% |
-| RayTrace | 0.0% | 100.0% |
-| EarleyBoyer | 0.0% | 100.0% |
-| RegExp | -0.0% | 99.9% |
-| Splay | 0.0% | 100.0% |
-| NavierStokes | 0.0% | 100.0% |
-| Mandreel | 0.0% | 100.0% |
-| CodeLoad | 0.0% | 100.0% |
-| zlib | 0.0% | 100.0% |
-| Typescript | 0.0% | 100.0% |
-
-PdfJS, Gameboy and Box2D crossed a phase boundary and are omitted. Richards
-has 68.4% body, 26.5% calls/returns and callee entries, 2.6% gateway entry,
-and 2.6% runtime. Both body code quality and call-graph optimization matter.
+# 113: The 50,000 full-Octane target
+
+Status: **ACTIVE — condensed 2026-11-01; assessed at rat `ec422de6`.**
+50K remains unachieved. This is the active JIT roadmap for plans 107–108, 110–112 and 116–118.
+
+## Objective and architecture
+
+Reach 50,000 on original complete Octane, preserving algorithms, validation, warmup
+and latency results. Improve integer/buffer, floating-point, object/allocation and
+closure/application workloads; profile native-library and frontend costs separately.
+
+Keep SLJIT as the backend and extend the existing graph and lowering:
+
+`decoded bytecode + feedback → cyclic typed SSA + effects/frame states → optimization → representations/global allocation → SLJIT + recovery/root maps`
+
+This is a coordinated architecture refactor. Architectural milestones below
+remain required; isolated opcode improvements, larger windows and more baseline
+coverage do not substitute for effects, cyclic optimization or global allocation.
+Preserve bounded compilation/memory and the existing embedding/execution modes.
+
+## Current capabilities and gaps
+
+- Shared SSA serves loop regions and bounded function regions/frameless callees.
+  Whole-body cyclic leaves admit up to 128 bytecodes; nested loops can form one
+  cyclic graph. Loop-header joins, late backedges, cycle-valid dominance,
+  converting parallel copies and backedge polls exist.
+- Frameless refusal replays the call. Admission therefore requires pure reads
+  and expanded pure helpers, terminal writes after guards, or narrowly proven
+  idempotent writes. This is not general recovery after effects or generic calls.
+- Rooted write dependencies and safe invalidation/retirement already support
+  watched numeric globals and inherited methods. Reuse these contracts.
+- Cyclic graphs skip invariant CSE, CSE, numeric-load refinement and function
+  liveness passes. Allocation follows flat definition order; cyclic joins reserve
+  private homes conservatively. Embedded field SSA has three integer homes.
+  A cyclic graph executing correctly is not yet a cycle-aware optimizing tier.
+- A bounded WIDE decoder, sparse loop-register remapping and CFG continuation
+  liveness exist. A scalable shared decoded CFG with canonical operand roles,
+  recovery uses and general call/register windows remains incomplete.
+- Native remainder, numeric typed-array dispatch and regexp rejection are useful
+  delivered changes. They do not close the structural gaps above.
+
+The older [typed-array checkpoint](113-fifty-thousand-octane/typed-array-dispatch-2026-10-31/report.md)
+records a full-suite median about **6,563**, not a current-revision measurement.
+Refresh attribution; historical bytecode shares and CPU percentages are stale.
+
+## Ordered implementation and acceptance
+
+### 1. Refresh evidence and define shared contracts
+
+Use `just sljit-stats` and `scripts/bench_interleaved.py` to rank admission, exits and CPU costs.
+Select real consumers across numeric/buffer, floating-point and object/closure
+clusters; keep Richards/DeltaBlue as regression checks. Record source/configuration
+hashes, compilation CPU, native/metadata bytes and memory. Distinguish interpreter,
+baseline, optimized body, helpers, GC and frontend in phase-checked profiles.
+
+Specify the effect/recovery/call interfaces and cycle-aware analysis together
+before adding another execution path. Audit existing decoder, compiler liveness,
+SSA graph/build/opt/emit and function/loop adapters; reuse their working pieces.
+
+Acceptance: a ranked blocker table, a short representative iteration panel and
+one blocked real consumer for each following structural milestone.
+
+### 2. Consolidate the decoded CFG and recovery-aware uses
+
+Build one indexed WIDE-aware instruction view retaining prefix/opcode/next PCs,
+branch/fallthrough and exception boundaries. Share canonical read/write roles,
+CFG edges, traversal, dominance and phi operands between loop/function analyses.
+Constant-pool indices must never become register uses. Separate execution uses
+from values needed only by recovery, including inline frames and latch operands.
+
+Replace structural dense PC-by-register matrices and fixed masks with budgeted
+nodes, edges and sparse states where required. Preserve sparse register mappings
+through emission and re-emission; represent contiguous call windows explicitly.
+Keep supported baseline exits for unsupported irreducible/exception cases.
+
+Acceptance: diamonds, multiple backedges, nested loops, WIDE/high registers and
+exit-only live values agree with the interpreter. Demonstrate native activation
+and completion on real consumers, with bounded compile/memory cost. Remove
+superseded analysis as shared consumers migrate; raising caps is not this milestone.
+
+### 3. Add exact-PC effects, calls and runtime continuations
+
+Give IR operations explicit pure/read/write/allocation/call/throw/poll effects.
+Carry memory/fact versions through joins and backedges, conservatively killing
+facts on unknown mutation. Use proven receiver/location identity for aliasing.
+Attach sparse frame states before and after observable operations: exits resume
+before an unperformed effect or after a completed effect, never replaying it.
+Include inline caller/callee state, exception destinations and ownership.
+
+Model generic calls with argument/result locations, clobbers and recovery states;
+inline profitable known callees under rooted dependencies. Define helper outcomes
+for completion, exceptions and polls. Publish precise roots or use root maps,
+respect string/refcount/barrier rules, reload movable frame pointers, revalidate
+facts after mutation and protect active code and incoming links during retirement.
+Allocation or watch-registration failure must decline specialization safely.
+
+Acceptance: an effectful cyclic body stores, continues natively and later exits
+at the correct PC with exactly-once effects; a hot loop crosses a non-inlined
+call; a separate allocation/closure consumer resumes after a completing helper.
+Exercise aliasing, mutation, stack growth, collection, exceptions and invalidation.
+A single generic call must not disqualify the surrounding computation.
+
+### 4. Optimize and allocate across the connected cyclic graph
+
+Make liveness, representation/type/range inference and memory facts converge over
+cycles, with edge phi uses and recovery states included. Enable sound CSE/load
+elimination, forwarding, redundant-guard removal, dead-code elimination, invariant
+hoisting and proven bounds-check elimination on cyclic graphs. Keep useful values
+unboxed across blocks/calls; preserve overflow, shifts, -0, NaN, holes and coercions.
+
+Replace conservative graph-wide join reservations and flat-order allocation with
+GPR/FPR live ranges across blocks, call clobbers and target-derived availability.
+Coalesce edge copies safely, reuse dead operands and rematerialize cheap values.
+Select SLJIT context from actual allocation. Defer scalar replacement until roots
+and recovery can reconstruct eliminated objects. Develop these passes alongside
+steps 2–3 where possible; do not postpone them for more coverage experiments.
+
+Acceptance: bytecode and native disassembly identify fewer executed checks,
+loads/stores, conversions or spills, and matched timings show repeatable wins
+across relevant workload clusters. Static instruction counts alone are insufficient.
+
+### 5. Close runtime, admission and full-suite gaps
+
+Profile remaining allocation/GC, strings, environments, regexp and frontend costs.
+Optimize dominant runtime kernels; measure code usefulness, compilation, metadata/RSS,
+retirement/recompilation and GC before changing budgets.
+
+At capability/performance milestones, run the original full suite with at least
+three alternating matched pairs; publish every result, geometric mean and resource
+costs. Only an actual score under those conditions closes the 50K objective.
+
+## Iteration rules and retained traps
+
+For each slice prove the intended generated path executes, validate output, then
+run uninstrumented alternating timings without concurrent builds/profiling/tests.
+Confirm promising gains with longer pairs; investigate repeatable mini regressions
+above roughly 3%. Infrastructure may land without a speed claim only when it enables
+a concrete consumer with bounded cost. Run appropriate interpreter/JIT differential,
+embedding ARM64/x64, ASan/GC and stress checks before promotion.
+
+Blind budget/window/spill increases and interpreter capture/WIDE fusions have
+repeatedly lost. Function-tier property continuations also lost despite increased
+native coverage; helper joins must reconcile flow/ownership and use the correct
+frame window. Do not infer nonaliasing from descriptor IDs or treat entry-only
+global snapshots as valid after effects. Reuse experimental pieces selectively.
+
+History: `git show 28d16112:plans/113-fifty-thousand-octane.md`. Evidence remains in
+`plans/113-fifty-thousand-octane/`. Keep this file focused on current architecture,
+next milestones and measured acceptance.
