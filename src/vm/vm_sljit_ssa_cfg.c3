@@ -41,7 +41,12 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         SsaBlock* block = &g.blocks[node.block];
         if (node.block_entry) {
             block.begin = node.view.pc;
-            block.external = node.external || loop_roots[node.block];
+            bool external = node.external;
+            // Shared decoding splits at every potential VM helper. A native
+            // access completes inside this activation, so its successor has
+            // no independent VM import edge. Keep actual calls and polls.
+            if (i != 0 && ssa_cfg_native_access(g, cfg.nodes[i - 1].view)) external = false;
+            block.external = external || loop_roots[node.block];
             if (block.external) {
                 if (g.plan.ssa_data != null) g.plan.ssa_data.resume_words[block.begin / 32] |= 1U << (block.begin % 32);
                 if (block.begin < SSA_SPAN) g.plan.ssa_resume_pcs[block.begin >> 6] |= 1UL << (block.begin & 63);
@@ -50,16 +55,17 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         block.end = node.view.pc;
         if (i + 1 < cfg.instruction_count && cfg.nodes[i + 1].block == node.block) continue;
         Opcode op = node.view.insn.op;
-        bool native_helper = op == Opcode.CALL || op == Opcode.CALL_UNDEF_THIS
-            || op == Opcode.CALL_GLOBAL || op == Opcode.CALL_VAR;
-        block.returns = op == Opcode.RET || op == Opcode.RETUNDEF || (node.call && !native_helper);
+        // Every admitted HELPER has an explicit synchronous continuation.
+        // Generic VM-step and native ACCESS sites both retain that CFG edge.
+        // Unsupported call forms decline during lowering, never fall through.
+        block.returns = op == Opcode.RET || op == Opcode.RETUNDEF;
         block.branch_pc = node.branch_target == compiler::CFG_NO_INSTRUCTION ? uint::max : node.view.pc;
         block.jump = op == Opcode.JUMP;
         block.conditional = block.branch_pc != uint::max && !block.jump;
         block.succ0 = SSA_NO_BLOCK;
         block.succ1 = SSA_NO_BLOCK;
-        // A call's semantic fallthrough stays in the decoded graph for
-        // liveness; native control stops and later enters its successor fresh.
+        // Helpers and native accesses both continue on the semantic edge.
+        // Their separate VM reentry root remains an independent proof barrier.
         if (block.returns) continue;
         if (block.jump) {
             block.succ0 = cfg.nodes[node.branch_target].block;
@@ -104,5 +110,17 @@ fn void ssa_cfg_extra_reads(void* context, DecodedBytecode view, compiler::RegSe
     if (child.capture_cells == null) return;
     for (uint i = 0; i < child.capture_count; i++) {
         if (child.capture_cells[i] != 0) { reads.set(child.capture_parent_reg); return; }
+    }
+}
+
+// Legacy descriptor lowering already established a watched native memory
+// operation. Its CFG split is useful, but does not create a VM reentry root.
+fn bool ssa_cfg_native_access(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
+    if (g.plan.ssa_data != null && g.plan.ssa_data.decoded_body) return ssa_access_native_site(g, view);
+    if (ssa_memory_site(g.plan, view.pc - g.plan.begin) == 0) return false;
+    switch (view.insn.op) {
+        case GETPROP: case GETPROP_CACHE: case GETPROPC: case GETPROPC_CACHED:
+        case GETTHISC: case PUTPROP: case PUTPROPC: case PUTTHISC: return true;
+        default: return false;
     }
 }

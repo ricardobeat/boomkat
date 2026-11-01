@@ -517,6 +517,16 @@ fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
     for (uint b = 0; b < g.block_count; b++) if (!reachable[b]) return false;
     for (uint n = 0; n < g.block_count; n++) {
         bool found;
+        // Imports are independent definitions, not a bytecode-order suffix.
+        // Build every root before merging any ordinary predecessor state.
+        if (g.recoverable) for (uint b = 0; b < g.block_count; b++) {
+            if (scheduled[b] || !g.blocks[b].external) continue;
+            g.cyclic_order[n] = b;
+            scheduled[b] = true;
+            found = true;
+            break;
+        }
+        if (found) continue;
         for (uint b = 0; b < g.block_count; b++) {
             if (scheduled[b]) continue;
             bool ready = g.recoverable ? g.blocks[b].external : b == 0;

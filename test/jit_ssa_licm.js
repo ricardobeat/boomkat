@@ -2,11 +2,14 @@
 // and OSR imports. The array write is an observable native-loop consumer.
 function invariantEffects(output, count, left, right) {
     var sum = 0.0;
-    for (var i = 0; i < count; i++) {
+    if (count <= 0) return sum;
+    var i = 0;
+    do {
         var invariant = left * 1.25 + right * 0.5;
         output[i] = invariant + i;
         sum = sum + output[i];
-    }
+        i++;
+    } while (i < count);
     return sum;
 }
 function invariantCheck(ok, name) { if (!ok) throw new Error(name); }
