@@ -22,10 +22,10 @@ const bool SSA_ENABLED    = !$feat(SLJIT_NO_SSA);
 // General cyclic graphs compile a whole function body, including backedges.
 // Disable at build time to compare against the straight-line tier.
 const bool SSA_CYCLIC     = !$feat(SLJIT_NO_SSA_CYCLIC);
-// A loop region with a nested loop is still usually served better by the
-// inner region, and whole-region admission measured slower on Navier-Stokes.
-// The graph handles it; keep the consumer opt-in until it pays its way.
-const bool SSA_CYCLIC_REGIONS = false;
+// A loop region may compile its nested loops as one cyclic graph. That measured
+// slower before whole-function cyclic SSA existed; with it, Navier-Stokes drops
+// about 9% in paired mini runs and the rest of the panel is unchanged.
+const bool SSA_CYCLIC_REGIONS = true;
 const uint SSA_MAX_VALUES = 512;
 const uint SSA_MAX_SPILL  = 128;
 const uint SSA_HOMES      = 8;
