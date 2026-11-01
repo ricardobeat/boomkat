@@ -39,6 +39,7 @@ fn void SsaAllocation.merge(&self, ulong* dest, ulong* source) @feat(SLJIT) {
 }
 fn void SsaAllocation.interfere(&self, uint value, ulong* live) @feat(SLJIT) {
     SsaGraph* g = self.g;
+    if (!ssa_charge_work(g, g.value_count)) return;
     ulong* row = self.conflicts + (usz)value * self.words;
     for (uint other = 0; other < g.value_count; other++) {
         if (other == value || !self.contains(live, other)
@@ -160,6 +161,7 @@ fn void SsaAllocation.latch(&self, bool record) @feat(SLJIT) {
 
 fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
     SsaGraph* g = self.g;
+    if (g.failed) return;
     self.clear(self.live);
     self.transfer_edge(block, g.blocks[block].succ0, record);
     self.transfer_edge(block, g.blocks[block].succ1, record);
@@ -243,6 +245,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
     }
     if (!ssa_charge_work(g, (usz)g.value_count * g.value_count + (usz)g.block_count * g.value_count)) return;
     for (uint b = 0; b < g.block_count; b++) a.block(b, true);
+    if (g.failed) return;
     // Every synthetic entry (initial entry or a resumed call successor)
     // consumes arguments initialized by that entry's prologue, then copies
     // them to its own JOINs. There is no native edge across an interpreted call.
@@ -263,6 +266,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
         g.values[i].home = 0;
         g.values[i].spill = 0;
     }
+    if (g.failed) return;
     g.spill_count = 0;
     // Prefer loop-carried definitions, then greedily color the remaining
     // interference graph. Non-overlapping joins can now reuse the same home.
@@ -277,6 +281,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
             bool free = true;
             ulong* conflicts = a.conflicts + (usz)i * words;
             for (uint other = 0; other < g.value_count; other++) {
+                if (!ssa_charge_work(g, 1)) return;
                 if (g.values[other].home == home && ssa_same_class(g.values[other].rep, value.rep)
                     && a.contains(conflicts, other)) { free = false; break; }
             }
@@ -299,6 +304,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
 // the temporary storage the emitter can use after allocation.
 fn bool ssa_phi_staging(SsaGraph* g, SsaJoin* join, int* incoming) @feat(SLJIT) {
     for (uint reg = 0; reg < g.reg_count; reg++) {
+        if (!ssa_charge_work(g, 1)) return true;
         if (join.phi[reg] < 0 || incoming[reg] < 0) continue;
         SsaValue dest = g.values[join.phi[reg]];
         SsaValue source = g.values[incoming[reg]];
@@ -306,6 +312,7 @@ fn bool ssa_phi_staging(SsaGraph* g, SsaJoin* join, int* incoming) @feat(SLJIT) 
             || (dest.rep == INT32 && source.rep != INT32)) return true;
         if (dest.rep == source.rep && ssa_same_location(dest, source)) continue;
         for (uint other = 0; other < g.reg_count; other++) {
+            if (!ssa_charge_work(g, 1)) return true;
             if (join.phi[other] < 0 || incoming[other] < 0) continue;
             SsaValue read = g.values[incoming[other]];
             if (ssa_same_location(dest, read)) return true;

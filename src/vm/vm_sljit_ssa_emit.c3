@@ -124,6 +124,7 @@ fn int SsaEmitter.fpr_slot(&self, int value, int scratch) @feat(SLJIT) {
 // Recovery exits reference immutable sparse frames. Several guards can share
 // one state without retaining a PC-by-register matrix.
 fn void SsaEmitter.snapshot_id(&self, void* jump, uint pc, SsaFrameId frame) @feat(SLJIT) {
+    if (jump == null) { self.e.failed = true; return; }
     SsaExit* exits = (SsaExit*)ssa_storage_grow(self.g, self.g.exits, self.g.exit_count,
         &self.g.exit_capacity, self.g.exit_count + 1, self.g.budget.max_values, SsaExit::size);
     if (exits == null) { self.e.failed = true; return; }

@@ -139,6 +139,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         uint b = g.cyclic ? g.cyclic_order[step] : step;
         g.current_block = b;
         // A conversion emitted in one arm need not execute on another arm.
+        if (!ssa_charge_work(g, (usz)g.value_capacity * 4)) return false;
         foreach (&entry : g.conv[0:g.value_capacity * 4]) *entry = 0;
         if (!ssa_enter_block(g, b)) {
             g.failed = true;
