@@ -241,6 +241,36 @@ fn void check_decoded_liveness(JsRuntime* runtime) {
     @check(!vm::ssa_continuation_live(graph, &live));
     plan.slot_reg[0] = 0;
 
+    // Shared canonical nodes retain recovery/cache PCs and high register roles.
+    compiler::DecodedCfg decoded;
+    @check(compiler::bytecode_cfg_build(&decoded, &code[0], code.len, h));
+    @check(decoded.instruction_count == 6 && decoded.word_count == 11 && decoded.has_wide);
+    @check(decoded.nodes[0].view.pc == 0 && decoded.nodes[0].view.payload_pc == 1
+        && decoded.nodes[0].view.next_pc == 2);
+    @check(decoded.pc_to_index[1] == compiler::CFG_NO_INSTRUCTION && decoded.pc_to_index[5] == 3);
+    @check(decoded.nodes[0].branch_target == 3 && decoded.nodes[0].successor_count == 2);
+    compiler::bytecode_cfg_free(&decoded);
+    compiler::DecodedCfgBudget tiny = { .max_words = 10, .max_instructions = 10, .max_bytes = 4096 };
+    @check(!compiler::bytecode_cfg_build(&decoded, &code[0], code.len, h, budget: tiny));
+    tiny = { .max_words = 20, .max_instructions = 2, .max_bytes = 4096 };
+    @check(!compiler::bytecode_cfg_build(&decoded, &code[0], code.len, h, budget: tiny));
+    tiny = { .max_words = 20, .max_instructions = 20, .max_bytes = 1 };
+    @check(!compiler::bytecode_cfg_build(&decoded, &code[0], code.len, h, budget: tiny));
+    Instruction[2] malformed = { bytecode::make_wide(1, 0, 0), bytecode::make_wide(0, 0, 0) };
+    @check(!compiler::bytecode_cfg_build(&decoded, &malformed[0], 1, h));
+    @check(!compiler::bytecode_cfg_build(&decoded, &malformed[0], malformed.len, h));
+    malformed[0] = bytecode::make_a_bc(Opcode.TRY, 0, 1);
+    malformed[1] = bytecode::make_abc(Opcode.RETUNDEF, 0, 0, 0);
+    @check(!compiler::bytecode_cfg_build(&decoded, &malformed[0], malformed.len, h));
+    malformed[0] = bytecode::make_a_bc(Opcode.LDINTX, 0, 1);
+    @check(!compiler::bytecode_cfg_build(&decoded, &malformed[0], malformed.len, h));
+    Instruction[2] calls = { bytecode::make_abc(Opcode.CALL, 0, 1, 0),
+        bytecode::make_abc(Opcode.RET, 0, 0, 0) };
+    @check(compiler::bytecode_cfg_build(&decoded, &calls[0], calls.len, h, split_calls: true));
+    @check(decoded.nodes[0].call && decoded.nodes[0].successor_count == 1
+        && decoded.nodes[1].external && decoded.nodes[1].block_entry && decoded.block_count == 2);
+    compiler::bytecode_cfg_free(&decoded);
+
     // This edge targets the LDREG payload, not its prefix.
     code[1] = bytecode::make_a_sbx(Opcode.IF_FALSE, 44, 4);
     @check(!compiler::moveelim_compute_decoded_liveness(&code[0], code.len, &sets[0], &sets[11], &scratch, &boundary[0]));
