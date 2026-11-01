@@ -67,16 +67,24 @@ fn long SsaEmitter.spill_offset(&self, uint spill) @feat(SLJIT) => self.g.recove
         + (long)spill * double::size : ssa_spill_offset(spill);
 
 fn void SsaEmitter.gpr(&self, int value, int dst) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
-    if (v.home != 0) {
+    if (ssa_rematerialized(v)) {
+        self.e.mov(dst, 0, jit::SLJIT_IMM, v.imm);
+    } else if (v.home != 0) {
         self.e.mov(dst, 0, v.home, 0);
     } else {
         self.e.mov(dst, 0, jit::SLJIT_MEM | self.state, self.spill_offset(v.spill));
     }
 }
 fn void SsaEmitter.load_fpr(&self, int value, int dst) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
-    if (v.home != 0) {
+    if (ssa_rematerialized(v)) {
+        int scratch = jit::reg_r(3);
+        self.e.mov(scratch, 0, jit::SLJIT_IMM, v.imm);
+        if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, dst, scratch) != 0) self.e.failed = true;
+    } else if (v.home != 0) {
         if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, dst, 0, v.home, 0) != 0) self.e.failed = true;
     } else {
         if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, dst, 0,
@@ -110,14 +118,17 @@ fn void SsaEmitter.store_fpr(&self, int value, int src) @feat(SLJIT) {
 // when the value has no home. Returning the home directly lets operations
 // consume operands in place instead of copying them through a scratch pair.
 fn int SsaEmitter.gpr_slot(&self, int value, int scratch) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
+    if (ssa_rematerialized(v)) { self.gpr(value, scratch); return scratch; }
     if (v.home != 0) return v.home;
     self.e.mov(scratch, 0, jit::SLJIT_MEM | self.state, self.spill_offset(v.spill));
     return scratch;
 }
 fn int SsaEmitter.fpr_slot(&self, int value, int scratch) @feat(SLJIT) {
+    value = ssa_alias(self.g, value);
     SsaValue v = self.g.values[value];
-    if (v.home != 0) return v.home;
+    if (!ssa_rematerialized(v) && v.home != 0) return v.home;
     self.load_fpr(value, scratch);
     return scratch;
 }
@@ -403,6 +414,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case COPY:
 
                     {
+                        if (ssa_rematerialized(v)) break;
                         SsaValue from = self.g.values[v.a];
                         if (ssa_same_location(v, from)) break;
                         if (v.rep == F64) {
@@ -418,6 +430,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case CONST_BOXED:
 
                     {
+                        if (ssa_rematerialized(v)) break;
                         int dst = v.home != 0 ? v.home : r0;
                         self.e.mov(dst, 0, imm, v.imm);
                         if (v.home == 0) self.store_gpr((int)i, dst);
@@ -426,6 +439,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case CONST_F:
 
                     {
+                        if (ssa_rematerialized(v)) break;
                         int dst = v.home != 0 ? v.home : 1;
                         self.e.mov(r0, 0, imm, v.imm);
                         if (jit::sljit_emit_fcopy(
@@ -458,12 +472,12 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                             // instead of comparing against INT32_MIN and MAX.
                             int arithmetic = v.op == SUB ? jit::SLJIT_SUB
                                 : v.op == MUL ? jit::SLJIT_MUL : jit::SLJIT_ADD;
-                            self.e.op(arithmetic | jit::SLJIT_32 | jit::SLJIT_SET_OVERFLOW, dst, left, 0, right,
-                                rightw);
+                            bool overflow = (v.proof_bits & SSA_PROOF_NO_OVERFLOW) == 0;
+                            self.e.op(arithmetic | jit::SLJIT_32 | (overflow ? jit::SLJIT_SET_OVERFLOW : 0), dst, left, 0, right, rightw);
                             // The flag must be consumed before anything else
                             // compares, because a compare replaces it.
-                            self.snapshot(self.e.jump_if(jit::SLJIT_OVERFLOW), self.pc);
-                            if (v.op == MUL) {
+                            if (overflow) self.snapshot(self.e.jump_if(jit::SLJIT_OVERFLOW), self.pc);
+                            if (v.op == MUL && (v.proof_bits & SSA_PROOF_NO_NEGATIVE_ZERO) == 0) {
                                 void* nonzero = self.e.cmp(jit::SLJIT_NOT_EQUAL, dst, 0, imm, 0);
                                 self.guard(jit::SLJIT_SIG_LESS, r3, 0, imm, 0, self.pc);
                                 self.e.bind(nonzero);
@@ -570,7 +584,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                             self.int32(r0, dst, self.pc);
                         } else if (from.rep == F64) {
                             self.load_fpr(v.a, 1);
-                            self.trunc_int_f64(1, dst, self.pc);
+                            if ((v.proof_bits & SSA_PROOF_EXACT_INT32) != 0) {
+                                if (jit::sljit_emit_fop1(e.compiler, jit::SLJIT_CONV_SW_FROM_F64, dst, 0, 1, 0) != 0) e.failed = true;
+                            } else { self.trunc_int_f64(1, dst, self.pc); }
                         } else {
                             self.e.mov(dst, 0, self.gpr_slot(v.a, r0), 0);
                         }
@@ -587,7 +603,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                             self.exact_int(r0, dst, self.pc);
                         } else if (from.rep == F64) {
                             self.load_fpr(v.a, 1);
-                            self.exact_int_f64(1, dst, self.pc);
+                            if ((v.proof_bits & SSA_PROOF_EXACT_INT32) != 0) {
+                                if (jit::sljit_emit_fop1(e.compiler, jit::SLJIT_CONV_SW_FROM_F64, dst, 0, 1, 0) != 0) e.failed = true;
+                            } else { self.exact_int_f64(1, dst, self.pc); }
                         } else {
                             self.e.mov(dst, 0, self.gpr_slot(v.a, r0), 0);
                             self.e.mov(dst, 0, dst, 0, jit::SLJIT_MOV_S32);

@@ -150,6 +150,11 @@ struct SsaExecution @feat(SLJIT) {
     SsaPublishedValue* outputs;
     uint output_count;
     ValueRoot* roots;
+    // Descriptors stay at stable addresses for the incremental collector.
+    // Membership and clearing scale with the two live maps, not all SSA IDs.
+    uint* live_roots;
+    bool* root_marks;
+    uint live_root_count;
     bool active;
     bool caller_lost;
     Instruction* vm_resume;
@@ -170,22 +175,26 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.value_capacity = values;
     usz runtime_bytes = LoopState::size + ((usz)spills + edges) * ulong::size
         + (usz)execution.register_count * (TVal::size + SsaPublishedValue::size)
-        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size);
+        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size + uint::size + bool::size);
     if (runtime_bytes > SSA_DEFAULT_BUDGET.max_bytes) return false;
     execution.input_values = h.alloc_func(h.heap_udata, (usz)execution.register_count * TVal::size);
     execution.outputs = h.alloc_func(h.heap_udata, (usz)execution.register_count * SsaPublishedValue::size);
     execution.saved_bits = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ulong::size);
     execution.roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ValueRoot::size);
+    execution.live_roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * uint::size);
+    execution.root_marks = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * bool::size);
     usz state_bytes = LoopState::size + ((usz)spills + edges) * ulong::size;
     if (state_bytes > SSA_DEFAULT_BUDGET.max_bytes) { ssa_execution_dispose(execution); return false; }
     execution.state_storage = (LoopState*)h.alloc_func(h.heap_udata, state_bytes);
     execution.spills = execution.state_storage == null ? null : (ulong*)((char*)execution.state_storage + LoopState::size);
     execution.edge = execution.spills == null ? null : execution.spills + spills;
     if (execution.input_values == null || execution.outputs == null || execution.saved_bits == null
-        || execution.roots == null || execution.spills == null || execution.edge == null) {
+        || execution.roots == null || execution.live_roots == null || execution.root_marks == null
+        || execution.spills == null || execution.edge == null) {
         ssa_execution_dispose(execution);
         return false;
     }
+    mem::clear(execution.root_marks, (sz)max(values, 1u) * bool::size);
     mem::copy(execution.input_values, cold.act.bottom, (sz)execution.register_count * TVal::size);
     TVal undefined;
     undefined.set_undefined();
@@ -207,6 +216,8 @@ fn void ssa_execution_dispose(SsaExecution* execution) @feat(SLJIT) {
     if (execution.outputs != null) h.free_func(h.heap_udata, execution.outputs);
     if (execution.saved_bits != null) h.free_func(h.heap_udata, execution.saved_bits);
     if (execution.roots != null) h.free_func(h.heap_udata, execution.roots);
+    if (execution.live_roots != null) h.free_func(h.heap_udata, execution.live_roots);
+    if (execution.root_marks != null) h.free_func(h.heap_udata, execution.root_marks);
     if (execution.state_storage != null) h.free_func(h.heap_udata, execution.state_storage);
     if (execution.owner_generation != 0) sljit_artifact_leave(h, execution.owner);
     *execution = {};
@@ -260,14 +271,20 @@ fn bool ssa_execution_roots(SsaExecution* execution, SsaHelperSite* site) @feat(
         h.tval_copy_ref(&execution.roots[value].value, &boxed);
         h.decref_tval(&boxed);
     }
-    for (uint value = 0; value < execution.value_capacity; value++) {
-        bool live;
-        for (uint i = 0; i < site.root_count; i++) if (site.root_values[i] == value) { live = true; break; }
-        if (!live) {
+    for (uint i = 0; i < site.root_count; i++) execution.root_marks[site.root_values[i]] = true;
+    for (uint i = 0; i < execution.live_root_count; i++) {
+        uint value = execution.live_roots[i];
+        if (!execution.root_marks[value]) {
             h.decref_tval(&execution.roots[value].value);
             execution.roots[value].value.set_undefined();
         }
     }
+    for (uint i = 0; i < site.root_count; i++) {
+        uint value = site.root_values[i];
+        execution.live_roots[i] = value;
+        execution.root_marks[value] = false;
+    }
+    execution.live_root_count = site.root_count;
     return true;
 }
 

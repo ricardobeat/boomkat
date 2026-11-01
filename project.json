@@ -804,6 +804,8 @@
         "test/capi/jit.c3",
         "test/capi/jit_ssa_scalable.c3",
         "test/capi/jit_ssa_access.c3",
+        "test/capi/jit_ssa_bounds.c3",
+        "test/capi/jit_ssa_remat.c3",
         "test/capi/jit_abi.c3"
       ],
       "features": [

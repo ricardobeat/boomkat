@@ -581,7 +581,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     {
                         bool binary = ssa_scalar_binary(ins.op);
                         int value = ssa_scalar(g, ins.op, g.current[ins.b], binary ? g.current[ins.c] : -1,
-                            (long)(ichar)ins.c);
+                            bytecode::imm_value(ins.op, ins.c));
                         if (value < 0) return false;
                         ssa_result(g, value, ins.a, pos);
                         g.current[ins.a] = value;

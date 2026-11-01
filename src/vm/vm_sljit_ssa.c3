@@ -119,8 +119,12 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     defer ssa_graph_free(graph);
     if (plan.ssa_data != null) {
         plan.ssa_data.native_accesses = 0;
+        plan.ssa_data.bounds_proofs = 0;
+        plan.ssa_data.rematerialized = 0;
         foreach (value : graph.values[:graph.value_count]) {
             if (value.op == ACCESS_LOAD || value.op == ACCESS_STORE) plan.ssa_data.native_accesses++;
+            if ((value.op == CONST_I || value.op == CONST_F) && ssa_rematerialized(value)) plan.ssa_data.rematerialized++;
+            if (value.op == ACCESS_ADDRESS && (value.proof_bits & SSA_PROOF_INDEX_BOUNDS) != 0) plan.ssa_data.bounds_proofs++;
         }
     }
     void* code = ssa_emit_graph(graph, parent);
@@ -231,6 +235,10 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
             io::eprintfn("SLJIT SSA LICM line=%d moved=%d", cf.get_line(0), hoisted);
         $endif
     }
+    uint range_proofs = ssa_ranges(graph);
+    $if $feat(SLJIT_STATS):
+        if (range_proofs != 0) io::eprintfn("SLJIT SSA ranges line=%d proven=%d", cf.get_line(0), range_proofs);
+    $endif
     uint dead = ssa_dce(graph);
     $if $feat(SLJIT_STATS):
         if (dead != 0) io::eprintfn("SLJIT SSA DCE line=%d removed=%d", cf.get_line(0), dead);
