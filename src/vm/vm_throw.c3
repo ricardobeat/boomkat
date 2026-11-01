@@ -141,6 +141,15 @@ fn InjectedReturnWalk gen_close_guards_to_finally(Vm* vm, Dispatch* ds, Catcher*
 fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
                        Instruction** curr_pc, bool* needs_restart,
                        bool local_only = false) {
+    $if $feat(SLJIT):
+        if (act != null && act == vm.native_step_activation) {
+            // Only the borrowed caller operation is intercepted. Descendant
+            // JS frames still run their own catches inside call_fn normally.
+            vm.heap.tval_copy_ref(&vm.throw_value, &thrown_val);
+            vm.throw_pending = true;
+            return false;
+        }
+    $endif
     // Walk through current and parent activations
     Activation* search_act = act;
     for (;;) {

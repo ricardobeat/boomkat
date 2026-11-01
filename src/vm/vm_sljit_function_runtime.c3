@@ -413,7 +413,7 @@ fn Instruction* sljit_function_dispatch(
     ColdCtx* cold
 ) @feat(SLJIT) @noinline {
     pc = sljit_function_entry(pc, regs, cold);
-    if (cold.vm.threaded_handoff != ThreadedHandoff.NONE) return pc;
+    if (cold.vm.threaded_handoff != ThreadedHandoff.NONE || ((Dispatch*)cold.dispatch_ptr).needs_restart) return pc;
     return th_next(pc, handlers, cold.act.bottom, cold);
 }
 // Report the counters the native tiers keep: what compiled, how often it ran,
