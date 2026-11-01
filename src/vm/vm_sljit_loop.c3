@@ -84,11 +84,15 @@ struct LoopState @feat(SLJIT) {
     TVal[LOOP_REGS] values;
     TVal receiver;
     uint shape_epoch;
+    uint resume_pc;
     LoopMemory[LOOP_MEMORY] memory;
     TVal[LOOP_BINDINGS] bindings;
     ulong dirty;
     long budget;
     double[128] ssa_spill;
+    // Edge conversions finish before any phi home is changed. Raw bits here
+    // are borrowed only while native code cannot collect or release strings.
+    double[LOOP_REGS] ssa_edge;
 }
 struct LoopPlan @feat(SLJIT) {
     LoopNative native;
@@ -97,6 +101,9 @@ struct LoopPlan @feat(SLJIT) {
     bool ssa_fields;
     bool ssa_calls;
     bool ssa_commit;
+    // Published-frame bodies recover the exact bytecode state after effects.
+    bool ssa_recoverable;
+    ulong[2] ssa_resume_pcs;
     // The region contains a nested loop, so only the cyclic SSA emitter can
     // describe it and the straight-line template emitter must not try.
     bool ssa_cyclic;
@@ -666,7 +673,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     // One final own-slot update commits after every fallible
                     // guard. A whole-body leaf may also write several slots
                     // when it reads no memory, so replaying it is idempotent.
-                    if (!feedback || (!multi_write && (pos + 1 != end
+                    if (!feedback || (!plan.ssa_recoverable && !multi_write && (pos + 1 != end
                         || cf.code[end].op != Opcode.RETUNDEF)) || cf.ic_entries == null) return false;
                     if (ins.op == Opcode.PUTPROPC && $feat(SLJIT_NO_SSA_FIELD_IR)) return false;
                     ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
@@ -822,7 +829,11 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                         memory = -1;
                     }
                     if (memory < 0) {
-                        bool stable = receiver || (source >= 0 && source < (int)LOOP_REGS && !maybe_written[source]);
+                        // Linear origin propagation cannot merge assignments
+                        // from different CFG arms. An unchanged origin alone
+                        // does not prove a rewritten receiver still names it.
+                        bool stable = receiver || (source >= 0 && source < (int)LOOP_REGS
+                            && !maybe_written[source] && !maybe_written[ins.b]);
                         if (stable) {
                             // A field of an object that is stable for the whole
                             // run: one load per iteration with no guard.
@@ -866,6 +877,9 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case CALL_VAR:
 
                 {
+                    // Calls in a recoverable body publish and return before the
+                    // call bytecode. The interpreter owns its effects and roots.
+                    if (plan.ssa_recoverable) break;
                     if (inline_calls && function_inline_ssa_candidate(cf, pos, cold.heap, feedback) != null) {
                         plan.ssa_calls = true;
                         bool fused = ins.op == Opcode.CALL_GLOBAL || ins.op == Opcode.CALL_VAR;

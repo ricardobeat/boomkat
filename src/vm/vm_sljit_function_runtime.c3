@@ -46,6 +46,17 @@ macro bool sljit_function_resumes(Instruction* pc, CompiledFunction* cf) @feat(S
     return plan != null && offset >= plan.begin && offset - plan.begin < plan.count
         && plan.entries[offset - plan.begin] != null;
 }
+// Published loop headers can reenter the same SSA graph after an interpreter
+// poll. Retired gateways and invalid specializations retain the loop fallback.
+macro bool sljit_function_ssa_resumes(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) {
+    $if $feat(SLJIT_NO_SSA_LOOP_ENTRY): return false; $endif
+    FunctionPlan* plan = cf.sljit_function;
+    uint offset = (uint)(pc - cf.code);
+    return plan != null && plan.ssa_region != null && plan.ssa_region.ssa_recoverable
+        && !plan.ssa_region.ssa_invalid && offset < SSA_SPAN
+        && (plan.ssa_region.ssa_resume_pcs[offset >> 6] & (1UL << (offset & 63))) != 0
+        && sljit_function_resumes(pc, cf);
+}
 fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uint begin = 0) @feat(SLJIT) @noinline {
     Heap* h = cold.heap;
     $if $feat(SLJIT_STATS):
@@ -103,8 +114,13 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     plan.min_span = 1;
     plan.entries = (void**)((char*)plan + FunctionPlan::size);
     plan.short_runs = (char*)(plan.entries + plan.count);
+    if (SSA_ENABLED && !$feat(SLJIT_NO_RECOVERABLE_SSA) && begin == 0 && region.code_count == cf.code_count) {
+        plan.ssa_region = sljit_function_ssa_recoverable_compile(cf, cold);
+    }
     $if $feat(SLJIT_FUNCTION_SSA):
-        if (begin == 0 && region.code_count == cf.code_count) plan.ssa_region = sljit_function_ssa_compile(cf, cold);
+        if (plan.ssa_region == null && begin == 0 && region.code_count == cf.code_count) {
+            plan.ssa_region = sljit_function_ssa_compile(cf, cold);
+        }
     $endif
     bool analyzed = function_analyze(&region, plan, h);
     bool emitted  = analyzed && function_emit(plan, &region, h, cold.act, cold);

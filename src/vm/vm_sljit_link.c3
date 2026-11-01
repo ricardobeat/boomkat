@@ -48,7 +48,7 @@ fn void* FunctionEmitter.call_fallback(&self) @feat(SLJIT) {
     TemplateEmitter* e = &self.out.e;
     void* label = e.label();
     if (jit::sljit_emit_enter(e.compiler, jit::SLJIT_ENTER_REG_ARG | jit::enter_keep(3),
-            jit::SLJIT_ARGS4WWWW_R, 7 | (6 << 8), 6, 0) != 0) e.failed = true;
+            jit::SLJIT_ARGS4WWWW_R, jit::scratch_register_count(6) | (6 << 8), 6, 0) != 0) e.failed = true;
     e.mov(jit::reg_r(0), 0, jit::SLJIT_MEM | jit::reg_s(2), $reflect(FunctionRun.start).offset);
     if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, jit::reg_r(0), 0) != 0) e.failed = true;
     for (FunctionCallLink* link = self.plan.calls; link != null; link = link.next) {

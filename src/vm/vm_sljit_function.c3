@@ -943,8 +943,15 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     f.cold = cold;
     if (FUNCTION_DATAFLOW) out.flow = &f.flow;
     f.blocks[0] = true;
-    if (plan.ssa_region != null) f.blocks[plan.ssa_region.end + 1] = true;
+    if (plan.ssa_region != null && plan.ssa_region.end + 1 < cf.code_count) {
+        f.blocks[plan.ssa_region.end + 1] = true;
+    }
     for (uint i = 0; i < cf.code_count; i++) {
+        // SSA hands off with published VM slots. These labels must not
+        // inherit temporary FP mappings from baseline instructions it skipped.
+        if (plan.ssa_region != null && plan.ssa_region.ssa_recoverable
+            && (cf.code[i].op == Opcode.RET || cf.code[i].op == Opcode.RETUNDEF
+                || function_call_op(cf.code[i].op))) f.blocks[i] = true;
         int target = loop_target(cf.code[i], i);
         if ((function_call_op(cf.code[i].op) || function_read_op(cf.code[i].op) || function_alloc_op(cf.code[i].op)
             || function_string_add_candidate(cf, i))
@@ -987,7 +994,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     void* internal = e.label();
     jit::sljit_set_label(gateway, internal);
     if (jit::sljit_emit_enter(e.compiler, jit::SLJIT_ENTER_REG_ARG | jit::enter_keep(3),
-            1, 7 | (6 << 8), 6, 0) != 0) return false;
+            1, jit::scratch_register_count(6) | (6 << 8), 6, 0) != 0) return false;
     void* body = e.label();
     if (plan.receiver) {
         Activation layout;
@@ -1015,7 +1022,8 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         Instruction ins = cf.code[pos];
         if (out.flow != null && f.blocks[pos]) f.flow_flush();
         out.labels[pos] = e.label();
-        if (pos == 0 && plan.ssa_region != null) f.ssa_entry();
+        if (plan.ssa_region != null && (pos == 0 || (plan.ssa_region.ssa_recoverable && pos < SSA_SPAN
+            && (plan.ssa_region.ssa_resume_pcs[pos >> 6] & (1UL << (pos & 63))) != 0))) f.ssa_entry(pos);
         bool active = function_op(
             ins.op
         ) || function_math_candidate(

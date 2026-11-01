@@ -271,6 +271,92 @@ fn void check_decoded_liveness(JsRuntime* runtime) {
         && decoded.nodes[1].external && decoded.nodes[1].block_entry && decoded.block_count == 2);
     compiler::bytecode_cfg_free(&decoded);
 
+    // GETPROP_CACHE's semantic destination is independent of the compiler's
+    // producer-retarget allow-list: a prior boolean in A is dead at this load.
+    Instruction[2] property = { bytecode::make_abc(Opcode.GETPROP_CACHE, 5, 0, 3),
+        bytecode::make_abc(Opcode.RETUNDEF, 0, 0, 0) };
+    @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+        &sets[0], &sets[11], &scratch, &boundary[0], h));
+    @check(!sets[11].test(5) && sets[11].test(0) && sets[11].test(3));
+    Instruction[3] wide_property = { bytecode::make_wide(1, 1, 1),
+        bytecode::make_abc(Opcode.GETPROP_CACHE, 5, 0, 3),
+        bytecode::make_abc(Opcode.RETUNDEF, 0, 0, 0) };
+    @check(compiler::moveelim_compute_decoded_liveness(&wide_property[0], wide_property.len,
+        &sets[0], &sets[11], &scratch, &boundary[0], h));
+    @check(!sets[11].test(261) && sets[11].test(256) && sets[11].test(259));
+
+    // Named property stores read receiver/value, never their constant-pool C.
+    property[0] = bytecode::make_abc(Opcode.PUTPROPC, 0, 8, 4);
+    @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+        &sets[0], &sets[11], &scratch, &boundary[0], h));
+    @check(sets[11].test(0) && sets[11].test(8) && !sets[11].test(4));
+    wide_property[1] = bytecode::make_abc(Opcode.PUTPROPC, 0, 8, 4);
+    @check(compiler::moveelim_compute_decoded_liveness(&wide_property[0], wide_property.len,
+        &sets[0], &sets[11], &scratch, &boundary[0], h));
+    @check(sets[11].test(256) && sets[11].test(264) && !sets[11].test(260));
+
+    // Destination-only and unary operations must not import unused operand
+    // bytes as registers (especially stale r0 or a prior branch condition).
+    Opcode[] destination_ops = { Opcode.GETTHISC, Opcode.INC_VAR, Opcode.DEC_VAR,
+        Opcode.INC_GLOBAL, Opcode.DEC_GLOBAL, Opcode.NEWOBJ, Opcode.LDTHIS, Opcode.VOID };
+    foreach (op : destination_ops) {
+        property[0] = bytecode::make_abc(op, 5, 7, 11);
+        @check(compiler::bytecode_cfg_build(&decoded, &property[0], property.len, h));
+        uint primary;
+        @check(decoded.nodes[0].must_def(&primary) && primary == 5);
+        scratch.clear(); decoded.nodes[0].reads(&scratch);
+        @check(!scratch.test(0) && !scratch.test(5) && !scratch.test(7) && !scratch.test(11));
+        compiler::bytecode_cfg_free(&decoded);
+    }
+    Opcode[] unary_ops = { Opcode.UNP, Opcode.UNM, Opcode.BNOT, Opcode.LNOT, Opcode.TYPEOF, Opcode.GETPROTO, Opcode.TONUMERIC };
+    foreach (op : unary_ops) {
+        property[0] = bytecode::make_abc(op, 5, 7, 11);
+        @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+            &sets[0], &sets[11], &scratch, &boundary[0], h));
+        @check(sets[11].test(7) && !sets[11].test(5) && !sets[11].test(11) && !sets[11].test(0));
+    }
+    Opcode[] inplace_ops = { Opcode.INC, Opcode.INC_LT, Opcode.DEC, Opcode.TOPROPKEY, Opcode.TOSTR };
+    foreach (op : inplace_ops) {
+        property[0] = bytecode::make_abc(op, 5, 7, 11);
+        @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+            &sets[0], &sets[11], &scratch, &boundary[0], h));
+        @check(sets[11].test(5) && !sets[11].test(7) && !sets[11].test(11) && !sets[11].test(0));
+    }
+    // Calls read real windows and spread counts, never literal counts/keys or
+    // an overwritten result slot. Aliasing A with a genuine input remains live.
+    property[0] = bytecode::make_abc(Opcode.CALL, 5, 10, 2);
+    @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+        &sets[0], &sets[11], &scratch, &boundary[0], h));
+    @check(sets[11].test(10) && sets[11].test(11) && sets[11].test(12) && sets[11].test(13)
+        && !sets[11].test(2) && !sets[11].test(5));
+    property[0] = bytecode::make_abc(Opcode.CALL_UNDEF_THIS, 5, 10, 2);
+    @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+        &sets[0], &sets[11], &scratch, &boundary[0], h));
+    @check(sets[11].test(10) && !sets[11].test(11) && sets[11].test(12) && sets[11].test(13)
+        && !sets[11].test(2) && !sets[11].test(5));
+    Opcode[] fused_calls = { Opcode.CALL_VAR, Opcode.CALL_GLOBAL };
+    foreach (op : fused_calls) {
+        property[0] = bytecode::make_abc(op, 10, 2, 7);
+        @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+            &sets[0], &sets[11], &scratch, &boundary[0], h));
+        @check(sets[11].test(12) && sets[11].test(13) && !sets[11].test(10)
+            && !sets[11].test(11) && !sets[11].test(2) && !sets[11].test(7));
+    }
+    Opcode[] spread_calls = { Opcode.CALL_S, Opcode.SUPER_CALL_S };
+    foreach (op : spread_calls) {
+        property[0] = bytecode::make_abc(op, 5, 10, 3);
+        @check(compiler::moveelim_compute_decoded_liveness(&property[0], property.len,
+            &sets[0], &sets[11], &scratch, &boundary[0], h));
+        @check(sets[11].test(3) && sets[11].test(10) && sets[11].test(11) && sets[11].test(1023)
+            && !sets[11].test(5));
+    }
+    wide_property[0] = bytecode::make_wide(1, 1, 0);
+    wide_property[1] = bytecode::make_abc(Opcode.CALL, 5, 10, 2);
+    @check(compiler::moveelim_compute_decoded_liveness(&wide_property[0], wide_property.len,
+        &sets[0], &sets[11], &scratch, &boundary[0], h));
+    @check(sets[11].test(266) && sets[11].test(267) && sets[11].test(268) && sets[11].test(269)
+        && !sets[11].test(261) && !sets[11].test(2));
+
     // This edge targets the LDREG payload, not its prefix.
     code[1] = bytecode::make_a_sbx(Opcode.IF_FALSE, 44, 4);
     @check(!compiler::moveelim_compute_decoded_liveness(&code[0], code.len, &sets[0], &sets[11], &scratch, &boundary[0]));
@@ -304,8 +390,15 @@ fn void check_decoded_liveness(JsRuntime* runtime) {
     compiler::moveelim_compute_liveness(&narrow[0], narrow.len, &original[0], &original[5], true, &old_scratch);
     @check(compiler::moveelim_compute_decoded_liveness(&narrow[0], narrow.len, &sets[0], &sets[11], &scratch, &boundary[0]));
     for (uint i = 0; i < narrow.len; i++) {
-        @check(sets[i].equals(&original[i]) && sets[11 + i].equals(&original[5 + i]));
+        // The legacy RET reader conservatively marks unused B/C=0 as r0.
+        // Canonical semantics intentionally remove that false dependency.
+        for (uint reg = 1; reg < 1024; reg++) {
+            @check(sets[i].test(reg) == original[i].test(reg));
+            @check(sets[11 + i].test(reg) == original[5 + i].test(reg));
+        }
     }
+    @check(sets[11].test(0)); // The real LDREG source at function entry.
+    @check(sets[15].test(2) && !sets[15].test(0)); // RET only reads its A.
 }
 
 // A WIDE call has a register window, not individually remappable fields. A

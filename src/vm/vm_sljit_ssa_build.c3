@@ -25,39 +25,8 @@ fn bool ssa_continuation_live(SsaGraph* g, bool[LOOP_REGS]* exit_live) @feat(SLJ
     if (g.single_pass || cf.code_count > 512 || cf.num_regs >= compiler::BYTECODE_REGS_MAX
         || cf.flags.has_direct_eval || cf.mapped_arguments() || cf.flags.is_generator || cf.flags.is_async) return false;
     for (uint reg = 0; reg < LOOP_REGS; reg++) if (plan.slot_reg[reg] != (int)reg) return false;
-    bool declaration;
-    for (uint pc = 0; pc < cf.code_count; pc++) {
-        Opcode op = cf.code[pc].op;
-        if (op == Opcode.WIDE) {
-            return compiler::moveelim_wide_continuation(cf.code, cf.code_count, cf.num_regs,
-                plan.end + 1, g.heap, &ssa_wide_continuation_op, &(*exit_live)[0], LOOP_REGS);
-        }
-        if (!function_op(op) && !function_call_op(op)) {
-            if (op != Opcode.DECLVAR && op != Opcode.DECLVAR_HOIST) return false;
-            declaration = true;
-        }
-    }
-    if (declaration) return false;
-    uint count = cf.code_count;
-    uint word_count = (cf.num_regs + 32) / 32;
-    if (word_count < 2) word_count = 2;
-    usz set_bytes = (usz)count * 2 * compiler::RegSet::size;
-    usz word_bytes = ((usz)count * 2 + 1) * word_count * uint::size;
-    compiler::RegSet* sets = (compiler::RegSet*)g.heap.alloc_func(g.heap.heap_udata, set_bytes);
-    if (sets == null) return false;
-    defer g.heap.free_func(g.heap.heap_udata, sets);
-    uint* words = (uint*)g.heap.alloc_func(g.heap.heap_udata, word_bytes);
-    if (words == null) return false;
-    defer g.heap.free_func(g.heap.heap_udata, words);
-    for (uint i = 0; i < count * 2; i++) {
-        sets[i].words = words + (usz)i * word_count;
-        sets[i].word_count = word_count;
-    }
-    compiler::RegSet scratch = { .words = words + (usz)count * 2 * word_count, .word_count = word_count };
-    compiler::moveelim_compute_liveness(cf.code, count, sets, sets + count, true, &scratch);
-    compiler::RegSet* input = &sets[count + plan.end + 1];
-    for (uint reg = 0; reg < LOOP_REGS; reg++) (*exit_live)[reg] = input.test(reg);
-    return true;
+    return compiler::moveelim_decoded_continuation(cf.code, cf.code_count, cf.num_regs,
+        plan.end + 1, g.heap, &ssa_wide_continuation_op, &(*exit_live)[0], LOOP_REGS);
 }
 
 // Rename bytecode definitions into the analyzed SSA graph.
@@ -131,8 +100,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             g.phi[reg] = phi;
             g.values[phi].arg_reg = (int)reg;
             g.current[reg] = phi;
-        } else if ((g.cyclic && reg < cf.num_args) || (g.single_pass && (live_in[reg] || exit_live[reg])) || (!written[reg] && value_read[reg])) {
-            int arg = ssa_value(g, ARG, g.cyclic || (g.single_pass && !live_in[reg]) ? BOXED : g.rep[reg], -1, 0, 0);
+        } else if (g.recoverable || (g.cyclic && reg < cf.num_args) || (g.single_pass && (live_in[reg] || exit_live[reg])) || (!written[reg] && value_read[reg])) {
+            int arg = ssa_value(g, ARG, g.recoverable || g.cyclic || (g.single_pass && !live_in[reg]) ? BOXED : g.rep[reg], -1, 0, 0);
             g.values[arg].arg_reg = (int)reg;
             g.arg[reg] = arg;
             g.current[reg] = arg;
@@ -232,6 +201,10 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case RET:
                 case RETUNDEF:
                     {
+                        if (g.recoverable) {
+                            ssa_value(g, EXIT, BOXED, -1, -1, 0);
+                            continue;
+                        }
                         if (plan.ssa_function == null || !g.direct) return false;
                         int value = ins.op == Opcode.RET ? g.current[ins.a] : -1;
                         if (ins.op == Opcode.RET && value < 0) return false;
@@ -337,8 +310,11 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         }
                         TVal value = cf.constants[ins.get_bc()];
                         if (!value.is_fastint() && !value.is_number()) {
-                            g.failed = true;
-                            return false;
+                            if (!g.recoverable) return false;
+                            int constant = ssa_value(g, CONST_BOXED, BOXED, -1, 0, (long)loop_bits(value));
+                            ssa_result(g, constant, ins.a, pos);
+                            g.current[ins.a] = constant;
+                            break;
                         }
                         double number = value.get_number_or_fastint();
                         if (value.is_fastint()) {
@@ -368,6 +344,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 case CALL_GLOBAL:
                 case CALL_VAR:
                     {
+                        if (g.recoverable) {
+                            // Its successor is a fresh external entry importing
+                            // the real post-call result from the VM register.
+                            ssa_value(g, EXIT, BOXED, -1, -1, 0);
+                            break;
+                        }
                         int value = ssa_inline_call(g, ins, pos);
                         if (value < 0) return false;
                         g.current[ins.a] = value;
@@ -522,13 +504,32 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
     if (g.cyclic) {
         for (uint j = 0; j < g.join_count; j++) {
             SsaJoin* join = &g.joins[j];
+            if (join.entry) {
+                for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                    int phi = join.phi[reg];
+                    int incoming = join.entry_incoming[reg];
+                    if (phi >= 0 && incoming >= 0 && g.values[phi].rep == INT32 && g.values[incoming].rep == F64) {
+                        g.force_f64 |= 1UL << reg;
+                    }
+                }
+            }
             for (uint p = 0; p < join.pred_count; p++) {
                 for (uint reg = 0; reg < LOOP_REGS; reg++) {
-                    if (join.phi[reg] < 0 || join.incoming[p][reg] >= 0) continue;
-                    int incoming = g.block_exit[join.preds[p]][reg];
-                    if (incoming < 0) return false;
-                    join.incoming[p][reg] = incoming;
-                    ssa_use(g, incoming);
+                    int phi = join.phi[reg];
+                    if (phi < 0) continue;
+                    int incoming = join.incoming[p][reg];
+                    if (incoming < 0) {
+                        incoming = g.block_exit[join.preds[p]][reg];
+                        if (incoming < 0) return false;
+                        join.incoming[p][reg] = incoming;
+                        ssa_use(g, incoming);
+                    }
+                    // Cyclic headers are created before every predecessor is
+                    // available. A numeric-use guess must never narrow a real
+                    // double producer; rebuild until these representations agree.
+                    if (g.values[phi].rep == INT32 && g.values[incoming].rep == F64) {
+                        g.force_f64 |= 1UL << reg;
+                    }
                 }
             }
         }

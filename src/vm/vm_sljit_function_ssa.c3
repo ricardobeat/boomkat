@@ -11,6 +11,57 @@ import std::io;
 // loop SSA. Pure regions use a shared-register entry when no binding snapshot
 // preparation is needed: guards can
 // restart the untouched baseline frame, and only the result is published.
+// A published frame is the authority for ownership and exception state.
+// Native effects commit in bytecode order; every refusal publishes the frame
+// before the next unperformed operation rather than replaying the function.
+fn LoopPlan* sljit_function_ssa_recoverable_compile(CompiledFunction* cf, ColdCtx* cold) @feat(SLJIT) {
+    if (cf.num_regs > LOOP_REGS || cf.code_count > SSA_SPAN || cf.code_count < 4
+        || cf.is_class_ctor()
+        || (cf.code[cf.code_count - 1].op != Opcode.RET
+            && cf.code[cf.code_count - 1].op != Opcode.RETUNDEF)) return null;
+    bool effect, cyclic;
+    for (uint pc = 0; pc < cf.code_count; pc++) {
+        Opcode op = cf.code[pc].op;
+        if (op == Opcode.PUTPROP || op == Opcode.PUTPROPC || op == Opcode.PUTTHISC) effect = true;
+        int target = loop_target(cf.code[pc], pc);
+        if (target >= 0 && target <= (int)pc) cyclic = true;
+    }
+    if (!effect || !cyclic) return null;
+    LoopPlan draft;
+    draft.ssa_recoverable = true;
+    draft.ssa_function = cf;
+    if (!loop_analyze(&draft, cf.code_count - 1, cold.act.bottom, cold, 0, true, cf, true)) {
+        $if $feat(SLJIT_STATS): io::eprintfn("SLJIT recoverable reject name=%s stage=analysis", (String)cf.get_name()); $endif
+        return null;
+    }
+    for (uint i = 0; i < draft.memory_count; i++) {
+        LoopMemorySpec spec = draft.memory[i];
+        // Prototype reads need dependency tracking across observable writes.
+        // Calls and exotic reads instead leave to the ordinary interpreter.
+        if (spec.kind == PROTO_FIELD || spec.kind == ASCII || spec.kind == INTRINSIC) return null;
+        if (spec.kind == FIELD || spec.kind == SHAPE_FIELD) draft.ssa_fields = true;
+    }
+    draft.ssa_shape_epoch = cold.heap.shape_recycle_epoch;
+    foreach (&cache : draft.cache) *cache = 0;
+    foreach (&cache : draft.float_cache) *cache = 0;
+    draft.canonical = 0;
+    draft.native = ssa_region_emit(&draft, cf, cold.heap);
+    if (draft.native == null) {
+        $if $feat(SLJIT_STATS): io::eprintfn("SLJIT recoverable reject name=%s stage=emission", (String)cf.get_name()); $endif
+        return null;
+    }
+    LoopPlan* plan = cold.heap.alloc_func(cold.heap.heap_udata, LoopPlan::size);
+    if (plan == null) {
+        jit::sljit_free_code((void*)draft.native, null);
+        return null;
+    }
+    *plan = draft;
+    $if $feat(SLJIT_STATS):
+        io::eprintfn("SLJIT recoverable SSA line=%d begin=%d end=%d bytes=%d", cf.get_line(0), plan.begin, plan.end, plan.code_bytes);
+    $endif
+    return plan;
+}
+
 fn LoopPlan* sljit_function_ssa_compile(CompiledFunction* cf, ColdCtx* cold) @feat(SLJIT) {
     if (cf.num_regs > LOOP_REGS || cf.code_count > SSA_SPAN || cf.code_count < 9) return null;
     for (uint pc = 0; pc < cf.code_count; pc++) {
@@ -84,6 +135,7 @@ fn bool sljit_function_ssa_live(Heap* h, LoopPlan* plan) @feat(SLJIT) {
     if (plan.ssa_fields && plan.ssa_shape_epoch != h.shape_recycle_epoch) {
         for (uint memory = 0; memory < plan.memory_count; memory++) {
             LoopMemorySpec spec = plan.memory[memory];
+            if (plan.ssa_recoverable && spec.kind != FIELD && spec.kind != SHAPE_FIELD && spec.kind != PROTO_FIELD) continue;
             if (!ssa_memory_layout_live(h, &spec)) {
                 plan.ssa_invalid = true;
                 jit::sljit_set_const(plan.ssa_epoch_patch, jit::SLJIT_MOV, 1L << 32, plan.ssa_executable_offset);
@@ -120,32 +172,42 @@ fn void sljit_function_ssa_refresh(Heap* h) @feat(SLJIT) {
 
 // Return null on normal completion, or the exact interpreter replay PC after
 // a failed guard. There are no allocations or observable helper calls here.
-fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan) @feat(SLJIT) {
+fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRun* run = null, uint resume_pc = 0) @feat(SLJIT) {
     CompiledFunction* cf = cold.vm.current_func;
     TVal* regs           = cold.act.bottom;
-    if (!sljit_function_ssa_live(cold.heap, plan)) return cf.code;
+    Instruction* entry_pc = cf.code + resume_pc;
+    if (!sljit_function_ssa_live(cold.heap, plan)) return entry_pc;
     // Prologue arguments and every defined spill are written before use.
     // Exits publish a fresh dirty mask; untouched interpreter slots stay owned
     // by the original frame, so no blanket scratch clear/copy is necessary.
     LoopState state @noinit;
-    if (plan.ssa_fields) {
-        state.receiver = cold.act.this_binding;
-        state.shape_epoch = cold.heap.shape_recycle_epoch;
-    }
+    state.receiver = cold.act.this_binding;
+    state.shape_epoch = cold.heap.shape_recycle_epoch;
+    state.resume_pc = resume_pc;
+    state.dirty = 0;
+    state.budget = plan.ssa_recoverable && run != null ? run.budget : 1;
     for (uint i = 0; i < cf.num_regs; i++) {
-        if ((plan.ssa_inputs & (1UL << i)) != 0) state.values[i] = regs[i];
+        if (plan.ssa_recoverable || (plan.ssa_inputs & (1UL << i)) != 0) state.values[i] = regs[i];
     }
-    if (plan.binding_count != 0 && !loop_prepare(plan, &state, cold, plan.ssa_fields)) return cf.code;
+    if ((plan.ssa_recoverable || plan.binding_count != 0)
+        && !loop_prepare(plan, &state, cold, plan.ssa_fields)) return entry_pc;
     cold.heap.jit_native_active++;
-    uint resume = plan.native(&state, 1);
+    long budget = plan.ssa_recoverable && run != null ? run.budget : 1;
+    uint resume = plan.native(&state, budget);
     cold.heap.jit_native_active--;
+    if (plan.ssa_recoverable && run != null) run.budget = state.budget;
     sljit_publish_state(cold, regs, &state, cf.num_regs, plan);
     plan.hits++;
     $if $feat(SLJIT_STATS):
-        if (resume == plan.end + 1) { plan.ssa_completed++; }
+        if (resume == plan.end + 1 || (plan.ssa_recoverable && resume < cf.code_count
+            && (cf.code[resume].op == Opcode.RET || cf.code[resume].op == Opcode.RETUNDEF))) { plan.ssa_completed++; }
         else if (resume == plan.begin) { plan.ssa_entry_misses++; }
         else { plan.ssa_body_misses++; }
     $endif
+    if (plan.ssa_recoverable) {
+        cold.act.curr_pc = cf.code + resume;
+        return cf.code + resume;
+    }
     return resume == plan.end + 1 ? null : cf.code + resume;
 }
 // R0 carries the result across these counters.
@@ -158,11 +220,12 @@ fn void ssa_counter(TemplateEmitter* e, ulong* counter) @feat(SLJIT) {
     e.mov(jit::SLJIT_MEM | r1, 0, r2, 0);
 }
 
-fn void FunctionEmitter.ssa_entry(&self) @feat(SLJIT) {
+fn void FunctionEmitter.ssa_entry(&self, uint entry_pc = 0) @feat(SLJIT) {
     FunctionPlan* plan = self.plan;
     CompiledFunction* cf = self.cf;
     TemplateEmitter* e = &self.out.e;
     LoopEmitter* out = &self.out;
+    if (plan.ssa_region.ssa_recoverable) self.flow_materialize();
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);
     int mem = jit::SLJIT_MEM;
@@ -191,8 +254,31 @@ fn void FunctionEmitter.ssa_entry(&self) @feat(SLJIT) {
     } else {
         e.mov(r0, 0, jit::reg_s(1), 0);
         e.mov(r1, 0, imm, (long)plan.ssa_region);
-        if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
+        e.mov(jit::reg_r(2), 0, jit::reg_s(2), 0);
+        e.mov(jit::reg_r(3), 0, imm, entry_pc);
+        if (jit::sljit_emit_icall(e.compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS4WWWW,
                 imm, (long)&sljit_function_ssa_run) != 0) e.failed = true;
+        if (plan.ssa_region.ssa_recoverable) {
+            // A normal return and a pending call can use the native baseline
+            // with the fully published VM slots. Keep every FP lane canonical
+            // before jumping to its bytecode label.
+            for (uint pc = 0; pc < cf.code_count; pc++) {
+                if (pc == entry_pc) continue;
+                Opcode op = cf.code[pc].op;
+                if (op != Opcode.RET && op != Opcode.RETUNDEF && !function_call_op(op)) continue;
+                void* other = e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)(cf.code + pc));
+                self.flow_reload(pc);
+                out.link(jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP), pc, false);
+                e.bind(other);
+            }
+            // Entry refusal continues after this hook, avoiding recursion into
+            // the same SSA entry. Every other guard leaves at its precise PC.
+            void* entry_refused = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, (long)(cf.code + entry_pc));
+            if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;
+            e.bind(entry_refused);
+            self.flow_reload(entry_pc);
+            return;
+        }
         void* completed = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, 0);
         void* refused = e.cmp(jit::SLJIT_EQUAL, r0, 0, imm, (long)cf.code);
         if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) e.failed = true;

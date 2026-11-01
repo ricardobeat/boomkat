@@ -39,6 +39,7 @@ struct SsaEmitter @feat(SLJIT) {
     int addr_value;
     int addr_reg;
     bool addr_numeric_load;
+    bool entry_copy;
     // The label of each block, and the jumps that reach them.
     void*[SSA_BLOCKS] block_label;
     void*[64] pending_jump;
@@ -130,10 +131,10 @@ fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int[LOOP_REGS]* re
         foreach (&reg : item.regs) *reg = -1;
     }
 }
-fn void SsaEmitter.snapshot_none(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc);
+fn void SsaEmitter.snapshot_none(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, self.g.recoverable ? SSA_ENTRY_BAIL : pc);
 fn void SsaEmitter.snapshot_phis(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc, &self.g.phi);
 fn void SsaEmitter.snapshot(&self, void* jump, uint pc) @feat(SLJIT) {
-    if (self.g.direct) { self.snapshot_none(jump, self.plan.begin); }
+    if (self.g.direct || self.entry_copy) { self.snapshot_none(jump, self.plan.begin); }
     else { self.snapshot_frame(jump, pc, &self.g.frames[pc - self.plan.begin]); }
 }
 fn void SsaEmitter.guard(&self, int condition, int left, long lw, int right, long rw, uint pc) @feat(SLJIT) {
@@ -250,7 +251,7 @@ fn void SsaEmitter.header_guards(&self) @feat(SLJIT) {
         // at each access. They have no invocation-local source to compare.
         if (self.plan.memory[memory].kind == SHAPE_FIELD || !self.g.invariant[memory]) continue;
         uint source = self.plan.memory[memory].source;
-        if (self.g.single_pass && self.plan.ssa_fields) {
+        if (self.g.single_pass && self.plan.ssa_fields && !self.g.recoverable) {
             if (self.plan.memory[memory].kind == SHAPE_FIELD) continue;
             self.field_entry(memory);
         }
@@ -339,7 +340,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case PHI: break;
                 case RECEIVER:
                     {
-                        if (self.g.callee_entry) { self.e.mov(r0, 0, jit::reg_s(3), 0); }
+                        if (self.g.recoverable) {
+                            self.e.mov(r0, 0, mem | self.state, $reflect(LoopState.receiver).offset);
+                        } else if (self.g.callee_entry) { self.e.mov(r0, 0, jit::reg_s(3), 0); }
                         else { self.e.mov(r0, 0, jit::SLJIT_MEM | self.regs, loop_value_offset(self.g.inline_base + 1)); }
                         self.store_gpr((int)i, r0);
                         break;
@@ -694,6 +697,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case BRANCH: self.branch((int)i); break;
                 case GOTO: self.goto_block((int)i); break;
                 case RETURN: self.direct_return(v.a); break;
+                case EXIT:
+                    self.publish(&self.g.frames[self.pc - self.plan.begin], self.pc);
+                    break;
             }
             if (v.dst_reg >= 0) self.live[v.dst_reg] = (int)i;
         }
@@ -764,7 +770,7 @@ fn void SsaEmitter.copy_phi(&self, int phi, int incoming) @feat(SLJIT) {
         int dst = pv.home != 0 ? pv.home : r0;
         if (sv.rep == F64) {
             self.load_fpr(incoming, 1);
-            self.trunc_int_f64(1, dst, self.pc);
+            self.exact_int_f64(1, dst, self.pc);
         } else {
             self.gpr(incoming, r0);
             self.exact_int(r0, dst, self.pc);
@@ -772,6 +778,69 @@ fn void SsaEmitter.copy_phi(&self, int phi, int incoming) @feat(SLJIT) {
         if (pv.home == 0) self.store_gpr(phi, dst);
     }
 }
+
+// Inline SSA has packed invocation scratch rather than a complete LoopState.
+// Dense temporary indices are bounded by ssa_edge_copy_temps during preparation.
+fn long SsaEmitter.edge_offset(&self, uint slot) @feat(SLJIT) => self.g.inplace
+    ? self.spill_offset(self.g.spill_count + slot)
+    : $reflect(LoopState.ssa_edge).offset + (long)slot * double::size;
+
+// A conversion can refuse, and a later edge may read the previous value of
+// the same loop phi. Stage every destination before committing any phi home:
+// neither the conversion guards nor source permutations may see a partial edge.
+fn void SsaEmitter.stage_phi(&self, int phi, int incoming, uint slot) @feat(SLJIT) {
+    SsaValue pv = self.g.values[phi];
+    SsaValue sv = self.g.values[incoming];
+    int r0 = jit::reg_r(0);
+    long offset = self.edge_offset(slot);
+    if (pv.rep == F64) {
+        if (sv.rep == F64) { self.load_fpr(incoming, 1); }
+        else if (sv.rep == INT32) {
+            self.gpr(incoming, r0);
+            if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_CONV_F64_FROM_SW, 1, 0, r0, 0) != 0) self.e.failed = true;
+        } else {
+            self.gpr(incoming, r0);
+            self.number(r0, 1, self.pc);
+        }
+        if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64,
+            jit::SLJIT_MEM | self.state, offset, 1, 0) != 0) self.e.failed = true;
+        return;
+    }
+    if (pv.rep == BOXED) {
+        if (sv.rep == F64) {
+            self.load_fpr(incoming, 1);
+            self.bits_fpr(1, r0);
+        } else {
+            self.gpr(incoming, r0);
+            if (sv.rep == INT32) self.box_gpr(r0);
+        }
+    } else if (sv.rep == F64) {
+        self.load_fpr(incoming, 1);
+        self.exact_int_f64(1, r0, self.pc);
+    } else {
+        self.gpr(incoming, r0);
+        if (sv.rep != INT32) self.exact_int(r0, r0, self.pc);
+    }
+    self.e.mov(jit::SLJIT_MEM | self.state, offset, r0, 0);
+}
+
+fn void SsaEmitter.commit_phi(&self, int phi, uint slot) @feat(SLJIT) {
+    long offset = self.edge_offset(slot);
+    if (self.g.values[phi].rep == F64) {
+        if (jit::sljit_emit_fop1(self.e.compiler, jit::SLJIT_MOV_F64, 1, 0,
+            jit::SLJIT_MEM | self.state, offset) != 0) self.e.failed = true;
+        self.store_fpr(phi, 1);
+    } else {
+        self.e.mov(jit::reg_r(0), 0, jit::SLJIT_MEM | self.state, offset);
+        self.store_gpr(phi, jit::reg_r(0));
+    }
+}
+
+// Sequential copies are safe when none can refuse and no destination
+// overwrites any still-needed source. Compare actual allocated locations, so
+// the fast path is valid for the CFG and legacy interval allocators alike.
+fn bool SsaEmitter.phi_staging(&self, SsaJoin* join, int[LOOP_REGS]* incoming) @feat(SLJIT)
+    => ssa_phi_staging(self.g, join, incoming);
 
 // Copy the values a join merges into the phi's home. Each predecessor
 // writes the home before it arrives, so the path that reaches the join
@@ -783,12 +852,21 @@ fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
         if (join.block != succ) continue;
         for (uint p = 0; p < join.pred_count; p++) {
             if (join.preds[p] != block) continue;
+            bool staged = self.g.cyclic && self.phi_staging(join, &join.incoming[p]);
+            uint slot;
             for (uint reg = 0; reg < LOOP_REGS; reg++) {
                 int phi = join.phi[reg];
                 if (phi < 0) continue;
                 int incoming = join.incoming[p][reg];
                 if (incoming < 0) { self.e.failed = true; return; }
-                self.copy_phi(phi, incoming);
+                if (staged) { self.stage_phi(phi, incoming, slot++); }
+                else { self.copy_phi(phi, incoming); }
+            }
+            if (staged) {
+                slot = 0;
+                for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                    if (join.phi[reg] >= 0) self.commit_phi(join.phi[reg], slot++);
+                }
             }
         }
     }
@@ -796,19 +874,29 @@ fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
 
 // A loop header at the body's entry receives its first values from the
 // function's entry state rather than a bytecode predecessor.
-fn void SsaEmitter.entry_copies(&self) @feat(SLJIT) {
+fn void SsaEmitter.entry_copies(&self, uint entry_block = 0) @feat(SLJIT) {
     uint saved = self.pc;
-    self.pc = self.plan.begin;
-    defer self.pc = saved;
+    self.pc = self.g.blocks[entry_block].begin;
+    self.entry_copy = true;
+    defer { self.pc = saved; self.entry_copy = false; }
     for (uint j = 0; j < self.g.join_count; j++) {
         SsaJoin* join = &self.g.joins[j];
-        if (!join.entry) continue;
+        if (!join.entry || join.block != entry_block) continue;
+        bool staged = self.g.cyclic && self.phi_staging(join, &join.entry_incoming);
+        uint slot;
         for (uint reg = 0; reg < LOOP_REGS; reg++) {
             int phi = join.phi[reg];
             if (phi < 0) continue;
             int incoming = join.entry_incoming[reg];
             if (incoming < 0) { self.e.failed = true; return; }
-            self.copy_phi(phi, incoming);
+            if (staged) { self.stage_phi(phi, incoming, slot++); }
+            else { self.copy_phi(phi, incoming); }
+        }
+        if (staged) {
+            slot = 0;
+            for (uint reg = 0; reg < LOOP_REGS; reg++) {
+                if (join.phi[reg] >= 0) self.commit_phi(join.phi[reg], slot++);
+            }
         }
     }
 }
@@ -929,9 +1017,9 @@ fn void SsaEmitter.goto_block(&self, int value) @feat(SLJIT) {
     self.pending_count++;
 }
 
-// Spend one iteration of the enclosing run budget at every backedge. A
-// cyclic body is pure, so refusing here replays it from the start in the
-// interpreter without duplicating an effect.
+// Spend one iteration of the enclosing run budget at every backedge. Direct
+// pure callees may replay; published regions resume this precise branch with
+// all completed effects and current loop counters preserved.
 fn void SsaEmitter.cyclic_poll(&self) @feat(SLJIT) {
     int r0 = jit::reg_r(0);
     if (self.g.callee_entry) {
@@ -967,6 +1055,9 @@ fn void SsaEmitter.exact_int_f64(&self, int freg, int dst, uint pc) @feat(SLJIT)
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);
     self.float_guard(jit::SLJIT_UNORDERED, freg, 0, freg, 0, pc);
+    // Integer homes cannot preserve the sign of zero, including on phi edges.
+    if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_FROM_F64, freg, r1) != 0) self.e.failed = true;
+    self.guard(jit::SLJIT_EQUAL, r1, 0, jit::SLJIT_IMM, (long)bitcast(-0.0, ulong), pc);
     self.e.mov(r1, 0, jit::SLJIT_IMM, (long)bitcast(-2147483648.0, ulong));
     if (jit::sljit_emit_fcopy(self.e.compiler, jit::SLJIT_COPY_TO_F64, 2, r1) != 0) self.e.failed = true;
     self.float_guard(jit::SLJIT_ORDERED_LESS, freg, 0, 2, 0, pc);
@@ -1077,10 +1168,17 @@ fn void SsaEmitter.load(&self, uint memory, int index, int dst_value, SsaRep rep
         }
         if (spec.integers) {
             self.e.mov(r0, 0, jit::SLJIT_MEM | r1, offset);
-            self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
-            self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
             int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : r0;
-            self.unbox_fastint(r0, dst, pc);
+            if (self.g.recoverable) {
+                // Earlier numeric stores or a completed call can replace a
+                // fastint with an equal double. Keep that representation change
+                // inside the same graph while rejecting lossy int32 values.
+                self.exact_int(r0, dst, pc);
+            } else {
+                self.e.op(jit::SLJIT_LSHR, r3, r0, 0, jit::SLJIT_IMM, 48);
+                self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, jit::SLJIT_IMM, (long)types::TAG_FASTINT, pc);
+                self.unbox_fastint(r0, dst, pc);
+            }
             if (self.g.values[dst_value].home == 0) self.store_gpr(dst_value, dst);
         } else if (spec.doubles) {
             int dst = self.g.values[dst_value].home != 0 ? self.g.values[dst_value].home : 1;
@@ -1283,7 +1381,11 @@ fn void SsaEmitter.publish(&self, int[LOOP_REGS]* regs, uint pc) @feat(SLJIT) {
     }
     self.e.mov(jit::SLJIT_MEM | self.state, (char*)&layout.dirty - (char*)&layout, jit::SLJIT_IMM, (long)dirty);
     self.e.mov(jit::SLJIT_MEM | self.state, (char*)&layout.budget - (char*)&layout, self.budget, 0);
-    self.e.mov(r0, 0, jit::SLJIT_IMM, (long)pc);
+    if (pc == SSA_ENTRY_BAIL) {
+        self.e.mov(r0, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.resume_pc).offset, jit::SLJIT_MOV_U32);
+    } else {
+        self.e.mov(r0, 0, jit::SLJIT_IMM, (long)pc);
+    }
     if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
 }
 fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {

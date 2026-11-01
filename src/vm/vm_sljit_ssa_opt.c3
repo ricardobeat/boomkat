@@ -17,63 +17,46 @@ import std::io;
 // objects. Forward graphs use the existing single sweep; a general graph
 // needs a fixed point and must ignore unreachable predecessors.
 fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
-    bool forward = true;
-    for (uint b = 1; b < g.block_count; b++) {
-        for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-            if (g.blocks[b].preds[p] >= b) forward = false;
-        }
-    }
-    if (!forward) {
-        uint reachable = 1;
-        bool changed = true;
-        while (changed) {
-            changed = false;
-            for (uint b = 1; b < g.block_count; b++) {
-                if ((reachable & (1U << b)) != 0) continue;
-                for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-                    if ((reachable & (1U << g.blocks[b].preds[p])) != 0) {
-                        reachable |= 1U << b;
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-        }
-        for (uint b = 0; b < g.block_count; b++) {
-            g.dominators[b] = b == 0 || (reachable & (1U << b)) == 0 ? 1U << b : reachable;
-        }
-        changed = true;
-        while (changed) {
-            changed = false;
-            for (uint b = 1; b < g.block_count; b++) {
-                if ((reachable & (1U << b)) == 0) continue;
-                uint mask = reachable;
-                for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-                    uint pred = g.blocks[b].preds[p];
-                    if ((reachable & (1U << pred)) != 0) mask &= g.dominators[pred];
-                }
-                mask |= 1U << b;
-                if (mask != g.dominators[b]) {
-                    g.dominators[b] = mask;
-                    changed = true;
-                }
-            }
-        }
-        return;
-    }
+    // Native call successors can enter directly from a fresh interpreter
+    // frame. A synthetic common root reaches every such external entry;
+    // therefore none of their pre-call blocks dominates them.
     uint reachable = 1;
     for (uint b = 0; b < g.block_count; b++) {
-        uint mask = uint::max;
-        bool has_reachable_pred;
-        if (b != 0) for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-            uint pred = g.blocks[b].preds[p];
-            if ((reachable & (1U << pred)) == 0) continue;
-            has_reachable_pred = true;
-            mask &= g.dominators[pred];
+        if (g.blocks[b].external) reachable |= 1U << b;
+    }
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (uint b = 1; b < g.block_count; b++) {
+            if ((reachable & (1U << b)) != 0) continue;
+            for (uint p = 0; p < g.blocks[b].pred_count; p++) {
+                if ((reachable & (1U << g.blocks[b].preds[p])) == 0) continue;
+                reachable |= 1U << b;
+                changed = true;
+                break;
+            }
         }
-        if (has_reachable_pred) { reachable |= 1U << b; }
-        else { mask = 0; }
-        g.dominators[b] = mask | (1U << b);
+    }
+    for (uint b = 0; b < g.block_count; b++) {
+        bool root = b == 0 || g.blocks[b].external;
+        g.dominators[b] = root || (reachable & (1U << b)) == 0 ? 1U << b : reachable;
+    }
+    changed = true;
+    while (changed) {
+        changed = false;
+        for (uint b = 1; b < g.block_count; b++) {
+            if (g.blocks[b].external || (reachable & (1U << b)) == 0) continue;
+            uint mask = reachable;
+            for (uint p = 0; p < g.blocks[b].pred_count; p++) {
+                uint pred = g.blocks[b].preds[p];
+                if ((reachable & (1U << pred)) != 0) mask &= g.dominators[pred];
+            }
+            mask |= 1U << b;
+            if (mask != g.dominators[b]) {
+                g.dominators[b] = mask;
+                changed = true;
+            }
+        }
     }
 }
 
@@ -263,7 +246,7 @@ fn int ssa_alias(SsaGraph* g, int value) @feat(SLJIT) {
     while (value >= 0 && guard++ < SSA_MAX_VALUES && g.values[value].op == COPY) value = g.values[value].a;
     return value;
 }
-fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+fn void ssa_allocate_linear(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < g.value_count; i++) {
         SsaValue* value = &g.values[i];
         if ((value.op == CONST_I || value.op == CONST_F) && value.last == value.def) value.op = NOP;
@@ -385,4 +368,15 @@ fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
         g.values[i].home = g.values[root].home;
         g.values[i].spill = g.values[root].spill;
     }
+}
+
+// General cyclic graphs require CFG liveness; flat definition stamps are not
+// live ranges across a backedge. Keep the established acyclic allocation.
+fn void ssa_allocate(SsaGraph* g) @feat(SLJIT) {
+    if (g.cyclic && !$feat(SLJIT_NO_CFG_ALLOCATION)) { ssa_allocate_cfg(g); }
+    else { ssa_allocate_linear(g); }
+    $if $feat(SLJIT_STATS):
+        if (g.cyclic) io::eprintfn("SLJIT cyclic allocation line=%d values=%d joins=%d spills=%d cfg=%d",
+            g.cf.get_line(0), g.value_count, g.join_count, g.spill_count, !$feat(SLJIT_NO_CFG_ALLOCATION));
+    $endif
 }

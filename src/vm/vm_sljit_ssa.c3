@@ -26,7 +26,8 @@ fn bool ssa_region_supported(LoopPlan* plan, CompiledFunction* cf, Heap* h) @fea
     )) return false;
     for (uint pc = plan.begin; pc <= plan.end; pc++) {
         int target = loop_target(cf.code[pc], pc);
-        if (target >= 0 && (target <= (int)pc || target > (int)plan.end)) return false;
+        if (target >= 0 && ((!plan.ssa_recoverable && target <= (int)pc)
+            || target < (int)plan.begin || target > (int)plan.end)) return false;
     }
     return true;
 }
@@ -49,12 +50,13 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     graph.cf = cf;
     graph.heap = h;
     graph.single_pass = single_pass;
+    graph.recoverable = plan.ssa_recoverable;
     graph.direct = direct;
     graph.result_reg = direct ? cf.code[plan.ssa_function != null ? plan.end : plan.end + 1].a : 0;
     if (plan.ssa_function != null) graph.result_reg = LOOP_REGS;
     graph.registers = ssa_register_budget(direct);
     graph.inplace = parent != null;
-    graph.direct_fields = parent != null && !$feat(SLJIT_NO_SSA_FIELD_IR);
+    graph.direct_fields = (parent != null || graph.recoverable) && !$feat(SLJIT_NO_SSA_FIELD_IR);
     graph.callee_entry = callee_entry;
     if (SSA_CYCLIC) for (uint pc = plan.begin; pc <= plan.end; pc++) {
         int to = loop_target(cf.code[pc], pc);
@@ -62,14 +64,18 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
         // A frameless callee compiles its whole body, so any backedge makes
         // the graph cyclic. A loop region keeps its outer latch separate and
         // only becomes cyclic for a nested loop inside the body.
-        if (callee_entry) { graph.cyclic = true; }
+        if (callee_entry || graph.recoverable) { graph.cyclic = true; }
         else if (SSA_CYCLIC_REGIONS && !single_pass && pc < plan.end && to > (int)plan.begin) { graph.cyclic = true; }
     }
     graph.inline_base = inline_base;
     graph.inline_depth = inline_depth;
     graph.fpr_homes = parent != null ? 4 : SSA_HOMES;
     if (parent != null) {
-        graph.registers.scratch_homes = graph.direct_fields ? 3 : 2;
+        graph.registers.scratches = (uint)jit::scratch_register_count(6);
+        graph.registers.saveds = 6;
+        // R0..R3 are emitter temporaries. Non-field regions also reserve R6
+        // for their LoopState; their contiguous homes stop before that slot.
+        graph.registers.scratch_homes = graph.direct_fields ? graph.registers.scratches - 4 : 2;
         graph.registers.saved_homes = 0;
     }
     graph.force_f64 = forced;
@@ -94,22 +100,34 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         $if $feat(SLJIT_STATS): if (callee_entry) io::eprintfn("SLJIT SSA entry reject line=%d stage=build pc=%d", cf.get_line(0), graph.current_pc); $endif
         return null;
     }
-    // A register can gain a double representation only after its definitions
-    // are built, so rebuild the graph when the first pass asks for one.
-    for (uint round = 0; round < 3 && graph.force_f64 != 0; round++) {
-        ulong forced = graph.force_f64;
+    // Backedges can reveal a wider input after a header has been built.
+    // Widening is monotone: each rebuilding round adds at least one of the
+    // bounded register bits. Emit only after those representations converge.
+    ulong forced;
+    uint rounds;
+    while (graph.force_f64 != forced) {
+        if (rounds++ == LOOP_REGS || (graph.force_f64 & forced) != forced) return null;
+        forced = graph.force_f64;
         ssa_configure(graph, plan, cf, h, single_pass, direct, parent, inline_base, inline_depth, callee_entry, forced);
         if (!ssa_build(graph)) return null;
-        if (graph.force_f64 == forced) break;
     }
     if (single_pass) {
         for (uint memory = 0; memory < plan.memory_count; memory++) {
             LoopMemorySpec spec = plan.memory[memory];
+            if (graph.recoverable) {
+                if ((spec.kind == FIELD || spec.kind == SHAPE_FIELD || spec.kind == PROTO_FIELD)
+                    && !ssa_memory_layout_live(h, &spec)) return null;
+                continue;
+            }
             if (spec.kind != FIELD && spec.kind != SHAPE_FIELD && !(graph.direct_fields && spec.kind == PROTO_FIELD)) return null;
             if (spec.kind == FIELD && !graph.invariant[memory]) return null;
             if (!ssa_memory_layout_live(h, &spec) || (spec.written && !plan.ssa_commit)) return null;
         }
-        plan.ssa_fields = plan.memory_count != 0;
+        plan.ssa_fields = false;
+        for (uint memory = 0; memory < plan.memory_count; memory++) {
+            LoopMemoryKind kind = plan.memory[memory].kind;
+            if (kind == FIELD || kind == SHAPE_FIELD || kind == PROTO_FIELD) plan.ssa_fields = true;
+        }
         plan.ssa_inputs = 0;
         for (uint reg = 0; reg < cf.num_regs; reg++) {
             if (graph.arg[reg] >= 0) plan.ssa_inputs |= 1UL << reg;
@@ -120,11 +138,14 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         }
     }
     ssa_dominators(graph);
-    if (!graph.cyclic) {
+    if ((graph.cyclic || graph.recoverable) && !$feat(SLJIT_NO_CFG_OPT)) {
+        ssa_optimize_cfg(graph);
+        ssa_numeric_loads(graph);
+    } else if (!graph.cyclic && !graph.recoverable) {
         ssa_invariant_cse(graph);
         ssa_cse(graph);
         ssa_numeric_loads(graph);
-        ssa_function_liveness(graph);
+        if (!graph.recoverable) ssa_function_liveness(graph);
     }
     // Only method reads replaced by a watched call proof may lose their
     // faulting load and its chain walk. Other guarded reads stay observable.
@@ -148,10 +169,14 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     if (graph.failed) return null;
     uint phi_count;
     for (uint reg = 0; reg < cf.num_regs && reg < LOOP_REGS; reg++) if (graph.phi[reg] >= 0) phi_count++;
-    if (graph.spill_count + phi_count + 2 > SSA_MAX_SPILL) return null;
+    // The latch and JOIN edges use these temporary slots at different times.
+    // Packed in-place state has no LoopState.ssa_edge array of its own.
+    uint copy_temps = ssa_edge_copy_temps(graph);
+    if (copy_temps < phi_count) copy_temps = phi_count;
+    if (graph.spill_count + copy_temps + 2 > SSA_MAX_SPILL) return null;
     uint scratch_window = inline_depth == 0 ? 0 : inline_depth + 1;
     if (parent != null && ((usz)plan.memory_count * LoopMemory::size + (usz)plan.binding_count * TVal::size
-        + (usz)(graph.spill_count + phi_count + 2) * double::size > (usz)(INLINE_DEPTH - scratch_window) * 32 * double::size)) return null;
+        + (usz)(graph.spill_count + copy_temps + 2) * double::size > (usz)(INLINE_DEPTH - scratch_window) * 32 * double::size)) return null;
     prepared = true;
     return graph;
 }
@@ -207,13 +232,13 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
         0
     ) != 0) return null;
     int r0 = jit::reg_r(0);
-    self.state = graph.direct_fields ? jit::reg_s(2) : parent != null ? jit::reg_r(6) : jit::reg_s(direct ? 5 : 0);
+    self.state = graph.direct_fields && parent != null ? jit::reg_s(2) : parent != null ? jit::reg_r(6) : jit::reg_s(direct ? 5 : 0);
     self.regs = jit::reg_s(parent != null && inline_depth != 0 ? 5 : 0);
     self.budget = jit::reg_s(1);
     self.run = jit::reg_s(2);
     self.at_def = 0;
     for (uint i = 0; i < LOOP_REGS; i++) self.live[i] = graph.header[i];
-    if (graph.direct_fields) {
+    if (graph.direct_fields && parent != null) {
         // Address spills from the shared run directly, freeing R6 for values.
         self.state_bias = function_inline_offset(scratch_window * 32);
     } else if (parent != null) {
@@ -243,7 +268,24 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
     for (uint i = (uint)saved_count; i < graph.exit_count; i++) {
         for (uint reg = 0; reg < LOOP_REGS; reg++) graph.exits[i].regs[reg] = -1;
     }
-    self.entry_copies();
+    if (graph.recoverable) {
+        // Each VM continuation imports a fresh frame. The shared body has a
+        // synthetic predecessor at these blocks; no pre-call register or
+        // memory proof survives entry through this dispatch.
+        for (uint block = 0; block < graph.block_count; block++) {
+            if (!graph.blocks[block].external) continue;
+            e.mov(r0, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.resume_pc).offset, jit::SLJIT_MOV_U32);
+            void* next = e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, jit::SLJIT_IMM, graph.blocks[block].begin);
+            self.entry_copies(block);
+            if (self.pending_count == self.pending_jump.len) { e.failed = true; break; }
+            self.pending_target[self.pending_count] = block;
+            self.pending_jump[self.pending_count++] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+            e.bind(next);
+        }
+        int[LOOP_REGS] untouched;
+        foreach (&value : untouched) *value = -1;
+        self.publish(&untouched, SSA_ENTRY_BAIL);
+    } else { self.entry_copies(); }
     self.header = e.label();
     self.body();
     if (!single_pass) self.latch();

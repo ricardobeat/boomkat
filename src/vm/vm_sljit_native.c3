@@ -149,7 +149,7 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     undef.set_undefined();
     void* entry = e.label();
     if (jit::sljit_emit_enter(e.compiler, jit::SLJIT_ENTER_REG_ARG | jit::enter_keep(3),
-            jit::SLJIT_ARGS4WWWW_R, 7 | (6 << 8), 6, 0) != 0) { e.failed = true; return null; }
+            jit::SLJIT_ARGS4WWWW_R, jit::scratch_register_count(6) | (6 << 8), 6, 0) != 0) { e.failed = true; return null; }
     e.mov(object, 0, r0, 0);
     e.mov(bottom, 0, r1, 0);
     e.mov(result, 0, r2, 0);

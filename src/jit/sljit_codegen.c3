@@ -74,3 +74,18 @@ const int SLJIT_SIMD_OP2_SHUFFLE    = 4;
 fn int reg_pair(int first, int second) @inline => first | (second << 8);
 // Equivalent to SLJIT_SET(condition) in the bundled header.
 fn int set_flags(int condition) @inline => condition << 10;
+
+// Saved and scratch registers share one target register file. Reserving the
+// fixed state registers leaves the rest available to generated temporaries;
+// SLJIT saves ABI-preserved registers used as additional scratch registers.
+fn int scratch_register_count(int saveds) @feat(SLJIT) {
+    int total = sljit_shim_info(0);
+    int count = total > saveds ? total - saveds : 0;
+    // A maximum-size context adds ABI saves to every baseline function.
+    // Keep it experimental until context selection follows actual allocation;
+    // the wider ARM64 context reduced spills but lost on the timing panel.
+    $if !$feat(SLJIT_EXTRA_FUNCTION_SCRATCH) || $feat(SLJIT_NO_EXTRA_FUNCTION_SCRATCH):
+        if (count > 7) count = 7;
+    $endif
+    return count;
+}

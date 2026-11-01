@@ -2494,7 +2494,10 @@ fn bool vm_branch(Dispatch* ds, int offset) @inline {
     Instruction* branch = ds.curr_pc - 1;
     ds.curr_pc += offset;
     $if $feat(SLJIT) && $feat(THREADED_DISPATCH):
-        if (offset < 0 && ds.vm.heap.jit_enabled && sljit_loop_probe(branch, ds.vm.current_func)) {
+        if (offset < 0 && ds.vm.heap.jit_enabled
+            && !(ds.vm.heap.gc_phase == heap::GcPhase.IDLE
+                && sljit_function_ssa_resumes(ds.curr_pc, ds.vm.current_func))
+            && sljit_loop_probe(branch, ds.vm.current_func)) {
             ds.curr_pc = sljit_loop_entry(branch, ds.curr_pc, ds.regs_base, &ds.cold);
         }
         if (offset < 0 && ds.vm.heap.jit_enabled && !ds.needs_restart) {

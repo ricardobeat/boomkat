@@ -107,6 +107,44 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
     }
 }
 
+// The ordinary semantic roles must not inherit a producer-retarget refusal.
+// General call windows are described by reads() below; their counts and keys
+// are immediates except C in the spread forms.
+// dispatch_unary/th_inc_var write updated binding values into A, despite the
+// legacy INC_VAR opcode comment calling A unused.
+fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
+    switch (op) {
+        case LDREG: case UNP: case UNM: case BNOT: case LNOT: case TYPEOF: case GETPROTO: case TONUMERIC:
+        case GETPROPC: case GETPROPC_CACHED:
+            return { .b_read = true, .a_write = true };
+        case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
+        case LDTHIS: case GETTHISC: case VOID:
+        case GETVAR: case GETGLOBAL: case GETBOUND: case GETCAP: case TYPEOFIDENT:
+        case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL:
+        case NEWOBJ: case NEWARR: case NEWARR_CONST: case NEWOBJ_SHAPE:
+            return { .a_write = true };
+        case INC: case INC_LT: case DEC: case TOPROPKEY: case TOSTR:
+            return { .a_read = true, .a_write = true };
+        case GETPROP: case GETPROP_CACHE: case DELPROP:
+            return { .b_read = true, .c_read = true, .a_write = true };
+        case PUTPROPC:
+            return { .a_read = true, .b_read = true };
+        case PUTTHISC: case SETALEN: case FREEZEOBJ: case SETCONST:
+        case RET: case RET_GEN: case THROW: case IF_TRUE: case IF_FALSE:
+            return { .a_read = true };
+        case NOP: case RETUNDEF: case RETUNDEF_GEN: case THROW_REF: case THROW_SYNTAX:
+        case JUMP: case BREAK: case CONTINUE:
+            return {};
+        case CALL: case CALL_UNDEF_THIS: case NEW_OBJ: case SUPER_CALL:
+            return { .b_read = true, .a_write = true, .general = true };
+        case CALL_S: case SUPER_CALL_S:
+            return { .b_read = true, .c_read = true, .a_write = true, .general = true };
+        case CALL_VAR: case CALL_GLOBAL:
+            return { .a_write = true, .general = true };
+        default: return moveelim_roles[op.ordinal];
+    }
+}
+
 // A single bounded allocation owns nodes and the PC map. Decoding and target
 // validation finish before a consumer sees a graph; failure releases everything.
 // split_calls marks real interpreter reentry boundaries while retaining normal
@@ -141,7 +179,7 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
         cfg.pc_to_index[pc] = index;
         DecodedCfgNode* node = &cfg.nodes[index];
         node.view = view;
-        node.roles = moveelim_roles[view.insn.op.ordinal];
+        node.roles = bytecode_cfg_roles(view.insn.op);
         node.branch_target = CFG_NO_INSTRUCTION;
         node.call = bytecode_cfg_call(view.insn.op);
         cfg.has_wide |= view.wide;
@@ -179,10 +217,35 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
 }
 
 fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true) {
-    // General windows and read/modify/write operands use the same canonical
-    // routines as packed move elimination; high registers stay ordinary bits.
-    moveelim_add_decoded_uses(self.view.insn, uses, call_windows);
+    DecodedInsn ins = self.view.insn;
+    switch (ins.op) {
+        case CALL: case NEW_OBJ: case SUPER_CALL:
+            uses.set(ins.b);
+            if (call_windows) moveelim_mark_range(uses, ins.b + 1, ins.b + 1 + ins.c);
+            return;
+        case CALL_UNDEF_THIS:
+            uses.set(ins.b);
+            if (call_windows && ins.c != 0) moveelim_mark_range(uses, ins.b + 2, ins.b + 1 + ins.c);
+            return;
+        case CALL_VAR: case CALL_GLOBAL:
+            // The fused resolver overwrites callee A and receiver A+1 before
+            // dispatch. Only argument values enter from the previous frame.
+            if (call_windows && ins.b != 0) moveelim_mark_range(uses, ins.a + 2, ins.a + 1 + ins.b);
+            return;
+        case CALL_S: case SUPER_CALL_S:
+            uses.set(ins.b);
+            uses.set(ins.c); // actual runtime argument-count register
+            if (call_windows) moveelim_mark_range(uses, ins.b + 1, uses.word_count * 32 - 1);
+            return;
+        default: break;
+    }
+    if (self.roles.general) {
+        moveelim_add_decoded_uses(ins, uses, call_windows);
+    } else {
+        moveelim_add_role_uses(self.roles, ins.a, ins.b, ins.c, uses);
+    }
 }
+
 fn bool DecodedCfgNode.must_def(&self, uint* reg) {
     return moveelim_get_role_def(self.roles, self.view.insn.a, reg);
 }

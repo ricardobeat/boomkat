@@ -208,7 +208,7 @@ fn bool sljit_resume_fragment(FunctionPlan* plan) @feat(SLJIT) {
     if (e.compiler == null) return false;
     defer jit::sljit_free_compiler(e.compiler);
     if (jit::sljit_set_context(e.compiler, jit::SLJIT_ENTER_REG_ARG | jit::enter_keep(3),
-            1, 7 | (6 << 8), 6, 0) != 0) return false;
+            1, jit::scratch_register_count(6) | (6 << 8), 6, 0) != 0) return false;
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);
     int imm = jit::SLJIT_IMM;
