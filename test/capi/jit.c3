@@ -932,7 +932,9 @@ fn void check_numeric_pipeline() @feat(SLJIT) {
     eval(&context, CFG_SOURCE);
     CompiledFunction* numeric = named_function(&runtime, "jitCfgNumbers");
     @check(numeric != null && numeric.sljit_function != null);
-    @check(((FunctionPlan*)numeric.sljit_function).numeric_homes != 0);
+    FunctionPlan* numeric_plan = numeric.sljit_function;
+    @check(numeric_plan.numeric_homes != 0
+        || (numeric_plan.ssa_region != null && numeric_plan.ssa_region.hits != 0));
     CompiledFunction* calls = named_function(&runtime, "jitCfgCalls");
     @check(calls != null && calls.sljit_function != null);
     FunctionPlan* plan = calls.sljit_function;

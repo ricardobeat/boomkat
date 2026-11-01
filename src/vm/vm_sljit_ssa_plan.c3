@@ -49,7 +49,9 @@ fn bool ssa_plan_resumes(LoopPlan* plan, uint pc) @feat(SLJIT) {
 fn FunctionPlan* ssa_function_wrap(CompiledFunction* cf, ColdCtx* cold, LoopPlan* body) @feat(SLJIT) {
     Heap* h = cold.heap;
     usz bytes = FunctionPlan::size + (usz)cf.code_count * (void*::size + char::size);
-    if (bytes > SSA_DEFAULT_BUDGET.max_bytes || !sljit_code_room(h, body.code_bytes, true)) {
+    bool room = sljit_code_room(h, body.code_bytes, true);
+    if (!room) cf.sljit_budget_wait = true;
+    if (bytes > SSA_DEFAULT_BUDGET.max_bytes || !room) {
         if (body.native != null) jit::sljit_free_code((void*)body.native, null);
         ssa_helper_sites_free(h, body);
         ssa_plan_data_free(h, body);
