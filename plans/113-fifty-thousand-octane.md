@@ -69,6 +69,40 @@ that cannot call JS. The function tier's read site is `FunctionEmitter.property`
 in `vm_sljit_property.c3`, whose shape miss currently links straight to an
 interpreter exit.
 
+## Property-read continuation attempt, 2026-10-31 (rejected, reverted)
+
+Tried the identified next step: a compiled `GETPROPC`/`GETPROPC_CACHED`/
+`GETTHISC` whose baked-in shape misses jumps to a block that calls
+`sljit_native_operation` through `sljit_resume_fragment`, completes the read
+from the site cache or the receiver's own data slot, and returns into the
+compiled body at the next bytecode. The helper used the documented 0/1/2
+contract (0 = no effect and resume at the instruction, 1 = continue natively,
+2 = completed and resume at the next instruction) and reused the threaded
+publication rules (`th_can_publish`, `th_can_release`, retain/release,
+`track_heap_store`).
+
+Two real defects were found and fixed along the way:
+
+1. `hobject::ic_resolve_slot` does not compare the receiver's shape with the
+   entry's. Callers in the threaded handlers check `hobj.shape_id` first; a
+   helper must do the same. Without it the read returned whatever lived in the
+   stale slot (an accessor pair, a number in place of a method), which surfaced
+   as `Cannot convert object to primitive value` and `number is not a function`.
+2. The resume fragment clobbers the emitter's cached lanes, and a fast/slow
+   split shares one `FunctionFlow` state. Materializing before the read and
+   reloading pinned lanes after the helper was not enough: after the second
+   fix, the local suite still failed broadly (`array_literal_elements`,
+   async, class-field and GC-lifetime tests), so a value register was still
+   being read from a lane the slow path never defined.
+
+The experiment was removed rather than kept behind a flag. The next attempt
+should make a slow-capable read a **flow barrier**: emit the fast and slow
+paths with separate flow states, reconverge only at the following bytecode
+label, and have that label consume a fully flushed state so neither path can
+inherit lane claims it did not produce. A completing helper must also not run
+inside an expanded callee's private register window (the helper addresses the
+VM frame), which the attempt already gated on `depth == 0`.
+
 ## Shared bytecode decoder, 2026-10-31
 
 [Actual bytecode, ARM64 dispatch, high-register execution and timing evidence](113-fifty-thousand-octane/shared-decoder-2026-10-31/report.md): rat `9966cd7f` shares WIDE operand construction between the interpreter and a bounded decoded view consumed by loop alias analysis; the view preserves prefix, opcode and next PCs and rejects invalid prefixes. It does not implement CFG edges, general operand windows or SSA recovery. A temporary aggregate-return form added a WIDE dispatch stack store and regressed several minis, so it was replaced with direct field assignment; final switch WIDE and threaded WIDE ARM64 instructions are byte-for-byte unchanged. The actual high-register alias fixture completes the same 366,592 native iterations; ARM64 ASan, x86-64 and local/Rosetta/modules differential checks pass. Final zlib pairs were 3727→3743 ms and a reversed-order confirmation 3713→3727 ms (+0.38%); the difference has not been attributed to a dispatch change. This is bounded groundwork, not an Octane throughput gain, and 50K remains open.
