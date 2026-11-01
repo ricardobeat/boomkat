@@ -897,7 +897,8 @@ BenchmarkSuite.RunSuites = function () {
     var b = s.benchmarks[bi];
     if (b.name.indexOf("Latency") >= 0) continue;
     if (BenchmarkSuite.ResetRNG) BenchmarkSuite.ResetRNG(); b.Setup(); var t = Date.now();
-    for (var i = 0; i < 10; i++) b.run();
+    // The benchmark checks its checksum on frame 15.
+    for (var i = 0; i < 16; i++) b.run();
     var ms = Date.now() - t; total += ms; b.TearDown();
     print(b.name + ": " + ms + " ms");
   } }

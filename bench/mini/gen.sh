@@ -1,10 +1,12 @@
 #!/bin/sh
 # Builds sub-second Octane variants: each benchmark runs Setup, a fixed number
-# of iterations, then TearDown (which validates), and prints elapsed ms.
+# of iterations, then TearDown, and prints elapsed ms. Some checks run inside
+# the benchmark: Navier-Stokes needs at least 16 frames to reach its checksum.
 # usage: gen.sh <zoo bench dir> name:iters ...
 src=$1; shift
 for spec in "$@"; do
   name=${spec%%:*}; n=${spec#*:}
+  if [ "$name" = navier-stokes ] && [ "$n" -lt 16 ]; then n=16; fi
   awk -v n="$n" '/^BenchmarkSuite.config.doWarmup = undefined;/ {
     print "BenchmarkSuite.RunSuites = function () {";
     print "  var total = 0;";
