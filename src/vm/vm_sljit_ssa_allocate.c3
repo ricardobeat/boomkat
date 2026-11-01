@@ -91,7 +91,7 @@ fn void SsaAllocation.transfer_edge(&self, uint pred, uint succ, bool record) @f
         SsaJoin* join = &g.joins[j];
         if (join.block != succ) continue;
         int edge = -1;
-        if (pred == SSA_BLOCKS) {
+        if (pred == SSA_NO_BLOCK) {
             if (!join.entry) continue;
         } else {
             for (uint p = 0; p < join.pred_count; p++) {
@@ -102,10 +102,10 @@ fn void SsaAllocation.transfer_edge(&self, uint pred, uint succ, bool record) @f
         for (uint reg = 0; reg < LOOP_REGS; reg++) {
             if (join.phi[reg] < 0) continue;
             self.add(self.destinations, join.phi[reg]);
-            self.add(self.edge, pred == SSA_BLOCKS ? join.entry_incoming[reg] : join.incoming[edge][reg]);
+            self.add(self.edge, pred == SSA_NO_BLOCK ? join.entry_incoming[reg] : join.incoming[edge][reg]);
         }
     }
-    if (pred == SSA_BLOCKS) {
+    if (pred == SSA_NO_BLOCK) {
         self.recovery(self.edge, g.blocks[succ].begin);
     } else {
         // A conversion emitted by an edge copy can fail at the last emitted
@@ -182,7 +182,7 @@ fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
     self.clear(self.destinations);
     for (uint j = 0; j < g.join_count; j++) {
         if (g.joins[j].block != block) continue;
-        foreach (phi : g.joins[j].phi) if (phi >= 0) self.add(self.destinations, phi);
+        foreach (phi : g.joins[j].phi[0:LOOP_REGS]) if (phi >= 0) self.add(self.destinations, phi);
     }
     if (block == 0 && !g.single_pass) {
         foreach (phi : g.phi) if (phi >= 0) self.add(self.destinations, phi);
@@ -205,9 +205,8 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
     usz matrix_words = (usz)g.value_count * words;
     usz input_words = (usz)g.block_count * words;
     usz count = matrix_words + input_words + (usz)4 * words;
-    ulong* storage = (ulong*)g.heap.alloc_func(g.heap.heap_udata, count * ulong::size);
+    ulong* storage = (ulong*)ssa_storage_alloc(g, count, ulong::size);
     if (storage == null) { g.failed = true; return; }
-    defer g.heap.free_func(g.heap.heap_udata, storage);
     mem::clear(storage, (sz)(count * ulong::size));
     SsaAllocation a = { .g = g, .words = words, .conflicts = storage,
         .inputs = storage + matrix_words, .live = storage + matrix_words + input_words,
@@ -234,7 +233,7 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
     for (uint j = 0; j < g.join_count; j++) {
         if (!g.joins[j].entry) continue;
         a.clear(a.live);
-        a.transfer_edge(SSA_BLOCKS, g.joins[j].block, true);
+        a.transfer_edge(SSA_NO_BLOCK, g.joins[j].block, true);
     }
     for (uint reg = 0; reg < g.cf.num_regs && reg < LOOP_REGS; reg++) {
         int value = g.phi[reg] >= 0 ? g.phi[reg] : g.arg[reg];
@@ -282,17 +281,17 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
 // destination overwrites a source still needed by another parallel copy.
 // Share this predicate with preparation so packed inline state reserves exactly
 // the temporary storage the emitter can use after allocation.
-fn bool ssa_phi_staging(SsaGraph* g, SsaJoin* join, int[LOOP_REGS]* incoming) @feat(SLJIT) {
+fn bool ssa_phi_staging(SsaGraph* g, SsaJoin* join, int* incoming) @feat(SLJIT) {
     for (uint reg = 0; reg < LOOP_REGS; reg++) {
-        if (join.phi[reg] < 0 || (*incoming)[reg] < 0) continue;
+        if (join.phi[reg] < 0 || incoming[reg] < 0) continue;
         SsaValue dest = g.values[join.phi[reg]];
-        SsaValue source = g.values[(*incoming)[reg]];
+        SsaValue source = g.values[incoming[reg]];
         if ((dest.rep == F64 && source.rep != F64 && source.rep != INT32)
             || (dest.rep == INT32 && source.rep != INT32)) return true;
         if (dest.rep == source.rep && ssa_same_location(dest, source)) continue;
         for (uint other = 0; other < LOOP_REGS; other++) {
-            if (join.phi[other] < 0 || (*incoming)[other] < 0) continue;
-            SsaValue read = g.values[(*incoming)[other]];
+            if (join.phi[other] < 0 || incoming[other] < 0) continue;
+            SsaValue read = g.values[incoming[other]];
             if (ssa_same_location(dest, read)) return true;
         }
     }
@@ -304,13 +303,13 @@ fn uint ssa_edge_copy_temps(SsaGraph* g) @feat(SLJIT) {
     uint maximum;
     for (uint j = 0; j < g.join_count; j++) {
         SsaJoin* join = &g.joins[j];
-        bool staged = join.entry && ssa_phi_staging(g, join, &join.entry_incoming);
+        bool staged = join.entry && ssa_phi_staging(g, join, join.entry_incoming);
         for (uint p = 0; p < join.pred_count && !staged; p++) {
-            staged = ssa_phi_staging(g, join, &join.incoming[p]);
+            staged = ssa_phi_staging(g, join, join.incoming[p]);
         }
         if (!staged) continue;
         uint count;
-        foreach (phi : join.phi) if (phi >= 0) count++;
+        foreach (phi : join.phi[0:LOOP_REGS]) if (phi >= 0) count++;
         if (count > maximum) maximum = count;
     }
     return maximum;

@@ -17,44 +17,46 @@ import std::io;
 // objects. Forward graphs use the existing single sweep; a general graph
 // needs a fixed point and must ignore unreachable predecessors.
 fn void ssa_dominators(SsaGraph* g) @feat(SLJIT) {
-    // Native call successors can enter directly from a fresh interpreter
-    // frame. A synthetic common root reaches every such external entry;
-    // therefore none of their pre-call blocks dominates them.
-    uint reachable = 1;
-    for (uint b = 0; b < g.block_count; b++) {
-        if (g.blocks[b].external) reachable |= 1U << b;
-    }
+    uint count = g.block_count;
+    uint words = (count + 31) / 32;
+    g.dominator_words = words;
+    g.dominators = (uint*)ssa_storage_alloc(g, (usz)count * words, uint::size);
+    bool* reachable = (bool*)ssa_storage_alloc(g, count, bool::size);
+    uint* mask = (uint*)ssa_storage_alloc(g, words, uint::size);
+    if (g.failed) return;
+    reachable[0] = true;
+    for (uint b = 0; b < count; b++) if (g.blocks[b].external) reachable[b] = true;
     bool changed = true;
     while (changed) {
         changed = false;
-        for (uint b = 1; b < g.block_count; b++) {
-            if ((reachable & (1U << b)) != 0) continue;
+        for (uint b = 0; b < count; b++) {
+            if (reachable[b]) continue;
             for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-                if ((reachable & (1U << g.blocks[b].preds[p])) == 0) continue;
-                reachable |= 1U << b;
-                changed = true;
-                break;
+                if (!reachable[g.blocks[b].preds[p]]) continue;
+                reachable[b] = true; changed = true; break;
             }
         }
     }
-    for (uint b = 0; b < g.block_count; b++) {
-        bool root = b == 0 || g.blocks[b].external;
-        g.dominators[b] = root || (reachable & (1U << b)) == 0 ? 1U << b : reachable;
+    for (uint b = 0; b < count; b++) {
+        uint* row = g.dominators + (usz)b * words;
+        if (b == 0 || g.blocks[b].external || !reachable[b]) { row[b / 32] |= 1U << (b % 32); }
+        else { for (uint d = 0; d < count; d++) if (reachable[d]) row[d / 32] |= 1U << (d % 32); }
     }
     changed = true;
     while (changed) {
         changed = false;
-        for (uint b = 1; b < g.block_count; b++) {
-            if (g.blocks[b].external || (reachable & (1U << b)) == 0) continue;
-            uint mask = reachable;
+        for (uint b = 1; b < count; b++) {
+            if (g.blocks[b].external || !reachable[b]) continue;
+            for (uint w = 0; w < words; w++) mask[w] = uint::max;
             for (uint p = 0; p < g.blocks[b].pred_count; p++) {
                 uint pred = g.blocks[b].preds[p];
-                if ((reachable & (1U << pred)) != 0) mask &= g.dominators[pred];
+                if (!reachable[pred]) continue;
+                for (uint w = 0; w < words; w++) mask[w] &= g.dominators[(usz)pred * words + w];
             }
-            mask |= 1U << b;
-            if (mask != g.dominators[b]) {
-                g.dominators[b] = mask;
-                changed = true;
+            mask[b / 32] |= 1U << (b % 32);
+            for (uint w = 0; w < words; w++) {
+                uint* slot = &g.dominators[(usz)b * words + w];
+                if (*slot != mask[w]) { *slot = mask[w]; changed = true; }
             }
         }
     }
@@ -69,7 +71,7 @@ fn void ssa_cse(SsaGraph* g) @feat(SLJIT) {
             for (uint k = 0; k < count; k++) {
                 SsaValue prior = g.values[g.cse_value[k]];
                 if (g.cse_memory[k] == (int)value.imm && ssa_alias(g, g.cse_index[k]) == ssa_alias(g, value.a) && prior.rep == value.rep
-                    && (g.dominators[value.block] & (1U << (uint)prior.block)) != 0) {
+                    && ssa_dominates(g, (uint)prior.block, (uint)value.block)) {
                     found = g.cse_value[k];
                     break;
                 }
@@ -112,7 +114,7 @@ fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
         bool found;
         for (uint k = 0; k < count; k++) {
             SsaValue prior = g.values[seen[k]];
-            if (value.op != prior.op || (g.dominators[value.block] & (1U << (uint)prior.block)) == 0) continue;
+            if (value.op != prior.op || !ssa_dominates(g, (uint)prior.block, (uint)value.block)) continue;
             if (scalar && prior.rep != value.rep) continue;
             if ((conversion || value.op == COMPARE) && ssa_alias(g, value.a) != ssa_alias(g, prior.a)) continue;
             if (value.op == COMPARE && (value.branch_op != prior.branch_op
@@ -227,7 +229,7 @@ fn int ssa_gpr_home(
 // Private inline scratch never owns strings. Keep unknown boxed spills out
 // of it; numeric results and boolean joins need no runtime ownership guard.
 fn bool ssa_inert_value(SsaGraph* g, int value, uint depth = 0) @feat(SLJIT) {
-    if (value < 0 || depth > SSA_BLOCKS) return false;
+    if (value < 0 || depth > g.block_count) return false;
     value = ssa_alias(g, value);
     SsaValue v = g.values[value];
     if (v.rep != BOXED || v.op == COMPARE || v.op == BOX_I || v.op == BOX_F || v.op == RECEIVER) return true;
@@ -243,7 +245,7 @@ fn bool ssa_inert_value(SsaGraph* g, int value, uint depth = 0) @feat(SLJIT) {
 // allocator coalesces them onto one home and codegen drops the move.
 fn int ssa_alias(SsaGraph* g, int value) @feat(SLJIT) {
     uint guard;
-    while (value >= 0 && guard++ < SSA_MAX_VALUES && g.values[value].op == COPY) value = g.values[value].a;
+    while (value >= 0 && guard++ < g.value_count && g.values[value].op == COPY) value = g.values[value].a;
     return value;
 }
 fn void ssa_allocate_linear(SsaGraph* g) @feat(SLJIT) {

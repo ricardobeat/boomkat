@@ -190,3 +190,75 @@ fn void ssa_graph_free(SsaGraph* g) @feat(SLJIT) {
     ssa_storage_free(g);
     g.heap.free_func(g.heap.heap_udata, g);
 }
+
+// Dynamic tables retain stable numeric identities. Builder code reacquires
+// pointers after adding values; optimization runs only after construction.
+fn bool ssa_reserve_values(SsaGraph* g, uint needed) @feat(SLJIT) {
+    if (needed <= g.value_capacity) return !g.failed;
+    uint prior = g.value_capacity;
+    uint capacity = prior;
+    SsaValue* values = (SsaValue*)ssa_storage_grow(g, g.values, g.value_count,
+        &capacity, needed, g.budget.max_values, SsaValue::size);
+    if (values == null) return false;
+    int* conv = (int*)ssa_storage_alloc(g, (usz)capacity * 4, int::size);
+    bool* numeric = (bool*)ssa_storage_alloc(g, capacity, bool::size);
+    if (g.failed) return false;
+    if (prior != 0) {
+        mem::copy(conv, g.conv, (sz)((usz)prior * 4 * int::size));
+        mem::copy(numeric, g.numeric_load, (sz)((usz)prior * bool::size));
+    }
+    g.values = values;
+    g.conv = conv;
+    g.numeric_load = numeric;
+    g.value_capacity = capacity;
+    return true;
+}
+fn bool ssa_graph_tables(SsaGraph* g, uint span) @feat(SLJIT) {
+    if (g.budget.max_bytes == 0) g.budget = SSA_DEFAULT_BUDGET;
+    if (span > g.budget.max_words) { g.failed = true; return false; }
+    uint blocks = span < g.budget.max_blocks ? span : g.budget.max_blocks;
+    g.block_capacity = blocks;
+    g.blocks = (SsaBlock*)ssa_storage_alloc(g, blocks, SsaBlock::size);
+    g.joins = (SsaJoin*)ssa_storage_alloc(g, blocks, SsaJoin::size);
+    g.cyclic_live = (ulong*)ssa_storage_alloc(g, blocks, ulong::size);
+    g.cyclic_order = (uint*)ssa_storage_alloc(g, blocks, uint::size);
+    g.block_built = (bool*)ssa_storage_alloc(g, blocks, bool::size);
+    g.block_first = (uint*)ssa_storage_alloc(g, blocks, uint::size);
+    g.block_last = (uint*)ssa_storage_alloc(g, blocks, uint::size);
+    return !g.failed;
+}
+fn bool ssa_collect_predecessors(SsaGraph* g) @feat(SLJIT) {
+    uint edges;
+    for (uint b = 0; b < g.block_count; b++) g.blocks[b].pred_count = 0;
+    for (uint p = 0; p < g.block_count; p++) {
+        for (uint e = 0; e < ssa_succ_count(g, p); e++) {
+            if (edges++ == g.budget.max_edges) { g.failed = true; return false; }
+            g.blocks[ssa_succ(g, p, e)].pred_count++;
+        }
+    }
+    for (uint b = 0; b < g.block_count; b++) {
+        SsaBlock* block = &g.blocks[b];
+        block.preds = (uint*)ssa_storage_alloc(g, block.pred_count, uint::size);
+        block.pred_count = 0;
+        if (g.failed) return false;
+    }
+    for (uint p = 0; p < g.block_count; p++) {
+        for (uint e = 0; e < ssa_succ_count(g, p); e++) {
+            SsaBlock* block = &g.blocks[ssa_succ(g, p, e)];
+            block.preds[block.pred_count++] = p;
+        }
+    }
+    return true;
+}
+fn bool ssa_join_storage(SsaGraph* g, SsaJoin* join, SsaBlock* block) @feat(SLJIT) {
+    join.preds = block.preds;
+    join.phi = (int*)ssa_storage_alloc(g, LOOP_REGS, int::size);
+    join.entry_incoming = (int*)ssa_storage_alloc(g, LOOP_REGS, int::size);
+    join.incoming = (int**)ssa_storage_alloc(g, block.pred_count, int*::size);
+    if (g.failed) return false;
+    for (uint p = 0; p < block.pred_count; p++) {
+        join.incoming[p] = (int*)ssa_storage_alloc(g, LOOP_REGS, int::size);
+        if (g.failed) return false;
+    }
+    return true;
+}
