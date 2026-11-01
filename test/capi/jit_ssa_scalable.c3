@@ -128,3 +128,39 @@ fn void check_ssa_alias_queries(JsRuntime* runtime) {
     @check(vm::ssa_alias(&graph, 1024) == 1024 && graph.failed);
     io::printn("SSA alias work budget: PASS");
 }
+
+fn void check_scalable_ssa_closure_startup() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    runtime.rt.heap.jit_stress = true;
+    eval(&context, $embed("../jit_ssa_closure_startup.js"));
+    CompiledFunction* cf = named_function(&runtime, "closureStartupFactory");
+    @check(cf != null && cf.num_regs > vm::LOOP_REGS && cf.code[0].op == Opcode.CLOSURE);
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan != null && plan.ssa_region != null && plan.ssa_region.ssa_recoverable);
+    LoopPlan* body = plan.ssa_region;
+    @check(body.hits > 0 && body.ssa_helper_calls > 0 && body.ssa_helper_continued > 0);
+    SsaHelperSite* closure;
+    for (SsaHelperSite* site = body.ssa_helpers; site != null; site = site.next) {
+        if (site.pc == 0) { closure = site; break; }
+    }
+    @check(closure != null && closure.native_resume);
+    bool imported;
+    foreach (entry : closure.after_entries[0:closure.after_count]) {
+        if (entry.reg == cf.code[0].a) imported = true;
+    }
+    @check(imported);
+    // A normal entry into the already-hot artifact must preserve the same
+    // constructor result and prototype ownership as stress compilation.
+    ulong prior = body.hits;
+    runtime.rt.heap.jit_stress = false;
+    eval(&context, "for(var q=0;q<128;q++){var F=closureStartupFactory();if((new F(q)).value!==q||F.prototype.m15!==7)throw 'normal closure startup';}");
+    @check(body.hits > prior);
+    io::printfn("scalable SSA closure startup: PASS registers=%d hits=%d helpers=%d continuations=%d", cf.num_regs,
+        body.hits, body.ssa_helper_calls, body.ssa_helper_continued);
+}
