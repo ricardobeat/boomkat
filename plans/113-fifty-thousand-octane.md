@@ -1,6 +1,6 @@
 # 113: The 50,000 Octane target — active JIT master roadmap
 
-Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `ac7abcb7` (frameless threaded numeric typed-array reads and integer stores); prior checkpoint rat `95fbeb07` (edge-safe in-place SSA join coalescing); prior checkpoint rat `a132b1ef` (correct SSA predecessor edges and cycle-correct dominance); prior checkpoint rat `be81dac9` (bounded WIDE-aware continuation liveness), preceded by `f4efb2a2` (correct polymorphic and inherited inline property offsets); previous checkpoint rat `9966cd7f` (shared bounded WIDE decoding for interpreter and loop operand analysis); prior checkpoint rat `48fb7172` (safe JIT refusal and retry when inline-cache allocation fails); prior checkpoint rat `c74029b2` (mandatory regexp substring rejection); prior checkpoint rat `2a063511` (one-load scaled dense-array reads); prior checkpoint rat `34f224e0` (SSA latch budget recovery without artificial branch-operand phis); prior checkpoint rat `9da6427e` (bounded CFG-based SSA loop continuation liveness with explicit latch and exception recovery); prior checkpoint rat `5aae48bc` (single-pass shared register-use collection for loop alias analysis); prior checkpoint rat `ba119b09` (conservative handling of unsupported WIDE register windows; direct embedding coverage; removes unconditional remap diagnostics); prior checkpoint rat `4228a786` (fixup-allocation size assertion and scalar-recovery regression only; release binary identical to `fa11ea2d`); prior runtime checkpoint rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
+Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 2026-10-29.** Current implementation checkpoint: rat `fe88ada7` (frameless capture and global reads, multi-field leaf writes, grown function fixup directories); prior checkpoint rat `de24cf29` (whole function bodies with cyclic SSA: loop-header joins, late-bound backedge inputs, converting parallel copies and a per-backedge budget poll); prior checkpoint rat `ac7abcb7` (frameless threaded numeric typed-array reads and integer stores); prior checkpoint rat `95fbeb07` (edge-safe in-place SSA join coalescing); prior checkpoint rat `a132b1ef` (correct SSA predecessor edges and cycle-correct dominance); prior checkpoint rat `be81dac9` (bounded WIDE-aware continuation liveness), preceded by `f4efb2a2` (correct polymorphic and inherited inline property offsets); previous checkpoint rat `9966cd7f` (shared bounded WIDE decoding for interpreter and loop operand analysis); prior checkpoint rat `48fb7172` (safe JIT refusal and retry when inline-cache allocation fails); prior checkpoint rat `c74029b2` (mandatory regexp substring rejection); prior checkpoint rat `2a063511` (one-load scaled dense-array reads); prior checkpoint rat `34f224e0` (SSA latch budget recovery without artificial branch-operand phis); prior checkpoint rat `9da6427e` (bounded CFG-based SSA loop continuation liveness with explicit latch and exception recovery); prior checkpoint rat `5aae48bc` (single-pass shared register-use collection for loop alias analysis); prior checkpoint rat `ba119b09` (conservative handling of unsupported WIDE register windows; direct embedding coverage; removes unconditional remap diagnostics); prior checkpoint rat `4228a786` (fixup-allocation size assertion and scalar-recovery regression only; release binary identical to `fa11ea2d`); prior runtime checkpoint rat `fa11ea2d` (register stores stop paying a refcount dance; earlier this session `58123edd` WIDE in the loop tier, `ba4840b4` a 512-op loop window with unproductive-loop retirement). Previous: `86abd083` (overflow-flag integer checks; previous `66a735a0` added the size-scaled function link budget, `d75838d9` boolean ToInt32, `8c421db8` aliased loop SSA, `76e89fb6` the sparse loop register window, and `12e9346e` larger hot regions, a 2 MiB function budget and region-relative exit attribution), previous checkpoints `047d0ef0`, `68d7c01e`, `456df4ef` and `3e837c64` (review fixes `72db32f4`, FP spills `3a34a140`). The 50K full-Octane objective and the 5–10x workload improvement objective are not achieved. This is the single active roadmap for the JIT work covered by plans 107–108, 110–112 and 116–118. Unrelated engine plans retain their own status.
 
 [Typed-array bytecode, fresh profile, ARM64, correctness and full scores](113-fifty-thousand-octane/typed-array-dispatch-2026-10-31/report.md): rat `ac7abcb7` removes the helper frame from the common numeric read and integer-store handlers while preserving float and unusual-buffer fallbacks. Mandreel mini improves 554→544 ms in two paired screens; three full-Octane pairs give median 6552→6563, too variable for a suite gain. A full-suite Box2D swing did not reproduce in nine mini or five ten-times-longer pairs; longer Gameboy changed +0.45%. The 50K target and cyclic function SSA remain open.
 
@@ -9,6 +9,46 @@ Status: **ACTIVE — consolidated 2026-10-28; implementation sequence revised 20
 [SSA CFG edges, cyclic dominance, bytecode, native code and full-suite evidence](113-fifty-thousand-octane/ssa-cfg-edges-2026-10-31/report.md): rat `a132b1ef` removes nonexistent edges to entry that rejected branch-heavy graphs and makes dominance correct for cycles and unreachable predecessors. Crypto’s `nbits` is newly admitted and completed 3,493 instrumented full-suite calls; a five-diamond focused workload improves 914→777 ms. Three alternating original full-Octane pairs pass with median 6573→6565, establishing no aggregate gain. Cyclic function SSA, loop-aware allocation, effect recovery and 50K remain open.
 
 [WIDE continuation CFG, native disassembly, correctness and paired measurements](113-fifty-thousand-octane/wide-continuation-2026-10-31/report.md): bounded decoded liveness keeps only r0 and r2 in the focused WIDE continuation fixture, reduces its native SSA region from 322 to 300 instructions, and leaves the selected release mini panel within 0.51%. Full Octane diagnostics showed no accepted WIDE continuation event, so no suite speedup is claimed. Validation also found and fixed a pre-existing non-plain inline-property offset bug that caused 29 JIT-only Array Test262 failures; the selected Test262 differential suites now match. Cyclic function SSA and the 50K target remain open.
+
+## Frameless leaves and link growth, 2026-10-31
+
+Two changes on rat, both verified by the differential JIT suites, the local
+suite (27 pre-existing failures), `test-slim`, `embedding_jit`, `jit_api` and
+the Test262 JIT differential slices (language/expressions, language/statements,
+built-ins/Array).
+
+`de24cf29` compiles a frameless callee whose body contains backedges as one SSA
+graph: loop-header joins, late-bound backedge inputs, representation-converting
+parallel copies, and a per-backedge poll that refuses and replays from the call.
+Only effect-free bodies are admitted, because a refusal replays the call.
+
+`fe88ada7`:
+
+- Grows a whole-function body's fixup directory instead of refusing the body
+  when its admission estimate is exhausted. Growth is limited to whole-function
+  bodies of at most 256 bytecodes; larger bodies and hot regions keep the hard
+  bound, because spending the shared code budget on them starves functions that
+  pay (measured earlier in this plan as gbemu/zlib losses).
+- Navier-Stokes `set_bnd` (200 bytecodes, about 2.5M interpreted calls) needs
+  more than eight fixups per bytecode and previously never compiled. Seven
+  alternating mini pairs measure navier-stokes 191→176 ms (-8%). The other
+  fourteen minis stay inside the layout noise a control rebuild already showed:
+  zlib +0.2%, gbemu -1.5%, everything else within about 1%.
+- Whole-body leaves may now read captures through the callee object's closure
+  refs (with the same ref guards the function tier uses) and globals through the
+  variable IC, and may write several fields when the body never reads memory.
+  A replay then recomputes the same values and rewrites the same slots in the
+  same order, so it is idempotent; the store guard itself refuses references,
+  before anything is released.
+- `GETCAP` and `TONUMERIC` joined the move-elimination A-write allow-list. A
+  capture read was treated as live-in at every loop header, which rejected
+  cyclic bodies that read captures.
+
+These are mini-panel results; full-Octane alternating pairs were not rerun for
+this checkpoint, so no suite-level gain is claimed. The 50K target and
+effect-carrying cyclic bodies (property and element stores inside loops, calls)
+remain open: those need a refusal that resumes in the interpreter rather than
+replaying the call.
 
 ## Shared bytecode decoder, 2026-10-31
 
