@@ -1315,6 +1315,7 @@ fn void main() {
     check_scalable_ssa_access();
     check_scalable_ssa_fields();
     check_scalable_ssa_memory_callbacks();
+    check_effectful_ssa_inline();
     $if $feat(SSA_SCALABLE_ONLY):
         return;
     $endif

@@ -217,7 +217,7 @@ fn int ssa_inline_call(SsaGraph* g, Instruction ins, uint pos) @feat(SLJIT) {
                     bool binary = ssa_scalar_binary(ci.op);
                     if (ci.b >= LOOP_REGS || (binary && ci.c >= LOOP_REGS)) return -1;
                     int value = ssa_scalar(g, ci.op, mapped[ci.b], binary ? mapped[ci.c] : -1,
-                        (long)(ichar)ci.c);
+                        bytecode::imm_value(ci.op, ci.c));
                     if (value < 0) return -1;
                     mapped[ci.a] = value;
                     continue;

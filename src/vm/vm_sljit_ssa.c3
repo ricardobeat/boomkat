@@ -58,6 +58,8 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     graph.budget = budget;
     graph.work = work;
     graph.plan = plan;
+    // Representation widening may rebuild this graph before emission.
+    plan.ssa_inline_sites = 0;
     graph.cf = cf;
     graph.heap = h;
     graph.single_pass = single_pass;
