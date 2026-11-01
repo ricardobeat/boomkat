@@ -458,12 +458,12 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                             // instead of comparing against INT32_MIN and MAX.
                             int arithmetic = v.op == SUB ? jit::SLJIT_SUB
                                 : v.op == MUL ? jit::SLJIT_MUL : jit::SLJIT_ADD;
-                            self.e.op(arithmetic | jit::SLJIT_32 | jit::SLJIT_SET_OVERFLOW, dst, left, 0, right,
-                                rightw);
+                            bool overflow = (v.proof_bits & SSA_PROOF_NO_OVERFLOW) == 0;
+                            self.e.op(arithmetic | jit::SLJIT_32 | (overflow ? jit::SLJIT_SET_OVERFLOW : 0), dst, left, 0, right, rightw);
                             // The flag must be consumed before anything else
                             // compares, because a compare replaces it.
-                            self.snapshot(self.e.jump_if(jit::SLJIT_OVERFLOW), self.pc);
-                            if (v.op == MUL) {
+                            if (overflow) self.snapshot(self.e.jump_if(jit::SLJIT_OVERFLOW), self.pc);
+                            if (v.op == MUL && (v.proof_bits & SSA_PROOF_NO_NEGATIVE_ZERO) == 0) {
                                 void* nonzero = self.e.cmp(jit::SLJIT_NOT_EQUAL, dst, 0, imm, 0);
                                 self.guard(jit::SLJIT_SIG_LESS, r3, 0, imm, 0, self.pc);
                                 self.e.bind(nonzero);
@@ -570,7 +570,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                             self.int32(r0, dst, self.pc);
                         } else if (from.rep == F64) {
                             self.load_fpr(v.a, 1);
-                            self.trunc_int_f64(1, dst, self.pc);
+                            if ((v.proof_bits & SSA_PROOF_EXACT_INT32) != 0) {
+                                if (jit::sljit_emit_fop1(e.compiler, jit::SLJIT_CONV_SW_FROM_F64, dst, 0, 1, 0) != 0) e.failed = true;
+                            } else { self.trunc_int_f64(1, dst, self.pc); }
                         } else {
                             self.e.mov(dst, 0, self.gpr_slot(v.a, r0), 0);
                         }
@@ -587,7 +589,9 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                             self.exact_int(r0, dst, self.pc);
                         } else if (from.rep == F64) {
                             self.load_fpr(v.a, 1);
-                            self.exact_int_f64(1, dst, self.pc);
+                            if ((v.proof_bits & SSA_PROOF_EXACT_INT32) != 0) {
+                                if (jit::sljit_emit_fop1(e.compiler, jit::SLJIT_CONV_SW_FROM_F64, dst, 0, 1, 0) != 0) e.failed = true;
+                            } else { self.exact_int_f64(1, dst, self.pc); }
                         } else {
                             self.e.mov(dst, 0, self.gpr_slot(v.a, r0), 0);
                             self.e.mov(dst, 0, dst, 0, jit::SLJIT_MOV_S32);

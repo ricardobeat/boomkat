@@ -38,7 +38,8 @@ fn SsaOpTraits ssa_op_traits(SsaGraph* g, SsaValue v) @feat(SLJIT) {
         case CONST_BOXED:
             return { .may_deopt = g.inplace };
         case ADD: case SUB: case MUL: case DIV:
-            return { .may_deopt = v.rep != F64 };
+            return { .may_deopt = v.rep != F64 && ((v.proof_bits & SSA_PROOF_NO_OVERFLOW) == 0
+                || (v.op == MUL && (v.proof_bits & SSA_PROOF_NO_NEGATIVE_ZERO) == 0)) };
         case BAND: case BOR: case BXOR: case SHL: case SHR: case BNOT:
         case NEG: case COMPARE:
             return {};
@@ -47,7 +48,7 @@ fn SsaOpTraits ssa_op_traits(SsaGraph* g, SsaValue v) @feat(SLJIT) {
         case SELECT:
             return { .may_deopt = g.inplace && v.rep == BOXED };
         case TO_INT: case TO_INDEX:
-            return { .may_deopt = g.values[v.a].rep != INT32,
+            return { .may_deopt = g.values[v.a].rep != INT32 && (v.proof_bits & SSA_PROOF_EXACT_INT32) == 0,
                 .may_coerce = g.values[v.a].rep == BOXED };
         case TO_F64:
             return { .may_deopt = g.values[v.a].rep == BOXED,
