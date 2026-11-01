@@ -50,6 +50,25 @@ effect-carrying cyclic bodies (property and element stores inside loops, calls)
 remain open: those need a refusal that resumes in the interpreter rather than
 replaying the call.
 
+`b85ef0ba` widens the same tier further: null, undefined and boolean constants
+lower to a boxed SSA constant, and a cyclic whole-body leaf may call a
+straight-line pure helper that is expanded in place. Both are coverage only;
+the differential suites, the local suite and the mini panel are unchanged.
+Bumping the non-cyclic leaf span from 32 to 96 bytecodes was measured on the
+minis and showed no gain, so it was reverted. Mini timings at this point are
+within a few percent of each other across rebuilds, and one box2d run spiked
+33% on unrelated load, so sub-5% single-workload differences here are not
+evidence either way.
+
+The next structural item remains native property access that continues instead
+of exiting: `sljit_resume_fragment` plus `sljit_native_operation` already
+provide the "may complete an operation and jump back into the compiled body"
+contract (0 = no effect and resume at pc, 1 = continue natively, 2 = completed
+and resume at pc+1), and the same shape could carry a data-only property read
+that cannot call JS. The function tier's read site is `FunctionEmitter.property`
+in `vm_sljit_property.c3`, whose shape miss currently links straight to an
+interpreter exit.
+
 ## Shared bytecode decoder, 2026-10-31
 
 [Actual bytecode, ARM64 dispatch, high-register execution and timing evidence](113-fifty-thousand-octane/shared-decoder-2026-10-31/report.md): rat `9966cd7f` shares WIDE operand construction between the interpreter and a bounded decoded view consumed by loop alias analysis; the view preserves prefix, opcode and next PCs and rejects invalid prefixes. It does not implement CFG edges, general operand windows or SSA recovery. A temporary aggregate-return form added a WIDE dispatch stack store and regressed several minis, so it was replaced with direct field assignment; final switch WIDE and threaded WIDE ARM64 instructions are byte-for-byte unchanged. The actual high-register alias fixture completes the same 366,592 native iterations; ARM64 ASan, x86-64 and local/Rosetta/modules differential checks pass. Final zlib pairs were 3727→3743 ms and a reversed-order confirmation 3713→3727 ms (+0.38%); the difference has not been attributed to a dispatch change. This is bounded groundwork, not an Octane throughput gain, and 50K remains open.
