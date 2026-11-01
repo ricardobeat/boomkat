@@ -170,7 +170,7 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
 
     uint body = tree.field(rec, ast::FN_BODY);
     if ((fnf & ast::FNF_EXPR_BODY) != 0) {
-        Val v = self.gen_expr(body, 0)!;
+        Val v = self.gen_tail_expr(body)!;
         self.gen_line_end(body);
         self.emit_a_bc(Opcode.RET, (uint)v.reg, 0);
     } else {
@@ -362,7 +362,7 @@ fn void? CompilerContext.gen_stmt(&self, uint n) {
                 self.emit_return_iter_closes();
                 self.emit_simple(self.is_user_generator ? Opcode.RETUNDEF_GEN : Opcode.RETUNDEF);
             } else {
-                Val v = self.gen_expr(arg, 0)!;
+                Val v = self.gen_tail_expr(arg)!;
                 self.gen_line_end(arg);
                 if (self.is_async_gen()) {
                     v.reg = self.emit_await(v.reg);
@@ -1290,7 +1290,10 @@ fn Val? CompilerContext.gen_expr(&self, uint n, uint ctx) {
         case TEMPLATE:
             return self.gen_template(n);
         case TAGGED_TEMPLATE:
-            return self.gen_tagged_template(n);
+            uint call_start = self.code_count;
+            Val v = self.gen_tagged_template(n)!;
+            self.note_tail_call(n, call_start);
+            return v;
         case OPT_CHAIN:
             return self.gen_optional_chain(n);
         case BINARY:
@@ -2234,7 +2237,12 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
             return scalar;
         }
     }
-    if (tag == NodeTag.CALL) return self.gen_call(n, ph, optional);
+    if (tag == NodeTag.CALL) {
+        uint call_start = self.code_count;
+        Val v = self.gen_call(n, ph, optional)!;
+        self.note_tail_call(n, call_start);
+        return v;
+    }
     if (tag == NodeTag.SUPER_MEMBER || tag == NodeTag.SUPER_INDEX) return self.gen_super(n, target);
 
     ushort callee_slot = method ? self.alloc_reg() : REG_NONE;
@@ -2307,6 +2315,51 @@ fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target
 }
 
 // ---- calls ----
+
+// Compile a returned expression, recording the calls in tail position for
+// run_tail_calls. Only strict code makes proper tail calls.
+fn Val? CompilerContext.gen_tail_expr(&self, uint n) {
+    if (!self.is_strict) return self.gen_expr(n, 0);
+    self.collect_tail_nodes(n);
+    defer self.tail_nodes.clear();
+    return self.gen_expr(n, 0);
+}
+
+// The calls in tail position within `n` (ECMA-262 HasCallInTailPosition):
+// the expression itself, both conditional arms, the right operand of a
+// logical operator and the last operand of a comma expression.
+fn void CompilerContext.collect_tail_nodes(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    switch (tree.tags.data[n]) {
+        case CALL:
+        case TAGGED_TEMPLATE:
+            self.tail_nodes.push(n);
+        case COND:
+            uint arms = tree.rhs.data[n];
+            self.collect_tail_nodes(tree.extra.data[arms]);
+            self.collect_tail_nodes(tree.extra.data[arms + 1]);
+        case LOGICAL:
+            self.collect_tail_nodes(tree.rhs.data[n]);
+        case SEQUENCE:
+            uint list = tree.lhs.data[n];
+            uint len = tree.list_len(list);
+            if (len > 0) self.collect_tail_nodes(tree.list_item(list, len - 1));
+        default:
+    }
+}
+
+// Record the call instruction emitted for `n` since `start` when `n` is in
+// tail position.
+fn void CompilerContext.note_tail_call(&self, uint n, uint start) {
+    if (self.tail_nodes.len() == 0) return;
+    if (!self.tail_nodes.contains(n)) return;
+    for (uint pc = self.code_count; pc > start; pc--) {
+        if (tailcall_form(self.code[pc - 1].op) != Opcode.NOP) {
+            self.tail_call_pcs.push(pc - 1);
+            return;
+        }
+    }
+}
 
 // `callee(args)`. The frame is the callee at `callee_reg`, the receiver slot after it, then the
 // arguments in consecutive registers; the result replaces the callee. A by-name callee read
