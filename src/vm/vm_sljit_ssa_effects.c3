@@ -40,8 +40,9 @@ fn SsaEffect ssa_effect(SsaOp op) @feat(SLJIT) {
 // such destination prevents facts from describing a previous dynamic execution
 // of a static SSA definition. LICM, rather than this availability pass, owns
 // proofs that a computation is genuinely invariant across those boundaries.
-struct SsaAvailable @feat(SLJIT) { ulong* words; uint count; }
+struct SsaAvailable @feat(SLJIT) { ulong* words; uint count; SsaGraph* graph; }
 struct SsaCfgEffects @feat(SLJIT) {
+    SsaGraph* graph;
     SsaValue* original;
     uint value_count;
     SsaAvailable* input;
@@ -54,22 +55,30 @@ struct SsaCfgEffects @feat(SLJIT) {
     bool* boundary;
     uint* buckets;
     uint* next;
+    uint* order;
     uint bucket_count;
     bool local_only;
 }
 fn void SsaAvailable.include(&self, uint id) @feat(SLJIT) { self.words[id >> 6] |= 1UL << (id & 63); }
 fn bool SsaAvailable.contains(&self, uint id) @feat(SLJIT) => (self.words[id >> 6] & (1UL << (id & 63))) != 0;
-fn void SsaAvailable.clear(&self) @feat(SLJIT) { for (uint w = 0; w < self.count; w++) self.words[w] = 0; }
+fn void SsaAvailable.clear(&self) @feat(SLJIT) {
+    if (!ssa_charge_work(self.graph, self.count)) return;
+    for (uint w = 0; w < self.count; w++) self.words[w] = 0;
+}
 fn void SsaAvailable.copy(&self, SsaAvailable* other) @feat(SLJIT) {
+    if (!ssa_charge_work(self.graph, self.count)) return;
     for (uint w = 0; w < self.count; w++) self.words[w] = other.words[w];
 }
 fn void SsaAvailable.intersect(&self, SsaAvailable* other) @feat(SLJIT) {
+    if (!ssa_charge_work(self.graph, self.count)) return;
     for (uint w = 0; w < self.count; w++) self.words[w] &= other.words[w];
 }
 fn void SsaAvailable.exclude(&self, SsaAvailable* other) @feat(SLJIT) {
+    if (!ssa_charge_work(self.graph, self.count)) return;
     for (uint w = 0; w < self.count; w++) self.words[w] &= ~other.words[w];
 }
 fn bool SsaAvailable.same(&self, SsaAvailable* other) @feat(SLJIT) {
+    if (!ssa_charge_work(self.graph, self.count)) return false;
     for (uint w = 0; w < self.count; w++) if (self.words[w] != other.words[w]) return false;
     return true;
 }
@@ -88,10 +97,12 @@ fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
         }
     }
     bool changed = true;
-    while (changed) {
+    while (changed && !g.failed) {
         changed = false;
+        if (!ssa_charge_work(g, g.block_count)) return;
         for (uint b = 0; b < g.block_count; b++) {
             if (facts.reachable[b]) continue;
+            if (!ssa_charge_work(g, ssa_pred_count(g, b))) return;
             for (uint p = 0; p < ssa_pred_count(g, b); p++) {
                 if (!facts.reachable[ssa_pred(g, b, p)]) continue;
                 facts.reachable[b] = true;
@@ -105,14 +116,16 @@ fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
         if (facts.reachable[b] && !facts.boundary[b]) facts.output[b].copy(&facts.candidates);
     }
     changed = true;
-    while (changed) {
+    while (changed && !g.failed) {
         changed = false;
+        if (!ssa_charge_work(g, g.block_count)) return;
         for (uint b = 0; b < g.block_count; b++) {
             if (!facts.reachable[b]) continue;
             facts.work_in.clear();
             if (!facts.boundary[b]) {
                 facts.work_in.copy(&facts.candidates);
-                for (uint p = 0; p < ssa_pred_count(g, b); p++) {
+                if (!ssa_charge_work(g, ssa_pred_count(g, b))) return;
+            for (uint p = 0; p < ssa_pred_count(g, b); p++) {
                     uint pred = ssa_pred(g, b, p);
                     if (facts.reachable[pred]) facts.work_in.intersect(&facts.output[pred]);
                 }
@@ -120,6 +133,7 @@ fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
             facts.input[b].copy(&facts.work_in);
             facts.work_out.copy(&facts.work_in);
             for (int id = ssa_block_first_value(g, b); id >= 0; id = ssa_next_value(g, id)) {
+                if (!ssa_charge_work(g, 1)) return;
                 ssa_effect_step(facts, (uint)id, &facts.work_out);
             }
             if (!facts.work_out.same(&facts.output[b])) {
@@ -129,11 +143,19 @@ fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {
         }
     }
 }
-fn bool ssa_effect_dominates(SsaGraph* g, uint prior, uint current) @feat(SLJIT)
-    => ssa_value_dominates(g, (int)prior, (int)current);
+fn bool ssa_effect_dominates(SsaGraph* g, SsaCfgEffects* facts, uint prior, uint current) @feat(SLJIT) {
+    if (!ssa_charge_work(g, 1)) return false;
+    SsaValue a = g.values[prior];
+    SsaValue b = g.values[current];
+    if (a.block != b.block) return ssa_dominates(g, (uint)a.block, (uint)b.block);
+    if (a.op == ARG || a.op == PHI || a.op == JOIN) return true;
+    return facts.order[prior] != 0 && facts.order[prior] < facts.order[current];
+}
 fn int ssa_effect_alias(SsaCfgEffects* facts, int value) @feat(SLJIT) {
     uint guard;
+    if (!ssa_charge_work(facts.graph, 1)) return -1;
     while (value >= 0 && guard++ < facts.value_count && facts.original[value].op == COPY) {
+        if (!ssa_charge_work(facts.graph, 1)) return -1;
         value = facts.original[value].a;
     }
     return value;
@@ -208,7 +230,7 @@ fn uint ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
     while (buckets < g.value_count * 2) buckets *= 2;
     usz fixed_bytes = (usz)g.value_count * SsaValue::size
         + (usz)g.block_count * 2 * SsaAvailable::size
-        + (usz)(buckets + g.value_count) * uint::size
+        + (usz)(buckets + g.value_count * 2) * uint::size
         + (usz)g.block_count * 2 * bool::size;
     usz remaining = g.budget.max_bytes > g.storage_bytes ? g.budget.max_bytes - g.storage_bytes : 0;
     uint rows = g.block_count * 2 + 4;
@@ -219,8 +241,10 @@ fn uint ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
     char* arena = (char*)g.heap.alloc_func(g.heap.heap_udata, bytes);
     if (arena == null) return 0;
     defer g.heap.free_func(g.heap.heap_udata, arena);
+    if (!ssa_charge_work(g, bytes / ulong::size + (usz)g.value_count * 3)) return 0;
     mem::clear(arena, (sz)bytes);
     SsaCfgEffects facts;
+    facts.graph = g;
     facts.value_count = g.value_count;
     facts.bucket_count = buckets;
     facts.local_only = local_only;
@@ -229,19 +253,26 @@ fn uint ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
     facts.input = (SsaAvailable*)cursor; cursor += (usz)g.block_count * SsaAvailable::size;
     facts.output = (SsaAvailable*)cursor; cursor += (usz)g.block_count * SsaAvailable::size;
     ulong* bits = (ulong*)cursor; cursor += (usz)rows * words * ulong::size;
-    facts.work_in = { bits, words };
-    facts.work_out = { bits + words, words };
-    facts.candidates = { bits + words * 2, words };
-    facts.memory = { bits + words * 3, words };
+    facts.work_in = { bits, words, g };
+    facts.work_out = { bits + words, words, g };
+    facts.candidates = { bits + words * 2, words, g };
+    facts.memory = { bits + words * 3, words, g };
     if (!local_only) for (uint b = 0; b < g.block_count; b++) {
-        facts.input[b] = { bits + (usz)(4 + b * 2) * words, words };
-        facts.output[b] = { bits + (usz)(5 + b * 2) * words, words };
+        facts.input[b] = { bits + (usz)(4 + b * 2) * words, words, g };
+        facts.output[b] = { bits + (usz)(5 + b * 2) * words, words, g };
     }
     facts.buckets = (uint*)cursor; cursor += (usz)buckets * uint::size;
     facts.next = (uint*)cursor; cursor += (usz)g.value_count * uint::size;
+    facts.order = (uint*)cursor; cursor += (usz)g.value_count * uint::size;
     facts.reachable = (bool*)cursor; cursor += g.block_count * bool::size;
     facts.boundary = (bool*)cursor;
     for (uint id = 0; id < g.value_count; id++) facts.original[id] = g.values[id];
+    for (uint block = 0; block < g.block_count; block++) {
+        uint position = 1;
+        for (int id = ssa_block_first_value(g, block); id >= 0; id = ssa_next_value(g, id)) {
+            facts.order[id] = position++;
+        }
+    }
     for (uint id = 0; id < g.value_count; id++) {
         SsaEffect effect = ssa_effect(facts.original[id].op);
         if (effect == READ || effect == WRITE) facts.memory.include(id);
@@ -252,20 +283,23 @@ fn uint ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
         facts.buckets[bucket] = id + 1;
     }
     ssa_effect_available(g, &facts);
+    if (g.failed) return 0;
     uint rewritten;
     for (uint b = 0; b < g.block_count; b++) {
         if (!facts.reachable[b]) continue;
         facts.work_in.clear();
         if (!local_only) facts.work_in.copy(&facts.input[b]);
         for (int node = ssa_block_first_value(g, b); node >= 0; node = ssa_next_value(g, node)) {
+            if (!ssa_charge_work(g, 1)) return 0;
             uint id = (uint)node;
             SsaValue original = facts.original[id];
             SsaEffect effect = ssa_effect(original.op);
             if (effect == SCALAR || effect == LAYOUT || effect == READ) {
                 uint bucket = ssa_effect_hash(&facts, original);
                 for (uint item = facts.buckets[bucket]; item != 0; item = facts.next[item - 1]) {
+                    if (!ssa_charge_work(g, 1)) return 0;
                     uint prior = item - 1;
-                    if (prior == id || !facts.work_in.contains(prior) || !ssa_effect_dominates(g, prior, id)) continue;
+                    if (prior == id || !facts.work_in.contains(prior) || !ssa_effect_dominates(g, &facts, prior, id)) continue;
                     SsaValue earlier = facts.original[prior];
                     int replacement = -1;
                     if (effect == READ && earlier.op == STORE) {
@@ -276,7 +310,7 @@ fn uint ssa_optimize_cfg(SsaGraph* g) @feat(SLJIT) {
                     if (replacement < 0) continue;
                     if (ssa_has_result(original.op)) {
                         replacement = ssa_alias(g, replacement);
-                        if (!ssa_effect_dominates(g, (uint)replacement, id)) continue;
+                        if (!ssa_effect_dominates(g, &facts, (uint)replacement, id)) continue;
                         SsaValue* value = &g.values[id];
                         value.op = COPY;
                         value.a = replacement;

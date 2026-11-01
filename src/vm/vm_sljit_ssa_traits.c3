@@ -24,6 +24,9 @@ fn bool SsaOpTraits.total(&self) @feat(SLJIT) => self.reads == 0 && self.writes 
     && !self.may_deopt && !self.may_coerce && !self.may_throw && !self.may_call
     && !self.may_collect && !self.observable && !self.terminates;
 
+fn bool SsaOpTraits.needs_recovery(&self) @feat(SLJIT) => self.may_deopt
+    || self.may_coerce || self.may_throw || self.may_call || self.may_collect;
+
 // Guard obligations belong to the operation even when its result is dead.
 // In particular, a boxed conversion may leave to JS coercion, integer math
 // guards overflow, and USHR can refuse its unsigned result representation.

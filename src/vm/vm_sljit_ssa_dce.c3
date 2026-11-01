@@ -29,6 +29,7 @@ fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
     mem::clear(work, (sz)bytes);
     bool* live = (bool*)(work + g.value_count);
     SsaMark mark = { .graph = g, .live = live, .work = work };
+    if (!ssa_charge_work(g, g.value_count)) return 0;
     for (uint id = 0; id < g.value_count; id++) {
         SsaValue value = g.values[id];
         SsaOpTraits traits = ssa_op_traits(g, value);
@@ -36,13 +37,17 @@ fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
     }
     if (!g.direct) {
         for (uint pc = g.plan.begin; pc <= g.plan.end; pc++) {
-            foreach (entry : ssa_frame_entries(g, ssa_frame_at_pc(g, pc))) mark.keep(entry.value);
+            SsaFrameEntry[] entries = ssa_frame_entries(g, ssa_frame_at_pc(g, pc));
+            if (!ssa_charge_work(g, entries.len + 1)) return 0;
+            foreach (entry : entries) mark.keep(entry.value);
         }
     }
     // Explicit after-effect and helper states are recovery users too; they
     // need not coincide with the ordinary pre-bytecode frame table.
     for (uint frame = 0; frame < g.frame_count; frame++) {
-        foreach (entry : ssa_frame_entries(g, frame)) mark.keep(entry.value);
+        SsaFrameEntry[] entries = ssa_frame_entries(g, frame);
+        if (!ssa_charge_work(g, entries.len + 1)) return 0;
+        foreach (entry : entries) mark.keep(entry.value);
     }
     if (g.single_pass && g.direct && g.result_reg < g.reg_count) mark.keep(g.current[g.result_reg]);
     if (g.single_pass && g.plan.ssa_function == null && !g.direct) {
@@ -51,9 +56,11 @@ fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
     mark.keep(g.cmp_lhs);
     mark.keep(g.cmp_rhs);
     for (uint next = 0; next < mark.count; next++) {
+        if (!ssa_charge_work(g, 4)) return 0;
         SsaValue value = g.values[mark.work[next]];
         if (value.op == JOIN) {
             SsaJoin* join = &g.joins[value.a];
+            if (!ssa_charge_work(g, join.pred_count)) return 0;
             for (uint p = 0; p < join.pred_count; p++) mark.keep(join.incoming[p][value.b]);
             if (join.entry) mark.keep(join.entry_incoming[value.b]);
         } else if (value.op == PHI) {
@@ -64,6 +71,7 @@ fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
             for (uint i = 0; i < count; i++) mark.keep(operands[i]);
         }
     }
+    if (!ssa_charge_work(g, g.value_count)) return 0;
     uint removed;
     for (uint id = 0; id < g.value_count; id++) {
         if (live[id] || g.values[id].op == NOP) continue;
