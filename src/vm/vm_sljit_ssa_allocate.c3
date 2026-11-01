@@ -167,6 +167,7 @@ fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
         // COPY is a pure alias, so neither a machine definition nor a kill.
         if (v.op == COPY) continue;
         bool definition = ssa_has_result(v.op) && v.op != ARG && v.op != PHI && v.op != JOIN;
+        if (record && v.op == HELPER) ssa_helper_capture(self, i);
         self.operands(self.live, v);
         self.recovery(self.live, v.pc);
         if (definition) {

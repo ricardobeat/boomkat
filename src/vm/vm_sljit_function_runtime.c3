@@ -394,6 +394,7 @@ fn Instruction* sljit_function_dispatch(
     ColdCtx* cold
 ) @feat(SLJIT) @noinline {
     pc = sljit_function_entry(pc, regs, cold);
+    if (cold.vm.threaded_handoff != ThreadedHandoff.NONE) return pc;
     return th_next(pc, handlers, cold.act.bottom, cold);
 }
 // Report the counters the native tiers keep: what compiled, how often it ran,
@@ -464,6 +465,10 @@ fn void sljit_stats_dump(Heap* h) {
                 if (plan.ssa_region != null) io::printfn("SLJIT SSA outcomes id=%d completed=%d entry_misses=%d body_misses=%d epoch_updates=%d",
                     i, plan.ssa_region.ssa_completed, plan.ssa_region.ssa_entry_misses,
                     plan.ssa_region.ssa_body_misses, plan.ssa_region.ssa_epoch_updates);
+                if (plan.ssa_region != null && plan.ssa_region.ssa_helpers != null) {
+                    io::printfn("SLJIT SSA helpers id=%d calls=%d continued=%d", i,
+                        plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
+                }
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes
                         - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0), plan.resume_fragment, plan.resume_bytes);
