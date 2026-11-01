@@ -1019,6 +1019,15 @@ fn void check_ssa_call_regions(JsRuntime* runtime, JsContext* context) {
         $if $feat(SLJIT_STATS): ulong calls_before = watched_plan.ssa_fast_calls; $endif
         for (uint i = 0; i < 100; i++) eval(context, "regionWatchDrive(regionWatch);");
         $if $feat(SLJIT_STATS): @check(watched_plan.ssa_fast_calls > calls_before); $endif
+        $if $feat(SLJIT_ADAPTIVE) && $feat(SLJIT_STATS):
+            // This completion returns before the ordinary call entry publishes
+            // a frame. Its owning plan must still be marked as recently used.
+            watched_plan.last_use = 0;
+            ulong fast_before = watched_plan.ssa_fast_calls;
+            eval(context, "regionWatchDrive(regionWatch);");
+            @check(watched_plan.ssa_fast_calls == fast_before + 1);
+            @check(watched_plan.last_use != 0);
+        $endif
         // Both first prototypes have an empty own layout; only their identity
         // distinguishes the two chains.
         eval(context, "Object.setPrototypeOf(regionWatch,regionAlt);regionWatch.v2.value=0;regionWatchDrive(regionWatch);if(regionWatch.v2.value!==91)throw 'watched first prototype';Object.setPrototypeOf(regionWatch,regionOriginProto);");
