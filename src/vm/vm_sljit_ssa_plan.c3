@@ -52,6 +52,7 @@ fn FunctionPlan* ssa_function_wrap(CompiledFunction* cf, ColdCtx* cold, LoopPlan
     if (bytes > SSA_DEFAULT_BUDGET.max_bytes || !sljit_code_room(h, body.code_bytes, true)) {
         if (body.native != null) jit::sljit_free_code((void*)body.native, null);
         ssa_helper_sites_free(h, body);
+        ssa_deopt_free(h, body);
         ssa_plan_data_free(h, body);
         h.free_func(h.heap_udata, body);
         return null;
@@ -60,6 +61,7 @@ fn FunctionPlan* ssa_function_wrap(CompiledFunction* cf, ColdCtx* cold, LoopPlan
     if (plan == null) {
         if (body.native != null) jit::sljit_free_code((void*)body.native, null);
         ssa_helper_sites_free(h, body);
+        ssa_deopt_free(h, body);
         ssa_plan_data_free(h, body);
         h.free_func(h.heap_udata, body);
         return null;

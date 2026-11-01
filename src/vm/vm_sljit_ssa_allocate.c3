@@ -51,10 +51,24 @@ fn void SsaAllocation.interfere(&self, uint value, ulong* live) @feat(SLJIT) {
 // Guard recovery is an allocator use even when no IR instruction reads the
 // value again. Keep a pre-bytecode frame through every instruction it lowers
 // to, including result writes preceding a later guard in that instruction.
-fn void SsaAllocation.recovery(&self, ulong* live, uint pc) @feat(SLJIT) {
+fn void SsaAllocation.recovery_frame(&self, ulong* live, SsaFrameId frame) @feat(SLJIT) {
     SsaGraph* g = self.g;
-    if (g.direct || pc < g.plan.begin || pc > g.plan.end) return;
-    foreach (entry : ssa_frame_entries(g, ssa_frame_at_pc(g, pc))) self.add(live, entry.value);
+    uint depth;
+    while (frame != SSA_NO_FRAME) {
+        if (frame >= g.frame_count || depth++ == g.frame_count) { g.failed = true; return; }
+        SsaFrame origin = g.frame_table[frame];
+        if (!ssa_charge_work(g, (usz)origin.count + 3)) return;
+        foreach (entry : ssa_frame_entries(g, frame)) self.add(live, entry.value);
+        self.add(live, origin.callee_value);
+        self.add(live, origin.receiver_value);
+        frame = origin.parent;
+    }
+}
+fn void SsaAllocation.recovery(&self, ulong* live, uint pc, SsaFrameId frame = SSA_NO_FRAME) @feat(SLJIT) {
+    SsaGraph* g = self.g;
+    if (g.direct) return;
+    if (frame == SSA_NO_FRAME) frame = ssa_frame_at_pc(g, pc);
+    self.recovery_frame(live, frame);
 }
 fn void SsaAllocation.operands(&self, ulong* live, SsaValue v) @feat(SLJIT) {
     switch (v.op) {
@@ -169,7 +183,7 @@ fn void SsaAllocation.block(&self, uint block, bool record) @feat(SLJIT) {
         bool definition = ssa_has_result(v.op) && v.op != ARG && v.op != PHI && v.op != JOIN;
         if (record && v.op == HELPER) ssa_helper_capture(self, i);
         self.operands(self.live, v);
-        self.recovery(self.live, v.pc);
+        self.recovery(self.live, v.pc, v.before_frame);
         if (definition) {
             // Inclusive operand interference also protects lowering sequences
             // that write their destination before their final guard executes.

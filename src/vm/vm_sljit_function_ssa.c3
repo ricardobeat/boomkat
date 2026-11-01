@@ -63,6 +63,7 @@ fn LoopPlan* sljit_function_ssa_recoverable_compile(CompiledFunction* cf, ColdCt
     if (plan == null) {
         jit::sljit_free_code((void*)draft.native, null);
         ssa_helper_sites_free(cold.heap, &draft);
+        ssa_deopt_free(cold.heap, &draft);
         return null;
     }
     *plan = draft;
@@ -129,6 +130,7 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
         plan.ssa_leaves = leaf.next;
         if (leaf.ssa_entry != null) jit::sljit_free_code(leaf.ssa_entry, null);
         ssa_helper_sites_free(h, leaf);
+        ssa_deopt_free(h, leaf);
         ssa_plan_data_free(h, leaf);
         h.free_func(h.heap_udata, leaf);
     }
@@ -139,6 +141,7 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
     $endif
     jit::sljit_free_code(plan.ssa_region.ssa_entry != null ? plan.ssa_region.ssa_entry : (void*)plan.ssa_region.native, null);
     ssa_helper_sites_free(h, plan.ssa_region);
+    ssa_deopt_free(h, plan.ssa_region);
     ssa_plan_data_free(h, plan.ssa_region);
     h.free_func(h.heap_udata, plan.ssa_region);
     plan.ssa_region = null;
