@@ -1,0 +1,7 @@
+{
+  "native_source": "dd0c551b",
+  "embedding_source": "e72dbc3e plus the callback fixture (pending commit at capture time)",
+  "native_binary_sha256": "063df43c52843c053172a2b53d85d8aa29ece16b9a2920447cf18e2d7ae90a70",
+  "fixture_sha256": "e02a3d92888b3084558044e99a22207e323782efdfa45fba9f6d15758d075031",
+  "scope": "Architecture validation, no throughput measurement. x64 run precedes the callback CAPI addition; ARM64 ASan includes it. 53-fixture differential precedes callback fixture; callback separately checked native and ASan."
+}

@@ -1,0 +1,6 @@
+scalable SSA gateway: PASS words=714 registers=310 spills=753 edges=153 hits=160
+scalable acyclic helper: PASS words=605 calls=128 continuations=128
+scalable SSA access: PASS dense + 8 typed classes, WIDE, normal/stress
+scalable SSA fields: PASS live shapes, native loads/stores, exact fallback
+scalable SSA memory callbacks: PASS native continuation after storage mutation
+embedding JIT: PASS

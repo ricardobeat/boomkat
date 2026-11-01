@@ -1,0 +1,345 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALVAR        r0, 1
+[  2] CHKGLOBALVAR        r0, 2
+[  3] CHKGLOBALVAR        r0, 3
+[  4] CHKGLOBALVAR        r0, 4
+[  5] CHKGLOBALVAR        r0, 5
+[  6] CHKGLOBALVAR        r0, 6
+[  7] CHKGLOBALFUNC       r0, 7
+[  8] CHKGLOBALFUNC       r0, 8
+[  9] CLOSURE             r0, 0
+[ 10] DECLGLOBALFUNC      r0, 7
+[ 11] CLOSURE             r0, 1
+[ 12] DECLGLOBALFUNC      r0, 8
+[ 13] LDUNDEF             r0 = r0, r0
+[ 14] DECLVAR_HOIST       r0, 0
+[ 15] LDUNDEF             r0 = r0, r0
+[ 16] DECLVAR_HOIST       r0, 1
+[ 17] LDUNDEF             r0 = r0, r0
+[ 18] DECLVAR_HOIST       r0, 2
+[ 19] LDUNDEF             r0 = r0, r0
+[ 20] DECLVAR_HOIST       r0, 3
+[ 21] LDUNDEF             r0 = r0, r0
+[ 22] DECLVAR_HOIST       r0, 4
+[ 23] LDUNDEF             r0 = r0, r0
+[ 24] DECLVAR_HOIST       r0, 5
+[ 25] LDUNDEF             r0 = r0, r0
+[ 26] DECLVAR_HOIST       r0, 6
+[ 27] LDINT               r0, 0
+[ 28] DECLVAR             r0, 0
+[ 29] LDINT               r1, +160
+[ 30] JUMP                +27
+[ 31] NEWARR_CONST        r3, 9
+[ 32] LDREG               r2 = r3, r0
+[ 33] PUTVAR              r2, 1
+[ 34] GETGLOBAL           r2, 7
+[ 35] GETGLOBAL           r4, 1
+[ 36] LDINT               r5, +4
+[ 37] GETGLOBAL           r6, 8
+[ 38] CALL_UNDEF_THIS     r2 = r2, r3
+[ 39] LDINT               r3, +60
+[ 40] SNEQ                r2 = r2, r3
+[ 41] IF_TRUE             r2, +6
+[ 42] GETGLOBAL           r3, 1
+[ 43] LDINT               r4, 0
+[ 44] GETPROP             r5 = r3, r4
+[ 45] LDINT               r6, +12
+[ 46] SNEQ                r5 = r5, r6
+[ 47] LDREG               r2 = r5, r0
+[ 48] IF_TRUE             r2, +5
+[ 49] GETGLOBAL           r5, 1
+[ 50] LDINT               r6, +3
+[ 51] GETPROP             r7 = r5, r6
+[ 52] LDINT               r8, +15
+[ 53] SNEQ                r2 = r7, r8
+[ 54] IF_FALSE            r2, +2
+[ 55] LDCONST             r7, 14
+[ 56] THROW               r7 = r0, r0
+[ 57] INC_GLOBAL          r2, 0
+[ 58] GETVAR              r2, 0
+[ 59] LT                  r3 = r2, r1
+[ 60] IF_TRUE             r3, -30
+[ 61] LDINT               r0, 0
+[ 62] PUTVAR              r0, 2
+[ 63] NEWARR_CONST        r2, 15
+[ 64] LDREG               r1 = r2, r0
+[ 65] PUTVAR              r1, 3
+[ 66] TRY                 r1, 12
+[ 67] NOP                 
+[ 68] GETGLOBAL           r0, 7
+[ 69] LDREG               r1 = r0, r0
+[ 70] GETGLOBAL           r3, 3
+[ 71] LDINT               r4, +4
+[ 72] CLOSURE             r5, 2
+[ 73] CALL_UNDEF_THIS     r1 = r1, r3
+[ 74] LDCONST             r0, 20
+[ 75] THROW               r0 = r0, r0
+[ 76] ENDTRY              
+[ 77] JUMP                +9
+[ 78] CATCH               r0 = r0, r0
+[ 79] PUSH_LEX            
+[ 80] PUTLEX              r0, 21
+[ 81] GETVAR              r1, 21
+[ 82] LDCONST             r2, 22
+[ 83] JMP_SEQ             +2, r1, r2
+[ 84] GETVAR              r1, 21
+[ 85] THROW               r1 = r0, r0
+[ 86] POP_LEX             
+[ 87] GETGLOBAL           r0, 2
+[ 88] LDINT               r1, +3
+[ 89] SNEQ                r0 = r0, r1
+[ 90] IF_TRUE             r0, +5
+[ 91] GETGLOBAL           r1, 3
+[ 92] LDINT               r2, 0
+[ 93] GETPROP             r3 = r1, r2
+[ 94] LDINT               r4, +12
+[ 95] SNEQ                r0 = r3, r4
+[ 96] IF_TRUE             r0, +6
+[ 97] GETGLOBAL           r3, 3
+[ 98] LDINT               r4, +1
+[ 99] GETPROP             r5 = r3, r4
+[100] LDINT               r6, +13
+[101] SNEQ                r5 = r5, r6
+[102] LDREG               r0 = r5, r0
+[103] IF_TRUE             r0, +5
+[104] GETGLOBAL           r5, 3
+[105] LDINT               r6, +2
+[106] GETPROP             r7 = r5, r6
+[107] LDINT               r8, +3
+[108] SNEQ                r0 = r7, r8
+[109] IF_FALSE            r0, +2
+[110] LDCONST             r7, 23
+[111] THROW               r7 = r0, r0
+[112] NEWARR_CONST        r1, 24
+[113] LDREG               r0 = r1, r0
+[114] PUTVAR              r0, 4
+[115] LDINT               r1, 0
+[116] PUTVAR              r1, 5
+[117] GETGLOBAL           r1, 7
+[118] GETGLOBAL           r3, 4
+[119] LDINT               r4, +4
+[120] CLOSURE             r5, 3
+[121] CALL_UNDEF_THIS     r1 = r1, r3
+[122] LDREG               r0 = r1, r0
+[123] PUTVAR              r0, 6
+[124] GETGLOBAL           r0, 29
+[125] GETGLOBAL           r2, 6
+[126] CALL_UNDEF_THIS     r0 = r0, r1
+[127] LNOT                r1 = r0, r0
+[128] IF_TRUE             r1, +3
+[129] GETGLOBAL           r2, 5
+[130] LDINT               r3, +4
+[131] SNEQ                r1 = r2, r3
+[132] IF_TRUE             r1, +7
+[133] GETGLOBAL           r2, 29
+[134] GETGLOBAL           r4, 4
+[135] LDINT               r5, +3
+[136] GETPROP             r6 = r4, r5
+[137] LDREG               r4 = r6, r0
+[138] CALL_UNDEF_THIS     r2 = r2, r1
+[139] LNOT                r1 = r2, r0
+[140] IF_FALSE            r1, +2
+[141] LDCONST             r3, 30
+[142] THROW               r3 = r0, r0
+[143] GETGLOBAL           r1, 31
+[144] GETPROPC            r0 = r1, r32
+[145] LDCONST             r2, 33
+[146] CALL                r0 = r0, r1
+[147] RETUNDEF            
+
+--- Inner function 0 ---
+[  0] LDINT               r3, 0
+[  1] LDINT               r4, 0
+[  2] JUMP                +13
+[  3] GETPROP             r5 = r0, r4
+[  4] LDREG               r6 = r2, r0
+[  5] LDREG               r8 = r0, r0
+[  6] LDREG               r9 = r4, r0
+[  7] CALL_UNDEF_THIS     r6 = r6, r2
+[  8] GETPROP             r6 = r0, r4
+[  9] ADD_FUSED           r7 = r5, r6
+[ 10] ADD                 r3 = r3, r7
+[ 11] LDREG               r6 = r4, r0
+[ 12] GETPROP             r8 = r0, r4
+[ 13] ADDI                r10 = r8, +1
+[ 14] PUTPROP             r0 = r6, r10
+[ 15] INC_LT              r4 = r0, r0
+[ 16] JMP_LT              -14, r4, r1
+[ 17] BANDI               r7 = r1, +1
+[ 18] ADD                 r3 = r3, r7
+[ 19] BANDI               r7 = r1, +1
+[ 20] ADD                 r3 = r3, r7
+[ 21] BANDI               r7 = r1, +1
+[ 22] ADD                 r3 = r3, r7
+[ 23] BANDI               r7 = r1, +1
+[ 24] ADD                 r3 = r3, r7
+[ 25] BANDI               r7 = r1, +1
+[ 26] ADD                 r3 = r3, r7
+[ 27] BANDI               r7 = r1, +1
+[ 28] ADD                 r3 = r3, r7
+[ 29] BANDI               r7 = r1, +1
+[ 30] ADD                 r3 = r3, r7
+[ 31] BANDI               r7 = r1, +1
+[ 32] ADD                 r3 = r3, r7
+[ 33] BANDI               r7 = r1, +1
+[ 34] ADD                 r3 = r3, r7
+[ 35] BANDI               r7 = r1, +1
+[ 36] ADD                 r3 = r3, r7
+[ 37] BANDI               r7 = r1, +1
+[ 38] ADD                 r3 = r3, r7
+[ 39] BANDI               r7 = r1, +1
+[ 40] ADD                 r3 = r3, r7
+[ 41] BANDI               r7 = r1, +1
+[ 42] ADD                 r3 = r3, r7
+[ 43] BANDI               r7 = r1, +1
+[ 44] ADD                 r3 = r3, r7
+[ 45] BANDI               r7 = r1, +1
+[ 46] ADD                 r3 = r3, r7
+[ 47] BANDI               r7 = r1, +1
+[ 48] ADD                 r3 = r3, r7
+[ 49] BANDI               r7 = r1, +1
+[ 50] ADD                 r3 = r3, r7
+[ 51] BANDI               r7 = r1, +1
+[ 52] ADD                 r3 = r3, r7
+[ 53] BANDI               r7 = r1, +1
+[ 54] ADD                 r3 = r3, r7
+[ 55] BANDI               r7 = r1, +1
+[ 56] ADD                 r3 = r3, r7
+[ 57] BANDI               r7 = r1, +1
+[ 58] ADD                 r3 = r3, r7
+[ 59] BANDI               r7 = r1, +1
+[ 60] ADD                 r3 = r3, r7
+[ 61] BANDI               r7 = r1, +1
+[ 62] ADD                 r3 = r3, r7
+[ 63] BANDI               r7 = r1, +1
+[ 64] ADD                 r3 = r3, r7
+[ 65] BANDI               r7 = r1, +1
+[ 66] ADD                 r3 = r3, r7
+[ 67] BANDI               r7 = r1, +1
+[ 68] ADD                 r3 = r3, r7
+[ 69] BANDI               r7 = r1, +1
+[ 70] ADD                 r3 = r3, r7
+[ 71] BANDI               r7 = r1, +1
+[ 72] ADD                 r3 = r3, r7
+[ 73] BANDI               r7 = r1, +1
+[ 74] ADD                 r3 = r3, r7
+[ 75] BANDI               r7 = r1, +1
+[ 76] ADD                 r3 = r3, r7
+[ 77] BANDI               r7 = r1, +1
+[ 78] ADD                 r3 = r3, r7
+[ 79] BANDI               r7 = r1, +1
+[ 80] ADD                 r3 = r3, r7
+[ 81] BANDI               r7 = r1, +1
+[ 82] ADD                 r3 = r3, r7
+[ 83] BANDI               r7 = r1, +1
+[ 84] ADD                 r3 = r3, r7
+[ 85] BANDI               r7 = r1, +1
+[ 86] ADD                 r3 = r3, r7
+[ 87] BANDI               r7 = r1, +1
+[ 88] ADD                 r3 = r3, r7
+[ 89] BANDI               r7 = r1, +1
+[ 90] ADD                 r3 = r3, r7
+[ 91] BANDI               r7 = r1, +1
+[ 92] ADD                 r3 = r3, r7
+[ 93] BANDI               r7 = r1, +1
+[ 94] ADD                 r3 = r3, r7
+[ 95] BANDI               r7 = r1, +1
+[ 96] ADD                 r3 = r3, r7
+[ 97] BANDI               r7 = r1, +1
+[ 98] ADD                 r3 = r3, r7
+[ 99] BANDI               r7 = r1, +1
+[100] ADD                 r3 = r3, r7
+[101] BANDI               r7 = r1, +1
+[102] ADD                 r3 = r3, r7
+[103] BANDI               r7 = r1, +1
+[104] ADD                 r3 = r3, r7
+[105] BANDI               r7 = r1, +1
+[106] ADD                 r3 = r3, r7
+[107] BANDI               r7 = r1, +1
+[108] ADD                 r3 = r3, r7
+[109] BANDI               r7 = r1, +1
+[110] ADD                 r3 = r3, r7
+[111] BANDI               r7 = r1, +1
+[112] ADD                 r3 = r3, r7
+[113] BANDI               r7 = r1, +1
+[114] ADD                 r3 = r3, r7
+[115] BANDI               r7 = r1, +1
+[116] ADD                 r3 = r3, r7
+[117] BANDI               r7 = r1, +1
+[118] ADD                 r3 = r3, r7
+[119] BANDI               r7 = r1, +1
+[120] ADD                 r3 = r3, r7
+[121] BANDI               r7 = r1, +1
+[122] ADD                 r3 = r3, r7
+[123] BANDI               r7 = r1, +1
+[124] ADD                 r3 = r3, r7
+[125] BANDI               r7 = r1, +1
+[126] ADD                 r3 = r3, r7
+[127] BANDI               r7 = r1, +1
+[128] ADD                 r3 = r3, r7
+[129] BANDI               r7 = r1, +1
+[130] ADD                 r3 = r3, r7
+[131] BANDI               r7 = r1, +1
+[132] ADD                 r3 = r3, r7
+[133] BANDI               r7 = r1, +1
+[134] ADD                 r3 = r3, r7
+[135] BANDI               r7 = r1, +1
+[136] ADD                 r3 = r3, r7
+[137] BANDI               r7 = r1, +1
+[138] ADD                 r3 = r3, r7
+[139] BANDI               r7 = r1, +1
+[140] ADD                 r3 = r3, r7
+[141] BANDI               r7 = r1, +1
+[142] ADD                 r3 = r3, r7
+[143] BANDI               r7 = r1, +1
+[144] ADD                 r3 = r3, r7
+[145] BANDI               r7 = r1, +1
+[146] ADD                 r3 = r3, r7
+[147] BANDI               r7 = r1, +1
+[148] ADD                 r3 = r3, r7
+[149] BANDI               r7 = r1, +1
+[150] ADD                 r3 = r3, r7
+[151] BANDI               r7 = r1, +1
+[152] ADD                 r3 = r3, r7
+[153] BANDI               r7 = r1, +1
+[154] ADD                 r3 = r3, r7
+[155] BANDI               r7 = r1, +1
+[156] ADD                 r3 = r3, r7
+[157] BANDI               r7 = r1, +1
+[158] ADD                 r3 = r3, r7
+[159] BANDI               r7 = r1, +1
+[160] ADD                 r3 = r3, r7
+[161] RET                 r3 = r0, r0
+
+--- Inner function 1 ---
+[  0] NEWOBJ_SHAPE        r4, 24
+[  1] INIT_SLOT           r4 = r0, r1
+[  2] LDCONST             r6, 4
+[  3] ADD                 r6 = r6, r1
+[  4] INIT_SLOT           r4 = r1, r6
+[  5] PUTPROPC            r0 = r4, r2
+[  6] LDREG               r2 = r1, r0
+[  7] GETPROP_CACHE       r3 = r0, r2
+[  8] ADDI                r3 = r3, +10
+[  9] PUTPROP             r0 = r2, r3
+[ 10] RETUNDEF            
+
+--- Inner function 2 ---
+[  0] INC_GLOBAL          r2, 2
+[  1] LDINT               r2, +2
+[  2] SEQ                 r3 = r1, r2
+[  3] IF_FALSE            r3, +2
+[  4] LDCONST             r3, 3
+[  5] THROW               r3 = r0, r0
+[  6] LDREG               r4 = r0, r0
+[  7] LDREG               r5 = r1, r0
+[  8] CALL_GLOBAL         r2, argc=2, K[4]
+[  9] RETUNDEF            
+
+--- Inner function 3 ---
+[  0] INC_GLOBAL          r2, 2
+[  1] LDREG               r2 = r1, r0
+[  2] DELPROP             r3 = r0, r2
+[  3] RETUNDEF            
+--- End bytecode ---

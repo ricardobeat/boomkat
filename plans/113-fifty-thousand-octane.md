@@ -29,12 +29,17 @@ Implemented foundations (individual milestones remain partial):
   effectful cyclic SSA with exact recovery after committed stores.
 - Budgeted dynamic SSA nodes, blocks, predecessor lists, dominance, register
   state and sparse immutable recovery frames; stable IDs separate from scheduling.
-  Decoded lowering and work budgets are integrated. WIDE/high-register gateway
-  activation and dynamic invocation storage are still in progress.
+  Decoded lowering, work budgets, WIDE/high-register gateway activation and
+  dynamic invocation storage are integrated. Shared deopt freezes locations
+  once and uses small guard stubs; scalable admission auditing continues.
 - Generic call/allocation continuation with typed live-home preservation,
   boxed roots, stable activation lookup after stack growth, explicit
-  before/after outcomes and exception handoff. Capturing closures and the
-  general single-operation interpreter bridge remain in progress.
+  before/after outcomes and exception handoff. Capturing closures, compact
+  cells and the single-operation interpreter bridge are integrated. Fresh
+  binding reads handle aliases with native stores. Effectful inlining remains
+  in progress; logical caller/callee recovery frames are now represented.
+- Native dense/typed/own-field access nodes use actual SSA receivers and live
+  storage/generation guards, including after a callback moves array storage.
 - Guard-safe DCE and CFG effects/CSE; dynamic effects, range proofs and LICM
   are being integrated. Cyclic allocation includes recovery and phi-edge uses.
 - Shared executable owners for function, loop and template code; pins through
@@ -42,7 +47,7 @@ Implemented foundations (individual milestones remain partial):
   Capacity-generation retries and exact-PC loop admission replace sticky waits
   and colliding rejection masks. Policy defaults remain unchanged.
 
-Current evidence: [architecture checkpoint](113-fifty-thousand-octane/ssa-architecture-2026-11-01/report.md).
+Current evidence: [scalable memory/recovery contracts](113-fifty-thousand-octane/ssa-architecture-2026-11-01/contracts/scalable-memory/report.md).
 Earlier full-suite scores are roughly 6.4K; 50K is not achieved. Isolated native
 activation or lower instruction counts are evidence of mechanism, not a full-suite win.
 

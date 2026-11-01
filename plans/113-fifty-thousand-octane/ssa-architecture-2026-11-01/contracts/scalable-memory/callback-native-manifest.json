@@ -1,0 +1,66 @@
+[
+  {
+    "index": 0,
+    "native": "0x100dc8010",
+    "size": 6620,
+    "path": "/tmp/bk-ssa-memory-native/native-000-6620",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=9 values=297 reused=72",
+      "SLJIT cyclic allocation line=3 values=297 joins=8 spills=17 cfg=1"
+    ]
+  },
+  {
+    "index": 1,
+    "native": "0x100dd7fa8",
+    "size": 56,
+    "path": "/tmp/bk-ssa-memory-native/native-001-56",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=9 values=297 reused=72",
+      "SLJIT cyclic allocation line=3 values=297 joins=8 spills=17 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=161 bytes=6620"
+    ]
+  },
+  {
+    "index": 2,
+    "native": "0x100dd5f68",
+    "size": 8192,
+    "path": "/tmp/bk-ssa-memory-native/native-002-8192",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=9 values=297 reused=72",
+      "SLJIT cyclic allocation line=3 values=297 joins=8 spills=17 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=161 bytes=6620"
+    ]
+  },
+  {
+    "index": 3,
+    "native": "0x100dd5f10",
+    "size": 56,
+    "path": "/tmp/bk-ssa-memory-native/native-003-56",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=9 values=297 reused=72",
+      "SLJIT cyclic allocation line=3 values=297 joins=8 spills=17 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=161 bytes=6620",
+      "SLJIT function compiled growAndChange pc=0..11 function_ops=11 regs=7 code_bytes=8248 plan_bytes=15187",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis"
+    ]
+  },
+  {
+    "index": 4,
+    "native": "0x100dcb600",
+    "size": 43216,
+    "path": "/tmp/bk-ssa-memory-native/native-004-43216",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=9 values=297 reused=72",
+      "SLJIT cyclic allocation line=3 values=297 joins=8 spills=17 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=161 bytes=6620",
+      "SLJIT function compiled growAndChange pc=0..11 function_ops=11 regs=7 code_bytes=8248 plan_bytes=15187",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis",
+      "SLJIT decoded reject pc=0 op=CHKGLOBALVAR",
+      "SLJIT recoverable reject name= stage=analysis"
+    ]
+  }
+]
