@@ -36,7 +36,7 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     if (!site.native_resume) {
         // A RAW address still needed across an unknown mutation has no valid
         // continuation. This individual bytecode uses the exact VM fallback.
-        self.publish(&self.g.frames[self.pc - self.plan.begin], self.pc);
+        self.publish_id(ssa_frame_at_pc(self.g, self.pc), self.pc);
         return;
     }
     foreach (id : site.live_values[:site.live_count]) self.helper_save(id);
@@ -47,14 +47,12 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     int mem = jit::SLJIT_MEM;
     int imm = jit::SLJIT_IMM;
     uint outputs;
-    for (uint reg = 0; reg < self.cf.num_regs; reg++) {
-        int source = self.g.frames[self.pc - self.plan.begin][reg];
-        if (source < 0) continue;
-        self.output(source, self.pc);
+    foreach (entry : ssa_frame_entries(self.g, site.before_frame)) {
+        self.output(entry.value, self.pc);
         self.e.mov(r2, 0, mem | self.state, $reflect(LoopState.execution).offset);
         self.e.mov(r2, 0, mem | r2, $reflect(SsaExecution.outputs).offset);
         self.e.mov(mem | r2, (long)outputs * SsaPublishedValue::size + $reflect(SsaPublishedValue.reg).offset,
-            imm, reg, jit::SLJIT_MOV_U32);
+            imm, entry.reg, jit::SLJIT_MOV_U32);
         self.e.mov(mem | r2, (long)outputs * SsaPublishedValue::size + $reflect(SsaPublishedValue.value).offset, r0, 0);
         outputs++;
     }

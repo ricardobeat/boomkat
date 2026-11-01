@@ -368,8 +368,11 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     int undefined = ssa_value(g, CONST_BOXED, BOXED, -1, -1,
                                         (long)(types::TAG_UNDEFINED << 48));
                                     ssa_result(g, undefined, receiver, pos);
-                                    g.current[receiver] = undefined;
+                                    // The result is written after receiver clearing.
+                                    if (receiver != ins.a) g.current[receiver] = undefined;
                                 }
+                                g.values[value].before_frame = g.frames[at];
+                                g.values[value].after_frame = ssa_frame_capture(g, pos + 1, &g.current[0], LOOP_REGS);
                                 break;
                             }
                             // Its successor is a fresh external entry importing
@@ -391,6 +394,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
                         ssa_result(g, value, ins.a, pos);
                         g.current[ins.a] = value;
+                        g.values[value].before_frame = g.frames[at];
+                        g.values[value].after_frame = ssa_frame_capture(g, pos + 1, &g.current[0], LOOP_REGS);
                         break;
                     }
                 case GETPROPC:

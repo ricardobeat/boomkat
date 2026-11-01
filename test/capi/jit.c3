@@ -848,6 +848,37 @@ fn void check_artifact_retirement() @feat(SLJIT) {
     @check(((FunctionPlan*)cf.sljit_function).artifact.generation != generation);
 }
 
+// CALL_UNDEF_THIS clears its receiver before invoking, then writes the result.
+// Hand-authored bytecode may place that result in the receiver slot itself.
+fn void check_helper_result_receiver_alias() @feat(SLJIT) {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    eval(&context, "function helperAlias(o,n,cb){var sum=0.25;for(var i=0;i<n;i++){o.count=o.count+1;var value=cb(i);sum=sum+value;}return sum;}function helperAliasCallback(i){return i+0.5;}");
+    CompiledFunction* cf = named_function(&runtime, "helperAlias");
+    @check(cf != null);
+    bool changed;
+    for (uint pc = 0; pc + 1 < cf.code_count; pc++) {
+        Instruction* call = cf.code + pc;
+        if (call.op != Opcode.CALL_UNDEF_THIS) continue;
+        Instruction* copy = cf.code + pc + 1;
+        @check(copy.op == Opcode.LDREG && copy.b == call.a);
+        call.a = call.b + 1;
+        copy.b = call.a;
+        changed = true;
+        break;
+    }
+    @check(changed && runtime.set_jit());
+    for (uint i = 0; i < 80; i++) eval(&context,
+        "var helperAliasState={count:0};if(helperAlias(helperAliasState,20,helperAliasCallback)!==200.25||helperAliasState.count!==20)throw 'receiver/result alias';");
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan != null && plan.ssa_region != null && plan.ssa_region.ssa_helpers != null);
+    $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued != 0); $endif
+}
+
 fn void check_numeric_pipeline() @feat(SLJIT) {
     // Earlier fixtures deliberately poison indexed prototypes. Use a fresh
     // runtime so this check requires successful compiled push continuations.
@@ -1214,6 +1245,7 @@ fn void check_function_missing_caches(JsRuntime* runtime) {
 fn void main() {
     check_dependency_gc();
     check_artifact_retirement();
+    check_helper_result_receiver_alias();
     check_parameter_alias_roles();
     check_decoded_bytecode();
     check_decoded_register_uses();

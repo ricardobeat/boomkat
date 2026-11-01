@@ -202,8 +202,8 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     }
     if ((plan.ssa_recoverable || plan.binding_count != 0)
         && !loop_prepare(plan, &state, cold, plan.ssa_fields)) return entry_pc;
-    if (sljit_artifact_enter(cold.heap, plan.code_owner) == 0) return entry_pc;
-    defer sljit_artifact_leave(cold.heap, plan.code_owner);
+    if (state.execution == null && sljit_artifact_enter(cold.heap, plan.code_owner) == 0) return entry_pc;
+    defer if (state.execution == null) sljit_artifact_leave(cold.heap, plan.code_owner);
     long budget = plan.ssa_recoverable && run != null ? run.budget : 1;
     uint resume = plan.native(&state, budget);
     if (plan.ssa_recoverable && run != null) run.budget = state.budget;
