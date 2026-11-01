@@ -120,13 +120,19 @@ var tailStacks = (function () {
     function thrower() { throw new Error('tail'); }
     function tailCaller() { return thrower(); }
     var arrowCaller = () => thrower();
+    // Not a tail call: the call's result goes through a local first, even
+    // though the compiled code ends in the same CALL; RET shape.
+    var viaLocal = () => { var r = thrower(); return r; };
+    var viaLocalOuter = () => { var r = viaLocal(); return r; };
     var out = [];
+    try { viaLocalOuter(); } catch (e) { out.push(e.stack); }
     try { tailCaller(); } catch (e) { out.push(e.stack); }
     try { arrowCaller(); } catch (e) { out.push(e.stack); }
     return out;
 })();
-check('tail call', tailStacks[0], ['thrower', 'tailCaller']);
-check('arrow tail call', tailStacks[1], ['thrower', 'arrowCaller']);
+check('result through a local', tailStacks[0], ['thrower', 'viaLocal', 'viaLocalOuter']);
+check('tail call', tailStacks[1], ['thrower', 'tailCaller']);
+check('arrow tail call', tailStacks[2], ['thrower', 'arrowCaller']);
 
 if (failures === 0) {
     print('PASS: error.stack carries ordered call frames');

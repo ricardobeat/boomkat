@@ -702,6 +702,12 @@ int  cur_with_depth;
     // Conditional branches and TRY catch offsets too far for their 16-bit
     // field, by instruction index. widen_far_offsets gives each a WIDE prefix.
     List{FarOffset} far_offsets;
+    // Call nodes in syntactic tail position (ECMA-262 IsInTailPosition) while
+    // the return operand naming them compiles, and the instruction index of
+    // each call emitted for one. run_tail_calls rewrites only those calls:
+    // `const r = f(); return r;` compiles to the same CALL; RET shape.
+    List{uint} tail_nodes;
+    List{uint} tail_call_pcs;
 
     // Arrow/async tracking, needed for needs_env computation in finish().
     bool is_arrow;
@@ -883,6 +889,8 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.slot_global_name_idxs.allocator = mem;
     self.direct_eval_offsets.allocator = mem;
     self.far_offsets.allocator = mem;
+    self.tail_nodes.allocator = mem;
+    self.tail_call_pcs.allocator = mem;
     self.bindings.allocator = mem;
     self.captured_names.allocator = mem;
     self.defaults.allocator = mem;
@@ -932,6 +940,8 @@ fn void CompilerContext.cleanup(&self) {
     self.slot_global_name_idxs.free();
     self.direct_eval_offsets.free();
     self.far_offsets.free();
+    self.tail_nodes.free();
+    self.tail_call_pcs.free();
     self.bindings.free();
     foreach (name : self.captured_names) { mem::free(name.ptr); }
     self.captured_names.free();
@@ -1629,7 +1639,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         if (self.is_strict) {
             moveelim_mark_jump_targets_and_try_regions(self.code, self.code_count,
                                                        me_jump_targets, me_in_try);
-            run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try);
+            run_tail_calls(self.code, self.code_count, me_jump_targets, me_in_try, self.tail_call_pcs.array_view());
         }
         h.free_func(h.heap_udata, me_jump_targets);
         h.free_func(h.heap_udata, me_in_try);

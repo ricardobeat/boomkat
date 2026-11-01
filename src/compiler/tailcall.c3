@@ -119,13 +119,16 @@ fn void tailcall_unmark_finally_bodies(Instruction* code, uint code_count, bool*
     }
 }
 
-// Rewrite `CALL* rDst ; RET rDst` into a TAILCALL, in place.
+// Rewrite `CALL* rDst ; RET rDst` into a TAILCALL, in place, for the calls
+// listed in `tail_pcs`, which the compiler recorded as syntactically in tail
+// position. Other calls reach the same shape once move elimination folds a
+// temporary away, as in `const r = f(); return r;`, and must keep their frame.
 //
 // `jump_targets` and `in_try` are the maps
 // moveelim_mark_jump_targets_and_try_regions builds; this pass runs after it
 // so both are already populated for the final instruction sequence.
-fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, bool* in_try) {
-    if (code_count < 2) { return; }
+fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, bool* in_try, uint[] tail_pcs) {
+    if (code_count < 2 || tail_pcs.len == 0) { return; }
 
     // `in_try` covers the finally body as well as the try body, because move
     // elimination must avoid both. Tail calls must not: a `return` in a
@@ -141,7 +144,8 @@ fn void run_tail_calls(Instruction* code, uint code_count, bool* jump_targets, b
     for (uint i = 0; i < code_count; i++) { tail_in_try[i] = in_try[i]; }
     tailcall_unmark_finally_bodies(code, code_count, tail_in_try);
 
-    for (uint i = 0; i + 1 < code_count; i++) {
+    foreach (i : tail_pcs) {
+        if (i + 1 >= code_count) { continue; }
         Instruction call_insn = code[i];
         Opcode tail_op = tailcall_form(call_insn.op);
         if (tail_op == Opcode.NOP) { continue; }
