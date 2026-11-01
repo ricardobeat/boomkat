@@ -158,6 +158,7 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
         if (!ssa_build(graph)) return null;
     }
     ssa_schedule_init(graph);
+    if (!ssa_edge_states(graph)) return null;
     if (single_pass) {
         for (uint memory = 0; memory < plan.memory_count; memory++) {
             LoopMemorySpec spec = plan.memory[memory];

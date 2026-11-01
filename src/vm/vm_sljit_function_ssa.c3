@@ -236,7 +236,11 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     // A collecting callback may have relocated every VM register window.
     regs = cold.act.bottom;
     if (plan.ssa_data != null) {
-        if (!ssa_execution_publish(&execution)) return entry_pc;
+        if (!ssa_execution_publish(&execution)) {
+            // Publication refusal after native progress cannot replay entry.
+            // An activation-changing helper already carries its actual VM PC.
+            return execution.vm_resume != null ? execution.vm_resume : cf.code + resume;
+        }
     } else { sljit_publish_state(cold, regs, state, cf.num_regs, plan); }
     plan.hits++;
     $if $feat(SLJIT_STATS):
