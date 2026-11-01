@@ -101,6 +101,8 @@ struct LoopPlan @feat(SLJIT) {
     ulong ssa_helper_calls @if($feat(SLJIT_STATS));
     ulong ssa_helper_continued @if($feat(SLJIT_STATS));
     LoopNative native;
+    JitArtifact artifact;
+    JitArtifact* code_owner;
     ulong ssa_inputs;
     uint ssa_shape_epoch;
     bool ssa_fields;
@@ -1961,8 +1963,16 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJ
     return native;
 }
 
+fn void sljit_loop_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
+    LoopPlan* plan = artifact.payload;
+    if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
+    h.free_func(h.heap_udata, plan);
+}
+
 fn void sljit_loop_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
     LoopPlan* plan = cf.sljit_loops;
+    cf.sljit_loops = null;
+    cf.sljit_loop_ready = 0;
     while (plan != null) {
         LoopPlan* next = plan.next;
         $if $feat(SLJIT_STATS):
@@ -1976,9 +1986,7 @@ fn void sljit_loop_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
                 plan.code_bytes
             );
         $endif
-        jit::sljit_free_code((void*)plan.native, null);
-        h.jit_code_bytes -= plan.code_bytes;
-        h.free_func(h.heap_udata, plan);
+        sljit_artifact_retire(h, &plan.artifact);
         plan = next;
     }
     cf.sljit_loops = null;
@@ -2099,6 +2107,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     Heap* h              = cold.heap;
     $if $feat(SLJIT_ADAPTIVE): h.jit_clock++; $endif
     CompiledFunction* cf = cold.vm.current_func;
+    sljit_budget_retry_function(h, cf);
     if (!h.jit_enabled || !types::USE_NANBOX || usz::size != 8 || h.uncatchable_throw
         || std::core::mem::@atomic_load(
         h.interrupt_requested
@@ -2121,7 +2130,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     uint plans;
     for (LoopPlan* candidate = cf.sljit_loops; candidate != null; candidate = candidate.next) {
         plans++;
-        if (offset != candidate.end) continue;
+        if (offset != candidate.end || candidate.native == null) continue;
         loop_import_state(candidate, &state, regs, window);
         if (loop_prepare(candidate, &state, cold)) {
             plan = candidate;
@@ -2175,7 +2184,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         *plan = draft;
         plan.next = cf.sljit_loops;
         cf.sljit_loops = plan;
-        h.jit_code_bytes += plan.code_bytes;
+        sljit_artifact_publish(h, &plan.artifact, cf, plan, LOOP_CODE,
+            plan.code_bytes, LoopPlan::size, &sljit_loop_release);
+        plan.code_owner = &plan.artifact;
         $if $feat(SLJIT_STATS):
             io::eprintfn(
                 "SLJIT loop compiled %s pc=%d..%d code_bytes=%d plan_bytes=%d ssa=%d mem=%d",
@@ -2194,9 +2205,9 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         loop_import_state(plan, &state, regs, window);
         if (!loop_prepare(plan, &state, cold)) return body;
     }
-    h.jit_native_active++;
+    if (sljit_artifact_enter(h, &plan.artifact) == 0) return body;
+    defer sljit_artifact_leave(h, &plan.artifact);
     uint resume_pc = plan.native(&state, budget);
-    h.jit_native_active--;
     uint consumed  = (uint)(budget - state.budget);
     $if $feat(SLJIT_STATS):
     if (plan.ssa) { plan.ssa_hits++; plan.ssa_iterations += consumed; }
@@ -2212,13 +2223,12 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     // their guarded code for future matching inputs and publish this miss's
     // exact caller state below before the interpreter replays the call.
     if (plan.ssa && !plan.ssa_calls && state.budget > 1
-        && resume_pc >= plan.begin && resume_pc < plan.end) {
+        && resume_pc >= plan.begin && resume_pc < plan.end
+        && sljit_artifact_retire_fragment(h, &plan.artifact, (void*)plan.native, plan.code_bytes)) {
         $if $feat(SLJIT_STATS):
             io::eprintfn("SLJIT ssa fallback name=%s begin=%d pc=%d opcode=%s iterations=%d",
                 (String)cf.get_name(), plan.begin, resume_pc, cf.code[resume_pc].op, consumed);
         $endif
-        jit::sljit_free_code((void*)plan.native, null);
-        h.jit_code_bytes -= plan.code_bytes;
         plan.native = null;
         plan.code_bytes = 0;
         // Widening only helps when an integer operation overflowed; any other
@@ -2260,10 +2270,17 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
             for (uint i = 0; i < plan.memory_count; i++) plan.memory[i].doubles = false;
             plan.native = loop_reemit(plan, cf, h, false);
         }
+        if (plan.native != null && !sljit_code_room(h, plan.code_bytes)) {
+            jit::sljit_free_code((void*)plan.native, null);
+            plan.native = null;
+            plan.code_bytes = 0;
+            cf.sljit_loop_budget_wait |= 1UL << (offset & 63);
+        }
         if (plan.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
         } else {
             h.jit_code_bytes += plan.code_bytes;
+            plan.artifact.code_bytes += plan.code_bytes;
         }
         // A retired cyclic kernel may already have committed stores. Its
         // completed prefix and exact frame must still be published below.

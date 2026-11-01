@@ -2,6 +2,7 @@ module boomkat::vm;
 
 import boomkat::heap;
 import boomkat::bytecode;
+import boomkat::jit;
 
 // One owner includes every executable fragment and the metadata those
 // fragments address. Dispatch detachment precedes retirement; reclamation
@@ -103,4 +104,29 @@ fn void sljit_artifact_retire(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
     h.jit_retired_artifacts = artifact;
     h.jit_retired_code_bytes += artifact.code_bytes;
     sljit_artifact_drain(h);
+}
+
+// A legacy loop may replace its kernel after returning to C. Keep that old
+// fragment charged and alive until the enclosing native/publication scope ends.
+struct JitCodeFragment @feat(SLJIT) {
+    JitArtifact artifact;
+    void* code;
+}
+fn void sljit_fragment_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
+    JitCodeFragment* fragment = artifact.payload;
+    boomkat::jit::sljit_free_code(fragment.code, null);
+    h.free_func(h.heap_udata, fragment);
+}
+fn bool sljit_artifact_retire_fragment(Heap* h, JitArtifact* owner, void* code, usz bytes) @feat(SLJIT) {
+    JitCodeFragment* fragment = (JitCodeFragment*)h.alloc_func(h.heap_udata, JitCodeFragment::size);
+    if (fragment == null) return false;
+    *fragment = {};
+    fragment.code = code;
+    assert(owner.code_bytes >= bytes);
+    owner.code_bytes -= bytes;
+    h.jit_code_bytes -= bytes;
+    sljit_artifact_publish(h, &fragment.artifact, owner.function, fragment,
+        owner.kind, bytes, JitCodeFragment::size, &sljit_fragment_release);
+    sljit_artifact_retire(h, &fragment.artifact);
+    return true;
 }

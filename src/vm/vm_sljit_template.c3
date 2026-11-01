@@ -20,6 +20,7 @@ struct TemplatePart @feat(SLJIT) {
 }
 struct TemplatePlan @feat(SLJIT) {
     TemplateNative measure;
+    JitArtifact artifact;
     TemplateNative write;
     TemplatePart[TEMPLATE_MAX_PARTS] parts;
     uint count;
@@ -30,7 +31,7 @@ struct TemplatePlan @feat(SLJIT) {
     uint return_pc;
     ulong hits;
     ulong misses;
-    usz code_bytes @if($feat(SLJIT_STATS));
+    usz code_bytes;
 }
 // Symbolic values describe the admitted loop without depending on its register
 // allocation, property names, template spelling, or function name.
@@ -420,27 +421,32 @@ fn TemplateNative sljit_template_emit(TemplatePlan* plan, bool write) @feat(SLJI
     if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, imm, -1) != 0) e.failed = true;
     if (e.failed) return null;
     void* code = jit::sljit_generate_code(e.compiler, 0, null);
-    $if $feat(SLJIT_STATS):
-        if (code) plan.code_bytes += jit::sljit_shim_code_size(e.compiler);
-    $endif
+    if (code) plan.code_bytes += jit::sljit_shim_code_size(e.compiler);
     return (TemplateNative)code;
 }
 
-fn void sljit_template_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
-    TemplatePlan* plan = (TemplatePlan*)cf.sljit_template;
-    if (!plan) return;
+fn void sljit_template_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
+    TemplatePlan* plan = artifact.payload;
+    CompiledFunction* cf = artifact.function;
     $if $feat(SLJIT_STATS):
         io::eprintfn("SLJIT template %s hits=%d misses=%d parts=%d", (String)cf.get_name(), plan.hits, plan.misses, plan.count);
     $endif
     if (plan.measure) jit::sljit_free_code((void*)plan.measure, null);
     if (plan.write) jit::sljit_free_code((void*)plan.write, null);
     h.free_func(h.heap_udata, plan);
+}
+
+fn void sljit_template_free(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
+    TemplatePlan* plan = (TemplatePlan*)cf.sljit_template;
+    if (plan == null) return;
     cf.sljit_template = null;
+    sljit_artifact_retire(h, &plan.artifact);
 }
 
 fn Instruction* sljit_template_entry(Instruction* pc, TVal* regs, ColdCtx* cold) @feat(SLJIT) @noinline {
     CompiledFunction* cf = cold.vm.current_func;
     Heap* h = cold.heap;
+    sljit_budget_retry_function(h, cf);
     if (!h.jit_enabled || pc != cf.code || !sljit_template_candidate(cf) || !types::USE_NANBOX || usz::size != 8
         || h.capi_interrupt_fn != null || h.interrupt_due || h.uncatchable_throw
         || std::core::mem::@atomic_load(h.interrupt_requested) != 0) return pc;
@@ -461,16 +467,27 @@ fn Instruction* sljit_template_entry(Instruction* pc, TVal* regs, ColdCtx* cold)
         plan = (TemplatePlan*)h.alloc_func(h.heap_udata, TemplatePlan::size);
         if (!plan) return pc;
         *plan = draft;
-        cf.sljit_template = plan;
         plan.measure = sljit_template_emit(plan, false);
         plan.write = sljit_template_emit(plan, true);
-        if (!plan.measure || !plan.write) { sljit_template_free(h, cf); return pc; }
+        bool ready = plan.measure != null && plan.write != null;
+        if (!ready || !sljit_code_room(h, plan.code_bytes, true)) {
+            cf.sljit_template_budget_wait = ready;
+            if (plan.measure) jit::sljit_free_code((void*)plan.measure, null);
+            if (plan.write) jit::sljit_free_code((void*)plan.write, null);
+            h.free_func(h.heap_udata, plan);
+            return pc;
+        }
+        sljit_artifact_publish(h, &plan.artifact, cf, plan, TEMPLATE_CODE,
+            plan.code_bytes, TemplatePlan::size, &sljit_template_release);
+        cf.sljit_template = plan;
         $if $feat(SLJIT_STATS):
             io::eprintfn("SLJIT template compiled %s: parts=%d code_bytes=%d plan_bytes=%d", (String)cf.get_name(), plan.count, plan.code_bytes, TemplatePlan::size);
         $endif
     }
     Shape* shape = h.get_shape(plan.shape);
     if (shape == null || shape.generation != plan.generation) return pc;
+    if (sljit_artifact_enter(h, &plan.artifact) == 0) return pc;
+    defer sljit_artifact_leave(h, &plan.artifact);
     long length = plan.measure(rows, count, null);
     if (length < 0) {
         plan.misses++;
