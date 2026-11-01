@@ -89,6 +89,7 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     }
     graph.force_f64 = forced;
     uint span = plan.end - plan.begin + 1;
+    if (!ssa_graph_tables(graph, span)) return;
     graph.frames = (SsaFrameId*)ssa_storage_alloc(graph, span, SsaFrameId::size);
     if (graph.frames != null) for (uint pc = 0; pc < span; pc++) graph.frames[pc] = SSA_NO_FRAME;
 }
@@ -154,7 +155,7 @@ fn SsaGraph* ssa_prepare(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool sin
     }
     ssa_dominators(graph);
     if ((graph.cyclic || graph.recoverable) && !$feat(SLJIT_NO_CFG_OPT)) {
-        ssa_optimize_cfg(graph);
+        if (graph.value_count <= SSA_MAX_VALUES && graph.block_count <= SSA_BLOCKS) ssa_optimize_cfg(graph);
         ssa_numeric_loads(graph);
     } else if (!graph.cyclic && !graph.recoverable) {
         ssa_invariant_cse(graph);
@@ -237,6 +238,13 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
         floats = 10;
     }
     SsaEmitter self    = { .g = graph, .plan = plan, .cf = cf };
+    self.done_capacity = graph.value_count + 1;
+    self.pending_capacity = graph.block_count * 3 + 1;
+    self.done_jumps = (void**)ssa_storage_alloc(graph, self.done_capacity, void*::size);
+    self.block_label = (void**)ssa_storage_alloc(graph, graph.block_count, void*::size);
+    self.pending_jump = (void**)ssa_storage_alloc(graph, self.pending_capacity, void*::size);
+    self.pending_target = (uint*)ssa_storage_alloc(graph, self.pending_capacity, uint::size);
+    if (graph.failed) return null;
     TemplateEmitter* e = &self.e;
     if (parent != null) { *e = *parent; }
     else { e.compiler = jit::sljit_create_compiler(null); }
@@ -296,7 +304,7 @@ fn void* ssa_emit_graph(SsaGraph* graph, TemplateEmitter* parent = null) @feat(S
             e.mov(r0, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.resume_pc).offset, jit::SLJIT_MOV_U32);
             void* next = e.cmp(jit::SLJIT_NOT_EQUAL, r0, 0, jit::SLJIT_IMM, graph.blocks[block].begin);
             self.entry_copies(block);
-            if (self.pending_count == self.pending_jump.len) { e.failed = true; break; }
+            if (self.pending_count == self.pending_capacity) { e.failed = true; break; }
             self.pending_target[self.pending_count] = block;
             self.pending_jump[self.pending_count++] = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
             e.bind(next);

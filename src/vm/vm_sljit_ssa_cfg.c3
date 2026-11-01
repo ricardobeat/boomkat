@@ -14,8 +14,9 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
     compiler::DecodedCfgBudget budget = { SSA_SPAN, SSA_SPAN, 128 * 1024 };
     if (!compiler::bytecode_cfg_build(&cfg, cf.code, cf.code_count, g.heap, null, true, budget)) return false;
     defer compiler::bytecode_cfg_free(&cfg);
-    if (cfg.has_wide || cfg.block_count > SSA_BLOCKS) return false;
-    bool[SSA_BLOCKS] loop_roots;
+    if (cfg.has_wide || cfg.block_count > g.block_capacity) return false;
+    bool* loop_roots = (bool*)ssa_storage_alloc(g, cfg.block_count, bool::size);
+    if (g.failed) return false;
     $if !$feat(SLJIT_NO_SSA_LOOP_ENTRY):
         // An ordinary VM backedge may resume here after a GC/interrupt poll.
         // Reuse the same external-frame import as a completed call instead of
@@ -45,8 +46,8 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
         block.branch_pc = node.branch_target == compiler::CFG_NO_INSTRUCTION ? uint::max : node.view.pc;
         block.jump = op == Opcode.JUMP;
         block.conditional = block.branch_pc != uint::max && !block.jump;
-        block.succ0 = SSA_BLOCKS;
-        block.succ1 = SSA_BLOCKS;
+        block.succ0 = SSA_NO_BLOCK;
+        block.succ1 = SSA_NO_BLOCK;
         // A call's semantic fallthrough stays in the decoded graph for
         // liveness; native control stops and later enters its successor fresh.
         if (block.returns) continue;
@@ -59,14 +60,7 @@ fn bool ssa_split_recoverable(SsaGraph* g) @feat(SLJIT) {
             block.succ0 = cfg.nodes[node.successors[0]].block;
         }
     }
-    for (uint b = 0; b < g.block_count; b++) {
-        SsaBlock* block = &g.blocks[b];
-        for (uint p = 0; p < g.block_count; p++) {
-            if (g.blocks[p].succ0 != b && g.blocks[p].succ1 != b) continue;
-            if (block.pred_count == block.preds.len) return false;
-            block.preds[block.pred_count++] = p;
-        }
-    }
+    if (!ssa_collect_predecessors(g)) return false;
     // Keep semantic call edges when finding registers needed by deoptimization
     // and post-call entry. Native proof propagation uses the cut edges above.
     // Mapped arguments are rejected by loop analysis. Own locals observed by

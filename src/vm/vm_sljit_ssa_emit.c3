@@ -28,7 +28,8 @@ struct SsaEmitter @feat(SLJIT) {
     uint pc;
     void* header;
     void* epoch_constant;
-    void*[SSA_EXITS + 1] done_jumps;
+    void** done_jumps;
+    uint done_capacity;
     uint done_count;
     int[2] memory_length;
     int[2] memory_base;
@@ -41,9 +42,10 @@ struct SsaEmitter @feat(SLJIT) {
     bool addr_numeric_load;
     bool entry_copy;
     // The label of each block, and the jumps that reach them.
-    void*[SSA_BLOCKS] block_label;
-    void*[64] pending_jump;
-    uint[64] pending_target;
+    void** block_label;
+    void** pending_jump;
+    uint pending_capacity;
+    uint* pending_target;
     uint pending_count;
 }
 
@@ -118,10 +120,10 @@ fn int SsaEmitter.fpr_slot(&self, int value, int scratch) @feat(SLJIT) {
 // Recovery exits reference immutable sparse frames. Several guards can share
 // one state without retaining a PC-by-register matrix.
 fn void SsaEmitter.snapshot_id(&self, void* jump, uint pc, SsaFrameId frame) @feat(SLJIT) {
-    if (self.g.exit_count == SSA_EXITS) {
-        self.e.failed = true;
-        return;
-    }
+    SsaExit* exits = (SsaExit*)ssa_storage_grow(self.g, self.g.exits, self.g.exit_count,
+        &self.g.exit_capacity, self.g.exit_count + 1, self.g.budget.max_values, SsaExit::size);
+    if (exits == null) { self.e.failed = true; return; }
+    self.g.exits = exits;
     SsaExit* item = &self.g.exits[self.g.exit_count++];
     item.jump = jump;
     item.pc = pc;
@@ -839,7 +841,7 @@ fn void SsaEmitter.commit_phi(&self, int phi, uint slot) @feat(SLJIT) {
 // Sequential copies are safe when none can refuse and no destination
 // overwrites any still-needed source. Compare actual allocated locations, so
 // the fast path is valid for the CFG and legacy interval allocators alike.
-fn bool SsaEmitter.phi_staging(&self, SsaJoin* join, int[LOOP_REGS]* incoming) @feat(SLJIT)
+fn bool SsaEmitter.phi_staging(&self, SsaJoin* join, int* incoming) @feat(SLJIT)
     => ssa_phi_staging(self.g, join, incoming);
 
 // Copy the values a join merges into the phi's home. Each predecessor
@@ -852,7 +854,7 @@ fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
         if (join.block != succ) continue;
         for (uint p = 0; p < join.pred_count; p++) {
             if (join.preds[p] != block) continue;
-            bool staged = self.g.cyclic && self.phi_staging(join, &join.incoming[p]);
+            bool staged = self.g.cyclic && self.phi_staging(join, join.incoming[p]);
             uint slot;
             for (uint reg = 0; reg < LOOP_REGS; reg++) {
                 int phi = join.phi[reg];
@@ -882,7 +884,7 @@ fn void SsaEmitter.entry_copies(&self, uint entry_block = 0) @feat(SLJIT) {
     for (uint j = 0; j < self.g.join_count; j++) {
         SsaJoin* join = &self.g.joins[j];
         if (!join.entry || join.block != entry_block) continue;
-        bool staged = self.g.cyclic && self.phi_staging(join, &join.entry_incoming);
+        bool staged = self.g.cyclic && self.phi_staging(join, join.entry_incoming);
         uint slot;
         for (uint reg = 0; reg < LOOP_REGS; reg++) {
             int phi = join.phi[reg];
@@ -990,7 +992,7 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
     if (self.g.cyclic && v.target <= v.block) self.cyclic_poll();
     self.join_copies((uint)v.block, (uint)v.target);
     void* target = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
-    if (self.pending_count + 2 > (uint)self.pending_jump.len) {
+    if (self.pending_count + 2 > (uint)self.pending_capacity) {
         e.failed = true;
         return;
     }
@@ -1008,7 +1010,7 @@ fn void SsaEmitter.goto_block(&self, int value) @feat(SLJIT) {
     if (self.g.cyclic && v.target <= v.block) self.cyclic_poll();
     self.join_copies((uint)v.block, (uint)v.target);
     void* jump = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
-    if (jump == null || self.pending_count + 1 > (uint)self.pending_jump.len) {
+    if (jump == null || self.pending_count + 1 > (uint)self.pending_capacity) {
         self.e.failed = true;
         return;
     }
@@ -1358,7 +1360,7 @@ fn void SsaEmitter.direct_return(&self, int value, bool refused = false) @feat(S
             jit::SLJIT_IMM, (long)types::TAG_STRING), self.plan.begin);
     }
     if (self.g.inplace) {
-        if (self.done_count == self.done_jumps.len) { self.e.failed = true; return; }
+        if (self.done_count == self.done_capacity) { self.e.failed = true; return; }
         self.done_jumps[self.done_count++] = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
     } else if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
 }
@@ -1393,7 +1395,8 @@ fn void SsaEmitter.publish_id(&self, SsaFrameId frame, uint pc) @feat(SLJIT) {
     if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
 }
 fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {
-    void*[SSA_EXITS] labels;
+    void** labels = (void**)ssa_storage_alloc(self.g, self.g.exit_count, void*::size);
+    if (self.g.failed) { self.e.failed = true; return; }
     for (uint i = 0; i < self.g.exit_count; i++) {
         SsaExit* item = &self.g.exits[i];
         // Several guards in one bytecode recover the same frame from fixed

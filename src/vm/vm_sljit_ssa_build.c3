@@ -54,7 +54,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             : g.int_reg[i] ? INT32
             : ssa_rep_for(int_need[i], f64_need[i], false);
     }
-    foreach (&entry : g.conv) *entry = 0;
+    foreach (&entry : g.conv[0:g.value_capacity * 4]) *entry = 0;
     // Header values. Written registers get a phi; read-only numeric inputs get
     // an argument. Pure memory bases need no value.
     // Registers written in the loop but not read before their first in-loop
@@ -134,7 +134,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
         uint b = g.cyclic ? g.cyclic_order[step] : step;
         g.current_block = b;
         // A conversion emitted in one arm need not execute on another arm.
-        foreach (&entry : g.conv) *entry = 0;
+        foreach (&entry : g.conv[0:g.value_capacity * 4]) *entry = 0;
         if (!ssa_enter_block(g, b)) {
             g.failed = true;
             return false;
