@@ -194,7 +194,8 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
                     int left = ssa_convert(g, mapped[ins.b], F64, false);
                     int right;
                     if (ins.op == Opcode.ADDI || ins.op == Opcode.SUBI || ins.op == Opcode.MULI) {
-                        right = ssa_value(g, CONST_F, F64, -1, -1, (long)bitcast((double)(ichar)ins.c, ulong));
+                        right = ssa_value(g, CONST_F, F64, -1, -1,
+                            (long)bitcast((double)bytecode::imm_value(ins.op, ins.c), ulong));
                     } else if (ins.op != Opcode.UNM) { right = ssa_convert(g, mapped[ins.c], F64, false); }
                     ssa_use(g, left);
                     if (ins.op != Opcode.UNM) ssa_use(g, right);
