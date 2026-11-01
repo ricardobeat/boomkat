@@ -207,6 +207,13 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     long budget = plan.ssa_recoverable && run != null ? run.budget : 1;
     uint resume = plan.native(&state, budget);
     if (plan.ssa_recoverable && run != null) run.budget = state.budget;
+    if (state.execution != null && execution.caller_lost) {
+        // An interpreter control transfer abandoned this activation. Its
+        // frame may already belong to a catch/finally handler or a callee;
+        // publishing old SSA outputs or returning entry_pc would replay effects.
+        plan.hits++;
+        return execution.vm_resume;
+    }
     // A collecting callback may have relocated every VM register window.
     regs = cold.act.bottom;
     sljit_publish_state(cold, regs, &state, cf.num_regs, plan);

@@ -726,6 +726,15 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                     if (feedback) {
                         if (cf.ic_entries == null) return false;
                         ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
+                        if (plan.ssa_recoverable && (ic.prop_flags.is_accessor || ic.has_proto)) {
+                            // Observable property semantics use the same rooted
+                            // helper boundary; surrounding scalar code remains SSA.
+                            plan.memory_at[at] = 0;
+                            origin[ins.a] = -1;
+                            method[ins.a] = -1;
+                            written |= 1UL << ins.a;
+                            continue;
+                        }
                         if (ic.has_proto && inline_calls) {
                             HObject* observed;
                             if (cold.vm.current_func.code == cf.code) {
@@ -873,7 +882,7 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                                 );
                             }
                         }
-                        if (memory < 0) return false;
+                        if (memory < 0 && !plan.ssa_recoverable) return false;
                     }
                     plan.memory_at[at] = (char)(memory + 1);
                     if (source < (int)LOOP_REGS) frequency[(uint)source]++;
@@ -914,6 +923,9 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case NEWARR:
             case NEWARR_CONST:
                 if (!plan.ssa_recoverable) return false;
+            case CLOSURE:
+                if (!plan.ssa_recoverable || ins.get_bc() >= cf.inner_count
+                    || cf.inner_funcs[ins.get_bc()].capture_count != 0) return false;
             case LDTRUE:
             case LDFALSE:
             case LDNULL:

@@ -465,6 +465,29 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
     HObject* func_obj = (HObject*)getter_fn.get_heapptr();
     if (func_obj == null || !func_obj.is_callable()) return false;
 
+    $if $feat(SLJIT):
+        if (vm.native_step_activation == act) {
+            // The borrowed switch instruction has an active generated caller.
+            // Use the ordinary synchronous callback bridge rather than leaving
+            // a getter activation for the outer interpreter to enter later.
+            heap::ValueRoot getter_root;
+            heap::ValueRoot receiver_root;
+            vm.heap.push_value_root(&getter_root, getter_fn);
+            defer vm.heap.pop_value_root(&getter_root);
+            vm.heap.push_value_root(&receiver_root, *this_val);
+            defer vm.heap.pop_value_root(&receiver_root);
+            TVal result = vm.heap.call_fn(vm, getter_root.value, null, 0, receiver_root.value);
+            if (vm.has_error || vm.heap.has_error || vm.throw_pending) {
+                vm.has_error = true;
+                return false;
+            }
+            regs_base = act.bottom;
+            vm.heap.tval_copy_ref(regs_base + result_reg, &result);
+            track_heap_store(act, regs_base + result_reg, result_reg);
+            return false;
+        }
+    $endif
+
     // A builtin getter is called directly, with no JS frame.
     if (func_obj.callable_kind() == hobject::CallableKind.BUILTIN_FN &&
         (*func_obj.extra_ptr()).func.builtin_fn_index >= 0) {

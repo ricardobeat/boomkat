@@ -654,6 +654,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
 
                 {
                     uint at = pos - plan.begin;
+                    if (plan.memory_at[at] == 0 && plan.ssa_recoverable) continue;
                     if (plan.memory_at[at] == 0 || plan.intrinsic_at[at] != 0) return false;
                     LoopMemoryKind kind = plan.memory[(uint)plan.memory_at[at] - 1].kind;
                     if (kind != FIELD && kind != SHAPE_FIELD && kind != PROTO_FIELD) return false;
@@ -671,6 +672,7 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
             case NEWOBJ_SHAPE:
             case NEWARR:
             case NEWARR_CONST:
+            case CLOSURE:
                 if (!plan.ssa_recoverable) return false;
                 continue;
             default:
@@ -755,6 +757,7 @@ fn void ssa_infer(
             case NEWOBJ_SHAPE:
             case NEWARR:
             case NEWARR_CONST:
+            case CLOSURE:
                 break;
             case CALL:
             case CALL_UNDEF_THIS:
