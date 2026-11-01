@@ -295,6 +295,24 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         g.current[ins.a] = value;
                         break;
                     }
+                case LDUNDEF:
+                case LDNULL:
+                case LDTRUE:
+                case LDFALSE:
+                    {
+                        TVal constant;
+                        if (ins.op == Opcode.LDTRUE || ins.op == Opcode.LDFALSE) {
+                            constant.set_boolean(ins.op == Opcode.LDTRUE);
+                        } else if (ins.op == Opcode.LDNULL) {
+                            constant.set_null();
+                        } else {
+                            constant.set_undefined();
+                        }
+                        int value = ssa_value(g, CONST_BOXED, BOXED, -1, 0, (long)loop_bits(constant));
+                        ssa_result(g, value, ins.a, pos);
+                        g.current[ins.a] = value;
+                        break;
+                    }
                 case LDINT:
 
                     {

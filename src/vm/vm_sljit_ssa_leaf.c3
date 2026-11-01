@@ -65,6 +65,10 @@ fn LoopPlan* FunctionEmitter.ssa_leaf(&self, CompiledFunction* target, Heap* h, 
                 case BXORI: case SHLI: case SHRI: case USHRI: continue;
                 case ADD_FUSED: case INC_LT: case UNM: continue;
                 case GETGLOBAL: case GETCAP: continue;
+                case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE: continue;
+                // An expanded callee is itself a pure leaf, so the body stays
+                // effect-free across the call.
+                case CALL: case CALL_UNDEF_THIS: case CALL_GLOBAL: case CALL_VAR: continue;
                 case RET: case RETUNDEF: if (pc + 1 == target.code_count) continue; return null;
                 default: return null;
             }

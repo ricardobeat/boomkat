@@ -395,6 +395,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                         break;
                     }
                 case CONST_I:
+                case CONST_BOXED:
 
                     {
                         int dst = v.home != 0 ? v.home : r0;

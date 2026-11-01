@@ -121,7 +121,7 @@ fn void ssa_invariant_cse(SsaGraph* g) @feat(SLJIT) {
         SsaValue* value = &g.values[i];
         // Scalar guards can be shared in direct in-place regions, where a
         // refusal always resumes the untouched caller and the store is terminal.
-        bool constant = value.op == CONST_I || value.op == CONST_F;
+        bool constant = value.op == CONST_I || value.op == CONST_F || value.op == CONST_BOXED;
         bool conversion = value.op == TO_INT || value.op == TO_INDEX || value.op == TO_F64;
         bool scalar = g.inplace && g.direct && (constant || conversion || value.op == COMPARE);
         if (!scalar && value.op != BINDING && value.op != CHECKFN && value.op != CHECKPROTO && value.op != RECEIVER && value.op != CHECKSHAPE
@@ -207,7 +207,7 @@ fn void ssa_function_liveness(SsaGraph* g) @feat(SLJIT) {
         SsaValue v = g.values[i];
         switch (v.op) {
             case NOP: case ARG: case PHI: case RECEIVER: case BINDING:
-            case CONST_I: case CONST_F: case COPY: case GOTO: break;
+            case CONST_I: case CONST_F: case CONST_BOXED: case COPY: case GOTO: break;
             case JOIN:
                 {
                     SsaJoin* join = &g.joins[v.a];

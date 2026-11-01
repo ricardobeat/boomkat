@@ -51,6 +51,9 @@ enum SsaOp : char {
     BINDING,
     CONST_I,
     CONST_F,
+    // A boxed constant: null, undefined or a boolean. The payload holds the
+    // NaN-boxed bits.
+    CONST_BOXED,
     COPY,
     ADD,
     SUB,

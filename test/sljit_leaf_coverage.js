@@ -108,4 +108,38 @@ if (biased !== expectBias) throw new Error("global bias mismatch");
 globalBias = 5;
 if (biasSum(10) !== 50) throw new Error("global rebind mismatch");
 
+// Null, undefined and boolean constants, including a body that returns one.
+function classify(n) {
+  var missing = true;
+  if (n < 0) return null;
+  if (n === 0) return missing ? undefined : false;
+  return n * 2;
+}
+var classified = 0;
+var expectClassified = 0;
+for (var c = 0; c < 6000; c++) {
+  var v = classify(c % 7 - 3);
+  classified += v === null ? 1 : v === undefined ? 2 : (v === false ? 3 : v);
+  var n = c % 7 - 3;
+  expectClassified += n < 0 ? 1 : n === 0 ? 2 : n * 2;
+}
+if (classified !== expectClassified) throw new Error("classify mismatch");
+
+// A straight-line helper expanded into a cyclic body: both are effect-free.
+function scaleValue(x, k) { return x * k + 1; }
+function accumulate(n) {
+  var total = 0, i = 0;
+  while (i < n) { total = total + scaleValue(i, 3); i = i + 1; }
+  return total;
+}
+var accumulated = 0;
+for (var a = 0; a < 400; a++) accumulated += accumulate(a % 11);
+var expectAccumulated = 0;
+for (var b = 0; b < 400; b++) {
+  var m = b % 11, sum = 0;
+  for (var k = 0; k < m; k++) sum += k * 3 + 1;
+  expectAccumulated += sum;
+}
+if (accumulated !== expectAccumulated) throw new Error("accumulate mismatch");
+
 print("sljit leaf coverage ok " + checksum + " " + pairSum);
