@@ -107,6 +107,7 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
         case JMP_NLT..JMP_SNEQI: case GETPROPC_CACHED:
         case GETPROTO: case GETCAP: case PUTCAP: case TONUMERIC:
         case NEWOBJ_SHAPE: case INIT_SLOT: case PUTPROPC: case GETTHISC: case PUTTHISC:
+        case CLOSURE:
         case ADD_FUSED: case INC_LT: return true;
         default: return false;
     }
@@ -122,7 +123,7 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
         case LDREG: case UNP: case UNM: case BNOT: case LNOT: case TYPEOF: case GETPROTO: case TONUMERIC:
         case GETPROPC: case GETPROPC_CACHED:
             return { .b_read = true, .a_write = true };
-        case CLOSURE: case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
+        case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case LDTHIS: case GETTHISC: case VOID:
         case GETVAR: case GETGLOBAL: case GETBOUND: case GETCAP: case TYPEOFIDENT:
         case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL:
@@ -134,6 +135,12 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
             return { .b_read = true, .c_read = true, .a_write = true };
         case PUTPROPC:
             return { .a_read = true, .b_read = true };
+        case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC:
+            return { .a_read = true };
+        case PUTVAR: case PUTVAR_ASSIGN: case PUTGLOBAL: case PUTCAP: case DECLB33GLOBAL:
+            // The binding consumes A. Successful writes can clear its owned
+            // register reference; generic helpers import the real post-value.
+            return { .a_read = true, .a_write = true };
         case PUTTHISC: case SETALEN: case FREEZEOBJ: case SETCONST:
         case RET: case RET_GEN: case THROW: case IF_TRUE: case IF_FALSE:
             return { .a_read = true };

@@ -62,3 +62,14 @@ empty object/array allocation and constant-array allocation. Unsupported
 operation semantics remain explicit VM boundaries. The graph's existing fixed
 register/block budgets are independent lowering limits; the scalable graph
 migration shares this execution ABI and does not create a second compiler.
+
+Generic helpers borrow one iteration of the existing `vm_dispatch` switch in
+single-step mode. Cached property downgrades retry that same instruction before
+reporting completion (including its original WIDE prefix). The borrowed caller's
+throw is intercepted before handler search; nested JavaScript frames still run
+their own catches. Getter calls in this scope use the common synchronous
+`call_fn` bridge so native continuation follows actual getter completion.
+An activation-changing interpreter operation reports its real VM resume PC and
+requests a restart; the native gateway then skips publication of the abandoned
+caller. Capturing closures require canonical implicit capture-register reads;
+that enrichment is part of the scalable CFG adapter, not a separate SSA scan.

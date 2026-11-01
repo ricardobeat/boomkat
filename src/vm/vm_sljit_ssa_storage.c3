@@ -53,7 +53,8 @@ fn void* ssa_storage_alloc(SsaGraph* g, usz count, usz item_size) @feat(SLJIT) {
     usz header = SsaStorageChunk::size;
     if (item_size == 0 || count > (usz::max - header) / item_size) { g.failed = true; return null; }
     usz bytes = header + count * item_size;
-    if (g.storage_bytes > g.budget.max_bytes || bytes > g.budget.max_bytes - g.storage_bytes) {
+    if (g.persistent_bytes > g.budget.max_bytes || g.storage_bytes > g.budget.max_bytes - g.persistent_bytes
+        || bytes > g.budget.max_bytes - g.persistent_bytes - g.storage_bytes) {
         g.failed = true;
         return null;
     }
@@ -310,3 +311,21 @@ fn bool ssa_charge_work(SsaGraph* g, usz amount) @feat(SLJIT) {
     return true;
 }
 fn bool ssa_cfg_charge_work(void* data, usz amount) @feat(SLJIT) => ssa_charge_work((SsaGraph*)data, amount);
+
+fn bool ssa_persistent_reserve(SsaGraph* g, usz bytes) @feat(SLJIT) {
+    if (g.failed) return false;
+    if (g.budget.max_bytes == 0) g.budget = SSA_DEFAULT_BUDGET;
+    if (g.storage_bytes > g.budget.max_bytes || g.persistent_bytes > g.budget.max_bytes - g.storage_bytes
+        || bytes > g.budget.max_bytes - g.storage_bytes - g.persistent_bytes) { g.failed = true; return false; }
+    g.persistent_bytes += bytes;
+    return true;
+}
+fn void ssa_persistent_release(SsaGraph* g, usz bytes) @feat(SLJIT) {
+    assert(bytes <= g.persistent_bytes);
+    g.persistent_bytes -= bytes;
+}
+fn bool ssa_pc_live(SsaGraph* g, uint pc, uint reg) @feat(SLJIT) {
+    if (!g.recoverable) return reg < g.reg_count;
+    return pc >= g.plan.begin && pc <= g.plan.end && reg < g.reg_count
+        && g.recovery_live[pc - g.plan.begin].test(reg);
+}

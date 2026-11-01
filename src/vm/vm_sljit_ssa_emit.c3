@@ -13,6 +13,8 @@ import std::io;
 // SLJIT emission and interpreter recovery for SSA graphs.
 
 struct SsaEmitter @feat(SLJIT) {
+    SsaEdgeState edge_state;
+    bool edge_snapshot;
     TemplateEmitter e;
     SsaGraph* g;
     LoopPlan* plan;
@@ -138,7 +140,8 @@ fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int* regs = null) 
 fn void SsaEmitter.snapshot_none(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, self.g.recoverable ? SSA_ENTRY_BAIL : pc);
 fn void SsaEmitter.snapshot_phis(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc, self.g.phi);
 fn void SsaEmitter.snapshot(&self, void* jump, uint pc) @feat(SLJIT) {
-    if (self.g.direct || self.entry_copy) { self.snapshot_none(jump, self.plan.begin); }
+    if (self.edge_snapshot) { self.snapshot_id(jump, self.edge_state.pc, self.edge_state.frame); }
+    else if (self.g.direct || self.entry_copy) { self.snapshot_none(jump, self.plan.begin); }
     else { self.snapshot_id(jump, pc, ssa_frame_at_pc(self.g, pc)); }
 }
 fn void SsaEmitter.guard(&self, int condition, int left, long lw, int right, long rw, uint pc) @feat(SLJIT) {
@@ -858,6 +861,13 @@ fn bool SsaEmitter.phi_staging(&self, SsaJoin* join, int* incoming) @feat(SLJIT)
 // carries its own value.
 fn void SsaEmitter.join_copies(&self, uint block, uint succ) @feat(SLJIT) {
     if (succ >= self.g.block_count) return;
+    SsaEdgeState previous = self.edge_state;
+    bool previous_snapshot = self.edge_snapshot;
+    if (self.g.recoverable) {
+        self.edge_state = ssa_edge_state(self.g, block, succ);
+        self.edge_snapshot = true;
+    }
+    defer { self.edge_state = previous; self.edge_snapshot = previous_snapshot; }
     for (uint j = 0; j < self.g.join_count; j++) {
         SsaJoin* join = &self.g.joins[j];
         if (join.block != succ) continue;
