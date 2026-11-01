@@ -128,7 +128,6 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
         case GETVAR: case GETGLOBAL: case GETBOUND: case GETCAP: case TYPEOFIDENT:
         case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL:
         case NEWOBJ: case NEWARR: case NEWARR_CONST: case NEWOBJ_SHAPE:
-        case CLOSURE:
             return { .a_write = true };
         case INC: case INC_LT: case DEC: case TOPROPKEY: case TOSTR:
             return { .a_read = true, .a_write = true };

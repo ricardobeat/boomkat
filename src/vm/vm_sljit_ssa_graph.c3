@@ -137,6 +137,8 @@ struct SsaValue @feat(SLJIT) {
 // One basic block of the loop body. The blocks partition the body in
 // bytecode order, so a block's fall-through successor is the next one.
 struct SsaBlock @feat(SLJIT) {
+    SsaEdgeState edge_state;
+    bool edge_ready;
     uint begin;
     uint end;
     uint succ0;
