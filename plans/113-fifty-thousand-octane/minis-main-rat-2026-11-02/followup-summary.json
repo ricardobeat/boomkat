@@ -1,0 +1,110 @@
+[
+  {
+    "case": "box2d",
+    "old-jit": {
+      "samples": [
+        206.0,
+        207.0,
+        209.0
+      ],
+      "median": 207.0
+    },
+    "rat-jit": {
+      "samples": [
+        713.0,
+        715.0,
+        779.0
+      ],
+      "median": 715.0
+    },
+    "rat-interpreter": {
+      "samples": [
+        226.0,
+        224.0,
+        225.0
+      ],
+      "median": 225.0
+    }
+  },
+  {
+    "case": "gbemu",
+    "old-jit": {
+      "samples": [
+        279.0,
+        277.0,
+        278.0
+      ],
+      "median": 278.0
+    },
+    "rat-jit": {
+      "samples": [
+        2865.0,
+        2909.0,
+        2856.0
+      ],
+      "median": 2865.0
+    },
+    "rat-interpreter": {
+      "samples": [
+        251.0,
+        252.0,
+        250.0
+      ],
+      "median": 251.0
+    }
+  },
+  {
+    "case": "navier-original-runner",
+    "old-jit": {
+      "samples": [
+        7053.0,
+        7123.0,
+        7109.0
+      ],
+      "median": 7109.0
+    },
+    "rat-jit": {
+      "samples": [
+        833.0,
+        840.0,
+        838.0
+      ],
+      "median": 838.0
+    },
+    "rat-interpreter": {
+      "samples": [
+        4151.0,
+        4162.0,
+        4166.0
+      ],
+      "median": 4162.0
+    }
+  },
+  {
+    "case": "navier-stokes",
+    "old-jit": {
+      "samples": [
+        318.0,
+        303.0,
+        308.0
+      ],
+      "median": 308.0
+    },
+    "rat-jit": {
+      "samples": [
+        2833.0,
+        2833.0,
+        2834.0
+      ],
+      "median": 2833.0
+    },
+    "rat-interpreter": {
+      "samples": [
+        572.0,
+        568.0,
+        567.0
+      ],
+      "median": 568.0
+    }
+  }
+]

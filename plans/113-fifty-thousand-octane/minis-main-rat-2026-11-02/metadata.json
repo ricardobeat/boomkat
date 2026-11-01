@@ -1,0 +1,52 @@
+{
+  "refs": {
+    "main": "7533520f156706d36fee3ebb4b02e453693753b4",
+    "rat": "fec58fc13ccf706e4abe803ce83dd3aa17cde579"
+  },
+  "root": "/private/tmp/bk-minis-main-rat-6sgez9zo",
+  "compiler": "C3 Compiler Version:       0.8.5\nInstalled directory:       /opt/homebrew/Cellar/c3c/0.8.5/libexec\nGit Hash:                  unknown\nBackends:                  LLVM\nLLVM version:              23.1.3\nLLVM default target:       arm64-apple-darwin27.0.0\n",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "configs": {
+    "main": [
+      "/private/tmp/bk-minis-main-rat-6sgez9zo/main-bin/boomkat"
+    ],
+    "rat": [
+      "/private/tmp/bk-minis-main-rat-6sgez9zo/rat-bin/boomkat",
+      "--jit"
+    ]
+  },
+  "pairs": 5,
+  "warmups": 1,
+  "input_source": "rat snapshot; identical files for both binaries",
+  "excluded": [
+    "strings-intl: not an Octane mini"
+  ],
+  "inputs": {
+    "box2d": "602e6f6a51efebc8502634b42fec5c4d7b76f8130d1ed72ae80d0b8c47271db3",
+    "code-load": "69a32867b10cf2e40ebac72db4ea507dd2f1db6b813b450355087ed39ac0ee15",
+    "crypto": "e5f9619dcc4c737d760aef500e6a42051b9c9ddd1f4dc42a47f598c708abce8c",
+    "deltablue": "741b27edc2d5eee59600ff9c18a4d6e63f69e8e3cc2a3472708dae3c817a9c06",
+    "earley-boyer": "f87b913028e6bee812713ca8ed551fbc31f4d7d0d31d282e5f9cb494139184bd",
+    "gbemu": "7cc60f067a6a5d52ac4c6ff4f16851e75904f98a15d9149b00cb08436efedf86",
+    "mandreel": "7eff7725370ae381bff3e1f1a965794cdf92aa45e39869628816a2a7abc66ca5",
+    "navier-stokes": "86171a719c30c2071f9e456bebd88bbc94e1058ec859ecac6aeafb0d14c087b2",
+    "pdfjs": "10ff6a1263f4d52b428c63dc7d339ec12f156e3999e188ff8b418f12ce588927",
+    "raytrace": "1c9a09182cac21bdc9c03c7b0ee5495a223d3f561b62f518f237233927616cbc",
+    "regexp": "550d6dc3e83cf27f61ba971c8fde29222a88232a941b5654a4d8774b0e3ced75",
+    "richards": "f685b1376338b4852b807144e835dd4fb293d040904b05e9fca51b64b61a1cc7",
+    "splay": "07c76078e0bbe2b5a869efb69a3088d60a4e3051fa7b3790b11428b4163d9ae7",
+    "typescript": "53a0d368b45e6a906aa2106095f615d1b5ae58936fdb827e7d6f225b9a94856a",
+    "zlib": "9e84f09be485572335b26a213500cab37d0748a36badc0668263e514812b603e"
+  },
+  "binary_sha256": {
+    "main": "6024c983e0cdc753ac6ca4e423efe3b7cebdff96bbbbbe3f046b5a02728e59f8",
+    "rat": "6b22281b0fdd7ec5a10d4a5d967c0b3e53d8ee8e0da74992f3c747b07b948e6c"
+  },
+  "historical_ref": "b85ef0bab96c08123c81b7ffc4135646569fed70",
+  "historical_binary_sha256": "5d93ff46e98d7a886eae5a59f19ba33c7c815982962b8383ab7baaf8fc37997b",
+  "full_navier_input_sha256": "f6788c96f00aa61f9dbdca113e1e57b08572a643b281d3a7b940f8f974179d47",
+  "followup_pairs": 3,
+  "archived_full_navier_sha256": "eebcb3a6fba1ab7bd515f1e3a280d49b1b4a19cd26669b6b170e776b05b35a43",
+  "archive_format_note": "Archived original-runner copy has trailing whitespace stripped only; full_navier_input_sha256 identifies the measured source before that formatting. Reconstruct exact measured input by removing the mini override from the fixed rat commit as described in report."
+}

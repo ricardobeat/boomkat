@@ -1,6 +1,6 @@
 # 113: The 50,000 full-Octane target
 
-Status: **ACTIVE — architecture contracts accepted; performance phase pending, 2026-11-02.**
+Status: **ACTIVE — architecture correctness accepted; performance blocked by regressions, 2026-11-02.**
 50K remains unachieved. This is the active roadmap for plans 107–108, 110–112 and 116–118.
 
 ## Objective and design
@@ -18,8 +18,11 @@ Wider windows and isolated opcode improvements do not substitute for these contr
 
 ## Current phase: finish the architecture
 
-Throughput tuning remains deferred by user instruction. Milestones 2–4 now meet
-the architecture acceptance below; benchmark sweeps have not resumed. Keep one SSA compiler and SLJIT;
+Milestones 2–4 passed architecture correctness checks, but measured throughput
+now blocks performance acceptance. [Matched minis and the historical Navier check](113-fifty-thousand-octane/minis-main-rat-2026-11-02/report.md)
+show current rat taking 1.21x main time across minis and warmed Navier falling
+from 7,109 at b85ef0ba to 838. First repair per-binding helper/publication and
+revalidation overhead, then repeat both comparisons before further expansion. Keep one SSA compiler and SLJIT;
 scale the shared IR and runtime boundary instead of adding another specialized tier.
 Work is confined to `rat`; plans remain on `plans/archive`.
 

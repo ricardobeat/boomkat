@@ -1,0 +1,326 @@
+[
+  {
+    "case": "navier-stokes",
+    "config": "old-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 0.5745149159338325,
+    "stdout": "NavierStokes: 318 ms\n",
+    "stderr": "        0.57 real         0.33 user         0.00 sys\n            12533760  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 936  page reclaims\n                   3  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  13  involuntary context switches\n          5549211058  instructions retired\n          1183741997  cycles elapsed\n            10355072  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "rat-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 2.8475457918830216,
+    "stdout": "NavierStokes: 2833 ms\n",
+    "stderr": "        2.84 real         2.83 user         0.00 sys\n            13418496  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 870  page reclaims\n                 121  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 142  involuntary context switches\n         58056884462  instructions retired\n         10553096760  cycles elapsed\n            11010408  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "rat-interpreter",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 0.5816959580406547,
+    "stdout": "NavierStokes: 572 ms\n",
+    "stderr": "        0.57 real         0.57 user         0.00 sys\n            11042816  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 845  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  35  involuntary context switches\n         11642004844  instructions retired\n          2136568887  cycles elapsed\n             8929640  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "old-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 0.32101566600613296,
+    "stdout": "Gameboy: 279 ms\n",
+    "stderr": "        0.31 real         0.31 user         0.00 sys\n            38322176  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2510  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   7  voluntary context switches\n                  10  involuntary context switches\n          6740299746  instructions retired\n          1168388945  cycles elapsed\n            36012416  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "rat-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 2.901073208078742,
+    "stdout": "Gameboy: 2865 ms\n",
+    "stderr": "        2.89 real         2.89 user         0.00 sys\n            40714240  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2647  page reclaims\n                  11  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  12  involuntary context switches\n         56690689541  instructions retired\n         10739737416  cycles elapsed\n            38191488  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "rat-interpreter",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 0.28629954205825925,
+    "stdout": "Gameboy: 251 ms\n",
+    "stderr": "        0.28 real         0.28 user         0.00 sys\n            34209792  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2258  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   6  involuntary context switches\n          6204043689  instructions retired\n          1049168581  cycles elapsed\n            31949160  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "old-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 0.2331865830346942,
+    "stdout": "Box2D: 206 ms\n",
+    "stderr": "        0.23 real         0.22 user         0.00 sys\n            23478272  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1603  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                  10  voluntary context switches\n                   3  involuntary context switches\n          4264700858  instructions retired\n           845331225  cycles elapsed\n            21184872  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "rat-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 0.738095915876329,
+    "stdout": "Box2D: 713 ms\n",
+    "stderr": "        0.73 real         0.73 user         0.00 sys\n            26017792  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1757  page reclaims\n                   3  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   5  involuntary context switches\n         13717575749  instructions retired\n          2721956936  cycles elapsed\n            23560576  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "rat-interpreter",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 0.25531654083169997,
+    "stdout": "Box2D: 226 ms\n",
+    "stderr": "        0.25 real         0.24 user         0.00 sys\n            19349504  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1341  page reclaims\n                  12  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   7  involuntary context switches\n          4315667835  instructions retired\n           914636847  cycles elapsed\n            17138024  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "old-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 2.022358417045325,
+    "stdout": "NavierStokes: 7053\n",
+    "stderr": "        2.02 real         2.01 user         0.00 sys\n            12730368  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 947  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   2  voluntary context switches\n                 217  involuntary context switches\n         37129801744  instructions retired\n          7441017625  cycles elapsed\n            10404200  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "rat-jit",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 4.280584125081077,
+    "stdout": "NavierStokes: 833\n",
+    "stderr": "        4.27 real         4.27 user         0.00 sys\n            13484032  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 992  page reclaims\n                   3  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  79  involuntary context switches\n         86946801717  instructions retired\n         15809496238  cycles elapsed\n            11010408  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "rat-interpreter",
+    "pair": 0,
+    "status": 0,
+    "wall_seconds": 2.0415387500543147,
+    "stdout": "NavierStokes: 4151\n",
+    "stderr": "        2.03 real         2.03 user         0.00 sys\n            11108352  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 848  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   7  involuntary context switches\n         41216663668  instructions retired\n          7543849323  cycles elapsed\n             8929640  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "rat-interpreter",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 0.5772589580155909,
+    "stdout": "NavierStokes: 568 ms\n",
+    "stderr": "        0.57 real         0.57 user         0.00 sys\n            11042816  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 844  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   6  involuntary context switches\n         11641951479  instructions retired\n          2128629214  cycles elapsed\n             8929640  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "rat-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 2.8427324169315398,
+    "stdout": "NavierStokes: 2833 ms\n",
+    "stderr": "        2.84 real         2.83 user         0.00 sys\n            13418496  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 990  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   6  involuntary context switches\n         58046293025  instructions retired\n         10530166383  cycles elapsed\n            11026792  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "old-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 0.31603595800697803,
+    "stdout": "NavierStokes: 303 ms\n",
+    "stderr": "        0.31 real         0.30 user         0.00 sys\n            12468224  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 850  page reclaims\n                  83  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  28  involuntary context switches\n          5550282389  instructions retired\n          1150585737  cycles elapsed\n            10273128  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "rat-interpreter",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 0.29090512497350574,
+    "stdout": "Gameboy: 252 ms\n",
+    "stderr": "        0.28 real         0.28 user         0.00 sys\n            34209792  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2257  page reclaims\n                   4  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   9  voluntary context switches\n                  13  involuntary context switches\n          6207366427  instructions retired\n          1050443137  cycles elapsed\n            31949160  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "rat-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 2.945510165998712,
+    "stdout": "Gameboy: 2909 ms\n",
+    "stderr": "        2.94 real         2.92 user         0.00 sys\n            42123264  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2741  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                 599  involuntary context switches\n         56704412429  instructions retired\n         10788970616  cycles elapsed\n            39600512  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "old-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 0.31559016602113843,
+    "stdout": "Gameboy: 277 ms\n",
+    "stderr": "        0.31 real         0.30 user         0.00 sys\n            38305792  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2500  page reclaims\n                  10  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   6  involuntary context switches\n          6737278992  instructions retired\n          1157311014  cycles elapsed\n            35979624  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "rat-interpreter",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 0.25027479184791446,
+    "stdout": "Box2D: 224 ms\n",
+    "stderr": "        0.24 real         0.24 user         0.00 sys\n            19333120  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1350  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                  11  voluntary context switches\n                   4  involuntary context switches\n          4316091280  instructions retired\n           909736445  cycles elapsed\n            17121640  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "rat-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 0.7389693327713758,
+    "stdout": "Box2D: 715 ms\n",
+    "stderr": "        0.73 real         0.73 user         0.00 sys\n            25968640  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1755  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   5  involuntary context switches\n         13720253571  instructions retired\n          2727968897  cycles elapsed\n            23495016  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "old-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 0.23260995792225003,
+    "stdout": "Box2D: 207 ms\n",
+    "stderr": "        0.23 real         0.22 user         0.00 sys\n            23511040  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1603  page reclaims\n                   4  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   4  involuntary context switches\n          4264643587  instructions retired\n           847147796  cycles elapsed\n            21234048  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "rat-interpreter",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 2.0766477920114994,
+    "stdout": "NavierStokes: 4162\n",
+    "stderr": "        2.07 real         2.07 user         0.00 sys\n            11141120  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 850  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  16  involuntary context switches\n         41938207424  instructions retired\n          7686194771  cycles elapsed\n             8946000  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "rat-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 4.2655341669451445,
+    "stdout": "NavierStokes: 840\n",
+    "stderr": "        4.26 real         4.25 user         0.00 sys\n            13467648  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 992  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  69  involuntary context switches\n         86946942119  instructions retired\n         15776249993  cycles elapsed\n            11010408  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "old-jit",
+    "pair": 1,
+    "status": 0,
+    "wall_seconds": 2.0259967921301723,
+    "stdout": "NavierStokes: 7123\n",
+    "stderr": "        2.02 real         2.02 user         0.00 sys\n            12713984  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 945  page reclaims\n                   3  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  10  involuntary context switches\n         37517637179  instructions retired\n          7503049846  cycles elapsed\n            10436968  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "old-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 0.3170785419642925,
+    "stdout": "NavierStokes: 308 ms\n",
+    "stderr": "        0.31 real         0.31 user         0.00 sys\n            12500992  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 933  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   3  involuntary context switches\n          5544493457  instructions retired\n          1165428560  cycles elapsed\n            10305896  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "rat-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 2.8445581670384854,
+    "stdout": "NavierStokes: 2834 ms\n",
+    "stderr": "        2.84 real         2.83 user         0.00 sys\n            13434880  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 991  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  11  involuntary context switches\n         58046759938  instructions retired\n         10524053802  cycles elapsed\n            11043176  peak memory footprint\n"
+  },
+  {
+    "case": "navier-stokes",
+    "config": "rat-interpreter",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 0.5775644590612501,
+    "stdout": "NavierStokes: 567 ms\n",
+    "stderr": "        0.57 real         0.57 user         0.00 sys\n            11042816  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 842  page reclaims\n                   4  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   5  involuntary context switches\n         11642280904  instructions retired\n          2126533940  cycles elapsed\n             8929640  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "old-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 0.3199937080498785,
+    "stdout": "Gameboy: 278 ms\n",
+    "stderr": "        0.31 real         0.31 user         0.00 sys\n            38273024  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2504  page reclaims\n                   4  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   9  voluntary context switches\n                  10  involuntary context switches\n          6735807465  instructions retired\n          1165477675  cycles elapsed\n            35946856  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "rat-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 2.892420790856704,
+    "stdout": "Gameboy: 2856 ms\n",
+    "stderr": "        2.89 real         2.88 user         0.00 sys\n            40812544  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2661  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  61  involuntary context switches\n         56690261533  instructions retired\n         10706511070  cycles elapsed\n            38289792  peak memory footprint\n"
+  },
+  {
+    "case": "gbemu",
+    "config": "rat-interpreter",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 0.2853995410259813,
+    "stdout": "Gameboy: 250 ms\n",
+    "stderr": "        0.28 real         0.27 user         0.00 sys\n            34177024  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                2256  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   3  involuntary context switches\n          6204785846  instructions retired\n          1047259858  cycles elapsed\n            31916392  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "old-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 0.23649491602554917,
+    "stdout": "Box2D: 209 ms\n",
+    "stderr": "        0.23 real         0.22 user         0.00 sys\n            23527424  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1607  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                  10  voluntary context switches\n                   6  involuntary context switches\n          4263666381  instructions retired\n           854073054  cycles elapsed\n            21250432  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "rat-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 0.803607250098139,
+    "stdout": "Box2D: 779 ms\n",
+    "stderr": "        0.80 real         0.79 user         0.00 sys\n            26066944  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1761  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   3  involuntary context switches\n         14809629271  instructions retired\n          2967767857  cycles elapsed\n            23609728  peak memory footprint\n"
+  },
+  {
+    "case": "box2d",
+    "config": "rat-interpreter",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 0.24987375014461577,
+    "stdout": "Box2D: 225 ms\n",
+    "stderr": "        0.24 real         0.24 user         0.00 sys\n            19333120  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                1350  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   3  involuntary context switches\n          4315807073  instructions retired\n           915630524  cycles elapsed\n            17121640  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "old-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 2.031579000176862,
+    "stdout": "NavierStokes: 7109\n",
+    "stderr": "        2.02 real         2.02 user         0.00 sys\n            12697600  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 945  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                   9  involuntary context switches\n         37518205223  instructions retired\n          7507266724  cycles elapsed\n            10420584  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "rat-jit",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 4.26738900016062,
+    "stdout": "NavierStokes: 838\n",
+    "stderr": "        4.26 real         4.25 user         0.00 sys\n            13451264  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 982  page reclaims\n                  11  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  44  involuntary context switches\n         86947048052  instructions retired\n         15787812818  cycles elapsed\n            10994024  peak memory footprint\n"
+  },
+  {
+    "case": "navier-original-runner",
+    "config": "rat-interpreter",
+    "pair": 2,
+    "status": 0,
+    "wall_seconds": 2.072913874872029,
+    "stdout": "NavierStokes: 4166\n",
+    "stderr": "        2.07 real         2.06 user         0.00 sys\n            11141120  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n                 850  page reclaims\n                   2  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   0  voluntary context switches\n                  40  involuntary context switches\n         41938125663  instructions retired\n          7649430136  cycles elapsed\n             8962408  peak memory footprint\n"
+  }
+]

@@ -1,0 +1,490 @@
+Analysis of sampling boomkat (pid 98517) every 1 millisecond
+Process:         boomkat [98517]
+Path:            /private/tmp/*/boomkat
+Load Address:    0x104fcc000
+Identifier:      boomkat
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [98507]
+Target Type:     live task
+
+Date/Time:       2026-11-02 00:46:30.048 +0100
+Launch Time:     2026-11-02 00:46:29.826 +0100
+OS Version:      macOS 27.0 (26A5425a)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         10.5M
+Physical footprint (peak):  10.5M
+Idle exit:                  untracked
+----
+
+Call graph:
+    2277 Thread_48789370   DispatchQueue_1: com.apple.main-thread  (serial)
+      2276 boomkat.vm.sljit_function_entry  (in boomkat) + 732  [0x1050c18a8]
+      + 1722 ???  (in <unknown binary>)  [0x105338030]
+      + ! 1718 boomkat.vm.sljit_function_ssa_run  (in boomkat) + 412  [0x1050c22f0]
+      + ! : 1552 boomkat.vm.sljit_function_entry  (in boomkat) + 732  [0x1050c18a8]
+      + ! : | 1552 ???  (in <unknown binary>)  [0x105358030]
+      + ! : |   1540 boomkat.vm.sljit_function_ssa_run  (in boomkat) + 412  [0x1050c22f0]
+      + ! : |   + 381 boomkat.vm.loop_prepare  (in boomkat) + 124,104,...  [0x1050c2c18,0x1050c2c04,...]
+      + ! : |   + 312 boomkat.vm.ssa_execution_publish  (in boomkat) + 268,208,...  [0x1050c32a4,0x1050c3268,...]
+      + ! : |   + 116 boomkat.vm.ssa_helper_execute  (in boomkat) + 88  [0x1050de950]
+      + ! : |   + ! 116 boomkat.vm.ssa_execution_roots  (in boomkat) + 596,480,...  [0x1050df3c8,0x1050df354,...]
+      + ! : |   + 103 boomkat.vm.ssa_execution_reload  (in boomkat) + 140  [0x1050c3634]
+      + ! : |   + ! 80 _platform_memmove  (in libsystem_platform.dylib) + 180,12,...  [0x19c8d3e14,0x19c8d3d6c,...]
+      + ! : |   + ! 14 boomkat.vm.ssa_execution_reload  (in boomkat) + 144,140  [0x1050c3638,0x1050c3634]
+      + ! : |   + ! 9 DYLD-STUB$$memcpy  (in boomkat) + 4  [0x1051d9230]
+      + ! : |   + 103 boomkat.vm.ssa_helper_state  (in boomkat) + 120,132,...  [0x1050de604,0x1050de610,...]
+      + ! : |   + 86 boomkat.vm.loop_binding_effective  (in boomkat) + 44,112,...  [0x1050c3850,0x1050c3894,...]
+      + ! : |   + 51 boomkat.vm.vm_dispatch  (in boomkat) + 66612,104,...  [0x105092fc8,0x105082bfc,...]
+      + ! : |   + 42 boomkat.vm.loop_binding_effective  (in boomkat) + 108  [0x1050c3890]
+      + ! : |   + ! 42 boomkat.vm.capture_ref  (in boomkat) + 96,28,...  [0x1050bb8bc,0x1050bb878,...]
+      + ! : |   + 42 boomkat.vm.ssa_helper_execute  (in boomkat) + 1216,2032,...  [0x1050dedb8,0x1050df0e8,...]
+      + ! : |   + 33 boomkat.vm.ssa_vm_step  (in boomkat) + 280,236,...  [0x1050df580,0x1050df554,...]
+      + ! : |   + 29 boomkat.vm.ssa_execution_publish  (in boomkat) + 544  [0x1050c33b8]
+      + ! : |   + ! 20 _platform_memmove  (in libsystem_platform.dylib) + 180,204,...  [0x19c8d3e14,0x19c8d3e2c,...]
+      + ! : |   + ! 9 DYLD-STUB$$memcpy  (in boomkat) + 4,0  [0x1051d9230,0x1051d922c]
+      + ! : |   + 19 boomkat.vm.loop_prepare  (in boomkat) + 224  [0x1050c2c7c]
+      + ! : |   + ! 19 boomkat.vm.loop_binding_effective  (in boomkat) + 20,0,...  [0x1050c3838,0x1050c3824,...]
+      + ! : |   + 13 boomkat.vm.ssa_helper_execute  (in boomkat) + 2096  [0x1050df128]
+      + ! : |   + ! 13 boomkat.vm.ssa_execution_reload  (in boomkat) + 0,64,...  [0x1050c35a8,0x1050c35e8,...]
+      + ! : |   + 12 boomkat.vm.ssa_helper_state  (in boomkat) + 84  [0x1050de5e0]
+      + ! : |   + ! 12 boomkat.vm.ssa_execution_reload  (in boomkat) + 0,48,...  [0x1050c35a8,0x1050c35d8,...]
+      + ! : |   + 12 boomkat.vm.vm_dispatch  (in boomkat) + 9240  [0x105084fac]
+      + ! : |   + ! 12 boomkat.vm.capture_ref  (in boomkat) + 96,28,...  [0x1050bb8bc,0x1050bb878,...]
+      + ! : |   + 7 ???  (in <unknown binary>)  [0x105354a38]
+      + ! : |   + ! 7 boomkat.vm.ssa_helper_state  (in boomkat) + 16  [0x1050de59c]
+      + ! : |   + 7 ???  (in <unknown binary>)  [0x1053548e0]
+      + ! : |   + 7 ???  (in <unknown binary>)  [0x105354b38]
+      + ! : |   + 7 ???  (in <unknown binary>)  [0x105354b5c]
+      + ! : |   + 7 ???  (in <unknown binary>)  [0x105354bb0]
+      + ! : |   + 6 ???  (in <unknown binary>)  [0x105354a20]
+      + ! : |   + 5 ???  (in <unknown binary>)  [0x10535488c]
+      + ! : |   + 5 ???  (in <unknown binary>)  [0x105354988]
+      + ! : |   + 5 ???  (in <unknown binary>)  [0x1053549b8]
+      + ! : |   + 5 ???  (in <unknown binary>)  [0x105354b78]
+      + ! : |   + 5 boomkat.vm.ssa_vm_step  (in boomkat) + 500  [0x1050df65c]
+      + ! : |   + ! 5 boomkat.vm.ssa_execution_reload  (in boomkat) + 24,108  [0x1050c35c0,0x1050c3614]
+      + ! : |   + 4 ???  (in <unknown binary>)  [0x105354648]
+      + ! : |   + 4 ???  (in <unknown binary>)  [0x10535469c]
+      + ! : |   + 4 ???  (in <unknown binary>)  [0x105354934]
+      + ! : |   + 4 ???  (in <unknown binary>)  [0x105354938]
+      + ! : |   + 4 ???  (in <unknown binary>)  [0x105354be4]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x1053544ac]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x105354600]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x1053546ac]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x1053547bc]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x1053547e0]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x105354804]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x105354848]
+      + ! : |   + 3 ???  (in <unknown binary>)  [0x105354a88]
+      + ! : |   + 3 boomkat.vm.ssa_helper_execute  (in boomkat) + 1260  [0x1050dede4]
+      + ! : |   + ! 3 boomkat.vm.ssa_vm_step  (in boomkat) + 24  [0x1050df480]
+      + ! : |   + 3 boomkat.vm.vm_dispatch  (in boomkat) + 180  [0x105082c48]
+      + ! : |   + ! 2 boomkat.vm.th_getcap  (in boomkat) + 4,456  [0x1051277f0,0x1051279b4]
+      + ! : |   + ! 1 boomkat.vm.th_add  (in boomkat) + 20  [0x10511e448]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x10535445c]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354468]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x1053544c4]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x1053544f4]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354538]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354670]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x1053546e8]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354740]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354828]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354ab4]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354ae0]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354b10]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354b14]
+      + ! : |   + 2 ???  (in <unknown binary>)  [0x105354ba4]
+      + ! : |   + 2 boomkat.vm.run_threaded_burst  (in boomkat) + 80,136  [0x10509a6b0,0x10509a6e8]
+      + ! : |   + 2 boomkat.vm.ssa_execution_publish  (in boomkat) + 40  [0x1050c31c0]
+      + ! : |   + ! 2 boomkat.vm.ssa_execution_reload  (in boomkat) + 0,108  [0x1050c35a8,0x1050c3614]
+      + ! : |   + 2 boomkat.vm.ssa_helper_state  (in boomkat) + 396  [0x1050de718]
+      + ! : |   + ! 2 boomkat.vm.loop_prepare  (in boomkat) + 0,20  [0x1050c2b9c,0x1050c2bb0]
+      + ! : |   + 2 boomkat.vm.ssa_vm_step  (in boomkat) + 128  [0x1050df4e8]
+      + ! : |   + ! 2 boomkat.vm.ssa_vm_step_supported  (in boomkat) + 0,44  [0x1050df830,0x1050df85c]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105353f38]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x10535448c]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x1053544d0]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x1053544e0]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354508]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354550]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354570]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x10535457c]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x1053545b8]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354628]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354630]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x1053546cc]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x1053546e4]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354754]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354770]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354798]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x10535485c]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354884]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354a38]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354ab8]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354aec]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354b24]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354b3c]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354b50]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354ba8]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354bf4]
+      + ! : |   + 1 ???  (in <unknown binary>)  [0x105354c24]
+      + ! : |   + 1 boomkat.hobject.HObject.set_array_idx  (in boomkat) + 200  [0x105141118]
+      + ! : |   + 1 boomkat.vm.dispatch_property  (in boomkat) + 868  [0x10509ac68]
+      + ! : |   + 1 boomkat.vm.sljit_function_entry  (in boomkat) + 276  [0x1050c16e0]
+      + ! : |   + ! 1 boomkat.vm.sljit_retire_invalid_dependencies  (in boomkat) + 0  [0x1050c1b08]
+      + ! : |   + 1 boomkat.vm.sljit_function_entry  (in boomkat) + 732  [0x1050c18a8]
+      + ! : |   + ! 1 ???  (in <unknown binary>)  [0x105308030]
+      + ! : |   + !   1 ???  (in <unknown binary>)  [0x105318dec]
+      + ! : |   + 1 boomkat.vm.ssa_helper_state  (in boomkat) + 36  [0x1050de5b0]
+      + ! : |   + ! 1 boomkat.vm.ssa_helper_execute  (in boomkat) + 32  [0x1050de918]
+      + ! : |   + 1 boomkat.vm.ssa_vm_step  (in boomkat) + 412  [0x1050df604]
+      + ! : |   + ! 1 boomkat.vm.vm_dispatch  (in boomkat) + 20  [0x105082ba8]
+      + ! : |   + 1 boomkat.vm.th_putprop  (in boomkat) + 72  [0x10512b350]
+      + ! : |   4 boomkat.vm.ssa_execution_dispose  (in boomkat) + 64  [0x1050c30a8]
+      + ! : |   + 4 boomkat.heap.Heap.pop_value_root  (in boomkat) + 12  [0x104fe3aa8]
+      + ! : |   3 boomkat.heap.Heap.pop_value_root  (in boomkat) + 76,36  [0x104fe3ae8,0x104fe3ac0]
+      + ! : |   3 boomkat.heap.Heap.push_value_root  (in boomkat) + 40,136,...  [0x104fe39f8,0x104fe3a58,...]
+      + ! : |   1 boomkat.vm.loop_prepare  (in boomkat) + 104  [0x1050c2c04]
+      + ! : |   1 boomkat.vm.ssa_execution_dispose  (in boomkat) + 136  [0x1050c30f0]
+      + ! : |     1 _free  (in libsystem_malloc.dylib) + 104  [0x19c6f0f8c]
+      + ! : 45 boomkat.vm.loop_prepare  (in boomkat) + 104,124,...  [0x1050c2c04,0x1050c2c18,...]
+      + ! : 23 boomkat.vm.ssa_execution_publish  (in boomkat) + 268,324,...  [0x1050c32a4,0x1050c32dc,...]
+      + ! : 14 boomkat.vm.ssa_helper_execute  (in boomkat) + 88  [0x1050de950]
+      + ! : | 14 boomkat.vm.ssa_execution_roots  (in boomkat) + 268,388,...  [0x1050df280,0x1050df2f8,...]
+      + ! : 11 boomkat.vm.ssa_execution_reload  (in boomkat) + 140  [0x1050c3634]
+      + ! : | 6 _platform_memmove  (in libsystem_platform.dylib) + 180,204,...  [0x19c8d3e14,0x19c8d3e2c,...]
+      + ! : | 5 boomkat.vm.ssa_execution_reload  (in boomkat) + 144,140  [0x1050c3638,0x1050c3634]
+      + ! : 10 boomkat.vm.ssa_helper_state  (in boomkat) + 120,136,...  [0x1050de604,0x1050de614,...]
+      + ! : 9 boomkat.vm.loop_binding_effective  (in boomkat) + 44,112,...  [0x1050c3850,0x1050c3894,...]
+      + ! : 8 boomkat.vm.vm_dispatch  (in boomkat) + 104,428,...  [0x105082bfc,0x105082d40,...]
+      + ! : 7 boomkat.vm.ssa_helper_execute  (in boomkat) + 2032,120,...  [0x1050df0e8,0x1050de970,...]
+      + ! : 6 boomkat.vm.ssa_vm_step  (in boomkat) + 280,204,...  [0x1050df580,0x1050df534,...]
+      + ! : 4 boomkat.vm.ssa_execution_publish  (in boomkat) + 544  [0x1050c33b8]
+      + ! : | 3 _platform_memmove  (in libsystem_platform.dylib) + 204,180  [0x19c8d3e2c,0x19c8d3e14]
+      + ! : | 1 DYLD-STUB$$memcpy  (in boomkat) + 4  [0x1051d9230]
+      + ! : 2 ???  (in <unknown binary>)  [0x10533010c]
+      + ! : 2 boomkat.vm.loop_binding_effective  (in boomkat) + 108  [0x1050c3890]
+      + ! : | 2 boomkat.vm.capture_ref  (in boomkat) + 28,36  [0x1050bb878,0x1050bb880]
+      + ! : 2 boomkat.vm.loop_prepare  (in boomkat) + 224  [0x1050c2c7c]
+      + ! : | 2 boomkat.vm.loop_binding_effective  (in boomkat) + 4  [0x1050c3828]
+      + ! : 2 boomkat.vm.vm_dispatch  (in boomkat) + 180  [0x105082c48]
+      + ! : | 1 boomkat.vm.th_getcap  (in boomkat) + 556  [0x105127a18]
+      + ! : | 1 boomkat.vm.th_getprop_array  (in boomkat) + 92  [0x10512a714]
+      + ! : 1 ???  (in <unknown binary>)  [0x10532f6a0]
+      + ! : 1 ???  (in <unknown binary>)  [0x10532fec0]
+      + ! : 1 ???  (in <unknown binary>)  [0x105330030]
+      + ! : 1 ???  (in <unknown binary>)  [0x105330258]
+      + ! : 1 ???  (in <unknown binary>)  [0x105330314]
+      + ! : 1 ???  (in <unknown binary>)  [0x105330398]
+      + ! : 1 ???  (in <unknown binary>)  [0x10533054c]
+      + ! : 1 ???  (in <unknown binary>)  [0x1053329d4]
+      + ! : 1 ???  (in <unknown binary>)  [0x105332b44]
+      + ! : 1 ???  (in <unknown binary>)  [0x105332b6c]
+      + ! : 1 ???  (in <unknown binary>)  [0x105332c48]
+      + ! : 1 ???  (in <unknown binary>)  [0x105332d70]
+      + ! : 1 ???  (in <unknown binary>)  [0x105332ef8]
+      + ! : 1 ???  (in <unknown binary>)  [0x105332ff0]
+      + ! : 1 ???  (in <unknown binary>)  [0x105333244]
+      + ! : 1 ???  (in <unknown binary>)  [0x105333304]
+      + ! : 1 boomkat.vm.ssa_helper_execute  (in boomkat) + 2096  [0x1050df128]
+      + ! : | 1 boomkat.vm.ssa_execution_reload  (in boomkat) + 32  [0x1050c35c8]
+      + ! : 1 boomkat.vm.ssa_helper_state  (in boomkat) + 84  [0x1050de5e0]
+      + ! : | 1 boomkat.vm.ssa_execution_reload  (in boomkat) + 64  [0x1050c35e8]
+      + ! : 1 boomkat.vm.ssa_vm_step  (in boomkat) + 128  [0x1050df4e8]
+      + ! : | 1 boomkat.vm.ssa_vm_step_supported  (in boomkat) + 76  [0x1050df87c]
+      + ! : 1 boomkat.vm.ssa_vm_step  (in boomkat) + 412  [0x1050df604]
+      + ! : | 1 boomkat.vm.vm_dispatch  (in boomkat) + 20  [0x105082ba8]
+      + ! : 1 boomkat.vm.ssa_vm_step  (in boomkat) + 500  [0x1050df65c]
+      + ! :   1 boomkat.vm.ssa_execution_reload  (in boomkat) + 108  [0x1050c3614]
+      + ! 2 boomkat.heap.Heap.push_value_root  (in boomkat) + 40,136  [0x104fe39f8,0x104fe3a58]
+      + ! 1 boomkat.vm.ssa_execution_dispose  (in boomkat) + 64  [0x1050c30a8]
+      + ! : 1 boomkat.heap.Heap.pop_value_root  (in boomkat) + 12  [0x104fe3aa8]
+      + ! 1 std.core.mem.allocators.LibcAllocator.acquire  (in boomkat) + 148  [0x1051b3c9c]
+      + !   1 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 472  [0x19c6e4a48]
+      + 411 ???  (in <unknown binary>)  [0x105368030]
+      + ! 411 boomkat.vm.sljit_function_ssa_run  (in boomkat) + 412  [0x1050c22f0]
+      + !   106 boomkat.vm.loop_prepare  (in boomkat) + 104,124,...  [0x1050c2c04,0x1050c2c18,...]
+      + !   80 boomkat.vm.ssa_execution_publish  (in boomkat) + 268,496,...  [0x1050c32a4,0x1050c3388,...]
+      + !   34 boomkat.vm.ssa_helper_execute  (in boomkat) + 88  [0x1050de950]
+      + !   : 34 boomkat.vm.ssa_execution_roots  (in boomkat) + 180,64,...  [0x1050df228,0x1050df1b4,...]
+      + !   29 boomkat.vm.ssa_execution_reload  (in boomkat) + 140  [0x1050c3634]
+      + !   : 20 _platform_memmove  (in libsystem_platform.dylib) + 180,204,...  [0x19c8d3e14,0x19c8d3e2c,...]
+      + !   : 9 boomkat.vm.ssa_execution_reload  (in boomkat) + 140,144  [0x1050c3634,0x1050c3638]
+      + !   22 boomkat.vm.ssa_helper_state  (in boomkat) + 120,132,...  [0x1050de604,0x1050de610,...]
+      + !   20 boomkat.vm.loop_binding_effective  (in boomkat) + 44,60,...  [0x1050c3850,0x1050c3860,...]
+      + !   17 boomkat.vm.vm_dispatch  (in boomkat) + 104,352,...  [0x105082bfc,0x105082cf4,...]
+      + !   10 boomkat.vm.ssa_vm_step  (in boomkat) + 176,360,...  [0x1050df518,0x1050df5d0,...]
+      + !   9 boomkat.vm.ssa_helper_execute  (in boomkat) + 700,80,...  [0x1050debb4,0x1050de948,...]
+      + !   6 boomkat.vm.ssa_execution_publish  (in boomkat) + 544  [0x1050c33b8]
+      + !   : 5 _platform_memmove  (in libsystem_platform.dylib) + 180,0  [0x19c8d3e14,0x19c8d3d60]
+      + !   : 1 DYLD-STUB$$memcpy  (in boomkat) + 4  [0x1051d9230]
+      + !   4 boomkat.vm.loop_binding_effective  (in boomkat) + 108  [0x1050c3890]
+      + !   : 4 boomkat.vm.capture_ref  (in boomkat) + 28,0,...  [0x1050bb878,0x1050bb85c,...]
+      + !   4 boomkat.vm.loop_prepare  (in boomkat) + 224  [0x1050c2c7c]
+      + !   : 4 boomkat.vm.loop_binding_effective  (in boomkat) + 20,0,...  [0x1050c3838,0x1050c3824,...]
+      + !   4 boomkat.vm.ssa_execution_publish  (in boomkat) + 40  [0x1050c31c0]
+      + !   : 4 boomkat.vm.ssa_execution_reload  (in boomkat) + 108,0  [0x1050c3614,0x1050c35a8]
+      + !   4 boomkat.vm.ssa_helper_state  (in boomkat) + 84  [0x1050de5e0]
+      + !   : 4 boomkat.vm.ssa_execution_reload  (in boomkat) + 0,108  [0x1050c35a8,0x1050c3614]
+      + !   3 ???  (in <unknown binary>)  [0x105304e5c]
+      + !   3 ???  (in <unknown binary>)  [0x1053056b4]
+      + !   3 boomkat.vm.ssa_helper_execute  (in boomkat) + 104  [0x1050de960]
+      + !   : 3 boomkat.vm.ssa_execution_publish  (in boomkat) + 24  [0x1050c31b0]
+      + !   3 boomkat.vm.ssa_helper_execute  (in boomkat) + 2096  [0x1050df128]
+      + !   : 3 boomkat.vm.ssa_execution_reload  (in boomkat) + 108,64  [0x1050c3614,0x1050c35e8]
+      + !   3 boomkat.vm.ssa_vm_step  (in boomkat) + 128  [0x1050df4e8]
+      + !   : 3 boomkat.vm.ssa_vm_step_supported  (in boomkat) + 0,44,...  [0x1050df830,0x1050df85c,...]
+      + !   2 ???  (in <unknown binary>)  [0x1053051a8]
+      + !   2 ???  (in <unknown binary>)  [0x1053058cc]
+      + !   2 ???  (in <unknown binary>)  [0x105305be8]
+      + !   2 ???  (in <unknown binary>)  [0x105306114]
+      + !   2 boomkat.vm.ssa_helper_execute  (in boomkat) + 1260  [0x1050dede4]
+      + !   : 2 boomkat.vm.ssa_vm_step  (in boomkat) + 24  [0x1050df480]
+      + !   2 boomkat.vm.ssa_vm_step  (in boomkat) + 500  [0x1050df65c]
+      + !   : 2 boomkat.vm.ssa_execution_reload  (in boomkat) + 64  [0x1050c35e8]
+      + !   1 ???  (in <unknown binary>)  [0x1053065b4]
+      + !   : 1 boomkat.vm.ssa_helper_state  (in boomkat) + 16  [0x1050de59c]
+      + !   1 ???  (in <unknown binary>)  [0x105304fcc]
+      + !   1 ???  (in <unknown binary>)  [0x1053050d4]
+      + !   1 ???  (in <unknown binary>)  [0x105305280]
+      + !   1 ???  (in <unknown binary>)  [0x105305430]
+      + !   1 ???  (in <unknown binary>)  [0x105305478]
+      + !   1 ???  (in <unknown binary>)  [0x105305624]
+      + !   1 ???  (in <unknown binary>)  [0x105305690]
+      + !   1 ???  (in <unknown binary>)  [0x1053056d8]
+      + !   1 ???  (in <unknown binary>)  [0x1053056fc]
+      + !   1 ???  (in <unknown binary>)  [0x105305784]
+      + !   1 ???  (in <unknown binary>)  [0x105305814]
+      + !   1 ???  (in <unknown binary>)  [0x10530583c]
+      + !   1 ???  (in <unknown binary>)  [0x105305884]
+      + !   1 ???  (in <unknown binary>)  [0x1053058f0]
+      + !   1 ???  (in <unknown binary>)  [0x105305980]
+      + !   1 ???  (in <unknown binary>)  [0x1053059a0]
+      + !   1 ???  (in <unknown binary>)  [0x105305af8]
+      + !   1 ???  (in <unknown binary>)  [0x105305ba0]
+      + !   1 ???  (in <unknown binary>)  [0x105305bb8]
+      + !   1 ???  (in <unknown binary>)  [0x105305c4c]
+      + !   1 ???  (in <unknown binary>)  [0x105305d68]
+      + !   1 ???  (in <unknown binary>)  [0x105305db0]
+      + !   1 ???  (in <unknown binary>)  [0x105305e1c]
+      + !   1 ???  (in <unknown binary>)  [0x105305f14]
+      + !   1 ???  (in <unknown binary>)  [0x105305f9c]
+      + !   1 ???  (in <unknown binary>)  [0x105306170]
+      + !   1 ???  (in <unknown binary>)  [0x1053061c0]
+      + !   1 ???  (in <unknown binary>)  [0x1053063a4]
+      + !   1 ???  (in <unknown binary>)  [0x1053064bc]
+      + !   1 ???  (in <unknown binary>)  [0x105306540]
+      + !   1 ???  (in <unknown binary>)  [0x10530659c]
+      + !   1 ???  (in <unknown binary>)  [0x105306640]
+      + !   1 boomkat.vm.dispatch_property  (in boomkat) + 208  [0x10509a9d4]
+      + !   1 boomkat.vm.vm_dispatch  (in boomkat) + 9240  [0x105084fac]
+      + !     1 boomkat.vm.capture_ref  (in boomkat) + 96  [0x1050bb8bc]
+      + 73 ???  (in <unknown binary>)  [0x1052e3c10]
+      + ! 73 boomkat.vm.sljit_function_ssa_run  (in boomkat) + 412  [0x1050c22f0]
+      + !   26 boomkat.vm.loop_prepare  (in boomkat) + 124,104,...  [0x1050c2c18,0x1050c2c04,...]
+      + !   9 boomkat.vm.ssa_execution_publish  (in boomkat) + 268,416,...  [0x1050c32a4,0x1050c3338,...]
+      + !   8 boomkat.vm.ssa_helper_execute  (in boomkat) + 88  [0x1050de950]
+      + !   : 8 boomkat.vm.ssa_execution_roots  (in boomkat) + 596,64,...  [0x1050df3c8,0x1050df1b4,...]
+      + !   4 boomkat.vm.ssa_execution_reload  (in boomkat) + 140  [0x1050c3634]
+      + !   : 2 _platform_memmove  (in libsystem_platform.dylib) + 36  [0x19c8d3d84]
+      + !   : 2 boomkat.vm.ssa_execution_reload  (in boomkat) + 144  [0x1050c3638]
+      + !   4 boomkat.vm.ssa_helper_execute  (in boomkat) + 36,68,...  [0x1050de91c,0x1050de93c,...]
+      + !   3 boomkat.vm.vm_dispatch  (in boomkat) + 9240  [0x105084fac]
+      + !   : 3 boomkat.vm.capture_ref  (in boomkat) + 0,28,...  [0x1050bb85c,0x1050bb878,...]
+      + !   2 boomkat.vm.loop_binding_effective  (in boomkat) + 132,788  [0x1050c38a8,0x1050c3b38]
+      + !   2 boomkat.vm.ssa_execution_publish  (in boomkat) + 544  [0x1050c33b8]
+      + !   : 1 DYLD-STUB$$memcpy  (in boomkat) + 4  [0x1051d9230]
+      + !   : 1 _platform_memmove  (in libsystem_platform.dylib) + 204  [0x19c8d3e2c]
+      + !   2 boomkat.vm.ssa_vm_step  (in boomkat) + 128  [0x1050df4e8]
+      + !   : 2 boomkat.vm.ssa_vm_step_supported  (in boomkat) + 44  [0x1050df85c]
+      + !   2 boomkat.vm.ssa_vm_step  (in boomkat) + 68,236  [0x1050df4ac,0x1050df554]
+      + !   1 ???  (in <unknown binary>)  [0x1052e72cc]
+      + !   1 ???  (in <unknown binary>)  [0x1052e743c]
+      + !   1 ???  (in <unknown binary>)  [0x1052e7460]
+      + !   1 ???  (in <unknown binary>)  [0x1052e7558]
+      + !   1 ???  (in <unknown binary>)  [0x1052e7580]
+      + !   1 boomkat.vm.ssa_execution_publish  (in boomkat) + 40  [0x1050c31c0]
+      + !   : 1 boomkat.vm.ssa_execution_reload  (in boomkat) + 132  [0x1050c362c]
+      + !   1 boomkat.vm.ssa_helper_execute  (in boomkat) + 2096  [0x1050df128]
+      + !   : 1 boomkat.vm.ssa_execution_reload  (in boomkat) + 64  [0x1050c35e8]
+      + !   1 boomkat.vm.ssa_helper_state  (in boomkat) + 36  [0x1050de5b0]
+      + !   : 1 boomkat.vm.ssa_helper_execute  (in boomkat) + 0  [0x1050de8f8]
+      + !   1 boomkat.vm.ssa_helper_state  (in boomkat) + 132  [0x1050de610]
+      + !   1 boomkat.vm.ssa_vm_step  (in boomkat) + 500  [0x1050df65c]
+      + !   : 1 boomkat.vm.ssa_execution_reload  (in boomkat) + 64  [0x1050c35e8]
+      + !   1 boomkat.vm.vm_dispatch  (in boomkat) + 80  [0x105082be4]
+      + 38 ???  (in <unknown binary>)  [0x1052e8030]
+      + ! 38 boomkat.vm.sljit_function_ssa_run  (in boomkat) + 412  [0x1050c22f0]
+      + !   14 boomkat.vm.loop_prepare  (in boomkat) + 104,124,...  [0x1050c2c04,0x1050c2c18,...]
+      + !   7 boomkat.vm.ssa_execution_publish  (in boomkat) + 496,208,...  [0x1050c3388,0x1050c3268,...]
+      + !   4 boomkat.vm.ssa_helper_execute  (in boomkat) + 88  [0x1050de950]
+      + !   : 4 boomkat.vm.ssa_execution_roots  (in boomkat) + 644,472,...  [0x1050df3f8,0x1050df34c,...]
+      + !   3 boomkat.vm.loop_binding_effective  (in boomkat) + 44,784,...  [0x1050c3850,0x1050c3b34,...]
+      + !   2 boomkat.vm.ssa_vm_step  (in boomkat) + 236,768  [0x1050df554,0x1050df768]
+      + !   1 ???  (in <unknown binary>)  [0x1052df8a0]
+      + !   1 ???  (in <unknown binary>)  [0x1052dfb4c]
+      + !   1 ???  (in <unknown binary>)  [0x1052dfcc0]
+      + !   1 ???  (in <unknown binary>)  [0x1052dfd44]
+      + !   1 boomkat.vm.loop_binding_effective  (in boomkat) + 108  [0x1050c3890]
+      + !   : 1 boomkat.vm.capture_ref  (in boomkat) + 84  [0x1050bb8b0]
+      + !   1 boomkat.vm.loop_prepare  (in boomkat) + 224  [0x1050c2c7c]
+      + !   : 1 boomkat.vm.loop_binding_effective  (in boomkat) + 0  [0x1050c3824]
+      + !   1 boomkat.vm.ssa_execution_publish  (in boomkat) + 40  [0x1050c31c0]
+      + !   : 1 boomkat.vm.ssa_execution_reload  (in boomkat) + 64  [0x1050c35e8]
+      + !   1 boomkat.vm.vm_dispatch  (in boomkat) + 9436  [0x105085070]
+      + 32 ???  (in <unknown binary>)  [0x105358030]
+      +   32 boomkat.vm.sljit_function_ssa_run  (in boomkat) + 412  [0x1050c22f0]
+      +     7 boomkat.vm.loop_prepare  (in boomkat) + 124,104,...  [0x1050c2c18,0x1050c2c04,...]
+      +     5 boomkat.vm.ssa_execution_reload  (in boomkat) + 140  [0x1050c3634]
+      +     : 3 _platform_memmove  (in libsystem_platform.dylib) + 12,180,...  [0x19c8d3d6c,0x19c8d3e14,...]
+      +     : 1 DYLD-STUB$$memcpy  (in boomkat) + 4  [0x1051d9230]
+      +     : 1 boomkat.vm.ssa_execution_reload  (in boomkat) + 144  [0x1050c3638]
+      +     4 boomkat.vm.ssa_execution_publish  (in boomkat) + 496,148,...  [0x1050c3388,0x1050c322c,...]
+      +     3 boomkat.vm.ssa_helper_state  (in boomkat) + 120,132,...  [0x1050de604,0x1050de610,...]
+      +     2 boomkat.vm.loop_binding_effective  (in boomkat) + 112,132  [0x1050c3894,0x1050c38a8]
+      +     2 boomkat.vm.ssa_helper_execute  (in boomkat) + 172  [0x1050de9a4]
+      +     2 boomkat.vm.ssa_vm_step  (in boomkat) + 236,404  [0x1050df554,0x1050df5fc]
+      +     1 ???  (in <unknown binary>)  [0x105353298]
+      +     1 ???  (in <unknown binary>)  [0x10535342c]
+      +     1 ???  (in <unknown binary>)  [0x1053534f8]
+      +     1 boomkat.vm.loop_binding_effective  (in boomkat) + 108  [0x1050c3890]
+      +     : 1 boomkat.vm.capture_ref  (in boomkat) + 84  [0x1050bb8b0]
+      +     1 boomkat.vm.ssa_helper_execute  (in boomkat) + 88  [0x1050de950]
+      +     : 1 boomkat.vm.ssa_execution_roots  (in boomkat) + 364  [0x1050df2e0]
+      +     1 boomkat.vm.vm_dispatch  (in boomkat) + 9240  [0x105084fac]
+      +     : 1 boomkat.vm.capture_ref  (in boomkat) + 96  [0x1050bb8bc]
+      +     1 boomkat.vm.vm_dispatch  (in boomkat) + 9384  [0x10508503c]
+      1 boomkat.hobject.hobject_alloc  (in boomkat) + 472  [0x105161300]
+
+Total number in stack (recursive counted multiple, when >=5):
+        20       boomkat.vm.ssa_execution_reload  (in boomkat) + 0  [0x1050c35a8]
+        10       boomkat.vm.loop_binding_effective  (in boomkat) + 0  [0x1050c3824]
+        9       _platform_memmove  (in libsystem_platform.dylib) + 0  [0x19c8d3d60]
+        9       boomkat.vm.capture_ref  (in boomkat) + 0  [0x1050bb85c]
+        8       boomkat.vm.loop_prepare  (in boomkat) + 0  [0x1050c2b9c]
+        8       boomkat.vm.ssa_vm_step  (in boomkat) + 0  [0x1050df468]
+        8       boomkat.vm.vm_dispatch  (in boomkat) + 0  [0x105082b94]
+        7       boomkat.vm.ssa_execution_publish  (in boomkat) + 0  [0x1050c3198]
+        7       boomkat.vm.ssa_helper_execute  (in boomkat) + 0  [0x1050de8f8]
+        7       boomkat.vm.ssa_helper_state  (in boomkat) + 0  [0x1050de58c]
+        6       DYLD-STUB$$memcpy  (in boomkat) + 0  [0x1051d922c]
+        6       boomkat.vm.sljit_function_ssa_run  (in boomkat) + 412  [0x1050c22f0]
+        6       boomkat.vm.ssa_execution_roots  (in boomkat) + 0  [0x1050df174]
+        6       boomkat.vm.ssa_helper_execute  (in boomkat) + 88  [0x1050de950]
+        5       boomkat.vm.loop_binding_effective  (in boomkat) + 108  [0x1050c3890]
+        5       boomkat.vm.ssa_execution_reload  (in boomkat) + 140  [0x1050c3634]
+
+Sort by top of stack, same collapsed (when >= 5):
+        boomkat.vm.loop_prepare  (in boomkat)        582
+        boomkat.vm.ssa_execution_publish  (in boomkat)        438
+        boomkat.vm.ssa_execution_roots  (in boomkat)        177
+        boomkat.vm.loop_binding_effective  (in boomkat)        148
+        boomkat.vm.ssa_helper_state  (in boomkat)        147
+        _platform_memmove  (in libsystem_platform.dylib)        140
+        boomkat.vm.ssa_execution_reload  (in boomkat)        83
+        boomkat.vm.vm_dispatch  (in boomkat)        81
+        boomkat.vm.capture_ref  (in boomkat)        67
+        boomkat.vm.ssa_helper_execute  (in boomkat)        66
+        boomkat.vm.ssa_vm_step  (in boomkat)        60
+        DYLD-STUB$$memcpy  (in boomkat)        22
+        boomkat.heap.Heap.pop_value_root  (in boomkat)        8
+        boomkat.vm.ssa_vm_step_supported  (in boomkat)        8
+        ???  (in <unknown binary>)  [0x1053548e0]        7
+        ???  (in <unknown binary>)  [0x105354b38]        7
+        ???  (in <unknown binary>)  [0x105354b5c]        7
+        ???  (in <unknown binary>)  [0x105354bb0]        7
+        ???  (in <unknown binary>)  [0x105354a20]        6
+        ???  (in <unknown binary>)  [0x10535488c]        5
+        ???  (in <unknown binary>)  [0x105354988]        5
+        ???  (in <unknown binary>)  [0x1053549b8]        5
+        ???  (in <unknown binary>)  [0x105354b78]        5
+        boomkat.heap.Heap.push_value_root  (in boomkat)        5
+
+Binary Images:
+       0x104fcc000 -        0x105223e0f +boomkat (0) <728B0F81-16DC-31E7-B2B9-A7246184452E> /tmp/*/boomkat
+       0x19c440000 -        0x19c48f527  libobjc.A.dylib (973.1) <220ABA7C-1B27-3461-AD64-F0C02DA55A5B> /usr/lib/libobjc.A.dylib
+       0x19c490000 -        0x19c49a23f  libsharedcache.dylib (0) <10B20858-73AC-3AB6-AEE8-B6E7243D386E> /usr/lib/libsharedcache.dylib
+       0x19c49b000 -        0x19c4c1ceb  libdyld.dylib (27062) <2DE7C10A-5A74-3F3F-93B6-5ABA1D64F9B7> /usr/lib/system/libdyld.dylib
+       0x19c4c2000 -        0x19c58166f  dyld (1.0.0 - 27062) <B6C0F697-046B-3606-96F7-042154B70AB9> /usr/lib/dyld
+       0x19c582000 -        0x19c58501f  libsystem_blocks.dylib (98.1) <426419BE-A433-3D7A-AE2A-39F3519571B4> /usr/lib/system/libsystem_blocks.dylib
+       0x19c586000 -        0x19c5db07f  libxpc.dylib (3298.1.1) <4173B9B6-71E5-3A85-A1C8-798693A94EDB> /usr/lib/system/libxpc.dylib
+       0x19c5dc000 -        0x19c5fbc03  libsystem_trace.dylib (1966.1.1) <9649346D-1AA0-3844-8401-1F2BEF5DEC12> /usr/lib/system/libsystem_trace.dylib
+       0x19c5fc000 -        0x19c6b0e47  libcorecrypto.dylib (2109.0.22) <4747DEC8-74F6-3C3C-9CFA-958D749E55D4> /usr/lib/system/libcorecrypto.dylib
+       0x19c6b1000 -        0x19c706a07  libsystem_malloc.dylib (886.0.8) <5F121E9F-0046-36C7-B614-BD8EDA4252AA> /usr/lib/system/libsystem_malloc.dylib
+       0x19c707000 -        0x19c74d13f  libdispatch.dylib (1605.0.2) <35B1D5C9-46F5-3E6C-88EB-9FEF218B3F6A> /usr/lib/system/libdispatch.dylib
+       0x19c74e000 -        0x19c750d2b  libsystem_featureflags.dylib (108) <20C1CAB2-1F13-3426-8146-9CAE9FF2A33D> /usr/lib/system/libsystem_featureflags.dylib
+       0x19c751000 -        0x19c7d3bdb  libsystem_c.dylib (1786.0.3) <B9578568-B137-3A96-A8C8-096F0B6F95CD> /usr/lib/system/libsystem_c.dylib
+       0x19c7d4000 -        0x19c869033  libc++.1.dylib (2200.27) <D69543EE-E165-3242-9281-5DAB86D55340> /usr/lib/libc++.1.dylib
+       0x19c86a000 -        0x19c883eff  libc++abi.dylib (2200.27) <6FBE4525-E708-3750-AE43-FC9D7327E8F5> /usr/lib/libc++abi.dylib
+       0x19c884000 -        0x19c8c29ab  libsystem_kernel.dylib (13432.1.9) <1D409488-002C-3663-9BA9-37C334D384C1> /usr/lib/system/libsystem_kernel.dylib
+       0x19c8c3000 -        0x19c8cf91b  libsystem_pthread.dylib (553.0.1) <A55DAC52-24D5-3CB7-9310-0C7C029498C5> /usr/lib/system/libsystem_pthread.dylib
+       0x19c8d0000 -        0x19c8d94f3  libsystem_platform.dylib (402.0.1.0.1) <97CB8000-7DFC-398B-B919-D525467BBF92> /usr/lib/system/libsystem_platform.dylib
+       0x19c8da000 -        0x19c9088f3  libsystem_info.dylib (603) <3E847D64-2B41-3505-AAE8-918B10DC3253> /usr/lib/system/libsystem_info.dylib
+       0x1a0a2a000 -        0x1a0a33ac3  libsystem_darwin.dylib (1786.0.3) <0270D881-5511-3056-8ABC-B62A1C4DEDF2> /usr/lib/system/libsystem_darwin.dylib
+       0x1a0e84000 -        0x1a0e95b8b  libsystem_notify.dylib (368) <BC2014EB-9569-3142-9B01-4ECD8ADD164E> /usr/lib/system/libsystem_notify.dylib
+       0x1a2fde000 -        0x1a2ff8da3  libsystem_networkextension.dylib (2340.1.2) <FC8BD562-14AD-34BD-8DA8-5CB1DBF4F9FD> /usr/lib/system/libsystem_networkextension.dylib
+       0x1a3085000 -        0x1a309c247  libsystem_asl.dylib (409) <0B8B1F14-A7FB-302F-B56B-AD113BB71055> /usr/lib/system/libsystem_asl.dylib
+       0x1a403c000 -        0x1a403cf2f  libobjcMsgSend.dylib (973.1) <41179EDE-DC97-3BBE-8848-6400D12C1436> /usr/lib/objc/libobjcMsgSend.dylib
+       0x1a516b000 -        0x1a5172edf  libsystem_symptoms.dylib (2394.0.4) <AEAE80CC-C6AE-344D-BBFC-E7A9DC4382D0> /usr/lib/system/libsystem_symptoms.dylib
+       0x1a94e0000 -        0x1a951aadb  libsystem_containermanager.dylib (833.0.8.0.1) <B33F2B09-4BE9-32C5-954C-9233E1D5BB94> /usr/lib/system/libsystem_containermanager.dylib
+       0x1aab29000 -        0x1aab2d317  libsystem_configuration.dylib (1446) <08EDCD0E-34BC-39E2-8B6C-4E5366461D75> /usr/lib/system/libsystem_configuration.dylib
+       0x1aab2e000 -        0x1aab34e03  libsystem_sandbox.dylib (3051.0.52) <1E892B56-092E-3832-BDE3-DCE356D7A4FA> /usr/lib/system/libsystem_sandbox.dylib
+       0x1ac03c000 -        0x1ac03cf2f  libobjcMsgSend1.dylib (973.1) <B40D9B2A-E1EE-37ED-8004-711A1F263DE1> /usr/lib/objc/libobjcMsgSend1.dylib
+       0x1ac706000 -        0x1ac708f93  libquarantine.dylib (217.0.4) <7FD4AE22-86EF-382B-83F5-ADF9336C1160> /usr/lib/system/libquarantine.dylib
+       0x1ace04000 -        0x1ace0a1e7  libsystem_coreservices.dylib (203) <7E74C917-CE45-393A-90B9-571B7BA0C9CF> /usr/lib/system/libsystem_coreservices.dylib
+       0x1ad3cc000 -        0x1ad409b27  libsystem_m.dylib (3326.0.1) <0F33CC3F-E56C-3322-90FC-D2DE78A8E2CC> /usr/lib/system/libsystem_m.dylib
+       0x1ad40b000 -        0x1ad40e4d7  libmacho.dylib (27062) <10767E82-A76D-335D-A289-B977D5507577> /usr/lib/system/libmacho.dylib
+       0x1ad428000 -        0x1ad4346ff  libcommonCrypto.dylib (600041) <215316D1-CCCC-3F21-B1A7-7AAA28C067BC> /usr/lib/system/libcommonCrypto.dylib
+       0x1ad435000 -        0x1ad43ec87  libunwind.dylib (2200.5) <12EC4D5E-7B70-3B75-B2F1-8060243A4BD3> /usr/lib/system/libunwind.dylib
+       0x1ad446000 -        0x1ad4507eb  libcopyfile.dylib (260.0.3) <52634F6F-1CEF-3F45-8F03-2807039C051C> /usr/lib/system/libcopyfile.dylib
+       0x1ad451000 -        0x1ad4548af  libcompiler_rt.dylib (103.4) <58DF4E26-8BF1-3A31-94D7-B837B76359A1> /usr/lib/system/libcompiler_rt.dylib
+       0x1ad455000 -        0x1ad45a087  libsystem_collections.dylib (1786.0.3) <31B75E6B-F7E4-352D-A1A3-716D667F8C7F> /usr/lib/system/libsystem_collections.dylib
+       0x1ad45b000 -        0x1ad45df1f  libsystem_secinit.dylib (182) <DE037464-4C5D-3E96-A33F-2A4557CC6A20> /usr/lib/system/libsystem_secinit.dylib
+       0x1ad45e000 -        0x1ad46097f  libremovefile.dylib (96) <E6E6DFCF-6B2C-3F30-A59D-816CAB1190CE> /usr/lib/system/libremovefile.dylib
+       0x1ad461000 -        0x1ad461e27  libkeymgr.dylib (31) <5EC997EF-3ADA-360B-9FCD-5F940C83FA4E> /usr/lib/system/libkeymgr.dylib
+       0x1ad462000 -        0x1ad46aaf7  libsystem_dnssd.dylib (3111.0.5.0.1) <CFEEC9C2-091A-32AE-8771-967374AE1994> /usr/lib/system/libsystem_dnssd.dylib
+       0x1ad46b000 -        0x1ad46ff1b  libcache.dylib (95) <83E81326-A587-374F-ABC1-BAE48D0FEE0D> /usr/lib/system/libcache.dylib
+       0x1ad470000 -        0x1ad4718f3  libSystem.B.dylib (1359) <4FDC9AA6-B344-37FE-B8C6-A4C94A038F57> /usr/lib/libSystem.B.dylib
+       0x1b403c000 -        0x1b403cf2f  libobjcMsgSend2.dylib (973.1) <BD27A84B-C9AE-3282-BBEA-3B6119837B5A> /usr/lib/objc/libobjcMsgSend2.dylib
+       0x1bc03c000 -        0x1bc03cf2f  libobjcMsgSend3.dylib (973.1) <C0860D68-DDFC-3BD7-8B06-DB0645CBBED4> /usr/lib/objc/libobjcMsgSend3.dylib
+       0x1c403c000 -        0x1c403cf2f  libobjcMsgSend4.dylib (973.1) <A6153BF5-622B-3B01-81B6-F64A365EF613> /usr/lib/objc/libobjcMsgSend4.dylib
+       0x1cc03c000 -        0x1cc03cf2f  libobjcMsgSend5.dylib (973.1) <3913A71C-B29A-3AEA-820B-BEC40AC1861A> /usr/lib/objc/libobjcMsgSend5.dylib
+       0x1d403c000 -        0x1d403cf2f  libobjcMsgSend6.dylib (973.1) <9BC523A3-E167-3F6C-8CAE-0F3EBA671791> /usr/lib/objc/libobjcMsgSend6.dylib
+       0x1dc03c000 -        0x1dc03cf2f  libobjcMsgSend7.dylib (973.1) <248B7BCE-5B4C-34C7-A340-43D5228628C5> /usr/lib/objc/libobjcMsgSend7.dylib
+       0x1e403c000 -        0x1e403cf2f  libobjcMsgSend8.dylib (973.1) <3E041BAD-A8E8-3069-B741-78CD1A45B176> /usr/lib/objc/libobjcMsgSend8.dylib
+       0x1ec03c000 -        0x1ec03cf2f  libobjcMsgSend9.dylib (973.1) <34A67969-21A0-39D6-BB81-8FDA5A2409DB> /usr/lib/objc/libobjcMsgSend9.dylib
+       0x1f403c000 -        0x1f403cf2f  libobjcMsgSend10.dylib (973.1) <678186C0-8EAD-3B35-8CBB-00285B41E4A0> /usr/lib/objc/libobjcMsgSend10.dylib
+       0x1fc03c000 -        0x1fc03cf2f  libobjcMsgSend11.dylib (973.1) <E05CB08C-E956-36FA-8967-AE8E346A8D2C> /usr/lib/objc/libobjcMsgSend11.dylib
+       0x22403c000 -        0x22403cf2f  libobjcMsgSend12.dylib (973.1) <10AB03AA-FF1F-3FDC-9DFB-BFC40042C501> /usr/lib/objc/libobjcMsgSend12.dylib
+       0x22c03c000 -        0x22c03cf2f  libobjcMsgSend13.dylib (973.1) <ABF53427-FA6F-3D0D-8F9D-7AD795CA5C92> /usr/lib/objc/libobjcMsgSend13.dylib
+       0x23403c000 -        0x23403cf2f  libobjcMsgSend14.dylib (973.1) <9A844C46-A6DA-34D4-8EBF-2AD775C30684> /usr/lib/objc/libobjcMsgSend14.dylib
+       0x23c03c000 -        0x23c03cf2f  libobjcMsgSend15.dylib (973.1) <7C995666-2B2D-3284-AA0A-EBF7C922838E> /usr/lib/objc/libobjcMsgSend15.dylib
+       0x24403c000 -        0x24403cf2f  libobjcMsgSend16.dylib (973.1) <B6C0E14B-53AE-3E22-9ED5-1729C49F46F2> /usr/lib/objc/libobjcMsgSend16.dylib
+       0x24c03c000 -        0x24c03cf2f  libobjcMsgSend17.dylib (973.1) <07B4CF85-251B-301B-832B-20B315A59E19> /usr/lib/objc/libobjcMsgSend17.dylib
+       0x25403c000 -        0x25403cf2f  libobjcMsgSend18.dylib (973.1) <43E575B7-04DB-3999-A633-1A3B638BA6E3> /usr/lib/objc/libobjcMsgSend18.dylib
+       0x25c03c000 -        0x25c03cf2f  libobjcMsgSend19.dylib (973.1) <736F4D85-76F7-3B28-8D87-C07E8F7A0EF4> /usr/lib/objc/libobjcMsgSend19.dylib
+       0x26403c000 -        0x26403cf2f  libobjcMsgSend20.dylib (973.1) <74E67C8B-6BCA-3184-A18E-A97F370052C6> /usr/lib/objc/libobjcMsgSend20.dylib
+       0x26c03c000 -        0x26c03cf2f  libobjcMsgSend21.dylib (973.1) <CC0D732F-98E7-3888-9E15-70984DA2FB04> /usr/lib/objc/libobjcMsgSend21.dylib
+       0x27403c000 -        0x27403cf2f  libobjcMsgSend22.dylib (973.1) <85A60286-5DE3-32BA-B18C-2A498B065C88> /usr/lib/objc/libobjcMsgSend22.dylib
+       0x27c03c000 -        0x27c03cf2f  libobjcMsgSend23.dylib (973.1) <5452A0D2-6B19-39BE-ADDD-80B7BCDE3A98> /usr/lib/objc/libobjcMsgSend23.dylib
+       0x28403c000 -        0x28403cf2f  libobjcMsgSend24.dylib (973.1) <94BBF2D6-722B-350D-8557-4D25A8E8D53A> /usr/lib/objc/libobjcMsgSend24.dylib
+       0x28c03c000 -        0x28c03cf2f  libobjcMsgSend25.dylib (973.1) <35481387-5A8E-3AE4-86A6-94CEB3CC8726> /usr/lib/objc/libobjcMsgSend25.dylib
+       0x2ac03c000 -        0x2ac03cf2f  libobjcMsgSend26.dylib (973.1) <9E0C8664-E7F4-39D1-AAFC-BD92B255E4E8> /usr/lib/objc/libobjcMsgSend26.dylib
+       0x2b403c000 -        0x2b403cf2f  libobjcMsgSend27.dylib (973.1) <FD424935-55A9-3650-955A-EED3441A1D19> /usr/lib/objc/libobjcMsgSend27.dylib
+       0x2bc03c000 -        0x2bc03cf2f  libobjcMsgSend28.dylib (973.1) <09BA7B97-7DF7-3C7F-932A-B6847662FC49> /usr/lib/objc/libobjcMsgSend28.dylib
+       0x2c403c000 -        0x2c403cf2f  libobjcMsgSend29.dylib (973.1) <36D5BA3F-2139-30B0-8558-556764BE9813> /usr/lib/objc/libobjcMsgSend29.dylib
+       0x2cc03c000 -        0x2cc03cf2f  libobjcMsgSend30.dylib (973.1) <9F05564A-9D12-372C-98FC-E9F0E6BE4F04> /usr/lib/objc/libobjcMsgSend30.dylib
+       0x2ce856000 -        0x2ce85cfe5  libRosetta.dylib (385) <88E33EA4-A20E-3ED1-AD7D-8D029E4E08BC> /usr/lib/libRosetta.dylib
+       0x2cf243000 -        0x2cf24675b  libsystem_darwindirectory.dylib (129.0.1) <61264923-2AA5-3658-B8C4-550C71E9D4B3> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x2cf247000 -        0x2cf251d9b  libsystem_eligibility.dylib (446.1.3) <EDDE8E9C-A2CF-3931-BBB3-321CB852EB30> /usr/lib/system/libsystem_eligibility.dylib
+       0x2cf252000 -        0x2cf25b42b  libsystem_sanitizers.dylib (32) <447BAA25-4DFF-3A23-976A-4B96AF067112> /usr/lib/system/libsystem_sanitizers.dylib
+       0x2cf25c000 -        0x2cf25ca13  libsystem_trial.dylib (511) <6AE48824-EC44-3A8C-B501-BE57DBE892E7> /usr/lib/system/libsystem_trial.dylib
+       0x2d403c000 -        0x2d403cf2f  libobjcMsgSend31.dylib (973.1) <0985E20F-78C3-3466-A2B2-DBB95F7104A3> /usr/lib/objc/libobjcMsgSend31.dylib
+       0x2dc03c000 -        0x2dc03cf2f  libobjcMsgSend32.dylib (973.1) <0D309D58-D576-3E5D-AD4B-6D55AB491702> /usr/lib/objc/libobjcMsgSend32.dylib
+       0x2e403c000 -        0x2e403cf2f  libobjcMsgSend33.dylib (973.1) <346E0484-48FA-369B-8A64-93B5F5341CFE> /usr/lib/objc/libobjcMsgSend33.dylib
+       0x2ec03c000 -        0x2ec03cf2f  libobjcMsgSend34.dylib (973.1) <6A31F809-BCBE-3E01-A367-E91FDACCE324> /usr/lib/objc/libobjcMsgSend34.dylib
