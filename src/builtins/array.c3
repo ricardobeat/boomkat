@@ -1893,6 +1893,44 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
 // the run-depth guard throws.
 const usz SORT_INLINE_ELEMS = 64;
 
+// Stable bottom-up merge sort. Returns false if comparefn threw. The caller
+// must keep the items rooted, since comparefn can release them.
+fn bool array_merge_sort(BuiltinContext* ctx, TVal[] items, TVal comparefn, bool has_comparefn) {
+    usz count = items.len;
+    if (count <= 1) return true;
+    TVal[SORT_INLINE_ELEMS] stack_temp;
+    TVal[] temp = count > SORT_INLINE_ELEMS ? mem::temp_array(TVal, (sz)count) : stack_temp[:count];
+
+    for (usz width = 1; width < count; width *= 2) {
+        for (usz i = 0; i < count; i += 2 * width) {
+            usz left = i;
+            usz mid = i + width < count ? i + width : count;
+            usz right = i + 2 * width < count ? i + 2 * width : count;
+
+            // Copy left run into temp buffer.
+            for (usz j = left; j < mid; j++) {
+                temp[j] = items[j];
+            }
+
+            // Merge temp[left..mid-1] and items[mid..right-1] back into items.
+            usz l = left;
+            usz r = mid;
+            usz k = left;
+            while (l < mid && r < right) {
+                int cmp = array_sort_compare(ctx, comparefn, has_comparefn, temp[l], items[r]);
+                if (ctx.should_throw) return false;
+                if (cmp <= 0) {
+                    items[k++] = temp[l++];
+                } else {
+                    items[k++] = items[r++];
+                }
+            }
+            while (l < mid) items[k++] = temp[l++];
+        }
+    }
+    return true;
+}
+
 fn void builtin_array_proto_sort(BuiltinContext* ctx) {
     HObject* obj = array_proto_get_this(ctx);
     if (obj == null) { ctx.result_undefined(); return; }
@@ -1974,54 +2012,9 @@ fn void builtin_array_proto_sort(BuiltinContext* ctx) {
         }
     }
 
-    // Stable bottom-up merge sort on the collected items.
-    if (present_count > 1) {
-        TVal[SORT_INLINE_ELEMS] stack_temp;
-        TVal[] temp;
-        if (present_count > SORT_INLINE_ELEMS) {
-            uint heap_count = present_count > 0x7FFFFFFF ? 0x7FFFFFFF : (uint)present_count;
-            temp = mem::temp_array(TVal, (sz)heap_count);
-        } else {
-            temp = stack_temp[0:(uint)present_count];
-        }
-
-        for (ulong width = 1; width < present_count; width *= 2) {
-            for (ulong i = 0; i < present_count; i += 2 * width) {
-                ulong left = i;
-                ulong mid = i + width < present_count ? i + width : present_count;
-                ulong right = i + 2 * width < present_count ? i + 2 * width : present_count;
-
-                // Copy left run into temp buffer.
-                for (ulong j = left; j < mid; j++) {
-                    temp[j] = items[j];
-                }
-
-                // Merge temp[left..mid-1] and items[mid..right-1] back into items.
-                ulong l = left;
-                ulong r = mid;
-                ulong k = left;
-                while (l < mid && r < right) {
-                    int cmp = array_sort_compare(ctx, comparefn, has_comparefn, temp[l], items[r]);
-                    if (ctx.should_throw) { ctx.result_undefined(); return; }
-                    if (cmp <= 0) {
-                        items[k] = temp[l];
-                        l++;
-                    } else {
-                        items[k] = items[r];
-                        r++;
-                    }
-                    k++;
-                }
-                while (l < mid) {
-                    items[k] = temp[l];
-                    l++; k++;
-                }
-                while (r < right) {
-                    items[k] = items[r];
-                    r++; k++;
-                }
-            }
-        }
+    if (!array_merge_sort(ctx, items[:present_count], comparefn, has_comparefn)) {
+        ctx.result_undefined();
+        return;
     }
 
     // Write sorted present elements back to indices 0..present_count-1 using
@@ -2269,85 +2262,42 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
         return;
     }
 
-    // Step 3: Read ALL elements from source into a list
-    TVal*[] elements;
-    TVal** elements_heap = null;
-    const usz STACK_THRESHOLD = 128;
+    // Step 3: Read all elements, holes included, into a list. The holder
+    // keeps them alive while getters and comparefn run.
+    TVal[SORT_INLINE_ELEMS] stack_items;
+    TVal[] items = len > SORT_INLINE_ELEMS ? mem::temp_array(TVal, (sz)len) : stack_items[:(usz)len];
 
-    TVal*[128] elements_stack;
-    if (len <= STACK_THRESHOLD) {
-        elements = elements_stack[:len];
-    } else {
-        elements_heap = (TVal**)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal*::size * (usz)len);
-        if (elements_heap == null) {
-            ctx.result_undefined();
-            return;
-        }
-        elements = elements_heap[:len];
+    HObject*? holder_obj = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch holder_obj) {
+        ctx.result_undefined();
+        return;
     }
+    HObject* holder = holder_obj;
+    heap::ObjectRoot holder_root;
+    ctx.heap.push_object_root(&holder_root, holder);
+    defer ctx.heap.pop_object_root(&holder_root);
 
     for (ulong i = 0; i < len; i++) {
         TVal elem; elem.set_undefined();
         arr_get_elem_vm(obj, i, ctx.heap, ctx, &elem);
-        if (ctx.should_throw) {
-            if (elements_heap != null) {
-                ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
-            }
+        if (ctx.should_throw) { ctx.result_undefined(); return; }
+        if (!holder.set_array_idx((uint)i, elem, ctx.heap)) {
             ctx.result_undefined();
             return;
         }
-        // Allocate space for this element
-        TVal* elem_ptr = (TVal*)ctx.heap.alloc_func(ctx.heap.heap_udata, TVal::size);
-        if (elem_ptr == null) {
-            if (elements_heap != null) {
-                ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
-            }
-            ctx.result_undefined();
-            return;
-        }
-        *elem_ptr = elem;
-        elements[i] = elem_ptr;
+        items[i] = elem;
     }
 
-    // Step 4: Sort the elements using compareFn (or string comparison if undefined)
-    // Simple bubble sort for compatibility
-    for (ulong i = 0; i < len; i++) {
-        for (ulong j = 0; j < len - 1 - i; j++) {
-            TVal a = *elements[j];
-            TVal b = *elements[j + 1];
-
-            // SortCompare (§23.1.3.34.1): undefined sorts last without calling
-            // comparefn; comparefn receives (a, b) with undefined this.
-            int cmp = array_sort_compare(ctx, comparefn, !comparefn.is_undefined(), a, b);
-            if (ctx.should_throw) {
-                for (ulong k = 0; k < len; k++) {
-                    ctx.heap.free_func(ctx.heap.heap_udata, elements[k]);
-                }
-                if (elements_heap != null) {
-                    ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
-                }
-                ctx.result_undefined();
-                return;
-            }
-
-            if (cmp > 0) {
-                // Swap
-                TVal* tmp = elements[j];
-                elements[j] = elements[j + 1];
-                elements[j + 1] = tmp;
-            }
-        }
+    // Step 4: SortCompare (§23.1.3.34.1) puts undefined last without calling
+    // comparefn.
+    if (!array_merge_sort(ctx, items, comparefn, !comparefn.is_undefined())) {
+        ctx.result_undefined();
+        return;
     }
 
     // Step 5: Create result array and populate with sorted elements
     HObject*? new_arr = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err = new_arr) {
-        for (ulong k = 0; k < len; k++) {
-            ctx.heap.free_func(ctx.heap.heap_udata, elements[k]);
-        }
-        if (elements_heap != null) {
-            ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
-        }
+    if (catch new_arr) {
         ctx.result_undefined();
         return;
     }
@@ -2355,7 +2305,7 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
     ctx.heap.set_prototype(result, ctx.heap.array_proto);
 
     for (ulong i = 0; i < len; i++) {
-        TVal elem = *elements[i];
+        TVal elem = items[i];
         if (elem.is_undefined()) {
             // Undefined (including former holes) must be an own property in
             // the result, and array_set_elem_ulong treats undefined as a hole.
@@ -2368,14 +2318,6 @@ fn void builtin_array_proto_toSorted(BuiltinContext* ctx) {
         }
     }
     array_set_length_ulong(result, len, ctx.heap, ctx.vm);
-
-    // Clean up
-    for (ulong k = 0; k < len; k++) {
-        ctx.heap.free_func(ctx.heap.heap_udata, elements[k]);
-    }
-    if (elements_heap != null) {
-        ctx.heap.free_func(ctx.heap.heap_udata, elements_heap);
-    }
 
     ctx.result_object(result);
 }
