@@ -142,7 +142,7 @@ struct SsaBlock @feat(SLJIT) {
     uint succ0;
     uint succ1;
     uint pred_count;
-    uint[4] preds;
+    uint* preds;
     uint branch_pc; // uint::max when the block has no branch
     bool conditional;
     bool jump;
@@ -157,14 +157,14 @@ struct SsaBlock @feat(SLJIT) {
 struct SsaJoin @feat(SLJIT) {
     uint block;
     uint pred_count;
-    uint[4] preds;
-    int[LOOP_REGS] phi;
-    int[LOOP_REGS][4] incoming;
+    uint* preds;
+    int* phi;
+    int** incoming;
     // A loop header at the body's entry has no bytecode predecessor for its
     // forward edge. The entry state plays that role and is copied before the
     // header label.
     bool entry;
-    int[LOOP_REGS] entry_incoming;
+    int* entry_incoming;
 }
 
 struct SsaExit @feat(SLJIT) {
@@ -211,8 +211,9 @@ struct SsaGraph @feat(SLJIT) {
     SsaSafepoint* safepoints;
     uint safepoint_count;
     uint safepoint_capacity;
-    SsaValue[SSA_MAX_VALUES] values;
-    int[SSA_MAX_VALUES * 4] conv;
+    SsaValue* values;
+    uint value_capacity;
+    int* conv;
     uint value_count;
     uint stamp;
     uint current_pc;
@@ -222,9 +223,9 @@ struct SsaGraph @feat(SLJIT) {
     bool schedule_ready;
     bool single_pass;
     bool cyclic;
-    ulong[SSA_BLOCKS] cyclic_live;
-    uint[SSA_BLOCKS] cyclic_order;
-    bool[SSA_BLOCKS] block_built;
+    ulong* cyclic_live;
+    uint* cyclic_order;
+    bool* block_built;
     bool direct;
     bool inplace;
     bool direct_fields;
@@ -251,7 +252,8 @@ struct SsaGraph @feat(SLJIT) {
     int cmp_rhs;
     long cmp_imm;
     Opcode cmp_op;
-    SsaExit[SSA_EXITS] exits;
+    SsaExit* exits;
+    uint exit_capacity;
     uint exit_count;
     // Memories whose source register is not written by the loop keep the same
     // descriptor for the whole run, so their guards can be checked once.
@@ -259,7 +261,7 @@ struct SsaGraph @feat(SLJIT) {
     // Element reads whose every consumer converts to a number: the tag guard
     // that rejects a non-number also rules out a hole, so the store that
     // follows such a read into the same slot needs no second check.
-    bool[SSA_MAX_VALUES] numeric_load;
+    bool* numeric_load;
     // Registers whose loop-carried value arrives as an exact double: keeping
     // them in the wider representation removes an exact conversion from every
     // backedge and lets the loop test compare doubles directly.
@@ -268,16 +270,18 @@ struct SsaGraph @feat(SLJIT) {
     int[SSA_CSE] cse_index;
     int[SSA_CSE] cse_value;
     // The body's block graph and the joins between its arms.
-    SsaBlock[SSA_BLOCKS] blocks;
+    SsaBlock* blocks;
+    uint block_capacity;
     uint block_count;
-    uint[SSA_BLOCKS] dominators;
-    SsaJoin[SSA_JOINS] joins;
+    uint* dominators;
+    uint dominator_words;
+    SsaJoin* joins;
     uint join_count;
     // The register state at the end of each block.
     SsaFrameId* block_exit;
     // The values each block owns, in the order they were built.
-    uint[SSA_BLOCKS] block_first;
-    uint[SSA_BLOCKS] block_last;
+    uint* block_first;
+    uint* block_last;
 }
 
 fn long ssa_spill_offset(uint slot) @feat(SLJIT) {
@@ -285,10 +289,7 @@ fn long ssa_spill_offset(uint slot) @feat(SLJIT) {
     return (char*)&state.ssa_spill - (char*)&state + (long)slot * double::size;
 }
 fn int ssa_value(SsaGraph* g, SsaOp op, SsaRep rep, int a, int b, long imm) @feat(SLJIT) {
-    if (g.value_count == SSA_MAX_VALUES) {
-        g.failed = true;
-        return 0;
-    }
+    if (!ssa_reserve_values(g, g.value_count + 1)) return 0;
     uint index = g.value_count++;
     g.values[index].proof_bits = 0;
     g.values[index].op = op;
@@ -364,15 +365,15 @@ fn bool ssa_comparison_op(Opcode op) @feat(SLJIT) {
 // ends at the branch that leaves it, or at the start of the next block, so
 // the blocks partition the body in bytecode order and a block's fall-through
 // successor is the next one.
-fn bool ssa_add_block_start(uint[SSA_BLOCKS]* starts, uint* count, uint pc) @feat(SLJIT) {
-    for (uint i = 0; i < *count; i++) if ((*starts)[i] == pc) return true;
-    if (*count == SSA_BLOCKS) return false;
+fn bool ssa_add_block_start(SsaGraph* g, uint* starts, uint* count, uint pc) @feat(SLJIT) {
+    for (uint i = 0; i < *count; i++) if (starts[i] == pc) return true;
+    if (*count == g.block_capacity) return false;
     uint at = *count;
-    while (at > 0 && (*starts)[at - 1] > pc) {
-        (*starts)[at] = (*starts)[at - 1];
+    while (at > 0 && starts[at - 1] > pc) {
+        starts[at] = starts[at - 1];
         at--;
     }
-    (*starts)[at] = pc;
+    starts[at] = pc;
     (*count)++;
     return true;
 }
@@ -381,9 +382,10 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
     if (g.recoverable) return ssa_split_recoverable(g);
     CompiledFunction* cf = g.cf;
     LoopPlan* plan = g.plan;
-    uint[SSA_BLOCKS] starts;
+    uint* starts = (uint*)ssa_storage_alloc(g, g.block_capacity, uint::size);
+    if (g.failed) return false;
     uint count;
-    if (!ssa_add_block_start(&starts, &count, plan.begin)) return false;
+    if (!ssa_add_block_start(g, starts, &count, plan.begin)) return false;
     for (uint pos = plan.begin; pos <= plan.end; pos++) {
         Instruction ins = cf.code[pos];
         int target = loop_target(ins, pos);
@@ -392,8 +394,8 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         if (target < (int)plan.begin || target > (int)plan.end) return false;
         if (target <= (int)pos && !g.cyclic) return false;
         if (ins.op != Opcode.JUMP && pos < plan.end
-            && !ssa_add_block_start(&starts, &count, pos + 1)) return false;
-        if (!ssa_add_block_start(&starts, &count, (uint)target)) return false;
+            && !ssa_add_block_start(g, starts, &count, pos + 1)) return false;
+        if (!ssa_add_block_start(g, starts, &count, (uint)target)) return false;
     }
     g.block_count = count;
     for (uint i = 0; i < count; i++) {
@@ -408,8 +410,8 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         block.end = e <= limit ? e : limit;
         block.conditional = false;
         block.jump = false;
-        block.succ0 = SSA_BLOCKS;
-        block.succ1 = SSA_BLOCKS;
+        block.succ0 = SSA_NO_BLOCK;
+        block.succ1 = SSA_NO_BLOCK;
         if (block.branch_pc != uint::max) {
             Instruction ins = cf.code[block.branch_pc];
             if (ins.op == Opcode.JUMP) {
@@ -423,12 +425,12 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
     for (uint i = 0; i < count; i++) {
         SsaBlock* block = &g.blocks[i];
         if (block.returns) {
-            block.succ0 = SSA_BLOCKS;
-            block.succ1 = SSA_BLOCKS;
+            block.succ0 = SSA_NO_BLOCK;
+            block.succ1 = SSA_NO_BLOCK;
             continue;
         }
         if (block.branch_pc == uint::max) {
-            block.succ0 = i + 1 < count ? i + 1 : SSA_BLOCKS;
+            block.succ0 = i + 1 < count ? i + 1 : SSA_NO_BLOCK;
             continue;
         }
         Instruction ins = cf.code[block.branch_pc];
@@ -444,7 +446,7 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
         }
         // A conditional branch: the arm that falls through is the next block,
         // the other one is the block the target names.
-        block.succ0 = i + 1 < count ? i + 1 : SSA_BLOCKS;
+        block.succ0 = i + 1 < count ? i + 1 : SSA_NO_BLOCK;
         for (uint j = 0; j < count; j++) {
             if (g.blocks[j].begin == (uint)target) {
                 block.succ1 = j;
@@ -454,21 +456,10 @@ fn bool ssa_split_blocks(SsaGraph* g) @feat(SLJIT) {
     }
     // The last block ends at the backedge, which the latch owns.
     if (!g.cyclic) {
-        g.blocks[count - 1].succ0 = g.single_pass ? SSA_BLOCKS : 0;
-        g.blocks[count - 1].succ1 = g.single_pass ? SSA_BLOCKS : 0;
+        g.blocks[count - 1].succ0 = g.single_pass ? SSA_NO_BLOCK : 0;
+        g.blocks[count - 1].succ1 = g.single_pass ? SSA_NO_BLOCK : 0;
     }
-    // Collect the predecessors.
-    for (uint i = 0; i < count; i++) {
-        SsaBlock* block = &g.blocks[i];
-        block.pred_count = 0;
-        for (uint j = 0; j < count; j++) {
-            SsaBlock* from = &g.blocks[j];
-            if (from.succ0 == i || from.succ1 == i) {
-                if (block.pred_count == block.preds.len) return false;
-                block.preds[block.pred_count++] = j;
-            }
-        }
-    }
+    if (!ssa_collect_predecessors(g)) return false;
     return true;
 }
 
@@ -482,48 +473,43 @@ fn int ssa_block_of(SsaGraph* g, uint pc) @feat(SLJIT) {
 
 fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
     if (!compiler::moveelim_roles_ready) compiler::moveelim_init_roles();
-    uint reachable = 1;
+    bool* reachable = (bool*)ssa_storage_alloc(g, g.block_count, bool::size);
+    bool* scheduled = (bool*)ssa_storage_alloc(g, g.block_count, bool::size);
+    if (g.failed) return false;
+    reachable[0] = true;
     if (g.recoverable) for (uint b = 0; b < g.block_count; b++) {
-        if (g.blocks[b].external) reachable |= 1U << b;
+        if (g.blocks[b].external) reachable[b] = true;
     }
     bool changed = true;
     while (changed) {
         changed = false;
         for (uint b = 0; b < g.block_count; b++) {
-            if ((reachable & (1U << b)) == 0) continue;
-            SsaBlock* block = &g.blocks[b];
-            uint next = reachable;
-            if (block.succ0 < g.block_count) next |= 1U << block.succ0;
-            if (block.succ1 < g.block_count) next |= 1U << block.succ1;
-            if (next != reachable) { reachable = next; changed = true; }
+            if (!reachable[b]) continue;
+            SsaBlock block = g.blocks[b];
+            if (block.succ0 < g.block_count && !reachable[block.succ0]) { reachable[block.succ0] = true; changed = true; }
+            if (block.succ1 < g.block_count && !reachable[block.succ1]) { reachable[block.succ1] = true; changed = true; }
         }
     }
-    if (reachable != (1U << g.block_count) - 1) return false;
-    uint scheduled = 1;
+    for (uint b = 0; b < g.block_count; b++) if (!reachable[b]) return false;
+    scheduled[0] = true;
     g.cyclic_order[0] = 0;
     for (uint n = 1; n < g.block_count; n++) {
-        bool found = false;
+        bool found;
         for (uint b = 1; b < g.block_count; b++) {
-            if ((scheduled & (1U << b)) != 0) continue;
-            if (g.recoverable && g.blocks[b].external) {
-                g.cyclic_order[n] = b;
-                scheduled |= 1U << b;
-                found = true;
-                break;
-            }
-            for (uint p = 0; p < g.blocks[b].pred_count; p++) {
-                if ((scheduled & (1U << g.blocks[b].preds[p])) == 0) continue;
-                g.cyclic_order[n] = b;
-                scheduled |= 1U << b;
-                found = true;
-                break;
-            }
-            if (found) break;
+            if (scheduled[b]) continue;
+            bool ready = g.recoverable && g.blocks[b].external;
+            for (uint p = 0; p < g.blocks[b].pred_count && !ready; p++) ready = scheduled[g.blocks[b].preds[p]];
+            if (!ready) continue;
+            g.cyclic_order[n] = b;
+            scheduled[b] = true;
+            found = true;
+            break;
         }
         if (!found) return false;
     }
     if (g.recoverable) return true; // canonical decoded CFG supplied liveness
-    uint[2][SSA_BLOCKS] live;
+    uint* live = (uint*)ssa_storage_alloc(g, (usz)g.block_count * 2, uint::size);
+    if (g.failed) return false;
     uint[2] words;
     compiler::RegSet set = { .words = &words[0], .word_count = 2 };
     changed = true;
@@ -535,10 +521,10 @@ fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
             SsaBlock* block = &g.blocks[b];
             set.clear();
             if (block.succ0 < g.block_count) {
-                words[0] |= live[block.succ0][0]; words[1] |= live[block.succ0][1];
+                words[0] |= live[(usz)(block.succ0) * 2 + 0]; words[1] |= live[(usz)(block.succ0) * 2 + 1];
             }
             if (block.succ1 < g.block_count) {
-                words[0] |= live[block.succ1][0]; words[1] |= live[block.succ1][1];
+                words[0] |= live[(usz)(block.succ1) * 2 + 0]; words[1] |= live[(usz)(block.succ1) * 2 + 1];
             }
             // Native control returns to the VM at CALL, but locals still live
             // across that call belong in its recovery frame. Preserve the
@@ -546,7 +532,7 @@ fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
             if (g.recoverable && function_call_op(g.cf.code[block.end].op)) {
                 int after_call = ssa_block_of(g, block.end + 1);
                 if (after_call >= 0) {
-                    words[0] |= live[after_call][0]; words[1] |= live[after_call][1];
+                    words[0] |= live[(usz)(after_call) * 2 + 0]; words[1] |= live[(usz)(after_call) * 2 + 1];
                 }
             }
             uint pc = block.end + 1;
@@ -556,12 +542,12 @@ fn bool ssa_cyclic_liveness(SsaGraph* g) @feat(SLJIT) {
                 if (compiler::moveelim_get_def(ins, &def)) set.unset(def);
                 compiler::moveelim_add_uses(ins, &set, true);
             }
-            if (live[b][0] != words[0] || live[b][1] != words[1]) {
-                live[b][0] = words[0]; live[b][1] = words[1]; changed = true;
+            if (live[(usz)(b) * 2 + 0] != words[0] || live[(usz)(b) * 2 + 1] != words[1]) {
+                live[(usz)(b) * 2 + 0] = words[0]; live[(usz)(b) * 2 + 1] = words[1]; changed = true;
             }
         }
     }
-    for (uint b = 0; b < g.block_count; b++) g.cyclic_live[b] = (ulong)live[b][0] | ((ulong)live[b][1] << 32);
+    for (uint b = 0; b < g.block_count; b++) g.cyclic_live[b] = (ulong)live[(usz)b * 2] | ((ulong)live[(usz)(b) * 2 + 1] << 32);
     return true;
 }
 
@@ -992,11 +978,12 @@ fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
 // inputs are bound once every block has been built.
 fn bool ssa_cyclic_header(SsaGraph* g, uint b) @feat(SLJIT) {
     SsaBlock* block = &g.blocks[b];
-    if (g.join_count == SSA_JOINS) return false;
+    if (g.join_count == g.block_capacity) return false;
     uint index = g.join_count++;
     SsaJoin* join = &g.joins[index];
     join.block = b;
     join.pred_count = block.pred_count;
+    if (!ssa_join_storage(g, join, block)) return false;
     join.entry = g.recoverable ? block.external : b == 0;
     for (uint p = 0; p < block.pred_count; p++) {
         join.preds[p] = block.preds[p];
@@ -1049,11 +1036,12 @@ fn bool ssa_enter_block(SsaGraph* g, uint b) @feat(SLJIT) {
         ssa_frame_restore(g, g.block_exit[pred], &g.current[0], LOOP_REGS);
         return true;
     }
-    if (g.join_count == SSA_JOINS) return false;
+    if (g.join_count == g.block_capacity) return false;
     uint index    = g.join_count++;
     SsaJoin* join = &g.joins[index];
     join.block = b;
     join.pred_count = block.pred_count;
+    if (!ssa_join_storage(g, join, block)) return false;
     for (uint p = 0; p < block.pred_count; p++) {
         join.preds[p] = block.preds[p];
         for (uint reg = 0; reg < LOOP_REGS; reg++) join.incoming[p][reg] = -1;
