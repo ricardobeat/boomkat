@@ -2182,10 +2182,13 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
     // JavaScript numbers are IEEE doubles, so the wider representation is
     // exact. Anything else falls back to the straight-line loop tier instead
     // of retrying the same speculation at every safepoint.
+    // A depleted budget is a normal safepoint, including at an interior
+    // backedge of a cyclic region; it does not disprove any speculation.
     // Call-expanded kernels have no straight-line template equivalent. Keep
     // their guarded code for future matching inputs and publish this miss's
     // exact caller state below before the interpreter replays the call.
-    if (plan.ssa && !plan.ssa_calls && resume_pc >= plan.begin && resume_pc < plan.end) {
+    if (plan.ssa && !plan.ssa_calls && state.budget > 1
+        && resume_pc >= plan.begin && resume_pc < plan.end) {
         $if $feat(SLJIT_STATS):
             io::eprintfn("SLJIT ssa fallback name=%s begin=%d pc=%d opcode=%s iterations=%d",
                 (String)cf.get_name(), plan.begin, resume_pc, cf.code[resume_pc].op, consumed);
@@ -2193,6 +2196,7 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         jit::sljit_free_code((void*)plan.native, null);
         h.jit_code_bytes -= plan.code_bytes;
         plan.native = null;
+        plan.code_bytes = 0;
         // Widening only helps when an integer operation overflowed; any other
         // guard exit (a shape or tag mismatch) needs the straight-line tier.
         bool overflow;
@@ -2234,14 +2238,18 @@ fn Instruction* sljit_loop_entry(Instruction* pc, Instruction* body, TVal* regs,
         }
         if (plan.native == null) {
             cf.sljit_loop_rejected |= 1UL << (offset & 63);
-            return body;
+        } else {
+            h.jit_code_bytes += plan.code_bytes;
         }
-        h.jit_code_bytes += plan.code_bytes;
+        // A retired cyclic kernel may already have committed stores. Its
+        // completed prefix and exact frame must still be published below.
     }
     // Failed guards retry at ordinary interpreter safepoints. Hash collisions
     // can only add a switch dispatch or delay another region's native entry.
     uint ready = 1U << (offset & 31);
-    if (consumed == 0 && resume_pc >= plan.begin && resume_pc <= plan.end) {
+    if (plan.native == null) {
+        cf.sljit_loop_ready &= ~ready;
+    } else if (consumed == 0 && resume_pc >= plan.begin && resume_pc <= plan.end) {
         cf.sljit_loop_ready &= ~ready;
         // The loop tier shares the function tier's rule: a plan that keeps
         // being entered without completing an iteration only pays for an entry
