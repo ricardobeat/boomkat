@@ -27,12 +27,13 @@ fn void check_scalable_ssa_access() {
     void* saved_ic = cf.ic_entries;
     void* saved_var_ic = cf.var_ic_entries;
     uint saved_ic_count = cf.ic_count;
+    uint saved_var_ic_count = cf.var_ic_count;
     Heap* h = runtime.rt.heap;
     defer {
         if (cf.sljit_function != null) vm::sljit_function_free(h, cf);
         cf.code = saved_code; cf.code_count = saved_count; cf.num_regs = saved_regs;
         cf.ic_entries = saved_ic; cf.ic_count = saved_ic_count;
-        cf.var_ic_entries = saved_var_ic;
+        cf.var_ic_entries = saved_var_ic; cf.var_ic_count = saved_var_ic_count;
     }
     Instruction[64] code;
     ICEntry[64] caches;
@@ -55,7 +56,7 @@ fn void check_scalable_ssa_access() {
     scalable_abc(&code[0], &count, Opcode.RET, 300, 0, 0);
     cf.code = &code[0]; cf.code_count = count; cf.num_regs = 304;
     cf.ic_entries = &caches[0]; cf.ic_count = count;
-    cf.var_ic_entries = &bindings[0];
+    cf.var_ic_entries = &bindings[0]; cf.var_ic_count = count;
     @check(runtime.set_jit());
     String[9] initializers = { "[1,2,3,4]", "new Int8Array([1,2,3,4])", "new Uint8Array([1,2,3,4])",
         "new Int16Array([1,2,3,4])", "new Uint16Array([1,2,3,4])", "new Int32Array([1,2,3,4])",
@@ -83,4 +84,44 @@ fn void check_scalable_ssa_access() {
         @check(plan.ssa_region.hits > before);
     }
     io::printn("scalable SSA access: PASS dense + 8 typed classes, WIDE, normal/stress");
+}
+
+fn void check_scalable_ssa_fields() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    eval(&context, "var console={log:function(){}};");
+    eval(&context, $embed("../jit_ssa_scalable_fields.js"));
+    CompiledFunction* cf = named_function(&runtime, "scalableFields");
+    @check(cf != null && cf.code_count > vm::SSA_SPAN);
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan != null && plan.native == null && plan.ssa_region != null);
+    @check(plan.ssa_region.hits != 0 && plan.ssa_region.memory_count == 0);
+    @check(plan.ssa_region.ssa_data.native_accesses == 3);
+    @check(plan.ssa_region.ssa_helpers == null);
+    io::printn("scalable SSA fields: PASS live shapes, native loads/stores, exact fallback");
+}
+
+fn void check_scalable_ssa_memory_callbacks() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    eval(&context, "var console={log:function(){}};");
+    eval(&context, $embed("../jit_ssa_memory_callbacks.js"));
+    CompiledFunction* cf = named_function(&runtime, "scalableMemoryCallback");
+    @check(cf != null && cf.code_count > vm::SSA_SPAN);
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan != null && plan.native == null && plan.ssa_region != null);
+    @check(plan.ssa_region.hits != 0 && plan.ssa_region.ssa_data.native_accesses == 4);
+    @check(plan.ssa_region.ssa_helpers != null);
+    $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued > 0); $endif
+    io::printn("scalable SSA memory callbacks: PASS native continuation after storage mutation");
 }

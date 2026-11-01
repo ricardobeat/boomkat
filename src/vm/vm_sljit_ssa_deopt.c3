@@ -36,7 +36,7 @@ struct SsaDeoptSite @feat(SLJIT) {
     uint pc;
     usz allocated_bytes;
 }
-alias SsaDeoptChain = fn Instruction*(SsaExecution* execution, SsaDeoptSite* site);
+alias SsaDeoptChain @feat(SLJIT) = fn Instruction*(SsaExecution* execution, SsaDeoptSite* site);
 struct SsaDeoptHome @feat(SLJIT) { int reg; bool floating; }
 struct SsaDeoptStub @feat(SLJIT) { SsaDeoptSite* site; void* label; }
 
@@ -47,6 +47,7 @@ fn bool ssa_deopt_prepare(SsaGraph* g) @feat(SLJIT) {
     g.deopt_frames = (SsaDeoptFrame**)ssa_storage_alloc(g, g.frame_count, SsaDeoptFrame*::size);
     if (g.failed) return false;
     for (uint id = 0; id < g.value_count; id++) {
+        if (!ssa_charge_work(g, (usz)g.deopt_home_count + 1)) return false;
         SsaValue value = g.values[id];
         if (value.home == 0 || value.op == COPY || !ssa_has_result(value.op)) continue;
         bool floating = value.rep == F64;
@@ -81,6 +82,7 @@ fn SsaDeoptLocation ssa_deopt_location(SsaGraph* g, int id) @feat(SLJIT) {
     }
     location.kind = SAVED_REGISTER;
     for (uint i = 0; i < g.deopt_home_count; i++) {
+        if (!ssa_charge_work(g, 1)) return location;
         if (g.deopt_homes[i].reg == value.home && g.deopt_homes[i].floating == (value.rep == F64)) {
             location.index = i;
             return location;
@@ -91,36 +93,48 @@ fn SsaDeoptLocation ssa_deopt_location(SsaGraph* g, int id) @feat(SLJIT) {
 }
 fn SsaDeoptFrame* ssa_deopt_freeze_frame(SsaGraph* g, SsaFrameId id) @feat(SLJIT) {
     if (id == SSA_NO_FRAME) return null;
-    if (id >= g.frame_count || !ssa_charge_work(g, 1)) { g.failed = true; return null; }
-    if (g.deopt_frames[id] != null) {
-        if (!g.deopt_frames[id].complete) g.failed = true;
-        return g.deopt_frames[id];
+    SsaFrameId cursor = id;
+    SsaDeoptFrame* child;
+    while (cursor != SSA_NO_FRAME) {
+        if (cursor >= g.frame_count || !ssa_charge_work(g, 1)) { g.failed = true; return null; }
+        SsaDeoptFrame* known = g.deopt_frames[cursor];
+        if (known != null) {
+            if (!known.complete) { g.failed = true; return null; } // parent cycle
+            if (child != null) child.parent = known;
+            break;
+        }
+        SsaFrame origin = g.frame_table[cursor];
+        if (origin.parent != SSA_NO_FRAME && g.plan.ssa_deopt_chain == null) { g.failed = true; return null; }
+        SsaFrameEntry[] entries = ssa_frame_entries(g, cursor);
+        usz bytes = SsaDeoptFrame::size + entries.len * SsaDeoptEntry::size;
+        if (!ssa_persistent_reserve(g, bytes)) return null;
+        SsaDeoptFrame* frame = (SsaDeoptFrame*)g.heap.alloc_func(g.heap.heap_udata, bytes);
+        if (frame == null) { ssa_persistent_release(g, bytes); g.failed = true; return null; }
+        mem::clear(frame, (sz)bytes);
+        frame.next_owned = g.plan.ssa_deopt_frames;
+        g.plan.ssa_deopt_frames = frame;
+        g.deopt_frames[cursor] = frame;
+        if (child != null) child.parent = frame;
+        frame.allocated_bytes = bytes;
+        frame.function = origin.function;
+        frame.pc = origin.pc;
+        frame.callsite_pc = origin.callsite_pc;
+        frame.return_reg = origin.return_reg;
+        frame.callee = ssa_deopt_location(g, origin.callee_value);
+        frame.receiver = ssa_deopt_location(g, origin.receiver_value);
+        frame.entries = (SsaDeoptEntry*)((char*)frame + SsaDeoptFrame::size);
+        frame.count = (uint)entries.len;
+        if (!ssa_charge_work(g, entries.len)) return null;
+        foreach (i, entry : entries) frame.entries[i] = { entry.reg, ssa_deopt_location(g, entry.value) };
+        if (g.failed) return null;
+        child = frame;
+        cursor = origin.parent;
     }
-    SsaFrame origin = g.frame_table[id];
-    if (origin.parent != SSA_NO_FRAME && g.plan.ssa_deopt_chain == null) { g.failed = true; return null; }
-    SsaFrameEntry[] entries = ssa_frame_entries(g, id);
-    usz bytes = SsaDeoptFrame::size + entries.len * SsaDeoptEntry::size;
-    if (!ssa_persistent_reserve(g, bytes)) return null;
-    SsaDeoptFrame* frame = (SsaDeoptFrame*)g.heap.alloc_func(g.heap.heap_udata, bytes);
-    if (frame == null) { ssa_persistent_release(g, bytes); g.failed = true; return null; }
-    mem::clear(frame, (sz)bytes);
-    frame.next_owned = g.plan.ssa_deopt_frames;
-    g.plan.ssa_deopt_frames = frame;
-    g.deopt_frames[id] = frame;
-    frame.allocated_bytes = bytes;
-    frame.function = origin.function;
-    frame.pc = origin.pc;
-    frame.callsite_pc = origin.callsite_pc;
-    frame.return_reg = origin.return_reg;
-    frame.callee = ssa_deopt_location(g, origin.callee_value);
-    frame.receiver = ssa_deopt_location(g, origin.receiver_value);
-    frame.parent = ssa_deopt_freeze_frame(g, origin.parent);
-    frame.entries = (SsaDeoptEntry*)((char*)frame + SsaDeoptFrame::size);
-    frame.count = (uint)entries.len;
-    if (!ssa_charge_work(g, entries.len)) return null;
-    foreach (i, entry : entries) frame.entries[i] = { entry.reg, ssa_deopt_location(g, entry.value) };
-    frame.complete = !g.failed;
-    return frame;
+    // The graph directory supplies an explicit stack: freezing deep logical
+    // chains never consumes the native compiler's C stack.
+    SsaDeoptFrame* result = g.deopt_frames[id];
+    for (SsaDeoptFrame* frame = result; frame != null && !frame.complete; frame = frame.parent) frame.complete = true;
+    return result;
 }
 fn SsaDeoptSite* ssa_deopt_freeze_site(SsaGraph* g, SsaFrameId frame, uint pc) @feat(SLJIT) {
     if (!ssa_persistent_reserve(g, SsaDeoptSite::size)) return null;
@@ -226,6 +240,7 @@ fn ulong ssa_deopt_execute(SsaExecution* execution, SsaDeoptSite* site) @feat(SL
 
 fn void SsaEmitter.deopt_stubs(&self) @feat(SLJIT) {
     SsaGraph* g = self.g;
+    if (self.e.failed || g.failed) return;
     if (!ssa_deopt_prepare(g)) { self.e.failed = true; return; }
     uint capacity = 8;
     while (capacity < g.exit_count * 2) capacity *= 2;
@@ -237,6 +252,7 @@ fn void SsaEmitter.deopt_stubs(&self) @feat(SLJIT) {
     int r1 = jit::reg_r(1);
     int r2 = jit::reg_r(2);
     for (uint i = 0; i < g.exit_count; i++) {
+        if (!ssa_charge_work(g, 1)) { self.e.failed = true; return; }
         SsaExit item = g.exits[i];
         uint slot = (item.frame * 2654435761U ^ item.pc) & (capacity - 1);
         while (table[slot].site != null && (table[slot].site.frame_id != item.frame || table[slot].site.pc != item.pc)) {
@@ -248,12 +264,16 @@ fn void SsaEmitter.deopt_stubs(&self) @feat(SLJIT) {
             if (site == null) { self.e.failed = true; return; }
             table[slot].site = site;
             table[slot].label = self.e.label();
+            if (self.e.failed || table[slot].label == null) return;
             self.e.mov(r0, 0, jit::SLJIT_IMM, (long)site);
-            common_jumps[count++] = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+            void* next = jit::sljit_emit_jump(self.e.compiler, jit::SLJIT_JUMP);
+            if (next == null) { self.e.failed = true; return; }
+            common_jumps[count++] = next;
         }
         jit::sljit_set_label(item.jump, table[slot].label);
     }
     void* common = self.e.label();
+    if (self.e.failed || common == null) return;
     for (uint i = 0; i < count; i++) jit::sljit_set_label(common_jumps[i], common);
     self.e.mov(r1, 0, jit::SLJIT_MEM | self.state, $reflect(LoopState.execution).offset);
     self.e.mov(r2, 0, jit::SLJIT_MEM | r1, $reflect(SsaExecution.saved_bits).offset);

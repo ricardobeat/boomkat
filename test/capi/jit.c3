@@ -1313,6 +1313,8 @@ fn void check_function_missing_caches(JsRuntime* runtime) {
 fn void main() {
     check_scalable_ssa_gateway();
     check_scalable_ssa_access();
+    check_scalable_ssa_fields();
+    check_scalable_ssa_memory_callbacks();
     $if $feat(SSA_SCALABLE_ONLY):
         return;
     $endif

@@ -74,6 +74,27 @@ fn void check_scalable_ssa_gateway() {
     eval(&context, "if(scalableRaw('3')!==11775)throw 'scalable coercion recovery';");
     io::printfn("scalable SSA gateway: PASS words=%d registers=%d spills=%d edges=%d hits=%d", count,
         cf.num_regs, plan.ssa_region.ssa_data.spill_count, plan.ssa_region.ssa_data.edge_count, plan.ssa_region.hits);
+
+    // Acyclic full SSA still needs CFG helper liveness and the dynamic result
+    // import. Its CALL destination is WIDE and the post-call entry is above512.
+    vm::sljit_function_free(h, cf);
+    cf.sljit_function_calls = 0;
+    count = 0;
+    for (uint i = 0; i < 600; i++) code[count++] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
+    scalable_abc(&code[0], &count, Opcode.LDUNDEF, 1, 0, 0);
+    scalable_abc(&code[0], &count, Opcode.CALL_UNDEF_THIS, 300, 0, 0);
+    uint after_call = count;
+    scalable_abc(&code[0], &count, Opcode.RET, 300, 0, 0);
+    cf.code_count = count;
+    h.jit_stress = true;
+    eval(&context, "function scalableCallback(){return 17;}for(var q=0;q<128;q++){if(scalableRaw(scalableCallback)!==17)throw 'scalable helper result';}");
+    plan = cf.sljit_function;
+    @check(plan != null && plan.native == null && plan.ssa_region != null);
+    @check(plan.ssa_region.hits > 0 && plan.ssa_region.ssa_helpers != null);
+    @check(plan.ssa_region.ssa_helper_calls > 0 && plan.ssa_region.ssa_helper_continued > 0);
+    @check(vm::ssa_plan_resumes(plan.ssa_region, after_call));
+    io::printfn("scalable acyclic helper: PASS words=%d calls=%d continuations=%d", count,
+        plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
 }
 
 // COPY queries share the graph's work ceiling and never return an invalid

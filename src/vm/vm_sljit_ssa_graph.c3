@@ -77,6 +77,7 @@ enum SsaOp : char {
     STORE,
     // Scalable accesses use SSA receivers and indices, never LoopMemory slots.
     ACCESS_ADDRESS,
+    ACCESS_FIELD,
     ACCESS_LOAD,
     ACCESS_STORE,
     // Identity guard: the value must be a function whose compiled body is the
@@ -111,6 +112,7 @@ fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
 
 struct SsaValue @feat(SLJIT) {
     SsaHelperSite* helper;
+    SsaFieldAccess* field_access;
     SsaOp op;
     SsaRep rep;
     int a;
