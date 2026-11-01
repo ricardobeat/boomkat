@@ -70,6 +70,14 @@ fn void ssa_configure(SsaGraph* graph, LoopPlan* plan, CompiledFunction* cf, Hea
     graph.inline_base = inline_base;
     graph.inline_depth = inline_depth;
     graph.fpr_homes = parent != null ? 4 : SSA_HOMES;
+    $if !$feat(SLJIT_NO_RECOVERABLE_FPRS):
+        if (parent == null && graph.recoverable && single_pass) {
+            // F1/F2 are emitter temporaries. SLJIT-private temporaries are
+            // already excluded from the target's reported available count.
+            uint total = (uint)jit::sljit_shim_info(2);
+            graph.fpr_homes = total > 2 ? total - 2 : 0;
+        }
+    $endif
     if (parent != null) {
         graph.registers.scratches = (uint)jit::scratch_register_count(6);
         graph.registers.saveds = 6;
