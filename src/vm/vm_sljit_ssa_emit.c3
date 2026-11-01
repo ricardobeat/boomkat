@@ -115,9 +115,9 @@ fn int SsaEmitter.fpr_slot(&self, int value, int scratch) @feat(SLJIT) {
     self.load_fpr(value, scratch);
     return scratch;
 }
-// One bounded exit table owns every recovery snapshot. Fixed arrays copy
-// by value, so the snapshot remains independent of later graph mutations.
-fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int[LOOP_REGS]* regs = null) @feat(SLJIT) {
+// Recovery exits reference immutable sparse frames. Several guards can share
+// one state without retaining a PC-by-register matrix.
+fn void SsaEmitter.snapshot_id(&self, void* jump, uint pc, SsaFrameId frame) @feat(SLJIT) {
     if (self.g.exit_count == SSA_EXITS) {
         self.e.failed = true;
         return;
@@ -125,17 +125,18 @@ fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int[LOOP_REGS]* re
     SsaExit* item = &self.g.exits[self.g.exit_count++];
     item.jump = jump;
     item.pc = pc;
-    if (regs != null) {
-        item.regs = *regs;
-    } else {
-        foreach (&reg : item.regs) *reg = -1;
-    }
+    item.frame = frame;
+}
+fn void SsaEmitter.snapshot_frame(&self, void* jump, uint pc, int[LOOP_REGS]* regs = null) @feat(SLJIT) {
+    SsaFrameId frame = regs == null ? SSA_NO_FRAME : ssa_frame_capture(self.g, pc, &(*regs)[0], LOOP_REGS);
+    if (self.g.failed) { self.e.failed = true; return; }
+    self.snapshot_id(jump, pc, frame);
 }
 fn void SsaEmitter.snapshot_none(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, self.g.recoverable ? SSA_ENTRY_BAIL : pc);
 fn void SsaEmitter.snapshot_phis(&self, void* jump, uint pc) @feat(SLJIT) => self.snapshot_frame(jump, pc, &self.g.phi);
 fn void SsaEmitter.snapshot(&self, void* jump, uint pc) @feat(SLJIT) {
     if (self.g.direct || self.entry_copy) { self.snapshot_none(jump, self.plan.begin); }
-    else { self.snapshot_frame(jump, pc, &self.g.frames[pc - self.plan.begin]); }
+    else { self.snapshot_id(jump, pc, ssa_frame_at_pc(self.g, pc)); }
 }
 fn void SsaEmitter.guard(&self, int condition, int left, long lw, int right, long rw, uint pc) @feat(SLJIT) {
     self.snapshot(self.e.cmp(condition, left, lw, right, rw), pc);
@@ -325,7 +326,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
     self.addr_reg = 0;
     for (uint b = 0; b < self.g.block_count; b++) {
         self.addr_reg = 0;
-        self.live = self.g.frames[self.g.blocks[b].begin - self.plan.begin];
+        ssa_frame_restore(self.g, ssa_frame_at_pc(self.g, self.g.blocks[b].begin), &self.live[0], LOOP_REGS);
         self.block_label[b] = e.label();
         for (int node = ssa_block_first_value(self.g, b); node >= 0; node = ssa_next_value(self.g, node)) {
             uint i = (uint)node;
@@ -697,7 +698,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                 case GOTO: self.goto_block((int)i); break;
                 case RETURN: self.direct_return(v.a); break;
                 case EXIT:
-                    self.publish(&self.g.frames[self.pc - self.plan.begin], self.pc);
+                    self.publish_id(ssa_frame_at_pc(self.g, self.pc), self.pc);
                     break;
             }
             if (v.dst_reg >= 0) self.live[v.dst_reg] = (int)i;
@@ -1363,6 +1364,11 @@ fn void SsaEmitter.direct_return(&self, int value, bool refused = false) @feat(S
 }
 
 fn void SsaEmitter.publish(&self, int[LOOP_REGS]* regs, uint pc) @feat(SLJIT) {
+    SsaFrameId frame = ssa_frame_capture(self.g, pc, &(*regs)[0], LOOP_REGS);
+    if (self.g.failed) { self.e.failed = true; return; }
+    self.publish_id(frame, pc);
+}
+fn void SsaEmitter.publish_id(&self, SsaFrameId frame, uint pc) @feat(SLJIT) {
     int r0      = jit::reg_r(0);
     if (self.g.direct) {
         self.direct_return(self.g.result_reg < LOOP_REGS ? self.g.current[self.g.result_reg] : -1, pc != self.plan.end + 1);
@@ -1371,12 +1377,11 @@ fn void SsaEmitter.publish(&self, int[LOOP_REGS]* regs, uint pc) @feat(SLJIT) {
 
     LoopState layout;
     ulong dirty = self.dirty_mask;
-    for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
-        int value = (*regs)[reg];
-        if (value < 0) continue;
-        self.output(value, pc);
-        self.e.mov(jit::SLJIT_MEM | self.state, loop_value_offset(reg), r0, 0);
-        dirty |= 1UL << reg;
+    foreach (entry : ssa_frame_entries(self.g, frame)) {
+        if (entry.reg >= self.cf.num_regs) continue;
+        self.output(entry.value, pc);
+        self.e.mov(jit::SLJIT_MEM | self.state, loop_value_offset(entry.reg), r0, 0);
+        dirty |= 1UL << entry.reg;
     }
     self.e.mov(jit::SLJIT_MEM | self.state, (char*)&layout.dirty - (char*)&layout, jit::SLJIT_IMM, (long)dirty);
     self.e.mov(jit::SLJIT_MEM | self.state, (char*)&layout.budget - (char*)&layout, self.budget, 0);
@@ -1398,10 +1403,12 @@ fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {
             SsaExit* candidate = &self.g.exits[prior];
             if (candidate.pc != item.pc) continue;
             bool same = true;
-            for (uint reg = 0; reg < self.cf.num_regs && reg < LOOP_REGS; reg++) {
-                if (candidate.regs[reg] != item.regs[reg]) {
-                    same = false;
-                    break;
+            SsaFrameEntry[] left = ssa_frame_entries(self.g, candidate.frame);
+            SsaFrameEntry[] right = ssa_frame_entries(self.g, item.frame);
+            if (left.len != right.len) { same = false; }
+            else {
+                for (usz r = 0; r < left.len; r++) {
+                    if (left[r].reg != right[r].reg || left[r].value != right[r].value) { same = false; break; }
                 }
             }
             if (same) {
@@ -1415,7 +1422,7 @@ fn void SsaEmitter.exit_stubs(&self) @feat(SLJIT) {
         }
         labels[i] = self.e.label();
         jit::sljit_set_label(item.jump, labels[i]);
-        self.publish(&item.regs, item.pc);
+        self.publish_id(item.frame, item.pc);
     }
 }
 fn void SsaEmitter.latch(&self) @feat(SLJIT) {
@@ -1431,12 +1438,12 @@ fn void SsaEmitter.latch(&self) @feat(SLJIT) {
         recovery[reg] = phi < 0 ? -1 : self.g.values[phi].a;
     }
     Instruction latch = self.cf.code[self.plan.end];
-    int[LOOP_REGS]* frame = &self.g.frames[self.plan.end - self.plan.begin];
+    SsaFrameId frame = ssa_frame_at_pc(self.g, self.plan.end);
     if (latch.op == Opcode.IF_TRUE || latch.op == Opcode.IF_FALSE) {
-        if (latch.a < LOOP_REGS) recovery[latch.a] = (*frame)[latch.a];
+        if (latch.a < LOOP_REGS) recovery[latch.a] = ssa_frame_lookup(self.g, frame, latch.a);
     } else if (ssa_comparison_op(latch.op)) {
-        if (latch.b < LOOP_REGS) recovery[latch.b] = (*frame)[latch.b];
-        if (latch.op < Opcode.JMP_NLTI && latch.c < LOOP_REGS) recovery[latch.c] = (*frame)[latch.c];
+        if (latch.b < LOOP_REGS) recovery[latch.b] = ssa_frame_lookup(self.g, frame, latch.b);
+        if (latch.op < Opcode.JMP_NLTI && latch.c < LOOP_REGS) recovery[latch.c] = ssa_frame_lookup(self.g, frame, latch.c);
     }
     self.snapshot_frame(self.e.cmp(jit::SLJIT_LESS_EQUAL, self.budget, 0, jit::SLJIT_IMM, 1), self.plan.end, &recovery);
     self.e.op(jit::SLJIT_SUB, self.budget, self.budget, 0, jit::SLJIT_IMM, 1);
