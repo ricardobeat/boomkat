@@ -5,9 +5,9 @@ import boomkat::hobject;
 import std::core::mem;
 
 // Effects are explicit so admitting a new IR operation cannot silently make a
-// memory proof valid across a call, allocation, or layout mutation. Slot stores
-// preserve layouts, but invalidate every read version: different descriptors
-// can name the same object or backing store.
+// memory proof valid across a call, allocation, or layout mutation. Numeric
+// stores preserve layouts, but can alias binding storage; without an explicit
+// disjointness proof they also invalidate facts derived from those bindings.
 enum SsaEffect : char {
     NONE,
     SCALAR,
@@ -85,7 +85,14 @@ fn bool SsaAvailable.same(&self, SsaAvailable* other) @feat(SLJIT) {
 fn void ssa_effect_step(SsaCfgEffects* facts, uint id, SsaAvailable* available) @feat(SLJIT) {
     SsaEffect effect = ssa_effect(facts.original[id].op);
     if (effect == UNKNOWN) { available.clear(); return; }
-    if (effect == WRITE) available.exclude(&facts.memory);
+    if (effect == WRITE) {
+        SsaOpTraits traits = ssa_op_traits(facts.graph, facts.original[id]);
+        if ((traits.writes & (SSA_DOMAIN_LAYOUT | SSA_DOMAIN_BINDING)) != 0) {
+            available.clear();
+        } else {
+            available.exclude(&facts.memory);
+        }
+    }
     if (facts.candidates.contains(id)) available.include(id);
 }
 fn void ssa_effect_available(SsaGraph* g, SsaCfgEffects* facts) @feat(SLJIT) {

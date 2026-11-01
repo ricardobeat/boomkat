@@ -63,7 +63,8 @@ fn SsaOpTraits ssa_op_traits(SsaGraph* g, SsaValue v) @feat(SLJIT) {
             return { .reads = SSA_DOMAIN_HEAP | SSA_DOMAIN_LAYOUT, .may_deopt = true };
         case STORE:
             return { .reads = SSA_DOMAIN_HEAP | SSA_DOMAIN_LAYOUT,
-                .writes = SSA_DOMAIN_HEAP, .may_deopt = true, .observable = true };
+                .writes = SSA_DOMAIN_HEAP | SSA_DOMAIN_BINDING,
+                .may_deopt = true, .observable = true };
         case BRANCH: case GOTO: case RETURN: case EXIT:
             return { .may_deopt = true, .terminates = true };
         default:
