@@ -15,6 +15,7 @@ import std::io;
 import std::collections::list;
 import std::collections::map;
 import boomkat::pagepool;
+import boomkat::agent;
 import std::time;
 import std::core::mem::allocators;
 
@@ -53,6 +54,9 @@ const int CATCHER_CHAIN_FREE_NODES_ONLY  = 2;
 // Runs after a microtask handler completes, with the handler's return value
 // and the downstream promise to resolve.
 alias MicrotaskAfterFn = fn void(void* heap, void* vm, TVal result, TVal downstream);
+// Settles whatever other agents or timers have made ready for this heap.
+// Returns true if it settled anything.
+alias AgentPollFn = fn bool(void* heap, void* vm);
 
 // Host notification for a promise that was rejected with nothing watching it.
 // Called once per such promise at the end of drain_microtasks, with the
@@ -130,7 +134,7 @@ const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
 const usz   ASCII_CHAR_CACHE_SIZE   = 128;
 const usz   CONCAT_CACHE_SIZE       = 16;
-const usz   CONCAT_CACHE_MAX_BYTES  = 256;
+const usz   CONCAT_CACHE_MAX_LENGTH = 256;
 
 struct ConcatCacheEntry {
     HString* result;
@@ -175,7 +179,7 @@ const uint  INTERRUPT_BUDGET_INIT  = 16;
 // Strings longer than this are never interned. They are very rarely property
 // keys, and interned copies pile up in the table until the next GC, which
 // gives O(n^2) memory growth in loops like `s += chunk`.
-const uint  MAX_INTERN_BYTES        = 256;
+const uint  MAX_INTERN_LENGTH       = 256;
 
 // Lightfunc deleted-property bitset sizing.
 // Each builtin index occupies 3 bits: name, length, and prototype deleted flags.
@@ -432,6 +436,7 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
             }
         }
         h.decref_tval(&gs.this_binding);
+        h.decref_tval(&gs.return_value);
         if (gs.persistent_async) {
             h.decref_tval(&gs.resume_value);
             h.decref_tval(&gs.throw_value);
@@ -476,13 +481,13 @@ fn void gs_release(GeneratorState* gs, void* heap_ptr, bool run_decref) {
     h.free_generator_state(gs);
 }
 
-// One parked Atomics.waitAsync waiter. `byte_index` is an absolute offset into
-// `buffer`, and Atomics.notify resolves `promise` with "ok".
+// One parked Atomics.waitAsync waiter. `node` is the entry in the process-wide
+// waiter table (agent.c3), null once the entry is free; `promise` is the
+// pending Promise that settles with "ok" or "timed-out" and is rooted until
+// then.
 struct AtomicsWaiter {
-    hobject::HObject* buffer;
     hobject::HObject* promise;
-    uint              byte_index;
-    bool              active;
+    void*             node;
 }
 
 // One registered host function.
@@ -516,7 +521,40 @@ struct HostClassEntry {
     void* udata;
     hstring::StringRef name;
     HObject* proto;      // prototype for instances; marked as a root
+    HObject* ctor;       // constructor of a C API class, or null; marked as a root
+    uint     parent;     // parent class id + 1, or 0
+    uint     flags;      // HOST_CLASS_*
+    void*    exotic;     // the C API's copy of the class's exotic hooks, or null; freed with the table
 }
+
+// Finalizers of this class run from Heap.run_deferred_finalizers, not at free.
+const uint HOST_CLASS_DEFER_FINALIZE = 1;
+// Defined through the C API's bk_define_class, so visible to its brand checks.
+const uint HOST_CLASS_C_API = 0x100;
+// Instances of a class with exotic hooks are callable.
+const uint HOST_CLASS_EXOTIC_CALL = 0x200;
+
+// A finalizer call held back by HOST_CLASS_DEFER_FINALIZE.
+struct DeferredFinal {
+    void* finalizer;     // HostClassFinalizeFn
+    void* payload;
+    void* udata;
+}
+
+// Called once with an external ArrayBuffer's data when the buffer is detached
+// or freed. Mirrors bk_finalizer.
+alias ExternalReleaseFn = fn void(void* data, void* opaque);
+
+// The release record of an external ArrayBuffer. A free record links to the
+// next free index through `next_free`.
+struct ExternalBuffer {
+    ExternalReleaseFn release;
+    void* data;
+    void* opaque;
+    uint  next_free;
+}
+
+const uint EXTERNAL_NONE = 0xFFFF_FFFF;
 
 struct HostFnEntry {
     void* handler;
@@ -524,6 +562,7 @@ struct HostFnEntry {
     hstring::StringRef name;
     int   arity;
     bool  constructable;
+    uint  class_id;      // host class id + 1 whose instances `new` allocates, or 0
 }
 
 // One host-call scope: the values a single host callback can address.
@@ -540,6 +579,11 @@ struct HostScope {
     uint base;
     uint count;
     uint generation;
+    // Embedding calls made while this is the innermost scope store their
+    // results here instead of in the registry.
+    bool local;
+    // Opened by the host (bk_scope_open) rather than pushed for a host call.
+    bool opened;
 }
 
 // --- Heap struct ---
@@ -622,6 +666,10 @@ struct PromiseSpeciesGuard {
 
 // Active intrinsics stay inline in Heap so property and allocation paths keep direct loads.
 struct RealmState {
+    // HostEnsureCanCompileStrings refuses eval and Function construction.
+    bool no_eval;
+    // The realm's code runs as an agent that cannot suspend (Atomics.wait).
+    bool no_block;
     HString* intl_fallback_symbol; // ECMA-402 legacy constructor key
     lexer::JsxOptions jsx;
     HObject* int8array_proto @tag("constructor", "Int8Array");
@@ -934,6 +982,18 @@ struct Heap {
     HostClassEntry* host_classes;
     uint            host_class_count;
     uint            host_class_capacity;
+    DeferredFinal*  deferred_finals;
+    uint            deferred_final_count;
+    uint            deferred_final_capacity;
+    WeakEntry*      weak_entries;
+    uint            weak_count;
+    uint            weak_capacity;
+    uint            weak_free;              // WEAK_NONE when no entry is free
+    HashMap{usz, uint} weak_index;          // target address -> entry
+    ExternalBuffer* external_buffers;
+    uint            external_buffer_count;
+    uint            external_buffer_capacity;
+    uint            external_buffer_free;   // EXTERNAL_NONE when no record is free
     // Values handed to add-ons for the duration of one call. A GC root, so a
     // handle keeps its value alive without the add-on doing anything; reset
     // per call rather than released individually.
@@ -954,6 +1014,9 @@ struct Heap {
     // Monotonic counter stamped into each handle. Never reset, so a handle
     // from a popped scope can never collide with a live one.
     uint       host_scope_generation;
+    // Host function frames on the native stack. Scopes the host opens itself
+    // do not count.
+    uint       host_call_depth;
     // Monotonic compile-time id for class private-slot binding names
     // ("#priv:<id>:foo"), one per class body. Per-runtime: every compiler
     // context in one runtime shares it, so sibling classes across the
@@ -1132,6 +1195,23 @@ struct Heap {
     // finally blocks still run. Cleared only at the host boundary when the
     // BK_ERR_INTERRUPT status is handed out.
     bool                uncatchable_throw;
+    // Byte accounting (gc_control.c3). With `accounting`, the allocator
+    // fields hold the wrappers and these hold the embedder's callbacks.
+    bool                accounting;
+    bool                heap_limit_hit;
+    AllocFunc           user_alloc;
+    ReallocFunc         user_realloc;
+    FreeFunc            user_free;
+    void*               user_udata;
+    ulong               heap_bytes;
+    ulong               heap_limit;
+    // heap_bytes past which a full collection is requested before the limit.
+    ulong               heap_limit_gc_at;
+    long                external_bytes;
+    uint                gc_cycles;
+    // Nesting depth of bk_gc_inhibit; a collection requested meanwhile waits.
+    uint                gc_inhibit;
+    bool                gc_inhibited_request;
 
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
     // create and resize. valstack_top_ptr points at vm.valstack_top so the GC
@@ -1180,7 +1260,7 @@ struct Heap {
     // Microtask queue, filled by promise_trigger_reactions and drained after
     // each top-level script execution and after vm_call_fn_impl returns. Every
     // entry occupies 3 TVal slots: handler, arg, and the downstream promise to
-    // resolve with the handler's return value, or undefined.
+    // resolve with the handler's return value, undefined, or a boolean for a terminal host job.
     // Jobs [microtask_head, microtask_count) are pending; the drain releases the
     // slots before the head, and a full queue slides the pending jobs down.
     TVal*     microtask_queue;
@@ -1189,6 +1269,7 @@ struct Heap {
     uint      microtask_capacity;
     bool      microtask_draining;  // re-entrancy guard
     bool      host_managed_jobs;
+    bool      host_job_error; // terminal host callback threw at the last checkpoint
 
     // Promises rejected with [[PromiseIsHandled]] still false. Recording one
     // here is provisional: a handler attached later in the same tick clears its
@@ -1208,12 +1289,6 @@ struct Heap {
     // End-of-drain reporting used by the CLI.
     RejectionTrackerFn   rejection_tracker_fn;
     void*                rejection_tracker_udata;
-
-    // Parked Atomics.waitAsync waiters. Each holds a pending Promise against a
-    // SharedArrayBuffer and byte index, and Atomics.notify resolves matching
-    // waiters with "ok" in FIFO order. Active waiters act as GC roots.
-    AtomicsWaiter[64] async_waiters;
-    uint      async_waiter_count;
 
     // Shapes (hidden classes) backing the inline caches.
     hobject::Shape**    shapes;    // each element points to one shape allocation
@@ -1328,7 +1403,36 @@ struct Heap {
     void*       defined_modules;
     uint        defined_module_count;
     uint        defined_module_cap;
+
+    // Parked Atomics.waitAsync waiters: one slot per pending Promise, with
+    // free slots left in place. Entries act as GC roots. The slots are indexed
+    // by the waiter table's nodes, so a settled slot is reused, not compacted.
+    AtomicsWaiter* async_waiters;
+    uint      async_waiter_count;      // high-water mark of used slots
+    uint      async_waiter_capacity;
+    // This agent's mailbox (agent::Port*), created the first time the heap
+    // waits on shared memory. Null for a heap that never does, which is what
+    // keeps the drain loop's poll to a single comparison.
+    void*          agent_port;
+    AgentPollFn    agent_poll_fn;
+    // AgentCanSuspend(): when set, Atomics.wait throws instead of blocking.
+    bool           agent_no_block;
+    // Host hook for the job queue turning non-empty: fn(runtime, opaque).
+    JobHookFn      job_hook;
+    void*          job_hook_runtime;
+    void*          job_hook_opaque;
+    // builtins::HostExoticOps, installed by the C API; serves proxies whose
+    // host_hooks is set.
+    void*          host_exotic_ops;
+    // Results of the last host exotic hook (value, getter, setter), owned
+    // until the next hook call like a call_fn result.
+    TVal[3]        host_exotic_hold;
+    // Dynamic import jobs waiting on asynchronous host module loads, newest
+    // first, linked through a hidden slot of each job.
+    HObject*       module_waiters;
 }
+
+alias JobHookFn = fn void(void* runtime, void* opaque);
 
 // ============================================================================
 // Built-in string cache, pre-interned at heap creation
@@ -1392,17 +1496,19 @@ enum BuiltinStr : uint {
     ON_FULFILLED,  // "onFulfilled"
     ON_REJECTED,   // "onRejected"
     DOWNSTREAM,    // "downstream"
-    CAP_RESOLVE,   // "\xFFcap_resolve_tv"
-    CAP_REJECT,    // "\xFFcap_reject_tv"
-    CAP_PROMISE,   // "\xFFcap_promise_tv"
     THEN,          // "then"
     RESOLVE,       // "resolve"
     REJECT,        // "reject"
-    // Hidden slots; the leading \xFF cannot be spelled in a source literal.
-    REACTION_NEXT,    // "\xFFpromise_reaction_next"
-    HIDDEN_PROMISE,   // "\xFFpromise"
-    CAP_CELL,         // "\xFFcap_cell"
-    ALREADY_RESOLVED, // "\xFFalreadyResolved"
+    // Hidden slots: interned as hidden symbols, so no script string can equal
+    // one. `CAP_RESOLVE` is the first, and every entry after it is hidden.
+    CAP_RESOLVE,      // "cap_resolve_tv"
+    CAP_REJECT,       // "cap_reject_tv"
+    CAP_PROMISE,      // "cap_promise_tv"
+    REACTION_NEXT,    // "promise_reaction_next"
+    HIDDEN_PROMISE,   // "promise"
+    CAP_CELL,         // "cap_cell"
+    ALREADY_RESOLVED, // "alreadyResolved"
+    HOST_FN_DATA,     // "host_fn_data"
 }
 
 // The literal for each `BuiltinStr`, in enum order. `init_builtin_strs`
@@ -1419,9 +1525,10 @@ const String[] BUILTIN_STR_LITERALS = {
     "unicode", "unicodeSets", "sticky", "hasIndices", "indices",
     "next", "return", "throw",
     "onFulfilled", "onRejected", "downstream",
-    "\xFFcap_resolve_tv", "\xFFcap_reject_tv", "\xFFcap_promise_tv",
     "then", "resolve", "reject",
-    "\xFFpromise_reaction_next", "\xFFpromise", "\xFFcap_cell", "\xFFalreadyResolved",
+    "cap_resolve_tv", "cap_reject_tv", "cap_promise_tv",
+    "promise_reaction_next", "promise", "cap_cell", "alreadyResolved",
+    "host_fn_data",
 };
 
 $assert BUILTIN_STR_LITERALS.len == BuiltinStr::len :
@@ -1474,8 +1581,14 @@ const uint MEM_CHECK_INTERVAL = 1 << 16;
 // the limit.
 fn void Heap.check_mem_limit(&self, usz incoming) {
     if (self.mem_limit != 0 && boomkat_rss_bytes() + incoming > self.mem_limit) {
-        self.fatal_func(self.heap_udata, "memory limit exceeded");
+        self.fatal("memory limit exceeded");
     }
+}
+
+// Hand an unrecoverable error to the fatal handler with the opaque the host
+// registered, which accounting moves out of heap_udata.
+fn void Heap.fatal(&self, char* msg) {
+    self.fatal_func(self.accounting ? self.user_udata : self.heap_udata, msg);
 }
 
 fn void default_fatal(void* udata, char* msg) {
@@ -1580,7 +1693,8 @@ fn Heap*? create(
     ReallocFunc  r,
     FreeFunc     f,
     void*        udata,
-    FatalFunc    fatal
+    FatalFunc    fatal,
+    ulong        heap_limit = 0
 ) {
     // Resolve defaults
     AllocFunc   afn   = a     != null ? a     : &default_alloc;
@@ -1605,6 +1719,8 @@ fn Heap*? create(
     h.free_func    = ffn;
     h.heap_udata   = udata;
     h.fatal_func   = fatfn;
+    h.heap_limit   = HEAP_UNLIMITED;
+    if (heap_limit != 0) h.enable_accounting(heap_limit);
 
     // GC tunables
     h.gc_trigger_counter    = GC_INITIAL_TRIGGER;
@@ -1626,8 +1742,22 @@ fn Heap*? create(
     h.host_fn_count         = 0;
     h.host_fn_capacity      = 0;
     h.host_classes          = null;
+    h.host_exotic_ops       = null;
+    h.module_waiters        = null;
     h.host_class_count      = 0;
     h.host_class_capacity   = 0;
+    h.deferred_finals       = null;
+    h.deferred_final_count  = 0;
+    h.deferred_final_capacity = 0;
+    h.weak_entries          = null;
+    h.weak_count            = 0;
+    h.weak_capacity         = 0;
+    h.weak_free             = WEAK_NONE;
+    h.weak_index            = {};
+    h.external_buffers      = null;
+    h.external_buffer_count = 0;
+    h.external_buffer_capacity = 0;
+    h.external_buffer_free  = EXTERNAL_NONE;
     h.addon_handles         = null;
     h.addon_handle_count    = 0;
     h.addon_handle_capacity = 0;
@@ -1651,7 +1781,7 @@ fn Heap*? create(
 
     // Allocate the initial string table
     usz tbl_bytes = str_table_bytes(INITIAL_STR_TABLE_SIZE);
-    void* tbl_raw = afn(udata, tbl_bytes);
+    void* tbl_raw = h.alloc_func(h.heap_udata, tbl_bytes);
     if (tbl_raw == null) {
         ffn(udata, raw);
         return HEAP_ALLOC_FAULT~;
@@ -1700,7 +1830,7 @@ fn Heap*? create(
 
     // 16 entries of (handler, arg, downstream), so 48 TVal slots.
     h.microtask_capacity = 16;
-    h.microtask_queue = (TVal*)afn(udata, TVal::size * 48);
+    h.microtask_queue = (TVal*)h.alloc_func(h.heap_udata, TVal::size * 48);
     if (h.microtask_queue != null) {
         mem::clear(h.microtask_queue, (sz)(TVal::size * 48));
     }
@@ -1714,7 +1844,15 @@ fn Heap*? create(
     h.promise_rejection_udata = null;
     h.rejection_tracker_fn    = null;
     h.rejection_tracker_udata = null;
+    h.async_waiters = null;
     h.async_waiter_count = 0;
+    h.async_waiter_capacity = 0;
+    h.agent_port = null;
+    h.job_hook = null;
+    h.job_hook_runtime = null;
+    h.job_hook_opaque = null;
+    h.agent_poll_fn = null;
+    h.agent_no_block = false;
 
     return h;
 }
@@ -1731,7 +1869,8 @@ fn HString* Heap.str(&self, BuiltinStr which) @inline {
 // repeat calls are harmless.
 fn void Heap.init_builtin_strs(&self) {
     foreach (i, lit : BUILTIN_STR_LITERALS) {
-        HString* s = self.str_intern((char[])lit);
+        HString* s = i >= BuiltinStr.CAP_RESOLVE.ordinal
+            ? self.str_intern_hidden((char[])lit) : self.str_intern((char[])lit);
         self.strs[i] = s;
         // Pinning keeps these alive through refcounting and sweep, and makes
         // every incref and decref against them a no-op. See HeapHeader.set_pinned.
@@ -1775,7 +1914,8 @@ fn HString* Heap.find_int_hstring(&self, long val) {
     char[24] buf;
     int len = hstring::int_to_buf(val, &buf, 24);
     if (len <= 0) return null;
-    return self.str_table_lookup(buf[:len], self.hash_string(buf[:len]));
+    Units digits = hstring::narrow_units(buf[:len]);
+    return self.str_table_lookup(digits, self.hash_units(digits));
 }
 
 // ============================================================================
@@ -2020,6 +2160,7 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
             if (!self.ic_names_live_shapes(&entries[i])) {
                 entries[i].shape_id = SHAPE_NONE;
                 entries[i].chain_len = 0;
+                // With chain_len 0, has_proto would make ic_cached_proto read protos[-1].
                 entries[i].has_proto = false;
             }
         }
@@ -2308,6 +2449,7 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    agent::heap_release(self);
     self.clear_concat_cache();
     self.free_realms();
     self.gc_gray.free();
@@ -2320,7 +2462,7 @@ fn void Heap.destroy(&self) {
             HString* string = self.large_strings[i];
             uint bucket = string.refcount < 4 ? string.refcount : 4;
             refcounts[bucket]++;
-            retained_bytes += hstring::HSTRING_HDR_SIZE + (ulong)string.capacity + 1;
+            retained_bytes += (ulong)string.alloc_size();
         }
         io::eprintfn("# GC_STRING_REFS zero=%d one=%d two=%d three=%d four_plus=%d bytes=%d",
                      refcounts[0], refcounts[1], refcounts[2], refcounts[3], refcounts[4], retained_bytes);
@@ -2368,7 +2510,24 @@ fn void Heap.destroy(&self) {
         self.host_fn_count = 0;
         self.host_fn_capacity = 0;
     }
+    self.run_deferred_finalizers();
+    if (self.deferred_finals != null) {
+        self.free_func(self.heap_udata, self.deferred_finals);
+        self.deferred_finals = null;
+        self.deferred_final_capacity = 0;
+    }
+    self.weak_destroy();
+    if (self.external_buffers != null) {
+        self.free_func(self.heap_udata, self.external_buffers);
+        self.external_buffers = null;
+        self.external_buffer_count = 0;
+        self.external_buffer_capacity = 0;
+        self.external_buffer_free = EXTERNAL_NONE;
+    }
     if (self.host_classes != null) {
+        for (uint i = 0; i < self.host_class_count; i++) {
+            if (self.host_classes[i].exotic != null) self.free_func(self.heap_udata, self.host_classes[i].exotic);
+        }
         self.free_func(self.heap_udata, self.host_classes);
         self.host_classes = null;
         self.host_class_count = 0;
@@ -2494,8 +2653,9 @@ fn void Heap.destroy(&self) {
 
     self.gc_roots.free();
 
-    FreeFunc    ffn   = self.free_func;
-    void*       udata = self.heap_udata;
+    // The struct came from the embedder's allocator before any wrapping.
+    FreeFunc    ffn   = self.accounting ? self.user_free : self.free_func;
+    void*       udata = self.accounting ? self.user_udata : self.heap_udata;
     ffn(udata, self);
 }
 
@@ -2575,6 +2735,7 @@ fn void Heap.reset(&self) {
         }
     }
     for (uint i = 0; i < 4; i++) self.object_list(i).clear();
+    self.run_deferred_finalizers();
     while (self.generator_states != null) {
         GeneratorState* gs = self.generator_states;
         gs.ref_count = 1;
@@ -2666,6 +2827,7 @@ fn void Heap.reset(&self) {
     self.addon_handle_count = 0;
     self.host_vals_len = 0;
     self.host_scope_depth = 0;
+    self.host_call_depth = 0;
     self.join_visited_count = 0;
     self.unhandled_count    = 0;
     self.reporting_rejections = false;
@@ -2673,8 +2835,8 @@ fn void Heap.reset(&self) {
     self.microtask_count    = 0;
     self.microtask_draining = false;
     self.host_managed_jobs = false;
-    self.async_waiter_count = 0;
-    mem::clear(&self.async_waiters, (sz)(AtomicsWaiter::size * 64));
+    agent::heap_release(self);
+    self.agent_no_block = false;
 
     // Remaining heap state: GC roots, execution state, prototypes.
     self.flags            = 0;
@@ -2824,6 +2986,7 @@ fn void Heap.reset(&self) {
     // These TVals can hold heap pointers.
     self.error_value.set_undefined();
     self.yield_value.set_undefined();
+    foreach (&v : self.host_exotic_hold) v.set_undefined();
     self.has_error = false;
 
     // gen_initial_obj points into the freed heap, and the GC mark phase
@@ -2966,6 +3129,7 @@ fn long Heap.register_host_fn(&self, void* handler, void* udata, void* name, int
     self.host_fns[slot].name          = hstring::string_ref((HString*)name);
     self.host_fns[slot].arity         = arity;
     self.host_fns[slot].constructable = constructable;
+    self.host_fns[slot].class_id      = 0;
     self.host_fn_count++;
     return (long)slot;
 }
@@ -2997,9 +3161,81 @@ fn long Heap.register_host_class(&self, void* finalizer, void* gc_mark, void* ud
     self.host_classes[id].udata     = udata;
     self.host_classes[id].name      = hstring::string_ref((HString*)name);
     self.host_classes[id].proto     = proto;
+    self.host_classes[id].ctor      = null;
+    self.host_classes[id].parent    = 0;
+    self.host_classes[id].flags     = 0;
+    self.host_classes[id].exotic    = null;
     self.shade_root_object(proto);
     self.host_class_count++;
     return (long)id;
+}
+
+// Make `buf`, a fresh fixed-length ArrayBuffer, view `data` as embedder memory
+// handed back through `release` on detach or free. False when the record cannot
+// be allocated; the buffer is then left untouched.
+fn bool Heap.make_external_buffer(&self, HObject* buf, char* data, uint length,
+                                  ExternalReleaseFn release, void* opaque) {
+    uint index = self.external_buffer_free;
+    if (index != EXTERNAL_NONE) {
+        self.external_buffer_free = self.external_buffers[index].next_free;
+    } else {
+        if (self.external_buffer_count >= self.external_buffer_capacity) {
+            uint new_cap = self.external_buffer_capacity == 0 ? 8 : self.external_buffer_capacity * 2;
+            void* grown = self.realloc_func(self.heap_udata, (void*)self.external_buffers, (usz)new_cap * ExternalBuffer::size);
+            if (grown == null) return false;
+            self.external_buffers = (ExternalBuffer*)grown;
+            self.external_buffer_capacity = new_cap;
+        }
+        index = self.external_buffer_count++;
+    }
+    self.external_buffers[index] = { .release = release, .data = data, .opaque = opaque, .next_free = EXTERNAL_NONE };
+    (*buf.extra_ptr()).ab.data = data;
+    (*buf.extra_ptr()).ab.byte_length = length;
+    (*buf.extra_ptr()).ab.external = true;
+    (*buf.extra_ptr()).ab.external_index = index;
+    return true;
+}
+
+// Hand an external buffer's data back to its embedder and leave the buffer an
+// ordinary one with no data. Runs the release callback exactly once.
+fn void Heap.release_external_buffer(&self, HObject* buf) {
+    uint index = (*buf.extra_ptr()).ab.external_index;
+    (*buf.extra_ptr()).ab.external = false;
+    (*buf.extra_ptr()).ab.external_index = 0;
+    (*buf.extra_ptr()).ab.data = null;
+    ExternalBuffer record = self.external_buffers[index];
+    self.external_buffers[index] = { .next_free = self.external_buffer_free };
+    self.external_buffer_free = index;
+    if (record.release != null) record.release(record.data, record.opaque);
+}
+
+// Holds a finalizer call for run_deferred_finalizers. Without memory for the
+// record, the finalizer runs now rather than leaking the payload.
+fn void Heap.defer_finalizer(&self, void* finalizer, void* payload, void* udata) {
+    if (self.deferred_final_count >= self.deferred_final_capacity) {
+        uint new_cap = self.deferred_final_capacity == 0 ? 16 : self.deferred_final_capacity * 2;
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.deferred_finals, (usz)new_cap * DeferredFinal::size);
+        if (grown == null) {
+            ((HostClassFinalizeFn)finalizer)(payload, udata);
+            return;
+        }
+        self.deferred_finals = (DeferredFinal*)grown;
+        self.deferred_final_capacity = new_cap;
+    }
+    self.deferred_finals[self.deferred_final_count++] = { .finalizer = finalizer, .payload = payload, .udata = udata };
+}
+
+// Runs the finalizers held back so far, in the order their objects were freed.
+// Returns how many ran.
+fn uint Heap.run_deferred_finalizers(&self) {
+    uint ran = 0;
+    for (uint i = 0; i < self.deferred_final_count; i++) {
+        DeferredFinal d = self.deferred_finals[i];
+        ((HostClassFinalizeFn)d.finalizer)(d.payload, d.udata);
+        ran++;
+    }
+    self.deferred_final_count = 0;
+    return ran;
 }
 
 // Entry for `id`, or null when never registered. As with host_fn_at, callers
@@ -3058,10 +3294,14 @@ fn HostClassEntry* Heap.host_class_at(&self, uint id) {
 const uint HOST_SCOPE_THIS = 0;
 const uint HOST_SCOPE_NEW_TARGET = 1;
 const uint HOST_SCOPE_ARG0 = 2;
+// Scope depth and slot index each fit the bits a handle gives them.
+const uint HOST_SCOPE_MAX_DEPTH = 0x7FFF;
+const uint HOST_SCOPE_MAX_INDEX = 0x1FFFF;
 
 // Push a scope of `count` slots, all undefined, for one host callback and
 // return its depth index, or -1.
 fn long Heap.host_scope_push(&self, uint count) {
+    if (self.host_scope_depth >= HOST_SCOPE_MAX_DEPTH) return -1;
     if (self.host_scope_depth >= self.host_scope_capacity) {
         uint new_cap = self.host_scope_capacity == 0 ? 4 : self.host_scope_capacity * 2;
         void* grown = self.realloc_func(self.heap_udata, (void*)self.host_scopes, (usz)new_cap * HostScope::size);
@@ -3081,7 +3321,7 @@ fn long Heap.host_scope_push(&self, uint count) {
     self.host_vals_len = base + count;
     uint depth = self.host_scope_depth;
     self.host_scope_generation++;
-    self.host_scopes[depth] = { base, count, self.host_scope_generation };
+    self.host_scopes[depth] = { base, count, self.host_scope_generation, false, false };
     self.host_scope_depth++;
     return (long)depth;
 }
@@ -3096,6 +3336,29 @@ fn void Heap.host_scope_pop(&self) {
     for (uint i = 0; i < sc.count; i++) self.decref_tval(&self.host_vals[sc.base + i]);
     self.host_vals_len = sc.base;
     *sc = { };
+}
+
+// Append `v` to the innermost scope and return its index, or -1 when the
+// scope is full or the slot cannot be allocated.
+fn long Heap.host_scope_append(&self, TVal v) {
+    if (self.host_scope_depth == 0) return -1;
+    HostScope* sc = &self.host_scopes[self.host_scope_depth - 1];
+    if (sc.count > HOST_SCOPE_MAX_INDEX) return -1;
+    uint at = sc.base + sc.count;
+    if (at >= self.host_vals_capacity) {
+        uint new_cap = max(self.host_vals_capacity * 2, at + 1, 16u);
+        void* grown = self.realloc_func(self.heap_udata, (void*)self.host_vals, (usz)new_cap * TVal::size);
+        if (grown == null) return -1;
+        self.host_vals = (TVal*)grown;
+        self.host_vals_capacity = new_cap;
+    }
+    if (v.is_refcounted() && v.get_heapptr() != null) ((HeapHeader*)v.get_heapptr()).incref();
+    self.host_vals[at] = v;
+    // The root scan may already have passed this slot.
+    self.shade_root_tval(v);
+    sc.count++;
+    self.host_vals_len = at + 1;
+    return (long)(sc.count - 1);
 }
 
 // Store `v` in scope `depth` at `index`, returning success.
@@ -3521,9 +3784,12 @@ fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
  */
 fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
-    usz total = hstring::HSTRING_HDR_SIZE + (usz)s.capacity + 1;  // +1 for NUL
+    usz total = s.alloc_size();
+    if (s.flags.has_extdata) s.release_external();
+
+    if (s.flags.weak_target) self.weak_target_died((HeapHeader*)s);
     gcprofile::gcprof_string_free(total);
-    if (s.blen == 1 && s.flags.is_ascii) {
+    if (s.length == 1 && s.flags.is_ascii) {
         gcprofile::gcprof_ascii_char_free();
     }
     int cls = pool_class_index(total);
@@ -3931,7 +4197,7 @@ fn HObject* Heap.gray_pop(&self) {
 fn void Heap.reject_poison(&self, TVal* v, ZString where) @feat(SCAN_POISON) {
     if (v.is_poison()) {
         io::eprintf("[scan-poison] %s: slot %p holds the poison fill\n", where, v);
-        self.fatal_func(self.heap_udata, "scan-poison: poisoned slot reached the collector");
+        self.fatal("scan-poison: poisoned slot reached the collector");
     }
 }
 
@@ -3941,7 +4207,7 @@ fn void Heap.reject_poison(&self, TVal* v, ZString where) @feat(SCAN_POISON) {
 fn void Heap.reject_poison_ptr(&self, void* ptr, ZString where) @feat(SCAN_POISON) {
     if ((usz)ptr == (usz)types::POISON_PAYLOAD) {
         io::eprintf("[scan-poison] %s: pointer %p holds the poison fill\n", where, ptr);
-        self.fatal_func(self.heap_udata, "scan-poison: poisoned pointer reached the collector");
+        self.fatal("scan-poison: poisoned pointer reached the collector");
     }
 }
 
@@ -3951,8 +4217,8 @@ fn void Heap.verify_string_owner(&self, HString* value) @feat(GC_VERIFY) {
     uint table_reference = value.flags.is_interned ? 1u : 0u;
     if (value.refcount <= table_reference) {
         io::eprintfn("[GC_VERIFY] live string lacks an owner: refs=%d interned=%d bytes=%d",
-            value.refcount, (int)value.flags.is_interned, value.blen);
-        self.fatal_func(self.heap_udata, "GC_VERIFY: unowned live string");
+            value.refcount, (int)value.flags.is_interned, value.length);
+        self.fatal("GC_VERIFY: unowned live string");
     }
 }
 
@@ -4496,6 +4762,7 @@ fn void Heap.mark_roots(&self) {
     // engine-side field of their own.
     for (uint i = 0; i < self.host_class_count; i++) {
         if (self.host_classes[i].proto != null) { self.mark_hobject(self.host_classes[i].proto); }
+        if (self.host_classes[i].ctor != null) { self.mark_hobject(self.host_classes[i].ctor); }
     }
     // Every live slot on the VM value stack, from base to top, can reference a
     // heap object or string.
@@ -4526,12 +4793,9 @@ fn void Heap.mark_roots(&self) {
         }
     }
 
-    // Atomics.waitAsync waiters keep their parked buffer + pending promise alive.
+    // Atomics.waitAsync waiters keep their pending promise alive.
     for (uint i = 0; i < self.async_waiter_count; i++) {
-        if (self.async_waiters[i].active) {
-            if (self.async_waiters[i].buffer != null) self.mark_hobject(self.async_waiters[i].buffer);
-            if (self.async_waiters[i].promise != null) self.mark_hobject(self.async_waiters[i].promise);
-        }
+        if (self.async_waiters[i].promise != null) self.mark_hobject(self.async_waiters[i].promise);
     }
 
     // CompiledFunctions live in their own tracking array rather than the GC
@@ -4568,6 +4832,8 @@ fn void Heap.mark_roots(&self) {
     // In-flight error and generator state held directly on the heap.
     self.mark_tval(&self.error_value);
     self.mark_tval(&self.yield_value);
+    foreach (&v : self.host_exotic_hold) self.mark_tval(v);
+    if (self.module_waiters != null) self.mark_hobject(self.module_waiters);
     for (uint i = 0; i < self.host_vals_len; i++) {
         if (self.host_vals[i].is_traced()) self.mark_tval(&self.host_vals[i]);
     }
@@ -5030,10 +5296,19 @@ fn void Heap.charge_allocation(&self, long units) @inline {
     if (self.gc_trigger_counter <= 0) self.request_gc();
 }
 
+// Allocate `size` bytes of ArrayBuffer data. The bytes count toward GC
+// pressure in kilobyte units, as large strings do, so a loop that drops
+// buffers is collected before the garbage reaches the heap limit.
+fn char* Heap.alloc_buffer_data(&self, usz size) {
+    self.charge_allocation((long)(size >> 10));
+    return (char*)self.alloc_func(self.heap_udata, size);
+}
+
 /**
  * Ask the next safepoint to collect.
  */
 fn void Heap.request_gc(&self) @inline {
+    if (self.gc_inhibit != 0) { self.gc_inhibited_request = true; return; }
     if (self.gc_phase == GcPhase.IDLE) self.gc_requested = true;
     self.gc_pending = true;
 }
@@ -5142,6 +5417,7 @@ fn void Heap.trigger_gc(&self) {
  * Marking can advance there; reclamation waits for a quiescent boundary.
  */
 fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
+    if (self.gc_inhibit != 0) return;
     bool quiescent = self.native_frame_depth == 0;
     if (quiescent && self.gc_full_requested) {
         self.gc_full_requested = false;
@@ -5214,23 +5490,21 @@ const uint FNV1A_PRIME        = 0x0100_0193;
  * Compute a 32-bit FNV-1a hash of `data`, mixing in the heap's seed so hash
  * collisions cannot be predicted from outside.
  */
-fn uint Heap.hash_string(&self, char[] data) {
-    uint h = FNV1A_OFFSET_BASIS ^ self.hash_seed;
-    foreach (b : data) {
-        h ^= (uint)b;
-        h *= FNV1A_PRIME;
-    }
+fn uint Heap.hash_units(&self, hstring::Units data) {
+    uint h = hstring::hash_units(FNV1A_OFFSET_BASIS ^ self.hash_seed, data);
     // Keep HASH_DEFERRED reserved as the "not computed yet" sentinel.
     return h == hstring::HASH_DEFERRED ? h + 1 : h;
 }
 
+fn uint Heap.hash_string(&self, char[] data) => self.hash_units(hstring::narrow_units(data));
+
 // The string's content hash, computing and caching it if it was deferred.
 // Interned strings always have it already, so this is a plain field read on
-// the hot path; only a large non-interned string ever pays the O(blen) scan,
+// the hot path; only a large non-interned string ever pays the O(length) scan,
 // and only if something actually needs its hash.
 fn uint Heap.content_hash(&self, hstring::HString* s) {
     if (s.hash == hstring::HASH_DEFERRED) {
-        s.hash = self.hash_string(s.get_data());
+        s.hash = self.hash_units(s.units());
     }
     return s.hash;
 }
@@ -5312,10 +5586,10 @@ fn void Heap.str_table_shrink(&self) {
 }
 
 /**
- * Look up an interned string by byte content and precomputed hash, returning
+ * Look up an interned string by content and precomputed hash, returning
  * null when the table does not hold it.
  */
-fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
+fn HString* Heap.str_table_lookup(&self, hstring::Units data, uint hash, bool hidden = false) {
     long lookup_start = gcprofile::gcprof_now();
     defer gcprofile::gcprof_phase(35, &lookup_start);
     if (self.str_table_size == 0) return null;
@@ -5328,7 +5602,9 @@ fn HString* Heap.str_table_lookup(&self, char[] data, uint hash) {
         if (slot == 0) return null;  // an empty slot ends the probe chain; a tombstone does not
         if (slot == tag) {
             HString* entry = self.str_table[idx];
-            if (entry.blen == (uint)data.len && entry.equals(data)) return entry;
+            if (entry.flags.is_hidden == hidden && entry.length == data.len
+                && entry.flags.is_wide == data.wide
+                && mem::equals(entry.data_ptr(), data.ptr, (sz)data.byte_len())) return entry;
         }
         idx = (idx + 1) & mask;
     }
@@ -5459,7 +5735,7 @@ fn void Heap.large_string_unregister(&self, HString* s) {
 // Concatenation results defer hashing and interning until a consumer needs
 // them. Accumulators reserve spare capacity for subsequent in-place appends.
 // Returns null if allocation fails.
-fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
+fn HString* Heap.alloc_concat_string(&self, Units data, uint cap) {
     HString*? new_s = hstring::hstring_alloc_cap(self, data, hstring::HASH_DEFERRED, cap);
     if (try s = new_s) {
         // Same registry contract as any other large non-interned string: the
@@ -5469,6 +5745,17 @@ fn HString* Heap.alloc_concat_string(&self, char[] data, uint cap) {
         return s;
     }
     return null;
+}
+
+// A non-interned string over a host buffer, in canonical width and kept as it
+// is until `release` runs at the string's end. The registry keeps it reachable
+// like any other large string. Returns null if allocation fails, leaving the
+// buffer with the caller.
+fn HString* Heap.alloc_external_string(&self, Units data, hstring::ExtRelease release, void* udata) {
+    HString*? created = hstring::hstring_alloc_external(self, data, release, udata);
+    if (catch created) return null;
+    self.large_string_register(created);
+    return created;
 }
 
 // Allocate a non-interned concatenation directly from its two source spans.
@@ -5482,19 +5769,22 @@ fn void Heap.clear_concat_cache(&self) {
 
 // Both operands are retained with the result, so pointer identity is enough.
 fn HString* Heap.cached_concat_string(&self, HString* left, HString* right) {
-    ulong length = (ulong)left.blen + right.blen;
-    if (length > CONCAT_CACHE_MAX_BYTES) return null;
+    ulong length = (ulong)left.length + right.length;
+    if (length > CONCAT_CACHE_MAX_LENGTH) return null;
     ConcatCacheEntry* entry = &self.concat_cache[length % CONCAT_CACHE_SIZE];
     return entry.left == left && entry.right == right ? entry.result : null;
 }
 
 // Optional string operands cover the complete spans and stay immutable while cached.
-fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
+// The cache retains its operands, so a pair with an external string is never
+// cached: its host buffer is handed back when the last script reference goes.
+fn HString* Heap.alloc_concat_string_parts(&self, Units left, Units right,
                                           uint cap, HString* left_string = null,
                                           HString* right_string = null) {
     usz length = (usz)left.len + (usz)right.len;
     ConcatCacheEntry* entry = left_string != null && right_string != null
-        && length <= CONCAT_CACHE_MAX_BYTES
+        && length <= CONCAT_CACHE_MAX_LENGTH
+        && !left_string.flags.has_extdata && !right_string.flags.has_extdata
         ? &self.concat_cache[length % CONCAT_CACHE_SIZE] : null;
     if (entry != null && entry.left == left_string && entry.right == right_string) return entry.result;
     HString*? new_s = hstring::hstring_alloc_concat_cap(
@@ -5514,8 +5804,8 @@ fn HString* Heap.alloc_concat_string_parts(&self, char[] left, char[] right,
     return null;
 }
 
-fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length) {
-    if (try s = hstring::hstring_alloc_join(self, parts, length)) {
+fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length, bool wide) {
+    if (try s = hstring::hstring_alloc_join(self, parts, length, wide)) {
         self.large_string_register(s);
         return s;
     }
@@ -5527,10 +5817,17 @@ fn HString* Heap.alloc_concat_join(&self, TVal[] parts, uint length) {
 // failing that this string is inserted. Property lookup calls this when a
 // non-interned concatenation result is used as a key.
 fn HString* Heap.ensure_interned(&self, hstring::HString* s) {
-    if (s.flags.is_interned) return s;
+    if (s.flags.is_interned || s.flags.is_symbol) return s;
+    // The table holds only strings it can own, so an external string interns as a copy.
+    if (s.flags.has_extdata) {
+        HString* copy = self.str_intern_units(s.units());
+        // Large copies start in the non-interned registry. Property tables use
+        // pointer identity, so they must still pass through canonicalization.
+        return copy == null ? null : self.ensure_interned(copy);
+    }
     // A large concat result reaches here with its hash still deferred, and the
     // table both probes and stores by hash, so materialize it first.
-    HString* existing = self.str_table_lookup(s.get_data(), self.content_hash(s));
+    HString* existing = self.str_table_lookup(s.units(), self.content_hash(s));
     if (existing != null) return existing;
     // The table owns the string from here on, so it must leave the registry or
     // the sweep would free it behind the table's back. If the table cannot take
@@ -5562,31 +5859,82 @@ fn int lf_key_to_prop_bit(HString* key) @inline {
     return -1;
 }
 
-fn HString* Heap.str_intern(&self, char[] data) {
-    // Raw 4-byte UTF-8 astral sequences, such as an emoji typed straight into
-    // source, become CESU-8 surrogate pairs before the hash and lookup. One
-    // logical string can otherwise intern under two byte encodings depending on
-    // how the astral character arrived, as a literal, a \u{...} escape, or
-    // String.fromCodePoint, which breaks `===` and property-key dedup. Almost no
-    // string contains a 4-byte sequence, so the check avoids the scratch buffer.
-    if (hstring::has_raw_utf8_astral(data)) {
-        usz cap = (usz)data.len + ((usz)data.len / 4) * 2 + 1;
-        char* scratch = (char*)alloc::malloc_try(mem, (sz)cap) ?? null;
-        if (scratch != null) {
-            uint norm_len = hstring::normalize_to_cesu8(data, scratch[:cap]);
-            HString* result = self.str_intern_normalized(scratch[:norm_len]);
-            mem::free(scratch);
-            return result;
-        }
+// A non-interned string of the UTF-8 or CESU-8 `text`, decoded to units in
+// canonical width. It is in neither the string table nor the large-string
+// registry, so the caller owns it until it registers or interns it. Returns
+// null if allocation fails.
+fn HString* Heap.alloc_text(&self, char[] text) {
+    // Well-formed text, which is nearly all of it, is sized by a quick estimate
+    // and decoded once. Malformed text decodes to a different count or width and
+    // is counted exactly instead.
+    bool wide;
+    uint count = hstring::estimate_text_units(text, &wide);
+    HString*? first = hstring::hstring_alloc_storage(self, count, wide, hstring::HASH_DEFERRED, count);
+    if (catch first) return null;
+    HString* s = first;
+    bool above;
+    uint written = hstring::decode_text(text, s.data_ptr(), wide, &above, count);
+    if (written != count || (above && !wide)) {
+        self.free_string(s);
+        count = hstring::decode_text(text, null, false, &wide);
+        HString*? exact = hstring::hstring_alloc_storage(self, count, wide, hstring::HASH_DEFERRED, count);
+        if (catch exact) return null;
+        s = exact;
+        hstring::decode_text(text, s.data_ptr(), wide, &above);
     }
-    return self.str_intern_normalized(data);
+    s.finish_data();
+    return s;
 }
 
-// Intern bytes that are already CESU-8 canonical. Callers whose input has no
-// raw 4-byte UTF-8 sequences, such as pure-ASCII builtin literals or data
-// already put through `normalize_to_cesu8`, can skip the astral scan by
-// calling this directly.
-fn HString* Heap.str_intern_normalized(&self, char[] data) {
+// Register a text-built string as a non-interned concatenation result.
+fn HString* Heap.alloc_concat_text(&self, char[] text) {
+    if (hstring::check_is_ascii(text)) {
+        return self.alloc_concat_string(hstring::narrow_units(text), (uint)text.len);
+    }
+    HString* s = self.alloc_text(text);
+    if (s != null) self.large_string_register(s);
+    return s;
+}
+
+// Settle a fully built, unregistered string: intern it, or free it in favor of
+// the equal interned string already in the table. A string too long to intern
+// goes to the large-string registry instead.
+fn HString* Heap.intern_fresh(&self, HString* s) {
+    if (s.length > MAX_INTERN_LENGTH) {
+        self.large_string_register(s);
+        return s;
+    }
+    s.hash = self.hash_units(s.units());
+    HString* existing = self.str_table_lookup(s.units(), s.hash);
+    if (existing != null) {
+        self.free_string(s);
+        return existing;
+    }
+    if (!self.str_table_insert(s)) { self.large_string_register(s); }
+    return s;
+}
+
+// Intern UTF-8 or CESU-8 text. A literal astral character, a surrogate pair of
+// 3-byte sequences and a `\u{...}` escape all decode to the same units, so the
+// one logical string interns once.
+fn HString* Heap.str_intern(&self, char[] text) {
+    if (hstring::check_is_ascii(text)) return self.str_intern_units(hstring::narrow_units(text));
+    HString* s = self.alloc_text(text);
+    return s == null ? null : self.intern_fresh(s);
+}
+
+// Intern Latin-1 bytes, one unit each.
+fn HString* Heap.str_intern_latin1(&self, char[] data) {
+    return self.str_intern_units(hstring::narrow_units(data));
+}
+
+// Intern UTF-16 units, narrowing them when none is above 0xFF.
+fn HString* Heap.str_intern_utf16(&self, ushort[] data) {
+    return self.str_intern_span(hstring::wide_units(data));
+}
+
+// Intern units in canonical width. A narrow run is interned as it is.
+fn HString* Heap.str_intern_units(&self, Units data) {
     // Strings this long are not used as property keys, symbols, or identifiers.
     // Interning them piles dead strings into the table until the next GC, giving
     // O(n^2) memory growth in string-building loops such as buildString in the
@@ -5598,7 +5946,7 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     // string and turn the loop O(n^2) in time even though it is already O(n) in
     // memory. These strings get `HASH_DEFERRED` and hash lazily via
     // `content_hash` if anything ever needs it.
-    if (data.len > MAX_INTERN_BYTES) {
+    if (data.len > MAX_INTERN_LENGTH) {
         HString*? new_s = hstring::hstring_alloc(self, data, hstring::HASH_DEFERRED);
         if (try s = new_s) {
             // The registry is what the mark-sweep backstop and heap reset use to
@@ -5610,15 +5958,15 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
     }
     bool cache_ascii_char = false;
     uint ascii_char_index = 0;
-    if (data.len == 1) {
-        ascii_char_index = (uint)data[0];
+    if (data.len == 1 && !data.wide) {
+        ascii_char_index = (uint)data.ptr[0];
         cache_ascii_char = ascii_char_index < ASCII_CHAR_CACHE_SIZE;
         if (cache_ascii_char) {
             HString* cached = self.ascii_char_strs[ascii_char_index];
             if (cached != null) return cached;
         }
     }
-    uint hash = self.hash_string(data);
+    uint hash = self.hash_units(data);
     HString* existing = self.str_table_lookup(data, hash);
     if (existing != null) {
         if (cache_ascii_char) {
@@ -5640,6 +5988,76 @@ fn HString* Heap.str_intern_normalized(&self, char[] data) {
         return s;
     }
     return null;
+}
+
+// Intern units of either width that may not be canonical: a wide run with no
+// unit above 0xFF, such as a slice of a wide string, is stored narrow.
+fn HString* Heap.str_intern_span(&self, Units data) {
+    if (!data.wide || !hstring::fits_latin1(data)) return self.str_intern_units(data);
+    ushort* units = (ushort*)data.ptr;
+    if (data.len <= MAX_INTERN_LENGTH) {
+        char[MAX_INTERN_LENGTH] buf;
+        for (uint i = 0; i < data.len; i++) buf[i] = (char)units[i];
+        return self.str_intern_units(hstring::narrow_units(buf[:data.len]));
+    }
+    HString*? new_s = hstring::hstring_alloc_storage(self, data.len, false, hstring::HASH_DEFERRED, data.len);
+    if (catch new_s) return null;
+    char* dest = new_s.data_ptr();
+    for (uint i = 0; i < data.len; i++) dest[i] = (char)units[i];
+    new_s.finish_data();
+    self.large_string_register(new_s);
+    return new_s;
+}
+
+// The string of the units `[from, to)` of `s`. Both bounds must lie within the
+// string; an empty range yields the empty string.
+fn HString* Heap.str_slice(&self, HString* s, uint from, uint to) {
+    if (from >= to) return self.str(BuiltinStr.EMPTY);
+    Units u = s.units();
+    u.ptr += (usz)from << (u.wide ? 1 : 0);
+    u.len = to - from;
+    return self.str_intern_span(u);
+}
+
+// The one-unit string holding `unit`, which may be a lone surrogate.
+fn HString* Heap.str_from_unit(&self, uint unit) {
+    if (unit <= 0xFF) {
+        char byte = (char)unit;
+        return self.str_intern_units(hstring::narrow_units((&byte)[:1]));
+    }
+    ushort wide = (ushort)unit;
+    return self.str_intern_units(hstring::wide_units((&wide)[:1]));
+}
+
+// Intern an engine slot name as a hidden symbol. A hidden symbol shares the
+// table with ordinary strings but never matches one, so no script string can
+// spell a slot name. Enumeration paths skip hidden symbols.
+fn HString* Heap.str_intern_hidden(&self, char[] name) {
+    HString* fresh = null;
+    Units units = hstring::narrow_units(name);
+    if (!hstring::check_is_ascii(name)) {
+        fresh = self.alloc_text(name);
+        if (fresh == null) return null;
+        units = fresh.units();
+    }
+    uint hash = self.hash_units(units);
+    HString* existing = self.str_table_lookup(units, hash, true);
+    if (existing != null) {
+        self.free_string(fresh);
+        return existing;
+    }
+    HString* s = fresh;
+    if (s == null) {
+        HString*? new_s = hstring::hstring_alloc(self, units, hash);
+        if (catch err = new_s) return null;
+        s = new_s;
+    }
+    s.hash = hash;
+    s.flags.is_symbol = true;
+    s.flags.is_hidden = true;
+    s.flags.is_arridx = false;
+    if (!self.str_table_insert(s)) { self.large_string_register(s); }
+    return s;
 }
 
 // ============================================================================
@@ -5665,7 +6083,7 @@ fn uint Heap.xorshift32(&self) {
 // Enqueue a promise reaction job as a (handler, argument, downstream) triple.
 // The queue drains after each top-level script and after vm_call_fn_impl
 // returns from a compiled function.
-fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
+fn bool Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     // Make room for the new entry; each takes 3 TVal slots. A queue whose first
     // half is already drained slides down instead of growing, so a drain that
     // keeps enqueuing its own successor runs in constant space.
@@ -5683,7 +6101,7 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
         uint new_cap = self.microtask_capacity == 0 ? 16 : self.microtask_capacity * 2;
         usz new_bytes = (usz)new_cap * TVal::size * 3;
         TVal* new_q = (TVal*)self.realloc_func(self.heap_udata, self.microtask_queue, new_bytes);
-        if (new_q == null) { return; }
+        if (new_q == null) { return false; }
         mem::clear(new_q + self.microtask_capacity * 3, (sz)((long)(new_cap - self.microtask_capacity) * TVal::size * 3));
         self.microtask_queue = new_q;
         self.microtask_capacity = new_cap;
@@ -5692,7 +6110,10 @@ fn void Heap.enqueue_microtask(&self, TVal handler, TVal arg, TVal downstream) {
     self.tval_copy_ref(&self.microtask_queue[idx], &handler);
     self.tval_copy_ref(&self.microtask_queue[idx + 1], &arg);
     self.tval_copy_ref(&self.microtask_queue[idx + 2], &downstream);
+    bool was_empty = self.microtask_count == self.microtask_head;
     self.microtask_count++;
+    if (was_empty && self.job_hook != null) self.job_hook(self.job_hook_runtime, self.job_hook_opaque);
+    return true;
 }
 
 // Release the three references that queue slot `job` owns.
@@ -5715,6 +6136,7 @@ fn void Heap.release_microtask_slot(&self, uint job) {
 fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs = 0xFFFF_FFFFu, bool force = false) {
     if (self.host_managed_jobs && !force) return;
     if (self.microtask_draining) { return; }
+    self.host_job_error = false;
     // An empty queue still has to fall through to the report: a top-level
     // `Promise.reject(x)` with no `.then` anywhere queues no job at all, and
     // is precisely the rejection most in need of reporting.
@@ -5735,13 +6157,20 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
         while (self.microtask_head < self.microtask_count && max_jobs > 0) {
             max_jobs--;
             if (self.gc_pending) { self.safepoint_gc(); }
+            // Another agent's notification or an elapsed waitAsync timeout
+            // settles its promise between jobs, so a script that spins on the
+            // microtask queue still sees it.
+            if (self.agent_port != null) (void)self.agent_poll_fn(self, vm);
             TVal handler    = self.microtask_queue[self.microtask_head * 3];
             TVal arg        = self.microtask_queue[self.microtask_head * 3 + 1];
             TVal downstream = self.microtask_queue[self.microtask_head * 3 + 2];
 
             TVal result;
             if (self.call_handler_fn != null && vm != null) {
-                result = self.call_handler_fn(vm, handler, &arg);
+                // Observer callbacks receive the settlement value; host jobs
+                // marked false are called with no arguments (queueMicrotask).
+                TVal* job_arg = downstream.is_boolean() && !downstream.get_boolean() ? null : &arg;
+                result = self.call_handler_fn(vm, handler, job_arg);
             } else {
                 result = arg;
             }
@@ -5756,6 +6185,8 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
             // resume half-dead promise state.
             if (self.uncatchable_throw) {
                 interrupted = true;
+            } else if (downstream.is_boolean()) {
+                self.host_job_error = self.has_error;
             } else if (downstream.is_object() && downstream.get_heapptr() != null &&
                        self.microtask_after_fn != null && vm != null) {
                 self.microtask_after_fn((void*)self, vm, result, downstream);
@@ -5765,6 +6196,7 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
             // The queue owns one reference to each value until the job has
             // completed. Release those references before advancing.
             self.release_microtask_slot(self.microtask_head++);
+            if (self.host_job_error) break; // preserve later jobs for the next checkpoint
 
             if (interrupted) {
                 // Drop the remainder of the queue.
@@ -5779,7 +6211,7 @@ fn void Heap.drain_microtasks(&self, void* vm, bool report = true, uint max_jobs
         }
     }
 
-    if (report && self.microtask_count == 0) self.report_unhandled_rejections(vm);
+    if (report && !self.host_job_error && self.microtask_count == 0) self.report_unhandled_rejections(vm);
 }
 
 // ============================================================================
@@ -5895,7 +6327,7 @@ fn bool Heap.set_jit_stress(&self, bool enabled) {
 
 // Shared by bytecode safepoints and libregexp's backtracking timeout hook.
 fn bool Heap.poll_interrupt(&self) {
-    if (self.uncatchable_throw || mem::@atomic_load(self.interrupt_requested) != 0) return true;
+    if (self.uncatchable_throw || self.heap_limit_hit || mem::@atomic_load(self.interrupt_requested) != 0) return true;
     if (self.capi_interrupt_fn == null) return false;
     BkInterruptFn cb = (BkInterruptFn)self.capi_interrupt_fn;
     return cb(self.capi_runtime, self.capi_interrupt_opaque) != 0;

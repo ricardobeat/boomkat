@@ -2,6 +2,7 @@ module boomkat::vm;
 
 import boomkat::types;
 import boomkat::bytecode;
+import boomkat::features;
 import boomkat::heap;
 import boomkat::hstring;
 import boomkat::hobject;
@@ -91,9 +92,11 @@ $endif
         heap.free_func(heap.heap_udata, raw);
         return VM_ERROR~;
     }
+    $if features::TEST262_HOST:
     if (test262_host_enabled) {
         builtins::register_test262_host(global, heap);
     }
+    $endif
 
     vm.activation_count = 0;
     vm.has_error = false;
@@ -215,9 +218,11 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     heap.register_gc_root(global_lex.bindings.as_header());
 
     if (!builtins::register_builtins(global, heap)) { return false; }
+    $if features::TEST262_HOST:
     if (test262_host_enabled) {
         builtins::register_test262_host(global, heap);
     }
+    $endif
 
     return true;
 }

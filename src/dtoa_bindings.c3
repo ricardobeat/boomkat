@@ -1,8 +1,8 @@
 /*
- * dtoa bindings: C3 interop with QuickJS dtoa.c through dtoa_wrapper.
+ * dtoa bindings: C3 interop with the vendored dtoa.c through dtoa_wrapper.
  *
- * QuickJS' `js_atod` is a David-Gay-style decimal parser that matches
- * V8/SpiderMonkey, so `0.1 + 0.2` and `8.3 - 1` round-trip as in other engines.
+ * `js_atod` is a correctly rounded decimal parser, so literals and string
+ * conversions round-trip per ECMA-262.
  *
  * `js_atod` needs a scratch buffer (JSATODTempMem, 216 bytes). The C wrapper
  * takes a `void*` of BOOMKAT_DTOA_TMP_SIZE bytes, which C3 passes as a

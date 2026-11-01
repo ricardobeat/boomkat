@@ -32,11 +32,12 @@ fn TVal? vm_proxy_rethrow(Vm* vm, Dispatch* ds) @local {
 // hot path, so this stays a call while the IC probe above it stays inline.
 fn TVal? getprop_null_throw(Vm* vm, Dispatch* ds, bool is_null, HString* name) @noinline @local {
     char[types::ERROR_MSG_BUF] msg_buf;
+    char[types::ERROR_MSG_BUF] name_text;
     int msg_len;
     if (name != null) {
         msg_len = (int)(io::bprintf(&msg_buf, "Cannot read properties of %s (reading '%s')",
                                     (is_null ? "null" : "undefined"),
-                                    (ZString)name.get_cstr()) ?? msg_buf[:0]).len;
+                                    name.cesu8_zstr(name_text[..])) ?? msg_buf[:0]).len;
     } else {
         msg_len = (int)(io::bprintf(&msg_buf, "Cannot read properties of %s",
                                     (is_null ? "null" : "undefined")) ?? msg_buf[:0]).len;
@@ -400,16 +401,11 @@ fn TVal? getprop_read_accessor(Vm* vm, Dispatch* ds, hobject::AccessorResult* ac
     // check never fires for public accessors.
     if ((!acc.accessor_fn.is_object() || acc.accessor_fn.get_heapptr() == null)
         && key != null && key.is_hidden()) {
-        char[] priv_desc = key.blen > 2 ? key.get_data()[2..] : (char[])"?";
-        char[160] set_only_buf;
-        int set_only_len = (int)(io::bprintf(&set_only_buf,
-            "Cannot read private member #%s from an object because it only has a setter",
-            (String)priv_desc) ?? set_only_buf[:0]).len;
-        char[] set_only_msg = set_only_len > 0 && (usz)set_only_len < set_only_buf.len
-            ? set_only_buf[:(usz)set_only_len]
-            : (char[])"Cannot read private member from an object because it only has a setter";
-        if (!vm_throw_error(vm, vm.heap.type_err_proto, set_only_msg,
-                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+        HString* priv_desc = key.unit_len() > 2
+            ? vm.heap.str_slice(key, 2, key.unit_len()) : vm.heap.str_intern("?");
+        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                "Cannot read private member #%s from an object because it only has a setter",
+                priv_desc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
             return VM_ERROR~;
         }
         return (TVal){};
@@ -702,8 +698,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         if (sidx >= 0) {
                             HString* prim_str = (HString*)(*hobj.extra_ptr()).prim.primitive_value.get_heapptr();
-                            if (sidx < (long)prim_str.char_length()) {
-                                uint cp = prim_str.char_at_unchecked((uint)sidx);
+                            if (sidx < (long)prim_str.unit_len()) {
+                                uint cp = prim_str.unit_at((uint)sidx);
                                 char[4] sbuf;
                                 uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                 HString* interned = intern_string(vm, sbuf[:sblen]);
@@ -747,9 +743,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // because the IC would have no way to detect modifications to
                             // intermediate objects in the prototype chain (e.g. when
                             // B.prototype.foo = ... is set, an IC that previously resolved
-                            // b.foo via A.prototype would return a stale value). This matches
-                            // the QuickJS approach where the shape itself encodes the proto
-                            // and lookups always walk the current chain. A live
+                            // b.foo via A.prototype would return a stale value). The shape
+                            // itself encodes the proto and lookups always walk the current
+                            // chain. A live
                             // mapped ARGUMENTS index never populates: the IC
                             // would snapshot the parameter's CURRENT value.
                             if (res.owner == hobj && res.owner != null && ds.ic_base != null) {
@@ -820,8 +816,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             str_idx = (long)key_prim.array_index();
                         }
                     }
-                    if (str_idx >= 0 && str_idx < (long)str_prim.char_length()) {
-                        uint cp = str_prim.char_at_unchecked((uint)str_idx);
+                    if (str_idx >= 0 && str_idx < (long)str_prim.unit_len()) {
+                        uint cp = str_prim.unit_at((uint)str_idx);
                         char[4] cbuf;
                         uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                         HString* interned = intern_string(vm, cbuf[:cblen]);
@@ -837,7 +833,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     if (key != null) {
                         // Fast path: .length → string character count
                         if (key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
-                            vm.heap.set_reg_fastint(ra, (long)h_str.char_length());
+                            vm.heap.set_reg_fastint(ra, (long)h_str.unit_len());
                             return (TVal){};
                         }
                         // A String exotic object's own properties include its
@@ -849,8 +845,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // patterns do.
                         uint sidx = key.array_index();
                         if (sidx != hstring::ARRIDX_NONE
-                                && sidx < str_prim.char_length()) {
-                            uint cp = str_prim.char_at_unchecked(sidx);
+                                && sidx < str_prim.unit_len()) {
+                            uint cp = str_prim.unit_at(sidx);
                             char[4] cbuf;
                             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
                             HString* interned = intern_string(vm, cbuf[:cblen]);
@@ -1026,8 +1022,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (key_hstr != null && key_hstr.is_arridx()) {
                                 long sidx = (long)key_hstr.array_index();
                                 HString* prim_str = (HString*)(*hobj.extra_ptr()).prim.primitive_value.get_heapptr();
-                                if (sidx < (long)prim_str.char_length()) {
-                                    uint cp = prim_str.char_at_unchecked((uint)sidx);
+                                if (sidx < (long)prim_str.unit_len()) {
+                                    uint cp = prim_str.unit_at((uint)sidx);
                                     char[4] sbuf;
                                     uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                     HString* interned = intern_string(vm, sbuf[:sblen]);
@@ -1160,8 +1156,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // slots are still found.
                         if (key_hstr != null && key_hstr.is_arridx()) {
                             long sidx = (long)key_hstr.array_index();
-                            if (sidx < (long)h_str.char_length()) {
-                                uint cp = h_str.char_at_unchecked((uint)sidx);
+                            if (sidx < (long)h_str.unit_len()) {
+                                uint cp = h_str.unit_at((uint)sidx);
                                 char[4] sbuf;
                                 uint sblen = hstring::encode_codepoint(cp, sbuf[:4]);
                                 HString* interned = intern_string(vm, sbuf[:sblen]);
@@ -1176,7 +1172,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         if (key_hstr != null) {
                             // Fast path: .length → string character count
                             if ((void*)key_hstr == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
-                                vm.heap.set_reg_fastint(ra, (long)h_str.char_length());
+                                vm.heap.set_reg_fastint(ra, (long)h_str.unit_len());
                                 return (TVal){};
                             }
                             // A String exotic's own properties include its indices
@@ -1185,8 +1181,8 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             // arrives interned, which the numeric fast path misses:
                             // `{0: c} = "x"` compiles to this opcode.
                             uint cidx = key_hstr.array_index();
-                            if (cidx != hstring::ARRIDX_NONE && cidx < h_str.char_length()) {
-                                uint ccp = h_str.char_at_unchecked(cidx);
+                            if (cidx != hstring::ARRIDX_NONE && cidx < h_str.unit_len()) {
+                                uint ccp = h_str.unit_at(cidx);
                                 char[4] cbuf;
                                 uint cblen = hstring::encode_codepoint(ccp, cbuf[:4]);
                                 HString* cinterned = intern_string(vm, cbuf[:cblen]);
@@ -1673,7 +1669,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 // only strict PutValue turns it into a TypeError.
                                 if (ds.act.func != null && ((CompiledFunction*)ds.act.func).is_strict()) {
                                     HString* nm = (HString*)key;
-                                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Cannot set property '%s' which has only a getter", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                         return VM_ERROR~;
                                     }
                                 }
@@ -2192,11 +2188,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                     name_hstr = (HString*)rb.get_heapptr();
                 }
                 char[types::ERROR_MSG_BUF] msg_buf;
+                char[types::ERROR_MSG_BUF] name_text;
                 int msg_len;
                 if (name_hstr != null) {
                     msg_len = (int)(io::bprintf(&msg_buf, "Cannot set properties of %s (setting '%s')",
                                               (ra.is_null() ? "null" : "undefined"),
-                                              (ZString)name_hstr.get_cstr()) ?? msg_buf[:0]).len;
+                                              name_hstr.cesu8_zstr(name_text[..])) ?? msg_buf[:0]).len;
                 } else {
                     msg_len = (int)(io::bprintf(&msg_buf, "Cannot set properties of %s",
                                               (ra.is_null() ? "null" : "undefined")) ?? msg_buf[:0]).len;
@@ -2260,13 +2257,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
                 HString* type_hstr = typeof_string(vm, &error_base);
                 char[types::ERROR_MSG_BUF] msg_buf;
+                char[types::ERROR_MSG_BUF] name_text, type_text;
                 int msg_len;
                 if (error_name != null) {
                     msg_len = (int)(io::bprintf(&msg_buf, "Cannot create property '%s' on %s",
-                                              (ZString)error_name.get_cstr(), (ZString)type_hstr.get_cstr()) ?? msg_buf[:0]).len;
+                                              error_name.cesu8_zstr(name_text[..]), type_hstr.cesu8_zstr(type_text[..])) ?? msg_buf[:0]).len;
                 } else {
                     msg_len = (int)(io::bprintf(&msg_buf, "Cannot create property on %s",
-                                              (ZString)type_hstr.get_cstr()) ?? msg_buf[:0]).len;
+                                              type_hstr.cesu8_zstr(type_text[..])) ?? msg_buf[:0]).len;
                 }
                 char[] msg_slice = (msg_len > 0 && msg_len < types::ERROR_MSG_BUF) ? msg_buf[:msg_len] : msg_buf[:0];
                 if (!vm_throw_error(vm, vm.heap.type_err_proto, msg_slice, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -2583,7 +2581,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 HString* key = get_prop_key(vm, rc);
                 if (key != null && base_str != null) {
                     bool non_configurable = key.is_arridx()
-                        ? key.array_index() < base_str.char_length()
+                        ? key.array_index() < base_str.unit_len()
                         : key.equals("length");
                     if (non_configurable) {
                         vm.heap.set_reg_boolean(ra, false);

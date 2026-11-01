@@ -24,6 +24,7 @@ import boomkat::re_bindings;
 import boomkat::heap;
 import boomkat::lib::temporal;
 import boomkat::pagepool;
+import boomkat::agent;
 import std::io;
 
 // Faults for optional returns
@@ -234,7 +235,7 @@ enum ObjClass : char {
     WRAP_FOR_VALID_ITERATOR,
     // Internal GC cell for boxed accessor pairs (getter + setter).
     GETTER_SETTER,
-    // Temporal proposal (Stage 4, shipped in V8/Safari/JSC). One shared
+    // Temporal proposal (Stage 4). One shared
     // HObjectTemporal variant backs every Temporal class; obj_class
     // discriminates which internal slots are live. Runtime-registered host
     // classes preserve the limited ObjClass namespace; Temporal can use HOST
@@ -883,7 +884,11 @@ struct HObjectIteratorHelper {
 struct HObjectProxy {
     HObject* target;
     HObject* handler;
-    void*    _reserved;          // keeps builtin_fn_index at the same offset as HObjectFunction
+    // Non-null on a host exotic object, an instance of a C API class with
+    // exotic hooks: its operations go to Heap.host_exotic_ops instead of
+    // handler traps. Pointer-sized, so builtin_fn_index keeps the offset it
+    // has in HObjectFunction.
+    void*    host_hooks;
     int      builtin_fn_index;
 }
 
@@ -916,14 +921,23 @@ struct HObjectGetterSetter {
 // never changes after construction: every write through a view is rejected,
 // and it can be neither detached nor resized. `immutable` and `resizable` are
 // mutually exclusive.
+//
+// An external buffer (bk_new_external_array_buffer) sets `external`. Its data
+// belongs to the embedder and is handed back through the release record at
+// `external_index` in Heap.external_buffers, on detach or free. External
+// buffers are never resizable, so the index shares the cap's storage.
 struct HObjectArrayBuffer {
     char*    data;          // heap.alloc_func'd, zeroed; null when detached or zero-length
     uint     byte_length;   // byte length; set to 0xFFFFFFFF on detach
     HObject* views_head;    // intrusive list of views (via HObjectBufferView.next_view)
-    uint     max_byte_length; // cap for resizable buffers; unused (0) when !resizable
+    union {
+        uint max_byte_length; // cap for resizable buffers; unused (0) when !resizable
+        uint external_index;  // release record of an external buffer
+    }
     bool     resizable;     // true iff constructed with {maxByteLength}
     bool     is_shared;     // true iff this is a SharedArrayBuffer (never detachable)
     bool     immutable;     // true iff produced by transferToImmutable
+    bool     external;      // data is embedder memory with a release record
 }
 
 // TypedArray or DataView, active for INT8ARRAY through FLOAT64ARRAY and DATAVIEW.
@@ -2159,6 +2173,12 @@ fn bool HObject.put_prop(&self, void* key, TVal val, PropFlags pflags, heap::Hea
     // interned, during heap setup, when no exotic array exists yet for the
     // comparisons to match.
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
+    // An Array's length is never enumerable or configurable (§10.4.2). Builtins
+    // that build result arrays pass the default WEC flags, so only the writable
+    // bit is taken from the caller.
+    if (self.flags.exotic_array && key == length_key) {
+        pflags = { .writable = pflags.writable };
+    }
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
     // Existing property: update in place.
@@ -2227,6 +2247,12 @@ fn bool HObject.put_prop_new(&self, void* key, TVal val, PropFlags pflags, heap:
     h.jit_notify_layout(self);
     if (self.gc.prototype_observed) h.bump_prototype_epoch();
     void* length_key = (void*)h.strs[heap::BuiltinStr.LENGTH];
+    // An Array's length is never enumerable or configurable (§10.4.2). Builtins
+    // that build result arrays pass the default WEC flags, so only the writable
+    // bit is taken from the caller.
+    if (self.flags.exotic_array && key == length_key) {
+        pflags = { .writable = pflags.writable };
+    }
     if (pflags != PROP_FLAGS_WEC) self.flags.has_nondefault_flags = true;
 
     // A new integer-indexed element on an exotic array goes to the dense part,
@@ -2908,6 +2934,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     if (hp != null) hp.jit_notify_layout(obj);
     // A weak first-link identity must not survive reuse of this address.
     if (obj.gc.prototype_observed && hp != null) hp.bump_prototype_epoch();
+    if (obj.gc.weak_target && hp != null) hp.weak_target_died((HeapHeader*)obj);
 
     // Subtype resources are disjoint. Ordinary objects and arrays own only
     // the shared property and element storage released below.
@@ -2917,8 +2944,12 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
             if (payload != null) {
                 heap::HostClassEntry* hc = hp.host_class_at((*obj.extra_ptr()).host.class_id);
                 if (hc != null && hc.finalizer != null) {
-                    heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
-                    fin(payload, hc.udata);
+                    if ((hc.flags & heap::HOST_CLASS_DEFER_FINALIZE) != 0 && !hp.tearing_down) {
+                        hp.defer_finalizer(hc.finalizer, payload, hc.udata);
+                    } else {
+                        heap::HostClassFinalizeFn fin = (heap::HostClassFinalizeFn)hc.finalizer;
+                        fin(payload, hc.udata);
+                    }
                 }
                 (*obj.extra_ptr()).host.payload = null;
             }
@@ -2939,7 +2970,15 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
                 for (uint i = 0; i < 3; i++) hp.decref_tval(&(*obj.extra_ptr()).reaction.values[i]);
             }
         case ObjClass.ARRAYBUFFER:
-            if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
+            if ((*obj.extra_ptr()).ab.is_shared) {
+                // A shared block outlives the heap teardown that skips the
+                // other frees: other agents may still hold it.
+                if ((*obj.extra_ptr()).ab.data != null) agent::block_release((*obj.extra_ptr()).ab.data);
+                (*obj.extra_ptr()).ab.data = null;
+            } else if ((*obj.extra_ptr()).ab.external) {
+                // Embedder memory is released on teardown too.
+                if (hp != null) hp.release_external_buffer(obj);
+            } else if (!hp.tearing_down && (*obj.extra_ptr()).ab.data != null) {
                 hp.free_func(hp.heap_udata, (*obj.extra_ptr()).ab.data);
                 (*obj.extra_ptr()).ab.data = null;
             }
@@ -3109,7 +3148,8 @@ fn bool hobject_free_step(HObject* obj, void* heap_ptr, usz* cursor, uint budget
 fn bool hobject_free_inline(HObject* obj, heap::Heap* h) @inline {
     ObjClass cls = obj.flags.obj_class;
     if ((cls != ObjClass.OBJECT && cls != ObjClass.ARRAY) || obj.flags.pool_fallback
-        || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed || obj.gc.jit_observed
+        || obj.prop_alloc != null || obj.prop_hash != null || obj.gc.prototype_observed
+        || obj.gc.jit_observed || obj.gc.weak_target
         || h.tearing_down) return false;
     if (obj.shape_id != 0) {
         Shape* sh = h.get_shape(obj.shape_id);
@@ -3312,7 +3352,10 @@ struct JsonShapePlan {
     uint refs;
     uint count;
     JsonShapeEntry* entries;
+    // The quoted keys, back to back, as `quoted_wide` UTF-16 units or Latin-1 bytes;
+    // each entry's offset and length count units.
     char* quoted_keys;
+    bool quoted_wide;
 }
 
 fn void json_shape_plan_release(JsonShapePlan* plan, heap::Heap* h) {
@@ -4173,8 +4216,8 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
 // import is an accessor whose getter reads one binding of the exporting
 // module's environment, named by these two internal slots.
 tlocal int module_getter_index = -1;
-const char[] MODULE_BINDING_ENV_SLOT = "\xFFmoduleBindingEnv";
-const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
+const char[] MODULE_BINDING_ENV_SLOT = "moduleBindingEnv";
+const char[] MODULE_BINDING_KEY_SLOT = "moduleBindingKey";
 
 // Retarget an entry filled on a live import binding at the exporter's own data
 // slot, following re-export chains. The import itself is immutable, so the
@@ -4184,8 +4227,8 @@ const char[] MODULE_BINDING_KEY_SLOT = "\xFFmoduleBindingKey";
 // advances the epoch that guards every hit.
 fn void var_ic_alias_import(VarICEntry* vic, heap::Heap* h) {
     if (module_getter_index < 0) return;
-    void* env_key = (void*)h.str_intern(MODULE_BINDING_ENV_SLOT);
-    void* name_key = (void*)h.str_intern(MODULE_BINDING_KEY_SLOT);
+    void* env_key = (void*)h.str_intern_hidden(MODULE_BINDING_ENV_SLOT);
+    void* name_key = (void*)h.str_intern_hidden(MODULE_BINDING_KEY_SLOT);
     if (env_key == null || name_key == null) return;
     for (int depth = 0; depth < 8; depth++) {
         TVal acc = vic.slot_ptr.get();
@@ -4528,7 +4571,7 @@ fn bool HObject.es_delete_prop(&self, void* key, heap::Heap* h) {
             TVal prim = (*self.extra_ptr()).prim.primitive_value;
             if (prim.is_string()) {
                 HString* pstr = (HString*)prim.get_heapptr();
-                if (pstr != null && skey.array_index() < (ulong)pstr.char_length()) {
+                if (pstr != null && skey.array_index() < (ulong)pstr.unit_len()) {
                     return false;
                 }
             }

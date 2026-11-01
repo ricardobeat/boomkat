@@ -30,6 +30,8 @@ import std::collections::list;
 // ============================================================================
 
 faultdef MODULE_ERROR;
+// A module's source is still being fetched by an asynchronous host loader.
+faultdef MODULE_PENDING;
 
 // ============================================================================
 // Module status lifecycle
@@ -38,6 +40,7 @@ faultdef MODULE_ERROR;
 enum ModuleStatus : char {
     UNLOADED,
     LOADING,       // currently being compiled (cycle detection)
+    LOAD_PENDING,  // compiled; a dependency awaits an asynchronous host load
     LOADED,        // compiled, not yet linked
     LINKING,       // being linked
     LINKED,        // ready for evaluation
@@ -410,6 +413,7 @@ fn char[]? probe_ts_twin(char[] path) {
 struct DefinedModule {
     char[] name;
     char[] source;
+    bool   native;    // built by define_native_module; `source` is empty
 }
 
 fn char[]? copy_bytes(char[] bytes) @local {
@@ -450,8 +454,90 @@ fn bool define_module(Heap* heap, char[] name, char[] source) {
         heap.defined_modules = grown;
         heap.defined_module_cap = new_cap;
     }
-    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, src_copy };
+    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, src_copy, false };
     return true;
+}
+
+// Removes `name`'s definition, if any.
+fn void undefine_module(Heap* heap, char[] name) @local {
+    DefinedModule* table = (DefinedModule*)heap.defined_modules;
+    for (uint i = 0; i < heap.defined_module_count; i++) {
+        if (!char_slice_eq(table[i].name, name)) continue;
+        mem::free(table[i].name.ptr);
+        mem::free(table[i].source.ptr);
+        table[i] = table[--heap.defined_module_count];
+        return;
+    }
+}
+
+// Drops the module record cached under `name`, so the next import loads it
+// again; namespaces and bindings already taken keep the old instance. A native
+// module's definition goes with it. Returns false when nothing was cached.
+fn bool invalidate_module(Heap* heap, char[] name) {
+    DefinedModule* dm = find_defined_module(heap, name);
+    if (dm != null && dm.native) undefine_module(heap, name);
+    if (!heap.module_index.is_initialized()) return false;
+    ModuleKey key = { .name = name, .attr_type = compiler::ModuleAttrType.NONE };
+    if (!heap.module_index.has_key(key)) return false;
+    heap.module_index.remove(key);
+    return true;
+}
+
+// Makes `name` a module whose exports are `names[i]` bound to `values[i]`,
+// already evaluated. It replaces a module of that name for later imports.
+// Returns false when out of memory.
+fn bool define_native_module(Heap* heap, char[] name, char[][] names, TVal[] values) {
+    invalidate_module(heap, name);
+    undefine_module(heap, name);
+    char[]? name_copy = copy_bytes(name);
+    if (catch name_copy) return false;
+    char[]? empty = copy_bytes("");
+    if (catch empty) { mem::free(name_copy.ptr); return false; }
+    if (heap.defined_module_count >= heap.defined_module_cap) {
+        uint new_cap = heap.defined_module_cap == 0 ? 8 : heap.defined_module_cap * 2;
+        void* grown = mem::realloc(heap.defined_modules, (usz)new_cap * DefinedModule::size);
+        if (grown == null) { mem::free(name_copy.ptr); mem::free(empty.ptr); return false; }
+        heap.defined_modules = grown;
+        heap.defined_module_cap = new_cap;
+    }
+    ((DefinedModule*)heap.defined_modules)[heap.defined_module_count++] = { name_copy, empty, true };
+
+    // The record keeps its own name, separate from the definition table's.
+    char[]? mod_name = copy_bytes(name);
+    if (catch mod_name) return false;
+    ModuleDef*? mod_opt = heap_new_module(heap, mod_name);
+    if (catch mod_opt) return false;
+    ModuleDef* mod = mod_opt;
+    mod.is_synthetic = true;
+    mod.synth_value.set_undefined();
+    EnvRecord*? env_opt = env::env_create_declarative(heap, null);
+    if (catch env_opt) return false;
+    mod.env = env_opt;
+    heap.shade_root_env(mod.env);
+    mod.env.flags.is_module = true;
+    if (mod.env.bindings != null) heap.register_gc_root(mod.env.bindings.as_header());
+    foreach (i, export_name : names) {
+        char[] kept = retain_name(heap, mod, export_name);
+        HString* key = heap.str_intern(kept);
+        if (key == null) return false;
+        env::env_declare(mod.env, key, values[i]);
+        ExportEntry e;
+        e.local_name = kept;
+        e.export_name = kept;
+        e.is_indirect = false;
+        e.req_module_idx = 0;
+        e.is_lexical = false;
+        mod.exports.push(e);
+    }
+    call_on_module_loaded(heap, mod);
+    mod.status = ModuleStatus.LOADED;
+    return true;
+}
+
+// True when a synthetic or native module exports `name`.
+fn bool synthetic_exports(ModuleDef* mod, char[] name) @local {
+    foreach (e : mod.exports) if (char_slice_eq(e.export_name, name)) return true;
+    return false;
 }
 
 // The source defined for `name`, if the host defined one.
@@ -782,6 +868,11 @@ fn char[]? call_resolve_name(Heap* heap, char[] base_name, char[] specifier) {
             return hooks.resolve_name(base_name, specifier, hooks.udata);
         }
     }
+    return default_resolve_name(base_name, specifier);
+}
+
+// The filesystem resolution used when no host hook resolves names.
+fn char[]? default_resolve_name(char[] base_name, char[] specifier) {
     // A bare specifier names a package: resolve it through node_modules
     // directories first (Node-style), falling back to treating it as a
     // plain path (plus an extension probe so `import 'x'` can find `x.ts`).
@@ -985,11 +1076,20 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
 
     // 2. Check engine cache
     ModuleDef* cached = heap_find_loaded_module(heap, normalized, attr_type);
-    if (cached != null) return cached;
+    if (cached != null) {
+        if (cached.status == ModuleStatus.LOAD_PENDING) return load_dependencies(heap, cached, normalized, quiet);
+        return cached;
+    }
 
     // 3. Read source via host hook
     char[]? source_opt = call_read_source(heap, normalized, attr_type);
-    if (catch err = source_opt) return MODULE_ERROR~;
+    if (catch err = source_opt) {
+        if (err == MODULE_PENDING) return MODULE_PENDING~;
+        // A host loader may have answered with a native module instead.
+        ModuleDef* native = heap_find_loaded_module(heap, normalized, attr_type);
+        if (native != null) return native;
+        return MODULE_ERROR~;
+    }
     char[] source = source_opt;
     // An empty ECMAScript file is a module with no body, but the loader's
     // extension probing uses emptiness as its "keep looking" signal (see
@@ -1101,15 +1201,12 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     $endif
 }
 
-// Point every name in `mod`'s metadata at an interned string the module owns
-// a reference to.
+// Give `mod` its own copy of every name in its metadata.
 //
-// The compiler fills the metadata with slices of interned strings (and the odd
-// C3 literal such as "default"), but nothing else holds those strings once
-// compilation is over, so the next collection would free them under the
-// module: a later import would then link against garbage names. Interning a
-// name again returns the table's string, and the reference taken here is never
-// released, as the module itself is never freed.
+// The compiler fills the metadata with slices of lexer storage that is freed
+// once compilation ends, so a later import would link against garbage names.
+// Each copy is canonical CESU-8 (see `canonical_cesu8`), so two spellings of a
+// name compare equal bytewise. The module is never freed, so neither are they.
 fn void retain_names(Heap* heap, ModuleDef* mod) @local {
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* e = &mod.req_modules[i];
@@ -1133,10 +1230,11 @@ fn void retain_names(Heap* heap, ModuleDef* mod) @local {
 
 fn char[] retain_name(Heap* heap, ModuleDef* mod, char[] name) @local {
     if (name.len == 0) return name;
-    HString* s = heap.str_intern(name);
-    if (s == null) return name; // out of memory: keep the borrowed slice
-    ((HeapHeader*)s).incref();
-    return s.get_data();
+    usz len = hstring::canonical_cesu8(name, null);
+    char* copy = (char*)heap.alloc_func(heap.heap_udata, len);
+    if (copy == null) return name; // out of memory: keep the borrowed slice
+    hstring::canonical_cesu8(name, copy);
+    return copy[:len];
 }
 
 // Compile `source` as the body of `mod` (status LOADING, named `normalized`),
@@ -1206,17 +1304,29 @@ fn ModuleDef*? compile_module_source(Heap* heap, ModuleDef* mod, char[] normaliz
     call_on_module_loaded(heap, mod);
 
     // 7. Recursively resolve dependencies
+    return load_dependencies(heap, mod, normalized, quiet);
+}
+
+// Resolves the dependencies of `mod` not resolved yet. When one waits on an
+// asynchronous host load, `mod` becomes LOAD_PENDING and the next import that
+// reaches it resumes here.
+fn ModuleDef*? load_dependencies(Heap* heap, ModuleDef* mod, char[] normalized, bool quiet) {
+    mod.status = ModuleStatus.LOADING;
     for (uint i = 0; i < (uint)mod.req_modules.len(); i++) {
         ReqModuleEntry* rme = &mod.req_modules[i];
+        if (rme.resolved != null) continue;
         // A dependency of a quietly-resolved module is quiet too: its parse
         // failure reaches the same promise rejection.
         ModuleDef*? dep = resolve_module(heap, rme.module_name, normalized, rme.attr_type, quiet);
         if (catch err = dep) {
+            if (err == MODULE_PENDING) {
+                mod.status = ModuleStatus.LOAD_PENDING;
+                return MODULE_PENDING~;
+            }
             return MODULE_ERROR~;
         }
         rme.resolved = dep;
     }
-
     mod.status = ModuleStatus.LOADED;
     return mod;
 }
@@ -1425,7 +1535,7 @@ fn bool validate_imports(Heap* heap, ModuleDef* mod) {
         if (rme.resolved == null) continue;
         ModuleDef* source_mod = (ModuleDef*)rme.resolved;
         if (source_mod.is_synthetic) {
-            if (!char_slice_eq(ie.import_name, "default")) {
+            if (!synthetic_exports(source_mod, ie.import_name)) {
                 return module_raise_link_error(heap,
                     "requested module does not provide the requested export");
             }
@@ -1689,7 +1799,7 @@ fn void module_settle_eval_promise(Heap* heap, Vm* vm, ModuleDef* mod, bool ok) 
 // reaction is a plain JS-visible-shaped object needing no new native-pointer
 // storage; heap_find_loaded_module recovers `mod` from it when the reaction
 // fires.
-const char[] MODULE_SETTLEMENT_NAME_KEY = "\xFFmpf_name";
+const char[] MODULE_SETTLEMENT_NAME_KEY = "mpf_name";
 
 // Attach a reaction to `pending` (the per-call promise execute_module_async
 // or execute_module_nested handed back for a still-suspended async/TLA
@@ -1719,7 +1829,7 @@ fn void module_attach_async_settlement(Heap* heap, ModuleDef* mod, HObject* sour
 // property, since a builtin reaction has no capture to hold the module in.
 fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source,
                                       uint onf_ordinal, uint onr_ordinal) {
-    HString* name_key = heap.str_intern(MODULE_SETTLEMENT_NAME_KEY);
+    HString* name_key = heap.str_intern_hidden(MODULE_SETTLEMENT_NAME_KEY);
     HString* name_str = heap.str_intern(mod.module_name);
 
     if (name_key == null || name_str == null) return;
@@ -1775,11 +1885,14 @@ fn void module_attach_named_reaction(Heap* heap, ModuleDef* mod, HObject* source
 // identity has to travel on the object rather than in a capture.
 fn ModuleDef* module_of_reaction(BuiltinContext* ctx) {
     if (ctx.callee_obj == null) return null;
-    HString* name_key = ctx.heap.str_intern(MODULE_SETTLEMENT_NAME_KEY);
+    HString* name_key = ctx.heap.str_intern_hidden(MODULE_SETTLEMENT_NAME_KEY);
     if (name_key == null) return null;
+    builtins::StrBuf text;
+    text.init(ctx.heap);
+    defer text.free();
     char[] name = {};
     if (try nv = ctx.callee_obj.get_prop(name_key, ctx.heap)) {
-        if (nv.is_string()) name = ((HString*)nv.get_heapptr()).get_data();
+        if (nv.is_string()) name = builtins::utf8_text(&text, (HString*)nv.get_heapptr());
     }
     if (name.len == 0) return null;
     return heap_find_loaded_module(ctx.heap, name);
@@ -2877,13 +2990,12 @@ fn bool validate_import_options(Heap* heap, Vm* vm, TVal* options, TVal* reason,
         // synthetic-module path. Other attributes are accepted (well-formed)
         // but carry no loader behavior here. This mirrors parse_with_clause,
         // since `import()` takes the same attributes as a static import.
-        if (char_slice_eq(key.get_data(), "type")) {
+        if (key.equals_chars("type")) {
             HString* avs2 = (HString*)av.get_heapptr();
             if (avs2 != null) {
-                char[] tv = avs2.get_data();
-                if (char_slice_eq(tv, "json"))  *attr_type = compiler::ModuleAttrType.JSON;
-                if (char_slice_eq(tv, "text"))  *attr_type = compiler::ModuleAttrType.TEXT;
-                if (char_slice_eq(tv, "bytes")) *attr_type = compiler::ModuleAttrType.BYTES;
+                if (avs2.equals_chars("json"))  *attr_type = compiler::ModuleAttrType.JSON;
+                if (avs2.equals_chars("text"))  *attr_type = compiler::ModuleAttrType.TEXT;
+                if (avs2.equals_chars("bytes")) *attr_type = compiler::ModuleAttrType.BYTES;
             }
         }
     }
@@ -2914,14 +3026,14 @@ fn TVal? dynamic_import_reject(Heap* heap, Vm* vm, TVal* reason) {
 
 // Hidden property keys holding a queued dynamic-import job's state. The job runs
 // the load, link, and evaluate steps as a separate microtask.
-const char[] DYN_IMPORT_SPEC_KEY  = "\xFFdi_spec";
-const char[] DYN_IMPORT_BASE_KEY  = "\xFFdi_base";
-const char[] DYN_IMPORT_JSON_KEY  = "\xFFdi_json";
+const char[] DYN_IMPORT_SPEC_KEY  = "di_spec";
+const char[] DYN_IMPORT_BASE_KEY  = "di_base";
+const char[] DYN_IMPORT_JSON_KEY  = "di_json";
 // `import.defer(x)`: the resolved module is bound to its deferred namespace
 // and is not evaluated by the import itself (import defer).
-const char[] DYN_IMPORT_DEFER_KEY  = "\xFFdi_defer";
-const char[] DYN_IMPORT_SOURCE_KEY = "\xFFdi_source";
-const char[] DYN_IMPORT_PROM_KEY  = "\xFFdi_promise";
+const char[] DYN_IMPORT_DEFER_KEY  = "di_defer";
+const char[] DYN_IMPORT_SOURCE_KEY = "di_source";
+const char[] DYN_IMPORT_PROM_KEY  = "di_promise";
 
 // `import(specifier)` (ECMA-262 EvaluateImportCall, HostImportModuleDynamically).
 // Synchronously allocates and returns the result promise, then defers the
@@ -2952,12 +3064,12 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAt
     // frame, and the original specifier's backing string, may be gone.
     // Interned HStrings are heap-owned and rooted through the string table for
     // as long as the job object references them.
-    HString* spec_key  = heap.str_intern(DYN_IMPORT_SPEC_KEY);
-    HString* base_key   = heap.str_intern(DYN_IMPORT_BASE_KEY);
-    HString* json_key   = heap.str_intern(DYN_IMPORT_JSON_KEY);
-    HString* defer_key  = heap.str_intern(DYN_IMPORT_DEFER_KEY);
-    HString* srcph_key  = heap.str_intern(DYN_IMPORT_SOURCE_KEY);
-    HString* prom_key   = heap.str_intern(DYN_IMPORT_PROM_KEY);
+    HString* spec_key  = heap.str_intern_hidden(DYN_IMPORT_SPEC_KEY);
+    HString* base_key   = heap.str_intern_hidden(DYN_IMPORT_BASE_KEY);
+    HString* json_key   = heap.str_intern_hidden(DYN_IMPORT_JSON_KEY);
+    HString* defer_key  = heap.str_intern_hidden(DYN_IMPORT_DEFER_KEY);
+    HString* srcph_key  = heap.str_intern_hidden(DYN_IMPORT_SOURCE_KEY);
+    HString* prom_key   = heap.str_intern_hidden(DYN_IMPORT_PROM_KEY);
     HString* spec_str   = heap.str_intern(specifier);
     HString* base_str   = base_name.len > 0 ? heap.str_intern(base_name) : null;
     if (spec_key == null || base_key == null || json_key == null || prom_key == null || spec_str == null) {
@@ -3014,6 +3126,56 @@ fn TVal? dynamic_import(Heap* heap, Vm* vm, char[] specifier, compiler::ModuleAt
     $endif
 }
 
+// Dynamic import jobs waiting on asynchronous host loads form a list through
+// a hidden slot of each job, headed by Heap.module_waiters.
+const char[] DYN_IMPORT_NEXT_KEY = "di_next";
+
+fn void module_wait_for_load(Heap* heap, HObject* job) {
+    HString* next_key = heap.str_intern_hidden(DYN_IMPORT_NEXT_KEY);
+    if (next_key == null) return;
+    TVal next;
+    if (heap.module_waiters != null) { next.set_object(heap.module_waiters); } else { next.set_undefined(); }
+    job.put_prop(next_key, next, hobject::PROP_FLAGS_WEC, heap);
+    heap.@set_edge(null, heap.module_waiters, job);
+}
+
+// A host answered an asynchronous load: queue every waiting import job
+// again, in the order they started waiting.
+fn void module_loads_progressed(Heap* heap) {
+    HObject* job = heap.module_waiters;
+    if (job == null) return;
+    HString* next_key = heap.str_intern_hidden(DYN_IMPORT_NEXT_KEY);
+    if (next_key == null) return;
+    uint n = 0;
+    for (HObject* j = job; j != null; n++) j = module_next_waiter(heap, j, next_key);
+    // Hold every job from a local array while the list is taken apart.
+    TVal* jobs = (TVal*)heap.alloc_func(heap.heap_udata, (usz)n * TVal::size);
+    if (jobs == null) return;
+    defer heap.free_func(heap.heap_udata, jobs);
+    uint i = 0;
+    for (HObject* j = job; j != null; j = module_next_waiter(heap, j, next_key)) {
+        TVal jv; jv.set_object(j);
+        jobs[i].set_undefined();
+        heap.tval_copy_ref(&jobs[i++], &jv);
+    }
+    heap.@set_edge(null, heap.module_waiters, (HObject*)null);
+    TVal undef; undef.set_undefined();
+    // The list runs newest first.
+    for (uint k = n; k > 0; k--) {
+        HObject* j = (HObject*)jobs[k - 1].get_heapptr();
+        j.put_prop(next_key, undef, hobject::PROP_FLAGS_WEC, heap);
+        heap.enqueue_microtask(jobs[k - 1], undef, undef);
+    }
+    for (uint k = 0; k < n; k++) heap.decref_tval(&jobs[k]);
+}
+
+fn HObject* module_next_waiter(Heap* heap, HObject* job, HString* next_key) @local {
+    if (try v = job.get_prop(next_key, heap)) {
+        if (v.is_object()) return (HObject*)v.get_heapptr();
+    }
+    return null;
+}
+
 // Microtask handler for DYNAMIC_IMPORT_JOB. Reads the deferred
 // specifier/base/attr-type/promise off ctx.callee_obj's hidden slots and
 // performs the resolve → link → evaluate pipeline. If the module's
@@ -3028,20 +3190,26 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     ctx.result_undefined();
     if (ctx.callee_obj == null) return;
 
-    HString* spec_key = heap.str_intern(DYN_IMPORT_SPEC_KEY);
-    HString* base_key = heap.str_intern(DYN_IMPORT_BASE_KEY);
-    HString* json_key = heap.str_intern(DYN_IMPORT_JSON_KEY);
-    HString* defer_key = heap.str_intern(DYN_IMPORT_DEFER_KEY);
-    HString* prom_key = heap.str_intern(DYN_IMPORT_PROM_KEY);
+    HString* spec_key = heap.str_intern_hidden(DYN_IMPORT_SPEC_KEY);
+    HString* base_key = heap.str_intern_hidden(DYN_IMPORT_BASE_KEY);
+    HString* json_key = heap.str_intern_hidden(DYN_IMPORT_JSON_KEY);
+    HString* defer_key = heap.str_intern_hidden(DYN_IMPORT_DEFER_KEY);
+    HString* prom_key = heap.str_intern_hidden(DYN_IMPORT_PROM_KEY);
     if (spec_key == null || base_key == null || json_key == null || prom_key == null) return;
 
+    builtins::StrBuf spec_text;
+    spec_text.init(heap);
+    defer spec_text.free();
+    builtins::StrBuf base_text;
+    base_text.init(heap);
+    defer base_text.free();
     char[] spec_data = {};
     if (try sv = ctx.callee_obj.get_prop(spec_key, ctx.heap)) {
-        if (sv.is_string()) spec_data = ((HString*)sv.get_heapptr()).get_data();
+        if (sv.is_string()) spec_data = builtins::utf8_text(&spec_text, (HString*)sv.get_heapptr());
     }
     char[] base_data = {};
     if (try bv = ctx.callee_obj.get_prop(base_key, ctx.heap)) {
-        if (bv.is_string()) base_data = ((HString*)bv.get_heapptr()).get_data();
+        if (bv.is_string()) base_data = builtins::utf8_text(&base_text, (HString*)bv.get_heapptr());
     }
     compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE;
     if (try jv = ctx.callee_obj.get_prop(json_key, ctx.heap)) {
@@ -3062,7 +3230,7 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
         }
     }
     bool source_phase = false;
-    HString* srcph_key = heap.str_intern(DYN_IMPORT_SOURCE_KEY);
+    HString* srcph_key = heap.str_intern_hidden(DYN_IMPORT_SOURCE_KEY);
     if (srcph_key != null) {
         if (try sv2 = ctx.callee_obj.get_prop(srcph_key, ctx.heap)) {
             if (sv2.is_boolean()) source_phase = sv2.get_boolean();
@@ -3086,6 +3254,13 @@ fn void builtin_dynamic_import_job(BuiltinContext* ctx) {
     heap.error_value.set_undefined();
     ModuleDef*? mod_opt = resolve_module(heap, spec_data, base_data, attr_type, true);
     if (catch err = mod_opt) {
+        // Waiting on an asynchronous host load: this job runs again once the
+        // host answers.
+        if (err == MODULE_PENDING) {
+            heap.has_error = false;
+            module_wait_for_load(heap, ctx.callee_obj);
+            return;
+        }
         // A load failure may have parked a specific static-semantics error
         // (SyntaxError for a module parse failure) on the heap error channel.
         // Prefer it over the generic TypeError, and clear the channel so the

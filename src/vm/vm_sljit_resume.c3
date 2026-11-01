@@ -142,8 +142,8 @@ fn long sljit_native_operation(ColdCtx* cold, uint offset) @feat(SLJIT) @noinlin
                     if (string == null || !position.is_fastint()) return 0;
                     long at = position.get_fastint();
                     TVal value;
-                    if (at < 0 || at >= string.char_length()) { value.set_number(double::nan); }
-                    else { value.set_fastint(string.char_at_unchecked((uint)at)); }
+                    if (at < 0 || at >= string.unit_len()) { value.set_number(double::nan); }
+                    else { value.set_fastint(string.unit_at((uint)at)); }
                     th_do_release(dest);
                     *dest = value;
                     return 1;

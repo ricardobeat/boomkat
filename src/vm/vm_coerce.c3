@@ -94,7 +94,7 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
         HString* sx = (HString*)px.get_heapptr();
         HString* sy = (HString*)py.get_heapptr();
         if (!(sx != null && sx.is_symbol()) && !(sy != null && sy.is_symbol())) {
-            int c = hstring::hstring_compare(sx, sy);
+            int c = hstring::units_compare(sx, sy);
             return c < 0 ? -1 : (c > 0 ? 1 : 0);
         }
     }
@@ -142,7 +142,7 @@ $if types::USE_NANBOX:
     }
     if (tag == types::TAG_STRING) {
         HString* s = (HString*)(val.bits & types::NANBOX_PAYLOAD_MASK);
-        return s.blen > 0;
+        return s.is_truthy();
     }
     return true;
 $else
@@ -152,7 +152,7 @@ $else
         case BOOLEAN:   return val.get_boolean();
         case NUMBER:    return val.get_number() != 0.0 && !math::is_nan(val.get_number());
         case FASTINT:   return val.get_fastint() != 0;
-        case STRING:    return ((HString*)val.get_heapptr()).blen > 0;
+        case STRING:    return ((HString*)val.get_heapptr()).is_truthy();
         case OBJECT:    return true;
         case LIGHTFUNC: return true;
         default:        return true;
@@ -418,7 +418,7 @@ fn HString*? vm_number_to_string(Vm* vm, double val) {
         return vm.heap.int_to_hstring((long)val);
     }
 
-    // QuickJS js_dtoa in FREE mode emits the shortest round-trip decimal in ECMA-262
+    // The dtoa shortest-digit routine emits the shortest round-trip decimal in ECMA-262
     // Number::toString format. A truncate-and-retry loop cannot produce e.g.
     // "7.300000000000001" from "7.3000000000000007".
     char[64] buf;
@@ -519,94 +519,11 @@ fn HString*? vm_to_string(Vm* vm, TVal* val) {
     }
 }
 
-// ECMAScript white-space and line terminators within ASCII: TAB, VT, FF, SP, NBSP, LF, CR.
-fn bool is_ecma_whitespace(char c) @inline {
-    return c == 0x09 || c == 0x0B || c == 0x0C
-        || c == 0x20 || c == 0xA0
-        || c == 0x0A || c == 0x0D;
-}
-
 // ECMA-262 StringToNumber: https://tc39.es/ecma262/#sec-stringtonumber
-// Trims white-space, then parses a decimal, hex or Infinity literal. Returns NaN otherwise.
+// A symbol has no numeric value.
 fn double hstring_to_number(HString* hstr) {
-    char* cstr = hstr.get_cstr();
-    uint blen = hstr.blen;
-
-    // --- skip leading white-space (CESU-8 aware) ---
-    uint start = 0;
-    while (start < blen) {
-        uint seq_len = 0;
-        uint cp = builtins::decode_codepoint_at(cstr, start, blen, &seq_len);
-        if (seq_len == 0 || !builtins::is_ecma_ws_codepoint(cp)) break;
-        start += seq_len;
-    }
-
-    // Empty or all-whitespace -> +0
-    if (start == blen) {
-        return 0.0;
-    }
-
-    char* p = cstr + start;
-
-    // --- Infinity / -Infinity / +Infinity ---
-    if ((ZString)p == (ZString)"Infinity")   return double::inf;
-    if ((ZString)p == (ZString)"+Infinity")  return double::inf;
-    if ((ZString)p == (ZString)"-Infinity")  return -double::inf;
-
-    // --- Hex integer literal (0x...) ---
-    if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
-        uint j = 2;
-        // At least one hex digit is required
-        if (p[j] == 0 || !((p[j] >= '0' && p[j] <= '9') || (p[j] >= 'a' && p[j] <= 'f') || (p[j] >= 'A' && p[j] <= 'F'))) {
-            return double::nan;
-        }
-        ulong val = 0;
-        while (p[j] != 0) {
-            char c = p[j];
-            uint digit;
-            if      (c >= '0' && c <= '9') { digit = (uint)(c - '0'); }
-            else if (c >= 'a' && c <= 'f') { digit = (uint)(c - 'a' + 10); }
-            else if (c >= 'A' && c <= 'F') { digit = (uint)(c - 'A' + 10); }
-            else { break; }   // non-hex terminates the literal
-
-            val = (val << 4) | digit;
-            j++;
-        }
-        // Trailing must be whitespace
-        while (p[j] != 0) {
-            if (!is_ecma_whitespace(p[j])) return double::nan;
-            j++;
-        }
-        return (double)val;
-    }
-
-    // --- Decimal via libc::strtod ---
-    char* endptr;
-    double result = dtoa_bindings::atod_strtod_compat(p, &endptr);
-
-    // Nothing was consumed -> NaN
-    if (endptr == p) {
-        return double::nan;
-    }
-
-    // strtod accepts case-insensitive "infinity" but ES requires exact case
-    if (result == double::inf || result == -double::inf) {
-        if ((ZString)p != (ZString)"Infinity" &&
-            (ZString)p != (ZString)"+Infinity" &&
-            (ZString)p != (ZString)"-Infinity") {
-            return double::nan;
-        }
-    }
-
-    // Trailing characters must be whitespace only
-    while (*endptr != 0) {
-        if (!is_ecma_whitespace(*endptr)) {
-            return double::nan;
-        }
-        endptr++;
-    }
-
-    return result;
+    if (hstr.is_symbol()) return double::nan;
+    return builtins::builtin_string_to_number(hstr);
 }
 
 // Extract [[PrimitiveValue]] from Boolean/Number/String wrapper objects.

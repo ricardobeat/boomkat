@@ -9,10 +9,10 @@
 // the whole contract is one struct, and adding a feature to the engine cannot
 // silently become part of the ABI.
 //
-// The design mirrors QuickJS's dlopen + js_init_module, with one addition that
-// matters for anything holding state: BkAddonApi.class_register takes a
-// gc_mark callback, so a payload can hold JS values safely. Without it an
-// add-on can only expose stateless functions.
+// The design loads a shared object with dlopen and calls one init entry
+// point, with one addition that matters for anything holding state:
+// BkAddonApi.class_register takes a gc_mark callback, so a payload can hold JS
+// values safely. Without it an add-on can only expose stateless functions.
 //
 // Loading is opt-in per Runtime (see bk_addon_enable_loading); a build that
 // never calls it links the loader but never opens anything.
@@ -30,7 +30,7 @@ import libc;
 // Bump when the vtable changes shape. An add-on compiled against a different
 // major version is rejected rather than called: the alternative is a wild jump
 // through a moved function pointer.
-const uint BK_ADDON_ABI_VERSION = 2;
+const uint BK_ADDON_ABI_VERSION = 3;
 
 const int BK_ADDON_OK          = 0;
 const int BK_ADDON_ERR_OPEN    = -1;  // dlopen failed
@@ -276,8 +276,10 @@ fn char* api_arg_string(void* bctx, uint i, usz* out_len) @private {
     if (!v.is_string()) return null;
     hstring::HString* hs = (hstring::HString*)v.get_heapptr();
     if (hs == null) return null;
-    if (out_len != null) *out_len = (usz)hs.blen;
-    return hs.get_cstr();
+    usz len;
+    char* text = builtins::host_text(c, hs, &len);
+    if (out_len != null) *out_len = len;
+    return text;
 }
 
 fn double api_arg_number(void* bctx, uint i) @private {
@@ -536,7 +538,10 @@ fn void builtin_load_addon(void* bctx, void* udata) @private {
     hstring::HString* hs = (hstring::HString*)v.get_heapptr();
     if (hs == null) { c.result_undefined(); return; }
 
-    int rc = load_addon(h, c.global_env, hs.get_cstr()[:hs.blen]);
+    builtins::StrBuf path;
+    path.init(h);
+    defer path.free();
+    int rc = load_addon(h, c.global_env, builtins::utf8_text(&path, hs));
     if (rc != BK_ADDON_OK) {
         switch (rc) {
             case BK_ADDON_ERR_OPEN:

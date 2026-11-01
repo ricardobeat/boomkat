@@ -1,0 +1,10 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: boomkat
+Description: Embeddable JavaScript engine (C API; boomkat.hpp for C++)
+Version: @VERSION@
+Libs: -L${libdir} -lboomkat
+Libs.private: @LIBS_PRIVATE@
+Cflags: -I${includedir}

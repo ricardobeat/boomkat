@@ -55,8 +55,8 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
  * hid the clash entirely.
  *
  * If RE_MATCH:
- *   *out_start = byte offset of match start
- *   *out_end   = byte offset of match end (exclusive)
+ *   *out_start = unit offset of match start
+ *   *out_end   = unit offset of match end (exclusive)
  *   *out_num_captures = number of capture groups (excluding full match)
  *   caps_start[i] = start of capture i (or -1 if unmatched)
  *   caps_end[i]   = end of capture i (or -1 if unmatched)
@@ -66,14 +66,14 @@ typedef struct ReInterrupt {
     void *opaque;
 } ReInterrupt;
 
-int re_run_interruptible(ReCompiled* re, const char* input, int input_len,
-           int start_offset, int input_is_ascii,
+int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
+           int start_offset, int input_wide,
            int* out_start, int* out_end, int* out_num_captures,
            int* caps_start, int* caps_end, int max_captures,
            ReInterrupt* interrupt);
 
-int re_run(ReCompiled* re, const char* input, int input_len,
-           int start_offset, int input_is_ascii,
+int re_run(ReCompiled* re, const void* input, int input_len,
+           int start_offset, int input_wide,
            int* out_start, int* out_end, int* out_num_captures,
            int* caps_start, int* caps_end, int max_captures);
 

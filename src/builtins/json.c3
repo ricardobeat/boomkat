@@ -31,23 +31,21 @@ struct JsonParseRecord {
     uint entry_count;
 }
 
+// How a parse of a whole document ended.
+enum JsonParseStatus {
+    OK,
+    SYNTAX,    // not a JSON text
+    TRAILING,  // a JSON value followed by something other than whitespace
+}
+
 struct JsonEntry {
     StringRef key;
     JsonParseRecord* record;
 }
 
-struct JsonParseCtx {
-    char* src;
-    uint pos;
-    uint len;
-    Heap* heap;
-    bool error;  // set on parse error to distinguish from valid undefined
-    bool record; // when true, parse functions build a JsonParseRecord tree
-}
-
 // Allocate a zeroed JsonParseRecord.
-fn JsonParseRecord* json_record_alloc(JsonParseCtx* jctx) {
-    JsonParseRecord* r = (JsonParseRecord*)jctx.heap.alloc_func(jctx.heap.heap_udata, JsonParseRecord::size);
+fn JsonParseRecord* json_record_alloc(Heap* heap) {
+    JsonParseRecord* r = (JsonParseRecord*)heap.alloc_func(heap.heap_udata, JsonParseRecord::size);
     if (r == null) return null;
     *r = {};
     return r;
@@ -79,525 +77,6 @@ fn void json_entries_free(Heap* heap, JsonEntry* entries, uint count) {
         json_record_free(heap, entries[i].record);
     }
     heap.free_func(heap.heap_udata, entries);
-}
-
-fn void json_skip_ws(JsonParseCtx* jctx) {
-    while (jctx.pos < jctx.len) {
-        char c = jctx.src[jctx.pos];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-            jctx.pos++;
-        } else {
-            break;
-        }
-    }
-}
-
-// Parse a 4-digit hex escape (\uXXXX).
-fn uint json_parse_hex4(JsonParseCtx* jctx) {
-    uint val = 0;
-    for (int i = 0; i < 4; i++) {
-        if (jctx.pos >= jctx.len) return 0xFFFFFFFF;
-        char c = jctx.src[jctx.pos];
-        uint d;
-        if (c >= '0' && c <= '9') {
-            d = (uint)(c - '0');
-        } else if (c >= 'a' && c <= 'f') {
-            d = (uint)(c - 'a' + 10);
-        } else if (c >= 'A' && c <= 'F') {
-            d = (uint)(c - 'A' + 10);
-        } else {
-            return 0xFFFFFFFF;
-        }
-        val = (val << 4) | d;
-        jctx.pos++;
-    }
-    return val;
-}
-
-// Parse a JSON string (between quotes).
-// Returns null on parse error (unterminated string, invalid escape, etc.).
-fn HString*? json_parse_string(JsonParseCtx* jctx) {
-    if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != '\"') {
-        return null;
-    }
-    jctx.pos++; // skip opening quote
-
-    // Grows to fit: valid JSON produced by this engine must parse back. Bounded
-    // only by memory.
-    StrBuf buf;
-    buf.init(jctx.heap);
-    defer buf.free();
-
-    while (jctx.pos < jctx.len) {
-        char c = jctx.src[jctx.pos];
-        if (c == '\"') {
-            jctx.pos++; // skip closing quote
-            return builtin_intern_string(jctx.heap, buf.bytes());
-        }
-        if (c == '\\') {
-            jctx.pos++;
-            if (jctx.pos >= jctx.len) return null;
-            char esc = jctx.src[jctx.pos];
-            jctx.pos++;
-            char ch;
-            switch (esc) {
-                case '\"': ch = '\"'; break;
-                case '\\': ch = '\\'; break;
-                case '/':  ch = '/';  break;
-                case 'b':  ch = '\b'; break;
-                case 'f':  ch = '\f'; break;
-                case 'n':  ch = '\n'; break;
-                case 'r':  ch = '\r'; break;
-                case 't':  ch = '\t'; break;
-                case 'u': {
-                    uint cp = json_parse_hex4(jctx);
-                    if (cp == 0xFFFFFFFF) return null;
-                    // ASCII copies directly; wider code points encode as UTF-8 below.
-                    if (cp <= 0x7F) {
-                        ch = (char)cp;
-                    } else if (cp <= 0x7FF) {
-                        // UTF-8 2-byte sequence
-                        if (!buf.append_char((char)(0xC0 | (cp >> 6)))) return null;
-                        ch = (char)(0x80 | (cp & 0x3F));
-                    } else {
-                        // UTF-8 3-byte sequence
-                        if (!buf.append_char((char)(0xE0 | (cp >> 12)))) return null;
-                        if (!buf.append_char((char)(0x80 | ((cp >> 6) & 0x3F)))) return null;
-                        ch = (char)(0x80 | (cp & 0x3F));
-                    }
-                    break;
-                }
-                default:
-                    return null;
-            }
-            if (!buf.append_char(ch)) return null;
-        } else if (c < 0x20) {
-            // Control characters not allowed
-            return null;
-        } else {
-            if (!buf.append_char(c)) return null;
-            jctx.pos++;
-        }
-    }
-    return null; // unterminated string
-}
-
-// Parse a JSON number.
-fn TVal json_parse_number(JsonParseCtx* jctx) {
-    uint start = jctx.pos;
-
-    // Optional minus
-    if (jctx.pos < jctx.len && jctx.src[jctx.pos] == '-') {
-        jctx.pos++;
-    }
-
-    // Integer part
-    if (jctx.pos >= jctx.len) {
-        jctx.error = true;
-        TVal r; r.set_undefined(); return r;
-    }
-    if (jctx.src[jctx.pos] == '0') {
-        jctx.pos++;
-    } else if (jctx.src[jctx.pos] >= '1' && jctx.src[jctx.pos] <= '9') {
-        jctx.pos++;
-        while (jctx.pos < jctx.len && jctx.src[jctx.pos] >= '0' && jctx.src[jctx.pos] <= '9') {
-            jctx.pos++;
-        }
-    } else {
-        jctx.error = true;
-        TVal r; r.set_undefined(); return r;
-    }
-
-    // Fractional part
-    if (jctx.pos < jctx.len && jctx.src[jctx.pos] == '.') {
-        jctx.pos++;
-        if (jctx.pos >= jctx.len || jctx.src[jctx.pos] < '0' || jctx.src[jctx.pos] > '9') {
-            jctx.error = true;
-            TVal r; r.set_undefined(); return r;
-        }
-        while (jctx.pos < jctx.len && jctx.src[jctx.pos] >= '0' && jctx.src[jctx.pos] <= '9') {
-            jctx.pos++;
-        }
-    }
-
-    // Exponent part
-    if (jctx.pos < jctx.len && (jctx.src[jctx.pos] == 'e' || jctx.src[jctx.pos] == 'E')) {
-        jctx.pos++;
-        if (jctx.pos < jctx.len && (jctx.src[jctx.pos] == '+' || jctx.src[jctx.pos] == '-')) {
-            jctx.pos++;
-        }
-        if (jctx.pos >= jctx.len || jctx.src[jctx.pos] < '0' || jctx.src[jctx.pos] > '9') {
-            jctx.error = true;
-            TVal r; r.set_undefined(); return r;
-        }
-        while (jctx.pos < jctx.len && jctx.src[jctx.pos] >= '0' && jctx.src[jctx.pos] <= '9') {
-            jctx.pos++;
-        }
-    }
-
-    // Convert to double
-    uint end = jctx.pos;
-    char saved = jctx.src[end];
-    jctx.src[end] = 0;
-    char* endptr;
-    double d = dtoa_bindings::atod_strtod_compat(jctx.src + start, &endptr);
-    jctx.src[end] = saved;
-
-    // Try fastint preservation. Guard against negative zero: (long)(-0.0)==0
-    // and (double)0==-0.0, so the fastint path would silently drop the sign.
-    // JSON.parse("-0") must yield -0 (ES §25.5.1 → ToNumber preserves it).
-    long fi = (long)d;
-    bool is_neg_zero = d == 0.0 && (1.0 / d) < 0.0;
-    // The bound is the fastint payload range (±2^47), not the safe-integer
-    // range (±(2^53-1)): a JSON number like 2251799813685248 (2^51) is a safe
-    // integer but overflows set_fastint's 48-bit nanbox encoding and would be
-    // silently truncated. Same defect as builtin_to_number's STRING case.
-    if (!is_neg_zero && (double)fi == d && fi >= types::FASTINT_MIN && fi <= types::FASTINT_MAX) {
-        TVal r; r.set_fastint(fi); return r;
-    }
-    TVal r; r.set_number(d); return r;
-}
-
-// Parse a JSON array: [value, ...]
-fn TVal json_parse_array(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
-    uint span_start = jctx.pos;
-    jctx.pos++; // skip '['
-    json_skip_ws(jctx);
-
-    HObject*? arr_raw = jctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    HObject* arr;
-    if (try a = arr_raw) {
-        arr = a;
-        jctx.heap.set_prototype(arr, jctx.heap.array_proto);
-    } else {
-        TVal r; r.set_undefined(); return r;
-    }
-
-    bool recording = out_rec != null && jctx.record;
-    JsonParseRecord** elems = null;
-    uint elem_cap = 0;
-
-    HString* len_key = jctx.heap.str(heap::BuiltinStr.LENGTH);
-    uint idx = 0;
-
-    if (jctx.pos < jctx.len && jctx.src[jctx.pos] != ']') {
-        while (true) {
-            json_skip_ws(jctx);
-            JsonParseRecord* child = null;
-            TVal elem = json_parse_value(jctx, recording ? &child : null);
-            defer jctx.heap.decref_tval(&elem);
-            if (jctx.error || (elem.is_undefined() && elem.get_heapptr() == null && jctx.pos < jctx.len)) {
-                jctx.error = true;
-                if (elems != null) {
-                    for (uint i = 0; i < idx; i++) json_record_free(jctx.heap, elems[i]);
-                    jctx.heap.free_func(jctx.heap.heap_udata, elems);
-                }
-                json_record_free(jctx.heap, child);
-                TVal r; r.set_undefined(); return r; // parse error
-            }
-            json_skip_ws(jctx);
-
-            HString* idx_key = jctx.heap.int_to_hstring((long)idx);
-            if (idx_key != null) {
-                arr.put_prop(idx_key, elem, hobject::PROP_FLAGS_WEC, jctx.heap);
-            }
-
-            if (recording) {
-                if (idx >= elem_cap) {
-                    uint new_cap = elem_cap == 0 ? 8 : elem_cap * 2;
-                    JsonParseRecord** ne = (JsonParseRecord**)jctx.heap.realloc_func(
-                        jctx.heap.heap_udata, elems, (usz)new_cap * JsonParseRecord*::size);
-                    if (ne != null) { elems = ne; elem_cap = new_cap; }
-                    else { recording = false; }
-                }
-                if (recording) { elems[idx] = child; }
-                else { json_record_free(jctx.heap, child); }
-            }
-            idx++;
-
-            if (jctx.pos >= jctx.len) {
-                jctx.error = true;
-                if (elems != null) {
-                    for (uint i = 0; i < idx; i++) json_record_free(jctx.heap, elems[i]);
-                    jctx.heap.free_func(jctx.heap.heap_udata, elems);
-                }
-                TVal r; r.set_undefined(); return r;
-            }
-            if (jctx.src[jctx.pos] == ',') {
-                jctx.pos++;
-            } else {
-                break;
-            }
-        }
-    }
-
-    if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != ']') {
-        jctx.error = true;
-        if (elems != null) {
-            for (uint i = 0; i < idx; i++) json_record_free(jctx.heap, elems[i]);
-            jctx.heap.free_func(jctx.heap.heap_udata, elems);
-        }
-        TVal r; r.set_undefined(); return r;
-    }
-    jctx.pos++; // skip ']'
-
-    TVal len_val;
-    len_val.set_fastint((long)idx);
-    arr.put_prop(len_key, len_val, hobject::PROP_FLAGS_WEC, jctx.heap);
-
-    TVal result;
-    result.set_object(arr);
-
-    if (out_rec != null && jctx.record) {
-        JsonParseRecord* rec = json_record_alloc(jctx);
-        if (rec != null) {
-            rec.kind = 1;
-            rec.span_start = span_start;
-            rec.span_end = jctx.pos;
-            rec.value = result;
-            rec.elements = elems;
-            rec.elem_count = idx;
-            *out_rec = rec;
-        } else if (elems != null) {
-            for (uint i = 0; i < idx; i++) json_record_free(jctx.heap, elems[i]);
-            jctx.heap.free_func(jctx.heap.heap_udata, elems);
-        }
-    } else if (elems != null) {
-        for (uint i = 0; i < idx; i++) json_record_free(jctx.heap, elems[i]);
-        jctx.heap.free_func(jctx.heap.heap_udata, elems);
-    }
-
-    return result;
-}
-
-// Parse a JSON object: {key: value, ...}
-fn TVal json_parse_object(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
-    uint span_start = jctx.pos;
-    jctx.pos++; // skip '{'
-    json_skip_ws(jctx);
-
-    HObject*? obj_raw = jctx.heap.alloc_object(hobject::ObjClass.OBJECT);
-    HObject* obj;
-    if (try o = obj_raw) {
-        obj = o;
-        jctx.heap.set_prototype(obj, jctx.heap.object_proto);
-    } else {
-        TVal r; r.set_undefined(); return r;
-    }
-
-    bool recording = out_rec != null && jctx.record;
-    JsonEntry* entries = null;
-    uint entry_count = 0;
-    uint entry_cap = 0;
-
-    if (jctx.pos < jctx.len && jctx.src[jctx.pos] != '}') {
-        while (true) {
-            json_skip_ws(jctx);
-            if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != '\"') {
-                jctx.error = true;
-                json_entries_free(jctx.heap, entries, entry_count);
-                TVal r; r.set_undefined(); return r;
-            }
-            HString*? key_str = json_parse_string(jctx);
-            if (try k = key_str) {
-                if (k == null) {
-                    jctx.error = true;
-                    json_entries_free(jctx.heap, entries, entry_count);
-                    TVal r; r.set_undefined(); return r;
-                }
-                json_skip_ws(jctx);
-                if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != ':') {
-                    jctx.error = true;
-                    json_entries_free(jctx.heap, entries, entry_count);
-                    TVal r; r.set_undefined(); return r;
-                }
-                jctx.pos++; // skip ':'
-                json_skip_ws(jctx);
-                JsonParseRecord* child = null;
-                TVal val = json_parse_value(jctx, recording ? &child : null);
-                defer jctx.heap.decref_tval(&val);
-                if (jctx.error || (val.is_undefined() && val.get_heapptr() == null && jctx.pos < jctx.len)) {
-                    jctx.error = true;
-                    json_entries_free(jctx.heap, entries, entry_count);
-                    json_record_free(jctx.heap, child);
-                    TVal r; r.set_undefined(); return r;
-                }
-                // A key over MAX_INTERN_BYTES comes back un-interned, but
-                // put_prop stores keys canonically and the duplicate-key
-                // recording below compares by pointer, so canonicalize once.
-                k = jctx.heap.ensure_interned(k);
-                obj.put_prop(k, val, hobject::PROP_FLAGS_WEC, jctx.heap);
-
-                if (recording) {
-                    // Duplicate keys: last value wins (matches put_prop), so
-                    // replace any existing entry's record for this key.
-                    bool replaced = false;
-                    for (uint i = 0; i < entry_count; i++) {
-                        if (entries[i].key.borrow() == k) {
-                            json_record_free(jctx.heap, entries[i].record);
-                            entries[i].record = child;
-                            replaced = true;
-                            break;
-                        }
-                    }
-                    if (!replaced) {
-                        if (entry_count >= entry_cap) {
-                            uint new_cap = entry_cap == 0 ? 8 : entry_cap * 2;
-                            JsonEntry* ne = (JsonEntry*)jctx.heap.realloc_func(
-                                jctx.heap.heap_udata, entries, (usz)new_cap * JsonEntry::size);
-                            if (ne != null) { entries = ne; entry_cap = new_cap; }
-                            else { recording = false; }
-                        }
-                        if (recording) {
-                            entries[entry_count].key = hstring::string_ref(k);
-                            entries[entry_count].record = child;
-                            entry_count++;
-                        } else {
-                            json_record_free(jctx.heap, child);
-                        }
-                    }
-                }
-
-                json_skip_ws(jctx);
-                if (jctx.pos >= jctx.len) {
-                    jctx.error = true;
-                    json_entries_free(jctx.heap, entries, entry_count);
-                    TVal r; r.set_undefined(); return r;
-                }
-                if (jctx.src[jctx.pos] == ',') {
-                    jctx.pos++;
-                } else {
-                    break;
-                }
-            } else {
-                jctx.error = true;
-                json_entries_free(jctx.heap, entries, entry_count);
-                TVal r; r.set_undefined(); return r;
-            }
-        }
-    }
-
-    if (jctx.pos >= jctx.len || jctx.src[jctx.pos] != '}') {
-        jctx.error = true;
-        json_entries_free(jctx.heap, entries, entry_count);
-        TVal r; r.set_undefined(); return r;
-    }
-    jctx.pos++; // skip '}'
-
-    TVal result;
-    result.set_object(obj);
-
-    if (out_rec != null && jctx.record) {
-        JsonParseRecord* rec = json_record_alloc(jctx);
-        if (rec != null) {
-            rec.kind = 2;
-            rec.span_start = span_start;
-            rec.span_end = jctx.pos;
-            rec.value = result;
-            rec.entries = entries;
-            rec.entry_count = entry_count;
-            *out_rec = rec;
-        } else {
-            json_entries_free(jctx.heap, entries, entry_count);
-        }
-    } else {
-        json_entries_free(jctx.heap, entries, entry_count);
-    }
-
-    return result;
-}
-
-// Parse a JSON value. Returns undefined on error; callers must also check
-// jctx.error to distinguish "valid undefined" from parse failure.
-// When out_rec is non-null and jctx.record is set, *out_rec receives a
-// JsonParseRecord capturing this value's source span (json-parse-with-source).
-fn TVal json_parse_value(JsonParseCtx* jctx, JsonParseRecord** out_rec = null) {
-    json_skip_ws(jctx);
-    if (jctx.pos >= jctx.len) {
-        jctx.error = true;
-        TVal r; r.set_undefined(); return r;
-    }
-
-    uint start = jctx.pos;
-    char c = jctx.src[jctx.pos];
-    switch (c) {
-        case '\"':
-            // String
-            {
-                HString*? s = json_parse_string(jctx);
-                if (try str = s) {
-                    if (str != null) {
-                        TVal r; r.set_string(str);
-                        json_record_primitive(jctx, out_rec, r, start);
-                        return r;
-                    }
-                }
-                jctx.error = true;
-                TVal r; r.set_undefined(); return r;
-            }
-        case '{':
-            return json_parse_object(jctx, out_rec);
-        case '[':
-            return json_parse_array(jctx, out_rec);
-        case 't':
-            // true
-            if (jctx.pos + 4 <= jctx.len &&
-                jctx.src[jctx.pos + 1] == 'r' &&
-                jctx.src[jctx.pos + 2] == 'u' &&
-                jctx.src[jctx.pos + 3] == 'e') {
-                jctx.pos += 4;
-                TVal r; r.set_boolean(true);
-                json_record_primitive(jctx, out_rec, r, start);
-                return r;
-            }
-            { jctx.error = true; TVal r; r.set_undefined(); return r; }
-        case 'f':
-            // false
-            if (jctx.pos + 5 <= jctx.len &&
-                jctx.src[jctx.pos + 1] == 'a' &&
-                jctx.src[jctx.pos + 2] == 'l' &&
-                jctx.src[jctx.pos + 3] == 's' &&
-                jctx.src[jctx.pos + 4] == 'e') {
-                jctx.pos += 5;
-                TVal r; r.set_boolean(false);
-                json_record_primitive(jctx, out_rec, r, start);
-                return r;
-            }
-            { jctx.error = true; TVal r; r.set_undefined(); return r; }
-        case 'n':
-            // null
-            if (jctx.pos + 4 <= jctx.len &&
-                jctx.src[jctx.pos + 1] == 'u' &&
-                jctx.src[jctx.pos + 2] == 'l' &&
-                jctx.src[jctx.pos + 3] == 'l') {
-                jctx.pos += 4;
-                TVal r; r.set_null();
-                json_record_primitive(jctx, out_rec, r, start);
-                return r;
-            }
-            { jctx.error = true; TVal r; r.set_undefined(); return r; }
-        case '-':
-        case '0'..'9':
-            {
-                TVal r = json_parse_number(jctx);
-                if (!jctx.error) json_record_primitive(jctx, out_rec, r, start);
-                return r;
-            }
-        default:
-            { jctx.error = true; TVal r; r.set_undefined(); return r; }
-    }
-}
-
-// Record a primitive value's source span [start, jctx.pos) into *out_rec.
-fn void json_record_primitive(JsonParseCtx* jctx, JsonParseRecord** out_rec, TVal val, uint start) {
-    if (out_rec == null || !jctx.record) return;
-    JsonParseRecord* rec = json_record_alloc(jctx);
-    if (rec == null) return;
-    rec.kind = 0;
-    rec.span_start = start;
-    rec.span_end = jctx.pos;
-    jctx.heap.tval_copy_ref(&rec.value, &val);
-    *out_rec = rec;
 }
 
 // Reads and ToLength-coerces an array-like's "length" via full [[Get]]
@@ -632,7 +111,7 @@ fn uint json_walk_array_length(void* vm, Heap* heap, HObject* obj) {
 // targets), then call the reviver.  Errors (from getters, Proxy traps, or
 // the reviver) are signalled via heap.has_error; the caller must check
 // after return.
-fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name, char* src = null, JsonParseRecord* rec = null) {
+fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name, HString* src = null, JsonParseRecord* rec = null) {
     TVal val;
     // Step 1: val = ? Get(holder, name), must invoke accessor getters and
     // Proxy "get" traps.
@@ -812,8 +291,7 @@ fn TVal json_walk(void* vm, Heap* heap, TVal reviver, TVal holder, HString* name
             if (try ctx_obj = ctx_raw) {
                 heap.set_prototype(ctx_obj, heap.object_proto);
                 if (rec_valid && !val.is_object() && src != null) {
-                    uint slen = rec.span_end - rec.span_start;
-                    HString* source_str = builtin_intern_string(heap, src[rec.span_start:slen]);
+                    HString* source_str = heap.str_slice(src, rec.span_start, rec.span_end);
                     if (source_str != null) {
                         TVal src_tv;
                         src_tv.set_string_borrowed(source_str);
@@ -863,27 +341,32 @@ faultdef JSON_MODULE_PARSE_ERROR;
 // The returned value carries no extra reference, object results are freshly
 // allocated with their prototype installed, exactly as JSON.parse yields.
 fn TVal? json_parse_module_source(Heap* heap, char[] source) {
-    JsonParseCtx jctx;
-    jctx.src = source.ptr;
-    jctx.pos = 0;
-    jctx.len = (uint)source.len;
-    jctx.heap = heap;
-    jctx.error = false;
-    jctx.record = false;
-
-    TVal result = json_parse_value(&jctx, null);
-    defer catch heap.decref_tval(&result);
-    if (jctx.error || (result.is_undefined() && result.get_heapptr() == null)) {
-        return JSON_MODULE_PARSE_ERROR~;
-    }
-    json_skip_ws(&jctx);
-    if (jctx.pos != jctx.len) {
-        // Trailing non-whitespace → SyntaxError.
+    // The file's UTF-8 becomes a string once, and the parser reads its units.
+    HString* text = heap.alloc_text(source);
+    if (text == null) return JSON_MODULE_PARSE_ERROR~;
+    defer heap.free_string(text);
+    TVal result;
+    if (json_parse_units(heap, text.units(), false, &result, null) != JsonParseStatus.OK) {
         return JSON_MODULE_PARSE_ERROR~;
     }
 
     // Install the top-level prototype (nested objects/arrays already got theirs
     // during parsing), matching builtin_json_parse.
+    json_install_root_prototype(heap, result);
+    return result;
+}
+
+// Parse `text` as one JSON text, reading its units in place.
+fn JsonParseStatus json_parse_units(Heap* heap, hstring::Units text, bool record,
+                                               TVal* result, JsonParseRecord** root) {
+    if (text.wide) {
+        return jsonparse::json_parse_document{ushort}(heap, (ushort*)text.ptr, text.len, record, result, root);
+    }
+    return jsonparse::json_parse_document{char}(heap, text.ptr, text.len, record, result, root);
+}
+
+// A top-level result object that has no prototype yet gets the one its class takes.
+fn void json_install_root_prototype(Heap* heap, TVal result) {
     if (result.is_object() && result.get_heapptr() != null) {
         HObject* obj = (HObject*)result.get_heapptr();
         if (obj.prototype == null) {
@@ -894,7 +377,6 @@ fn TVal? json_parse_module_source(Heap* heap, char[] source) {
             }
         }
     }
-    return result;
 }
 
 fn void builtin_json_parse(BuiltinContext* ctx) {
@@ -936,8 +418,6 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 
     StringRef text_owner = hstring::string_ref(text_str);
     defer text_owner.release(ctx.heap);
-    char* src = text_str.get_cstr();
-    uint len = text_str.blen;
 
     // Determine whether a callable reviver is present. If so, record source
     // spans (json-parse-with-source) so the reviver's context.source works.
@@ -949,45 +429,16 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
             ((HObject*)rv.get_heapptr()).is_callable());
     }
 
-    JsonParseCtx jctx;
-    jctx.src = src;
-    jctx.pos = 0;
-    jctx.len = len;
-    jctx.heap = ctx.heap;
-    jctx.error = false;
-    jctx.record = has_reviver;
-
     JsonParseRecord* root_rec = null;
-    TVal result = json_parse_value(&jctx, has_reviver ? &root_rec : null);
+    TVal result;
+    if (json_parse_units(ctx.heap, text_str.units(), has_reviver, &result, &root_rec) != JsonParseStatus.OK) {
+        json_record_free(ctx.heap, root_rec);
+        json_throw_syntax_error(ctx, "Unexpected token in JSON");
+        return;
+    }
     defer ctx.heap.decref_tval(&result);
 
-    // Check parse error (jctx.error or undefined sentinel)
-    if (jctx.error || (result.is_undefined() && result.get_heapptr() == null)) {
-        json_record_free(ctx.heap, root_rec);
-        json_throw_syntax_error(ctx, "Unexpected token in JSON");
-        return;
-    }
-
-    // Skip trailing whitespace
-    json_skip_ws(&jctx);
-    if (jctx.pos != jctx.len) {
-        // Trailing non-whitespace characters → SyntaxError
-        json_record_free(ctx.heap, root_rec);
-        json_throw_syntax_error(ctx, "Unexpected token in JSON");
-        return;
-    }
-
-    // Set prototype on the result object if it's an object
-    if (result.is_object() && result.get_heapptr() != null) {
-        HObject* obj = (HObject*)result.get_heapptr();
-        if (obj.prototype == null) {
-            if (obj.get_class() == hobject::ObjClass.ARRAY) {
-                ctx.heap.set_prototype(obj, ctx.heap.array_proto);
-            } else {
-                ctx.heap.set_prototype(obj, ctx.heap.object_proto);
-            }
-        }
-    }
+    json_install_root_prototype(ctx.heap, result);
 
     // Reviver support (ECMA-262 §15.12.2 step 4)
     if (ctx.argc > 1) {
@@ -1008,7 +459,7 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 
                 // ECMA-262 §15.12.2 step 4: walk the root value through the reviver.
                 // Propagate abrupt completions (reviver-call-err, reviver-get-name-err).
-                TVal walked = json_walk(ctx.vm, ctx.heap, *reviver_arg, holder_tv, empty_key, src, root_rec);
+                TVal walked = json_walk(ctx.vm, ctx.heap, *reviver_arg, holder_tv, empty_key, text_str, root_rec);
                 json_record_free(ctx.heap, root_rec);
                 if (ctx.heap.has_error) {
                     ctx.throw_value = ctx.heap.error_value;
@@ -1035,208 +486,149 @@ fn void builtin_json_parse(BuiltinContext* ctx) {
 // JSON.stringify (ECMA-262 §15.12.3)
 // ============================================================================
 
-// Helper: append a JSON-escaped string to a buffer.
-// Handles well-formed JSON stringify (ECMA-262): lone surrogates are escaped
-// as \uXXXX rather than passed through as broken UTF-8.
-fn usz json_escape_string(char* src, uint len, char* buf, usz buf_size) {
-    usz pos = 0;
-    if (pos < buf_size) buf[pos++] = '\"';
-    char[16] hex_digits = { '0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f' };
-    for (uint i = 0; i < len && pos < buf_size; ) {
-        char c = src[i];
-        if (c == '\"') { if (pos + 2 > buf_size) break; buf[pos++] = '\\'; buf[pos++] = '\"'; i++; }
-        else if (c == '\\') { if (pos + 2 > buf_size) break; buf[pos++] = '\\'; buf[pos++] = '\\'; i++; }
-        else if (c == '\b') { if (pos + 2 > buf_size) break; buf[pos++] = '\\'; buf[pos++] = 'b'; i++; }
-        else if (c == '\f') { if (pos + 2 > buf_size) break; buf[pos++] = '\\'; buf[pos++] = 'f'; i++; }
-        else if (c == '\n') { if (pos + 2 > buf_size) break; buf[pos++] = '\\'; buf[pos++] = 'n'; i++; }
-        else if (c == '\r') { if (pos + 2 > buf_size) break; buf[pos++] = '\\'; buf[pos++] = 'r'; i++; }
-        else if (c == '\t') { if (pos + 2 > buf_size) break; buf[pos++] = '\\'; buf[pos++] = 't'; i++; }
-        else if (c < 0x20) {
-            // Control char: \u00XX
-            if (pos + 6 > buf_size) break;
-            buf[pos++] = '\\'; buf[pos++] = 'u'; buf[pos++] = '0'; buf[pos++] = '0';
-            buf[pos++] = hex_digits[(c >> 4) & 0xF]; buf[pos++] = hex_digits[c & 0xF];
-            i++;
-        }
-        else if ((c & 0x80) == 0) {
-            // Regular ASCII
-            if (pos >= buf_size) break;
-            buf[pos++] = (char)c; i++;
-        }
-        else if ((c & 0xE0) == 0xC0) {
-            // 2-byte UTF-8: 110xxxxx 10xxxxxx
-            uint cp = (uint)((int)c & 0x1F) << 6;
-            if (i + 1 < len) { cp |= (uint)((int)src[i+1] & 0x3F); i += 2; }
-            else { i++; continue; }
-            // Not a surrogate, pass through
-            if (pos + 2 > buf_size) break;
-            buf[pos++] = (char)(0xC0 | (cp >> 6));
-            buf[pos++] = (char)(0x80 | (cp & 0x3F));
-        }
-        else if ((c & 0xF0) == 0xE0) {
-            // 3-byte UTF-8: 1110xxxx 10xxxxxx 10xxxxxx
-            uint cp = (uint)((int)c & 0x0F) << 12;
-            uint next_i = i + 3;
-            if (i + 2 < len) {
-                cp |= (uint)((int)src[i+1] & 0x3F) << 6;
-                cp |= (uint)((int)src[i+2] & 0x3F);
-            } else { i++; continue; }
-            // Check for surrogate pair: high surrogate (U+D800..U+DBFF) followed
-            // by low surrogate (U+DC00..U+DFFF) → combine into supplementary char
-            if (cp >= 0xD800 && cp <= 0xDBFF && next_i + 3 <= len) {
-                char nc = src[next_i];
-                if ((nc & 0xF0) == 0xE0) {
-                    uint cp2 = (uint)((int)nc & 0x0F) << 12;
-                    cp2 |= (uint)((int)src[next_i+1] & 0x3F) << 6;
-                    cp2 |= (uint)((int)src[next_i+2] & 0x3F);
-                    if (cp2 >= 0xDC00 && cp2 <= 0xDFFF) {
-                        // Keep paired surrogates in the engine's CESU-8 form.
-                        i = next_i + 3;
-                        if (pos + 6 > buf_size) break;
-                        mem::copy(buf + pos, src + next_i - 3, 6);
-                        pos += 6;
-                        continue;
-                    }
-                }
-            }
-            i = next_i;
-            // Lone surrogate, escape as \uXXXX (well-formed JSON stringify)
-            if (cp >= 0xD800 && cp <= 0xDFFF) {
-                if (pos + 6 > buf_size) break;
-                buf[pos++] = '\\'; buf[pos++] = 'u';
-                buf[pos++] = hex_digits[(cp >> 12) & 0xF];
-                buf[pos++] = hex_digits[(cp >> 8) & 0xF];
-                buf[pos++] = hex_digits[(cp >> 4) & 0xF];
-                buf[pos++] = hex_digits[cp & 0xF];
-            } else {
-                // Normal BMP character, pass through as 3-byte UTF-8
-                if (pos + 3 > buf_size) break;
-                buf[pos++] = (char)(0xE0 | (cp >> 12));
-                buf[pos++] = (char)(0x80 | ((cp >> 6) & 0x3F));
-                buf[pos++] = (char)(0x80 | (cp & 0x3F));
-            }
-        }
-        else if ((c & 0xF8) == 0xF0) {
-            // 4-byte UTF-8: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
-            uint cp = (uint)(c & 0x07) << 18;
-            if (i + 3 < len) {
-                cp |= (uint)((int)src[i+1] & 0x3F) << 12;
-                cp |= (uint)((int)src[i+2] & 0x3F) << 6;
-                cp |= (uint)((int)src[i+3] & 0x3F);
-                i += 4;
-            } else { i++; continue; }
-            if (pos + 6 > buf_size) break;
-            uint high = 0xD800 + ((cp - 0x10000) >> 10);
-            uint low = 0xDC00 + ((cp - 0x10000) & 0x3FF);
-            buf[pos++] = (char)(0xE0 | (high >> 12));
-            buf[pos++] = (char)(0x80 | ((high >> 6) & 0x3F));
-            buf[pos++] = (char)(0x80 | (high & 0x3F));
-            buf[pos++] = (char)(0xE0 | (low >> 12));
-            buf[pos++] = (char)(0x80 | ((low >> 6) & 0x3F));
-            buf[pos++] = (char)(0x80 | (low & 0x3F));
-        }
-        else {
-            // Invalid UTF-8 lead byte, skip
-            i++;
-        }
-    }
-    if (pos < buf_size) buf[pos++] = '\"';
-    return pos;
-}
+// QuoteJSONString (ECMA-262). The text is written as UTF-16 units: a lone
+// surrogate becomes a lowercase \uXXXX escape so the output is well-formed, and
+// a surrogate pair passes through whole.
 
-// Zero-byte detection can stop early through a borrow between bytes; that
-// only sends a safe byte through the scalar check. All loads stay in bounds.
-fn uint json_safe_span(char* src, uint len) @inline {
-    uint i = 0;
+// The length of the leading run of `src` that needs no escape. A narrow unit
+// needs one when it is a control character, a quote or a backslash.
+//
+// The word test can stop early through a borrow between bytes; that only sends
+// a safe byte through the scalar check. All loads stay in bounds.
+fn usz json_safe_span_narrow(char* src, usz len) @inline {
+    usz i = 0;
     while (len - i >= 8) {
-        ulong word;
-        mem::copy(&word, src + i, 8);
+        ulong word = mem::load((ulong*)(src + i), 1);
         ulong quote = word ^ 0x2222222222222222;
         ulong slash = word ^ 0x5C5C5C5C5C5C5C5C;
-        ulong surrogate = word ^ 0xEDEDEDEDEDEDEDED;
-        ulong astral = (word & 0xF8F8F8F8F8F8F8F8) ^ 0xF0F0F0F0F0F0F0F0;
         ulong special = ((word - 0x2020202020202020) & ~word)
             | ((quote - 0x0101010101010101) & ~quote)
-            | ((slash - 0x0101010101010101) & ~slash)
-            | ((surrogate - 0x0101010101010101) & ~surrogate)
-            | ((astral - 0x0101010101010101) & ~astral);
+            | ((slash - 0x0101010101010101) & ~slash);
         if ((special & 0x8080808080808080) != 0) break;
         i += 8;
     }
-    while (i < len && src[i] >= 0x20 && src[i] != '"' && src[i] != '\\'
-        && src[i] != 0xED && (src[i] & 0xF8) != 0xF0) i++;
+    while (i < len && src[i] >= 0x20 && src[i] != '"' && src[i] != '\\') i++;
     return i;
 }
 
-// Reserve for each span's actual output. ASCII text needs its own length,
-// while an escaped control or Unicode unit fits in the small scratch buffer.
-fn bool json_escape_string_to(StrBuf* out, char* src, uint len) {
-    uint first_span = json_safe_span(src, len);
-    if (first_span == len) {
-        if (!out.reserve((usz)len + 2)) return false;
-        out.data[out.len++] = '"';
-        hstring::copy_short(out.data + out.len, src, len);
-        out.len += len;
-        out.data[out.len++] = '"';
-        return true;
+// The same for UTF-16 units, where a surrogate half needs one too. Sets `*high`
+// when some unit in the run exceeds 0xFF, so the caller knows whether the run
+// fits a narrow buffer.
+fn usz json_safe_span_wide(ushort* src, usz len, bool* high) @inline {
+    usz i = 0;
+    ulong seen = 0;
+    while (len - i >= 4) {
+        ulong word = mem::load((ulong*)(src + i), 2);
+        ulong quote = word ^ 0x0022002200220022;
+        ulong slash = word ^ 0x005C005C005C005C;
+        ulong surrogate = (word & 0xF800F800F800F800) ^ 0xD800D800D800D800;
+        ulong special = ((word - 0x0020002000200020) & ~word)
+            | ((quote - 0x0001000100010001) & ~quote)
+            | ((slash - 0x0001000100010001) & ~slash)
+            | ((surrogate - 0x0001000100010001) & ~surrogate);
+        if ((special & 0x8000800080008000) != 0) break;
+        seen |= word;
+        i += 4;
+    }
+    uint tail = 0;
+    while (i < len) {
+        uint u = src[i];
+        if (u < 0x20 || u == '"' || u == '\\' || (u & 0xF800) == 0xD800) break;
+        tail |= u;
+        i++;
+    }
+    *high = ((seen & 0xFF00FF00FF00FF00) != 0) || tail > 0xFF;
+    return i;
+}
+
+// Append the escape for one unit that is not safe: a control character, a quote,
+// a backslash or a lone surrogate.
+fn bool json_escape_unit(UnitBuf* out, uint unit) {
+    char[6] escaped;
+    escaped[0] = '\\';
+    usz size = 2;
+    switch (unit) {
+        case '"': case '\\': escaped[1] = (char)unit;
+        case '\b': escaped[1] = 'b';
+        case '\f': escaped[1] = 'f';
+        case '\n': escaped[1] = 'n';
+        case '\r': escaped[1] = 'r';
+        case '\t': escaped[1] = 't';
+        default:
+            char[] hex = "0123456789abcdef";
+            escaped[1] = 'u';
+            escaped[2] = hex[(unit >> 12) & 15];
+            escaped[3] = hex[(unit >> 8) & 15];
+            escaped[4] = hex[(unit >> 4) & 15];
+            escaped[5] = hex[unit & 15];
+            size = 6;
+    }
+    return out.append_latin1(escaped[:size]);
+}
+
+// Append `s` as a JSON string literal.
+fn bool json_quote_to(UnitBuf* out, HString* s) {
+    hstring::Units text = s.units();
+    usz len = text.len;
+    if (!text.wide && !out.wide) {
+        // The common case: nothing to escape, so one reservation covers the
+        // quotes and the text.
+        usz first = json_safe_span_narrow(text.ptr, len);
+        if (first == len) {
+            if (!out.reserve(len + 2)) return false;
+            char* dst = out.data + out.len;
+            dst[0] = '"';
+            hstring::copy_short(dst + 1, text.ptr, len);
+            dst[len + 1] = '"';
+            out.len += len + 2;
+            return true;
+        }
     }
     if (!out.append_char('"')) return false;
-    uint i = 0;
-    while (i < len) {
-        uint span = i == 0 ? first_span : json_safe_span(src + i, len - i);
-        if (span != 0) {
-            if (!out.reserve(span)) return false;
-            hstring::copy_short(out.data + out.len, src + i, span);
-            out.len += span;
-            i += span;
-            if (i == len) break;
-        }
-        uint unit = 1;
-        char lead = src[i];
-        if (lead < 0x80) {
-            char[6] escaped;
-            escaped[0] = '\\';
-            uint size = 2;
-            switch (lead) {
-                case '"': case '\\': escaped[1] = lead;
-                case '\b': escaped[1] = 'b';
-                case '\f': escaped[1] = 'f';
-                case '\n': escaped[1] = 'n';
-                case '\r': escaped[1] = 'r';
-                case '\t': escaped[1] = 't';
-                default:
-                    char[] hex = "0123456789abcdef";
-                    escaped[1] = 'u'; escaped[2] = '0'; escaped[3] = '0';
-                    escaped[4] = hex[lead >> 4]; escaped[5] = hex[lead & 15];
-                    size = 6;
+    usz i = 0;
+    if (!text.wide) {
+        char* units = text.ptr;
+        while (i < len) {
+            usz span = json_safe_span_narrow(units + i, len - i);
+            if (span != 0) {
+                if (!out.append_latin1(units[i:span])) return false;
+                i += span;
+                if (i == len) break;
             }
-            if (!out.reserve(size)) return false;
-            hstring::copy_short(out.data + out.len, &escaped, size);
-            out.len += size;
+            if (!json_escape_unit(out, units[i])) return false;
             i++;
-            continue;
         }
-        if ((lead & 0xE0) == 0xC0 && len - i >= 2) { unit = 2; }
-        else if ((lead & 0xF0) == 0xE0 && len - i >= 3) {
-            unit = 3;
-            // Keep a surrogate pair together for the well-formed check.
-            if (lead == 0xED && src[i + 1] >= 0xA0 && src[i + 1] < 0xB0
-                && len - i >= 6 && src[i + 3] == 0xED && src[i + 4] >= 0xB0 && src[i + 4] < 0xC0) {
-                if (!out.reserve(6)) return false;
-                hstring::copy_short(out.data + out.len, src + i, 6);
-                out.len += 6;
-                i += 6;
+    } else {
+        ushort* units = (ushort*)text.ptr;
+        while (i < len) {
+            bool high;
+            usz span = json_safe_span_wide(units + i, len - i, &high);
+            if (span != 0) {
+                if (!out.append_wide(units[i:span], high)) return false;
+                i += span;
+                if (i == len) break;
+            }
+            uint unit = units[i];
+            // Keep a surrogate pair together; a half without its partner is escaped.
+            if (hstring::is_high_surrogate(unit) && i + 1 < len && hstring::is_low_surrogate(units[i + 1])) {
+                if (!out.append_wide(units[i:2], true)) return false;
+                i += 2;
                 continue;
             }
-        } else if ((lead & 0xF8) == 0xF0 && len - i >= 4) { unit = 4; }
-        char[40] escaped;
-        usz written = json_escape_string(src + i, unit, &escaped, escaped.len);
-        if (!out.reserve(written - 2)) return false;
-        hstring::copy_short(out.data + out.len, &escaped[1], written - 2);
-        out.len += written - 2;
-        i += unit;
+            if (!json_escape_unit(out, unit)) return false;
+            i++;
+        }
     }
     return out.append_char('"');
+}
+
+// Append the newline and `levels` copies of the indentation gap.
+fn bool json_newline(JsonSerializeCtx* jctx, usz levels) {
+    if (!jctx.out.append_char('\n')) return false;
+    for (usz g = 0; g < levels; g++) {
+        if (!jctx.out.append_wide(jctx.gap[:jctx.gap_len], jctx.gap_high)) return false;
+    }
+    return true;
 }
 
 // Serialize a JSON value (internal recursive helper).
@@ -1247,10 +639,12 @@ fn bool json_escape_string_to(StrBuf* out, char* src, uint len) {
 struct JsonSerializeCtx {
     Heap* heap;
     void* vm;                    // VM pointer for calling JS functions
-    StrBuf* out;
+    UnitBuf* out;
     usz indent_level;
-    char* gap;
+    // The indentation unit: at most ten UTF-16 units, `gap_high` when one exceeds 0xFF.
+    ushort[10] gap;
     usz gap_len;
+    bool gap_high;
     // Current stack depth for cycle detection
     uint depth;
     // Replacer function (undefined if none)
@@ -1331,8 +725,8 @@ fn usz json_number_to_string(double d, char* buf, usz buf_size) {
         buf[0] = '0';
         return 1;
     }
-    // Shortest round-trip decimal via QuickJS js_dtoa (FREE mode), same as
-    // ToString(Number), spec exponent format, correct final-digit rounding.
+    // Shortest round-trip decimal, same as ToString(Number), spec exponent
+    // format, correct final-digit rounding.
     if (buf_size < 64) {
         int glen = (int)(io::bprintf(buf[:buf_size], "%.17g", d) ?? buf[:0]).len;
         return (glen > 0) ? (usz)glen : 0;
@@ -1538,6 +932,15 @@ fn TVal json_check_property(JsonSerializeCtx* jctx, HString* key, TVal val, TVal
     return val;
 }
 
+// The quoted key and colon of `entry`, as units of the plan's width.
+fn hstring::Units json_plan_key(JsonShapePlan* plan, JsonShapeEntry* entry) @inline {
+    return {
+        .ptr = plan.quoted_keys + ((usz)entry.quoted_offset << (plan.quoted_wide ? 1 : 0)),
+        .len = entry.quoted_length,
+        .wide = plan.quoted_wide,
+    };
+}
+
 fn JsonShapePlan* json_shape_plan(Heap* heap, HObject* obj) {
     if (obj.get_class() != ObjClass.OBJECT || obj.flags.exotic_proxyobj
         || obj.flags.exotic_array || obj.flags.exotic_stringobj || obj.flags.exotic_arguments
@@ -1565,7 +968,7 @@ fn JsonShapePlan* json_shape_plan(Heap* heap, HObject* obj) {
     plan.entries = (JsonShapeEntry*)heap.alloc_func(heap.heap_udata, (usz)count * JsonShapeEntry::size);
     if (plan.entries == null) { heap.free_func(heap.heap_udata, plan); return null; }
     mem::clear(plan.entries, (sz)((usz)count * JsonShapeEntry::size));
-    StrBuf quoted;
+    UnitBuf quoted;
     quoted.init(heap);
     defer quoted.free();
     for (uint i = 0; i < count; i++) {
@@ -1575,17 +978,19 @@ fn JsonShapePlan* json_shape_plan(Heap* heap, HObject* obj) {
         entry.key.set(heap, keys[i]);
         entry.slot = (uint)slot;
         entry.quoted_offset = (uint)quoted.len;
-        if (!json_escape_string_to(&quoted, keys[i].get_cstr(), keys[i].blen) || !quoted.append_char(':')) {
+        if (!json_quote_to(&quoted, keys[i]) || !quoted.append_char(':')) {
             hobject::json_shape_plan_release(plan, heap);
             return null;
         }
         entry.quoted_length = (uint)quoted.len - entry.quoted_offset;
     }
-    plan.quoted_keys = (char*)heap.alloc_func(heap.heap_udata, quoted.len);
+    usz quoted_bytes = quoted.len << (quoted.wide ? 1 : 0);
+    plan.quoted_keys = (char*)heap.alloc_func(heap.heap_udata, quoted_bytes);
     if (plan.quoted_keys == null) { hobject::json_shape_plan_release(plan, heap); return null; }
-    mem::copy(plan.quoted_keys, quoted.data, (sz)quoted.len);
+    mem::copy(plan.quoted_keys, quoted.data, (sz)quoted_bytes);
+    plan.quoted_wide = quoted.wide;
     shape.json_plan = plan;
-    heap.account_auxiliary_allocation(JsonShapePlan::size + (usz)count * JsonShapeEntry::size + quoted.len);
+    heap.account_auxiliary_allocation(JsonShapePlan::size + (usz)count * JsonShapeEntry::size + quoted_bytes);
     return plan;
 }
 
@@ -1664,16 +1069,11 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
 
             // Indentation
             if (jctx.gap_len > 0) {
-                if (!jctx.out.append_char('\n')) return -1;
-                for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
-                    if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
-                }
+                if (!json_newline(jctx, jctx.indent_level)) return -1;
             }
 
             // Key
-            char* key_data = key_hstr.get_cstr();
-            uint key_len = key_hstr.blen;
-            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
+            if (!json_quote_to(jctx.out, key_hstr)) return -1;
 
             if (!jctx.out.append_char(':')) return -1;
             if (jctx.gap_len > 0) {
@@ -1721,16 +1121,11 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
 
             // Indentation
             if (jctx.gap_len > 0) {
-                if (!jctx.out.append_char('\n')) return -1;
-                for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
-                    if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
-                }
+                if (!json_newline(jctx, jctx.indent_level)) return -1;
             }
 
             // Key
-            char* key_data = key_hstr.get_cstr();
-            uint key_len = key_hstr.blen;
-            if (!json_escape_string_to(jctx.out, key_data, key_len)) return -1;
+            if (!json_quote_to(jctx.out, key_hstr)) return -1;
 
             if (!jctx.out.append_char(':')) return -1;
             if (jctx.gap_len > 0) {
@@ -1803,10 +1198,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
                 if (!first && !jctx.out.append_char(',')) return -1;
                 first = false;
                 JsonShapeEntry* entry = &plan.entries[si];
-                if (!jctx.out.reserve(entry.quoted_length)) return -1;
-                hstring::copy_short(jctx.out.data + jctx.out.len,
-                    plan.quoted_keys + entry.quoted_offset, entry.quoted_length);
-                jctx.out.len += entry.quoted_length;
+                if (!jctx.out.append_units(json_plan_key(plan, entry))) return -1;
                 if (json_serialize_scalar(jctx, &val) != 0) return -1;
                 continue;
             }
@@ -1826,21 +1218,15 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
 
             // Indentation
             if (jctx.gap_len > 0) {
-                if (!jctx.out.append_char('\n')) return -1;
-                for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
-                    if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
-                }
+                if (!json_newline(jctx, jctx.indent_level)) return -1;
             }
 
             // Key
             if (plan != null) {
                 JsonShapeEntry* entry = &plan.entries[si];
-                if (!jctx.out.reserve(entry.quoted_length)) return -1;
-                hstring::copy_short(jctx.out.data + jctx.out.len,
-                    plan.quoted_keys + entry.quoted_offset, entry.quoted_length);
-                jctx.out.len += entry.quoted_length;
+                if (!jctx.out.append_units(json_plan_key(plan, entry))) return -1;
             } else {
-                if (!json_escape_string_to(jctx.out, key_hstr.get_cstr(), key_hstr.blen)) return -1;
+                if (!json_quote_to(jctx.out, key_hstr)) return -1;
                 if (!jctx.out.append_char(':')) return -1;
             }
             if (jctx.gap_len > 0) {
@@ -1860,10 +1246,7 @@ fn int json_serialize_object(JsonSerializeCtx* jctx, HObject* obj) {
     }
 
     if (jctx.gap_len > 0) {
-        if (!jctx.out.append_char('\n')) return -1;
-        for (usz g = 0; g < (jctx.indent_level - 1) * jctx.gap_len; g++) {
-            if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
-        }
+        if (!json_newline(jctx, (jctx.indent_level - 1))) return -1;
     }
 
     if (!jctx.out.append_char('}')) return -1;
@@ -1984,21 +1367,18 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
 
         // Indentation
         if (jctx.gap_len > 0) {
-            if (!jctx.out.append_char('\n')) return -1;
-            for (usz g = 0; g < jctx.indent_level * jctx.gap_len; g++) {
-                if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
-            }
+            if (!json_newline(jctx, jctx.indent_level)) return -1;
         }
 
         // null for omitted/undefined elements
         if (omit || elem.is_undefined()) {
-            if (!jctx.out.append_bytes("null")) return -1;
+            if (!jctx.out.append_latin1("null")) return -1;
         } else if (elem.is_lightfunc()) {
-            if (!jctx.out.append_bytes("null")) return -1;
+            if (!jctx.out.append_latin1("null")) return -1;
         } else if (elem.is_object() && elem.get_heapptr() != null) {
             HObject* vobj = (HObject*)elem.get_heapptr();
             if (vobj.get_class() == ObjClass.FUNCTION) {
-                if (!jctx.out.append_bytes("null")) return -1;
+                if (!jctx.out.append_latin1("null")) return -1;
             } else {
                 jctx.depth++;
                 if (jctx.depth > JSON_MAX_DEPTH) {
@@ -2022,10 +1402,7 @@ fn int json_serialize_array(JsonSerializeCtx* jctx, HObject* arr) {
     }
 
     if (jctx.gap_len > 0) {
-        if (!jctx.out.append_char('\n')) return -1;
-        for (usz g = 0; g < (jctx.indent_level - 1) * jctx.gap_len; g++) {
-            if (!jctx.out.append_char(jctx.gap[g % jctx.gap_len])) return -1;
-        }
+        if (!json_newline(jctx, (jctx.indent_level - 1))) return -1;
     }
 
     if (!jctx.out.append_char(']')) return -1;
@@ -2046,35 +1423,33 @@ fn int json_serialize_scalar(JsonSerializeCtx* jctx, TVal* val) @inline {
         }
         case BOOLEAN: {
             if (val.get_boolean()) {
-                if (!jctx.out.append_bytes("true")) return -1;
+                if (!jctx.out.append_latin1("true")) return -1;
             } else {
-                if (!jctx.out.append_bytes("false")) return -1;
+                if (!jctx.out.append_latin1("false")) return -1;
             }
             return 0;
         }
         case NUMBER: {
             double d = val.get_number();
             if (math::is_nan(d) || math::is_inf(d)) {
-                if (!jctx.out.append_bytes("null")) return -1;
+                if (!jctx.out.append_latin1("null")) return -1;
                 return 0;
             }
             char[64] num_buf;
             usz num_len = json_number_to_string(d, &num_buf, 64);
-            if (!jctx.out.append_bytes(num_buf[:num_len])) return -1;
+            if (!jctx.out.append_latin1(num_buf[:num_len])) return -1;
             return 0;
         }
         case FASTINT: {
             char[24] buf;
             int len = hstring::int_to_buf(val.get_fastint(), &buf, 24);
             if (len <= 0) return -1;
-            if (!jctx.out.append_bytes(buf[:(usz)len])) return -1;
+            if (!jctx.out.append_latin1(buf[:(usz)len])) return -1;
             return 0;
         }
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
-            char* data = s.get_cstr();
-            uint slen = s.blen;
-            if (!json_escape_string_to(jctx.out, data, slen)) return -1;
+            if (!json_quote_to(jctx.out, s)) return -1;
             return 0;
         }
         default: return 1;
@@ -2092,7 +1467,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         }
         case OBJECT: {
             if (val.get_heapptr() == null) {
-                if (!jctx.out.append_bytes("null")) return -1;
+                if (!jctx.out.append_latin1("null")) return -1;
                 return 0;
             }
             HObject* obj = (HObject*)val.get_heapptr();
@@ -2103,9 +1478,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
                 if (try raw_v = raw_opt) {
                     if (raw_v.is_string() && raw_v.get_heapptr() != null) {
                         HString* rs = (HString*)raw_v.get_heapptr();
-                        char* rd = rs.get_cstr();
-                        uint rl = rs.blen;
-                        if (!jctx.out.append_bytes(rd[:rl])) return -1;
+                        if (!jctx.out.append_hstring(rs)) return -1;
                         return 0;
                     }
                 }
@@ -2113,7 +1486,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
             }
             if (obj.is_callable()) {
                 // Functions (including callable Proxies) serialize as null in JSON.
-                if (!jctx.out.append_bytes("null")) return -1;
+                if (!jctx.out.append_latin1("null")) return -1;
                 return 0;
             }
             // IsArray (§7.2.2): recurses through Proxy targets, throws
@@ -2131,7 +1504,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         }
         case LIGHTFUNC: {
             // Functions serialize as null
-            if (!jctx.out.append_bytes("null")) return -1;
+            if (!jctx.out.append_latin1("null")) return -1;
             return 0;
         }
         case UNDEFINED:
@@ -2139,7 +1512,7 @@ fn int json_serialize_val(JsonSerializeCtx* jctx, TVal* val) {
         case POINTER:
         default:
             // Undefined, Buffer, Pointer -> serialize as null
-            if (!jctx.out.append_bytes("null")) return -1;
+            if (!jctx.out.append_latin1("null")) return -1;
             return 0;
     }
 }
@@ -2324,7 +1697,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
 
     // Check space parameter, unwrap Number/String wrappers
     uint space_num = 0;
-    char[16] gap_buf;
+    ushort[10] gap_units;
     usz gap_len = 0;
 
     if (ctx.argc > 2) {
@@ -2416,29 +1789,19 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
             space_num = (uint)si;
         } else if (space_arg.is_string()) {
             HString* s = (HString*)space_arg.get_heapptr();
-            char* data = s.get_cstr();
-            uint slen = s.blen;
-            if (slen > 10) slen = 10;
-            for (uint i = 0; i < slen; i++) {
-                gap_buf[i] = data[i];
-            }
-            gap_len = slen;
+            uint units = s.unit_len();
+            if (units > 10) units = 10;
+            for (uint i = 0; i < units; i++) gap_units[gap_len++] = (ushort)s.unit_at(i);
         }
     }
 
     // Build gap string
-    char[16] gap_str;
+    bool gap_high = false;
     if (space_num > 0) {
         gap_len = space_num;
-        for (uint i = 0; i < gap_len && i < 16; i++) {
-            gap_str[i] = ' ';
-        }
-    } else if (gap_len > 0) {
-        // String gap: copy from gap_buf to gap_str
-        for (usz i = 0; i < gap_len && i < 16; i++) {
-            gap_str[i] = gap_buf[i];
-        }
+        for (usz i = 0; i < gap_len; i++) gap_units[i] = ' ';
     }
+    for (usz i = 0; i < gap_len; i++) gap_high = gap_high || gap_units[i] > 0xFF;
 
     // Apply root-level toJSON + replacer per spec:
     // 1. Create wrapper = { "": value }
@@ -2465,7 +1828,7 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     // Initialize serialization context. The output buffer grows to fit, so the
     // only size limit is memory, and running into it throws instead of handing
     // back a truncated document.
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
     JsonSerializeCtx jctx;
@@ -2473,8 +1836,9 @@ fn void builtin_json_stringify(BuiltinContext* ctx) {
     jctx.vm = ctx.vm;
     jctx.out = &out;
     jctx.indent_level = 0;
-    jctx.gap = &gap_str;
+    jctx.gap = gap_units;
     jctx.gap_len = gap_len;
+    jctx.gap_high = gap_high;
     jctx.depth = 0;
     jctx.replacer_func = replacer_func;
     jctx.prop_keys = prop_keys;
@@ -2558,33 +1922,25 @@ fn void builtin_json_raw_json(BuiltinContext* ctx) {
         if (json_str == null) { json_throw_syntax_error(ctx, "Invalid raw JSON"); return; }
     }
 
-    char* src = json_str.get_cstr();
-    uint len = json_str.blen;
+    hstring::Units text = json_str.units();
 
     // Step 2: SyntaxError if empty, or first/last code unit is whitespace
     // (0x09, 0x0A, 0x0D, 0x20).
-    if (len == 0) { json_throw_syntax_error(ctx, "raw JSON text must not be empty"); return; }
-    if (json_is_ws_char(src[0]) || json_is_ws_char(src[len - 1])) {
+    if (text.len == 0) { json_throw_syntax_error(ctx, "raw JSON text must not be empty"); return; }
+    if (json_is_ws_char(text.at(0)) || json_is_ws_char(text.at(text.len - 1))) {
         json_throw_syntax_error(ctx, "raw JSON text has leading/trailing whitespace");
         return;
     }
 
     // Step 3: parse as a single JSON value that is not an object or array.
-    JsonParseCtx jctx;
-    jctx.src = src;
-    jctx.pos = 0;
-    jctx.len = len;
-    jctx.heap = ctx.heap;
-    jctx.error = false;
-    jctx.record = false;
-    TVal parsed = json_parse_value(&jctx);
-    defer ctx.heap.decref_tval(&parsed);
-    if (jctx.error || (parsed.is_undefined() && parsed.get_heapptr() == null)) {
+    TVal parsed;
+    JsonParseStatus status = json_parse_units(ctx.heap, text, false, &parsed, null);
+    if (status == JsonParseStatus.SYNTAX) {
         json_throw_syntax_error(ctx, "invalid raw JSON text");
         return;
     }
-    json_skip_ws(&jctx);
-    if (jctx.pos != jctx.len || (parsed.is_object() && parsed.get_heapptr() != null)) {
+    defer ctx.heap.decref_tval(&parsed);
+    if (status != JsonParseStatus.OK || (parsed.is_object() && parsed.get_heapptr() != null)) {
         json_throw_syntax_error(ctx, "raw JSON must be a single primitive value");
         return;
     }
@@ -2623,7 +1979,7 @@ fn void builtin_json_is_raw_json(BuiltinContext* ctx) {
 }
 
 // True for the four JSON whitespace code units.
-fn bool json_is_ws_char(char c) {
+fn bool json_is_ws_char(uint c) {
     return c == 0x09 || c == 0x0A || c == 0x0D || c == 0x20;
 }
 

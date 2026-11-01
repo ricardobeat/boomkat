@@ -29,6 +29,7 @@ def package(platform: str, binary_dir: pathlib.Path, dist: pathlib.Path) -> None
             root.mkdir()
             shutil.copy2(source, root / source.name)
             shutil.copy2(ROOT / "LICENSE", root / "LICENSE")
+            shutil.copy2(ROOT / "THIRD_PARTY", root / "THIRD_PARTY")
             if suffix:
                 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
                     for file in root.iterdir():
@@ -52,6 +53,7 @@ def package(platform: str, binary_dir: pathlib.Path, dist: pathlib.Path) -> None
         (root / "lib").mkdir()
         shutil.copy2(ROOT / "include" / "boomkat.h", root / "include" / "boomkat.h")
         shutil.copy2(ROOT / "LICENSE", root / "LICENSE")
+        shutil.copy2(ROOT / "THIRD_PARTY", root / "THIRD_PARTY")
         shutil.copy2(library, root / "lib" / library.name)
         if suffix:
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:

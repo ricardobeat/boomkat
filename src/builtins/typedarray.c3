@@ -47,59 +47,65 @@ const TAInfo[12] TA_INFO = {
 };
 
 // ============================================================================
-// IEEE 754 half-precision (binary16) conversion, ported from QuickJS cutils.h
-// (fromfp16/tofp16). Round-to-nearest-even; NaN/Inf/subnormal preserving.
-// Used by Float16Array element load/store, Math.f16round and DataView
-// getFloat16/setFloat16. Do NOT replace with a truncating (float)cast.
+// IEEE 754 binary16 conversion for Float16Array elements, Math.f16round and
+// DataView get/setFloat16. Narrowing rounds to nearest, ties to even; a plain
+// (float) cast would round twice and is not a substitute.
 // ============================================================================
 
-// binary16 bit pattern -> double (exact; half is a subset of double).
-fn double f16_to_double(ushort v) {
-    uint v1 = (uint)v & 0x7fff;
-    if (v1 >= 0x7c00) v1 += 0x1f8000; // NaN or infinity
-    ulong bits = ((ulong)((uint)v >> 15) << 63) | ((ulong)v1 << (52 - 10));
-    double d;
-    mem::copy(&d, &bits, (sz)(8));
-    return d * 0x1p1008;
+const ulong F64_SIGN     = 0x8000000000000000;
+const ulong F64_INF      = 0x7ff0000000000000;
+const ulong F64_QUIET    = 0x0008000000000000;
+const ulong F64_MIN_F16_NORMAL    = 0x3f10000000000000; // 2^-14
+const ulong F64_HALF_MIN_F16_SUB  = 0x3e60000000000000; // 2^-25
+const ulong F64_REBIAS   = (ulong)(1023 - 15) << 52;    // exponent bias gap
+const int   MANT_GAP     = 52 - 10;                     // mantissa width gap
+const ushort F16_INF     = 0x7c00;
+const ushort F16_NAN     = 0x7c01;
+
+// Shifts `x` right by `shift` bits, rounding to nearest with ties to even.
+fn ulong shift_right_round_even(ulong x, int shift) @inline {
+    ulong below_half = ((ulong)1 << (shift - 1)) - 1;
+    return (x + below_half + ((x >> shift) & 1)) >> shift;
 }
 
-// double -> binary16 bit pattern, round-to-nearest-even (§ NumberToRawBytes).
-fn ushort double_to_f16(double d) {
-    ulong a;
-    mem::copy(&a, &d, (sz)(8));
-    uint sgn = (uint)(a >> 63);
-    a = a & 0x7fffffffffffffff;
-    uint v;
-    if (a > 0x7ff0000000000000) {
-        // NaN
-        v = 0x7c01;
-    } else if (a < 0x3f10000000000000) { // 0x1p-14
-        // subnormal f16 number or zero
-        if (a < 0x3e60000000000000) { // 0x1p-25
-            // Strictly less: 0x1p-25 itself is the tie between zero and the
-            // smallest subnormal, and anything above it rounds up to that
-            // subnormal, so both must reach the round-to-nearest-even path.
-            v = 0x0000; // zero
-        } else {
-            int shift = 1051 - (int)(a >> 52);
-            a = ((ulong)1 << 52) | (a & (((ulong)1 << 52) - 1));
-            ulong addend = ((a >> shift) & 1) + (((ulong)1 << (shift - 1)) - 1);
-            v = (uint)((a + addend) >> shift);
-        }
-    } else {
-        // normal number or infinity
-        a -= 0x3f00000000000000; // adjust the exponent
-        // round
-        ulong addend = ((a >> (52 - 10)) & 1) + (((ulong)1 << (52 - 11)) - 1);
-        v = (uint)((a + addend) >> (52 - 10));
-        // overflow ?
-        if (v > 0x7c00) v = 0x7c00;
+// Widens a binary16 bit pattern to a double; exact for every finite value.
+fn double f16_to_double(ushort h) {
+    ulong sign = (ulong)(h & 0x8000) << 48;
+    ulong body = (ulong)(h & 0x7fff) << MANT_GAP;
+    if ((h & F16_INF) == F16_INF) {
+        // Infinity, or NaN with its payload kept and the quiet bit set.
+        ulong quiet = (h & 0x3ff) != 0 ? F64_QUIET : 0;
+        return bitcast(sign | F64_INF | body | quiet, double);
     }
-    return (ushort)(v | (sgn << 15));
+    // Exponent and mantissa land in place; scaling by 2^(1023-15) fixes the
+    // bias and normalizes subnormals in one exact multiply.
+    return bitcast(sign | body, double) * 0x1p1008;
+}
+
+// Narrows a double to a binary16 bit pattern, rounding to nearest-even.
+// Every NaN becomes 0x7c01 with the input's sign; overflow gives infinity.
+fn ushort double_to_f16(double d) {
+    ulong bits = bitcast(d, ulong);
+    ushort sign = (ushort)(bits >> 48) & 0x8000;
+    ulong mag = bits & ~F64_SIGN;
+    if (mag > F64_INF) return sign | F16_NAN;
+    if (mag >= F64_MIN_F16_NORMAL) {
+        // Rebias the exponent and round off the low mantissa bits; a carry
+        // out of the mantissa bumps the exponent, possibly to infinity.
+        ulong h = shift_right_round_even(mag - F64_REBIAS, MANT_GAP);
+        return sign | (ushort)min(h, (ulong)F16_INF);
+    }
+    // 2^-25 is the tie between zero and the smallest subnormal, so it and
+    // everything above it go through rounding.
+    if (mag < F64_HALF_MIN_F16_SUB) return sign;
+    // Subnormal: restore the implicit bit and shift so 2^-24 lands at bit 0.
+    int shift = 1051 - (int)(mag >> 52);
+    ulong mant = (mag & (((ulong)1 << 52) - 1)) | ((ulong)1 << 52);
+    return sign | (ushort)shift_right_round_even(mant, shift);
 }
 
 // True iff `cls` is any of the TypedArray element kinds.
-fn bool is_typed_array_class(hobject::ObjClass cls) {
+fn bool is_typed_array_class(hobject::ObjClass cls) @inline {
     $if !features::BUFFERS:
         return false;
     $else
@@ -109,7 +115,7 @@ fn bool is_typed_array_class(hobject::ObjClass cls) {
 
 // True iff `cls` is a BigInt-backed TypedArray (content type "BigInt").
 // Mixing BigInt and non-BigInt arrays in set()/construction throws TypeError.
-fn bool is_bigint_typed_array_class(hobject::ObjClass cls) {
+fn bool is_bigint_typed_array_class(hobject::ObjClass cls) @inline {
     return cls == hobject::ObjClass.BIGINT64ARRAY || cls == hobject::ObjClass.BIGUINT64ARRAY;
 }
 
@@ -117,7 +123,7 @@ fn uint ta_elem_size(hobject::ObjClass cls) {
     return TA_INFO[(int)cls - (int)hobject::ObjClass.INT8ARRAY].elem_size;
 }
 
-fn uint ta_elem_shift(hobject::ObjClass cls) {
+fn uint ta_elem_shift(hobject::ObjClass cls) @inline {
     return TA_INFO[(int)cls - (int)hobject::ObjClass.INT8ARRAY].elem_shift;
 }
 
@@ -131,15 +137,15 @@ fn char[] ta_class_name(hobject::ObjClass cls) {
 // "1.5", "NaN", "Infinity"). Plain array-index integer strings ("0", "1",
 // ...) are handled separately via HString.is_arridx() and never reach here.
 fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
-    char[] bytes = s.get_data();
-    if (bytes.len == 2 && bytes[0] == '-' && bytes[1] == '0') {
+    if (s.is_symbol()) return false;
+    if (s.unit_len() == 2 && s.unit_at(0) == '-' && s.unit_at(1) == '0') {
         *out = -0.0;
         return true;
     }
     double d = vm::hstring_to_number(s);
     if (d != d) {
         // NaN parses only when the source text was literally "NaN".
-        if (bytes.len == 3 && bytes[0] == 'N' && bytes[1] == 'a' && bytes[2] == 'N') {
+        if (s.unit_len() == 3 && s.unit_at(0) == 'N' && s.unit_at(1) == 'a' && s.unit_at(2) == 'N') {
             *out = d;
             return true;
         }
@@ -147,8 +153,7 @@ fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
     }
     HString* restr = builtin_number_to_hstring(heap, d);
     if (restr == null) return false;
-    if (restr.blen != s.blen) return false;
-    if (!mem::equals(restr.get_cstr(), s.get_cstr(), s.blen)) return false;
+    if (!hstring::units_equal(restr, s)) return false;
     *out = d;
     return true;
 }
@@ -163,7 +168,7 @@ fn bool is_canonical_numeric_index(Heap* heap, HString* s, double* out) {
 fn HObject* typedarray_alloc_buffer(BuiltinContext* ctx, uint byte_length) {
     char* data = null;
     if (byte_length > 0) {
-        data = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)byte_length);
+        data = ctx.heap.alloc_buffer_data((usz)byte_length);
         if (data == null) return null;
         mem::clear(data, (sz)((usz)byte_length));
     }
@@ -198,7 +203,7 @@ fn HObject* bytes_module_view(Heap* heap, char[] bytes) {
     uint byte_length = (uint)bytes.len;
     char* data = null;
     if (byte_length > 0) {
-        data = (char*)heap.alloc_func(heap.heap_udata, (usz)byte_length);
+        data = heap.alloc_buffer_data((usz)byte_length);
         if (data == null) return null;
         mem::copy(data, bytes.ptr, (sz)((usz)byte_length));
     }
@@ -389,7 +394,7 @@ fn TVal ta_load_element(Heap* heap, char* p, hobject::ObjClass cls, uint idx) {
 }
 
 // ES2022 §7.1.11 ToUint8Clamp, NaN -> 0, clamp to [0,255], banker's
-// rounding (round half to even) on ties. Matches QuickJS JS_ToUint8ClampFree.
+// rounding (round half to even) on ties.
 fn char ta_to_uint8_clamped(double d) {
     if (d != d) return 0; // NaN
     if (d <= 0.0) return 0;
@@ -657,7 +662,7 @@ fn void typed_array_construct(BuiltinContext* ctx, hobject::ObjClass obj_class) 
             uint length = 0;
             if (!len_arg.is_undefined() && !arraybuffer_to_index(ctx, &len_arg, &length)) return;
             // Both coercions may detach or resize the backing buffer.
-            uint buf_len = (*arg_obj.extra_ptr()).ab.byte_length;
+            uint buf_len = buffer_byte_length(arg_obj);
             if (buf_len == 0xFFFFFFFFu) {
                 arraybuffer_throw_type_error(ctx, "Cannot construct TypedArray on a detached ArrayBuffer");
                 return;
@@ -1078,7 +1083,7 @@ fn HObject* ta_validate(BuiltinContext* ctx) {
 fn bool view_is_out_of_bounds(HObject* obj) {
     HObject* buf = (*obj.extra_ptr()).view.buffer;
     if (buf == null) return true;
-    uint buf_len = (*buf.extra_ptr()).ab.byte_length;
+    uint buf_len = buffer_byte_length(buf);
     if (buf_len == 0xFFFFFFFFu) return true; // detached
     if (!(*buf.extra_ptr()).ab.resizable) return false; // fixed: never OOB
     uint off = (*obj.extra_ptr()).view.byte_offset;
@@ -1124,7 +1129,7 @@ fn uint view_effective_byte_length(HObject* obj) {
         return (*obj.extra_ptr()).view.byte_length;
     }
     HObject* buf = (*obj.extra_ptr()).view.buffer;
-    uint buf_len = (*buf.extra_ptr()).ab.byte_length;
+    uint buf_len = buffer_byte_length(buf);
     uint off = (*obj.extra_ptr()).view.byte_offset;
     uint avail = buf_len - off; // off <= buf_len guaranteed by not-OOB
     if (is_typed_array_class(obj.flags.obj_class)) {
@@ -1284,8 +1289,8 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
     // the offset (step 5, below), because the offset's valueOf runs first and
     // may itself throw, or detach the buffer. Calling ta_validate here reported
     // that detached buffer before the offset was ever coerced, so a throwing
-    // valueOf never ran. QuickJS orders it the same way: js_typed_array_set
-    // skips validate_typed_array, unlike the iterator methods beside it.
+    // valueOf never ran. Unlike the iterator methods beside it, set skips
+    // validate_typed_array, so the buffer check happens only after coercion.
     HObject* dst = ta_this_receiver(ctx);
     if (dst == null) {
         arraybuffer_throw_type_error(ctx, "TypedArray method called on incompatible receiver");
@@ -1436,17 +1441,8 @@ fn void builtin_ta_proto_set(BuiltinContext* ctx) {
         TVal elem; elem.set_undefined();
         if (src_is_string_exotic && src_prim_str != null) {
             // Serve char at index i from the underlying string.
-            char[] data = src_prim_str.get_data();
-            usz byte_start = (usz)src_prim_str.char_offset_to_byte_offset(i);
-            usz byte_end = (usz)src_prim_str.char_offset_to_byte_offset(i + 1);
-            if (byte_start < byte_end) {
-                usz copy_len = byte_end - byte_start;
-                char[8] one;
-                if (copy_len >= one.len) copy_len = one.len - 1;
-                for (usz j = 0; j < copy_len; j++) { one[j] = data[byte_start + j]; }
-                HString*? ch_raw = builtin_intern_string(heap, one[:copy_len]);
-                if (try ch = ch_raw) { elem.set_string_borrowed(ch); }
-            }
+            HString* ch = heap.str_from_unit(src_prim_str.unit_at(i));
+            if (ch != null) elem.set_string_borrowed(ch);
         } else {
             HString* idx_key = heap.int_to_hstring((long)i);
             if (idx_key != null) {
@@ -2204,7 +2200,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
     char* base = (*buf.extra_ptr()).ab.data + byte_off;
 
     // Separator, ToString(separator) per spec, must propagate errors (e.g., throwing object).
-    char[] sep = ",";
+    HString* sep = builtin_intern_string(heap, ",");
     HString* sep_hs = null;
     if (ctx.argc >= 1) {
         TVal sep_arg = ctx.regs[ctx.base_reg];
@@ -2213,7 +2209,7 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
             if (ctx.should_throw) { ctx.result_undefined(); return; }
             if (sep_hs != null) {
                 ((types::HeapHeader*)sep_hs).incref();
-                sep = sep_hs.get_data();
+                sep = sep_hs;
             }
         }
     }
@@ -2241,7 +2237,6 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         elem_strs = heap_strs[:len];
     }
 
-    usz total_len = 0;
     for (uint i = 0; i < len; i++) {
         // Iterate the ORIGINAL length (spec §23.2.3.16 step 4). A separator
         // coercion may have shrunk the buffer; indices now out of bounds read
@@ -2260,45 +2255,14 @@ fn void builtin_ta_proto_join(BuiltinContext* ctx) {
         if (es == null) es = (HString*)heap.strs[heap::BuiltinStr.EMPTY];
         ((types::HeapHeader*)es).incref();
         elem_strs[i] = es;
-        total_len += es.blen;
-    }
-    if (len > 1) total_len += sep.len * (usz)(len - 1);
-
-    char* rbuf = (char*)heap.alloc_func(heap.heap_udata, total_len > 0 ? total_len : 1);
-    if (rbuf == null) {
-        if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
-        for (uint i = 0; i < len; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
-        if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-        ctx.result_undefined();
-        return;
     }
 
-    usz off = 0;
-    for (uint i = 0; i < len; i++) {
-        if (i > 0 && sep.len > 0) {
-            mem::copy(&rbuf[off], &sep[0], (sz)(sep.len));
-            off += sep.len;
-        }
-        char[] ed = elem_strs[i].get_data();
-        if (ed.len > 0) { mem::copy(&rbuf[off], &ed[0], (sz)(ed.len)); off += ed.len; }
-        heap.decref((types::HeapHeader*)elem_strs[i]);
-    }
+    HString* joined = join_hstrings(ctx, elem_strs, sep);
+    for (uint i = 0; i < len; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
     if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
     if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-
-    uint hash = heap.hash_string(rbuf[:total_len]);
-    HString*? hs_raw = hstring::hstring_alloc(heap, rbuf[:total_len], hash);
-    heap.free_func(heap.heap_udata, rbuf);
-    if (catch err = hs_raw) { ctx.result_undefined(); return; }
-    HString* hs = hs_raw;
-    // Return the join result as a transient (non-interned) string. It must NOT
-    // be inserted into the string table without also taking the table's owning
-    // incref + setting is_interned; a bare insert leaves a table entry backed by
-    // no reference, so the result register's later decref frees it while it is
-    // still in the table, double-freeing at heap reset. String === compares by
-    // content (equals_hstring), so interning is not required for correctness;
-    // store_builtin_result handles the refcount-1 transient.
-    ctx.result_string(hs);
+    if (joined == null) { ctx.result_undefined(); return; }
+    ctx.result_string(joined);
 }
 
 // %TypedArray%.prototype.forEach(callbackFn, thisArg?), §23.2.3.12.
@@ -3206,7 +3170,7 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
 
     HString* toloc_key = builtin_intern_string(heap, "toLocaleString");
     HString* sep_hs = null;
-    char[] sep = ",";
+    HString* sep = builtin_intern_string(heap, ",");
 
     // Collect the element strings by invoking toLocaleString on each numeric value.
     HString*[64] stack_strs;
@@ -3298,38 +3262,12 @@ fn void builtin_ta_proto_toLocaleString(BuiltinContext* ctx) {
         done++;
     }
 
-    // Compute the total length of all element strings plus separators.
-    usz total_len = 0;
-    for (uint i = 0; i < done; i++) total_len += elem_strs[i].blen;
-    if (done > 1) total_len += sep.len * (usz)(done - 1);
-
-    char* rbuf = (char*)heap.alloc_func(heap.heap_udata, total_len > 0 ? total_len : 1);
-    if (rbuf == null) {
-        for (uint i = 0; i < done; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
-        if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-        ctx.result_undefined();
-        return;
-    }
-
-    usz off = 0;
-    for (uint i = 0; i < done; i++) {
-        if (i > 0 && sep.len > 0) {
-            mem::copy(&rbuf[off], &sep[0], (sz)(sep.len));
-            off += sep.len;
-        }
-        char[] ed = elem_strs[i].get_data();
-        if (ed.len > 0) { mem::copy(&rbuf[off], &ed[0], (sz)(ed.len)); off += ed.len; }
-        heap.decref((types::HeapHeader*)elem_strs[i]);
-    }
+    HString* joined = join_hstrings(ctx, elem_strs[:done], sep);
+    for (uint i = 0; i < done; i++) heap.decref((types::HeapHeader*)elem_strs[i]);
     if (sep_hs != null) heap.decref((types::HeapHeader*)sep_hs);
     if (heap_strs != null) heap.free_func(heap.heap_udata, heap_strs);
-
-    uint hash = heap.hash_string(rbuf[:total_len]);
-    HString*? hs_raw = hstring::hstring_alloc(heap, rbuf[:total_len], hash);
-    heap.free_func(heap.heap_udata, rbuf);
-    if (catch err2 = hs_raw) { ctx.result_undefined(); return; }
-    HString* result_hs = hs_raw;
-    ctx.result_string(result_hs);
+    if (joined == null) { ctx.result_undefined(); return; }
+    ctx.result_string(joined);
 }
 
 // ---- %TypedArray% intrinsic abstract constructor ----
@@ -3805,115 +3743,122 @@ struct B64DecodeResult {
     bool err;
 }
 
-// FromBase64 abstract operation (proposal-arraybuffer-base64). Decodes the
-// codepoint-indexed string `src` (length `src_len` in codepoints, equal to
-// UTF-16 units for the ASCII prefix that any valid input consists of) into
-// `dst` (capacity `max_len`). Faithful port of quickjs's from_base64.
+// Index of the first non-whitespace codepoint at or after `pos`.
+fn uint b64_skip_ws(HString* s, uint pos, uint len, char alphabet) @inline {
+    while (pos < len && b64_decode_char(s.unit_at(pos), alphabet) == B64_K_WS) pos++;
+    return pos;
+}
+
+// Left-align a group of `count` sextets in a 24-bit word. Its top count - 1
+// bytes are the decoded payload.
+macro uint b64_group_word(uint bits, int count) => bits << (6 * (4 - count));
+
+// Payload-free low bits of a short group; strict mode requires them to be zero.
+fn uint b64_spare_bits(uint bits, int count) @inline {
+    return b64_group_word(bits, count) & (0xFFFFFFu >> (8 * (count - 1)));
+}
+
+// Append the count - 1 bytes decoded from a group of `count` sextets.
+fn void b64_emit_partial(char* dst, uint* out, uint bits, int count) @inline {
+    uint word = b64_group_word(bits, count);
+    for (int k = 0; k < count - 1; k++) dst[(*out)++] = (char)(word >> (16 - 8 * k));
+}
+
+// FromBase64 (ECMAScript, Uint8Array.fromBase64). Decodes the codepoints of
+// `src` into `dst`, which holds `max_len` bytes. `read` counts the codepoints
+// consumed up to the end of the last group that was written; it is the whole
+// input when decoding reaches the end. On error, `dst` keeps whatever full
+// groups were written before the bad character.
 fn B64DecodeResult from_base64(HString* src, uint src_len, char* dst, uint max_len,
                                char alphabet, char last_chunk) {
-    B64DecodeResult r;
-    r.read = 0; r.written = 0; r.err = false;
+    B64DecodeResult res;
+    if (max_len == 0) return res;
 
-    uint read = 0;
-    uint written = 0;
-    uint acc = 0;
-    int seen = 0;
-    uint index = 0;
+    uint pos = 0;
+    uint out = 0;
+    uint bits = 0;  // sextets of the group being collected
+    int count = 0;  // number of sextets in `bits`
 
-    if (max_len == 0) { r.read = 0; r.written = 0; return r; }
-
-    for (;;) {
-        if (seen == 0) {
-            // Fast path: decode complete groups of 4 valid characters.
-            while (index + 4 <= src_len && written + 3 <= max_len) {
-                char v0 = b64_decode_char(src.char_at_unchecked(index), alphabet);
-                char v1 = b64_decode_char(src.char_at_unchecked(index + 1), alphabet);
-                char v2 = b64_decode_char(src.char_at_unchecked(index + 2), alphabet);
-                char v3 = b64_decode_char(src.char_at_unchecked(index + 3), alphabet);
-                if ((v0 | v1 | v2 | v3) >= 64) break;
-                uint v = ((uint)v0 << 18) | ((uint)v1 << 12) | ((uint)v2 << 6) | (uint)v3;
-                dst[written]     = (char)(v >> 16);
-                dst[written + 1] = (char)(v >> 8);
-                dst[written + 2] = (char)v;
-                written += 3;
-                index += 4;
+    while (true) {
+        if (count == 0) {
+            // Bulk loop: four alphabet characters in a row make three bytes.
+            while (pos + 4 <= src_len && out + 3 <= max_len) {
+                char a = b64_decode_char(src.unit_at(pos), alphabet);
+                char b = b64_decode_char(src.unit_at(pos + 1), alphabet);
+                char c = b64_decode_char(src.unit_at(pos + 2), alphabet);
+                char d = b64_decode_char(src.unit_at(pos + 3), alphabet);
+                if ((a | b | c | d) >= 64) break;
+                uint word = ((uint)a << 18) | ((uint)b << 12) | ((uint)c << 6) | (uint)d;
+                dst[out] = (char)(word >> 16);
+                dst[out + 1] = (char)(word >> 8);
+                dst[out + 2] = (char)word;
+                out += 3;
+                pos += 4;
             }
-            read = index;
-            if (written >= max_len) { r.read = read; r.written = written; return r; }
+            res.read = pos;
+            if (out == max_len) break;
         }
 
-        // Slow path: whitespace, padding, partial groups, capacity.
-        while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
-
-        if (index == src_len) {
-            if (seen > 0) {
-                if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) { r.read = read; r.written = written; return r; }
-                if (last_chunk == B64_LAST_STRICT) { r.err = true; return r; }
-                // loose
-                if (seen == 1) { r.err = true; return r; }
+        pos = b64_skip_ws(src, pos, src_len, alphabet);
+        if (pos == src_len) {
+            if (count == 0) {
+                res.read = src_len;
                 break;
             }
-            r.read = src_len; r.written = written; return r;
-        }
-
-        uint ch = src.char_at_unchecked(index++);
-
-        if (ch == '=') {
-            if (seen < 2) { r.err = true; return r; }
-            while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
-            if (seen == 2) {
-                if (index == src_len) {
-                    if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) { r.read = read; r.written = written; return r; }
-                    r.err = true; return r;
-                }
-                if (src.char_at_unchecked(index) == '=') {
-                    index++;
-                    while (index < src_len && b64_decode_char(src.char_at_unchecked(index), alphabet) == B64_K_WS) index++;
-                } else {
-                    r.err = true; return r;
-                }
-            }
-            // After padding, only whitespace is allowed.
-            if (index != src_len) { r.err = true; return r; }
-            if (last_chunk == B64_LAST_STRICT) {
-                uint mask = (seen == 2) ? 0xF : 0x3;
-                if (acc & mask) { r.err = true; return r; }
+            switch (last_chunk) {
+                case B64_LAST_STOP_BEFORE_PARTIAL:
+                    break;
+                case B64_LAST_STRICT:
+                    return { .err = true };
+                default:
+                    if (count == 1) return { .err = true };
+                    b64_emit_partial(dst, &out, bits, count);
+                    res.read = src_len;
             }
             break;
         }
 
-        char v = b64_decode_char(ch, alphabet);
-        if (v >= 64) { r.err = true; return r; }
-
-        // Check remaining capacity before committing to this group.
-        uint remaining = max_len - written;
-        if ((remaining == 1 && seen == 2) || (remaining == 2 && seen == 3)) {
-            r.read = read; r.written = written; return r;
+        uint cp = src.unit_at(pos++);
+        if (cp == '=') {
+            // Padding ends the input: "xx==" or "xxx=", with whitespace
+            // allowed anywhere around the pad characters.
+            if (count < 2) return { .err = true };
+            pos = b64_skip_ws(src, pos, src_len, alphabet);
+            if (count == 2) {
+                if (pos == src_len) {
+                    if (last_chunk == B64_LAST_STOP_BEFORE_PARTIAL) break;
+                    return { .err = true };
+                }
+                if (src.unit_at(pos) != '=') return { .err = true };
+                pos = b64_skip_ws(src, pos + 1, src_len, alphabet);
+            }
+            if (pos != src_len) return { .err = true };
+            if (last_chunk == B64_LAST_STRICT && b64_spare_bits(bits, count) != 0) {
+                return { .err = true };
+            }
+            b64_emit_partial(dst, &out, bits, count);
+            res.read = src_len;
+            break;
         }
 
-        acc = (acc << 6) | (uint)v;
-        seen++;
+        char v = b64_decode_char(cp, alphabet);
+        if (v >= 64) return { .err = true };
 
-        if (seen == 4) {
-            dst[written]     = (char)(acc >> 16);
-            dst[written + 1] = (char)(acc >> 8);
-            dst[written + 2] = (char)acc;
-            written += 3;
-            acc = 0;
-            seen = 0;
-            read = index;
-            if (written >= max_len) { r.read = read; r.written = written; return r; }
+        // A group of n sextets yields n - 1 bytes; stop before taking a
+        // sextet whose group could not fit in the remaining space.
+        if (count >= 2 && max_len - out == (uint)(count - 1)) break;
+
+        bits = (bits << 6) | v;
+        if (++count == 4) {
+            b64_emit_partial(dst, &out, bits, 4);
+            bits = 0;
+            count = 0;
+            res.read = pos;
+            if (out == max_len) break;
         }
     }
-
-    if (seen == 2) {
-        dst[written++] = (char)(acc >> 4);
-    } else if (seen == 3) {
-        dst[written]     = (char)(acc >> 10);
-        dst[written + 1] = (char)(acc >> 2);
-        written += 2;
-    }
-    r.read = src_len; r.written = written; return r;
+    res.written = out;
+    return res;
 }
 
 // FromHex abstract operation. Decodes hex pairs from `src` into `dst`
@@ -3928,8 +3873,8 @@ fn B64DecodeResult from_hex(HString* src, uint src_len, char* dst, uint max_len)
     uint written = 0;
     uint i = 0;
     while (i < src_len && written < max_len) {
-        int hi = hex_decode_char(src.char_at_unchecked(i));
-        int lo = hex_decode_char(src.char_at_unchecked(i + 1));
+        int hi = hex_decode_char(src.unit_at(i));
+        int lo = hex_decode_char(src.unit_at(i + 1));
         if (hi < 0 || lo < 0) { r.err = true; return r; }
         dst[written++] = (char)((hi << 4) | lo);
         i += 2;
@@ -4055,7 +4000,7 @@ fn void builtin_uint8array_from_base64(BuiltinContext* ctx) {
     char last_chunk = b64_get_last_chunk_option(ctx, opts);
     if (ctx.should_throw) return;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     uint out_cap = (str_len / 4) * 3 + 3;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(out_cap == 0 ? 1 : out_cap));
     if (buf == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
@@ -4082,7 +4027,7 @@ fn void builtin_uint8array_from_hex(BuiltinContext* ctx) {
     HString* str = b64_require_string_arg(ctx);
     if (str == null) return;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     uint out_cap = str_len / 2 + 1;
     char* buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)out_cap);
     if (buf == null) { arraybuffer_throw_range_error(ctx, "out of memory"); return; }
@@ -4217,7 +4162,7 @@ fn void builtin_uint8array_proto_set_from_base64(BuiltinContext* ctx) {
     uint len = (*obj.extra_ptr()).view.byte_length;
     char* data = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     B64DecodeResult res = from_base64(str, str_len, data, len, alphabet, last_chunk);
     if (res.err) {
         builtin_throw(ctx, ctx.heap.syntax_err_proto, "invalid base64 string");
@@ -4242,7 +4187,7 @@ fn void builtin_uint8array_proto_set_from_hex(BuiltinContext* ctx) {
     uint len = (*obj.extra_ptr()).view.byte_length;
     char* data = (*buf.extra_ptr()).ab.data + (*obj.extra_ptr()).view.byte_offset;
 
-    uint str_len = str.char_length();
+    uint str_len = str.unit_len();
     B64DecodeResult res = from_hex(str, str_len, data, len);
     if (res.err) {
         builtin_throw(ctx, ctx.heap.syntax_err_proto, "invalid hex string");

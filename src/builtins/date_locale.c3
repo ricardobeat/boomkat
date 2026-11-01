@@ -122,6 +122,11 @@ fn int locale_split(char[] s, char[][] out_parts) {
 }
 
 // Case-insensitive ASCII compare of a subtag against a lowercase literal.
+// True for a tag beginning with en-US.
+fn bool locale_is_us(char[] tag) {
+    return tag.len >= 5 && locale_eq_ci(tag[:5], "en-us");
+}
+
 fn bool locale_eq_ci(char[] s, char[] lit) {
     if (s.len != lit.len) return false;
     for (usz i = 0; i < s.len; i++) {
@@ -278,7 +283,7 @@ fn void date_canonicalize_locale_list(BuiltinContext* ctx, TVal* locales) {
     if (locales.is_string()) {
         HString* tag = (HString*)locales.get_heapptr();
         if (tag == null) return;
-        if (!locale_is_well_formed(tag.get_cstr()[:tag.blen])) {
+        if (!locale_is_well_formed(tag.token_text())) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
         }
         return;
@@ -332,7 +337,7 @@ fn void date_canonicalize_locale_list(BuiltinContext* ctx, TVal* locales) {
         HString* tag = builtin_to_string_vm(ctx, &elem);
         if (ctx.should_throw) return;
         if (tag == null) continue;
-        if (!locale_is_well_formed(tag.get_cstr()[:tag.blen])) {
+        if (!locale_is_well_formed(tag.token_text())) {
             builtin_throw(ctx, ctx.heap.range_err_proto, "invalid language tag");
             return;
         }
@@ -367,7 +372,7 @@ fn int date_get_string_option(BuiltinContext* ctx, HObject* opts, char[] key,
     HString* s = builtin_to_string_vm(ctx, &v);
     if (ctx.should_throw) return 0;
     if (s != null) {
-        char[] sv = s.get_cstr()[:s.blen];
+        char[] sv = s.token_text();
         foreach (cand : values) {
             if (cand.name.len == sv.len && (sv.len == 0 || mem_eq_bytes(cand.name, sv))) {
                 return cand.code;
@@ -469,7 +474,7 @@ fn void date_resolve_timezone(BuiltinContext* ctx, HObject* opts, DateTimeFormat
         fmt.tz_is_explicit = false;
         return;
     }
-    char[] s = tz.get_cstr()[:tz.blen];
+    char[] s = tz.token_text();
 
     if (locale_eq_ci(s, "utc") || locale_eq_ci(s, "gmt") || locale_eq_ci(s, "etc/utc") ||
         locale_eq_ci(s, "etc/gmt") || locale_eq_ci(s, "universal") || locale_eq_ci(s, "zulu") ||
@@ -625,13 +630,13 @@ fn void date_resolve_options(BuiltinContext* ctx, TVal* locales, TVal* options,
     // and its shape check and then dropped.
     HString* cal = date_get_raw_string_option(ctx, opts, "calendar");
     if (ctx.should_throw) return;
-    if (cal != null && !date_is_unicode_type_subtag(cal.get_cstr()[:cal.blen])) {
+    if (cal != null && !date_is_unicode_type_subtag(cal.token_text())) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendar");
         return;
     }
     HString* nu = date_get_raw_string_option(ctx, opts, "numberingSystem");
     if (ctx.should_throw) return;
-    if (nu != null && !date_is_unicode_type_subtag(nu.get_cstr()[:nu.blen])) {
+    if (nu != null && !date_is_unicode_type_subtag(nu.token_text())) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numberingSystem");
         return;
     }

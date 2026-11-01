@@ -96,4 +96,31 @@ with Runtime() as rt:
     # The runtime is unharmed and still usable afterwards.
     print("still alive:", rt.eval("'yes'"))
 
+    # --- compiled scripts and modules -------------------------------------
+
+    # Compile once, run many times; each run sees the current globals.
+    script = rt.compile("globalThis.runs = (globalThis.runs || 0) + 1")
+    script.run()
+    print("compiled runs:", script.run())
+    script.close()
+
+    # Modules come from Python: resolve names a module, load supplies source.
+    sources = {"app:main": "import { twice } from 'app:lib'; globalThis.out = twice(21)",
+               "app:lib": "export const twice = (n) => n * 2"}
+    rt.set_module_loader(resolve=lambda referrer, spec: spec,
+                         load=lambda name: sources.get(name),
+                         filesystem_fallback=False)
+    rt.define_native_module("app:config", {"mode": "demo"})
+    rt.import_module("app:main")
+    print("module result:", rt.eval("out"))
+    sources["app:lib"] = "export const twice = (n) => n * 3"
+    rt.invalidate_module("app:lib")
+    rt.invalidate_module("app:main")
+    rt.import_module("app:main")
+    print("reloaded:", rt.eval("out"))
+    try:
+        rt.import_module("app:missing")
+    except JsError as err:
+        print("missing module:", err)
+
 print("runtime closed")

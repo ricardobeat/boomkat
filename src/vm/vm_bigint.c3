@@ -245,7 +245,7 @@ fn int vm_bigint_relational(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
                 vm_set_type_error(vm, "Cannot convert a Symbol value to a number");
                 return 0;
             }
-            hbigint::HBigInt*? yb = string_to_bigint(vm.heap, ys.get_data());
+            hbigint::HBigInt*? yb = string_to_bigint(vm.heap, ys);
             if (catch yb) { *is_undef = true; return 0; }
             return hbigint::hbigint_cmp(x.get_bigint(), yb);
         }
@@ -263,7 +263,7 @@ fn int vm_bigint_relational(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
             vm_set_type_error(vm, "Cannot convert a Symbol value to a number");
             return 0;
         }
-        hbigint::HBigInt*? xb = string_to_bigint(vm.heap, xs.get_data());
+        hbigint::HBigInt*? xb = string_to_bigint(vm.heap, xs);
         if (catch xb) { *is_undef = true; return 0; }
         return hbigint::hbigint_cmp(xb, y.get_bigint());
     }

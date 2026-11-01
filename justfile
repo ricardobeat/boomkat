@@ -120,6 +120,18 @@ build t="boomkat" intl="default" temporal="default" collator="default":
 build-debug t="boomkat" intl="default" temporal="default" collator="default":
     python3 scripts/build.py "{{t}}" --intl "{{intl}}" --temporal "{{temporal}}" --collator "{{collator}}" --debug
 
+build-riscv:
+    c3c build boomkat_tiny --target linux-riscv64 --cc riscv64-linux-gnu-gcc --build-dir out/build/riscv64 --show-backtrace=no
+    mkdir -p out/riscv64
+    mv out/boomkat_tiny out/riscv64/boomkat_tiny
+    riscv64-linux-gnu-strip out/riscv64/boomkat_tiny
+
+build-riscv-musl:
+    c3c build boomkat_tiny --target linux-riscv64 --linux-libc=musl --linux-crt /usr/riscv64-linux-musl/lib/musl/lib --cc scripts/riscv64-musl-cc -L /usr/riscv64-linux-musl/lib/musl/lib -z `riscv64-linux-gnu-gcc -print-libgcc-file-name` --build-dir out/build/riscv64-musl --show-backtrace=no
+    mkdir -p out/riscv64-musl
+    mv out/boomkat_tiny out/riscv64-musl/boomkat_tiny
+    riscv64-linux-gnu-strip out/riscv64-musl/boomkat_tiny
+
 # Build the full bundled Intl and Temporal release CLI.
 build-full-icu:
     @make out/boomkat-full-icu
@@ -199,19 +211,20 @@ pack:
     bash {{justfile_directory()}}/scripts/pack_c3l.sh
     bash {{justfile_directory()}}/scripts/pack_c3l.sh --link
 
-# Bump VERSION, CLI_VERSION and bk_version() to <version>, check them, and create the annotated tag v<version> (does not push)
+# Roll CHANGELOG.md [Unreleased] into <version>, bump VERSION, CLI_VERSION and bk_version(), check them, and create the annotated tag v<version> (does not push)
 release version:
     #!/usr/bin/env bash
     set -euo pipefail
     cd {{justfile_directory()}}
     v='{{version}}'
     v="${v#v}"
+    python3 scripts/changelog.py roll "$v"
     printf '%s\n' "$v" > VERSION
     sed -i.bak -E "s/^(const String CLI_VERSION = \")[^\"]+(\";)/\1$v\2/" cli/boomkat.c3
     sed -i.bak -E "/fn char\* bk_version\(\)/,/^}/ s/return \"[^\"]+\";/return \"$v\";/" src/capi.c3
     rm -f cli/boomkat.c3.bak src/capi.c3.bak
     python3 scripts/check_release_version.py --tag "v$v"
-    git add VERSION cli/boomkat.c3 src/capi.c3
+    git add VERSION CHANGELOG.md cli/boomkat.c3 src/capi.c3
     git commit -m "Release v$v"
     git tag -a "v$v" -m "Boomkat v$v"
     echo "Tagged v$v. Push with: git push origin main v$v"
@@ -512,7 +525,7 @@ test-bytecode: test-tiny
 
 # Promise rejection transitions and watchdog cancellation in the C and C3 APIs.
 test-runtime-hooks:
-    @make test-runtime-hooks
+    @make test-runtime-hooks test-strings-api
     cd bindings/c3/example && c3c build runtime_hooks && ./out/runtime_hooks
 
 # Verify shared-heap realms, native reentry, and sibling-context lifetimes.
@@ -521,8 +534,13 @@ test-realms:
     @python3 scripts/run_test262.py --single test/capi/intl_realms.js
 
 # Runtime/context ownership, callback values, exceptions, strings, and explicit jobs.
+# C++ binding: test/cpp in the C++17/C++20, exceptions on/off matrix, plus header
+# self-containment and compile-fail cases.
+cpp-test:
+    @make cpp-check
+
 test-api:
-    @make test-api-lifecycle test-host-abi test-embed-api test-modules-api test-realms-api test-runtime-hooks
+    @make test-api-lifecycle test-host-abi test-embed-api test-modules-api test-realms-api test-runtime-hooks test-strings-api test-handles-api test-runtime-options test-atoms-api test-object-model-api test-errors-api test-descriptors-api test-closures-api test-classes-api test-tracing-api test-intrinsics-api test-promises-api test-event-loop-api test-scripts-api test-module-loader-api test-binary-api test-weak-api test-gc-control-api test-context-options-api test-exotic-api
 
 # C3 contexts with private or shared runtimes, including ownership and reuse.
 test-c3-api:

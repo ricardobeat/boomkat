@@ -1,75 +1,120 @@
-<div align="center"><img width="240" alt="" src="https://github.com/user-attachments/assets/d32200ca-e5ce-4de8-8450-2b93f22ce07b" /></div>
+<h1 align="left"><img width="360" alt="boomkat" src="https://github.com/user-attachments/assets/bbe5a2f2-9d08-42cf-9bf9-cb42c7d0f388" /></h1>
 
-# boomkat
+*Small enough to hide. Fast enough to hunt.*
 
-**Boomkat** is a modern embeddable Javascript engine implementing 100% of the [ES2026 spec](https://tc39.es/ecma262/2025/), developed using the [C3](https://c3-lang.org/) language.
+**boomkat** is a tiny, fast Javascript engine with modern features.
 
-## Architecture
+![ECMAScript](https://img.shields.io/badge/ECMAScript-2026-f7df1e?style=flat)
+![TypeScript](https://img.shields.io/badge/TypeScript-native-3178c6?style=flat)
+![Size](https://img.shields.io/badge/size-2MB-555585?style=flat)
+![Test262](https://img.shields.io/badge/test262-99.3%25-green?logo=javascript&logoColor=yellow)
 
-Boomkat is a conventional bytecode interpreter. It parses code into a flat AST with types erased, generates register-based bytecode, applies light optimizations (folding, peepholes, move elimination, fusion, inlining) and hands it off to a direct-threaded VM dispatcher. It also has a full tracing, generational, incremental GC - pauses are kept < 1ms which makes it suitable for UI work.
-
-See the [engine comparison](#comparison-to-other-engines) section for more detail.
+> *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America that can swivel it's hindlegs 180 degrees for better climbing; it translates to *tree cat*.
 
 ## Features
 
-#### ⚡ Modern JS, built in
+- 🟨 **ECMAScript 2026** — [ES2026](https://tc39.es/ecma262/2026/) support, native ESM, top-level await, proxies and modern built-ins.
+- ⚛️ **TypeScript & JSX** — run `.ts`, `.tsx`, and `.jsx` files without a build step.
+- 🌎 **Temporal & Intl** — full internationalization support with the *full-ICU* build.
+- 🧱 **Small footprint** — tunable build profiles down to ~700 KB.
+- ⚡ **Fast execution** — outperforms QuickJS on OctaneBench.
 
-Boomkat targets the latest ECMAScript spec. It has ES modules, top-level await, private fields, proxies, async generators, and BigInt. It also has Iterator helpers, resizable ArrayBuffers, and explicit resource management (`using`). Temporal and Intl are available in the full ICU build.
+Developed using the [C3](https://c3-lang.org/) language.
 
-#### ⚛️ TypeScript and JSX without a build step
+## Quick start
 
-The engine runs `.ts` and `.tsx` files natively. Type annotations are stripped by the parser. Respects `tsconfig.json` settings too. This lets you write software without any extra build tooling in your pipeline.
+Download the latest `boomkat-cli` from [Releases](https://github.com/ricardobeat/boomkat/releases/latest), then run:
 
-#### 🧱 Small and tunable
+```sh
+boomkat hello.js
+```
 
-The default build is ~2MB, the *slim* profile ~1.5MB, and the *tiny* one about 700KB. You can pick and match build flags to trade features for size exactly the way you want it. No complex build tooling required besides the `c3c` compiler.
+Boomkat runs files as ES modules in strict mode by default. Use `--script` for classic script semantics.
 
-#### 🧪 Full ECMAScript compliance
+To build from source see the [building from source](#building-from-source) section below. Minimal tooling is required.
 
-Boomkat currently passes 99%+ of the test262 suite, above QuickJS, V8, Spidermonkey and JavascriptCore. Pass rate is 100% for most ECMAScript editions (ES5, ES2015, ES2025 etc). The engine has an extensive validation pipeline that checks it against qjs/node, test262, extensive regression and performance tests, and a set of popular javascript and typescript projects on every build.
+## ECMAScript conformance
 
-#### 🪝 Embedding API
+*boomkat* passes **53,240 / 53,578** Test262 tests (99.3%).
 
-Friendly C embedding API - or use it as a library directly in a C3 project.
+<img width="380" alt="test262-compare" src="https://github.com/user-attachments/assets/498c9584-7895-4946-a1fa-4301d55ff42e" />
 
-A full ECMAScript feature-by-feature breakdown against QuickJS, quickjs-ng, and Duktape can be found in [docs/features.md](docs/features.md).
+<details>
+<summary>Test results per ECMA edition</summary>
 
-## Comparison to other engines
+| Version | Passed | Rate |
+|:--------|-------:|-----:|
+| ES5 | 23 / 23 | 100% |
+| ES2015 | 29,231 / 29,497 | 99.0% |
+| ES2016 | 197 / 198 | 99.4% |
+| ES2017 | 1,359 / 1,632 | 83.2% |
+| ES2018 | 6,890 / 6,890 | 100% |
+| ES2019 | 185 / 185 | 100% |
+| ES2020 | 3,076 / 3,121 | 98.5% |
+| ES2021 | 1,038 / 1,038 | 100% |
+| ES2022 | 7,611 / 7,611 | 100% |
+| ES2023 | 299 / 299 | 100% |
+| ES2024 | 813 / 866 | 93.8% |
+| ES2025 | 1,322 / 1,322 | 100% |
+| ES2026 | 375 / 375 | 100% |
+
+</details>
+
+## Architecture
+
+- **Compiler** — parsing, type stripping, flat AST, and register-based bytecode.
+- **Optimization** — constant folding, peephole optimization, fused operations, and inlining.
+- **Interpreter** — direct-threaded VM dispatch.
+- **Modern GC** — incremental, generational tracing GC with string reference counting, designed for low pause times
+- **JIT** — optional [sljit](https://github.com/zherczeg/sljit) backend (in development).
+
+<details>
+
+<summary>Engine comparison</summary>
 
 | Engine | Lang | Front end | Bytecode | JIT | GC | Size |
 |---|---|---|---|---|---|---|
-| boomkat | C3 | Flat AST | Register | ❌* | Generational GC + string refcount | 2.2 MB |
+| boomkat | C3 | Flat AST | Register | 🚧 * | Generational GC + string refcount | 2.2 MB |
 | QuickJS | C | Single-pass | Stack | ❌ | Refcount + cycle collector | 2.2 MB |
 | Duktape | C | Single-pass | Register | ❌ | Refcount + mark-sweep | 0.5 MB |
 | V8 | C++ | AST | Register | ✅ | Generational, concurrent GC | 51 MB |
 | Boa | Rust | AST | Register | ❌ | Tracing GC (prototype) | 30 MB |
 | Kiesel | Zig | AST, IR | Register | ❌ | Boehm (bdwgc) | 17 MB |
 
-_* integration with [sljit](https://github.com/zherczeg/sljit) is in prototype stage_
+_* not yet available in release builds_
+
+</details>
 
 ## Performance
 
-- ~**10x** faster than Duktape
-- **~10-20%** faster than QuickJS
-- low memory usage
+Currently ~10x faster than Duktape, 20-40% faster than QuickJS, with similar memory usage. Process startup time <2ms.
 
-The goal is to land somewhere in between browser engines (V8/JSC/SM) and QuickJS - work is ongoing on performance optimization and a potential simple JIT compiler.
+<img width="800"  alt="Octane bench results" src="https://github.com/user-attachments/assets/4bf3910e-16d4-44bc-af61-e009e9fc6265" />
 
-<img src="./docs/benchmarks.png" alt="Benchmark comparison of boomkat, QuickJS and Duktape across 17 benchmarks (time in ms, lower is better)" width="680" />
+> Results from: Apple MacBook Air, M3, 16GB
 
-## Getting started
+## AI disclosure
 
-The easiest way to try it out is by downloading the latest `boomkat-cli` release from the [Releases](/releases) page. Or check the [building from source](#building-from-source) section below.
+This project is built through *AI-assisted engineering*. All code is written by AI agents, but under continuous human guidance - hands-on direction, feedback and review throughout the development process. Autonomous workflows are reserved for well-scoped, bounded tasks.
 
-## A little backstory
+Over **500 hours of human effort** have gone into the project.
 
-Boomkat started as an attempt to port [Duktape](https://duktape.org) to C3 (thank you @svaarala!).
+### Model and agent usage stats</summary>
 
-It quickly grew into a personal AI-orchestration challenge - the Bun port to Rust cost over a million dollars, which seemed excessive. How much could I get done with open models and my close-to-zero budget? 
+**40B-50B** tokens used so far (estimated). The core of the engine was largely written using open models (MiMo, Minimax, DeepSeek), especially at earlier stages.
 
-The engine is written using what I call *AI-assisted engineering*: code is written by machines, with _heavy human guidance_. 400+ hours so far have been put into design, research, testing, and agent orchestration. Every commit is read (but not reviewed) by a human.
+<img width="1055" height="490" alt="boomkat-commits" src="https://github.com/user-attachments/assets/6bb6502d-69a8-445c-9192-902b448ff964" />
 
-> *boomkat* is the dutch name for the [Margay](https://en.wikipedia.org/wiki/Margay), a small wild cat native to South America that can swivel it's hindlegs 180 degrees for better climbing; it translates to *tree cat*.
+<details>
+    <summary>Commits by model</summary>
+    <img width="1057" height="701" alt="boomkat-models" src="https://github.com/user-attachments/assets/253821da-8ab3-4d80-aa13-6555e8207a06" />
+</details>
+
+<details>
+    <summary>Human input</summary>
+    <strong>5000+</strong> unique prompts. 2000+ longer than ten words, 887 were Ralph-style loop prompts.
+    <img width="1054" height="280" alt="boomkat-prompts" src="https://github.com/user-attachments/assets/b691b426-5ce9-4ccd-a58b-d273c65d3cd1" />
+</details>
 
 ### Building from source
 
@@ -81,7 +126,8 @@ The engine is written using what I call *AI-assisted engineering*: code is writt
 
 Then `git clone https://github.com/ricardobeat/boomkat` and run `c3c build`. See `just --list` for a full list of available build outputs and tasks.
 
-#### Build flags
+<details>
+<summary>Build flags</summary>
 
 - `-D TRACE_VM`: Enable bytecode disassembly and VM tracing
 - `-D OP_PROFILE`: Enable opcode profiling
@@ -91,18 +137,16 @@ Then `git clone https://github.com/ricardobeat/boomkat` and run `c3c build`. See
 - `-D HEAP_VERIFY`: validate GC roots at yield/resume
 
 See [docs/build-flags.md](docs/build-flags.md) for the full list.
+</details>
 
 ### Build profiles
 
-To show the modular engine features, we ship a few different build profiles:
+The default release files come in several build profiles, allowing you to trade language features and internationalization support for binary size:
 
-The default **boomkat** CLI builds with all ES features, but only English-language localization. The engine ships it's own intl code taking the final build to over 4MB. Build with `just build-full-icu`.
-
-**boomkat-full-icu** includes complete `Intl` and `Temporal` APIs for every language. The engine ships it's own intl code taking the final build to over 4MB. Build with `just build-full-icu`.
-
-**boomkat-slim** is a smaller build that is strict-only, excludes the builtin `console`, `Temporal`, `Intl`, `BigInt`, `Proxy`, typescript and jsx support to achive a roughly ~1.5MB binary size. Build with `just build-slim`.
-
-**boomkat-tiny** also excludes `RegExp`, `Map/Set`, `Iterators`, `SharedArrayBuffer` and a bunch of other modern features to achieve extreme size reduction. It is basically an ES2015 strict mode engine. It also *excludes the parser* and can only run precompiled bytecode:
+- **`boomkat`** — default CLI with modern ECMAScript features and English-language internationalization.
+- **`boomkat-full-icu`** — complete Intl and Temporal APIs with bundled locale data and collation support. Over 4 MB.
+- **`boomkat-slim`** — approximately 1.5 MB, excluding TypeScript, JSX, Temporal, Intl, BigInt, Proxy, and other optional features.
+- **`boomkat-tiny`** — approximately 700 KB, with a reduced ECMAScript feature set and no parser. Executes precompiled bytecode only.
 
 ```sh
 just build-tiny
@@ -110,7 +154,8 @@ just build-tiny
 ./out/boomkat_tiny program.bkbc
 ```
 
-### Intl options
+<details>
+    <summary>Intl options</summary>
 
 ```sh
 just build boomkat --intl=none --temporal=false
@@ -131,10 +176,9 @@ reserved for an ICU backend and reports an error until that backend exists.
 `just test-local` and test262 use full builds; the test runner detects its worker's
 available features automatically.
 
-### Strict-mode is the default
+</details>
 
-The CLI runs files as ES modules with `boomkat main.js`, so `import`, `export` and top-level `await` work. Use the
-`--script` flag to run files in sloppy mode instead.
+### JIT compilation
 
 Use `boomkat --jit main.js` to enable native compilation for eligible hot
 template rendering, numeric array loops, byte transforms, ASCII scans, and hot
@@ -143,12 +187,6 @@ JIT compilation is off by default. Embedders control it per runtime through
 the C and C3 APIs. See
 [JIT](docs/build-flags.md#jit) for scope and build options.
 
-
-## Not implemented / unplanned
-
-- decorators
-- stage 2 features
-
 ## Language bindings
 
 The engine ships a `bk_` C ABI (`include/boomkat.h`, static `boomkat.a` and a
@@ -156,6 +194,9 @@ shared library). See `docs/embedding.md`.
 
 A quick example in C exposing a host function:
 
+<details>
+    <summary>C binding example</summary>
+    
 ```c
 #include <boomkat.h>
 #include <stdio.h>
@@ -176,14 +217,24 @@ int main(void) {
 
 This example is available at [bindings/c/hello.c](bindings/c/hello.c). Build the static library with `just build-lib`, then run `just example-c-hello`.
 
+</details>
+
 > Bindings for Go, Rust, Python, Ruby, and Zig are currently a work in progress.
+
+
+## Credits
+
+Thanks to the [Duktape](https://duktape.org) and [QuickJS](https://github.com/bellard/quickjs) authors. This engine initially started as an attempt to port Duktape to the C3 language, eventually trying to match QuickJS, and ultimately becoming something entirely new. It wouldn't exist without these prior works.
 
 ## License
 
 Use of this software is governed by the Business Source License included in the [LICENSE](./LICENSE) file.
 
-tl;dr Boomkat can be used without restrictions for open-source, personal and commercial projects up to $2M/year revenue, and each release becomes MIT-licensed after four years.
+tl;dr *boomkat* can be used without restrictions for open-source, personal and commercial projects up to $2M/year revenue, and each release becomes MIT-licensed after four years.
+
+See THIRD_PARTY for third-party licenses (QJS, Duktape, vendored modules).
 
 ## Support this project
 
 [![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-red)](https://github.com/sponsors/ricardobeat)
+

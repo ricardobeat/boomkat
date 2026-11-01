@@ -1126,7 +1126,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
 
     // Get separator, §23.1.3.16 step 3: if undefined (or absent), use ",".
     HString* sep_str = null;
-    char[] sep = ",";
+    HString* sep = builtin_intern_string(ctx.heap, ",");
     if (ctx.argc > 0 && !ctx.regs[ctx.base_reg].is_undefined()) {
         TVal sep_val = ctx.regs[ctx.base_reg];
         // Use full ToString/ToPrimitive so custom valueOf/toString on objects wins.
@@ -1134,7 +1134,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         if (ctx.should_throw) { ctx.result_undefined(); return; }
         if (sep_str != null) {
             ((types::HeapHeader*)sep_str).incref();
-            sep = sep_str.get_data();
+            sep = sep_str;
         }
     }
 
@@ -1196,7 +1196,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         elem_strs = elem_strs_heap[:len];
     }
 
-    usz total_len = 0;
+    ulong total_len = 0;
     for (uint i = 0; i < len; i++) {
         TVal elem;
         bool present = arr_get_elem_vm(obj, (ulong)i, ctx.heap, ctx, &elem);
@@ -1222,15 +1222,14 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         }
         ((types::HeapHeader*)elem_str).incref();
         elem_strs[i] = elem_str;
-        total_len += elem_str.blen;
+        total_len += elem_str.unit_len();
     }
     if (len > 1) {
-        total_len += sep.len * (usz)(len - 1);
+        total_len += (ulong)sep.unit_len() * (ulong)(len - 1);
     }
 
-    // PASS 2: Allocate a single buffer and copy all pieces using memcpy.
-    // When total_len is 0 (all elements are empty strings and separator is ""),
-    // skip the alloc and return "" directly to avoid a null-from-alloc(0) path.
+    // PASS 2: Build the result. When total_len is 0 (all elements are empty
+    // strings and separator is ""), return "" directly.
     if (total_len == 0) {
         if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
         for (uint i = 0; i < len; i++) {
@@ -1244,9 +1243,9 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
     }
 
     // A join whose pieces sum past the string cap can never produce a value, so
-    // refuse before reserving the buffer. total_len is already 64-bit, so the
+    // refuse before building the buffer. total_len is already 64-bit, so the
     // sum above is exact; only the result is out of range.
-    if (hstring::length_exceeds_max((ulong)total_len)) {
+    if (hstring::length_exceeds_max(total_len)) {
         if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
         for (uint i = 0; i < len; i++) {
             ctx.heap.decref((types::HeapHeader*)elem_strs[i]);
@@ -1256,36 +1255,7 @@ fn void builtin_array_proto_join(BuiltinContext* ctx) {
         return;
     }
 
-    char* result_buf = (char*)ctx.heap.alloc_func(ctx.heap.heap_udata, total_len);
-    if (result_buf == null) {
-        if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
-        for (uint i = 0; i < len; i++) {
-            ctx.heap.decref((types::HeapHeader*)elem_strs[i]);
-        }
-        if (elem_strs_heap != null) ctx.heap.free_func(ctx.heap.heap_udata, elem_strs_heap);
-        ctx.result_undefined();
-        return;
-    }
-
-    usz offset = 0;
-    for (uint i = 0; i < len; i++) {
-        if (i > 0 && sep.len > 0) {
-            // Guard sep.len > 0: an empty separator (e.g. join("")) makes `sep`
-            // a zero-length slice, and &sep[0] traps under bounds-checked builds
-            // even though the copy would move zero bytes.
-            mem::copy(&result_buf[offset], &sep[0], (sz)(sep.len));
-            offset += sep.len;
-        }
-        HString* elem_str = elem_strs[i];
-        char[] elem_data = elem_str.get_data();
-        if (elem_data.len > 0) {
-            mem::copy(&result_buf[offset], &elem_data[0], (sz)(elem_data.len));
-            offset += elem_data.len;
-        }
-    }
-
-    HString* result = builtin_intern_string(ctx.heap, result_buf[:total_len]);
-    ctx.heap.free_func(ctx.heap.heap_udata, result_buf);
+    HString* result = join_hstrings(ctx, elem_strs[:len], sep);
     if (sep_str != null) ctx.heap.decref((types::HeapHeader*)sep_str);
     for (uint i = 0; i < len; i++) {
         ctx.heap.decref((types::HeapHeader*)elem_strs[i]);
@@ -1346,7 +1316,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
     // Steps 4-7: concatenate ToString(Invoke(element, "toLocaleString")),
     // separated by ",". Built incrementally in a DString-style growable buffer
     // so output length is bounded only by memory.
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
 
@@ -1357,7 +1327,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
     $endif
     for (ulong k = 0; k < len; k++) {
         // Step 6.a: separator before every element but the first.
-        if (k > 0 && !out.append_bytes(",")) {
+        if (k > 0 && !out.append_char(',')) {
             arr_throw_range_error(ctx, "Array.prototype.toLocaleString out of memory");
             ctx.result_undefined(); return;
         }
@@ -1402,7 +1372,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
         // Pin across the append: the interned result is only weakly held and a
         // GC triggered by the buffer growth would otherwise reclaim it.
         ((types::HeapHeader*)s).incref();
-        bool ok = out.append_bytes(s.get_data());
+        bool ok = out.append_hstring(s);
         ctx.heap.decref((types::HeapHeader*)s);
         if (!ok) {
             arr_throw_range_error(ctx, "Array.prototype.toLocaleString out of memory");
@@ -1410,9 +1380,7 @@ fn void builtin_array_proto_toLocaleString(BuiltinContext* ctx) {
         }
     }
 
-    HString* result = builtin_intern_string(ctx.heap, out.bytes());
-    if (result == null) { ctx.result_undefined(); return; }
-    ctx.result_string(result);
+    out.finish(ctx);
 }
 
 // ============================================================================
@@ -1596,8 +1564,8 @@ fn void builtin_array_proto_push(BuiltinContext* ctx) {
     //   - no own array-index key was ever promoted into the named table on
     //     the receiver. Every write target here is >= the current length,
     //     and a promoted index is always < length (and disappears from the
-    //     named table entirely if length later shrinks past it, verified
-    //     against quickjs), so this can't be hit by construction, but the
+    //     named table entirely if length later shrinks past it), so this
+    //     can't be hit by construction, but the
     //     check is a free (O(1), sticky flag) second line of defense should
     //     that invariant ever have an exception this reasoning missed.
     //   - the target range stays under the same 2^24 cap the VM's PUTPROP
@@ -1913,7 +1881,7 @@ fn int array_sort_compare(BuiltinContext* ctx, TVal comparefn, bool has_comparef
             return 0;
         }
         HString* b_str = b_str_raw ?? builtin_to_string(ctx.heap, &b);
-        cmp = hstring::hstring_compare(a_str, b_str);
+        cmp = hstring::units_compare(a_str, b_str);
     }
     return cmp;
 }
@@ -2977,8 +2945,7 @@ fn bool arr_from_is_callable(TVal v) {
 // already been recorded in ctx (ctx.should_throw/ctx.throw_value). Calls
 // iterator.return() if present, discarding *its* result but propagating a
 // throw from close itself would override the original completion per spec
-// step 5, however we keep the original completion (matching most engines'
-// pragmatic behavior for a non-throwing return()) since ctx already holds
+// step 5, however we keep the original completion since ctx already holds
 // the completion to propagate. If close() throws, the original completion
 // is preserved (spec step 5 says close()'s throw masks the original only
 // when the original was a normal completion, which is not this call site's
@@ -3473,7 +3440,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
     HString* len_key = heap.str(heap::BuiltinStr.LENGTH);
     ulong len = 0;
     if (is_string_prim) {
-        len = str_val.char_length();
+        len = str_val.unit_len();
     } else if (len_key != null) {
         TVal? len_opt = builtins_generic_get(array_like, len_key, ctx);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
@@ -3529,7 +3496,7 @@ fn void builtin_array_from(BuiltinContext* ctx) {
             // This array-like fallback is incomplete for strings: Array.from(str)
             // should go through @@iterator, codepoint by codepoint. Reaching here
             // means that path was not taken.
-            uint cp = str_val.char_at_unchecked((uint)k);
+            uint cp = str_val.unit_at((uint)k);
             char[4] cbuf;
             uint cblen = hstring::encode_codepoint(cp, cbuf[:4]);
             HString* ch_str = builtin_intern_string(heap, cbuf[:cblen]);
@@ -3671,7 +3638,7 @@ fn HObject* arr_to_object(TVal val, Heap* heap) {
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
-            len_tv.set_fastint((long)prim_str.char_length());
+            len_tv.set_fastint((long)prim_str.unit_len());
             obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, heap);
             // Indexed character properties are served lazily via the exotic_stringobj flag;
             // no per-character own properties are materialised at construction time.
@@ -3804,7 +3771,7 @@ fn bool arr_has_prop(HObject* obj, ulong key, Heap* heap, void* vm = null) {
     // STRING exotic: integer indices [0, char_length) are own properties served lazily
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        return prim != null && (long)key < prim.char_length();
+        return prim != null && (long)key < prim.unit_len();
     }
     // TypedArray: integer indices in [0, length) are own data properties served
     // from the backing buffer (they never appear in the named-property table).
@@ -4266,7 +4233,7 @@ fn bool array_set_elem_ulong_set(BuiltinContext* ctx, HObject* obj, ulong idx, T
     // falls through to silently defining a NEW own property instead.
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && idx < (ulong)prim.char_length()) {
+        if (prim != null && idx < (ulong)prim.unit_len()) {
             arr_throw_type_error(ctx, "Cannot assign to read-only property of String");
             return false;
         }
@@ -4450,19 +4417,9 @@ fn bool arr_get_elem(HObject* obj, uint key, Heap* heap, TVal* out) {
     // STRING exotic: serve indexed character properties lazily
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && (long)key < prim.char_length()) {
-            char[] data = prim.get_data();
-            usz byte_start = (usz)prim.char_offset_to_byte_offset(key);
-            usz byte_end = (usz)prim.char_offset_to_byte_offset(key + 1);
-            if (byte_start < byte_end) {
-                char[8] one;
-                usz copy_len = byte_end - byte_start;
-                if (copy_len >= one.len) copy_len = one.len - 1;
-                for (usz j = 0; j < copy_len; j++) { one[j] = data[byte_start + j]; }
-                one[copy_len] = 0;
-                HString*? ch_raw = builtin_intern_string(heap, one[:copy_len]);
-                if (try ch = ch_raw) { out.set_string_borrowed(ch); return true; }
-            }
+        if (prim != null && (long)key < prim.unit_len()) {
+            HString* ch = heap.str_from_unit(prim.unit_at((uint)key));
+            if (ch != null) { out.set_string_borrowed(ch); return true; }
             return false;
         }
         return false;
@@ -4580,19 +4537,9 @@ fn bool arr_get_elem_vm(HObject* obj, ulong key, Heap* heap, BuiltinContext* ctx
     // STRING exotic: serve indexed character properties lazily
     if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
         HString* prim = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-        if (prim != null && (long)key < prim.char_length()) {
-            char[] data = prim.get_data();
-            usz byte_start = (usz)prim.char_offset_to_byte_offset((uint)key);
-            usz byte_end = (usz)prim.char_offset_to_byte_offset((uint)key + 1);
-            if (byte_start < byte_end) {
-                char[8] one;
-                usz copy_len = byte_end - byte_start;
-                if (copy_len >= one.len) copy_len = one.len - 1;
-                for (usz j = 0; j < copy_len; j++) { one[j] = data[byte_start + j]; }
-                one[copy_len] = 0;
-                HString*? ch_raw = builtin_intern_string(heap, one[:copy_len]);
-                if (try ch = ch_raw) { out.set_string_borrowed(ch); return true; }
-            }
+        if (prim != null && (long)key < prim.unit_len()) {
+            HString* ch = heap.str_from_unit(prim.unit_at((uint)key));
+            if (ch != null) { out.set_string_borrowed(ch); return true; }
             return false;
         }
         return false;

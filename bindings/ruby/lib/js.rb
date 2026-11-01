@@ -36,6 +36,8 @@ module JS
     TYPE       = -6
     FULL       = -7
     INTERRUPT  = -8
+    ENCODING   = -9
+    UNSUPPORTED = -10
   end
 
   # Error constructors bk_throw_error can raise, from bk_error_kind.
@@ -47,6 +49,14 @@ module JS
     SYNTAX    = 4
   end
 
+  # Immediate handles from boomkat.h: valid in any context, never freed.
+  module Handle
+    UNDEFINED = 1
+    NULL      = 2
+    TRUE      = 3
+    FALSE     = 4
+  end
+
   # Value types reported by bk_get_type.
   module Type
     UNDEFINED = 0
@@ -56,7 +66,8 @@ module JS
     STRING    = 4
     OBJECT    = 5
     FUNCTION  = 6
-    OTHER     = 7
+    SYMBOL    = 7
+    BIGINT    = 8
   end
 
   # Base of the exception hierarchy. Everything this binding raises is a JS::Error,
@@ -146,7 +157,8 @@ module JS
     NAMES = {
       Type::OBJECT   => 'object',
       Type::FUNCTION => 'function',
-      Type::OTHER    => 'other'
+      Type::SYMBOL   => 'symbol',
+      Type::BIGINT   => 'bigint'
     }.freeze
 
     attr_reader :type_id
@@ -176,9 +188,9 @@ module JS
     extend Fiddle::Importer
 
     SIGNATURES = [
-      'void* bk_new_runtime()',
+      'void* bk_new_runtime(void*)',
       'void bk_free_runtime(void*)',
-      'void* bk_new_context(void*)',
+      'void* bk_new_context(void*, void*)',
       'void bk_free_context(void*)',
       'const char* bk_version()',
 
@@ -190,6 +202,10 @@ module JS
       'int bk_read_number(void*, unsigned long long, double*)',
       'int bk_read_bool(void*, unsigned long long, int*)',
       'int bk_read_string(void*, unsigned long long, char*, size_t, size_t*)',
+      'int bk_read_string_utf8(void*, unsigned long long, int, char*, size_t, size_t*)',
+      'int bk_read_string_utf16(void*, unsigned long long, void*, size_t, size_t*)',
+      'size_t bk_string_length(void*, unsigned long long)',
+      'int bk_string_view_get(void*, unsigned long long, void*)',
       'const char* bk_get_error_message(void*)',
       'int bk_get_error_code(void*)',
       'int bk_run_jobs(void*)',
@@ -204,13 +220,35 @@ module JS
       'int bk_is_constructor_call(void*)',
 
       'unsigned long long bk_throw_error(void*, int, const char*)',
+      'unsigned long long bk_new_error(void*, int, const char*)',
+      'int bk_describe(void*, unsigned long long, char*, size_t, size_t*)',
       'unsigned long long bk_dup_value(void*, unsigned long long)',
+      # Binary data: ArrayBuffers and typed arrays read back as binary Strings.
+      'int bk_get_array_buffer(void*, unsigned long long, void**, size_t*)',
+      'void bk_gc(void*, int)',
+      'int bk_get_heap_stats(void*, void*)',
+      'int bk_get_typed_array(void*, unsigned long long, void*)',
       'unsigned long long bk_call(void*, unsigned long long, unsigned long long, const unsigned long long*, unsigned int)',
 
+      # Compiled scripts and modules.
+      'unsigned long long bk_compile(void*, const char*, size_t, const char*, unsigned int)',
+      'unsigned long long bk_run_script(void*, unsigned long long)',
+      'int bk_set_module_loader(void*, void*)',
+      'int bk_module_set_name(void*, const char*, size_t)',
+      'int bk_module_provide(void*, const char*, size_t)',
+      'int bk_module_fail(void*, unsigned long long)',
+      'int bk_define_native_module(void*, const char*, size_t, unsigned long long)',
+      'int bk_invalidate_module(void*, const char*, size_t)',
+      'unsigned long long bk_import(void*, const char*, size_t)',
+      'int bk_promise_state_get(void*, unsigned long long, int*)',
+      'unsigned long long bk_promise_result(void*, unsigned long long)',
+
       'unsigned long long bk_new_number(void*, double)',
-      'unsigned long long bk_new_undefined(void*)',
-      'unsigned long long bk_new_bool(void*, int)',
-      'unsigned long long bk_new_string(void*, const char*, size_t)'
+      'unsigned long long bk_new_string(void*, const char*, size_t)',
+      'unsigned long long bk_new_string_latin1(void*, const char*, size_t)',
+      'unsigned long long bk_new_string_utf16(void*, const void*, size_t)',
+      'unsigned long long bk_new_external_string_latin1(void*, const void*, size_t, void*, void*)',
+      'unsigned long long bk_new_external_string_utf16(void*, const void*, size_t, void*, void*)'
     ].freeze
 
     class << self
@@ -553,12 +591,33 @@ module JS
   # A value belongs to the runtime that produced it. #eval converts its result
   # to Ruby before returning, so ordinary results move freely; a handle held
   # inside a host function does not, and the other runtime refuses it.
+  # Compiled script code from Runtime#compile, runnable any number of times.
+  class Script
+    def initialize(runtime, id)
+      @runtime = runtime
+      @id = id
+    end
+
+    # Run the script and return its completion value.
+    def run
+      raise Error.new('this Script is closed', Status::INVALID) if @id.zero?
+
+      @runtime.run_script(@id)
+    end
+
+    def close
+      @runtime.release(@id)
+      @id = 0
+      self
+    end
+  end
+
   class Runtime
     def initialize(library = nil)
       Lib.load!(library || JS.default_library)
 
-      @runtime = Lib.bk_new_runtime
-      @rt = Lib.bk_new_context(@runtime)
+      @runtime = Lib.bk_new_runtime(nil)
+      @rt = Lib.bk_new_context(@runtime, nil)
       raise Error.new('cannot create context', Status::NOMEM) unless @rt
 
       @reader = Reader.new(@rt)
@@ -628,6 +687,135 @@ module JS
         raise_status!(status)
       end
       self
+    end
+
+    # Compile a classic script once; JS::Script#run runs it. A syntax error
+    # raises JS::SyntaxError here rather than at run time.
+    def compile(source, filename = '<script>', strict: false)
+      check_open!
+      bytes = source.to_s.b
+      id = Lib.bk_compile(@rt, bytes, bytes.bytesize, filename.to_s, strict ? 2 : 0)
+      raise_status!(Lib.bk_get_error_code(@rt), filename) if id.zero?
+      Script.new(self, id)
+    end
+
+    # Serve module imports from Ruby. `resolve` is called as
+    # (referrer, specifier) and returns the canonical name; `load` is called
+    # with a name and returns the source. Returning nil falls back to the
+    # filesystem unless filesystem_fallback is false; raising fails the
+    # import with the exception's message. With neither, the loader is removed.
+    def set_module_loader(resolve: nil, load: nil, filesystem_fallback: true)
+      check_open!
+      if resolve.nil? && load.nil?
+        @loader = nil
+        status = Lib.bk_set_module_loader(@runtime, nil)
+      else
+        answer = lambda do |request, deliver, &fn|
+          begin
+            result = fn.call
+          rescue StandardError => e
+            err = Lib.bk_new_error(@rt, 0, e.message)
+            status = Lib.bk_module_fail(request, err)
+            Lib.bk_free_value(@rt, err)
+            next status
+          end
+          next Status::OK if result.nil?
+
+          bytes = result.to_s.b
+          Lib.send(deliver, request, bytes, bytes.bytesize)
+        end
+        voidp = Fiddle::TYPE_VOIDP
+        on_resolve = resolve && Fiddle::Closure::BlockCaller.new(
+          Fiddle::TYPE_INT, [voidp, voidp, voidp, voidp, voidp]
+        ) do |_ctx, referrer, specifier, request, _opaque|
+          from = referrer.null? ? '' : referrer.to_s.force_encoding(Encoding::UTF_8)
+          answer.call(request, :bk_module_set_name) do
+            resolve.call(from, specifier.to_s.force_encoding(Encoding::UTF_8))
+          end
+        end
+        on_load = load && Fiddle::Closure::BlockCaller.new(
+          Fiddle::TYPE_INT, [voidp, voidp, voidp, voidp]
+        ) do |_ctx, name, request, _opaque|
+          answer.call(request, :bk_module_provide) { load.call(name.to_s.force_encoding(Encoding::UTF_8)) }
+        end
+        # bk_module_loader: resolve, load, opaque, flags.
+        table = [on_resolve ? on_resolve.to_i : 0, on_load ? on_load.to_i : 0, 0,
+                 filesystem_fallback ? 0 : 2].pack('QQQL')
+        # The closures must outlive their registration.
+        @loader = [on_resolve, on_load, table]
+        status = Lib.bk_set_module_loader(@runtime, Fiddle::Pointer[table])
+      end
+      raise_status!(status) if status != Status::OK
+      self
+    end
+
+    # A module whose exports are the keys of `exports`, a JSON-compatible Hash.
+    def define_native_module(name, exports)
+      check_open!
+      require 'json'
+      source = "(#{JSON.generate(exports)})".b
+      id = Lib.bk_eval_ex(@rt, source, source.bytesize, '<exports>', 0)
+      raise_status!(Lib.bk_get_error_code(@rt)) if id.zero?
+      begin
+        bytes = name.to_s.b
+        status = Lib.bk_define_native_module(@rt, bytes, bytes.bytesize, id)
+      ensure
+        Lib.bk_free_value(@rt, id)
+      end
+      raise_status!(status) if status != Status::OK
+      self
+    end
+
+    # Drop a cached module so the next import loads it again.
+    def invalidate_module(name)
+      check_open!
+      bytes = name.to_s.b
+      status = Lib.bk_invalidate_module(@rt, bytes, bytes.bytesize)
+      raise_status!(status) if status != Status::OK
+      self
+    end
+
+    # Load and evaluate a module, as import(specifier) does, running pending
+    # jobs until it settles. Raises JS::ThrowError when the import rejects.
+    def import_module(specifier)
+      check_open!
+      bytes = specifier.to_s.b
+      promise = Lib.bk_import(@rt, bytes, bytes.bytesize)
+      raise_status!(Lib.bk_get_error_code(@rt)) if promise.zero?
+      begin
+        Lib.bk_run_jobs(@runtime)
+        state = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
+        Lib.bk_promise_state_get(@rt, promise, state)
+        case state[0, Fiddle::SIZEOF_INT].unpack1('i')
+        when 1 then self
+        when 2
+          reason = Lib.bk_promise_result(@rt, promise)
+          buf = Fiddle::Pointer.malloc(512)
+          Lib.bk_describe(@rt, reason, buf, 512, nil)
+          Lib.bk_free_value(@rt, reason)
+          raise ThrowError.new(buf.to_s, Status::THROW)
+        else raise Error.new('import did not settle', Status::INTERNAL)
+        end
+      ensure
+        Lib.bk_free_value(@rt, promise)
+      end
+    end
+
+    # Run compiled code; JS::Script calls this.
+    def run_script(id)
+      check_open!
+      result = Lib.bk_run_script(@rt, id)
+      raise_status!(Lib.bk_get_error_code(@rt)) if result.zero?
+      begin
+        to_ruby(result)
+      ensure
+        Lib.bk_free_value(@rt, result)
+      end
+    end
+
+    # Release a value handle this runtime issued.
+    def release(id)
+      Lib.bk_free_value(@rt, id) unless @closed || id.zero?
     end
 
     # Engine version, e.g. "0.1.0".
@@ -700,6 +888,22 @@ module JS
 
     # Run pending promise jobs. #eval already drains before returning, so this
     # is only needed after resolving promises from outside the engine.
+    # Collect garbage now: a full collection, or a minor one.
+    def gc(full: true)
+      check_open!
+      Lib.bk_gc(@runtime, full ? 1 : 0)
+    end
+
+    # The collector's counters as a Hash.
+    def heap_stats
+      check_open!
+      out = Fiddle::Pointer.malloc(32)
+      Lib.bk_get_heap_stats(@runtime, out)
+      heap, external, limit, live, cycles = out[0, 32].unpack('QQQLL')
+      { heap_bytes: heap, external_bytes: external, heap_limit: limit,
+        live_handles: live, gc_cycles: cycles }
+    end
+
     def drain_microtasks
       check_open!
       status = Lib.bk_run_jobs(@runtime)
@@ -737,9 +941,9 @@ module JS
     end
 
     # Size of one bk_fn_def on the C ABI: two pointers, an int, an unsigned
-    # int, and a trailing pointer, with no padding beyond that on any 64-bit
-    # target this binding supports.
-    FN_DEF_SIZE = Fiddle::SIZEOF_VOIDP * 3 + Fiddle::SIZEOF_INT * 2
+    # int, and three trailing pointers (udata, finalize, finalize_opaque),
+    # with no padding beyond that on any 64-bit target this binding supports.
+    FN_DEF_SIZE = Fiddle::SIZEOF_VOIDP * 5 + Fiddle::SIZEOF_INT * 2
     private_constant :FN_DEF_SIZE
 
     # Pack a two-entry registration table into a byte buffer: the function
@@ -756,13 +960,15 @@ module JS
         closure.to_i,
         arity,
         constructable ? 1 : 0,
+        0,
+        0,
         0
-      ].pack('Q Q l L Q')
+      ].pack('Q Q l L Q Q Q')
       buf
     end
 
-    # Wrap a Ruby block in the C callback shape bk_host_fn declares:
-    #   void (*)(bk_call_ctx ctx, void *udata)
+    # Wrap a Ruby block in the C callback shape bk_c_function declares:
+    #   bk_value (*)(bk_ctx ctx, bk_value this, unsigned argc, const bk_value *argv, void *udata)
     #
     # The udata parameter is unused -- Ruby closes over the block directly,
     # which is both simpler and safer than round-tripping an object through a
@@ -801,8 +1007,8 @@ module JS
     # silently returning undefined.
     def return_value(call, ctx, value)
       case value
-      when nil            then Lib.bk_new_undefined(ctx)
-      when true, false    then Lib.bk_new_bool(ctx, value ? 1 : 0)
+      when nil            then Handle::UNDEFINED
+      when true, false    then value ? Handle::TRUE : Handle::FALSE
       when Numeric        then Lib.bk_new_number(ctx, value.to_f)
       when String
         bytes = value.dup.force_encoding(Encoding::BINARY)
@@ -813,7 +1019,7 @@ module JS
         Lib.bk_new_string(ctx, s, bytes.bytesize)
       when Callback
         raise HostThrow.new('callback belongs to another call', :type) unless value.scope.equal?(call)
-        Lib.bk_dup_value(ctx, value.handle)
+        value.handle
       else
         raise HostThrow.new(
           "host function returned a #{value.class}, which has no JS " \
@@ -836,7 +1042,7 @@ module JS
 
       case value
       when true, false
-        call.send(:record_owned, Lib.bk_new_bool(pointer, value ? 1 : 0))
+        value ? Handle::TRUE : Handle::FALSE
       when Numeric
         call.send(:record_owned, Lib.bk_new_number(pointer, value.to_f))
       when String, Symbol
@@ -926,13 +1132,6 @@ module JS
       when Type::NUMBER   then Tagged.wrap(read_number(id, reader), id)
       when Type::STRING   then Tagged.wrap(read_string(id, reader), id)
       when Type::FUNCTION then Callback.new(call, id)
-      when Type::OTHER
-        # bk_get_type reports OTHER for a lightfunc -- the compact
-        # representation the engine uses for many built-ins, where Math.sqrt
-        # and friends live -- as well as for symbols and bigints. A lightfunc
-        # is callable, so expose the whole class as a Callback and let
-        # bk_call's own TypeError reject the ones that are not.
-        Callback.new(call, id)
       else Opaque.new(type, id)
       end
     end
@@ -959,8 +1158,40 @@ module JS
       when Type::BOOLEAN then read_bool(id, @reader)
       when Type::NUMBER  then read_number(id, @reader)
       when Type::STRING  then read_string(id, @reader)
+      when Type::OBJECT  then read_binary(id, @rt) || Opaque.new(type)
       else Opaque.new(type)
       end
+    end
+
+    # Element size of each bk_element_type, in enum order.
+    ELEMENT_SIZES = [1, 1, 1, 2, 2, 4, 4, 2, 4, 8, 8, 8].freeze
+    # bk_typed_array_info: int type (padded), void* data, size_t length,
+    # size_t byte_offset, bk_value buffer.
+    TYPED_ARRAY_INFO_SIZE = 8 + Fiddle::SIZEOF_VOIDP + (2 * Fiddle::SIZEOF_SIZE_T) + 8
+
+    # The bytes of an ArrayBuffer or typed array as a binary String, or nil.
+    def read_binary(id, ctx)
+      data = Fiddle::Pointer.malloc(Fiddle::SIZEOF_VOIDP)
+      len = Fiddle::Pointer.malloc(Fiddle::SIZEOF_SIZE_T)
+      if Lib.bk_get_array_buffer(ctx, id, data, len) == Status::OK
+        size = len[0, Fiddle::SIZEOF_SIZE_T].unpack1('J')
+        ptr = data[0, Fiddle::SIZEOF_VOIDP].unpack1('J')
+        return ''.b if ptr.zero? || size.zero?
+
+        return Fiddle::Pointer.new(ptr)[0, size]
+      end
+
+      info = Fiddle::Pointer.malloc(TYPED_ARRAY_INFO_SIZE)
+      return nil unless Lib.bk_get_typed_array(ctx, id, info) == Status::OK
+
+      type = info[0, 4].unpack1('l')
+      ptr = info[8, Fiddle::SIZEOF_VOIDP].unpack1('J')
+      count = info[8 + Fiddle::SIZEOF_VOIDP, Fiddle::SIZEOF_SIZE_T].unpack1('J')
+      buffer = info[TYPED_ARRAY_INFO_SIZE - 8, 8].unpack1('Q')
+      Lib.bk_free_value(ctx, buffer)
+      return ''.b if ptr.zero?
+
+      Fiddle::Pointer.new(ptr)[0, count * ELEMENT_SIZES[type]]
     end
 
     # The readers take the context that can resolve the handle: the runtime's

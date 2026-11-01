@@ -39,7 +39,7 @@ static void test_independence(void) {
     bk_ctx A = NULL, B = NULL, C = NULL;
     bk_value t; double d; char s[64];
 
-    if (!(A = bk_new_context(bk_new_runtime())) || !(B = bk_new_context(bk_new_runtime())) || !(C = bk_new_context(bk_new_runtime()))) {
+    if (!(A = bk_new_context(bk_new_runtime(NULL), NULL)) || !(B = bk_new_context(bk_new_runtime(NULL), NULL)) || !(C = bk_new_context(bk_new_runtime(NULL), NULL))) {
         check("three runtimes open", 0);
         return;
     }
@@ -128,7 +128,7 @@ static bk_value h_reenter(bk_ctx ctx, bk_value this_value, unsigned argc, const 
     if (v != 0) bk_free_value(g_other, v);
     return bk_new_number(ctx, (arg == kept) ? kept : -1);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Same name in both runtimes, different udata: each must see its own. */
@@ -136,14 +136,14 @@ static bk_value h_udata(bk_ctx ctx, bk_value this_value, unsigned argc, const bk
     (void)this_value; (void)argc; (void)argv;
     return bk_new_number(ctx, udata ? *(double *)udata : -1);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 static void test_reentry(void) {
     bk_ctx A = NULL, B = NULL;
     double d, ua = 10, ub = 20;
 
-    if (!(A = bk_new_context(bk_new_runtime())) || !(B = bk_new_context(bk_new_runtime()))) {
+    if (!(A = bk_new_context(bk_new_runtime(NULL), NULL)) || !(B = bk_new_context(bk_new_runtime(NULL), NULL))) {
         check("reentry: two runtimes open", 0);
         return;
     }
@@ -171,7 +171,7 @@ static void test_cross_handles(void) {
     bk_value va;
     double d; char s[64]; size_t n = 0;
 
-    if (!(A = bk_new_context(bk_new_runtime())) || !(B = bk_new_context(bk_new_runtime()))) {
+    if (!(A = bk_new_context(bk_new_runtime(NULL), NULL)) || !(B = bk_new_context(bk_new_runtime(NULL), NULL))) {
         check("cross: two runtimes open", 0);
         return;
     }

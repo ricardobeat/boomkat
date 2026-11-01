@@ -97,9 +97,8 @@ fn main() -> Result<(), boomkat::Error> {
 
     // --- threads ----------------------------------------------------------
     //
-    // `Runtime` is `Send` but not `Sync`. One runtime per thread is sound and
-    // shares no state; sharing a single runtime between threads is a compile
-    // error, because the engine takes no locks.
+    // `Runtime` is neither `Send` nor `Sync`: each thread builds its own, and
+    // runtimes on different threads share no state.
     let workers: Vec<_> = (0..3)
         .map(|i| {
             std::thread::spawn(move || {

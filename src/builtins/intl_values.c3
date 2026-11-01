@@ -21,7 +21,7 @@ fn void builtin_intl_supported_values_of(BuiltinContext* ctx) {
     TVal key_arg = builtin_arg(ctx, 0);
     HString* key = builtin_to_string_vm(ctx, &key_arg);
     if (ctx.should_throw || key == null) return;
-    char[] name = key.get_cstr()[:key.blen];
+    char[] name = key.token_text();
     HObject* list = intl_array(ctx);
     if (ctx.should_throw) return;
     uint count = 0;

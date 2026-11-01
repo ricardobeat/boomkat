@@ -501,6 +501,22 @@
       ],
       "opt": "O0"
     },
+    "promise_failures": {
+      "type": "executable",
+      "safe": true,
+      "sources": [ "src", "test/capi/promise_failures.c3" ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [ "THREADED_DISPATCH" ]
+    },
+    "deferred_api": {
+      "type": "executable",
+      "safe": true,
+      "sources": [ "src", "test/capi/deferred.c3" ],
+      "opt": "O2",
+      "single-module": true,
+      "features": [ "THREADED_DISPATCH" ]
+    },
     "host_fn_phase1": {
       "type": "executable",
       "sources": [

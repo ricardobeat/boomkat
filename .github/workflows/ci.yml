@@ -5,10 +5,11 @@ on:
     branches: ['**']
   pull_request:
 
-# A newer push to the same branch cancels an in-flight run. The old result is
-# stale the moment the new commit lands.
+# A newer push to the same branch or PR cancels an in-flight run. On main every
+# commit gets its own group: releases gate on the CI result of an exact commit,
+# and a docs-only push, which skips the engine jobs, must not cancel it.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:

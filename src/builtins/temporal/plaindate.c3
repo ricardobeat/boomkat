@@ -106,7 +106,7 @@ fn bool to_temporal_date(BuiltinContext* ctx, TVal* item, temporal::CivilDate* i
     }
     // TemporalDateTimeString[~Zoned] has no Z designator; a numeric offset is dropped with the time.
     temporal::ParsedIsoDateTime p;
-    if (!temporal::parse_iso_date_string(s.get_cstr()[:s.blen], &p) || p.offset_kind == temporal::OffsetKind.Z) {
+    if (!temporal::parse_iso_date_string(s.token_text(), &p) || p.offset_kind == temporal::OffsetKind.Z) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid ISO date string");
         return false;
     }

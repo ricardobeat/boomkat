@@ -24,7 +24,7 @@
 extern "C" {
 #endif
 
-#define BK_ADDON_ABI_VERSION 2u
+#define BK_ADDON_ABI_VERSION 3u
 
 #define BK_ADDON_OK           0
 #define BK_ADDON_ERR_OPEN    (-1)
@@ -85,14 +85,14 @@ typedef struct BkAddonApi {
 
     /* -- calling convention -- */
     unsigned int (*arg_count)(void *bctx);
-    /* Bytes of string argument `i`, or NULL. Not NUL-terminated; use out_len.
-     * Valid only for the duration of the call. */
+    /* UTF-8 text of string argument `i`, or NULL. NUL-terminated; out_len is
+     * the byte count. Valid only for the duration of the call. */
     const char  *(*arg_string)(void *bctx, unsigned int i, size_t *out_len);
     double       (*arg_number)(void *bctx, unsigned int i);
     BkHandle     (*arg_handle)(void *bctx, unsigned int i);
     BkHandle     (*this_handle)(void *bctx);
     void         (*return_number)(void *bctx, double v);
-    void         (*return_string)(void *bctx, const char *bytes, size_t len);
+    void         (*return_string)(void *bctx, const char *utf8, size_t len);
     void         (*return_object)(void *bctx, void *obj);
     void         (*return_handle)(void *bctx, BkHandle h);
     void         (*return_undefined)(void *bctx);

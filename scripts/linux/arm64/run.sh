@@ -39,8 +39,8 @@ write_probe() {
 #include <stdio.h>
 #include <string.h>
 int main(void) {
-    bk_runtime runtime = bk_new_runtime();
-    bk_ctx ctx = bk_new_context(runtime);
+    bk_runtime runtime = bk_new_runtime(NULL);
+    bk_ctx ctx = bk_new_context(runtime, NULL);
     if (!ctx) return 1;
     const char *s = "6*7";
     bk_value v = bk_eval_ex(ctx, s, strlen(s), "smoke.js", BK_EVAL_GLOBAL);
@@ -69,8 +69,8 @@ printf 'cc        : %s\n' "$(cc --version | head -1)"
 # ---------------------------------------------------------------------------
 if want build; then
     say "1. build the engine (c3c build boomkat)"
-    if timeout "$TIMEOUT" make boomkat 2>&1 | grep -viE 'warning|^ *[0-9]+:|^ *\^+ *$' | tail -5; then
-        [ -x out/boomkat ] && pass "engine binary built" || fail "engine binary missing"
+    if timeout "$TIMEOUT" make boomkat boomkat-full-icu 2>&1 | grep -viE 'warning|^ *[0-9]+:|^ *\^+ *$' | tail -5; then
+        [ -x out/boomkat ] && [ -x out/boomkat-full-icu ] && pass "engine binary built" || fail "engine binary missing"
     else
         fail "engine build"
     fi
@@ -79,7 +79,7 @@ fi
 # ---------------------------------------------------------------------------
 if want tests; then
     say "2. engine test suite (bash test/run_local.sh)"
-    if [ ! -x out/boomkat ]; then
+    if [ ! -x out/boomkat-full-icu ]; then
         skip "test suite (no engine binary)"
     else
         suite_log=$(mktemp)
@@ -216,9 +216,9 @@ const std = @import("std");
 const c = @cImport({ @cInclude("boomkat.h"); });
 
 pub fn main() void {
-    const runtime = c.bk_new_runtime() orelse return;
+    const runtime = c.bk_new_runtime(null) orelse return;
     defer c.bk_free_runtime(runtime);
-    const ctx = c.bk_new_context(runtime) orelse return;
+    const ctx = c.bk_new_context(runtime, null) orelse return;
     defer c.bk_free_context(ctx);
     const src = "6*7";
     const v = c.bk_eval_ex(ctx, src, src.len, null, c.BK_EVAL_GLOBAL);
@@ -259,8 +259,8 @@ EOF
     cat > src/main.rs <<'EOF'
 use std::os::raw::{c_char, c_double, c_int, c_ulonglong, c_void};
 extern "C" {
-    fn bk_new_runtime() -> *mut c_void;
-    fn bk_new_context(runtime: *mut c_void) -> *mut c_void;
+    fn bk_new_runtime(options: *const c_void) -> *mut c_void;
+    fn bk_new_context(runtime: *mut c_void, options: *const c_void) -> *mut c_void;
     fn bk_free_runtime(runtime: *mut c_void);
     fn bk_free_context(ctx: *mut c_void);
     fn bk_eval_ex(ctx: *mut c_void, src: *const c_char, len: usize, filename: *const c_char, flags: u32) -> c_ulonglong;
@@ -269,8 +269,8 @@ extern "C" {
 }
 fn main() {
     unsafe {
-        let runtime = bk_new_runtime();
-        let ctx = bk_new_context(runtime);
+        let runtime = bk_new_runtime(std::ptr::null());
+        let ctx = bk_new_context(runtime, std::ptr::null());
         assert!(!ctx.is_null(), "bk_new_context");
         let s = b"6*7";
         let v = bk_eval_ex(ctx, s.as_ptr() as *const c_char, s.len(), std::ptr::null(), 0);

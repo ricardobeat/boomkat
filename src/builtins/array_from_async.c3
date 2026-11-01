@@ -23,28 +23,28 @@ import boomkat::hstring;
 import boomkat::heap;
 import boomkat::hobject;
 
-// Hidden-prop keys carrying the driver state (mirrors the "\xFF..." unspellable
+// Hidden-prop keys carrying the driver state (mirrors the "..." unspellable
 // key convention in promise.c3 and async_from_sync.c3). All live on one state
 // object.
-const char[] AFA_STATE_SLOT     = "\xFFafa_state";     // on each closure: -> state obj
-const char[] AFA_ARR_SLOT       = "\xFFafa_arr";       // result array A
-const char[] AFA_MAPFN_SLOT     = "\xFFafa_mapfn";     // mapfn (or undefined)
-const char[] AFA_THISARG_SLOT   = "\xFFafa_thisArg";   // thisArg
-const char[] AFA_ITER_SLOT      = "\xFFafa_iter";      // iterator object (iterator path)
-const char[] AFA_NEXT_SLOT      = "\xFFafa_next";      // iterator.next method
-const char[] AFA_ARRAYLIKE_SLOT = "\xFFafa_arraylike"; // array-like object
-const char[] AFA_K_SLOT         = "\xFFafa_k";         // current index k
-const char[] AFA_LEN_SLOT       = "\xFFafa_len";       // length (array-like path)
-const char[] AFA_OUTER_SLOT     = "\xFFafa_outer";     // outer result promise
-const char[] AFA_ISASYNC_SLOT   = "\xFFafa_isAsync";   // true=iterator path, false=array-like
-const char[] AFA_SOURCE_SLOT    = "\xFFafa_source";    // pins asyncItems for the driver's lifetime
+const char[] AFA_STATE_SLOT     = "afa_state";     // on each closure: -> state obj
+const char[] AFA_ARR_SLOT       = "afa_arr";       // result array A
+const char[] AFA_MAPFN_SLOT     = "afa_mapfn";     // mapfn (or undefined)
+const char[] AFA_THISARG_SLOT   = "afa_thisArg";   // thisArg
+const char[] AFA_ITER_SLOT      = "afa_iter";      // iterator object (iterator path)
+const char[] AFA_NEXT_SLOT      = "afa_next";      // iterator.next method
+const char[] AFA_ARRAYLIKE_SLOT = "afa_arraylike"; // array-like object
+const char[] AFA_K_SLOT         = "afa_k";         // current index k
+const char[] AFA_LEN_SLOT       = "afa_len";       // length (array-like path)
+const char[] AFA_OUTER_SLOT     = "afa_outer";     // outer result promise
+const char[] AFA_ISASYNC_SLOT   = "afa_isAsync";   // true=iterator path, false=array-like
+const char[] AFA_SOURCE_SLOT    = "afa_source";    // pins asyncItems for the driver's lifetime
 
 // ---------------------------------------------------------------------------
 // State object helpers
 // ---------------------------------------------------------------------------
 
 fn void afa_put_obj(HObject* state, Heap* heap, char[] key, HObject* val) {
-    HString* k = builtin_intern_string(heap, key);
+    HString* k = heap.str_intern_hidden(key);
     if (k == null) return;
     TVal tv;
     if (val != null) { tv.set_object(val); } else { tv.set_undefined(); }
@@ -52,7 +52,7 @@ fn void afa_put_obj(HObject* state, Heap* heap, char[] key, HObject* val) {
 }
 
 fn void afa_put_tval(HObject* state, Heap* heap, char[] key, TVal val) {
-    HString* k = builtin_intern_string(heap, key);
+    HString* k = heap.str_intern_hidden(key);
     if (k == null) return;
     state.put_prop(k, val, hobject::PROP_FLAGS_WEC, heap);
 }
@@ -68,7 +68,7 @@ fn void afa_put_int(HObject* state, Heap* heap, char[] key, long val) {
 }
 
 fn HObject* afa_get_obj(HObject* state, Heap* heap, char[] key) {
-    HString* k = builtin_intern_string(heap, key);
+    HString* k = heap.str_intern_hidden(key);
     if (k == null) return null;
     if (try v = state.get_prop(k, heap)) {
         if (v.is_object() && v.get_heapptr() != null) return (HObject*)v.get_heapptr();
@@ -78,7 +78,7 @@ fn HObject* afa_get_obj(HObject* state, Heap* heap, char[] key) {
 
 fn TVal afa_get_tval(HObject* state, Heap* heap, char[] key) {
     TVal out; out.set_undefined();
-    HString* k = builtin_intern_string(heap, key);
+    HString* k = heap.str_intern_hidden(key);
     if (k == null) return out;
     if (try v = state.get_prop(k, heap)) return v;
     return out;
@@ -283,7 +283,7 @@ fn void builtin_array_from_async(BuiltinContext* ctx) {
         }
     }
     afa_put_tval(state, heap, AFA_MAPFN_SLOT, mapfn);
-    afa_put_bool(state, heap, "\xFFafa_mapping", mapping);
+    afa_put_bool(state, heap, "afa_mapping", mapping);
     afa_put_tval(state, heap, AFA_THISARG_SLOT, this_arg);
 
     // Steps 4-8: obtain an iterator. GetMethod(asyncItems, @@asyncIterator),
@@ -581,7 +581,7 @@ fn void builtin_array_from_async_step_fulfill(BuiltinContext* ctx) {
 // mapping (and await the mapped result), else store directly and advance.
 fn void afa_process_value(BuiltinContext* ctx, HObject* state, TVal value) {
     Heap* heap = ctx.heap;
-    bool mapping = afa_get_bool(state, heap, "\xFFafa_mapping");
+    bool mapping = afa_get_bool(state, heap, "afa_mapping");
     long k = afa_get_int(state, heap, AFA_K_SLOT);
 
     if (mapping) {

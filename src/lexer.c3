@@ -455,7 +455,7 @@ fn void encode_utf8_push(List{char}* buf, uint cp) {
     // Supplementary plane: ECMAScript strings are UTF-16 code unit
     // sequences (spec §6.1.4), encode `\u{H+}` astral escapes as a
     // surrogate pair (CESU-8 storage: each half gets its own 3-byte UTF-8
-    // sequence) so `"\u{1F600}".length === 2`, matching a real JS engine.
+    // sequence) so `"\u{1F600}".length === 2`, as ECMA-262 requires.
     uint v = cp - 0x1_0000;
     encode_utf8_push(buf, 0xD800 + (v >> 10));
     encode_utf8_push(buf, 0xDC00 + (v & 0x3FF));
@@ -1356,10 +1356,9 @@ fn Token? Lexer.scan_number(&self) {
     }
 
     if (!octal_resolved) {
-        // Use js_atod for precise parsing (handles subnormals, avoids frac*=0.1 rounding).
-        // QuickJS' js_atod is a David-Gay-style parser that matches V8/SpiderMonkey,
-        // so "8.3 - 1 === 7.3" is true and literals round-trip consistently with
-        // parseFloat().
+        // Use the dtoa parser for precise parsing (handles subnormals, avoids frac*=0.1 rounding).
+        // It is correctly rounded, so "8.3 - 1 === 7.3" is true and literals round-trip
+        // consistently with parseFloat().
         uint len = self.pos - start_pos;
         // A numeric literal has no length limit, so anything past the stack
         // buffer gets arena storage rather than being read as zero. Both the

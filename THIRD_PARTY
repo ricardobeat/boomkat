@@ -1,3 +1,29 @@
+# Third-party notices
+
+Boomkat includes the third-party code listed below. Each component keeps its
+own copyright and license terms.
+
+## QuickJS (MIT)
+
+Used in `vendor/dtoa/`, `vendor/libregexp/`, and `vendor/libunicode/`.
+Upstream: https://bellard.org/quickjs/ (QuickJS 2025-09-13).
+
+Copyright notices carried by these files:
+
+- Copyright (c) 2017-2021 Fabrice Bellard
+- Copyright (c) 2017-2021 Charlie Gordon
+- Copyright (c) 2017-2018 Fabrice Bellard
+- Copyright (c) 2024 Fabrice Bellard
+
+## Unicode and CLDR data (Unicode License V3)
+
+Used in `vendor/intl/` and in the generated Intl and Unicode tables. The data
+comes from ICU 78.3 and CLDR 48. The full license is in `vendor/intl/LICENSE`.
+
+## MIT License text
+
+The following text applies to the QuickJS-derived code above.
+
 QuickJS Javascript Engine
 
 Copyright (c) 2017-2021 Fabrice Bellard

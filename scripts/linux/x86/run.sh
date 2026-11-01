@@ -42,7 +42,7 @@ printf 'cc     : %s\n' "$(cc --version | head -1)"
 if want build; then
     say "1. build engine + test262 runner (clean out/ first)"
     rm -rf out build
-    if timeout "$TIMEOUT" make boomkat 2>&1 | tail -3 && [ -x out/boomkat ]; then
+    if timeout "$TIMEOUT" make boomkat boomkat-full-icu 2>&1 | tail -3 && [ -x out/boomkat ] && [ -x out/boomkat-full-icu ]; then
         pass "engine binary built"
     else
         fail "engine build"
@@ -56,7 +56,7 @@ fi
 
 if want tests; then
     say "2. engine test suite (bash test/run_local.sh)"
-    if [ ! -x out/boomkat ]; then
+    if [ ! -x out/boomkat-full-icu ]; then
         skip "test suite (no engine binary)"
     else
         log=$(mktemp)

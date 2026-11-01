@@ -390,6 +390,11 @@ struct CompilerContext {
     // when the next token is not a call (e.g. RPAREN closing the parens).
     bool inside_parens;
 
+    // The register the next conditional expression writes its result to, set
+    // by a store to a register-resident local so the arms need no copy.
+    // gen_cond takes it and resets it to REG_NONE.
+    ushort cond_dest;
+
     // When true, emit_private_access skips CHK_BRAND. emit_deferred_target sets it for private
     // field targets in destructuring assignment (ECMA-262 DestructuringAssignmentEvaluation):
     // the target is evaluated before GetV(value, key), but the brand check must run only after
@@ -741,6 +746,18 @@ fn char[] CompilerContext.keep_name(&self, char[] name) {
     return self.lexer.arena_dup(name.ptr, name.len);
 }
 
+// The UTF-8 text of an interned name, stable for the compile: an ASCII name is
+// read in place, any other is copied into the lexer's arena. A lone surrogate
+// keeps its own 3-byte form, as in source text.
+fn char[] CompilerContext.name_text(&self, HString* name) {
+    if (name.is_ascii()) return name.ascii_bytes();
+    usz n = name.utf8_len(true);
+    char[] buf = self.lexer.arena_alloc(n + 1);
+    name.copy_utf8(buf.ptr, true);
+    buf[n] = 0;
+    return buf[:n];
+}
+
 // Bracket the parser's inferred-name slot across a NamedEvaluation scope. Use:
 //
 //   NameEvalFrame _nef = self.save_name_eval();
@@ -820,6 +837,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.scope_overflow = false;
     self.const_hash_count = 0;
     self.call_prop_obj_reg = REG_NONE;
+    self.cond_dest = REG_NONE;
     self.method_callee = 0;
     self.deferred_brand_reg_hint = 0xFFFF;
     self.super_name_idx = 0xFFFFFFFF;
@@ -1042,7 +1060,7 @@ fn void CompilerContext.record_b33_hoist(&self, char[] var_name, uint var_reg, u
         self.b33_hoisted_cap = new_cap;
     }
     HString* hs = ((Heap*)self.heap).str_intern(var_name);
-    self.b33_hoisted_names[self.b33_hoisted_count] = hs.get_data();
+    self.b33_hoisted_names[self.b33_hoisted_count] = self.name_text(hs);
     self.b33_hoisted_regs[self.b33_hoisted_count] = (ushort)var_reg;
     self.b33_hoisted_pcs[self.b33_hoisted_count] = hoist_pc;
     self.b33_hoisted_count++;

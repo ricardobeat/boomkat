@@ -67,7 +67,7 @@ fn bool now_coerce_tz_string(BuiltinContext* ctx, String* out, bool* is_default)
         // empty JS string would produce text.len == 1, defeating the
         // empty-string RangeError check downstream.  Leave *out as the
         // zero-length literal assigned above.
-        if (hs.blen > 0) *out = (String)hs.get_cstr()[:hs.blen];
+        if (hs.unit_len() > 0) *out = (String)hs.token_text();
         return true;
     }
     // Per ECMA-262 ToTemporalTimeZoneSlotValue: only strings are accepted.

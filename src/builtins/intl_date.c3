@@ -52,7 +52,7 @@ fn void intl_date_zone(BuiltinContext* ctx, HString* option, IntlDateState* stat
         usz n = 0;
         if (system != null) while (system[n] != 0 && n < 127) n++;
         zone = n > 0 ? system[:n] : "UTC";
-    } else { zone = option.get_cstr()[:option.blen]; }
+    } else { zone = option.token_text(); }
     long offset;
     if (date_parse_offset_timezone(zone, &offset)) {
         state.fmt.tz_offset_sec = offset;
@@ -373,19 +373,19 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     if (array_get_length(supported, ctx.heap) > 0) {
         TVal first = array_get_elem(supported, 0, ctx.heap);
         HString* s = (HString*)first.get_heapptr();
-        tag = s.get_cstr()[:s.blen];
+        tag = s.token_text();
     }
     state.row = intl_row_for_tag(tag);
     if (state.row < 0) state.row = 0;
-    state.us_locale = tag.len >= 5 && locale_eq_ci(tag[:5], "en-us");
+    state.us_locale = locale_is_us(tag);
     char[] hc_extension = intl_date_extension(tag, "hc");
     char[] ca_extension = intl_date_extension(tag, "ca");
     HString* calendar = date_get_raw_string_option(ctx, opts, "calendar");
     if (ctx.should_throw) return false;
-    if (calendar != null && !date_is_unicode_type_subtag(calendar.get_cstr()[:calendar.blen])) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendar"); return false; }
+    if (calendar != null && !date_is_unicode_type_subtag(calendar.token_text())) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid calendar"); return false; }
     HString* numbering = date_get_raw_string_option(ctx, opts, "numberingSystem");
     if (ctx.should_throw) return false;
-    if (numbering != null && !date_is_unicode_type_subtag(numbering.get_cstr()[:numbering.blen])) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numbering system"); return false; }
+    if (numbering != null && !date_is_unicode_type_subtag(numbering.token_text())) { builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numbering system"); return false; }
     int hour12 = date_get_boolean_option(ctx, opts, "hour12");
     if (ctx.should_throw) return false;
     int hc = date_get_string_option(ctx, opts, "hourCycle", date_values_hour_cycle());
@@ -396,8 +396,8 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     // The option is ASCII case-insensitive, so it is lowercased before it is compared with the names.
     char[64] ca_buf;
     usz ca_len = 0;
-    if (calendar != null && calendar.blen <= ca_buf.len) {
-        char[] raw = calendar.get_cstr()[:calendar.blen];
+    if (calendar != null && calendar.token_text().len <= ca_buf.len) {
+        char[] raw = calendar.token_text();
         for (usz k = 0; k < raw.len; k++) {
             char ch = raw[k];
             ca_buf[k] = ch >= 'A' && ch <= 'Z' ? (char)(ch + 32) : ch;
@@ -418,7 +418,7 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     }
     bool ca_keep = (!supported_calendar || mem_eq_bytes(ca_option, ca_extension)) && supported_extension;
     bool hc_keep = (hc == 0 || (hc == 11 && mem_eq_bytes(hc_extension, "h11")) || (hc == 12 && mem_eq_bytes(hc_extension, "h12")) || (hc == 23 && mem_eq_bytes(hc_extension, "h23")) || (hc == 24 && mem_eq_bytes(hc_extension, "h24"))) && hour12 < 0 && (mem_eq_bytes(hc_extension, "h11") || mem_eq_bytes(hc_extension, "h12") || mem_eq_bytes(hc_extension, "h23") || mem_eq_bytes(hc_extension, "h24"));
-    IntlNumbering resolved_numbering = intl_resolve_numbering(tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+    IntlNumbering resolved_numbering = intl_resolve_numbering(tag, numbering == null ? "" : numbering.token_text(), numbering != null);
     state.numbering = intl_numbering_store(resolved_numbering.index);
     bool nu_keep = resolved_numbering.keep_extension;
     if (ca_keep || hc_keep || nu_keep) {

@@ -121,7 +121,8 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                     self.gc_root_stage++;
                     continue;
                 }
-                self.mark_hobject(self.host_classes[self.gc_root_index++].proto);
+                self.mark_hobject(self.host_classes[self.gc_root_index].proto);
+                self.mark_hobject(self.host_classes[self.gc_root_index++].ctor);
             case 8:
                 if (self.valstack_base == null || self.valstack_top_ptr == null
                     || self.gc_root_index >= (uint)(*self.valstack_top_ptr - self.valstack_base)) {
@@ -151,8 +152,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                     self.gc_root_stage++;
                     continue;
                 }
-                if (self.async_waiters[self.gc_root_index].active) {
-                    self.mark_hobject(self.async_waiters[self.gc_root_index].buffer);
+                if (self.async_waiters[self.gc_root_index].promise != null) {
                     self.mark_hobject(self.async_waiters[self.gc_root_index].promise);
                 }
                 self.gc_root_index++;
@@ -186,6 +186,8 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
             case 15:
                 self.mark_tval(&self.error_value);
                 self.mark_tval(&self.yield_value);
+                foreach (&v : self.host_exotic_hold) self.mark_tval(v);
+                if (self.module_waiters != null) self.mark_hobject(self.module_waiters);
                 self.mark_generator_state(self.resume_gen);
                 self.mark_generator_state(self.gen_initial_gs);
                 self.mark_hobject((HObject*)self.gen_initial_obj);

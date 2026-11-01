@@ -50,7 +50,7 @@ Running a file containing `f("hi")` crosses these boundaries:
 | `src/gc/` | Tracing, nursery collection, roots, verification and collector profiling |
 | `src/types.c3` | `TVal` and `HeapHeader`, the two universal representations |
 | `src/hobject.c3` | Object layout, property storage, shapes, inline caches |
-| `src/hstring.c3` | String storage, interning, and CESU-8 conversion |
+| `src/hstring.c3` | String storage, interning, and text conversion |
 | `src/env.c3` | Environment records and the scope chain |
 | `src/module.c3` | The ESM lifecycle: resolve, link, evaluate |
 | `src/builtins/` | The standard library, one file per area |
@@ -415,8 +415,8 @@ pending, or any guard fails, the instruction returns to the switch, which runs
 the call safepoint and existing fast/slow call dispatch.
 
 `ITER_NEXT_FAST` also handles cached ASCII steps for a real string iterator
-whose captured `next` is the built-in method. `Heap.str_intern_normalized`
-keeps a lazy cache of pinned one-byte ASCII strings, so the threaded step can
+whose captured `next` is the built-in method. `Heap.str_intern_units`
+keeps a lazy cache of pinned one-unit ASCII strings, so the threaded step can
 publish a character without hashing or changing its fixed reference count.
 The first uncached character and every non-ASCII code point return to the
 switch; that path interns the character and preserves surrogate-pair handling.
@@ -833,7 +833,7 @@ other header, whose corresponding union member holds generation and verifier bit
 
 ### HString
 
-String bytes live next to the header, with a trailing NUL for C APIs. Published
+String units live next to the header, with a trailing NUL for C APIs. Published
 strings are immutable. A uniquely owned, non-interned concat accumulator may
 extend its spare capacity before another value can observe it.
 
@@ -850,8 +850,8 @@ derives content metadata from the combined bytes.
 
 `JSON.stringify` also returns a non-interned string. Its writer copies safe
 text spans in bulk, grows for actual escaped output, and preserves paired
-surrogates in CESU-8 while escaping lone surrogates. Finishing needs no
-intern-table lookup or UTF-8 normalization pass.
+surrogates while escaping lone surrogates. Finishing needs no intern-table
+lookup.
 
 Immutable ordinary-object shapes cache JSON serialization plans when shared
 or pinned by compiled code. A plan owns the enumerable string keys in spec
@@ -862,17 +862,33 @@ receiver's shape and the heap's recycle epoch before each direct slot read. A mu
 uses normal property access against the original key snapshot, preserving
 deletion, inheritance, and getter behavior.
 
-The internal encoding is **CESU-8**. JavaScript strings are sequences of
-UTF-16 code units: an astral code point occupies two surrogate units, while a
-lone surrogate is also a valid string element. Encoding each unit separately
-preserves both cases. `normalize_to_cesu8` canonicalizes input for interning;
-`write_cesu8_as_utf8` converts text for host output.
+A string is a sequence of UTF-16 code units: an astral code point occupies two
+surrogate units, and a lone surrogate is a valid element. Storage is dual width
+and canonical. A **narrow** string holds one byte per unit and every unit is at
+most 0xFF (Latin-1); a **wide** string holds two bytes per unit in native
+endianness and at least one unit above 0xFF. A string is narrow whenever it can
+be, so equal strings always have equal width and equal bytes. `is_ascii` is a
+sub-flag of narrow. `length` counts units, so indexing, slicing and search are
+direct offsets with no cursor or scan. The hash is FNV-1a over the units.
 
-Character indexing is by UTF-16 code unit and cached. Each string remembers one
-`(char_offset, byte_offset)` cursor, and `char_offset_to_byte_offset` scans from
-whichever of the string start, the string end, or that cursor is nearest.
-Because strings are immutable, the cache is only ever updated, never
-invalidated. ASCII strings skip all of it: one byte is one character.
+Text crosses the boundary only at the edges. `StrBuf` accumulates CESU-8 text,
+which encodes each unit separately and so round-trips lone surrogates;
+`Heap.alloc_text` and `alloc_concat_text` decode it into a string of canonical
+width. `write_utf8` and `utf8_len` produce standard UTF-8 for host output and
+the C API. Compiler and module metadata that must outlive a string keep owned
+canonical CESU-8 copies (`canonical_cesu8`), so equal names compare as bytes.
+
+An **external** string (`has_extdata`) keeps a pointer, a release callback and
+an opaque value after its header in place of the units, so the C API can wrap
+host memory with no copy. It has the same canonical width and is read through
+`data_ptr()`, but it is never flagged ASCII (its buffer has no terminator, which
+the in-place text paths rely on), never enters the intern table (interning
+makes a copy), and stays out of the concat cache so the host buffer is released
+as soon as the last reference goes. `Heap.free_string` calls the callback once.
+
+RegExp matching runs on the string's own width without transcoding: libregexp
+receives 8-bit or 16-bit input directly, every offset is a unit offset, and
+only the pattern is compiled from CESU-8 text.
 
 ### HObject
 
@@ -1039,12 +1055,17 @@ through that heap's matching hook, including during teardown. `gs_release()`
 takes an explicit heap for this reason.
 
 `mem_limit` caps the process's resident memory, defaulting to 80% of physical
-memory (`bk_set_memory_limit`, `--memory-limit=MB`, 0 for none). The heap
+memory (`--memory-limit=MB`, 0 for none). The heap
 compares the OS-reported resident size with it after every GC cycle, every
 `MEM_CHECK_INTERVAL` object allocations, and before any block of 1 MB or more,
 and calls `fatal_func` when it is over. Resident size covers the whole process
 and the freed memory malloc keeps, so the limit is a backstop, not an exact
 budget: it holds to within a few percent of the limit.
+
+A C API runtime created with `bk_runtime_options.heap_limit` counts bytes
+exactly instead (`src/gc/gc_control.c3`): the allocator callbacks are wrapped so
+each block carries its size, and crossing the budget becomes an uncatchable
+termination at the next interrupt poll, reported as `BK_ERR_NOMEM`.
 
 Object pools (`PagePool`, `src/pagepool.c3`) serve object classes with similar storage needs:
 
@@ -1382,6 +1403,36 @@ embedding runtime IDs allocate atomically. VM values and heap pointers remain
 owned by their execution thread. A host exchanges copied data between runtimes
 and keeps each runtime alive until its native callbacks and watchdog finish.
 
+### Agents and shared memory
+
+An agent is a thread with its own heap and VM (above). Agents share one thing, a
+`SharedArrayBuffer`'s bytes. The block sits in libc memory behind a 16-byte
+header holding a reference count, the live length (a growable buffer raises it
+from any agent), the capacity, and a growable flag. `ab.data` points past the
+header, so typed array loads and stores read a shared buffer exactly as they
+read an `ArrayBuffer`. The finalizer releases a reference instead of freeing, so
+the last holder frees it even after the creating heap is gone. `Atomics`
+operations on a shared buffer are real atomic instructions at the element width;
+a plain `ArrayBuffer` keeps the ordinary path, since its blocks carry no
+alignment promise.
+
+`Atomics.wait` and `notify` meet in one process-wide table of waiters, hashed on
+the cell's address and guarded by one lock (`src/agent.c3`). A waiter compares
+its cell and joins the queue in the same critical section, so a notify that
+follows the compare cannot miss it. Each heap that waits gets a refcounted
+mailbox, the *port*: a notify that claims an `Atomics.waitAsync` waiter queues it
+on the owner's port, and the owner settles the promise the next time it polls.
+The microtask drain polls between jobs when the heap has a port (a null check
+otherwise), and the host event loop (`agent::run_event_loop`) sleeps on the port
+until a notification, a timeout, or a host event. Promise settlement happens only
+on the owner's thread. A watchdog interrupt also wakes a blocked `wait`.
+
+The test262 `$262.agent` host (`src/builtins/test262_agent.c3`) starts each
+agent on a thread with a large stack, delivers broadcasts through the agent's
+port, and collects reports in a per-group queue. The runner and CLI end the group
+when a test or program finishes: they raise the agent's interrupt, post a stop
+event, and join.
+
 ### Tearing down and reusing a heap
 
 `Heap.destroy()` releases everything and frees the heap struct.
@@ -1441,6 +1492,16 @@ without loading reject import/import.meta instructions. The normal build folds
 these guards away.
 
 ## TINY bytecode tools
+
+The macOS ARM64 runner links to about 785 KB with the compact unwind table
+omitted: the engine catches JavaScript exceptions itself and the build emits no
+native backtraces, so nothing in it unwinds through these frames. DWARF unwind
+data stays in the binary, which is what a debugger or sampling profiler falls
+back to. Host-only builtins (`$262`, the agent bridge, `evalScript`,
+`detachArrayBuffer`, `isHTMLDDA`) are linked only into profiles that can enable
+the test262 host (`features::TEST262_HOST`). Threaded dispatch accounts for
+about 66 KB of the size, and a switch dispatch build is 1.5-5.5x slower; measure
+both before trading one for the other.
 
 `boomkat_tiny_compile` is the ordinary source CLI built with TINY's capabilities
 and `BYTECODE_GENERATOR`. It exposes `--compile OUTPUT.bkbc INPUT.js`.
@@ -1816,7 +1877,7 @@ specifier means.
 
 ### Realms
 
-`bk_new_runtime` owns an isolated heap and VM. `bk_new_context(runtime)` creates
+`bk_new_runtime` owns an isolated heap and VM. `bk_new_context(runtime, options)` creates
 an independently released realm, sharing interned strings, symbols, the value
 registry, and the job queue with its siblings. Each realm owns its globals,
 intrinsics, builtin promotion cache, and module cache. Context records and realm

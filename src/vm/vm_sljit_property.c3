@@ -216,7 +216,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
     TVal* literal      = computed ? function_key_literal(cf, pc, write ? ins.b : ins.c) : null;
     if (computed && literal != null && literal.is_string()) {
         HString* text = literal.get_heapptr();
-        if (!text.is_symbol() && (String)text.get_data() == "length") key = h.str(heap::BuiltinStr.LENGTH);
+        if (text.equals("length")) key = h.str(heap::BuiltinStr.LENGTH);
     }
     uint base_reg    = write ? ins.a : ins.b;
     bool tracking    = FUNCTION_OBJECT_FLOW && self.out.flow != null && !computed;
@@ -265,7 +265,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             HString* left  = literal.get_heapptr();
             HString* right = key;
             matching = right != null && !left.is_symbol() && !right.is_symbol()
-                && (String)left.get_data() == (String)right.get_data();
+                && left.equals_hstring(right);
         }
         // A numeric key names an array element, which the dense part answers.
         // The site cache only records string keys, so an unrecorded key is an

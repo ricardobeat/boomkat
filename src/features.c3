@@ -10,6 +10,11 @@ const bool JSX = !$feat(NO_JSX);
 const bool MODULE_LOADING = !$feat(NO_MODULE_LOADING);
 const bool ASYNC_GENERATORS = !$feat(NO_ASYNC_GENERATORS);
 const bool SOURCE_COMPILER = !$feat(BYTECODE_ONLY);
+// The test262 host globals ($262, __evalScript, __detachArrayBuffer) are a
+// runtime opt-in, but only a source-evaluating profile or the harness can turn
+// them on. Bytecode-only runners never do, so they leave the host, its agent
+// threads and its source-evaluating globals out of the link.
+const bool TEST262_HOST = SOURCE_COMPILER || $feat(TEST262_HELPERS);
 const bool PORTABLE_BYTECODE = $feat(BYTECODE_GENERATOR);
 const bool REGEXP = !$feat(NO_REGEXP);
 const bool COLLECTIONS = !$feat(NO_COLLECTIONS);

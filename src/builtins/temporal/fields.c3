@@ -59,7 +59,7 @@ fn bool prepare_field(BuiltinContext* ctx, CalendarId cal, TemporalField field, 
         case ERA:
             HString* name = builtin_to_string_vm(ctx, value);
             if (ctx.should_throw) return false;
-            out.put(ERA, temporal::calendar_era_index(cal, name.get_cstr()[:name.blen]));
+            out.put(ERA, temporal::calendar_era_index(cal, name.token_text()));
         case MONTH_CODE:
             temporal::MonthCode code;
             if (!to_month_code(ctx, value, &code)) return false;
@@ -103,7 +103,7 @@ fn bool to_integer_field(BuiltinContext* ctx, TVal* value, long* out) {
 fn bool to_month_code(BuiltinContext* ctx, TVal* value, temporal::MonthCode* out) {
     HString* s = to_primitive_string(ctx, value, "monthCode must be a string");
     if (s == null) return false;
-    char[] text = s.get_cstr()[:s.blen];
+    char[] text = s.token_text();
     bool leap = text.len == 4 && text[3] == 'L';
     if ((text.len != 3 && !leap) || text[0] != 'M' || !text[1].is_digit() || !text[2].is_digit()
         || (text[1] == '0' && text[2] == '0' && !leap)) {
@@ -118,7 +118,7 @@ fn bool to_month_code(BuiltinContext* ctx, TVal* value, temporal::MonthCode* out
 fn bool to_offset_nanoseconds(BuiltinContext* ctx, TVal* value, long* out) {
     HString* s = to_primitive_string(ctx, value, "offset must be a string");
     if (s == null) return false;
-    char[] text = s.get_cstr()[:s.blen];
+    char[] text = s.token_text();
     usz pos = 0;
     if (!temporal::parse_offset_nanoseconds(text, &pos, out) || pos != text.len) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid offset string");

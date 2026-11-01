@@ -45,10 +45,15 @@ _STATUS_NAMES = {
     -6: "wrong type",
     -7: "buffer too small or registry full",
     -8: "aborted by the interrupt handler",
+    -9: "invalid text encoding",
+    -10: "feature not in this build",
 }
 
+# Immediate handles from boomkat.h: valid in any context, never freed.
+_HANDLE_UNDEFINED, _HANDLE_NULL, _HANDLE_TRUE, _HANDLE_FALSE = 1, 2, 3, 4
+
 # Value types from bk_get_type.
-_UNDEFINED, _NULL, _BOOLEAN, _NUMBER, _STRING, _OBJECT, _FUNCTION, _OTHER = range(8)
+_UNDEFINED, _NULL, _BOOLEAN, _NUMBER, _STRING, _OBJECT, _FUNCTION, _SYMBOL, _BIGINT = range(9)
 
 _TYPE_NAMES = {
     _UNDEFINED: "undefined",
@@ -58,7 +63,8 @@ _TYPE_NAMES = {
     _STRING: "string",
     _OBJECT: "object",
     _FUNCTION: "function",
-    _OTHER: "other",
+    _SYMBOL: "symbol",
+    _BIGINT: "bigint",
 }
 
 
@@ -137,6 +143,18 @@ _HOST_FN = ctypes.CFUNCTYPE(ctypes.c_uint64, ctypes.c_void_p, ctypes.c_uint64,
                             ctypes.c_uint, ctypes.POINTER(ctypes.c_uint64), ctypes.c_void_p)
 
 
+class _StringView(ctypes.Structure):
+    """bk_string_view: width 1 is Latin-1, width 2 native UTF-16."""
+
+    _fields_ = [("data", ctypes.c_void_p), ("length", ctypes.c_size_t),
+                ("width", ctypes.c_uint8), ("ascii", ctypes.c_uint8)]
+
+
+# void (*bk_string_release)(void *opaque, const void *data, size_t length)
+_STRING_RELEASE = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p,
+                                   ctypes.c_size_t)
+
+
 class _FnDef(ctypes.Structure):
     """One entry of a bk_set_function_list table (mirrors bk_fn_def in boomkat.h)."""
 
@@ -144,7 +162,37 @@ class _FnDef(ctypes.Structure):
                 ("fn", _HOST_FN),
                 ("arity", ctypes.c_int),
                 ("flags", ctypes.c_uint),
-                ("udata", ctypes.c_void_p)]
+                ("udata", ctypes.c_void_p),
+                ("finalize", ctypes.c_void_p),
+                ("finalize_opaque", ctypes.c_void_p)]
+
+
+class _HeapStats(ctypes.Structure):
+    """Mirrors bk_heap_stats in boomkat.h."""
+
+    _fields_ = [
+        ("heap_bytes", ctypes.c_uint64),
+        ("external_bytes", ctypes.c_uint64),
+        ("heap_limit", ctypes.c_uint64),
+        ("live_handles", ctypes.c_uint32),
+        ("gc_cycles", ctypes.c_uint32),
+    ]
+
+
+class _TypedArrayInfo(ctypes.Structure):
+    """Mirrors bk_typed_array_info in boomkat.h."""
+
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("data", ctypes.c_void_p),
+        ("length", ctypes.c_size_t),
+        ("byte_offset", ctypes.c_size_t),
+        ("buffer", ctypes.c_uint64),
+    ]
+
+
+# Element size of each bk_element_type, in enum order.
+_ELEMENT_SIZES = (1, 1, 1, 2, 2, 4, 4, 2, 4, 8, 8, 8)
 
 
 def _declare(lib):
@@ -156,9 +204,9 @@ def _declare(lib):
     ctx = ctypes.c_void_p
     val = ctypes.c_uint64
     signatures = [
-        ("bk_new_runtime", [], ctx),
+        ("bk_new_runtime", [ctypes.c_void_p], ctx),
         ("bk_free_runtime", [ctx], None),
-        ("bk_new_context", [ctx], ctx),
+        ("bk_new_context", [ctx, ctypes.c_void_p], ctx),
         ("bk_free_context", [ctx], None),
         ("bk_version", [], ctypes.c_char_p),
         # Value-producing calls return the handle directly; 0 means failure
@@ -171,6 +219,9 @@ def _declare(lib):
         ("bk_read_bool", [ctx, val, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
         ("bk_read_string", [ctx, val, ctypes.c_char_p, ctypes.c_size_t,
                              ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
+        ("bk_read_string_utf16", [ctx, val, ctypes.POINTER(ctypes.c_uint16),
+                                  ctypes.c_size_t,
+                                  ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
 
         ("bk_get_error_message", [ctx], ctypes.c_char_p),
         ("bk_get_error_code", [ctx], ctypes.c_int),
@@ -186,15 +237,41 @@ def _declare(lib):
 
         ("bk_throw_error", [ctx, ctypes.c_int, ctypes.c_char_p], val),
         ("bk_throw", [ctx, val], val),
+        ("bk_new_error", [ctx, ctypes.c_int, ctypes.c_char_p], val),
+        ("bk_describe", [ctx, val, ctypes.c_char_p, ctypes.c_size_t,
+                         ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
         # Constructors, for building a return value inside a callback. The
         # so ctypes cannot reach them.
         ("bk_new_number", [ctx, ctypes.c_double], val),
-        ("bk_new_bool", [ctx, ctypes.c_int], val),
-        ("bk_new_null", [ctx], val),
-        ("bk_new_undefined", [ctx], val),
         ("bk_new_string", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
+        ("bk_new_string_utf16", [ctx, ctypes.POINTER(ctypes.c_uint16),
+                                 ctypes.c_size_t], val),
+        ("bk_new_external_string_latin1", [ctx, ctypes.c_void_p, ctypes.c_size_t,
+                                           _STRING_RELEASE, ctypes.c_void_p], val),
+        ("bk_new_external_string_utf16", [ctx, ctypes.c_void_p, ctypes.c_size_t,
+                                          _STRING_RELEASE, ctypes.c_void_p], val),
+        ("bk_string_view_get", [ctx, val, ctypes.POINTER(_StringView)], ctypes.c_int),
         ("bk_dup_value", [ctx, val], val),
+        ("bk_gc", [ctx, ctypes.c_int], None),
+        ("bk_get_heap_stats", [ctx, ctypes.POINTER(_HeapStats)], ctypes.c_int),
+        # Binary data: ArrayBuffers and typed arrays cross as bytes.
+        ("bk_new_array_buffer", [ctx, ctypes.c_size_t, ctypes.POINTER(ctypes.c_void_p)], val),
+        ("bk_get_array_buffer", [ctx, val, ctypes.POINTER(ctypes.c_void_p),
+                                 ctypes.POINTER(ctypes.c_size_t)], ctypes.c_int),
+        ("bk_get_typed_array", [ctx, val, ctypes.POINTER(_TypedArrayInfo)], ctypes.c_int),
         ("bk_call", [ctx, val, val, ctypes.POINTER(val), ctypes.c_uint], val),
+        # Compiled scripts and modules.
+        ("bk_compile", [ctx, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_uint], val),
+        ("bk_run_script", [ctx, val], val),
+        ("bk_set_module_loader", [ctx, ctypes.POINTER(_ModuleLoader)], ctypes.c_int),
+        ("bk_module_set_name", [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int),
+        ("bk_module_provide", [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int),
+        ("bk_module_fail", [ctypes.c_void_p, val], ctypes.c_int),
+        ("bk_define_native_module", [ctx, ctypes.c_char_p, ctypes.c_size_t, val], ctypes.c_int),
+        ("bk_invalidate_module", [ctx, ctypes.c_char_p, ctypes.c_size_t], ctypes.c_int),
+        ("bk_import", [ctx, ctypes.c_char_p, ctypes.c_size_t], val),
+        ("bk_promise_state_get", [ctx, val, ctypes.POINTER(ctypes.c_int)], ctypes.c_int),
+        ("bk_promise_result", [ctx, val], val),
     ]
     for name, argtypes, restype in signatures:
         fn = getattr(lib, name)
@@ -302,11 +379,7 @@ class Call:
     @property
     def new_target(self):
         """new.target, or None on a plain call."""
-        handle = self._lib.bk_get_new_target(self._ctx)
-        try:
-            return self.reader.to_python(handle)
-        finally:
-            self._lib.bk_free_value(self._ctx, handle)
+        return self.reader.to_python(self._lib.bk_get_new_target(self._ctx))
 
     @property
     def runtime(self):
@@ -319,13 +392,7 @@ class Call:
         return bool(self._lib.bk_is_constructor_call(self._ctx))
 
     def _wrap(self, handle, type_id):
-        # OTHER is treated as callable alongside FUNCTION because bk_get_type has
-        # no lightfunc case: engine built-ins such as Math.abs are stored as a
-        # tagged ordinal rather than an HObject, so they fall through to OTHER
-        # even though `typeof` says "function" and bk_call invokes them fine.
-        # Symbols and bigints also land in OTHER, and calling one throws a
-        # TypeError from JS -- the correct outcome anyway.
-        cls = JsFunction if type_id in (_FUNCTION, _OTHER) else JsValue
+        cls = JsFunction if type_id == _FUNCTION else JsValue
         return cls(self, handle, type_id)
 
     def _invoke(self, func, args):
@@ -388,18 +455,19 @@ class _Reader:
     """The ABI's readers, bound to the context that resolves handles.
 
     v2 has one context type: the runtime's own context at top level, the
-    callback's context inside a host function. Both resolve registry handles,
-    bk_get_new_target return.
+    callback's context inside a host function. Both resolve registry handles
+    and the borrowed call handles (arguments, this, new.target).
     """
 
-    __slots__ = ("_owner", "type_of", "_read_bool", "_read_number", "_read_string")
+    __slots__ = ("_owner", "_lib", "type_of", "_read_bool", "_read_number", "_read_string_utf16")
 
     def __init__(self, lib, owner):
         self._owner = owner
+        self._lib = lib
         self.type_of = _bind(lib, "bk_get_type", owner)
         self._read_bool = _bind(lib, "bk_read_bool", owner)
         self._read_number = _bind(lib, "bk_read_number", owner)
-        self._read_string = _bind(lib, "bk_read_string", owner)
+        self._read_string_utf16 = _bind(lib, "bk_read_string_utf16", owner)
 
     def to_python(self, handle, type_id=None):
         """Convert a handle to a plain Python value."""
@@ -418,15 +486,37 @@ class _Reader:
                 return JsObject(type_id)
             return out.value
         if type_id == _STRING:
+            # UTF-16 round-trips a lone surrogate, which Python str can hold.
             size = ctypes.c_size_t(0)
-            if self._read_string(handle, None, 0, ctypes.byref(size)) != _OK:
+            if self._read_string_utf16(handle, None, 0, ctypes.byref(size)) != _OK:
                 return JsObject(type_id)
-            buffer = ctypes.create_string_buffer(size.value + 1)
-            if self._read_string(handle, buffer, size.value + 1,
-                                 ctypes.byref(size)) != _OK:
+            buffer = (ctypes.c_uint16 * size.value)()
+            if self._read_string_utf16(handle, buffer, size.value,
+                                       ctypes.byref(size)) != _OK:
                 return JsObject(type_id)
-            return buffer.raw[:size.value].decode("utf-8")
+            return bytes(memoryview(buffer).cast("B")).decode(
+                "utf-16-le", "surrogatepass")
+        if type_id == _OBJECT:
+            data = self._binary(handle)
+            if data is not None:
+                return data
         return JsObject(type_id)
+
+    def _binary(self, handle):
+        """The bytes of an ArrayBuffer or typed array, copied, or None."""
+        lib = self._lib
+        data = ctypes.c_void_p()
+        size = ctypes.c_size_t()
+        if lib.bk_get_array_buffer(self._owner, handle, ctypes.byref(data),
+                                   ctypes.byref(size)) == _OK:
+            return ctypes.string_at(data, size.value) if data.value else b""
+        info = _TypedArrayInfo()
+        if lib.bk_get_typed_array(self._owner, handle, ctypes.byref(info)) == _OK:
+            lib.bk_free_value(self._owner, info.buffer)
+            if not info.data:
+                return b""
+            return ctypes.string_at(info.data, info.length * _ELEMENT_SIZES[info.type])
+        return None
 
 
 def _bind(lib, name, owner):
@@ -439,6 +529,47 @@ def _bind(lib, name, owner):
 # mapped back to the Python object that owns it. Weak so that a Runtime the
 # embedder has dropped stays collectable; entries also go on close().
 _OPEN_RUNTIMES = weakref.WeakValueDictionary()
+
+_LOADER_NO_FILESYSTEM_FALLBACK = 2
+_PROMISE_FULFILLED = 1
+_PROMISE_REJECTED = 2
+_EVAL_STRICT = 2
+
+_RESOLVE_FN = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p,
+                               ctypes.c_char_p, ctypes.c_void_p, ctypes.c_void_p)
+_LOAD_FN = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_char_p,
+                            ctypes.c_void_p, ctypes.c_void_p)
+
+
+class _ModuleLoader(ctypes.Structure):
+    """Mirrors bk_module_loader in boomkat.h."""
+    _fields_ = [("resolve", _RESOLVE_FN), ("load", _LOAD_FN),
+                ("opaque", ctypes.c_void_p), ("flags", ctypes.c_uint)]
+
+
+class Script:
+    """Compiled script code from Runtime.compile, runnable any number of times."""
+
+    def __init__(self, runtime, handle):
+        self._runtime = runtime
+        self._handle = handle
+
+    def run(self):
+        """Run the script and return its completion value."""
+        rt = self._runtime
+        rt._check_open()
+        if not self._handle:
+            raise JsError(-5, "this Script is closed")
+        handle = rt._lib.bk_run_script(rt._rt, self._handle)
+        return rt._take(handle)
+
+    def close(self):
+        if self._handle and self._runtime._rt:
+            self._runtime._lib.bk_free_value(self._runtime._rt, self._handle)
+        self._handle = 0
+
+    def __del__(self):
+        self.close()
 
 
 class Runtime:
@@ -466,10 +597,10 @@ class Runtime:
         # sees its text, so keeping the object here preserves the traceback for
         # an embedder that wants to re-raise or log it after eval() returns.
         self._last_host_exception = None
-        self._runtime = self._lib.bk_new_runtime()
+        self._runtime = self._lib.bk_new_runtime(None)
         if not self._runtime:
             raise JsError(-1, "cannot create runtime")
-        self._rt = self._lib.bk_new_context(self._runtime)
+        self._rt = self._lib.bk_new_context(self._runtime, None)
         if not self._rt:
             self._lib.bk_free_runtime(self._runtime)
             raise JsError(-1, "cannot create context")
@@ -520,7 +651,8 @@ class Runtime:
         self._trampolines.append(trampoline)
         encoded = name.encode("utf-8")
         table = (_FnDef * 2)(_FnDef(encoded, trampoline, arity,
-                                    1 if constructable else 0, None),
+                                    1 if constructable else 0, None,
+                                    None, None),
                              _FnDef())
         rc = self._lib.bk_set_function_list(self._rt, 0, table)
         if rc != _OK:
@@ -590,18 +722,26 @@ class Runtime:
         """Store a Python value as the call's JS return value."""
         lib = self._lib
         if result is None:
-            return lib.bk_new_undefined(ctx)
+            return _HANDLE_UNDEFINED
         if isinstance(result, bool):
             # Checked before int: bool is a subclass of int in Python.
-            handle = lib.bk_new_bool(ctx, 1 if result else 0)
+            handle = _HANDLE_TRUE if result else _HANDLE_FALSE
         elif isinstance(result, (int, float)):
             handle = lib.bk_new_number(ctx, float(result))
         elif isinstance(result, str):
-            encoded = result.encode("utf-8")
-            handle = lib.bk_new_string(ctx, encoded, len(encoded))
+            encoded = result.encode("utf-16-le", "surrogatepass")
+            units = (ctypes.c_uint16 * (len(encoded) // 2)).from_buffer_copy(encoded)
+            handle = lib.bk_new_string_utf16(ctx, units, len(units))
+        elif isinstance(result, (bytes, bytearray, memoryview)):
+            raw = bytes(result)
+            data = ctypes.c_void_p()
+            handle = lib.bk_new_array_buffer(ctx, len(raw), ctypes.byref(data))
+            if handle and raw:
+                ctypes.memmove(data, raw, len(raw))
         elif isinstance(result, JsValue):
             # Returning an argument straight back, or the result of a callback.
-            return lib.bk_dup_value(ctx, result._handle)
+            # The engine copies the returned handle, so it is passed as is.
+            return result._handle
         elif isinstance(result, (list, dict, tuple)):
             # No ABI constructor builds an object or array inside a callback,
             # and bk_eval must not be re-entered from one. Returning JSON text
@@ -613,8 +753,139 @@ class Runtime:
         else:
             raise TypeError("no JS equivalent; return a number, string, bool, "
                             "None, or a value from call.raw")
-        # go straight back to the registry.
         return handle
+
+    def compile(self, source, filename="<script>", strict=False):
+        """Compile a classic script once; Script.run() runs it.
+
+        Syntax errors raise JsError here, not at run time.
+        """
+        self._check_open()
+        encoded = source.encode("utf-8")
+        handle = self._lib.bk_compile(self._rt, encoded, len(encoded),
+                                      filename.encode("utf-8"),
+                                      _EVAL_STRICT if strict else 0)
+        if handle == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        return Script(self, handle)
+
+    def set_module_loader(self, resolve=None, load=None, filesystem_fallback=True):
+        """Serve module imports from Python.
+
+        resolve(referrer, specifier) returns the canonical module name, and
+        load(name) returns the module's source text. Either may return None to
+        use the filesystem (unless filesystem_fallback is False) or raise to
+        fail the import with that message. Passing neither removes the loader.
+        """
+        self._check_open()
+        if resolve is None and load is None:
+            self._loader = None
+            status = self._lib.bk_set_module_loader(self._runtime, None)
+        else:
+            def answer(request, fn, args, deliver):
+                try:
+                    result = fn(*args)
+                except Exception as exc:  # noqa: BLE001 - reported to JS
+                    self._last_host_exception = exc
+                    err = self._lib.bk_new_error(self._rt, 0, str(exc).encode("utf-8", "replace"))
+                    status = self._lib.bk_module_fail(request, err)
+                    self._lib.bk_free_value(self._rt, err)
+                    return status
+                if result is None:
+                    return 0
+                encoded = result.encode("utf-8")
+                return deliver(request, encoded, len(encoded))
+
+            def on_resolve(_ctx, referrer, specifier, request, _opaque):
+                return answer(request, resolve,
+                              ((referrer or b"").decode("utf-8", "replace"),
+                               specifier.decode("utf-8", "replace")),
+                              self._lib.bk_module_set_name)
+
+            def on_load(_ctx, name, request, _opaque):
+                return answer(request, load, (name.decode("utf-8", "replace"),),
+                              self._lib.bk_module_provide)
+
+            loader = _ModuleLoader(_RESOLVE_FN(on_resolve) if resolve else _RESOLVE_FN(),
+                                   _LOAD_FN(on_load) if load else _LOAD_FN(), None,
+                                   0 if filesystem_fallback else _LOADER_NO_FILESYSTEM_FALLBACK)
+            # The callbacks must outlive their registration.
+            self._loader = loader
+            status = self._lib.bk_set_module_loader(self._runtime, ctypes.byref(loader))
+        if status != 0:
+            raise JsError(status, self._error_message())
+
+    def define_native_module(self, name, exports):
+        """A module whose exports are the keys of `exports`, a JSON-compatible dict."""
+        self._check_open()
+        import json
+        source = "(" + json.dumps(exports) + ")"
+        encoded = source.encode("utf-8")
+        handle = self._lib.bk_eval_ex(self._rt, encoded, len(encoded), b"<exports>", 0)
+        if handle == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        try:
+            encoded = name.encode("utf-8")
+            status = self._lib.bk_define_native_module(self._rt, encoded, len(encoded), handle)
+        finally:
+            self._lib.bk_free_value(self._rt, handle)
+        if status != 0:
+            raise JsError(status, self._error_message())
+
+    def invalidate_module(self, name):
+        """Drop a cached module so the next import loads it again."""
+        self._check_open()
+        encoded = name.encode("utf-8")
+        status = self._lib.bk_invalidate_module(self._rt, encoded, len(encoded))
+        if status != 0:
+            raise JsError(status, self._error_message())
+
+    def import_module(self, specifier):
+        """Load and evaluate a module, as import(specifier) does.
+
+        Runs pending jobs until the import settles; raises JsError when it
+        rejects.
+        """
+        self._check_open()
+        encoded = specifier.encode("utf-8")
+        promise = self._lib.bk_import(self._rt, encoded, len(encoded))
+        if promise == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        try:
+            self._lib.bk_run_jobs(self._runtime)
+            state = ctypes.c_int(0)
+            self._lib.bk_promise_state_get(self._rt, promise, ctypes.byref(state))
+            if state.value == _PROMISE_REJECTED:
+                reason = self._lib.bk_promise_result(self._rt, promise)
+                buf = ctypes.create_string_buffer(512)
+                self._lib.bk_describe(self._rt, reason, buf, len(buf), None)
+                self._lib.bk_free_value(self._rt, reason)
+                raise JsError(-3, buf.value.decode("utf-8", "replace"))
+            if state.value != _PROMISE_FULFILLED:
+                raise JsError(-5, "import did not settle")
+        finally:
+            self._lib.bk_free_value(self._rt, promise)
+
+    def _take(self, handle):
+        """Convert and free a result handle, raising for 0."""
+        if handle == 0:
+            raise JsError(self._lib.bk_get_error_code(self._rt), self._error_message())
+        try:
+            return self._to_python(handle)
+        finally:
+            self._lib.bk_free_value(self._rt, handle)
+
+    def gc(self, full=True):
+        """Collect garbage now: a full collection, or a minor one."""
+        self._check_open()
+        self._lib.bk_gc(self._runtime, 1 if full else 0)
+
+    def heap_stats(self):
+        """The collector's counters as a dict."""
+        self._check_open()
+        out = _HeapStats()
+        self._lib.bk_get_heap_stats(self._runtime, ctypes.byref(out))
+        return {name: getattr(out, name) for name, _ in _HeapStats._fields_}
 
     def drain_microtasks(self):
         """Run pending promise jobs. eval() already does this on its own."""

@@ -315,7 +315,7 @@ fn void env_pool_verify_restore(Heap* h) @feat(GC_VERIFY) {
             EnvRecord* e = &block.cells[i];
             if (!e.flags.allocated) continue;
             if (e.flags.mark_epoch == h.env_mark_epoch && e.verify_epoch != h.env_mark_epoch) {
-                h.fatal_func(h.heap_udata, "GC_VERIFY: incremental mark missed a live environment");
+                h.fatal("GC_VERIFY: incremental mark missed a live environment");
             }
             e.flags.mark_epoch = e.verify_epoch;
             e.gc_gray_next = null;
@@ -352,7 +352,9 @@ fn EnvRecord*? env_create_function_scope(Heap* heap, EnvRecord* parent, uint cap
     return types::ALLOC_ERROR~;
 }
 
-fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
+// An object environment over a fresh ordinary object, or over `object` when
+// given (a host-class global object).
+fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent, HObject* object = null) {
     gcprofile::gcprof_env(false, false);
     EnvRecord*? raw = env_pool_alloc(heap);
     if (try env = raw) {
@@ -361,7 +363,7 @@ fn EnvRecord*? env_create(Heap* heap, EnvRecord* parent) {
         env.heap = heap;
         env.flags.is_declarative = false;
 
-        HObject*? bindings = heap.alloc_object(hobject::ObjClass.OBJECT);
+        HObject*? bindings = object != null ? object : heap.alloc_object(hobject::ObjClass.OBJECT);
         if (catch err = bindings) {
             env_pool_free(heap, env);
             return types::ALLOC_ERROR~;
@@ -440,7 +442,7 @@ fn bool env_tval_to_boolean(TVal v) {
     if (v.is_fastint()) return v.get_fastint() != 0;
     if (v.is_string()) {
         void* p = v.get_heapptr();
-        return p != null && ((HString*)p).blen > 0;
+        return p != null && ((HString*)p).is_truthy();
     }
     return true;
 }

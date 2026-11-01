@@ -248,13 +248,123 @@ static void test_delete(bk_ctx rt) {
     bk_free_value(rt, obj);
 }
 
+static bk_value eval_global(bk_ctx rt, const char *src) {
+    return bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
+}
+
+/* Deletion goes through each object's [[Delete]]: array elements, typed
+ * array indices, and proxy traps are not entries in the property table. */
+static void test_delete_exotic(bk_ctx rt) {
+    int out = -1;
+    bk_value arr = expect_val(eval_global(rt, "[1,2,3]"), rt, "eval array");
+    if (arr) {
+        if (bk_delete_property(rt, arr, "1", 1, &out) != BK_OK || out != 1) {
+            printf("FAIL: delete array element (out=%d)\n", out); failures++;
+        }
+        bk_value hole = bk_get_property_uint32(rt, arr, 1);
+        if (!hole || !bk_is_undefined(rt, hole)) fail("deleted array element still present");
+        bk_free_value(rt, hole);
+        out = -1;
+        if (bk_delete_property(rt, arr, "7", 1, &out) != BK_OK || out != 0) {
+            printf("FAIL: delete absent array element (out=%d)\n", out); failures++;
+        }
+        bk_free_value(rt, arr);
+    }
+    bk_value ta = expect_val(eval_global(rt, "new Uint8Array(4)"), rt, "eval typed array");
+    if (ta) {
+        if (bk_delete_property(rt, ta, "1", 1, &out) != BK_ERR_THROW) {
+            fail("delete typed array index should throw");
+        }
+        out = -1;
+        if (bk_delete_property(rt, ta, "9", 1, &out) != BK_OK || out != 0) {
+            printf("FAIL: delete out-of-range typed array index (out=%d)\n", out); failures++;
+        }
+        bk_free_value(rt, ta);
+    }
+    bk_value px = expect_val(eval_global(rt,
+        "var trapped = []; new Proxy({}, { deleteProperty(t, k) { trapped.push(k); return true; } })"),
+        rt, "eval delete proxy");
+    if (px) {
+        out = -1;
+        if (bk_delete_property(rt, px, "x", 1, &out) != BK_OK || out != 1) {
+            printf("FAIL: proxy delete (out=%d)\n", out); failures++;
+        }
+        bk_value seen = eval_global(rt, "trapped.join()");
+        char buf[8];
+        size_t len = 0;
+        if (!seen || bk_read_string(rt, seen, buf, sizeof buf, &len) != BK_OK || strcmp(buf, "x") != 0) {
+            fail("proxy deleteProperty trap not called");
+        }
+        bk_free_value(rt, seen);
+        bk_free_value(rt, px);
+    }
+}
+
+/* Property reads on primitives box the base and keep it as the receiver. */
+static void test_get_primitive(bk_ctx rt) {
+    bk_value s = bk_str(rt, "abc");
+    bk_value len = bk_get_property(rt, s, "length", 6);
+    double n = 0;
+    if (!len || bk_read_number(rt, len, &n) != BK_OK || n != 3) {
+        printf("FAIL: \"abc\".length: %s\n", bk_get_error_message(rt)); failures++;
+    }
+    bk_value ch = bk_get_property_uint32(rt, s, 1);
+    char buf[4];
+    size_t blen = 0;
+    if (!ch || bk_read_string(rt, ch, buf, sizeof buf, &blen) != BK_OK || strcmp(buf, "b") != 0) {
+        printf("FAIL: \"abc\"[1]: %s\n", bk_get_error_message(rt)); failures++;
+    }
+    bk_value num = bk_new_number(rt, 1.5);
+    bk_value fixed = bk_get_property(rt, num, "toFixed", 7);
+    if (!fixed || !bk_is_function(rt, fixed)) fail("(1.5).toFixed is not a function");
+    bk_value getter = eval_global(rt,
+        "Object.defineProperty(Number.prototype, 'self', { get() { 'use strict'; return typeof this; }, configurable: true })");
+    bk_value self = bk_get_property(rt, num, "self", 4);
+    char type[16];
+    if (!self || bk_read_string(rt, self, type, sizeof type, &blen) != BK_OK || strcmp(type, "number") != 0) {
+        fail("primitive getter receiver is not the primitive");
+    }
+    bk_value undef = BK_UNDEFINED;
+    if (bk_get_property(rt, undef, "x", 1) || bk_get_error_code(rt) != BK_ERR_TYPE) {
+        fail("reading a property of undefined should fail with BK_ERR_TYPE");
+    }
+    bk_free_value(rt, s); bk_free_value(rt, len); bk_free_value(rt, ch);
+    bk_free_value(rt, num); bk_free_value(rt, fixed); bk_free_value(rt, getter);
+    bk_free_value(rt, self); bk_free_value(rt, undef);
+}
+
+/* new.target is a borrowed call handle: a constructor returns it without
+ * freeing it, and a plain call sees undefined. */
+static bk_value new_target_fn(bk_ctx ctx, bk_value this_value, unsigned argc,
+                              const bk_value *argv, void *opaque) {
+    (void)this_value; (void)argc; (void)argv; (void)opaque;
+    bk_value nt = bk_get_new_target(ctx);
+    if (!nt) return bk_throw_error(ctx, BK_ERROR_TYPE, "no new.target handle");
+    if (bk_is_undefined(ctx, nt)) return bk_str(ctx, "plain");
+    return bk_dup_value(ctx, nt);
+}
+
+static void test_new_target(bk_ctx rt) {
+    bk_value fn = expect_val(bk_new_c_function(rt, new_target_fn, "NT", 0, BK_CTOR, NULL, NULL, NULL), rt, "new NT fn");
+    if (!fn) return;
+    if (!expect_ok(bk_set_global_property(rt, "NT", 2, fn), rt, "install NT")) { bk_free_value(rt, fn); return; }
+    bk_value r = eval_global(rt, "new NT() === NT && NT() === 'plain' && Reflect.construct(NT, [], Array) === Array");
+    int ok = 0;
+    if (!r || bk_read_bool(rt, r, &ok) != BK_OK || !ok) {
+        printf("FAIL: new.target handle: %s\n", bk_get_error_message(rt)); failures++;
+    }
+    if (bk_get_new_target(rt) != 0) fail("bk_get_new_target outside a callback should be 0");
+    bk_free_value(rt, r);
+    bk_free_value(rt, fn);
+}
+
 /* Enumeration: an own non-enumerable key appears alongside own enumerable. */
 static void test_enumeration(bk_ctx rt) {
     bk_value obj = 0, keys = 0, k = 0;
     if (!(obj = bk_eval_ex(rt, "var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e", strlen("var e={a:1}; Object.defineProperty(e,'h',{value:2,enumerable:false}); e"), "<eval>", BK_EVAL_GLOBAL))) {
         printf("FAIL: eval enum setup: %s\n", bk_get_error_message(rt)); failures++; return;
     }
-    if (!(keys = bk_get_own_property_names(rt, obj))) {
+    if (!(keys = bk_get_own_property_keys(rt, obj, BK_KEYS_STRINGS))) {
         printf("FAIL: own_prop_names: %s\n", bk_get_error_message(rt)); failures++; bk_free_value(rt, obj); return;
     }
     double n = 0;
@@ -291,7 +401,7 @@ static bk_value doubled(bk_ctx ctx, bk_value this_value, unsigned argc, const bk
     bk_read_number(ctx, ((0) < argc ? argv[0] : BK_EXCEPTION), &d);
     return bk_new_number(ctx, d * 2.0);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* Evaluates its argument as a separate script, the way a host `load()` or
@@ -305,27 +415,32 @@ static bk_value h_eval_script(bk_ctx ctx, bk_value this_value, unsigned argc, co
     bk_free_cstring(ctx, src);
     if (v) bk_free_value(ctx, v);
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 /* A host callback can evaluate a script while another is running. It runs
  * as its own global Script: its declarations land on the global object and
  * its `this` is the global object. */
-/* A limit far above the process runs a GC-heavy script to completion; going
- * over one calls the fatal handler, which would end this process. */
-static void test_memory_limit(bk_ctx rt) {
+/* A heap limit far above the script's needs runs a GC-heavy script to
+ * completion. */
+static void test_memory_limit(bk_ctx unused) {
     static const char src[] =
         "let a = []; for (let i = 0; i < 200000; i++) a.push({ i }); a.length";
-    bk_set_interrupt(bk_get_runtime(rt), NULL, NULL);
-    bk_set_memory_limit(bk_get_runtime(rt), (uint64_t)1 << 40);
+    (void)unused;
+    bk_runtime_options options = { 0 };
+    options.heap_limit = (uint64_t)1 << 40;
+    bk_runtime runtime = bk_new_runtime(&options);
+    bk_ctx rt = bk_new_context(runtime, NULL);
     bk_value v = bk_eval_ex(rt, src, strlen(src), "<eval>", BK_EVAL_GLOBAL);
-    bk_set_memory_limit(bk_get_runtime(rt), 0);
-    if (!v) { printf("FAIL: memory limit: %s\n", bk_get_error_message(rt)); failures++; return; }
+    if (!v) { printf("FAIL: memory limit: %s\n", bk_get_error_message(rt)); failures++; goto done; }
     if (bk_to_number(rt, v) != 200000) {
         printf("FAIL: memory limit: got %g\n", bk_to_number(rt, v)); failures++;
     }
     bk_free_value(rt, v);
     printf("PASS: memory limit\n");
+done:
+    bk_free_context(rt);
+    bk_free_runtime(runtime);
 }
 
 static void test_nested_eval(bk_ctx rt) {
@@ -434,7 +549,7 @@ static void test_locations(bk_ctx rt) {
 
 int main(void) {
     bk_ctx rt = NULL;
-    if (!(rt = bk_new_context(bk_new_runtime()))) {
+    if (!(rt = bk_new_context(bk_new_runtime(NULL), NULL))) {
         printf("FAIL: bk_new_context\n");
         return 1;
     }
@@ -442,6 +557,9 @@ int main(void) {
     test_interrupt(rt);
     test_config(rt);
     test_delete(rt);
+    test_delete_exotic(rt);
+    test_get_primitive(rt);
+    test_new_target(rt);
     test_enumeration(rt);
     test_call_rt(rt);
     test_locations(rt);

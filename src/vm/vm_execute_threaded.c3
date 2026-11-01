@@ -441,12 +441,11 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
         hstring::HString* source = (*iterator.extra_ptr()).str_iter.string.borrow();
         if (source == null) return pc;
         uint index = (*iterator.extra_ptr()).str_iter.index;
-        char[] data = source.get_data();
-        if (index >= data.len) return th_next(pc + 2, handlers, regs, cold);
+        if (index >= source.unit_len()) return th_next(pc + 2, handlers, regs, cold);
 
-        uint byte = (uint)data[index];
-        if (byte >= heap::ASCII_CHAR_CACHE_SIZE) return pc;
-        hstring::HString* character = cold.heap.ascii_char_strs[byte];
+        uint unit = source.unit_at(index);
+        if (unit >= heap::ASCII_CHAR_CACHE_SIZE) return pc;
+        hstring::HString* character = cold.heap.ascii_char_strs[unit];
         if (character == null || !((types::HeapHeader*)character).is_pinned()) return pc;
 
         TVal* dest = regs + insn.a;
@@ -609,8 +608,8 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
         if (text != null && text.is_ascii() && index.is_fastint()) {
             long offset = index.get_fastint();
             TVal* dest = regs + result_reg;
-            if (offset >= 0 && offset < (long)text.blen && th_can_release(dest)) {
-                uint code = text.get_cstr()[offset];
+            if (offset >= 0 && offset < (long)text.unit_len() && th_can_release(dest)) {
+                uint code = text.unit_at((uint)offset);
                 th_do_release(dest);
                 dest.set_fastint((long)code);
                 return th_next(pc + 1, handlers, regs, cold);
@@ -784,6 +783,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     publish_frame_top(vm, bottom, nregs, nargs);
     vm.valstack_bottom = bottom;
     cold.act = la;
+    cold.capture_refs = null;
     *cold.regs_base_ptr = bottom;
     if (target != vm.current_func) {
         // The switch's code and cache view follows vm.current_func when the
@@ -1127,6 +1127,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     if (fill < fill_end) fill.set_undefined();
 
     publish_frame_top(vm, regs, nregs, nargs);
+    cold.capture_refs = null;
     if (target != vm.current_func) {
         vm.current_func = target;
         th_bind_ic_bias(cold, target.code, target.ic_entries, target.var_ic_entries);
@@ -1753,10 +1754,10 @@ macro long th_int32_op(Opcode op, int x, int y) @private {
     }
 }
 
-// A WIDE-prefixed register move, integer load, or fastint arithmetic or
-// bitwise operation; th_wide_test takes truth tests and comparisons. Anything
-// else, and any operand these cannot take, runs in the switch from the
-// prefix word.
+// A WIDE-prefixed register move, capture read, integer load, or fastint
+// arithmetic or bitwise operation; th_wide_test takes truth tests and
+// comparisons. Anything else, and any operand these cannot take, runs in the
+// switch from the prefix word.
 fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction ext = pc[0];
     Instruction insn = pc[1];
@@ -1768,6 +1769,9 @@ fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     switch (insn.op) {
         case Opcode.LDREG:
             if (!th_move(regs, a, *rb, cold)) return pc;
+            return th_next(pc + 2, handlers, regs, cold);
+        case Opcode.GETCAP:
+            if (!th_read_capture(regs, a, th_wide_bc(ext, insn), cold)) return pc;
             return th_next(pc + 2, handlers, regs, cold);
         case Opcode.LDINT:
             result = th_wide_sbc(ext, insn);
@@ -1794,9 +1798,13 @@ fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     return th_next(pc + 2, handlers, regs, cold);
 }
 
-// The signed BC operand of an A-BC payload, whose prefix carries BC bits 16-31.
+// The BC operand of an A-BC payload, whose prefix carries BC bits 16-31.
+macro uint th_wide_bc(Instruction ext, Instruction insn) @private {
+    return insn.get_bc() | ((uint)ext.b << 16) | ((uint)ext.c << 24);
+}
+
 macro int th_wide_sbc(Instruction ext, Instruction insn) @private {
-    return (int)(insn.get_bc() | ((uint)ext.b << 16) | ((uint)ext.c << 24)) - (int)bytecode::BC_BIAS;
+    return (int)th_wide_bc(ext, insn) - (int)bytecode::BC_BIAS;
 }
 
 fn Instruction* th_wide_test(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @noinline @private {
@@ -2242,17 +2250,20 @@ fn Instruction* th_dec_global(Instruction* pc, HandlerTable* handlers, TVal* reg
 
 // --- Variable access: VarIC (shape and recycle-epoch) hit path only. ---
 
+// Read capture `index` of the running closure into register `a`. False when
+// the read needs the switch.
+macro bool th_read_capture(TVal* regs, uint a, uint index, ColdCtx* cold) @private {
+    if (cold.capture_refs == null) {
+        cold.capture_refs = capture_refs_of(cold.act, &cold.capture_count);
+        if (cold.capture_refs == null) return false;
+    }
+    if (index >= cold.capture_count) return false;
+    hobject::PropValue* slot = capture_read_slot(&cold.capture_refs[index]);
+    return slot != null && th_move(regs, a, slot.get(), cold);
+}
+
 fn Instruction* th_getcap(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    hobject::PropValue* slot = capture_read_slot(cold.act, pc.get_bc());
-    if (slot == null) return pc;
-    TVal value = slot.get();
-    TVal* dst = regs + pc.a;
-    if (!th_can_publish(cold.heap, value)
-        || !th_can_release(dst)) return pc;
-    th_do_retain(&value);
-    th_do_release(dst);
-    *dst = value;
-    track_heap_store(cold.act, dst, (uint)pc.a);
+    if (!th_read_capture(regs, pc.a, pc.get_bc(), cold)) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
 
@@ -2482,7 +2493,7 @@ fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* r
     if (ic.key.borrow() == null && key.flags.is_interned) return pc;
     HString* interned = key;
     if (!key.flags.is_interned) {
-        interned = h.str_table_lookup(key.get_data(), h.content_hash(key));
+        interned = h.str_table_lookup(key.units(), h.content_hash(key));
         if (interned == null) return pc;
     }
     TVal value;
@@ -2527,14 +2538,34 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     if (rc.is_string()) return th_get_computed(pc, handlers, regs, cold, (HObject*)rb.get_heapptr(), (HString*)rc.get_heapptr());
     if (!rc.is_fastint()) return pc;
     HObject* obj = (HObject*)rb.get_heapptr();
-    if (obj.get_class() != hobject::ObjClass.ARRAY) {
-        if (builtins::is_typed_array_class(obj.get_class()) && !obj.is_proxy()) return th_get_typed_element(pc, handlers, regs, cold, obj);
+    long idx = rc.get_fastint();
+    hobject::ObjClass cls = obj.get_class();
+    hobject::PropValue* elements;
+    uint count;
+    if (cls == hobject::ObjClass.ARGUMENTS) {
+        // A parameter-mapped index reads the owning frame's register.
+        if (idx < 0 || args_is_mapped(obj, (uint)idx)) return pc;
+        // A sloppy call's object keeps its arguments as the first named slots
+        // of a shared shape until a property is added or removed. Any other
+        // keeps them in the dense part, where promoting an index to a named
+        // property empties its slot.
+        uint nargs = *obj.array_len_ptr();
+        if (nargs < cold.heap.args_shapes.len && obj.shape_id == cold.heap.args_shapes[nargs]) {
+            elements = obj.prop_values();
+            count = nargs;
+        } else {
+            elements = obj.array_part();
+            count = obj.array_size;
+        }
+    } else if (cls == hobject::ObjClass.ARRAY) {
+        if (obj.is_proxy()) return pc;
+        elements = obj.array_part();
+        count = obj.array_size;
+    } else {
+        if (builtins::is_typed_array_class(cls) && !obj.is_proxy()) return th_get_typed_element(pc, handlers, regs, cold, obj);
         return pc;
     }
-    if (obj.is_proxy()) return pc;
-    long idx = rc.get_fastint();
-    hobject::PropValue* elements = obj.array_part();
-    if (elements == null || idx < 0 || idx >= (long)obj.array_size) return pc;
+    if (elements == null || idx < 0 || idx >= (long)count) return pc;
     TVal value = elements[idx].get();
     // Undefined dense slots need named-property and prototype lookup.
     if (value.is_undefined()) return pc;
@@ -2575,10 +2606,23 @@ fn Instruction* th_get_typed_element(Instruction* pc, HandlerTable* handlers, TV
     uint count;
     char* base = th_typed_array_base(obj, &count);
     TVal* ra = regs + insn.a;
-    if (base == null || idx < 0 || idx >= (long)count || !th_can_release(ra)
-        || builtins::is_bigint_typed_array_class(obj.get_class())) return pc;
+    if (base == null || idx < 0 || idx >= (long)count || !th_can_release(ra)) return pc;
     hobject::ObjClass cls = obj.get_class();
-    TVal value = builtins::ta_load_number(base + ((uint)idx << builtins::ta_elem_shift(cls)), cls);
+    char* ep = base + ((uint)idx << builtins::ta_elem_shift(cls));
+    // Elements are aligned to their size. Integer kinds that fit a fastint
+    // load here; the rest convert out of line.
+    TVal value;
+    switch (cls) {
+        case hobject::ObjClass.INT8ARRAY:  value.set_fastint(*(ichar*)ep);
+        case hobject::ObjClass.UINT8ARRAY:
+        case hobject::ObjClass.UINT8CLAMPEDARRAY: value.set_fastint(*(char*)ep);
+        case hobject::ObjClass.INT16ARRAY: value.set_fastint(*(short*)ep);
+        case hobject::ObjClass.UINT16ARRAY: value.set_fastint(*(ushort*)ep);
+        case hobject::ObjClass.INT32ARRAY: value.set_fastint(*(int*)ep);
+        case hobject::ObjClass.BIGINT64ARRAY:
+        case hobject::ObjClass.BIGUINT64ARRAY: return pc;
+        default: value = builtins::ta_load_number(ep, cls);
+    }
     th_do_release(ra);
     *ra = value;
     return th_next(pc + 1, handlers, regs, cold);
@@ -2645,7 +2689,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         if (key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
             TVal* destination = regs + insn.a;
             if (!th_can_release(destination)) return pc;
-            long length = (long)str.char_length();
+            long length = (long)str.unit_len();
             th_do_release(destination);
             destination.set_fastint(length);
             return th_next(pc + 1, handlers, regs, cold);
@@ -3308,6 +3352,7 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
     vm.activation_count--;
     vm.gc_root_frame_count_changed();
     cold.act = caller;
+    cold.capture_refs = null;
     vm.valstack_bottom = caller.bottom;
     vm.valstack_top = caller_top;
     *cold.regs_base_ptr = caller.bottom;
@@ -3540,6 +3585,7 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
     // allocation failed runs entirely on the switch.
     if (cold.ic_base == null || cold.var_ic_base == null) return pc;
     th_bind_ic_bias(cold, cold.code_base, cold.ic_base, cold.var_ic_base);
+    cold.capture_refs = null;
     $if $feat(SLJIT):
         if (cold.heap.jit_enabled) {
             CompiledFunction* cf = cold.vm.current_func;

@@ -136,8 +136,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             // catcher may be a catch-only try (no finally_pc).
             Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat != null && ret_cat.finally_pc != null) {
-                ret_cat.return_val = ra[0];
-                vm.heap.shade_root_tval(ret_cat.return_val);
+                catcher_set_return(vm.heap, ret_cat, ra[0]);
                 if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                     // Don't jump to finally_pc if we're already inside the
@@ -170,7 +169,7 @@ fn TVal? dispatch_returns(Dispatch* ds, Opcode op, TVal* ra) {
             // catcher may be a catch-only try (no finally_pc).
             Catcher* ret_cat2 = find_and_unlink_finally_catcher(vm, ds.act);
             if (ret_cat2 != null && ret_cat2.finally_pc != null) {
-                ret_cat2.return_val = undef_val;
+                catcher_set_return(vm.heap, ret_cat2, undef_val);
                 if (!(ret_cat2.flags & CATCHER_FLAG_PENDING_RETURN)) {
                     ret_cat2.flags |= CATCHER_FLAG_PENDING_RETURN | CATCHER_FLAG_PENDING_RETURN_GEN;
                     if ((ret_cat2.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
@@ -225,32 +224,30 @@ fn void class_initaccessor_set_name(Vm* vm, HObject* fn_obj, TVal* key_tval, cha
     hobject::PropValue* name_slot = &fn_obj.prop_values()[name_idx];
     if (!name_slot.get().is_string()) return;
     HString* cur_name = (HString*)name_slot.get().get_heapptr();
-    if (cur_name == null || cur_name.blen != 0) return;  // non-empty: already set
+    if (cur_name == null || cur_name.unit_len() != 0) return;  // non-empty: already set
 
-    // Build "prefix + key_desc" in a stack buffer.
-    char[256] buf;
-    usz pos = 0;
-    for (usz i = 0; i < prefix.len && pos < 255; i++) buf[pos++] = prefix[i];
+    // Build "prefix + key_desc".
+    builtins::UnitBuf name;
+    name.init(vm.heap);
+    defer name.free();
+    name.append_latin1(prefix);
 
     if (key_tval.is_string()) {
         HString* key_hstr = (HString*)key_tval.get_heapptr();
         if (key_hstr != null && key_hstr.is_symbol()) {
             // Symbol key: append "[description]" or "" for anonymous symbols.
             if (builtins::symbol_has_description(key_hstr)) {
-                char[] desc = builtins::symbol_description(key_hstr);
-                buf[pos++] = '[';
-                for (uint i = 0; i < desc.len && pos < 254; i++) buf[pos++] = desc[i];
-                if (pos < 255) buf[pos++] = ']';
+                name.append_char('[');
+                name.append_hstring(key_hstr);
+                name.append_char(']');
             }
             // anonymous Symbol(): name stays just prefix (e.g. "get ")
         } else if (key_hstr != null) {
-            // Plain string key
-            char* kstr = key_hstr.get_cstr();
-            for (uint i = 0; i < key_hstr.blen && pos < 255; i++) buf[pos++] = kstr[i];
+            name.append_hstring(key_hstr);
         }
     }
 
-    HString* new_name = intern_string(vm, buf[:pos]);
+    HString* new_name = name.intern(vm.heap);
     if (new_name != null) {
         TVal new_tv;
         new_tv.set_string_borrowed(new_name);
@@ -1104,7 +1101,7 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 // Indexed character properties are served lazily via exotic_stringobj during enumeration.
                 HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
                 TVal len_tv;
-                len_tv.set_fastint((long)prim_str.char_length());
+                len_tv.set_fastint((long)prim_str.unit_len());
                 obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, ds.vm.heap);
             } else if (ra.is_number() || ra.is_fastint()) {
                 HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
@@ -1160,8 +1157,8 @@ fn TVal? dispatch_iterator(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // by undefined, because the key is no longer addressable on the
             // target.  Walk the pre-collected key list, advancing the index
             // past any key that no longer resolves.  Properties added during
-            // enumeration are not visited (we only walk the snapshot),
-            // matching QuickJS / Duktape.  Exotic-keyed targets (TypedArray,
+            // enumeration are not visited (we only walk the snapshot).
+            // Exotic-keyed targets (TypedArray,
             // String wrapper) and proxy targets get a dedicated existence
             // path inside `forin_key_still_exists` because their integer
             // indices are served by the exotic handler rather than the
@@ -1467,7 +1464,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable
                         && !hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot redefine non-configurable property '%s'", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Cannot redefine non-configurable property '%s'", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -1508,7 +1505,7 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                     if (idx >= 0 && !hobj.get_prop_flags((uint)idx, ds.vm.heap).configurable
                         && !hobj.get_prop_flags((uint)idx, ds.vm.heap).is_accessor) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Cannot redefine non-configurable property '%s'", nm.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Cannot redefine non-configurable property '%s'", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -1588,8 +1585,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 }
                 if (initprop_status == INITPROP_TYPE_ERROR) {
                     HString* key_hs = (HString*)rb.get_heapptr();
-                    char* key_str = key_hs != null ? key_hs.get_cstr() : (char*)"";
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                    HString* key_str = key_hs != null ? key_hs : vm.heap.str(heap::BuiltinStr.EMPTY);
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
                         "Cannot redefine property: %s",
                         key_str,
                         ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -1625,8 +1622,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 }
                 if (initpropn_status == INITPROP_TYPE_ERROR) {
                     HString* key_hs = (HString*)rb.get_heapptr();
-                    char* key_str = key_hs != null ? key_hs.get_cstr() : (char*)"";
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                    HString* key_str = key_hs != null ? key_hs : vm.heap.str(heap::BuiltinStr.EMPTY);
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
                         "Cannot redefine property: %s",
                         key_str,
                         ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -1681,8 +1678,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                         // (e.g. redefining the class constructor's non-configurable
                         // .prototype via `static get ['prototype']() {}`).
                         HString* key_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                            "Cannot redefine non-configurable property '%s'", key_hstr.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                            "Cannot redefine non-configurable property '%s'", key_hstr,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -1744,8 +1741,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                         // (e.g. redefining the class constructor's non-configurable
                         // .prototype via `static set ['prototype'](_) {}`).
                         HString* key_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                            "Cannot redefine non-configurable property '%s'", key_hstr.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                            "Cannot redefine non-configurable property '%s'", key_hstr,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -1807,8 +1804,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                             // Non-configurable: DefinePropertyOrThrow throws TypeError
                             // (MethodDefinitionEvaluation, ValidateAndApplyPropertyDescriptor).
                             HString* key_hstr = (HString*)key;
-                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                                "Cannot redefine non-configurable property '%s'", key_hstr.get_cstr(),
+                            if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                                "Cannot redefine non-configurable property '%s'", key_hstr,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
@@ -1957,8 +1954,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 // null", leaking the internal @@iterator key into the message.
                 if (ra.is_null() || ra.is_undefined()) {
                     HString* desc = iterable_value_desc(vm, ra);
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable",
-                        desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not iterable",
+                        desc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                 }
@@ -1973,16 +1970,16 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 if (method.is_undefined() || method.is_null()) {
                     // No @@iterator at all: the source simply is not iterable.
                     HString* desc = iterable_value_desc(vm, &src);
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not iterable",
-                        desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not iterable",
+                        desc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                 } else {
                     // @@iterator exists but is not callable: report the bad
                     // method value, matching the distinction node draws.
                     HString* mdesc = typeof_string(vm, &method);
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not a function",
-                        mdesc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not a function",
+                        mdesc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                 }
@@ -2016,8 +2013,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             TVal src = *rb;
             if (src.is_null() || src.is_undefined()) {
                 HString* desc = iterable_value_desc(vm, &src);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not async iterable",
-                    desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not async iterable",
+                    desc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return (TVal){};
@@ -2089,8 +2086,8 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             if (sync_method.is_nullish() || !sync_method.is_object()
                 || !((HObject*)sync_method.get_heapptr()).is_callable()) {
                 HString* desc = iterable_value_desc(vm, &src);
-                if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "%s is not async iterable",
-                    desc.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "%s is not async iterable",
+                    desc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return (TVal){};
@@ -2274,13 +2271,10 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
             // instruction (each class evaluation creates a fresh
             // PrivateEnvironment).
             uint bc = insn.get_bc();
-            char[] desc = {};
+            HString* desc = vm.heap.str(heap::BuiltinStr.EMPTY);
             if (bc < vm.current_func.const_count) {
                 TVal desc_tv = ds.constants[bc];
-                if (desc_tv.is_string()) {
-                    HString* desc_hs = (HString*)desc_tv.get_heapptr();
-                    desc = desc_hs.get_data();
-                }
+                if (desc_tv.is_string()) desc = (HString*)desc_tv.get_heapptr();
             }
             HString* sym = builtins::create_hidden_symbol(vm.heap, desc);
             if (sym == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
@@ -2321,22 +2315,15 @@ fn TVal? dispatch_misc(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, De
                 }
             }
             if (!ok) {
-                char[] priv_name = "?";
+                HString* priv_name = vm.heap.str_intern("?");
                 uint c = insn.c;
                 if (c != 0xFF && c < vm.current_func.const_count) {
                     TVal name_tv = ds.constants[c];
-                    if (name_tv.is_string()) {
-                        HString* name_hs = (HString*)name_tv.get_heapptr();
-                        priv_name = name_hs.get_data();
-                    }
+                    if (name_tv.is_string()) priv_name = (HString*)name_tv.get_heapptr();
                 }
-                char[160] msg_buf;
-                int len = (int)(io::bprintf(&msg_buf,
-                    "Cannot access private member #%s from an object whose class did not declare it",
-                    (String)priv_name) ?? msg_buf[:0]).len;
-                char[] msg = len > 0 && (usz)len < msg_buf.len ? msg_buf[:(usz)len] : (char[])"Cannot access private member from an object whose class did not declare it";
-                if (!vm_throw_error(vm, vm.heap.type_err_proto, msg,
-                        ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                        "Cannot access private member #%s from an object whose class did not declare it",
+                        priv_name, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
             }

@@ -3,6 +3,15 @@
 Boomkat is an embeddable JavaScript engine written in C3, targeting correctness,
 low memory use, and good performance on low-powered devices.
 
+## Required agent attribution
+
+All coding agents (including Codex, Claude Code, Crush, and delegated agents)
+must include an explicit Git trailer in every commit they create:
+
+```text
+Assisted-by: <harness>/<model>
+```
+
 ## Codebase
 
 - `src/`: engine, compiler, VM, builtins, and C embedding API.

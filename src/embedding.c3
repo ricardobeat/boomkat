@@ -21,6 +21,7 @@
 //     them from accumulating until teardown. The registry grows on demand.
 module boomkat @feat(!BYTECODE_ONLY);
 
+import boomkat::agent;
 import boomkat::builtins;
 import boomkat::embed;
 import boomkat::vm;
@@ -46,6 +47,7 @@ faultdef
     JS_EXCEPTION,         // script threw; see last_error()
     INTERNAL_ERROR,       // VM fault with no JS error attached
     INTERRUPTED,          // aborted by the interrupt handler
+    ENCODING_ERROR,       // invalid UTF-8 input
     WRONG_TYPE,           // as_number() on a string, etc.
     STALE_VALUE,          // value was released, or belongs to another runtime
     VALUE_TABLE_FULL,     // registry exhausted
@@ -62,7 +64,8 @@ enum JsType : int {
     STRING,
     OBJECT,
     FUNCTION,
-    OTHER,        // symbol, bigint, and other non-classified tags
+    SYMBOL,
+    BIGINT,
 }
 
 $assert JsType.UNDEFINED.ordinal == embed::BK_TYPE_UNDEFINED;
@@ -72,7 +75,8 @@ $assert JsType.NUMBER.ordinal    == embed::BK_TYPE_NUMBER;
 $assert JsType.STRING.ordinal    == embed::BK_TYPE_STRING;
 $assert JsType.OBJECT.ordinal    == embed::BK_TYPE_OBJECT;
 $assert JsType.FUNCTION.ordinal  == embed::BK_TYPE_FUNCTION;
-$assert JsType.OTHER.ordinal     == embed::BK_TYPE_OTHER;
+$assert JsType.SYMBOL.ordinal    == embed::BK_TYPE_SYMBOL;
+$assert JsType.BIGINT.ordinal    == embed::BK_TYPE_BIGINT;
 
 // Maps a core status onto this module's faults.
 macro fault_of(int code) {
@@ -81,6 +85,7 @@ macro fault_of(int code) {
         case embed::BK_ERR_SYNTAX:    return SYNTAX_ERROR;
         case embed::BK_ERR_THROW:     return JS_EXCEPTION;
         case embed::BK_ERR_INTERRUPT: return INTERRUPTED;
+        case embed::BK_ERR_ENCODING:  return ENCODING_ERROR;
         case embed::BK_ERR_FULL:      return VALUE_TABLE_FULL;
         case embed::BK_ERR_TYPE:      return WRONG_TYPE;
         case embed::BK_ERR_INVALID:   return STALE_VALUE;
@@ -282,11 +287,26 @@ fn void? JsContext.exec(&self, String source, String name = "<eval>") {
 
 // Run a host-selected promise job checkpoint.
 //
-// Faults: INTERRUPTED
+// Faults: INTERRUPTED, JS_EXCEPTION
 fn void? JsRuntime.drain_microtasks(&self) {
     if (self.rt == null) return;
     int rc = embed::drain_microtasks(self.rt);
     if (rc != embed::BK_OK) return fault_of(rc)~;
+}
+
+// Queue a callable with no arguments and undefined this. The queue owns the
+// callback until delivery, ignores its result, and reports exceptions through
+// drain_microtasks. No promise is created and no JS factory is consulted.
+fn void? JsContext.enqueue_job(&self, JsValue callback) {
+    if (self.rt == null) return NOT_CREATED~;
+    embed::select_context(self.context);
+    TVal f;
+    if (!self.load(callback, &f)) return STALE_VALUE~;
+    if (!builtins::is_callable_tval(f)) return NOT_CALLABLE~;
+    TVal arg, terminal;
+    arg.set_undefined();
+    terminal.set_boolean(false);
+    if (!self.rt.heap.enqueue_microtask(f, arg, terminal)) return OUT_OF_MEMORY~;
 }
 
 // ============================================================================
@@ -398,6 +418,70 @@ fn JsValue? JsContext.call(&self, JsValue func, JsValue[] args = {},
         return JS_EXCEPTION~;
     }
     return self.root(res);
+}
+
+// A native promise capability. These three owned roots outlive @scope; copies
+// alias them. Release exactly once after completion or cancellation. Resolving
+// functions share the engine's first-call-wins latch, including during adoption.
+struct JsDeferred {
+    JsValue promise;
+    JsValue resolve;
+    JsValue reject;
+}
+
+fn JsDeferred? JsContext.deferred(&self) {
+    if (self.rt == null) return NOT_CREATED~;
+    embed::select_context(self.context);
+    Heap* h = self.rt.heap;
+    HObject*? created = builtins::promise_create(h);
+    if (catch created) return OUT_OF_MEMORY~;
+    HObject* p = created;
+    if (p == null) return OUT_OF_MEMORY~;
+    TVal tv; tv.set_object(p);
+    ValueRoot held;
+    h.push_value_root(&held, tv);
+    defer h.pop_value_root(&held);
+    builtins::PromiseCapability cap = builtins::promise_new_capability(h, p);
+    if (cap.promise == null) return OUT_OF_MEMORY~;
+    JsDeferred out;
+    bool complete;
+    defer if (!complete) self.release_deferred(out);
+    out.promise.slot = embed::slot_alloc(self.rt, tv);
+    if (!out.promise.slot) return VALUE_TABLE_FULL~;
+    tv.set_object(cap.resolve_func);
+    out.resolve.slot = embed::slot_alloc(self.rt, tv);
+    if (!out.resolve.slot) return VALUE_TABLE_FULL~;
+    tv.set_object(cap.reject_func);
+    out.reject.slot = embed::slot_alloc(self.rt, tv);
+    if (!out.reject.slot) return VALUE_TABLE_FULL~;
+    complete = true;
+    return out;
+}
+
+fn void JsContext.release_deferred(&self, JsDeferred deferred) {
+    self.release(deferred.promise);
+    self.release(deferred.resolve);
+    self.release(deferred.reject);
+}
+
+// Settlement runs synchronous resolution work only. The host owns checkpoints.
+fn void? JsContext.settle_deferred(&self, JsDeferred deferred, bool ok, JsValue value = {}) {
+    JsValue[1] args = { value };
+    JsValue result = self.call(ok ? deferred.resolve : deferred.reject, args[..])!;
+    self.release(result);
+}
+
+// Observe an intrinsic promise without reading .then or @@species and without
+// creating a downstream promise. The engine retains callbacks until delivery.
+// Return values are ignored; throws escape through the host's job checkpoint.
+fn void? JsContext.observe_promise(&self, JsValue promise, JsValue fulfilled, JsValue rejected) {
+    if (self.rt == null) return NOT_CREATED~;
+    embed::select_context(self.context);
+    TVal p, f, r;
+    if (!self.load(promise, &p) || !self.load(fulfilled, &f) || !self.load(rejected, &r)) return STALE_VALUE~;
+    if (!p.is_object() || ((HObject*)p.get_heapptr()).get_class() != PROMISE
+        || !builtins::is_callable_tval(f) || !builtins::is_callable_tval(r)) return WRONG_TYPE~;
+    if (!builtins::promise_observe(self.rt.heap, p.get_heapptr(), f, r)) return OUT_OF_MEMORY~;
 }
 
 // ============================================================================
@@ -593,6 +677,7 @@ fn JsValue? JsContext.root(&self, TVal tv) {
     if (self.rt == null) return NOT_CREATED~;
     ulong slot = embed::slot_alloc(self.rt, tv);
     if (slot == 0) return VALUE_TABLE_FULL~;
+    embed::release_parked_result(self.rt, tv);
     JsValue handle = { .slot = slot };
     if (self.scope_depth > 0) self.scoped.push(handle);
     return handle;
@@ -689,8 +774,8 @@ fn void utf8_put(char c, void* udata) {
 
 fn String utf8_of(HString* s, Allocator allocator) {
     if (s == null) return "";
-    DString buf = dstring::temp_with_capacity(s.get_data().len + 4);
-    hstring::write_cesu8_as_utf8(s.get_data(), &utf8_put, &buf);
+    DString buf = dstring::temp_with_capacity((sz)(s.utf8_len() + 4));
+    s.write_utf8(&utf8_put, &buf);
     return buf.copy_str(allocator);
 }
 
@@ -892,19 +977,7 @@ fn JsArg JsCtx.value(self, JsValue v) {
 
 // --- inspecting a JsArg -----------------------------------------------------
 
-fn JsType JsArg.type_of(self) {
-    if (self.tv.is_undefined()) return JsType.UNDEFINED;
-    if (self.tv.is_null()) return JsType.NULL;
-    if (self.tv.is_boolean()) return JsType.BOOLEAN;
-    if (self.tv.is_numeric()) return JsType.NUMBER;
-    if (self.tv.is_string()) return JsType.STRING;
-    if (self.tv.is_object()) {
-        HObject* obj = (HObject*)self.tv.get_heapptr();
-        if (obj != null && obj.flags.callable) return JsType.FUNCTION;
-        return JsType.OBJECT;
-    }
-    return JsType.OTHER;
-}
+fn JsType JsArg.type_of(self) => (JsType)embed::classify(self.tv);
 
 fn bool JsArg.is_undefined(self) => self.tv.is_undefined();
 fn bool JsArg.is_number(self)    => self.tv.is_numeric();
@@ -1110,7 +1183,10 @@ fn void JsRuntime.set_interrupt(&self, InterruptHandler handler, void* opaque = 
 // and stationary until the watchdog has stopped; all other operations belong
 // to the engine thread. Requests stay latched until clear_interrupt().
 fn void JsRuntime.request_interrupt(&self) {
-    if (self.rt != null) mem::@atomic_store(self.rt.heap.interrupt_requested, 1u);
+    if (self.rt == null) return;
+    mem::@atomic_store(self.rt.heap.interrupt_requested, 1u);
+    // A thread blocked in Atomics.wait sleeps on a condition, not on this flag.
+    agent::wake_interrupt(self.rt.heap);
 }
 
 fn void JsRuntime.clear_interrupt(&self) {

@@ -44,15 +44,15 @@ fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx
     // instead of the numbered binding (e.g. "__super__0") in the env chain.
     if (self.super_name_idx != 0xFFFFFFFF) {
         HString* super_hstr = (HString*)self.constants[self.super_name_idx].get_heapptr();
-        target_ctx.super_name_idx = target_ctx.add_string_constant(super_hstr.get_data());
+        target_ctx.super_name_idx = target_ctx.add_string_constant_hstr(super_hstr);
     }
     if (self.static_super_name_idx != 0xFFFFFFFF) {
         HString* static_super_hstr = (HString*)self.constants[self.static_super_name_idx].get_heapptr();
-        target_ctx.static_super_name_idx = target_ctx.add_string_constant(static_super_hstr.get_data());
+        target_ctx.static_super_name_idx = target_ctx.add_string_constant_hstr(static_super_hstr);
     }
     if (self.home_object_name_idx != 0xFFFFFFFF) {
         HString* home_object_hstr = (HString*)self.constants[self.home_object_name_idx].get_heapptr();
-        target_ctx.home_object_name_idx = target_ctx.add_string_constant(home_object_hstr.get_data());
+        target_ctx.home_object_name_idx = target_ctx.add_string_constant_hstr(home_object_hstr);
     }
     target_ctx.emit_simple(Opcode.PUSH_LEX);
 }

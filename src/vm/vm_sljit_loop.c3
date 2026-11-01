@@ -459,9 +459,9 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool gener
         if (spec.kind == ASCII) {
             if (!memory.source.is_string()) return false;
             HString* text = memory.source.get_heapptr();
-            if (text.is_symbol() || !text.is_ascii()) return false;
-            memory.data = text.get_cstr();
-            memory.length = text.blen;
+            if (text.is_symbol() || !text.is_ascii() || text.is_wide() || text.flags.has_extdata) return false;
+            memory.data = text.data_ptr();
+            memory.length = text.unit_len();
             if (spec.builtin != 0 && !loop_lookup(
                 h,
                 h.string_proto,
@@ -776,7 +776,6 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                         written |= 1UL << ins.a;
                         continue;
                     }
-                    String name =  (String)key.get_data();
                     // Element, string and builtin-method memories first.
                     int memory  = -1;
                     if (!receiver && base.is_string()) {
@@ -787,13 +786,13 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                         bool element   = cls == ARRAY
                             || (cls >= INT8ARRAY && cls <= FLOAT64ARRAY && cls != UINT8CLAMPEDARRAY
                                 && cls != FLOAT16ARRAY);
-                        bool builtin   = cls == MATH || (name == "imul" || name == "charCodeAt");
+                        bool builtin   = cls == MATH || (key.equals("imul") || key.equals("charCodeAt"));
                         if (element || builtin) memory = loop_memory(plan, source, base);
                     }
                     if (memory >= 0 && plan.memory[memory].kind == ASCII) {
-                        if (name == "length") {
+                        if (key.equals("length")) {
                             plan.memory[memory].length_read = true;
-                        } else if (name == "charCodeAt") {
+                        } else if (key.equals("charCodeAt")) {
                             plan.memory[memory].builtin = (int)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal;
                             plan.intrinsic_at[at] = 1;
                             plan.memory_at[at] = (char)(memory + 1);
@@ -805,13 +804,13 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
                             memory = -1;
                         }
                     } else if (memory >= 0 && plan.memory[memory].kind != INTRINSIC) {
-                        if (name == "length") {
+                        if (key.equals("length")) {
                             plan.memory[memory].length_read = true;
                         } else {
                             memory = -1;
                         }
                     } else if (memory >= 0) {
-                        if (name == "imul") {
+                        if (key.equals("imul")) {
                             plan.memory[memory].builtin = (int)builtins::Builtin.MATH_IMUL.ordinal;
                             plan.intrinsic_at[at] = 1;
                             plan.memory_at[at] = (char)(memory + 1);

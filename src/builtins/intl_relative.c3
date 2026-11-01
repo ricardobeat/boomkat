@@ -88,7 +88,7 @@ fn void builtin_intl_relative_format(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     HString* numbering = date_get_raw_string_option(ctx, opts, "numberingSystem");
     if (ctx.should_throw) return;
-    if (numbering != null && !date_is_unicode_type_subtag(numbering.get_cstr()[:numbering.blen])) {
+    if (numbering != null && !date_is_unicode_type_subtag(numbering.token_text())) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "invalid numbering system");
         return;
     }
@@ -96,10 +96,10 @@ fn void builtin_intl_relative_format(BuiltinContext* ctx) {
     char[] first_tag = "en-US";
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
-        first_tag = tag.get_cstr()[:tag.blen];
-        number.us_locale = tag.blen >= 5 && locale_eq_ci(tag.get_cstr()[:5], "en-us");
+        first_tag = tag.token_text();
+        number.us_locale = locale_is_us(tag.token_text());
     }
-    IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.get_cstr()[:numbering.blen], numbering != null);
+    IntlNumbering resolved = intl_resolve_numbering(first_tag, numbering == null ? "" : numbering.token_text(), numbering != null);
     number.numbering = intl_numbering_store(resolved.index);
     number.numbering_ext = resolved.keep_extension;
     int row = intl_row_for_tag(first_tag);
@@ -181,7 +181,7 @@ fn void intl_relative_render(BuiltinContext* ctx, bool as_parts) {
         builtin_throw(ctx, ctx.heap.range_err_proto, "relative time value must be finite");
         return;
     }
-    char[] name = unit_str.get_cstr()[:unit_str.blen];
+    char[] name = unit_str.token_text();
     if (name.len > 1 && name[^1] == 's') name = name[:name.len - 1];
     int index = -1;
     foreach (i, entry : INTL_RELATIVE_UNITS) if (mem_eq_bytes(name, entry.name)) index = (int)i;

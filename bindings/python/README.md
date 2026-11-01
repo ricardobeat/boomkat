@@ -211,6 +211,21 @@ a.register("whichRuntime", which)
 b.register("whichRuntime", which)
 ```
 
+## Compiled scripts and modules
+
+`rt.compile(source, filename="<script>", strict=False)` compiles a classic script
+once and reports syntax errors then; `script.run()` runs it and returns its
+completion value, as many times as needed. `script.close()` releases it.
+
+`rt.set_module_loader(resolve=..., load=..., filesystem_fallback=True)` serves
+imports from Python. `resolve(referrer, specifier)` returns the module's canonical
+name and `load(name)` returns its source. Returning `None` falls back to the
+filesystem unless `filesystem_fallback` is false, and raising fails the import
+with the exception's message. `rt.define_native_module(name, exports)` defines a
+module from a JSON-compatible dict, `rt.invalidate_module(name)` drops a cached
+module so the next import loads it again, and `rt.import_module(specifier)`
+loads and evaluates a module, raising `JsError` when the import rejects.
+
 ## Limitations
 
 These come from the C ABI, not the binding.

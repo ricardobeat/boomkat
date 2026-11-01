@@ -1,12 +1,11 @@
-// Atomics built-in object, single-agent variant.
+// Atomics built-in object.
 //
-// This engine runs a single agent with no worker threads, so every atomic
-// read-modify-write is a plain (uncontended) memory operation. Atomics work on
-// both SharedArrayBuffer- and (per ECMA-262) ArrayBuffer-backed integer
-// TypedArrays. `wait`/`notify`/`waitAsync` degrade to their single-agent
-// no-waiter behaviour: `notify` always reports 0, `wait` returns "not-equal"
-// or "timed-out" without ever blocking, and `waitAsync` returns a synchronous
-// {async:false, value:...} result.
+// Read-modify-write operations on a SharedArrayBuffer-backed view are real
+// atomic instructions at the element width, so they stay correct when other
+// agents share the block. A plain ArrayBuffer has no other agent to race
+// with, and its data block carries no alignment promise, so it takes the
+// ordinary memory path. `wait`/`notify`/`waitAsync` coordinate through the
+// waiter table in agent.c3.
 module boomkat::builtins;
 
 import boomkat::types;
@@ -15,6 +14,8 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hbigint;
 import boomkat::env;
+import boomkat::agent;
+import std::atomic;
 import std::io;
 import std::math;
 
@@ -140,7 +141,19 @@ fn char* atomics_elem_ptr(HObject* ta, uint idx) {
 fn TVal atomics_read(Heap* heap, HObject* ta, uint idx) {
     HObject* buf = (*ta.extra_ptr()).view.buffer;
     char* base = (*buf.extra_ptr()).ab.data + (*ta.extra_ptr()).view.byte_offset;
-    return ta_load_element(heap, base, ta.flags.obj_class, idx);
+    if (!(*buf.extra_ptr()).ab.is_shared) return ta_load_element(heap, base, ta.flags.obj_class, idx);
+
+    // One atomic load of the cell, decoded through a private copy.
+    uint width = ta_elem_size(ta.flags.obj_class);
+    ulong raw = agent::cell_load(base + (idx * width), width);
+    return ta_load_element(heap, (char*)&raw, ta.flags.obj_class, 0);
+}
+
+// True when the view's buffer is a SharedArrayBuffer, whose cells other
+// agents can touch.
+fn bool atomics_is_shared(HObject* ta) @inline {
+    HObject* buf = (*ta.extra_ptr()).view.buffer;
+    return (*buf.extra_ptr()).ab.is_shared;
 }
 
 // ============================================================================
@@ -183,11 +196,17 @@ enum AtomicOp : char {
 // extension for the returned old value. `operand` is the ToInteger'd argument,
 // `expected` is only used for COMPARE_EXCHANGE. Writes the returned "old value"
 // into *old_out (as a double so both int32 and uint32 fit).
-fn void atomics_rmw_int(char* p, hobject::ObjClass cls, AtomicOp op, double operand, double expected, double* old_out) {
+fn void atomics_rmw_int(char* p, hobject::ObjClass cls, AtomicOp op, double operand, double expected, double* old_out, bool shared) {
     uint width = ta_elem_size(cls);
     bool is_signed = (cls == hobject::ObjClass.INT8ARRAY
         || cls == hobject::ObjClass.INT16ARRAY
         || cls == hobject::ObjClass.INT32ARRAY);
+
+    if (shared) {
+        ulong old = atomics_cell_rmw(p, width, op, (ulong)double_to_int_wrap(operand), (ulong)double_to_int_wrap(expected));
+        *old_out = atomics_raw_to_double(old, width, is_signed);
+        return;
+    }
 
     // Read current raw value (zero-extended into u64).
     ulong cur = 0;
@@ -232,6 +251,42 @@ fn void atomics_rmw_int(char* p, hobject::ObjClass cls, AtomicOp op, double oper
         case 2: { ushort v = (ushort)(result & 0xFFFF); mem::copy(p, &v, (sz)(2)); break; }
         case 4: { uint v = (uint)(result & 0xFFFFFFFF); mem::copy(p, &v, (sz)(4)); break; }
         default: break;
+    }
+}
+
+// One atomic read-modify-write on a `$Type`-wide cell, returning the value the
+// cell held before. Sequentially consistent, as the spec requires of every
+// Atomics operation. `expected` matters to COMPARE_EXCHANGE only.
+macro ulong atomics_cell_op($Type, char* p, AtomicOp op, ulong operand, ulong expected) {
+    $Type* cell = ($Type*)p;
+    $Type value = ($Type)operand;
+    switch (op) {
+        case ADD: return (ulong)atomic::fetch_add(cell, value);
+        case SUB: return (ulong)atomic::fetch_sub(cell, value);
+        case AND: return (ulong)atomic::fetch_and(cell, value, SEQ_CONSISTENT, false, $Type::size);
+        case OR:  return (ulong)atomic::fetch_or(cell, value, SEQ_CONSISTENT, false, $Type::size);
+        case XOR: return (ulong)atomic::fetch_xor(cell, value, SEQ_CONSISTENT, false, $Type::size);
+        case COMPARE_EXCHANGE: return (ulong)mem::compare_exchange(cell, ($Type)expected, value);
+        case STORE:
+            mem::@atomic_store(*cell, value);
+            return 0;
+        case EXCHANGE:
+            $Type seen = mem::@atomic_load(*cell);
+            while (true) {
+                $Type witnessed = mem::compare_exchange(cell, seen, value);
+                if (witnessed == seen) return (ulong)seen;
+                seen = witnessed;
+            }
+    }
+}
+
+// The previous contents of the `width`-byte cell at `p`, zero-extended.
+fn ulong atomics_cell_rmw(char* p, uint width, AtomicOp op, ulong operand, ulong expected) {
+    switch (width) {
+        case 1: return atomics_cell_op(char, p, op, operand, expected);
+        case 2: return atomics_cell_op(ushort, p, op, operand, expected);
+        case 4: return atomics_cell_op(uint, p, op, operand, expected);
+        default: return atomics_cell_op(ulong, p, op, operand, expected);
     }
 }
 
@@ -283,7 +338,12 @@ fn long double_to_int_wrap(double d) {
 // BigInt read-modify-write.
 // ============================================================================
 
-fn void atomics_rmw_bigint(char* p, hobject::ObjClass cls, AtomicOp op, int128 operand, int128 expected, int128* old_out) {
+fn void atomics_rmw_bigint(char* p, hobject::ObjClass cls, AtomicOp op, int128 operand, int128 expected, int128* old_out, bool shared) {
+    if (shared) {
+        ulong old = atomics_cell_rmw(p, 8, op, (ulong)(long)operand, (ulong)(long)expected);
+        *old_out = cls == hobject::ObjClass.BIGINT64ARRAY ? (int128)(long)old : (int128)(uint128)old;
+        return;
+    }
     long raw;
     mem::copy(&raw, p, (sz)(8));
     int128 cur;
@@ -372,11 +432,11 @@ fn void atomics_rmw_op(BuiltinContext* ctx, AtomicOp op) {
     char* p = atomics_elem_ptr(ta, idx);
     if (is_big) {
         int128 old;
-        atomics_rmw_bigint(p, cls, op, big_operand, 0, &old);
+        atomics_rmw_bigint(p, cls, op, big_operand, 0, &old, atomics_is_shared(ta));
         atomics_set_bigint_result(ctx, cls, old);
     } else {
         double old = 0.0;
-        atomics_rmw_int(p, cls, op, num_operand, 0.0, &old);
+        atomics_rmw_int(p, cls, op, num_operand, 0.0, &old, atomics_is_shared(ta));
         atomics_set_num_result(ctx, cls, old);
     }
 }
@@ -451,13 +511,13 @@ fn void builtin_atomics_store(BuiltinContext* ctx) {
     char* p = atomics_elem_ptr(ta, idx);
     if (is_big) {
         int128 old;
-        atomics_rmw_bigint(p, cls, AtomicOp.STORE, big_operand, 0, &old);
+        atomics_rmw_bigint(p, cls, AtomicOp.STORE, big_operand, 0, &old, atomics_is_shared(ta));
         // store returns the ToBigInt'd value itself (§25.4.3.13 step 3 returns
         // `v`), NOT the width-reinterpreted stored bits.
         builtin_set_bigint_result(ctx, hbigint::hbigint_alloc(ctx.heap, big_operand) ?? null);
     } else {
         double old = 0.0;
-        atomics_rmw_int(p, cls, AtomicOp.STORE, num_operand, 0.0, &old);
+        atomics_rmw_int(p, cls, AtomicOp.STORE, num_operand, 0.0, &old, atomics_is_shared(ta));
         // store returns the (integer) value that was passed, as a Number.
         atomics_store_num_result(ctx, num_operand);
     }
@@ -519,11 +579,11 @@ fn void builtin_atomics_compareexchange(BuiltinContext* ctx) {
     char* p = atomics_elem_ptr(ta, idx);
     if (is_big) {
         int128 old;
-        atomics_rmw_bigint(p, cls, AtomicOp.COMPARE_EXCHANGE, big_rep, big_exp, &old);
+        atomics_rmw_bigint(p, cls, AtomicOp.COMPARE_EXCHANGE, big_rep, big_exp, &old, atomics_is_shared(ta));
         atomics_set_bigint_result(ctx, cls, old);
     } else {
         double old = 0.0;
-        atomics_rmw_int(p, cls, AtomicOp.COMPARE_EXCHANGE, num_rep, num_exp, &old);
+        atomics_rmw_int(p, cls, AtomicOp.COMPARE_EXCHANGE, num_rep, num_exp, &old, atomics_is_shared(ta));
         atomics_set_num_result(ctx, cls, old);
     }
 }
@@ -554,7 +614,7 @@ fn void builtin_atomics_load(BuiltinContext* ctx) {
 }
 
 // Atomics.isLockFree(size). Returns whether an atomic op on a
-// value of the given byte size is lock-free. Per QuickJS: 1,2,4,8 are lock-free.
+// value of the given byte size is lock-free. Sizes 1, 2, 4 and 8 are lock-free.
 fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
     TVal size_arg; size_arg.set_undefined();
     if (ctx.argc >= 1) size_arg = ctx.regs[ctx.base_reg];
@@ -568,16 +628,19 @@ fn void builtin_atomics_islockfree(BuiltinContext* ctx) {
 // wait / notify / waitAsync, single-agent degenerate behaviour.
 // ============================================================================
 
-// Atomics.wait(ta, index, value, timeout).
-// This engine's single main agent has AgentCanSuspend = true, but with no
-// other agents there is never a notifier, so wait never actually blocks: it
-// returns "not-equal" when the cell differs from `value`, and "timed-out"
-// otherwise (any finite/zero/negative timeout elapses instantly; an infinite
-// timeout with no possible notifier likewise cannot make progress and would
-// deadlock, so we conservatively return "timed-out" too). Argument validation
-// (ValidateIntegerTypedArray waitable, ValidateAtomicAccess, ToInteger of
-// value, ToNumber of timeout) runs first and may throw.
-fn void builtin_atomics_wait(BuiltinContext* ctx) {
+// The arguments Atomics.wait and Atomics.waitAsync share (DoWait steps 1-6):
+// the validated view, the cell it names, the value it must hold, and the
+// timeout in ms (NaN meaning forever). False when a step threw.
+struct WaitArgs {
+    HObject* buffer;
+    char*    block;
+    char*    cell;
+    uint     width;
+    ulong    expected;
+    double   timeout;
+}
+
+fn bool atomics_wait_args(BuiltinContext* ctx, char[] who, WaitArgs* out) {
     TVal ta_arg;   ta_arg.set_undefined();
     TVal idx_arg;  idx_arg.set_undefined();
     TVal val_arg;  val_arg.set_undefined();
@@ -588,46 +651,71 @@ fn void builtin_atomics_wait(BuiltinContext* ctx) {
     if (ctx.argc >= 4) to_arg  = ctx.regs[ctx.base_reg + 3];
 
     HObject* ta = atomics_validate_int_ta(ctx, ta_arg, true);
-    if (ta == null) return;
+    if (ta == null) return false;
 
-    // The buffer must be shared for wait (§25.4.13 step 3: RevalidateAtomicAccess
-    // requires a SharedArrayBuffer).
+    // Only a SharedArrayBuffer can have another agent to wait for.
     HObject* buf = (*ta.extra_ptr()).view.buffer;
     if (buf == null || !(*buf.extra_ptr()).ab.is_shared) {
-        atomics_throw_type_error(ctx, "Atomics.wait requires a SharedArrayBuffer-backed TypedArray");
-        return;
+        atomics_throw_type_error(ctx, who == "Atomics.wait"
+            ? "Atomics.wait requires a SharedArrayBuffer-backed TypedArray"
+            : "Atomics.waitAsync requires a SharedArrayBuffer-backed TypedArray");
+        return false;
     }
 
     uint idx = 0;
-    if (!atomics_validate_access(ctx, ta, idx_arg, &idx)) return;
+    if (!atomics_validate_access(ctx, ta, idx_arg, &idx)) return false;
 
-    // Coerce value (BigInt for BigInt64Array, else ToInteger).
-    hobject::ObjClass cls = ta.flags.obj_class;
-    bool matches;
-    if (cls == hobject::ObjClass.BIGINT64ARRAY) {
+    // BigInt64Array waits on a BigInt; Int32Array on ToInt32 of the value.
+    ulong expected;
+    if (ta.flags.obj_class == hobject::ObjClass.BIGINT64ARRAY) {
         int128 b;
-        if (!atomics_coerce_bigint(ctx, &val_arg, &b)) return;
-        char* p = atomics_elem_ptr(ta, idx);
-        long raw; mem::copy(&raw, p, (sz)(8));
-        matches = ((long)b == raw);
+        if (!atomics_coerce_bigint(ctx, &val_arg, &b)) return false;
+        expected = (ulong)(long)b;
     } else {
         double d = builtin_to_integer_vm(ctx, &val_arg);
-        if (ctx.should_throw) return;
-        char* p = atomics_elem_ptr(ta, idx);
-        int raw; mem::copy(&raw, p, (sz)(4));
-        matches = ((int)double_to_int_wrap(d) == raw);
+        if (ctx.should_throw) return false;
+        expected = (ulong)double_to_int_wrap(d);
     }
 
-    // ToNumber(timeout), may run user code / throw.
+    // ToNumber(timeout) may run user code.
     double timeout = builtin_to_number_vm(ctx, &to_arg);
-    if (ctx.should_throw) return;
+    if (ctx.should_throw) return false;
 
-    char[] verdict = matches ? "timed-out" : "not-equal";
+    out.buffer = buf;
+    out.block = (*buf.extra_ptr()).ab.data;
+    out.cell = atomics_elem_ptr(ta, idx);
+    out.width = ta_elem_size(ta.flags.obj_class);
+    out.expected = expected;
+    out.timeout = timeout;
+    return true;
+}
+
+// Atomics.wait(ta, index, value, timeout): blocks this agent while the cell
+// holds `value`, until another agent notifies it or the timeout passes.
+fn void builtin_atomics_wait(BuiltinContext* ctx) {
+    WaitArgs args;
+    if (!atomics_wait_args(ctx, "Atomics.wait", &args)) return;
+
+    // DoWait step 7: an agent that cannot suspend (a main thread that must
+    // not block) cannot wait.
+    if (ctx.heap.agent_no_block || ctx.heap.no_block) {
+        atomics_throw_type_error(ctx, "Atomics.wait: this agent cannot suspend");
+        return;
+    }
+
+    char[] verdict;
+    switch (agent::wait_sync(ctx.heap, args.cell, args.width, args.expected, args.timeout)) {
+        case NOT_EQUAL: verdict = "not-equal";
+        case OK:        verdict = "ok";
+        case TIMED_OUT: verdict = "timed-out";
+        case INTERRUPTED:
+            ctx.heap.uncatchable_throw = true;
+            host_throw_error(ctx, HOST_ERR_ERROR, "interrupted");
+            return;
+    }
     ctx.result_string(builtin_intern_string(ctx.heap, verdict));
 }
 
-// Atomics.notify(ta, index, count).
-// With no other agents ever waiting, always returns 0.
 // Atomics.pause([iterationNumber]) (microwait). A spin-wait
 // hint to the CPU; observably a no-op. iterationNumber, when present and not
 // undefined, must already BE an integral Number (no coercion), else
@@ -672,147 +760,66 @@ fn void builtin_atomics_notify(BuiltinContext* ctx) {
         count = c < 0.0 ? 0.0 : c;
     }
 
-    // Only shared buffers can have parked async waiters; non-shared: 0.
+    // Only a shared buffer has waiters; no one waits on a plain ArrayBuffer.
     HObject* buf = (*ta.extra_ptr()).view.buffer;
     if (buf == null || !(*buf.extra_ptr()).ab.is_shared) {
         ctx.result_fastint(0);
         return;
     }
 
-    uint shift = ta_elem_shift(ta.flags.obj_class);
-    uint byte_index = (*ta.extra_ptr()).view.byte_offset + (idx << shift);
-    long notified = atomics_notify_waiters(ctx, buf, byte_index, count);
-    ctx.result_fastint(notified);
+    uint woken = agent::notify(atomics_elem_ptr(ta, idx), count);
+    // A waitAsync parked by this very agent settles before notify returns.
+    if (ctx.heap.agent_port != null) (void)atomics_poll(ctx.heap, ctx.vm);
+    ctx.result_fastint((long)woken);
 }
 
-// Resolve up to `count` parked waitAsync promises on (buffer, byte_index) with
-// "ok" (FIFO). Returns the number resolved.
-fn long atomics_notify_waiters(BuiltinContext* ctx, HObject* buffer, uint byte_index, double count) {
-    Heap* heap = ctx.heap;
-    long resolved = 0;
-    for (uint i = 0; i < heap.async_waiter_count; i++) {
-        if ((double)resolved >= count) break;
-        heap::AtomicsWaiter* w = &heap.async_waiters[i];
-        if (!w.active) continue;
-        if (w.buffer != buffer || w.byte_index != byte_index) continue;
-        w.active = false;
-        HObject* promise = w.promise;
-        w.promise = null;
-        w.buffer = null;
-        TVal ok; ok.set_string_borrowed(builtin_intern_string(heap, "ok"));
-        promise_resolve_with_value(promise, ok, heap, ctx.vm);
-        resolved++;
+// Settles the promises that other agents' notifies and elapsed timeouts have
+// made ready: "ok" for a notify, "timed-out" for a deadline. Runs only
+// promise reactions' enqueue, never user code. Returns true if any settled.
+fn bool atomics_poll(void* heap_raw, void* vm) {
+    Heap* heap = (Heap*)heap_raw;
+    Port* port = (Port*)heap.agent_port;
+    bool settled = false;
+    while (agent::port_ready(port)) {
+        bool timed_out;
+        HObject* promise = agent::take_ready(heap, &timed_out);
+        if (promise == null) break;
+        TVal verdict;
+        verdict.set_string_borrowed(builtin_intern_string(heap, timed_out ? "timed-out" : "ok"));
+        promise_resolve_with_value(promise, verdict, heap, vm);
+        settled = true;
     }
-    atomics_compact_waiters(heap);
-    return resolved;
+    return settled;
 }
 
-// Drop trailing inactive waiter slots so the count stays small.
-fn void atomics_compact_waiters(Heap* heap) {
-    while (heap.async_waiter_count > 0 && !heap.async_waiters[heap.async_waiter_count - 1].active) {
-        heap.async_waiter_count--;
-    }
-}
-
-// Park a pending Promise on (buffer, byte_index). Returns the promise HObject,
-// or null if no slot is free.
-fn HObject* atomics_park_waiter(BuiltinContext* ctx, HObject* buffer, uint byte_index) {
-    Heap* heap = ctx.heap;
-    // Reuse an inactive slot if one exists.
-    uint slot = heap.async_waiter_count;
-    for (uint i = 0; i < heap.async_waiter_count; i++) {
-        if (!heap.async_waiters[i].active) { slot = i; break; }
-    }
-    if (slot == heap.async_waiter_count) {
-        if (heap.async_waiter_count >= 64) return null; // list full
-        heap.async_waiter_count++;
-    }
-    HObject*? prom_raw = promise_create(heap);
-    if (catch e = prom_raw) { return null; }
-    HObject* promise = prom_raw;
-    heap.async_waiters[slot].buffer = buffer;
-    heap.shade_root_object(buffer);
-    heap.async_waiters[slot].promise = promise;
-    heap.shade_root_object(promise);
-    heap.async_waiters[slot].byte_index = byte_index;
-    heap.async_waiters[slot].active = true;
-    return promise;
-}
-
-// Atomics.waitAsync(ta, index, value, timeout).
-// Single-agent: no other agent can ever notify, so this resolves synchronously
-// to {async:false, value:"not-equal"} (when the cell differs) or
-// {async:false, value:"timed-out"} (when it matches; there is no way to block).
+// Atomics.waitAsync(ta, index, value, timeout): like wait, without blocking.
+// Returns {async:false, value} when the answer is already known, and
+// {async:true, value:promise} otherwise; the promise settles with "ok" or
+// "timed-out".
 fn void builtin_atomics_waitasync(BuiltinContext* ctx) {
-    TVal ta_arg;   ta_arg.set_undefined();
-    TVal idx_arg;  idx_arg.set_undefined();
-    TVal val_arg;  val_arg.set_undefined();
-    TVal to_arg;   to_arg.set_undefined();
-    if (ctx.argc >= 1) ta_arg  = ctx.regs[ctx.base_reg];
-    if (ctx.argc >= 2) idx_arg = ctx.regs[ctx.base_reg + 1];
-    if (ctx.argc >= 3) val_arg = ctx.regs[ctx.base_reg + 2];
-    if (ctx.argc >= 4) to_arg  = ctx.regs[ctx.base_reg + 3];
+    WaitArgs args;
+    if (!atomics_wait_args(ctx, "Atomics.waitAsync", &args)) return;
 
-    HObject* ta = atomics_validate_int_ta(ctx, ta_arg, true);
-    if (ta == null) return;
-
-    HObject* buf = (*ta.extra_ptr()).view.buffer;
-    if (buf == null || !(*buf.extra_ptr()).ab.is_shared) {
-        atomics_throw_type_error(ctx, "Atomics.waitAsync requires a SharedArrayBuffer-backed TypedArray");
+    // A timeout of zero (or less) is a poll: no waiter is parked.
+    if (args.timeout == args.timeout && args.timeout <= 0.0) {
+        bool equal = agent::cell_load(args.cell, args.width) == (args.expected & agent::width_mask(args.width));
+        atomics_make_wait_result_str(ctx, false, equal ? "timed-out" : "not-equal");
         return;
     }
 
-    uint idx = 0;
-    if (!atomics_validate_access(ctx, ta, idx_arg, &idx)) return;
-
-    hobject::ObjClass cls = ta.flags.obj_class;
-    bool matches;
-    if (cls == hobject::ObjClass.BIGINT64ARRAY) {
-        int128 b;
-        if (!atomics_coerce_bigint(ctx, &val_arg, &b)) return;
-        char* p = atomics_elem_ptr(ta, idx);
-        long raw; mem::copy(&raw, p, (sz)(8));
-        matches = ((long)b == raw);
-    } else {
-        double d = builtin_to_integer_vm(ctx, &val_arg);
-        if (ctx.should_throw) return;
-        char* p = atomics_elem_ptr(ta, idx);
-        int raw; mem::copy(&raw, p, (sz)(4));
-        matches = ((int)double_to_int_wrap(d) == raw);
+    HObject*? created = promise_create(ctx.heap);
+    if (catch err = created) {
+        ctx.result_undefined();
+        return;
     }
-
-    // ToNumber(timeout), may run user code / throw. NaN/undefined -> +Infinity.
-    double timeout = builtin_to_number_vm(ctx, &to_arg);
-    if (ctx.should_throw) return;
-    bool zero_timeout = (timeout == timeout) && (timeout <= 0.0);
-
-    if (!matches) {
-        // Cell differs: no waiting needed. {async:false, value:"not-equal"}.
+    HObject* promise = created;
+    if (!agent::wait_async(ctx.heap, promise, args.block, args.cell, args.width, args.expected, args.timeout)) {
         atomics_make_wait_result_str(ctx, false, "not-equal");
         return;
     }
-    if (zero_timeout) {
-        // Value matches but the timeout has already elapsed: {async:false,
-        // value:"timed-out"} (no async waiter is parked).
-        atomics_make_wait_result_str(ctx, false, "timed-out");
-        return;
-    }
-
-    // Value matches with a non-zero timeout: park an async waiter and return a
-    // pending promise. In this single-agent engine the promise is only ever
-    // resolved by a later Atomics.notify on the same location (with "ok"); the
-    // timeout is not otherwise driven, matching the tests that notify before
-    // draining microtasks.
-    uint shift = ta_elem_shift(ta.flags.obj_class);
-    uint byte_index = (*ta.extra_ptr()).view.byte_offset + (idx << shift);
-    HObject* promise = atomics_park_waiter(ctx, buf, byte_index);
-    if (promise == null) {
-        // Fallback: no slot, behave as an immediate timeout.
-        atomics_make_wait_result_str(ctx, false, "timed-out");
-        return;
-    }
-    TVal prom_tv; prom_tv.set_object(promise);
-    atomics_make_wait_result_val(ctx, true, prom_tv);
+    TVal promise_val;
+    promise_val.set_object(promise);
+    atomics_make_wait_result_val(ctx, true, promise_val);
 }
 
 // Build {async, value:<string>} for waitAsync's synchronous outcomes.

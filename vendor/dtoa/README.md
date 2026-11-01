@@ -6,7 +6,7 @@ uses for `Number.prototype.toString`, `toFixed`/`toPrecision`/`toExponential`,
 and numeric literal parsing; `cutils.c` carries the dynamic-buffer and integer
 helpers it depends on.
 
-Upstream: QuickJS `2025-09-13` (bellard/quickjs), MIT licensed — see `LICENSE`.
+Upstream: QuickJS `2025-09-13` (bellard/quickjs), MIT licensed — see `THIRD_PARTY` at the repo root.
 
 ## Why these files are checked in
 

@@ -28,7 +28,7 @@ fn bool intl_initialized(Heap* hp, TVal value, long class_id) {
     HObject* obj = (HObject*)value.get_heapptr();
     HostClassEntry* entry = hp.host_class_at((uint)class_id);
     HString* name = entry != null ? entry.name.borrow() : null;
-    return name != null && intl_has_brand(hp, obj, name.get_data());
+    return name != null && intl_has_brand(hp, obj, name.token_text());
 }
 fn HObject* intl_legacy_unwrap(BuiltinContext* ctx, long class_id, bool legacy) {
     TVal value = ctx.regs[ctx.base_reg - 1];

@@ -65,6 +65,16 @@ endif
 
 SLJIT_DEPS := $(wildcard vendor/sljit/sljit_src/*.h vendor/sljit/sljit_src/*.c vendor/sljit/sljit_src/allocator_src/*.c)
 
+# TINY also omits the compact unwind table: the engine catches JavaScript
+# exceptions itself and the build emits no native backtraces, so nothing in it
+# unwinds through these frames. DWARF unwind data stays in the binary, which is
+# what a debugger or sampling profiler falls back to.
+ifeq ($(UNAME_S),Darwin)
+TINY_LINK_FLAGS := $(SLIM_LINK_FLAGS) -z -Wl,-no_compact_unwind
+else
+TINY_LINK_FLAGS := $(SLIM_LINK_FLAGS)
+endif
+
 PREFIX ?= /usr/local
 
 .PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_sljitstats boomkat_gc_stress clean \
@@ -131,12 +141,12 @@ out/boomkat_slim: Makefile project.json $(call target_sources,boomkat_slim) scri
 	@rm -f out/.profile-boomkat_slim
 
 out/boomkat_tiny: Makefile project.json $(call target_sources,boomkat_tiny) scripts/no_exports.exp
-	$(C3C_BUILD) boomkat_tiny $(C3C_BUILDFLAGS) --show-backtrace=no $(SLIM_LINK_FLAGS)
+	$(C3C_BUILD) boomkat_tiny $(C3C_BUILDFLAGS) --show-backtrace=no $(TINY_LINK_FLAGS)
 	$(if $(TINY_STRIP),$(TINY_STRIP) $@,)
 	@rm -f out/.profile-boomkat_tiny
 
 out/boomkat_tiny_compile: Makefile project.json $(call target_sources,boomkat_tiny_compile) scripts/no_exports.exp
-	$(C3C_BUILD) boomkat_tiny_compile $(C3C_BUILDFLAGS) $(SLIM_LINK_FLAGS)
+	$(C3C_BUILD) boomkat_tiny_compile $(C3C_BUILDFLAGS) $(TINY_LINK_FLAGS)
 	@rm -f out/.profile-boomkat_tiny_compile
 
 out/boomkat_debug: project.json $(call target_sources,boomkat_debug)
@@ -305,8 +315,59 @@ test-runtime-cycles: boomkat-stress
 install: out/boomkat.a out/boomkat.$(SHLIB_EXT)
 	install -d $(DESTDIR)$(PREFIX)/include $(DESTDIR)$(PREFIX)/lib
 	install -m 644 include/boomkat.h $(DESTDIR)$(PREFIX)/include/boomkat.h
+	install -m 644 $(CPP_HEADERS) $(DESTDIR)$(PREFIX)/include/
 	install -m 644 out/boomkat.a $(DESTDIR)$(PREFIX)/lib/libboomkat.a
 	install -m 755 out/boomkat.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/boomkat.$(SHLIB_EXT)
+	install -m 755 out/libboomkat.$(SHLIB_EXT) $(DESTDIR)$(PREFIX)/lib/libboomkat.$(SHLIB_EXT)
+	install -d $(DESTDIR)$(PREFIX)/lib/cmake/boomkat $(DESTDIR)$(PREFIX)/lib/pkgconfig
+	install -m 644 cmake/boomkatConfig.cmake $(DESTDIR)$(PREFIX)/lib/cmake/boomkat/boomkatConfig.cmake
+	sed -e 's|@PREFIX@|$(PREFIX)|' -e "s|@VERSION@|$$(sed -n 's/.*\"version\": *\"\(.*\)\".*/\1/p' project.json | head -1)|" \
+	    -e 's|@LIBS_PRIVATE@|$(BK_LDLIBS)|' cmake/boomkat.pc.in > $(DESTDIR)$(PREFIX)/lib/pkgconfig/boomkat.pc
+
+# ---- C++ binding (include/boomkat.hpp) --------------------------------------
+# Header-only; nothing here goes into the C library. cpp-check builds every
+# test/cpp/*.cpp in each mode of the matrix, runs it, compiles each header on
+# its own, and runs the compile-fail cases.
+CXX ?= c++
+CPP_WARN := -Wall -Wextra -Werror -pedantic
+CPP_MODES := cxx17-noexc cxx17 cxx20-noexc
+CPP_FLAGS_cxx17-noexc := -std=c++17 -fno-exceptions -fno-rtti
+CPP_FLAGS_cxx17 := -std=c++17
+CPP_FLAGS_cxx20-noexc := -std=c++20 -fno-exceptions -fno-rtti
+CPP_HEADERS := include/boomkat.hpp include/boomkat_std.hpp include/boomkat_coro.hpp
+CPP_TESTS := $(basename $(notdir $(wildcard test/cpp/*.cpp)))
+CPP_LIB ?= out/boomkat.a
+
+.PHONY: cpp-check cpp-headers cpp-compile-fail cpp-examples
+cpp-check: $(CPP_LIB) cpp-headers cpp-compile-fail
+	@set -e; for mode in $(CPP_MODES); do \
+	  mkdir -p out/cpp/$$mode; \
+	  case $$mode in \
+	    cxx17-noexc) flags="$(CPP_FLAGS_cxx17-noexc)";; \
+	    cxx17) flags="$(CPP_FLAGS_cxx17)";; \
+	    cxx20-noexc) flags="$(CPP_FLAGS_cxx20-noexc)";; \
+	  esac; \
+	  for t in $(CPP_TESTS); do \
+	    $(CXX) $$flags $(CPP_WARN) -Iinclude test/cpp/$$t.cpp $(CPP_LIB) $(BK_LDLIBS) -lpthread \
+	      -o out/cpp/$$mode/$$t; \
+	    printf '%s ' "$$mode"; ./out/cpp/$$mode/$$t; \
+	  done; \
+	done
+
+cpp-headers:
+	@set -e; for h in $(CPP_HEADERS); do \
+	  std=-std=c++17; case $$h in *coro*) std=-std=c++20;; esac; \
+	  echo "#include \"$$(basename $$h)\"" | $(CXX) $$std $(CPP_WARN) -Iinclude -x c++ -fsyntax-only -; \
+	done; echo "cpp-headers: ok"
+
+cpp-compile-fail:
+	@CXX="$(CXX)" sh test/cpp/compile_fail/run.sh
+
+cpp-examples: $(CPP_LIB)
+	@set -e; mkdir -p out/cpp/examples; for f in bindings/cpp/examples/*.cpp; do \
+	  n=$$(basename $$f .cpp); \
+	  $(CXX) -std=c++17 $(CPP_WARN) -Iinclude $$f $(CPP_LIB) $(BK_LDLIBS) -lpthread -o out/cpp/examples/$$n; \
+	done; echo "cpp-examples: built $$(ls out/cpp/examples | wc -l | tr -d ' ')"
 
 # ---- Linux CI ---------------------------------------------------------------
 # Build the Linux image and run the whole build/test/link-validation suite in
@@ -378,6 +439,131 @@ out/runtime_hooks: test/capi/runtime_hooks.c include/boomkat.h out/boomkat.a
 test-runtime-hooks: out/runtime_hooks
 	./out/runtime_hooks
 
+# String creators and readers: Latin-1, UTF-16, UTF-8 and lone surrogates.
+out/strings: test/capi/strings.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -pthread -Iinclude test/capi/strings.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/strings
+
+.PHONY: test-strings-api
+test-strings-api: out/strings
+	./out/strings
+
+# Immediate handles and local scopes.
+out/handles: test/capi/handles.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/handles.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/handles
+
+.PHONY: test-handles-api
+test-handles-api: out/handles
+	./out/handles
+
+# Runtime options: a host allocator sees every heap allocation.
+out/runtime_options: test/capi/runtime_options.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/runtime_options.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/runtime_options
+
+.PHONY: test-runtime-options
+test-runtime-options: out/runtime_options
+	./out/runtime_options
+
+# Atoms and own-key enumeration.
+out/atoms: test/capi/atoms.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/atoms.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/atoms
+
+.PHONY: test-atoms-api
+test-atoms-api: out/atoms
+	./out/atoms
+
+# Construction, prototypes, equality, length and JSON.
+out/object_model: test/capi/object_model.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/object_model.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/object_model
+
+out/errors_api: test/capi/errors.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/errors.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/errors_api
+
+.PHONY: test-errors-api
+test-errors-api: out/errors_api
+	./out/errors_api
+
+out/descriptors_api: test/capi/descriptors.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/descriptors.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/descriptors_api
+
+.PHONY: test-descriptors-api
+test-descriptors-api: out/descriptors_api
+	./out/descriptors_api
+
+out/closures_api: test/capi/closures.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/closures.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/closures_api
+
+.PHONY: test-closures-api
+test-closures-api: out/closures_api
+	./out/closures_api
+
+out/classes_api: test/capi/classes.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/classes.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/classes_api
+
+.PHONY: test-classes-api
+test-classes-api: out/classes_api
+	./out/classes_api
+
+out/tracing_api: test/capi/tracing.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/tracing.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/tracing_api
+
+.PHONY: test-tracing-api
+test-tracing-api: out/tracing_api
+	./out/tracing_api
+
+out/intrinsics_api: test/capi/intrinsics.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/intrinsics.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/intrinsics_api
+
+.PHONY: test-intrinsics-api
+test-intrinsics-api: out/intrinsics_api
+	./out/intrinsics_api
+
+out/promises_api: test/capi/promises.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/promises.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/promises_api
+
+.PHONY: test-promises-api
+test-promises-api: out/promises_api
+	./out/promises_api
+
+out/event_loop_api: test/capi/event_loop.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -D_POSIX_C_SOURCE=200809L -D_DEFAULT_SOURCE -Wall -Wextra -pedantic -Iinclude test/capi/event_loop.c \
+	   out/boomkat.a $(BK_LDLIBS) -lpthread -o out/event_loop_api
+
+.PHONY: test-event-loop-api
+test-event-loop-api: out/event_loop_api
+	./out/event_loop_api
+
+out/scripts_api: test/capi/scripts.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/scripts.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/scripts_api
+
+.PHONY: test-scripts-api
+test-scripts-api: out/scripts_api
+	./out/scripts_api
+
+out/module_loader_api: test/capi/module_loader.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/module_loader.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/module_loader_api
+
+.PHONY: test-module-loader-api
+test-module-loader-api: out/module_loader_api
+	./out/module_loader_api
+
+.PHONY: test-object-model-api
+test-object-model-api: out/object_model
+	./out/object_model
+
 .PHONY: test-api-lifecycle
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle
@@ -385,3 +571,55 @@ test-api-lifecycle: out/boomkat.a
 
 out/jit_api: test/capi/jit.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/jit.c out/boomkat.a $(BK_LDLIBS) -o out/jit_api
+
+out/binary_api: test/capi/binary.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/binary.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/binary_api
+
+.PHONY: test-binary-api
+test-binary-api: out/binary_api
+	./out/binary_api
+
+out/weak_api: test/capi/weak.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/weak.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/weak_api
+
+.PHONY: test-weak-api
+test-weak-api: out/weak_api
+	./out/weak_api
+
+out/exotic_api: test/capi/exotic.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/exotic.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/exotic_api
+
+.PHONY: test-exotic-api
+test-exotic-api: out/exotic_api
+	./out/exotic_api
+
+out/gc_control_api: test/capi/gc_control.c include/boomkat.h out/boomkat.a
+	cc -std=c11 -Wall -Wextra -pedantic -Iinclude test/capi/gc_control.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/gc_control_api
+
+.PHONY: test-gc-control-api
+test-gc-control-api: out/gc_control_api
+	./out/gc_control_api
+
+out/context_options_api: test/capi/context_options.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/context_options.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/context_options_api
+
+.PHONY: test-context-options-api
+test-context-options-api: out/context_options_api
+	./out/context_options_api
+
+# Native C3 promise capabilities.
+.PHONY: test-deferred-api
+test-deferred-api:
+	$(C3C) build deferred_api --build-dir out/build/deferred_api
+	./out/deferred_api
+
+# Partial promise-capability registration must release every root/local.
+.PHONY: test-promise-failures
+test-promise-failures:
+	$(C3C) build promise_failures --build-dir out/build/promise_failures
+	./out/promise_failures

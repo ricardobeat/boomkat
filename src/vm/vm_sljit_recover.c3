@@ -86,6 +86,7 @@ fn Instruction* sljit_inline_recover(ColdCtx* cold, FunctionRun* run) @feat(SLJI
         vm.valstack_bottom = bottom;
         vm.current_func = cf;
         cold.act = act;
+        cold.capture_refs = null;
     }
     *cold.regs_base_ptr = cold.act.bottom;
     CompiledFunction* active = vm.current_func;

@@ -334,7 +334,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         TVal old_val = cur.bindings.prop_values()[idx].get();
                         if (env::is_tdz_sentinel(&old_val)) {
                             HString* name_hstr = (HString*)key;
-                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             return (TVal){};
@@ -353,7 +353,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                                 return (TVal){};
                             }
                             HString* name_hstr = (HString*)key;
-                            if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                            if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
                             return (TVal){};
@@ -438,8 +438,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     // falls through to [[Set]], which recreates the property.
                     if (!still_exists && act_strict_acc) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                "%s is not defined", name_hstr.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -459,9 +459,9 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     if (!sres_acc && act_strict_acc) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
                                 "Cannot assign to read only property '%s'",
-                                name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                                name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -478,7 +478,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     TVal old_val = cur.bindings.prop_values()[idx].get();
                     if (env::is_tdz_sentinel(&old_val)) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -497,7 +497,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             return (TVal){};
                         }
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -568,7 +568,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (!found) {
                     // ReferenceError
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                 }
@@ -660,7 +660,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     TVal old_val = cur.bindings.prop_values()[idx].get();
                     if (env::is_tdz_sentinel(&old_val)) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -687,7 +687,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             return (TVal){};
                         }
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         return (TVal){};
@@ -773,7 +773,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             if (!found) {
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return (TVal){};

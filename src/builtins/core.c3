@@ -52,15 +52,15 @@ extern fn double math_cbrt(double x)          @MathLibc("cbrt");
 // The Tm struct mirrors C's struct tm layout exactly.
 
 // ============================================================================
-// StrBuf: a growable byte buffer for builtins that assemble a string whose
-// final size is not known up front (JSON.stringify, Array.prototype.join's
-// toLocaleString sibling, the console formatter).
+// StrBuf: a growable buffer of CESU-8 bytes for text that stays text: the
+// console formatter and inspect output, Intl results from ICU, the source of
+// the Function constructor, and error messages. A builtin that assembles a JS
+// string builds it in a UnitBuf instead, which holds the code units directly.
 // ============================================================================
 //
 // Everything here reports allocation failure through a `bool` return rather
-// than truncating. A builtin that silently stops appending would hand back a
-// well-formed-looking but corrupt result, which is far worse than an error:
-// JSON.stringify did exactly that, returning unterminated JSON as success.
+// than truncating, since a builtin that silently stops appending would hand
+// back a well-formed-looking but corrupt result.
 
 // Bytes held inline before the first heap allocation. Sized so the common
 // case (short strings, small objects) never touches the allocator.
@@ -120,7 +120,7 @@ fn bool StrBuf.grow(&self, usz extra) {
     }
     // reserve has checked len + extra against the maximum, so the clamp keeps
     // the capacity above what is needed.
-    if (new_cap > (usz)hstring::MAX_STRING_BYTES) new_cap = (usz)hstring::MAX_STRING_BYTES;
+    if (new_cap > (usz)hstring::MAX_STRING_LENGTH) new_cap = (usz)hstring::MAX_STRING_LENGTH;
     char* grown;
     if (self.data == &self.inline_buf[0]) {
         grown = (char*)self.heap.alloc_func(self.heap.heap_udata, new_cap);
@@ -143,6 +143,95 @@ fn bool StrBuf.append_bytes(&self, char[] bytes) {
     return true;
 }
 
+// Append the whole string.
+fn bool StrBuf.append_hstring(&self, HString* s) {
+    return self.append_hstring_range(s, 0, s.unit_len());
+}
+
+// Append "Symbol(description)"; an anonymous symbol has an empty description.
+fn bool StrBuf.append_symbol(&self, HString* sym) {
+    if (!self.append_bytes("Symbol(")) return false;
+    if (symbol_has_description(sym) && !self.append_hstring(sym)) return false;
+    return self.append_char(')');
+}
+
+// Append the units `[from, to)` of `s`.
+fn bool StrBuf.append_hstring_range(&self, HString* s, uint from, uint to) {
+    if (from >= to) return true;
+    if (s.is_ascii()) return self.append_bytes(s.ascii_bytes()[from:to - from]);
+    // Each unit takes at most three bytes, so a bounded chunk is reserved once
+    // and encoded in place.
+    const uint CHUNK = 512;
+    bool wide = s.is_wide();
+    char* units = s.data_ptr();
+    while (from < to) {
+        uint count = to - from < CHUNK ? to - from : CHUNK;
+        if (!self.reserve((usz)count * 3)) return false;
+        char* dst = self.data + self.len;
+        usz n = 0;
+        for (uint k = from; k < from + count; k++) {
+            uint u = wide ? (uint)((ushort*)units)[k] : (uint)units[k];
+            if (u < 0x80) {
+                dst[n++] = (char)u;
+            } else if (u < 0x800) {
+                dst[n++] = (char)(0xC0 | (u >> 6));
+                dst[n++] = (char)(0x80 | (u & 0x3F));
+            } else {
+                dst[n++] = (char)(0xE0 | (u >> 12));
+                dst[n++] = (char)(0x80 | ((u >> 6) & 0x3F));
+                dst[n++] = (char)(0x80 | (u & 0x3F));
+            }
+        }
+        self.len += n;
+        from += count;
+    }
+    return true;
+}
+
+// Append one UTF-16 code unit, which may be a lone surrogate.
+fn bool StrBuf.append_unit(&self, uint unit) {
+    char[3] buf;
+    uint n = hstring::encode_codepoint(unit, buf[:3]);
+    return self.append_bytes(buf[:n]);
+}
+
+// Append one code point, an astral one as its surrogate pair.
+fn bool StrBuf.append_codepoint(&self, uint cp) {
+    if (cp < hstring::ASTRAL_START) return self.append_unit(cp);
+    uint high; uint low;
+    hstring::codepoint_to_surrogates(cp, &high, &low);
+    return self.append_unit(high) && self.append_unit(low);
+}
+
+fn void strbuf_put_byte(char c, void* udata) {
+    ((StrBuf*)udata).append_char(c);
+}
+
+// The string as UTF-8 text, a lone surrogate as U+FFFD, or kept as its own
+// 3-byte sequence when `keep_lone` is set. An ASCII string is returned in
+// place; any other is written into `tmp`, which owns the bytes until it is
+// freed or appended to. Both forms are NUL-terminated.
+fn char[] utf8_text(StrBuf* tmp, HString* s, bool keep_lone = false) {
+    if (s.is_ascii()) return s.ascii_bytes();
+    s.write_utf8(&strbuf_put_byte, tmp, keep_lone);
+    // NUL-terminate for C consumers without counting the terminator.
+    tmp.append_char(0);
+    tmp.len--;
+    return tmp.bytes();
+}
+
+// The string as CESU-8 text, the form a StrBuf holds. An ASCII string is
+// returned in place; any other is appended to `tmp`, which owns the bytes
+// until it is freed or appended to again. Both forms are NUL-terminated.
+fn char[] cesu8_text(StrBuf* tmp, HString* s) {
+    if (s.is_ascii()) return s.ascii_bytes();
+    tmp.len = 0;
+    tmp.append_hstring(s);
+    tmp.append_char(0);
+    tmp.len--;
+    return tmp.bytes();
+}
+
 fn bool StrBuf.append_char(&self, char c) {
     if (!self.reserve(1)) return false;
     self.data[self.len++] = c;
@@ -162,10 +251,56 @@ fn HString* StrBuf.to_hstring(&self, BuiltinContext* ctx) {
     HString* result = null;
     if (!self.failed && !hstring::length_exceeds_max((ulong)self.len)) {
         result = self.len == 0 ? ctx.heap.str(heap::BuiltinStr.EMPTY)
-            : ctx.heap.alloc_concat_string(self.bytes(), (uint)self.len);
+            : ctx.heap.alloc_concat_text(self.bytes());
     }
     if (result == null) builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
     return result;
+}
+
+// Store `elem`, which must not be undefined, at index `idx` of a new array that
+// a builtin fills in index order. The element goes straight into the dense part,
+// and the caller sets "length" once at the end.
+fn void array_fill_elem(Heap* heap, HObject* arr, uint idx, TVal elem) @inline {
+    if (arr.set_array_idx(idx, elem, heap)) return;
+    arr.put_prop(heap.int_to_hstring((long)idx), elem, hobject::PROP_FLAGS_WEC, heap);
+}
+
+// The pieces of `strs` joined by `sep`, or null after throwing a RangeError
+// when the result is too long. The units are copied straight into a string of
+// the width they need.
+fn HString* join_hstrings(BuiltinContext* ctx, HString*[] strs, HString* sep) {
+    ulong total = (ulong)sep.unit_len() * (strs.len > 1 ? strs.len - 1 : 0);
+    // The separator is only copied between pieces, and a wide string must hold a
+    // unit above 0xFF to stay canonical.
+    bool wide = strs.len > 1 && sep.is_wide();
+    foreach (piece : strs) {
+        total += piece.unit_len();
+        wide = wide || piece.is_wide();
+    }
+    if (hstring::length_exceeds_max(total)) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return null;
+    }
+    if (total == 0) return ctx.heap.str(heap::BuiltinStr.EMPTY);
+    HString*? joined = hstring::hstring_alloc_storage(ctx.heap, (uint)total, wide, hstring::HASH_DEFERRED, (uint)total);
+    if (catch joined) {
+        builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length");
+        return null;
+    }
+    char* dst = joined.data_ptr();
+    uint shift = wide ? 1 : 0;
+    usz at = 0;
+    foreach (i, piece : strs) {
+        if (i > 0) {
+            hstring::copy_units(dst + at, wide, sep.units());
+            at += (usz)sep.unit_len() << shift;
+        }
+        hstring::copy_units(dst + at, wide, piece.units());
+        at += (usz)piece.unit_len() << shift;
+    }
+    joined.finish_data();
+    ctx.heap.large_string_register(joined);
+    return joined;
 }
 
 // Make the accumulated string the builtin's result, or throw as `to_hstring` does.
@@ -214,6 +349,9 @@ struct BuiltinContext {
     // another host function leaves a deeper scope on top, and the outer
     // handler must keep addressing its own.
     uint host_scope_slot;
+    // UTF-8 copies of string arguments handed to the host during this call,
+    // chained through their first word and freed when the call ends.
+    void* host_text;
 }
 
 // A borrowed descriptor for an owned result slot. Nested builtin contexts may
@@ -658,6 +796,14 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     PROXY_CALL {"", -1, true},
     TA_SPECIES_GET {"", -1, false},
     CREATE_REALM {"createRealm", 0, false},
+    AGENT_START {"start", 1, false},
+    AGENT_BROADCAST {"broadcast", 2, false},
+    AGENT_GET_REPORT {"getReport", 0, false},
+    AGENT_SLEEP {"sleep", 1, false},
+    AGENT_MONOTONIC_NOW {"monotonicNow", 0, false},
+    AGENT_RECEIVE_BROADCAST {"receiveBroadcast", 1, false},
+    AGENT_REPORT {"report", 1, false},
+    AGENT_LEAVING {"leaving", 0, false},
     EVAL_SCRIPT {"", -1, false},
     REGEXP_SPECIES_GETTER {"", -1, false},
     MODULE_BINDING_GETTER {"", -1, false},
@@ -1223,7 +1369,7 @@ fn HObject* to_object_wrapper(Heap* heap, TVal value) {
         (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
         HString* len_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
         TVal len_tv;
-        len_tv.set_fastint((long)prim_str.char_length());
+        len_tv.set_fastint((long)prim_str.unit_len());
         obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, heap);
         return obj;
     }
@@ -1277,7 +1423,7 @@ fn void print_tval(Heap* heap, TVal* val) {
         case STRING:
             HString* s = (HString*)val.get_heapptr();
             if (s != null) {
-                hstring::write_cesu8_as_utf8(s.get_data(), &putc_stdout);
+                s.write_utf8(&putc_stdout);
             } else {
                 io::printf("[null string]");
             }
@@ -1296,31 +1442,9 @@ fn void print_tval(Heap* heap, TVal* val) {
     }
 }
 
-fn double string_to_double(TVal* val) {
-    if (val.is_fastint()) return (double)val.get_fastint();
-    if (val.is_number()) return val.get_number();
-    if (val.is_string()) {
-        HString* h = (HString*)val.get_heapptr();
-        if (h == null || h.blen == 0) return double::nan;
-        char* end;
-        double r = dtoa_bindings::atod_strtod_compat((ZString)h.get_cstr(), &end);
-        if (end == h.get_cstr()) return double::nan;
-        return r;
-    }
-    return double::nan;
-}
-
 // ============================================================================
 // ECMAScript whitespace check
 // ============================================================================
-
-// ECMAScript whitespace (ASCII subset: Tab, VT, FF, Space, NBSP, LF, CR).
-// Used by ToNumber which only needs ASCII whitespace.
-fn bool is_ecma_whitespace(char c) @inline {
-    return c == 0x09 || c == 0x0B || c == 0x0C
-        || c == 0x20 || c == 0xA0
-        || c == 0x0A || c == 0x0D;
-}
 
 // ECMAScript whitespace check at the Unicode codepoint level (ECMA-262 §7.2 + §7.3).
 // Handles the full Unicode range including Zs (Space_Separator) characters.
@@ -1347,41 +1471,15 @@ fn bool is_ecma_ws_codepoint(uint cp) @inline {
     return false;
 }
 
-// Decode a UTF-8 codepoint starting at `data[off]`. Returns the codepoint
-// and sets `*seq_len` to the number of bytes consumed (1-4). Returns 0 on
-// invalid/truncated input.
-fn uint decode_codepoint_at(char* data, uint off, uint total_len, uint* seq_len) {
-    if (off >= total_len) { *seq_len = 0; return 0; }
-    uint b0 = (uint)data[off];
-    // 1-byte (ASCII)
-    if (b0 < 0x80) { *seq_len = 1; return b0; }
-    // 2-byte: 110xxxxx 10xxxxxx
-    if ((b0 & 0xE0) == 0xC0) {
-        if (off + 1 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        *seq_len = 2;
-        return ((b0 & 0x1F) << 6) | (b1 & 0x3F);
-    }
-    // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
-    if ((b0 & 0xF0) == 0xE0) {
-        if (off + 2 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        uint b2 = (uint)data[off + 2];
-        *seq_len = 3;
-        return ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F);
-    }
-    // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
-    if ((b0 & 0xF8) == 0xF0) {
-        if (off + 3 >= total_len) { *seq_len = 1; return 0; }
-        uint b1 = (uint)data[off + 1];
-        uint b2 = (uint)data[off + 2];
-        uint b3 = (uint)data[off + 3];
-        *seq_len = 4;
-        return ((b0 & 0x07) << 18) | ((b1 & 0x3F) << 12) | ((b2 & 0x3F) << 6) | (b3 & 0x3F);
-    }
-    // Invalid lead byte, skip one byte
-    *seq_len = 1;
-    return 0;
+// The unit range `[*start, *end)` of `s` left after removing ECMAScript
+// whitespace from the front (`lead`) and the back (`trail`).
+fn void ws_trim_bounds(HString* s, uint* start, uint* end, bool lead = true, bool trail = true) {
+    uint lo = 0;
+    uint hi = s.unit_len();
+    if (lead) while (lo < hi && is_ecma_ws_codepoint(s.unit_at(lo))) lo++;
+    if (trail) while (hi > lo && is_ecma_ws_codepoint(s.unit_at(hi - 1))) hi--;
+    *start = lo;
+    *end = hi;
 }
 
 // The value of digit `c` in a radix up to 36, or -1 if `c` is not a digit.
@@ -1424,48 +1522,44 @@ fn double Pow2Digits.value(&self) {
 // parsing numeric literals (decimal, hex, Infinity).  Returns NaN when
 // the string does not represent a valid numeric literal.
 fn double builtin_string_to_number(HString* hstr) {
-    char* cstr = hstr.get_cstr();
-    uint blen = hstr.blen;
-
-    // --- skip leading ECMAScript whitespace (CESU-8 aware) ---
-    uint start = 0;
-    while (start < blen) {
-        uint seq_len = 0;
-        uint cp = decode_codepoint_at(cstr, start, blen, &seq_len);
-        if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) break;
-        start += seq_len;
-    }
-
+    uint lo; uint hi;
+    ws_trim_bounds(hstr, &lo, &hi);
     // Empty or all-whitespace -> +0
-    if (start == blen) {
-        return 0.0;
-    }
+    if (lo == hi) return 0.0;
 
-    char* p = cstr + start;
-
-    // --- Infinity / -Infinity / +Infinity (trailing ECMAScript whitespace ok) ---
-    {
-        char* q = p;
-        double inf_sign = 1.0;
-        if (*q == '+') { q++; }
-        else if (*q == '-') { inf_sign = -1.0; q++; }
-        if (mem::equals(q, (char*)"Infinity", 8)) {
-            uint rest = (uint)(q - cstr) + 8;
-            uint tail = rest;
-            bool only_ws = true;
-            while (tail < blen) {
-                uint seq_len2 = 0;
-                uint cp2 = decode_codepoint_at(cstr, tail, blen, &seq_len2);
-                if (seq_len2 == 0 || !is_ecma_ws_codepoint(cp2)) { only_ws = false; break; }
-                tail += seq_len2;
-            }
-            if (only_ws) return inf_sign * double::inf;
+    // The literal grammar is ASCII. An ASCII string is parsed in place: the
+    // byte after the trimmed run is whitespace or the terminator, where
+    // strtod stops. Any other string is copied out after checking its units.
+    usz n = (usz)(hi - lo);
+    char[128] stack;
+    char* heap_copy = null;
+    defer if (heap_copy != null) mem::free(heap_copy);
+    char* p;
+    if (hstr.is_ascii()) {
+        p = hstr.ascii_bytes().ptr + lo;
+    } else {
+        p = &stack[0];
+        if (n >= stack.len) {
+            heap_copy = (char*)alloc::malloc_try(mem, (sz)(n + 1)) ?? null;
+            if (heap_copy == null) return double::nan;
+            p = heap_copy;
         }
+        for (usz i = 0; i < n; i++) {
+            uint u = hstr.unit_at(lo + (uint)i);
+            if (u >= 0x80) return double::nan;
+            p[i] = (char)u;
+        }
+        p[n] = 0;
     }
+    char[] text = p[:n];
+
+    // --- Infinity / -Infinity / +Infinity ---
+    if (text == "Infinity" || text == "+Infinity") return double::inf;
+    if (text == "-Infinity") return -double::inf;
 
     // --- Reject sign-prefixed hex/binary/octal literals ---
     // ECMA-262 §7.1.3.1: +0x... / -0x... etc. are not valid StringNumericLiterals.
-    if ((p[0] == '+' || p[0] == '-')) {
+    if (p[0] == '+' || p[0] == '-') {
         char* q = p + 1;
         if (q[0] == '0' && (q[1] == 'x' || q[1] == 'X')) return double::nan;
         if (q[0] == '0' && (q[1] == 'b' || q[1] == 'B')) return double::nan;
@@ -1476,7 +1570,7 @@ fn double builtin_string_to_number(HString* hstr) {
     // Unlike parseInt, ToNumber(String) accepts these prefixes, but no sign and
     // no trailing radix.
     int shift = 0;
-    if (p[0] == '0') {
+    if (n > 1 && p[0] == '0') {
         switch (p[1]) {
             case 'x': case 'X': shift = 4;
             case 'b': case 'B': shift = 1;
@@ -1485,57 +1579,27 @@ fn double builtin_string_to_number(HString* hstr) {
     }
     if (shift != 0) {
         Pow2Digits digits;
-        uint j = 2;
-        for (int d; (d = radix_digit_value(p[j])) >= 0 && d < (1 << shift); j++) digits.add(d, shift);
-        if (j == 2) return double::nan;   // at least one digit is required
-        // Trailing must be whitespace (codepoint-aware)
-        uint trail_pos = (uint)((p + j) - cstr);
-        while (trail_pos < blen) {
-            uint seq_len = 0;
-            uint cp = decode_codepoint_at(cstr, trail_pos, blen, &seq_len);
-            if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) return double::nan;
-            trail_pos += seq_len;
-        }
+        usz j = 2;
+        for (int d; j < n && (d = radix_digit_value(p[j])) >= 0 && d < (1 << shift); j++) digits.add(d, shift);
+        if (j == 2 || j != n) return double::nan;   // at least one digit, and nothing after
         return digits.value();
     }
 
-    // --- Decimal via libc::strtod ---
+    // --- Decimal via strtod ---
     char* endptr;
     double result = dtoa_bindings::atod_strtod_compat(p, &endptr);
 
-    // Nothing was consumed -> NaN
-    if (endptr == p) {
-        return double::nan;
-    }
+    // The whole trimmed run must be consumed.
+    if (endptr != p + n) return double::nan;
 
     // strtod accepts case-insensitive "infinity" text, but ES only allows the
-    // exact "Infinity" spelling. Distinguish text-Infinity from numeric overflow
-    // (e.g. "10e10000" legitimately overflows to Infinity): overflow input
-    // begins with a digit or '.', whereas Infinity text begins with a letter
-    // after the optional sign. Only reject a wrong-case Infinity *spelling*.
+    // exact "Infinity" spelling, handled above. Numeric overflow (e.g.
+    // "10e10000") legitimately gives Infinity and begins with a digit or '.'.
     if (result == double::inf || result == -double::inf) {
         char* q = p;
         if (q[0] == '+' || q[0] == '-') q++;
-        bool is_inf_text = (q[0] == 'i' || q[0] == 'I');
-        if (is_inf_text &&
-            (ZString)p != (ZString)"Infinity" &&
-            (ZString)p != (ZString)"+Infinity" &&
-            (ZString)p != (ZString)"-Infinity") {
-            return double::nan;
-        }
+        if (q[0] == 'i' || q[0] == 'I') return double::nan;
     }
-
-    // Trailing characters must be whitespace only (codepoint-aware for multi-byte Unicode ws)
-    uint trail_pos = (uint)(endptr - cstr);
-    while (trail_pos < blen) {
-        uint seq_len = 0;
-        uint cp = decode_codepoint_at(cstr, trail_pos, blen, &seq_len);
-        if (seq_len == 0 || !is_ecma_ws_codepoint(cp)) {
-            return double::nan;
-        }
-        trail_pos += seq_len;
-    }
-
     return result;
 }
 
@@ -1652,7 +1716,7 @@ fn bool builtin_to_boolean(TVal* val, Heap* h = null) {
             return !val.get_bigint().is_zero();   // ToBoolean(0n) = false
         case STRING: {
             HString* s = (HString*)val.get_heapptr();
-            return s != null && s.blen > 0;
+            return s != null && s.is_truthy();
         }
         case OBJECT:
             if (h != null && h.htmldda_obj != null
@@ -1672,15 +1736,8 @@ fn bool builtin_to_boolean(TVal* val, Heap* h = null) {
 // ============================================================================
 
 fn HString* builtin_intern_string(Heap* heap, char[] data) {
-    // Heap.str_intern normalizes raw 4-byte UTF-8 astral sequences to CESU-8
-    // before hashing, so one logical string cannot intern under two different
-    // byte encodings.
     return heap.str_intern(data);
 }
-
-// Interns a slice of an existing string's bytes. A string's bytes are already
-// CESU-8, so a slice needs no astral normalization scan.
-fn HString* builtin_intern_slice(Heap* heap, char[] data) @inline => heap.str_intern_normalized(data);
 
 // ============================================================================
 // Collection class check helper (shared by Map, Set, WeakMap, WeakSet)
@@ -1853,7 +1910,7 @@ fn int find_in_array_part(HObject* obj, TVal val, uint stride) {
 //
 // Map/Set/WeakMap/WeakSet keep entries in array_part, and scanning it on
 // every add, has, get and delete makes building a collection quadratic:
-// a linear scan of a 100k Set costs 24s against QuickJS's 9ms, over 90% of
+// a linear scan of a 100k Set costs 24s, over 90% of
 // it inside same_value_zero.
 //
 // The index stores 1-based array_part indices rather than a copy of each key,
@@ -2021,8 +2078,7 @@ fn void coll_construct(BuiltinContext* ctx, hobject::ObjClass obj_class, HObject
                  ((HObject*)iter_fn.get_heapptr()).is_callable());
             if (!iter_callable) {
                 // ECMA-262 §7.4.1 GetIterator (sync): obj[@@iterator]() throws
-                // TypeError when @@iterator is missing. Newer specs add an
-                // array-like fallback, but V8/SpiderMonkey still throw here.
+                // TypeError when @@iterator is missing.
                 coll_throw(ctx, not_iterable_msg);
                 return;
             }
@@ -2654,7 +2710,7 @@ fn HObject* group_by_shared(BuiltinContext* ctx, bool into_map) {
 // ============================================================================
 
 // ToString(Number) per ECMA-262 §7.1.12.1, shortest round-trip decimal via
-// QuickJS js_dtoa (FREE mode), spec exponent format (1e+21, 1e-7).
+// spec exponent format (1e+21, 1e-7).
 fn HString* builtin_number_to_hstring(Heap* heap, double d) {
     if (math::is_nan(d)) return (HString*)heap.strs[heap::BuiltinStr.NAN_STR];
     if (math::is_inf(d)) {
@@ -2691,24 +2747,11 @@ fn HString* builtin_to_string(Heap* heap, TVal* val) {
             HString* s = (HString*)val.get_heapptr();
             // Symbols need special handling: ToString(symbol) = "Symbol(description)"
             if (s != null && s.is_symbol()) {
-                // Build "Symbol(description)" string
-                char[] desc = symbol_description(s);
-                char[512] result_buf;
-                result_buf[0] = 'S';
-                result_buf[1] = 'y';
-                result_buf[2] = 'm';
-                result_buf[3] = 'b';
-                result_buf[4] = 'o';
-                result_buf[5] = 'l';
-                result_buf[6] = '(';
-                int pos = 7;
-                for (int i = 0; i < desc.len && pos < 510; i++) {
-                    result_buf[pos] = desc[i];
-                    pos++;
-                }
-                result_buf[pos] = ')';
-                pos++;
-                return builtin_intern_string(heap, result_buf[:(uint)pos]);
+                StrBuf out;
+                out.init(heap);
+                defer out.free();
+                out.append_symbol(s);
+                return builtin_intern_string(heap, out.bytes());
             }
             return s;
         }
@@ -2985,6 +3028,18 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
     }
     if (res != null) res.set_temproot();
     return res;
+}
+
+// A string that a call returned belongs to the pending return value until the
+// next call replaces it. A builtin that keeps such a string across another call
+// holds its own reference, and releases it with builtin_unhold.
+fn HString* builtin_hold(HString* s) @inline {
+    if (s != null) ((HeapHeader*)s).incref();
+    return s;
+}
+
+fn void builtin_unhold(BuiltinContext* ctx, HString* s) @inline {
+    if (s != null) ctx.heap.decref((HeapHeader*)s);
 }
 
 // ToPropertyKey (ES §7.1.19): like ToString but a Symbol is a valid property
@@ -3416,7 +3471,8 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
     if (try err = err_raw) {
         ctx.heap.set_prototype(err, ctx.heap.ref_err_proto);
         char[256] buf;
-        int len = (int)(io::bprintf(&buf, "Cannot access '%s' before initialization", (ZString)name.get_cstr()) ?? buf[:0]).len;
+        char[256] name_text;
+        int len = (int)(io::bprintf(&buf, "Cannot access '%s' before initialization", name.cesu8_zstr(name_text[..])) ?? buf[:0]).len;
         char[] msg = len > 0 && len < 256 ? buf[:len] : buf[:0];
         HString* msg_str = builtin_intern_string(ctx.heap, msg);
         if (msg_str != null) {
@@ -3448,8 +3504,8 @@ fn void module_binding_throw_tdz(BuiltinContext* ctx, HString* name) {
 fn void builtin_module_binding_getter(BuiltinContext* ctx) {
     ctx.result_undefined();
     if (ctx.callee_obj == null) return;
-    HString* env_slot_key = ctx.heap.str_intern(MODULE_BINDING_ENV_SLOT);
-    HString* key_slot_key = ctx.heap.str_intern(MODULE_BINDING_KEY_SLOT);
+    HString* env_slot_key = ctx.heap.str_intern_hidden(MODULE_BINDING_ENV_SLOT);
+    HString* key_slot_key = ctx.heap.str_intern_hidden(MODULE_BINDING_KEY_SLOT);
     if (env_slot_key == null || key_slot_key == null) return;
 
     int env_idx = ctx.callee_obj.find_prop_idx((void*)env_slot_key, ctx.heap);
@@ -3499,8 +3555,8 @@ fn TVal make_module_binding_accessor(Heap* heap, HObject* source_bindings, HStri
     func_obj.flags.constructable = false;
     heap.set_prototype(func_obj, heap.function_proto);
 
-    HString* env_slot_key = heap.str_intern(MODULE_BINDING_ENV_SLOT);
-    HString* key_slot_key = heap.str_intern(MODULE_BINDING_KEY_SLOT);
+    HString* env_slot_key = heap.str_intern_hidden(MODULE_BINDING_ENV_SLOT);
+    HString* key_slot_key = heap.str_intern_hidden(MODULE_BINDING_KEY_SLOT);
     if (env_slot_key == null || key_slot_key == null) return undef_result;
     hobject::module_getter_index = (int)Builtin.MODULE_BINDING_GETTER.ordinal;
 
@@ -3612,6 +3668,39 @@ alias HostFunc = fn void(BuiltinContext*, void*);
 const uint MAX_HOST_DEPTH @feat(GC_STRESS) = 8;
 const uint MAX_HOST_DEPTH @feat(!GC_STRESS) = 32;
 
+// The string as NUL-terminated UTF-8 text valid until the host call returns. An
+// ASCII string is returned in place; any other is copied. Null with `out_len`
+// zero when the copy cannot be allocated.
+fn char* host_text(BuiltinContext* ctx, HString* s, usz* out_len) {
+    if (s.is_ascii()) {
+        *out_len = s.unit_len();
+        return s.data_ptr();
+    }
+    usz len = s.utf8_len();
+    void** block = (void**)alloc::malloc_try(mem, (sz)(usz::size + len + 1)) ?? null;
+    if (block == null) {
+        *out_len = 0;
+        return null;
+    }
+    char* text = (char*)(block + 1);
+    s.copy_utf8(text);
+    text[len] = 0;
+    *block = ctx.host_text;
+    ctx.host_text = block;
+    *out_len = len;
+    return text;
+}
+
+fn void host_text_free(BuiltinContext* ctx) {
+    void** block = (void**)ctx.host_text;
+    while (block != null) {
+        void** next = (void**)*block;
+        mem::free(block);
+        block = next;
+    }
+    ctx.host_text = null;
+}
+
 // Invoke the host function registered in `slot`.
 //
 // An unregistered slot yields undefined rather than faulting, so a forged or
@@ -3631,9 +3720,9 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     ctx.result_undefined();
 
     // Bound host nesting before touching any VM state, so the caller sees an
-    // unmodified engine alongside the pending throw. host_scope_depth is
+    // unmodified engine alongside the pending throw. host_call_depth is
     // exactly the count of host frames currently on the C3 stack.
-    if (heap.host_scope_depth >= MAX_HOST_DEPTH) {
+    if (heap.host_call_depth >= MAX_HOST_DEPTH) {
         host_throw_error(ctx, HOST_ERR_RANGE, "Maximum call stack size exceeded");
         return;
     }
@@ -3648,7 +3737,10 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // collection the host triggers.
     bool made_this = false;
     if (ctx.is_constructor && !ctx.this_val.is_object()) {
-        HObject*? inst_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
+        // A host class constructor allocates an instance of its class with no
+        // payload yet; the callback attaches one.
+        heap::HostClassEntry* cls = entry.class_id != 0 ? heap.host_class_at(entry.class_id - 1) : null;
+        HObject*? inst_raw = heap.alloc_object(cls != null ? hobject::ObjClass.HOST : hobject::ObjClass.OBJECT);
         if (catch inst_raw) {
             heap.leave_native_frame();
             ctx.should_throw = true;
@@ -3656,7 +3748,11 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
             return;
         }
         HObject* inst = inst_raw;
-        heap.set_prototype(inst, heap.object_proto);
+        if (cls != null) {
+            (*inst.extra_ptr()).host.class_id = entry.class_id - 1;
+            (*inst.extra_ptr()).host.payload = null;
+        }
+        heap.set_prototype(inst, cls != null && cls.proto != null ? cls.proto : heap.object_proto);
         HObject* src = ctx.new_target != null ? ctx.new_target : ctx.callee_obj;
         if (src != null) {
             HString* proto_key = (HString*)heap.strs[heap::BuiltinStr.PROTOTYPE];
@@ -3668,6 +3764,15 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
 
                     }
                 }
+            }
+        }
+        if (cls != null && cls.exotic != null) {
+            inst = host_exotic_create(heap, inst, cls.exotic, (cls.flags & heap::HOST_CLASS_EXOTIC_CALL) != 0);
+            if (inst == null) {
+                heap.leave_native_frame();
+                ctx.should_throw = true;
+                ctx.throw_value.set_undefined();
+                return;
             }
         }
         ctx.this_val.set_object(inst);
@@ -3701,8 +3806,11 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
     // returns. Saving the mark and restoring it, rather than clearing, keeps a
     // nested host call from invalidating its caller's handles.
     uint addon_handle_mark = heap.addon_handle_count;
+    heap.host_call_depth++;
     handler(ctx, entry.udata);
+    heap.host_call_depth--;
     heap.addon_handles_rewind(addon_handle_mark);
+    host_text_free(ctx);
 
     // ECMA-262 §9.2.2 step 13: a [[Construct]] call evaluates to the created
     // object unless the host explicitly returned an object of its own.
@@ -3710,7 +3818,8 @@ fn void dispatch_host(uint slot, BuiltinContext* ctx) {
         ctx.copy_result(ctx.this_val);
     }
 
-    heap.host_scope_pop();
+    // Scopes the handler opened and left open close with its call.
+    while (heap.host_scope_depth > depth) heap.host_scope_pop();
     ctx.host_scope_slot = 0;
     heap.leave_native_frame();
 }
@@ -3795,13 +3904,10 @@ const int HOST_ERR_RANGE     = abi::BK_ERROR_RANGE;
 const int HOST_ERR_REFERENCE = abi::BK_ERROR_REFERENCE;
 const int HOST_ERR_SYNTAX    = abi::BK_ERROR_SYNTAX;
 
-// Throw a fresh Error of `kind` carrying `msg`. The ergonomic path, and the
-// one bindings use: it spares the host from building an Error through the
-// value API.
-fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
-    if (ctx == null || ctx.heap == null) return;
-    Heap* heap = ctx.heap;
-    HObject* proto = heap.err_proto;
+// Build a fresh Error of `kind` carrying `msg` (null for none), with the stack
+// of the running VM captured. Returns false when allocation fails.
+fn bool host_new_error(Heap* heap, void* vm, int kind, HString* msg, TVal* out) {
+    HObject* proto;
     switch (kind) {
         case HOST_ERR_TYPE:      proto = heap.type_err_proto;
         case HOST_ERR_RANGE:     proto = heap.range_err_proto;
@@ -3810,20 +3916,27 @@ fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
         default:                 proto = heap.err_proto;
     }
     HObject*? err_raw = heap.alloc_object(hobject::ObjClass.ERROR);
-    if (try err = err_raw) {
-        ctx.heap.set_prototype(err, proto);
-
-        HString* msg_str = builtin_intern_string(heap, msg);
-        HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
-        if (msg_str != null && msg_key != null) {
-            TVal msg_tv;
-            msg_tv.set_string_borrowed(msg_str);
-            err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, ctx.heap);
-        }
-        ctx.throw_value.set_object(err);
-    } else {
-        ctx.throw_value.set_undefined();
+    if (catch err_raw) return false;
+    HObject* err = err_raw;
+    heap.set_prototype(err, proto);
+    HString* msg_key = heap.str(heap::BuiltinStr.MESSAGE);
+    if (msg != null && msg_key != null) {
+        TVal msg_tv;
+        msg_tv.set_string_borrowed(msg);
+        err.put_prop(msg_key, msg_tv, hobject::PROP_FLAGS_WC, heap);
     }
+    error_capture_vm_stack_hstring(err, heap, vm, msg);
+    out.set_object(err);
+    return true;
+}
+
+// Throw a fresh Error of `kind` carrying `msg`. The ergonomic path, and the
+// one bindings use: it spares the host from building an Error through the
+// value API.
+fn void host_throw_error(BuiltinContext* ctx, int kind, char[] msg) {
+    if (ctx == null || ctx.heap == null) return;
+    HString* msg_str = builtin_intern_string(ctx.heap, msg);
+    if (!host_new_error(ctx.heap, ctx.vm, kind, msg_str, &ctx.throw_value)) ctx.throw_value.set_undefined();
     ctx.should_throw = true;
 }
 
@@ -4687,7 +4800,7 @@ fn bool register_abstract_module_source(Heap* heap) {
 // ============================================================================
 
 // The object's [[Call]]: returns null, as test262's $262.IsHTMLDDA contract
-// requires (and browser document.all() does).
+// requires.
 fn void builtin_html_dda_call(BuiltinContext* ctx) {
     ctx.result_null();
 }
@@ -4796,6 +4909,10 @@ fn bool register_test262_host(EnvRecord* global_env, Heap* heap) {
     if (dda_obj == null) return false;
     TVal dda_tv; dda_tv.set_object(dda_obj);
     h262.put_prop(builtin_intern_string(heap, "IsHTMLDDA"), dda_tv, hobject::PROP_FLAGS_WC, heap);
+
+    $if features::SHARED_MEMORY:
+    if (!register_agent_main_side(heap, h262)) return false;
+    $endif
 
     if (global_env.bindings != null) {
         TVal g_tv;

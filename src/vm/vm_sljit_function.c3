@@ -866,6 +866,7 @@ fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
     e.op(jit::SLJIT_SUB, r0, r0, 0, imm, 1);
     e.mov(mem | r2, $reflect(Vm.activation_count).offset, r0, 0, jit::SLJIT_MOV_U32);
     e.mov(mem | cold, (char*)&ctx.act - (char*)&ctx, r3, 0);
+    e.mov(mem | cold, $reflect(ColdCtx.capture_refs).offset, imm, 0);
     e.mov(regs, 0, mem | r3, (char*)&act.bottom - (char*)&act);
     e.mov(mem | r2, $reflect(Vm.valstack_bottom).offset, regs, 0);
     e.mov(r0, 0, mem | r3, (char*)&act.func - (char*)&act);

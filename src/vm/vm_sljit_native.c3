@@ -47,7 +47,7 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
         if (key == cold.heap.str(heap::BuiltinStr.LENGTH)) {
             TVal* dest = regs + ins.a;
             if (!th_can_release(dest)) return 0;
-            uint length = string.char_length();
+            uint length = string.unit_len();
             th_do_release(dest);
             dest.set_fastint(length);
             return 1;
@@ -283,6 +283,7 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
     e.mov(regs, 0, bottom, 0);
     e.mov(mem | vm, $reflect(Vm.valstack_bottom).offset, regs, 0);
     e.mov(mem | cold, $reflect(ColdCtx.act).offset, act, 0);
+    e.mov(mem | cold, $reflect(ColdCtx.capture_refs).offset, imm, 0);
     e.mov(r0, 0, mem | cold, $reflect(ColdCtx.regs_base_ptr).offset);
     e.mov(mem | r0, 0, regs, 0);
     e.mov(mem | cold, $reflect(ColdCtx.ic_bias).offset, imm, (long)((usz)cf.ic_entries - (usz)cf.code * TH_IC_SCALE));

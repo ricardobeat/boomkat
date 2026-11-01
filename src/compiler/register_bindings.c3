@@ -40,7 +40,7 @@ fn void retain_child_name_producers(CompilerContext* ctx, CompiledFunction* inne
 fn bool register_promotion_eligible(CompilerContext* ctx) {
     return !ctx.disable_optimize && !ctx.has_wide && !ctx.is_global
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
-        && !ctx.capture_all && !ctx.uses_arguments && !ctx.has_rest
+        && !ctx.capture_all && !arguments_observes_bindings(ctx) && !ctx.has_rest
         && ctx.defaults.len() == 0 && ctx.destruct_defaults.len() == 0
         && !ctx.has_destructured_param && !ctx.is_named_func_expr
         && !ctx.in_class_body && !ctx.is_arrow

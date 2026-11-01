@@ -21,6 +21,7 @@ import boomkat::lexer;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::esm;
+import boomkat::agent;
 import std::io, libc;
 
 // Counts rejections reported by cli_rejection_tracker so the process exits
@@ -199,6 +200,9 @@ fn int main(String[] args) {
     }
     defer if (stats) vm::sljit_stats_dump(hp);
 
+    // Agents a script started with $262.agent end before the heap does.
+    defer builtins::agent_host_shutdown();
+
     hp.set_rejection_tracker(&cli_rejection_tracker, null);
     hp.jsx = jsx;
 
@@ -235,6 +239,7 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
     } else {
         rc = esm::run_module_file(hp, v, (char[])path);
     }
+    if (rc == 0) agent::run_event_loop(hp, (void*)v);
     if (rc == 1 && (hp.has_error || !hp.error_value.is_undefined())) {
             print_uncaught(hp, &hp.error_value);
         } else if (rc != 0) {
@@ -247,7 +252,7 @@ fn int run_module_source(Heap* hp, Vm* v, char[] source, String path, bool stdin
     $endif
 }
 
-const String CLI_VERSION = "0.2.0";
+const String CLI_VERSION = "0.3.0";
 
 fn void print_usage() {
     $if features::JSX:
@@ -323,7 +328,7 @@ fn int run_script_source(Heap* hp, Vm* v, char[] source, String path, bool ts_mo
         return 1;
     }
     TVal? result = v.execute(f);
-    hp.drain_microtasks((void*)v);
+    agent::run_event_loop(hp, (void*)v);
     if (catch err = result) {
         if (v.heap.has_error) {
             print_uncaught(v.heap, &v.heap.error_value);
@@ -438,13 +443,16 @@ fn void print_tval_stderr(Heap* hp, TVal* v) {
     io::eprintf("[object]");
 }
 
+fn void stderr_put_byte(char c, void* udata) {
+    io::eprintf("%c", c);
+}
+
 fn void print_hstring_stderr(HString* s) {
     if (s == null) {
         io::eprintf("<null string>");
         return;
     }
-    char[] d = s.get_data();
-    for (usz i = 0; i < d.len; i++) io::eprintf("%c", d[i]);
+    s.write_utf8(&stderr_put_byte);
 }
 
 // Uses the same parser and code generator as normal execution.

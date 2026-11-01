@@ -45,7 +45,7 @@ fn bool this_number_value(BuiltinContext* ctx, double* out) {
 // works entirely in `double` via repeated division/floor rather than casting
 // through `ulong`/`long` the way `number_to_radix_str` does for the part
 // that DOES fit in 64 bits. Returns false on allocation failure.
-fn bool append_double_int_radix(StrBuf* out, double val, uint radix) {
+fn bool append_double_int_radix(UnitBuf* out, double val, uint radix) {
     if (val == 0.0) return out.append_char('0');
     // Peel off least-significant digits first, buffering them, then emit
     // most-significant first. A double integer part needs at most ~1024
@@ -210,7 +210,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     // Radix 2-36: manual conversion. The integer part can need up to ~1024
     // base-2 digits (doubles reach ~1.8e308) and the fractional part up to
     // ~1074 (the smallest denormal is 2^-1074), so this builds into a
-    // heap-backed StrBuf rather than a fixed buffer; short, common results
+    // heap-backed UnitBuf rather than a fixed buffer; short, common results
     // (small integers, base 16/36) never leave the buffer's inline storage.
     bool negative = d < 0;
     if (negative) d = -d;
@@ -219,7 +219,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     double int_part = math::trunc(d);
     double frac_part = d - int_part;
 
-    StrBuf out;
+    UnitBuf out;
     out.init(ctx.heap);
     defer out.free();
 
@@ -228,7 +228,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
     // Convert integer part. Doubles beyond 2^53 no longer represent every
     // integer exactly, but the *radix expansion* of whatever double value we
     // do have is still computed exactly here via repeated float division,
-    // matching V8/QuickJS rather than saturating through a 64-bit cast.
+    // rather than saturating through a 64-bit cast.
     if (!append_double_int_radix(&out, int_part, (uint)radix)) {
         ctx.result_undefined();
         return;
@@ -249,7 +249,7 @@ fn void builtin_number_proto_toString(BuiltinContext* ctx) {
         }
     }
 
-    HString* result = builtin_intern_string(ctx.heap, out.bytes());
+    HString* result = out.intern(ctx.heap);
     if (result == null) {
         ctx.result_undefined();
         return;

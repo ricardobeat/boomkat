@@ -11,11 +11,11 @@ static void check(bk_ctx ctx, const char *source) {
 }
 
 int main(void) {
-    bk_runtime runtime = bk_new_runtime();
+    bk_runtime runtime = bk_new_runtime(NULL);
     assert(runtime);
     assert(bk_set_jit(NULL, 1) == BK_ERR_INVALID);
     assert(bk_set_jit(runtime, 1) == BK_OK);
-    bk_ctx ctx = bk_new_context(runtime);
+    bk_ctx ctx = bk_new_context(runtime, NULL);
     assert(ctx);
     check(ctx, "function render(items){let out='';for(let i=0;i<items.length;i++){const item=items[i];out+=`<li>${item.id}:${item.name}</li>`;}return out;}"
                "var rows=[{id:1,name:'one'},{id:2,name:'two'}];"

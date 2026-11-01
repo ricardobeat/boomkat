@@ -75,7 +75,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
         return;
     }
 
-    uint buf_len = (*buf.extra_ptr()).ab.byte_length;
+    uint buf_len = buffer_byte_length(buf);
     if (byte_offset > buf_len) {
         arraybuffer_throw_range_error(ctx, "DataView constructor: byteOffset out of range");
         return;
@@ -96,7 +96,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
             arraybuffer_throw_type_error(ctx, "DataView constructor: buffer is detached");
             return;
         }
-        buf_len = (*buf.extra_ptr()).ab.byte_length;
+        buf_len = buffer_byte_length(buf);
         if (byte_offset > buf_len || view_len > buf_len - byte_offset) {
             arraybuffer_throw_range_error(ctx, "DataView constructor: byteLength out of range");
             return;
@@ -118,7 +118,7 @@ fn void builtin_dataview(BuiltinContext* ctx) {
     // §25.3.2.1 steps 11-13: the prototype Get may also have RESIZED the
     // buffer; re-validate offset and (non-tracking) length against the
     // current byte length.
-    buf_len = (*buf.extra_ptr()).ab.byte_length;
+    buf_len = buffer_byte_length(buf);
     if (byte_offset > buf_len) {
         arraybuffer_throw_range_error(ctx, "DataView constructor: byteOffset out of range");
         return;

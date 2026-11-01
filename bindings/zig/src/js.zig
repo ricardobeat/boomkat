@@ -40,6 +40,10 @@ pub const Error = error{
     Full,
     /// Aborted by the runtime's interrupt handler.
     Interrupt,
+    /// Invalid UTF-8 input, or a lone surrogate read in strict mode.
+    Encoding,
+    /// The feature is compiled out of this build.
+    Unsupported,
 };
 
 fn check(status: c_int) Error!void {
@@ -52,6 +56,8 @@ fn check(status: c_int) Error!void {
         c.BK_ERR_TYPE => Error.WrongType,
         c.BK_ERR_FULL => Error.Full,
         c.BK_ERR_INTERRUPT => Error.Interrupt,
+        c.BK_ERR_ENCODING => Error.Encoding,
+        c.BK_ERR_UNSUPPORTED => Error.Unsupported,
         else => Error.Internal,
     };
 }
@@ -72,8 +78,8 @@ pub const Type = enum(c_int) {
     string = c.BK_TYPE_STRING,
     object = c.BK_TYPE_OBJECT,
     function = c.BK_TYPE_FUNCTION,
-    /// symbol, bigint, ...
-    other = c.BK_TYPE_OTHER,
+    symbol = c.BK_TYPE_SYMBOL,
+    bigint = c.BK_TYPE_BIGINT,
 };
 
 /// Engine version, e.g. "0.2.0".
@@ -202,7 +208,7 @@ pub const Ctx = struct {
     /// Argument `i` as a scope handle. Reading past `argc` yields `undefined`,
     /// matching JS, so there is no bounds error to handle.
     pub fn arg(self: Ctx, i: u32) Value {
-        return .{ .owner = self.raw, .handle = if (i < self.argv.len) self.argv[i] else 0, .owned = false };
+        return .{ .owner = self.raw, .handle = if (i < self.argv.len) self.argv[i] else c.BK_UNDEFINED, .owned = false };
     }
 
     /// The `this` receiver. Strict semantics: an undefined receiver stays
@@ -213,7 +219,7 @@ pub const Ctx = struct {
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn newTarget(self: Ctx) Value {
-        return .{ .owner = self.raw, .handle = c.bk_get_new_target(self.raw), .owned = true };
+        return .{ .owner = self.raw, .handle = c.bk_get_new_target(self.raw), .owned = false };
     }
 
     /// True when invoked through `new` or `super()`.
@@ -229,9 +235,7 @@ pub const Ctx = struct {
     }
 
     pub fn boolean(self: Ctx, value: bool) Error!Value {
-        const result = c.bk_new_bool(self.raw, @intFromBool(value));
-        if (result == 0) return valueError(self.raw);
-        return .{ .owner = self.raw, .handle = result };
+        return .{ .owner = self.raw, .handle = if (value) c.BK_TRUE else c.BK_FALSE };
     }
 
     pub fn string(self: Ctx, value: []const u8) Error!Value {
@@ -300,13 +304,13 @@ fn trampoline(comptime func: anytype) c.bk_c_function {
     if (info.params.len != 1 and info.params.len != 2)
         @compileError("host function must take (Ctx) or (Ctx, *T)");
     return struct {
-        fn invoke(raw: c.bk_ctx, this_value: c.bk_value, argc: c_uint, argv: [*c]const c.bk_value, opaque: ?*anyopaque) callconv(.c) c.bk_value {
+        fn invoke(raw: c.bk_ctx, this_value: c.bk_value, argc: c_uint, argv: [*c]const c.bk_value, data: ?*anyopaque) callconv(.c) c.bk_value {
             const context: Ctx = .{ .raw = raw, .this_value = this_value, .argv = argv[0..argc] };
-            const result = (if (info.params.len == 1) func(context) else func(context, @ptrCast(@alignCast(opaque)))) catch |err| {
-                if (err != Error.Throw) _ = context.throwError(.generic, @errorName(err));
+            const result = (if (info.params.len == 1) func(context) else func(context, @ptrCast(@alignCast(data)))) catch |err| {
+                if (err != Error.Throw) _ = c.bk_throw_error(raw, @intCast(@intFromEnum(ErrorKind.generic)), @errorName(err));
                 return c.BK_EXCEPTION;
             };
-            return if (result.owned) result.handle else c.bk_dup_value(raw, result.handle);
+            return result.handle;
         }
     }.invoke;
 }
@@ -327,9 +331,9 @@ pub const Runtime = struct {
     /// back to it, so keep it at a stable address (a local you never copy is
     /// fine; see the example).
     pub fn init() Error!Runtime {
-        const runtime = c.bk_new_runtime() orelse return Error.OutOfMemory;
+        const runtime = c.bk_new_runtime(null) orelse return Error.OutOfMemory;
         errdefer c.bk_free_runtime(runtime);
-        return .{ .runtime = runtime, .ptr = c.bk_new_context(runtime) orelse return Error.OutOfMemory };
+        return .{ .runtime = runtime, .ptr = c.bk_new_context(runtime, null) orelse return Error.OutOfMemory };
     }
 
     /// Destroy the runtime. All outstanding `Value`s from it become invalid;
@@ -390,6 +394,8 @@ pub const Runtime = struct {
             .arity = opts.arity,
             .flags = if (opts.constructable) c.BK_CTOR else 0,
             .udata = opts.udata,
+            .finalize = null,
+            .finalize_opaque = null,
         };
         const table = [_]c.bk_fn_def{ def, std.mem.zeroes(c.bk_fn_def) };
         try check(c.bk_set_function_list(self.ptr, 0, &table));
@@ -430,7 +436,181 @@ pub const Runtime = struct {
     pub fn drain(self: *Runtime) Error!void {
         try check(c.bk_run_jobs(self.runtime));
     }
+
+    /// Collect garbage now.
+    pub fn gc(self: *Runtime, kind: enum { minor, full }) void {
+        c.bk_gc(self.runtime, if (kind == .full) c.BK_GC_FULL else c.BK_GC_MINOR);
+    }
+
+    /// Collector work for about `budget_ns`; true while the cycle continues.
+    pub fn gcStep(self: *Runtime, budget_ns: u64) bool {
+        return c.bk_gc_step(self.runtime, budget_ns) != 0;
+    }
+
+    pub fn heapStats(self: *Runtime) c.bk_heap_stats {
+        var out: c.bk_heap_stats = undefined;
+        _ = c.bk_get_heap_stats(self.runtime, &out);
+        return out;
+    }
+
+    /// Compile a classic script once; `runScript` runs it any number of
+    /// times. A syntax error fails here with `error.Syntax`. The returned
+    /// `Value` is the compiled script; `deinit` it when done.
+    pub fn compile(self: *Runtime, src: []const u8, filename: [:0]const u8, opts: struct { strict: bool = false }) Error!Value {
+        const handle = c.bk_compile(self.ptr, src.ptr, src.len, filename.ptr, if (opts.strict) c.BK_EVAL_STRICT else c.BK_EVAL_GLOBAL);
+        if (handle == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .handle = handle };
+    }
+
+    /// Run a script from `compile`. Caller owns the completion value.
+    pub fn runScript(self: *Runtime, script: Value) Error!Value {
+        const handle = c.bk_run_script(self.ptr, script.handle);
+        if (handle == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .handle = handle };
+    }
+
+    /// Serve module imports from `loader`, a `*T` that outlives the runtime
+    /// or the next `setModuleLoader`. `T` may declare
+    ///
+    ///     fn resolve(self: *T, req: ModuleRequest, referrer: []const u8, specifier: []const u8) !void
+    ///     fn load(self: *T, req: ModuleRequest, name: []const u8) !void
+    ///
+    /// and answers through `req`. Not answering falls back to the filesystem
+    /// unless `filesystem_fallback` is false; an error fails the import with
+    /// the error's name.
+    pub fn setModuleLoader(self: *Runtime, comptime T: type, loader: *T, opts: struct { filesystem_fallback: bool = true }) Error!void {
+        const Glue = struct {
+            fn resolve(ctx: c.bk_ctx, referrer: [*c]const u8, specifier: [*c]const u8, req: ?*c.bk_module_request, opaque_ptr: ?*anyopaque) callconv(.c) c.bk_status {
+                const r = ModuleRequest{ .ctx = ctx, .ptr = req.? };
+                const from: []const u8 = if (referrer == null) "" else std.mem.span(referrer);
+                T.resolve(@ptrCast(@alignCast(opaque_ptr)), r, from, std.mem.span(specifier)) catch |e| return r.failWith(@errorName(e));
+                return c.BK_OK;
+            }
+            fn load(ctx: c.bk_ctx, name: [*c]const u8, req: ?*c.bk_module_request, opaque_ptr: ?*anyopaque) callconv(.c) c.bk_status {
+                const r = ModuleRequest{ .ctx = ctx, .ptr = req.? };
+                T.load(@ptrCast(@alignCast(opaque_ptr)), r, std.mem.span(name)) catch |e| return r.failWith(@errorName(e));
+                return c.BK_OK;
+            }
+        };
+        const def = c.bk_module_loader{
+            .resolve = if (@hasDecl(T, "resolve")) Glue.resolve else null,
+            .load = if (@hasDecl(T, "load")) Glue.load else null,
+            .@"opaque" = loader,
+            .flags = if (opts.filesystem_fallback) 0 else c.BK_LOADER_NO_FILESYSTEM_FALLBACK,
+        };
+        try check(c.bk_set_module_loader(self.runtime, &def));
+    }
+
+    /// Remove the module loader.
+    pub fn clearModuleLoader(self: *Runtime) Error!void {
+        try check(c.bk_set_module_loader(self.runtime, null));
+    }
+
+    /// A module whose named exports are `exports`'s own enumerable properties.
+    pub fn defineNativeModule(self: *Runtime, name: []const u8, exports: Value) Error!void {
+        try check(c.bk_define_native_module(self.ptr, name.ptr, name.len, exports.handle));
+    }
+
+    /// Drop a cached module so the next import loads it again.
+    pub fn invalidateModule(self: *Runtime, name: []const u8) Error!void {
+        try check(c.bk_invalidate_module(self.ptr, name.ptr, name.len));
+    }
+
+    /// Load and evaluate a module, as `import(specifier)` does, draining jobs
+    /// until it settles. Returns the namespace, or `error.Throw` when the
+    /// import rejects.
+    pub fn importModule(self: *Runtime, specifier: []const u8) Error!Value {
+        const promise = c.bk_import(self.ptr, specifier.ptr, specifier.len);
+        if (promise == 0) return valueError(self.ptr);
+        defer c.bk_free_value(self.ptr, promise);
+        try self.drain();
+        var state: c.bk_promise_state = c.BK_PROMISE_PENDING;
+        try check(c.bk_promise_state_get(self.ptr, promise, &state));
+        if (state != c.BK_PROMISE_FULFILLED) return if (state == c.BK_PROMISE_REJECTED) Error.Throw else Error.Internal;
+        const ns = c.bk_promise_result(self.ptr, promise);
+        if (ns == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .handle = ns };
+    }
+
+    /// A weak handle to an object or non-registered symbol. `deinit` it.
+    pub fn weak(self: *Runtime, v: Value) Error!Weak {
+        const w = c.bk_new_weak(self.ptr, v.handle);
+        if (w == 0) return valueError(self.ptr);
+        return .{ .owner = self.ptr, .id = w };
+    }
 };
+
+/// A module loader's question, answered once before its callback returns.
+pub const ModuleRequest = struct {
+    ctx: c.bk_ctx,
+    ptr: *c.bk_module_request,
+
+    /// Answer a resolve with the module's canonical name.
+    pub fn setName(self: ModuleRequest, name: []const u8) Error!void {
+        try check(c.bk_module_set_name(self.ptr, name.ptr, name.len));
+    }
+
+    /// Answer a load with module source, which the engine copies.
+    pub fn provide(self: ModuleRequest, source: []const u8) Error!void {
+        try check(c.bk_module_provide(self.ptr, source.ptr, source.len));
+    }
+
+    /// Answer a load with a module whose exports are `exports`'s properties.
+    pub fn provideNative(self: ModuleRequest, exports: Value) Error!void {
+        try check(c.bk_module_provide_native(self.ptr, exports.handle));
+    }
+
+    fn failWith(self: ModuleRequest, message: [:0]const u8) c.bk_status {
+        const err = c.bk_new_error(self.ctx, c.BK_ERROR, message.ptr);
+        if (err == 0) return c.bk_get_error_code(self.ctx);
+        defer c.bk_free_value(self.ctx, err);
+        return c.bk_module_fail(self.ptr, err);
+    }
+};
+
+/// A reference that does not keep its target alive.
+pub const Weak = struct {
+    owner: c.bk_ctx,
+    id: c.bk_weak,
+
+    /// The target as an owned `Value`, or null once it was collected.
+    pub fn get(self: Weak) Error!?Value {
+        const h = c.bk_weak_get(self.owner, self.id);
+        if (h == 0) return valueError(self.owner);
+        if (h == c.BK_UNDEFINED) return null;
+        return .{ .owner = self.owner, .handle = h };
+    }
+
+    pub fn deinit(self: *Weak) void {
+        if (self.id == 0) return;
+        c.bk_free_weak(self.owner, self.id);
+        self.id = 0;
+    }
+};
+
+test "collection and heap stats" {
+    var rt = try Runtime.init();
+    defer rt.deinit();
+    const before = rt.heapStats().gc_cycles;
+    rt.gc(.full);
+    try std.testing.expect(rt.heapStats().gc_cycles > before);
+    while (rt.gcStep(1_000_000)) {}
+}
+
+test "weak handles follow their target" {
+    var rt = try Runtime.init();
+    defer rt.deinit();
+    var kept = try rt.eval("globalThis.kept = {}");
+    var w = try rt.weak(kept);
+    defer w.deinit();
+    kept.deinit();
+    var again = (try w.get()) orelse return error.TestUnexpectedResult;
+    defer again.deinit();
+    try std.testing.expectEqual(Type.object, again.typeOf());
+    var n = try rt.eval("1");
+    defer n.deinit();
+    try std.testing.expectError(Error.WrongType, rt.weak(n));
+}
 
 test "eval, read back, and surface errors" {
     const gpa = std.testing.allocator;
@@ -516,7 +696,11 @@ test "runtimes are independent and do not share values" {
     defer moved.deinit();
     try std.testing.expectEqual(@as(f64, 333), try moved.toNumber());
 
-    // Closing one runtime leaves the other fully working.
+    // Closing one runtime leaves the other fully working. Its values go
+    // first: a handle cannot be released once its runtime is gone.
+    a_tag.deinit();
+    a_k49.deinit();
+    a_n.deinit();
     a.deinit();
     var after = try b.eval("n + 1");
     defer after.deinit();

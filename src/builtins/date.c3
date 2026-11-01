@@ -126,8 +126,7 @@ fn double date_local_to_ms(long year, long month, long day,
 // Compute the local timezone offset (in seconds, UTC minus local) for the
 // given epoch time, i.e. how far local time is ahead of UTC. Reads
 // tm_gmtoff (exposed as TzDateTime.gmt_offset) directly off a single
-// localtime_r lookup at the UTC instant, the same single-call approach
-// as the reference engine's getTimezoneOffset. Earlier revisions
+// localtime_r lookup at the UTC instant. Earlier revisions
 // reinterpreted the local broken-down fields through the engine's own
 // civil-day math to get a second offset estimate; that round trip is
 // unstable for historical Local-Mean-Time offsets that aren't a whole
@@ -532,8 +531,9 @@ fn void builtin_date(BuiltinContext* ctx) {
             if (arg.is_string()) {
                 // Parse string: try ISO 8601 first, then locale format, then as number
                 HString* s = (HString*)arg.get_heapptr();
-                char* str = s.get_cstr();
-                usz slen = s.blen;
+                char[] text = s.token_text();
+                char* str = text.ptr;
+                usz slen = text.len;
                 // ES2024 §21.4.2.1 step 3.a: a string argument is parsed as a
                 // date string only. An unparseable one yields NaN, producing
                 // an Invalid Date rather than falling back to the current
@@ -573,8 +573,9 @@ fn void builtin_date(BuiltinContext* ctx) {
                     if (prim.is_string() && prim.get_heapptr() != null &&
                         !((HString*)prim.get_heapptr()).is_symbol()) {
                         HString* s = (HString*)prim.get_heapptr();
-                        char* str = s.get_cstr();
-                        usz slen = s.blen;
+                        char[] text = s.token_text();
+                        char* str = text.ptr;
+                        usz slen = text.len;
                         time_val = date_parse_iso_str(str, slen);
                         if (math::is_nan(time_val)) {
                             time_val = date_parse_locale_str(str, slen);
@@ -808,7 +809,7 @@ fn void builtin_date_parse(BuiltinContext* ctx) {
         s = builtin_to_string_vm(ctx, arg);
         if (ctx.should_throw) { ctx.result_undefined(); return; }
     }
-    if (s == null || s.blen == 0) {
+    if (s == null || s.unit_len() == 0) {
         ctx.result_number(double::nan);
         return;
     }
@@ -816,8 +817,9 @@ fn void builtin_date_parse(BuiltinContext* ctx) {
     // string, never as a number of milliseconds. Parsing numerically first
     // would also shadow the year-only Date Time String form, making
     // Date.parse("2020") the number 2020 instead of 2020-01-01T00:00:00Z.
-    char* str = s.get_cstr();
-    usz slen = s.blen;
+    char[] text = s.token_text();
+    char* str = text.ptr;
+    usz slen = text.len;
     double date_val = date_parse_iso_str(str, slen);
     if (math::is_nan(date_val)) {
         // Try toString/toUTCString locale format

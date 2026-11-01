@@ -807,7 +807,7 @@ fn TVal async_gen_resume_body(BuiltinContext* ctx, GeneratorState* gs, ResumeKin
     switch (kind) {
         case NEXT:   gs.resume_value = completion;
         case THROW:  gs.throw_value  = completion;
-        case RETURN: gs.return_value = completion;
+        case RETURN: heap.tval_copy_ref(&gs.return_value, &completion);
     }
     heap.shade_root_tval(completion);
     heap.resume_gen = gs;

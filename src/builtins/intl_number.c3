@@ -38,17 +38,11 @@ fn bool intl_decimal(BuiltinContext* ctx, TVal input, IntlDecimal* out, bool plu
         out.negative = math::signbit(n) != 0;
         if (!plural && input.is_string() && !math::is_nan(n)) {
             HString* raw = (HString*)input.get_heapptr();
-            uint start = 0;
-            uint end = 0;
-            for (uint i = 0; i < raw.blen;) {
-                uint width;
-                uint cp = decode_codepoint_at(raw.get_cstr(), i, raw.blen, &width);
-                if (width == 0) break;
-                if (!is_ecma_ws_codepoint(cp)) { if (end == 0) start = i; end = i + width; }
-                i += width;
-            }
-            if (end > start) {
-                char[] candidate = raw.get_cstr()[start:end - start];
+            uint start; uint end;
+            ws_trim_bounds(raw, &start, &end);
+            HString* trimmed = ctx.heap.str_slice(raw, start, end);
+            if (end > start && trimmed.is_ascii()) {
+                char[] candidate = trimmed.ascii_bytes();
                 bool decimal = true;
                 foreach (c : candidate) {
                     if (!locale_is_digit(c) && c != '.' && c != 'e' && c != 'E' && c != '+' && c != '-') decimal = false;
@@ -62,7 +56,7 @@ fn bool intl_decimal(BuiltinContext* ctx, TVal input, IntlDecimal* out, bool plu
         text = builtin_number_to_hstring(ctx.heap, math::abs(n));
     }
     if (ctx.should_throw || text == null) return false;
-    char[] source = exact.len > 0 ? exact : text.get_cstr()[:text.blen];
+    char[] source = exact.len > 0 ? exact : text.token_text();
     usz i = 0;
     if (source.len > 0 && (source[0] == '-' || source[0] == '+')) { out.negative = source[0] == '-'; i++; }
     bool fractional = false;
@@ -78,7 +72,7 @@ fn bool intl_decimal(BuiltinContext* ctx, TVal input, IntlDecimal* out, bool plu
         if (i < source.len && (source[i] == '+' || source[i] == '-')) i++;
         long exponent = 0;
         while (i < source.len) {
-            if (exponent > (long)hstring::MAX_STRING_BYTES) { builtin_throw(ctx, ctx.heap.range_err_proto, "formatted number exceeds string limit"); return false; }
+            if (exponent > (long)hstring::MAX_STRING_LENGTH) { builtin_throw(ctx, ctx.heap.range_err_proto, "formatted number exceeds string limit"); return false; }
             exponent = exponent * 10 + source[i++] - '0';
         }
         out.point += minus ? -exponent : exponent;
@@ -814,20 +808,22 @@ fn void builtin_intl_number_parts(BuiltinContext* ctx) {
     if (state != null) intl_render(ctx, state, builtin_arg(ctx, 0), true);
 }
 
-fn char[] intl_part_field(BuiltinContext* ctx, HObject* parts, uint index, char[] key) {
+fn HString* intl_part_string(BuiltinContext* ctx, HObject* parts, uint index, char[] key) {
     TVal entry = array_get_elem(parts, index, ctx.heap);
     HObject* obj = (HObject*)entry.get_heapptr();
     TVal? value = obj.get_prop(builtin_intern_string(ctx.heap, key), ctx.heap);
-    if (try v = value) {
-        HString* s = (HString*)v.get_heapptr();
-        return s.get_cstr()[:s.blen];
-    }
-    return "";
+    if (try v = value) return (HString*)v.get_heapptr();
+    return ctx.heap.str(heap::BuiltinStr.EMPTY);
+}
+
+// The part's `type` or `source`, which are ASCII tokens.
+fn char[] intl_part_field(BuiltinContext* ctx, HObject* parts, uint index, char[] key) {
+    return intl_part_string(ctx, parts, index, key).token_text();
 }
 
 fn bool intl_same_part(BuiltinContext* ctx, HObject* a, uint ai, HObject* b, uint bi) {
     return mem_eq_bytes(intl_part_field(ctx, a, ai, "type"), intl_part_field(ctx, b, bi, "type")) &&
-           mem_eq_bytes(intl_part_field(ctx, a, ai, "value"), intl_part_field(ctx, b, bi, "value"));
+           hstring::units_equal(intl_part_string(ctx, a, ai, "value"), intl_part_string(ctx, b, bi, "value"));
 }
 
 fn bool intl_range_copy(BuiltinContext* ctx, HObject* out, HObject* from, uint index, char[] source, uint* count, StrBuf* text) {
@@ -835,7 +831,7 @@ fn bool intl_range_copy(BuiltinContext* ctx, HObject* out, HObject* from, uint i
     HObject* obj = (HObject*)part.get_heapptr();
     if (!intl_put_string(ctx.heap, obj, "source", source)) { text.failed = true; return false; }
     array_set_elem(out, (*count)++, part, ctx.heap);
-    return text.append_bytes(intl_part_field(ctx, from, index, "value"));
+    return text.append_hstring(intl_part_string(ctx, from, index, "value"));
 }
 
 fn void intl_range(BuiltinContext* ctx, bool as_parts) {

@@ -161,9 +161,6 @@ def sample_worker_rss(workers):
 SKIP_DIRS = {
     "annexB/built-ins/String",         # 82   — B.2.3 HTML tag wrappers (blink, bold, ...)
     "built-ins/ShadowRealm",           # 67    — Stage 3 proposal
-    # built-ins/SharedArrayBuffer + built-ins/Atomics: implemented single-agent
-    # (no worker threads). Tests using the $262.agent multi-worker harness are
-    # skipped per-file below (see AGENT_HARNESS_RE in skip_reason).
     # built-ins/BigInt: limb-vector BigInt (BIGINT_MAX_LIMBS = 1 << 26 at
     # src/hbigint.c3:33). Skips are out of scope: arbitrary-precision
     # literals (>2^53) and Reflect.construct as constructor.
@@ -306,11 +303,6 @@ def resolve_suite(name):
 # all post-ES5 tests.  Tests without `features:` are baseline ES5 behavior.
 ANY_FEATURES_PATTERN = re.compile(r"^features:\s*\[", re.MULTILINE)
 
-# Multi-worker Atomics/SharedArrayBuffer tests drive a second agent via the
-# $262.agent host hooks (agent.start / agent.broadcast / agent.receiveBroadcast
-# / agent.sleep / agent.monotonicNow). This single-agent engine has no worker
-# threads, so these tests can never pass — skip them by their harness usage.
-AGENT_HARNESS_RE = re.compile(r"\$262\.agent\b|\bagent\.(?:start|broadcast|receiveBroadcast|sleep|monotonicNow|getReport|report|leaving)\b")
 # These scalar numeric cases use the same symbols as English, even though
 # their locale metadata names another language. Keep the assertions active.
 ENGLISH_COMPATIBLE_LOCALE_TESTS = {
@@ -597,25 +589,8 @@ def skip_reason(path, es5_only=False):
         # feature keyword it matched for a useful message.
         feat = _UNSUPPORTED_FEATURE_RE.search(m.group(0))
         return f"unsupported feature ({feat.group(0) if feat else 'deferred'})"
-    # Skip multi-worker agent tests (Atomics/SharedArrayBuffer). The $262.agent
-    # usage is in the test body, not the front-matter, so read the whole file.
-    if rel.startswith("built-ins/Atomics") or rel.startswith("built-ins/SharedArrayBuffer"):
-        try:
-            with open(path) as f:
-                full = f.read()
-        except OSError:
-            full = header
-        if AGENT_HARNESS_RE.search(full):
-            return "multi-worker agent harness ($262.agent) — single-agent engine"
     if es5_only and ANY_FEATURES_PATTERN.search(header):
         return "ES5-only mode: post-ES5 feature flag"
-    # CanBlockIsFalse tests assume Atomics.wait throws because the agent cannot
-    # suspend. This engine's single main agent has AgentCanSuspend = true (like
-    # QuickJS/V8's shell), so wait returns "timed-out"/"not-equal" instead —
-    # these tests are inapplicable.
-    if re.search(r"flags:\s*\[.*\bCanBlockIsFalse\b", header):
-        return "CanBlockIsFalse (engine agent can suspend)"
-
     # `$DONOTEVALUATE()` is a harness guard, not a skip reason: it throws if a
     # test that must be rejected earlier ever runs. The worker scores each
     # phase on its own result — parse as a compile error, resolution as rc 2 so

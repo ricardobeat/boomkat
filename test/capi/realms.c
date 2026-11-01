@@ -19,19 +19,19 @@ static bk_value bounce(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_
     bk_value result = bk_eval_ex(ctx, "secret === 42", strlen("secret === 42"), "<eval>", BK_EVAL_GLOBAL);
     return result;
 
-    return bk_new_undefined(ctx);
+    return BK_UNDEFINED;
 }
 
 int main(void) {
-    bk_ctx primary = bk_new_context(bk_new_runtime());
-    bk_ctx other = bk_new_context(bk_get_runtime(primary));
+    bk_ctx primary = bk_new_context(bk_new_runtime(NULL), NULL);
+    bk_ctx other = bk_new_context(bk_get_runtime(primary), NULL);
     if (!primary || !other) return 1;
     bk_value global = bk_get_global_object(other);
     if (bk_set_global_property(primary, "other", 5, global) != BK_OK) return 1;
     bk_free_value(primary, global);
     check(primary, "globalThis !== other && Object !== other.Object && Math.max !== other.Math.max");
     check(primary, "delete Math.floor.name; delete Math.floor.length; true");
-    bk_ctx third = bk_new_context(bk_get_runtime(other));
+    bk_ctx third = bk_new_context(bk_get_runtime(other), NULL);
     if (!third) return 1;
     check(third, "Math.floor.name === 'floor' && Math.floor.length === 1");
     bk_free_context(third);

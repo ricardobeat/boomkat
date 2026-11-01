@@ -204,11 +204,11 @@ fn int vm_bareword_put(Vm* vm, Dispatch* ds, void* key, TVal val) {
         }
         HString* name = (HString*)key;
         bool raised = gres == 2
-            ? vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                "Cannot assign to read only property '%s'", name.get_cstr(),
+            ? vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                "Cannot assign to read only property '%s'", name,
                 ds.act, &ds.curr_pc, &ds.needs_restart)
-            : vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                "'%s' is not defined", name.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart);
+            : vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                "'%s' is not defined", name, ds.act, &ds.curr_pc, &ds.needs_restart);
         return raised ? 0 : -1;
     }
     if (!vm_global_bareword_store(vm, key, val)) {
@@ -353,10 +353,10 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
 // overlapping tails retain immutable-copy semantics. The result stays
 // non-interned; property-key consumers canonicalize it with ensure_interned.
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
-                             HString* ls, char[] tail, uint reg_idx,
+                             HString* ls, Units tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
     if (ra != rb) return false;
-    if (ls.blen < CONCAT_ACCUM_MIN && ls.capacity <= ls.blen) return false;
+    if (ls.length < CONCAT_ACCUM_MIN && ls.capacity <= ls.byte_len()) return false;
     if (ls.flags.is_interned || ls.flags.is_symbol) return false;
     if (((types::HeapHeader*)ls).is_temproot()) return false;
     if (!ra.is_string() || ra.get_heapptr() != (void*)ls) return false;
@@ -364,24 +364,27 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     uint rc_val = ((types::HeapHeader*)ls).refcount;
     if (rc_val != 1 && (rc_val != 2
         || !concat_binding_owns(vm, act, ls, reg_idx, next_insn))) return false;
-    // Appending a slice of the accumulator's own buffer would read the bytes
+    // Appending a slice of the accumulator's own buffer would read the units
     // the append is concurrently writing, and growing would leave `tail`
     // dangling at the old allocation. `s += s` is the reachable case; the
     // check is on the buffer range so it also rejects any partial overlap.
-    char* ls_data = ls.get_cstr();
+    char* ls_data = ls.data_ptr();
     if (tail.ptr >= ls_data && tail.ptr < ls_data + ls.capacity) return false;
 
     if (ls.try_append_in_place(tail)) return true;
 
-    // Geometric growth keeps the total copied prefix bytes linear in the
-    // final string size.
-    ulong need = (ulong)ls.blen + (ulong)tail.len;
-    ulong want = (ulong)ls.capacity * 2;
+    // Geometric growth keeps the total copied prefix units linear in the
+    // final string size. The new width is the wider of the two.
+    bool wide = ls.is_wide() || tail.wide;
+    ulong need = (ulong)ls.length + (ulong)tail.len;
+    ulong want = (ulong)ls.capacity * 2 >> (ls.is_wide() ? 1 : 0);
     if (want < need) { want = need; }
     if (hstring::length_exceeds_max(want)) { want = need; }
     if (hstring::length_exceeds_max(want)) return false;
 
-    HString* grown = vm.heap.alloc_concat_string(ls.get_data(), (uint)want);
+    // The empty tail only gives the allocation its width.
+    Units shape = { .ptr = null, .len = 0, .wide = wide };
+    HString* grown = vm.heap.alloc_concat_string_parts(ls.units(), shape, (uint)want);
     if (grown == null) return false;
     if (!grown.try_append_in_place(tail)) {
         // Cannot happen: the capacity was sized for exactly this append. Drop
@@ -428,18 +431,8 @@ fn bool concat_next_add_uses_left(Instruction* next, Instruction* code_end, uint
 // Concatenation values need no canonical identity until used as property keys.
 // Reserve growth space only for the accumulator shape; other results hold
 // exactly their content and defer hashing until a consumer needs it.
-fn HString* vm_concat_birth(Vm* vm, TVal* ra, TVal* rb, char[] data,
-                            bool reserve_for_next_add = false) {
-    ulong cap = (ulong)data.len;
-    if ((ra == rb && data.len >= CONCAT_ACCUM_MIN) || reserve_for_next_add) {
-        cap *= 2;
-        if (hstring::length_exceeds_max(cap)) { cap = (ulong)data.len; }
-    }
-    return vm.heap.alloc_concat_string(data, (uint)cap);
-}
-
 fn HString* vm_concat_birth_parts(Vm* vm, TVal* ra, TVal* rb,
-                                  char[] left, char[] right, uint len,
+                                  Units left, Units right, uint len,
                                   bool reserve_for_next_add = false,
                                   HString* left_string = null, HString* right_string = null) {
     ulong cap = (ulong)len;
@@ -468,18 +461,20 @@ fn bool vm_concat_overflow(Vm* vm, Dispatch* ds) {
 }
 
 // Last resort when the concat string cannot be allocated directly: build the
-// bytes in a scratch buffer and intern them.
-fn HString* vm_concat_interned(Vm* vm, char[] left, char[] right, uint total) @noinline {
+// units in a scratch buffer and intern them.
+fn HString* vm_concat_interned(Vm* vm, Units left, Units right, uint total) @noinline {
+    bool wide = left.wide || right.wide;
+    usz bytes = (usz)total << (wide ? 1 : 0);
     char[512] stack_buf;
     char* buf = &stack_buf;
-    if (total > stack_buf.len) {
-        buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
+    if (bytes > stack_buf.len) {
+        buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, bytes);
         if (buf == null) return null;
     }
-    if (left.len > 0) mem::copy(buf, left.ptr, (sz)left.len);
-    if (right.len > 0) mem::copy(buf + left.len, right.ptr, (sz)right.len);
-    HString* result = intern_string(vm, buf[:total]);
-    if (total > stack_buf.len) vm.heap.free_func(vm.heap.heap_udata, buf);
+    hstring::copy_units(buf, wide, left);
+    hstring::copy_units(buf + ((usz)left.len << (wide ? 1 : 0)), wide, right);
+    HString* result = vm.heap.str_intern_units({ .ptr = buf, .len = total, .wide = wide });
+    if (bytes > stack_buf.len) vm.heap.free_func(vm.heap.heap_udata, buf);
     return result;
 }
 
@@ -489,7 +484,7 @@ fn HString* vm_concat_interned(Vm* vm, char[] left, char[] right, uint total) @n
 // register tracking: heap_reg_count must cover it for the frame teardown to
 // release the reference.
 fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* acc,
-                          char[] left, char[] right, uint reg_idx,
+                          Units left, Units right, uint reg_idx,
                           Instruction* next, Instruction* code_end, HString* right_string = null) {
     // The cap bounds each length well below 2^32, so the sum cannot wrap, but
     // it can land past the cap, which must surface as a RangeError rather than
@@ -531,18 +526,18 @@ fn ConcatStatus vm_concat_add(Vm* vm, Activation* act, TVal* ra, TVal* rb, TVal*
             track_heap_store(act, ra, reg_idx);
             return ConcatStatus.DONE;
         }
-        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), rs.get_data(), reg_idx, next, code_end, rs);
+        return vm_concat(vm, act, ra, rb, ls, ls.units(), rs.units(), reg_idx, next, code_end, rs);
     }
     char[32] buf;
     if (ls != null && rc.is_fastint()) {
         int n = hstring::int_to_buf(rc.get_fastint(), &buf, buf.len);
         if (n <= 0) return ConcatStatus.NOT_APPLICABLE;
-        return vm_concat(vm, act, ra, rb, ls, ls.get_data(), buf[:n], reg_idx, next, code_end);
+        return vm_concat(vm, act, ra, rb, ls, ls.units(), hstring::narrow_units(buf[:n]), reg_idx, next, code_end);
     }
     if (rs != null && rb.is_fastint()) {
         int n = hstring::int_to_buf(rb.get_fastint(), &buf, buf.len);
         if (n <= 0) return ConcatStatus.NOT_APPLICABLE;
-        return vm_concat(vm, act, ra, rb, null, buf[:n], rs.get_data(), reg_idx, next, code_end);
+        return vm_concat(vm, act, ra, rb, null, hstring::narrow_units(buf[:n]), rs.units(), reg_idx, next, code_end);
     }
     return ConcatStatus.NOT_APPLICABLE;
 }
@@ -1522,7 +1517,7 @@ fn TVal vm_call_handler_fn_impl(void* vm_ptr, TVal handler, TVal* arg) {
             return vm_run_async_continuation(vm, job, *arg);
         }
     }
-    return vm_call_fn_impl(vm_ptr, handler, arg, 1, undef);
+    return vm_call_fn_impl(vm_ptr, handler, arg, arg != null ? 1 : 0, undef);
 }
 
 // Heap.construct_fn's implementation: `new Fn(args)` semantics.
@@ -1929,6 +1924,9 @@ fn TVal? Vm.execute(Vm* vm, CompiledFunction* func) {
     Activation* entry_act = &vm.activations[0];
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
+    // An uncaught throw ends a run with the flag set; left stale, it would make
+    // the next run's native getters report a fault.
+    vm.has_error = false;
 
     entry_act.func = func;
     entry_act.parent = null;
@@ -2019,6 +2017,9 @@ fn TVal? Vm.execute_in_env(Vm* vm, CompiledFunction* func, EnvRecord* env) {
     Activation* entry_act = &vm.activations[0];
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
+    // An uncaught throw ends a run with the flag set; left stale, it would make
+    // the next run's native getters report a fault.
+    vm.has_error = false;
 
     entry_act.func = func;
     entry_act.parent = null;
@@ -2121,6 +2122,9 @@ fn bool? Vm.execute_module_async(Vm* vm, CompiledFunction* func, EnvRecord* env,
     Activation* entry_act = &vm.activations[0];
     vm.gc_root_active_replaced();
     vm.activation_count = 1;
+    // An uncaught throw ends a run with the flag set; left stale, it would make
+    // the next run's native getters report a fault.
+    vm.has_error = false;
 
     entry_act.func = func;
     entry_act.parent = null;
@@ -2620,8 +2624,8 @@ fn bool? vm_write_with_binding(Dispatch* ds, HObject* base, HString* key, TVal v
         // through to [[Set]], which re-creates the property with the
         // new value (ECMA-262 §10.2.1.2.4's create-when-absent step).
         HString* name_hstr = (HString*)key;
-        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                "%s is not defined", name_hstr.get_cstr(),
+        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                "%s is not defined", name_hstr,
                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
             return VM_ERROR~;
         }
@@ -2701,7 +2705,7 @@ fn BindingRead? vm_read_with_binding(Dispatch* ds, EnvRecord* env, void* key, TV
     if (!builtins::js_has_property(vm, vm.heap, env.bindings, (HString*)key, &has_hit) || !has_hit) {
         if (((CompiledFunction*)ds.act.func).is_strict()) {
             HString* name_hstr = (HString*)key;
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(),
+            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr,
                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 return VM_ERROR~;
             }
@@ -2826,8 +2830,8 @@ fn BindingRead? vm_read_binding(Dispatch* ds, void* key, TVal* out) {
             TVal v = env.bindings.prop_values()[idx].get();
             if (env::is_tdz_sentinel(&v)) {
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization",
-                        name_hstr.get_cstr(), act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization",
+                        name_hstr, act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 return BindingRead.THREW;
@@ -3118,7 +3122,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 continue;
             }
             if (try ls = left_str && try rs = right_str) {
-                if (vm_concat(vm, ds.act, ra, rb, ls, ls.get_data(), rs.get_data(), (uint)insn.a,
+                if (vm_concat(vm, ds.act, ra, rb, ls, ls.units(), rs.units(), (uint)insn.a,
                               ds.curr_pc, ds.code_end, rs) == ConcatStatus.TOO_LONG) {
                     if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                     if (ds.needs_restart) break;
@@ -3202,7 +3206,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             char[32] int_buf;
             int int_len = hstring::int_to_buf(imm, &int_buf, int_buf.len);
             if (int_len > 0) {
-                if (vm_concat(vm, ds.act, ra, rb, str, str.get_data(), int_buf[:int_len], (uint)insn.a,
+                if (vm_concat(vm, ds.act, ra, rb, str, str.units(), hstring::narrow_units(int_buf[:int_len]), (uint)insn.a,
                               ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
                     if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                     if (ds.needs_restart) break;
@@ -3231,34 +3235,12 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     char[32] int_buf;
                     int int_len = hstring::int_to_buf(imm, &int_buf, 32);
                     if (int_len > 0) {
-                        uint s_len = left_str.blen;
-                        // Widened for the same reason as the ADD fast path.
-                        ulong total64 = (ulong)s_len + (ulong)int_len;
-                        if (hstring::length_exceeds_max(total64)) {
-                            if (!vm_throw_error(vm, vm.heap.range_err_proto, "Invalid string length", ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                return VM_ERROR~;
-                            }
+                        if (vm_concat(vm, ds.act, ra, rb, null, left_str.units(),
+                                      hstring::narrow_units(int_buf[:int_len]), (uint)insn.a,
+                                      ds.curr_pc, ds.code_end) == ConcatStatus.TOO_LONG) {
+                            if (!vm_concat_overflow(vm, ds)) return VM_ERROR~;
                             if (ds.needs_restart) break;
-                            continue;
                         }
-                        uint total = (uint)total64;
-                        char[544] stack_buf;
-                        char* buf;
-                        bool heap_allocated = false;
-                        if (total <= 544) {
-                            buf = &stack_buf;
-                        } else {
-                            buf = (char*)vm.heap.alloc_func(vm.heap.heap_udata, total);
-                            if (buf == null) { vm.heap.set_reg_undefined(ra); continue; }
-                            heap_allocated = true;
-                        }
-                        mem::copy(buf, left_str.get_cstr(), (sz)(s_len));
-                        mem::copy(buf + s_len, &int_buf, (sz)((usz)int_len));
-                        HString* interned = intern_string(vm, buf[:total]);
-                        if (heap_allocated) vm.heap.free_func(vm.heap.heap_udata, buf);
-                        vm.heap.set_reg_string(ra, interned);
-                        // Large concat results are non-interned; see ADD.
-                        track_heap_store(ds.act, ra, (uint)insn.a);
                         continue;
                     }
                 }
@@ -3339,6 +3321,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // before the add so two lengths near the cap cannot wrap.
         ulong total64 = 0;
         ulong char_length = 0;
+        bool wide = false;
         for (uint i = 0; i < count; i++) {
             TVal part_val = parts[i];
             if (part_val.get_tag() == TValTag.FASTINT) {
@@ -3347,8 +3330,9 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 if (insn.op == Opcode.STRJOIN_LENGTH) char_length += digits;
             } else {
                 HString* part = (HString*)part_val.get_heapptr();
-                total64 += (ulong)part.blen;
-                if (insn.op == Opcode.STRJOIN_LENGTH) char_length += part.char_length();
+                total64 += (ulong)part.length;
+                wide = wide || part.is_wide();
+                if (insn.op == Opcode.STRJOIN_LENGTH) char_length += part.unit_len();
             }
         }
         if (hstring::length_exceeds_max(total64)) {
@@ -3365,7 +3349,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
 
-        HString* result = vm.heap.alloc_concat_join(parts[:count], total);
+        HString* result = vm.heap.alloc_concat_join(parts[:count], total, wide);
         if (result == null) { vm.heap.set_reg_undefined(ra); continue; }
         vm.heap.set_reg_string(ra, result);
         // A non-interned result is a pure refcounted leaf with no
@@ -3999,7 +3983,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 HString* key_hstr = (HString*)key;
                 if (key_hstr != null && key_hstr.is_arridx()) {
                     HString* prim_str = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
-                    if (prim_str != null && key_hstr.array_index() < prim_str.char_length()) {
+                    if (prim_str != null && key_hstr.array_index() < prim_str.unit_len()) {
                         vm.heap.set_reg_boolean(ra, true);
                         continue;
                     }
@@ -4273,7 +4257,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
         ds.regs_base = ds.act.bottom;
-        TVal? prom_opt = esm::dynamic_import(vm.heap, vm, spec_str.get_data(), attr_type,
+        builtins::StrBuf spec_text;
+        spec_text.init(vm.heap);
+        defer spec_text.free();
+        TVal? prom_opt = esm::dynamic_import(vm.heap, vm, builtins::utf8_text(&spec_text, spec_str), attr_type,
                                              op == Opcode.DYN_IMPORT_DEFER,
                                              op == Opcode.DYN_IMPORT_SOURCE);
         // The nested module evaluation may have reallocated the valstack.
@@ -4350,8 +4337,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
         if (ret_cat != null && ret_cat.finally_pc != null) {
             // Save return value
-            ret_cat.return_val = val;
-            vm.heap.shade_root_tval(ret_cat.return_val);
+            catcher_set_return(vm.heap, ret_cat, val);
             // If PENDING_RETURN is already set, we're inside the finally
             // block that was entered due to an earlier return.  Just update
             // the return value and let execution continue normally, since
@@ -4725,14 +4711,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (ra.is_envref() && ra.get_heapptr() != null) { continue; }
         if (((CompiledFunction*)ds.act.func).is_strict()) {
             uint bc = insn.get_bc();
-            char* nm = (char*)"";
+            HString* nm = vm.heap.str(heap::BuiltinStr.EMPTY);
             if (bc < vm.current_func.const_count) {
                 TVal name_val = ds.constants[bc];
                 if (name_val.is_string()) {
-                    nm = ((HString*)name_val.get_heapptr()).get_cstr();
+                    nm = (HString*)name_val.get_heapptr();
                 }
             }
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "'%s' is not defined", nm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 return VM_ERROR~;
             }
         }
@@ -4794,7 +4780,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 track_heap_store(ds.act, ra, (uint)insn.a);
             case BindingRead.UNRESOLVABLE:
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(),
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr,
                         ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
@@ -4817,7 +4803,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                 if (put_result == -1) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -4829,7 +4815,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (strict_a) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                     }
@@ -4837,7 +4823,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     break;
                 } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -4904,7 +4890,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // a strict binding before the immutable check
                     // (ECMA-262 §9.1.1.1.5 steps 2 and 5.2).
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -4913,7 +4899,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // sloppy silently drops, strict throws.
                     if (((CompiledFunction*)ds.act.func).is_strict()) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         break;
@@ -5012,8 +4998,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     bool is_strict_act = ds.act.func != null
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (is_strict_act) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                "%s is not defined", name_hstr.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5038,8 +5024,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     bool is_strict_act = ds.act.func != null
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (is_strict_act) {
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                "%s is not defined", name_hstr.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                                "%s is not defined", name_hstr,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5054,7 +5040,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // §9.1.1.1.5 step 2 promotes strict for strict
                     // bindings before the immutable check.
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -5065,7 +5051,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (strict_b) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                     }
@@ -5074,7 +5060,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     break;
                 } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     break;
@@ -5194,8 +5180,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         // RESOLVEVAR found it (§9.1.1.2.5 step 4).
                         if (is_strict_act) {
                             HString* name_hstr = (HString*)key;
-                            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto,
-                                    "%s is not defined", name_hstr.get_cstr(),
+                            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto,
+                                    "%s is not defined", name_hstr,
                                     ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
@@ -5203,13 +5189,13 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         }
                     } else if (put_result == -2) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         continue;
                     } else if (put_result == -1 || (put_result == -4 && is_strict_act)) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         continue;
@@ -5263,8 +5249,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 if (is_global_fn_env && is_eval_fn) {
                     if (!env::env_can_declare_global_func(ds.act.var_env, fdecl_key)) {
                         HString* type_str = typeof_string(vm, (TVal*)&fdecl_name);
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                                "Cannot declare global function '%s'", type_str.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                                "Cannot declare global function '%s'", type_str,
                                 ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5518,8 +5504,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && !globals.get_prop_flags((uint)gidx, vm.heap).configurable;
                     if (has_lex || restricted) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.syntax_err_proto,
-                            "Identifier '%s' has already been declared", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.syntax_err_proto,
+                            "Identifier '%s' has already been declared", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5532,8 +5518,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // extensible and has no matching own property).
                     if (has_lex) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.syntax_err_proto,
-                            "Identifier '%s' has already been declared", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.syntax_err_proto,
+                            "Identifier '%s' has already been declared", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5541,8 +5527,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     }
                     if (!has_global && !globals.is_extensible()) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                            "Cannot declare global variable '%s'", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                            "Cannot declare global variable '%s'", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5558,8 +5544,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     // TypeError.
                     if (has_lex) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.syntax_err_proto,
-                            "Identifier '%s' has already been declared", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.syntax_err_proto,
+                            "Identifier '%s' has already been declared", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5575,8 +5561,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     }
                     if (!definable) {
                         HString* nm = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto,
-                            "Cannot declare global function '%s'", nm.get_cstr(),
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto,
+                            "Cannot declare global function '%s'", nm,
                             ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
@@ -5714,7 +5700,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             continue;
         }
         if (is_strict_d && !found) {
-            if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                 return VM_ERROR~;
             }
             continue;
@@ -5820,7 +5806,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             (*obj.extra_ptr()).prim.primitive_value.set_string(prim_str);
             HString* len_key = (HString*)vm.heap.strs[heap::BuiltinStr.LENGTH];
             TVal len_tv;
-            len_tv.set_fastint((long)prim_str.char_length());
+            len_tv.set_fastint((long)prim_str.unit_len());
             obj.put_prop(len_key, len_tv, hobject::PROP_FLAGS_NNC, vm.heap);
         } else if (obj_val.is_number() || obj_val.is_fastint()) {
             HObject*? wrapped = vm.heap.alloc_object(hobject::ObjClass.NUMBER);
@@ -5990,7 +5976,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 TVal v_raw = cur.bindings.prop_values()[idx].get();
                 if (env::is_tdz_sentinel(&v_raw)) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw_pending = true;
@@ -6043,7 +6029,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 TVal v_raw = vcur.bindings.prop_values()[vidx].get();
                 if (env::is_tdz_sentinel(&v_raw)) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw_pending = true;
@@ -6083,7 +6069,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                     && ((CompiledFunction*)ds.act.func).is_strict();
                 if (is_strict_act) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "'%s' is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     continue;
@@ -6206,19 +6192,19 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 int put_result = env::env_try_put_lex(senv, key, *ra, true);
                 if (put_result == -1 || (put_result == -4 && senv_strict)) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
                 } else if (put_result == -2) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
                 } else if (put_result == -3 && senv_strict) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "%s is not defined", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
@@ -6234,7 +6220,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 int put_result = env::env_try_put_lex(ds.act.lex_env, key, *ra, true);
                 if (put_result == -1) {
                     HString* name_hstr = (HString*)key;
-                    if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                         return VM_ERROR~;
                     }
                     threw = true;
@@ -6245,14 +6231,14 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                         && ((CompiledFunction*)ds.act.func).is_strict();
                     if (strict_c) {
                         HString* name_hstr = (HString*)key;
-                        if (!vm_throw_error_fmt(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                        if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                             return VM_ERROR~;
                         }
                         threw = true;
                     }
                 } else if (put_result == -2) {
                 HString* name_hstr = (HString*)key;
-                if (!vm_throw_error_fmt(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr.get_cstr(), ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                if (!vm_throw_error_fmt_str(vm, vm.heap.ref_err_proto, "Cannot access '%s' before initialization", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                     return VM_ERROR~;
                 }
                 threw = true;

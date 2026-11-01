@@ -27,8 +27,8 @@
 //!   into exhaustion by ordinary use.
 //! - Every fallible call returns [`Result`], with the engine's message
 //!   captured (copied, not borrowed) into [`Error`].
-//! - [`Runtime`] is [`Send`] but not [`Sync`], which is exactly the engine's
-//!   threading rule expressed in the type system. See below.
+//! - [`Runtime`] is neither [`Send`] nor [`Sync`]: it stays on the thread
+//!   that created it. See below.
 //!
 //! # Several runtimes
 //!
@@ -58,22 +58,18 @@
 //!
 //! # Threads
 //!
-//! [`Runtime`] is [`Send`] and deliberately not [`Sync`]. The engine takes no
-//! locks and has no thread-local or process-global state, so:
+//! [`Runtime`] is neither [`Send`] nor [`Sync`]. The engine takes no locks, and
+//! registered closures may capture thread-bound state such as an `Rc` holding a
+//! [`Persisted`], so a runtime stays on the thread that created it. Runtimes on
+//! different threads share nothing: give each worker its own, built on that
+//! thread. [`Value`] borrows its runtime and follows.
 //!
-//! - Two runtimes on two threads share nothing and do not interact. `Send` is
-//!   what lets you build one here and drive it there, or give each worker its
-//!   own.
-//! - One runtime driven from two threads at once would corrupt it. `!Sync` is
-//!   what makes that a compile error: without a shareable `&Runtime`, two
-//!   threads cannot both reach the same instance. Opting in means saying so —
-//!   a [`std::sync::Mutex<Runtime>`] serialises access and *is* `Sync`,
-//!   because the lock supplies the exclusion the engine does not.
+//! Moving or sharing a runtime is a compile error:
 //!
-//! [`Value`] is neither, and follows for free: it borrows its runtime, and
-//! `&Runtime` is not [`Send`] precisely because [`Runtime`] is not [`Sync`].
-//!
-//! Sharing one runtime is rejected rather than merely discouraged:
+//! ```compile_fail
+//! fn assert_send<T: Send>() {}
+//! assert_send::<boomkat::Runtime>();
+//! ```
 //!
 //! ```compile_fail
 //! fn assert_sync<T: Sync>() {}
@@ -100,7 +96,7 @@
 //!
 //! Returning `Err` from the closure throws in JS, and a panic is caught at the
 //! boundary and converted to a throw rather than unwinding into C. See
-//! [`Runtime::register_fn`] for both, and for why the closure is leaked.
+//! [`Runtime::register_fn`] for both, and for when the closure is dropped.
 //!
 //! # Not covered
 //!
@@ -111,7 +107,9 @@
 use std::any::Any;
 use std::ffi::{CStr, CString};
 use std::fmt;
+use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
+use std::rc::Rc;
 use std::os::raw::{c_char, c_int, c_void};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -139,6 +137,8 @@ pub enum Kind {
     Full,
     /// Source or a string result was not valid UTF-8 / contained a NUL byte.
     Encoding,
+    /// The feature is compiled out of this build.
+    Unsupported,
     /// The ABI returned a status this binding does not know.
     Unknown(c_int),
 }
@@ -153,6 +153,8 @@ impl Kind {
             sys::BK_ERR_INVALID => Kind::Invalid,
             sys::BK_ERR_TYPE => Kind::Type,
             sys::BK_ERR_FULL => Kind::Full,
+            sys::BK_ERR_ENCODING => Kind::Encoding,
+            sys::BK_ERR_UNSUPPORTED => Kind::Unsupported,
             other => Kind::Unknown(other),
         }
     }
@@ -167,6 +169,7 @@ impl Kind {
             Kind::Type => "wrong type",
             Kind::Full => "value registry full",
             Kind::Encoding => "invalid text encoding",
+            Kind::Unsupported => "feature not in this build",
             Kind::Unknown(_) => "unknown error",
         }
     }
@@ -239,8 +242,8 @@ pub enum Type {
     String,
     Object,
     Function,
-    /// Symbol, BigInt, and anything else the ABI does not name.
-    Other,
+    Symbol,
+    BigInt,
 }
 
 impl Type {
@@ -252,7 +255,8 @@ impl Type {
             sys::BK_TYPE_STRING => Type::String,
             sys::BK_TYPE_OBJECT => Type::Object,
             sys::BK_TYPE_FUNCTION => Type::Function,
-            sys::BK_TYPE_OTHER => Type::Other,
+            sys::BK_TYPE_SYMBOL => Type::Symbol,
+            sys::BK_TYPE_BIGINT => Type::BigInt,
             // BK_TYPE_UNDEFINED, and anything unrecognised, which the ABI
             // also reports as undefined.
             _ => Type::Undefined,
@@ -272,26 +276,13 @@ impl Type {
 ///
 /// # Threads
 ///
-/// [`Send`] but deliberately not [`Sync`]. The engine takes no locks, so a
-/// single runtime must be driven from one thread at a time; `!Sync` is what
-/// makes sharing one across threads a compile error. Moving one to another
-/// thread, or giving each thread its own, is sound and is what `Send` allows:
-/// two runtimes share no state whatsoever. See the crate docs for the full
-/// argument.
+/// Neither [`Send`] nor [`Sync`]: a runtime stays on the thread that created
+/// it, because registered closures may hold thread-bound state. Each thread
+/// can build its own. See the crate docs.
 pub struct Runtime {
     raw: sys::bk_ctx,
-    /// `Send`, not `Sync`: a runtime may move between threads but must not be
-    /// used from two at once. See the type's doc comment.
-    _not_sync: PhantomData<std::cell::Cell<()>>,
+    shared: Rc<Shared>,
 }
-
-// SAFETY: a runtime owns a heap that is reachable from nothing else -- no
-// process-global state remains in the engine, so two runtimes on two threads
-// touch disjoint memory. Handing one to another thread is therefore sound so
-// long as only one thread drives it at a time, which `!Sync` (via the `Cell`
-// marker) enforces: without `&Runtime` being shareable, two threads cannot hold
-// a usable reference to the same instance.
-unsafe impl Send for Runtime {}
 
 impl Runtime {
     /// Open an engine instance.
@@ -300,11 +291,11 @@ impl Runtime {
     /// independent: each has its own globals, prototypes, objects and string
     /// intern table, and nothing is shared between them.
     pub fn new() -> Result<Self, Error> {
-        let runtime = unsafe { sys::bk_new_runtime() };
+        let runtime = unsafe { sys::bk_new_runtime(std::ptr::null()) };
         if runtime.is_null() {
             return Err(Error::new(Kind::from_status(sys::BK_ERR_NOMEM), ""));
         }
-        let raw = unsafe { sys::bk_new_context(runtime) };
+        let raw = unsafe { sys::bk_new_context(runtime, std::ptr::null()) };
 
         if raw.is_null() {
             return Err(Error::new(Kind::from_status(sys::BK_ERR_NOMEM), ""));
@@ -312,7 +303,10 @@ impl Runtime {
 
         Ok(Runtime {
             raw,
-            _not_sync: PhantomData,
+            shared: Rc::new(Shared {
+                alive: Cell::new(true),
+                released: RefCell::new(Vec::new()),
+            }),
         })
     }
 
@@ -329,6 +323,7 @@ impl Runtime {
     ///
     /// Pending promise jobs are drained before this returns.
     pub fn eval(&self, src: &str) -> Result<Value<'_>, Error> {
+        self.shared.drop_released();
         // The ABI takes a pointer plus an explicit length, so interior NULs
         // are fine and no CString round-trip is needed.
         // SAFETY: `src` is a valid slice for `src.len()` bytes; `self.raw` is
@@ -348,6 +343,13 @@ impl Runtime {
         }
 
         Ok(Value { rt: self, handle })
+    }
+
+    /// Run a full collection, then drop the closures of collected functions.
+    pub fn gc(&self) {
+        // SAFETY: `self.raw` is a live context.
+        unsafe { sys::bk_gc(sys::bk_get_runtime(self.raw), sys::BK_GC_FULL) };
+        self.shared.drop_released();
     }
 
     /// Run `src` purely for its side effects, discarding the result.
@@ -394,13 +396,13 @@ impl Runtime {
     ///
     /// # Lifetime of the closure
     ///
-    /// The closure is boxed and **deliberately leaked**. The engine holds a raw
-    /// pointer to it for as long as the runtime lives and offers no way to
-    /// unregister, so there is no later moment at which dropping it would be
-    /// sound. Leaking is the honest encoding of "lives as long as the runtime":
-    /// bounded by the number of `register_fn` calls, never per JS call. This is
-    /// also why the closure must be `'static` — it may run at any point up to
-    /// [`Runtime`] drop, so it cannot borrow anything shorter-lived.
+    /// The engine owns the closure through the function object. When that
+    /// object is collected, or the runtime closes, the engine's finalizer hands
+    /// the closure back, and it is dropped at the next [`Runtime::eval`] or when
+    /// the [`Runtime`] drops, never from inside the engine. A [`Persisted`]
+    /// captured by the closure is therefore released safely, and after the
+    /// runtime has closed it releases nothing. The closure must be `'static`
+    /// because it may run at any point up to then.
     ///
     /// # Panics
     ///
@@ -439,14 +441,11 @@ impl Runtime {
     where
         F: for<'a> Fn(&Ctx<'a>) -> Result<HostValue<'a>, Error> + 'static,
     {
-        // One leaked box per registration; see the doc comment above. The
-        // pointer rides in `udata` together with this runtime's context (v2
-        // gives a callback no way to reach its runtime otherwise); the
-        // trampoline recovers both.
-        let boxed: *mut F = Box::into_raw(Box::new(f));
+        // The engine owns `data` from here and returns it through `release`.
         let data: *mut TrampolineData<F> = Box::into_raw(Box::new(TrampolineData {
-            f: boxed,
+            f,
             rt: self.raw,
+            shared: self.shared.clone(),
         }));
 
         // The table ends at the first zeroed entry, so two entries suffice:
@@ -454,7 +453,6 @@ impl Runtime {
         let c_name = match CString::new(name) {
             Ok(s) => s,
             Err(_) => {
-                drop(unsafe { Box::from_raw(boxed) });
                 drop(unsafe { Box::from_raw(data) });
                 return Err(Error::new(
                     Kind::Encoding,
@@ -469,28 +467,21 @@ impl Runtime {
                 arity: arity as c_int,
                 flags: if constructable { sys::BK_CTOR } else { 0 },
                 udata: data as *mut c_void,
+                finalize: Some(release::<F>),
+                finalize_opaque: std::ptr::null_mut(),
             },
             sys::BK_FN_END,
         ];
 
         // SAFETY: `c_name` outlives the call, which copies what it needs;
-        // `trampoline::<F>` has the required C signature; `data` outlives the
-        // runtime because it is never freed. The engine only passes `udata`
-        // back, never derefs it.
+        // `trampoline::<F>` and `release::<F>` have the required C
+        // signatures. The engine passes `udata` back and runs `release`
+        // exactly once, also when registration fails.
         let status = unsafe { sys::bk_set_function_list(self.raw, 0, defs.as_ptr()) };
-
         if status != sys::BK_OK {
-            // Registration failed, so the engine never took the pointers and we
-            // still own them uniquely. Reclaim them rather than leaking on a
-            // path that has no runtime-lifetime justification.
-            // SAFETY: both came from `Box::into_raw` above and, since
-            // registration failed, no copy of either escaped.
-            drop(unsafe { Box::from_raw(boxed) });
-            drop(unsafe { Box::from_raw(data) });
             return Err(self.error(status));
         }
         Ok(())
-        // `boxed` and `data` are intentionally not freed on the success path.
     }
 
     /// Build an [`Error`] from a status, copying the engine's message out
@@ -538,7 +529,11 @@ impl Drop for Runtime {
         // exactly once, since Runtime is neither Copy nor Clone. Every Value
         // borrows self, so none can be alive here. Other runtimes are
         // untouched: closing one frees only its own heap.
+        // Closures released while the runtime closes, and any Persisted
+        // they hold, are dropped after it is gone and touch nothing.
+        self.shared.alive.set(false);
         unsafe { sys::bk_free_runtime(sys::bk_get_runtime(self.raw)) };
+        self.shared.drop_released();
     }
 }
 
@@ -779,6 +774,8 @@ pub struct Ctx<'a> {
     /// (v2 gives a callback no engine-side way to reach it). Freeing a
     /// [`Ctx::call`] result needs it.
     rt: sys::bk_ctx,
+    /// The runtime's shared state, which a [`Persisted`] keeps.
+    shared: &'a Rc<Shared>,
     /// Values the host built, parked until one of them is returned. See
     /// [`Repr::Built`].
     built: std::cell::RefCell<Vec<Built>>,
@@ -793,6 +790,7 @@ impl<'a> Ctx<'a> {
     fn new(
         raw: sys::bk_ctx,
         rt: sys::bk_ctx,
+        shared: &'a Rc<Shared>,
         this_value: sys::bk_value,
         argv: &'a [sys::bk_value],
     ) -> Self {
@@ -801,6 +799,7 @@ impl<'a> Ctx<'a> {
             this_value,
             argv,
             rt,
+            shared,
             built: std::cell::RefCell::new(Vec::new()),
             kept: std::cell::RefCell::new(Vec::new()),
             _call: PhantomData,
@@ -839,12 +838,8 @@ impl<'a> Ctx<'a> {
 
     /// `new.target`, or `undefined` on a plain call.
     pub fn new_target(&self) -> HostValue<'a> {
-        // SAFETY: live context.
-        {
-            let value = unsafe { sys::bk_get_new_target(self.raw) };
-            self.kept.borrow_mut().push(value);
-            HostValue::handle(self.raw, value)
-        }
+        // SAFETY: live context; the handle borrows the current call.
+        HostValue::handle(self.raw, unsafe { sys::bk_get_new_target(self.raw) })
     }
 
     /// Whether this invocation came through `new` or `super()`.
@@ -891,6 +886,7 @@ impl<'a> Ctx<'a> {
         }
         Ok(Persisted {
             rt: self.rt,
+            shared: self.shared.clone(),
             handle: out,
         })
     }
@@ -959,9 +955,14 @@ impl<'a> Ctx<'a> {
             None => sys::BK_EXCEPTION,
         };
 
+        // The call's result would be a local of this callback's scope, which
+        // lives until the callback returns. Run it in a scope of its own and
+        // keep the result as a registry root the guard can free on drop.
+        // SAFETY: live context.
+        let scope = unsafe { sys::bk_scope_open(self.raw) };
         // SAFETY: live context; `raw_args` is valid for its length (a null
         // pointer when empty is what the ABI wants for "no arguments").
-        let out = unsafe {
+        let local = unsafe {
             sys::bk_call(
                 self.raw,
                 func_handle,
@@ -974,6 +975,13 @@ impl<'a> Ctx<'a> {
                 raw_args.len() as u32,
             )
         };
+        // SAFETY: live context; `local` is a handle in `scope` or an immediate.
+        let out = if local == sys::BK_EXCEPTION {
+            sys::BK_EXCEPTION
+        } else {
+            unsafe { sys::bk_dup_value(self.raw, local) }
+        };
+        unsafe { sys::bk_scope_close(self.raw, scope) };
 
         // Only a callee exception leaves a throw staged on this context; other
         // failures come back with nothing recorded, and reporting them as an
@@ -1089,10 +1097,11 @@ impl fmt::Debug for Retained<'_, '_> {
 /// so unlike [`Value`] this one is on the host to sequence. Registered closures
 /// are dropped only when the runtime is, which is the case it is designed for.
 ///
-/// A `Persisted` is not [`Send`]: it names a slot in one runtime, and that
-/// runtime must be driven from one thread at a time.
+/// A `Persisted` is not [`Send`]: it names a slot in one runtime, which stays
+/// on its thread.
 pub struct Persisted {
     rt: sys::bk_ctx,
+    shared: Rc<Shared>,
     handle: sys::bk_value,
 }
 
@@ -1144,8 +1153,11 @@ impl Persisted {
 
 impl Drop for Persisted {
     fn drop(&mut self) {
-        // SAFETY: `self.rt` is the runtime that issued `handle`, and it must
-        // still be open; see the type's doc comment.
+        // A closed runtime took the slot with it.
+        if !self.shared.alive.get() {
+            return;
+        }
+        // SAFETY: `self.rt` is the open runtime that issued `handle`.
         unsafe { sys::bk_free_value(self.rt, self.handle) };
     }
 }
@@ -1182,9 +1194,9 @@ impl Built {
         unsafe {
             match self {
                 Built::Number(n) => sys::bk_new_number(raw, *n),
-                Built::Bool(b) => sys::bk_new_bool(raw, *b as c_int),
-                Built::Null => sys::bk_new_null(raw),
-                Built::Undefined => sys::bk_new_undefined(raw),
+                Built::Bool(b) => if *b { sys::BK_TRUE } else { sys::BK_FALSE },
+                Built::Null => sys::BK_NULL,
+                Built::Undefined => sys::BK_UNDEFINED,
                 Built::Str(s) => sys::bk_new_string(raw, s.as_ptr() as *const c_char, s.len()),
             }
         }
@@ -1285,14 +1297,14 @@ where
     // taken as a shared reference only; it is `Fn`, so re-entrant calls
     // (host -> JS -> same host) are fine.
     let data: &TrampolineData<F> = unsafe { &*(udata as *const TrampolineData<F>) };
-    let f: &F = unsafe { &*data.f };
+    let f: &F = &data.f;
 
     let args = if argc == 0 {
         &[]
     } else {
         unsafe { std::slice::from_raw_parts(argv, argc as usize) }
     };
-    let ctx = Ctx::new(raw, data.rt, this_value, args);
+    let ctx = Ctx::new(raw, data.rt, &data.shared, this_value, args);
 
     // AssertUnwindSafe: on a panic we touch `ctx` only to record a throw and
     // free handles, neither of which reads closure state that a panic could
@@ -1303,8 +1315,10 @@ where
         // Apply exactly the value the closure returned, ignoring any others it
         // built along the way.
         Ok(Ok(v)) => match v.repr {
+            // A copy in the call's own scope: the registry slots `keep`
+            // retained are freed below, before the engine reads the result.
             // SAFETY: live context; the handle came from this call.
-            Repr::Handle(h) => unsafe { sys::bk_dup_value(raw, h) },
+            Repr::Handle(h) => unsafe { sys::bk_scope_local(raw, h) },
             // The index came from `Ctx::park` on this same context, so it is
             // always in bounds.
             Repr::Built(i) => ctx.built.borrow()[i].apply(raw),
@@ -1345,10 +1359,50 @@ where
 }
 
 /// What the trampoline recovers from `udata`: the closure and the runtime that
-/// registered it. One leaked allocation per registration.
+/// registered it. The engine owns it until `release`.
 struct TrampolineData<F> {
-    f: *mut F,
+    f: F,
     rt: sys::bk_ctx,
+    shared: Rc<Shared>,
+}
+
+/// State a runtime shares with its closures and [`Persisted`] values.
+struct Shared {
+    /// False once the runtime has closed.
+    alive: Cell<bool>,
+    /// Closures the engine has released, waiting to be dropped outside it.
+    released: RefCell<Vec<Box<dyn Any>>>,
+}
+
+impl Shared {
+    /// Drop released closures. Dropping one can release more, through a
+    /// [`Persisted`] it held, so this repeats until none are left.
+    fn drop_released(&self) {
+        loop {
+            let batch = std::mem::take(&mut *self.released.borrow_mut());
+            if batch.is_empty() {
+                return;
+            }
+            drop(batch);
+        }
+    }
+}
+
+/// The finalizer of a registered function: the engine is done with `udata`.
+/// It must not call the engine, so the closure is parked for
+/// [`Shared::drop_released`].
+///
+/// # Safety
+///
+/// `udata` is the `*mut TrampolineData<F>` from `register_fn_impl`, passed
+/// exactly once.
+unsafe extern "C" fn release<F: 'static>(udata: *mut c_void, _opaque: *mut c_void) {
+    if udata.is_null() {
+        return;
+    }
+    let data: Box<TrampolineData<F>> = unsafe { Box::from_raw(udata as *mut TrampolineData<F>) };
+    let shared = data.shared.clone();
+    shared.released.borrow_mut().push(data);
 }
 
 /// Record a JS throw carrying `msg`, tolerating a message with interior NULs by

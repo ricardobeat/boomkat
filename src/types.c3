@@ -122,7 +122,7 @@ const int FORMAT_BUF = 32;
 const ulong NANBOX_PAYLOAD_MASK = 0x0000FFFFFFFFFFFF;  // bits 47-0
 
 // Tag values for NaN-boxed representation. These are full 16-bit values
-// stored in bits 63-48, matching Duktape's encoding. All doubles must
+// stored in bits 63-48. All doubles must
 // have bits 63-48 <= 0xFFF0 (achieved by NaN normalization in set_number).
 //
 // The tags that point into the heap or hold a collector reference are
@@ -875,11 +875,12 @@ bitstruct GcBits : uint {
     // An inherited read depends on this ordinary object's layout/prototype.
     bool prototype_observed : 5;
     bool computed_names : 6; // has added a non-interned input string key
-    bool jit_observed : 7; // a compiled dependency watches this object
+    bool weak_target : 7;    // a weak handle refers to this object (gc_weak.c3)
     uint shaped_props : 8..10; // original trailing capacity minus four, or zero
     // Offset of an object's inline property slots, in eight-byte words; see
     // HObject.inline_props_ptr.
     uint inline_words : 11..15;
+    bool jit_observed : 16; // a compiled dependency watches this object
 }
 
 // Sentinel refcount for a pinned string, where incref and decref do nothing

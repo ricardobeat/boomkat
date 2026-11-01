@@ -172,7 +172,9 @@ fn bool sljit_template_analyze(CompiledFunction* cf, HObject* sample, Heap* h, T
     if (out == 0 || index == 0 || out == index || code[1].get_sbc() != 0
         || code[0].get_bc() >= cf.const_count) return false;
     TVal empty = cf.constants[code[0].get_bc()];
-    if (!empty.is_string() || ((HString*)empty.get_heapptr()).blen != 0) return false;
+    HString* initial = plain_string_of(&empty);
+    if (initial == null || initial.unit_len() != 0 || !initial.is_ascii()
+        || initial.is_wide() || initial.flags.has_extdata) return false;
     int test = 3 + code[2].get_sabc();
     if (test < 6 || test + 3 >= (int)cf.code_count) return false;
     Instruction length = code[test];
@@ -217,7 +219,9 @@ fn bool sljit_template_analyze(CompiledFunction* cf, HObject* sample, Heap* h, T
             case LDCONST:
                 if (ins.get_bc() >= cf.const_count || ins.a == out) return false;
                 TVal value = cf.constants[ins.get_bc()];
-                if (!value.is_string() || ((HString*)value.get_heapptr()).is_symbol()) return false;
+                if (!value.is_string()) return false;
+                HString* literal = value.get_heapptr();
+                if (literal.is_symbol() || !literal.is_ascii() || literal.is_wide() || literal.flags.has_extdata) return false;
                 values[ins.a] = { .kind = 4, .constant = ins.get_bc() };
             case TOSTR:
                 if (values[ins.a].kind != 5 && values[ins.a].kind != 4) return false;
@@ -233,7 +237,11 @@ fn bool sljit_template_analyze(CompiledFunction* cf, HObject* sample, Heap* h, T
                         int slot = sample.find_prop_idx(key, h);
                         if (slot < 0 || sample.get_prop_flags((uint)slot, h).is_accessor) return false;
                         TVal field = sample.prop_values()[slot].get();
-                        if (!field.is_fastint() && (!field.is_string() || ((HString*)field.get_heapptr()).is_symbol())) return false;
+                        if (!field.is_fastint()) {
+                            if (!field.is_string()) return false;
+                            HString* text = field.get_heapptr();
+                            if (text.is_symbol() || !text.is_ascii() || text.is_wide() || text.flags.has_extdata) return false;
+                        }
                         part.slot = (uint)slot;
                         part.integer = field.is_fastint();
                         used_reads[val.read_id] = true;
@@ -285,7 +293,7 @@ fn TemplateNative sljit_template_emit(TemplatePlan* plan, bool write) @feat(SLJI
     HString string;
     long shape_offset = (char*)&object.shape_id - (char*)&object;
     long props_offset = (char*)&object.prop_alloc - (char*)&object;
-    long length_offset = (char*)&string.blen - (char*)&string;
+    long length_offset = (char*)&string.length - (char*)&string;
     e.op(jit::SLJIT_SHL, end, end, 0, imm, 3);
     e.op(jit::SLJIT_ADD, end, rows, 0, end, 0);
     e.mov(offset, 0, imm, 0);
@@ -311,10 +319,10 @@ fn TemplateNative sljit_template_emit(TemplatePlan* plan, bool write) @feat(SLJI
     for (uint i = 0; i < plan.count; i++) {
         TemplatePart part = plan.parts[i];
         if (part.literal) {
-            uint len = part.literal.blen;
+            uint len = part.literal.unit_len();
             if (write && len != 0) {
                 e.op(jit::SLJIT_ADD, r6, output, 0, offset, 0);
-                char* bytes = part.literal.get_cstr();
+                char* bytes = part.literal.data_ptr();
                 uint j;
                 while (j + 8 <= len) {
                     ulong word;
@@ -383,9 +391,13 @@ fn TemplateNative sljit_template_emit(TemplatePlan* plan, bool write) @feat(SLJI
             if (!write) {
                 e.mov(r5, 0, mem | r4, 0, jit::SLJIT_MOV_U32);
                 HStringFlags flags;
+                flags.is_ascii = true;
+                uint ascii = (uint)flags;
                 flags.is_symbol = true;
+                flags.is_wide = true;
+                flags.has_extdata = true;
                 e.op(jit::SLJIT_AND, r5, r5, 0, imm, (long)(uint)flags);
-                e.guard(jit::SLJIT_NOT_EQUAL, r5, 0, imm, 0);
+                e.guard(jit::SLJIT_NOT_EQUAL, r5, 0, imm, ascii);
             }
             e.mov(r5, 0, mem | r4, length_offset, jit::SLJIT_MOV_U32);
             if (write) {
@@ -465,11 +477,11 @@ fn Instruction* sljit_template_entry(Instruction* pc, TVal* regs, ColdCtx* cold)
         return pc;
     }
     // alloc_no_gc and registry growth cannot enter JS or move source objects.
-    HString* result = hstring::hstring_alloc_storage(h, (uint)length, hstring::HASH_DEFERRED, (uint)length + 8) ?? null;
+    HString* result = hstring::hstring_alloc_storage(h, (uint)length, false, hstring::HASH_DEFERRED, (uint)length + 8) ?? null;
     if (!result) return pc;
-    long written = plan.write(rows, count, result.get_cstr());
-    result.blen = (uint)written;
-    result.get_cstr()[written] = 0;
+    long written = plan.write(rows, count, result.data_ptr());
+    result.length = (uint)written;
+    result.data_ptr()[written] = 0;
     result.finish_data();
     h.large_string_register(result);
     h.set_reg_string(regs + plan.result_reg, result);
