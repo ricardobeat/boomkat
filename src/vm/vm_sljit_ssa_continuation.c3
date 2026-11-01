@@ -220,6 +220,18 @@ fn bool ssa_execution_reload(SsaExecution* execution) @feat(SLJIT) {
     return true;
 }
 
+// Native saved homes contain NaN-boxed bits. The alternate value build keeps
+// the interpreter available while JIT admission remains disabled.
+fn bool ssa_decode_boxed_bits(ulong bits, TVal* value) @feat(SLJIT) @inline {
+    $if types::USE_NANBOX:
+        *value = bitcast(bits, TVal);
+        return true;
+    $else
+        value.set_undefined();
+        return false;
+    $endif
+}
+
 // Anchor the entire new root map before releasing ANY prior native root.
 // Keeping one stable descriptor per value avoids cursor invalidation when an
 // incremental collection is partway through the native root chain.
@@ -229,14 +241,16 @@ fn bool ssa_execution_roots(SsaExecution* execution, SsaHelperSite* site) @feat(
     for (uint i = 0; i < site.root_count; i++) if (site.root_values[i] >= execution.value_capacity) return false;
     for (uint i = 0; i < site.root_count; i++) {
         uint value = site.root_values[i];
-        TVal boxed = bitcast(execution.saved_bits[value], TVal);
+        TVal boxed;
+        if (!ssa_decode_boxed_bits(execution.saved_bits[value], &boxed)) return false;
         if (boxed.is_refcounted() && boxed.get_heapptr() != null) ((HeapHeader*)boxed.get_heapptr()).incref();
     }
     // The temporary reference above keeps cross-slot swaps alive while the
     // ordinary owning root update shades the new value and releases the old.
     for (uint i = 0; i < site.root_count; i++) {
         uint value = site.root_values[i];
-        TVal boxed = bitcast(execution.saved_bits[value], TVal);
+        TVal boxed;
+        if (!ssa_decode_boxed_bits(execution.saved_bits[value], &boxed)) return false;
         h.tval_copy_ref(&execution.roots[value].value, &boxed);
         h.decref_tval(&boxed);
     }
