@@ -18,7 +18,11 @@ const DecodedCfgBudget DEFAULT_CFG_BUDGET = { 4096, 4096, 1024 * 1024 };
 alias DecodedOpAllowed = fn bool(Opcode op);
 alias DecodedWorkCharge = fn bool(void* data, usz amount);
 
+alias DecodedReadExtras = fn void(void* context, DecodedBytecode view, RegSet* reads);
+
 struct DecodedCfgNode {
+    DecodedReadExtras extra_reads;
+    void* read_context;
     DecodedBytecode view;
     MoveelimRoles roles;
     uint[2] successors;
@@ -118,7 +122,7 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
         case LDREG: case UNP: case UNM: case BNOT: case LNOT: case TYPEOF: case GETPROTO: case TONUMERIC:
         case GETPROPC: case GETPROPC_CACHED:
             return { .b_read = true, .a_write = true };
-        case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
+        case CLOSURE: case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case LDTHIS: case GETTHISC: case VOID:
         case GETVAR: case GETGLOBAL: case GETBOUND: case GETCAP: case TYPEOFIDENT:
         case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL:
@@ -153,7 +157,8 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
 // at node.call and use the external successor as another root.
 fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     heap::Heap* h = null, DecodedOpAllowed allowed = null, bool split_calls = false,
-    DecodedCfgBudget budget = DEFAULT_CFG_BUDGET) {
+    DecodedCfgBudget budget = DEFAULT_CFG_BUDGET,
+    DecodedOpAllowed boundary = null, DecodedReadExtras extra_reads = null, void* read_context = null) {
     *cfg = {};
     if (code == null || count == 0 || count > budget.max_words) return false;
     ulong bytes = (ulong)count * (DecodedCfgNode::size + uint::size);
@@ -180,6 +185,8 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
         cfg.pc_to_index[pc] = index;
         DecodedCfgNode* node = &cfg.nodes[index];
         node.view = view;
+        node.extra_reads = extra_reads;
+        node.read_context = read_context;
         node.roles = bytecode_cfg_roles(view.insn.op);
         node.branch_target = CFG_NO_INSTRUCTION;
         node.call = bytecode_cfg_call(view.insn.op);
@@ -206,8 +213,9 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
         if (fallthrough) {
             if (!branch || node.branch_target != i + 1) node.successors[node.successor_count++] = i + 1;
         }
-        if (branch || !fallthrough || (split_calls && node.call)) cfg.nodes[i + 1].block_entry = true;
-        if (split_calls && node.call) cfg.nodes[i + 1].external = true;
+        bool helper_boundary = (split_calls && node.call) || (boundary != null && boundary(node.view.insn.op));
+        if (branch || !fallthrough || helper_boundary) cfg.nodes[i + 1].block_entry = true;
+        if (helper_boundary) cfg.nodes[i + 1].external = true;
     }
     for (uint i = 0; i < cfg.instruction_count; i++) {
         if (cfg.nodes[i].block_entry) cfg.block_count++;
@@ -218,6 +226,7 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
 }
 
 fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true) {
+    if (self.extra_reads != null) self.extra_reads(self.read_context, self.view, uses);
     DecodedInsn ins = self.view.insn;
     switch (ins.op) {
         case CALL: case NEW_OBJ: case SUPER_CALL:

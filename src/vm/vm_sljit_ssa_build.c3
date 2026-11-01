@@ -379,7 +379,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                                     if (receiver != ins.a) g.current[receiver] = undefined;
                                 }
                                 g.values[value].before_frame = g.frames[at];
-                                g.values[value].after_frame = ssa_frame_capture(g, pos + 1, &g.current[0], LOOP_REGS);
+                                g.values[value].after_frame = ssa_frame_capture(g, view.next_pc, g.current, g.reg_count,
+                                    view.next_pc <= plan.end ? g.recovery_live[view.next_pc - plan.begin].words : null, g.reg_words);
                                 break;
                             }
                             // Its successor is a fresh external entry importing
@@ -402,7 +403,8 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                         ssa_result(g, value, ins.a, pos);
                         g.current[ins.a] = value;
                         g.values[value].before_frame = g.frames[at];
-                        g.values[value].after_frame = ssa_frame_capture(g, pos + 1, &g.current[0], LOOP_REGS);
+                        g.values[value].after_frame = ssa_frame_capture(g, view.next_pc, g.current, g.reg_count,
+                                    view.next_pc <= plan.end ? g.recovery_live[view.next_pc - plan.begin].words : null, g.reg_words);
                         break;
                     }
                 case GETPROPC:
