@@ -35,8 +35,13 @@ fn uint ssa_dce(SsaGraph* g) @feat(SLJIT) {
     }
     if (!g.direct) {
         for (uint pc = g.plan.begin; pc <= g.plan.end; pc++) {
-            foreach (value : g.frames[pc - g.plan.begin]) mark.keep(value);
+            foreach (entry : ssa_frame_entries(g, ssa_frame_at_pc(g, pc))) mark.keep(entry.value);
         }
+    }
+    // Explicit after-effect and helper states are recovery users too; they
+    // need not coincide with the ordinary pre-bytecode frame table.
+    for (uint frame = 0; frame < g.frame_count; frame++) {
+        foreach (entry : ssa_frame_entries(g, frame)) mark.keep(entry.value);
     }
     if (g.single_pass && g.direct && g.result_reg < LOOP_REGS) mark.keep(g.current[g.result_reg]);
     if (g.single_pass && g.plan.ssa_function == null && !g.direct) {
