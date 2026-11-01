@@ -1,149 +1,114 @@
 # 113: The 50,000 full-Octane target
 
-Status: **ACTIVE — condensed 2026-11-01; assessed at rat `ec422de6`.**
-50K remains unachieved. This is the active JIT roadmap for plans 107–108, 110–112 and 116–118.
+Status: **ACTIVE — architecture implementation, 2026-11-01.**
+50K remains unachieved. This is the active roadmap for plans 107–108, 110–112 and 116–118.
 
-## Objective and architecture
+## Objective and design
 
-Reach 50,000 on original complete Octane, preserving algorithms, validation, warmup
-and latency results. Improve integer/buffer, floating-point, object/allocation and
-closure/application workloads; profile native-library and frontend costs separately.
+Reach 50,000 on original complete Octane, preserving algorithms, validation,
+warmup and latency results. Cover numeric/buffer, floating-point, object/allocation
+and closure/application workloads; attribute frontend and native-library costs separately.
 
-Keep SLJIT as the backend and extend the existing graph and lowering:
+Keep SLJIT and consolidate the existing compiler around:
 
 `decoded bytecode + feedback → cyclic typed SSA + effects/frame states → optimization → representations/global allocation → SLJIT + recovery/root maps`
 
-This is a coordinated architecture refactor. Architectural milestones below
-remain required; isolated opcode improvements, larger windows and more baseline
-coverage do not substitute for effects, cyclic optimization or global allocation.
-Preserve bounded compilation/memory and the existing embedding/execution modes.
+Preserve bounded compilation/memory and embedding, script and module semantics.
+Wider windows and isolated opcode improvements do not substitute for these contracts.
 
-## Current capabilities and gaps
+## Current phase: finish the architecture
 
-- Shared SSA serves loop regions and bounded function regions/frameless callees.
-  Whole-body cyclic leaves admit up to 128 bytecodes; nested loops can form one
-  cyclic graph. Loop-header joins, late backedges, cycle-valid dominance,
-  converting parallel copies and backedge polls exist.
-- Frameless refusal replays the call. Admission therefore requires pure reads
-  and expanded pure helpers, terminal writes after guards, or narrowly proven
-  idempotent writes. This is not general recovery after effects or generic calls.
-- Rooted write dependencies and safe invalidation/retirement already support
-  watched numeric globals and inherited methods. Reuse these contracts.
-- Cyclic graphs skip invariant CSE, CSE, numeric-load refinement and function
-  liveness passes. Allocation follows flat definition order; cyclic joins reserve
-  private homes conservatively. Embedded field SSA has three integer homes.
-  A cyclic graph executing correctly is not yet a cycle-aware optimizing tier.
-- A bounded WIDE decoder, sparse loop-register remapping and CFG continuation
-  liveness exist. A scalable shared decoded CFG with canonical operand roles,
-  recovery uses and general call/register windows remains incomplete.
-- Native remainder, numeric typed-array dispatch and regexp rejection are useful
-  delivered changes. They do not close the structural gaps above.
+Throughput tuning is deferred by user instruction. Complete and integrate the
+contracts below before resuming benchmark sweeps. Keep one SSA compiler and SLJIT;
+scale the shared IR and runtime boundary instead of adding another specialized tier.
+Work is confined to `rat`; plans remain on `plans/archive`.
 
-The older [typed-array checkpoint](113-fifty-thousand-octane/typed-array-dispatch-2026-10-31/report.md)
-records a full-suite median about **6,563**, not a current-revision measurement.
-Refresh attribution; historical bytecode shares and CPU percentages are stale.
+Implemented foundations (individual milestones remain partial):
 
-## Ordered implementation and acceptance
+- Canonical decoded CFG, semantic operand roles and continuation liveness;
+  effectful cyclic SSA with exact recovery after committed stores.
+- Budgeted dynamic SSA nodes, blocks, predecessor lists, dominance, register
+  state and sparse immutable recovery frames; stable IDs separate from scheduling.
+  Decoded lowering and work budgets are integrated. WIDE/high-register gateway
+  activation and dynamic invocation storage are still in progress.
+- Generic call/allocation continuation with typed live-home preservation,
+  boxed roots, stable activation lookup after stack growth, explicit
+  before/after outcomes and exception handoff. Capturing closures and the
+  general single-operation interpreter bridge remain in progress.
+- Guard-safe DCE and CFG effects/CSE; dynamic effects, range proofs and LICM
+  are being integrated. Cyclic allocation includes recovery and phi-edge uses.
+- Shared executable owners for function, loop and template code; pins through
+  native recovery/publication; deferred retirement and exact code accounting.
+  Capacity-generation retries and exact-PC loop admission replace sticky waits
+  and colliding rejection masks. Policy defaults remain unchanged.
 
-### 1. Refresh evidence and define shared contracts
+Current evidence: [architecture checkpoint](113-fifty-thousand-octane/ssa-architecture-2026-11-01/report.md).
+Earlier full-suite scores are roughly 6.4K; 50K is not achieved. Isolated native
+activation or lower instruction counts are evidence of mechanism, not a full-suite win.
 
-Use `just sljit-stats` and `scripts/bench_interleaved.py` to rank admission, exits and CPU costs.
-Select real consumers across numeric/buffer, floating-point and object/closure
-clusters; keep Richards/DeltaBlue as regression checks. Record source/configuration
-hashes, compilation CPU, native/metadata bytes and memory. Distinguish interpreter,
-baseline, optimized body, helpers, GC and frontend in phase-checked profiles.
+## Remaining milestones and acceptance
 
-Specify the effect/recovery/call interfaces and cycle-aware analysis together
-before adding another execution path. Audit existing decoder, compiler liveness,
-SSA graph/build/opt/emit and function/loop adapters; reuse their working pieces.
+### 1. Attribute the remaining cost — performance phase
 
-Acceptance: a ranked blocker table, a short representative iteration panel and
-one blocked real consumer for each following structural milestone.
+Refresh admission, exits and phase-checked profiles across representative workload
+clusters. Rank interpreter, baseline, optimized body, helpers, GC and frontend costs.
+Record source/configuration hashes, compilation CPU, native/metadata bytes and RSS.
+Keep Richards/DeltaBlue as regression checks and identify a blocked real consumer
+for each architectural change below.
 
-### 2. Consolidate the decoded CFG and recovery-aware uses
+### 2. Complete shared scalable CFG and recovery analysis — partial
 
-Build one indexed WIDE-aware instruction view retaining prefix/opcode/next PCs,
-branch/fallthrough and exception boundaries. Share canonical read/write roles,
-CFG edges, traversal, dominance and phi operands between loop/function analyses.
-Constant-pool indices must never become register uses. Separate execution uses
-from values needed only by recovery, including inline frames and latch operands.
+Consume WIDE/high-register operands throughout SSA lowering. Replace dense fixed
+PC/register structures with budgeted nodes, edges and sparse frame states; preserve
+register mappings through emission and re-emission. Consolidate duplicate traversal,
+dominance, liveness and phi analysis. Distinguish execution from recovery-only uses.
 
-Replace structural dense PC-by-register matrices and fixed masks with budgeted
-nodes, edges and sparse states where required. Preserve sparse register mappings
-through emission and re-emission; represent contiguous call windows explicitly.
-Keep supported baseline exits for unsupported irreducible/exception cases.
+Acceptance: large real consumers, diamonds, multiple backedges, nested loops,
+WIDE/high registers and exit-only values agree with the interpreter. Unsupported
+exception/irreducible cases have explicit safe exits. Raising caps alone is insufficient.
 
-Acceptance: diamonds, multiple backedges, nested loops, WIDE/high registers and
-exit-only live values agree with the interpreter. Demonstrate native activation
-and completion on real consumers, with bounded compile/memory cost. Remove
-superseded analysis as shared consumers migrate; raising caps is not this milestone.
+### 3. Complete calls, effects and runtime continuations — partial
 
-### 3. Add exact-PC effects, calls and runtime continuations
-
-Give IR operations explicit pure/read/write/allocation/call/throw/poll effects.
-Carry memory/fact versions through joins and backedges, conservatively killing
-facts on unknown mutation. Use proven receiver/location identity for aliasing.
-Attach sparse frame states before and after observable operations: exits resume
-before an unperformed effect or after a completed effect, never replaying it.
-Include inline caller/callee state, exception destinations and ownership.
-
-Model generic calls with argument/result locations, clobbers and recovery states;
-inline profitable known callees under rooted dependencies. Define helper outcomes
-for completion, exceptions and polls. Publish precise roots or use root maps,
-respect string/refcount/barrier rules, reload movable frame pointers, revalidate
-facts after mutation and protect active code and incoming links during retirement.
+Add graph-level argument/result locations and clobbers, effectful inlining with
+caller/callee recovery, and allocation/helper continuations. Model throw/poll
+outcomes, ownership and precise roots/root maps; reload movable frames and reset
+facts after mutation. Protect active code and incoming links during retirement.
 Allocation or watch-registration failure must decline specialization safely.
 
-Acceptance: an effectful cyclic body stores, continues natively and later exits
-at the correct PC with exactly-once effects; a hot loop crosses a non-inlined
-call; a separate allocation/closure consumer resumes after a completing helper.
-Exercise aliasing, mutation, stack growth, collection, exceptions and invalidation.
-A single generic call must not disqualify the surrounding computation.
+Acceptance: native stores followed by exact recovery; a loop crossing a generic
+call; and a separate allocation/closure consumer continuing after a completed
+helper. Exercise aliasing, coercion, mutation, stack growth, collection, exceptions,
+interrupts and invalidation. A single call must not disqualify surrounding work.
 
-### 4. Optimize and allocate across the connected cyclic graph
+### 4. Complete cyclic optimization and allocation — partial
 
-Make liveness, representation/type/range inference and memory facts converge over
-cycles, with edge phi uses and recovery states included. Enable sound CSE/load
-elimination, forwarding, redundant-guard removal, dead-code elimination, invariant
-hoisting and proven bounds-check elimination on cyclic graphs. Keep useful values
-unboxed across blocks/calls; preserve overflow, shifts, -0, NaN, holes and coercions.
+Extend fixed-point facts with type/range reasoning, DCE, LICM and proven bounds
+removal. Preserve overflow, shifts, -0, NaN, holes and coercion semantics. Add
+call-aware allocation, safe edge coalescing, rematerialization and contexts selected
+from actual allocation. Scalar replacement waits for object reconstruction at exits.
 
-Replace conservative graph-wide join reservations and flat-order allocation with
-GPR/FPR live ranges across blocks, call clobbers and target-derived availability.
-Coalesce edge copies safely, reuse dead operands and rematerialize cheap values.
-Select SLJIT context from actual allocation. Defer scalar replacement until roots
-and recovery can reconstruct eliminated objects. Develop these passes alongside
-steps 2–3 where possible; do not postpone them for more coverage experiments.
+Architecture acceptance: bytecode and disassembly demonstrate working motion,
+guard removal, call preservation and allocation on actual native paths; focused
+correctness and bounded compile/memory checks pass. Repeatable matched timing
+wins remain a separate performance gate; static instruction counts do not close it.
 
-Acceptance: bytecode and native disassembly identify fewer executed checks,
-loads/stores, conversions or spills, and matched timings show repeatable wins
-across relevant workload clusters. Static instruction counts alone are insufficient.
-
-### 5. Close runtime, admission and full-suite gaps
+### 5. Close runtime and full-suite gaps — performance phase
 
 Profile remaining allocation/GC, strings, environments, regexp and frontend costs.
-Optimize dominant runtime kernels; measure code usefulness, compilation, metadata/RSS,
-retirement/recompilation and GC before changing budgets.
+Optimize dominant kernels; measure usefulness, metadata/RSS, compilation and
+retirement before changing admission budgets. At performance milestones run at
+least **three alternating matched full-suite pairs**, preserving every result,
+geometric mean and resource costs. Only an actual qualifying score closes 50K.
 
-At capability/performance milestones, run the original full suite with at least
-three alternating matched pairs; publish every result, geometric mean and resource
-costs. Only an actual score under those conditions closes the 50K objective.
+## Iteration rules
 
-## Iteration rules and retained traps
+Prove native activation and correct output first. During this phase use focused
+correctness, allocation-failure, GC, recovery and native-code checks. Once tuning
+resumes, run uninstrumented pairs
+without concurrent builds/tests/profiling; investigate repeatable mini regressions
+above roughly 3%. Run appropriate differential, embedding ARM64/x64, ASan/GC and
+stress checks. Infrastructure can land without a speed claim only when it enables
+a concrete consumer with bounded cost. Do not infer nonaliasing from descriptor
+IDs, reuse entry snapshots after effects, or replay completed stores on retirement.
 
-For each slice prove the intended generated path executes, validate output, then
-run uninstrumented alternating timings without concurrent builds/profiling/tests.
-Confirm promising gains with longer pairs; investigate repeatable mini regressions
-above roughly 3%. Infrastructure may land without a speed claim only when it enables
-a concrete consumer with bounded cost. Run appropriate interpreter/JIT differential,
-embedding ARM64/x64, ASan/GC and stress checks before promotion.
-
-Blind budget/window/spill increases and interpreter capture/WIDE fusions have
-repeatedly lost. Function-tier property continuations also lost despite increased
-native coverage; helper joins must reconcile flow/ownership and use the correct
-frame window. Do not infer nonaliasing from descriptor IDs or treat entry-only
-global snapshots as valid after effects. Reuse experimental pieces selectively.
-
-History: `git show 28d16112:plans/113-fifty-thousand-octane.md`. Evidence remains in
-`plans/113-fifty-thousand-octane/`. Keep this file focused on current architecture,
-next milestones and measured acceptance.
+Keep commit history in Git and detailed experiments in the linked evidence.
