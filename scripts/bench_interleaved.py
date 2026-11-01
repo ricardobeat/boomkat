@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shlex
 import statistics
 import subprocess
 import time
@@ -14,8 +15,12 @@ p.add_argument('candidate', type=Path)
 p.add_argument('files', nargs='+', type=Path)
 p.add_argument('--out', type=Path, required=True)
 p.add_argument('--pairs', type=int, default=7)
+p.add_argument('--jit', action='store_true', help='pass --jit to the engine')
+p.add_argument('--engine-args', default='',
+               help="extra engine flags as one token (e.g. --engine-args='--jit --jit-stress')")
 a = p.parse_args()
 a.out.mkdir(parents=True, exist_ok=True)
+engine_args = (['--jit'] if a.jit else []) + shlex.split(a.engine_args)
 binaries = [a.baseline.resolve(), a.candidate.resolve()]
 rows = []
 use_time_l = True
@@ -25,7 +30,7 @@ for path in a.files:
     for pair in range(-1, a.pairs):
         for side in ([0, 1] if pair % 2 == 0 else [1, 0]):
             start = time.perf_counter()
-            command = [str(binaries[side]), '--script', str(path.resolve())]
+            command = [str(binaries[side]), *engine_args, '--script', str(path.resolve())]
             r = subprocess.run((['/usr/bin/time', '-l'] if use_time_l else []) + command,
                                capture_output=True, text=True, timeout=120)
             if use_time_l and r.returncode == 1 and 'sysctl kern.clockrate: Operation not permitted' in r.stderr:
@@ -47,8 +52,7 @@ for path in a.files:
                         if 'maximum resident set size' in line:
                             rss[side].append(int(line.split()[0]))
     def normalize(output):
-        if path.stem in ('bench_date', 'bench_regexp'):
-            output = re.sub(r'\b\d+(?:\.\d+)? ms\b', '<time> ms', output)
+        output = re.sub(r'\b\d+(?:\.\d+)? ms\b', '<time> ms', output)
         if 'scene_churn:' in output or 'vdom_churn:' in output:
             output = re.sub(r'\b(total|worst_frame)=\d+ms', r'\1=<time>ms', output)
         return output

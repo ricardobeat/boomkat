@@ -473,6 +473,11 @@ relex-stats SCRIPT:
     @make out/boomkat_relexstats 2>/dev/null || c3c build boomkat_relexstats
     ./out/boomkat_relexstats {{SCRIPT}}
 
+# Native-compilation census: coverage, exits by opcode, code budget (e.g. `just sljit-stats --jit --script bench/mini/gbemu.js`)
+sljit-stats *ARGS:
+    @make out/boomkat_sljitstats 2>/dev/null || c3c build boomkat_sljitstats
+    ./out/boomkat_sljitstats --stats {{ARGS}}
+
 # Census AST acceptance; AST_LEGACY_BIN adds a saved compiler comparison
 ast-census *ARGS:
     @make out/boomkat_debug 2>/dev/null || c3c build boomkat_debug

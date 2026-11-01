@@ -59,6 +59,42 @@
         "vendor/sljit/sljit_src"
       ]
     },
+    "boomkat_sljitstats": {
+      "type": "executable",
+      "name": "boomkat_sljitstats",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "SLJIT_STATS",
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "SLJIT",
+        "SLJIT_LOOP_RESERVE",
+        "SLJIT_READ_REFRESH",
+        "SLJIT_ARRAY_NAMED_READ"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "boomkat_slim": {
       "type": "executable",
       "name": "boomkat_slim",

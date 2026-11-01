@@ -67,7 +67,7 @@ SLJIT_DEPS := $(wildcard vendor/sljit/sljit_src/*.h vendor/sljit/sljit_src/*.c v
 
 PREFIX ?= /usr/local
 
-.PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress clean \
+.PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_sljitstats boomkat_gc_stress clean \
         shared boomkat-stress install boomkat-full-icu
 
 all: lib test262_runner boomkat boomkat-full-icu
@@ -84,6 +84,7 @@ boomkat_tiny: out/boomkat_tiny
 boomkat_tiny_compile: out/boomkat_tiny_compile
 boomkat-full-icu: out/boomkat-full-icu
 boomkat_debug: out/boomkat_debug
+boomkat_sljitstats: out/boomkat_sljitstats
 # Also deliberately out of `all`: GC_STRESS collects at every allocation, which
 # makes the binary orders of magnitude slower. It is the only build that turns a
 # missed GC root into a deterministic failure instead of a rare field crash.
@@ -116,6 +117,10 @@ endif
 out/boomkat: project.json $(call target_sources,boomkat) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat
+
+out/boomkat_sljitstats: project.json $(call target_sources,boomkat_sljitstats) $(SLJIT_DEPS)
+	$(C3C_BUILD) boomkat_sljitstats $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_sljitstats
 
 out/boomkat-full-icu: project.json $(call target_sources,boomkat-full-icu) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat-full-icu $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
