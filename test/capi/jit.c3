@@ -883,6 +883,41 @@ fn void check_helper_result_receiver_alias() @feat(SLJIT) {
     $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued != 0); $endif
 }
 
+fn void check_artifact_inventory(Heap* h) @feat(SLJIT) {
+    usz code, metadata, retired;
+    JitArtifact* previous;
+    for (JitArtifact* owner = h.jit_artifacts; owner != null; owner = owner.next) {
+        @check(owner.previous == previous && owner.state == JitArtifactState.LIVE);
+        code += owner.code_bytes;
+        metadata += owner.metadata_bytes;
+        previous = owner;
+        if (owner.kind == JitArtifactKind.FUNCTION_CODE) {
+            FunctionPlan* plan = owner.payload;
+            @check(owner == &plan.artifact && owner.code_bytes == plan.code_bytes);
+            @check(owner.function.sljit_function == plan);
+            if (plan.ssa_region != null) {
+                @check(plan.ssa_region.code_owner == owner);
+                @check(owner.metadata_bytes >= FunctionPlan::size + vm::sljit_loop_metadata_bytes(plan.ssa_region));
+            }
+            for (FunctionCallLink* link = plan.calls; link != null; link = link.next) {
+                @check(link.registered);
+                bool found;
+                for (FunctionCallLink* incoming = link.target.sljit_incoming_calls; incoming != null; incoming = incoming.target_next) {
+                    if (incoming == link) { found = true; break; }
+                }
+                @check(found);
+            }
+        }
+    }
+    for (JitArtifact* owner = h.jit_retired_artifacts; owner != null; owner = owner.retired_next) {
+        @check(owner.state == JitArtifactState.RETIRED);
+        code += owner.code_bytes;
+        metadata += owner.metadata_bytes;
+        retired += owner.code_bytes;
+    }
+    @check(code == h.jit_code_bytes && metadata == h.jit_metadata_bytes && retired == h.jit_retired_code_bytes);
+}
+
 fn void check_numeric_pipeline() @feat(SLJIT) {
     // Earlier fixtures deliberately poison indexed prototypes. Use a fresh
     // runtime so this check requires successful compiled push continuations.
@@ -1482,5 +1517,7 @@ fn void main() {
     check_ssa_calls(&first, &a);
     check_ssa_leaf(&first, &a);
     check_ssa_call_regions(&first, &a);
+    check_artifact_inventory(first.rt.heap);
+    check_artifact_inventory(second.rt.heap);
     io::printn("embedding JIT: PASS");
 }

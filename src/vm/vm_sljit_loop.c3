@@ -1967,6 +1967,8 @@ fn LoopNative loop_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(SLJ
 fn void sljit_loop_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
     LoopPlan* plan = artifact.payload;
     if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
+    ssa_helper_sites_free(h, plan);
+    ssa_plan_data_free(h, plan);
     h.free_func(h.heap_udata, plan);
 }
 
