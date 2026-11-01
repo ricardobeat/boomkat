@@ -741,6 +741,51 @@ fn int stop_after_polls(void* runtime, void* opaque) {
     return *polls >= 3 ? 1 : 0;
 }
 
+// Detaching an owner during a suspended generated invocation must leave code
+// and metadata alive and charged until its outer publication scope finishes.
+fn void check_artifact_retirement() @feat(SLJIT) {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    eval(&context, "function ownerTarget(x){return x+3;}");
+    for (uint i = 0; i < 160; i++) eval(&context, "if(ownerTarget(4)!==7)throw 'owner';");
+    Heap* h = runtime.rt.heap;
+    CompiledFunction* cf = named_function(&runtime, "ownerTarget");
+    @check(cf != null && cf.sljit_function != null);
+    FunctionPlan* plan = cf.sljit_function;
+    usz total = h.jit_code_bytes;
+    usz bytes = plan.artifact.code_bytes;
+    usz metadata = h.jit_metadata_bytes;
+    usz owner_metadata = plan.artifact.metadata_bytes;
+    ulong capacity = h.jit_capacity_generation;
+    ulong generation = vm::sljit_artifact_enter(h, &plan.artifact);
+    @check(generation != 0 && vm::sljit_artifact_is_live(&plan.artifact, generation));
+    vm::sljit_function_free(h, cf);
+    @check(cf.sljit_function == null && plan.artifact.state == JitArtifactState.RETIRED);
+    @check(!vm::sljit_artifact_is_live(&plan.artifact, generation));
+    @check(vm::sljit_artifact_enter(h, &plan.artifact) == 0);
+    @check(h.jit_code_bytes == total && h.jit_retired_code_bytes == bytes);
+    @check(h.jit_metadata_bytes == metadata && h.jit_capacity_generation == capacity);
+    cf.sljit_budget_wait = true;
+    cf.sljit_function_calls = uint::max;
+    cf.sljit_capacity_seen = capacity;
+    vm::sljit_budget_retry_function(h, cf);
+    @check(cf.sljit_budget_wait && cf.sljit_function_calls == uint::max);
+    vm::sljit_artifact_leave(h, &plan.artifact);
+    @check(h.jit_code_bytes == total - bytes && h.jit_retired_code_bytes == 0);
+    @check(h.jit_metadata_bytes == metadata - owner_metadata && h.jit_native_active == 0);
+    @check(h.jit_capacity_generation != capacity);
+    vm::sljit_budget_retry_function(h, cf);
+    @check(!cf.sljit_budget_wait && cf.sljit_function_calls == 0);
+    for (uint i = 0; i < 160; i++) eval(&context, "if(ownerTarget(4)!==7)throw 'recompile';");
+    @check(cf.sljit_function != null);
+    @check(((FunctionPlan*)cf.sljit_function).artifact.generation != generation);
+}
+
 fn void check_numeric_pipeline() @feat(SLJIT) {
     // Earlier fixtures deliberately poison indexed prototypes. Use a fresh
     // runtime so this check requires successful compiled push continuations.
@@ -1106,6 +1151,7 @@ fn void check_function_missing_caches(JsRuntime* runtime) {
 
 fn void main() {
     check_dependency_gc();
+    check_artifact_retirement();
     check_parameter_alias_roles();
     check_decoded_bytecode();
     check_decoded_register_uses();
@@ -1249,6 +1295,10 @@ fn void main() {
                 ((FunctionPlan*)candidate.sljit_function).last_use = first.rt.heap.jit_clock;
             }
         }
+        for (JitArtifact* artifact = first.rt.heap.jit_artifacts; artifact != null; artifact = artifact.next) {
+            artifact.last_use = first.rt.heap.jit_clock;
+        }
+        target_plan.artifact.last_use = 1;
         target_plan.last_use = 1;
         // A region can leave the warmup counter at its terminal sentinel even
         // though its entry was never retired as unproductive. Eviction must
