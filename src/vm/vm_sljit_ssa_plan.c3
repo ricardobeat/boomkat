@@ -81,10 +81,19 @@ fn FunctionPlan* ssa_function_wrap(CompiledFunction* cf, ColdCtx* cold, LoopPlan
     body.code_owner = &plan.artifact;
     cf.sljit_function = plan;
     sljit_artifact_publish(h, &plan.artifact, cf, plan, FUNCTION_CODE,
-        plan.code_bytes, bytes + LoopPlan::size + body.ssa_data.bytes, &sljit_function_release);
+        plan.code_bytes, sljit_function_metadata_bytes(plan, bytes), &sljit_function_release);
     // No native call_entry exists: linked callers keep their normal call_fn
     // bridge, which enters this same shared interpreter gateway.
     sljit_relink_calls(h, cf);
     cf.sljit_function_calls = uint::max - 1;
     return plan;
 }
+
+// Decoded bodies use generic helpers instead of indexing legacy per-window
+// descriptor tables. Larger PCs never enter those fixed inline adapters.
+fn uint ssa_memory_site(LoopPlan* plan, uint at) @feat(SLJIT) => plan.ssa_data != null && plan.ssa_data.decoded_body
+    ? 0 : at < LOOP_SPAN ? (uint)plan.memory_at[at] : 0;
+fn uint ssa_binding_site(LoopPlan* plan, uint at) @feat(SLJIT) => plan.ssa_data != null && plan.ssa_data.decoded_body
+    ? 0 : at < LOOP_SPAN ? (uint)plan.binding_at[at] : 0;
+fn uint ssa_intrinsic_site(LoopPlan* plan, uint at) @feat(SLJIT) => plan.ssa_data != null && plan.ssa_data.decoded_body
+    ? 0 : at < LOOP_SPAN ? (uint)plan.intrinsic_at[at] : 0;

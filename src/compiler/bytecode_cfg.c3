@@ -123,7 +123,7 @@ fn MoveelimRoles bytecode_cfg_roles(Opcode op) {
         case LDREG: case UNP: case UNM: case BNOT: case LNOT: case TYPEOF: case GETPROTO: case TONUMERIC:
         case GETPROPC: case GETPROPC_CACHED:
             return { .b_read = true, .a_write = true };
-        case CLOSURE: case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
+        case LDCONST: case LDINT: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case LDTHIS: case GETTHISC: case VOID:
         case GETVAR: case GETGLOBAL: case GETBOUND: case GETCAP: case TYPEOFIDENT:
         case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL:

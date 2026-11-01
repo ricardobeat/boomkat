@@ -134,7 +134,7 @@ fn bool sljit_artifact_retire_fragment(Heap* h, JitArtifact* owner, void* code, 
 // Persistent metadata follows executable ownership. Compiler arenas and
 // invocation scratch have separate, shorter lifetimes and are not included.
 fn usz sljit_loop_metadata_bytes(LoopPlan* plan) @feat(SLJIT) {
-    return LoopPlan::size + ssa_helper_metadata_bytes(plan);
+    return LoopPlan::size + ssa_helper_metadata_bytes(plan) + (plan.ssa_data == null ? 0 : plan.ssa_data.bytes);
 }
 fn usz sljit_function_metadata_bytes(FunctionPlan* plan, usz allocation) @feat(SLJIT) {
     usz bytes = allocation;
