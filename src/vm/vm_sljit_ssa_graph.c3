@@ -963,7 +963,8 @@ fn void ssa_int_fixpoint(SsaGraph* g) @feat(SLJIT) {
     LoopPlan* plan       = g.plan;
     bool* assigned = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
     if (g.failed) return;
-    bool* int_reg;
+    bool* int_reg = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    if (g.failed) return;
     for (uint i = 0; i < g.reg_count; i++) int_reg[i] = true;
     uint* words = (uint*)ssa_storage_alloc(g, g.reg_words, uint::size);
     if (g.failed) return;
