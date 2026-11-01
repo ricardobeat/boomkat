@@ -238,8 +238,11 @@ fn bool loop_lookup(Heap* h, HObject* start, void* key, bool getter, int builtin
     return false;
 }
 fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) {
-    if (pc.op == Opcode.GETCAP) {
-        hobject::PropValue* value = capture_value_slot(cold.act, pc.get_bc(), cold.heap);
+    return loop_binding_effective(pc, { pc.op, pc.a, pc.b, pc.c }, cold, result);
+}
+fn bool loop_binding_effective(Instruction* pc, DecodedInsn ins, ColdCtx* cold, TVal* result) @feat(SLJIT) {
+    if (ins.op == Opcode.GETCAP) {
+        hobject::PropValue* value = capture_value_slot(cold.act, ins.get_bc(), cold.heap);
         if (value != null) {
             *result = value.get();
             return !env::is_tdz_sentinel(result);
@@ -248,7 +251,7 @@ fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) 
         // The bytecode IC is shared by every closure of this function. The
         // threaded GETVAR handler checks the environment head before using
         // its cached slot; a loop entry must make the same check.
-        hobject::VarICEntry* ic = (pc.op == Opcode.GETGLOBAL || pc.op == Opcode.CALL_GLOBAL) ? th_global_ic_hit(pc, cold)
+        hobject::VarICEntry* ic = (ins.op == Opcode.GETGLOBAL || ins.op == Opcode.CALL_GLOBAL) ? th_global_ic_hit(pc, cold)
             : (!th_var_ic_moved(pc, cold) ? th_var_ic_hit(pc, cold) : null);
         if (ic != null && !ic.prop_flags.is_accessor) {
             *result = ic.slot_ptr.get();
@@ -256,8 +259,8 @@ fn bool loop_binding(Instruction* pc, ColdCtx* cold, TVal* result) @feat(SLJIT) 
         }
     }
     CompiledFunction* cf = cold.vm.current_func;
-    uint constant        = pc.op == Opcode.CALL_GLOBAL || pc.op == Opcode.CALL_VAR ? pc.c : pc.get_bc();
-    if (pc.op == Opcode.GETCAP) {
+    uint constant        = ins.op == Opcode.CALL_GLOBAL || ins.op == Opcode.CALL_VAR ? ins.c : ins.get_bc();
+    if (ins.op == Opcode.GETCAP) {
         if (constant >= cf.capture_count) return false;
         constant = cf.capture_names[constant];
     }

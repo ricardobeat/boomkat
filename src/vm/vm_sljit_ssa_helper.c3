@@ -79,6 +79,7 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     self.addr_memory = -1;
     self.addr_numeric_load = false;
     if (self.g.values[value].dst_reg < 0) return;
+    if (self.g.values[value].dst_reg < 0) return;
     if (self.plan.ssa_data != null) {
         self.e.mov(r0, 0, mem | self.state, $reflect(LoopState.execution).offset);
         self.e.mov(r0, 0, mem | r0, $reflect(SsaExecution.input_values).offset);
