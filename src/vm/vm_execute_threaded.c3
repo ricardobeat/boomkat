@@ -3594,6 +3594,9 @@ fn Instruction* run_threaded_burst(Instruction* pc, Instruction* code_end, TVal*
                 || (pc == cf.code && cf.sljit_function_calls != uint::max)) {
                 pc = sljit_function_entry(pc, regs, cold);
                 regs = cold.act.bottom;
+                if (cold.vm.threaded_handoff != ThreadedHandoff.NONE) {
+                    return pc;
+                }
             }
         }
     $endif

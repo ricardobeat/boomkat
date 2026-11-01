@@ -92,7 +92,10 @@ enum SsaOp : char {
     GOTO,
     RETURN,
     // Publish the pre-bytecode frame and resume that unperformed operation.
-    EXIT
+    EXIT,
+    // A published-frame, collecting/reentrant operation with an internal
+    // native successor. Unlike EXIT, its effect runs before native resumes.
+    HELPER
 }
 
 fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
@@ -103,6 +106,7 @@ fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
 }
 
 struct SsaValue @feat(SLJIT) {
+    SsaHelperSite* helper;
     SsaOp op;
     SsaRep rep;
     int a;
@@ -649,6 +653,12 @@ fn bool ssa_loop_eligible(LoopPlan* plan, CompiledFunction* cf, Heap* h) @feat(S
                 if (plan.memory_at[pos - plan.begin] != 0) return false;
                 if (!plan.ssa_recoverable && function_inline_ssa_candidate(cf, pos, h, plan.ssa_function != null) == null) return false;
                 continue;
+            case NEWOBJ:
+            case NEWOBJ_SHAPE:
+            case NEWARR:
+            case NEWARR_CONST:
+                if (!plan.ssa_recoverable) return false;
+                continue;
             default:
                 return false;
         }
@@ -727,6 +737,10 @@ fn void ssa_infer(
             case GETGLOBAL:
             case LDINT:
             case LDCONST:
+            case NEWOBJ:
+            case NEWOBJ_SHAPE:
+            case NEWARR:
+            case NEWARR_CONST:
                 break;
             case CALL:
             case CALL_UNDEF_THIS:
