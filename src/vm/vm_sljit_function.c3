@@ -916,6 +916,10 @@ fn bool function_typed_body(CompiledFunction* cf) @feat(SLJIT) {
 // several each, so a typed body gets three times the eight fixups per bytecode
 // that every other body is allowed.
 const uint REGION_LINK_LIMIT = 8192;
+// A guard-rich but modest body (a long switch is the common case) can need
+// more fixups than its admission estimate. Larger bodies keep the hard bound:
+// spending the shared code budget on them starves the functions that do pay.
+const uint FUNCTION_LINK_GROWTH_OPS = 256;
 fn uint function_link_limit(CompiledFunction* cf) @feat(SLJIT) {
     if (function_typed_body(cf)) return LINK_LIMIT_MAX;
     uint sized = cf.code_count * 8;
@@ -931,6 +935,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     FunctionEmitter* f = &emitter;
     LoopEmitter* out   = &f.out;
     out.link_limit = function_link_limit(cf);
+    out.link_growth = plan.begin == 0 && cf.code_count <= FUNCTION_LINK_GROWTH_OPS ? LINK_LIMIT_MAX : 0;
     out.function_mode = true;
     f.cf = cf;
     f.cold = cold;

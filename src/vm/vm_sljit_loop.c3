@@ -24,6 +24,10 @@ const uint LOOP_SPAN      = 512;
 const uint SSA_SPAN       = 128;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
+// Binding descriptors hold either invocation-local variables resolved through
+// the variable IC or captures resolved through the callee's capture refs.
+const char BINDING_VAR     = 0;
+const char BINDING_CAPTURE = 1;
 const uint LOOP_THIS      = LOOP_REGS + LOOP_BINDINGS;
 // A fixup costs one arena block per four records; the directory that indexes
 // them is heap-allocated per emitter, so this ceiling only bounds memory.
@@ -122,6 +126,7 @@ struct LoopPlan @feat(SLJIT) {
     uint memory_count;
     uint[LOOP_BINDINGS] bindings;
     CompiledFunction*[LOOP_BINDINGS] binding_functions;
+    char[LOOP_BINDINGS] binding_kind;
     uint binding_count;
     char[LOOP_SPAN] memory_at;
     char[LOOP_SPAN] binding_at;
@@ -166,6 +171,9 @@ struct LoopEmitter @feat(SLJIT) {
     LoopLink** link_blocks;
     uint link_count;
     uint link_limit;
+    // Highest capacity growth may reach; zero keeps the admission estimate as
+    // a hard bound. Only whole-function bodies opt in.
+    uint link_growth;
     bool link_limit_reached @if($feat(SLJIT_STATS));
     bool function_mode;
     // Inlined callees keep their registers in a private scratch window, so the
@@ -275,6 +283,24 @@ fn int loop_record_binding(LoopPlan* plan, uint pc, ColdCtx* cold, LoopState* sa
     if (!feedback && !loop_binding(cf.code + pc, cold, &sample.bindings[id])) return -1;
     plan.binding_count++;
     plan.bindings[id] = pc;
+    plan.binding_at[pc - plan.begin] = (char)(id + 1);
+    return (int)id;
+}
+// A frameless leaf borrows the callee's closure refs instead of walking an
+// activation. Captures are resolved once at entry, like variable IC slots.
+fn int loop_record_capture(LoopPlan* plan, uint pc, CompiledFunction* cf) @feat(SLJIT) {
+    uint index = cf.code[pc].get_bc();
+    for (uint i = 0; i < plan.binding_count; i++) {
+        if (plan.binding_kind[i] != BINDING_CAPTURE) continue;
+        if (cf.code[plan.bindings[i]].get_bc() == index) {
+            plan.binding_at[pc - plan.begin] = (char)(i + 1);
+            return (int)i;
+        }
+    }
+    if (plan.binding_count == LOOP_BINDINGS) return -1;
+    uint id = plan.binding_count++;
+    plan.bindings[id] = pc;
+    plan.binding_kind[id] = BINDING_CAPTURE;
     plan.binding_at[pc - plan.begin] = (char)(id + 1);
     return (int)id;
 }
@@ -502,7 +528,7 @@ fn bool loop_prepare(LoopPlan* plan, LoopState* state, ColdCtx* cold, bool gener
     return true;
 }
 
-fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int region_begin = -1, bool inline_calls = false, CompiledFunction* target_cf = null, bool allow_backedges = false) @feat(SLJIT) {
+fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int region_begin = -1, bool inline_calls = false, CompiledFunction* target_cf = null, bool allow_backedges = false, bool multi_write = false) @feat(SLJIT) {
     bool feedback = target_cf != null;
     CompiledFunction* cf = feedback ? target_cf : cold.vm.current_func;
     int begin            = region_begin >= 0 ? region_begin : loop_target(cf.code[end], end);
@@ -600,7 +626,11 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case GETCAP:
 
                 {
-                    int id = loop_record_binding(plan, pos, cold, &sample, feedback, cf);
+                    // A whole-body leaf has no activation: its captures come
+                    // from the callee object, not from the caller's env chain.
+                    int id = ins.op == Opcode.GETCAP && feedback
+                        ? loop_record_capture(plan, pos, cf)
+                        : loop_record_binding(plan, pos, cold, &sample, feedback, cf);
                     if (id < 0) return false;
                     origin[ins.a] = (int)LOOP_REGS + id;
                     method[ins.a] = -1;
@@ -633,9 +663,11 @@ fn bool loop_analyze(LoopPlan* plan, uint end, TVal* regs, ColdCtx* cold, int re
             case PUTTHISC:
             case PUTPROPC:
                 {
-                    // One final own-slot update: every refusal precedes it.
-                    if (!feedback || pos + 1 != end || cf.code[end].op != Opcode.RETUNDEF
-                        || cf.ic_entries == null) return false;
+                    // One final own-slot update commits after every fallible
+                    // guard. A whole-body leaf may also write several slots
+                    // when it reads no memory, so replaying it is idempotent.
+                    if (!feedback || (!multi_write && (pos + 1 != end
+                        || cf.code[end].op != Opcode.RETUNDEF)) || cf.ic_entries == null) return false;
                     if (ins.op == Opcode.PUTPROPC && $feat(SLJIT_NO_SSA_FIELD_IR)) return false;
                     ICEntry* ic = (ICEntry*)cf.ic_entries + pos;
                     Shape* shape = cold.heap.get_shape(ic.shape_id);
@@ -1091,22 +1123,50 @@ fn void LoopEmitter.labels_free(&self) @feat(SLJIT) {
     self.heap.free_func(self.heap.heap_udata, self.labels);
     self.labels = null;
 }
+fn bool LoopEmitter.reserve_links(&self, uint capacity, uint prior = 0) @feat(SLJIT) {
+    uint blocks = (capacity + LOOP_LINK_BLOCK - 1) / LOOP_LINK_BLOCK;
+    LoopLink** grown = (LoopLink**)self.heap.alloc_func(self.heap.heap_udata, (usz)blocks * void*::size);
+    if (grown == null) return false;
+    for (uint i = 0; i < blocks; i++) grown[i] = null;
+    if (self.link_blocks != null && prior != 0) {
+        uint used = (prior + LOOP_LINK_BLOCK - 1) / LOOP_LINK_BLOCK;
+        if (used > blocks) used = blocks;
+        for (uint i = 0; i < used; i++) grown[i] = self.link_blocks[i];
+    }
+    if (self.link_blocks != null) self.heap.free_func(self.heap.heap_udata, self.link_blocks);
+    self.link_blocks = grown;
+    return true;
+}
+// A body that needs more fixups than its admission estimate still compiles:
+// the directory doubles instead of failing the whole function. Only the
+// absolute ceiling ends native compilation.
+fn bool LoopEmitter.grow_links(&self) @feat(SLJIT) {
+    uint capacity = self.link_capacity();
+    uint next = capacity * 2;
+    if (next > self.link_growth) next = self.link_growth;
+    if (next <= capacity) {
+        $if $feat(SLJIT_STATS): self.link_limit_reached = true; $endif
+        return false;
+    }
+    if (!self.reserve_links(next, capacity)) return false;
+    self.link_limit = next;
+    return true;
+}
 fn void LoopEmitter.add_link(&self, LoopLink link) @feat(SLJIT) {
     // SLJIT silently returns null above 128 bytes (64 on 32-bit hosts).
     // Growing a fixup must not accidentally disable all native compilation.
     $assert(LOOP_LINK_BLOCK * LoopLink::size <= 16 * usz::size);
-    $if $feat(SLJIT_STATS):
-        if (self.link_count == self.link_capacity()) self.link_limit_reached = true;
-    $endif
-    if (link.jump == null || self.link_count == self.link_capacity()) {
+    if (link.jump == null) {
         self.e.failed = true;
         return;
     }
     if (self.link_blocks == null) {
-        uint blocks = (self.link_capacity() + LOOP_LINK_BLOCK - 1) / LOOP_LINK_BLOCK;
-        self.link_blocks = (LoopLink**)self.heap.alloc_func(self.heap.heap_udata, (usz)blocks * void*::size);
-        if (self.link_blocks == null) { self.e.failed = true; return; }
-        for (uint i = 0; i < blocks; i++) self.link_blocks[i] = null;
+        if (!self.reserve_links(self.link_capacity())) { self.e.failed = true; return; }
+    } else if (self.link_count == self.link_capacity()) {
+        // The capacity is a memory estimate, not a semantic bound: a
+        // guard-rich body (a long switch is the common case) simply needs
+        // more fixups.
+        if (!self.grow_links()) { self.e.failed = true; return; }
     }
     uint block = self.link_count / LOOP_LINK_BLOCK;
     if (self.link_blocks[block] == null) {

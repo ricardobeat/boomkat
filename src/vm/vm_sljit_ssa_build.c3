@@ -244,7 +244,12 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                     {
                         if (!plan.ssa_commit) return false;
                         int value = g.current[ins.op == Opcode.PUTTHISC ? ins.a : ins.b];
-                        if (value < 0 || !ssa_numeric_rep(g.values[value].rep)) return false;
+                        // A boxed value may still hold a reference, which the
+                        // store guard refuses before anything is released. The
+                        // refusal is deterministic in the body's own writes, so
+                        // replaying it writes the same slots with the same
+                        // values and lets the interpreter do the counted store.
+                        if (value < 0 || g.values[value].rep == RAW) return false;
                         value = ssa_convert(g, value, BOXED, false);
                         ssa_use(g, value);
                         uint memory = (uint)plan.memory_at[at] - 1;

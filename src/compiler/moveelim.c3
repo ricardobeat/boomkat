@@ -169,6 +169,8 @@ fn bool moveelim_producer_allowed(Opcode op) {
         case Opcode.GETVAR:
         case Opcode.GETBOUND:
         case Opcode.GETGLOBAL:
+        case Opcode.GETCAP:
+        case Opcode.TONUMERIC:
         case Opcode.TYPEOFIDENT:
             return true;
         default:
