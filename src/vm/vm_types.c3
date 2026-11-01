@@ -171,6 +171,11 @@ struct Activation {
     TVal tv_func;
     // The caller's valstack_top at CALL time, restored on RET without recomputing.
     TVal* caller_valstack_top;
+    // The most recent frame a tail call replaced, and where it made the call.
+    // Valid only under ACT_FLAG_TAIL_CALLED. CompiledFunctions live until heap
+    // teardown, so the borrow cannot dangle.
+    void* tail_caller;
+    Instruction* tail_caller_pc;
 }
 
 const uint ACT_FLAG_CONSTRUCT      = 1u << 1;
@@ -220,12 +225,15 @@ const uint ACT_FLAG_SUPER_REBIND   = 1u << 10;
 // register was borrowed (ACT_FLAG_BORROWED_CALLEE) from a binding the call can
 // reassign, or a tail call slid the frame down over the register that held it.
 const uint ACT_FLAG_CALLEE_OWNED   = 1u << 11;
+// A tail call took over this frame, and tail_caller/tail_caller_pc name the
+// caller it replaced, so stack traces can still show that frame.
+const uint ACT_FLAG_TAIL_CALLED    = 1u << 12;
 
 // The flags a frame may carry and still return through RET's and RETUNDEF's
 // fast paths. Each of the others asks the pop for work only the general path
 // does.
 const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
-    | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID;
+    | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID | ACT_FLAG_TAIL_CALLED;
 
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is

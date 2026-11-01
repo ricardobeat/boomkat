@@ -59,26 +59,43 @@ fn void error_append_frame(UnitBuf* out, char[] name, char[] file, bytecode::Sou
 
 // Append the current JS call stack to `out`, innermost frame first.
 //
-// Walks Vm.activations from the top down. The topmost activations belong to
-// the Error constructor itself (a native builtin, which has no
-// CompiledFunction), so frames without a compiled function are skipped
-// rather than emitted as placeholders.
+// Walks the active segment of Vm.activations from the top down, then each
+// caller segment a re-entrant call (a native builtin invoking a callback)
+// saved on shadow_act_list. Native frames have no CompiledFunction and are
+// skipped rather than emitted as placeholders.
 fn void error_append_stack_frames(UnitBuf* out, void* vm_ptr) {
     if (vm_ptr == null) return;
     Vm* vm = (Vm*)vm_ptr;
-    uint n = vm.activation_count;
+    error_append_segment_frames(out, vm.activations, vm.activation_count);
+    for (ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
+         shadow != null; shadow = (ShadowActFrame*)shadow.prev) {
+        error_append_segment_frames(out, shadow.acts, shadow.count);
+    }
+}
+
+fn void error_append_segment_frames(UnitBuf* out, Activation* acts, uint n) {
     while (n > 0) {
         n--;
-        Activation* act = &vm.activations[n];
-        CompiledFunction* cf = (CompiledFunction*)act.func;
-        if (cf == null) continue;
-        bytecode::SourcePosition pos;
-        if (act.curr_pc != null && cf.code != null) {
-            long off = (long)(act.curr_pc - cf.code);
-            if (off > 0 && off <= (long)cf.code_count) pos = cf.get_source_position((uint)(off - 1));
+        Activation* act = &acts[n];
+        error_append_compiled_frame(out, (CompiledFunction*)act.func, act.curr_pc);
+        // A proper tail call reused this frame. Show the caller it replaced;
+        // only the most recent one is kept, so a longer chain collapses to it.
+        if ((act.flags & vm::ACT_FLAG_TAIL_CALLED) != 0) {
+            error_append_compiled_frame(out, (CompiledFunction*)act.tail_caller, act.tail_caller_pc);
         }
-        error_append_frame(out, cf.get_name(), cf.get_filename(), pos);
     }
+}
+
+// Append a frame for `cf` paused at `pc`, the instruction after the call.
+// Native frames have no CompiledFunction and are skipped.
+fn void error_append_compiled_frame(UnitBuf* out, CompiledFunction* cf, Instruction* pc) {
+    if (cf == null) return;
+    bytecode::SourcePosition pos;
+    if (pc != null && cf.code != null) {
+        long off = (long)(pc - cf.code);
+        if (off > 0 && off <= (long)cf.code_count) pos = cf.get_source_position((uint)(off - 1));
+    }
+    error_append_frame(out, cf.get_name(), cf.get_filename(), pos);
 }
 
 // Build the `.stack` payload for a freshly constructed error: the
