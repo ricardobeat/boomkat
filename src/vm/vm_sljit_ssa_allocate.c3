@@ -83,7 +83,7 @@ fn void SsaAllocation.recovery(&self, ulong* live, uint pc, SsaFrameId frame = S
 fn void SsaAllocation.operands(&self, ulong* live, SsaValue v) @feat(SLJIT) {
     switch (v.op) {
         case NOP: case ARG: case PHI: case JOIN: case COPY: case GOTO:
-        case RECEIVER: case BINDING: case CONST_I: case CONST_F: case CONST_BOXED: break;
+        case RECEIVER: case BINDING: case FRESH_BINDING: case CONST_I: case CONST_F: case CONST_BOXED: break;
         case STORAGE: case PROTO_STORAGE: case CHECKFN: case CHECKPROTO:
         case CHECKSHAPE: case CHECKWRITE: case BNOT: case NEG:
         case TO_INT: case TO_INDEX: case TO_F64: case BOX_I: case BOX_F:
