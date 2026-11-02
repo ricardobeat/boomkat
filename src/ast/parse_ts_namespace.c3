@@ -63,8 +63,13 @@ fn uint? Parser.ts_namespace(&self, uint pos, uint* name) {
     bool merged = self.ts_merged_name(parts[0]);
     self.expect(TokenType.LBRACE)!;
     uint param;
-    uint body = self.node(NodeTag.BLOCK, pos, self.ts_namespace_body(parts[count - 1], pos, &param)!);
+    bool instantiated;
+    uint body = self.node(NodeTag.BLOCK, pos, self.ts_namespace_body(parts[count - 1], pos, &param, &instantiated)!);
     self.expect(TokenType.RBRACE)!;
+    *name = parts[0];
+    // A namespace that holds only types has no runtime object, as in
+    // TypeScript's output, so it declares no name a class could clash with.
+    if (!instantiated) return self.node(NodeTag.EMPTY_STMT, pos);
 
     // The inner namespaces come first: each one is declared in the namespace
     // that holds it and put on that namespace's object.
@@ -92,8 +97,9 @@ fn uint? Parser.ts_namespace(&self, uint pos, uint* name) {
 
 // The body of a namespace: its statements, with every exported member also
 // put on the namespace object. The namespace's parameter takes a name of its
-// own, so that a declaration in the body does not redeclare it.
-fn uint? Parser.ts_namespace_body(&self, uint name, uint pos, uint* param) {
+// own, so that a declaration in the body does not redeclare it. `instantiated`
+// says whether any statement of the body has a runtime effect.
+fn uint? Parser.ts_namespace_body(&self, uint name, uint pos, uint* param, bool* instantiated) {
     uint saved = self.ns_name;
     *param = self.ts_ns_param(name);
     self.ns_name = *param;
@@ -103,6 +109,10 @@ fn uint? Parser.ts_namespace_body(&self, uint name, uint pos, uint* param) {
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
         self.ts_namespace_statement()!;
+    }
+    *instantiated = false;
+    for (uint i = mark; i < self.scratch.len; i++) {
+        if (self.ast.tags.data[self.scratch.data[i]] != NodeTag.EMPTY_STMT) *instantiated = true;
     }
     // `return N;` hands the object back, so that the variable can hold it.
     self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, *param)));
@@ -147,7 +157,9 @@ fn void? Parser.ts_namespace_statement(&self) {
         uint name;
         uint decl = self.ts_namespace(pos, &name)!;
         self.scratch_push(decl);
-        if (exported) self.scratch_push(self.ts_namespace_assign(pos, name));
+        if (exported && self.ast.tags.data[decl] != NodeTag.EMPTY_STMT) {
+            self.scratch_push(self.ts_namespace_assign(pos, name));
+        }
         return;
     }
     if (self.ts_import_equals_ahead()) {

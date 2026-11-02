@@ -31,3 +31,9 @@ Counter.bump();
 console.log(Counter.count, JSON.stringify(Counter));
 Counter.count = 5;
 console.log(Counter.current());
+
+// A namespace that holds only types has no runtime object, so a class of its
+// name may follow it.
+namespace Shape { export interface Point { x: number } }
+class Shape { static sides = 4 }
+console.log(typeof Shape, Shape.sides);

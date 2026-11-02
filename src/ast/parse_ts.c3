@@ -372,54 +372,6 @@ fn void Parser.ts_record_decl(&self, uint stmt) {
     }
 }
 
-// Whether a declaration of `name` follows in the current statement list. A
-// namespace merges with a class or a function declared after it as well, so
-// the names that come later matter too.
-fn bool Parser.ts_decl_follows(&self, uint name) {
-    Token first = self.tok;
-    bool found = false;
-    bool decl = false;
-    bool ambient = false;
-    uint depth = 0;
-    while (true) {
-        Token t = self.tok;
-        if (t.type == TokenType.EOF_TOKEN) break;
-        if (depth == 0) {
-            if (t.type == TokenType.RBRACE) break;
-            if (decl && t.type == TokenType.IDENTIFIER && self.atom(t.str_value) == name) {
-                found = true;
-                break;
-            }
-        }
-        bool is_decl = depth == 0 && (t.type == TokenType.CLASS || t.type == TokenType.VAR
-            || t.type == TokenType.LET || t.type == TokenType.CONST || t.type == TokenType.ENUM
-            || self.is_word(t, "function"));
-        if (depth == 0 && self.is_word(t, "declare")) {
-            // An ambient declaration has no binding at runtime.
-            ambient = true;
-            decl = false;
-        } else if (is_decl) {
-            decl = !ambient;
-            ambient = false;
-        } else {
-            decl = false;
-        }
-        if (t.type == TokenType.LBRACE) {
-            depth++;
-        } else if (t.type == TokenType.RBRACE && depth > 0) {
-            depth--;
-        }
-        if (catch err = self.next()) break;
-    }
-    self.lex.seek_to_token(first);
-    self.has_peek = false;
-    self.peek_failed = false;
-    self.tok = first;
-    self.prev = first;
-    if (catch err_c = self.next()) return found;
-    return found;
-}
-
 // Drop the import specifiers whose local name this module also declares. Only
 // a type may share a name that way: the import is elided in the output, so the
 // binding it would declare must not clash with the declaration.
@@ -451,11 +403,12 @@ fn void Parser.ts_elide_shadowed_imports(&self, uint mark) {
     }
 }
 
-// Whether a namespace of this name merges with another declaration of it: a
-// class, a function or an enum of the same name in the same scope.
+// Whether a namespace of this name merges with a class, a function or an enum
+// of the same name declared before it in the same scope. TypeScript rejects a
+// namespace placed before the class or function it merges with, and an enum
+// merges either way round, so only the names declared already matter.
 fn bool Parser.ts_merged_name(&self, uint name) {
-    if (self.ts_scope_has(name)) return true;
-    return self.ts_decl_follows(name);
+    return self.ts_scope_has(name);
 }
 
 
@@ -486,6 +439,7 @@ fn uint? Parser.ts_statement(&self, uint pos, bool top_level) {
         if (self.is_word(pk, "namespace") || self.is_word(pk, "module")) {
             self.next()!;
             uint decl = self.ts_namespace(pos, &name)!;
+            if (self.ast.tags.data[decl] == NodeTag.EMPTY_STMT) return decl;
             return self.ts_export(pos, decl, name);
         }
         if (pk.type == TokenType.CONST) {
