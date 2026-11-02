@@ -548,6 +548,7 @@ fn uint? Parser.import_expr(&self) {
         self.next()!;
         if (self.tok.type != TokenType.RPAREN) {
             opts = self.assign_expr()!;
+            if (self.lex.ts_mode) self.ts_reject_import_assert(opts)!;
             if (self.tok.type == TokenType.COMMA) self.next()!;
         }
     }
