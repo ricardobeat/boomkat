@@ -19,3 +19,11 @@ try {
   console.log("caught:", (e as TypeError).name);
 }
 console.log(box.v?.length ?? "unset", m ?? -1);
+
+// A conditional type in an assertion keeps its own `?` and `:`, while the
+// conditional expression around an assertion keeps the rest.
+type Text = string;
+const asCond = raw as typeof raw extends Text ? 1 : 2;
+const inBranch = true ? raw as string : 0;
+const nested = (raw as unknown) === "s" ? raw as number extends Text ? "y" : "n" : "z";
+console.log(asCond, inBranch, nested);

@@ -15,7 +15,10 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
     TokenType prev_tt = TokenType.EOF_TOKEN;
     char[] prev_str = (char[])"";
     bool just_closed_obj = false;
-    bool saw_extends = false;
+    // The conditional types still open at depth 0: those that said `extends`
+    // and await their `?`, and those that said `?` and await their `:`.
+    int awaiting_question = 0;
+    int awaiting_colon = 0;
 
     for (;;) {
         TokenType tt = self.tok.type;
@@ -49,7 +52,7 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
                     case QUESTION:
                         // `a === b as T ? c : d` asks a question; a conditional
                         // type already said `extends` before its own `?`.
-                        if (!saw_extends) return;
+                        if (awaiting_question == 0) return;
                         break;
                     default: break;
                 }
@@ -65,8 +68,9 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
                     return;
                 case TokenType.COLON:
                     // An assertion in an expression ends at the `:` of the
-                    // conditional whose branch it is: `a ? b as T : c`.
-                    if (expression) return;
+                    // conditional whose branch it is, `a ? b as T : c`, unless
+                    // a conditional type of its own awaits that `:`.
+                    if (expression && awaiting_colon == 0) return;
                     break;
                 case TokenType.ARROW:
                     if (prev_tt == TokenType.RPAREN && last_group_had_arrow) return;
@@ -100,7 +104,20 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
 
         Token skip_tok = self.ts_advance()!;
         consumed_any = true;
-        if (tt == TokenType.EXTENDS && depth == 0) saw_extends = true;
+        if (depth == 0) {
+            switch (tt) {
+                case TokenType.EXTENDS:
+                    awaiting_question++;
+                case TokenType.QUESTION:
+                    if (awaiting_question > 0) {
+                        awaiting_question--;
+                        awaiting_colon++;
+                    }
+                case TokenType.COLON:
+                    if (awaiting_colon > 0) awaiting_colon--;
+                default:
+            }
+        }
         if (paren == 1 && !group_seen_first && tt != TokenType.RPAREN) {
             group_seen_first = true;
             if (tt == TokenType.LPAREN || tt == TokenType.LT) {
