@@ -190,10 +190,170 @@ binaries) located where Box2D loses its 25 percent:
 - Widening a warm region to its enclosing loop header was implemented and
   measured neutral (Box2D 263 -> 266 ms, others unchanged); not kept.
 
+## Second pass: dead jumps, the append guard, and where Box2D's time goes
+
+Two commits after the pass above, both on rat: 360d596e drops the jump an `if`
+emits over its alternative when the consequent cannot fall through, and
+ac3e695d fixes an inverted prototype-chain guard in the template tier's
+property append.
+
+### Append guard
+
+`FunctionEmitter.append_property` walks the receiver's prototype chain and then
+must confirm the walk ended at the chain terminator. The guard tested `r3 == 0`
+and bailed when it held, so the inline store bailed exactly when the chain was
+the one the cache recorded and continued only when another link remained. No
+constructor ever took the inlined append; every `this.x = ...` left to the
+interpreter after the entry cost had been paid. On a fixture of 300k
+`new P(...)` calls with six appends, the body moved from stalling at pc 0 on
+every call to exiting at its ordinary `RETUNDEF` (283k of 284k runs), and the
+plan stays active. The mini screen is insensitive to it (Box2D runs three
+iterations, so ~50k constructor calls are amortised): Box2D 218 vs 218 ms,
+Mandreel 565 vs 566, Gameboy 221 vs 222, DeltaBlue 91 vs 91, Richards 69 vs 70,
+and 19.5 s vs 19.6 s on a 300-iteration Box2D fixture.
+
+### Screen at this head
+
+Two full screens, four and three alternating pairs, at load 2.7 and 5.7
+(`/private/tmp/octane-20261102` and `...02b`); they agree to 0.2%.
+
+| Benchmark | b85 ms | rat ms | ratio |
+|---|---:|---:|---:|
+| Richards | 69 | 70 | 0.986 |
+| DeltaBlue | 89 | 91 | 0.978 |
+| Crypto | 176 | 180 | 0.978 |
+| RayTrace | 161 | 165 | 0.976 |
+| EarleyBoyer | 175 | 174 | 1.006 |
+| RegExp | 226 | 223 | 1.013 |
+| Splay | 108 | 112 | 0.964 |
+| NavierStokes | 299 | 106 | 2.821 |
+| PdfJS | 362 | 347 | 1.043 |
+| Mandreel | 551 | 565 | 0.975 |
+| Gameboy | 272 | 219 | 1.242 |
+| CodeLoad | 160 | 156 | 1.026 |
+| Box2D | 201 | 218 | 0.922 |
+| zlib | 3725 | 3549 | 1.050 |
+| TypeScript | 1236 | 1265 | 0.977 |
+
+Geometric mean **1.078**. That is the best measured against the historical
+binary (previous passes: 1.058, then 1.069, then 1.066), and Box2D moves from
+0.768 to 0.922 — still 8.5% behind, confirmed separately with nine interleaved
+pairs (200 vs 217 ms) and on the 300-iteration fixture (18.3 s vs 19.3 s,
+1.051). Both binaries' sample profiles are close: the head spends 14.5% against
+12.8% in `th_getpropc_cached` and 2.5 points less in generated code, so the
+remaining Box2D gap is about coverage rather than a new hot path.
+
+### Where the interpreter time actually is
+
+Box2D's mini run executes 31.5M interpreter dispatches. Grouped by the plan the
+rejection census reports for each function:
+
+| Plan state | Functions | Dispatches | Share |
+|---|---:|---:|---:|
+| compiled | 129 | 28.44M | 90.3% |
+| code budget | 57 | 1.93M | 6.1% |
+| not attempted | 150 | 0.26M | 0.8% |
+| mapped arguments | 1 | 0.85M | 2.7% |
+
+So the cost is not the functions the tiers refuse; it is the parts of compiled
+functions their plans do not cover. The hottest body is `SolveVelocityConstraints`
+(605 ops, id 728): its plan is a 256-op region from pc 33 that hit 78.5k times
+and exited at a `CALL` 38.9k times, never returning natively. A sample of the
+300-iteration fixture puts `th_getpropc_cached` at 918 of 6175 self samples
+(14.9%), and every one of those samples has `vm_dispatch` as its parent: the
+helper's cost is the threaded interpreter, not the native call-out path.
+
+### The SSA read refusal is not the blocker
+
+`ssa_body_reads_lowerable` refuses a body when any cached read cannot be
+lowered, and instrumenting it over Box2D shows 22 refusals:
+
+| IC chain form | Sites |
+|---|---:|
+| `IC_CHAIN_EPOCH` (one link plus a mutation epoch) | 16 |
+| `IC_CHAIN_POLY` (own read over several receiver shapes) | 2 |
+| `IC_CHAIN_PROTO` (epoch plus one arm per receiver shape) | 2 |
+| one-link snapshot with `dict_count == 0` | 2 |
+
+Not one is a depth-2 chain, and none is a form the template tier cannot
+already lower: `FunctionEmitter.property` has arms for the epoch, polynomial
+and proto caches and for bounded snapshots. Teaching the SSA tier the same
+forms would move those bodies between tiers, not remove interpreter work,
+because those bodies already run native with inlined reads. The premise behind
+"lower reads into the SSA tier" was wrong, and it was dropped after this
+measurement rather than after an implementation.
+
+### Code density, and three experiments that did not pay
+
+Generated bodies run 220-700 bytes per bytecode op (about 350 on average), and
+126 Box2D plans fill 2.10 MB of the 4 MB arena. The dominant contributors, by
+per-op byte span (`SLJIT_MAP` maps): computed `GETPROP` at 3.2 KB per site (the
+`indexed` path expands a `dense_element` copy, up to eight typed arms and a
+guarded property fallback at every site: 344 KB, 23% of all body bytes), the
+typed-read store at 208 B, and the counted-store sequence in `function_store`
+at about 110 B repeated at every register store.
+
+Three attempts to convert that into time were measured and discarded:
+
+- Exiting to the interpreter whenever either side of a store is a string cut
+  body bytes 7.6% and admitted nine more plans, and won on Gameboy (0.923) — but
+  it stalls and retires any loop that assigns one string over another, so it
+  was rejected on behaviour, not on speed.
+- The sound version, an out-of-line counted store (`sljit_native_store`, called
+  once per store that touches a string, fenced off when the body keeps a
+  numeric value in a caller-saved float lane), is exactly what the interpreter's
+  `th_move` does. It cut `LDREG` from 188 to 81 bytes per op, `LDINT` from 115 to
+  67 and `GETPROPC_CACHED` from 208 to 156, total body bytes from 1.52 MB to
+  1.44 MB, and admitted 139 plans instead of 130 — and was timing-neutral at
+  load 2.1 (Box2D 1.005, Mandreel 0.996, Gameboy 1.000, DeltaBlue 0.989,
+  Richards 0.986). Code size is not the bottleneck.
+- A 512-op region window (`FUNCTION_REGION_OPS` 256 -> 512) cost Box2D 7.9%
+  (216 -> 233 ms) while helping Mandreel 1.8%, confirming the earlier
+  rejection.
+
+Also confirmed: the body the dead-jump commit newly admits on Mandreel and
+which demotes is `insertleaf` (line 19280). It is a real loop, but every one of
+its 256 sampled entries takes one helper and leaves, so the helper-per-entry
+demotion rule is doing the right thing; the cost is one wasted compile.
+
+### The score in Octane terms
+
+`scripts/octane_score.py` restores the missing measurement. It runs a matched
+pair of mini binaries and multiplies each benchmark's recorded Octane score by
+its measured time ratio, so the composite is the recorded composite scaled by
+the geometric mean of the time ratios. Over the thirteen benchmarks the
+historical log scored, this head projects **5694 against a recorded 5672**
+(ratio 1.0038); Box2D is the largest single loss (7135 -> 6546) and Gameboy the
+largest gain (13092 -> 16260).
+
+The 1.078 screen figure is a different number: the screen also covers
+NavierStokes, which the historical run failed on a checksum, and its 2.8x
+accounts for almost the whole difference. Against the 50,000 target, the head
+sits at roughly one ninth of the goal on the thirteen-benchmark basis, and the
+earlier "six percent above the historical revision" was the mini geomean rather
+than the score ratio — corrected here.
+
+### Validation at this head
+
+`./out/embedding_jit` 30/30, `just test-local` 39/39,
+`scripts/run_jit_diff.sh` matches on test-local (pre-existing `status 1`),
+rosetta and modules, and test262 `language/expressions/assignment` 485/485,
+`built-ins/String` 1223/1223, `language/statements/class` 4353 pass with 14
+skips and no failures.
+
 Remaining work
 
-0. Box2D 0.76x after 9b34b0ee. The 2 MB function-tier budget still decides the
-   outcome: at 4 MB Box2D reaches 248 ms but Mandreel regresses 557 -> 580 ms.
+0. Box2D 0.92x, 8.5% behind the historical binary. Coverage of compiled
+   functions, not code size, is the cause: 90% of Box2D's interpreter
+   dispatches happen inside functions whose plan covers a bounded region, and a
+   body like SolveVelocityConstraints exits its region at a `CALL` on half its
+   entries and never returns natively. The measured dead ends are code density
+   (a 30% smaller store sequence is timing-neutral) and wider regions (512 ops
+   costs 7.9%). What remains untried is making a region's `CALL` reach a
+   compiled callee: the run links 114k direct calls but only 65k direct
+   returns, so a third of the native calls fall back into the interpreter.
+   Continuing to chase the 2 MB function-tier budget is not worthwhile now that
+   the budget-rejected functions account for 6% of dispatches.
    Instrumented runs show why the extra coverage hurts Mandreel: the newly
    compiled bodies exit at a `GETPROP` four to forty thousand times each and
    cover only a fraction of their own body per entry, so partial coverage costs
