@@ -43,6 +43,8 @@ expect_ok "$DIR/simple.ts"    "42"
 expect_ok "$DIR/enum.ts"      "0
 Green
 3"
+expect_ok "$DIR/angle_assert.ts" "5
+0"
 expect_ok "$DIR/basic.ts"     "hello world hello world 
 42"
 expect_ok "$DIR/fn.ts"        "5"
