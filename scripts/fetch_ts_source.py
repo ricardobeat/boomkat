@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Fetch the TypeScript compiler's own source (microsoft/TypeScript v5.4.5).
+"""Fetch the TypeScript compiler's own source (microsoft/TypeScript v6.0.3).
 
-The compiler is written in TypeScript. Its sources exercise far more of the
+TypeScript 6.0 is the last compiler written in TypeScript; TypeScript 7 is a
+Go rewrite. Its sources exercise far more of the
 language than the conformance corpus does (const enums across modules, cycles
 between modules, import aliases), so they are a useful stress test for the
 engine's type stripping:
@@ -14,6 +15,7 @@ rejects. The corpus is gitignored; only this script is committed.
 """
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -21,7 +23,7 @@ import tempfile
 import urllib.request
 
 UA = "boomkat-ts-source-fetch"
-VERSION = "5.4.5"
+VERSION = "6.0.3"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEST = os.path.join(ROOT, "test", "tscorpus", "typescript-src")
 TARBALL = f"https://codeload.github.com/microsoft/TypeScript/tar.gz/refs/tags/v{VERSION}"
@@ -30,7 +32,7 @@ DEFAULT_BIN = os.path.join(ROOT, "out", "boomkat")
 # The parser, checker, services and command line driver: everything the
 # compiler itself is built from.
 TREES = ("src/compiler", "src/services", "src/server", "src/tsc",
-         "src/executeCommandLine", "src/jsTyping", "src/typingsInstaller",
+         "src/jsTyping", "src/typingsInstaller",
          "src/typingsInstallerCore", "src/watchGuard", "src/deprecatedCompat")
 
 
@@ -40,10 +42,19 @@ def fetch(url):
         return r.read()
 
 
+# Names the release the fetched tree came from, so another VERSION refetches.
+STAMP = os.path.join(DEST, ".version")
+
+
 def extract():
-    if os.path.isdir(DEST) and any(os.scandir(DEST)):
-        print(f"already fetched: {DEST}")
-        return
+    if os.path.isfile(STAMP):
+        with open(STAMP, encoding="utf-8") as f:
+            if f.read().strip() == VERSION:
+                print(f"already fetched: {DEST}")
+                return
+    if os.path.isdir(DEST):
+        print(f"replacing the sources of another release in {DEST}")
+        shutil.rmtree(DEST)
     print(f"downloading {TARBALL}")
     data = fetch(TARBALL)
     os.makedirs(DEST, exist_ok=True)
@@ -60,6 +71,8 @@ def extract():
             tar.extractall(DEST, members=members, filter="data")
     finally:
         os.unlink(path)
+    with open(STAMP, "w", encoding="utf-8") as f:
+        f.write(VERSION + "\n")
     print(f"extracted {sum(1 for _ in walk_ts(DEST))} modules into {DEST}")
 
 

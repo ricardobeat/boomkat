@@ -23,12 +23,12 @@ function caller(): Error {
     )][0];
 }
 const error: Error = caller();
-checkFrame(error.stack, 0, 18, 12);
-checkFrame(error.stack, 1, 21, 13);
+checkFrame(error.stack!, 0, 18, 12);
+checkFrame(error.stack!, 1, 21, 13);
 function propertyError(value: Shape | null): number {
     return value!.value;
 }
 try { propertyError(null); } catch (e: unknown) {
-    checkFrame((e as Error).stack, 0, 29, 19);
+    checkFrame((e as Error).stack!, 0, 29, 19);
 }
 print('PASS: TS stack source columns');

@@ -1,14 +1,9 @@
 {
   "compilerOptions": {
-    "target": "es2022",
-    "lib": ["es2022"],
-    "module": "esnext",
     "moduleDetection": "force",
     "isolatedModules": true,
     "noEmit": true,
-    "strict": false,
-    "skipLibCheck": true,
-    "types": []
+    "skipLibCheck": true
   },
   "include": ["globals.d.ts", "*.ts"],
   "exclude": []

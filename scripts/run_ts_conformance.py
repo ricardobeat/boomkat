@@ -7,8 +7,10 @@ The engine runs `.ts` and `.tsx` files by erasing type syntax at parse time
 namespaces, parameter properties) into the objects they stand for. There is
 no official test262-style TypeScript suite, so this harness turns the
 TypeScript project's own conformance corpus (`tests/cases/conformance/`,
-thousands of files) into one by using `tsc --erasableSyntaxOnly` as the
-acceptance oracle:
+thousands of files) into one by using TypeScript 7's `tsc
+--erasableSyntaxOnly` as the acceptance oracle, with TypeScript 7's defaults
+(latest target, ES modules, strict mode for all code) except that type
+checking is not strict:
 
   ACCEPT  - tsc reports no errors: the file is valid TypeScript, so the
             engine must compile it. A SyntaxError here is a real failure.
@@ -20,27 +22,28 @@ acceptance oracle:
             files and any file tsc cannot parse as a single program.
 
 Corpus location: `test/typescript/conformance-src` (a sparse, blobless clone
-of github.com/microsoft/TypeScript with `tests/cases/conformance` checked
-out; fetch it with `scripts/fetch_ts_conformance.py`). Like test262, the
+of github.com/microsoft/TypeScript with `tsc/testdata/tests/cases/conformance`
+checked out; fetch it with `scripts/fetch_ts_conformance.py`). Like test262, the
 corpus itself is gitignored; the harness and this script are committed.
 
 The full corpus runs in a couple of minutes: tsc verdicts are cached in
-`test/typescript/ts_conformance_cache`, engine runs are parallel, and a file
+`test/typescript/ts_conformance_cache`, under a directory named for the tsc
+version and flags that produced them, engine runs are parallel, and a file
 that compiles but whose runtime never terminates counts as a pass (compile
 conformance, not runtime conformance). A hard deadline (default 10 minutes)
 aborts the run and reports partial results if anything pathological slips in.
 
 Usage:
   python3 scripts/run_ts_conformance.py [--limit N] [--only <substring>]
-      [--bin ./out/boomkat] [--keep-tsc] [--phase-dir <subdir>]
+      [--bin ./out/boomkat] [--phase-dir <subdir>]
       [--jobs N] [--engine-timeout SECONDS] [--deadline SECONDS]
       [--log <file>] [--no-cache]
-  --keep-tsc     reuse cached tsc classifications (default; kept for compat)
   --no-cache     force a fresh tsc classification, overwriting the cache
   --log <file>   write RESULT<TAB>path lines for every verdict (failure
                  clustering, same format as run_test262.py)
 """
 
+import hashlib
 import os
 import re
 import subprocess
@@ -65,12 +68,14 @@ DEFAULT_ENGINE_TIMEOUT = 20      # seconds per engine run
 DEFAULT_TSC_TIMEOUT = 60         # seconds per tsc run
 DEFAULT_DEADLINE = 600           # hard wall-clock cap for the whole run
 
+# TypeScript 7's defaults decide the target, module format and strict mode;
+# only the type checker's strictness is turned off, since type errors are not
+# what the corpus is used to test here.
 TSC_FLAGS = [
-    "--noEmit", "--erasableSyntaxOnly", "--skipLibCheck",
-    "--target", "es2022", "--module", "esnext", "--moduleResolution", "bundler",
-    "--lib", "es2022", "--strict", "false", "--isolatedModules", "false",
+    "--noEmit", "--erasableSyntaxOnly", "--skipLibCheck", "--strict", "false",
     "--noResolve",
 ]
+TSC_MIN_MAJOR = 7
 
 # TS1294 = "This syntax is not allowed under 'erasableSyntaxOnly'"
 RE_TS1294 = re.compile(r"error TS1294")
@@ -133,16 +138,32 @@ class Clock:
             return False
 
 
+def tsc_cache_dir():
+    """The cache directory for the installed tsc and TSC_FLAGS, or None when
+    tsc is missing or older than TypeScript 7."""
+    try:
+        out = subprocess.run(["tsc", "--version"], capture_output=True, text=True).stdout
+    except FileNotFoundError:
+        out = ""
+    m = re.search(r"Version (\d+)\.(\d+)\.(\S+)", out)
+    if not m:
+        print("tsc not on PATH; cannot run the oracle. Install typescript 7.", file=sys.stderr)
+        return None
+    if int(m.group(1)) < TSC_MIN_MAJOR:
+        print(f"tsc {m.group(0)[8:]} is older than TypeScript {TSC_MIN_MAJOR}; "
+              f"install typescript@{TSC_MIN_MAJOR}", file=sys.stderr)
+        return None
+    flags = hashlib.sha256(" ".join(TSC_FLAGS).encode()).hexdigest()[:8]
+    return os.path.join(CACHE, f"tsc-{m.group(0)[8:]}-{flags}")
+
+
 def tsc_classify(path, cache_dir, no_cache):
     """Run tsc once per file (cached). Returns 'accept' | 'runtime' | 'skip'."""
     rel = os.path.relpath(path, CORPUS)
     cache_file = os.path.join(cache_dir, rel + ".txt")
     if not no_cache and os.path.exists(cache_file):
         with open(cache_file, "r", encoding="utf-8") as f:
-            verdict = f.read().strip()
-        # The verdict used to be called "reject"; the engine now compiles the
-        # runtime features those files use.
-        return "runtime" if verdict == "reject" else verdict
+            return f.read().strip()
 
     out = ""
     try:
@@ -153,7 +174,7 @@ def tsc_classify(path, cache_dir, no_cache):
         out = res.stdout + res.stderr
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         if isinstance(e, FileNotFoundError):
-            print("tsc not on PATH; cannot run the oracle. Install typescript.", file=sys.stderr)
+            print("tsc not on PATH; cannot run the oracle. Install typescript 7.", file=sys.stderr)
             sys.exit(2)
         verdict = "skip"  # timeout: tsc hung on a pathological file
     else:
@@ -260,9 +281,6 @@ def main():
         log_path = args[args.index("--log") + 1]
     if "--no-cache" in args:
         no_cache = True
-    # --keep-tsc is the default; accepted for compatibility.
-    if "--keep-tsc" in args and "--no-cache" in args:
-        print("--keep-tsc and --no-cache conflict; --no-cache wins", file=sys.stderr)
 
     if not os.path.isdir(CORPUS):
         print(f"Corpus not found at {CORPUS}.\n"
@@ -285,13 +303,16 @@ def main():
     if limit:
         files = files[:limit]
 
+    cache_dir = tsc_cache_dir()
+    if cache_dir is None:
+        return 2
     clock = Clock(deadline_s)
 
     # Phase 1: tsc verdicts (cached, parallel when the cache is cold).
     print(f"classifying {len(files)} files with tsc (jobs={jobs})...", flush=True)
     verdicts = {}
     with ThreadPoolExecutor(max_workers=jobs) as ex:
-        results = ex.map(lambda p: (p, tsc_classify(p, CACHE, no_cache)), files)
+        results = ex.map(lambda p: (p, tsc_classify(p, cache_dir, no_cache)), files)
         for path, verdict in results:
             verdicts[path] = verdict
             if clock.expired():
