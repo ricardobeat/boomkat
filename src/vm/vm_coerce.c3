@@ -52,28 +52,6 @@ fn double vm_to_number(Vm* vm, TVal* val) {
     }
 }
 
-// ECMA-262 ToInt32: https://tc39.es/ecma262/#sec-toint32
-fn int toint32(double d) @inline {
-    // Fast path for values that fit in int32. The range check must precede the cast:
-    // (int)d is undefined for out-of-range d, and at -O2 LLVM may fold away the
-    // `(double)i == d` guard.
-    if (d >= -2147483648.0 && d <= 2147483647.0) {
-        int i = (int)d;
-        if ((double)i == d) return i;
-    }
-    // NaN / ±Infinity → 0
-    if (math::is_nan(d) || !math::is_finite(d)) return 0;
-    // Spec: posInt = sign(d) * floor(abs(d)); int32bit = posInt mod 2^32
-    double abs_d = math::abs(d);
-    double pos_int = math::floor(abs_d);
-    if (d < 0.0) pos_int = -pos_int;
-    double q = pos_int * (1.0 / 4294967296.0);
-    q = math::floor(q);
-    double r = pos_int - q * 4294967296.0;   // r in [0, 2^32)
-    if (r >= 2147483648.0) r -= 4294967296.0;
-    return (int)r;
-}
-
 // ECMA-262 IsLessThan: https://tc39.es/ecma262/#sec-islessthan
 // Returns -1, +1 or 0. Sets *is_undef when either operand is NaN. Sets vm.throw_pending
 // on a ToPrimitive failure; the caller must check it.

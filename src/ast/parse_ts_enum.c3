@@ -6,6 +6,7 @@ module boomkat::ast @feat(!NO_TYPESCRIPT);
 
 import boomkat::lexer;
 import boomkat::ast::vec;
+import boomkat::types;
 import std::math;
 
 // What an enum member's initialiser evaluates to when it is a constant
@@ -195,7 +196,7 @@ fn EnumConst Parser.ts_enum_const(&self, uint n, Vec{EnumMember}* members, doubl
             switch (op) {
                 case TokenType.MINUS: *num = -a; return EnumConst.NUMBER;
                 case TokenType.PLUS: *num = a; return EnumConst.NUMBER;
-                case TokenType.BIT_NOT: *num = (double)(~(int)a); return EnumConst.NUMBER;
+                case TokenType.BIT_NOT: *num = (double)(~types::toint32(a)); return EnumConst.NUMBER;
                 default: return EnumConst.NONE;
             }
         }
@@ -217,12 +218,14 @@ fn EnumConst Parser.ts_enum_const(&self, uint n, Vec{EnumMember}* members, doubl
                 case TokenType.SLASH: *num = a / b; return EnumConst.NUMBER;
                 case TokenType.PERCENT: *num = a % b; return EnumConst.NUMBER;
                 case TokenType.STARSTAR: *num = math::pow(a, b); return EnumConst.NUMBER;
-                case TokenType.SHL: *num = (double)((int)a << ((int)b & 31)); return EnumConst.NUMBER;
-                case TokenType.SHR: *num = (double)((int)a >> ((int)b & 31)); return EnumConst.NUMBER;
-                case TokenType.USHR: *num = (double)((uint)(int)a >> ((int)b & 31)); return EnumConst.NUMBER;
-                case TokenType.BIT_AND: *num = (double)((int)a & (int)b); return EnumConst.NUMBER;
-                case TokenType.BIT_OR: *num = (double)((int)a | (int)b); return EnumConst.NUMBER;
-                case TokenType.BIT_XOR: *num = (double)((int)a ^ (int)b); return EnumConst.NUMBER;
+                // The bitwise operators work on ToInt32 of their operands, and
+                // a shift's count is ToUint32 of its right operand mod 32.
+                case TokenType.SHL: *num = (double)(types::toint32(a) << (types::toint32(b) & 31)); return EnumConst.NUMBER;
+                case TokenType.SHR: *num = (double)(types::toint32(a) >> (types::toint32(b) & 31)); return EnumConst.NUMBER;
+                case TokenType.USHR: *num = (double)((uint)types::toint32(a) >> (types::toint32(b) & 31)); return EnumConst.NUMBER;
+                case TokenType.BIT_AND: *num = (double)(types::toint32(a) & types::toint32(b)); return EnumConst.NUMBER;
+                case TokenType.BIT_OR: *num = (double)(types::toint32(a) | types::toint32(b)); return EnumConst.NUMBER;
+                case TokenType.BIT_XOR: *num = (double)(types::toint32(a) ^ types::toint32(b)); return EnumConst.NUMBER;
                 default: return EnumConst.NONE;
             }
         }
