@@ -220,6 +220,50 @@ fn bool Parser.ts_type_arguments(&self) {
     return false;
 }
 
+// A parameter property modifier: `public`, `private`, `protected`, `readonly`
+// or `override`. The modifier is type-only, but the parameter is also assigned
+// to the instance.
+fn bool Parser.ts_param_property(&self) {
+    if (!self.lex.ts_mode) return false;
+    Token t = self.tok;
+    if (t.type == TokenType.PUBLIC || t.type == TokenType.PRIVATE || t.type == TokenType.PROTECTED) return true;
+    if (t.type != TokenType.IDENTIFIER || t.has_escape) return false;
+    return ident_is(t.str_value, "public") || ident_is(t.str_value, "private")
+        || ident_is(t.str_value, "protected") || ident_is(t.str_value, "readonly")
+        || ident_is(t.str_value, "override");
+}
+
+// The `this.x = x;` statements of a constructor's parameter properties, from
+// the names collected after index `from`.
+fn uint Parser.ts_param_prop_statements(&self, uint pos, sz from) {
+    sz n = self.ts_param_props.len;
+    if (n <= from) return 0;
+    uint mark = self.scratch_mark();
+    for (sz i = from; i < n; i++) {
+        uint name = self.ts_param_props.data[i];
+        uint member = self.node(NodeTag.MEMBER, pos, self.node(NodeTag.THIS, pos), name);
+        uint value = self.node(NodeTag.IDENT, pos, name);
+        uint assign = self.node(NodeTag.ASSIGN, pos, member, value, op_flag(TokenType.ASSIGN));
+        self.scratch_push(self.node(NodeTag.EXPR_STMT, pos, assign));
+    }
+    return self.scratch_list(mark);
+}
+
+// The place in a constructor's body where the parameter property assignments
+// go: after the prologue, and after the super() call in a derived constructor.
+fn uint Parser.ts_param_prop_at(&self, uint list, bool derived) {
+    uint count = self.ast.list_len(list);
+    uint at = 0;
+    while (at < count && self.ast.tags.data[self.ast.list_item(list, at)] == NodeTag.DIRECTIVE) at++;
+    if (!derived) return at;
+    for (uint i = at; i < count; i++) {
+        uint stmt = self.ast.list_item(list, i);
+        if (self.ast.tags.data[stmt] != NodeTag.EXPR_STMT) continue;
+        if (self.ast.tags.data[self.ast.lhs.data[stmt]] == NodeTag.SUPER_CALL) return i + 1;
+    }
+    return count;
+}
+
 // A statement that only TypeScript has and that has a runtime effect: an enum.
 // Returns 0 when the current token does not start one, leaving the token where
 // it was. Only a module's top level may export such a statement.

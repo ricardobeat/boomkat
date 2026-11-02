@@ -296,6 +296,24 @@ fn uint Ast.list_len(&self, uint list) @inline {
     return self.extra[list];
 }
 
+// Insert the items of the list `src` into the list `list`, after the item at
+// index `at`.
+fn void Ast.list_insert_list(&self, uint list, uint at, uint src) {
+    usz count = self.extra[list];
+    usz k = self.extra[src];
+    if (k == 0) return;
+    usz base = (usz)list + 1;
+    usz pos = (usz)at > count ? count : (usz)at;
+    while (self.extra.len < (sz)(base + count + k)) self.extra.push(0);
+    for (usz i = count; i > pos; i--) {
+        self.extra.data[base + i - 1 + k] = self.extra.data[base + i - 1];
+    }
+    for (usz i = 0; i < k; i++) {
+        self.extra.data[base + pos + i] = self.extra.data[(usz)src + 1 + i];
+    }
+    self.extra.data[list] = (uint)(count + k);
+}
+
 fn uint Ast.list_item(&self, uint list, uint i) @inline {
     return self.extra[list + 1 + i];
 }
