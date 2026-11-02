@@ -1166,8 +1166,8 @@ fn bool ssa_arm_branch(SsaGraph* g, uint b, uint pos, DecodedInsn ins) @feat(SLJ
         return true;
     }
     if (ins.op == Opcode.IF_TRUE || ins.op == Opcode.IF_FALSE) {
-        // The truthiness of a value. An integer reads its own value; a boxed
-        // one must be a boolean, whose payload is the value.
+        // Preserve boxed predicates for native truth tests and exact recovery
+        // of representations that still need the interpreter.
         if (ins.a >= g.reg_count) return false;
         lhs = g.current[ins.a];
         if (lhs < 0) return false;
