@@ -1,0 +1,57 @@
+
+
+Sampling rate: 1000.000000 microseconds. Total samples: 83
+Top functions as <numSamples  'functionName#hash:sourceID'>
+    76    'lin_solve#DG9A1c:2'
+     1    'pas_thread_local_cache_flush_deallocation_log#<nil>:4294967295'
+     1    'JSC::DFG::ByteCodeParser::setLocalOrTmp(JSC::CodeOrigin const&, JSC::Operand, JSC::DFG::Node*, JSC::DFG::ByteCodeParser::SetMode)#<nil>:4294967295'
+     1    'JSC::DFG::performGraphPackingAndLivenessAnalysis(JSC::DFG::Graph&)#<nil>:4294967295'
+     1    'JSC::DFG::performGlobalStoreBarrierInsertion(JSC::DFG::Graph&)#<nil>:4294967295'
+     1    'advect#DVMXnO:2'
+     1    'JSC::DFG::clobbersHeap(JSC::DFG::Graph&, JSC::DFG::Node*)#<nil>:4294967295'
+     1    '(program)#EnmcAg:2'
+
+
+Sampling rate: 1000.000000 microseconds. Total samples: 83
+
+Tier breakdown:
+-----------------------------------
+LLInt:                     0  (0.000000%)
+Baseline:                  3  (3.614458%)
+DFG:                       5  (6.024096%)
+FTL:                      70  (84.337349%)
+js builtin:                0  (0.000000%)
+IPInt:                     0  (0.000000%)
+BBQ:                       0  (0.000000%)
+OMG:                       0  (0.000000%)
+Wasm:                      0  (0.000000%)
+Host:                      0  (0.000000%)
+RegExp:                    0  (0.000000%)
+C/C++:                     5  (6.024096%)
+
+
+Hottest bytecodes as <numSamples   'functionName#hash:JITType:bytecodeIndex'>
+    18    'lin_solve#DG9A1c:FTL:bc#354'
+    17    'lin_solve#DG9A1c:FTL:bc#408'
+     9    'lin_solve#DG9A1c:FTL:bc#466'
+     8    'lin_solve#DG9A1c:FTL:bc#390'
+     7    'lin_solve#DG9A1c:FTL:bc#372'
+     5    'lin_solve#DG9A1c:FTL:bc#438'
+     2    'lin_solve#DG9A1c:Baseline:bc#346'
+     1    'JSC::DFG::performGlobalStoreBarrierInsertion(JSC::DFG::Graph&)#<nil>:None:<nil>'
+     1    'lin_solve#DG9A1c:FTL:bc#234'
+     1    'lin_solve#DG9A1c:DFG:bc#426'
+     1    'lin_solve#DG9A1c:DFG:bc#408'
+     1    'lin_solve#DG9A1c:DFG:bc#396'
+     1    'pas_thread_local_cache_flush_deallocation_log#<nil>:None:<nil>'
+     1    'lin_solve#DG9A1c:FTL:bc#369'
+     1    'lin_solve#DG9A1c:FTL:bc#414'
+     1    'lin_solve#DG9A1c:FTL:bc#447'
+     1    'advect#DVMXnO:FTL:bc#466'
+     1    'JSC::DFG::ByteCodeParser::setLocalOrTmp(JSC::CodeOrigin const&, JSC::Operand, JSC::DFG::Node*, JSC::DFG::ByteCodeParser::SetMode)#<nil>:None:<nil>'
+     1    '(program)#EnmcAg:Baseline:bc#954'
+     1    'lin_solve#DG9A1c:DFG:bc#346'
+     1    'lin_solve#DG9A1c:FTL:bc#405'
+     1    'lin_solve#DG9A1c:DFG:bc#378'
+     1    'JSC::DFG::performGraphPackingAndLivenessAnalysis(JSC::DFG::Graph&)#<nil>:None:<nil>'
+     1    'JSC::DFG::clobbersHeap(JSC::DFG::Graph&, JSC::DFG::Node*)#<nil>:None:<nil>'

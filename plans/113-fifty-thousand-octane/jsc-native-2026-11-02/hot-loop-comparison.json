@@ -1,0 +1,65 @@
+[
+  {
+    "kernel": "lin_solve copy",
+    "JSC": {
+      "offsets": [
+        308,
+        496
+      ],
+      "instructions_including_backedge": 48,
+      "elements": 4,
+      "calls": 0
+    },
+    "Boomkat_af024": {
+      "offsets": [
+        4260,
+        4896
+      ],
+      "instructions_including_backedge": 160,
+      "elements": 1,
+      "calls": 0
+    }
+  },
+  {
+    "kernel": "lin_solve iterative",
+    "JSC": {
+      "offsets": [
+        812,
+        1264
+      ],
+      "instructions_including_backedge": 114,
+      "elements": 4,
+      "calls": 0
+    },
+    "Boomkat_af024": {
+      "offsets": [
+        7044,
+        8320
+      ],
+      "instructions_including_backedge": 320,
+      "elements": 1,
+      "calls": 0
+    }
+  },
+  {
+    "kernel": "advect",
+    "JSC": {
+      "offsets": [
+        384,
+        704
+      ],
+      "instructions_including_backedge": 81,
+      "elements": 1,
+      "calls": 0
+    },
+    "Boomkat_af024": {
+      "offsets": [
+        3792,
+        6136
+      ],
+      "instructions_including_backedge": 587,
+      "elements": 1,
+      "calls": 0
+    }
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "commit": "af024c0de4e094eee5c9bf2ad80bd7b296436c4c",
+  "diagnostic_file": "/tmp/bk-jsc-native-evidence/boomkat-af024-snapshot/src/vm/vm_sljit_ssa.c3",
+  "sha256": "ac861ad7942d610535c5bec0176aa1a287d6ccc1e4537cd11a45d76d3b181846",
+  "change": "Print native code bytes after successful generation only; generated machine code unchanged.",
+  "project_sha256": "aefcad149858e03689d0308b7a9a294b684950d5919ad4bfa82d7f3bc21e5fe1",
+  "project_matches_commit": true,
+  "release_binary_sha256": "79d6af91b406632358a1900d6bc2ad596714ded7747f4c6a26ecfb7cfa3a606c",
+  "driver_sha256": "32a417f0d0566cbff3a0ea32ab6e4bf20f5faabf3b21f788423eb7854fa5870a"
+}

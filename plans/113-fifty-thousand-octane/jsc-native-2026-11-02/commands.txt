@@ -1,0 +1,23 @@
+JSC=/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc
+Evidence directory: /tmp/bk-jsc-native-evidence
+
+# Exact Navier body capture, default tier thresholds, synchronous compilation:
+$JSC --validateOptions=true --useConcurrentJIT=false --dumpDFGDisassembly=true --dumpFTLDisassembly=true --dumpSourceAtDFGTime=true --dumpBytecodeAtDFGTime=true --reportDFGCompileTimes=true navier-exact-kernels.js > navier.stdout.log 2> navier.disassembly.log
+# Interpreter semantic control:
+$JSC --useJIT=false navier-exact-kernels.js > navier-interpreter.stdout.log 2> navier-interpreter.stderr.log
+# Actual tier activation evidence on identical source:
+$JSC --useConcurrentJIT=false --sample --samplingProfilerPath=/tmp/bk-jsc-native-evidence navier-exact-kernels.js > navier-sample.stdout.log 2> navier-sample.stderr.log
+# Representative own field + array dispatch, identical options except omitted compile-time reporting:
+$JSC --validateOptions=true --useConcurrentJIT=false --dumpDFGDisassembly=true --dumpFTLDisassembly=true --dumpSourceAtDFGTime=true --dumpBytecodeAtDFGTime=true boxed-field-array.js > boxed-field-array.stdout.log 2> boxed-field-array.disassembly.log
+$JSC --useJIT=false boxed-field-array.js > boxed-field-array-interpreter.stdout.log 2> boxed-field-array-interpreter.stderr.log
+
+# Boomkat current committed source snapshot (af024c0de4e094eee5c9bf2ad80bd7b296436c4c), only code-byte print injection:
+c3c build boomkat -D SLJIT_STATS --build-dir /tmp/bk-jsc-native-evidence/boomkat-obj --output-dir /tmp/bk-jsc-native-evidence/boomkat-out
+boomkat-out/boomkat --script --jit navier-exact-kernels.js > boomkat-navier.stdout.log 2> boomkat-navier.native.log
+# Release comparison excludes SLJIT_STATS counter instructions:
+c3c build boomkat --build-dir /tmp/bk-jsc-native-evidence/boomkat-release-obj --output-dir /tmp/bk-jsc-native-evidence/boomkat-release-out
+boomkat-release-out/boomkat --script --jit navier-exact-kernels.js > boomkat-release-navier.stdout.log 2> boomkat-release-navier.native.log
+# Decode each REPAIR_NATIVE hex record into .bin and .asm:
+/opt/homebrew/opt/llvm/bin/llvm-mc --disassemble --triple=aarch64 < hex-bytes-in-address-order.txt
+
+No benchmark timings were collected. Compilation-time diagnostics are JSC's own compile logs only.

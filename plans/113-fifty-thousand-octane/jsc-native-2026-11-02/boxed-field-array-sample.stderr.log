@@ -1,0 +1,28 @@
+
+
+Sampling rate: 1000.000000 microseconds. Total samples: 2
+Top functions as <numSamples  'functionName#hash:sourceID'>
+     2    'fieldArrayDispatch#ElJpJD:2'
+
+
+Sampling rate: 1000.000000 microseconds. Total samples: 2
+
+Tier breakdown:
+-----------------------------------
+LLInt:                     0  (0.000000%)
+Baseline:                  0  (0.000000%)
+DFG:                       1  (50.000000%)
+FTL:                       1  (50.000000%)
+js builtin:                0  (0.000000%)
+IPInt:                     0  (0.000000%)
+BBQ:                       0  (0.000000%)
+OMG:                       0  (0.000000%)
+Wasm:                      0  (0.000000%)
+Host:                      0  (0.000000%)
+RegExp:                    0  (0.000000%)
+C/C++:                     0  (0.000000%)
+
+
+Hottest bytecodes as <numSamples   'functionName#hash:JITType:bytecodeIndex'>
+     1    'fieldArrayDispatch#ElJpJD:FTL:bc#40'
+     1    'fieldArrayDispatch#ElJpJD:DFG:bc#46'

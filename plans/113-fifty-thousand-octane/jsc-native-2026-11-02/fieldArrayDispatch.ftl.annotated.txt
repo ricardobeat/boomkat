@@ -1,0 +1,972 @@
+Generated FTL code for fieldArrayDispatch#ElJpJD:[0x1111dc480->0x1111dc2c0->0x1111b5300, FTLFunctionCall, 64 (DidTryToEnterInLoop)], instructions size = 64:
+Air BB#0: ; frequency = 1.000000
+asm                          <0> 0x113c40600:    pacibsp
+asm                          <4> 0x113c40604:    stp	fp, lr, [sp, #-0x10]!
+asm                          <8> 0x113c40608:    mov	fp, sp
+asm                         <12> 0x113c4060c:    sub	x0, fp, #0x60
+asm                         <16> 0x113c40610:    mov	x17, #0x6068
+asm                         <20> 0x113c40614:    movk	x17, #0x1142, lsl #0x10
+asm                         <24> 0x113c40618:    movk	x17, #0x1, lsl #0x20 -> 0x111426068 vm +104: vm.softStackLimit()
+asm                         <28> 0x113c4061c:    ldr	x16, [x17, xzr]
+asm                         <32> 0x113c40620:    cmp	x16, x0
+asm                         <36> 0x113c40624:    b.gt	0x113c18000 -> JIT PC
+asm                         <40> 0x113c40628:    sub	sp, sp, #0x20
+b3            Int64 b@16 = FramePointer()
+b3            Int64 b@22 = Load(b@16, offset = 56, ControlDependent|Reads:189)
+Air               Move 56(%fp), %x2
+asm                         <44> 0x113c4062c:    ldur	x2, [fp, #0x38]
+b3            Int64 b@18 = Const64(-562949953421312)
+Air               Move $0xfffe000000000000, %x0
+asm                         <48> 0x113c40630:    orr	x0, xzr, #0xfffe000000000000
+b3            Int32 b@23 = Below(b@22, $-562949953421312(b@18))
+b3            Void b@24 = Check(b@23:WarmAny, b@22:ColdAny, generator = 0x1100851c0, ExitsSideways|Reads:Top)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x2, %x0, %x2
+asm                         <52> 0x113c40634:    cmp	x2, x0
+asm                         <56> 0x113c40638:    b.lo	0x113c40928 -> <808>
+b3            Int64 b@16 = FramePointer()
+b3            Int64 b@27 = Load(b@16, offset = 48, ControlDependent|Reads:190)
+Air               Move 48(%fp), %x1
+asm                         <60> 0x113c4063c:    ldur	x1, [fp, #0x30]
+b3            Int64 b@19 = Const64(-562949953421310)
+Air               Add64 $2, %x0, %x3
+asm                         <64> 0x113c40640:    add	x3, x0, #0x2
+b3            Int64 b@28 = BitAnd(b@27, $-562949953421310(b@19))
+b3            Void b@30 = Check(b@28:WarmAny, b@27:ColdAny, generator = 0x110085210, ExitsSideways|Reads:Top)
+Air               Patch &BranchTest64(3,SameAsRep)2, NonZero, %x1, %x3, %x1
+asm                         <68> 0x113c40644:    tst	x1, x3
+asm                         <72> 0x113c40648:    b.ne	0x113c4093c -> <828>
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG       D@99:<!0:->	CheckStructure(Cell:D@65, MustGen, [0x7001002710:[0x1002710/16787216, Array, (0/0, 0/0){}, ArrayWithContiguous, Unknown, Proto:0x1100bcf98]], R:JSCell_structureID, Exits, bc#0, ExitValid)
+b3            Int32 b@42 = Load(b@27, ControlDependent|Reads:1, D@99)
+Air               Move32 (%x1), %x4
+asm                         <76> 0x113c4064c:    ldur	w4, [x1]
+b3            Int32 b@43 = Const32(16787216, D@99)
+Air               Move $0x1002710, %x5
+asm                         <80> 0x113c40650:    mov	x5, #0x2710
+asm                         <84> 0x113c40654:    movk	x5, #0x100, lsl #0x10 -> 0x1002710
+b3            Int32 b@44 = NotEqual(b@42, $16787216(b@43), D@99)
+b3            Void b@45 = Check(b@44:WarmAny, b@27:ColdAny, generator = 0x110085260, ExitsSideways|Reads:Top, D@99)
+Air               Patch &Branch32(3,SameAsRep)1, NotEqual, %x4, %x5, %x1
+asm                         <88> 0x113c40658:    cmp	w4, w5
+asm                         <92> 0x113c4065c:    b.ne	0x113c40950 -> <848>
+DFG       D@24:<!0:->	InvalidationPoint(MustGen, W:SideState, Exits, bc#0, ExitValid)
+b3            Void b@49 = Patchpoint(generator = 0x110067280, resultConstraints = WarmAny, ExitsSideways|WritesPinned|ReadsPinned|Fence|Reads:Top, D@24)
+Air               Patch &Patchpoint0
+DFG       D@91:< 2:->	DoubleConstant(Double|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, BytecodeDouble, Double: 0, 0.000000, bc#0, ExitValid)
+b3            Double b@38 = ConstDouble(0.000000e+00(0), D@91<Double>)
+Air               MoveDouble $0x0, %q0
+asm                         <96> 0x113c40660:    movi	v0.16b, #0; InvalidationPoint
+b3            Int64 b@383 = Const64(4563434768)
+Air               Move $0x110007d10, %x4
+asm                        <100> 0x113c40664:    mov	x4, #0x7d10
+asm                        <104> 0x113c40668:    movk	x4, #0x1000, lsl #0x10
+asm                        <108> 0x113c4066c:    movk	x4, #0x1, lsl #0x20 -> 0x110007d10
+b3            Double b@320 = Load($4563434768(b@383), ControlDependent|Reads:Top)
+Air               MoveDouble (%x4), %q1
+asm                        <112> 0x113c40670:    ldur	d1, [x4]
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG       D@47:<!3:->	Phi(Int32|MustGen|PureInt, Int32, W:SideState, bc#11, ExitInvalid)
+DFG       D@37:< 4:->	JSConstant(JS|PureInt|UseAsInt, NonBoolInt32, Int32: 255, bc#0, ExitValid)
+DFG       D@38:< 3:->	ArithBitAnd(Int32:D@47, Int32:D@37, Int32|PureNum|NeedsNaNOrInfinity|UseAsOther|UseAsInt|ReallyWantsInt, Int32, bc#13, ExitValid)
+DFG       D@89:< 5:->	GetButterfly(Cell:D@65, Storage|PureInt, R:JSObject_butterfly, bc#19, exit: bc#11, ExitValid)
+DFG      D@130:< 4:->	GetArrayLength(KnownCell:D@65, KnownStorage:D@89, Int32|PureInt, Int32, Contiguous+OriginalNonCopyOnWriteArray+InBoundsSaneChain+AsIs+Read, R:Butterfly_publicLength, bc#19, exit: bc#11, ExitValid)
+DFG      D@126:<!1:->	CheckInBounds(Int32:D@38, KnownInt32:D@130, JS|MustGen|PureInt, Int32, Exits, bc#19, ExitValid)
+DFG       D@42:< 8:->	GetByVal(KnownCell:D@65, Int32:Kill:D@38, KnownStorage:D@89, Check:Untyped:Kill:D@126, JS|VarArgs|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Final, Contiguous+OriginalNonCopyOnWriteArray+InBoundsSaneChain+AsIs+Read, R:Butterfly_publicLength,IndexedContiguousProperties, Exits, bc#19, ExitValid)  predicting Final
+DFG       D@50:<!0:->	CheckStructure(Check:Cell:D@42, MustGen, [0x7001006a90:[0x1006a90/16804496, Object, (2/2, 0/0){value:0, scale:1}, NonArray, PropertyAddition, Proto:0x1100bc8c8, Leaf]], R:JSCell_structureID, Exits, bc#28, ExitValid)
+b3            Int32 b@316 = Const32(16804496, D@50)
+Air               Move $0x1006a90, %x4
+asm                        <116> 0x113c40674:    mov	x4, #0x6a90
+asm                        <120> 0x113c40678:    movk	x4, #0x100, lsl #0x10 -> 0x1006a90
+DFG       D@26:< 4:->	JSConstant(JS|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, BoolInt32, Int32: 0, bc#0, ExitValid)
+DFG       D@62:<!5:->	GetStack(JS|MustGen|PureInt, NonBoolInt32, arg2, machine:arg2, FlushedInt32, R:Stack(arg2), bc#0, ExitValid)
+DFG       D@32:< 1:->	CompareLess(Int32:D@26, Int32:D@62, Boolean|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Bool, bc#7, ExitValid)
+DFG       D@33:<!0:->	Branch(KnownBoolean:Kill:D@32, MustGen, T:#1/w:10.000000, F:#4/w:1.000000, W:SideState, bc#7, ExitInvalid)
+b3            Int32 b@391 = Trunc(b@22, D@62)
+b3            Int32 b@50 = Const32(0, D@26)
+b3            Int32 b@37 = GreaterThan(b@391, $0(b@50), D@32)
+b3            Void b@52 = Branch(b@37, Terminal, D@33)
+Air               Branch32 LessThanOrEqual, %x2, $0
+asm                        <124> 0x113c4067c:    cmp	w2, #0
+asm                        <128> 0x113c40680:    b.le	0x113c406c0 -> <192>
+Air   Successors: #4, #1
+Air BB#1: ; frequency = 10.000000
+Air   Predecessors: #0
+DFG       D@26:< 4:->	JSConstant(JS|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, BoolInt32, Int32: 0, bc#0, ExitValid)
+DFG        D@2:< 1:->	Upsilon(KnownInt32:Kill:D@26, ^47, W:SideState, bc#11, ExitValid)
+b3            Int32 b@50 = Const32(0, D@26)
+b3            Void b@60 = Upsilon($0(b@50), ^11, WritesLocalState, D@2)
+Air               Move %xzr, %x5
+asm                        <132> 0x113c40684:    mov	x5, #0
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG       D@89:< 5:->	GetButterfly(Cell:D@65, Storage|PureInt, R:JSObject_butterfly, bc#19, exit: bc#11, ExitValid)
+b3            Int64 b@63 = Load(b@27, offset = 8, ControlDependent|Reads:80, D@89)
+Air               Move 8(%x1), %x6
+asm                        <136> 0x113c40688:    ldur	x6, [x1, #0x8]
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG      D@130:< 4:->	GetArrayLength(KnownCell:D@65, KnownStorage:D@89, Int32|PureInt, Int32, Contiguous+OriginalNonCopyOnWriteArray+InBoundsSaneChain+AsIs+Read, R:Butterfly_publicLength, bc#19, exit: bc#11, ExitValid)
+b3            Int32 b@66 = Load(b@63, offset = -8, ControlDependent|Reads:12, D@130)
+Air               Move32 -8(%x6), %x7
+asm                        <140> 0x113c4068c:    ldur	w7, [x6, #-0x8]
+DFG       D@55:<!0:->	Jump(MustGen, T:#3, W:SideState, bc#11, ExitValid)
+b3            Void b@67 = Jump(Terminal, D@55)
+Air               Jump 
+Air   Successors: #2
+Air BB#2: ; frequency = 10.000000
+Air   Predecessors: #1, #22
+DFG       D@47:<!3:->	Phi(Int32|MustGen|PureInt, Int32, W:SideState, bc#11, ExitInvalid)
+DFG       D@37:< 4:->	JSConstant(JS|PureInt|UseAsInt, NonBoolInt32, Int32: 255, bc#0, ExitValid)
+DFG       D@38:< 3:->	ArithBitAnd(Int32:D@47, Int32:D@37, Int32|PureNum|NeedsNaNOrInfinity|UseAsOther|UseAsInt|ReallyWantsInt, Int32, bc#13, ExitValid)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Int32 b@31 = Const32(255, D@37)
+b3            Int32 b@69 = BitAnd(b@11, $255(b@31), D@38)
+Air               ZeroExtend8To32 %x5, %x8
+asm                        <144> 0x113c40690:    and	w8, w5, #0xff
+DFG      D@126:<!1:->	CheckInBounds(Int32:D@38, KnownInt32:D@130, JS|MustGen|PureInt, Int32, Exits, bc#19, ExitValid)
+b3            Int32 b@17 = BelowEqual(b@66, b@69, D@126)
+b3            Double b@12 = Phi(ReadsLocalState, D@59<Double>)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Void b@71 = Check(b@17:WarmAny, b@12:ColdAny, b@11:ColdAny, b@69:ColdAny, generator = 0x1100852b0, ExitsSideways|Reads:Top, D@126)
+Air               Patch &Branch32(3,SameAsRep)1, BelowOrEqual, %x7, %x8, %q0, %x5, %x8
+asm                        <148> 0x113c40694:    cmp	w7, w8
+asm                        <152> 0x113c40698:    b.ls	0x113c40978 -> <888>
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG       D@42:< 8:->	GetByVal(KnownCell:D@65, Int32:Kill:D@38, KnownStorage:D@89, Check:Untyped:Kill:D@126, JS|VarArgs|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Final, Contiguous+OriginalNonCopyOnWriteArray+InBoundsSaneChain+AsIs+Read, R:Butterfly_publicLength,IndexedContiguousProperties, Exits, bc#19, ExitValid)  predicting Final
+b3            Int64 b@72 = ZExt32(b@69, D@42)
+b3            Int32 b@386 = Const32(3, D@42)
+b3            Int64 b@14 = Shl(b@72, $3(b@386), D@42)
+b3            Int64 b@75 = Add(b@14, b@63, D@42)
+b3            Int64 b@76 = Load(b@75, ControlDependent|Reads:185, D@42)
+Air               Move (%x6,%x8,ZExt32,8), %x8
+asm                        <156> 0x113c4069c:    ldr	x8, [x6, w8, uxtw #0x3]
+b3            Void b@313 = Branch(b@76, Terminal, D@42)
+Air               BranchTest64 NonZero, %x8, %x8
+asm                        <160> 0x113c406a0:    cbnz	x8, 0x113c406d4 -> <212>
+Air   Successors: #5, #3
+Air BB#3: ; frequency = 10.000000
+Air   Predecessors: #2
+b3            Void b@5 = Patchpoint(b@27:ColdAny, generator = 0x1100079e0, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@42)
+Air               Patch &Patchpoint0, %x1
+b3            Int64 b@13 = Const64(10, D@42)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Double b@12 = Phi(ReadsLocalState, D@59<Double>)
+b3            Void b@389 = Patchpoint($10(b@13):ColdAny, b@11:ColdAny, $10(b@13):ColdAny, b@12:ColdAny, generator = 0x110085300, resultConstraints = WarmAny, ExitsSideways|Reads:Top, D@50)
+Air               Patch &Patchpoint0, $10, %x5, $10, %q0
+asm                        <164> 0x113c406a4:    stp	x16, x16, [sp, #-0x10]!
+asm                        <168> 0x113c406a8:    orr	w16, wzr, #0x1
+asm                        <172> 0x113c406ac:    stur	x16, [sp]
+asm                        <176> 0x113c406b0:    ldur	x16, [sp, #0x8]
+asm                        <180> 0x113c406b4:    b	0x113c2c400 -> JIT PC
+b3            Void b@315 = Oops(Terminal, D@50)
+Air               Oops 
+asm                        <184> 0x113c406b8:    mov	w16, #0x9b -> 155
+asm                        <188> 0x113c406bc:    brk	#0xbb08
+Air BB#4: ; frequency = 1.000000
+Air   Predecessors: #0, #7, #12, #17, #22
+DFG       D@53:< 2:->	Phi(Double|PureInt, BoolInt32|AnyIntAsDouble|NonIntAsDouble, W:SideState, bc#62, ExitInvalid)
+DFG       D@97:< 1:->	ValueRep(DoubleRep:Kill:D@53<Double>, JS|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, BytecodeDouble, bc#62, ExitValid)
+b3            Double b@10 = Phi(ReadsLocalState, D@53<Double>)
+b3            Int64 b@55 = BitwiseCast(b@10, D@97)
+Air               MoveDoubleTo64 %q0, %x1
+asm                        <192> 0x113c406c0:    fmov	x1, d0
+b3            Int64 b@333 = Sub(b@55, $-562949953421312(b@18), D@97)
+Air               Sub64 %x1, %x0, %x0
+asm                        <196> 0x113c406c4:    sub	x0, x1, x0
+DFG       D@75:<!0:->	Return(Check:Untyped:Kill:D@97, MustGen, W:SideState, Exits, bc#62, ExitValid)
+b3            Int64 b@385 = Identity(b@333, D@97)
+b3            Void b@57 = Return(b@385, Terminal, D@75)
+Air               Ret64 %x0
+asm                        <200> 0x113c406c8:    mov	sp, fp
+asm                        <204> 0x113c406cc:    ldp	fp, lr, [sp], #0x10
+asm                        <208> 0x113c406d0:    retab
+Air BB#5: ; frequency = 10.000000
+Air   Predecessors: #2
+b3            Void b@6 = Patchpoint(b@27:ColdAny, generator = 0x1100079e0, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@42)
+Air               Patch &Patchpoint0, %x1
+b3            Int64 b@80 = BitAnd(b@76, $-562949953421310(b@19), D@50)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Double b@12 = Phi(ReadsLocalState, D@59<Double>)
+b3            Void b@311 = Check(b@80:WarmAny, b@76:ColdAny, b@11:ColdAny, b@76:ColdAny, b@12:ColdAny, generator = 0x110085300, ExitsSideways|Reads:Top, D@50)
+Air               Patch &BranchTest64(3,SameAsRep)2, NonZero, %x8, %x3, %x8, %x5, %x8, %q0
+asm                        <212> 0x113c406d4:    tst	x8, x3
+asm                        <216> 0x113c406d8:    b.ne	0x113c4098c -> <908>
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Int32 b@84 = Load(b@79, ControlDependent|Reads:1, D@50)
+Air               Move32 (%x8), %x9
+asm                        <220> 0x113c406dc:    ldur	w9, [x8]
+b3            Int32 b@86 = NotEqual(b@84, $16804496(b@316), D@50)
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Double b@12 = Phi(ReadsLocalState, D@59<Double>)
+b3            Void b@87 = Check(b@86:WarmAny, b@79:ColdAny, b@11:ColdAny, b@79:ColdAny, b@12:ColdAny, generator = 0x110085350, ExitsSideways|Reads:Top, D@50)
+Air               Patch &Branch32(3,SameAsRep)1, NotEqual, %x9, %x4, %x8, %x5, %x8, %q0
+asm                        <224> 0x113c406e0:    cmp	w9, w4
+asm                        <228> 0x113c406e4:    b.ne	0x113c409a0 -> <928>
+DFG       D@51:<!2:->	GetByOffset(KnownStorage:D@42, KnownCell:D@42, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id0{value}, 0, R:NamedProperties(0), Exits, bc#28, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Double b@90 = Load(b@79, offset = 16, ControlDependent|Reads:6, D@51<Double>)
+Air               MoveDouble 16(%x8), %q3
+asm                        <232> 0x113c406e8:    ldur	d3, [x8, #0x10]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@91 = Patchpoint(b@90:SomeRegister, b@9:SomeRegister, generator = 0x1100079f0, resultConstraints = SomeRegister, D@51<Double>)
+Air               Patch &Patchpoint0, %q2, %q3, %q1
+asm                        <236> 0x113c406ec:    sub	d2, d3, d1
+b3            Int32 b@93 = Equal(b@91, b@91, D@51<Double>)
+b3            Void b@94 = Branch(b@93, Terminal, D@51<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q2, %q2
+asm                        <240> 0x113c406f0:    fcmp	d2, d2
+asm                        <244> 0x113c406f4:    b.ne	0x113c40914 -> <788>
+Air   Successors: Rare:#30, #6
+Air BB#6: ; frequency = 10.000000
+Air   Predecessors: #5, #30
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Void b@103 = Patchpoint(b@79:ColdAny, generator = 0x110007a10, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@51<Double>)
+Air               Patch &Patchpoint0, %x8
+DFG       D@57:<!1:->	GetByOffset(KnownStorage:Kill:D@42, KnownCell:D@42, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id1{scale}, 1, R:NamedProperties(1), Exits, bc#34, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Double b@106 = Load(b@79, offset = 24, ControlDependent|Reads:7, D@57<Double>)
+Air               MoveDouble 24(%x8), %q4
+asm                        <248> 0x113c406f8:    ldur	d4, [x8, #0x18]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@107 = Patchpoint(b@106:SomeRegister, b@9:SomeRegister, generator = 0x110007a20, resultConstraints = SomeRegister, D@57<Double>)
+Air               Patch &Patchpoint0, %q3, %q4, %q1
+asm                        <252> 0x113c406fc:    sub	d3, d4, d1
+b3            Int32 b@109 = Equal(b@107, b@107, D@57<Double>)
+b3            Void b@110 = Branch(b@109, Terminal, D@57<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q3, %q3
+asm                        <256> 0x113c40700:    fcmp	d3, d3
+asm                        <260> 0x113c40704:    b.ne	0x113c40900 -> <768>
+Air   Successors: Rare:#29, #7
+Air BB#7: ; frequency = 10.000000
+Air   Predecessors: #6, #29
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Void b@119 = Patchpoint(b@79:ColdAny, generator = 0x110007a40, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@57<Double>)
+Air               Patch &Patchpoint0, %x8
+DFG       D@60:< 1:->	ArithMul(DoubleRep:Kill:D@51<Double>, DoubleRep:Kill:D@57<Double>, Double|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#40, ExitValid)
+b3            Double b@102 = Phi(ReadsLocalState, D@51<Double>)
+b3            Double b@118 = Phi(ReadsLocalState, D@57<Double>)
+b3            Double b@120 = Mul(b@102, b@118, D@60<Double>)
+Air               MulDouble %q2, %q3, %q2
+asm                        <264> 0x113c40708:    fmul	d2, d2, d3
+DFG       D@59:< 3:->	Phi(Double|PureInt, BoolInt32|AnyIntAsDouble|NonIntAsDouble, W:SideState, bc#11, ExitInvalid)
+DFG       D@63:<!4:->	ArithAdd(DoubleRep:Kill:D@60<Double>, DoubleRep:Kill:D@59<Double>, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther|MayHaveDoubleResult|MayOverflowInt32InBaseline, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#46, ExitValid)
+b3            Double b@12 = Phi(ReadsLocalState, D@59<Double>)
+b3            Double b@121 = Add(b@12, b@120, D@63<Double>)
+Air               AddDouble %q0, %q2, %q0
+asm                        <268> 0x113c4070c:    fadd	d0, d0, d2
+DFG       D@47:<!3:->	Phi(Int32|MustGen|PureInt, Int32, W:SideState, bc#11, ExitInvalid)
+DFG       D@90:< 4:->	JSConstant(JS|PureNum|NeedsNaNOrInfinity, Int32, Int32: 1, bc#0, ExitValid)
+DFG       D@68:<!4:->	ArithAdd(Int32:Kill:D@47, Int32:D@90, Int32|MustGen|PureNum|NeedsNaNOrInfinity|UseAsOther, Int32, Unchecked, bc#55, ExitValid)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Int32 b@319 = Const32(1, D@90)
+b3            Int32 b@123 = Add(b@11, $1(b@319), D@68)
+Air               Add32 $1, %x5, %x8
+asm                        <272> 0x113c40710:    add	w8, w5, #0x1
+DFG       D@62:<!5:->	GetStack(JS|MustGen|PureInt, NonBoolInt32, arg2, machine:arg2, FlushedInt32, R:Stack(arg2), bc#0, ExitValid)
+DFG       D@72:< 1:->	CompareLess(Int32:D@68, Int32:D@62, Boolean|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Bool, bc#58, ExitValid)
+DFG       D@73:<!0:->	Branch(KnownBoolean:Kill:D@72, MustGen, T:#12/w:10.000000, F:#5/w:1.000000, W:SideState, bc#58, ExitInvalid)
+b3            Int32 b@391 = Trunc(b@22, D@62)
+b3            Int32 b@145 = LessThan(b@123, b@391, D@72)
+b3            Void b@125 = Branch(b@145, Terminal, D@73)
+Air               Branch32 GreaterThanOrEqual, %x8, %x2
+asm                        <276> 0x113c40714:    cmp	w8, w2
+asm                        <280> 0x113c40718:    b.ge	0x113c406c0 -> <192>
+Air   Successors: #4, #8
+Air BB#8: ; frequency = 10.000000
+Air   Predecessors: #7
+DFG       D@37:< 4:->	JSConstant(JS|PureInt|UseAsInt, NonBoolInt32, Int32: 255, bc#0, ExitValid)
+DFG      D@214:< 3:->	ArithBitAnd(Int32:D@68, Int32:D@37, Int32|PureNum|NeedsNaNOrInfinity|UseAsOther|UseAsInt|ReallyWantsInt, Int32, bc#13, ExitValid)
+b3            Int32 b@31 = Const32(255, D@37)
+b3            Int32 b@129 = BitAnd(b@123, $255(b@31), D@214)
+Air               ZeroExtend8To32 %x8, %x9
+asm                        <284> 0x113c4071c:    and	w9, w8, #0xff
+DFG      D@103:<!1:->	CheckInBounds(Int32:D@214, KnownInt32:D@130, JS|MustGen|PureInt, Int32, Exits, bc#19, ExitValid)
+b3            Int32 b@321 = BelowEqual(b@66, b@129, D@103)
+b3            Void b@131 = Check(b@321:WarmAny, b@121:ColdAny, b@123:ColdAny, b@129:ColdAny, generator = 0x110085440, ExitsSideways|Reads:Top, D@103)
+Air               Patch &Branch32(3,SameAsRep)1, BelowOrEqual, %x7, %x9, %q0, %x8, %x9
+asm                        <288> 0x113c40720:    cmp	w7, w9
+asm                        <292> 0x113c40724:    b.ls	0x113c409b4 -> <948>
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG      D@209:< 8:->	GetByVal(KnownCell:D@65, Int32:Kill:D@214, KnownStorage:D@89, Check:Untyped:Kill:D@103, JS|VarArgs|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Final, Contiguous+OriginalNonCopyOnWriteArray+InBoundsSaneChain+AsIs+Read, R:Butterfly_publicLength,IndexedContiguousProperties, Exits, bc#19, ExitValid)  predicting Final
+b3            Int64 b@132 = ZExt32(b@129, D@209)
+b3            Int32 b@386 = Const32(3, D@42)
+b3            Int64 b@323 = Shl(b@132, $3(b@386), D@209)
+b3            Int64 b@135 = Add(b@63, b@323, D@209)
+b3            Int64 b@136 = Load(b@135, ControlDependent|Reads:185, D@209)
+Air               Move (%x6,%x9,ZExt32,8), %x9
+asm                        <296> 0x113c40728:    ldr	x9, [x6, w9, uxtw #0x3]
+b3            Void b@337 = Branch(b@136, Terminal, D@209)
+Air               BranchTest64 NonZero, %x9, %x9
+asm                        <300> 0x113c4072c:    cbnz	x9, 0x113c4074c -> <332>
+Air   Successors: #10, #9
+Air BB#9: ; frequency = 10.000000
+Air   Predecessors: #8
+b3            Void b@327 = Patchpoint(b@27:ColdAny, generator = 0x110007a60, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@209)
+Air               Patch &Patchpoint0, %x1
+DFG      D@193:<!0:->	CheckStructure(Check:Cell:D@209, MustGen, [0x7001006a90:[0x1006a90/16804496, Object, (2/2, 0/0){value:0, scale:1}, NonArray, PropertyAddition, Proto:0x1100bc8c8, Leaf]], R:JSCell_structureID, Exits, bc#28, ExitValid)
+b3            Int64 b@13 = Const64(10, D@42)
+b3            Void b@392 = Patchpoint($10(b@13):ColdAny, b@123:ColdAny, $10(b@13):ColdAny, b@121:ColdAny, generator = 0x110085490, resultConstraints = WarmAny, ExitsSideways|Reads:Top, D@193)
+Air               Patch &Patchpoint0, $10, %x8, $10, %q0
+asm                        <304> 0x113c40730:    stp	x16, x16, [sp, #-0x10]!
+asm                        <308> 0x113c40734:    orr	w16, wzr, #0x2
+asm                        <312> 0x113c40738:    stur	x16, [sp]
+asm                        <316> 0x113c4073c:    ldur	x16, [sp, #0x8]
+asm                        <320> 0x113c40740:    b	0x113c2c400 -> JIT PC
+b3            Void b@339 = Oops(Terminal, D@193)
+Air               Oops 
+asm                        <324> 0x113c40744:    mov	w16, #0x9b -> 155
+asm                        <328> 0x113c40748:    brk	#0xbb08
+Air BB#10: ; frequency = 10.000000
+Air   Predecessors: #8
+b3            Void b@326 = Patchpoint(b@27:ColdAny, generator = 0x110007a60, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@209)
+Air               Patch &Patchpoint0, %x1
+b3            Int64 b@140 = BitAnd(b@136, $-562949953421310(b@19), D@193)
+b3            Void b@335 = Check(b@140:WarmAny, b@136:ColdAny, b@123:ColdAny, b@136:ColdAny, b@121:ColdAny, generator = 0x110085490, ExitsSideways|Reads:Top, D@193)
+Air               Patch &BranchTest64(3,SameAsRep)2, NonZero, %x9, %x3, %x9, %x8, %x9, %q0
+asm                        <332> 0x113c4074c:    tst	x9, x3
+asm                        <336> 0x113c40750:    b.ne	0x113c409c8 -> <968>
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Int32 b@144 = Load(b@139, ControlDependent|Reads:1, D@193)
+Air               Move32 (%x9), %x10
+asm                        <340> 0x113c40754:    ldur	w10, [x9]
+b3            Int32 b@146 = NotEqual(b@144, $16804496(b@316), D@193)
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Void b@147 = Check(b@146:WarmAny, b@139:ColdAny, b@123:ColdAny, b@139:ColdAny, b@121:ColdAny, generator = 0x1100854e0, ExitsSideways|Reads:Top, D@193)
+Air               Patch &Branch32(3,SameAsRep)1, NotEqual, %x10, %x4, %x9, %x8, %x9, %q0
+asm                        <344> 0x113c40758:    cmp	w10, w4
+asm                        <348> 0x113c4075c:    b.ne	0x113c409dc -> <988>
+DFG      D@188:<!2:->	GetByOffset(KnownStorage:D@209, KnownCell:D@209, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id0{value}, 0, R:NamedProperties(0), Exits, bc#28, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Double b@150 = Load(b@139, offset = 16, ControlDependent|Reads:6, D@188<Double>)
+Air               MoveDouble 16(%x9), %q3
+asm                        <352> 0x113c40760:    ldur	d3, [x9, #0x10]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@151 = Patchpoint(b@150:SomeRegister, b@9:SomeRegister, generator = 0x110007a70, resultConstraints = SomeRegister, D@188<Double>)
+Air               Patch &Patchpoint0, %q2, %q3, %q1
+asm                        <356> 0x113c40764:    sub	d2, d3, d1
+b3            Int32 b@153 = Equal(b@151, b@151, D@188<Double>)
+b3            Void b@154 = Branch(b@153, Terminal, D@188<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q2, %q2
+asm                        <360> 0x113c40768:    fcmp	d2, d2
+asm                        <364> 0x113c4076c:    b.ne	0x113c408ec -> <748>
+Air   Successors: Rare:#28, #11
+Air BB#11: ; frequency = 10.000000
+Air   Predecessors: #10, #28
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Void b@163 = Patchpoint(b@139:ColdAny, generator = 0x110007a90, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@188<Double>)
+Air               Patch &Patchpoint0, %x9
+DFG      D@184:<!1:->	GetByOffset(KnownStorage:Kill:D@209, KnownCell:D@209, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id1{scale}, 1, R:NamedProperties(1), Exits, bc#34, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Double b@166 = Load(b@139, offset = 24, ControlDependent|Reads:7, D@184<Double>)
+Air               MoveDouble 24(%x9), %q4
+asm                        <368> 0x113c40770:    ldur	d4, [x9, #0x18]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@167 = Patchpoint(b@166:SomeRegister, b@9:SomeRegister, generator = 0x110007aa0, resultConstraints = SomeRegister, D@184<Double>)
+Air               Patch &Patchpoint0, %q3, %q4, %q1
+asm                        <372> 0x113c40774:    sub	d3, d4, d1
+b3            Int32 b@169 = Equal(b@167, b@167, D@184<Double>)
+b3            Void b@170 = Branch(b@169, Terminal, D@184<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q3, %q3
+asm                        <376> 0x113c40778:    fcmp	d3, d3
+asm                        <380> 0x113c4077c:    b.ne	0x113c408d8 -> <728>
+Air   Successors: Rare:#27, #12
+Air BB#12: ; frequency = 10.000000
+Air   Predecessors: #11, #27
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Void b@179 = Patchpoint(b@139:ColdAny, generator = 0x110007ac0, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@184<Double>)
+Air               Patch &Patchpoint0, %x9
+DFG      D@175:< 1:->	ArithMul(DoubleRep:Kill:D@188<Double>, DoubleRep:Kill:D@184<Double>, Double|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#40, ExitValid)
+b3            Double b@162 = Phi(ReadsLocalState, D@188<Double>)
+b3            Double b@178 = Phi(ReadsLocalState, D@184<Double>)
+b3            Double b@180 = Mul(b@162, b@178, D@175<Double>)
+Air               MulDouble %q2, %q3, %q2
+asm                        <384> 0x113c40780:    fmul	d2, d2, d3
+DFG      D@164:<!4:->	ArithAdd(DoubleRep:Kill:D@63<Double>, DoubleRep:Kill:D@175<Double>, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther|MayHaveDoubleResult|MayOverflowInt32InBaseline, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#46, ExitValid)
+b3            Double b@181 = Add(b@121, b@180, D@164<Double>)
+Air               AddDouble %q0, %q2, %q0
+asm                        <388> 0x113c40784:    fadd	d0, d0, d2
+DFG       D@90:< 4:->	JSConstant(JS|PureNum|NeedsNaNOrInfinity, Int32, Int32: 1, bc#0, ExitValid)
+DFG      D@144:<!4:->	ArithAdd(Int32:Kill:D@68, Int32:D@90, Int32|MustGen|PureNum|NeedsNaNOrInfinity|UseAsOther, Int32, Unchecked, bc#55, ExitValid)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Int32 b@393 = Const32(2, D@90)
+b3            Int32 b@183 = Add(b@11, $2(b@393), D@144)
+Air               Add32 $2, %x5, %x8
+asm                        <392> 0x113c40788:    add	w8, w5, #0x2
+DFG       D@62:<!5:->	GetStack(JS|MustGen|PureInt, NonBoolInt32, arg2, machine:arg2, FlushedInt32, R:Stack(arg2), bc#0, ExitValid)
+DFG      D@138:< 1:->	CompareLess(Int32:D@144, Int32:D@62, Boolean|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Bool, bc#58, ExitValid)
+DFG      D@136:<!0:->	Branch(KnownBoolean:Kill:D@138, MustGen, T:#11/w:10.000000, F:#8/w:1.000000, W:SideState, bc#58, ExitInvalid)
+b3            Int32 b@391 = Trunc(b@22, D@62)
+b3            Int32 b@328 = LessThan(b@183, b@391, D@138)
+b3            Void b@185 = Branch(b@328, Terminal, D@136)
+Air               Branch32 GreaterThanOrEqual, %x8, %x2
+asm                        <396> 0x113c4078c:    cmp	w8, w2
+asm                        <400> 0x113c40790:    b.ge	0x113c406c0 -> <192>
+Air   Successors: #4, #13
+Air BB#13: ; frequency = 10.000000
+Air   Predecessors: #12
+DFG       D@37:< 4:->	JSConstant(JS|PureInt|UseAsInt, NonBoolInt32, Int32: 255, bc#0, ExitValid)
+DFG      D@177:< 3:->	ArithBitAnd(Int32:D@144, Int32:D@37, Int32|PureNum|NeedsNaNOrInfinity|UseAsOther|UseAsInt|ReallyWantsInt, Int32, bc#13, ExitValid)
+b3            Int32 b@31 = Const32(255, D@37)
+b3            Int32 b@189 = BitAnd(b@183, $255(b@31), D@177)
+Air               ZeroExtend8To32 %x8, %x9
+asm                        <404> 0x113c40794:    and	w9, w8, #0xff
+DFG      D@109:<!1:->	CheckInBounds(Int32:D@177, KnownInt32:D@130, JS|MustGen|PureInt, Int32, Exits, bc#19, ExitValid)
+b3            Int32 b@342 = BelowEqual(b@66, b@189, D@109)
+b3            Void b@191 = Check(b@342:WarmAny, b@181:ColdAny, b@183:ColdAny, b@189:ColdAny, generator = 0x1100855d0, ExitsSideways|Reads:Top, D@109)
+Air               Patch &Branch32(3,SameAsRep)1, BelowOrEqual, %x7, %x9, %q0, %x8, %x9
+asm                        <408> 0x113c40798:    cmp	w7, w9
+asm                        <412> 0x113c4079c:    b.ls	0x113c409f0 -> <1008>
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG      D@182:< 8:->	GetByVal(KnownCell:D@65, Int32:Kill:D@177, KnownStorage:D@89, Check:Untyped:Kill:D@109, JS|VarArgs|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Final, Contiguous+OriginalNonCopyOnWriteArray+InBoundsSaneChain+AsIs+Read, R:Butterfly_publicLength,IndexedContiguousProperties, Exits, bc#19, ExitValid)  predicting Final
+b3            Int64 b@192 = ZExt32(b@189, D@182)
+b3            Int32 b@386 = Const32(3, D@42)
+b3            Int64 b@344 = Shl(b@192, $3(b@386), D@182)
+b3            Int64 b@195 = Add(b@63, b@344, D@182)
+b3            Int64 b@196 = Load(b@195, ControlDependent|Reads:185, D@182)
+Air               Move (%x6,%x9,ZExt32,8), %x9
+asm                        <416> 0x113c407a0:    ldr	x9, [x6, w9, uxtw #0x3]
+b3            Void b@358 = Branch(b@196, Terminal, D@182)
+Air               BranchTest64 NonZero, %x9, %x9
+asm                        <420> 0x113c407a4:    cbnz	x9, 0x113c407c4 -> <452>
+Air   Successors: #15, #14
+Air BB#14: ; frequency = 10.000000
+Air   Predecessors: #13
+b3            Void b@348 = Patchpoint(b@27:ColdAny, generator = 0x110007ae0, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@182)
+Air               Patch &Patchpoint0, %x1
+DFG      D@190:<!0:->	CheckStructure(Check:Cell:D@182, MustGen, [0x7001006a90:[0x1006a90/16804496, Object, (2/2, 0/0){value:0, scale:1}, NonArray, PropertyAddition, Proto:0x1100bc8c8, Leaf]], R:JSCell_structureID, Exits, bc#28, ExitValid)
+b3            Int64 b@13 = Const64(10, D@42)
+b3            Void b@396 = Patchpoint($10(b@13):ColdAny, b@183:ColdAny, $10(b@13):ColdAny, b@181:ColdAny, generator = 0x110085620, resultConstraints = WarmAny, ExitsSideways|Reads:Top, D@190)
+Air               Patch &Patchpoint0, $10, %x8, $10, %q0
+asm                        <424> 0x113c407a8:    stp	x16, x16, [sp, #-0x10]!
+asm                        <428> 0x113c407ac:    orr	w16, wzr, #0x3
+asm                        <432> 0x113c407b0:    stur	x16, [sp]
+asm                        <436> 0x113c407b4:    ldur	x16, [sp, #0x8]
+asm                        <440> 0x113c407b8:    b	0x113c2c400 -> JIT PC
+b3            Void b@360 = Oops(Terminal, D@190)
+Air               Oops 
+asm                        <444> 0x113c407bc:    mov	w16, #0x9b -> 155
+asm                        <448> 0x113c407c0:    brk	#0xbb08
+Air BB#15: ; frequency = 10.000000
+Air   Predecessors: #13
+b3            Void b@347 = Patchpoint(b@27:ColdAny, generator = 0x110007ae0, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@182)
+Air               Patch &Patchpoint0, %x1
+b3            Int64 b@200 = BitAnd(b@196, $-562949953421310(b@19), D@190)
+b3            Void b@356 = Check(b@200:WarmAny, b@196:ColdAny, b@183:ColdAny, b@196:ColdAny, b@181:ColdAny, generator = 0x110085620, ExitsSideways|Reads:Top, D@190)
+Air               Patch &BranchTest64(3,SameAsRep)2, NonZero, %x9, %x3, %x9, %x8, %x9, %q0
+asm                        <452> 0x113c407c4:    tst	x9, x3
+asm                        <456> 0x113c407c8:    b.ne	0x113c40a04 -> <1028>
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Int32 b@204 = Load(b@199, ControlDependent|Reads:1, D@190)
+Air               Move32 (%x9), %x10
+asm                        <460> 0x113c407cc:    ldur	w10, [x9]
+b3            Int32 b@206 = NotEqual(b@204, $16804496(b@316), D@190)
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Void b@207 = Check(b@206:WarmAny, b@199:ColdAny, b@183:ColdAny, b@199:ColdAny, b@181:ColdAny, generator = 0x110085670, ExitsSideways|Reads:Top, D@190)
+Air               Patch &Branch32(3,SameAsRep)1, NotEqual, %x10, %x4, %x9, %x8, %x9, %q0
+asm                        <464> 0x113c407d0:    cmp	w10, w4
+asm                        <468> 0x113c407d4:    b.ne	0x113c40a18 -> <1048>
+DFG      D@191:<!2:->	GetByOffset(KnownStorage:D@182, KnownCell:D@182, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id0{value}, 0, R:NamedProperties(0), Exits, bc#28, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Double b@210 = Load(b@199, offset = 16, ControlDependent|Reads:6, D@191<Double>)
+Air               MoveDouble 16(%x9), %q3
+asm                        <472> 0x113c407d8:    ldur	d3, [x9, #0x10]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@211 = Patchpoint(b@210:SomeRegister, b@9:SomeRegister, generator = 0x110007af0, resultConstraints = SomeRegister, D@191<Double>)
+Air               Patch &Patchpoint0, %q2, %q3, %q1
+asm                        <476> 0x113c407dc:    sub	d2, d3, d1
+b3            Int32 b@213 = Equal(b@211, b@211, D@191<Double>)
+b3            Void b@214 = Branch(b@213, Terminal, D@191<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q2, %q2
+asm                        <480> 0x113c407e0:    fcmp	d2, d2
+asm                        <484> 0x113c407e4:    b.ne	0x113c408c4 -> <708>
+Air   Successors: Rare:#26, #16
+Air BB#16: ; frequency = 10.000000
+Air   Predecessors: #15, #26
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Void b@223 = Patchpoint(b@199:ColdAny, generator = 0x110007b10, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@191<Double>)
+Air               Patch &Patchpoint0, %x9
+DFG      D@195:<!1:->	GetByOffset(KnownStorage:Kill:D@182, KnownCell:D@182, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id1{scale}, 1, R:NamedProperties(1), Exits, bc#34, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Double b@226 = Load(b@199, offset = 24, ControlDependent|Reads:7, D@195<Double>)
+Air               MoveDouble 24(%x9), %q4
+asm                        <488> 0x113c407e8:    ldur	d4, [x9, #0x18]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@227 = Patchpoint(b@226:SomeRegister, b@9:SomeRegister, generator = 0x110007b20, resultConstraints = SomeRegister, D@195<Double>)
+Air               Patch &Patchpoint0, %q3, %q4, %q1
+asm                        <492> 0x113c407ec:    sub	d3, d4, d1
+b3            Int32 b@229 = Equal(b@227, b@227, D@195<Double>)
+b3            Void b@230 = Branch(b@229, Terminal, D@195<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q3, %q3
+asm                        <496> 0x113c407f0:    fcmp	d3, d3
+asm                        <500> 0x113c407f4:    b.ne	0x113c408b0 -> <688>
+Air   Successors: Rare:#25, #17
+Air BB#17: ; frequency = 10.000000
+Air   Predecessors: #16, #25
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Void b@239 = Patchpoint(b@199:ColdAny, generator = 0x110007b40, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@195<Double>)
+Air               Patch &Patchpoint0, %x9
+DFG      D@200:< 1:->	ArithMul(DoubleRep:Kill:D@191<Double>, DoubleRep:Kill:D@195<Double>, Double|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#40, ExitValid)
+b3            Double b@222 = Phi(ReadsLocalState, D@191<Double>)
+b3            Double b@238 = Phi(ReadsLocalState, D@195<Double>)
+b3            Double b@240 = Mul(b@222, b@238, D@200<Double>)
+Air               MulDouble %q2, %q3, %q2
+asm                        <504> 0x113c407f8:    fmul	d2, d2, d3
+DFG      D@204:<!4:->	ArithAdd(DoubleRep:Kill:D@200<Double>, DoubleRep:Kill:D@164<Double>, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther|MayHaveDoubleResult|MayOverflowInt32InBaseline, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#46, ExitValid)
+b3            Double b@241 = Add(b@181, b@240, D@204<Double>)
+Air               AddDouble %q0, %q2, %q0
+asm                        <508> 0x113c407fc:    fadd	d0, d0, d2
+DFG       D@90:< 4:->	JSConstant(JS|PureNum|NeedsNaNOrInfinity, Int32, Int32: 1, bc#0, ExitValid)
+DFG      D@211:<!4:->	ArithAdd(Int32:Kill:D@144, Int32:D@90, Int32|MustGen|PureNum|NeedsNaNOrInfinity|UseAsOther, Int32, Unchecked, bc#55, ExitValid)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Int32 b@386 = Const32(3, D@42)
+b3            Int32 b@243 = Add(b@11, $3(b@386), D@211)
+Air               Add32 $3, %x5, %x8
+asm                        <512> 0x113c40800:    add	w8, w5, #0x3
+DFG       D@62:<!5:->	GetStack(JS|MustGen|PureInt, NonBoolInt32, arg2, machine:arg2, FlushedInt32, R:Stack(arg2), bc#0, ExitValid)
+DFG      D@215:< 1:->	CompareLess(Int32:D@211, Int32:D@62, Boolean|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Bool, bc#58, ExitValid)
+DFG      D@216:<!0:->	Branch(KnownBoolean:Kill:D@215, MustGen, T:#10/w:10.000000, F:#7/w:1.000000, W:SideState, bc#58, ExitInvalid)
+b3            Int32 b@391 = Trunc(b@22, D@62)
+b3            Int32 b@329 = LessThan(b@243, b@391, D@215)
+b3            Void b@245 = Branch(b@329, Terminal, D@216)
+Air               Branch32 GreaterThanOrEqual, %x8, %x2
+asm                        <516> 0x113c40804:    cmp	w8, w2
+asm                        <520> 0x113c40808:    b.ge	0x113c406c0 -> <192>
+Air   Successors: #4, #18
+Air BB#18: ; frequency = 10.000000
+Air   Predecessors: #17
+DFG       D@37:< 4:->	JSConstant(JS|PureInt|UseAsInt, NonBoolInt32, Int32: 255, bc#0, ExitValid)
+DFG      D@128:< 3:->	ArithBitAnd(Int32:D@211, Int32:D@37, Int32|PureNum|NeedsNaNOrInfinity|UseAsOther|UseAsInt|ReallyWantsInt, Int32, bc#13, ExitValid)
+b3            Int32 b@31 = Const32(255, D@37)
+b3            Int32 b@249 = BitAnd(b@243, $255(b@31), D@128)
+Air               ZeroExtend8To32 %x8, %x9
+asm                        <524> 0x113c4080c:    and	w9, w8, #0xff
+DFG      D@131:<!1:->	CheckInBounds(Int32:D@128, KnownInt32:D@130, JS|MustGen|PureInt, Int32, Exits, bc#19, ExitValid)
+b3            Int32 b@363 = BelowEqual(b@66, b@249, D@131)
+b3            Void b@251 = Check(b@363:WarmAny, b@241:ColdAny, b@243:ColdAny, b@249:ColdAny, generator = 0x1100858f0, ExitsSideways|Reads:Top, D@131)
+Air               Patch &Branch32(3,SameAsRep)1, BelowOrEqual, %x7, %x9, %q0, %x8, %x9
+asm                        <528> 0x113c40810:    cmp	w7, w9
+asm                        <532> 0x113c40814:    b.ls	0x113c40a2c -> <1068>
+DFG       D@65:< 8:->	GetStack(JS|PureInt, Array, arg1, machine:arg1, FlushedCell, R:Stack(arg1), bc#0, ExitValid)
+DFG      D@133:< 8:->	GetByVal(KnownCell:D@65, Int32:Kill:D@128, KnownStorage:D@89, Check:Untyped:Kill:D@131, JS|VarArgs|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Final, Contiguous+OriginalNonCopyOnWriteArray+InBoundsSaneChain+AsIs+Read, R:Butterfly_publicLength,IndexedContiguousProperties, Exits, bc#19, ExitValid)  predicting Final
+b3            Int64 b@252 = ZExt32(b@249, D@133)
+b3            Int32 b@386 = Const32(3, D@42)
+b3            Int64 b@365 = Shl(b@252, $3(b@386), D@133)
+b3            Int64 b@255 = Add(b@63, b@365, D@133)
+b3            Int64 b@256 = Load(b@255, ControlDependent|Reads:185, D@133)
+Air               Move (%x6,%x9,ZExt32,8), %x9
+asm                        <536> 0x113c40818:    ldr	x9, [x6, w9, uxtw #0x3]
+b3            Void b@379 = Branch(b@256, Terminal, D@133)
+Air               BranchTest64 NonZero, %x9, %x9
+asm                        <540> 0x113c4081c:    cbnz	x9, 0x113c4083c -> <572>
+Air   Successors: #20, #19
+Air BB#19: ; frequency = 10.000000
+Air   Predecessors: #18
+b3            Void b@369 = Patchpoint(b@27:ColdAny, generator = 0x110007b60, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@133)
+Air               Patch &Patchpoint0, %x1
+DFG      D@141:<!0:->	CheckStructure(Check:Cell:D@133, MustGen, [0x7001006a90:[0x1006a90/16804496, Object, (2/2, 0/0){value:0, scale:1}, NonArray, PropertyAddition, Proto:0x1100bc8c8, Leaf]], R:JSCell_structureID, Exits, bc#28, ExitValid)
+b3            Int64 b@13 = Const64(10, D@42)
+b3            Void b@399 = Patchpoint($10(b@13):ColdAny, b@243:ColdAny, $10(b@13):ColdAny, b@241:ColdAny, generator = 0x110085940, resultConstraints = WarmAny, ExitsSideways|Reads:Top, D@141)
+Air               Patch &Patchpoint0, $10, %x8, $10, %q0
+asm                        <544> 0x113c40820:    stp	x16, x16, [sp, #-0x10]!
+asm                        <548> 0x113c40824:    orr	w16, wzr, #0x4
+asm                        <552> 0x113c40828:    stur	x16, [sp]
+asm                        <556> 0x113c4082c:    ldur	x16, [sp, #0x8]
+asm                        <560> 0x113c40830:    b	0x113c2c400 -> JIT PC
+b3            Void b@381 = Oops(Terminal, D@141)
+Air               Oops 
+asm                        <564> 0x113c40834:    mov	w16, #0x9b -> 155
+asm                        <568> 0x113c40838:    brk	#0xbb08
+Air BB#20: ; frequency = 10.000000
+Air   Predecessors: #18
+b3            Void b@368 = Patchpoint(b@27:ColdAny, generator = 0x110007b60, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@133)
+Air               Patch &Patchpoint0, %x1
+b3            Int64 b@260 = BitAnd(b@256, $-562949953421310(b@19), D@141)
+b3            Void b@377 = Check(b@260:WarmAny, b@256:ColdAny, b@243:ColdAny, b@256:ColdAny, b@241:ColdAny, generator = 0x110085940, ExitsSideways|Reads:Top, D@141)
+Air               Patch &BranchTest64(3,SameAsRep)2, NonZero, %x9, %x3, %x9, %x8, %x9, %q0
+asm                        <572> 0x113c4083c:    tst	x9, x3
+asm                        <576> 0x113c40840:    b.ne	0x113c40a40 -> <1088>
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Int32 b@264 = Load(b@259, ControlDependent|Reads:1, D@141)
+Air               Move32 (%x9), %x10
+asm                        <580> 0x113c40844:    ldur	w10, [x9]
+b3            Int32 b@266 = NotEqual(b@264, $16804496(b@316), D@141)
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Void b@267 = Check(b@266:WarmAny, b@259:ColdAny, b@243:ColdAny, b@259:ColdAny, b@241:ColdAny, generator = 0x110085990, ExitsSideways|Reads:Top, D@141)
+Air               Patch &Branch32(3,SameAsRep)1, NotEqual, %x10, %x4, %x9, %x8, %x9, %q0
+asm                        <584> 0x113c40848:    cmp	w10, w4
+asm                        <588> 0x113c4084c:    b.ne	0x113c40a54 -> <1108>
+DFG      D@142:<!2:->	GetByOffset(KnownStorage:D@133, KnownCell:D@133, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id0{value}, 0, R:NamedProperties(0), Exits, bc#28, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Double b@270 = Load(b@259, offset = 16, ControlDependent|Reads:6, D@142<Double>)
+Air               MoveDouble 16(%x9), %q3
+asm                        <592> 0x113c40850:    ldur	d3, [x9, #0x10]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@271 = Patchpoint(b@270:SomeRegister, b@9:SomeRegister, generator = 0x110007b70, resultConstraints = SomeRegister, D@142<Double>)
+Air               Patch &Patchpoint0, %q2, %q3, %q1
+asm                        <596> 0x113c40854:    sub	d2, d3, d1
+b3            Int32 b@273 = Equal(b@271, b@271, D@142<Double>)
+b3            Void b@274 = Branch(b@273, Terminal, D@142<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q2, %q2
+asm                        <600> 0x113c40858:    fcmp	d2, d2
+asm                        <604> 0x113c4085c:    b.ne	0x113c4089c -> <668>
+Air   Successors: Rare:#24, #21
+Air BB#21: ; frequency = 10.000000
+Air   Predecessors: #20, #24
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Void b@283 = Patchpoint(b@259:ColdAny, generator = 0x110007b90, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@142<Double>)
+Air               Patch &Patchpoint0, %x9
+DFG      D@146:<!1:->	GetByOffset(KnownStorage:Kill:D@133, KnownCell:D@133, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity, NonIntAsDouble, id1{scale}, 1, R:NamedProperties(1), Exits, bc#34, ExitValid)  predicting NonIntAsDouble
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Double b@286 = Load(b@259, offset = 24, ControlDependent|Reads:7, D@146<Double>)
+Air               MoveDouble 24(%x9), %q4
+asm                        <608> 0x113c40860:    ldur	d4, [x9, #0x18]
+b3            Double b@9 = Identity(b@320)
+b3            Double b@287 = Patchpoint(b@286:SomeRegister, b@9:SomeRegister, generator = 0x110007ba0, resultConstraints = SomeRegister, D@146<Double>)
+Air               Patch &Patchpoint0, %q3, %q4, %q1
+asm                        <612> 0x113c40864:    sub	d3, d4, d1
+b3            Int32 b@289 = Equal(b@287, b@287, D@146<Double>)
+b3            Void b@290 = Branch(b@289, Terminal, D@146<Double>)
+Air               BranchDouble DoubleNotEqualOrUnordered, %q3, %q3
+asm                        <616> 0x113c40868:    fcmp	d3, d3
+asm                        <620> 0x113c4086c:    b.ne	0x113c40888 -> <648>
+Air   Successors: Rare:#23, #22
+Air BB#22: ; frequency = 10.000000
+Air   Predecessors: #21, #23
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Void b@299 = Patchpoint(b@259:ColdAny, generator = 0x110007bc0, resultConstraints = WarmAny, WritesLocalState|Reads:Top, D@146<Double>)
+Air               Patch &Patchpoint0, %x9
+DFG      D@151:< 1:->	ArithMul(DoubleRep:Kill:D@142<Double>, DoubleRep:Kill:D@146<Double>, Double|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#40, ExitValid)
+b3            Double b@282 = Phi(ReadsLocalState, D@142<Double>)
+b3            Double b@298 = Phi(ReadsLocalState, D@146<Double>)
+b3            Double b@300 = Mul(b@282, b@298, D@151<Double>)
+Air               MulDouble %q2, %q3, %q2
+asm                        <624> 0x113c40870:    fmul	d2, d2, d3
+DFG      D@155:<!3:->	ArithAdd(DoubleRep:Kill:D@151<Double>, DoubleRep:Kill:D@204<Double>, Double|MustGen|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther|MayHaveDoubleResult|MayOverflowInt32InBaseline, AnyIntAsDouble|NonIntAsDouble, NotSet, bc#46, ExitValid)
+b3            Double b@301 = Add(b@241, b@300, D@155<Double>)
+Air               AddDouble %q0, %q2, %q0
+asm                        <628> 0x113c40874:    fadd	d0, d0, d2
+DFG       D@90:< 4:->	JSConstant(JS|PureNum|NeedsNaNOrInfinity, Int32, Int32: 1, bc#0, ExitValid)
+DFG      D@162:<!3:->	ArithAdd(Int32:Kill:D@211, Int32:D@90, Int32|MustGen|PureNum|NeedsNaNOrInfinity|UseAsOther, Int32, Unchecked, bc#55, ExitValid)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Int32 b@400 = Const32(4, D@90)
+b3            Int32 b@303 = Add(b@11, $4(b@400), D@162)
+Air               Add32 $4, %x5, %x5
+asm                        <632> 0x113c40878:    add	w5, w5, #0x4
+DFG       D@62:<!5:->	GetStack(JS|MustGen|PureInt, NonBoolInt32, arg2, machine:arg2, FlushedInt32, R:Stack(arg2), bc#0, ExitValid)
+DFG      D@166:< 1:->	CompareLess(Int32:D@162, Int32:D@62, Boolean|PureNum|NeedsNegZero|NeedsNaNOrInfinity|UseAsOther, Bool, bc#58, ExitValid)
+DFG      D@167:<!0:->	Branch(KnownBoolean:Kill:D@166, MustGen, T:#2/w:10.000000, F:#6/w:1.000000, W:SideState, bc#58, ExitInvalid)
+b3            Int32 b@391 = Trunc(b@22, D@62)
+b3            Int32 b@138 = LessThan(b@303, b@391, D@166)
+b3            Void b@305 = Branch(b@138, Terminal, D@167)
+Air               Branch32 LessThan, %x5, %x2
+asm                        <636> 0x113c4087c:    cmp	w5, w2
+asm                        <640> 0x113c40880:    b.lt	0x113c40690 -> <144>
+Air   Successors: #2, #4
+Air BB#23: ; frequency = 10.000000
+Air   Predecessors: #21
+b3            Int64 b@291 = BitwiseCast(b@286, D@146<Double>)
+Air               MoveDoubleTo64 %q4, %x10
+asm                        <648> 0x113c40888:    fmov	x10, d4
+b3            Int32 b@292 = Below(b@291, $-562949953421312(b@18), D@146<Double>)
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Double b@282 = Phi(ReadsLocalState, D@142<Double>)
+b3            Void b@293 = Check(b@292:WarmAny, b@243:ColdAny, b@259:ColdAny, b@241:ColdAny, b@282:ColdAny, generator = 0x110085a30, ExitsSideways|Reads:Top, D@146<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x10, %x0, %x8, %x9, %q0, %q2
+asm                        <652> 0x113c4088c:    cmp	x10, x0
+asm                        <656> 0x113c40890:    b.lo	0x113c40a68 -> <1128>
+b3            Int32 b@294 = Trunc(b@291, D@146<Double>)
+b3            Double b@295 = IToD(b@294, D@146<Double>)
+Air               ConvertInt32ToDouble %x10, %q3
+asm                        <660> 0x113c40894:    scvtf	d3, w10
+b3            Void b@297 = Jump(Terminal, D@146<Double>)
+Air               Jump 
+asm                        <664> 0x113c40898:    b	0x113c40870 -> <624>
+Air   Successors: #22
+Air BB#24: ; frequency = 10.000000
+Air   Predecessors: #20
+b3            Int64 b@275 = BitwiseCast(b@270, D@142<Double>)
+Air               MoveDoubleTo64 %q3, %x10
+asm                        <668> 0x113c4089c:    fmov	x10, d3
+b3            Int32 b@276 = Below(b@275, $-562949953421312(b@18), D@142<Double>)
+b3            Int64 b@259 = Phi(ReadsLocalState, D@133)
+b3            Void b@277 = Check(b@276:WarmAny, b@243:ColdAny, b@259:ColdAny, b@241:ColdAny, generator = 0x1100859e0, ExitsSideways|Reads:Top, D@142<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x10, %x0, %x8, %x9, %q0
+asm                        <672> 0x113c408a0:    cmp	x10, x0
+asm                        <676> 0x113c408a4:    b.lo	0x113c40a7c -> <1148>
+b3            Int32 b@278 = Trunc(b@275, D@142<Double>)
+b3            Double b@279 = IToD(b@278, D@142<Double>)
+Air               ConvertInt32ToDouble %x10, %q2
+asm                        <680> 0x113c408a8:    scvtf	d2, w10
+b3            Void b@281 = Jump(Terminal, D@142<Double>)
+Air               Jump 
+asm                        <684> 0x113c408ac:    b	0x113c40860 -> <608>
+Air   Successors: #21
+Air BB#25: ; frequency = 10.000000
+Air   Predecessors: #16
+b3            Int64 b@231 = BitwiseCast(b@226, D@195<Double>)
+Air               MoveDoubleTo64 %q4, %x10
+asm                        <688> 0x113c408b0:    fmov	x10, d4
+b3            Int32 b@232 = Below(b@231, $-562949953421312(b@18), D@195<Double>)
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Double b@222 = Phi(ReadsLocalState, D@191<Double>)
+b3            Void b@233 = Check(b@232:WarmAny, b@183:ColdAny, b@199:ColdAny, b@181:ColdAny, b@222:ColdAny, generator = 0x1100858a0, ExitsSideways|Reads:Top, D@195<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x10, %x0, %x8, %x9, %q0, %q2
+asm                        <692> 0x113c408b4:    cmp	x10, x0
+asm                        <696> 0x113c408b8:    b.lo	0x113c40a90 -> <1168>
+b3            Int32 b@234 = Trunc(b@231, D@195<Double>)
+b3            Double b@235 = IToD(b@234, D@195<Double>)
+Air               ConvertInt32ToDouble %x10, %q3
+asm                        <700> 0x113c408bc:    scvtf	d3, w10
+b3            Void b@237 = Jump(Terminal, D@195<Double>)
+Air               Jump 
+asm                        <704> 0x113c408c0:    b	0x113c407f8 -> <504>
+Air   Successors: #17
+Air BB#26: ; frequency = 10.000000
+Air   Predecessors: #15
+b3            Int64 b@215 = BitwiseCast(b@210, D@191<Double>)
+Air               MoveDoubleTo64 %q3, %x10
+asm                        <708> 0x113c408c4:    fmov	x10, d3
+b3            Int32 b@216 = Below(b@215, $-562949953421312(b@18), D@191<Double>)
+b3            Int64 b@199 = Phi(ReadsLocalState, D@182)
+b3            Void b@217 = Check(b@216:WarmAny, b@183:ColdAny, b@199:ColdAny, b@181:ColdAny, generator = 0x1100856c0, ExitsSideways|Reads:Top, D@191<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x10, %x0, %x8, %x9, %q0
+asm                        <712> 0x113c408c8:    cmp	x10, x0
+asm                        <716> 0x113c408cc:    b.lo	0x113c40aa4 -> <1188>
+b3            Int32 b@218 = Trunc(b@215, D@191<Double>)
+b3            Double b@219 = IToD(b@218, D@191<Double>)
+Air               ConvertInt32ToDouble %x10, %q2
+asm                        <720> 0x113c408d0:    scvtf	d2, w10
+b3            Void b@221 = Jump(Terminal, D@191<Double>)
+Air               Jump 
+asm                        <724> 0x113c408d4:    b	0x113c407e8 -> <488>
+Air   Successors: #16
+Air BB#27: ; frequency = 10.000000
+Air   Predecessors: #11
+b3            Int64 b@171 = BitwiseCast(b@166, D@184<Double>)
+Air               MoveDoubleTo64 %q4, %x10
+asm                        <728> 0x113c408d8:    fmov	x10, d4
+b3            Int32 b@172 = Below(b@171, $-562949953421312(b@18), D@184<Double>)
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Double b@162 = Phi(ReadsLocalState, D@188<Double>)
+b3            Void b@173 = Check(b@172:WarmAny, b@123:ColdAny, b@139:ColdAny, b@121:ColdAny, b@162:ColdAny, generator = 0x110085580, ExitsSideways|Reads:Top, D@184<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x10, %x0, %x8, %x9, %q0, %q2
+asm                        <732> 0x113c408dc:    cmp	x10, x0
+asm                        <736> 0x113c408e0:    b.lo	0x113c40ab8 -> <1208>
+b3            Int32 b@174 = Trunc(b@171, D@184<Double>)
+b3            Double b@175 = IToD(b@174, D@184<Double>)
+Air               ConvertInt32ToDouble %x10, %q3
+asm                        <740> 0x113c408e4:    scvtf	d3, w10
+b3            Void b@177 = Jump(Terminal, D@184<Double>)
+Air               Jump 
+asm                        <744> 0x113c408e8:    b	0x113c40780 -> <384>
+Air   Successors: #12
+Air BB#28: ; frequency = 10.000000
+Air   Predecessors: #10
+b3            Int64 b@155 = BitwiseCast(b@150, D@188<Double>)
+Air               MoveDoubleTo64 %q3, %x10
+asm                        <748> 0x113c408ec:    fmov	x10, d3
+b3            Int32 b@156 = Below(b@155, $-562949953421312(b@18), D@188<Double>)
+b3            Int64 b@139 = Phi(ReadsLocalState, D@209)
+b3            Void b@157 = Check(b@156:WarmAny, b@123:ColdAny, b@139:ColdAny, b@121:ColdAny, generator = 0x110085530, ExitsSideways|Reads:Top, D@188<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x10, %x0, %x8, %x9, %q0
+asm                        <752> 0x113c408f0:    cmp	x10, x0
+asm                        <756> 0x113c408f4:    b.lo	0x113c40acc -> <1228>
+b3            Int32 b@158 = Trunc(b@155, D@188<Double>)
+b3            Double b@159 = IToD(b@158, D@188<Double>)
+Air               ConvertInt32ToDouble %x10, %q2
+asm                        <760> 0x113c408f8:    scvtf	d2, w10
+b3            Void b@161 = Jump(Terminal, D@188<Double>)
+Air               Jump 
+asm                        <764> 0x113c408fc:    b	0x113c40770 -> <368>
+Air   Successors: #11
+Air BB#29: ; frequency = 10.000000
+Air   Predecessors: #6
+b3            Int64 b@111 = BitwiseCast(b@106, D@57<Double>)
+Air               MoveDoubleTo64 %q4, %x9
+asm                        <768> 0x113c40900:    fmov	x9, d4
+b3            Int32 b@112 = Below(b@111, $-562949953421312(b@18), D@57<Double>)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Double b@12 = Phi(ReadsLocalState, D@59<Double>)
+b3            Double b@102 = Phi(ReadsLocalState, D@51<Double>)
+b3            Void b@113 = Check(b@112:WarmAny, b@11:ColdAny, b@79:ColdAny, b@12:ColdAny, b@102:ColdAny, generator = 0x1100853f0, ExitsSideways|Reads:Top, D@57<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x9, %x0, %x5, %x8, %q0, %q2
+asm                        <772> 0x113c40904:    cmp	x9, x0
+asm                        <776> 0x113c40908:    b.lo	0x113c40ae0 -> <1248>
+b3            Int32 b@114 = Trunc(b@111, D@57<Double>)
+b3            Double b@115 = IToD(b@114, D@57<Double>)
+Air               ConvertInt32ToDouble %x9, %q3
+asm                        <780> 0x113c4090c:    scvtf	d3, w9
+b3            Void b@117 = Jump(Terminal, D@57<Double>)
+Air               Jump 
+asm                        <784> 0x113c40910:    b	0x113c40708 -> <264>
+Air   Successors: #7
+Air BB#30: ; frequency = 10.000000
+Air   Predecessors: #5
+b3            Int64 b@95 = BitwiseCast(b@90, D@51<Double>)
+Air               MoveDoubleTo64 %q3, %x9
+asm                        <788> 0x113c40914:    fmov	x9, d3
+b3            Int32 b@96 = Below(b@95, $-562949953421312(b@18), D@51<Double>)
+b3            Int32 b@11 = Phi(ReadsLocalState, D@47)
+b3            Int64 b@79 = Phi(ReadsLocalState, D@42)
+b3            Double b@12 = Phi(ReadsLocalState, D@59<Double>)
+b3            Void b@97 = Check(b@96:WarmAny, b@11:ColdAny, b@79:ColdAny, b@12:ColdAny, generator = 0x1100853a0, ExitsSideways|Reads:Top, D@51<Double>)
+Air               Patch &Branch64(3,SameAsRep)3, Below, %x9, %x0, %x5, %x8, %q0
+asm                        <792> 0x113c40918:    cmp	x9, x0
+asm                        <796> 0x113c4091c:    b.lo	0x113c40af4 -> <1268>
+b3            Int32 b@98 = Trunc(b@95, D@51<Double>)
+b3            Double b@99 = IToD(b@98, D@51<Double>)
+Air               ConvertInt32ToDouble %x9, %q2
+asm                        <800> 0x113c40920:    scvtf	d2, w9
+b3            Void b@101 = Jump(Terminal, D@51<Double>)
+Air               Jump 
+asm                        <804> 0x113c40924:    b	0x113c406f8 -> <248>
+Air   Successors: #6
+Air # Late paths
+asm                        <808> 0x113c40928:    stp	x16, x16, [sp, #-0x10]!
+asm                        <812> 0x113c4092c:    mov	w16, #0x5 -> 5
+asm                        <816> 0x113c40930:    stur	x16, [sp]
+asm                        <820> 0x113c40934:    ldur	x16, [sp, #0x8]
+asm                        <824> 0x113c40938:    b	0x113c2c400 -> JIT PC
+asm                        <828> 0x113c4093c:    stp	x16, x16, [sp, #-0x10]!
+asm                        <832> 0x113c40940:    orr	w16, wzr, #0x6
+asm                        <836> 0x113c40944:    stur	x16, [sp]
+asm                        <840> 0x113c40948:    ldur	x16, [sp, #0x8]
+asm                        <844> 0x113c4094c:    b	0x113c2c400 -> JIT PC
+asm                        <848> 0x113c40950:    stp	x16, x16, [sp, #-0x10]!
+asm                        <852> 0x113c40954:    orr	w16, wzr, #0x7
+asm                        <856> 0x113c40958:    stur	x16, [sp]
+asm                        <860> 0x113c4095c:    ldur	x16, [sp, #0x8]
+asm                        <864> 0x113c40960:    b	0x113c2c400 -> JIT PC
+asm                        <868> 0x113c40964:    stp	x16, x16, [sp, #-0x10]!
+asm                        <872> 0x113c40968:    mov	w16, #0
+asm                        <876> 0x113c4096c:    stur	x16, [sp]
+asm                        <880> 0x113c40970:    ldur	x16, [sp, #0x8]
+asm                        <884> 0x113c40974:    b	0x113c2c400 -> JIT PC
+asm                        <888> 0x113c40978:    stp	x16, x16, [sp, #-0x10]!
+asm                        <892> 0x113c4097c:    orr	w16, wzr, #0x8
+asm                        <896> 0x113c40980:    stur	x16, [sp]
+asm                        <900> 0x113c40984:    ldur	x16, [sp, #0x8]
+asm                        <904> 0x113c40988:    b	0x113c2c400 -> JIT PC
+asm                        <908> 0x113c4098c:    stp	x16, x16, [sp, #-0x10]!
+asm                        <912> 0x113c40990:    mov	w16, #0x9 -> 9
+asm                        <916> 0x113c40994:    stur	x16, [sp]
+asm                        <920> 0x113c40998:    ldur	x16, [sp, #0x8]
+asm                        <924> 0x113c4099c:    b	0x113c2c400 -> JIT PC
+asm                        <928> 0x113c409a0:    stp	x16, x16, [sp, #-0x10]!
+asm                        <932> 0x113c409a4:    mov	w16, #0xa -> 10
+asm                        <936> 0x113c409a8:    stur	x16, [sp]
+asm                        <940> 0x113c409ac:    ldur	x16, [sp, #0x8]
+asm                        <944> 0x113c409b0:    b	0x113c2c400 -> JIT PC
+asm                        <948> 0x113c409b4:    stp	x16, x16, [sp, #-0x10]!
+asm                        <952> 0x113c409b8:    mov	w16, #0xb -> 11
+asm                        <956> 0x113c409bc:    stur	x16, [sp]
+asm                        <960> 0x113c409c0:    ldur	x16, [sp, #0x8]
+asm                        <964> 0x113c409c4:    b	0x113c2c400 -> JIT PC
+asm                        <968> 0x113c409c8:    stp	x16, x16, [sp, #-0x10]!
+asm                        <972> 0x113c409cc:    orr	w16, wzr, #0xc
+asm                        <976> 0x113c409d0:    stur	x16, [sp]
+asm                        <980> 0x113c409d4:    ldur	x16, [sp, #0x8]
+asm                        <984> 0x113c409d8:    b	0x113c2c400 -> JIT PC
+asm                        <988> 0x113c409dc:    stp	x16, x16, [sp, #-0x10]!
+asm                        <992> 0x113c409e0:    mov	w16, #0xd -> 13
+asm                        <996> 0x113c409e4:    stur	x16, [sp]
+asm                       <1000> 0x113c409e8:    ldur	x16, [sp, #0x8]
+asm                       <1004> 0x113c409ec:    b	0x113c2c400 -> JIT PC
+asm                       <1008> 0x113c409f0:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1012> 0x113c409f4:    orr	w16, wzr, #0xe
+asm                       <1016> 0x113c409f8:    stur	x16, [sp]
+asm                       <1020> 0x113c409fc:    ldur	x16, [sp, #0x8]
+asm                       <1024> 0x113c40a00:    b	0x113c2c400 -> JIT PC
+asm                       <1028> 0x113c40a04:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1032> 0x113c40a08:    orr	w16, wzr, #0xf
+asm                       <1036> 0x113c40a0c:    stur	x16, [sp]
+asm                       <1040> 0x113c40a10:    ldur	x16, [sp, #0x8]
+asm                       <1044> 0x113c40a14:    b	0x113c2c400 -> JIT PC
+asm                       <1048> 0x113c40a18:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1052> 0x113c40a1c:    orr	w16, wzr, #0x10
+asm                       <1056> 0x113c40a20:    stur	x16, [sp]
+asm                       <1060> 0x113c40a24:    ldur	x16, [sp, #0x8]
+asm                       <1064> 0x113c40a28:    b	0x113c2c400 -> JIT PC
+asm                       <1068> 0x113c40a2c:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1072> 0x113c40a30:    mov	w16, #0x11 -> 17
+asm                       <1076> 0x113c40a34:    stur	x16, [sp]
+asm                       <1080> 0x113c40a38:    ldur	x16, [sp, #0x8]
+asm                       <1084> 0x113c40a3c:    b	0x113c2c400 -> JIT PC
+asm                       <1088> 0x113c40a40:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1092> 0x113c40a44:    mov	w16, #0x12 -> 18
+asm                       <1096> 0x113c40a48:    stur	x16, [sp]
+asm                       <1100> 0x113c40a4c:    ldur	x16, [sp, #0x8]
+asm                       <1104> 0x113c40a50:    b	0x113c2c400 -> JIT PC
+asm                       <1108> 0x113c40a54:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1112> 0x113c40a58:    mov	w16, #0x13 -> 19
+asm                       <1116> 0x113c40a5c:    stur	x16, [sp]
+asm                       <1120> 0x113c40a60:    ldur	x16, [sp, #0x8]
+asm                       <1124> 0x113c40a64:    b	0x113c2c400 -> JIT PC
+asm                       <1128> 0x113c40a68:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1132> 0x113c40a6c:    mov	w16, #0x14 -> 20
+asm                       <1136> 0x113c40a70:    stur	x16, [sp]
+asm                       <1140> 0x113c40a74:    ldur	x16, [sp, #0x8]
+asm                       <1144> 0x113c40a78:    b	0x113c2c400 -> JIT PC
+asm                       <1148> 0x113c40a7c:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1152> 0x113c40a80:    mov	w16, #0x15 -> 21
+asm                       <1156> 0x113c40a84:    stur	x16, [sp]
+asm                       <1160> 0x113c40a88:    ldur	x16, [sp, #0x8]
+asm                       <1164> 0x113c40a8c:    b	0x113c2c400 -> JIT PC
+asm                       <1168> 0x113c40a90:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1172> 0x113c40a94:    mov	w16, #0x16 -> 22
+asm                       <1176> 0x113c40a98:    stur	x16, [sp]
+asm                       <1180> 0x113c40a9c:    ldur	x16, [sp, #0x8]
+asm                       <1184> 0x113c40aa0:    b	0x113c2c400 -> JIT PC
+asm                       <1188> 0x113c40aa4:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1192> 0x113c40aa8:    mov	w16, #0x17 -> 23
+asm                       <1196> 0x113c40aac:    stur	x16, [sp]
+asm                       <1200> 0x113c40ab0:    ldur	x16, [sp, #0x8]
+asm                       <1204> 0x113c40ab4:    b	0x113c2c400 -> JIT PC
+asm                       <1208> 0x113c40ab8:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1212> 0x113c40abc:    orr	w16, wzr, #0x18
+asm                       <1216> 0x113c40ac0:    stur	x16, [sp]
+asm                       <1220> 0x113c40ac4:    ldur	x16, [sp, #0x8]
+asm                       <1224> 0x113c40ac8:    b	0x113c2c400 -> JIT PC
+asm                       <1228> 0x113c40acc:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1232> 0x113c40ad0:    mov	w16, #0x19 -> 25
+asm                       <1236> 0x113c40ad4:    stur	x16, [sp]
+asm                       <1240> 0x113c40ad8:    ldur	x16, [sp, #0x8]
+asm                       <1244> 0x113c40adc:    b	0x113c2c400 -> JIT PC
+asm                       <1248> 0x113c40ae0:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1252> 0x113c40ae4:    mov	w16, #0x1a -> 26
+asm                       <1256> 0x113c40ae8:    stur	x16, [sp]
+asm                       <1260> 0x113c40aec:    ldur	x16, [sp, #0x8]
+asm                       <1264> 0x113c40af0:    b	0x113c2c400 -> JIT PC
+asm                       <1268> 0x113c40af4:    stp	x16, x16, [sp, #-0x10]!
+asm                       <1272> 0x113c40af8:    mov	w16, #0x1b -> 27
+asm                       <1276> 0x113c40afc:    stur	x16, [sp]
+asm                       <1280> 0x113c40b00:    ldur	x16, [sp, #0x8]
+asm                       <1284> 0x113c40b04:    b	0x113c2c400 -> JIT PC
+Air # Remaining
+asm                       <1288> 0x113c40b08:    b	0x113c10080 -> JIT PC
+asm                       <1292> 0x113c40b0c:    ldur	w2, [sp, #0x10]
+asm                       <1296> 0x113c40b10:    cmp	w2, #0x3
+asm                       <1300> 0x113c40b14:    b.hs	0x113c40600 -> <0>
+asm                       <1304> 0x113c40b18:    orr	w0, wzr, #0x3
+asm                       <1308> 0x113c40b1c:    sub	w0, w0, w2
+asm                       <1312> 0x113c40b20:    add	w1, w0, #0x1
+asm                       <1316> 0x113c40b24:    and	w1, w1, #0xfffffffe
+asm                       <1320> 0x113c40b28:    lsl	x1, x1, #0x3
+asm                       <1324> 0x113c40b2c:    sub	x3, sp, x1
+asm                       <1328> 0x113c40b30:    mov	x17, #0x6068
+asm                       <1332> 0x113c40b34:    movk	x17, #0x1142, lsl #0x10
+asm                       <1336> 0x113c40b38:    movk	x17, #0x1, lsl #0x20 -> 0x111426068 vm +104: vm.softStackLimit()
+asm                       <1340> 0x113c40b3c:    ldr	x16, [x17, xzr]
+asm                       <1344> 0x113c40b40:    cmp	x16, x3
+asm                       <1348> 0x113c40b44:    b.gt	0x113c40b60 -> <1376>
+asm                       <1352> 0x113c40b48:    pacizb	lr
+asm                       <1356> 0x113c40b4c:    mov	x1, lr
+asm                       <1360> 0x113c40b50:    bl	0x113c10000 -> JIT PC
+asm                       <1364> 0x113c40b54:    mov	lr, x1
+asm                       <1368> 0x113c40b58:    autizb	lr
+asm                       <1372> 0x113c40b5c:    b	0x113c40600 -> <0>
+asm                       <1376> 0x113c40b60:    pacibsp
+asm                       <1380> 0x113c40b64:    stp	fp, lr, [sp, #-0x10]!
+asm                       <1384> 0x113c40b68:    mov	fp, sp
+asm                       <1388> 0x113c40b6c:    b	0x113c18000 -> JIT PC
+asm                       <1392> 0x113c40b70:    brk	#0xbb08

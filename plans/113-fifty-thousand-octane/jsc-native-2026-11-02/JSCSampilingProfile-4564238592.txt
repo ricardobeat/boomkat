@@ -1,0 +1,57 @@
+
+
+Sampling rate: 1000.000000 microseconds. Total samples: 81
+Top functions as <numSamples  'functionName#hash:sourceID'>
+    73    'lin_solve#DG9A1c:2'
+     2    'advect#DVMXnO:2'
+     1    'JSC::FTL::(anonymous namespace)::LowerDFGToB3::buildExitArguments(JSC::FTL::OSRExitDescriptor*, JSC::CodeOrigin, JSC::FTL::FormattedValue, unsigned int)#<nil>:4294967295'
+     1    'JSC::ARM64Assembler::LinkRecord::from() const#<nil>:4294967295'
+     1    'void JSC::DFG::clobberize<JSC::DFG::NoOpClobberize, JSC::DFG::ClobberSetAdd, JSC::DFG::NoOpClobberize, void JSC::DFG::clobberize<JSC::DFG::NoOpClobberize, JSC::DFG::ClobberSetAdd, JSC::DFG::NoOpClobberize>(JSC::DFG::Graph&, JSC::DFG::Node*, JSC::DFG::NoOpClobberize const&, JSC::DFG::ClobberSetAdd const&, JSC::DFG::NoOpClobberize const&)::'lambda'()>(JSC::DFG::Graph&, JSC::DFG::Node*, JSC::DFG::NoOpClobberize const&, JSC::DFG::ClobberSetAdd const&, JSC::DFG::NoOpClobberize const&, void JSC::DFG::clobberize<JSC::DFG::NoOpClobberize, JSC::DFG::ClobberSetAdd, JSC::DFG::NoOpClobberize>(JSC::DFG::Graph&, JSC::DFG::Node*, JSC::DFG::NoOpClobberize const&, JSC::DFG::ClobberSetAdd const&, JSC::DFG::NoOpClobberize const&)::'lambda'() const&)#<nil>:4294967295'
+     1    'JSC::DFG::SafeToExecuteEdge<JSC::DFG::AtTailAbstractState>::operator()(JSC::DFG::Node*, JSC::DFG::Edge)#<nil>:4294967295'
+     1    '__bzero#<nil>:4294967295'
+     1    'JSC::B3::Procedure::dominators()#<nil>:4294967295'
+
+
+Sampling rate: 1000.000000 microseconds. Total samples: 81
+
+Tier breakdown:
+-----------------------------------
+LLInt:                     0  (0.000000%)
+Baseline:                  2  (2.469136%)
+DFG:                       4  (4.938272%)
+FTL:                      69  (85.185185%)
+js builtin:                0  (0.000000%)
+IPInt:                     0  (0.000000%)
+BBQ:                       0  (0.000000%)
+OMG:                       0  (0.000000%)
+Wasm:                      0  (0.000000%)
+Host:                      0  (0.000000%)
+RegExp:                    0  (0.000000%)
+C/C++:                     6  (7.407407%)
+
+
+Hottest bytecodes as <numSamples   'functionName#hash:JITType:bytecodeIndex'>
+    25    'lin_solve#DG9A1c:FTL:bc#408'
+    12    'lin_solve#DG9A1c:FTL:bc#438'
+     8    'lin_solve#DG9A1c:FTL:bc#354'
+     6    'lin_solve#DG9A1c:FTL:bc#372'
+     6    'lin_solve#DG9A1c:FTL:bc#390'
+     4    'lin_solve#DG9A1c:FTL:bc#466'
+     2    'lin_solve#DG9A1c:FTL:bc#447'
+     2    'lin_solve#DG9A1c:FTL:bc#414'
+     1    'lin_solve#DG9A1c:Baseline:bc#346'
+     1    'lin_solve#DG9A1c:FTL:bc#396'
+     1    'JSC::FTL::(anonymous namespace)::LowerDFGToB3::buildExitArguments(JSC::FTL::OSRExitDescriptor*, JSC::CodeOrigin, JSC::FTL::FormattedValue, unsigned int)#<nil>:None:<nil>'
+     1    'JSC::ARM64Assembler::LinkRecord::from() const#<nil>:None:<nil>'
+     1    'lin_solve#DG9A1c:DFG:bc#405'
+     1    'JSC::B3::Procedure::dominators()#<nil>:None:<nil>'
+     1    'lin_solve#DG9A1c:FTL:bc#420'
+     1    'lin_solve#DG9A1c:DFG:bc#457'
+     1    'advect#DVMXnO:DFG:bc#435'
+     1    'void JSC::DFG::clobberize<JSC::DFG::NoOpClobberize, JSC::DFG::ClobberSetAdd, JSC::DFG::NoOpClobberize, void JSC::DFG::clobberize<JSC::DFG::NoOpClobberize, JSC::DFG::ClobberSetAdd, JSC::DFG::NoOpClobberize>(JSC::DFG::Graph&, JSC::DFG::Node*, JSC::DFG::NoOpClobberize const&, JSC::DFG::ClobberSetAdd const&, JSC::DFG::NoOpClobberize const&)::'lambda'()>(JSC::DFG::Graph&, JSC::DFG::Node*, JSC::DFG::NoOpClobberize const&, JSC::DFG::ClobberSetAdd const&, JSC::DFG::NoOpClobberize const&, void JSC::DFG::clobberize<JSC::DFG::NoOpClobberize, JSC::DFG::ClobberSetAdd, JSC::DFG::NoOpClobberize>(JSC::DFG::Graph&, JSC::DFG::Node*, JSC::DFG::NoOpClobberize const&, JSC::DFG::ClobberSetAdd const&, JSC::DFG::NoOpClobberize const&)::'lambda'() const&)#<nil>:None:<nil>'
+     1    'lin_solve#DG9A1c:FTL:bc#426'
+     1    'advect#DVMXnO:FTL:bc#191'
+     1    '__bzero#<nil>:None:<nil>'
+     1    'lin_solve#DG9A1c:Baseline:bc#408'
+     1    'JSC::DFG::SafeToExecuteEdge<JSC::DFG::AtTailAbstractState>::operator()(JSC::DFG::Node*, JSC::DFG::Edge)#<nil>:None:<nil>'
+     1    'lin_solve#DG9A1c:DFG:bc#346'
