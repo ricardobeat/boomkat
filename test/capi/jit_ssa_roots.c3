@@ -75,3 +75,46 @@ fn void check_ssa_lazy_roots() {
     h.gc_root_value_cursor = prior_cursor;
     io::printn("SSA lazy roots: PASS empty entry, sparse swaps, clear, deopt and reverse disposal");
 }
+
+fn void check_ssa_sparse_imports() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    Heap* h = runtime.rt.heap;
+    Vm* vm = runtime.rt.vm;
+    CompiledFunction function = { .num_regs = 900 };
+    CompiledFunction* prior_function = vm.current_func;
+    Activation prior_activation = vm.activation_storage[0];
+    uint prior_count = vm.activation_count;
+    defer { vm.current_func = prior_function; vm.activation_storage[0] = prior_activation; vm.activation_count = prior_count; }
+    vm.current_func = &function;
+    vm.activation_storage[0] = { .func = &function, .bottom = vm.valstack };
+    vm.activation_count = 1;
+    vm.valstack[0].set_fastint(3);
+    vm.valstack[899].set_fastint(11);
+    ColdCtx cold = { .vm = vm, .heap = h, .act = &vm.activation_storage[0] };
+    JitArtifact owner = { .state = LIVE, .generation = 1 };
+    LoopPlan plan = { .code_owner = &owner };
+    SsaExecution execution;
+    @check(vm::ssa_execution_init(&execution, &cold, &plan, 1, 0, 0));
+    defer vm::ssa_execution_dispose(&execution);
+    // Validation/rebinding and sparse publication must not silently copy a
+    // 900-register frame. Only the actual before-frame output is imported.
+    vm.valstack[899].set_fastint(22);
+    @check(vm::ssa_execution_rebind(&execution));
+    @check(execution.input_values[899].get_fastint() == 11);
+    execution.outputs[0].reg = 1;
+    execution.outputs[0].value.set_fastint(9);
+    execution.output_count = 1;
+    @check(vm::ssa_execution_publish(&execution));
+    @check(execution.input_values[1].get_fastint() == 9 && vm.valstack[1].get_fastint() == 9);
+    @check(execution.input_values[899].get_fastint() == 11);
+    SsaFrameEntry[1] after = { { .reg = 0, .value = 0 } };
+    SsaHelperSite site = { .after_entries = &after[0], .after_count = 1, .result_reg = 899 };
+    vm.valstack[0].set_fastint(44);
+    vm.valstack[899].set_fastint(55);
+    @check(vm::ssa_execution_import_after(&execution, &site));
+    @check(execution.input_values[0].get_fastint() == 44 && execution.input_values[899].get_fastint() == 55);
+    @check(execution.input_values[1].get_fastint() == 9);
+    io::printn("SSA sparse imports: PASS rebind, sparse before/after maps and high result");
+}

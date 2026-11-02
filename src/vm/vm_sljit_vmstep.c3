@@ -46,7 +46,7 @@ fn SsaHelperOutcome ssa_vm_step(SsaExecution* execution, SsaHelperSite* site) @f
         step.curr_pc = execution.function.code + view.pc;
         if (catch err = vm_dispatch(&step)) failed = true;
     }
-    if (step.needs_restart || step.halt || !ssa_execution_reload(execution)) {
+    if (step.needs_restart || step.halt || !ssa_execution_rebind(execution)) {
         // A future supported opcode may transfer control. Never continue or
         // replay a native caller that is no longer the active VM activation.
         ((Dispatch*)cold.dispatch_ptr).needs_restart = true;
