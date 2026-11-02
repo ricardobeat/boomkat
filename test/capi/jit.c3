@@ -1313,6 +1313,8 @@ fn void check_function_missing_caches(JsRuntime* runtime) {
 fn void main() {
     check_ssa_lazy_roots();
     check_ssa_sparse_imports();
+    check_ssa_helper_homes();
+    check_ssa_boxed_truth();
     check_scalable_ssa_closure_startup();
     check_scalable_ssa_gateway();
     check_scalable_ssa_access();

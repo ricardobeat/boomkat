@@ -3,9 +3,134 @@ module jit_test;
 import boomkat;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::jit;
 import boomkat::types;
 import boomkat::vm;
 import std::io;
+
+const ulong HELPER_HOME_SENTINEL = 0x7654321076543210UL;
+
+fn void check_ssa_boxed_truth() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    eval(&context, "var console={log:function(){}};");
+    eval(&context, $embed("../jit_ssa_boxed_truth.js"));
+    CompiledFunction* cf = named_function(&runtime, "nativeBoxedTruth");
+    @check(cf != null && cf.code_count > vm::SSA_SPAN);
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan != null && plan.ssa_region != null);
+    @check(plan.ssa_region.ssa_helpers == null);
+    @check(plan.ssa_region.ssa_completed > 100);
+    io::printn("SSA boxed truth: PASS native cyclic object/null/boolean/integer branches");
+}
+
+fn long helper_home_probe(LoopState* state) @noinline {
+    ulong* bits = state.execution.saved_bits;
+    ulong boxed_saved = vm::loop_bits(types::make_fastint(29));
+    ulong boxed_scratch = vm::loop_bits(types::make_fastint(31));
+    ulong boxed_spill = vm::loop_bits(types::make_fastint(37));
+    bool saved_fp = jit::sljit_shim_info(3) != 0;
+    state.execution.output_count = bits[0] == 37 && bits[1] == HELPER_HOME_SENTINEL
+        && bits[2] == bitcast(1.25, ulong)
+        && bits[3] == (saved_fp ? HELPER_HOME_SENTINEL : bitcast(2.5, ulong))
+        && bits[4] == HELPER_HOME_SENTINEL && bits[5] == boxed_saved
+        && bits[6] == boxed_scratch && bits[7] == boxed_spill ? 1 : 0;
+    // Surviving homes must remain authoritative. Poison their unused saved
+    // slots so an unnecessary restore corrupts the generated result.
+    bits[1] = 99;
+    if (saved_fp) bits[3] = bitcast(99.0, ulong);
+    bits[4] = 99;
+    bits[5] = vm::loop_bits(types::make_fastint(99));
+    bits[7] = vm::loop_bits(types::make_fastint(99));
+    return 1;
+}
+
+alias HelperHomeEntry = fn long(LoopState* state);
+
+fn void check_ssa_helper_homes() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    Heap* h = runtime.rt.heap;
+    LoopState* state = h.alloc_func(h.heap_udata, LoopState::size + 2 * ulong::size);
+    @check(state != null);
+    defer h.free_func(h.heap_udata, state);
+    SsaExecution execution;
+    ulong[8] bits;
+    ulong[8] results;
+    foreach (&value : bits) *value = HELPER_HOME_SENTINEL;
+    execution.saved_bits = &bits[0];
+    execution.edge = &results[0];
+    state.execution = &execution;
+    SsaPlanData data;
+    LoopPlan plan = { .ssa_data = &data };
+    int total_fp = jit::sljit_shim_info(2);
+    bool saved_fp = jit::sljit_shim_info(3) != 0;
+    SsaValue[8] values = {
+        { .op = ARG, .rep = INT32, .home = jit::reg_r(4) },
+        { .op = ARG, .rep = INT32, .home = jit::reg_s(1) },
+        { .op = ARG, .rep = F64, .home = 3 },
+        { .op = ARG, .rep = F64, .home = saved_fp ? total_fp : 4 },
+        { .op = ARG, .rep = INT32, .spill = 0 },
+        { .op = ARG, .rep = BOXED, .home = jit::reg_s(2) },
+        { .op = ARG, .rep = BOXED, .home = jit::reg_r(5) },
+        { .op = ARG, .rep = BOXED, .spill = 1 }
+    };
+    ulong[8] expected = { 37, 41, bitcast(1.25, ulong), bitcast(2.5, ulong), 43,
+        vm::loop_bits(types::make_fastint(29)), vm::loop_bits(types::make_fastint(31)),
+        vm::loop_bits(types::make_fastint(37)) };
+    SsaGraph graph = { .values = &values[0], .value_count = 8, .recoverable = true, .plan = &plan };
+    SsaEmitter emitter = { .g = &graph, .plan = &plan, .state = jit::reg_s(0) };
+    void* compiler = jit::sljit_create_compiler(null);
+    @check(compiler != null);
+    defer jit::sljit_free_compiler(compiler);
+    emitter.e.compiler = compiler;
+    @check(jit::sljit_emit_enter(compiler, 0, jit::SLJIT_ARGS1WW_R, 7 | (total_fp << 8), 3, 0) == 0);
+    emitter.e.mov(emitter.state, 0, jit::reg_r(0), 0);
+    for (uint i = 0; i < values.len; i++) {
+        emitter.e.mov(jit::reg_r(0), 0, jit::SLJIT_IMM, (long)expected[i]);
+        if (values[i].rep == F64) {
+            @check(jit::sljit_emit_fcopy(compiler, jit::SLJIT_COPY_TO_F64, values[i].home, jit::reg_r(0)) == 0);
+        } else { emitter.store_gpr((int)i, jit::reg_r(0)); }
+    }
+    uint[8] live = { 0, 1, 2, 3, 4, 5, 6, 7 };
+    uint[3] roots = { 5, 6, 7 };
+    SsaHelperSite site = { .live_values = &live[0], .live_count = 8, .root_values = &roots[0], .root_count = 3 };
+    emitter.helper_save_values(&site);
+    emitter.e.mov(jit::reg_r(0), 0, emitter.state, 0);
+    @check(jit::sljit_emit_icall(compiler, jit::SLJIT_CALL, jit::SLJIT_ARGS1WW,
+        jit::SLJIT_IMM, (long)&helper_home_probe) == 0);
+    // Force volatile homes to be clobbered independently of the C compiler's
+    // register choices, then exercise the actual helper continuation emitter.
+    emitter.e.mov(jit::reg_r(4), 0, jit::SLJIT_IMM, -99);
+    emitter.e.mov(jit::reg_r(5), 0, jit::SLJIT_IMM, -99);
+    emitter.e.mov(jit::reg_r(0), 0, jit::SLJIT_IMM, (long)bitcast(-99.0, ulong));
+    @check(jit::sljit_emit_fcopy(compiler, jit::SLJIT_COPY_TO_F64, 3, jit::reg_r(0)) == 0);
+    if (!saved_fp) @check(jit::sljit_emit_fcopy(compiler, jit::SLJIT_COPY_TO_F64, 4, jit::reg_r(0)) == 0);
+    emitter.helper_restore_values(&site);
+    for (uint i = 0; i < values.len; i++) {
+        if (values[i].rep == F64) {
+            emitter.load_fpr((int)i, 1);
+            @check(jit::sljit_emit_fcopy(compiler, jit::SLJIT_COPY_FROM_F64, 1, jit::reg_r(0)) == 0);
+        } else { emitter.gpr((int)i, jit::reg_r(0)); }
+        emitter.e.mov(jit::reg_r(2), 0, jit::SLJIT_MEM | emitter.state, $reflect(LoopState.execution).offset);
+        emitter.e.mov(jit::reg_r(2), 0, jit::SLJIT_MEM | jit::reg_r(2), $reflect(SsaExecution.edge).offset);
+        emitter.e.mov(jit::SLJIT_MEM | jit::reg_r(2), (long)i * ulong::size, jit::reg_r(0), 0);
+    }
+    @check(jit::sljit_emit_return(compiler, jit::SLJIT_MOV, jit::SLJIT_IMM, 1) == 0);
+    @check(!emitter.e.failed);
+    void* code = jit::sljit_generate_code(compiler, 0, null);
+    @check(code != null);
+    defer jit::sljit_free_code(code, null);
+    @check(((HelperHomeEntry)code)(state) == 1 && execution.output_count == 1);
+    foreach (i, value : results) @check(value == expected[i]);
+    io::printfn("SSA helper homes: PASS C ABI saved/volatile registers, spills and boxed roots (saved FP=%d)", saved_fp);
+}
 
 // Stable descriptors need not all join the collector chain at invocation
 // entry. Exercise sparse ownership independently of incidental JS allocation.
