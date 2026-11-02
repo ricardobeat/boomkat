@@ -18,7 +18,7 @@ fn TVal boxed_field_key(CompiledFunction* cf, String name) {
     return types::make_undefined();
 }
 
-fn void check_native_ssa_boxed_this() {
+fn void check_native_ssa_boxed_this(bool dictionary = false) {
     JsRuntime runtime;
     runtime.create()!!;
     defer runtime.destroy();
@@ -70,7 +70,10 @@ fn void check_native_ssa_boxed_this() {
     cf.constants = &constants[0]; cf.const_count = constants.len;
     cf.ic_entries = &caches[0]; cf.ic_count = count;
     cf.var_ic_entries = &bindings[0]; cf.var_ic_count = count;
-    eval(&context, "var boxedThisProto={run:boxedThisRaw};var boxedThisReceiver=Object.create(boxedThisProto);boxedThisReceiver.count=0;boxedThisReceiver.flag=true;boxedThisReceiver.optional=undefined;boxedThisReceiver.child={slotValue:7};for(var q=0;q<4;q++)boxedThisReceiver.run();boxedThisReceiver.count=0;");
+    eval(&context, "var boxedThisProto={run:boxedThisRaw};var boxedThisReceiver=Object.create(boxedThisProto);");
+    if (dictionary) eval(&context, "for(var q=0;q<96;q++)boxedThisReceiver['padding'+q]=q;");
+    eval(&context, "boxedThisReceiver.count=0;boxedThisReceiver.flag=true;boxedThisReceiver.optional=undefined;boxedThisReceiver.child={slotValue:7};for(var q=0;q<4;q++)boxedThisReceiver.run();boxedThisReceiver.count=0;");
+    @check(!dictionary || h.get_shape(caches[1].shape_id).dict);
     @check(runtime.set_jit());
     h.jit_stress = true;
     eval(&context, "for(var q=0;q<128;q++){if(boxedThisReceiver.run()!==boxedThisReceiver.child||boxedThisReceiver.count!==q+1)throw 'boxed this';}");
@@ -82,6 +85,12 @@ fn void check_native_ssa_boxed_this() {
         io::printfn("native SSA boxed this warm: reads=%d writes=%d completed=%d", body.ssa_data.field_reads, body.ssa_data.field_writes, body.ssa_completed);
         @check(body.ssa_completed > 0 && body.ssa_data.field_reads > 0 && body.ssa_data.field_writes > 0);
     $endif
+    if (dictionary) {
+        // Move external storage, compact slots, then change flags/accessor
+        // semantics after the count store. Every refusal must resume the next
+        // unperformed opcode without repeating that earlier mutation.
+        eval(&context, "for(var q=96;q<600;q++)boxedThisReceiver['padding'+q]=q;var dictBefore=boxedThisReceiver.count;if(boxedThisReceiver.run()!==boxedThisReceiver.child||boxedThisReceiver.count!==dictBefore+1)throw 'dict growth';delete boxedThisReceiver.padding0;dictBefore=boxedThisReceiver.count;if(boxedThisReceiver.run()!==boxedThisReceiver.child||boxedThisReceiver.count!==dictBefore+1)throw 'dict compact';var dictGets=0,dictSets=0;Object.defineProperty(boxedThisReceiver,'flag',{get:function(){dictGets++;return true;},set:function(v){dictSets++;},configurable:true});dictBefore=boxedThisReceiver.count;if(boxedThisReceiver.run()!==boxedThisReceiver.child||boxedThisReceiver.count!==dictBefore+1||dictGets!==1||dictSets!==1)throw 'dict accessor';Object.defineProperty(boxedThisReceiver,'flag',{value:true,writable:true,configurable:true});Object.defineProperty(boxedThisReceiver,'optional',{value:undefined,writable:false,configurable:true});dictBefore=boxedThisReceiver.count;if(boxedThisReceiver.run()!==boxedThisReceiver.child||boxedThisReceiver.count!==dictBefore+1)throw 'dict readonly';Object.defineProperty(boxedThisReceiver,'optional',{value:undefined,writable:true,configurable:true});");
+    }
     eval(&context, "boxedThisReceiver.flag=false;boxedThisReceiver.optional=null;for(var q=0;q<32;q++){if(boxedThisReceiver.run()!==boxedThisReceiver.child||boxedThisReceiver.flag!==false||boxedThisReceiver.optional!==null)throw 'boxed primitives';}boxedThisReceiver.optional=undefined;boxedThisReceiver.run();var beforeBoxed=boxedThisReceiver.count;boxedThisReceiver.child='string';if(boxedThisReceiver.run()!=='string'||boxedThisReceiver.count!==beforeBoxed+1)throw 'boxed string phase';");
     eval(&context, "boxedThisReceiver.child={slotValue:9,extra:1};var beforeBoxed=boxedThisReceiver.count;if(boxedThisReceiver.run()!==boxedThisReceiver.child||boxedThisReceiver.count!==beforeBoxed+1)throw 'boxed shape phase';var boxedGetterCalls=0;Object.defineProperty(boxedThisReceiver.child,'slotValue',{get:function(){boxedGetterCalls++;throw 'boxed getter';},configurable:true});beforeBoxed=boxedThisReceiver.count;try{boxedThisReceiver.run();throw 'missing boxed getter';}catch(error){if(error!=='boxed getter')throw error;}if(boxedGetterCalls!==1||boxedThisReceiver.count!==beforeBoxed+1)throw 'boxed getter phase';");
     h.jit_stress = false;

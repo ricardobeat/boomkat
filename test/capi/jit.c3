@@ -1323,6 +1323,7 @@ fn void main() {
     check_scalable_ssa_remat();
     check_native_ssa_bindings();
     check_native_ssa_boxed_this();
+    check_native_ssa_boxed_this(true);
     check_native_ssa_boxed_arrays();
     check_scalable_ssa_fields();
     check_scalable_ssa_memory_callbacks();
