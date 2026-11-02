@@ -1315,6 +1315,7 @@ fn void main() {
     check_ssa_sparse_imports();
     check_ssa_helper_homes();
     check_ssa_boxed_truth();
+    check_ssa_boolean_equality();
     check_scalable_ssa_closure_startup();
     check_scalable_ssa_gateway();
     check_ssa_native_scratch_ownership();

@@ -957,6 +957,7 @@ fn void SsaEmitter.entry_copies(&self, uint entry_block = 0) @feat(SLJIT) {
 
 // A comparison used as a value remains a JavaScript boolean at publication.
 fn void SsaEmitter.compare(&self, int value) @feat(SLJIT) {
+    if (self.boolean_compare(value)) return;
     SsaValue v = self.g.values[value];
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);
