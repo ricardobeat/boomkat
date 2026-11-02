@@ -91,11 +91,7 @@ fn bool AstIndex.is_register_capture(&self, Binding* b) {
 }
 
 fn uint AstIndex.function_scope(&self, uint n) {
-    uint rec = self.tree.rhs.data[n];
-    uint body = self.tree.field(rec, FN_BODY);
-    uint inner = (self.tree.field(rec, FN_FLAGS) & FNF_EXPR_BODY) != 0
-        ? self.tree.field(rec, FN_BODY_START) : self.tree.main_tok.data[body] + 1;
-    uint scope = self.res.scope_at(inner);
+    uint scope = self.res.scope_of_node(n);
     return scope != 0 && self.res.scopes.data[scope].node == n ? scope : 0;
 }
 
