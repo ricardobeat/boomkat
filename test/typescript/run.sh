@@ -45,6 +45,8 @@ Green
 3"
 expect_ok "$DIR/angle_assert.ts" "5
 0"
+expect_ok "$DIR/param_props.ts" "1
+3"
 expect_ok "$DIR/basic.ts"     "hello world hello world 
 42"
 expect_ok "$DIR/fn.ts"        "5"
@@ -119,7 +121,6 @@ hi ns"
 
 # --- rejects ---------------------------------------------------------------
 expect_reject "$DIR/reject_namespace.ts"  "not erasable syntax"
-expect_reject "$DIR/reject_ctor_prop.ts"  "public"
 
 # --- tsc oracle (optional) -------------------------------------------------
 # If tsc is on PATH, cross-check the corpus against `--erasableSyntaxOnly`:
@@ -134,7 +135,7 @@ if command -v tsc >/dev/null 2>&1; then
         cat /tmp/tsc.out
         FAIL=$((FAIL + 1))
     fi
-    for rej in reject_namespace.ts reject_ctor_prop.ts; do
+    for rej in reject_namespace.ts; do
         out=$(cd "$DIR" && tsc --ignoreConfig --erasableSyntaxOnly --noEmit \
               --isolatedModules --target es2022 --module esnext --lib es2022 \
               --skipLibCheck --strict false --moduleDetection force \

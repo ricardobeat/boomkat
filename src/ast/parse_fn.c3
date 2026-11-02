@@ -82,7 +82,15 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
     self.ctx.allow_super_call = (fnf & FNF_DERIVED_CTOR) != 0;
     self.ctx.in_params = true;
     uint paren = self.tok.pos;
+    sz saved_props = self.ts_param_props.len;
     uint params = self.formal_params()!;
+    // The parameter property assignments are made before the body runs, so
+    // their nodes come first.
+    uint props = self.ts_param_prop_statements(start, saved_props);
+    self.ts_param_props.truncate(saved_props);
+    if (props != 0 && (fnf & FNF_CTOR) == 0) {
+        return self.fail("a parameter property is only allowed in a constructor")~;
+    }
     uint header_end = self.prev.pos;
     self.ctx.in_params = false;
     self.ts_annotation()!;
@@ -91,6 +99,11 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
         self.semicolon()!;
     } else {
         body = self.function_block(&fnf)!;
+    }
+    if (props != 0 && body != 0) {
+        uint list = self.ast.lhs.data[body];
+        uint at = self.ts_param_prop_at(list, (fnf & FNF_DERIVED_CTOR) != 0);
+        self.ast.list_insert_list(list, at, props);
     }
     self.ctx = saved;
     self.no_in = saved_no_in;
@@ -122,10 +135,17 @@ fn uint? Parser.formal_params(&self) {
             if (self.tok.type != TokenType.RPAREN) return self.fail("rest parameter must be last formal parameter")~;
             break;
         }
-        if (self.lex.ts_mode && (self.at_word("public") || self.at_word("private")
-            || self.at_word("protected") || self.at_word("readonly"))
-            && self.peek_type() == TokenType.IDENTIFIER) {
-            return self.fail("parameter properties (public/private/protected/readonly) are not supported")~;
+        if (self.lex.ts_mode && self.ts_param_property()) {
+            // A parameter property: the parameter is also assigned to the
+            // instance, which the constructor does when it runs. The modifier
+            // only counts in front of a name.
+            Token? pk = self.peek();
+            if (catch err = pk) return err~;
+            if (pk.type == TokenType.IDENTIFIER) {
+                while (self.ts_param_property()) self.next()!;
+                if (self.tok.type != TokenType.IDENTIFIER) return self.fail("a parameter property must name a parameter")~;
+                self.ts_param_props.push(self.atom(self.tok.str_value));
+            }
         }
         self.scratch_push(self.binding_element()!);
         if (self.tok.type != TokenType.COMMA) break;
