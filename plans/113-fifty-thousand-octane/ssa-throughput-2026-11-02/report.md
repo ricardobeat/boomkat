@@ -1,7 +1,7 @@
 # SSA throughput pass: scratch pooling, dictionary reads, self-healing tiers
 
-Work is confined to rat (commits 29da643a and ea96005b on top of 252ff89e); this
-evidence lives on plans/archive. Main was not modified. The 50,000 full-Octane
+Work is confined to rat (commits 29da643a, ea96005b and 1de6c8dd on top of
+252ff89e); this evidence lives on plans/archive. Main was not modified. The 50,000 full-Octane
 target remains open.
 
 ## What changed
@@ -51,16 +51,22 @@ target remains open.
 ## Performance evidence
 
 Matched screen, three alternating pairs, historical b85ef0ba binary versus
-final head (median of interleaved runs; raw data in `summary.json`/`raw.json`):
+final head (median of interleaved runs; raw data in `summary.json`/`raw.json`
+and the last screen in `final-summary.json`):
 
 | Mini | b85ef0ba ms | rat ms | ratio |
 |---|---:|---:|---:|
-| Gameboy | 272 | 229 | 1.19x faster |
-| Box2D | 202 | 268 | 0.75x (open regression) |
-| DeltaBlue | 88 | 91 | ~equal |
-| Crypto | 175 | 186 | 0.94x (pre-existing gap) |
-| Mandreel | 552 | 553 | ~equal |
-| NavierStokes | 293 | 137 | 2.14x faster |
+| Gameboy | 273 | 231 | 1.18x faster |
+| Box2D | 202 | 271 | 0.75x (open regression) |
+| DeltaBlue | 89 | 91 | ~equal |
+| Crypto | 176 | 188 | 0.94x (pre-existing gap) |
+| Mandreel | 551 | 563 | ~equal |
+| NavierStokes | 302 | 137 | 2.20x faster |
+
+A later follow-up commit (1de6c8dd) also demotes a specialization when helper
+calls merely *equal* its own entries, not only when they exceed them: Gameboy
+244 -> 229 ms and Mandreel 576 -> 559 ms against the prior head, Box2D 257 ->
+263 ms.
 
 Session trajectory for the two repaired regressions: Gameboy 403 -> 234 -> 229
 (historical 272-277), Mandreel 583 -> 561 -> 553 (historical 552-565). The
@@ -95,13 +101,34 @@ Two independent causes, both found with an ASan embedding target
   logical-not 19/19, property-accessors 21/21, relational 1/1, delete 69/69,
   statements/if 69/69, statements/with 181/181.
 
-## Remaining work
+## Box2D investigation findings (open)
 
-1. Box2D remains 0.75x. `SolveVelocityConstraints` (id=728, 605 ops, 63
-   registers) rejects whole-body SSA at emission and falls to a region tier
-   that makes 7.25M generic native reads per run; the bound now keeps it
-   there by design, so the fix is either cheaper emission for very wide
-   bodies or a typed access path in the region tier.
+Instrumented runs (`SLJIT_STATS --stats` plus sample attribution on both
+binaries) located where Box2D loses its 25 percent:
+
+- SolveVelocityConstraints (728) and SolvePositionConstraints (730) interpret
+  2.0M extra instructions each against the historical binary. Both have
+  compiled 256-op template regions, but 730's entries stall: 34-56 entries
+  exit at pc=0 (GETGLOBAL) with zero budget consumed, hit the 8-short-run
+  disable, and the entry is abandoned after seven rebuild generations
+  (attempts=74 versus 4.9M historically). The same stall exists with the
+  dictionary-read commit reverted, so it predates this pass.
+- The 2 MB function-tier code budget (`JIT_MAX_CODE_LIMIT`) saturates in both
+  binaries, but the historical binary packs 154 functions into it versus 114
+  now: the pass spends budget on b2PositionSolverManifold (138 KB, previously
+  refused) and on whole-body SSA plans for call-heavy collision helpers whose
+  SSA bodies are then demoted. Raising the cap to 4 MB helped Box2D 263 -> 250
+  ms but cost Mandreel 560 -> 584 ms, so it was not kept. 512-op regions were
+  also tried and rejected (Box2D 251 -> 267 ms).
+- Widening a warm region to its enclosing loop header was implemented and
+  measured neutral (Box2D 263 -> 266 ms, others unchanged); not kept.
+
+Remaining work
+
+1. Box2D 0.75x: debug why SolvePositionConstraints' template entries exit at
+   pc=0 with zero consumed budget (GETGLOBAL IC fill suspected) instead of
+   disabling after 8 stalls, and re-balance which functions claim the 2 MB
+   function-tier budget.
 2. Crypto sits at 0.94x, unchanged since before this pass.
 3. Review and measure the guarded integer-capture candidate 842bbca3
    (branch rat-ssa-continuations); cold-this helper fast path is still only
