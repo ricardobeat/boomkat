@@ -67,6 +67,9 @@ fn void check_scalable_ssa_gateway() {
     cf.code = &code[0]; cf.code_count = count; cf.num_regs = 310;
     @check(runtime.set_jit());
     h.jit_stress = true;
+    // The fixture is call-dominated, so the tier policy would move it to the
+    // baseline tier and replace the specialization under test.
+    h.jit_hold_tier = true;
     eval(&context, "for(var q=0;q<128;q++){if(scalableRaw(3)!==11775)throw 'scalable raw result';}");
     FunctionPlan* plan = cf.sljit_function;
     @check(plan != null && plan.native == null && plan.ssa_region != null);

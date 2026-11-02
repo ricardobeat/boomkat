@@ -252,7 +252,7 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     // its own body pays the publication/root cost per bytecode, so the
     // baseline tier is faster. The sample must be big enough for the ratio to
     // mean something.
-    if (plan.ssa_helper_calls >= SSA_DEMOTE_HELPERS && plan.ssa_helper_calls > plan.hits
+    if (plan.ssa_helper_calls >= SSA_DEMOTE_HELPERS && plan.ssa_helper_calls >= plan.hits
         && !cold.vm.current_func.sljit_ssa_disabled && !cold.heap.jit_hold_tier) {
         cold.vm.current_func.sljit_ssa_disabled = true;
         plan.ssa_demote = true;
