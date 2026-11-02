@@ -202,9 +202,9 @@ def strip_with_tsc(rel_files):
         return False
     if os.path.isdir(TRANSPILED):
         shutil.rmtree(TRANSPILED)
+    # TypeScript 7's defaults: the latest target, ES modules, strict mode.
     r = subprocess.run(
-        ["tsc", "--target", "es2022", "--module", "esnext", "--skipLibCheck",
-         "--outDir", TRANSPILED, *rel_files],
+        ["tsc", "--skipLibCheck", "--outDir", TRANSPILED, *rel_files],
         cwd=CACHE, capture_output=True, text=True, timeout=300,
     )
     if not os.path.isdir(TRANSPILED):
