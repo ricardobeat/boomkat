@@ -25,6 +25,8 @@ const uint INLINE_DEPTH = 4;
 struct FunctionRun {
     void* entry;
     long budget;
+    // The shared run's uncharged native work is budget_base - budget.
+    long budget_base;
     Activation* root;
     uint depth;
     Instruction* start;
@@ -43,6 +45,13 @@ struct FunctionRun {
     ulong ssa_receiver @if($feat(SLJIT));
 }
 alias FunctionNative = fn Instruction*(TVal* regs, ColdCtx* cold, FunctionRun* run);
+struct FunctionNativeCall {
+    HObject* callee;
+    TVal* arguments;
+    TVal* result;
+    uint flags;
+}
+alias FunctionNativeCallEntry = fn Instruction*(ColdCtx* cold, FunctionRun* run, FunctionNativeCall* call);
 
 // VM registers own every published value. Generated lean calls share the run;
 // operations that may allocate, invoke unknown code or throw escape with all
@@ -57,6 +66,7 @@ struct FunctionPlan @feat(SLJIT) {
     uint read_refresh_shape @if($feat(SLJIT_READ_REFRESH));
     uint read_refresh_generation @if($feat(SLJIT_READ_REFRESH));
     void* call_entry;
+    FunctionNativeCallEntry call_from_c;
     // SSA-only bodies share the ordinary native call ABI through this small
     // adapter. The SSA kernel and adapter have the same artifact owner.
     void* ssa_call_code;
@@ -1544,6 +1554,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
     }
     void* call_entry = f.emit_call_entry(body);
     void* fallback = f.call_fallback();
+    void* call_from_c = f.emit_c_call_entry(call_entry);
     if (e.failed) {
         $if $feat(SLJIT_STATS): cf.sljit_rejection = "exit emission"; $endif
         return false;
@@ -1572,6 +1583,7 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
         }
     $endif
     if (call_entry != null) plan.call_entry = (void*)jit::sljit_shim_label_addr(call_entry);
+    if (call_from_c != null) plan.call_from_c = (FunctionNativeCallEntry)jit::sljit_shim_label_addr(call_from_c);
     plan.code_bytes = jit::sljit_shim_code_size(e.compiler) + plan.resume_bytes
         + (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0);
     uint entries;

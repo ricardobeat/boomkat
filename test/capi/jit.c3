@@ -1317,6 +1317,7 @@ fn void main() {
     check_ssa_boxed_truth();
     check_scalable_ssa_closure_startup();
     check_scalable_ssa_gateway();
+    check_ssa_native_scratch_ownership();
     check_scalable_ssa_access();
     check_scalable_ssa_bounds();
     check_scalable_ssa_remat();
