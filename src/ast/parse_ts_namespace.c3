@@ -5,14 +5,17 @@ module boomkat::ast @feat(!NO_TYPESCRIPT);
 
 import boomkat::lexer;
 
-// Whether a `namespace` or `module` here starts a namespace with a name,
-// rather than an identifier or an ambient module declaration.
+// Whether a `namespace` here starts a namespace with a name, rather than an
+// identifier.
 fn bool Parser.ts_namespace_ahead(&self) {
-    if (!self.lex.ts_mode) return false;
-    if (!self.at_word("namespace") && !self.at_word("module")) return false;
-    // The name of a namespace stands on the same line as the keyword: a
-    // `namespace` on a line of its own is an identifier, and the line break
-    // ends the statement.
+    return self.ts_word_names_ahead("namespace");
+}
+
+// Whether the contextual keyword `word` stands here with a name after it on
+// the same line: a keyword on a line of its own is an identifier, and the
+// line break ends the statement.
+fn bool Parser.ts_word_names_ahead(&self, String word) {
+    if (!self.lex.ts_mode || !self.at_word(word)) return false;
     Token first = self.tok;
     bool named = false;
     if (catch err_a = self.next()) return false;
@@ -24,6 +27,15 @@ fn bool Parser.ts_namespace_ahead(&self) {
     self.prev = first;
     if (catch err_c = self.next()) return false;
     return named;
+}
+
+// TypeScript 6 and later reject `module N { }` as a namespace (TS1540); only
+// `namespace N { }` declares one, and `module "name" { }` stays an ambient
+// module declaration.
+fn void? Parser.ts_reject_module_namespace(&self) {
+    if (self.ts_word_names_ahead("module")) {
+        return self.fail("a namespace is declared with 'namespace', not 'module'")~;
+    }
 }
 
 // Whether an ambient module declaration, `module "name" { ... }`, starts here.
@@ -145,6 +157,7 @@ fn void? Parser.ts_namespace_statement(&self) {
         if (pk.type == TokenType.LBRACE) return self.fail("export declarations are not permitted in a namespace")~;
         self.next()!;
         exported = true;
+        self.ts_reject_module_namespace()!;
     }
     if (self.tok.type == TokenType.ENUM) {
         uint name;
