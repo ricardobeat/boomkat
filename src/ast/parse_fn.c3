@@ -102,8 +102,7 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
     }
     if (props != 0 && body != 0) {
         uint list = self.ast.lhs.data[body];
-        uint at = self.ts_param_prop_at(list, (fnf & FNF_DERIVED_CTOR) != 0);
-        self.ast.list_insert_list(list, at, props);
+        self.ast.lhs.data[body] = self.ts_param_prop_body(list, props, (fnf & FNF_DERIVED_CTOR) != 0)!;
     }
     self.ctx = saved;
     self.no_in = saved_no_in;

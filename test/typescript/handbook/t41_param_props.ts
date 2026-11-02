@@ -22,3 +22,13 @@ class Derived extends Base {
 }
 const derived = new Derived("d");
 console.log(derived.label, derived.seen, derived.greet());
+
+// The assignments follow the super() call, after any statement before it.
+class Logged extends Array<number> {
+  constructor(public label: string) {
+    const start = label.length;
+    super(start);
+    console.log(this.label, this.length);
+  }
+}
+new Logged("abc");
