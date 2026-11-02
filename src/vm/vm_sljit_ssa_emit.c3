@@ -396,6 +396,7 @@ fn void SsaEmitter.body(&self) @feat(SLJIT) {
                     self.field_address(r0, r1);
                     self.store_gpr((int)i, r1);
                     break;
+                case FRESH_BINDING: self.fresh_binding((int)i); break;
                 case BINDING:
 
                     {

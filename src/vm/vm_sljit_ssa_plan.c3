@@ -13,6 +13,8 @@ struct SsaPlanData @feat(SLJIT) {
     uint spill_count;
     uint edge_count;
     uint native_accesses;
+    uint native_bindings;
+    ulong binding_reads @if($feat(SLJIT_STATS));
     uint bounds_proofs;
     uint rematerialized;
     uint* resume_words;

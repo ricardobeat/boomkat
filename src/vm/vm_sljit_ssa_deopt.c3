@@ -191,6 +191,7 @@ fn bool ssa_deopt_anchor_location(SsaExecution* execution, SsaDeoptLocation loca
     if (location.rep != BOXED || location.value == uint::max) return true;
     TVal value;
     if (location.value >= execution.value_capacity || !ssa_deopt_read(execution, location, &value)) return false;
+    if (pass == 0 && !ssa_execution_root(execution, location.value)) return false;
     Heap* h = execution.cold.heap;
     if (pass == 1 && value.is_refcounted() && value.get_heapptr() != null) ((HeapHeader*)value.get_heapptr()).incref();
     if (pass == 2) {
