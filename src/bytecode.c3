@@ -1958,6 +1958,9 @@ struct CompiledFunction {
     bool            sljit_ssa_failed @if($feat(SLJIT));
     char            sljit_read_refreshes @if($feat(SLJIT) && $feat(SLJIT_READ_REFRESH));
     bool            sljit_budget_wait @if($feat(SLJIT));
+    // Code bytes the last rejected plan needed. A rejected plan retries only
+    // once the arena can hold that many bytes again.
+    uint            sljit_budget_bytes @if($feat(SLJIT));
     ulong           sljit_capacity_seen @if($feat(SLJIT));
     bool            sljit_template_budget_wait @if($feat(SLJIT));
     char*           sljit_loop_admission @if($feat(SLJIT));

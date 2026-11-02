@@ -513,9 +513,12 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
     } else {
         // Feedback may have filled this site's IC after the plan compiled.
         // Ask for one rebuild instead of paying a helper call per execution
-        // for the life of the plan.
+        // for the life of the plan. A filled cache also settles the site: the
+        // rebuild either lowers it directly or leaves the body to the
+        // baseline tier.
         if (!execution.plan.ssa_recompile_wanted && execution.function.sljit_recompiles < 2
-            && ssa_access_would_specialize(cold.heap, execution.function, site.pc)) {
+            && (ssa_access_would_specialize(cold.heap, execution.function, site.pc)
+                || ssa_access_site_refused(cold.heap, execution.function, site.pc))) {
             execution.plan.ssa_recompile_wanted = true;
         }
         SsaHelperOutcome outcome = ssa_vm_step(execution, site);

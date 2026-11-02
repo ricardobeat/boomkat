@@ -306,6 +306,24 @@ fn bool ssa_access_would_specialize(Heap* h, CompiledFunction* cf, uint pc) @fea
     return ssa_access_field_spec(h, cf, view, &access);
 }
 
+// A read whose cache is filled but whose access cannot be lowered will keep
+// paying an interpreter step per execution. The baseline region inlines the
+// same read, so such a read is left to it.
+fn bool ssa_access_site_refused(Heap* h, CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    if (pc >= cf.code_count) return false;
+    DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+    if (!view.valid || view.wide) return false;
+    switch (view.insn.op) {
+        case Opcode.GETPROPC: case Opcode.GETPROPC_CACHED: case Opcode.GETTHISC: break;
+        default: return false;
+    }
+    if (cf.ic_entries == null || view.payload_pc >= cf.ic_count) return false;
+    ICEntry* ic = (ICEntry*)cf.ic_entries + view.payload_pc;
+    if (ic.key.borrow() == null) return false;
+    SsaFieldAccess access;
+    return !ssa_access_field_spec(h, cf, view, &access);
+}
+
 fn bool ssa_access_native_site(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
     if (view.insn.op == Opcode.GETPROP || view.insn.op == Opcode.GETPROP_CACHE || view.insn.op == Opcode.PUTPROP) return true;
     SsaFieldAccess access;

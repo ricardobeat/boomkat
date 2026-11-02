@@ -59,7 +59,10 @@ fn FunctionPlan* ssa_function_wrap(CompiledFunction* cf, ColdCtx* cold, LoopPlan
     Heap* h = cold.heap;
     usz bytes = FunctionPlan::size + (usz)cf.code_count * (void*::size + char::size);
     bool room = sljit_code_room(h, body.code_bytes, true);
-    if (!room) cf.sljit_budget_wait = true;
+    if (!room) {
+        cf.sljit_budget_wait = true;
+        cf.sljit_budget_bytes = (uint)body.code_bytes;
+    }
     if (bytes > SSA_DEFAULT_BUDGET.max_bytes || !room) {
         if (body.native != null) jit::sljit_free_code((void*)body.native, null);
         ssa_helper_sites_free(h, body);

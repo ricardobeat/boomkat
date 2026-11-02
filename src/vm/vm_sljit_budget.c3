@@ -45,18 +45,24 @@ fn void sljit_budget_retry(Heap* h) @feat(SLJIT) {
 // A temporary capacity rejection is reconsidered lazily at the next relevant
 // gateway. Unsupported code keeps its rejection; an unchanged budget never
 // causes repeated compilation attempts or a full function-registry sweep.
+// Releasing code frees capacity, so a rejected plan may be reconsidered, but
+// only once the arena can hold the plan that was rejected. Retrying earlier
+// would repeat the whole compilation for a rejection that cannot change.
 fn void sljit_budget_retry_function(Heap* h, CompiledFunction* cf) @feat(SLJIT) @inline {
     if (cf.sljit_capacity_seen == h.jit_capacity_generation) return;
     cf.sljit_capacity_seen = h.jit_capacity_generation;
     if (cf.sljit_budget_wait) {
+        if (!sljit_code_room(h, cf.sljit_budget_bytes, true)) return;
         cf.sljit_budget_wait = false;
         if (cf.sljit_function == null) cf.sljit_function_calls = 0;
     }
     if (cf.sljit_template_budget_wait) {
+        if (!sljit_code_room(h, 0, true)) return;
         cf.sljit_template_budget_wait = false;
         if (cf.sljit_template == null) cf.sljit_template_calls = 0;
     }
     if (cf.sljit_loop_budget_wait && cf.sljit_loop_admission != null) {
+        if (!sljit_code_room(h, 0)) return;
         for (uint pc = 0; pc < cf.code_count; pc++) cf.sljit_loop_admission[pc] &= 0xFD;
         cf.sljit_loop_budget_wait = false;
     }

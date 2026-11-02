@@ -229,6 +229,14 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             }
             if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
                 && ssa_vm_step_supported(ins.op)) {
+                // A property read the body cannot lower would run as one
+                // interpreter step per access. Once the site cache is filled
+                // such a read never becomes a direct field read, and the
+                // baseline region inlines the same read into generated code.
+                if (ssa_access_site_refused(g.heap, g.cf, view.payload_pc)) {
+                    g.failed = true;
+                    return false;
+                }
                 int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);
                 uint destination;
                 compiler::MoveelimRoles roles = compiler::bytecode_cfg_roles(ins.op);

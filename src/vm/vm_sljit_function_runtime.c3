@@ -89,8 +89,7 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         cf.sljit_budget_wait = begin < cf.code_count;
         $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
         return null;
-    }
-    // A body that fails admission keeps the baseline template region, which
+    }    // A body that fails admission keeps the baseline template region, which
     // inlines the same reads, so the refusal is remembered rather than retried.
     if (SSA_ENABLED && !$feat(SLJIT_NO_RECOVERABLE_SSA) && !cf.sljit_ssa_disabled
         && !cf.sljit_ssa_failed && cf.code_count <= sljit_ssa_body_ops(h)) {
@@ -168,6 +167,9 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     $endif
     if (!emitted || !sljit_code_room(h, plan.code_bytes, true)) {
         cf.sljit_budget_wait = emitted;
+        // Remember the size this plan needed, so the rejection is reconsidered
+        // only once the arena can hold it again.
+        if (emitted) cf.sljit_budget_bytes = (uint)plan.code_bytes;
         $if $feat(SLJIT_STATS): if (emitted) cf.sljit_rejection = "code budget"; $endif
         if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
         if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
