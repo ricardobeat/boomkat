@@ -651,6 +651,27 @@ fn void? CompilerContext.gen_try(&self, uint n) {
     self.try_depth--;
 }
 
+// Whether the last emitted instruction transfers control unconditionally, so
+// the statement that emitted it cannot fall through to the next one.
+fn bool CompilerContext.code_terminated(&self) {
+    if (self.code_count == 0) return false;
+    switch (self.code[self.code_count - 1].op) {
+        case Opcode.JUMP:
+        case Opcode.BREAK:
+        case Opcode.CONTINUE:
+        case Opcode.RET:
+        case Opcode.RET_GEN:
+        case Opcode.RETUNDEF:
+        case Opcode.RETUNDEF_GEN:
+        case Opcode.THROW:
+        case Opcode.THROW_REF:
+        case Opcode.THROW_SYNTAX:
+            return true;
+        default:
+            return false;
+    }
+}
+
 fn void? CompilerContext.gen_if(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint rec = tree.rhs.data[n];
@@ -663,10 +684,18 @@ fn void? CompilerContext.gen_if(&self, uint n) {
     self.gen_stmt(cons)!;
     if (alt != 0) {
         self.gen_line(tree.field(rec, 2));
-        uint end_jump = self.emit_jump(Opcode.JUMP);
-        self.patch_jump(false_jump);
-        self.gen_stmt(alt)!;
-        self.patch_jump(end_jump);
+        // The consequent ending in a return/throw/jump makes the jump over the
+        // alternative unreachable dead code, unless some branch inside the
+        // consequent lands on this very position.
+        if (!self.code_terminated() || self.branch_targets_fall_off_end()) {
+            uint end_jump = self.emit_jump(Opcode.JUMP);
+            self.patch_jump(false_jump);
+            self.gen_stmt(alt)!;
+            self.patch_jump(end_jump);
+        } else {
+            self.patch_jump(false_jump);
+            self.gen_stmt(alt)!;
+        }
     } else {
         self.patch_jump(false_jump);
     }
