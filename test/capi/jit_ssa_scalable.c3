@@ -70,6 +70,10 @@ fn void check_scalable_ssa_gateway() {
     FunctionPlan* plan = cf.sljit_function;
     @check(plan != null && plan.native == null && plan.ssa_region != null);
     @check(plan.count == count && plan.ssa_region.hits > 0);
+    // Successful WIDE RET exits are completions, including short resumed
+    // regions that must not be classified as repeated unproductive entries.
+    @check(plan.ssa_region.ssa_completed > 0);
+    @check(vm::sljit_function_exit_op(cf, count - 2) == Opcode.RET);
     @check(plan.ssa_region.ssa_data != null && plan.ssa_region.ssa_data.reg_count == 310);
     @check(plan.ssa_region.ssa_data.spill_count > 128 && plan.ssa_region.ssa_data.edge_count > 64);
     @check(plan.call_entry != null && plan.ssa_call_code != null);
