@@ -4,6 +4,7 @@ import boomkat::bytecode;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hstring;
 import boomkat::builtins;
 import boomkat::jit;
 
@@ -234,6 +235,10 @@ struct SsaFieldAccess @feat(SLJIT) {
     uint generation;
     uint slot;
     bool write;
+    CompiledFunction* source;
+    uint pc;
+    bool live_ic;
+    HString* key;
 }
 
 fn bool ssa_access_field_spec(SsaGraph* g, DecodedBytecode view, SsaFieldAccess* access, CompiledFunction* source = null) @feat(SLJIT) {
@@ -250,11 +255,11 @@ fn bool ssa_access_field_spec(SsaGraph* g, DecodedBytecode view, SsaFieldAccess*
     if (ic.key.borrow() != key.get_heapptr() || ic.has_proto || ic.chain_len != 0
         || ic.prop_idx >= hobject::IC_PROP_MISSING || ic.prop_flags.is_accessor) return false;
     Shape* shape = g.heap.get_shape(ic.shape_id);
-    if (shape == null || shape.dict || shape.generation != ic.shape_gen) return false;
+    if (shape == null || shape.generation != ic.shape_gen) return false;
     PropFlags flags;
     int slot = function_shape_slot(shape, key.get_heapptr(), &flags);
     if (slot < 0 || (uint)slot != ic.prop_idx || flags.is_accessor || (write && !flags.writable)) return false;
-    *access = { ic.shape_id, ic.shape_gen, (uint)slot, write };
+    *access = { ic.shape_id, ic.shape_gen, (uint)slot, write, source, view.payload_pc, shape.dict, key.get_heapptr() };
     return true;
 }
 
@@ -306,6 +311,11 @@ fn void SsaEmitter.access_field(&self, int id) @feat(SLJIT) {
     self.guard(jit::SLJIT_EQUAL, r0, 0, imm, 0, self.pc);
     self.ordinary_receiver(r0, self.pc);
     if (access.write) self.commit_receiver(r0);
+    if (access.live_ic) {
+        self.access_own_ic(access, r0, r2);
+        self.store_gpr(id, r2);
+        return;
+    }
     self.e.mov(r3, 0, mem | r0, (char*)&object.shape_id - (char*)&object, jit::SLJIT_MOV_U32);
     self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, access.shape, self.pc);
     // Shape IDs can be recycled and private shapes can change in place. Load
@@ -319,4 +329,45 @@ fn void SsaEmitter.access_field(&self, int id) @feat(SLJIT) {
     self.field_address(r0, r2);
     self.e.op(jit::SLJIT_ADD, r2, r2, 0, imm, (long)access.slot * TVal::size);
     self.store_gpr(id, r2);
+}
+
+// A dictionary can append keys and move its property buffer without changing
+// its shape ID. Reload the site's current IC and current receiver storage on
+// every access; never turn dictionary feedback into a raw slot pointer.
+fn void SsaEmitter.access_own_ic(&self, SsaFieldAccess* access, int receiver, int storage) @feat(SLJIT) {
+    int r1 = jit::reg_r(1); int r3 = jit::reg_r(3);
+    int mem = jit::SLJIT_MEM; int imm = jit::SLJIT_IMM;
+    HObject object; Shape shape;
+    HString* key = access.key;
+    self.e.mov(r1, 0, imm, (long)&access.source.ic_entries);
+    self.e.mov(r1, 0, mem | r1, 0);
+    self.guard(jit::SLJIT_EQUAL, r1, 0, imm, 0, self.pc);
+    self.e.op(jit::SLJIT_ADD, r1, r1, 0, imm, (long)access.pc * ICEntry::size);
+    self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.key).offset);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)key, self.pc);
+    self.e.mov(r3, 0, mem | receiver, (char*)&object.shape_id - (char*)&object, jit::SLJIT_MOV_U32);
+    self.guard(jit::SLJIT_NOT_EQUAL | jit::SLJIT_32, r3, 0, mem | r1, $reflect(ICEntry.shape_id).offset, self.pc);
+    self.e.mov(storage, 0, imm, (long)&self.g.heap.shapes);
+    self.e.mov(storage, 0, mem | storage, 0);
+    self.e.op(jit::SLJIT_SHL, r3, r3, 0, imm, 3);
+    self.e.op(jit::SLJIT_ADD, storage, storage, 0, r3, 0);
+    self.e.mov(storage, 0, mem | storage, 0);
+    self.guard(jit::SLJIT_EQUAL, storage, 0, imm, 0, self.pc);
+    self.e.mov(r3, 0, mem | storage, (char*)&shape.generation - (char*)&shape, jit::SLJIT_MOV_U32);
+    self.guard(jit::SLJIT_NOT_EQUAL | jit::SLJIT_32, r3, 0, mem | r1, $reflect(ICEntry.shape_gen).offset, self.pc);
+    self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.has_proto).offset, jit::SLJIT_MOV_U8);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, self.pc);
+    self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.chain_len).offset, jit::SLJIT_MOV_U8);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, self.pc);
+    PropFlags flags; flags.is_accessor = true;
+    if (access.write) flags.writable = true;
+    self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.prop_flags).offset, jit::SLJIT_MOV_U8);
+    self.e.op(jit::SLJIT_AND, r3, r3, 0, imm, (char)flags);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, access.write ? 1 : 0, self.pc);
+    self.e.mov(r1, 0, mem | r1, $reflect(ICEntry.prop_idx).offset, jit::SLJIT_MOV_U32);
+    self.e.mov(r3, 0, mem | receiver, (char*)&object.prop_count - (char*)&object, jit::SLJIT_MOV_U32);
+    self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
+    self.field_address(receiver, storage);
+    self.e.op(jit::SLJIT_SHL, r1, r1, 0, imm, 3);
+    self.e.op(jit::SLJIT_ADD, storage, storage, 0, r1, 0);
 }

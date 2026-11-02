@@ -3,6 +3,7 @@ module jit_test;
 import boomkat;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hobject;
 import boomkat::jit;
 import boomkat::types;
 import boomkat::vm;
@@ -26,6 +27,29 @@ fn void check_ssa_boxed_truth() {
     @check(plan != null && plan.ssa_region != null);
     @check(plan.ssa_region.ssa_helpers == null);
     @check(plan.ssa_region.ssa_completed > 100);
+    ulong[512] exits_before = plan.exit_pcs;
+    ulong completed = plan.ssa_region.ssa_completed;
+    eval(&context, "for(var q=0;q<64;q++){if(nativeBoxedTruth(truthObject,truthOutput)!==3)throw 'object native branch';}");
+    @check(plan.ssa_region.ssa_completed >= completed + 32);
+    // The forward branch tests the boxed argument. The backward IF_TRUE
+    // may still exit for a scheduled GC/interrupt poll and is not a tag miss.
+    uint conditions = 0;
+    for (uint pc = 0; pc < plan.count && pc < 512; pc++) {
+        if (cf.code[pc].op != Opcode.IF_FALSE) continue;
+        @check(plan.exit_pcs[pc] == exits_before[pc]);
+        conditions++;
+    }
+    @check(conditions == 1);
+    Heap* h = runtime.rt.heap;
+    HObject* globals = runtime.rt.vm.global_env.bindings;
+    int object_slot = globals.find_prop_idx(h.str_intern("truthObject"), h);
+    @check(object_slot >= 0);
+    HObject* prior = h.htmldda_obj;
+    defer h.htmldda_obj = prior;
+    h.htmldda_obj = globals.prop_values()[object_slot].get().get_heapptr();
+    eval(&context, "if(nativeBoxedTruth(truthObject,truthOutput)!==6)throw 'live HTMLDDA identity';");
+    h.htmldda_obj = prior;
+    eval(&context, "if(nativeBoxedTruth(truthObject,truthOutput)!==3)throw 'restored HTMLDDA identity';");
     io::printn("SSA boxed truth: PASS native cyclic object/null/boolean/integer branches");
 }
 
