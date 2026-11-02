@@ -1,0 +1,148 @@
+(lldb) target create "/tmp/bk-threaded-builtin/boomkat"
+Current executable set to '/tmp/bk-threaded-builtin/boomkat' (arm64).
+(lldb) disassemble -n boomkat.vm.th_call_native
+boomkat`boomkat.vm.th_call_native:
+boomkat[0x1001674d0] <+0>:   stp    x24, x23, [sp, #-0x40]!
+boomkat[0x1001674d4] <+4>:   stp    x22, x21, [sp, #0x10]
+boomkat[0x1001674d8] <+8>:   stp    x20, x19, [sp, #0x20]
+boomkat[0x1001674dc] <+12>:  stp    x29, x30, [sp, #0x30]
+boomkat[0x1001674e0] <+16>:  add    x9, x2, w4, uxtw #3
+boomkat[0x1001674e4] <+20>:  mov    w11, #0xfff9              ; =65529 
+boomkat[0x1001674e8] <+24>:  mov    w22, w5
+boomkat[0x1001674ec] <+28>:  mov    w23, w4
+boomkat[0x1001674f0] <+32>:  mov    x20, x3
+boomkat[0x1001674f4] <+36>:  mov    x21, x1
+boomkat[0x1001674f8] <+40>:  ldr    x8, [x9]
+boomkat[0x1001674fc] <+44>:  mov    x19, x0
+boomkat[0x100167500] <+48>:  lsr    x10, x8, #48
+boomkat[0x100167504] <+52>:  cmp    x10, x11
+boomkat[0x100167508] <+56>:  b.eq   0x1001675fc               ; <+300>
+boomkat[0x10016750c] <+60>:  mov    w11, #0xfff7              ; =65527 
+boomkat[0x100167510] <+64>:  cmp    w10, w11
+boomkat[0x100167514] <+68>:  b.ne   0x10016764c               ; <+380>
+boomkat[0x100167518] <+72>:  mov    x7, xzr
+boomkat[0x10016751c] <+76>:  ldr    x10, [x20, #0x8]
+boomkat[0x100167520] <+80>:  ldrb   w11, [x10, #0xf78]
+boomkat[0x100167524] <+84>:  tbz    w11, #0x0, 0x100167558    ; <+136>
+boomkat[0x100167528] <+88>:  ldrb   w11, [x10, #0xf79]
+boomkat[0x10016752c] <+92>:  tbz    w11, #0x0, 0x100167538    ; <+104>
+boomkat[0x100167530] <+96>:  ldr    w11, [x10, #0x114c]
+boomkat[0x100167534] <+100>: cbz    w11, 0x10016764c          ; <+380>
+boomkat[0x100167538] <+104>: ldrb   w11, [x10, #0xf7b]
+boomkat[0x10016753c] <+108>: cmp    w11, #0x1
+boomkat[0x100167540] <+112>: b.eq   0x10016764c               ; <+380>
+boomkat[0x100167544] <+116>: ldr    w11, [x10, #0x1148]
+boomkat[0x100167548] <+120>: cmp    w11, #0x2
+boomkat[0x10016754c] <+124>: b.lo   0x10016764c               ; <+380>
+boomkat[0x100167550] <+128>: sub    w11, w11, #0x1
+boomkat[0x100167554] <+132>: str    w11, [x10, #0x1148]
+boomkat[0x100167558] <+136>: cmp    w6, #0x0
+boomkat[0x10016755c] <+140>: mov    w10, #0x76                ; =118 
+boomkat[0x100167560] <+144>: ccmp   w8, w10, #0x0, ne
+boomkat[0x100167564] <+148>: b.ne   0x100167620               ; <+336>
+boomkat[0x100167568] <+152>: ldr    x10, [x9, #0x8]
+boomkat[0x10016756c] <+156>: asr    x11, x10, #48
+boomkat[0x100167570] <+160>: cmn    x11, #0x8
+boomkat[0x100167574] <+164>: b.ne   0x100167620               ; <+336>
+boomkat[0x100167578] <+168>: ands   x12, x10, #0xffffffffffff
+boomkat[0x10016757c] <+172>: b.eq   0x100167620               ; <+336>
+boomkat[0x100167580] <+176>: ldr    w10, [x12]
+boomkat[0x100167584] <+180>: mov    w11, #0x280               ; =640 
+boomkat[0x100167588] <+184>: and    w11, w10, w11
+boomkat[0x10016758c] <+188>: cmp    w11, #0x80
+boomkat[0x100167590] <+192>: b.ne   0x100167620               ; <+336>
+boomkat[0x100167594] <+196>: ldr    x11, [x9, #0x10]
+boomkat[0x100167598] <+200>: asr    x9, x11, #48
+boomkat[0x10016759c] <+204>: cmn    x9, #0xf
+boomkat[0x1001675a0] <+208>: b.ne   0x100167620               ; <+336>
+boomkat[0x1001675a4] <+212>: tbnz   x11, #0x2f, 0x100167620   ; <+336>
+boomkat[0x1001675a8] <+216>: sbfx   x9, x11, #0, #48
+boomkat[0x1001675ac] <+220>: ldr    w13, [x12, #0x14]
+boomkat[0x1001675b0] <+224>: cmp    x9, x13
+boomkat[0x1001675b4] <+228>: b.hs   0x100167620               ; <+336>
+boomkat[0x1001675b8] <+232>: ldr    x9, [x2, w22, uxtw #3]
+boomkat[0x1001675bc] <+236>: mov    x14, #-0x8000000000000    ; =-2251799813685248 
+boomkat[0x1001675c0] <+240>: and    x13, x9, #0xffff000000000000
+boomkat[0x1001675c4] <+244>: cmp    x13, x14
+boomkat[0x1001675c8] <+248>: b.ne   0x1001675e0               ; <+272>
+boomkat[0x1001675cc] <+252>: ands   x14, x9, #0xffffffffffff
+boomkat[0x1001675d0] <+256>: b.eq   0x1001675e0               ; <+272>
+boomkat[0x1001675d4] <+260>: ldr    w14, [x14, #0x4]
+boomkat[0x1001675d8] <+264>: cmp    w14, #0x2
+boomkat[0x1001675dc] <+268>: b.lo   0x100167620               ; <+336>
+boomkat[0x1001675e0] <+272>: add    x8, x12, #0x18
+boomkat[0x1001675e4] <+276>: tbz    w10, #0xd, 0x1001675ec    ; <+284>
+boomkat[0x1001675e8] <+280>: ldr    x8, [x8]
+boomkat[0x1001675ec] <+284>: mov    w11, w11
+boomkat[0x1001675f0] <+288>: tbnz   w10, #0xb, 0x10016769c    ; <+460>
+boomkat[0x1001675f4] <+292>: ldrb   w8, [x8, x11]
+boomkat[0x1001675f8] <+296>: b      0x1001676a0               ; <+464>
+boomkat[0x1001675fc] <+300>: ands   x7, x8, #0xffffffffffff
+boomkat[0x100167600] <+304>: b.eq   0x10016764c               ; <+380>
+boomkat[0x100167604] <+308>: ldr    w8, [x7]
+boomkat[0x100167608] <+312>: and    w8, w8, #0x600
+boomkat[0x10016760c] <+316>: cmp    w8, #0x200
+boomkat[0x100167610] <+320>: b.ne   0x10016764c               ; <+380>
+boomkat[0x100167614] <+324>: ldr    w8, [x7, #0x50]
+boomkat[0x100167618] <+328>: tbz    w8, #0x1f, 0x10016751c    ; <+76>
+boomkat[0x10016761c] <+332>: b      0x10016764c               ; <+380>
+boomkat[0x100167620] <+336>: mov    x0, x19
+boomkat[0x100167624] <+340>: mov    x1, x2
+boomkat[0x100167628] <+344>: mov    x2, x20
+boomkat[0x10016762c] <+348>: mov    w3, w23
+boomkat[0x100167630] <+352>: mov    w4, w22
+boomkat[0x100167634] <+356>: mov    w5, w6
+boomkat[0x100167638] <+360>: mov    w6, w8
+boomkat[0x10016763c] <+364>: bl     0x10016770c               ; boomkat.vm.th_invoke_builtin
+boomkat[0x100167640] <+368>: cmn    w0, #0x2
+boomkat[0x100167644] <+372>: b.ne   0x100167664               ; <+404>
+boomkat[0x100167648] <+376>: add    x19, x19, #0x4
+boomkat[0x10016764c] <+380>: mov    x0, x19
+boomkat[0x100167650] <+384>: ldp    x29, x30, [sp, #0x30]
+boomkat[0x100167654] <+388>: ldp    x20, x19, [sp, #0x20]
+boomkat[0x100167658] <+392>: ldp    x22, x21, [sp, #0x10]
+boomkat[0x10016765c] <+396>: ldp    x24, x23, [sp], #0x40
+boomkat[0x100167660] <+400>: ret    
+boomkat[0x100167664] <+404>: ldr    x8, [x20, #0x10]
+boomkat[0x100167668] <+408>: mov    w6, w0
+boomkat[0x10016766c] <+412>: ldr    x2, [x8, #0x38]
+boomkat[0x100167670] <+416>: tbnz   w0, #0x1f, 0x1001676e4    ; <+532>
+boomkat[0x100167674] <+420>: mov    x0, x19
+boomkat[0x100167678] <+424>: mov    x1, x21
+boomkat[0x10016767c] <+428>: mov    x3, x20
+boomkat[0x100167680] <+432>: mov    w5, w22
+boomkat[0x100167684] <+436>: ldp    x29, x30, [sp, #0x30]
+boomkat[0x100167688] <+440>: ldp    x20, x19, [sp, #0x20]
+boomkat[0x10016768c] <+444>: mov    w4, w23
+boomkat[0x100167690] <+448>: ldp    x22, x21, [sp, #0x10]
+boomkat[0x100167694] <+452>: ldp    x24, x23, [sp], #0x40
+boomkat[0x100167698] <+456>: b      0x1001678d0               ; boomkat.vm.th_call_redispatched
+boomkat[0x10016769c] <+460>: ldrh   w8, [x8, x11, lsl #1]
+boomkat[0x1001676a0] <+464>: mov    x10, #-0x8000000000000    ; =-2251799813685248 
+boomkat[0x1001676a4] <+468>: cmp    x13, x10
+boomkat[0x1001676a8] <+472>: b.ne   0x1001676d8               ; <+520>
+boomkat[0x1001676ac] <+476>: ands   x9, x9, #0xffffffffffff
+boomkat[0x1001676b0] <+480>: b.eq   0x1001676d8               ; <+520>
+boomkat[0x1001676b4] <+484>: ldr    w10, [x9, #0x4]
+boomkat[0x1001676b8] <+488>: mov    w11, #0x7fffffff          ; =2147483647 
+boomkat[0x1001676bc] <+492>: cmp    w10, w11
+boomkat[0x1001676c0] <+496>: b.ne   0x1001676d0               ; <+512>
+boomkat[0x1001676c4] <+500>: ldrb   w11, [x9]
+boomkat[0x1001676c8] <+504>: tst    w11, #0x3
+boomkat[0x1001676cc] <+508>: b.eq   0x1001676d8               ; <+520>
+boomkat[0x1001676d0] <+512>: sub    w10, w10, #0x1
+boomkat[0x1001676d4] <+516>: str    w10, [x9, #0x4]
+boomkat[0x1001676d8] <+520>: mov    x9, #-0xf000000000000     ; =-4222124650659840 
+boomkat[0x1001676dc] <+524>: orr    x8, x8, x9
+boomkat[0x1001676e0] <+528>: str    x8, [x2, w22, uxtw #3]
+boomkat[0x1001676e4] <+532>: ldrb   w8, [x19, #0x4]!
+boomkat[0x1001676e8] <+536>: mov    x0, x19
+boomkat[0x1001676ec] <+540>: mov    x1, x21
+boomkat[0x1001676f0] <+544>: mov    x3, x20
+boomkat[0x1001676f4] <+548>: ldr    x4, [x21, x8, lsl #3]
+boomkat[0x1001676f8] <+552>: ldp    x29, x30, [sp, #0x30]
+boomkat[0x1001676fc] <+556>: ldp    x20, x19, [sp, #0x20]
+boomkat[0x100167700] <+560>: ldp    x22, x21, [sp, #0x10]
+boomkat[0x100167704] <+564>: ldp    x24, x23, [sp], #0x40
+boomkat[0x100167708] <+568>: br     x4
+(lldb) quit

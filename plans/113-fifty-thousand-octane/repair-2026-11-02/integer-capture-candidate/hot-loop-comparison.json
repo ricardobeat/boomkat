@@ -1,0 +1,48 @@
+[
+  {
+    "kernel": "lin_solve-0-1",
+    "before": {
+      "offsets": [
+        7044,
+        8320
+      ],
+      "instructions": 320,
+      "fcvtzs": 4,
+      "fcmp": 17,
+      "calls": 0
+    },
+    "after": {
+      "offsets": [
+        7872,
+        8944
+      ],
+      "instructions": 269,
+      "fcvtzs": 1,
+      "fcmp": 4,
+      "calls": 0
+    }
+  },
+  {
+    "kernel": "advect-0-4",
+    "before": {
+      "offsets": [
+        3792,
+        6136
+      ],
+      "instructions": 587,
+      "fcvtzs": 7,
+      "fcmp": 31,
+      "calls": 0
+    },
+    "after": {
+      "offsets": [
+        4388,
+        6664
+      ],
+      "instructions": 570,
+      "fcvtzs": 5,
+      "fcmp": 22,
+      "calls": 0
+    }
+  }
+]

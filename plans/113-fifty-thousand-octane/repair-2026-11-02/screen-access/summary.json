@@ -1,0 +1,32 @@
+[
+  {
+    "case": "gbemu",
+    "b85": 273.0,
+    "fixed": 764.0
+  },
+  {
+    "case": "box2d",
+    "b85": 202.0,
+    "fixed": 299.0
+  },
+  {
+    "case": "deltablue",
+    "b85": 88.0,
+    "fixed": 91.0
+  },
+  {
+    "case": "crypto",
+    "b85": 175.0,
+    "fixed": 188.0
+  },
+  {
+    "case": "mandreel",
+    "b85": 548.0,
+    "fixed": 583.0
+  },
+  {
+    "case": "navier-stokes",
+    "b85": 302.0,
+    "fixed": 147.0
+  }
+]

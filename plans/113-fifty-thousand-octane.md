@@ -18,13 +18,19 @@ Wider windows and isolated opcode improvements do not substitute for these contr
 
 ## Current phase: finish the architecture
 
-Milestones 2–4 passed architecture correctness checks, but measured throughput
-now blocks performance acceptance. [Matched minis and the historical Navier check](113-fifty-thousand-octane/minis-main-rat-2026-11-02/report.md)
-show current rat taking 1.21x main time across minis and warmed Navier falling
-from 7,109 at b85ef0ba to 838. First repair per-binding helper/publication and
-revalidation overhead, then repeat both comparisons before further expansion. Keep one SSA compiler and SLJIT;
-scale the shared IR and runtime boundary instead of adding another specialized tier.
-Work is confined to `rat`; plans remain on `plans/archive`.
+Milestones 2–4 passed architecture correctness checks; performance acceptance
+remains open. [Regression repairs and current evidence](113-fifty-thousand-octane/repair-2026-11-02/report.md)
+recover Navier and substantially reduce Gameboy helper overhead, but Gameboy and
+Box2D remain slower than the historical baseline in the last matched screen.
+The warmed Gameboy run also exposed threaded builtin stack growth; rat now
+releases that native frame before tail dispatch, with failed-before regression
+coverage. Final-head matched full-suite results are still required.
+
+[Matched JSC/native inspection](113-fifty-thousand-octane/jsc-native-2026-11-02/review-report.md)
+identifies lost integer induction and repeated binding/storage validation as the
+next architectural work. A guarded integer-capture candidate is committed
+separately and awaits performance review; hoisting is not implemented. Keep one
+SSA compiler and SLJIT. Work is confined to `rat`; plans stay on `plans/archive`.
 
 Accepted architecture:
 

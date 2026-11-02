@@ -1,0 +1,25 @@
+Guarded per-site integer captures, candidate based on root4594dde3 (isolated merge050f6ad2).
+No hoisting or new optimizer passes. No timings collected.
+
+Correctness/activation:
+- c3c build boomkat -D SLJIT_STATS --build-dir /tmp/bk-capture-i32-cli-obj --output-dir /tmp/bk-capture-i32-cli
+- /tmp/bk-capture-i32-cli/boomkat --script --jit test/jit_ssa_integer_captures.js: PASS
+- Same --jit-stress: PASS
+- c3c build embedding_jit --build-dir /tmp/bk-capture-i32-embedding-obj --output-dir /tmp/bk-capture-i32-embedding
+- Full /tmp/bk-capture-i32-embedding/embedding_jit: PASS, log /tmp/bk-capture-i32-embedding.out. New native mechanism typed=1 completed=180.
+- Permanent fixture covers changing capture to1.5,-0,INT32_MAX (checked multiplication overflow),INT32_MAX+1, coercible object (exactly2 calls), callback altering capture after committed row effects, integer alias change and different closure sharing same compiled function.
+
+Native proof:
+- Copy current source into /tmp/bk-capture-i32-native/source, add diagnostic-only REPAIR_NATIVE code-byte printing and REPAIR_VALUE representation printing in ssa.c3. No machine code changed by diagnostics.
+- c3c build boomkat --build-dir /tmp/bk-capture-i32-native/obj --output-dir /tmp/bk-capture-i32-native/out
+- out/boomkat --script --jit /tmp/bk-jsc-native-evidence/navier-exact-kernels.js > navier.stdout.log 2>navier.native.log
+- Exact unchanged driver checksum20296.04261683489, matching JSC/interpreter/baseline.
+- Full function graphs have9 guarded INT32 FRESH_BINDING sites each in lin_solve and advect. No TO_INDEX IR remains in either FULL graph. navier.native.log also contains older narrow loop graphs with TO_INDEX; do not mix those with full graph records.
+- All native hex decoded by llvm-mc --disassemble --triple=aarch64; native-manifest.json and offset assembly archived.
+- Comparison against identical-driver af024 plain release /tmp/bk-jsc-native-evidence/boomkat-release-native (not stats capture):
+  lin_solve iterative static interval7044..8320 (320 instructions,4fcvtzs,17fcmp) becomes7872..8944 (269instructions,1fcvtzs,4fcmp).
+  advect inner static interval3792..6136 (587instructions,7fcvtzs,31fcmp) becomes4388..6664 (570instructions,5fcvtzs,22fcmp).
+  No C calls in any hot interval. Counts include branch and static alternate paths; not speed ratios. Remaining fcvtzs includes the newly required binding numeric-guard slow paths and actual JS bitwise conversions. Fresh guards are deliberately retained at every read, so total function size increases despite eliminating index roundtrips.
+
+Limitations:
+This proves typed propagation and recovery, not a5x improvement. Binding metadata/guards still repeat per read; no loop hoisting was authorized. Selection currently specializes GETCAP of the active closure only, other binding/inline contexts retain existing BOXED lowering. No performance recommendation to integrate before matched review.

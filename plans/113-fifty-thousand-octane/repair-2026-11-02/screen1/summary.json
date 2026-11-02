@@ -1,0 +1,22 @@
+{
+  "navier-stokes": {
+    "b85-jit": 298.0,
+    "broken-jit": 2780.0,
+    "candidate": 148.0
+  },
+  "gbemu": {
+    "b85-jit": 271.0,
+    "broken-jit": 2811.0,
+    "candidate": 874.0
+  },
+  "box2d": {
+    "b85-jit": 199.0,
+    "broken-jit": 758.0,
+    "candidate": 291.0
+  },
+  "navier-original": {
+    "b85-jit": 7250.0,
+    "broken-jit": 857.0,
+    "candidate": 16588.0
+  }
+}

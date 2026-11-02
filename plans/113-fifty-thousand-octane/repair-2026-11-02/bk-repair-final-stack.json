@@ -1,0 +1,61 @@
+[
+  {
+    "path": "test/threaded_builtin_stack.js",
+    "mode": [],
+    "status": 0,
+    "stdout": "threaded_builtin_stack: PASS\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/threaded_builtin_stack.js",
+    "mode": [
+      "--jit"
+    ],
+    "status": 0,
+    "stdout": "threaded_builtin_stack: PASS\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/threaded_builtin_stack.js",
+    "mode": [
+      "--jit-stress"
+    ],
+    "status": 0,
+    "stdout": "threaded_builtin_stack: PASS\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/threaded_native_calls.js",
+    "mode": [],
+    "status": 0,
+    "stdout": "threaded_native_calls: 395 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/threaded_native_calls.js",
+    "mode": [
+      "--jit"
+    ],
+    "status": 0,
+    "stdout": "threaded_native_calls: 395 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "path": "test/threaded_native_calls.js",
+    "mode": [
+      "--jit-stress"
+    ],
+    "status": 0,
+    "stdout": "threaded_native_calls: 395 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "path": "original-warmed-gameboy",
+    "mode": [
+      "--jit"
+    ],
+    "status": 0,
+    "stdout": "Gameboy: 5065\n",
+    "stderr": ""
+  }
+]

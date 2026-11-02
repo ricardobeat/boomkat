@@ -1,0 +1,290 @@
+[
+  {
+    "pair": 0,
+    "case": "gbemu",
+    "side": "fixed",
+    "ms": 971.0,
+    "stdout": "Gameboy: 971 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "gbemu",
+    "side": "b85",
+    "ms": 273.0,
+    "stdout": "Gameboy: 273 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "box2d",
+    "side": "b85",
+    "ms": 207.0,
+    "stdout": "Box2D: 207 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "box2d",
+    "side": "fixed",
+    "ms": 324.0,
+    "stdout": "Box2D: 324 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "deltablue",
+    "side": "fixed",
+    "ms": 94.0,
+    "stdout": "DeltaBlue: 94 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "deltablue",
+    "side": "b85",
+    "ms": 92.0,
+    "stdout": "DeltaBlue: 92 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "crypto",
+    "side": "b85",
+    "ms": 180.0,
+    "stdout": "Encrypt: 12 ms\nDecrypt: 168 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "crypto",
+    "side": "fixed",
+    "ms": 195.0,
+    "stdout": "Encrypt: 16 ms\nDecrypt: 179 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "mandreel",
+    "side": "fixed",
+    "ms": 606.0,
+    "stdout": "Mandreel: 606 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "mandreel",
+    "side": "b85",
+    "ms": 575.0,
+    "stdout": "Mandreel: 575 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-stokes",
+    "side": "b85",
+    "ms": 308.0,
+    "stdout": "NavierStokes: 308 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-stokes",
+    "side": "fixed",
+    "ms": 151.0,
+    "stdout": "NavierStokes: 151 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "gbemu",
+    "side": "b85",
+    "ms": 283.0,
+    "stdout": "Gameboy: 283 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "gbemu",
+    "side": "fixed",
+    "ms": 762.0,
+    "stdout": "Gameboy: 762 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "box2d",
+    "side": "fixed",
+    "ms": 299.0,
+    "stdout": "Box2D: 299 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "box2d",
+    "side": "b85",
+    "ms": 202.0,
+    "stdout": "Box2D: 202 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "deltablue",
+    "side": "b85",
+    "ms": 88.0,
+    "stdout": "DeltaBlue: 88 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "deltablue",
+    "side": "fixed",
+    "ms": 91.0,
+    "stdout": "DeltaBlue: 91 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "crypto",
+    "side": "fixed",
+    "ms": 188.0,
+    "stdout": "Encrypt: 16 ms\nDecrypt: 172 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "crypto",
+    "side": "b85",
+    "ms": 175.0,
+    "stdout": "Encrypt: 11 ms\nDecrypt: 164 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "mandreel",
+    "side": "b85",
+    "ms": 548.0,
+    "stdout": "Mandreel: 548 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "mandreel",
+    "side": "fixed",
+    "ms": 582.0,
+    "stdout": "Mandreel: 582 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-stokes",
+    "side": "fixed",
+    "ms": 147.0,
+    "stdout": "NavierStokes: 147 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-stokes",
+    "side": "b85",
+    "ms": 302.0,
+    "stdout": "NavierStokes: 302 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "gbemu",
+    "side": "fixed",
+    "ms": 764.0,
+    "stdout": "Gameboy: 764 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "gbemu",
+    "side": "b85",
+    "ms": 271.0,
+    "stdout": "Gameboy: 271 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "box2d",
+    "side": "b85",
+    "ms": 200.0,
+    "stdout": "Box2D: 200 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "box2d",
+    "side": "fixed",
+    "ms": 295.0,
+    "stdout": "Box2D: 295 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "deltablue",
+    "side": "fixed",
+    "ms": 91.0,
+    "stdout": "DeltaBlue: 91 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "deltablue",
+    "side": "b85",
+    "ms": 88.0,
+    "stdout": "DeltaBlue: 88 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "crypto",
+    "side": "b85",
+    "ms": 175.0,
+    "stdout": "Encrypt: 11 ms\nDecrypt: 164 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "crypto",
+    "side": "fixed",
+    "ms": 187.0,
+    "stdout": "Encrypt: 15 ms\nDecrypt: 172 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "mandreel",
+    "side": "fixed",
+    "ms": 583.0,
+    "stdout": "Mandreel: 583 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "mandreel",
+    "side": "b85",
+    "ms": 548.0,
+    "stdout": "Mandreel: 548 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-stokes",
+    "side": "b85",
+    "ms": 302.0,
+    "stdout": "NavierStokes: 302 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-stokes",
+    "side": "fixed",
+    "ms": 147.0,
+    "stdout": "NavierStokes: 147 ms\n",
+    "stderr": ""
+  }
+]

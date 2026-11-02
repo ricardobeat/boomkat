@@ -1,0 +1,6 @@
+{
+  "baseline_commit": "050f6ad2",
+  "change": "Guarded per-site INT32 capture specialization, uncommitted source snapshot; diagnostic print only in snapshot",
+  "binding_sha256": "363ce46d5b06d21173b8087c15e635c706c40c49abaae1cd665f9d7486b5ed46",
+  "driver": "/tmp/bk-jsc-native-evidence/navier-exact-kernels.js"
+}

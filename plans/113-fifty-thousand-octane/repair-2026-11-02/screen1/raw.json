@@ -1,0 +1,362 @@
+[
+  {
+    "pair": 0,
+    "case": "navier-stokes",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.3053442919626832,
+    "value": 282.0,
+    "stdout": "NavierStokes: 282 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-stokes",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 2.793378167087212,
+    "value": 2773.0,
+    "stdout": "NavierStokes: 2773 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-stokes",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.37021458405070007,
+    "value": 165.0,
+    "stdout": "NavierStokes: 165 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "gbemu",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.3104622501414269,
+    "value": 271.0,
+    "stdout": "Gameboy: 271 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "gbemu",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 2.8465500839520246,
+    "value": 2814.0,
+    "stdout": "Gameboy: 2814 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "gbemu",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.9073380830232054,
+    "value": 874.0,
+    "stdout": "Gameboy: 874 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "box2d",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.22573045804165304,
+    "value": 201.0,
+    "stdout": "Box2D: 201 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "box2d",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 0.7757424169685692,
+    "value": 753.0,
+    "stdout": "Box2D: 753 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "box2d",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.31513445801101625,
+    "value": 293.0,
+    "stdout": "Box2D: 293 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-original",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 2.0276073748245835,
+    "value": 7257.0,
+    "stdout": "NavierStokes: 7257\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-original",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 4.191453041974455,
+    "value": 854.0,
+    "stdout": "NavierStokes: 854\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-original",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 2.0192560418508947,
+    "value": 16571.0,
+    "stdout": "NavierStokes: 16571\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-stokes",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.15558916702866554,
+    "value": 147.0,
+    "stdout": "NavierStokes: 147 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-stokes",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 2.805898416088894,
+    "value": 2797.0,
+    "stdout": "NavierStokes: 2797 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-stokes",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.3090992080979049,
+    "value": 300.0,
+    "stdout": "NavierStokes: 300 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "gbemu",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.9090859170537442,
+    "value": 874.0,
+    "stdout": "Gameboy: 874 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "gbemu",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 2.8439442908857018,
+    "value": 2810.0,
+    "stdout": "Gameboy: 2810 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "gbemu",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.30628583300858736,
+    "value": 270.0,
+    "stdout": "Gameboy: 270 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "box2d",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.31383204204030335,
+    "value": 291.0,
+    "stdout": "Box2D: 291 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "box2d",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 0.7805551660712808,
+    "value": 758.0,
+    "stdout": "Box2D: 758 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "box2d",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.22233716608025134,
+    "value": 199.0,
+    "stdout": "Box2D: 199 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-original",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 2.011124375043437,
+    "value": 16588.0,
+    "stdout": "NavierStokes: 16588\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-original",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 4.167516749817878,
+    "value": 860.0,
+    "stdout": "NavierStokes: 860\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-original",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 2.0308024999685585,
+    "value": 7250.0,
+    "stdout": "NavierStokes: 7250\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-stokes",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.306513249874115,
+    "value": 298.0,
+    "stdout": "NavierStokes: 298 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-stokes",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 2.788393124938011,
+    "value": 2780.0,
+    "stdout": "NavierStokes: 2780 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-stokes",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.15595249994657934,
+    "value": 148.0,
+    "stdout": "NavierStokes: 148 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "gbemu",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.3082079158630222,
+    "value": 272.0,
+    "stdout": "Gameboy: 272 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "gbemu",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 2.844949166988954,
+    "value": 2811.0,
+    "stdout": "Gameboy: 2811 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "gbemu",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.911329791881144,
+    "value": 878.0,
+    "stdout": "Gameboy: 878 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "box2d",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 0.22256116708740592,
+    "value": 199.0,
+    "stdout": "Box2D: 199 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "box2d",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 0.7817072079051286,
+    "value": 759.0,
+    "stdout": "Box2D: 759 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "box2d",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 0.31356866704300046,
+    "value": 291.0,
+    "stdout": "Box2D: 291 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-original",
+    "config": "b85-jit",
+    "status": 0,
+    "wall_seconds": 2.030970166204497,
+    "value": 7243.0,
+    "stdout": "NavierStokes: 7243\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-original",
+    "config": "broken-jit",
+    "status": 0,
+    "wall_seconds": 4.175454166950658,
+    "value": 857.0,
+    "stdout": "NavierStokes: 857\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-original",
+    "config": "candidate",
+    "status": 0,
+    "wall_seconds": 2.018150874879211,
+    "value": 16588.0,
+    "stdout": "NavierStokes: 16588\n",
+    "stderr": ""
+  }
+]

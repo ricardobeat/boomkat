@@ -1,0 +1,30 @@
+SSA lazy roots: PASS empty entry, sparse swaps, clear, deopt and reverse disposal
+SSA sparse imports: PASS rebind, sparse before/after maps and high result
+SSA helper homes: PASS C ABI saved/volatile registers, spills and boxed roots (saved FP=1)
+SSA boxed truth: PASS native cyclic object/null/boolean/integer branches
+scalable SSA closure startup: PASS registers=66 hits=237 helpers=238 continuations=1
+SSA alias work budget: PASS
+scalable native call ABI: PASS calls=126 returns=85
+scalable SSA gateway: PASS words=714 registers=310 spills=900 edges=153 hits=330
+scalable acyclic helper: PASS words=605 calls=273 continuations=108
+SSA native helper calls: PASS calls=240 returns=170 partial=37
+SSA native scratch: PASS live arguments/scratch and dead owned string refuse before clearing
+scalable SSA access: PASS dense + 8 typed classes, WIDE, normal/stress
+scalable SSA bounds: PASS helper=0 proofs=1 hits=106
+scalable SSA bounds: PASS helper=1 proofs=0 hits=138
+scalable SSA rematerialization: PASS constants=141 hits=24 helpers=23 continued=2
+native SSA captures: PASS sites=2 reads=2302 hits=218
+native SSA variable IC: PASS sites=1 reads=188 hits=191
+native SSA boxed this warm: reads=405 writes=243 completed=81
+native SSA boxed this: PASS accesses=8 reads=718 writes=432 completed=142
+native SSA boxed this warm: reads=475 writes=285 completed=95
+native SSA boxed this: PASS accesses=8 reads=783 writes=471 completed=155
+native SSA boxed arrays: PASS mode=0 reads=79 completed=79 helpers=0 continued=0
+native SSA boxed arrays: PASS mode=1 reads=108 completed=108 helpers=108 continued=108
+native SSA boxed arrays: PASS mode=2 reads=109 completed=108 helpers=109 continued=108
+scalable SSA fields: PASS live shapes, native loads/stores, exact fallback
+scalable SSA memory callbacks: PASS native continuation after storage mutation
+effectful SSA inline: PASS effectInlineCaller entries=92 recoveries=1
+effectful SSA inline: PASS effectCallbackCaller entries=93 recoveries=93
+effectful SSA inline: PASS WIDE child registers + exact late recovery
+embedding JIT: PASS

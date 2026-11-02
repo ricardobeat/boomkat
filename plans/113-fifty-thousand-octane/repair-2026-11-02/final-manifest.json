@@ -1,0 +1,14 @@
+{
+  "rat_commit": "252ff89e3aeca01db01967106c1c16bb0a534882",
+  "release_sha256": "6faf3291f736deff26a1e2361f3172d599f162485bc6e15664361b1c937948f5",
+  "integer_candidate": "842bbca3",
+  "validation": {
+    "embedding": "full O2 + ASan pass",
+    "fixtures": "85/85 interpreter/JIT/stress; elapsed ms normalized",
+    "stack": "60,000-call straight-line fixture passes all three modes; old binary exits139",
+    "builtins": "395 semantic checks pass all three modes",
+    "warmed_gameboy": "original runner completes; run used only for correctness, concurrent validation means no timing claim"
+  },
+  "full_octane_final_head": "not run",
+  "final_x64": "not rerun; earlier helper ABI checkpoint passed x64"
+}
