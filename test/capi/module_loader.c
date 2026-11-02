@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static int resolves, loads, version = 1;
+static int resolves, loads, version = 1, flaky_up;
 
 static bk_status resolve(bk_ctx ctx, const char *referrer, const char *specifier,
                          bk_module_request *req, void *opaque) {
@@ -31,6 +31,7 @@ static bk_status load(bk_ctx ctx, const char *name, bk_module_request *req, void
         bk_value exports = bk_eval_ex(ctx, "({ answer: 42, greet: () => 'hi' })", 35, NULL, BK_EVAL_GLOBAL);
         return bk_module_provide_native(req, exports);
     }
+    if (strcmp(name, "app:flaky") == 0 && flaky_up) return bk_module_provide(req, "export default 'up'", 19);
     return BK_ERR_INVALID;
 }
 
@@ -103,6 +104,15 @@ int main(void) {
     bk_free_value(ctx, bk_get_exception(ctx));
     assert(bk_is_exception(eval_module(ctx, "import x from 'missing'")));
     bk_free_value(ctx, bk_get_exception(ctx));
+
+    /* A failed load is not cached: once the host can answer, a retry loads it,
+     * along with the importer that failed with it. */
+    const char *flaky = "import f from 'app:flaky'; globalThis.f1 = f";
+    assert(bk_is_exception(eval_module(ctx, flaky)));
+    bk_free_value(ctx, bk_get_exception(ctx));
+    flaky_up = 1;
+    assert(!bk_is_exception(eval_module(ctx, flaky)));
+    assert(truthy(ctx, "f1 === 'up'"));
 
     /* bk_define_native_module wins over the loader and can be replaced. */
     bk_value ex = bk_eval_ex(ctx, "({ get lazy() { return 'read' }, default: 'dflt' })", 51, NULL, BK_EVAL_GLOBAL);
