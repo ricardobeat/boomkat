@@ -129,6 +129,28 @@ silent_quiet "handled dynamic import of an unparseable module" \
 reported "unhandled dynamic import of an unparseable module" \
   "import('./badmodule_FIXTURE.js');" "cannot share a name"
 
+# --- a top-level await that rejects -----------------------------------------
+# A module whose top-level await rejects fails once: the host reports it as
+# uncaught. The engine's internal promise for the module's evaluation used to
+# be reported as an unhandled rejection as well, so one failure printed twice.
+reported_once() {
+  local name="$1" file="$2" want="$3"
+  local got rc count
+  got="$(timeout 30 "$ENGINE" "$file" 2>&1)"
+  rc=$?
+  count="$(printf '%s\n' "$got" | grep -c -- "$want")"
+  if [ "$rc" -eq 0 ] || [ "$count" -ne 1 ]; then
+    FAIL=$((FAIL + 1)); echo "FAIL: $name — expected one report and a non-zero exit, got $rc ('$got')"; return
+  fi
+  PASS=$((PASS + 1))
+}
+printf '%s\n' 'await Promise.reject(new Error("tla boom"));' > "$TMP/tla_FIXTURE.js"
+printf '%s\n' 'import "./tla_FIXTURE.js";' > "$TMP/tla_importer_FIXTURE.js"
+printf '%s\n' 'await import("./badmodule_FIXTURE.js");' > "$TMP/tla_import_FIXTURE.js"
+reported_once "rejected top-level await" "$TMP/tla_FIXTURE.js" "tla boom"
+reported_once "rejected top-level await in a dependency" "$TMP/tla_importer_FIXTURE.js" "tla boom"
+reported_once "awaited import of an unparseable module" "$TMP/tla_import_FIXTURE.js" "cannot share a name"
+
 # --- --ignore-unhandled-promises --------------------------------------------
 # The flag turns the reporting off entirely: no output and exit 0, for hosts
 # (test262 runners, like d8's flag of the same name) that do not treat an
