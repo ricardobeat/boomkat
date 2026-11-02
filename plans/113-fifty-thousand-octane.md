@@ -19,12 +19,16 @@ Wider windows and isolated opcode improvements do not substitute for these contr
 ## Current phase: finish the architecture
 
 Milestones 2–4 passed architecture correctness checks; performance acceptance
-remains open. [Regression repairs and current evidence](113-fifty-thousand-octane/repair-2026-11-02/report.md)
-recover Navier and substantially reduce Gameboy helper overhead, but Gameboy and
-Box2D remain slower than the historical baseline in the last matched screen.
-The warmed Gameboy run also exposed threaded builtin stack growth; rat now
-releases that native frame before tail dispatch, with failed-before regression
-coverage. Final-head matched full-suite results are still required.
+remains open. [Regression repairs](113-fifty-thousand-octane/repair-2026-11-02/report.md)
+and the follow-up [SSA throughput pass](113-fifty-thousand-octane/ssa-throughput-2026-11-02/report.md)
+(29da643a dictionary-receiver inherited reads, ea96005b pooled SSA scratch,
+feedback-driven plan rebuilds, helper-dominated demotion and a 320-opcode
+whole-body bound) now beat the historical baseline on Gameboy (1.19x), hold
+Mandreel and DeltaBlue at parity and keep Navier at 2.14x. Box2D (0.75x) and
+Crypto (0.94x) remain open regressions. The warmed Gameboy run also exposed
+threaded builtin stack growth; rat releases that native frame before tail
+dispatch, with failed-before regression coverage. Final-head matched full-Octane
+results are still required.
 
 [Matched JSC/native inspection](113-fifty-thousand-octane/jsc-native-2026-11-02/review-report.md)
 identifies lost integer induction and repeated binding/storage validation as the
