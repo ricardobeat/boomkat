@@ -207,6 +207,8 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
         uint spills = plan.ssa_data == null ? 0 : plan.ssa_data.spill_count;
         uint edges = plan.ssa_data == null ? 0 : plan.ssa_data.edge_count;
         if (!ssa_execution_init(&execution, cold, plan, plan.ssa_value_capacity, spills, edges)) return entry_pc;
+        execution.run = run;
+        if (run != null && run.budget_base < run.budget) run.budget_base = run.budget;
         state = execution.state_storage;
         state.execution = &execution;
     }

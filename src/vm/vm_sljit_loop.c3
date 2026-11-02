@@ -136,6 +136,10 @@ struct LoopPlan @feat(SLJIT) {
     ulong ssa_entry_misses @if($feat(SLJIT_STATS));
     ulong ssa_body_misses @if($feat(SLJIT_STATS));
     ulong ssa_epoch_updates @if($feat(SLJIT_STATS));
+    ulong ssa_native_calls @if($feat(SLJIT_STATS));
+    ulong ssa_native_returns @if($feat(SLJIT_STATS));
+    ulong ssa_native_exits @if($feat(SLJIT_STATS));
+    ulong ssa_native_overlaps @if($feat(SLJIT_STATS));
     void* ssa_epoch_constant;
     usz ssa_epoch_patch;
     long ssa_executable_offset;
