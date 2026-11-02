@@ -3,17 +3,15 @@
 # feature area per file, covering the erasable subset the engine accepts.
 #
 # Each accept file (tNN_*.ts) is executed under node, whose native type
-# stripping is the reference runtime, and the engine must match that stdout
+# transformation is the reference runtime, and the engine must match that stdout
 # byte for byte and exit 0. The reference outputs are captured in .expected
 # files so the gate has no runtime dependency on node; regenerate them with:
 #
 #     bash test/typescript/handbook/run.sh --regen
 #
-# Reject files (rNN_*_reject.ts) name syntax that is NOT erasable (enums,
-# namespaces, parameter properties, angle-bracket assertions). Both tsc
-# (--erasableSyntaxOnly, TS1294) and node's type stripping refuse them, so
-# the engine must refuse to compile them too: non-zero exit is the pass
-# condition.
+# Reject files (rNN_*_reject.ts) name syntax the engine does not support yet
+# (namespaces, parameter properties, angle-bracket assertions). The engine must
+# refuse to compile them: non-zero exit is the pass condition.
 #
 # Usage: bash test/typescript/handbook/run.sh [engine_binary] [--regen]
 
@@ -36,7 +34,7 @@ for f in "$DIR"/t*.ts; do
   expected_file="${f%.ts}.expected"
 
   if [ "$REGEN" -eq 1 ]; then
-    node "$f" > "$expected_file" 2>/tmp/handbook_node_err.$$ || {
+    node --experimental-transform-types "$f" > "$expected_file" 2>/tmp/handbook_node_err.$$ || {
       echo "REGEN ABORT: node rejected $name"
       cat /tmp/handbook_node_err.$$ | head -5
       rm -f /tmp/handbook_node_err.$$

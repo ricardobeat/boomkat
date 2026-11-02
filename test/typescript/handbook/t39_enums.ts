@@ -1,0 +1,39 @@
+// Enums are runtime constructs: the engine compiles them into the object
+// TypeScript emits, with the numeric members mapped back to their names.
+enum Color {
+  Red,
+  Green,
+  Blue,
+}
+console.log(Color.Red, Color.Green, Color.Blue);
+console.log(Color[Color.Red], Color[Color.Blue]);
+
+enum Flags {
+  None = 0,
+  Read = 1 << 0,
+  Write = 1 << 1,
+  All = Read | Write,
+}
+console.log(Flags.Read, Flags.Write, Flags.All);
+console.log(Flags[Flags.All]);
+
+enum Mixed {
+  First = 1,
+  Second = "two",
+  Third = 3,
+}
+console.log(Mixed.First, Mixed.Second, Mixed.Third);
+console.log(Mixed[Mixed.First], Mixed["two"]);
+
+enum Counted {
+  One = 5,
+  Two,
+  Three,
+}
+console.log(Counted.One, Counted.Two, Counted.Three);
+
+const enum Flags2 {
+  A = 10,
+  B = 20,
+}
+console.log(Flags2.A, Flags2.B);

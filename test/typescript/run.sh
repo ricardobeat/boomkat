@@ -40,6 +40,9 @@ expect_reject() {
 
 # --- original corpus -------------------------------------------------------
 expect_ok "$DIR/simple.ts"    "42"
+expect_ok "$DIR/enum.ts"      "0
+Green
+3"
 expect_ok "$DIR/basic.ts"     "hello world hello world 
 42"
 expect_ok "$DIR/fn.ts"        "5"
@@ -113,7 +116,6 @@ expect_ok "$DIR/mod_use_ns.ts"      "42
 hi ns"
 
 # --- rejects ---------------------------------------------------------------
-expect_reject "$DIR/reject_enum.ts"       "not erasable syntax"
 expect_reject "$DIR/reject_namespace.ts"  "not erasable syntax"
 expect_reject "$DIR/reject_ctor_prop.ts"  "public"
 
@@ -130,7 +132,7 @@ if command -v tsc >/dev/null 2>&1; then
         cat /tmp/tsc.out
         FAIL=$((FAIL + 1))
     fi
-    for rej in reject_enum.ts reject_namespace.ts reject_ctor_prop.ts; do
+    for rej in reject_namespace.ts reject_ctor_prop.ts; do
         out=$(cd "$DIR" && tsc --ignoreConfig --erasableSyntaxOnly --noEmit \
               --isolatedModules --target es2022 --module esnext --lib es2022 \
               --skipLibCheck --strict false --moduleDetection force \

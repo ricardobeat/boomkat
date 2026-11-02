@@ -184,6 +184,9 @@ fn uint? Parser.binary(&self, uint min_prec) {
     while (true) {
         if (self.lex.ts_mode && (self.at_word("as") || self.at_word("satisfies"))) {
             self.next()!;
+            // An assertion makes the expression a computed value: a constant
+            // expression that carries one is no longer folded.
+            self.ts_asserted = true;
             if (self.tok.type == TokenType.CONST) { self.next()!; }
             else { self.ts_skip_type(expression: true)!; }
             continue;
