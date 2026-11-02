@@ -46,6 +46,7 @@ enum SsaOp : char {
     PROTO_STORAGE,
     PHI,
     BINDING,
+    FRESH_BINDING,
     CONST_I,
     CONST_F,
     // A boxed constant: null, undefined or a boolean. The payload holds the
@@ -109,6 +110,7 @@ fn bool ssa_has_result(SsaOp op) @feat(SLJIT) {
 struct SsaValue @feat(SLJIT) {
     SsaHelperSite* helper;
     SsaFieldAccess* field_access;
+    SsaBindingSite* binding_site;
     SsaOp op;
     SsaRep rep;
     int a;
