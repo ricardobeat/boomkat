@@ -497,6 +497,7 @@ fn void sljit_stats_dump(Heap* h) {
                     io::printfn("SLJIT SSA helpers id=%d calls=%d continued=%d", i,
                         plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
                 }
+                ssa_stats_accesses(h, cf, plan.ssa_region, i);
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes
                         - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0), plan.resume_fragment, plan.resume_bytes);
