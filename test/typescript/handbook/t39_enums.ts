@@ -37,3 +37,12 @@ const enum Flags2 {
   B = 20,
 }
 console.log(Flags2.A, Flags2.B);
+
+// An initialiser that is not a constant runs as written, and a member it
+// names stands for that member's value.
+enum Derived { A = "a", B = A + "b", C = `${B}c`, D = A }
+console.log(JSON.stringify(Derived));
+enum Computed { A = 3, B = A.toString().length, C = "xyz".length, D = B + C, E }
+console.log(JSON.stringify(Computed));
+enum Self { Self = 1, Next = Self + 1 }
+console.log(JSON.stringify(Self));
