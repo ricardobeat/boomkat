@@ -121,6 +121,7 @@ struct Resolver {
     uint slot_count;
     Vec{AnnexBCandidate} annexb;
     Vec{uint} inner_slots;     // open addressing over Scope.inner: scope id, 0 = empty
+    Vec{uint} node_slots;      // open addressing over Scope.node: scope id, 0 = empty
     Vec{uint} func_start;      // bindings grouped by function scope: [func_start[f], func_start[f + 1]) of func_items
     Vec{uint} func_items;
     uint cur;
@@ -165,6 +166,7 @@ fn void Resolver.free(&self) {
     self.slots.free();
     self.annexb.free();
     self.inner_slots.free();
+    self.node_slots.free();
     self.func_start.free();
     self.func_items.free();
 }
@@ -848,6 +850,21 @@ fn void Resolver.index_inner(&self) {
         while (self.inner_slots.data[i] != 0) i = (i + 1) & mask;
         self.inner_slots.data[i] = s;
     }
+
+    sz ncap = 16;
+    while (ncap < self.scopes.len * 2) ncap *= 2;
+    self.node_slots.init_zero(ncap);
+    uint nmask = (uint)ncap - 1;
+    for (uint s = 1; s < (uint)self.scopes.len; s++) {
+        uint node = self.scopes.data[s].node;
+        // A block-level function has a block scope for its name as well as its
+        // function scope, and both name the declaration; only the function
+        // scope is what a function node stands for.
+        if (node == 0 || self.scopes.data[s].kind != ScopeKind.FUNCTION) continue;
+        uint i = (node * 0x9E3779B1) & nmask;
+        while (self.node_slots.data[i] != 0) i = (i + 1) & nmask;
+        self.node_slots.data[i] = s;
+    }
 }
 
 // The scope whose braces open just before byte offset `inner`, or 0.
@@ -859,6 +876,21 @@ fn uint Resolver.scope_at(&self, uint inner) {
         uint s = self.inner_slots.data[i];
         if (s == 0) return 0;
         if (self.scopes.data[s].inner == inner) return s;
+        i = (i + 1) & mask;
+    }
+}
+
+// The function scope created for AST node `node`, or 0. Unlike `scope_at` this
+// does not depend on source positions, so it stays correct for synthesized
+// functions that share a body position.
+fn uint Resolver.scope_of_node(&self, uint node) {
+    if (self.node_slots.len == 0) return 0;
+    uint mask = (uint)self.node_slots.len - 1;
+    uint i = (node * 0x9E3779B1) & mask;
+    while (true) {
+        uint s = self.node_slots.data[i];
+        if (s == 0) return 0;
+        if (self.scopes.data[s].node == node) return s;
         i = (i + 1) & mask;
     }
 }
