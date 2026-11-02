@@ -28,6 +28,7 @@ The CLI evaluates modules by default. Use `--script` for classic scripts, which
 are sloppy unless they contain `"use strict"`. Modules and class code are strict.
 The C API's `bk_eval` runs sloppy scripts; `bk_eval_ex` with `BK_EVAL_STRICT` selects strict
 scripts. Preserve both execution modes when changing parser or runtime behavior.
+TypeScript follows TypeScript 7: a `.ts` script is strict without a prologue.
 
 | Task | Command |
 |------|---------|
@@ -72,9 +73,9 @@ Check `--single`'s suite-exclusion warning before treating a failure as a
 regression. Compile errors are expected for parse-negative tests. `--log` writes
 per-test verdicts for failure clustering.
 
-TypeScript stripping uses `just ts-conformance [phase-dir]`, with
+TypeScript stripping uses `just ts-conformance [phase-dir]`, with TypeScript 7's
 `tsc --erasableSyntaxOnly` as the compilation oracle. The TypeScript compiler's
-own sources are a broader stress test: `python3 scripts/fetch_ts_source.py
+own sources (6.0, the last release written in TypeScript) are a broader stress test: `python3 scripts/fetch_ts_source.py
 --check` fetches them and compiles every module. Fetch the corpus with
 `python3 scripts/fetch_ts_conformance.py` if it is missing. Runner options and
 exclusions are in `scripts/run_ts_conformance.py`.

@@ -114,7 +114,7 @@ snapshot.
 
 | | boomkat | QuickJS | quickjs-ng | Duktape v2.7.0 |
 |---|---|---|---|---|
-| TypeScript type stripping | ✅ erasable-only | ❌ | ❌ | ❌ |
+| TypeScript (TypeScript 7 syntax: type stripping, enums, namespaces, parameter properties) | ✅ | ❌ | ❌ | ❌ |
 | JSX (classic and automatic runtimes, pragmas, tsconfig/jsconfig) | ✅ | ❌ | ❌ | ❌ |
 | Temporal | ✅ Optional; 16 calendars, IANA timezones | ❌ | ❌ | ❌ |
 | Built-in debugger protocol | ❌ | ❌ | ❌ | ✅ |
@@ -198,7 +198,7 @@ revision and overlapping skip rules.
 | Sloppy mode | supported | supported | supported | supported |
 | Annex B | sloppy-mode parts | supported | supported | supported |
 | RegExp engine | libregexp | libregexp | libregexp | built-in |
-| TypeScript stripping | erasable only | | | |
+| TypeScript | TypeScript 7, strict | | | |
 | GC | refcounted strings + cooperative generational tracing | refcount + cycles | refcount + cycles | refcount + MS |
 | Inspection | disasm, VM trace | bytecode dump | bytecode dump | remote debugger |
 | Embedding | C ABI | C API | C API | C API |

@@ -84,7 +84,11 @@ scripts, modules, eval and dynamic function constructors. `CompilerContext` owns
 one function's registers, scope stack, constant pool and optimization passes.
 A nested function gets its own context and becomes a template in its parent's
 `inner_funcs` array. Type-only declarations, imports and exports produce no
-runtime binding. Nonerasable TypeScript syntax is rejected.
+runtime binding. The parser follows TypeScript 7: enums, namespaces and
+constructor parameter properties are desugared into the objects TypeScript
+emits, `module N { }` is rejected in favour of `namespace N { }`, and a
+TypeScript source is strict code, script or module. Other nonerasable syntax
+is rejected.
 
 Bytecode source metadata records original-source byte offsets with 1-based lines
 and byte columns, including TypeScript tokens after type erasure. Adjacent
@@ -1416,7 +1420,7 @@ excluded.
 
 TypeScript erasure has two providers: `ast/parse_ts.c3` and
 `ast/parse_ts_disabled.c3`, selected at module boundaries. The disabled provider
-implements the nine grammar-facing helpers with no-op, false or parse-error
+implements the grammar-facing helpers with no-op, false or parse-error
 results. Parser initialization rejects a request for disabled TypeScript/JSX.
 The ordinary JS grammar retains its type-mode checks. JSX's entry points and
 injected imports use the constant capability, letting its helpers be discarded.
