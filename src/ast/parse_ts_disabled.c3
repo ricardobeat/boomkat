@@ -19,3 +19,4 @@ fn uint Parser.ts_scope_push(&self) { return 0; }
 fn void Parser.ts_scope_pop(&self, uint mark) { return; }
 fn void Parser.ts_record_decl(&self, uint stmt) { return; }
 fn void Parser.ts_elide_shadowed_imports(&self, uint mark) { return; }
+fn void Parser.ts_type_import_statements(&self) { return; }

@@ -167,7 +167,12 @@ fn uint? Parser.import_decl(&self) {
                 }
                 local = self.ident_node(name_tok);
             }
-            if (!erased) self.scratch_push(self.node(NodeTag.IMPORT_SPEC, spos, imported, local));
+            if (erased) {
+                // `import { type A }` binds a type, which an export may name.
+                self.ts_type_imports.push(self.ast.lhs.data[local]);
+            } else {
+                self.scratch_push(self.node(NodeTag.IMPORT_SPEC, spos, imported, local));
+            }
             if (self.tok.type != TokenType.COMMA) break;
             self.next()!;
         }

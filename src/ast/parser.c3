@@ -75,6 +75,7 @@ struct Parser {
     Vec{uint} ts_exports;     // names a TypeScript declaration exported already
     Vec{uint} ts_param_props;  // the names of a constructor's parameter properties
     Vec{uint} ts_scope_names;  // the names the current TypeScript scope declares
+    Vec{uint} ts_type_imports; // the names type-only imports bind
     uint label_depth;
     uint ts_erased_name;
     uint ns_name;            // the namespace object the parser is inside
@@ -378,6 +379,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ts_exports.init(8);
     p.ts_param_props.init(8);
     p.ts_scope_names.init(8);
+    p.ts_type_imports.init(8);
     build_line_table(ast);
     lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
@@ -410,6 +412,7 @@ fn void Parser.destroy(&self) {
     self.ts_exports.free();
     self.ts_param_props.free();
     self.ts_scope_names.free();
+    self.ts_type_imports.free();
 }
 
 // Return to the state `saved` and `lex` hold, taken before a speculative parse.
@@ -421,13 +424,16 @@ fn void Parser.rewind(&self, Parser* saved, Lexer* lex) {
     Vec{uint} exports = self.ts_exports;
     Vec{uint} param_props = self.ts_param_props;
     Vec{uint} scope_names = self.ts_scope_names;
+    Vec{uint} type_imports = self.ts_type_imports;
     *self = *saved;
     scratch.len = saved.scratch.len;
     exports.len = saved.ts_exports.len;
     param_props.len = saved.ts_param_props.len;
     scope_names.len = saved.ts_scope_names.len;
+    type_imports.len = saved.ts_type_imports.len;
     self.scratch = scratch;
     self.ts_exports = exports;
     self.ts_param_props = param_props;
     self.ts_scope_names = scope_names;
+    self.ts_type_imports = type_imports;
 }

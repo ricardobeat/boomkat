@@ -510,7 +510,7 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
         if (self.is_word(next, "type") && !next.nl_before) {
             self.next()!;
             self.next()!;
-            self.ts_erase_import_export()!;
+            self.ts_erase_import_export(imported: true)!;
             return true;
         }
     }
@@ -624,21 +624,40 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
     return false;
 }
 
-fn void? Parser.ts_erase_import_export(&self) {
+// Skip a type-only import or export. The names a type-only import binds are
+// recorded, so that an `export { A }` of one is dropped like the export of
+// any other type: `import type { A, B as C }`, `import type D from` and
+// `import type * as E from` bind A, C, D and E.
+fn void? Parser.ts_erase_import_export(&self, bool imported = false) {
     uint depth = 0;
+    bool past_from = false;
     while (self.tok.type != TokenType.EOF_TOKEN) {
         TokenType tt = self.tok.type;
         if (depth == 0) {
             if (self.eat(TokenType.SEMICOLON)!) return;
             if (self.tok.nl_before && tt != TokenType.COMMA && !self.at_word("from")
                 && tt != TokenType.STRING) return;
+            if (self.at_word("from")) past_from = true;
         }
         if (tt == TokenType.LBRACE || tt == TokenType.LPAREN || tt == TokenType.LBRACKET) depth++;
         if (tt == TokenType.RBRACE || tt == TokenType.RPAREN || tt == TokenType.RBRACKET) {
             if (depth == 0) return;
             depth--;
         }
+        Token t = self.tok;
         self.next()!;
+        if (imported && !past_from && depth <= 1 && t.type == TokenType.IDENTIFIER
+            && (self.tok.type == TokenType.COMMA || self.tok.type == TokenType.RBRACE || self.at_word("from"))) {
+            self.ts_type_imports.push(self.atom(t.str_value));
+        }
+    }
+}
+
+// Leave an empty statement naming each type a type-only import bound, where
+// the resolver looks for the types an export may name.
+fn void Parser.ts_type_import_statements(&self) {
+    for (sz i = 0; i < self.ts_type_imports.len; i++) {
+        self.scratch_push(self.node(NodeTag.EMPTY_STMT, 0, self.ts_type_imports.data[i]));
     }
 }
 

@@ -132,6 +132,7 @@ b#2"
 expect_ok "$DIR/mod_main.ts"        "42
 hi world"
 expect_ok "$DIR/mod_use_default.ts" "42"
+expect_ok "$DIR/mod_type_reexport.ts" "box 4"
 expect_script_ok "$DIR/script_strict.ts" "true 1"
 expect_ok "$DIR/mod_use_ns.ts"      "42
 hi ns"
