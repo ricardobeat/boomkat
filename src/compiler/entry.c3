@@ -32,12 +32,13 @@ import std::io;
 // directly and modules are strict, so neither passes this.
 // `strict` compiles the whole Script as strict code, as if its prologue held
 // "use strict". The CLI and the embedding API use it for their strict-by-
-// default modes; spec-driven callers leave it off.
+// default modes; spec-driven callers leave it off. A TypeScript source is
+// always strict: TypeScript 6 and later assume strict mode for all code.
 fn CompiledFunction*? compile(Lexer* lex, void* heap, bool want_completion = false,
                               bool non_strict_source = false, bool strict = false) {
     $if features::SOURCE_COMPILER:
     // Reset error state for this top-level compilation.
-    strict = features::STRICT_ONLY || strict;
+    strict = features::STRICT_ONLY || strict || lex.ts_mode;
     lex.err_msg[0] = 0;
     lex.err_line = 0;
     lex.err_col  = 0;
