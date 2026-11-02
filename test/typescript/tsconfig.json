@@ -11,5 +11,5 @@
     "types": []
   },
   "include": ["globals.d.ts", "*.ts"],
-  "exclude": ["reject_namespace.ts"]
+  "exclude": []
 }

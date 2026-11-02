@@ -9,9 +9,8 @@
 #
 #     bash test/typescript/handbook/run.sh --regen
 #
-# Reject files (rNN_*_reject.ts) name syntax the engine does not support yet
-# (namespaces, parameter properties, angle-bracket assertions). The engine must
-# refuse to compile them: non-zero exit is the pass condition.
+# Reject files (rNN_*_reject.ts) name syntax the engine does not support yet.
+# The engine must refuse to compile them: non-zero exit is the pass condition.
 #
 # Usage: bash test/typescript/handbook/run.sh [engine_binary] [--regen]
 
@@ -69,6 +68,7 @@ if [ "$REGEN" -eq 1 ]; then
 fi
 
 for f in "$DIR"/r*_reject.ts; do
+  [ -e "$f" ] || continue
   name="$(basename "$f")"
   got="$(timeout 30 "$ENGINE" "$f" 2>&1)"
   rc=$?

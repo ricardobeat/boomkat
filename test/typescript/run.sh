@@ -47,6 +47,8 @@ expect_ok "$DIR/angle_assert.ts" "5
 0"
 expect_ok "$DIR/param_props.ts" "1
 3"
+expect_ok "$DIR/namespace.ts"   "3
+6"
 expect_ok "$DIR/basic.ts"     "hello world hello world 
 42"
 expect_ok "$DIR/fn.ts"        "5"
@@ -119,13 +121,9 @@ expect_ok "$DIR/mod_use_default.ts" "42"
 expect_ok "$DIR/mod_use_ns.ts"      "42
 hi ns"
 
-# --- rejects ---------------------------------------------------------------
-expect_reject "$DIR/reject_namespace.ts"  "not erasable syntax"
-
 # --- tsc oracle (optional) -------------------------------------------------
 # If tsc is on PATH, cross-check the corpus against `--erasableSyntaxOnly`:
-#   1. `tsc -p .` (accepting corpus + tsconfig excludes) must pass with no error.
-#   2. Each reject file must fail with TS1294 (erasableSyntaxOnly violation).
+#   1. `tsc -p .` (the accepting corpus) must pass with no error.
 if command -v tsc >/dev/null 2>&1; then
     echo "== tsc oracle =="
     if (cd "$DIR" && tsc -p . >/tmp/tsc.out 2>&1); then
@@ -135,19 +133,6 @@ if command -v tsc >/dev/null 2>&1; then
         cat /tmp/tsc.out
         FAIL=$((FAIL + 1))
     fi
-    for rej in reject_namespace.ts; do
-        out=$(cd "$DIR" && tsc --ignoreConfig --erasableSyntaxOnly --noEmit \
-              --isolatedModules --target es2022 --module esnext --lib es2022 \
-              --skipLibCheck --strict false --moduleDetection force \
-              --types "" "$rej" 2>&1)
-        if grep -q TS1294 <<<"$out"; then
-            echo "ok:   tsc rejects $rej (TS1294)"
-        else
-            echo "FAIL: tsc did not flag $rej with TS1294"
-            echo "$out"
-            FAIL=$((FAIL + 1))
-        fi
-    done
 else
     echo "-- tsc not on PATH; skipping oracle cross-check"
 fi
