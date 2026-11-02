@@ -76,6 +76,7 @@ struct Parser {
     Vec{uint} ts_param_props;  // the names of a constructor's parameter properties
     uint label_depth;
     uint ts_erased_name;
+    uint ns_name;            // the namespace object the parser is inside
     bool ts_asserted;         // the last expression held an `as` or `satisfies` assertion
     uint jsx_used;           // JSX_USES_* bits: the jsx-runtime imports to inject
     char[256] err_msg;

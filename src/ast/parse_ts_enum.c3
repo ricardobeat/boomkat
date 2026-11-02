@@ -67,7 +67,7 @@ fn uint? Parser.ts_enum(&self, uint pos, uint* name) {
     // `return E;` hands the object back, so that the variable can hold it.
     self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, *name)));
     uint body = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
-    return self.ts_enum_var(*name, body, pos);
+    return self.ts_object_var(*name, body, pos);
 }
 
 // The name of an enum member: an identifier or a string literal.
@@ -112,27 +112,6 @@ fn uint Parser.ts_enum_member_value(&self, uint enum_name, uint member, uint ini
         self.node(NodeTag.INDEX, pos, self.node(NodeTag.IDENT, pos, enum_name), inner),
         self.node(NodeTag.STRING, pos, member), op_flag(TokenType.ASSIGN));
     return self.node(NodeTag.EXPR_STMT, pos, outer);
-}
-
-// The variable and the immediately invoked function that hold an enum's
-// members: `var E = (function (E) { ...; return E; })(E || (E = {}))`. The
-// argument reuses the object a previous declaration of the same name made, so
-// that an enum and a namespace of that name share it.
-fn uint Parser.ts_enum_var(&self, uint name, uint body, uint pos) {
-    uint param = self.node(NodeTag.IDENT, pos, name);
-    uint rec = self.fn_record(FNF_SIMPLE_PARAMS, self.ast.add_list({ param }), body, pos, pos);
-    self.ast.set_field(rec, FN_PAREN, pos);
-    self.ast.set_field(rec, FN_HEADER_END, pos);
-    self.ast.set_field(rec, FN_BODY_START, pos);
-    uint func = self.node(NodeTag.FUNC_EXPR, pos, 0, rec);
-    uint empty = self.node(NodeTag.OBJECT, pos, self.ast.add_list({}));
-    uint fallback = self.node(NodeTag.ASSIGN, pos, self.node(NodeTag.IDENT, pos, name),
-        empty, op_flag(TokenType.ASSIGN));
-    uint arg = self.node(NodeTag.LOGICAL, pos, self.node(NodeTag.IDENT, pos, name),
-        fallback, op_flag(TokenType.LOG_OR));
-    uint call = self.node(NodeTag.CALL, pos, func, self.ast.add_list({ arg }));
-    uint decl = self.node(NodeTag.DECLARATOR, pos, self.node(NodeTag.IDENT, pos, name), call);
-    return self.node(NodeTag.VAR_DECL, pos, self.ast.add_list({ decl }), 0, VAR_KIND_VAR);
 }
 
 // The constant an enum member's initialiser evaluates to, when it is a

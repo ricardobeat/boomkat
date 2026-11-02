@@ -264,6 +264,28 @@ fn uint Parser.ts_param_prop_at(&self, uint list, bool derived) {
     return count;
 }
 
+// The variable and the immediately invoked function that hold a TypeScript
+// object: `var N = (function (N) { ...; return N; })(N || (N = {}))`. The
+// argument reuses the object a previous declaration of the same name made,
+// so that an enum and a namespace of that name share it.
+fn uint Parser.ts_object_var(&self, uint name, uint body, uint pos) {
+    uint param = self.node(NodeTag.IDENT, pos, name);
+    uint rec = self.fn_record(FNF_SIMPLE_PARAMS, self.ast.add_list({ param }), body, pos, pos);
+    self.ast.set_field(rec, FN_PAREN, pos);
+    self.ast.set_field(rec, FN_HEADER_END, pos);
+    self.ast.set_field(rec, FN_BODY_START, pos);
+    uint func = self.node(NodeTag.FUNC_EXPR, pos, 0, rec);
+    uint empty = self.node(NodeTag.OBJECT, pos, self.ast.add_list({}));
+    uint fallback = self.node(NodeTag.ASSIGN, pos, self.node(NodeTag.IDENT, pos, name),
+        empty, op_flag(TokenType.ASSIGN));
+    uint arg = self.node(NodeTag.LOGICAL, pos, self.node(NodeTag.IDENT, pos, name),
+        fallback, op_flag(TokenType.LOG_OR));
+    uint call = self.node(NodeTag.CALL, pos, func, self.ast.add_list({ arg }));
+    uint decl = self.node(NodeTag.DECLARATOR, pos, self.node(NodeTag.IDENT, pos, name), call);
+    return self.node(NodeTag.VAR_DECL, pos, self.ast.add_list({ decl }), 0, VAR_KIND_VAR);
+}
+
+
 // A statement that only TypeScript has and that has a runtime effect: an enum.
 // Returns 0 when the current token does not start one, leaving the token where
 // it was. Only a module's top level may export such a statement.
@@ -276,12 +298,21 @@ fn uint? Parser.ts_statement(&self, uint pos, bool top_level) {
         if (catch err = pk) return err~;
         if (pk.type == TokenType.ENUM) return self.ts_enum(pos, &name);
     }
+    if (top_level && self.ts_namespace_ahead()) {
+        uint decl = self.ts_namespace(pos, &name)!;
+        return decl;
+    }
     if (top_level && self.is_module && self.tok.type == TokenType.EXPORT) {
         Token? pk = self.peek();
         if (catch err = pk) return err~;
         if (pk.type == TokenType.ENUM) {
             self.next()!;
             uint decl = self.ts_enum(pos, &name)!;
+            return self.ts_export(pos, decl, name);
+        }
+        if (self.is_word(pk, "namespace") || self.is_word(pk, "module")) {
+            self.next()!;
+            uint decl = self.ts_namespace(pos, &name)!;
             return self.ts_export(pos, decl, name);
         }
         if (self.is_word(pk, "const")) {
