@@ -233,7 +233,10 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 // interpreter step per access. Once the site cache is filled
                 // such a read never becomes a direct field read, and the
                 // baseline region inlines the same read into generated code.
-                if (ssa_access_site_refused(g.heap, g.cf, view.payload_pc)) {
+                // A body past the shared span spends that step often enough to
+                // lose to the baseline region.
+                if (plan.end + 1 > SSA_SPAN
+                    && ssa_access_site_refused(g.heap, g.cf, view.payload_pc)) {
                     g.failed = true;
                     return false;
                 }

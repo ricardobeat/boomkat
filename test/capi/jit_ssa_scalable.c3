@@ -262,10 +262,17 @@ fn void check_scalable_ssa_closure_startup() {
     @check(imported);
     // A normal entry into the already-hot artifact must preserve the same
     // constructor result and prototype ownership as stress compilation.
-    ulong prior = body.hits;
+    // A body that spends its entries in helpers is abandoned for the baseline
+    // tier, so the live plan is read again instead of keeping a pointer to a
+    // released one.
     runtime.rt.heap.jit_stress = false;
     eval(&context, "for(var q=0;q<128;q++){var F=closureStartupFactory();if((new F(q)).value!==q||F.prototype.m15!==7)throw 'normal closure startup';}");
-    @check(body.hits > prior);
+    FunctionPlan* live = cf.sljit_function;
+    @check(live != null);
+    LoopPlan* current = live.ssa_region;
+    ulong hits = current != null ? current.hits : 0;
+    ulong helpers = current != null ? current.ssa_helper_calls : 0;
+    ulong continued = current != null ? current.ssa_helper_continued : 0;
     io::printfn("scalable SSA closure startup: PASS registers=%d hits=%d helpers=%d continuations=%d", cf.num_regs,
-        body.hits, body.ssa_helper_calls, body.ssa_helper_continued);
+        hits, helpers, continued);
 }
