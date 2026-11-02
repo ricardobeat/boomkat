@@ -446,6 +446,7 @@ fn bool Parser.ts_merged_name(&self, uint name) {
 // it was. Only a module's top level may export such a statement.
 fn uint? Parser.ts_statement(&self, uint pos, bool top_level) {
     if (!self.lex.ts_mode) return 0;
+    self.ts_reject_module_namespace()!;
     uint name;
     if (self.tok.type == TokenType.ENUM) return self.ts_enum(pos, &name);
     if (self.tok.type == TokenType.CONST) {
@@ -467,6 +468,7 @@ fn uint? Parser.ts_statement(&self, uint pos, bool top_level) {
         }
         if (self.is_word(pk, "namespace") || self.is_word(pk, "module")) {
             self.next()!;
+            self.ts_reject_module_namespace()!;
             uint decl = self.ts_namespace(pos, &name)!;
             if (self.ast.tags.data[decl] == NodeTag.EMPTY_STMT) return decl;
             return self.ts_export(pos, decl, name);
@@ -501,6 +503,7 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
     if (!self.lex.ts_mode) return false;
     self.ts_erased_name = 0;
     uint pos = self.tok.pos;
+    self.ts_reject_module_namespace()!;
     if (self.tok.type == TokenType.ENUM) return self.fail("'enum' is not supported (not erasable syntax)")~;
     if (self.tok.type == TokenType.IMPORT && self.peek_type() == TokenType.IDENTIFIER) {
         Token next = self.peek()!;
@@ -534,7 +537,7 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
     }
     bool iface = self.at_word("interface");
     bool alias_decl = self.at_word("type");
-    bool namespace_decl = self.at_word("namespace") || self.at_word("module");
+    bool namespace_decl = self.at_word("namespace");
     if (iface || alias_decl || namespace_decl) {
         Token next = self.peek()!;
         if (next.type != TokenType.IDENTIFIER || next.nl_before) return false;
@@ -546,7 +549,7 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
             self.expect(TokenType.LBRACE)!;
             while (self.tok.type != TokenType.RBRACE) {
                 if (self.eat(TokenType.SEMICOLON)!) continue;
-                if (!(self.ts_erase_statement(true)!)) return self.fail_at(pos, "'namespace' / 'module' is not supported (not erasable syntax)")~;
+                if (!(self.ts_erase_statement(true)!)) return self.fail_at(pos, "'namespace' is not supported (not erasable syntax)")~;
             }
             self.next()!;
         } else {
@@ -573,6 +576,7 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
         if (next.nl_before) return false;
         if (in_namespace && !self.is_word(next, "namespace") && !self.is_word(next, "module")) return false;
         self.next()!;
+        self.ts_reject_module_namespace()!;
         if (in_namespace) return self.ts_erase_statement(true);
         bool body = self.tok.type == TokenType.CLASS || self.at_word("interface")
             || self.tok.type == TokenType.ENUM || self.at_word("namespace")
