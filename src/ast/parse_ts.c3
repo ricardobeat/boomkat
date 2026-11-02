@@ -15,6 +15,7 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
     TokenType prev_tt = TokenType.EOF_TOKEN;
     char[] prev_str = (char[])"";
     bool just_closed_obj = false;
+    bool saw_extends = false;
 
     for (;;) {
         TokenType tt = self.tok.type;
@@ -38,8 +39,18 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
                 switch (tt) {
                     case PLUS: case MINUS: case STAR: case SLASH: case PERCENT: case STARSTAR:
                     case SHL: case SHR: case USHR: case EQ: case NE: case SEQ: case SNE:
-                    case LOG_AND: case LOG_OR: case NULLISH: case LPAREN:
+                    case LOG_AND: case LOG_OR: case NULLISH:
                         return;
+                    case LPAREN:
+                        // `readonly (A | B)[]` keeps the parenthesis, while the
+                        // `(y)` of `x as T (y)` is a call on the assertion.
+                        if (!(prev_tt == TokenType.IDENTIFIER && ts_ident_is_type_operator(prev_str))) return;
+                        break;
+                    case QUESTION:
+                        // `a === b as T ? c : d` asks a question; a conditional
+                        // type already said `extends` before its own `?`.
+                        if (!saw_extends) return;
+                        break;
                     default: break;
                 }
             }
@@ -52,6 +63,11 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
                 case TokenType.RBRACE:
                 case TokenType.ASSIGN:
                     return;
+                case TokenType.COLON:
+                    // An assertion in an expression ends at the `:` of the
+                    // conditional whose branch it is: `a ? b as T : c`.
+                    if (expression) return;
+                    break;
                 case TokenType.ARROW:
                     if (prev_tt == TokenType.RPAREN && last_group_had_arrow) return;
                     if (prev_tt == TokenType.RPAREN) break;
@@ -84,6 +100,7 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
 
         Token skip_tok = self.ts_advance()!;
         consumed_any = true;
+        if (tt == TokenType.EXTENDS && depth == 0) saw_extends = true;
         if (paren == 1 && !group_seen_first && tt != TokenType.RPAREN) {
             group_seen_first = true;
             if (tt == TokenType.LPAREN || tt == TokenType.LT) {
@@ -125,7 +142,9 @@ fn void? Parser.ts_skip_type(&self, bool expression = false) {
     }
 }
 
-fn void? Parser.ts_skip_generic_params(&self) {
+// Skip a `<...>` list, generic parameters or type arguments. `type_args` makes
+// the list be checked for tokens that no type argument list holds.
+fn void? Parser.ts_skip_generic_params(&self, bool type_args = false) {
     Token _skip_open = self.expect(TokenType.LT)!;
     int angle = 1;
     int paren = 0;
@@ -140,6 +159,13 @@ fn void? Parser.ts_skip_generic_params(&self) {
         if (tt == TokenType.TEMPLATE_HEAD) {
             self.ts_skip_template()!;
             continue;
+        }
+        // A type argument list holds types and nothing else, so a token no
+        // type holds rules it out. Without this, `a < b && c > (d)` reads as
+        // the call `a<b && c>(d)`.
+        if (type_args && angle == 1 && paren == 0 && bracket == 0 && brace == 0
+            && ts_token_ends_type_args(tt)) {
+            return self.fail_at(self.tok.pos, "not a type argument list")~;
         }
         Token _skip = self.ts_advance()!;
         switch (tt) {
@@ -209,7 +235,7 @@ fn void? Parser.ts_skip_body(&self) {
 fn bool Parser.ts_type_arguments(&self) {
     Parser saved = *self;
     Lexer lexer_saved = *self.lex;
-    if (try self.ts_skip_generic_params()) {
+    if (try self.ts_skip_generic_params(true)) {
         if (self.tok.type == TokenType.LPAREN || self.tok.type == TokenType.DOT
             || self.tok.type == TokenType.TEMPLATE_HEAD || self.tok.is_template
             || self.tok.type == TokenType.SEMICOLON || self.tok.type == TokenType.RPAREN
@@ -388,6 +414,37 @@ fn bool Parser.ts_decl_follows(&self, uint name) {
     self.prev = first;
     if (catch err_c = self.next()) return found;
     return found;
+}
+
+// Drop the import specifiers whose local name this module also declares. Only
+// a type may share a name that way: the import is elided in the output, so the
+// binding it would declare must not clash with the declaration.
+fn void Parser.ts_elide_shadowed_imports(&self, uint mark) {
+    if (!self.lex.ts_mode || !self.is_module) return;
+    uint count = (uint)self.scratch.len - mark;
+    for (uint i = 0; i < count; i++) {
+        uint decl = self.scratch.data[mark + i];
+        if (self.ast.tags.data[decl] == NodeTag.EXPORT_DECL) decl = self.ast.lhs.data[decl];
+        if (self.ast.tags.data[decl] != NodeTag.IMPORT_DECL) continue;
+        uint specs = self.ast.rhs.data[decl];
+        uint scount = self.ast.list_len(specs);
+        uint keep = self.scratch_mark();
+        bool dropped = false;
+        for (uint j = 0; j < scount; j++) {
+            uint spec = self.ast.list_item(specs, j);
+            uint local = self.ast.rhs.data[spec];
+            if (local != 0 && self.ts_scope_has(self.ast.lhs.data[local])) {
+                dropped = true;
+                continue;
+            }
+            self.scratch_push(spec);
+        }
+        if (dropped) {
+            self.ast.rhs.data[decl] = self.scratch_list(keep);
+        } else {
+            self.scratch.truncate(keep);
+        }
+    }
 }
 
 // Whether a namespace of this name merges with another declaration of it: a
@@ -667,6 +724,37 @@ fn bool ts_ident_is_type_operator(char[] name) @inline {
         || ident_is(name, "satisfies") || ident_is(name, "readonly")
         || ident_is(name, "is") || ident_is(name, "asserts")
         || ident_is(name, "abstract");
+}
+
+// A token that cannot stand in a type argument list, so a `<` that reaches one
+// before its closing `>` does not open one. The list's own separators and the
+// tokens of conditional, union and function types are not here.
+fn bool ts_token_ends_type_args(TokenType tt) {
+    switch (tt) {
+        case TokenType.SEMICOLON:
+        case TokenType.LOG_AND:
+        case TokenType.LOG_OR:
+        case TokenType.NULLISH:
+        case TokenType.ASSIGN:
+        case TokenType.RPAREN:
+        case TokenType.RBRACKET:
+        case TokenType.RBRACE:
+        case TokenType.STAR:
+        case TokenType.SLASH:
+        case TokenType.PERCENT:
+        case TokenType.EQ:
+        case TokenType.NE:
+        case TokenType.SEQ:
+        case TokenType.SNE:
+        case TokenType.LE:
+        case TokenType.GE:
+        case TokenType.INC:
+        case TokenType.DEC:
+        case TokenType.INSTANCEOF:
+            return true;
+        default:
+            return ts_token_stops_type(tt);
+    }
 }
 
 fn bool ts_token_stops_type(TokenType tt) {

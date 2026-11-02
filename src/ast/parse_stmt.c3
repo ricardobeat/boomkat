@@ -15,6 +15,7 @@ fn uint? Parser.program(&self, ParseOptions opts) {
     while (self.tok.type != TokenType.EOF_TOKEN) {
         self.scratch_push(self.statement_list_item()!);
     }
+    self.ts_elide_shadowed_imports(mark);
     self.ts_scope_pop(scope);
     if (features::JSX && (self.jsx_used & (JSX_USES_JSX | JSX_USES_JSXS | JSX_USES_FRAGMENT)) != 0) self.scratch_push(self.jsx_import(false));
     if (features::JSX && (self.jsx_used & JSX_USES_CREATE) != 0) self.scratch_push(self.jsx_import(true));
