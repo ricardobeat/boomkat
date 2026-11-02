@@ -413,6 +413,27 @@ fn bool lightfunc_promoted_getprop(Vm* vm, Dispatch* ds, TVal* lf, void* key,
     return true;
 }
 
+// The cached and uncached property reads differ only in their opcode: both
+// name the destination register in A, the receiver in B and the key's
+// constant index in C. Switching between them therefore rewrites the opcode
+// alone, leaving the operands -- and the WIDE prefix that carries their high
+// bytes -- exactly as the compiler emitted them.
+fn void rewrite_read_opcode(Dispatch* ds, Opcode op) {
+    ds.curr_pc[-1].op = op;
+}
+
+// Switch the property read at the current instruction back to its uncached
+// form and run it again. The rewind has to reach the start of the
+// instruction: a WIDE-prefixed one spans two words, and re-running only the
+// payload would decode its operands as narrow and read the wrong registers.
+// A WIDE word is never a payload, so the word before the payload is the
+// prefix whenever there is one.
+fn void downgrade_read_to_uncached(Dispatch* ds) {
+    rewrite_read_opcode(ds, Opcode.GETPROPC);
+    ds.curr_pc--;
+    if (ds.curr_pc > ds.code_base && ds.curr_pc[-1].op == Opcode.WIDE) ds.curr_pc--;
+}
+
 fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
     Vm* vm = ds.vm;
     if (vm.heap.realm != null && rb.is_lightfunc()) {
@@ -1054,8 +1075,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (res.owner != null && ds.ic_base != null && res.acc.accessor_fn.is_object()
                                 && ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, res.owner)
                                 && op == Opcode.GETPROPC) {
-                                ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
-                                                                  (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                                rewrite_read_opcode(ds, Opcode.GETPROPC_CACHED);
                             }
                             if (catch err = getprop_read_accessor(vm, ds, &res.acc, hobj, ra, (uint)insn.a, key_hstr)) { return err~; }
                             return (TVal){};
@@ -1092,8 +1112,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 if (ic_fill_read(vm, ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base), hobj, key, res.owner)
                                     && op == Opcode.GETPROPC) {
                                     // Upgrade to the cached variant now that the IC is populated.
-                                    ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
-                                                                      (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                                    rewrite_read_opcode(ds, Opcode.GETPROPC_CACHED);
                                 }
                             }
                         } else {
@@ -1102,8 +1121,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 && hobject::ic_fill_missing_read(ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base),
                                                                  hobj, key, vm.heap)
                                 && op == Opcode.GETPROPC) {
-                                ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC_CACHED,
-                                                                  (uint)insn.a, (uint)insn.b, (uint)insn.c);
+                                rewrite_read_opcode(ds, Opcode.GETPROPC_CACHED);
                             }
                         }
                     } else {
@@ -1248,9 +1266,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             vm.heap.set_reg_undefined(ra);
                             return (TVal){};
                         }
-                        ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
-                                                         (uint)insn.a, (uint)insn.b, (uint)insn.c);
-                        ds.curr_pc--;
+                        downgrade_read_to_uncached(ds);
                         return (TVal){};
                     }
                     hobject::PropValue* accessor_slot = hobject::ic_resolve_slot(ic, hobj);
@@ -1269,9 +1285,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                 }
             }
             // IC miss or ds.ic_base null: downgrade back to GETPROPC and re-execute
-            ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
-                                            (uint)insn.a, (uint)insn.b, (uint)insn.c);
-            ds.curr_pc--;
+            downgrade_read_to_uncached(ds);
             return (TVal){};
         }
 
