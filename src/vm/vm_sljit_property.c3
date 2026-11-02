@@ -171,7 +171,7 @@ fn void FunctionEmitter.append_property(&self, CompiledFunction* cf, uint pc, IC
         self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, (uint)ordinary, pc);
         e.mov(r3, 0, mem | r3, proto_offset);
     }
-    self.out.guard(jit::SLJIT_EQUAL, r3, 0, imm, 0, pc);
+    self.out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pc);
     // The value takes the next free slot: the inline storage while the object
     // has none, and the block the heap allocated once it did.
     e.mov(r2, 0, mem | r0, (char*)&obj.prop_alloc - (char*)&obj);
