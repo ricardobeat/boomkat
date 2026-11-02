@@ -575,27 +575,11 @@ fn uint? Parser.primary(&self) {
             if (features::JSX && self.lex.jsx.enabled) return self.jsx_expr();
             if (!self.lex.ts_mode) return self.unexpected()~;
             // `<T>(...) => ...` is a generic arrow function and `<T>expr` a
-            // type assertion. Only the arrow form continues with a
-            // parenthesis, so the two are told apart by parsing it.
-            {
-                Parser saved = *self;
-                Lexer lexer_saved = *self.lex;
-                AstMark mark = self.ast.mark();
-                uint arrow = 0;
-                if (try self.ts_skip_generic_params()) {
-                    if (self.tok.type == TokenType.LPAREN) {
-                        if (try e = self.paren_or_arrow()) {
-                            if (self.ast.tags.data[e] == NodeTag.ARROW) arrow = e;
-                        }
-                    }
-                }
-                if (arrow != 0) return arrow;
-                self.ast.truncate(mark);
-                *self.lex = lexer_saved;
-                *self = saved;
-            }
-            // A type assertion: the type is erased and the expression kept.
+            // type assertion, whose type is erased. A parenthesis after the
+            // type parses as either, so it is parsed once: nested assertions
+            // stay linear.
             self.ts_skip_generic_params()!;
+            if (self.tok.type == TokenType.LPAREN) return self.paren_or_arrow();
             return self.unary();
         case TokenType.NUMBER:
             uint n = self.number_node();
