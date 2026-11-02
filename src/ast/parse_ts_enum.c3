@@ -16,10 +16,14 @@ enum EnumConst : char {
     STRING,
 }
 
-// A parsed enum member: its name and the constant it stands for.
+// A parsed enum member: its name, its initialiser, and the constant it stands
+// for. `bindable` says whether the name can also be a variable, which an
+// initialiser that refers to the member reads.
 struct EnumMember {
     uint name;
+    uint init;
     EnumConst kind;
+    bool bindable;
     double num;
 }
 
@@ -37,10 +41,13 @@ fn uint? Parser.ts_enum(&self, uint pos, uint* name) {
     members.init(8);
     defer members.free();
 
-    uint mark = self.scratch_mark();
+    // An initialiser that is not folded into a constant runs as it is, and a
+    // member it names must resolve to that member's value.
+    bool computed = false;
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
-        uint member = self.ts_enum_member_name()!;
+        bool bindable;
+        uint member = self.ts_enum_member_name(&bindable)!;
         uint init = 0;
         EnumConst kind = EnumConst.NONE;
         double num = 0;
@@ -51,6 +58,7 @@ fn uint? Parser.ts_enum(&self, uint pos, uint* name) {
             self.ts_asserted = false;
             init = self.assign_expr()!;
             if (!self.ts_asserted) kind = self.ts_enum_const(init, &members, &num);
+            if (kind != EnumConst.NUMBER) computed = true;
         } else if (members.len == 0) {
             kind = EnumConst.NUMBER;
         } else if (members.data[members.len - 1].kind == EnumConst.NUMBER) {
@@ -58,27 +66,53 @@ fn uint? Parser.ts_enum(&self, uint pos, uint* name) {
             kind = EnumConst.NUMBER;
             num = members.data[members.len - 1].num + 1;
         }
-        members.push({ .name = member, .kind = kind, .num = num });
-        self.scratch_push(self.ts_enum_member_value(*name, member, init, kind, num, pos));
+        members.push({ .name = member, .init = init, .kind = kind, .bindable = bindable, .num = num });
         if (self.tok.type != TokenType.COMMA) break;
         self.next()!;
     }
     self.expect(TokenType.RBRACE)!;
+
+    // The function's parameter takes a name no source text spells, so that a
+    // member of the enum's own name does not shadow it.
+    uint param = self.ts_ns_param(*name);
+    uint mark = self.scratch_mark();
+    if (computed) self.scratch_push(self.ts_enum_bindings(&members, *name, pos));
+    for (sz i = 0; i < members.len; i++) {
+        EnumMember* m = &members.data[i];
+        self.scratch_push(self.ts_enum_member_value(param, m, computed && m.bindable && m.name != *name, pos));
+    }
     // `return E;` hands the object back, so that the variable can hold it.
-    self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, *name)));
+    self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, param)));
     uint body = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
-    return self.ts_object_var(*name, *name, body, pos);
+    return self.ts_object_var(*name, param, body, pos);
+}
+
+// `var A, B;`: the variables that let a computed initialiser name a member, as
+// TypeScript resolves such a name to the member. A member of the enum's own
+// name keeps referring to the enum.
+fn uint Parser.ts_enum_bindings(&self, Vec{EnumMember}* members, uint enum_name, uint pos) {
+    uint mark = self.scratch_mark();
+    for (sz i = 0; i < members.len; i++) {
+        EnumMember* m = &members.data[i];
+        if (!m.bindable || m.name == enum_name) continue;
+        self.scratch_push(self.node(NodeTag.DECLARATOR, pos, self.node(NodeTag.IDENT, pos, m.name), 0));
+    }
+    return self.node(NodeTag.VAR_DECL, pos, self.scratch_list(mark), 0, VAR_KIND_VAR);
 }
 
 // The name of an enum member: an identifier or a string literal. A reserved
-// word is a name here too, as it is in TypeScript.
-fn uint? Parser.ts_enum_member_name(&self) {
+// word is a name here too, as it is in TypeScript. `bindable` is set for a
+// name an initialiser can refer to.
+fn uint? Parser.ts_enum_member_name(&self, bool* bindable) {
     if (is_name_token(self.tok.type)) {
+        *bindable = self.tok.type == TokenType.IDENTIFIER && !self.tok.has_escape
+            && !ident_is(self.tok.str_value, "eval") && !ident_is(self.tok.str_value, "arguments");
         uint name = self.atom(self.tok.str_value);
         self.next(true)!;
         return name;
     }
     if (self.tok.type == TokenType.STRING && !self.tok.is_template) {
+        *bindable = false;
         uint name = self.atom(self.tok.str_value);
         self.next()!;
         return name;
@@ -88,30 +122,34 @@ fn uint? Parser.ts_enum_member_name(&self) {
 
 // The statement that gives an enum member its value: `E["A"] = 1` for a
 // string-valued member, and `E[E["A"] = 1] = "A"` for a numeric one, which
-// also maps the value back to the member's name.
-fn uint Parser.ts_enum_member_value(&self, uint enum_name, uint member, uint init, EnumConst kind, double num, uint pos) {
+// also maps the value back to the member's name. With `bind`, the value is
+// also stored in the member's variable: `E[E["A"] = A = 1] = "A"`.
+fn uint Parser.ts_enum_member_value(&self, uint enum_obj, EnumMember* m, bool bind, uint pos) {
     uint value;
     bool reverse = true;
-    if (kind == EnumConst.NUMBER) {
-        value = self.ts_number_node(num, pos);
-    } else if (kind == EnumConst.STRING) {
+    if (m.kind == EnumConst.NUMBER) {
+        value = self.ts_number_node(m.num, pos);
+    } else if (m.kind == EnumConst.STRING) {
         // A string value has no reverse mapping, and the initialiser already
         // holds the string.
-        value = init;
+        value = m.init;
         reverse = false;
-    } else if (init != 0) {
-        value = init;
+    } else if (m.init != 0) {
+        value = m.init;
     } else {
         value = self.ts_void_zero(pos);
     }
+    if (bind) {
+        value = self.node(NodeTag.ASSIGN, pos, self.node(NodeTag.IDENT, pos, m.name), value, op_flag(TokenType.ASSIGN));
+    }
     uint inner = self.node(NodeTag.ASSIGN, pos,
-        self.node(NodeTag.INDEX, pos, self.node(NodeTag.IDENT, pos, enum_name),
-            self.node(NodeTag.STRING, pos, member)),
+        self.node(NodeTag.INDEX, pos, self.node(NodeTag.IDENT, pos, enum_obj),
+            self.node(NodeTag.STRING, pos, m.name)),
         value, op_flag(TokenType.ASSIGN));
     if (!reverse) return self.node(NodeTag.EXPR_STMT, pos, inner);
     uint outer = self.node(NodeTag.ASSIGN, pos,
-        self.node(NodeTag.INDEX, pos, self.node(NodeTag.IDENT, pos, enum_name), inner),
-        self.node(NodeTag.STRING, pos, member), op_flag(TokenType.ASSIGN));
+        self.node(NodeTag.INDEX, pos, self.node(NodeTag.IDENT, pos, enum_obj), inner),
+        self.node(NodeTag.STRING, pos, m.name), op_flag(TokenType.ASSIGN));
     return self.node(NodeTag.EXPR_STMT, pos, outer);
 }
 
@@ -141,6 +179,9 @@ fn EnumConst Parser.ts_enum_const(&self, uint n, Vec{EnumMember}* members, doubl
             uint atom = self.ast.lhs.data[n];
             for (sz i = 0; i < members.len; i++) {
                 if (members.data[i].name != atom) continue;
+                // A string member's value is a string, which a reference to
+                // it keeps without folding.
+                if (members.data[i].kind == EnumConst.STRING) return EnumConst.STRING;
                 if (members.data[i].kind != EnumConst.NUMBER) return EnumConst.NONE;
                 *num = members.data[i].num;
                 return EnumConst.NUMBER;
