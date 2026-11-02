@@ -114,6 +114,9 @@ fn void check_scalable_ssa_memory_callbacks() {
     context.create(&runtime)!!;
     defer context.destroy();
     @check(runtime.set_jit());
+    // The fixture is helper-dominated, so the tier policy would move it to the
+    // baseline tier and replace the specialization under test.
+    runtime.rt.heap.jit_hold_tier = true;
     eval(&context, "var console={log:function(){}};");
     eval(&context, $embed("../jit_ssa_memory_callbacks.js"));
     CompiledFunction* cf = named_function(&runtime, "scalableMemoryCallback");
@@ -134,6 +137,9 @@ fn void check_effectful_ssa_inline() {
     context.create(&runtime)!!;
     defer context.destroy();
     @check(runtime.set_jit());
+    // The padded fixture is above the whole-body attempt bound production
+    // tiers use; the plan must still inline and recover at that size.
+    runtime.rt.heap.jit_ssa_body_ops = 1 << 16;
     eval(&context, $embed("../jit_ssa_effect_inline.js"));
     String[2] names = { "effectInlineCaller", "effectCallbackCaller" };
     foreach (name : names) {

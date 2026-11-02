@@ -238,11 +238,17 @@ struct SsaFieldAccess @feat(SLJIT) {
     CompiledFunction* source;
     uint pc;
     bool live_ic;
+    // An inherited read on a dictionary receiver. The live-IC emitter
+    // revalidates the receiver's prop_count against dict_count, because a
+    // dictionary appends keys without changing its shape id.
+    bool has_proto;
     HString* key;
+    uint dict_count;
 }
 
-fn bool ssa_access_field_spec(SsaGraph* g, DecodedBytecode view, SsaFieldAccess* access, CompiledFunction* source = null) @feat(SLJIT) {
-    if (source == null) source = g.cf;
+fn bool ssa_access_field_spec(Heap* h, CompiledFunction* cf, DecodedBytecode view,
+    SsaFieldAccess* access, CompiledFunction* source = null) @feat(SLJIT) {
+    if (source == null) source = cf;
     DecodedInsn ins = view.insn;
     bool own_this = ins.op == Opcode.GETTHISC || ins.op == Opcode.PUTTHISC;
     bool write = ins.op == Opcode.PUTPROPC || ins.op == Opcode.PUTTHISC;
@@ -252,26 +258,63 @@ fn bool ssa_access_field_spec(SsaGraph* g, DecodedBytecode view, SsaFieldAccess*
     TVal key = source.constants[constant];
     if (!key.is_string()) return false;
     ICEntry* ic = (ICEntry*)source.ic_entries + view.payload_pc;
-    if (ic.key.borrow() != key.get_heapptr() || ic.has_proto || ic.chain_len != 0
+    if (ic.key.borrow() != key.get_heapptr()
         || ic.prop_idx >= hobject::IC_PROP_MISSING || ic.prop_flags.is_accessor) return false;
-    Shape* shape = g.heap.get_shape(ic.shape_id);
+    if (ic.has_proto) {
+        // One link only: the receiver's immediate prototype. The entry must
+        // carry the dictionary prop_count guard, which is what makes caching
+        // an inherited read against an append-only receiver sound.
+        if (write || ic.chain == null || ic.chain_len != 1 || ic.dict_count == 0) return false;
+        HObject* owner = hobject::ic_cached_proto(ic);
+        if (owner == null || owner.is_proxy() || owner.get_class() != ObjClass.OBJECT) return false;
+        if (ic.chain.snapshot.protos[0] != (void*)owner || owner.shape_id != ic.chain.snapshot.shapes[0]) return false;
+        Shape* receiver_shape = h.get_shape(ic.shape_id);
+        Shape* owner_shape    = h.get_shape(owner.shape_id);
+        if (receiver_shape == null || owner_shape == null || receiver_shape.generation != ic.shape_gen) return false;
+        PropFlags flags;
+        if (function_shape_slot(owner_shape, key.get_heapptr(), &flags) != (int)ic.prop_idx || flags.is_accessor) return false;
+        // An own property would already have answered this read.
+        if (function_shape_slot(receiver_shape, key.get_heapptr(), &flags) >= 0) return false;
+        *access = { ic.shape_id, ic.shape_gen, ic.prop_idx, write, source, view.payload_pc, true,
+            true, key.get_heapptr(), ic.dict_count };
+        return true;
+    }
+    if (ic.chain_len != 0) return false;
+    Shape* shape = h.get_shape(ic.shape_id);
     if (shape == null || shape.generation != ic.shape_gen) return false;
     PropFlags flags;
     int slot = function_shape_slot(shape, key.get_heapptr(), &flags);
     if (slot < 0 || (uint)slot != ic.prop_idx || flags.is_accessor || (write && !flags.writable)) return false;
-    *access = { ic.shape_id, ic.shape_gen, (uint)slot, write, source, view.payload_pc, shape.dict, key.get_heapptr() };
+    *access = { ic.shape_id, ic.shape_gen, (uint)slot, write, source, view.payload_pc, shape.dict,
+        false, key.get_heapptr(), 0 };
     return true;
+}
+
+// Would this instruction now be emitted as a native access? Helper execution
+// asks after feedback fills so a plan compiled before its sites warmed can be
+// rebuilt instead of paying a helper call per execution forever.
+fn bool ssa_access_would_specialize(Heap* h, CompiledFunction* cf, uint pc) @feat(SLJIT) {
+    if (pc >= cf.code_count) return false;
+    DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+    if (!view.valid || view.wide) return false;
+    switch (view.insn.op) {
+        case Opcode.GETPROPC: case Opcode.GETPROPC_CACHED:
+        case Opcode.GETTHISC: case Opcode.PUTTHISC: case Opcode.PUTPROPC: break;
+        default: return false;
+    }
+    SsaFieldAccess access;
+    return ssa_access_field_spec(h, cf, view, &access);
 }
 
 fn bool ssa_access_native_site(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
     if (view.insn.op == Opcode.GETPROP || view.insn.op == Opcode.GETPROP_CACHE || view.insn.op == Opcode.PUTPROP) return true;
     SsaFieldAccess access;
-    return ssa_access_field_spec(g, view, &access);
+    return ssa_access_field_spec(g.heap, g.cf, view, &access);
 }
 
 fn bool ssa_access_field_build(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
     SsaFieldAccess spec;
-    if (!ssa_access_field_spec(g, view, &spec)) return false;
+    if (!ssa_access_field_spec(g.heap, g.cf, view, &spec)) return false;
     DecodedInsn ins = view.insn;
     bool write = spec.write;
     bool own_this = ins.op == Opcode.GETTHISC || ins.op == Opcode.PUTTHISC;
@@ -333,11 +376,13 @@ fn void SsaEmitter.access_field(&self, int id) @feat(SLJIT) {
 
 // A dictionary can append keys and move its property buffer without changing
 // its shape ID. Reload the site's current IC and current receiver storage on
-// every access; never turn dictionary feedback into a raw slot pointer.
+// every access; never turn dictionary feedback into a raw slot pointer. An
+// inherited read additionally replays its one recorded link and revalidates
+// the receiver's prop_count, which is what an appended own key would change.
 fn void SsaEmitter.access_own_ic(&self, SsaFieldAccess* access, int receiver, int storage) @feat(SLJIT) {
     int r1 = jit::reg_r(1); int r3 = jit::reg_r(3);
     int mem = jit::SLJIT_MEM; int imm = jit::SLJIT_IMM;
-    HObject object; Shape shape;
+    HObject object; Shape shape; ICChain chain_view;
     HString* key = access.key;
     self.e.mov(r1, 0, imm, (long)&access.source.ic_entries);
     self.e.mov(r1, 0, mem | r1, 0);
@@ -355,6 +400,37 @@ fn void SsaEmitter.access_own_ic(&self, SsaFieldAccess* access, int receiver, in
     self.guard(jit::SLJIT_EQUAL, storage, 0, imm, 0, self.pc);
     self.e.mov(r3, 0, mem | storage, (char*)&shape.generation - (char*)&shape, jit::SLJIT_MOV_U32);
     self.guard(jit::SLJIT_NOT_EQUAL | jit::SLJIT_32, r3, 0, mem | r1, $reflect(ICEntry.shape_gen).offset, self.pc);
+    if (access.has_proto) {
+        self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.has_proto).offset, jit::SLJIT_MOV_U8);
+        self.guard(jit::SLJIT_EQUAL, r3, 0, imm, 0, self.pc);
+        self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.chain_len).offset, jit::SLJIT_MOV_U8);
+        self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 1, self.pc);
+        self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.chain).offset);
+        self.guard(jit::SLJIT_EQUAL, r3, 0, imm, 0, self.pc);
+        // The receiver must not have gained the key since the entry filled.
+        self.e.mov(storage, 0, mem | receiver, (char*)&object.prop_count - (char*)&object, jit::SLJIT_MOV_U32);
+        self.e.op(jit::SLJIT_ADD, storage, storage, 0, imm, 1);
+        self.guard(jit::SLJIT_NOT_EQUAL | jit::SLJIT_32, storage, 0, mem | r1, $reflect(ICEntry.dict_count).offset, self.pc);
+        // Replay the recorded link: its identity and its layout.
+        self.e.mov(storage, 0, mem | r3, (char*)&chain_view.snapshot.protos - (char*)&chain_view);
+        self.e.mov(receiver, 0, mem | receiver, (char*)&object.prototype - (char*)&object);
+        self.guard(jit::SLJIT_NOT_EQUAL, receiver, 0, storage, 0, self.pc);
+        self.e.mov(storage, 0, mem | receiver, (char*)&object.shape_id - (char*)&object, jit::SLJIT_MOV_U32);
+        self.e.mov(r3, 0, mem | r3, (char*)&chain_view.snapshot.shapes - (char*)&chain_view, jit::SLJIT_MOV_U32);
+        self.guard(jit::SLJIT_NOT_EQUAL | jit::SLJIT_32, storage, 0, r3, 0, self.pc);
+        self.ordinary_receiver(receiver, self.pc);
+        PropFlags flags; flags.is_accessor = true;
+        self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.prop_flags).offset, jit::SLJIT_MOV_U8);
+        self.e.op(jit::SLJIT_AND, r3, r3, 0, imm, (char)flags);
+        self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, self.pc);
+        self.e.mov(r1, 0, mem | r1, $reflect(ICEntry.prop_idx).offset, jit::SLJIT_MOV_U32);
+        self.e.mov(r3, 0, mem | receiver, (char*)&object.prop_count - (char*)&object, jit::SLJIT_MOV_U32);
+        self.guard(jit::SLJIT_GREATER_EQUAL, r1, 0, r3, 0, self.pc);
+        self.field_address(receiver, storage);
+        self.e.op(jit::SLJIT_SHL, r1, r1, 0, imm, 3);
+        self.e.op(jit::SLJIT_ADD, storage, storage, 0, r1, 0);
+        return;
+    }
     self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.has_proto).offset, jit::SLJIT_MOV_U8);
     self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, self.pc);
     self.e.mov(r3, 0, mem | r1, $reflect(ICEntry.chain_len).offset, jit::SLJIT_MOV_U8);

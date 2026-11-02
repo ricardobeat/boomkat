@@ -90,12 +90,16 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         $if $feat(SLJIT_STATS): cf.sljit_rejection = "code budget or region bounds"; $endif
         return null;
     }
-    if (SSA_ENABLED && !$feat(SLJIT_NO_RECOVERABLE_SSA)) {
+    // A body that fails admission keeps the baseline template region, which
+    // inlines the same reads, so the refusal is remembered rather than retried.
+    if (SSA_ENABLED && !$feat(SLJIT_NO_RECOVERABLE_SSA) && !cf.sljit_ssa_disabled
+        && !cf.sljit_ssa_failed && cf.code_count <= sljit_ssa_body_ops(h)) {
         bool full = cf.code_count > SSA_SPAN || cf.num_regs > LOOP_REGS;
         if (!full) for (uint pc = 0; pc < cf.code_count; pc++) if (cf.code[pc].op == Opcode.WIDE) { full = true; break; }
         if (full) {
             LoopPlan* body = sljit_function_ssa_recoverable_compile(cf, cold);
             if (body != null) return ssa_function_wrap(cf, cold, body);
+            cf.sljit_ssa_failed = true;
         }
     }
     // The view borrows the original bytecode, constants and site caches. Only
@@ -136,7 +140,8 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
     plan.min_span = 1;
     plan.entries = (void**)((char*)plan + FunctionPlan::size);
     plan.short_runs = (char*)(plan.entries + plan.count);
-    if (SSA_ENABLED && !$feat(SLJIT_NO_RECOVERABLE_SSA) && begin == 0 && region.code_count == cf.code_count) {
+    if (SSA_ENABLED && !$feat(SLJIT_NO_RECOVERABLE_SSA) && !cf.sljit_ssa_disabled
+        && begin == 0 && region.code_count == cf.code_count) {
         plan.ssa_region = sljit_function_ssa_recoverable_compile(cf, cold);
     }
     $if $feat(SLJIT_FUNCTION_SSA):
@@ -240,6 +245,11 @@ fn void sljit_retire_invalid_dependencies(Heap* h) @feat(SLJIT) {
 // Calls a function must see before the tier compiles it. The differential
 // test setting compiles on the first call instead.
 fn uint sljit_warmup(Heap* h) @feat(SLJIT) @inline => h.jit_stress ? 1 : 64;
+// Whole-body SSA attempt bound. Stress mode compiles everything the tiers can
+// accept, and a host can raise the bound for larger hand-built bodies; zero
+// keeps the policy default.
+fn uint sljit_ssa_body_ops(Heap* h) @feat(SLJIT) @inline
+    => h.jit_ssa_body_ops != 0 ? h.jit_ssa_body_ops : h.jit_stress ? uint::max : SSA_BODY_OPS;
 fn Instruction* sljit_function_entry(
     Instruction* pc,
     TVal* regs,
@@ -284,6 +294,20 @@ fn Instruction* sljit_function_entry(
         cf.sljit_function_calls = uint::max;
         // A hot backedge in an ordinary function must also produce its call
         // entry. Otherwise callers can never enter that callee natively.
+        plan = sljit_function_compile(cf, cold, cf.code_count <= FUNCTION_OPS ? 0 : offset);
+        if (plan == null) return pc;
+    }
+    // A helper observed feedback this plan could not use when it compiled.
+    // Rebuild it now, outside every generated frame, so the site joins the
+    // native body. Two attempts bound the diagnostics-driven retry.
+    if (plan.ssa_region != null && plan.ssa_region.ssa_recoverable
+        && (plan.ssa_region.ssa_recompile_wanted || plan.ssa_region.ssa_demote)
+        && h.jit_native_active == 0 && !h.jit_hold_tier
+        && cf.sljit_recompiles < 2) {
+        plan.ssa_region.ssa_recompile_wanted = false;
+        cf.sljit_recompiles++;
+        sljit_function_free(h, cf);
+        cf.sljit_function_calls = uint::max;
         plan = sljit_function_compile(cf, cold, cf.code_count <= FUNCTION_OPS ? 0 : offset);
         if (plan == null) return pc;
     }
@@ -478,6 +502,9 @@ fn void sljit_stats_dump(Heap* h) {
                 io::printfn("SLJIT numeric id=%d homes=%d", i, plan.numeric_homes);
                 io::printfn("SLJIT SSA calls id=%d frameless=%d", i, plan.ssa_fast_calls);
                 for (uint pc = 0; pc < plan.count && pc < FUNCTION_OPS; pc++) {
+                    if (plan.read_natives[pc] != 0) {
+                        io::printfn("SLJIT readnative id=%d pc=%d calls=%d", i, plan.begin + pc, plan.read_natives[pc]);
+                    }
                     if (plan.read_hits[pc] != 0) {
                         ICEntry* ic = (ICEntry*)cf.ic_entries + plan.begin + pc;
                         io::printfn("SLJIT readmiss id=%d pc=%d hits=%d changes=%d shape=%d class=%d rep=%d chain=%d cached=%d",

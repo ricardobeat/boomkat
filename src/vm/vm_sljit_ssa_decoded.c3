@@ -21,7 +21,10 @@ fn bool ssa_decoded_body_op(Opcode op) @feat(SLJIT) {
         case LT: case LE: case GT: case GE: case EQ: case NEQ: case SEQ: case SNEQ:
         case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR: case BNOT:
         case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
-        case JUMP: case IF_TRUE: case IF_FALSE: case RET: case RETUNDEF: return true;
+        case UNM: case UNP: case LNOT: case INSTANCEOF:
+        case JUMP: case IF_TRUE: case IF_FALSE:
+        case JMP_NULL: case JMP_NNULL:
+        case RET: case RETUNDEF: return true;
         default: return false;
     }
 }

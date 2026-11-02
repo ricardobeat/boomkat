@@ -17,6 +17,7 @@ fn bool ssa_vm_step_supported(Opcode op) @feat(SLJIT) {
         case GETTHISC: case PUTPROP: case PUTPROPC: case PUTTHISC:
         case DELPROP: case TOSTR: case TOPROPKEY:
         case NEWOBJ: case NEWOBJ_SHAPE: case NEWARR: case NEWARR_CONST:
+        case UNM: case UNP: case LNOT: case INSTANCEOF:
             return true;
         default: return false;
     }

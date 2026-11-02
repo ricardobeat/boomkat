@@ -214,6 +214,19 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
             if (g.recoverable && ssa_binding_build(g, view)) continue;
             if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
                 && ssa_access_build(g, view)) continue;
+            // Unary minus stays in the typed graph so a numeric loop does not
+            // pay a one-instruction VM step for every negation. Non-numeric
+            // operands fail the conversion and use the helper below.
+            if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
+                && ins.op == Opcode.UNM) {
+                int negated = ssa_scalar(g, ins.op, g.current[ins.b]);
+                if (negated >= 0) {
+                    ssa_result(g, negated, ins.a, pos);
+                    g.current[ins.a] = negated;
+                    continue;
+                }
+                g.failed = false;
+            }
             if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
                 && ssa_vm_step_supported(ins.op)) {
                 int value = ssa_value(g, HELPER, BOXED, -1, -1, 0);

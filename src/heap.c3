@@ -1162,6 +1162,11 @@ struct Heap {
 
     bool                jit_enabled @if($feat(SLJIT));
     bool                jit_stress @if($feat(SLJIT));
+    // Test setting: keep the tier a function picked at warmup, so a policy
+    // rebuild cannot replace the plan under inspection.
+    bool                jit_hold_tier @if($feat(SLJIT));
+    // Overrides the whole-body SSA attempt bound for hosts with larger bodies.
+    uint                jit_ssa_body_ops @if($feat(SLJIT));
     usz                 jit_code_bytes @if($feat(SLJIT));
     usz                 jit_code_limit @if($feat(SLJIT));
     JitArtifact*        jit_artifacts @if($feat(SLJIT));

@@ -1029,7 +1029,16 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
     int r3             = jit::reg_r(3);
     int imm            = jit::SLJIT_IMM;
     void* taken;
-    if ((int)v.branch_op == 0) {
+    if (v.branch_op == Opcode.JMP_NULL || v.branch_op == Opcode.JMP_NNULL) {
+        // Canonical null and undefined carry adjacent tags with an empty
+        // payload. Unsigned tag-delta <= 1 distinguishes them from every other
+        // tag, including the negative-looking fastint and string ranges.
+        self.gpr(v.a, r0);
+        e.op(jit::SLJIT_LSHR, r1, r0, 0, imm, 48);
+        e.op(jit::SLJIT_SUB, r1, r1, 0, imm, (long)types::TAG_UNDEFINED);
+        taken = e.cmp(v.branch_op == Opcode.JMP_NNULL ? jit::SLJIT_GREATER : jit::SLJIT_LESS_EQUAL,
+            r1, 0, imm, (long)(types::TAG_NULL_VAL - types::TAG_UNDEFINED));
+    } else if ((int)v.branch_op == 0) {
         // The truthiness of the condition's value.
         if (self.g.values[v.a].rep == INT32) {
             int src = self.gpr_slot(v.a, r0);

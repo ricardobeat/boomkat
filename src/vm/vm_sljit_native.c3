@@ -33,6 +33,12 @@ fn bool native_data_object(HObject* object, HString* key, Heap* h) @feat(SLJIT) 
 // the native run. This helper never invokes accessors, allocates or mutates
 // objects. Anything with observable slow semantics escapes before the read.
 fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
+    $if $feat(SLJIT_STATS):
+        FunctionPlan* measured = cold.vm.current_func.sljit_function;
+        if (measured != null && offset >= measured.begin && offset - measured.begin < FUNCTION_OPS) {
+            measured.read_natives[offset - measured.begin]++;
+        }
+    $endif
     Instruction ins = cold.vm.current_func.code[offset];
     TVal* regs = cold.act.bottom;
     TVal base = ins.op == Opcode.GETTHISC ? cold.act.this_binding : regs[ins.b];

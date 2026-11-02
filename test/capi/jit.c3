@@ -876,6 +876,9 @@ fn void check_helper_result_receiver_alias() @feat(SLJIT) {
         break;
     }
     @check(changed && runtime.set_jit());
+    // The fixture calls a helper per iteration, so the tier policy would move
+    // it to the baseline tier and replace the specialization under test.
+    runtime.rt.heap.jit_hold_tier = true;
     for (uint i = 0; i < 80; i++) eval(&context,
         "var helperAliasState={count:0};if(helperAlias(helperAliasState,20,helperAliasCallback)!==200.25||helperAliasState.count!==20)throw 'receiver/result alias';");
     FunctionPlan* plan = cf.sljit_function;

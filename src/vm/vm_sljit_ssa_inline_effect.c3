@@ -83,7 +83,7 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
         if (!ssa_effect_inline_op(view.insn.op)) break;
         if (view.insn.op == Opcode.GETPROPC || view.insn.op == Opcode.GETPROPC_CACHED || view.insn.op == Opcode.PUTPROPC) {
             SsaFieldAccess access;
-            if (!ssa_access_field_spec(g, view, &access, target)) return -1;
+            if (!ssa_access_field_spec(g.heap, g.cf, view, &access, target)) return -1;
         }
         if (view.insn.op == Opcode.PUTPROPC) effect = true;
         if (view.insn.op == Opcode.RET || view.insn.op == Opcode.RETUNDEF) break;
@@ -169,7 +169,7 @@ fn int ssa_effect_inline_call(SsaGraph* g, DecodedBytecode call) @feat(SLJIT) {
             case GETPROPC: case GETPROPC_CACHED: case PUTPROPC:
                 {
                     SsaFieldAccess spec;
-                    if (!ssa_access_field_spec(g, view, &spec, target)) { g.failed = true; return -1; }
+                    if (!ssa_access_field_spec(g.heap, g.cf, view, &spec, target)) { g.failed = true; return -1; }
                     SsaFieldAccess* access = ssa_storage_alloc(g, 1, SsaFieldAccess::size);
                     if (access == null) return -1;
                     *access = spec;

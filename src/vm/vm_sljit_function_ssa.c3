@@ -132,6 +132,7 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
         ssa_helper_sites_free(h, leaf);
         ssa_deopt_free(h, leaf);
         ssa_plan_data_free(h, leaf);
+        ssa_scratch_free_all(h, leaf);
         h.free_func(h.heap_udata, leaf);
     }
     if (plan.ssa_region == null) return;
@@ -143,6 +144,7 @@ fn void sljit_function_ssa_free(Heap* h, FunctionPlan* plan) @feat(SLJIT) {
     ssa_helper_sites_free(h, plan.ssa_region);
     ssa_deopt_free(h, plan.ssa_region);
     ssa_plan_data_free(h, plan.ssa_region);
+    ssa_scratch_free_all(h, plan.ssa_region);
     h.free_func(h.heap_udata, plan.ssa_region);
     plan.ssa_region = null;
 }
@@ -245,6 +247,18 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
         }
     } else { sljit_publish_state(cold, regs, state, cf.num_regs, plan); }
     plan.hits++;
+    // A whole-body specialization earns its entry only if it executes real
+    // work between helpers. A body that spends more calls in helpers than in
+    // its own body pays the publication/root cost per bytecode, so the
+    // baseline tier is faster. The sample must be big enough for the ratio to
+    // mean something.
+    if (plan.ssa_helper_calls >= SSA_DEMOTE_HELPERS && plan.ssa_helper_calls > plan.hits
+        && !cold.vm.current_func.sljit_ssa_disabled && !cold.heap.jit_hold_tier) {
+        cold.vm.current_func.sljit_ssa_disabled = true;
+        plan.ssa_demote = true;
+        $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA demote line=%d hits=%d helpers=%d",
+            cold.vm.current_func.get_line(0), plan.hits, plan.ssa_helper_calls); $endif
+    }
     $if $feat(SLJIT_STATS):
         Opcode exit_op = sljit_function_exit_op(cf, resume);
         if (resume == plan.end + 1 || (plan.ssa_recoverable

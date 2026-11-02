@@ -116,6 +116,7 @@ struct FunctionPlan @feat(SLJIT) {
     ulong direct_returns @if($feat(SLJIT_STATS));
     ulong inline_recoveries @if($feat(SLJIT_STATS));
     ulong[FUNCTION_OPS] read_hits @if($feat(SLJIT_STATS));
+    ulong[FUNCTION_OPS] read_natives @if($feat(SLJIT_STATS));
     uint[FUNCTION_OPS] read_shapes @if($feat(SLJIT_STATS));
     uint[FUNCTION_OPS] read_changes @if($feat(SLJIT_STATS));
     uint[FUNCTION_OPS] read_classes @if($feat(SLJIT_STATS));

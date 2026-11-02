@@ -22,6 +22,13 @@ const uint LOOP_SPAN      = 512;
 // which costs 64 words per op, so its span is bounded separately and a longer
 // loop falls back to the straight-line tier.
 const uint SSA_SPAN       = 128;
+// Largest bytecode body the whole-body SSA tier attempts. A bigger body costs
+// proportional compile and recovery work, and the baseline template region
+// inlines the same property reads for less, so it keeps those functions.
+const uint SSA_BODY_OPS   = 320;
+// A specialization is abandoned for the baseline tier only after this many
+// helper calls have shown it spends more entries in helpers than in its body.
+const uint SSA_DEMOTE_HELPERS = 256;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
 // Binding descriptors hold either invocation-local variables resolved through
@@ -102,7 +109,15 @@ struct LoopPlan @feat(SLJIT) {
     SsaDeoptChain ssa_deopt_chain;
     SsaHelperSite* ssa_helpers;
     uint ssa_value_capacity;
-    ulong ssa_helper_calls @if($feat(SLJIT_STATS));
+    // Reusable invocation scratch, one block per concurrent activation.
+    SsaScratch* ssa_scratch_free;
+    // A helper site's feedback became native while this plan ran. The next
+    // gateway outside generated code may recompile so the site joins the body.
+    bool ssa_recompile_wanted;
+    // This body spends most of its entries in helpers. Its CompiledFunction
+    // recompiles on the baseline tier instead of keeping the specialization.
+    bool ssa_demote;
+    ulong ssa_helper_calls;
     ulong ssa_helper_continued @if($feat(SLJIT_STATS));
     uint ssa_inline_sites;
     ulong ssa_inline_entries @if($feat(SLJIT_STATS));
@@ -1998,6 +2013,7 @@ fn void sljit_loop_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
     if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
     ssa_helper_sites_free(h, plan);
     ssa_plan_data_free(h, plan);
+    ssa_scratch_free_all(h, plan);
     h.free_func(h.heap_udata, plan);
 }
 

@@ -16,9 +16,9 @@ fn void ssa_stats_accesses(Heap* h, CompiledFunction* cf, LoopPlan* region, uint
     for (SsaHelperSite* site = region.ssa_helpers; site != null; site = site.next) {
         DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, site.pc);
         if (!view.valid) continue;
-        io::printfn("SLJIT SSA site id=%d pc=%d next=%d opcode=%s kind=%d resume=%d before=%d after=%d live=%d roots=%d",
+        io::printfn("SLJIT SSA site id=%d pc=%d next=%d opcode=%s kind=%d resume=%d before=%d after=%d live=%d roots=%d calls=%d",
             id, site.pc, site.next_pc, view.insn.op, site.kind.ordinal, site.native_resume,
-            site.before_count, site.after_count, site.live_count, site.root_count);
+            site.before_count, site.after_count, site.live_count, site.root_count, site.calls);
         if (cf.ic_entries != null && view.payload_pc < cf.ic_count
             && (view.insn.op == Opcode.GETTHISC || view.insn.op == Opcode.PUTTHISC
                 || view.insn.op == Opcode.GETPROPC || view.insn.op == Opcode.GETPROPC_CACHED)) {

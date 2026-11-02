@@ -15,6 +15,9 @@ fn void check_ssa_boolean_equality() {
     defer context.destroy();
     @check(runtime.set_jit());
     runtime.rt.heap.jit_stress = true;
+    // The fixture is call-dominated, so the tier policy would move it to the
+    // baseline tier and replace the specialization under test.
+    runtime.rt.heap.jit_hold_tier = true;
     eval(&context, "var booleanEqOnlyNative=true;");
     eval(&context, $embed("../jit_ssa_boolean_equality.js"));
     CompiledFunction* cf = named_function(&runtime, "nativeBooleanEquality");

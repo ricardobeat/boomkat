@@ -1192,6 +1192,14 @@ fn bool ssa_arm_branch(SsaGraph* g, uint b, uint pos, DecodedInsn ins) @feat(SLJ
         SsaRep rep = g.values[lhs].rep;
         if (rep != INT32 && rep != BOXED) return false;
         imm = ins.op == Opcode.IF_TRUE ? 1 : 0;
+    } else if (ins.op == Opcode.JMP_NULL || ins.op == Opcode.JMP_NNULL) {
+        // A nullish test inspects the boxed tag directly; no conversion or
+        // numeric operand is involved.
+        if (ins.b >= g.reg_count) return false;
+        lhs = g.current[ins.b];
+        if (lhs < 0) return false;
+        lhs = ssa_convert(g, lhs, BOXED, false);
+        op = ins.op;
     } else {
         if (ins.b >= g.reg_count || ins.c >= g.reg_count) return false;
         lhs = g.current[ins.b];

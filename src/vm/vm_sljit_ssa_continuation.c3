@@ -41,6 +41,7 @@ struct SsaHelperSite @feat(SLJIT) {
     uint root_count;
     bool native_resume;
     bool refresh_plan;
+    ulong calls @if($feat(SLJIT_STATS));
     SsaFrameEntry* before_entries;
     uint before_count;
     SsaFrameEntry* after_entries;
@@ -133,6 +134,46 @@ fn usz ssa_helper_metadata_bytes(LoopPlan* plan) @feat(SLJIT) {
     return bytes;
 }
 
+// One allocation serves every array an invocation needs. Blocks are carved
+// from a plan-owned free list, so a hot function reaches the allocator only
+// while its recursion depth grows. A block is never grown: a deeper activation
+// takes a different block, keeping the addresses already published to generated
+// code stable.
+struct SsaScratch @feat(SLJIT) {
+    SsaScratch* next;
+    usz bytes;
+}
+
+fn SsaScratch* ssa_scratch_acquire(Heap* h, LoopPlan* plan, usz bytes) @feat(SLJIT) {
+    SsaScratch** link = &plan.ssa_scratch_free;
+    while (*link != null) {
+        SsaScratch* block = *link;
+        if (block.bytes >= bytes) {
+            *link = block.next;
+            return block;
+        }
+        link = &block.next;
+    }
+    SsaScratch* block = (SsaScratch*)h.alloc_func(h.heap_udata, bytes);
+    if (block == null) return null;
+    block.bytes = bytes;
+    block.next = null;
+    return block;
+}
+
+fn void ssa_scratch_release(LoopPlan* plan, SsaScratch* block) @feat(SLJIT) {
+    block.next = plan.ssa_scratch_free;
+    plan.ssa_scratch_free = block;
+}
+
+fn void ssa_scratch_free_all(Heap* h, LoopPlan* plan) @feat(SLJIT) {
+    while (plan.ssa_scratch_free != null) {
+        SsaScratch* block = plan.ssa_scratch_free;
+        plan.ssa_scratch_free = block.next;
+        h.free_func(h.heap_udata, block);
+    }
+}
+
 // An invocation owns this storage until its generated frame unwinds. Pointers
 // into the movable VM stack are transient; activation_slot is relative to the
 // permanent activation_storage, including during nested call_fn segments.
@@ -168,13 +209,18 @@ struct SsaExecution @feat(SLJIT) {
     uint* root_order;
     bool* root_registered;
     uint root_count;
+    SsaScratch* scratch;
     bool active;
     bool caller_lost;
     Instruction* vm_resume;
 }
 
+fn usz ssa_align8(usz value) @feat(SLJIT) @inline => (value + 7) & ~(usz)7;
+
 // All arrays are allocated before entering generated code. In particular no
 // root descriptor points into a VM register window that a callback can move.
+// One pooled block carries them all, so a warm invocation performs no
+// allocation and the pointers it published to generated code stay put.
 fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* plan,
     uint values, uint spills, uint edges) @feat(SLJIT) {
     Heap* h = cold.heap;
@@ -186,33 +232,51 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.activation_slot = (uint)(cold.act - &cold.vm.activation_storage[0]);
     execution.register_count = execution.function.num_regs;
     execution.value_capacity = values;
-    usz runtime_bytes = LoopState::size + ((usz)spills + edges) * ulong::size
-        + (usz)execution.register_count * (TVal::size + SsaPublishedValue::size)
-        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size + uint::size * 2 + bool::size * 2);
+    usz regs = (usz)execution.register_count;
+    usz cap = (usz)max(values, 1u);
+    // Each carved array is rounded to eight bytes on its own, so an odd
+    // capacity still lands every following pointer on its natural alignment.
+    usz uint_map = ssa_align8(cap * uint::size);
+    usz bool_map = cap * bool::size;
+    usz state_bytes = ssa_align8(LoopState::size) + ((usz)spills + edges) * ulong::size;
+    usz runtime_bytes = SsaScratch::size
+        + state_bytes
+        + ssa_align8(regs * TVal::size)
+        + ssa_align8(regs * SsaPublishedValue::size)
+        + ssa_align8(cap * ulong::size)
+        + ssa_align8(cap * ValueRoot::size)
+        + uint_map + uint_map
+        + bool_map + bool_map;
     if (runtime_bytes > SSA_DEFAULT_BUDGET.max_bytes) return false;
-    execution.input_values = h.alloc_func(h.heap_udata, (usz)execution.register_count * TVal::size);
-    execution.outputs = h.alloc_func(h.heap_udata, (usz)execution.register_count * SsaPublishedValue::size);
-    execution.saved_bits = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ulong::size);
-    execution.roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ValueRoot::size);
-    execution.live_roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * uint::size);
-    execution.root_marks = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * bool::size);
-    execution.root_order = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * uint::size);
-    execution.root_registered = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * bool::size);
-    usz state_bytes = LoopState::size + ((usz)spills + edges) * ulong::size;
-    if (state_bytes > SSA_DEFAULT_BUDGET.max_bytes) { ssa_execution_dispose(execution); return false; }
-    execution.state_storage = (LoopState*)h.alloc_func(h.heap_udata, state_bytes);
-    execution.spills = execution.state_storage == null ? null : (ulong*)((char*)execution.state_storage + LoopState::size);
-    execution.edge = execution.spills == null ? null : execution.spills + spills;
-    if (execution.input_values == null || execution.outputs == null || execution.saved_bits == null
-        || execution.roots == null || execution.live_roots == null || execution.root_marks == null
-        || execution.root_order == null || execution.root_registered == null
-        || execution.spills == null || execution.edge == null) {
-        ssa_execution_dispose(execution);
-        return false;
-    }
-    mem::clear(execution.root_marks, (sz)max(values, 1u) * bool::size);
-    mem::clear(execution.root_registered, (sz)max(values, 1u) * bool::size);
-    mem::copy(execution.input_values, cold.act.bottom, (sz)execution.register_count * TVal::size);
+    SsaScratch* scratch = ssa_scratch_acquire(h, plan, ssa_align8(runtime_bytes));
+    if (scratch == null) return false;
+    execution.scratch = scratch;
+    char* base = (char*)scratch;
+    usz offset = SsaScratch::size;
+    execution.state_storage = (LoopState*)(base + offset);
+    offset += ssa_align8(LoopState::size);
+    execution.spills = (ulong*)(base + offset);
+    offset += (usz)spills * ulong::size;
+    execution.edge = (ulong*)(base + offset);
+    offset = ssa_align8(offset + (usz)edges * ulong::size);
+    execution.input_values = (TVal*)(base + offset);
+    offset = ssa_align8(offset + regs * TVal::size);
+    execution.outputs = (SsaPublishedValue*)(base + offset);
+    offset = ssa_align8(offset + regs * SsaPublishedValue::size);
+    execution.saved_bits = (ulong*)(base + offset);
+    offset = ssa_align8(offset + cap * ulong::size);
+    execution.roots = (ValueRoot*)(base + offset);
+    offset = ssa_align8(offset + cap * ValueRoot::size);
+    execution.live_roots = (uint*)(base + offset);
+    offset = ssa_align8(offset + cap * uint::size);
+    execution.root_order = (uint*)(base + offset);
+    offset = ssa_align8(offset + cap * uint::size);
+    execution.root_marks = (bool*)(base + offset);
+    offset += cap * bool::size;
+    execution.root_registered = (bool*)(base + offset);
+    mem::clear(execution.root_marks, (sz)cap * bool::size);
+    mem::clear(execution.root_registered, (sz)cap * bool::size);
+    mem::copy(execution.input_values, cold.act.bottom, (sz)regs * TVal::size);
     // Protect both the calling body and all linked artifacts throughout a
     // collecting/reentrant helper. Retirement may invalidate, never free it.
     execution.active = true;
@@ -241,16 +305,8 @@ fn void ssa_execution_dispose(SsaExecution* execution) @feat(SLJIT) {
     if (execution.active) {
         for (uint i = execution.root_count; i > 0; i--) h.pop_value_root(&execution.roots[execution.root_order[i - 1]]);
     }
-    if (execution.input_values != null) h.free_func(h.heap_udata, execution.input_values);
-    if (execution.outputs != null) h.free_func(h.heap_udata, execution.outputs);
-    if (execution.saved_bits != null) h.free_func(h.heap_udata, execution.saved_bits);
-    if (execution.roots != null) h.free_func(h.heap_udata, execution.roots);
-    if (execution.live_roots != null) h.free_func(h.heap_udata, execution.live_roots);
-    if (execution.root_marks != null) h.free_func(h.heap_udata, execution.root_marks);
-    if (execution.root_order != null) h.free_func(h.heap_udata, execution.root_order);
-    if (execution.root_registered != null) h.free_func(h.heap_udata, execution.root_registered);
-    if (execution.state_storage != null) h.free_func(h.heap_udata, execution.state_storage);
     if (execution.owner_generation != 0) sljit_artifact_leave(h, execution.owner);
+    if (execution.scratch != null) ssa_scratch_release(execution.plan, execution.scratch);
     *execution = {};
 }
 
@@ -367,6 +423,7 @@ fn bool ssa_execution_publish(SsaExecution* execution) @feat(SLJIT) {
 // A helper may allocate and enter arbitrary JavaScript. It is always an
 // unknown heap/layout/binding clobber, even when its result is unused.
 fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* site) @feat(SLJIT) @noinline {
+    $if $feat(SLJIT_STATS): site.calls++; $endif
     ColdCtx* cold = execution.cold;
     execution.before_pc = site.pc;
     execution.after_pc = site.next_pc;
@@ -454,6 +511,13 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
         long status = sljit_native_operation(cold, site.pc);
         if (status == 0) return REPLAY;
     } else {
+        // Feedback may have filled this site's IC after the plan compiled.
+        // Ask for one rebuild instead of paying a helper call per execution
+        // for the life of the plan.
+        if (!execution.plan.ssa_recompile_wanted && execution.function.sljit_recompiles < 2
+            && ssa_access_would_specialize(cold.heap, execution.function, site.pc)) {
+            execution.plan.ssa_recompile_wanted = true;
+        }
         SsaHelperOutcome outcome = ssa_vm_step(execution, site);
         if (outcome != COMPLETE) { execution.outcome = outcome; return outcome; }
     }
@@ -472,7 +536,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
 // dynamic execution state; only this gateway copies its older LoopState ABI.
 fn SsaHelperOutcome ssa_helper_state(LoopState* state, SsaHelperSite* site) @feat(SLJIT) @noinline {
     SsaExecution* execution = state.execution;
-    $if $feat(SLJIT_STATS): execution.plan.ssa_helper_calls++; $endif
+    execution.plan.ssa_helper_calls++;
     SsaHelperOutcome outcome = ssa_helper_execute(execution, site);
     state.dirty = 0;
     state.resume_pc = execution.phase == AFTER ? execution.after_pc : site.pc;

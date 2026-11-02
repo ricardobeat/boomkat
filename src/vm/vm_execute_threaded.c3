@@ -3386,7 +3386,11 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
         th_bind_ic_bias(cold, caller_func.code, caller_func.ic_entries, caller_func.var_ic_entries);
     }
     $if $feat(SLJIT):
-        if (cold.heap.jit_enabled && sljit_function_resumes(caller_pc, vm.current_func)) {
+        // A native frame on the C stack already owns the caller's execution
+        // state. Re-entering there would nest a second gateway over the same
+        // activation; the pending native call resumes when this VM run returns.
+        if (cold.heap.jit_enabled && cold.heap.jit_native_active == 0
+            && sljit_function_resumes(caller_pc, vm.current_func)) {
             return sljit_function_dispatch(caller_pc, handlers, caller.bottom, cold);
         }
     $endif
