@@ -722,13 +722,22 @@ fn void ssa_infer(
     CompiledFunction* cf = g.cf;
     LoopPlan* plan       = g.plan;
     bool* assigned = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
+    bool* boolean_literal = (bool*)ssa_storage_alloc(g, g.reg_count, bool::size);
     if (g.failed) return;
     for (uint pos = plan.begin; pos <= plan.end;) {
         DecodedBytecode view = ssa_decoded_view(g, pos);
         if (!view.valid) { g.failed = true; return; }
         defer pos = view.next_pc;
         DecodedInsn ins = view.insn;
+        // This is only a representation preference. Runtime guards and the
+        // SSA definition still prove the boolean comparison itself. Keep the
+        // hint within straight-line definitions; calls/control can import a
+        // different value for the same physical bytecode register.
+        bool boolean_result = ins.op == Opcode.LDTRUE || ins.op == Opcode.LDFALSE
+            || (ins.op == Opcode.LDREG && boolean_literal[ins.b]);
         if (ssa_decoded_target(view) >= 0) {
+            if (!ssa_charge_work(g, g.reg_count)) return;
+            mem::clear(boolean_literal, (sz)g.reg_count * bool::size);
             // An unconditional jump carries an offset in A, not a register.
             if (ins.op == Opcode.JUMP) continue;
             // A comparison branch reads two numbers; a truthiness test reads
@@ -898,8 +907,12 @@ fn void ssa_infer(
                 value_read[ins.c] = true;
                 if (!assigned[ins.b]) live_in[ins.b] = true;
                 if (!assigned[ins.c]) live_in[ins.c] = true;
-                f64_need[ins.b] = true;
-                f64_need[ins.c] = true;
+                bool equality = ins.op == Opcode.EQ || ins.op == Opcode.NEQ
+                    || ins.op == Opcode.SEQ || ins.op == Opcode.SNEQ;
+                if (!equality || (!boolean_literal[ins.b] && !boolean_literal[ins.c])) {
+                    f64_need[ins.b] = true;
+                    f64_need[ins.c] = true;
+                }
                 break;
             case ADDI:
             case SUBI:
@@ -911,9 +924,14 @@ fn void ssa_infer(
                 break;
             default: break;
         }
+        if (ssa_decoded_helper_op(ins.op)) {
+            if (!ssa_charge_work(g, g.reg_count)) return;
+            mem::clear(boolean_literal, (sz)g.reg_count * bool::size);
+        }
         if (writes) {
             written[ins.a] = true;
             assigned[ins.a] = true;
+            boolean_literal[ins.a] = boolean_result;
         }
     }
 }

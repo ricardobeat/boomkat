@@ -1,6 +1,13 @@
 module boomkat::vm;
 
 import boomkat::bytecode;
+import boomkat::types;
+
+fn bool ssa_boolean_literal(SsaGraph* g, int value) @feat(SLJIT) {
+    value = ssa_alias(g, value);
+    return value >= 0 && g.values[value].op == CONST_BOXED
+        && ((ulong)g.values[value].imm >> 48) == types::TAG_BOOLEAN;
+}
 
 fn bool ssa_scalar_binary(Opcode op) @feat(SLJIT) {
     switch (op) {
@@ -143,6 +150,16 @@ fn int ssa_scalar(SsaGraph* g, Opcode opcode, int left_input, int right_input = 
         case LT: case LE: case GT: case GE:
         case EQ: case NEQ: case SEQ: case SNEQ:
             if (left_input < 0 || right_input < 0) return -1;
+            bool equality = opcode == Opcode.EQ || opcode == Opcode.NEQ
+                || opcode == Opcode.SEQ || opcode == Opcode.SNEQ;
+            if (equality && (ssa_boolean_literal(g, left_input) || ssa_boolean_literal(g, right_input))) {
+                int left = ssa_convert(g, left_input, BOXED, false);
+                int right = ssa_convert(g, right_input, BOXED, false);
+                ssa_use(g, left); ssa_use(g, right);
+                int value = ssa_value(g, COMPARE, BOXED, left, right, 0);
+                g.values[value].branch_op = ssa_comparison_branch(opcode);
+                return value;
+            }
             bool integer = g.values[left_input].rep == INT32 && g.values[right_input].rep == INT32;
             SsaRep rep = integer ? INT32 : F64;
             int left = ssa_convert(g, left_input, rep, false);
