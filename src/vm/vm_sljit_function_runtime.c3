@@ -30,6 +30,7 @@ fn void sljit_function_release(Heap* h, JitArtifact* artifact) @feat(SLJIT) {
         );
     $endif
     if (plan.native != null) jit::sljit_free_code((void*)plan.native, null);
+    if (plan.ssa_call_code != null) jit::sljit_free_code(plan.ssa_call_code, null);
     if (plan.resume_fragment != null) jit::sljit_free_code(plan.resume_fragment, null);
     sljit_function_ssa_free(h, plan);
     sljit_inline_frames_free(h, plan);
