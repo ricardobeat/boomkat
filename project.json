@@ -808,6 +808,7 @@
         "test/capi/jit_ssa_bounds.c3",
         "test/capi/jit_ssa_remat.c3",
         "test/capi/jit_ssa_bindings.c3",
+        "test/capi/jit_ssa_integer_captures.c3",
         "test/capi/jit_ssa_boxed.c3",
         "test/capi/jit_ssa_boolean.c3",
         "test/capi/jit_abi.c3"

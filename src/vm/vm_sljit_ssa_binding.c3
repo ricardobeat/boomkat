@@ -25,12 +25,44 @@ fn bool ssa_binding_native_site(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) 
     }
     return true;
 }
+
+// Feedback selects a representation, never a value or a lifetime assumption.
+// Only inspect the current closure's direct capture slot: gathering feedback
+// must not resolve a name, run a getter, or borrow another closure's IC.
+fn bool ssa_binding_integer_feedback(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
+    if (view.insn.op != Opcode.GETCAP || !ssa_binding_native_site(g, view)
+        || g.heap.curr_thread == null) return false;
+    Vm* vm = (Vm*)g.heap.curr_thread;
+    if (vm.heap != g.heap || vm.current_func != g.cf || vm.activation_count == 0) return false;
+    Activation* act = &vm.activations[vm.activation_count - 1];
+    if (act.func != g.cf || !act.tv_func.is_object()) return false;
+    HObject* closure = act.tv_func.get_heapptr();
+    if (closure == null || closure.get_class() != FUNCTION) return false;
+    CaptureRef* ref = capture_ref(act, view.insn.get_bc());
+    if (ref == null || ref.guard_shadow) return false;
+    TVal sample;
+    if (ref.is_value) { sample = ref.value; }
+    else {
+        HObject* owner = ref.owner;
+        if (owner == null || owner.get_class() != OBJECT || owner.is_proxy()
+            || owner.flags.exotic_module_ns || ref.prop_idx >= owner.prop_count) return false;
+        sample = owner.prop_values()[ref.prop_idx].get();
+    }
+    if (sample.is_fastint()) return sample.get_fastint() >= -2147483648L
+        && sample.get_fastint() <= 2147483647L;
+    if (!sample.is_number()) return false;
+    double number = sample.get_number();
+    return number >= -2147483648.0 && number <= 2147483647.0
+        && bitcast(number, ulong) != 0x8000000000000000UL && number == (double)(long)number;
+}
+
 fn bool ssa_binding_build(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
     if (!ssa_binding_native_site(g, view)) return false;
     SsaBindingSite* site = ssa_storage_alloc(g, 1, SsaBindingSite::size);
     if (site == null) return false;
     *site = { g.cf, view.insn.op, view.insn.get_bc(), view.payload_pc };
-    int value = ssa_value(g, FRESH_BINDING, BOXED, -1, -1, 0);
+    SsaRep rep = ssa_binding_integer_feedback(g, view) ? INT32 : BOXED;
+    int value = ssa_value(g, FRESH_BINDING, rep, -1, -1, 0);
     g.values[value].binding_site = site;
     g.values[value].before_frame = ssa_frame_at_pc(g, view.pc);
     ssa_result(g, value, view.insn.a, view.pc);
@@ -127,6 +159,10 @@ fn void SsaEmitter.fresh_binding(&self, int id) @feat(SLJIT) {
     void* initialized = self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED);
     self.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)(types::TAG_UNDEFINED << 48), self.pc);
     self.e.bind(initialized);
+    // A different closure, aliasing write, callback, or later invocation may
+    // change the capture. Check every fresh read before committing its result;
+    // fractional numbers, -0, overflow and coercible values resume GETCAP.
+    if (self.g.values[id].rep == INT32) self.exact_int(r0, r0, self.pc);
     self.store_gpr(id, r0);
     $if $feat(SLJIT_STATS):
         if (self.plan.ssa_data != null) {

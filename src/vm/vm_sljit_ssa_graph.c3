@@ -949,6 +949,7 @@ fn bool ssa_op_is_int(SsaGraph* g, DecodedInsn ins, uint pos, bool* int_reg) @fe
     CompiledFunction* cf = g.cf;
     LoopPlan* plan       = g.plan;
     switch (ins.op) {
+        case GETCAP: return ssa_binding_integer_feedback(g, ssa_decoded_view(g, pos));
         case LDINT: return true;
         case LDCONST:
 

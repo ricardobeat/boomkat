@@ -1317,6 +1317,7 @@ fn void main() {
     check_ssa_lazy_roots();
     check_ssa_sparse_imports();
     check_ssa_helper_homes();
+    check_ssa_integer_captures();
     check_ssa_boxed_truth();
     check_ssa_boolean_equality();
     check_scalable_ssa_closure_startup();
