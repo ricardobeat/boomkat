@@ -1,0 +1,556 @@
+--- Bytecode ---
+[  0] CHKGLOBALVAR        r0, 0
+[  1] CHKGLOBALVAR        r0, 1
+[  2] CHKGLOBALVAR        r0, 2
+[  3] CHKGLOBALVAR        r0, 3
+[  4] CHKGLOBALVAR        r0, 4
+[  5] CHKGLOBALVAR        r0, 5
+[  6] CHKGLOBALVAR        r0, 6
+[  7] CHKGLOBALVAR        r0, 7
+[  8] CHKGLOBALVAR        r0, 8
+[  9] CHKGLOBALVAR        r0, 9
+[ 10] CHKGLOBALVAR        r0, 10
+[ 11] CHKGLOBALVAR        r0, 11
+[ 12] CHKGLOBALVAR        r0, 12
+[ 13] CHKGLOBALVAR        r0, 13
+[ 14] CHKGLOBALVAR        r0, 14
+[ 15] CHKGLOBALVAR        r0, 10
+[ 16] CHKGLOBALVAR        r0, 15
+[ 17] CHKGLOBALFUNC       r0, 16
+[ 18] CHKGLOBALFUNC       r0, 17
+[ 19] CLOSURE             r0, 0
+[ 20] DECLGLOBALFUNC      r0, 16
+[ 21] CLOSURE             r0, 1
+[ 22] DECLGLOBALFUNC      r0, 17
+[ 23] LDUNDEF             r0 = r0, r0
+[ 24] DECLVAR_HOIST       r0, 0
+[ 25] LDUNDEF             r0 = r0, r0
+[ 26] DECLVAR_HOIST       r0, 1
+[ 27] LDUNDEF             r0 = r0, r0
+[ 28] DECLVAR_HOIST       r0, 2
+[ 29] LDUNDEF             r0 = r0, r0
+[ 30] DECLVAR_HOIST       r0, 3
+[ 31] LDUNDEF             r0 = r0, r0
+[ 32] DECLVAR_HOIST       r0, 4
+[ 33] LDUNDEF             r0 = r0, r0
+[ 34] DECLVAR_HOIST       r0, 5
+[ 35] LDUNDEF             r0 = r0, r0
+[ 36] DECLVAR_HOIST       r0, 6
+[ 37] LDUNDEF             r0 = r0, r0
+[ 38] DECLVAR_HOIST       r0, 7
+[ 39] LDUNDEF             r0 = r0, r0
+[ 40] DECLVAR_HOIST       r0, 8
+[ 41] LDUNDEF             r0 = r0, r0
+[ 42] DECLVAR_HOIST       r0, 9
+[ 43] LDUNDEF             r0 = r0, r0
+[ 44] DECLVAR_HOIST       r0, 10
+[ 45] LDUNDEF             r0 = r0, r0
+[ 46] DECLVAR_HOIST       r0, 11
+[ 47] LDUNDEF             r0 = r0, r0
+[ 48] DECLVAR_HOIST       r0, 12
+[ 49] LDUNDEF             r0 = r0, r0
+[ 50] DECLVAR_HOIST       r0, 13
+[ 51] LDUNDEF             r0 = r0, r0
+[ 52] DECLVAR_HOIST       r0, 14
+[ 53] LDUNDEF             r0 = r0, r0
+[ 54] DECLVAR_HOIST       r0, 10
+[ 55] LDUNDEF             r0 = r0, r0
+[ 56] DECLVAR_HOIST       r0, 15
+[ 57] LDINT               r0, +16
+[ 58] PUTVAR              r0, 0
+[ 59] GETGLOBAL           r2, 0
+[ 60] ADDI                r2 = r2, +2
+[ 61] GETGLOBAL           r3, 0
+[ 62] ADDI                r3 = r3, +2
+[ 63] MUL                 r2 = r2, r3
+[ 64] LDREG               r1 = r2, r0
+[ 65] PUTVAR              r1, 1
+[ 66] GETGLOBAL           r3, 16
+[ 67] GETGLOBAL           r5, 0
+[ 68] GETGLOBAL           r6, 0
+[ 69] CALL_UNDEF_THIS     r3 = r3, r2
+[ 70] LDREG               r2 = r3, r0
+[ 71] PUTVAR              r2, 2
+[ 72] GETGLOBAL           r4, 17
+[ 73] GETGLOBAL           r6, 0
+[ 74] GETGLOBAL           r7, 0
+[ 75] CALL_UNDEF_THIS     r4 = r4, r2
+[ 76] LDREG               r3 = r4, r0
+[ 77] PUTVAR              r3, 3
+[ 78] LDINT               r0, 0
+[ 79] DECLVAR             r0, 4
+[ 80] LDINT               r1, +30
+[ 81] JUMP                +146
+[ 82] NEWARR              r3, 0
+[ 83] LDREG               r2 = r3, r0
+[ 84] PUTVAR              r2, 5
+[ 85] NEWARR              r4, 0
+[ 86] LDREG               r3 = r4, r0
+[ 87] PUTVAR              r3, 6
+[ 88] NEWARR              r5, 0
+[ 89] LDREG               r4 = r5, r0
+[ 90] PUTVAR              r4, 7
+[ 91] NEWARR              r6, 0
+[ 92] LDREG               r5 = r6, r0
+[ 93] PUTVAR              r5, 8
+[ 94] NEWARR              r7, 0
+[ 95] LDREG               r6 = r7, r0
+[ 96] PUTVAR              r6, 9
+[ 97] LDINT               r2, 0
+[ 98] DECLVAR             r2, 10
+[ 99] JUMP                +41
+[100] GETGLOBAL           r3, 5
+[101] GETGLOBAL           r4, 10
+[102] GETGLOBAL           r6, 6
+[103] GETGLOBAL           r7, 10
+[104] LDINT               r9, 0
+[105] PUTPROP             r6 = r7, r9
+[106] LDREG               r10 = r9, r0
+[107] PUTPROP             r3 = r4, r10
+[108] GETGLOBAL           r3, 7
+[109] GETGLOBAL           r4, 10
+[110] GETGLOBAL           r6, 10
+[111] MULI                r6 = r6, +19
+[112] GETGLOBAL           r7, 4
+[113] MULI                r7 = r7, +3
+[114] ADD                 r6 = r6, r7
+[115] LDINT               r7, +107
+[116] MOD                 r6 = r6, r7
+[117] LDINT               r7, +107
+[118] DIV                 r6 = r6, r7
+[119] PUTPROP             r3 = r4, r6
+[120] GETGLOBAL           r3, 8
+[121] GETGLOBAL           r4, 10
+[122] GETGLOBAL           r6, 10
+[123] MULI                r6 = r6, +11
+[124] LDINT               r7, +17
+[125] MOD                 r6 = r6, r7
+[126] SUBI                r6 = r6, +8
+[127] LDINT               r7, +32
+[128] DIV                 r6 = r6, r7
+[129] PUTPROP             r3 = r4, r6
+[130] GETGLOBAL           r3, 9
+[131] GETGLOBAL           r4, 10
+[132] GETGLOBAL           r6, 10
+[133] MULI                r6 = r6, +7
+[134] LDINT               r7, +23
+[135] MOD                 r6 = r6, r7
+[136] SUBI                r6 = r6, +11
+[137] LDINT               r7, +32
+[138] DIV                 r6 = r6, r7
+[139] PUTPROP             r3 = r4, r6
+[140] INC_GLOBAL          r3, 10
+[141] GETGLOBAL           r3, 10
+[142] GETGLOBAL           r4, 1
+[143] JMP_LT              -44, r3, r4
+[144] GETGLOBAL           r3, 4
+[145] LDINT               r4, +3
+[146] MOD                 r3 = r3, r4
+[147] JMP_SNEQI           +2, r3, +1
+[148] GETGLOBAL           r2, 7
+[149] JUMP                +1
+[150] GETGLOBAL           r2, 8
+[151] PUTVAR              r2, 11
+[152] GETGLOBAL           r4, 4
+[153] LDINT               r5, +3
+[154] MOD                 r4 = r4, r5
+[155] JMP_SNEQI           +2, r4, +2
+[156] GETGLOBAL           r3, 7
+[157] JUMP                +1
+[158] GETGLOBAL           r3, 9
+[159] PUTVAR              r3, 12
+[160] GETGLOBAL           r2, 2
+[161] LDINT               r4, +2
+[162] GETGLOBAL           r5, 5
+[163] GETGLOBAL           r6, 7
+[164] GETGLOBAL           r7, 11
+[165] GETGLOBAL           r8, 12
+[166] LDCONST             r9, 18
+[167] CALL_UNDEF_THIS     r2 = r2, r6
+[168] GETGLOBAL           r2, 3
+[169] LDINT               r4, +2
+[170] GETGLOBAL           r5, 6
+[171] GETGLOBAL           r6, 7
+[172] GETGLOBAL           r7, 11
+[173] GETGLOBAL           r8, 12
+[174] LDCONST             r9, 18
+[175] CALL_UNDEF_THIS     r2 = r2, r6
+[176] LDINT               r2, 0
+[177] PUTVAR              r2, 13
+[178] LDINT               r3, -1
+[179] PUTVAR              r3, 14
+[180] LDINT               r2, 0
+[181] DECLVAR             r2, 10
+[182] JUMP                +21
+[183] GETGLOBAL           r5, 19
+[184] GETPROPC            r4 = r5, r20
+[185] GETGLOBAL           r6, 5
+[186] GETGLOBAL           r7, 10
+[187] GETPROP             r8 = r6, r7
+[188] GETGLOBAL           r9, 6
+[189] GETGLOBAL           r10, 10
+[190] GETPROP             r11 = r9, r10
+[191] SUB                 r6 = r8, r11
+[192] CALL                r4 = r4, r1
+[193] LDREG               r3 = r4, r0
+[194] PUTVAR              r3, 15
+[195] GETGLOBAL           r3, 15
+[196] GETGLOBAL           r4, 13
+[197] GT                  r3 = r3, r4
+[198] IF_FALSE            r3, +4
+[199] GETGLOBAL           r4, 15
+[200] PUTGLOBAL           r4, 13
+[201] GETGLOBAL           r4, 10
+[202] PUTGLOBAL           r4, 14
+[203] INC_GLOBAL          r3, 10
+[204] GETGLOBAL           r3, 10
+[205] GETGLOBAL           r4, 1
+[206] JMP_LT              -24, r3, r4
+[207] GETGLOBAL           r2, 13
+[208] LDCONST             r3, 21
+[209] GT                  r2 = r2, r3
+[210] IF_FALSE            r2, +16
+[211] GETGLOBAL           r3, 22
+[212] GETPROPC            r2 = r3, r23
+[213] LDCONST             r4, 24
+[214] GETGLOBAL           r5, 4
+[215] GETGLOBAL           r6, 13
+[216] GETGLOBAL           r7, 14
+[217] GETGLOBAL           r8, 5
+[218] GETGLOBAL           r9, 14
+[219] GETPROP             r10 = r8, r9
+[220] LDREG               r8 = r10, r0
+[221] GETGLOBAL           r10, 6
+[222] GETGLOBAL           r11, 14
+[223] GETPROP             r9 = r10, r11
+[224] CALL                r2 = r2, r6
+[225] LDCONST             r2, 25
+[226] THROW               r2 = r0, r0
+[227] INC_GLOBAL          r2, 4
+[228] GETVAR              r2, 4
+[229] LT                  r3 = r2, r1
+[230] IF_TRUE             r3, -149
+[231] GETGLOBAL           r1, 22
+[232] GETPROPC            r0 = r1, r23
+[233] LDCONST             r2, 26
+[234] CALL                r0 = r0, r1
+[235] RETUNDEF            
+
+--- Inner function 0 ---
+[  0] NEWCELLS            r2, 3
+[  1] SETCELL             r0 = r2, r0
+[  2] SETCELL             r1 = r2, r1
+[  3] LDUNDEF             r3 = r0, r0
+[  4] SETCELL             r3 = r2, r2
+[  5] CLOSURE             r5, 1
+[  6] DECLGLOBALFUNC      r5, 4
+[  7] CLOSURE             r4, 0
+[  8] DECLGLOBALFUNC      r4, 3
+[  9] GETCELL             r6 = r2, r0
+[ 10] ADDI                r3 = r6, +2
+[ 11] SETCELL             r3 = r2, r2
+[ 12] RET                 r5 = r0, r0
+
+--- Inner function 0.0 ---
+[  0] RETUNDEF            
+
+--- Inner function 0.1 ---
+[  0] GETCAP              r25, 0
+[  1] MUL                 r6 = r5, r25
+[  2] GETCAP              r25, 1
+[  3] MUL                 r7 = r5, r25
+[  4] GETCAP              r25, 0
+[  5] LDCONST             r26, 27
+[  6] ADD                 r8 = r25, r26
+[  7] GETCAP              r25, 1
+[  8] LDCONST             r26, 27
+[  9] ADD                 r9 = r25, r26
+[ 10] LDINT               r10, +1
+[ 11] JUMP                +60
+[ 12] GETCAP              r25, 2
+[ 13] MUL                 r11 = r10, r25
+[ 14] LDINT               r12, +1
+[ 15] JUMP                +53
+[ 16] INC                 r11
+[ 17] GETPROP             r25 = r3, r11
+[ 18] MUL                 r26 = r6, r25
+[ 19] SUB                 r13 = r12, r26
+[ 20] GETPROP             r25 = r4, r11
+[ 21] MUL                 r26 = r7, r25
+[ 22] SUB                 r14 = r10, r26
+[ 23] LDCONST             r25, 27
+[ 24] JMP_NLT             +2, r13, r25
+[ 25] LDCONST             r13, 27
+[ 26] JUMP                +2
+[ 27] JMP_NGT             +1, r13, r8
+[ 28] LDREG               r13 = r8, r0
+[ 29] BORI                r15 = r13, 0
+[ 30] ADDI                r16 = r15, +1
+[ 31] LDCONST             r25, 27
+[ 32] JMP_NLT             +2, r14, r25
+[ 33] LDCONST             r14, 27
+[ 34] JUMP                +2
+[ 35] JMP_NGT             +1, r14, r9
+[ 36] LDREG               r14 = r9, r0
+[ 37] BORI                r17 = r14, 0
+[ 38] ADDI                r18 = r17, +1
+[ 39] SUB                 r19 = r13, r15
+[ 40] LDINT               r25, +1
+[ 41] SUB                 r20 = r25, r19
+[ 42] SUB                 r21 = r14, r17
+[ 43] LDINT               r25, +1
+[ 44] SUB                 r22 = r25, r21
+[ 45] GETCAP              r25, 2
+[ 46] MUL                 r23 = r17, r25
+[ 47] GETCAP              r25, 2
+[ 48] MUL                 r24 = r18, r25
+[ 49] LDREG               r25 = r11, r0
+[ 50] ADD                 r27 = r15, r23
+[ 51] GETPROP             r28 = r2, r27
+[ 52] MUL                 r29 = r22, r28
+[ 53] ADD                 r30 = r15, r24
+[ 54] GETPROP             r31 = r2, r30
+[ 55] MUL                 r32 = r21, r31
+[ 56] ADD                 r29 = r29, r32
+[ 57] MUL                 r32 = r20, r29
+[ 58] ADD                 r33 = r16, r23
+[ 59] GETPROP             r34 = r2, r33
+[ 60] MUL                 r35 = r22, r34
+[ 61] ADD                 r36 = r16, r24
+[ 62] GETPROP             r37 = r2, r36
+[ 63] MUL                 r38 = r21, r37
+[ 64] ADD                 r35 = r35, r38
+[ 65] MUL                 r38 = r19, r35
+[ 66] ADD                 r32 = r32, r38
+[ 67] PUTPROP             r1 = r25, r32
+[ 68] INC                 r12
+[ 69] GETCAP              r25, 0
+[ 70] JMP_LE              -55, r12, r25
+[ 71] INC                 r10
+[ 72] GETCAP              r25, 1
+[ 73] LE                  r26 = r10, r25
+[ 74] IF_TRUE             r26, -63
+[ 75] LDREG               r27 = r0, r0
+[ 76] LDREG               r28 = r1, r0
+[ 77] CALL_VAR            r25, argc=2, K[29]
+[ 78] RETUNDEF            
+
+--- Inner function 1 ---
+[  0] DECLVAR             r0, 0
+[  1] DECLVAR             r1, 1
+[  2] LDUNDEF             r2 = r0, r0
+[  3] DECLVAR_HOIST       r2, 2
+[  4] CLOSURE             r4, 1
+[  5] DECLGLOBALFUNC      r4, 4
+[  6] CLOSURE             r3, 0
+[  7] DECLGLOBALFUNC      r3, 3
+[  8] GETVAR              r5, 0
+[  9] ADDI                r2 = r5, +2
+[ 10] DECLVAR             r2, 2
+[ 11] GETVAR              r5, 4
+[ 12] RET                 r5 = r0, r0
+
+--- Inner function 1.0 ---
+[  0] RETUNDEF            
+
+--- Inner function 1.1 ---
+[  0] DECLVAR             r0, 0
+[  1] DECLVAR             r1, 1
+[  2] DECLVAR             r2, 2
+[  3] DECLVAR             r3, 3
+[  4] DECLVAR             r4, 4
+[  5] DECLVAR             r5, 5
+[  6] LDUNDEF             r6 = r0, r0
+[  7] DECLVAR_HOIST       r6, 6
+[  8] LDUNDEF             r7 = r0, r0
+[  9] DECLVAR_HOIST       r7, 7
+[ 10] LDUNDEF             r8 = r0, r0
+[ 11] DECLVAR_HOIST       r8, 8
+[ 12] LDUNDEF             r9 = r0, r0
+[ 13] DECLVAR_HOIST       r9, 9
+[ 14] LDUNDEF             r10 = r0, r0
+[ 15] DECLVAR_HOIST       r10, 10
+[ 16] LDUNDEF             r11 = r0, r0
+[ 17] DECLVAR_HOIST       r11, 11
+[ 18] LDUNDEF             r12 = r0, r0
+[ 19] DECLVAR_HOIST       r12, 12
+[ 20] LDUNDEF             r13 = r0, r0
+[ 21] DECLVAR_HOIST       r13, 13
+[ 22] LDUNDEF             r14 = r0, r0
+[ 23] DECLVAR_HOIST       r14, 14
+[ 24] LDUNDEF             r15 = r0, r0
+[ 25] DECLVAR_HOIST       r15, 15
+[ 26] LDUNDEF             r16 = r0, r0
+[ 27] DECLVAR_HOIST       r16, 16
+[ 28] LDUNDEF             r17 = r0, r0
+[ 29] DECLVAR_HOIST       r17, 17
+[ 30] LDUNDEF             r18 = r0, r0
+[ 31] DECLVAR_HOIST       r18, 18
+[ 32] LDUNDEF             r19 = r0, r0
+[ 33] DECLVAR_HOIST       r19, 19
+[ 34] LDUNDEF             r20 = r0, r0
+[ 35] DECLVAR_HOIST       r20, 20
+[ 36] LDUNDEF             r21 = r0, r0
+[ 37] DECLVAR_HOIST       r21, 21
+[ 38] LDUNDEF             r22 = r0, r0
+[ 39] DECLVAR_HOIST       r22, 22
+[ 40] LDUNDEF             r23 = r0, r0
+[ 41] DECLVAR_HOIST       r23, 23
+[ 42] LDUNDEF             r24 = r0, r0
+[ 43] DECLVAR_HOIST       r24, 24
+[ 44] LDCONST             r27, 26
+[ 45] CALL_VAR            r25, argc=1, K[25]
+[ 46] GETVAR              r25, 5
+[ 47] GETVAR              r26, 27
+[ 48] MUL                 r6 = r25, r26
+[ 49] DECLVAR             r6, 6
+[ 50] GETVAR              r25, 5
+[ 51] GETVAR              r26, 28
+[ 52] MUL                 r7 = r25, r26
+[ 53] DECLVAR             r7, 7
+[ 54] GETVAR              r25, 27
+[ 55] LDCONST             r26, 29
+[ 56] ADD                 r8 = r25, r26
+[ 57] DECLVAR             r8, 8
+[ 58] GETVAR              r25, 28
+[ 59] LDCONST             r26, 29
+[ 60] ADD                 r9 = r25, r26
+[ 61] DECLVAR             r9, 9
+[ 62] LDINT               r10, +1
+[ 63] PUTVAR              r10, 10
+[ 64] JUMP                +125
+[ 65] GETVAR              r25, 10
+[ 66] GETVAR              r26, 30
+[ 67] MUL                 r11 = r25, r26
+[ 68] DECLVAR             r11, 11
+[ 69] LDINT               r12, +1
+[ 70] PUTVAR              r12, 12
+[ 71] JUMP                +113
+[ 72] GETVAR              r25, 12
+[ 73] GETVAR              r26, 6
+[ 74] GETVAR              r27, 3
+[ 75] INC_VAR             r28, 11
+[ 76] GETPROP             r29 = r27, r28
+[ 77] MUL                 r26 = r26, r29
+[ 78] SUB                 r13 = r25, r26
+[ 79] DECLVAR             r13, 13
+[ 80] GETVAR              r25, 10
+[ 81] GETVAR              r26, 7
+[ 82] GETVAR              r27, 4
+[ 83] GETVAR              r28, 11
+[ 84] GETPROP             r29 = r27, r28
+[ 85] MUL                 r26 = r26, r29
+[ 86] SUB                 r14 = r25, r26
+[ 87] DECLVAR             r14, 14
+[ 88] GETVAR              r25, 13
+[ 89] LDCONST             r26, 29
+[ 90] JMP_NLT             +3, r25, r26
+[ 91] LDCONST             r26, 29
+[ 92] PUTVAR_ASSIGN       r26 = r13, r0
+[ 93] JUMP                +5
+[ 94] GETVAR              r25, 13
+[ 95] GETVAR              r26, 8
+[ 96] JMP_NGT             +2, r25, r26
+[ 97] GETVAR              r26, 8
+[ 98] PUTVAR_ASSIGN       r26 = r13, r0
+[ 99] GETVAR              r25, 13
+[100] BORI                r15 = r25, 0
+[101] DECLVAR             r15, 15
+[102] GETVAR              r25, 15
+[103] ADDI                r16 = r25, +1
+[104] DECLVAR             r16, 16
+[105] GETVAR              r25, 14
+[106] LDCONST             r26, 29
+[107] JMP_NLT             +3, r25, r26
+[108] LDCONST             r26, 29
+[109] PUTVAR_ASSIGN       r26 = r14, r0
+[110] JUMP                +5
+[111] GETVAR              r25, 14
+[112] GETVAR              r26, 9
+[113] JMP_NGT             +2, r25, r26
+[114] GETVAR              r26, 9
+[115] PUTVAR_ASSIGN       r26 = r14, r0
+[116] GETVAR              r25, 14
+[117] BORI                r17 = r25, 0
+[118] DECLVAR             r17, 17
+[119] GETVAR              r25, 17
+[120] ADDI                r18 = r25, +1
+[121] DECLVAR             r18, 18
+[122] GETVAR              r25, 13
+[123] GETVAR              r26, 15
+[124] SUB                 r19 = r25, r26
+[125] DECLVAR             r19, 19
+[126] LDINT               r25, +1
+[127] GETVAR              r26, 19
+[128] SUB                 r20 = r25, r26
+[129] DECLVAR             r20, 20
+[130] GETVAR              r25, 14
+[131] GETVAR              r26, 17
+[132] SUB                 r21 = r25, r26
+[133] DECLVAR             r21, 21
+[134] LDINT               r25, +1
+[135] GETVAR              r26, 21
+[136] SUB                 r22 = r25, r26
+[137] DECLVAR             r22, 22
+[138] GETVAR              r25, 17
+[139] GETVAR              r26, 30
+[140] MUL                 r23 = r25, r26
+[141] DECLVAR             r23, 23
+[142] GETVAR              r25, 18
+[143] GETVAR              r26, 30
+[144] MUL                 r24 = r25, r26
+[145] DECLVAR             r24, 24
+[146] GETVAR              r25, 1
+[147] GETVAR              r26, 11
+[148] GETVAR              r28, 20
+[149] GETVAR              r29, 22
+[150] GETVAR              r30, 2
+[151] GETVAR              r31, 15
+[152] GETVAR              r32, 23
+[153] ADD                 r31 = r31, r32
+[154] GETPROP             r32 = r30, r31
+[155] MUL                 r29 = r29, r32
+[156] GETVAR              r32, 21
+[157] GETVAR              r33, 2
+[158] GETVAR              r34, 15
+[159] GETVAR              r35, 24
+[160] ADD                 r34 = r34, r35
+[161] GETPROP             r35 = r33, r34
+[162] MUL                 r32 = r32, r35
+[163] ADD                 r29 = r29, r32
+[164] MUL                 r28 = r28, r29
+[165] GETVAR              r35, 19
+[166] GETVAR              r36, 22
+[167] GETVAR              r37, 2
+[168] GETVAR              r38, 16
+[169] GETVAR              r39, 23
+[170] ADD                 r38 = r38, r39
+[171] GETPROP             r39 = r37, r38
+[172] MUL                 r36 = r36, r39
+[173] GETVAR              r39, 21
+[174] GETVAR              r40, 2
+[175] GETVAR              r41, 16
+[176] GETVAR              r42, 24
+[177] ADD                 r41 = r41, r42
+[178] GETPROP             r42 = r40, r41
+[179] MUL                 r39 = r39, r42
+[180] ADD                 r36 = r36, r39
+[181] MUL                 r35 = r35, r36
+[182] ADD                 r28 = r28, r35
+[183] PUTPROP             r25 = r26, r28
+[184] INC_VAR             r25, 12
+[185] GETVAR              r25, 12
+[186] GETVAR              r26, 27
+[187] LE                  r25 = r25, r26
+[188] IF_TRUE             r25, -117
+[189] INC_VAR             r25, 10
+[190] GETVAR              r25, 10
+[191] GETVAR              r26, 28
+[192] LE                  r25 = r25, r26
+[193] IF_TRUE             r25, -129
+[194] GETVAR              r25, 31
+[195] GETVAR              r27, 0
+[196] GETVAR              r28, 1
+[197] CALL_UNDEF_THIS     r25 = r25, r2
+[198] RETUNDEF            
+--- End bytecode ---

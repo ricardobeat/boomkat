@@ -1,0 +1,69 @@
+{
+  "bundle_sha256": "a52f0e6cce8983293b715f8370edf36f667fe74673aff116a245aca732a973b4",
+  "binaries": {
+    "/tmp/bk-corrected-baseline/boomkat": "627979071011f8f94d69a66d4108f387bc54a1e52819c2b38805ee361c4b71e7",
+    "/tmp/bk-recovery-live-release/boomkat": "57932d9571d6837c51fd3ba229d9fcace1350b84d94e280cfc585ae6aa28c5dd"
+  },
+  "runs": [
+    {
+      "pair": 1,
+      "side": "baseline",
+      "exit": 0,
+      "seconds": 80.38586533395573,
+      "cpu_seconds": 79.71214599999999,
+      "maxrss_bytes": 1817231360,
+      "score": 6286,
+      "log": "pair1-baseline.log"
+    },
+    {
+      "pair": 1,
+      "side": "candidate",
+      "exit": 0,
+      "seconds": 79.88321133400314,
+      "cpu_seconds": 79.606574,
+      "maxrss_bytes": 1845133312,
+      "score": 6476,
+      "log": "pair1-candidate.log"
+    },
+    {
+      "pair": 2,
+      "side": "candidate",
+      "exit": 0,
+      "seconds": 79.75223191687837,
+      "cpu_seconds": 79.669576,
+      "maxrss_bytes": 1456898048,
+      "score": 6433,
+      "log": "pair2-candidate.log"
+    },
+    {
+      "pair": 2,
+      "side": "baseline",
+      "exit": 0,
+      "seconds": 80.33073808299378,
+      "cpu_seconds": 80.09035300000001,
+      "maxrss_bytes": 1573044224,
+      "score": 6467,
+      "log": "pair2-baseline.log"
+    },
+    {
+      "pair": 3,
+      "side": "baseline",
+      "exit": 0,
+      "seconds": 80.42980195814744,
+      "cpu_seconds": 80.287913,
+      "maxrss_bytes": 1498710016,
+      "score": 6506,
+      "log": "pair3-baseline.log"
+    },
+    {
+      "pair": 3,
+      "side": "candidate",
+      "exit": 0,
+      "seconds": 96.1503860000521,
+      "cpu_seconds": 92.46055199999999,
+      "maxrss_bytes": 1416200192,
+      "score": 6167,
+      "log": "pair3-candidate.log"
+    }
+  ]
+}

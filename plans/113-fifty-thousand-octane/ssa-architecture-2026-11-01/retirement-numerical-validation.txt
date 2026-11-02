@@ -1,0 +1,7 @@
+Retirement fix validation: /tmp/bk-retirement-agent/boomkat --jit --script /tmp/bk-navier-state.js
+Reference: /tmp/bk-merged-baseline --script /tmp/bk-navier-state.js
+Both executions exit 0.
+Compared 2 frames x 6 arrays x 16900 values = 202800 numeric values.
+Exact differing values after fix: 0.
+Pre-fix merged JIT differed in thousands of values already in frame 0 (max density error 0.5779772189903496).
+The original, unmodified16-frame Navier checksum also passes --jit and --jit-stress after the fix.

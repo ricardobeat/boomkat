@@ -1,0 +1,452 @@
+[
+  {
+    "file": "test/jit_alloc_continuations.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_append_property.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_array_element_access.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_array_named_inherited.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_array_read_index.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_cfg_numbers.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_function_ssa.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_function_ssa_calls.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_function_ssa_fields.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_inline_branches.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_inline_property_write.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_inline_recovery.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_integer_equality.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_kernel_links.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_linked_calls.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_loop_arms.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_loop_receiver_join.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_loose_equality.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_named_read_moves.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_native_call.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_native_calls.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_nested_inline.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_numeric_locals.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_poly_own_reads.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_proto_read_shapes.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_read_miss_cache.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_read_refresh.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_read_result_types.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_review_regressions.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_scalar_recovery.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_call_regions.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_cfg_allocation.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_cyclic_effects.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_effect_recovery.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_exit_only_highreg.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_float_spills.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_fractional_bounds.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_global_dependency.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_handoff.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_join_coalescing.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_latch_boxed.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_leaves.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_loop_recovery.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_many_blocks.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_nested_store_budget.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_pure_swap.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_wide_continuation.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_string_continuations.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_helper_continuations.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  },
+  {
+    "file": "test/jit_ssa_optimization.js",
+    "exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "match": true
+  }
+]

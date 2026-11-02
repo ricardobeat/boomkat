@@ -1,0 +1,71 @@
+{
+  "binary": "/tmp/bk-final-phi-x64-release/boomkat",
+  "sha256": "1cfb6cc599384d8b6c73b3f8f5e069a7d7cf5b08e889a2e7452daab3a50fb8f1",
+  "command": "c3c --target macos-x64 --cc /tmp/bk-scratch-clang-x64 build boomkat --build-dir /tmp/bk-final-phi-x64-release-obj --output-dir /tmp/bk-final-phi-x64-release",
+  "features": "plain release project defaults; no diagnostics or extra scratch flags",
+  "checks": [
+    {
+      "fixture": "test/jit_ssa_pure_swap.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_pure_swap.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_cfg_allocation.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_cfg_allocation.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "JIT effect recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "JIT effect recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_loop_recovery.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "JIT cyclic loop recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_loop_recovery.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "JIT cyclic loop recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "/tmp/bk-navier-checksum.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "Navier 16-frame checksum: PASS\n",
+      "stderr": ""
+    }
+  ]
+}

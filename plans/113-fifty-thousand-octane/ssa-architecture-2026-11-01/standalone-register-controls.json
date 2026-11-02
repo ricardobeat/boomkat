@@ -1,0 +1,184 @@
+{
+  "source_changes_during_builds": [],
+  "default_features": "plain boomkat release project defaults plus listed opt-in flags; no diagnostics",
+  "variants": [
+    {
+      "variant": "gpr",
+      "binary": "/tmp/bk-recoverable-gpr-release/boomkat",
+      "sha256": "0208f5668cf70b3636b07f0fa8b5e18b993ff9756764a238d49874f3bab306d2",
+      "build_features": [
+        "SLJIT_RECOVERABLE_GPRS"
+      ],
+      "checks": [
+        {
+          "fixture": "test/jit_ssa_effect_recovery.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_effect_recovery.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_fractional_bounds.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_fractional_bounds.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_pure_swap.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_pure_swap.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "/tmp/bk-navier-checksum.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "Navier 16-frame checksum: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "variant": "fpr",
+      "binary": "/tmp/bk-recoverable-fpr-release/boomkat",
+      "sha256": "f9a339a5b7f0efe97550dfab881927e081f4d984012c1f4e7d23db40b35b6917",
+      "build_features": [
+        "SLJIT_RECOVERABLE_FPRS"
+      ],
+      "checks": [
+        {
+          "fixture": "test/jit_ssa_effect_recovery.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_effect_recovery.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_fractional_bounds.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_fractional_bounds.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_pure_swap.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_pure_swap.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "/tmp/bk-navier-checksum.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "Navier 16-frame checksum: PASS\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "variant": "both",
+      "binary": "/tmp/bk-recoverable-both-release/boomkat",
+      "sha256": "c4e8df32cf2f4389a729b6a91a9f0a650af1c4de47d0b52dcfa212ef72f49f7e",
+      "build_features": [
+        "SLJIT_RECOVERABLE_GPRS",
+        "SLJIT_RECOVERABLE_FPRS"
+      ],
+      "checks": [
+        {
+          "fixture": "test/jit_ssa_effect_recovery.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_effect_recovery.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "JIT effect recovery: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_fractional_bounds.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_fractional_bounds.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "JIT fractional bounds: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_pure_swap.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "test/jit_ssa_pure_swap.js",
+          "mode": "--jit-stress",
+          "exit": 0,
+          "stdout": "pure cyclic swap: PASS\npure float cyclic swap: PASS\n",
+          "stderr": ""
+        },
+        {
+          "fixture": "/tmp/bk-navier-checksum.js",
+          "mode": "--jit",
+          "exit": 0,
+          "stdout": "Navier 16-frame checksum: PASS\n",
+          "stderr": ""
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "file": "bench/mini/navier-stokes.js",
+    "seconds": [
+      [
+        0.3021878330036998,
+        0.305397666990757,
+        0.3078362080268562,
+        0.3093331251293421,
+        0.3103747919667512,
+        0.3108530829194933,
+        0.31163874990306795,
+        0.31232420820742846,
+        0.31048400001600385
+      ],
+      [
+        0.2073005000129342,
+        0.20861945790238678,
+        0.2111246669664979,
+        0.2132717501372099,
+        0.2123047080822289,
+        0.21479141688905656,
+        0.21460687485523522,
+        0.21497808396816254,
+        0.21285524987615645
+      ]
+    ],
+    "median": [
+      0.3103747919667512,
+      0.21285524987615645
+    ],
+    "change_percent": -31.4199299088186,
+    "rss": [
+      [],
+      []
+    ],
+    "outputs": [
+      [
+        "NavierStokes: 294 ms\n",
+        "NavierStokes: 297 ms\n",
+        "NavierStokes: 300 ms\n",
+        "NavierStokes: 302 ms\n",
+        "NavierStokes: 303 ms\n",
+        "NavierStokes: 305 ms\n"
+      ],
+      [
+        "NavierStokes: 199 ms\n",
+        "NavierStokes: 201 ms\n",
+        "NavierStokes: 203 ms\n",
+        "NavierStokes: 204 ms\n",
+        "NavierStokes: 205 ms\n",
+        "NavierStokes: 206 ms\n",
+        "NavierStokes: 207 ms\n",
+        "NavierStokes: 208 ms\n"
+      ]
+    ],
+    "scene_total_ms": [
+      [],
+      []
+    ],
+    "scene_worst_frame_ms": [
+      [],
+      []
+    ]
+  }
+]

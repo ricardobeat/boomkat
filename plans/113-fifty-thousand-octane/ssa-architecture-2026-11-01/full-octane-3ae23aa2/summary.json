@@ -1,0 +1,44 @@
+{
+  "benchmark_change_percent": {
+    "Richards": 5.349965583232286,
+    "DeltaBlue": 7.195490225662415,
+    "Crypto": 4.072477649329431,
+    "RayTrace": -0.34416045977858634,
+    "EarleyBoyer": -0.474967309023433,
+    "RegExp": -0.3804391197989254,
+    "Splay": 2.8427347921600843,
+    "SplayLatency": 3.150372083509767,
+    "NavierStokes": 0.5937251863194604,
+    "PdfJS": -6.245140241744229,
+    "Mandreel": -0.31157952508144016,
+    "MandreelLatency": -1.8415143802278044,
+    "Gameboy": -0.19939995533688748,
+    "CodeLoad": -2.35090852423947,
+    "Box2D": 0.27352040138295397,
+    "zlib": -6.328856571668673,
+    "Typescript": -18.425534912865615,
+    "Score (version 9)": -0.962193166401315
+  },
+  "baseline": {
+    "scores": [
+      6286,
+      6467,
+      6506
+    ],
+    "score_median": 6467,
+    "cpu_median": 80.09035300000001,
+    "wall_median": 80.38586533395573,
+    "rss_median_bytes": 1573044224
+  },
+  "candidate": {
+    "scores": [
+      6476,
+      6433,
+      6167
+    ],
+    "score_median": 6433,
+    "cpu_median": 79.669576,
+    "wall_median": 79.88321133400314,
+    "rss_median_bytes": 1456898048
+  }
+}

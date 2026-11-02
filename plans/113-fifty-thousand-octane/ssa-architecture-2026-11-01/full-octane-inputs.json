@@ -1,0 +1,30 @@
+{
+  "source": "/Users/rtomasi/cousas/boomkat-jit-experiments/octane-study-20261021/octane",
+  "assembly": "inline load(base_dir + filename) in run.js, preserving all source text and suite configuration",
+  "bundle_sha256": "a52f0e6cce8983293b715f8370edf36f667fe74673aff116a245aca732a973b4",
+  "inputs": {
+    "base.js": "216612c2e7096a02b3e52b57e9cf9351bbaf180d60938d5c60b85fd756232733",
+    "richards.js": "1246a64a24b931158bf01c24640343259fa74b0226e73bad630bd1f686aa0fa7",
+    "deltablue.js": "6c4784e82f3e8f5c18306d289653d08b17b38838f1bac16b38611d7318fa5a36",
+    "crypto.js": "b01b6b3fe534327fdef05131162927bc5508f100a3208e185d0c5a4efb200a39",
+    "raytrace.js": "64b8ff90969966dd69659100e28754976dfc3e9a4f8ee55b9232f974c66ed08c",
+    "earley-boyer.js": "8dd28a505f7e705642f86816232b012fd3c770ec8afc9f719ce89ce772dab347",
+    "regexp.js": "a292d6047900c5296ea9e2628453832cc3bfe397e49fddade8aff7b5876c8263",
+    "splay.js": "f9a6a60d8f205908f5542ad1180abc1902dcdab3dcb4278017c5ce179ee123f7",
+    "navier-stokes.js": "27926de809451c60b0c49a4185c08f97081310d0db166a30c1d202fb656556a2",
+    "pdfjs.js": "ced89e66a178a4b63a69ea33fc6f47d405bf9bd379817be25f060a4b2dcce351",
+    "mandreel.js": "fc4a9516e8899bb33df63a69db30797959a138d33233e9fb1ccc57cb91dcd164",
+    "gbemu-part1.js": "67ae8c639b7acc5ebbcf0995c8b68821251a629f72c604e74cae8526c8e85965",
+    "gbemu-part2.js": "acd923e085cf70fce8a15b1420d1fa489bd8315e4a8c066775aeaa7104e609d3",
+    "code-load.js": "32fd38d49bb8794b40e947c70c0c51276bfc2588833a8451a25b1b2bfccad96c",
+    "box2d.js": "83b10c280f004e7b156a9e04d09ce4109892ea92788f7c6c963f7fadf29c7bd4",
+    "zlib.js": "d8c4bca32e84b38f573d3ee50a38b194afc9fb4e2f79754d952524bff01a898c",
+    "zlib-data.js": "b8d093321289574f36116e933e2b3b211bb98df9fe3e761ffb1be550d0e82aed",
+    "typescript.js": "fbc5ec16d9c60b1bdcca7e7b9f66fba2fe46c0e04da64088203052e47922ff21",
+    "typescript-input.js": "e23d2fe7b3df9dc069c720ab3fb112006c235d0eb416556ecde7c3a2766a0396",
+    "typescript-compiler.js": "9e99fe0ddfe48a2462eca622ade1e1ddd13bf49f8e461a6c53463bbbc1d5363a",
+    "run.js": "b4b10b05e3ccefd6f49d57763ec67ef746c3e7c093ed0fdd602c7f126af5c12f"
+  },
+  "shell_compatibility": "Define read(path) throwing unexpected shell read; zlib shell setup references it but complete suite never calls it. Same compatibility shim as original study.py.",
+  "source_checkout_head": "570ad1ccfe86e3eecba0636c8f932ac08edec517"
+}

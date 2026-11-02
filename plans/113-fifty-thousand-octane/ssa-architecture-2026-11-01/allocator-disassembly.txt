@@ -1,0 +1,67 @@
+CFG allocator native evidence, 2026-11-01
+
+Both binaries built from the coordinated SSA source after staged edge copies
+and before external CALL reentry roots, with SLJIT_STATS + SLJIT_MAP. Control
+alone defines SLJIT_NO_CFG_ALLOCATION. All diagnostics excluded from timing;
+no performance timing claim is made.
+
+Control SHA256 00e970d0af47a53509c025aea1bccbc72504651f563c38035197a589d3c9e458
+CFG SHA256     cc11b2427ef342a35d07d7ba8d9e3a90afc10639e136433a0e1ba9fd00288e0f
+
+Commands: c3c -D SLJIT_STATS -D SLJIT_MAP [-D SLJIT_NO_CFG_ALLOCATION]
+  build boomkat --build-dir /tmp/bk-cfg-alloc-map-{linear,cfg}-obj
+  --output-dir /tmp/bk-cfg-alloc-map-{linear,cfg}
+
+Native bytes captured by LLDB callbacks at sljit_generate_code return and
+sljit_shim_code_size return, before code retirement, using
+/tmp/bk_cfg_capture.py. Run under LLDB:
+  command script import /tmp/bk_cfg_capture.py
+  script bk_cfg_capture.setup(lldb.debugger,"/tmp/bk-cfg-alloc-native-{variant}")
+  process launch --stdout <dir>/stdout.log --stderr <dir>/stderr.log --
+    --jit --stats --script bench/mini/navier-stokes.js
+
+Native generation #26 is lin_solve pc34..68 (function line557), the cyclic
+region including the inner loop. See manifests and the following SLJIT loop
+compiled line in each stderr.log. Both runs record 1,023 native SSA iterations
+for this region before its existing budget/continuation fallback.
+
+                         linear       CFG
+SSA values               64           64
+joins                    1            1
+spill slots              25           20
+complete native bytes    7,708        7,696
+static ARM64 words       1,927        1,924
+static load/store ops    639          592
+inner-loop words         162          159
+inner-loop load/store    58           47
+outer-region words       377          374
+outer-region load/store  107          93
+
+Inner loop range: offset0x3bc through backedge0x640(linear)/0x634(CFG).
+Outer region: offset0x128 through backedge0x708(linear)/0x6fc(CFG).
+Counts are static instruction ranges, not sampled dynamic CPU shares. Each LDP/STP
+pair instruction counts as one ARM64 instruction. Cold recovery stubs are included
+only in complete-native totals, not in these loop ranges.
+
+Example actual hot work: linear0x3e8 adds w0,w23,#1;0x3f4 stores x0 to a spill;
+0x3f8 reloads it for the array index. CFG0x3e8 adds w4,w22,#1, sign extends
+in x4, then moves x4 directly to x1 for the index. Other spills/reloads also
+become register moves, so byte count reduction alone understates memory work.
+
+Raw files:
+/tmp/bk-cfg-alloc-native-linear/native-026-7708.{asm,bin}
+/tmp/bk-cfg-alloc-native-cfg/native-026-7696.{asm,bin}
+/tmp/bk-cfg-alloc-native-{linear,cfg}/manifest.json
+/tmp/bk-cfg-alloc-native-{linear,cfg}/{stdout,stderr}.log
+/tmp/bk-cfg-alloc-native-diff.txt (normalized local address diff)
+
+Focused validation before external-root adaptation:
+9 fixture interpreter/JIT comparisons pass. New fixture's dedicated drivers
+complete 2,831--2,932 frameless cyclic calls in each of four bodies under both
+allocation variants, with identical checksum4585312.5. Its corresponding spill
+counts fall26->14,20->10,19->11,31->21 for identical graph sizes. Node agrees.
+
+The allocator subsequently received the narrow required external-root change:
+record every SsaJoin.entry root instead of only block0, and use that block's
+begin PC for conservative entry recovery. Final parent build/review must cover
+that change with the new CALL reentry graph metadata.

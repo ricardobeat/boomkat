@@ -1,0 +1,86 @@
+Recoverable SSA liveness: hot traffic versus recovery-code footprint
+
+Artifacts (AArch64, offsets relative to each captured native base):
+  Before: /tmp/bk-reviewed-native/native-011-16552.asm
+          base 0x1002ffca8, 16552 bytes, 201 values, 98 spill slots.
+  After:  /tmp/bk-recovery-live-native/native-011-12704.asm
+          base 0x100300bb0, 12704 bytes, 199 values, 77 spill slots.
+Both are the same full 79-bytecode isolated advect function, 39 VM registers.
+
+HOT INNER ITERATION
+Count one successful, unclamped, non-final inner iteration, including the
+continuing taken loop backedge and phi imports. Assumptions: finite numeric
+array values, positive valid integral indices, integer width/rowSize captures,
+x/y within [0.5, bound], sufficient budget, and i remains <= width. This is
+a static walk of an executable steady-state path, not a dynamic profile or
+an average over clamp/final/guard-failure paths.
+
+Before path: 0964 through 1114, where branch returns to 0964.
+After path:  094c through 105c, where branch returns to 094c.
+
+                                 Before    After    Change
+SSA spill loads                      70       49       -21
+SSA spill stores                     53       35       -18
+Total spill memory instructions     123       84       -39 (-31.7%)
+Array loads/stores                  7/1      7/1      unchanged
+Other LoopState/descriptor loads      12       12      unchanged
+Total scalar instructions            470      431       -39 (-8.3%)
+
+Count classification: ldr/str with base x19 and offset >=0x3a0 are native
+SSA spill accesses (LoopState.ssa_spill starts at 0x3a0; ssa_edge at 0x7a0).
+Lower x19 offsets are VM state/descriptors; [x2] accesses are array traffic.
+The selected path uses no stack spills. Counts include phi destination
+spill writes/imports, which execute each iteration, and exclude recovery
+publication stubs. The seven array loads include the old-destination value
+check before the one array store.
+
+Breakdown of the selected path's spill loads/stores:
+  Compute/store core: before 0964..0fdc = 55 loads / 41 stores;
+                      after 094c..0f4c = 36 loads / 25 stores.
+  Phi writes:         before 0fe0..1054 = 3 loads / 11 stores;
+                      after 0f50..0fa0 = 2 loads / 9 stores.
+  Loop condition:     before 1058..10b8 = 2 loads / 1 store;
+                      after 0fa4..1004 = 2 loads / 1 store.
+  Backedge imports:   before 10bc..1114 = 10 loads / 0 stores;
+                      after 1008..105c = 9 loads / 0 stores.
+
+Representative removal: before 0a38/0a44 and 0a4c plus later y reloads
+spill the velocity product and y coordinate into 0x560/0x568; after
+0a1c..0a28 they remain in d7/d17. More intermediates remain in FP homes
+through interpolation; the final retained result also uses fewer spill pairs.
+
+RECOVERY PUBLICATION AND CODE SIZE (counted separately)
+Contiguous code partitions, using exclusive upper offsets:
+                                      Before          After        Reduction
+Entry/prologue/entry bailout      0000..075c 1884  0000..075c 1884        0
+Compute/control body             075c..1254 2808  075c..119c 2624      184
+Pending CALL publication          1254..1364  272  119c..11dc   64      208
+RET publication                   1364..1394   48  11dc..120c   48        0
+Out-of-line recovery stubs        1394..40a8 11540 120c..31a0 8084     3456
+Total                                       16552             12704    3848
+
+The out-of-line recovery region has 24 return-ending stubs in both captures.
+Its static VM-slot stores fall 444 -> 327 and spill reloads 207 -> 94.
+These counts sum emitted instructions across all stubs, not operations per
+iteration: an exit executes only its selected stub. Pending CALL publication
+falls from 14 -> 2 VM-slot stores and 10 -> 1 spill reload; this cost occurs
+at the pending call, not each grid cell. The RET publication remains empty
+apart from metadata/return because RETUNDEF has no semantic register inputs.
+Thus 3456/3848 = 89.8% of total code-size savings are cold stub footprint;
+the hot-path traffic reduction is independently established above. Code size
+alone would overstate the reduction in repeatedly executed instructions.
+
+METHOD / REPRODUCIBILITY
+Lightweight text-only parser/walker: /tmp/bk-count-recovery-native.py.
+Full selected spill-instruction listings: /tmp/bk-recovery-native-path-counts.txt.
+The walker follows direct branches, successful in-body exact-conversion and
+normal-number branches, unclamped coordinate branches, integer capture decode,
+and the continuing inner backedge; it rejects any path entering cold stubs.
+No engine process, benchmark, build, profiler, or source edit was run here.
+
+ACTIVATION CHECK (pre-existing capture stdout logs)
+Both captures report: isolated advect PASS; 40 SSA hits, 1 RET completion,
+0 entry misses, 39 body handoffs, 7878 charged native edges, 10 budget exits.
+Coverage therefore did not fall to produce the smaller native code. This
+mechanism evidence is not a claim of an equivalent end-to-end speedup;
+matched timing remains the performance gate.

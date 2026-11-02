@@ -1,0 +1,48 @@
+Reviewed corrected advect native code (AArch64)
+
+Artifact: /tmp/bk-reviewed-native/native-011-16552.asm / .bin.
+Manifest entry 11: native base 0x1002ffca8, size 16552 bytes; recoverable
+advect, 79 bytecodes, 39 VM registers, 201 SSA values, 8 joins, 98 spills.
+All instruction addresses below are byte offsets from that native base.
+Bytecode reference: /tmp/bk-reviewed-advect-bytecode.txt, inner function 0.1.
+
+Producer -> cyclic phi/spill -> comparison:
+* Bytecodes 4..6 produce r8 = width + 0.5 (Wp5); 7..9 produce
+  r9 = height + 0.5 (Hp5). Native 07dc..07e0 loads the exact 0.5
+  double (0x3fe0000000000000); 0818 fadd d16,d6,d3 and 0850
+  fadd d17,d6,d3 produce the two double bounds.
+* Initial outer-edge copies at 0888..0894 store d16/d17 as doubles
+  to [x19+0x418] / [x19+0x420]. The outer backedge imports them at
+  1238..1244 with ldr d0 / fmov d4,d0 and ldr d0 / fmov d5,d0.
+* The inner-header edge stores the bounds as doubles at 0930..093c
+  to [x19+0x3c8] / [x19+0x3d0]. The continuing inner edge repeats
+  these F64 stores at 1010..101c and imports at 10ec..10f8 into
+  d4/d5. Moving to the next outer iteration uses F64 ldr/str at
+  1158..1164 to copy those slots back to 0x418 / 0x420.
+* Bytecode 27 compares x against r8. Native 0a80 fmov d0,d17;
+  0a84 fmov d1,d4; 0a88 fcmp d0,d1; 0a8c b.le selects the
+  unclamped result. The upper clamp copies the exact bound with
+  0a9c fmov d6,d4. Bytecode 35 is the y/r9 comparison: 0b20
+  ldr d0,[x19+0x568]; 0b24 fmov d1,d5; 0b28 fcmp d0,d1;
+  0b2c b.le; the clamp uses 0b40 fmov d7,d5.
+* External-frame imports also preserve the bounds: r8/r9 saved ARG
+  slots 0x468/0x470 are decoded at 02ec..0358. Already-double
+  values use fmov d0,x0 at 031c/0354, staging via F64 str at
+  0320/0358 and F64 ldr/fmov at 0428..0434. Tagged integers use
+  scvtf (integer-to-double), not double-to-integer conversion.
+
+There is no fcvtzs/fcvt narrowing on these bound-producing, phi-transfer,
+external-import, or upper-comparison paths. The fcvtzs instructions at
+0acc and 0b70 belong to the deliberate JavaScript x|0 and y|0 operations
+(bytecodes 29 and 37); they convert clamped coordinates to array indices,
+not the fractional bounds. Other fcvtzs instructions implement checked
+integer counters/indices and are not evidence of bound narrowing.
+
+Execution evidence from the same capture's stdout.log:
+* isolated advect PASS (30 rounds, including input alias cases).
+* advect SSA: 40 hits, 1 RET completion, 0 entry misses, 39 body
+  handoffs (29 CALL_VAR handoffs + 10 budget polls).
+* Function-run counters: 7,878 charged native edges, 10 budget exits.
+The separate real 16-frame Navier run also passes its checksum:
+/tmp/bk-phi-navier-stats.out reports advect 868 SSA hits, 48 completed,
+0 entry misses, 791,742 charged edges, and 772 budget exits.

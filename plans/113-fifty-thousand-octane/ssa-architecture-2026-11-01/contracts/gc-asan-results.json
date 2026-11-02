@@ -1,0 +1,72 @@
+[
+  {
+    "fixture": "test/jit_ssa_helper_continuations.js",
+    "mode": "--jit",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_helper_continuations--jit.log"
+  },
+  {
+    "fixture": "test/jit_ssa_helper_continuations.js",
+    "mode": "--jit-stress",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_helper_continuations--jit-stress.log"
+  },
+  {
+    "fixture": "test/jit_ssa_effect_recovery.js",
+    "mode": "--jit",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_effect_recovery--jit.log"
+  },
+  {
+    "fixture": "test/jit_ssa_effect_recovery.js",
+    "mode": "--jit-stress",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_effect_recovery--jit-stress.log"
+  },
+  {
+    "fixture": "test/jit_ssa_optimization.js",
+    "mode": "--jit",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_optimization--jit.log"
+  },
+  {
+    "fixture": "test/jit_ssa_optimization.js",
+    "mode": "--jit-stress",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_optimization--jit-stress.log"
+  },
+  {
+    "fixture": "test/jit_ssa_loop_recovery.js",
+    "mode": "--jit",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_loop_recovery--jit.log"
+  },
+  {
+    "fixture": "test/jit_ssa_loop_recovery.js",
+    "mode": "--jit-stress",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_loop_recovery--jit-stress.log"
+  },
+  {
+    "fixture": "test/jit_ssa_nested_store_budget.js",
+    "mode": "--jit",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_nested_store_budget--jit.log"
+  },
+  {
+    "fixture": "test/jit_ssa_nested_store_budget.js",
+    "mode": "--jit-stress",
+    "rc": 0,
+    "ok": true,
+    "log": "/tmp/bk-architecture-gc-asan-logs/jit_ssa_nested_store_budget--jit-stress.log"
+  }
+]

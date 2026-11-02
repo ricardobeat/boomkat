@@ -1,0 +1,70 @@
+{
+  "binary": "/tmp/bk-final-x64-release/boomkat",
+  "sha256": "5b790bdc83039efd54d6d175988949f4d44ee7286d59503b4db072bd902add53",
+  "build_command": "c3c --target macos-x64 --cc /tmp/bk-scratch-clang-x64 build boomkat --build-dir /tmp/bk-final-x64-release-obj --output-dir /tmp/bk-final-x64-release",
+  "checks": [
+    {
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "JIT effect recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "JIT effect recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_loop_recovery.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "JIT cyclic loop recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_loop_recovery.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "JIT cyclic loop recovery: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_nested_store_budget.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "JIT nested store budget: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_nested_store_budget.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "JIT nested store budget: PASS\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_cfg_allocation.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "test/jit_ssa_cfg_allocation.js",
+      "mode": "--jit-stress",
+      "exit": 0,
+      "stdout": "SSA CFG allocation: PASS 4585312.5\n",
+      "stderr": ""
+    },
+    {
+      "fixture": "/tmp/bk-navier-checksum.js",
+      "mode": "--jit",
+      "exit": 0,
+      "stdout": "Navier 16-frame checksum: PASS\n",
+      "stderr": ""
+    }
+  ]
+}

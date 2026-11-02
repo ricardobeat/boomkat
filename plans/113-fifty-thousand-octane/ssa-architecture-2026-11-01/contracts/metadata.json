@@ -1,0 +1,11 @@
+{
+  "source": "rat ca19f90c",
+  "features": [
+    "SLJIT_STATS"
+  ],
+  "binary_sha256": "9e94f71326679c7eeb1c37a112e44fa580b723dc6debc978e22ba66de63dcac8",
+  "fixture_sha256": "f4260506a26f9736bd18d669245a877a460c80fc518a6e533dea79ec9add98f0",
+  "native_bytes": 5292,
+  "native_address": "0x1049e8010",
+  "note": "Mechanism evidence, not a throughput benchmark. ASAN results precede the pure integer-analysis scratch fix; the 50-fixture differential follows it. Later generic-step and edge-phase fixes require fresh validation."
+}

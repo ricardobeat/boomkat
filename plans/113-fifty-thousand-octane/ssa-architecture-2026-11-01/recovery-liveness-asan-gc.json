@@ -1,0 +1,78 @@
+{
+  "build": [
+    "c3c",
+    "build",
+    "boomkat",
+    "--sanitize=address",
+    "-D",
+    "GC_STRESS",
+    "-D",
+    "GC_VERIFY",
+    "-D",
+    "POOL_BYPASS",
+    "--build-dir",
+    "/tmp/bk-cfg-gc-asan-build",
+    "--output-dir",
+    "/tmp/bk-cfg-gc-asan"
+  ],
+  "ASAN_OPTIONS": "detect_leaks=0",
+  "binary": "/tmp/bk-cfg-gc-asan/boomkat",
+  "sha256": "7d1ad86965eb5f514cd575bed458981dd6dc78bde1853b546bcf8a6ecd36fb31",
+  "head": "1a50864f6cb108ad59b22e09f5921d778ac697f1",
+  "results": [
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_ssa_fractional_bounds.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_native_calls.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/capture_refs_frames.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_ssa_fractional_bounds.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_native_calls.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/capture_refs_frames.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "/tmp/bk-navier-checksum.js",
+      "returncode": 0,
+      "pass": true
+    }
+  ]
+}

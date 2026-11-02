@@ -1,0 +1,61 @@
+[
+  {
+    "index": 0,
+    "native": "0x1049e8010",
+    "size": 5292,
+    "path": "/tmp/bk-architecture-helper-native-ca19/native-000-5292",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=5 values=60 reused=2",
+      "SLJIT cyclic allocation line=3 values=60 joins=4 spills=11 cfg=1"
+    ]
+  },
+  {
+    "index": 1,
+    "native": "0x1049f6948",
+    "size": 5740,
+    "path": "/tmp/bk-architecture-helper-native-ca19/native-001-5740",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=5 values=60 reused=2",
+      "SLJIT cyclic allocation line=3 values=60 joins=4 spills=11 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=16 bytes=5292"
+    ]
+  },
+  {
+    "index": 2,
+    "native": "0x1049f6180",
+    "size": 1972,
+    "path": "/tmp/bk-architecture-helper-native-ca19/native-002-1972",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=5 values=60 reused=2",
+      "SLJIT cyclic allocation line=3 values=60 joins=4 spills=11 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=16 bytes=5292",
+      "SLJIT function compiled nativeHelper pc=0..17 function_ops=17 regs=11 code_bytes=11032 plan_bytes=15241"
+    ]
+  },
+  {
+    "index": 3,
+    "native": "0x1049f6128",
+    "size": 56,
+    "path": "/tmp/bk-architecture-helper-native-ca19/native-003-56",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=5 values=60 reused=2",
+      "SLJIT cyclic allocation line=3 values=60 joins=4 spills=11 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=16 bytes=5292",
+      "SLJIT function compiled nativeHelper pc=0..17 function_ops=17 regs=11 code_bytes=11032 plan_bytes=15241",
+      "SLJIT function compiled callback pc=0..3 function_ops=3 regs=3 code_bytes=1972 plan_bytes=15115"
+    ]
+  },
+  {
+    "index": 4,
+    "native": "0x1049f3e70",
+    "size": 8796,
+    "path": "/tmp/bk-architecture-helper-native-ca19/native-004-8796",
+    "recent_stderr": [
+      "SLJIT SSA CSE line=3 blocks=5 values=60 reused=2",
+      "SLJIT cyclic allocation line=3 values=60 joins=4 spills=11 cfg=1",
+      "SLJIT recoverable SSA line=3 begin=0 end=16 bytes=5292",
+      "SLJIT function compiled nativeHelper pc=0..17 function_ops=17 regs=11 code_bytes=11032 plan_bytes=15241",
+      "SLJIT function compiled callback pc=0..3 function_ops=3 regs=3 code_bytes=1972 plan_bytes=15115"
+    ]
+  }
+]

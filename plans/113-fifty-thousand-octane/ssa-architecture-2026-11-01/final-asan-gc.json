@@ -1,0 +1,114 @@
+{
+  "flags": [
+    "c3c",
+    "build",
+    "boomkat",
+    "--sanitize=address",
+    "-D",
+    "GC_STRESS",
+    "-D",
+    "GC_VERIFY",
+    "-D",
+    "POOL_BYPASS"
+  ],
+  "ASAN_OPTIONS": "detect_leaks=0",
+  "sha256": "6c4fcead26377a9675d5f35ca283c3e9fba82b78bfb867eed6c09504908b1071",
+  "results": [
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_ssa_loop_recovery.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_ssa_cyclic_effects.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_ssa_fractional_bounds.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_ssa_nested_store_budget.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/capture_refs_frames.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "test/jit_native_calls.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit",
+      "fixture": "/tmp/bk-navier-checksum.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_ssa_loop_recovery.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_ssa_effect_recovery.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_ssa_cyclic_effects.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_ssa_fractional_bounds.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_ssa_nested_store_budget.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/capture_refs_frames.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "test/jit_native_calls.js",
+      "returncode": 0,
+      "pass": true
+    },
+    {
+      "mode": "--jit-stress",
+      "fixture": "/tmp/bk-navier-checksum.js",
+      "returncode": 0,
+      "pass": true
+    }
+  ]
+}
