@@ -411,3 +411,23 @@ fn void Parser.destroy(&self) {
     self.ts_param_props.free();
     self.ts_scope_names.free();
 }
+
+// Return to the state `saved` and `lex` hold, taken before a speculative parse.
+// The parser's lists keep the buffers they have now, which the speculation may
+// have reallocated: only their lengths go back.
+fn void Parser.rewind(&self, Parser* saved, Lexer* lex) {
+    *self.lex = *lex;
+    Vec{uint} scratch = self.scratch;
+    Vec{uint} exports = self.ts_exports;
+    Vec{uint} param_props = self.ts_param_props;
+    Vec{uint} scope_names = self.ts_scope_names;
+    *self = *saved;
+    scratch.len = saved.scratch.len;
+    exports.len = saved.ts_exports.len;
+    param_props.len = saved.ts_param_props.len;
+    scope_names.len = saved.ts_scope_names.len;
+    self.scratch = scratch;
+    self.ts_exports = exports;
+    self.ts_param_props = param_props;
+    self.ts_scope_names = scope_names;
+}

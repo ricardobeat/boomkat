@@ -241,8 +241,7 @@ fn bool Parser.ts_type_arguments(&self) {
             || self.tok.type == TokenType.SEMICOLON || self.tok.type == TokenType.RPAREN
             || self.tok.type == TokenType.COMMA || self.tok.type == TokenType.LBRACE) return true;
     }
-    *self.lex = lexer_saved;
-    *self = saved;
+    self.rewind(&saved, &lexer_saved);
     return false;
 }
 
@@ -494,8 +493,7 @@ fn uint? Parser.ts_statement(&self, uint pos, bool top_level) {
                 uint decl = self.ts_enum(pos, &name)!;
                 return self.ts_export(pos, decl, name);
             }
-            *self.lex = lexer_saved;
-            *self = saved;
+            self.rewind(&saved, &lexer_saved);
         }
     }
     return 0;
@@ -533,8 +531,7 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
             self.next()!;
             self.next()!;
             if (self.at_word("interface")) return self.ts_erase_statement(in_namespace);
-            *self.lex = lexer_saved;
-            *self = saved;
+            self.rewind(&saved, &lexer_saved);
         }
         if (self.is_word(next, "type") || self.is_word(next, "interface")
             || self.is_word(next, "declare") || self.is_word(next, "namespace")) {
@@ -658,8 +655,7 @@ fn bool Parser.ts_index_signature(&self) {
     Parser saved = *self;
     Lexer lexer_saved = *self.lex;
     if (try self.ts_read_index_signature()) return true;
-    *self.lex = lexer_saved;
-    *self = saved;
+    self.rewind(&saved, &lexer_saved);
     return false;
 }
 
@@ -681,8 +677,7 @@ fn void Parser.ts_arrow_return_annotation(&self) {
     if (try self.ts_annotation()) {
         if (self.tok.type == TokenType.ARROW) return;
     }
-    *self.lex = lexer_saved;
-    *self = saved;
+    self.rewind(&saved, &lexer_saved);
 }
 
 fn void? Parser.ts_class_modifiers(&self) {
