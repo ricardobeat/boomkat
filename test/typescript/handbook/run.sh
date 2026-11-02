@@ -1,6 +1,6 @@
 #!/bin/bash
 # TypeScript handbook syntax corpus: small, doc-organized .ts files, one TS
-# feature area per file, covering the erasable subset the engine accepts.
+# feature area per file, covering the TypeScript 7 syntax the engine accepts.
 #
 # Each accept file (tNN_*.ts) is executed under node, whose native type
 # transformation is the reference runtime, and the engine must match that stdout
