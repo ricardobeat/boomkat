@@ -3,9 +3,18 @@ module boomkat::vm;
 import boomkat::jit;
 import boomkat::types;
 
-// All caller-clobbered homes have stable, representation-preserving storage.
-// Callee-saved homes use the same contract, so target ABI details cannot leak
-// into graph allocation. Reserved emitter temporaries are never value homes.
+// SLJIT numbers each register class with its ABI-saved range at the end.
+// Spills live in invocation-owned memory, and rematerialized values have no
+// mutable home. Neither needs preservation across an ordinary C ABI call.
+fn bool ssa_helper_clobbered(SsaValue value) @feat(SLJIT) {
+    if (ssa_rematerialized(value) || value.home == 0) return false;
+    int total = jit::sljit_shim_info(value.rep == F64 ? 2 : 0);
+    int saved = jit::sljit_shim_info(value.rep == F64 ? 3 : 1);
+    return value.home <= total - saved;
+}
+
+// Roots need a typed bits copy even when the physical home survives the call.
+// Reserved emitter temporaries are never allocated value homes.
 fn void SsaEmitter.helper_save(&self, uint value) @feat(SLJIT) {
     if (ssa_rematerialized(self.g.values[value])) return;
     int r0 = jit::reg_r(0);
@@ -32,6 +41,27 @@ fn void SsaEmitter.helper_restore(&self, uint value) @feat(SLJIT) {
     } else { self.store_gpr((int)value, r0); }
 }
 
+fn void SsaEmitter.helper_save_values(&self, SsaHelperSite* site) @feat(SLJIT) {
+    foreach (id : site.live_values[:site.live_count]) {
+        if (ssa_helper_clobbered(self.g.values[id])) self.helper_save(id);
+    }
+    // Both frozen maps contain ascending canonical SSA IDs. Merge them so a
+    // boxed caller-clobbered value needed after the call is materialized once.
+    uint live;
+    foreach (id : site.root_values[:site.root_count]) {
+        while (live < site.live_count && site.live_values[live] < id) live++;
+        bool saved = live < site.live_count && site.live_values[live] == id
+            && ssa_helper_clobbered(self.g.values[id]);
+        if (!saved) self.helper_save(id);
+    }
+}
+
+fn void SsaEmitter.helper_restore_values(&self, SsaHelperSite* site) @feat(SLJIT) {
+    foreach (id : site.live_values[:site.live_count]) {
+        if (ssa_helper_clobbered(self.g.values[id])) self.helper_restore(id);
+    }
+}
+
 fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     SsaHelperSite* site = self.g.values[value].helper;
     if (site == null) { self.e.failed = true; return; }
@@ -41,8 +71,7 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
         self.publish_id(site.before_frame, site.pc);
         return;
     }
-    foreach (id : site.live_values[:site.live_count]) self.helper_save(id);
-    foreach (id : site.root_values[:site.root_count]) self.helper_save(id);
+    self.helper_save_values(site);
     int r0 = jit::reg_r(0);
     int r1 = jit::reg_r(1);
     int r2 = jit::reg_r(2);
@@ -69,7 +98,9 @@ fn void SsaEmitter.helper(&self, uint value) @feat(SLJIT) {
     self.e.mov(r0, 0, mem | self.state, $reflect(LoopState.resume_pc).offset, jit::SLJIT_MOV_U32);
     if (jit::sljit_emit_return(self.e.compiler, jit::SLJIT_MOV, r0, 0) != 0) self.e.failed = true;
     self.e.bind(complete);
-    foreach (id : site.live_values[:site.live_count]) self.helper_restore(id);
+    // A routed native callee shares the invocation's progress budget.
+    self.e.mov(self.budget, 0, mem | self.state, $reflect(LoopState.budget).offset);
+    self.helper_restore_values(site);
     // Descriptor caches are invocation-local but helpers can grow/detach their
     // backing stores. Read the freshly validated descriptors after completion.
     for (uint memory = 0; memory < 2; memory++) {
