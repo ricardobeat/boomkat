@@ -624,6 +624,22 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
     return false;
 }
 
+// TypeScript 7 rejects an `assert` key in the options of `import()` (TS2880):
+// import attributes go under `with`. JavaScript only ignores such a key.
+fn void? Parser.ts_reject_import_assert(&self, uint opts) {
+    if (self.ast.tags.data[opts] != NodeTag.OBJECT) return;
+    uint list = self.ast.lhs.data[opts];
+    for (uint i = 0; i < self.ast.list_len(list); i++) {
+        uint prop = self.ast.list_item(list, i);
+        if (self.ast.tags.data[prop] != NodeTag.PROP_INIT || (self.ast.flags.data[prop] & PROP_COMPUTED) != 0) continue;
+        uint key = self.ast.lhs.data[prop];
+        if (self.ast.tags.data[key] != NodeTag.STRING) continue;
+        if ((String)self.ast.atoms.get(self.ast.lhs.data[key]) == "assert") {
+            return self.fail_at(self.ast.main_tok.data[key], IMPORT_ASSERT_REMOVED)~;
+        }
+    }
+}
+
 // Skip a type-only import or export. The names a type-only import binds are
 // recorded, so that an `export { A }` of one is dropped like the export of
 // any other type: `import type { A, B as C }`, `import type D from` and

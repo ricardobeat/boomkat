@@ -4,6 +4,8 @@ module boomkat::ast;
 import boomkat::features;
 import boomkat::lexer;
 
+const String IMPORT_ASSERT_REMOVED = "import assertions were replaced by import attributes: use 'with' instead of 'assert'";
+
 // The module request after `from`: a string literal and an optional `with { key: "value" }` clause.
 // Returns the request record.
 fn uint? Parser.module_request(&self) {
@@ -11,6 +13,12 @@ fn uint? Parser.module_request(&self) {
     if (self.tok.type != TokenType.STRING || self.tok.is_template) return self.unexpected()~;
     uint src = self.atom(self.tok.str_value);
     self.next()!;
+    // Import assertions, `assert { type: "json" }`, left the language for
+    // import attributes; TypeScript 7 rejects them too (TS2880). On a line of
+    // its own, `assert` starts the next statement.
+    if (self.at_word("assert") && !self.tok.nl_before && self.peek_type() == TokenType.LBRACE) {
+        return self.fail(IMPORT_ASSERT_REMOVED)~;
+    }
     uint attrs = 0;
     if (self.tok.type == TokenType.WITH) {
         self.next()!;
