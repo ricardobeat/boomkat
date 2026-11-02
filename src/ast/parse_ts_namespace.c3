@@ -6,16 +6,17 @@ module boomkat::ast @feat(!NO_TYPESCRIPT);
 import boomkat::lexer;
 
 // Whether a `namespace` or `module` here starts a namespace with a name,
-// rather than an ambient module declaration.
+// rather than an identifier or an ambient module declaration.
 fn bool Parser.ts_namespace_ahead(&self) {
     if (!self.lex.ts_mode) return false;
-    if (self.at_word("namespace")) return true;
-    if (!self.at_word("module")) return false;
-    // `module "name" { }` is an ambient module declaration.
+    if (!self.at_word("namespace") && !self.at_word("module")) return false;
+    // The name of a namespace stands on the same line as the keyword: a
+    // `namespace` on a line of its own is an identifier, and the line break
+    // ends the statement.
     Token first = self.tok;
     bool named = false;
     if (catch err_a = self.next()) return false;
-    named = self.tok.type == TokenType.IDENTIFIER;
+    named = self.tok.type == TokenType.IDENTIFIER && !self.tok.nl_before;
     self.lex.seek_to_token(first);
     self.has_peek = false;
     self.peek_failed = false;
@@ -23,6 +24,23 @@ fn bool Parser.ts_namespace_ahead(&self) {
     self.prev = first;
     if (catch err_c = self.next()) return false;
     return named;
+}
+
+// Whether an ambient module declaration, `module "name" { ... }`, starts here.
+fn bool Parser.ts_ambient_module_ahead(&self) {
+    if (!self.lex.ts_mode) return false;
+    if (!self.at_word("module")) return false;
+    Token first = self.tok;
+    bool ambient = false;
+    if (catch err_a = self.next()) return false;
+    ambient = self.tok.type == TokenType.STRING && !self.tok.nl_before;
+    self.lex.seek_to_token(first);
+    self.has_peek = false;
+    self.peek_failed = false;
+    self.tok = first;
+    self.prev = first;
+    if (catch err_c = self.next()) return false;
+    return ambient;
 }
 
 // `namespace N { ... }` and `export namespace N { ... }`, desugared into the
@@ -40,39 +58,70 @@ fn uint? Parser.ts_namespace(&self, uint pos, uint* name) {
         self.next()!;
         if (!(self.eat(TokenType.DOT)!)) break;
     }
+    // A namespace that shares its name with a class or a function merges with
+    // it: it fills that binding instead of declaring a variable of its own.
+    bool merged = self.ts_merged_name(parts[0]);
     self.expect(TokenType.LBRACE)!;
-    uint body = self.node(NodeTag.BLOCK, pos, self.ts_namespace_body(parts[count - 1], pos)!);
+    uint param;
+    uint body = self.node(NodeTag.BLOCK, pos, self.ts_namespace_body(parts[count - 1], pos, &param)!);
     self.expect(TokenType.RBRACE)!;
 
     // The inner namespaces come first: each one is declared in the namespace
     // that holds it and put on that namespace's object.
-    uint decl = self.ts_object_var(parts[count - 1], body, pos);
+    uint decl = self.ts_object_var(parts[count - 1], param, body, pos);
     for (uint i = count - 1; i > 0; i--) {
         uint saved = self.ns_name;
         self.ns_name = parts[i - 1];
         uint inner = self.ts_namespace_assign(pos, parts[i]);
         self.ns_name = saved;
-        uint outer_body = self.node(NodeTag.BLOCK, pos, self.ast.add_list({ decl, inner }));
-        decl = self.ts_object_var(parts[i - 1], outer_body, pos);
+        uint outer_param = parts[i - 1];
+        uint outer_body = self.node(NodeTag.BLOCK, pos, self.ast.add_list(
+            { decl, inner, self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, outer_param)) }));
+        if (i == 1 && merged) {
+            // The outermost namespace fills the binding the class or the
+            // function of that name made.
+            *name = parts[0];
+            return self.ts_object_merge(parts[0], outer_param, outer_body, pos);
+        }
+        decl = self.ts_object_var(parts[i - 1], outer_param, outer_body, pos);
     }
     *name = parts[0];
+    if (merged) return self.ts_object_merge(parts[0], param, body, pos);
     return decl;
 }
 
 // The body of a namespace: its statements, with every exported member also
-// put on the namespace object.
-fn uint? Parser.ts_namespace_body(&self, uint name, uint pos) {
+// put on the namespace object. The namespace's parameter takes a name of its
+// own, so that a declaration in the body does not redeclare it.
+fn uint? Parser.ts_namespace_body(&self, uint name, uint pos, uint* param) {
     uint saved = self.ns_name;
-    self.ns_name = name;
+    *param = self.ts_ns_param(name);
+    self.ns_name = *param;
     defer self.ns_name = saved;
     uint mark = self.scratch_mark();
+    uint scope = self.ts_scope_push();
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
         self.ts_namespace_statement()!;
     }
     // `return N;` hands the object back, so that the variable can hold it.
-    self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, name)));
+    self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, *param)));
+    self.ts_scope_pop(scope);
     return self.scratch_list(mark);
+}
+
+// The name the parameter of a namespace takes. The IIFE's parameter would be
+// redeclared by a class or a function of the same name in the body, so it
+// takes a name no source text spells. The name lives in the lexer's string
+// arena: atom entries point into it for the rest of the compilation.
+fn uint Parser.ts_ns_param(&self, uint name) {
+    char[128] buf;
+    String text = (String)self.ast.atoms.get(name);
+    usz len = 0;
+    if (len + 1 < buf.len) buf[len++] = ' ';
+    for (usz i = 0; i < text.len && len + 1 < buf.len; i++) buf[len++] = text[i];
+    char[] stable = self.lex.arena_dup(&buf[0], len);
+    return self.atom(stable);
 }
 
 // A statement of a namespace body. An exported member is followed by the
@@ -94,7 +143,7 @@ fn void? Parser.ts_namespace_statement(&self) {
         if (exported) self.scratch_push(self.ts_namespace_assign(pos, name));
         return;
     }
-    if (self.at_word("namespace") || self.at_word("module")) {
+    if (self.ts_namespace_ahead()) {
         uint name;
         uint decl = self.ts_namespace(pos, &name)!;
         self.scratch_push(decl);
@@ -102,6 +151,7 @@ fn void? Parser.ts_namespace_statement(&self) {
         return;
     }
     if (self.ts_import_equals_ahead()) {
+        self.next()!;
         uint decl = self.ts_import_equals(pos)!;
         self.scratch_push(decl);
         if (exported) self.ts_namespace_exports(decl);
@@ -109,6 +159,7 @@ fn void? Parser.ts_namespace_statement(&self) {
     }
     uint decl = self.statement_list_item_in_block()!;
     self.scratch_push(decl);
+    self.ts_record_decl(decl);
     if (exported) self.ts_namespace_exports(decl);
 }
 

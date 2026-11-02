@@ -265,12 +265,19 @@ fn uint Parser.ts_param_prop_at(&self, uint list, bool derived) {
 }
 
 // The variable and the immediately invoked function that hold a TypeScript
-// object: `var N = (function (N) { ...; return N; })(N || (N = {}))`. The
+// object: `var N = (function (P) { ...; return P; })(N || (N = {}))`. The
 // argument reuses the object a previous declaration of the same name made,
 // so that an enum and a namespace of that name share it.
-fn uint Parser.ts_object_var(&self, uint name, uint body, uint pos) {
-    uint param = self.node(NodeTag.IDENT, pos, name);
-    uint rec = self.fn_record(FNF_SIMPLE_PARAMS, self.ast.add_list({ param }), body, pos, pos);
+fn uint Parser.ts_object_var(&self, uint name, uint param, uint body, uint pos) {
+    uint call = self.ts_object_call(name, param, body, pos);
+    uint decl = self.node(NodeTag.DECLARATOR, pos, self.node(NodeTag.IDENT, pos, name), call);
+    return self.node(NodeTag.VAR_DECL, pos, self.ast.add_list({ decl }), 0, VAR_KIND_VAR);
+}
+
+// The call that fills a TypeScript object: `(function (P) { ...; return P; })(N || (N = {}))`.
+fn uint Parser.ts_object_call(&self, uint name, uint param, uint body, uint pos) {
+    uint param_node = self.node(NodeTag.IDENT, pos, param);
+    uint rec = self.fn_record(FNF_SIMPLE_PARAMS, self.ast.add_list({ param_node }), body, pos, pos);
     self.ast.set_field(rec, FN_PAREN, pos);
     self.ast.set_field(rec, FN_HEADER_END, pos);
     self.ast.set_field(rec, FN_BODY_START, pos);
@@ -280,9 +287,114 @@ fn uint Parser.ts_object_var(&self, uint name, uint body, uint pos) {
         empty, op_flag(TokenType.ASSIGN));
     uint arg = self.node(NodeTag.LOGICAL, pos, self.node(NodeTag.IDENT, pos, name),
         fallback, op_flag(TokenType.LOG_OR));
-    uint call = self.node(NodeTag.CALL, pos, func, self.ast.add_list({ arg }));
-    uint decl = self.node(NodeTag.DECLARATOR, pos, self.node(NodeTag.IDENT, pos, name), call);
-    return self.node(NodeTag.VAR_DECL, pos, self.ast.add_list({ decl }), 0, VAR_KIND_VAR);
+    return self.node(NodeTag.CALL, pos, func, self.ast.add_list({ arg }));
+}
+
+// The call that fills an object a name is already bound to, without declaring a
+// variable of its own. A namespace that merges with a class or a function of
+// the same name fills that binding instead.
+fn uint Parser.ts_object_merge(&self, uint name, uint param, uint body, uint pos) {
+    uint call = self.ts_object_call(name, param, body, pos);
+    return self.node(NodeTag.EXPR_STMT, pos, call);
+}
+
+// ---- the names a TypeScript scope declares ----
+
+// Open a TypeScript scope: the names it declares are kept apart from those of
+// the scope around it. Returns the mark `ts_scope_pop` takes.
+fn uint Parser.ts_scope_push(&self) {
+    return (uint)self.ts_scope_names.len;
+}
+
+// Close the scope opened at `mark`.
+fn void Parser.ts_scope_pop(&self, uint mark) {
+    self.ts_scope_names.truncate(mark);
+}
+
+// Whether the current scope declares `name`.
+fn bool Parser.ts_scope_has(&self, uint name) {
+    for (sz i = 0; i < self.ts_scope_names.len; i++) {
+        if (self.ts_scope_names.data[i] == name) return true;
+    }
+    return false;
+}
+
+// The names a statement declares in the scope that holds it.
+fn void Parser.ts_record_decl(&self, uint stmt) {
+    if (!self.lex.ts_mode) return;
+    uint node = stmt;
+    if (self.ast.tags.data[node] == NodeTag.EXPORT_DECL) node = self.ast.lhs.data[node];
+    switch (self.ast.tags.data[node]) {
+        case NodeTag.CLASS_DECL:
+        case NodeTag.FUNC_DECL: {
+            uint ident = self.ast.lhs.data[node];
+            if (ident != 0) self.ts_scope_names.push(self.ast.lhs.data[ident]);
+        }
+        case NodeTag.VAR_DECL: {
+            uint list = self.ast.lhs.data[node];
+            for (uint i = 0; i < self.ast.list_len(list); i++) {
+                uint target = self.ast.lhs.data[self.ast.list_item(list, i)];
+                if (self.ast.tags.data[target] != NodeTag.IDENT) continue;
+                self.ts_scope_names.push(self.ast.lhs.data[target]);
+            }
+        }
+        default:
+    }
+}
+
+// Whether a declaration of `name` follows in the current statement list. A
+// namespace merges with a class or a function declared after it as well, so
+// the names that come later matter too.
+fn bool Parser.ts_decl_follows(&self, uint name) {
+    Token first = self.tok;
+    bool found = false;
+    bool decl = false;
+    bool ambient = false;
+    uint depth = 0;
+    while (true) {
+        Token t = self.tok;
+        if (t.type == TokenType.EOF_TOKEN) break;
+        if (depth == 0) {
+            if (t.type == TokenType.RBRACE) break;
+            if (decl && t.type == TokenType.IDENTIFIER && self.atom(t.str_value) == name) {
+                found = true;
+                break;
+            }
+        }
+        bool is_decl = depth == 0 && (t.type == TokenType.CLASS || t.type == TokenType.VAR
+            || t.type == TokenType.LET || t.type == TokenType.CONST || t.type == TokenType.ENUM
+            || self.is_word(t, "function"));
+        if (depth == 0 && self.is_word(t, "declare")) {
+            // An ambient declaration has no binding at runtime.
+            ambient = true;
+            decl = false;
+        } else if (is_decl) {
+            decl = !ambient;
+            ambient = false;
+        } else {
+            decl = false;
+        }
+        if (t.type == TokenType.LBRACE) {
+            depth++;
+        } else if (t.type == TokenType.RBRACE && depth > 0) {
+            depth--;
+        }
+        if (catch err = self.next()) break;
+    }
+    self.lex.seek_to_token(first);
+    self.has_peek = false;
+    self.peek_failed = false;
+    self.tok = first;
+    self.prev = first;
+    if (catch err_c = self.next()) return found;
+    return found;
+}
+
+// Whether a namespace of this name merges with another declaration of it: a
+// class, a function or an enum of the same name in the same scope.
+fn bool Parser.ts_merged_name(&self, uint name) {
+    if (self.ts_scope_has(name)) return true;
+    return self.ts_decl_follows(name);
 }
 
 
@@ -315,7 +427,7 @@ fn uint? Parser.ts_statement(&self, uint pos, bool top_level) {
             uint decl = self.ts_namespace(pos, &name)!;
             return self.ts_export(pos, decl, name);
         }
-        if (self.is_word(pk, "const")) {
+        if (pk.type == TokenType.CONST) {
             // `export const enum E {}` or `export const x = 1`.
             Parser saved = *self;
             Lexer lexer_saved = *self.lex;
@@ -448,6 +560,21 @@ fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
         return true;
     }
     if (self.at_word("abstract") && self.peek_type() == TokenType.CLASS) self.next()!;
+    // An ambient module declaration, `module "name" { ... }`, has no runtime
+    // effect of its own.
+    if (self.ts_ambient_module_ahead()) {
+        self.next()!;
+        self.next()!;
+        self.expect(TokenType.LBRACE)!;
+        while (self.tok.type != TokenType.RBRACE) {
+            if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
+            if (self.eat(TokenType.SEMICOLON)!) continue;
+            if (!(self.ts_erase_statement(true)!)) return self.fail_at(pos, "'module' is not supported (not erasable syntax)")~;
+        }
+        self.next()!;
+        self.eat(TokenType.SEMICOLON)!;
+        return true;
+    }
     return false;
 }
 

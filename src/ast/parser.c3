@@ -74,6 +74,7 @@ struct Parser {
     Vec{uint} scratch;       // child-id stack for building lists
     Vec{uint} ts_exports;     // names a TypeScript declaration exported already
     Vec{uint} ts_param_props;  // the names of a constructor's parameter properties
+    Vec{uint} ts_scope_names;  // the names the current TypeScript scope declares
     uint label_depth;
     uint ts_erased_name;
     uint ns_name;            // the namespace object the parser is inside
@@ -376,6 +377,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.scratch.init(256);
     p.ts_exports.init(8);
     p.ts_param_props.init(8);
+    p.ts_scope_names.init(8);
     build_line_table(ast);
     lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
@@ -407,4 +409,5 @@ fn void Parser.destroy(&self) {
     self.scratch.free();
     self.ts_exports.free();
     self.ts_param_props.free();
+    self.ts_scope_names.free();
 }

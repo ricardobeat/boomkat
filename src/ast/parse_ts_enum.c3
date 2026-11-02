@@ -67,14 +67,15 @@ fn uint? Parser.ts_enum(&self, uint pos, uint* name) {
     // `return E;` hands the object back, so that the variable can hold it.
     self.scratch_push(self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, *name)));
     uint body = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
-    return self.ts_object_var(*name, body, pos);
+    return self.ts_object_var(*name, *name, body, pos);
 }
 
-// The name of an enum member: an identifier or a string literal.
+// The name of an enum member: an identifier or a string literal. A reserved
+// word is a name here too, as it is in TypeScript.
 fn uint? Parser.ts_enum_member_name(&self) {
-    if (self.tok.type == TokenType.IDENTIFIER) {
+    if (is_name_token(self.tok.type)) {
         uint name = self.atom(self.tok.str_value);
-        self.next()!;
+        self.next(true)!;
         return name;
     }
     if (self.tok.type == TokenType.STRING && !self.tok.is_template) {

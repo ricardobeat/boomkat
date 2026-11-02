@@ -440,6 +440,9 @@ fn uint? Parser.class_tail(&self, uint start) {
         heritage = self.call_expr()!;
         if (self.is_bare_arrow(heritage)) return self.fail_at(self.ast.main_tok.data[heritage], "an arrow function is not a class heritage")~;
         heritage = self.strict_thunk(first, heritage);
+        // The type arguments of the base class, `extends Base<T>`, have no
+        // runtime effect.
+        if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
     }
     if (self.lex.ts_mode && self.at_word("implements")) {
         self.next()!;

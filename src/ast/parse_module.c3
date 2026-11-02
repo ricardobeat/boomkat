@@ -231,6 +231,12 @@ fn uint? Parser.export_decl(&self) {
             return self.export_wrap(pos, self.function_decl(self.tok.pos, false)!);
         case TokenType.CLASS:
             return self.export_wrap(pos, self.class_decl()!);
+        case TokenType.IMPORT:
+            // `export import X = A.B;` is TypeScript's re-exported alias.
+            if (self.lex.ts_mode && self.ts_import_equals_ahead()) {
+                self.next()!;
+                return self.export_wrap(pos, self.ts_import_equals(pos)!);
+            }
         case TokenType.IDENTIFIER:
             if (self.at_word("async") && self.peek_type() == TokenType.FUNCTION) {
                 uint start = self.tok.pos;
