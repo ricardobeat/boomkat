@@ -8,12 +8,14 @@ import boomkat::lexer;
 // The program: a directive prologue and statements (or module items).
 fn uint? Parser.program(&self, ParseOptions opts) {
     uint mark = self.scratch_mark();
+    uint scope = self.ts_scope_push();
     char flags = (opts.is_module ? PROGRAM_MODULE : 0) | (opts.ts_mode ? PROGRAM_TS : 0);
     self.directive_prologue(mark, &flags)!;
     if (self.ctx.strict) flags |= PROGRAM_STRICT;
     while (self.tok.type != TokenType.EOF_TOKEN) {
         self.scratch_push(self.statement_list_item()!);
     }
+    self.ts_scope_pop(scope);
     if (features::JSX && (self.jsx_used & (JSX_USES_JSX | JSX_USES_JSXS | JSX_USES_FRAGMENT)) != 0) self.scratch_push(self.jsx_import(false));
     if (features::JSX && (self.jsx_used & JSX_USES_CREATE) != 0) self.scratch_push(self.jsx_import(true));
     return self.node(NodeTag.PROGRAM, 0, self.scratch_list(mark), 0, flags);
@@ -59,20 +61,41 @@ fn void? Parser.directive_prologue(&self, uint mark, char* flags) {
 fn uint? Parser.statement_list_item(&self) {
     uint pos = self.tok.pos;
     uint ts = self.ts_statement(pos, true)!;
-    if (ts != 0) return ts;
+    if (ts != 0) {
+        self.ts_record_decl(ts);
+        return ts;
+    }
     if (self.ts_erase_statement()!) return self.node(NodeTag.EMPTY_STMT, pos, self.ts_erased_name);
     switch (self.tok.type) {
         case TokenType.LET:
-            if (self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
+            if (self.let_starts_declaration()) {
+                uint decl = self.var_statement(VAR_KIND_LET)!;
+                self.ts_record_decl(decl);
+                return decl;
+            }
         case TokenType.IMPORT:
             TokenType pt = self.peek_type();
             if (pt != TokenType.LPAREN && pt != TokenType.DOT) {
-                if (!self.is_module) return self.fail("cannot use import statement outside a module")~;
-                return self.import_decl();
+                if (!self.is_module) {
+                    // An import alias, `import X = A.B;`, is TypeScript's own
+                    // and a script may use it.
+                    if (self.lex.ts_mode && self.ts_import_equals_ahead()) {
+                        self.next()!;
+                        uint decl = self.ts_import_equals(pos)!;
+                        self.ts_record_decl(decl);
+                        return decl;
+                    }
+                    return self.fail("cannot use import statement outside a module")~;
+                }
+                uint decl = self.import_decl()!;
+                self.ts_record_decl(decl);
+                return decl;
             }
         case TokenType.EXPORT:
             if (!self.is_module) return self.fail("unexpected token 'export'")~;
-            return self.export_decl();
+            uint decl = self.export_decl()!;
+            self.ts_record_decl(decl);
+            return decl;
         default:
     }
     bool is_await = self.await_using_starts_declaration();
@@ -82,7 +105,9 @@ fn uint? Parser.statement_list_item(&self) {
         if (!self.is_module) return self.fail("a using declaration is not allowed at the top level of a script")~;
         return self.using_declaration(is_await, false)!;
     }
-    return self.statement();
+    uint stmt = self.statement()!;
+    self.ts_record_decl(stmt);
+    return stmt;
 }
 
 // `using` begins a UsingDeclaration when a binding identifier follows it on
