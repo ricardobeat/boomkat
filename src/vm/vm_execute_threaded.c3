@@ -582,9 +582,42 @@ fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TV
                          this_value, this_valid);
 }
 
+// Keep address-taken builtin temporaries out of the threaded dispatch frame.
+// LLVM cannot tail-dispatch while a BuiltinContext/result passed to another
+// function remains in that frame: the generic continuation otherwise becomes
+// a recursive call through the handler table. Return only scalar status after
+// those temporaries have gone out of scope (-1 complete, -2 throw, or nargs).
+fn int th_invoke_builtin(Instruction* pc, TVal* regs, ColdCtx* cold,
+                         uint callee_reg, uint result_reg, uint nargs,
+                         uint fn_idx, HObject* function) @private @noinline {
+    Vm* vm = cold.vm;
+    Activation* act = cold.act;
+    act.curr_pc = pc + 1;
+    TVal* top = act.bottom + vm.current_func.num_regs + FRAME_SCRATCH_SLOTS;
+    if (top > vm.valstack_top) vm.valstack_top = top;
+    TVal result;
+    result.set_undefined();
+    builtins::BuiltinContext ctx = call_context(cold, callee_reg, nargs, &result,
+                                                this_val: &regs[callee_reg + 1], callee: function);
+    builtins::dispatch_builtin(fn_idx, &ctx);
+    // The builtin may have moved the value stack.
+    regs = act.bottom;
+    *cold.regs_base_ptr = regs;
+    if (ctx.should_throw) {
+        vm.threaded_throw = ctx.throw_value;
+        vm.threaded_handoff = ThreadedHandoff.THROW;
+        return -2;
+    }
+    if (ctx.needs_re_dispatch) {
+        return (int)ctx.re_nargs;
+    }
+    cold.heap.store_builtin_result(regs + result_reg, &result);
+    track_heap_store(act, regs + result_reg, result_reg);
+    return -1;
+}
+
 fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                uint callee_reg, uint result_reg, uint nargs) @private @noinline {
-    Vm* vm = cold.vm;
     TVal callee = regs[callee_reg];
     HObject* function = null;
     uint fn_idx;
@@ -617,28 +650,12 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
         }
     }
 
-    Activation* act = cold.act;
-    act.curr_pc = pc + 1;
-    TVal* top = act.bottom + vm.current_func.num_regs + FRAME_SCRATCH_SLOTS;
-    if (top > vm.valstack_top) vm.valstack_top = top;
-    TVal result;
-    result.set_undefined();
-    builtins::BuiltinContext ctx = call_context(cold, callee_reg, nargs, &result,
-                                                this_val: &regs[callee_reg + 1], callee: function);
-    builtins::dispatch_builtin(fn_idx, &ctx);
-    // The builtin may have moved the value stack.
-    regs = act.bottom;
-    *cold.regs_base_ptr = regs;
-    if (ctx.should_throw) {
-        vm.threaded_throw = ctx.throw_value;
-        vm.threaded_handoff = ThreadedHandoff.THROW;
-        return pc + 1;
+    int status = th_invoke_builtin(pc, regs, cold, callee_reg, result_reg, nargs, fn_idx, function);
+    regs = cold.act.bottom;
+    if (status == -2) return pc + 1;
+    if (status >= 0) {
+        return th_call_redispatched(pc, handlers, regs, cold, callee_reg, result_reg, (uint)status);
     }
-    if (ctx.needs_re_dispatch) {
-        return th_call_redispatched(pc, handlers, regs, cold, callee_reg, result_reg, ctx.re_nargs);
-    }
-    cold.heap.store_builtin_result(regs + result_reg, &result);
-    track_heap_store(act, regs + result_reg, result_reg);
     return th_next(pc + 1, handlers, regs, cold);
 }
 
