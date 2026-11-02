@@ -86,6 +86,7 @@ fn void ssa_function_call_entry(CompiledFunction* cf, ColdCtx* cold, FunctionPla
         if (jit::sljit_emit_return(e.compiler, jit::SLJIT_MOV, r0, 0) != 0) return;
     }
     void* entry = f.emit_call_entry(body, false);
+    void* call_from_c = f.emit_c_call_entry(entry);
     if (entry == null || e.failed) return;
     void* code = jit::sljit_generate_code(e.compiler, 0, null);
     if (code == null) return;
@@ -96,6 +97,7 @@ fn void ssa_function_call_entry(CompiledFunction* cf, ColdCtx* cold, FunctionPla
     }
     plan.ssa_call_code = code;
     plan.call_entry = (void*)jit::sljit_shim_label_addr(entry);
+    if (call_from_c != null) plan.call_from_c = (FunctionNativeCallEntry)jit::sljit_shim_label_addr(call_from_c);
     plan.code_bytes += bytes;
     $if $feat(SLJIT_MAP): plan.map_calls = plan.call_entry; $endif
 }

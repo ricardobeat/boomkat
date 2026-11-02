@@ -331,6 +331,7 @@ fn Instruction* sljit_function_entry(
     run.start = pc;
     run.recover_frame = null;
     run.budget = budget;
+    run.budget_base = budget;
     run.typed[0].receiver = null;
     run.typed[1].receiver = null;
     if (sljit_artifact_enter(h, &plan.artifact) == 0) return pc;
@@ -496,6 +497,9 @@ fn void sljit_stats_dump(Heap* h) {
                 if (plan.ssa_region != null && plan.ssa_region.ssa_helpers != null) {
                     io::printfn("SLJIT SSA helpers id=%d calls=%d continued=%d", i,
                         plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
+                    io::printfn("SLJIT SSA native_calls id=%d calls=%d returns=%d exits=%d overlaps=%d", i,
+                        plan.ssa_region.ssa_native_calls, plan.ssa_region.ssa_native_returns,
+                        plan.ssa_region.ssa_native_exits, plan.ssa_region.ssa_native_overlaps);
                 }
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes
