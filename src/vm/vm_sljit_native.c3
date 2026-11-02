@@ -217,7 +217,9 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body, bool frameless = tru
     e.op(jit::SLJIT_ADD, r0, bottom, 0, imm, loop_value_offset(cf.num_regs + FRAME_SCRATCH_SLOTS));
     e.mov(r1, 0, mem | vm, $reflect(Vm.valstack_end).offset);
     guards.guard(jit::SLJIT_GREATER, r0, 0, r1, 0, 0);
-    for (uint i = cf.num_formals; i < cf.num_regs; i++) {
+    // Scratch words are cleared by the same borrowed-window entry below.
+    // They can overlap dead but still-owned caller strings as well as locals.
+    for (uint i = cf.num_formals; i < cf.num_regs + FRAME_SCRATCH_SLOTS; i++) {
         e.mov(r0, 0, mem | bottom, loop_value_offset(i));
         e.op(jit::SLJIT_LSHR, r0, r0, 0, imm, 48);
         guards.guard(jit::SLJIT_EQUAL, r0, 0, imm, (long)types::TAG_STRING, 0);

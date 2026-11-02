@@ -3,6 +3,7 @@ module jit_test;
 import boomkat;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::types;
 import boomkat::vm;
 import std::io;
 
@@ -70,6 +71,10 @@ fn void check_scalable_ssa_gateway() {
     FunctionPlan* plan = cf.sljit_function;
     @check(plan != null && plan.native == null && plan.ssa_region != null);
     @check(plan.count == count && plan.ssa_region.hits > 0);
+    // Successful WIDE RET exits are completions, including short resumed
+    // regions that must not be classified as repeated unproductive entries.
+    @check(plan.ssa_region.ssa_completed > 0);
+    @check(vm::sljit_function_exit_op(cf, count - 2) == Opcode.RET);
     @check(plan.ssa_region.ssa_data != null && plan.ssa_region.ssa_data.reg_count == 310);
     @check(plan.ssa_region.ssa_data.spill_count > 128 && plan.ssa_region.ssa_data.edge_count > 64);
     @check(plan.call_entry != null && plan.ssa_call_code != null);
@@ -109,12 +114,99 @@ fn void check_scalable_ssa_gateway() {
     @check(plan != null && plan.native == null && plan.ssa_region != null);
     @check(plan.ssa_region.hits > 0 && plan.ssa_region.ssa_helpers != null);
     @check(plan.ssa_region.ssa_helper_calls > 0 && plan.ssa_region.ssa_helper_continued > 0);
+    @check(plan.ssa_region.ssa_native_returns > 0);
     @check(vm::ssa_plan_resumes(plan.ssa_region, after_call));
     eval(&context, "for(var q=0;q<64;q++){if(scalableNativeDriver(scalableRaw,scalableCallback)!==17)throw 'native helper return';}function scalableNativeGrow(n){if(n===0)return 17;var a0=n,a1=n+1,a2=n+2,a3=n+3,a4=n+4,a5=n+5,a6=n+6,a7=n+7,a8=n+8,a9=n+9;return scalableNativeGrow(n-1)+(a0-a0)+(a1-a1)+(a2-a2)+(a3-a3)+(a4-a4)+(a5-a5)+(a6-a6)+(a7-a7)+(a8-a8)+(a9-a9);}function scalableGrowCallback(){return scalableNativeGrow(40);}if(scalableNativeDriver(scalableRaw,scalableGrowCallback)!==17)throw 'native helper stack growth';var nativeThrows=0;function scalableThrowCallback(){nativeThrows++;throw 'native helper throw';}try{scalableNativeDriver(scalableRaw,scalableThrowCallback);throw 'missing native helper throw';}catch(error){if(error!=='native helper throw')throw error;}if(nativeThrows!==1)throw 'native helper replay';");
     eval(&context, "var nativeStringCalls=0;function scalableStringCallback(){nativeStringCalls++;return 'native-owned-'+nativeStringCalls;}if(scalableNativeDriver(scalableRaw,scalableStringCallback)!=='native-owned-1'||nativeStringCalls!==1)throw 'native owned return';");
+    eval(&context, "globalThis.scalablePlainMarker=17;function scalablePlainThis(){return this.scalablePlainMarker;}for(var q=0;q<32;q++){if(scalableRaw(scalablePlainThis)!==17)throw 'plain native this';}");
+    h.jit_stress = false;
+    eval(&context, "var scalablePartialState={calls:0,throws:0,budgets:0};function scalablePartial(){scalablePartialState.calls=scalablePartialState.calls+1;return Object.keys({x:1}).length+16;}function scalablePartialThrow(){scalablePartialState.throws=scalablePartialState.throws+1;throw 'partial native throw';}function scalablePartialBudget(){scalablePartialState.budgets=scalablePartialState.budgets+1;var sum=0;for(var i=0;i<4096;i++)sum=sum+1;return sum-4079;}scalablePartial();try{scalablePartialThrow();}catch(error){}scalablePartialBudget();scalablePartialState.calls=0;scalablePartialState.throws=0;scalablePartialState.budgets=0;");
+    h.jit_stress = true;
+    eval(&context, "for(var q=0;q<32;q++){if(scalableRaw(scalablePartial)!==17)throw 'partial native result';}if(scalablePartialState.calls!==32)throw 'partial native replay';for(var q=0;q<32;q++){try{scalableRaw(scalablePartialThrow);throw 'missing partial throw';}catch(error){if(error!=='partial native throw')throw error;}}if(scalablePartialState.throws!==32)throw 'partial throw replay';");
+    @check(plan.ssa_region.ssa_native_exits > 0);
+    ulong before_budget = plan.ssa_region.ssa_native_exits;
+    eval(&context, "for(var q=0;q<8;q++){if(scalableRaw(scalablePartialBudget)!==17)throw 'partial native budget';}if(scalablePartialState.budgets!==8)throw 'native budget replay';");
+    @check(plan.ssa_region.ssa_native_exits > before_budget);
     @check(plan.direct_returns > 0);
     io::printfn("scalable acyclic helper: PASS words=%d calls=%d continuations=%d", count,
         plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
+    io::printfn("SSA native helper calls: PASS calls=%d returns=%d partial=%d", plan.ssa_region.ssa_native_calls,
+        plan.ssa_region.ssa_native_returns, plan.ssa_region.ssa_native_exits);
+
+}
+
+// Dead VM slots still own counted strings until their frame releases them.
+fn void check_ssa_native_scratch_ownership() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    Heap* h = runtime.rt.heap;
+    Vm* vm = runtime.rt.vm;
+    h.jit_stress = true;
+    eval(&context, "function nativeScratchTarget(value){return value;}for(var q=0;q<16;q++)nativeScratchTarget(17);");
+    CompiledFunction* target = named_function(&runtime, "nativeScratchTarget");
+    @check(target != null && target.sljit_function != null);
+    heap::Realm* prior_realm = h.realm;
+    h.enter_realm(target.realm);
+    defer h.enter_realm(prior_realm);
+    h.mark_and_sweep(true, true);
+    @check(h.gc_phase == heap::GcPhase.IDLE && !h.gc_pending);
+    @check(target.num_formals == 1 && target.call_flags.lean_plain);
+    FunctionPlan* target_plan = target.sljit_function;
+    @check(target_plan.call_from_c != null && target_plan.entries[0] != null && target_plan.shape_count == 0);
+    target_plan.shape_clock = h.shape_gen_clock;
+    target_plan.shape_epoch = h.shape_recycle_epoch;
+    int index = vm.global_env.bindings.find_prop_idx((void*)h.str_intern("nativeScratchTarget"), h);
+    @check(index >= 0);
+    TVal callee = vm.global_env.bindings.prop_values()[index].get();
+    Instruction[3] code = { bytecode::make_wide(1, 0, 0),
+        bytecode::make_abc(Opcode.CALL_UNDEF_THIS, 300 & 255, 0, 1), bytecode::make_abc(Opcode.RETUNDEF, 0, 0, 0) };
+    CompiledFunction caller_function = { .num_regs = 900, .realm = h.realm, .code = &code[0], .code_count = 3 };
+    FunctionPlan caller_plan;
+    caller_function.sljit_function = &caller_plan;
+    CompiledFunction* prior_function = vm.current_func;
+    Activation prior_activation = vm.activation_storage[0];
+    uint prior_count = vm.activation_count;
+    uint prior_budget = h.bwd_gc_budget;
+    defer { vm.current_func = prior_function; vm.activation_storage[0] = prior_activation;
+        vm.activation_count = prior_count; h.bwd_gc_budget = prior_budget; }
+    vm.current_func = &caller_function;
+    vm.activation_storage[0] = { .func = &caller_function, .bottom = vm.valstack,
+        .var_env = vm.global_env, .lex_env = vm.global_env, .heap_reg_count = 900 };
+    vm.activation_count = 1;
+    h.bwd_gc_budget = 1024;
+    ColdCtx cold = { .vm = vm, .heap = h, .act = &vm.activation_storage[0] };
+    JitArtifact owner = { .state = LIVE, .generation = 1 };
+    LoopPlan plan = { .code_owner = &owner };
+    SsaExecution execution;
+    @check(vm::ssa_execution_init(&execution, &cold, &plan, 1, 0, 0));
+    defer vm::ssa_execution_dispose(&execution);
+    FunctionRun run = { .root = cold.act, .budget = 128, .budget_base = 128 };
+    execution.run = &run;
+    execution.state_storage.budget = 128;
+    SsaFrameEntry[1] after = { { .reg = 2, .value = 0 } };
+    SsaHelperSite site = { .pc = 0, .next_pc = 2, .result_reg = 300, .after_entries = &after[0], .after_count = 1 };
+    // Refuse overlapping live arguments and scratch without entering a VM
+    // callee. The ordinary interpreter's borrowed CALL convention itself does
+    // not promise to preserve arbitrary after-live slots in this window.
+    @check(vm::ssa_helper_native_call(&execution, &site, bytecode::decode_bytecode(&code[0], 3, 0), callee, 0, 1) == SsaNativeCallOutcome.DECLINE);
+    after[0].reg = 2 + target.num_regs;
+    @check(vm::ssa_helper_native_call(&execution, &site, bytecode::decode_bytecode(&code[0], 3, 0), callee, 0, 1) == SsaNativeCallOutcome.DECLINE);
+    @check(plan.ssa_native_overlaps == 2 && plan.ssa_native_calls == 0);
+    after[0].reg = 300;
+    uint scratch = 2 + target.num_regs;
+    TVal string = types::make_string(h.alloc_text("owned dead native scratch"));
+    HeapHeader* header = string.get_heapptr();
+    h.tval_copy_ref(vm.valstack + scratch, &string);
+    defer { h.decref_tval(vm.valstack + scratch); vm.valstack[scratch].set_undefined(); h.decref_tval(&string); }
+    @check(vm::ssa_helper_native_call(&execution, &site, bytecode::decode_bytecode(&code[0], 3, 0), callee, 0, 1) == SsaNativeCallOutcome.DECLINE);
+    @check(plan.ssa_native_calls == 1 && plan.ssa_native_exits == 0 && vm.activation_count == 1);
+    @check(vm.valstack[scratch].get_heapptr() == header && header.refcount == 2);
+    io::printn("SSA native scratch: PASS live arguments/scratch and dead owned string refuse before clearing");
 }
 
 // COPY queries share the graph's work ceiling and never return an invalid

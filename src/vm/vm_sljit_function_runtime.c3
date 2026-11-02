@@ -52,6 +52,15 @@ macro bool sljit_function_resumes(Instruction* pc, CompiledFunction* cf) @feat(S
     return plan != null && offset >= plan.begin && offset - plan.begin < plan.count
         && plan.entries[offset - plan.begin] != null;
 }
+// Runtime exits use canonical prefix PCs, including instructions whose WIDE
+// payload carries the return register or call window.
+fn Opcode sljit_function_exit_op(CompiledFunction* cf, uint pc) @feat(SLJIT) @inline {
+    if (pc >= cf.code_count) return Opcode.NOP;
+    Opcode op = cf.code[pc].op;
+    if (op != Opcode.WIDE) return op;
+    DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+    return view.valid ? view.insn.op : Opcode.NOP;
+}
 // Published loop headers can reenter the same SSA graph after an interpreter
 // poll. Retired gateways and invalid specializations retain the loop fallback.
 macro bool sljit_function_ssa_resumes(Instruction* pc, CompiledFunction* cf) @feat(SLJIT) {
@@ -322,6 +331,7 @@ fn Instruction* sljit_function_entry(
     run.start = pc;
     run.recover_frame = null;
     run.budget = budget;
+    run.budget_base = budget;
     run.typed[0].receiver = null;
     run.typed[1].receiver = null;
     if (sljit_artifact_enter(h, &plan.artifact) == 0) return pc;
@@ -362,9 +372,9 @@ fn Instruction* sljit_function_entry(
     // A run that stops at the same unexpandable call without completing a
     // backedge repeats the same prefix on every entry loop iteration. Let the
     // interpreter own the function once that is clearly never going to pay.
-    bool at_call = next < cf.code_count && function_call_op(cf.code[next].op);
-    bool returned = next < cf.code_count
-        && (cf.code[next].op == Opcode.RET || cf.code[next].op == Opcode.RETUNDEF);
+    Opcode exit_op = sljit_function_exit_op(cf, next);
+    bool at_call = function_call_op(exit_op);
+    bool returned = exit_op == Opcode.RET || exit_op == Opcode.RETUNDEF;
     bool stuck = consumed == 0 && next >= offset && !returned
         && (next - offset < 6 || at_call);
     if (stuck) {
@@ -382,8 +392,7 @@ fn Instruction* sljit_function_entry(
         if (at < plan.count && at < 512) plan.exit_pcs[at]++;
     }
     if (next == offset) plan.stalled++;
-    if (next < cf.code_count
-        && (cf.code[next].op == Opcode.RET || cf.code[next].op == Opcode.RETUNDEF)) plan.completed++;
+    if (returned) plan.completed++;
     $endif
     return cf.code + next;
 }
@@ -488,7 +497,11 @@ fn void sljit_stats_dump(Heap* h) {
                 if (plan.ssa_region != null && plan.ssa_region.ssa_helpers != null) {
                     io::printfn("SLJIT SSA helpers id=%d calls=%d continued=%d", i,
                         plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
+                    io::printfn("SLJIT SSA native_calls id=%d calls=%d returns=%d exits=%d overlaps=%d", i,
+                        plan.ssa_region.ssa_native_calls, plan.ssa_region.ssa_native_returns,
+                        plan.ssa_region.ssa_native_exits, plan.ssa_region.ssa_native_overlaps);
                 }
+                ssa_stats_accesses(h, cf, plan.ssa_region, i);
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes
                         - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0), plan.resume_fragment, plan.resume_bytes);

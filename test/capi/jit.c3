@@ -1314,12 +1314,17 @@ fn void main() {
     check_ssa_lazy_roots();
     check_ssa_sparse_imports();
     check_ssa_helper_homes();
+    check_ssa_boxed_truth();
     check_scalable_ssa_closure_startup();
     check_scalable_ssa_gateway();
+    check_ssa_native_scratch_ownership();
     check_scalable_ssa_access();
     check_scalable_ssa_bounds();
     check_scalable_ssa_remat();
     check_native_ssa_bindings();
+    check_native_ssa_boxed_this();
+    check_native_ssa_boxed_this(true);
+    check_native_ssa_boxed_arrays();
     check_scalable_ssa_fields();
     check_scalable_ssa_memory_callbacks();
     check_effectful_ssa_inline();

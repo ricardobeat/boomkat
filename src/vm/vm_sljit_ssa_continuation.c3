@@ -138,6 +138,7 @@ fn usz ssa_helper_metadata_bytes(LoopPlan* plan) @feat(SLJIT) {
 // permanent activation_storage, including during nested call_fn segments.
 struct SsaExecution @feat(SLJIT) {
     ColdCtx* cold;
+    FunctionRun* run;
     CompiledFunction* function;
     LoopPlan* plan;
     JitArtifact* owner;
@@ -428,24 +429,27 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
         if (ins.op == Opcode.CALL) { receiver = cold.act.bottom[base + 1]; }
         else { cold.heap.set_reg_undefined(cold.act.bottom + base + 1); }
         if (fused) cold.heap.tval_copy_ref(cold.act.bottom + base, &callee);
-        if (argc != 0) mem::copy(execution.input_values + base + 2, cold.act.bottom + base + 2, (sz)argc * TVal::size);
-        // Stable snapshot arguments survive VM stack relocation. Native roots
-        // and the published VM frame keep their borrowed references alive.
-        TVal result = cold.heap.call_fn(cold.vm, callee,
-            execution.input_values + base + 2, argc, receiver);
-        if (!ssa_execution_rebind(execution)) {
-            execution.outcome = YIELD;
-            execution.phase = AFTER;
-            return YIELD;
+        SsaNativeCallOutcome native = ssa_helper_native_call(execution, site, view, callee, base, argc);
+        if (native == YIELD) return YIELD;
+        if (native == DECLINE) {
+            if (argc != 0) mem::copy(execution.input_values + base + 2, cold.act.bottom + base + 2, (sz)argc * TVal::size);
+            // Stable snapshot arguments survive VM stack relocation. Native
+            // roots and the published VM frame own the borrowed references.
+            TVal result = cold.heap.call_fn(cold.vm, callee,
+                execution.input_values + base + 2, argc, receiver);
+            if (!ssa_execution_rebind(execution)) {
+                execution.outcome = YIELD;
+                execution.phase = AFTER;
+                return YIELD;
+            }
+            if (vm_check_call_fn_error(cold.vm) || cold.vm.throw_pending) {
+                execution.outcome = THROW;
+                return THROW;
+            }
+            cold.heap.tval_copy_ref(cold.act.bottom + ins.a, &result);
+            // call_fn returns a borrow from vm.return_val (including strings).
+            track_heap_store(cold.act, cold.act.bottom + ins.a, ins.a);
         }
-        if (vm_check_call_fn_error(cold.vm) || cold.vm.throw_pending) {
-            execution.outcome = THROW;
-            return THROW;
-        }
-        cold.heap.tval_copy_ref(cold.act.bottom + ins.a, &result);
-        // call_fn returns a borrow from vm.return_val (including strings).
-        // The VM result slot keeps its reference after the caller copies it.
-        track_heap_store(cold.act, cold.act.bottom + ins.a, ins.a);
     } else if (function_alloc_op(ins.op) && !view.wide) {
         long status = sljit_native_operation(cold, site.pc);
         if (status == 0) return REPLAY;

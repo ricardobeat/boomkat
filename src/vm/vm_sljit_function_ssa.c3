@@ -207,6 +207,8 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
         uint spills = plan.ssa_data == null ? 0 : plan.ssa_data.spill_count;
         uint edges = plan.ssa_data == null ? 0 : plan.ssa_data.edge_count;
         if (!ssa_execution_init(&execution, cold, plan, plan.ssa_value_capacity, spills, edges)) return entry_pc;
+        execution.run = run;
+        if (run != null && run.budget_base < run.budget) run.budget_base = run.budget;
         state = execution.state_storage;
         state.execution = &execution;
     }
@@ -244,8 +246,9 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
     } else { sljit_publish_state(cold, regs, state, cf.num_regs, plan); }
     plan.hits++;
     $if $feat(SLJIT_STATS):
-        if (resume == plan.end + 1 || (plan.ssa_recoverable && resume < cf.code_count
-            && (cf.code[resume].op == Opcode.RET || cf.code[resume].op == Opcode.RETUNDEF))) { plan.ssa_completed++; }
+        Opcode exit_op = sljit_function_exit_op(cf, resume);
+        if (resume == plan.end + 1 || (plan.ssa_recoverable
+            && (exit_op == Opcode.RET || exit_op == Opcode.RETUNDEF))) { plan.ssa_completed++; }
         else if (resume == plan.begin) { plan.ssa_entry_misses++; }
         else { plan.ssa_body_misses++; }
     $endif

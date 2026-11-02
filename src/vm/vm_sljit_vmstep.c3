@@ -42,7 +42,8 @@ fn SsaHelperOutcome ssa_vm_step(SsaExecution* execution, SsaHelperSite* site) @f
     // to retry, without reading a value. Re-enter the original WIDE prefix,
     // never its payload, and finish that same semantic instruction once.
     if (!failed && !step.needs_restart && view.insn.op == Opcode.GETPROPC_CACHED
-        && step.curr_pc == execution.function.code + view.payload_pc) {
+        && (step.curr_pc == execution.function.code + view.pc
+            || step.curr_pc == execution.function.code + view.payload_pc)) {
         step.curr_pc = execution.function.code + view.pc;
         if (catch err = vm_dispatch(&step)) failed = true;
     }
