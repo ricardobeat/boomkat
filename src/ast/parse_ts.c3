@@ -291,19 +291,31 @@ fn uint Parser.ts_param_prop_statements(&self, uint pos, sz from) {
     return self.scratch_list(mark);
 }
 
-// The place in a constructor's body where the parameter property assignments
-// go: after the prologue, and after the super() call in a derived constructor.
-fn uint Parser.ts_param_prop_at(&self, uint list, bool derived) {
+// The statement list of a constructor's body with its parameter property
+// assignments `props` added: after the prologue, and in a derived class after
+// the super() call, which must then be a statement of the body itself, as
+// TypeScript requires.
+fn uint? Parser.ts_param_prop_body(&self, uint list, uint props, bool derived) {
     uint count = self.ast.list_len(list);
     uint at = 0;
     while (at < count && self.ast.tags.data[self.ast.list_item(list, at)] == NodeTag.DIRECTIVE) at++;
-    if (!derived) return at;
-    for (uint i = at; i < count; i++) {
-        uint stmt = self.ast.list_item(list, i);
-        if (self.ast.tags.data[stmt] != NodeTag.EXPR_STMT) continue;
-        if (self.ast.tags.data[self.ast.lhs.data[stmt]] == NodeTag.SUPER_CALL) return i + 1;
+    if (derived) {
+        uint i = at;
+        for (; i < count; i++) {
+            uint stmt = self.ast.list_item(list, i);
+            if (self.ast.tags.data[stmt] != NodeTag.EXPR_STMT) continue;
+            if (self.ast.tags.data[self.ast.lhs.data[stmt]] == NodeTag.SUPER_CALL) break;
+        }
+        if (i == count) {
+            return self.fail("a constructor with parameter properties must call super() as a statement of its body")~;
+        }
+        at = i + 1;
     }
-    return count;
+    uint mark = self.scratch_mark();
+    for (uint i = 0; i < at; i++) self.scratch_push(self.ast.list_item(list, i));
+    for (uint i = 0; i < self.ast.list_len(props); i++) self.scratch_push(self.ast.list_item(props, i));
+    for (uint i = at; i < count; i++) self.scratch_push(self.ast.list_item(list, i));
+    return self.scratch_list(mark);
 }
 
 // The variable and the immediately invoked function that hold a TypeScript

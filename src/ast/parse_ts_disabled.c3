@@ -13,7 +13,7 @@ fn void? Parser.ts_class_modifiers(&self) { return; }
 fn bool Parser.ts_type_specifier(&self) { return false; }
 fn bool Parser.ts_param_property(&self) { return false; }
 fn uint Parser.ts_param_prop_statements(&self, uint pos, sz from) { return 0; }
-fn uint Parser.ts_param_prop_at(&self, uint list, bool derived) { return 0; }
+fn uint? Parser.ts_param_prop_body(&self, uint list, uint props, bool derived) { return list; }
 fn bool Parser.ts_import_equals_ahead(&self) { return false; }
 fn uint Parser.ts_scope_push(&self) { return 0; }
 fn void Parser.ts_scope_pop(&self, uint mark) { return; }
