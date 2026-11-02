@@ -58,6 +58,8 @@ fn void? Parser.directive_prologue(&self, uint mark, char* flags) {
 // A StatementListItem: a statement, declaration, or module import/export.
 fn uint? Parser.statement_list_item(&self) {
     uint pos = self.tok.pos;
+    uint ts = self.ts_statement(pos, true)!;
+    if (ts != 0) return ts;
     if (self.ts_erase_statement()!) return self.node(NodeTag.EMPTY_STMT, pos, self.ts_erased_name);
     switch (self.tok.type) {
         case TokenType.LET:
@@ -294,6 +296,8 @@ fn uint? Parser.block(&self) {
 // scope to dispose them in.
 fn uint? Parser.statement_list_item_in_block(&self, bool allow_using = true) {
     uint pos = self.tok.pos;
+    uint ts = self.ts_statement(pos, false)!;
+    if (ts != 0) return ts;
     if (self.ts_erase_statement()!) return self.node(NodeTag.EMPTY_STMT, pos, self.ts_erased_name);
     if (self.tok.type == TokenType.LET && self.let_starts_declaration()) return self.var_statement(VAR_KIND_LET);
     if (allow_using) {

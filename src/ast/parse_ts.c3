@@ -220,6 +220,53 @@ fn bool Parser.ts_type_arguments(&self) {
     return false;
 }
 
+// A statement that only TypeScript has and that has a runtime effect: an enum.
+// Returns 0 when the current token does not start one, leaving the token where
+// it was. Only a module's top level may export such a statement.
+fn uint? Parser.ts_statement(&self, uint pos, bool top_level) {
+    if (!self.lex.ts_mode) return 0;
+    uint name;
+    if (self.tok.type == TokenType.ENUM) return self.ts_enum(pos, &name);
+    if (self.tok.type == TokenType.CONST) {
+        Token? pk = self.peek();
+        if (catch err = pk) return err~;
+        if (pk.type == TokenType.ENUM) return self.ts_enum(pos, &name);
+    }
+    if (top_level && self.is_module && self.tok.type == TokenType.EXPORT) {
+        Token? pk = self.peek();
+        if (catch err = pk) return err~;
+        if (pk.type == TokenType.ENUM) {
+            self.next()!;
+            uint decl = self.ts_enum(pos, &name)!;
+            return self.ts_export(pos, decl, name);
+        }
+        if (self.is_word(pk, "const")) {
+            // `export const enum E {}` or `export const x = 1`.
+            Parser saved = *self;
+            Lexer lexer_saved = *self.lex;
+            self.next()!;
+            self.next()!;
+            if (self.tok.type == TokenType.ENUM) {
+                uint decl = self.ts_enum(pos, &name)!;
+                return self.ts_export(pos, decl, name);
+            }
+            *self.lex = lexer_saved;
+            *self = saved;
+        }
+    }
+    return 0;
+}
+
+// The export of a TypeScript declaration that has a runtime effect. A name
+// that is exported already keeps the export it has.
+fn uint Parser.ts_export(&self, uint pos, uint decl, uint name) {
+    for (sz i = 0; i < self.ts_exports.len; i++) {
+        if (self.ts_exports.data[i] == name) return decl;
+    }
+    self.ts_exports.push(name);
+    return self.node(NodeTag.EXPORT_DECL, pos, decl);
+}
+
 fn bool? Parser.ts_erase_statement(&self, bool in_namespace = false) {
     if (!self.lex.ts_mode) return false;
     self.ts_erased_name = 0;

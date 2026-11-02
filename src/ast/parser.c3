@@ -72,8 +72,10 @@ struct Parser {
     // Depth of array / object literals and parenthesised lists that a pattern may still claim.
     uint cover_depth;
     Vec{uint} scratch;       // child-id stack for building lists
+    Vec{uint} ts_exports;     // names a TypeScript declaration exported already
     uint label_depth;
     uint ts_erased_name;
+    bool ts_asserted;         // the last expression held an `as` or `satisfies` assertion
     uint jsx_used;           // JSX_USES_* bits: the jsx-runtime imports to inject
     char[256] err_msg;
     uint err_len;
@@ -370,6 +372,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.lex = lex;
     p.is_module = opts.is_module;
     p.scratch.init(256);
+    p.ts_exports.init(8);
     build_line_table(ast);
     lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
@@ -399,4 +402,5 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
 
 fn void Parser.destroy(&self) {
     self.scratch.free();
+    self.ts_exports.free();
 }
