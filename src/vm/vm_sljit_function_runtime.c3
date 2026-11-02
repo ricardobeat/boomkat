@@ -501,6 +501,7 @@ fn void sljit_stats_dump(Heap* h) {
                         plan.ssa_region.ssa_native_calls, plan.ssa_region.ssa_native_returns,
                         plan.ssa_region.ssa_native_exits, plan.ssa_region.ssa_native_overlaps);
                 }
+                ssa_stats_accesses(h, cf, plan.ssa_region, i);
                 io::printfn("SLJIT code id=%d start=%p bytes=%d fragment=%p fragment_bytes=%d",
                     i, plan.native, plan.code_bytes - plan.resume_bytes
                         - (plan.ssa_region != null ? plan.ssa_region.code_bytes : 0), plan.resume_fragment, plan.resume_bytes);

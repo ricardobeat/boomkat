@@ -986,6 +986,38 @@ fn void SsaEmitter.compare(&self, int value) @feat(SLJIT) {
     self.store_gpr(value, r0);
 }
 
+// Boxed control flow commonly tests a linked-list object or null directly.
+// Keep those tests native without converting the value or invoking coercion.
+// Other representations retain exact before-instruction recovery.
+fn void SsaEmitter.boxed_truth(&self) @feat(SLJIT) {
+    TemplateEmitter* e = &self.e;
+    int r0 = jit::reg_r(0); int r1 = jit::reg_r(1); int r3 = jit::reg_r(3);
+    int imm = jit::SLJIT_IMM;
+    e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
+    void* integer = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_FASTINT);
+    void* boolean = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_BOOLEAN);
+    void* object = e.cmp(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_OBJECT);
+    self.guard(jit::SLJIT_LESS, r3, 0, imm, (long)types::TAG_UNDEFINED, self.pc);
+    self.guard(jit::SLJIT_GREATER, r3, 0, imm, (long)types::TAG_NULL_VAL, self.pc);
+    e.mov(r0, 0, imm, 0);
+    void* null_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(object);
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    // The embedding's document.all sentinel is the one falsy JS object.
+    e.mov(r1, 0, imm, (long)&self.g.heap.htmldda_obj);
+    e.mov(r1, 0, jit::SLJIT_MEM | r1, 0);
+    void* sentinel = e.cmp(jit::SLJIT_EQUAL, r0, 0, r1, 0);
+    e.mov(r0, 0, imm, 1);
+    void* object_done = jit::sljit_emit_jump(e.compiler, jit::SLJIT_JUMP);
+    e.bind(sentinel);
+    e.mov(r0, 0, imm, 0);
+    e.bind(integer);
+    e.bind(boolean);
+    e.op(jit::SLJIT_AND, r0, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
+    e.bind(null_done);
+    e.bind(object_done);
+}
+
 // An arm's branch: the condition decides which block the loop continues in.
 fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
     SsaValue v         = self.g.values[value];
@@ -1003,12 +1035,9 @@ fn void SsaEmitter.branch(&self, int value) @feat(SLJIT) {
             e.op(jit::SLJIT_SUB, r1, src, 0, imm, 0);
             taken = e.cmp(v.imm != 0 ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL, r1, 0, imm, 0);
         } else {
-            // A boxed boolean carries its value in the payload.
             self.gpr(v.a, r0);
-            e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
-            self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_BOOLEAN, self.pc);
-            e.op(jit::SLJIT_AND, r1, r0, 0, imm, (long)types::NANBOX_PAYLOAD_MASK);
-            taken = e.cmp(v.imm != 0 ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL, r1, 0, imm, 0);
+            self.boxed_truth();
+            taken = e.cmp(v.imm != 0 ? jit::SLJIT_NOT_EQUAL : jit::SLJIT_EQUAL, r0, 0, imm, 0);
         }
     } else {
         SsaValue lhs = self.g.values[v.a];

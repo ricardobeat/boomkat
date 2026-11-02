@@ -437,7 +437,7 @@ fn bool lightfunc_promoted_getprop(Vm* vm, Dispatch* ds, TVal* lf, void* key,
     return true;
 }
 
-fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn) {
+fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, DecodedInsn insn, bool wide = false) {
     Vm* vm = ds.vm;
     if (vm.heap.realm != null && rb.is_lightfunc()) {
         if (!builtins::promote_lightfunc_tval(vm.heap, rb)) return VM_ERROR~;
@@ -1274,7 +1274,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         }
                         ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
                                                          (uint)insn.a, (uint)insn.b, (uint)insn.c);
-                        ds.curr_pc--;
+                        ds.curr_pc -= wide ? 2 : 1;
                         return (TVal){};
                     }
                     hobject::PropValue* accessor_slot = hobject::ic_resolve_slot(ic, hobj);
@@ -1295,7 +1295,10 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
             // IC miss or ds.ic_base null: downgrade back to GETPROPC and re-execute
             ds.curr_pc[-1] = bytecode::make_abc(bytecode::Opcode.GETPROPC,
                                             (uint)insn.a, (uint)insn.b, (uint)insn.c);
-            ds.curr_pc--;
+            // Preserve high operands when retrying a downgraded cached read.
+            // The dispatch decoder knows whether this instruction had WIDE;
+            // inspecting the preceding raw word is not a decoding contract.
+            ds.curr_pc -= wide ? 2 : 1;
             return (TVal){};
         }
 

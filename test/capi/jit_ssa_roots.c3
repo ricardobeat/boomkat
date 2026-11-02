@@ -10,6 +10,25 @@ import std::io;
 
 const ulong HELPER_HOME_SENTINEL = 0x7654321076543210UL;
 
+fn void check_ssa_boxed_truth() {
+    JsRuntime runtime;
+    runtime.create()!!;
+    defer runtime.destroy();
+    JsContext context;
+    context.create(&runtime)!!;
+    defer context.destroy();
+    @check(runtime.set_jit());
+    eval(&context, "var console={log:function(){}};");
+    eval(&context, $embed("../jit_ssa_boxed_truth.js"));
+    CompiledFunction* cf = named_function(&runtime, "nativeBoxedTruth");
+    @check(cf != null && cf.code_count > vm::SSA_SPAN);
+    FunctionPlan* plan = cf.sljit_function;
+    @check(plan != null && plan.ssa_region != null);
+    @check(plan.ssa_region.ssa_helpers == null);
+    @check(plan.ssa_region.ssa_completed > 100);
+    io::printn("SSA boxed truth: PASS native cyclic object/null/boolean/integer branches");
+}
+
 fn long helper_home_probe(LoopState* state) @noinline {
     ulong* bits = state.execution.saved_bits;
     ulong boxed_saved = vm::loop_bits(types::make_fastint(29));
