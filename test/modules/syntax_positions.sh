@@ -58,7 +58,7 @@ check() {
     # reports this through an unhandled rejection, since `import()` returns a
     # promise, so the exit status alone cannot distinguish the two.
     case "$out" in
-      *"cannot resolve module"*) [ "$expect" = ACCEPT ] && got=ACCEPT ;;
+      *"Cannot find module"*) [ "$expect" = ACCEPT ] && got=ACCEPT ;;
     esac
   fi
 

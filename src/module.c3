@@ -55,7 +55,7 @@ enum ModuleStatus : char {
     EVALUATING_ASYNC,
     EVALUATED,     // fully executed
     ERRORED,       // evaluation threw; eval_error holds the cached rejection reason
-    LOAD_FAILED,   // it or a dependency failed to load; eval_error holds the error
+    LOAD_FAILED,   // it or a dependency failed to load; the cache skips it so a retry reloads
 }
 // ECMA-262 [[AsyncEvaluationOrder]]. UNSET before a module is known to be
 // async; ORDERED once it is, with async_eval_index holding its position in the
@@ -354,7 +354,10 @@ fn ModuleDef* heap_find_loaded_module(Heap* heap, char[] name,
                                       compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE) {
     if (!heap.module_index.is_initialized()) return null;
     ModuleKey key = { .name = name, .attr_type = attr_type };
-    if (try found = heap.module_index.get(key)) return found;
+    if (try found = heap.module_index.get(key)) {
+        if (found.status == ModuleStatus.LOAD_FAILED) return null;
+        return found;
+    }
     return null;
 }
 
@@ -1072,14 +1075,13 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
 
     // 1. Normalize name via host hook
     char[]? normalized_opt = call_resolve_name(heap, base_name, specifier);
-    if (catch err = normalized_opt) return MODULE_ERROR~;
+    if (catch err = normalized_opt) return module_not_found(heap, specifier, base_name, quiet);
     char[] normalized = normalized_opt;
 
     // 2. Check engine cache
     ModuleDef* cached = heap_find_loaded_module(heap, normalized, attr_type);
     if (cached != null) {
         if (cached.status == ModuleStatus.LOAD_PENDING) return load_dependencies(heap, cached, normalized, quiet);
-        if (cached.status == ModuleStatus.LOAD_FAILED) return module_reraise_load_error(heap, cached);
         return cached;
     }
 
@@ -1090,7 +1092,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
         // A host loader may have answered with a native module instead.
         ModuleDef* native = heap_find_loaded_module(heap, normalized, attr_type);
         if (native != null) return native;
-        return MODULE_ERROR~;
+        return module_not_found(heap, specifier, base_name, quiet);
     }
     char[] source = source_opt;
     // An empty ECMAScript file is a module with no body, but the loader's
@@ -1099,7 +1101,7 @@ fn ModuleDef*? resolve_module(Heap* heap, char[] specifier, char[] base_name, co
     // A synthetic module names its file exactly -- no probing, no extension
     // guessing -- so an empty file is genuinely an empty text or bytes module
     // (test262 text-empty, bytes-from-empty) and must not be an error.
-    if (source.len == 0 && attr_type == compiler::ModuleAttrType.NONE) return MODULE_ERROR~;
+    if (source.len == 0 && attr_type == compiler::ModuleAttrType.NONE) return module_not_found(heap, specifier, base_name, quiet);
 
     // 4. Create ModuleDef (marks as LOADING for cycle detection)
     // The resolved name keys the module cache for the life of the heap, but it
@@ -1337,26 +1339,26 @@ fn ModuleDef*? load_dependencies(Heap* heap, ModuleDef* mod, char[] normalized, 
     return mod;
 }
 
-// Mark `mod` LOAD_FAILED, keeping the error parked on the heap channel so
-// every later import of it fails the same way instead of finding a module
-// stuck in LOADING, which reads as a cycle and links an empty namespace.
+// Mark `mod` LOAD_FAILED. A module stuck in LOADING would read as a cycle to
+// later imports and link an empty namespace; a failed one drops out of the
+// cache instead, so the next import loads it afresh.
 fn ModuleDef*? module_load_failed(Heap* heap, ModuleDef* mod) @local {
     mod.status = ModuleStatus.LOAD_FAILED;
-    if (!mod.has_eval_error && heap_has_thrown(heap)) {
-        mod.eval_error.set_undefined();
-        heap.tval_copy_ref(&mod.eval_error, &heap.error_value);
-        mod.has_eval_error = true;
-    }
     return MODULE_ERROR~;
 }
 
-// Park a LOAD_FAILED module's error on the heap channel again and fail.
-fn ModuleDef*? module_reraise_load_error(Heap* heap, ModuleDef* mod) @local {
-    if (mod.has_eval_error) {
-        heap.error_value.set_undefined();
-        heap.tval_copy_ref(&heap.error_value, &mod.eval_error);
-        heap.has_error = true;
-    }
+// Fail an import whose module the host could not find, parking a TypeError
+// that names it unless the host already parked its own error.
+fn ModuleDef*? module_not_found(Heap* heap, char[] specifier, char[] base_name, bool quiet) @local {
+    if (heap_has_thrown(heap)) return MODULE_ERROR~;
+    String msg = base_name.len > 0
+        ? string::tformat("Cannot find module '%s' imported from %s", (String)specifier, (String)base_name)
+        : string::tformat("Cannot find module '%s'", (String)specifier);
+    if (!quiet) io::eprintfn("TypeError: %s", msg);
+    TVal err = module_type_error(heap, msg);
+    heap.shade_root_tval(err);
+    heap.error_value = err;
+    heap.has_error = true;
     return MODULE_ERROR~;
 }
 
