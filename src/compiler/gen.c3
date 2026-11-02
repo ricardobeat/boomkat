@@ -2191,6 +2191,19 @@ fn bool is_chain_link(NodeTag t) {
         || t == NodeTag.SUPER_MEMBER || t == NodeTag.SUPER_INDEX || t == NodeTag.PRIVATE_MEMBER;
 }
 
+// Whether a link of the chain rooted at `n` marks an optional step. An optional
+// chain short-circuits through the jumps list its own generation keeps, so code
+// that starts a chain without one must not walk into an optional link.
+fn bool CompilerContext.chain_has_optional(&self, uint n) {
+    ast::Ast* tree = &ast::index_state.tree;
+    uint link = n;
+    while (is_chain_link(tree.tags.data[link])) {
+        if ((tree.flags.data[link] & ast::FLAG_OPTIONAL) != 0) return true;
+        link = tree.lhs.data[link];
+    }
+    return false;
+}
+
 fn Val? CompilerContext.gen_super(&self, uint n, MemberTarget* target) {
     ast::Ast* tree = &ast::index_state.tree;
     ushort base;

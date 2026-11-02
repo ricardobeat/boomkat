@@ -59,6 +59,9 @@ fn Val? CompilerContext.gen_hof_call(&self, uint n) {
     if (g_disable_optimize || self.is_global || self.in_with() || self.capture_all
         || (tree.flags.data[n] & ast::FLAG_OPTIONAL) != 0
         || tree.tags.data[callee] != NodeTag.MEMBER || (tree.flags.data[callee] & ast::FLAG_OPTIONAL) != 0
+        // The inlined call generates its receiver without the jumps list an
+        // optional chain short-circuits through.
+        || self.chain_has_optional(tree.lhs.data[callee])
         || tree.list_len(args) == 0) return NOT_HOF_CALL~;
     char[] method = tree.atoms.get(tree.rhs.data[callee]);
     HofKind kind;
