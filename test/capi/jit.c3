@@ -941,8 +941,8 @@ fn void check_helper_binding_store_alias() @feat(SLJIT) {
     CompiledFunction* cf = named_function(&runtime, "aliasLexicalLoop");
     @check(cf != null && cf.sljit_function != null);
     FunctionPlan* plan = cf.sljit_function;
-    @check(plan.ssa_region != null && plan.ssa_region.ssa_helpers != null);
-    $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_helper_continued != 0); $endif
+    @check(plan.ssa_region != null && plan.ssa_region.ssa_data.native_bindings != 0);
+    $if $feat(SLJIT_STATS): @check(plan.ssa_region.ssa_data.binding_reads != 0); $endif
 }
 
 fn void check_numeric_pipeline() @feat(SLJIT) {
@@ -1316,6 +1316,7 @@ fn void main() {
     check_scalable_ssa_access();
     check_scalable_ssa_bounds();
     check_scalable_ssa_remat();
+    check_native_ssa_bindings();
     check_scalable_ssa_fields();
     check_scalable_ssa_memory_callbacks();
     check_effectful_ssa_inline();

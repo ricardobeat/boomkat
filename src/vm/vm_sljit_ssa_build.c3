@@ -211,6 +211,7 @@ fn bool ssa_build(SsaGraph* g) @feat(SLJIT) {
                 g.cmp_op = ins.op;
                 continue;
             }
+            if (g.recoverable && ssa_binding_build(g, view)) continue;
             if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
                 && ssa_access_build(g, view)) continue;
             if (g.recoverable && plan.ssa_data != null && plan.ssa_data.decoded_body
