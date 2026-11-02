@@ -38,6 +38,20 @@ expect_reject() {
     fi
 }
 
+expect_script_ok() {
+    local file="$1" want="$2"
+    local got
+    got=$("$BIN" --script "$file" 2>&1)
+    if [[ "$got" != "$want" ]]; then
+        echo "FAIL: $file (script)"
+        echo "  want: $(printf '%q' "$want")"
+        echo "  got:  $(printf '%q' "$got")"
+        FAIL=$((FAIL + 1))
+    else
+        echo "ok:   $(basename "$file") (script)"
+    fi
+}
+
 # --- original corpus -------------------------------------------------------
 expect_ok "$DIR/simple.ts"    "42"
 expect_ok "$DIR/enum.ts"      "0
@@ -118,6 +132,7 @@ b#2"
 expect_ok "$DIR/mod_main.ts"        "42
 hi world"
 expect_ok "$DIR/mod_use_default.ts" "42"
+expect_script_ok "$DIR/script_strict.ts" "true 1"
 expect_ok "$DIR/mod_use_ns.ts"      "42
 hi ns"
 
