@@ -9,8 +9,8 @@ import boomkat::lexer;
 // rather than an ambient module declaration.
 fn bool Parser.ts_namespace_ahead(&self) {
     if (!self.lex.ts_mode) return false;
-    if (!self.at_word("namespace") && !self.at_word("module")) return false;
     if (self.at_word("namespace")) return true;
+    if (!self.at_word("module")) return false;
     // `module "name" { }` is an ambient module declaration.
     Token first = self.tok;
     bool named = false;
@@ -48,11 +48,11 @@ fn uint? Parser.ts_namespace(&self, uint pos, uint* name) {
     // that holds it and put on that namespace's object.
     uint decl = self.ts_object_var(parts[count - 1], body, pos);
     for (uint i = count - 1; i > 0; i--) {
+        uint saved = self.ns_name;
+        self.ns_name = parts[i - 1];
         uint inner = self.ts_namespace_assign(pos, parts[i]);
-        uint mark = self.scratch_mark();
-        self.scratch_push(decl);
-        self.scratch_push(inner);
-        uint outer_body = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
+        self.ns_name = saved;
+        uint outer_body = self.node(NodeTag.BLOCK, pos, self.ast.add_list({ decl, inner }));
         decl = self.ts_object_var(parts[i - 1], outer_body, pos);
     }
     *name = parts[0];

@@ -2,20 +2,22 @@
 """TypeScript conformance runner: type-stripping conformance against the
 official Microsoft TypeScript conformance corpus.
 
-The engine runs `.ts` and `.tsx` files by erasing type syntax at parse time (plan 042,
-the TS 5.8+ `--erasableSyntaxOnly` subset). There is no official test262-style
-TypeScript suite, so this harness turns the TypeScript project's own
-conformance corpus (`tests/cases/conformance/`, thousands of files) into one
-by using `tsc --erasableSyntaxOnly` as the acceptance oracle:
+The engine runs `.ts` and `.tsx` files by erasing type syntax at parse time
+(plan 042) and by compiling the runtime features TypeScript adds (enums,
+namespaces, parameter properties) into the objects they stand for. There is
+no official test262-style TypeScript suite, so this harness turns the
+TypeScript project's own conformance corpus (`tests/cases/conformance/`,
+thousands of files) into one by using `tsc --erasableSyntaxOnly` as the
+acceptance oracle:
 
-  ACCEPT  - tsc reports no errors: the file is purely erasable, so the
+  ACCEPT  - tsc reports no errors: the file is valid TypeScript, so the
             engine must compile it. A SyntaxError here is a real failure.
-  REJECT  - tsc reports only TS1294 (erasableSyntaxOnly violation: enum,
-            namespace, parameter property, ...): the engine must also reject
-            the source with a compile error.
+  RUNTIME - tsc reports only TS1294 (erasableSyntaxOnly violation: enum,
+            namespace, parameter property, ...): the file uses a runtime
+            feature the engine supports, so the engine must compile it too.
   SKIP    - tsc reports other diagnostics (type errors, deliberate-error
-            tests, missing libs): not an erasable-syntax test. Also skipped:
-            `.d.ts` files and any file tsc cannot parse as a single program.
+            tests, missing libs): not a syntax test. Also skipped: `.d.ts`
+            files and any file tsc cannot parse as a single program.
 
 Corpus location: `test/typescript/conformance-src` (a sparse, blobless clone
 of github.com/microsoft/TypeScript with `tests/cases/conformance` checked
@@ -132,12 +134,15 @@ class Clock:
 
 
 def tsc_classify(path, cache_dir, no_cache):
-    """Run tsc once per file (cached). Returns 'accept' | 'reject' | 'skip'."""
+    """Run tsc once per file (cached). Returns 'accept' | 'runtime' | 'skip'."""
     rel = os.path.relpath(path, CORPUS)
     cache_file = os.path.join(cache_dir, rel + ".txt")
     if not no_cache and os.path.exists(cache_file):
         with open(cache_file, "r", encoding="utf-8") as f:
-            return f.read().strip()
+            verdict = f.read().strip()
+        # The verdict used to be called "reject"; the engine now compiles the
+        # runtime features those files use.
+        return "runtime" if verdict == "reject" else verdict
 
     out = ""
     try:
@@ -155,9 +160,10 @@ def tsc_classify(path, cache_dir, no_cache):
         if res.returncode == 0:
             verdict = "accept"
         elif RE_TS1294.search(out) and "error TS" in out:
-            # Reject only when TS1294 is the ONLY diagnostic family.
+            # The file uses a runtime feature (enum, namespace, parameter
+            # property) and nothing else tsc objects to.
             errors = [l for l in out.splitlines() if "error TS" in l]
-            verdict = "reject" if all(RE_TS1294.search(l) for l in errors) else "skip"
+            verdict = "runtime" if all(RE_TS1294.search(l) for l in errors) else "skip"
         else:
             verdict = "skip"
 
@@ -292,14 +298,13 @@ def main():
                 print("tsc classification exceeded the deadline; aborting", file=sys.stderr)
                 return 2
 
-    counts = {"pass": 0, "fail": 0, "expected_reject": 0, "unexpected_accept": 0,
+    counts = {"pass": 0, "fail": 0, "runtime_pass": 0,
               "skip": 0, "decorators": 0, "js_early_error": 0, "runtime_timeout": 0,
               "accessors": 0, "using_decls": 0}
     for v in verdicts.values():
         if v == "skip":
             counts["skip"] += 1
     failures = []
-    unexpected = []
     log_lines = []
 
     def log_verdict(rel, result):
@@ -333,56 +338,45 @@ def main():
                 continue
             path, outcome, elapsed, verdict, rel = r
             slow.append((elapsed, rel))
-            if verdict == "accept":
-                if rel in JS_EARLY_ERROR_FILES and outcome == "syntax_error":
-                    counts["js_early_error"] += 1
-                    log_verdict(rel, "JS_EARLY_ERROR")
-                    continue
-                if outcome == "compiled":
-                    counts["pass"] += 1
+            if rel in JS_EARLY_ERROR_FILES and outcome == "syntax_error":
+                counts["js_early_error"] += 1
+                log_verdict(rel, "JS_EARLY_ERROR")
+                continue
+            if outcome == "compiled":
+                counts["pass"] += 1
+                if verdict == "runtime":
+                    counts["runtime_pass"] += 1
+                    log_verdict(rel, "PASS_RUNTIME")
+                else:
                     log_verdict(rel, "PASS")
-                elif outcome == "compiled_timeout":
-                    # The source compiled and ran past the timeout: a compile
-                    # conformance pass whose runtime never terminates.
-                    counts["pass"] += 1
-                    counts["runtime_timeout"] += 1
-                    log_verdict(rel, "PASS_TIMEOUT")
-                elif outcome == "decorators":
-                    counts["decorators"] += 1
-                    log_verdict(rel, "SKIP_DECORATORS")
-                elif outcome == "accessors":
-                    counts["accessors"] += 1
-                    log_verdict(rel, "SKIP_ACCESSORS")
-                elif outcome == "using_decls":
-                    counts["using_decls"] += 1
-                    log_verdict(rel, "SKIP_USING")
-                else:
-                    counts["fail"] += 1
-                    failures.append((rel, outcome))
-                    log_verdict(rel, "FAIL")
-            else:  # reject
-                if outcome == "syntax_error":
-                    counts["expected_reject"] += 1
-                    log_verdict(rel, "REJECT_OK")
-                elif outcome == "decorators":
-                    # A reject verdict whose only problem is `@` is a
-                    # documented non-goal, not an engine acceptance bug.
-                    counts["decorators"] += 1
-                    log_verdict(rel, "SKIP_DECORATORS")
-                else:
-                    counts["unexpected_accept"] += 1
-                    unexpected.append((rel, outcome))
-                    log_verdict(rel, "UNEXPECTED_ACCEPT")
+            elif outcome == "compiled_timeout":
+                # The source compiled and ran past the timeout: a compile
+                # conformance pass whose runtime never terminates.
+                counts["pass"] += 1
+                counts["runtime_timeout"] += 1
+                log_verdict(rel, "PASS_TIMEOUT")
+            elif outcome == "decorators":
+                counts["decorators"] += 1
+                log_verdict(rel, "SKIP_DECORATORS")
+            elif outcome == "accessors":
+                counts["accessors"] += 1
+                log_verdict(rel, "SKIP_ACCESSORS")
+            elif outcome == "using_decls":
+                counts["using_decls"] += 1
+                log_verdict(rel, "SKIP_USING")
+            else:
+                counts["fail"] += 1
+                failures.append((rel, outcome))
+                log_verdict(rel, "FAIL")
 
     print()
     print(f"TS conformance (corpus: {len(files)} files after filter, "
           f"jobs={jobs}, engine timeout={engine_timeout}s, deadline={deadline_s}s)")
-    print(f"  accept  -> compiled ok:       {counts['pass']}"
+    print(f"  compiled ok:                  {counts['pass']}"
           + (f" ({counts['runtime_timeout']} ran past the engine timeout)" if counts["runtime_timeout"] else ""))
-    print(f"  accept  -> SyntaxError (BUG): {counts['fail']}")
-    print(f"  reject  -> rejected ok:       {counts['expected_reject']}")
-    print(f"  reject  -> compiled (BUG):    {counts['unexpected_accept']}")
-    print(f"  skipped (not erasable tests): {counts['skip']}")
+    print(f"  of which runtime features:    {counts['runtime_pass']}")
+    print(f"  SyntaxError (BUG):            {counts['fail']}")
+    print(f"  skipped (not syntax tests):   {counts['skip']}")
     if counts["decorators"]:
         print(f"  skipped (decorators, non-goal): {counts['decorators']}")
     if counts["accessors"]:
@@ -401,17 +395,11 @@ def main():
             print(f"  {elapsed:7.1f}s  {rel}")
 
     if failures:
-        print(f"\n== {len(failures)} accept-file compile failures ==")
+        print(f"\n== {len(failures)} compile failures ==")
         for rel, outcome in failures[:40]:
             print(f"  {outcome:>12}  {rel}")
         if len(failures) > 40:
             print(f"  ... and {len(failures) - 40} more")
-    if unexpected:
-        print(f"\n== {len(unexpected)} reject-files accepted by the engine ==")
-        for rel, outcome in unexpected[:20]:
-            print(f"  {outcome:>12}  {rel}")
-        if len(unexpected) > 20:
-            print(f"  ... and {len(unexpected) - 20} more")
 
     if log_path:
         with open(log_path, "w", encoding="utf-8") as f:
@@ -421,10 +409,10 @@ def main():
     if aborted:
         print(f"\n== RUN EXCEEDED {deadline_s}s DEADLINE; {aborted} files unrun ==")
         return 2
-    if counts["fail"] == 0 and counts["unexpected_accept"] == 0:
+    if counts["fail"] == 0:
         print("\n== all TS conformance checks passed ==")
         return 0
-    print(f"\n== {counts['fail'] + counts['unexpected_accept']} TS conformance failure(s) ==")
+    print(f"\n== {counts['fail']} TS conformance failure(s) ==")
     return 1
 
 
