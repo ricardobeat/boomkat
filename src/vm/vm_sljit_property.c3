@@ -346,6 +346,9 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         && (epoch_chain || poly_chain || proto_chain || ic.chain_len <= hobject::IC_MAX_CHAIN)
         && !ic.prop_flags.is_accessor
         && ic.prop_idx < hobject::IC_PROP_MISSING
+        // An inherited read on a dictionary receiver revalidates prop_count
+        // below, since an appended own key would shadow the cached owner.
+        && (!ic.has_proto || !shape.dict || ic.dict_count != 0)
         && (!write || (!ic.has_proto && ic.prop_flags.writable));
     if (usable && epoch_chain) {
         usable = ic.chain.epoch.owner != null && ic.chain.epoch.first != null && ic.chain.epoch.owner.find_prop_idx(
@@ -396,7 +399,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
         } else if (ic.chain_len == 0) {
             usable = usable && index == (int)ic.prop_idx && !flags.is_accessor && (!write || flags.writable);
         } else {
-            usable = usable && index < 0 && !shape.dict;
+            usable = usable && index < 0 && (!shape.dict || ic.dict_count != 0);
             for (uint i = 0; usable && i < ic.chain_len; i++) {
                 // Cache links are weak. Validate layouts through the shape table;
                 // generated code follows live links before dereferencing objects.
@@ -422,7 +425,7 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
     $if $feat(SLJIT_ARRAY_NAMED_READ):
         HString* name = key;
         bool array_snapshot = usable && !write && !computed && !known_shape
-            && ic.has_proto && ic.chain != null && ic.chain_len == 1 && name != null
+            && ic.has_proto && ic.chain != null && ic.chain_len == 1 && ic.dict_count == 0 && name != null
             && !name.is_arridx() && !name.is_hidden() && key != h.str(heap::BuiltinStr.LENGTH);
         if (array_snapshot) {
             // The IC roots its final owner. Do not add an array arm at sites
@@ -590,6 +593,11 @@ fn bool FunctionEmitter.property(&self, CompiledFunction* cf, uint pc, bool writ
             e.mov(r2, 0, mem | r0, shape_offset, jit::SLJIT_MOV_U32);
             self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.shape_id, pc);
             if (tracking) self.flow.guard_shape(token, ic.shape_id);
+        }
+        if (ic.has_proto && ic.dict_count != 0) {
+            e.mov(r2, 0, mem | r0, (char*)&obj.prop_count - (char*)&obj, jit::SLJIT_MOV_U32);
+            e.op(jit::SLJIT_ADD, r2, r2, 0, imm, 1);
+            self.out.guard(jit::SLJIT_NOT_EQUAL, r2, 0, imm, ic.dict_count, pc);
         }
         if (epoch_chain) {
             // The epoch covers a repointed link and every layout change on the

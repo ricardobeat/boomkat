@@ -3640,6 +3640,11 @@ struct ICEntry {
     // PUTPROP entry proving that a store adds the key: absent from the
     // receiver, and on its chain absent or a writable data property.
     uint   prop_idx;
+    // Inherited reads on a dictionary receiver: receiver.prop_count + 1 at
+    // fill. A dictionary adds keys without changing its shape id, so the count
+    // is what proves no own property has since shadowed the cached owner.
+    // Zero means the receiver was not in dictionary mode, or the entry is own.
+    uint   dict_count;
     // The property's flags, so a cache hit needs no shape walk.
     PropFlags prop_flags;
     // Bounded snapshot length, or IC_CHAIN_EPOCH selecting the epoch payload.
@@ -3677,6 +3682,13 @@ const char IC_CHAIN_POLY = 0xFE;
 // plus one arm per receiver shape the site has already resolved.
 const char IC_CHAIN_PROTO = 0xFD;
 
+// A dictionary receiver adds keys without changing its shape id. An inherited
+// read records prop_count + 1 so an appended own property invalidates the
+// entry instead of being shadowed by the cached prototype owner.
+fn bool ic_dict_count_live(ICEntry* ic, HObject* hobj) @inline {
+    return ic.dict_count == 0 || hobj.prop_count + 1 == ic.dict_count;
+}
+
 // True when the entry's epoch still holds, so an inherited read needs no
 // layout guard beyond the identity of the link it recorded.
 fn bool ic_epoch_live(ICEntry* ic) @inline {
@@ -3689,7 +3701,7 @@ fn bool ic_epoch_live(ICEntry* ic) @inline {
 // matched the key and checked the receiver's own layout.
 fn bool ic_proto_slot(ICEntry* ic, HObject* hobj, HObject** owner, uint* prop_idx) @inline {
     if (ic.chain_len != IC_CHAIN_PROTO || !plain_property_object(hobj)) return false;
-    if (!ic_epoch_live(ic)) return false;
+    if (!ic_epoch_live(ic) || !ic_dict_count_live(ic, hobj)) return false;
     ICProtoReads* set = &ic.chain.proto;
     if (hobj.shape_id == ic.shape_id) {
         if (hobj.prototype != set.primary.first) return false;
@@ -3721,7 +3733,8 @@ fn PropValue* ic_proto_value(ICEntry* ic, HObject* hobj) @inline {
 // the caller replaces it instead.
 fn bool ic_proto_add(ICEntry* ic, uint shape_id, uint prop_idx, HObject* owner, HObject* first) {
     if (ic.chain == null || !ic.has_proto || ic.prop_flags.is_accessor || owner == null || first == null
-        || ic.shape_id == heap::SHAPE_NONE || ic.prop_idx >= IC_PROP_MISSING) return false;
+        || ic.shape_id == heap::SHAPE_NONE || ic.prop_idx >= IC_PROP_MISSING
+        || ic.dict_count != 0) return false;
     if (ic.chain_len == IC_CHAIN_EPOCH) {
         if (!ic_epoch_live(ic)) return false;
         // The epoch payload already sits at the offset the read set's first
@@ -4002,6 +4015,7 @@ fn bool HObject.in_dict_mode(&self, heap::Heap* h) @inline {
 // moves the owner's shape but not its prop_alloc).
 fn HObject* ic_resolve_owner(ICEntry* ic, HObject* hobj) @inline {
     if (!ic.has_proto) return hobj;
+    if (!ic_dict_count_live(ic, hobj)) return null;
     if (ic.chain_len == IC_CHAIN_EPOCH) {
         if (!plain_property_object(hobj) || hobj.prototype != ic.chain.epoch.first
             || *ic.chain.epoch.current != ic.chain.epoch.value) return null;

@@ -239,6 +239,7 @@ fn CompiledFunction* function_inline_method(CompiledFunction* cf, uint pc, Heap*
         if (ic.key.borrow() != cf.constants[ins.c].get_heapptr() || (!epoch && ic.chain_len != 1)
             || ic.prop_flags.is_accessor
             || !ic.has_proto
+            || ic.dict_count != 0
             || ic.prop_idx >= hobject::IC_PROP_MISSING) {
             return null;
         }
