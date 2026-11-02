@@ -1097,8 +1097,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     if (tracked) th_tail_release_regs(vm, fa, regs, callee_reg, nargs);
     for (uint i = 0; i < nargs; i++) regs[i] = args[i];
     // Keep the replaced caller for stack traces, paused just past this call.
-    fa.tail_caller = fa.func;
-    fa.tail_caller_pc = pc + 1;
+    vm.note_tail_caller(fa, fa.func, pc + 1, target);
     fa.func = target;
     fa.var_env = env;
     fa.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;

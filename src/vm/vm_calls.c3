@@ -2285,8 +2285,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                         // copy, so one acquisition gets released twice.
                         Activation* scratch = new_act;
                         scratch.flags |= ACT_FLAG_TAIL_CALLED;
-                        scratch.tail_caller = ca.func;
-                        scratch.tail_caller_pc = ds.curr_pc;
+                        vm.note_tail_caller(ca, ca.func, ds.curr_pc, scratch.func);
                         *ca = *scratch;
                         scratch.this_binding.set_undefined();
                         scratch.flags &= ~(ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID | ACT_FLAG_CALLEE_OWNED);

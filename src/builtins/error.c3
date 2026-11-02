@@ -87,22 +87,23 @@ fn void error_set_source_stack(HObject* err, Heap* heap, char[] name, char[] msg
 fn void error_append_stack_frames(UnitBuf* out, void* vm_ptr) {
     if (vm_ptr == null) return;
     Vm* vm = (Vm*)vm_ptr;
-    error_append_segment_frames(out, vm.activations, vm.activation_count);
+    error_append_segment_frames(out, vm, vm.activations, vm.activation_count);
     for (ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
          shadow != null; shadow = (ShadowActFrame*)shadow.prev) {
-        error_append_segment_frames(out, shadow.acts, shadow.count);
+        error_append_segment_frames(out, vm, shadow.acts, shadow.count);
     }
 }
 
-fn void error_append_segment_frames(UnitBuf* out, Activation* acts, uint n) {
+fn void error_append_segment_frames(UnitBuf* out, Vm* vm, Activation* acts, uint n) {
     while (n > 0) {
         n--;
         Activation* act = &acts[n];
         error_append_compiled_frame(out, (CompiledFunction*)act.func, act.curr_pc);
         // A proper tail call reused this frame. Show the caller it replaced;
         // only the most recent one is kept, so a longer chain collapses to it.
-        if ((act.flags & vm::ACT_FLAG_TAIL_CALLED) != 0) {
-            error_append_compiled_frame(out, (CompiledFunction*)act.tail_caller, act.tail_caller_pc);
+        vm::TailCaller* tc = vm.tail_caller(act);
+        if (tc != null) {
+            error_append_compiled_frame(out, (CompiledFunction*)tc.caller, tc.pc);
         }
     }
 }

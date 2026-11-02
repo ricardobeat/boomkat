@@ -171,11 +171,17 @@ struct Activation {
     TVal tv_func;
     // The caller's valstack_top at CALL time, restored on RET without recomputing.
     TVal* caller_valstack_top;
-    // The most recent frame a tail call replaced, and where it made the call.
-    // Valid only under ACT_FLAG_TAIL_CALLED. CompiledFunctions live until heap
-    // teardown, so the borrow cannot dangle.
-    void* tail_caller;
-    Instruction* tail_caller_pc;
+}
+
+// The most recent frame a tail call replaced in an activation, and where it
+// made the call. Vm.tail_callers holds one per activation_storage slot, valid
+// only while that activation carries ACT_FLAG_TAIL_CALLED and still runs
+// `callee`. CompiledFunctions live until heap teardown, so the borrows cannot
+// dangle.
+struct TailCaller {
+    void* caller;
+    Instruction* pc;
+    void* callee;
 }
 
 const uint ACT_FLAG_CONSTRUCT      = 1u << 1;
@@ -225,8 +231,8 @@ const uint ACT_FLAG_SUPER_REBIND   = 1u << 10;
 // register was borrowed (ACT_FLAG_BORROWED_CALLEE) from a binding the call can
 // reassign, or a tail call slid the frame down over the register that held it.
 const uint ACT_FLAG_CALLEE_OWNED   = 1u << 11;
-// A tail call took over this frame, and tail_caller/tail_caller_pc name the
-// caller it replaced, so stack traces can still show that frame.
+// A tail call took over this frame, and Vm.tail_callers names the caller it
+// replaced, so stack traces can still show that frame.
 const uint ACT_FLAG_TAIL_CALLED    = 1u << 12;
 
 // The flags a frame may carry and still return through RET's and RETUNDEF's
@@ -369,6 +375,10 @@ struct Vm {
     Activation* activations;
     uint activation_capacity;
     uint activation_count;
+    // Grown on demand to cover the deepest tail-called slot, so code that
+    // never makes a tail call pays nothing. See TailCaller.
+    TailCaller* tail_callers;
+    uint tail_caller_cap;
 
     // Current execution state (stable pointers reloaded on restart)
     CompiledFunction* current_func;
@@ -583,4 +593,29 @@ fn void Vm.restore_frame_realm(&self, heap::Realm* fallback) @inline {
         if (function != null) { self.heap.enter_realm(function.realm); return; }
     }
     self.heap.enter_realm(fallback);
+}
+
+// Record for stack traces that a tail call into `callee` replaced `caller`
+// in `act`, paused at `pc`. Dropped silently if the table can't be allocated.
+fn void Vm.note_tail_caller(&self, Activation* act, void* caller, Instruction* pc, void* callee) {
+    uint slot = (uint)(act - &self.activation_storage[0]);
+    if (slot >= self.tail_caller_cap) {
+        uint cap = self.tail_caller_cap == 0 ? 16 : self.tail_caller_cap;
+        while (cap <= slot) cap *= 2;
+        void* grown = self.tail_callers == null
+            ? self.heap.alloc_func(self.heap.heap_udata, TailCaller::size * cap)
+            : self.heap.realloc_func(self.heap.heap_udata, self.tail_callers, TailCaller::size * cap);
+        if (grown == null) return;
+        self.tail_callers = (TailCaller*)grown;
+        self.tail_caller_cap = cap;
+    }
+    self.tail_callers[slot] = { caller, pc, callee };
+}
+
+// The caller a tail call replaced in `act`, or null.
+fn TailCaller* Vm.tail_caller(&self, Activation* act) {
+    uint slot = (uint)(act - &self.activation_storage[0]);
+    if ((act.flags & ACT_FLAG_TAIL_CALLED) == 0 || slot >= self.tail_caller_cap) return null;
+    TailCaller* tc = &self.tail_callers[slot];
+    return tc.callee == act.func ? tc : null;
 }
