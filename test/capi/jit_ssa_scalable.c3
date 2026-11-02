@@ -72,9 +72,16 @@ fn void check_scalable_ssa_gateway() {
     @check(plan.count == count && plan.ssa_region.hits > 0);
     @check(plan.ssa_region.ssa_data != null && plan.ssa_region.ssa_data.reg_count == 310);
     @check(plan.ssa_region.ssa_data.spill_count > 128 && plan.ssa_region.ssa_data.edge_count > 64);
+    @check(plan.call_entry != null && plan.ssa_call_code != null);
     @check(vm::ssa_plan_resumes(plan.ssa_region, header));
     $if $feat(SLJIT_MAP): vm::sljit_address_map(plan, cf, 0); $endif
     @check(!vm::ssa_plan_resumes(plan.ssa_region, count - 1)); // WIDE RET payload
+    eval(&context, "function scalableNativeDriver(fn,n){return fn(n);}for(var q=0;q<128;q++){if(scalableNativeDriver(scalableRaw,3)!==11775)throw 'scalable native call result';}");
+    CompiledFunction* driver = named_function(&runtime, "scalableNativeDriver");
+    @check(driver != null && driver.sljit_function != null);
+    FunctionPlan* driver_plan = driver.sljit_function;
+    @check(driver_plan.direct_calls > 0 && plan.direct_returns > 0);
+    io::printfn("scalable native call ABI: PASS calls=%d returns=%d", driver_plan.direct_calls, plan.direct_returns);
     // Fractional input traverses the same high-register loop and exact prefix
     // recovery. Every local must be reimported when an interpreter poll resumes.
     ulong prior_hits = plan.ssa_region.hits;
@@ -103,6 +110,9 @@ fn void check_scalable_ssa_gateway() {
     @check(plan.ssa_region.hits > 0 && plan.ssa_region.ssa_helpers != null);
     @check(plan.ssa_region.ssa_helper_calls > 0 && plan.ssa_region.ssa_helper_continued > 0);
     @check(vm::ssa_plan_resumes(plan.ssa_region, after_call));
+    eval(&context, "for(var q=0;q<64;q++){if(scalableNativeDriver(scalableRaw,scalableCallback)!==17)throw 'native helper return';}function scalableNativeGrow(n){if(n===0)return 17;var a0=n,a1=n+1,a2=n+2,a3=n+3,a4=n+4,a5=n+5,a6=n+6,a7=n+7,a8=n+8,a9=n+9;return scalableNativeGrow(n-1)+(a0-a0)+(a1-a1)+(a2-a2)+(a3-a3)+(a4-a4)+(a5-a5)+(a6-a6)+(a7-a7)+(a8-a8)+(a9-a9);}function scalableGrowCallback(){return scalableNativeGrow(40);}if(scalableNativeDriver(scalableRaw,scalableGrowCallback)!==17)throw 'native helper stack growth';var nativeThrows=0;function scalableThrowCallback(){nativeThrows++;throw 'native helper throw';}try{scalableNativeDriver(scalableRaw,scalableThrowCallback);throw 'missing native helper throw';}catch(error){if(error!=='native helper throw')throw error;}if(nativeThrows!==1)throw 'native helper replay';");
+    eval(&context, "var nativeStringCalls=0;function scalableStringCallback(){nativeStringCalls++;return 'native-owned-'+nativeStringCalls;}if(scalableNativeDriver(scalableRaw,scalableStringCallback)!=='native-owned-1'||nativeStringCalls!==1)throw 'native owned return';");
+    @check(plan.direct_returns > 0);
     io::printfn("scalable acyclic helper: PASS words=%d calls=%d continuations=%d", count,
         plan.ssa_region.ssa_helper_calls, plan.ssa_region.ssa_helper_continued);
 }

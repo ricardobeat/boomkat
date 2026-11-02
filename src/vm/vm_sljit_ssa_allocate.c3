@@ -43,11 +43,18 @@ fn void SsaAllocation.interfere(&self, uint value, ulong* live) @feat(SLJIT) {
     if (ssa_rematerialized(g.values[value])) return;
     if (!ssa_charge_work(g, g.value_count)) return;
     ulong* row = self.conflicts + (usz)value * self.words;
-    for (uint other = 0; other < g.value_count; other++) {
-        if (other == value || !self.contains(live, other)
-            || !ssa_same_class(g.values[value].rep, g.values[other].rep)) continue;
-        row[other / 64] |= 1UL << (other % 64);
-        self.conflicts[(usz)other * self.words + value / 64] |= 1UL << (value % 64);
+    // Walk present values, rather than testing every graph ID for every
+    // definition. Keep the existing work charge so admission is unchanged.
+    for (uint w = 0; w < self.words; w++) {
+        ulong bits = live[w];
+        while (bits != 0) {
+            uint bit = (uint)bits.ctz();
+            bits &= bits - 1;
+            uint other = w * 64 + bit;
+            if (other == value || !ssa_same_class(g.values[value].rep, g.values[other].rep)) continue;
+            row[w] |= 1UL << bit;
+            self.conflicts[(usz)other * self.words + value / 64] |= 1UL << (value % 64);
+        }
     }
 }
 
@@ -76,7 +83,7 @@ fn void SsaAllocation.recovery(&self, ulong* live, uint pc, SsaFrameId frame = S
 fn void SsaAllocation.operands(&self, ulong* live, SsaValue v) @feat(SLJIT) {
     switch (v.op) {
         case NOP: case ARG: case PHI: case JOIN: case COPY: case GOTO:
-        case RECEIVER: case BINDING: case CONST_I: case CONST_F: case CONST_BOXED: break;
+        case RECEIVER: case BINDING: case FRESH_BINDING: case CONST_I: case CONST_F: case CONST_BOXED: break;
         case STORAGE: case PROTO_STORAGE: case CHECKFN: case CHECKPROTO:
         case CHECKSHAPE: case CHECKWRITE: case BNOT: case NEG:
         case TO_INT: case TO_INDEX: case TO_F64: case BOX_I: case BOX_F:
@@ -285,11 +292,22 @@ fn void ssa_allocate_cfg(SsaGraph* g) @feat(SLJIT) {
             int home = value.rep == F64 ? 3 + (int)slot : ssa_gpr_home(g, slot);
             bool free = true;
             ulong* conflicts = a.conflicts + (usz)i * words;
-            for (uint other = 0; other < g.value_count; other++) {
-                if (!ssa_charge_work(g, 1)) return;
-                if (g.values[other].home == home && ssa_same_class(g.values[other].rep, value.rep)
-                    && a.contains(conflicts, other)) { free = false; break; }
+            uint inspected = g.value_count;
+            for (uint w = 0; w < words && free; w++) {
+                ulong bits = conflicts[w];
+                while (bits != 0) {
+                    uint other = w * 64 + (uint)bits.ctz();
+                    bits &= bits - 1;
+                    if (g.values[other].home == home && ssa_same_class(g.values[other].rep, value.rep)) {
+                        free = false;
+                        inspected = other + 1;
+                        break;
+                    }
+                }
             }
+            // Preserve the prior ordered scan's budget decision exactly;
+            // this changes compiler work, not which graphs are admitted.
+            if (!ssa_charge_work(g, inspected)) return;
             if (free) { value.home = home; break; }
         }
         if (value.home == 0) value.spill = g.spill_count++;

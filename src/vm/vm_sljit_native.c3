@@ -122,7 +122,7 @@ fn long sljit_native_read(ColdCtx* cold, uint offset) @feat(SLJIT) @noinline {
 // bit 8 for a plain call. S0..S2 remain the caller window, ColdCtx and run.
 // This entry uses the body's register/stack context, so it can jump straight
 // into that body after publishing an ordinary interpreter-visible frame.
-fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
+fn void* FunctionEmitter.emit_call_entry(&self, void* body, bool frameless = true) @feat(SLJIT) {
     CompiledFunction* cf = self.cf;
     if (self.plan.begin != 0 || !cf.call_flags.lean_call || cf.arguments_in_reg()
         || cf.num_formals > 255) return null;
@@ -206,7 +206,7 @@ fn void* FunctionEmitter.emit_call_entry(&self, void* body) @feat(SLJIT) {
         e.mov(r0, 0, mem | run, $reflect(FunctionRun.clock).offset);
         e.mov(mem, (long)&self.plan.last_use, r0, 0);
     $endif
-    $if !$feat(SLJIT_NO_SSA_CALL_ENTRY): self.ssa_call_entry(cf); $endif
+    $if !$feat(SLJIT_NO_SSA_CALL_ENTRY): if (frameless) self.ssa_call_entry(cf); $endif
     // Frameless SSA uses the caller-owned argument/result window and the run
     // scratch area. Only the ordinary entry publishes a new VM frame and
     // clears the callee's local and scratch slots.

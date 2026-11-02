@@ -31,6 +31,7 @@ struct SsaHelperSite @feat(SLJIT) {
     uint reserve_regs;
     uint reserve_depth;
     uint callee_value;
+    int result_reg;
     CompiledFunction* inline_target;
     SsaFrameId before_frame;
     SsaFrameId after_frame;
@@ -39,6 +40,7 @@ struct SsaHelperSite @feat(SLJIT) {
     uint* root_values;
     uint root_count;
     bool native_resume;
+    bool refresh_plan;
     SsaFrameEntry* before_entries;
     uint before_count;
     SsaFrameEntry* after_entries;
@@ -88,9 +90,16 @@ fn void ssa_helper_capture(SsaAllocation* allocation, uint node) @feat(SLJIT) {
     site.reserve_regs = (uint)g.values[node].target;
     site.reserve_depth = (uint)g.values[node].fallto;
     site.callee_value = (uint)ssa_alias(g, g.values[node].a);
+    site.result_reg = g.values[node].dst_reg;
     site.inline_target = g.values[node].inline_target;
     site.before_frame = point.before_frame;
     site.after_frame = point.after_frame;
+    // Decoded ACCESS nodes guard live receivers and storage at each use.
+    // Only the older descriptor/binding/representation caches require a
+    // plan-wide refresh after the helper has changed the heap.
+    site.refresh_plan = g.plan.ssa_data == null || !g.plan.ssa_data.decoded_body
+        || g.plan.memory_count != 0 || g.plan.binding_count != 0 || g.plan.ssa_fields;
+    foreach (cache : g.plan.float_cache) if (cache != 0) site.refresh_plan = true;
     if (site.before_frame != SSA_NO_FRAME && g.frame_table[site.before_frame].parent != SSA_NO_FRAME) {
         // A virtual child must be materialized before a general helper can
         // operate on its real activation and frame-local register numbers.
@@ -155,6 +164,9 @@ struct SsaExecution @feat(SLJIT) {
     uint* live_roots;
     bool* root_marks;
     uint live_root_count;
+    uint* root_order;
+    bool* root_registered;
+    uint root_count;
     bool active;
     bool caller_lost;
     Instruction* vm_resume;
@@ -175,7 +187,7 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.value_capacity = values;
     usz runtime_bytes = LoopState::size + ((usz)spills + edges) * ulong::size
         + (usz)execution.register_count * (TVal::size + SsaPublishedValue::size)
-        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size + uint::size + bool::size);
+        + (usz)max(values, 1u) * (ulong::size + ValueRoot::size + uint::size * 2 + bool::size * 2);
     if (runtime_bytes > SSA_DEFAULT_BUDGET.max_bytes) return false;
     execution.input_values = h.alloc_func(h.heap_udata, (usz)execution.register_count * TVal::size);
     execution.outputs = h.alloc_func(h.heap_udata, (usz)execution.register_count * SsaPublishedValue::size);
@@ -183,6 +195,8 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * ValueRoot::size);
     execution.live_roots = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * uint::size);
     execution.root_marks = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * bool::size);
+    execution.root_order = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * uint::size);
+    execution.root_registered = h.alloc_func(h.heap_udata, (usz)max(values, 1u) * bool::size);
     usz state_bytes = LoopState::size + ((usz)spills + edges) * ulong::size;
     if (state_bytes > SSA_DEFAULT_BUDGET.max_bytes) { ssa_execution_dispose(execution); return false; }
     execution.state_storage = (LoopState*)h.alloc_func(h.heap_udata, state_bytes);
@@ -190,15 +204,14 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     execution.edge = execution.spills == null ? null : execution.spills + spills;
     if (execution.input_values == null || execution.outputs == null || execution.saved_bits == null
         || execution.roots == null || execution.live_roots == null || execution.root_marks == null
+        || execution.root_order == null || execution.root_registered == null
         || execution.spills == null || execution.edge == null) {
         ssa_execution_dispose(execution);
         return false;
     }
     mem::clear(execution.root_marks, (sz)max(values, 1u) * bool::size);
+    mem::clear(execution.root_registered, (sz)max(values, 1u) * bool::size);
     mem::copy(execution.input_values, cold.act.bottom, (sz)execution.register_count * TVal::size);
-    TVal undefined;
-    undefined.set_undefined();
-    for (uint i = 0; i < values; i++) h.push_value_root(&execution.roots[i], undefined);
     // Protect both the calling body and all linked artifacts throughout a
     // collecting/reentrant helper. Retirement may invalidate, never free it.
     execution.active = true;
@@ -207,10 +220,25 @@ fn bool ssa_execution_init(SsaExecution* execution, ColdCtx* cold, LoopPlan* pla
     return true;
 }
 
+// A descriptor is linked only when its SSA value first needs an owning root.
+// Its address stays stable until invocation disposal, including while an
+// incremental collector cursor points into this native root chain.
+fn bool ssa_execution_root(SsaExecution* execution, uint value) @feat(SLJIT) {
+    if (!execution.active || value >= execution.value_capacity) return false;
+    if (execution.root_registered[value]) return true;
+    assert(execution.root_count < execution.value_capacity);
+    TVal undefined;
+    undefined.set_undefined();
+    execution.cold.heap.push_value_root(&execution.roots[value], undefined);
+    execution.root_order[execution.root_count++] = value;
+    execution.root_registered[value] = true;
+    return true;
+}
+
 fn void ssa_execution_dispose(SsaExecution* execution) @feat(SLJIT) {
     Heap* h = execution.cold.heap;
     if (execution.active) {
-        for (uint i = execution.value_capacity; i > 0; i--) h.pop_value_root(&execution.roots[i - 1]);
+        for (uint i = execution.root_count; i > 0; i--) h.pop_value_root(&execution.roots[execution.root_order[i - 1]]);
     }
     if (execution.input_values != null) h.free_func(h.heap_udata, execution.input_values);
     if (execution.outputs != null) h.free_func(h.heap_udata, execution.outputs);
@@ -218,12 +246,16 @@ fn void ssa_execution_dispose(SsaExecution* execution) @feat(SLJIT) {
     if (execution.roots != null) h.free_func(h.heap_udata, execution.roots);
     if (execution.live_roots != null) h.free_func(h.heap_udata, execution.live_roots);
     if (execution.root_marks != null) h.free_func(h.heap_udata, execution.root_marks);
+    if (execution.root_order != null) h.free_func(h.heap_udata, execution.root_order);
+    if (execution.root_registered != null) h.free_func(h.heap_udata, execution.root_registered);
     if (execution.state_storage != null) h.free_func(h.heap_udata, execution.state_storage);
     if (execution.owner_generation != 0) sljit_artifact_leave(h, execution.owner);
     *execution = {};
 }
 
-fn bool ssa_execution_reload(SsaExecution* execution) @feat(SLJIT) {
+// Validate the original activation and repair pointers after stack relocation.
+// This does not import register contents: callers choose their semantic map.
+fn bool ssa_execution_rebind(SsaExecution* execution) @feat(SLJIT) {
     ColdCtx* cold = execution.cold;
     Vm* vm = cold.vm;
     if (execution.activation_slot >= MAX_CALLS) return false;
@@ -233,7 +265,24 @@ fn bool ssa_execution_reload(SsaExecution* execution) @feat(SLJIT) {
     cold.act = act;
     cold.capture_refs = null;
     if (cold.regs_base_ptr != null) *cold.regs_base_ptr = act.bottom;
-    mem::copy(execution.input_values, act.bottom, (sz)execution.register_count * TVal::size);
+    return true;
+}
+
+fn bool ssa_execution_reload(SsaExecution* execution) @feat(SLJIT) {
+    if (!ssa_execution_rebind(execution)) return false;
+    mem::copy(execution.input_values, execution.cold.act.bottom, (sz)execution.register_count * TVal::size);
+    return true;
+}
+
+// Native after-edges carry SSA joins, while fresh VM reentries import a full
+// snapshot at invocation init. A completed helper needs only its frozen live
+// post-frame and declared result, including any aliased or cleared operands.
+fn bool ssa_execution_import_after(SsaExecution* execution, SsaHelperSite* site) @feat(SLJIT) {
+    if (site.result_reg >= (int)execution.register_count) return false;
+    foreach (entry : site.after_entries[:site.after_count]) if (entry.reg >= execution.register_count) return false;
+    TVal* regs = execution.cold.act.bottom;
+    foreach (entry : site.after_entries[:site.after_count]) execution.input_values[entry.reg] = regs[entry.reg];
+    if (site.result_reg >= 0) execution.input_values[site.result_reg] = regs[site.result_reg];
     return true;
 }
 
@@ -256,6 +305,7 @@ fn bool ssa_execution_roots(SsaExecution* execution, SsaHelperSite* site) @feat(
     Heap* h = execution.cold.heap;
     if (site.root_count > execution.value_capacity) return false;
     for (uint i = 0; i < site.root_count; i++) if (site.root_values[i] >= execution.value_capacity) return false;
+    for (uint i = 0; i < site.root_count; i++) if (!ssa_execution_root(execution, site.root_values[i])) return false;
     for (uint i = 0; i < site.root_count; i++) {
         uint value = site.root_values[i];
         TVal boxed;
@@ -290,7 +340,7 @@ fn bool ssa_execution_roots(SsaExecution* execution, SsaHelperSite* site) @feat(
 
 fn bool ssa_execution_publish(SsaExecution* execution) @feat(SLJIT) {
     ColdCtx* cold = execution.cold;
-    if (!ssa_execution_reload(execution) || execution.output_count > execution.register_count) return false;
+    if (!ssa_execution_rebind(execution) || execution.output_count > execution.register_count) return false;
     // Validate first; malformed metadata cannot publish half a frame.
     for (uint i = 0; i < execution.output_count; i++) {
         if (execution.outputs[i].reg >= execution.register_count) return false;
@@ -305,11 +355,11 @@ fn bool ssa_execution_publish(SsaExecution* execution) @feat(SLJIT) {
         cold.heap.tval_copy_ref(dest, &output.value);
         cold.heap.decref_tval(&output.value);
         if (dest.is_heap_allocated()) track_heap_store(cold.act, dest, output.reg);
+        // Publish exactly the same before-frame into the stable operand
+        // snapshot. Call windows are semantic reads in this recovery map.
+        execution.input_values[output.reg] = *dest;
     }
     execution.output_count = 0;
-    // Helper operands must describe the newly committed before-frame, not
-    // the snapshot that was current when native entry began.
-    mem::copy(execution.input_values, cold.act.bottom, (sz)execution.register_count * TVal::size);
     return true;
 }
 
@@ -337,7 +387,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
             cold.heap.tval_copy_ref(cold.act.bottom + ins.a, &callee);
             track_heap_store(cold.act, cold.act.bottom + ins.a, ins.a);
         } else {
-            if (site.callee_value >= execution.value_capacity) return REPLAY;
+            if (site.callee_value >= execution.value_capacity || !execution.root_registered[site.callee_value]) return REPLAY;
             TVal callee = execution.roots[site.callee_value].value;
             if (!callee.is_object() || callee.get_heapptr() == null) return REPLAY;
             HObject* function = callee.get_heapptr();
@@ -353,7 +403,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
             usz needed = (usz)(top - cold.vm.valstack) + site.reserve_regs;
             if (needed > uint::max || !ensure_valstack(cold.vm, (uint)needed)) return REPLAY;
         }
-        if (!ssa_execution_reload(execution)) return REPLAY;
+        if (!ssa_execution_rebind(execution)) return REPLAY;
         cold.heap.safepoint_gc_on_call();
         if (!sljit_artifact_is_live(execution.owner, execution.owner_generation)) return REPLAY;
         $if $feat(SLJIT_STATS): if (site.kind == INLINE_RESERVE) execution.plan.ssa_inline_entries++; $endif
@@ -366,7 +416,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
         uint base = fused ? ins.a : ins.b;
         uint argc = fused ? ins.b : ins.c;
         if (base + 2 + argc > execution.register_count || ins.a >= execution.register_count) return REPLAY;
-        TVal callee = execution.input_values[base];
+        TVal callee = cold.act.bottom[base];
         // The shared non-observable binding resolver refuses accessors/with
         // scopes before invoking anything. Those sites retain exact VM EXIT.
         if (fused && !loop_binding_effective(cf.code + view.payload_pc, ins, cold, &callee)) return REPLAY;
@@ -375,14 +425,15 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
         defer cold.heap.pop_value_root(&callee_root);
         TVal receiver;
         receiver.set_undefined();
-        if (ins.op == Opcode.CALL) { receiver = execution.input_values[base + 1]; }
+        if (ins.op == Opcode.CALL) { receiver = cold.act.bottom[base + 1]; }
         else { cold.heap.set_reg_undefined(cold.act.bottom + base + 1); }
         if (fused) cold.heap.tval_copy_ref(cold.act.bottom + base, &callee);
+        if (argc != 0) mem::copy(execution.input_values + base + 2, cold.act.bottom + base + 2, (sz)argc * TVal::size);
         // Stable snapshot arguments survive VM stack relocation. Native roots
         // and the published VM frame keep their borrowed references alive.
         TVal result = cold.heap.call_fn(cold.vm, callee,
             execution.input_values + base + 2, argc, receiver);
-        if (!ssa_execution_reload(execution)) {
+        if (!ssa_execution_rebind(execution)) {
             execution.outcome = YIELD;
             execution.phase = AFTER;
             return YIELD;
@@ -406,7 +457,7 @@ fn SsaHelperOutcome ssa_helper_execute(SsaExecution* execution, SsaHelperSite* s
     cold.act.curr_pc = cf.code + execution.after_pc;
     // Results are already owned and shaded by the VM frame before collection.
     cold.heap.safepoint_gc_on_call();
-    if (!ssa_execution_reload(execution)) { execution.outcome = YIELD; return YIELD; }
+    if (!ssa_execution_rebind(execution)) { execution.outcome = YIELD; return YIELD; }
     // Invalidated code remains pinned until unwind, but cannot be continued.
     execution.outcome = execution.plan.ssa_invalid
         || !sljit_artifact_is_live(execution.owner, execution.owner_generation) ? YIELD : COMPLETE;
@@ -422,8 +473,7 @@ fn SsaHelperOutcome ssa_helper_state(LoopState* state, SsaHelperSite* site) @fea
     state.dirty = 0;
     state.resume_pc = execution.phase == AFTER ? execution.after_pc : site.pc;
     ColdCtx* cold = execution.cold;
-    if (!ssa_execution_reload(execution)) return YIELD;
-    for (uint reg = 0; reg < execution.register_count && reg < LOOP_REGS; reg++) state.values[reg] = execution.input_values[reg];
+    if (!ssa_execution_rebind(execution)) return YIELD;
     state.receiver = cold.act.this_binding;
     state.shape_epoch = cold.heap.shape_recycle_epoch;
     if (outcome == THROW) {
@@ -435,9 +485,13 @@ fn SsaHelperOutcome ssa_helper_state(LoopState* state, SsaHelperSite* site) @fea
         return THROW;
     }
     if (outcome != COMPLETE) return outcome;
+    if (!ssa_execution_import_after(execution, site)) return YIELD;
     // Bindings and backing stores may have changed while arbitrary JS ran.
-    if (!loop_prepare(execution.plan, state, cold, execution.plan.ssa_fields)
-        || cold.heap.jit_dependencies_dirty || execution.plan.ssa_invalid
+    if (site.refresh_plan) {
+        for (uint reg = 0; reg < execution.register_count && reg < LOOP_REGS; reg++) state.values[reg] = cold.act.bottom[reg];
+        if (!loop_prepare(execution.plan, state, cold, execution.plan.ssa_fields)) return YIELD;
+    }
+    if (cold.heap.jit_dependencies_dirty || execution.plan.ssa_invalid
         || cold.heap.shape_recycle_epoch != execution.plan.ssa_shape_epoch) return YIELD;
     $if $feat(SLJIT_STATS): execution.plan.ssa_helper_continued++; $endif
     return COMPLETE;
