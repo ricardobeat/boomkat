@@ -4041,7 +4041,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
                 if (op == Opcode.PUTPROP) sljit_typed_observe(typed_ic, *ra, *rb);
             }
         $endif
-        if (catch err = dispatch_property(ds, op, ra, rb, rc, insn)) { return err~; }
+        if (catch err = dispatch_property(ds, op, ra, rb, rc, insn, word.op == Opcode.WIDE)) { return err~; }
         continue;
 
     case Opcode.PUTPROPC:
