@@ -158,12 +158,12 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     }
                     return (TVal){};
                 }
-                int bnot_obj_b = toint32(vm_to_number(vm, &bnot_prim_b));
+                int bnot_obj_b = types::toint32(vm_to_number(vm, &bnot_prim_b));
                 if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                 vm.heap.set_reg_fastint(ra, (long)(~bnot_obj_b));
                 return (TVal){};
             }
-            int bnot_b = toint32(vm_to_number(vm,rb));
+            int bnot_b = types::toint32(vm_to_number(vm,rb));
             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
             vm.heap.set_reg_fastint(ra, (long)(~bnot_b));
             return (TVal){};

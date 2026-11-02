@@ -46,3 +46,7 @@ enum Computed { A = 3, B = A.toString().length, C = "xyz".length, D = B + C, E }
 console.log(JSON.stringify(Computed));
 enum Self { Self = 1, Next = Self + 1 }
 console.log(JSON.stringify(Self));
+
+// The bitwise operators fold through ToInt32, as they compute at runtime.
+enum Bits { A = 2 ** 31, B = ~A, C = A | 0, D = 1 << 33, F = -1 >>> 0, G = NaN | 1 }
+console.log(JSON.stringify(Bits));

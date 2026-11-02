@@ -2575,9 +2575,9 @@ macro @bitop(TVal* ra, TVal* rb, TVal* rc, $op, vm, Dispatch* ds; @body()) {
         vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, (int)eb.get_fastint(), (int)ec.get_fastint()));
         return;
     }
-    int b = toint32(vm_to_number(vm,eb));
+    int b = types::toint32(vm_to_number(vm,eb));
     @body();
-    int c = toint32(vm_to_number(vm,ec));
+    int c = types::toint32(vm_to_number(vm,ec));
     @body();
     vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, b, c));
 }
@@ -3586,10 +3586,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             }
             continue;
         }
-        uint ushr_b = (uint)toint32(vm_to_number(vm,eb));
+        uint ushr_b = (uint)types::toint32(vm_to_number(vm,eb));
         if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
         if (ds.needs_restart) break;
-        int  ushr_c = toint32(vm_to_number(vm,ec));
+        int  ushr_c = types::toint32(vm_to_number(vm,ec));
         if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
         vm.heap.set_reg_fastint(ra, (long)(ushr_b >> (ushr_c & 0x1F)));
         continue;
