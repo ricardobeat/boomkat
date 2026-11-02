@@ -1295,7 +1295,11 @@ fn bool function_emit(FunctionPlan* plan, CompiledFunction* cf, Heap* h, Activat
                     e.mov(r0, 0, mem | r2, 0);
                     e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
                     void* initialized = e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED);
-                    out.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)(types::TAG_UNDEFINED << 48), pos);
+                    // Canonical undefined is a value, so only the temporal dead
+                    // zone sentinel, the same tag with a nonzero payload, is an
+                    // uninitialized binding that must resume in the interpreter.
+                    e.op(jit::SLJIT_SHL, r3, r0, 0, imm, 16);
+                    out.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, pos);
                     e.bind(initialized);
                 }
             case PUTCAP:

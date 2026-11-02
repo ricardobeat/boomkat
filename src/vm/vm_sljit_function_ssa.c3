@@ -247,25 +247,29 @@ fn Instruction* sljit_function_ssa_run(ColdCtx* cold, LoopPlan* plan, FunctionRu
         }
     } else { sljit_publish_state(cold, regs, state, cf.num_regs, plan); }
     plan.hits++;
+    Opcode exit_op = sljit_function_exit_op(cf, resume);
+    bool completed = resume == plan.end + 1 || (plan.ssa_recoverable
+        && (exit_op == Opcode.RET || exit_op == Opcode.RETUNDEF));
+    if (completed) { plan.ssa_completed++; }
+    else if (resume == plan.begin) { plan.ssa_entry_misses++; }
+    else { plan.ssa_body_misses++; }
+    // A body that never gets past its own first PC cannot execute at all: a
+    // register or binding assumption from compile time does not hold for the
+    // frames that enter it, and it must not keep the baseline tier away.
+    plan.ssa_entry_streak = resume == plan.begin && !completed ? plan.ssa_entry_streak + 1 : 0;
     // A whole-body specialization earns its entry only if it executes real
     // work between helpers. A body that spends more calls in helpers than in
     // its own body pays the publication/root cost per bytecode, so the
     // baseline tier is faster. The sample must be big enough for the ratio to
     // mean something.
-    if (plan.ssa_helper_calls >= SSA_DEMOTE_HELPERS && plan.ssa_helper_calls >= plan.hits
-        && !cold.vm.current_func.sljit_ssa_disabled && !cold.heap.jit_hold_tier) {
+    bool unproductive = plan.ssa_entry_streak >= SSA_REFUSE_STREAK
+        || (plan.ssa_helper_calls >= SSA_DEMOTE_HELPERS && plan.ssa_helper_calls >= plan.hits);
+    if (unproductive && !cold.vm.current_func.sljit_ssa_disabled && !cold.heap.jit_hold_tier) {
         cold.vm.current_func.sljit_ssa_disabled = true;
         plan.ssa_demote = true;
-        $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA demote line=%d hits=%d helpers=%d",
-            cold.vm.current_func.get_line(0), plan.hits, plan.ssa_helper_calls); $endif
+        $if $feat(SLJIT_STATS): io::eprintfn("SLJIT SSA demote line=%d hits=%d helpers=%d streak=%d",
+            cold.vm.current_func.get_line(0), plan.hits, plan.ssa_helper_calls, plan.ssa_entry_streak); $endif
     }
-    $if $feat(SLJIT_STATS):
-        Opcode exit_op = sljit_function_exit_op(cf, resume);
-        if (resume == plan.end + 1 || (plan.ssa_recoverable
-            && (exit_op == Opcode.RET || exit_op == Opcode.RETUNDEF))) { plan.ssa_completed++; }
-        else if (resume == plan.begin) { plan.ssa_entry_misses++; }
-        else { plan.ssa_body_misses++; }
-    $endif
     if (plan.ssa_recoverable) {
         cold.act.curr_pc = cf.code + resume;
         return cf.code + resume;

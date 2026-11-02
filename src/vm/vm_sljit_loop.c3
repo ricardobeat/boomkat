@@ -29,6 +29,10 @@ const uint SSA_BODY_OPS   = 320;
 // A specialization is abandoned for the baseline tier only after this many
 // helper calls have shown it spends more entries in helpers than in its body.
 const uint SSA_DEMOTE_HELPERS = 256;
+// Consecutive no-progress native entries before a site's entry is retired.
+const uint STALL_RETIRE_ENTRIES = 64;
+// Consecutive entries an SSA body may refuse before it is abandoned entirely.
+const uint SSA_REFUSE_STREAK = 32;
 const uint LOOP_MEMORY    = 8;
 const uint LOOP_BINDINGS  = 16;
 // Binding descriptors hold either invocation-local variables resolved through
@@ -147,9 +151,14 @@ struct LoopPlan @feat(SLJIT) {
     FunctionPlan* dependency_owner;
     TVal[LOOP_BINDINGS] ssa_binding_constants;
     bool ssa_invalid;
-    ulong ssa_completed @if($feat(SLJIT_STATS));
-    ulong ssa_entry_misses @if($feat(SLJIT_STATS));
-    ulong ssa_body_misses @if($feat(SLJIT_STATS));
+    ulong ssa_completed;
+    // Entries that returned to the body's own first PC or left without
+    // completing. A body whose every entry is a miss never executes.
+    ulong ssa_entry_misses;
+    ulong ssa_body_misses;
+    // Consecutive entries that returned to the body's first PC. A body that
+    // never starts is abandoned for the baseline tier.
+    ulong ssa_entry_streak;
     ulong ssa_epoch_updates @if($feat(SLJIT_STATS));
     ulong ssa_native_calls @if($feat(SLJIT_STATS));
     ulong ssa_native_returns @if($feat(SLJIT_STATS));

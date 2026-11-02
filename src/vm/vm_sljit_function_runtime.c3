@@ -402,7 +402,11 @@ fn Instruction* sljit_function_entry(
     bool stuck = consumed == 0 && next >= offset && !returned
         && (next - offset < 6 || at_call);
     if (stuck) {
-        if (!h.jit_stress && ++plan.short_runs[local] >= 8) {
+        // A cache refill or prototype epoch bump costs one immediate exit, and
+        // a hot function can see a handful before its state settles. Only a
+        // long run of consecutive no-progress entries shows the site can never
+        // pay, so keep a wide margin before retiring the entry for good.
+        if (!h.jit_stress && ++plan.short_runs[local] >= STALL_RETIRE_ENTRIES) {
             plan.entries[local] = null;
             if (offset == 0) cf.sljit_function_calls = uint::max;
         }
@@ -467,7 +471,7 @@ fn void sljit_stats_dump(Heap* h) {
                     uint retired;
                     uint active;
                     if (plan != null) for (uint j = 0; j < plan.count; j++) {
-                        if (plan.short_runs[j] >= 8) retired++;
+                        if (plan.short_runs[j] >= STALL_RETIRE_ENTRIES) retired++;
                         if (plan.entries[j] != null) active++;
                     }
                     io::printfn(

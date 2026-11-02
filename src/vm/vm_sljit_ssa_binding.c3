@@ -157,7 +157,11 @@ fn void SsaEmitter.fresh_binding(&self, int id) @feat(SLJIT) {
     // next collecting helper roots them. Keep their owning VM read path.
     self.guard(jit::SLJIT_EQUAL, r3, 0, imm, (long)types::TAG_STRING, self.pc);
     void* initialized = self.e.cmp(jit::SLJIT_NOT_EQUAL, r3, 0, imm, (long)types::TAG_UNDEFINED);
-    self.guard(jit::SLJIT_NOT_EQUAL, r0, 0, imm, (long)(types::TAG_UNDEFINED << 48), self.pc);
+    // Canonical undefined is a value, so only the temporal dead zone sentinel,
+    // the same tag with a nonzero payload, is an uninitialized binding that
+    // must resume the read in the interpreter.
+    self.e.op(jit::SLJIT_SHL, r3, r0, 0, imm, 16);
+    self.guard(jit::SLJIT_NOT_EQUAL, r3, 0, imm, 0, self.pc);
     self.e.bind(initialized);
     // A different closure, aliasing write, callback, or later invocation may
     // change the capture. Check every fresh read before committing its result;
