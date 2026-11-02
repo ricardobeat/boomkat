@@ -13,6 +13,8 @@ struct SsaPlanData @feat(SLJIT) {
     uint spill_count;
     uint edge_count;
     uint native_accesses;
+    uint native_bindings;
+    ulong binding_reads @if($feat(SLJIT_STATS));
     uint bounds_proofs;
     uint rematerialized;
     uint* resume_words;
@@ -86,11 +88,11 @@ fn FunctionPlan* ssa_function_wrap(CompiledFunction* cf, ColdCtx* cold, LoopPlan
     plan.shape_clock = h.shape_gen_clock;
     plan.shape_epoch = h.shape_recycle_epoch;
     body.code_owner = &plan.artifact;
+    ssa_function_call_entry(cf, cold, plan);
     cf.sljit_function = plan;
     sljit_artifact_publish(h, &plan.artifact, cf, plan, FUNCTION_CODE,
         plan.code_bytes, sljit_function_metadata_bytes(plan, bytes), &sljit_function_release);
-    // No native call_entry exists: linked callers keep their normal call_fn
-    // bridge, which enters this same shared interpreter gateway.
+    // Incoming native links and interpreter entries execute the same SSA body.
     sljit_relink_calls(h, cf);
     cf.sljit_function_calls = uint::max - 1;
     return plan;

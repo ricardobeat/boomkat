@@ -116,6 +116,7 @@ fn void ssa_cfg_extra_reads(void* context, DecodedBytecode view, compiler::RegSe
 // Legacy descriptor lowering already established a watched native memory
 // operation. Its CFG split is useful, but does not create a VM reentry root.
 fn bool ssa_cfg_native_access(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
+    if (ssa_binding_native_site(g, view)) return true;
     if (g.plan.ssa_data != null && g.plan.ssa_data.decoded_body) return ssa_access_native_site(g, view);
     if (ssa_memory_site(g.plan, view.pc - g.plan.begin) == 0) return false;
     switch (view.insn.op) {

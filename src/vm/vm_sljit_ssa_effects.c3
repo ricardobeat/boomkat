@@ -20,7 +20,7 @@ enum SsaEffect : char {
 
 fn SsaEffect ssa_effect(SsaOp op) @feat(SLJIT) {
     switch (op) {
-        case NOP: case ARG: case COPY: case BRANCH: case GOTO: case RETURN: return NONE;
+        case NOP: case ARG: case COPY: case FRESH_BINDING: case BRANCH: case GOTO: case RETURN: return NONE;
         case CONST_I: case CONST_F: case CONST_BOXED:
         case ADD: case SUB: case MUL: case DIV:
         case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:

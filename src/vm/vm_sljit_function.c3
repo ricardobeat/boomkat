@@ -57,6 +57,9 @@ struct FunctionPlan @feat(SLJIT) {
     uint read_refresh_shape @if($feat(SLJIT_READ_REFRESH));
     uint read_refresh_generation @if($feat(SLJIT_READ_REFRESH));
     void* call_entry;
+    // SSA-only bodies share the ordinary native call ABI through this small
+    // adapter. The SSA kernel and adapter have the same artifact owner.
+    void* ssa_call_code;
     FunctionCallLink* calls;
     // Watched assumptions remain allocated until this plan is retired. Native
     // code checks the shared cell before entering any dependent SSA body.
@@ -814,7 +817,7 @@ fn bool FunctionEmitter.native_call(&self, CompiledFunction* cf, uint pc, Heap* 
     return true;
 }
 
-fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
+fn void FunctionEmitter.native_return(&self, uint pc, int result_reg = -2) @feat(SLJIT) {
     self.flow_materialize();
     TemplateEmitter* e = &self.out.e;
     int r0 = jit::reg_r(0);
@@ -838,7 +841,8 @@ fn void FunctionEmitter.native_return(&self, uint pc) @feat(SLJIT) {
     e.mov(r1, 0, mem | cold, (char*)&ctx.act - (char*)&ctx);
     e.mov(r2, 0, mem | run, (char*)&state.root - (char*)&state);
     self.out.guard(jit::SLJIT_EQUAL, r1, 0, r2, 0, pc);
-    if (self.cf.code[pc].op == Opcode.RET) { self.out.load(self.cf.code[pc].a, r0); }
+    if (result_reg == -2) result_reg = self.cf.code[pc].op == Opcode.RET ? (int)self.cf.code[pc].a : -1;
+    if (result_reg >= 0) { self.out.load((uint)result_reg, r0); }
     else { e.mov(r0, 0, imm, (long)loop_bits(undef)); }
     e.op(jit::SLJIT_LSHR, r3, r0, 0, imm, 48);
     void* inert = e.cmp(jit::SLJIT_LESS, r3, 0, imm, (long)types::TAG_STRING);
