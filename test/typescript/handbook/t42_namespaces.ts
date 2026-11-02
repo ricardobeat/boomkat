@@ -18,3 +18,16 @@ namespace Shapes {
 }
 console.log(Shapes.origin.x, Shapes.distance(3, 7), new Shapes.Box(4).size);
 console.log(Shapes.Kind.Round, Shapes.Nested.depth, Shapes.hidden);
+
+// An exported variable and its member stay the same value, whichever side
+// changes it.
+namespace Counter {
+  export let count = 1;
+  export const step = 10;
+  export function bump() { count += step; }
+  export function current() { return count; }
+}
+Counter.bump();
+console.log(Counter.count, JSON.stringify(Counter));
+Counter.count = 5;
+console.log(Counter.current());

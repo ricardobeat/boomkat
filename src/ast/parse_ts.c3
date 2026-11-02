@@ -299,14 +299,19 @@ fn uint Parser.ts_object_var(&self, uint name, uint param, uint body, uint pos) 
     return self.node(NodeTag.VAR_DECL, pos, self.ast.add_list({ decl }), 0, VAR_KIND_VAR);
 }
 
-// The call that fills a TypeScript object: `(function (P) { ...; return P; })(N || (N = {}))`.
-fn uint Parser.ts_object_call(&self, uint name, uint param, uint body, uint pos) {
-    uint param_node = self.node(NodeTag.IDENT, pos, param);
-    uint rec = self.fn_record(FNF_SIMPLE_PARAMS, self.ast.add_list({ param_node }), body, pos, pos);
+// A function expression the parser makes up, with simple parameters and the
+// block `body`.
+fn uint Parser.ts_function(&self, uint params, uint body, uint pos) {
+    uint rec = self.fn_record(FNF_SIMPLE_PARAMS, params, body, pos, pos);
     self.ast.set_field(rec, FN_PAREN, pos);
     self.ast.set_field(rec, FN_HEADER_END, pos);
     self.ast.set_field(rec, FN_BODY_START, pos);
-    uint func = self.node(NodeTag.FUNC_EXPR, pos, 0, rec);
+    return self.node(NodeTag.FUNC_EXPR, pos, 0, rec);
+}
+
+// The call that fills a TypeScript object: `(function (P) { ...; return P; })(N || (N = {}))`.
+fn uint Parser.ts_object_call(&self, uint name, uint param, uint body, uint pos) {
+    uint func = self.ts_function(self.ast.add_list({ self.node(NodeTag.IDENT, pos, param) }), body, pos);
     uint empty = self.node(NodeTag.OBJECT, pos, self.ast.add_list({}));
     uint fallback = self.node(NodeTag.ASSIGN, pos, self.node(NodeTag.IDENT, pos, name),
         empty, op_flag(TokenType.ASSIGN));

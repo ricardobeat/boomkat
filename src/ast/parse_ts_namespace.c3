@@ -168,10 +168,19 @@ fn void Parser.ts_namespace_exports(&self, uint decl) {
     switch (self.ast.tags.data[decl]) {
         case NodeTag.VAR_DECL: {
             uint list = self.ast.lhs.data[decl];
+            bool mutable = (self.ast.flags.data[decl] & VAR_KIND_MASK) != VAR_KIND_CONST;
             for (uint i = 0; i < self.ast.list_len(list); i++) {
                 uint target = self.ast.lhs.data[self.ast.list_item(list, i)];
                 if (self.ast.tags.data[target] != NodeTag.IDENT) continue;
-                self.scratch_push(self.ts_namespace_assign(self.ast.main_tok.data[decl], self.ast.lhs.data[target]));
+                uint pos = self.ast.main_tok.data[decl];
+                uint name = self.ast.lhs.data[target];
+                // A variable that can change stays the member: TypeScript
+                // reads and writes the member wherever the namespace names it.
+                if (mutable) {
+                    self.scratch_push(self.ts_namespace_live(pos, name));
+                } else {
+                    self.scratch_push(self.ts_namespace_assign(pos, name));
+                }
             }
         }
         case NodeTag.FUNC_DECL:
@@ -192,6 +201,40 @@ fn uint Parser.ts_namespace_assign(&self, uint pos, uint name) {
     uint value = self.node(NodeTag.IDENT, pos, name);
     uint assign = self.node(NodeTag.ASSIGN, pos, member, value, op_flag(TokenType.ASSIGN));
     return self.node(NodeTag.EXPR_STMT, pos, assign);
+}
+
+// The accessor that keeps an exported variable and its namespace member the
+// same: `Object.defineProperty(N, "x", { get: function () { return x; },
+// set: function (v) { x = v; }, enumerable: true, configurable: true })`.
+// TypeScript instead turns each reference to the variable into the member;
+// the accessor gives the same values without rewriting the references.
+fn uint Parser.ts_namespace_live(&self, uint pos, uint name) {
+    uint get_body = self.node(NodeTag.BLOCK, pos, self.ast.add_list({
+        self.node(NodeTag.RETURN, pos, self.node(NodeTag.IDENT, pos, name)) }));
+    uint getter = self.ts_function(self.ast.add_list({}), get_body, pos);
+    // The value's parameter takes a name no source text spells, so that it
+    // does not shadow the variable.
+    uint value = self.ts_ns_param(name);
+    uint set_body = self.node(NodeTag.BLOCK, pos, self.ast.add_list({
+        self.node(NodeTag.EXPR_STMT, pos, self.node(NodeTag.ASSIGN, pos,
+            self.node(NodeTag.IDENT, pos, name), self.node(NodeTag.IDENT, pos, value),
+            op_flag(TokenType.ASSIGN))) }));
+    uint setter = self.ts_function(self.ast.add_list({ self.node(NodeTag.IDENT, pos, value) }), set_body, pos);
+    uint descriptor = self.node(NodeTag.OBJECT, pos, self.ast.add_list({
+        self.ts_prop(pos, "get", getter),
+        self.ts_prop(pos, "set", setter),
+        self.ts_prop(pos, "enumerable", self.node(NodeTag.TRUE_LIT, pos)),
+        self.ts_prop(pos, "configurable", self.node(NodeTag.TRUE_LIT, pos)) }));
+    uint define = self.node(NodeTag.MEMBER, pos,
+        self.node(NodeTag.IDENT, pos, self.atom("Object")), self.atom("defineProperty"));
+    uint call = self.node(NodeTag.CALL, pos, define, self.ast.add_list({
+        self.node(NodeTag.IDENT, pos, self.ns_name), self.node(NodeTag.STRING, pos, name), descriptor }));
+    return self.node(NodeTag.EXPR_STMT, pos, call);
+}
+
+// An object literal's `key: value` property.
+fn uint Parser.ts_prop(&self, uint pos, String key, uint value) {
+    return self.node(NodeTag.PROP_INIT, pos, self.node(NodeTag.STRING, pos, self.atom(key)), value);
 }
 
 // Whether an `import` here is an import alias, `import X = A.B;`, rather than
