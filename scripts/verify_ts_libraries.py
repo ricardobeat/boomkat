@@ -112,18 +112,6 @@ LIBS = {
                 and "/benchmarks/" not in name
             ),
             "strip": "/",
-            # v4/classic/compat.ts ends with `export enum ZodFirstPartyTypeKind
-            # {}`, a memberless deprecated stub kept only for
-            # zod-to-json-schema compatibility. Enums are non-erasable
-            # TypeScript and the engine rejects them by design, so the stub
-            # line is dropped at fetch time. Nothing in the tree imports the
-            # name (the only other mention is the v3 compat copy, which no v4
-            # module reaches).
-            "patch": {
-                "zod/src/v4/classic/compat.ts": lambda body: re.sub(
-                    r"\n/\*\* [^\n]*\*/\nexport enum ZodFirstPartyTypeKind \{\}[^\n]*\n?$",
-                    "\n", body),
-            },
         },
     },
 }
