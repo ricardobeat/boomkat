@@ -1,7 +1,7 @@
 # SSA throughput pass: scratch pooling, dictionary reads, self-healing tiers
 
-Work is confined to rat (commits 29da643a, ea96005b and 1de6c8dd on top of
-252ff89e); this evidence lives on plans/archive. Main was not modified. The 50,000 full-Octane
+Work is confined to rat (commits 29da643a, ea96005b, 1de6c8dd, 072cb547 and
+9b34b0ee on top of 252ff89e); this evidence lives on plans/archive. Main was not modified. The 50,000 full-Octane
 target remains open.
 
 ## What changed
@@ -63,10 +63,24 @@ and the last screen in `final-summary.json`):
 | Mandreel | 551 | 563 | ~equal |
 | NavierStokes | 302 | 137 | 2.20x faster |
 
-A later follow-up commit (1de6c8dd) also demotes a specialization when helper
-calls merely *equal* its own entries, not only when they exceed them: Gameboy
-244 -> 229 ms and Mandreel 576 -> 559 ms against the prior head, Box2D 257 ->
-263 ms.
+Two later commits change the tier policy again. 1de6c8dd demotes a
+specialization when helper calls merely *equal* its own entries, not only when
+they exceed them (Gameboy 244 -> 229 ms, Mandreel 576 -> 559 ms, Box2D +2%).
+9b34b0ee stops three ways the tier abandoned code it could run: a variable read
+no longer bails when the value is plain undefined (only the TDZ sentinel, the
+same tag with a nonzero payload, is uninitialized), the no-progress retirement
+bound moved from 8 consecutive entries to 64 so cache refills and epoch bumps
+cannot kill a hot entry, and an SSA body that refuses every entry abandons
+itself for the baseline tier. Measured against the prior head: Box2D 268 -> 257
+ms and Gameboy 230 -> 219 ms, with the other four unchanged.
+
+The largest single win is 072cb547, which types a fresh capture read as INT32
+from the running closure's own capture slot when that value is exactly an
+int32, revalidating every read and resuming the original GETCAP otherwise. Loop
+kernels that keep their dimensions in captured variables stop promoting indices
+to doubles: NavierStokes drops 136 -> 106 ms, and the full screen puts it at
+107 ms against 303 ms historically (2.8x). Score-relevant candidates for the
+same treatment are the remaining capture sites typed boxed.
 
 Session trajectory for the two repaired regressions: Gameboy 403 -> 234 -> 229
 (historical 272-277), Mandreel 583 -> 561 -> 553 (historical 552-565). The
@@ -125,6 +139,14 @@ binaries) located where Box2D loses its 25 percent:
 
 Remaining work
 
+0. Box2D 0.76x after 9b34b0ee. The 2 MB function-tier budget still decides the
+   outcome: at 4 MB Box2D reaches 248 ms but Mandreel regresses 557 -> 580 ms.
+   Instrumented runs show why the extra coverage hurts Mandreel: the newly
+   compiled bodies exit at a `GETPROP` four to forty thousand times each and
+   cover only a fraction of their own body per entry, so partial coverage costs
+   more than interpretation. A plan needs a release-mode coverage measure before
+   the budget can grow, and 730 (SolvePositionConstraints) needs a template plan
+   at all, which the full budget currently refuses.
 1. Box2D 0.75x: debug why SolvePositionConstraints' template entries exit at
    pc=0 with zero consumed budget (GETGLOBAL IC fill suspected) instead of
    disabling after 8 stalls, and re-balance which functions claim the 2 MB

@@ -1,0 +1,38 @@
+[
+  {
+    "case": "gbemu",
+    "b85": 280.0,
+    "final": 224.0,
+    "speedup": 1.25
+  },
+  {
+    "case": "box2d",
+    "b85": 203.0,
+    "final": 270.0,
+    "speedup": 0.7518518518518519
+  },
+  {
+    "case": "deltablue",
+    "b85": 90.0,
+    "final": 92.0,
+    "speedup": 0.9782608695652174
+  },
+  {
+    "case": "crypto",
+    "b85": 176.0,
+    "final": 187.0,
+    "speedup": 0.9411764705882353
+  },
+  {
+    "case": "mandreel",
+    "b85": 552.0,
+    "final": 558.0,
+    "speedup": 0.989247311827957
+  },
+  {
+    "case": "navier-stokes",
+    "b85": 299.0,
+    "final": 107.0,
+    "speedup": 2.794392523364486
+  }
+]
