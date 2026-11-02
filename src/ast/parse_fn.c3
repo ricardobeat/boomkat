@@ -355,12 +355,20 @@ fn void? Parser.to_pattern_element(&self, uint n, bool binding) {
 
 // ---- classes ----
 
+// Whether a class head ends here, so its name is absent: `class {`, `class
+// extends B {`, and, in TypeScript, the type parameters and `implements` of an
+// anonymous class expression.
+fn bool Parser.class_head_unnamed(&self) {
+    if (self.tok.type == TokenType.EXTENDS || self.tok.type == TokenType.LBRACE) return true;
+    if (!self.lex.ts_mode) return false;
+    return self.tok.type == TokenType.LT || self.at_word("implements");
+}
+
 fn uint? Parser.class_decl(&self, bool anonymous_ok = false) {
     uint start = self.tok.pos;
     self.next()!;
     uint name = 0;
-    if (self.tok.type != TokenType.EXTENDS && self.tok.type != TokenType.LBRACE
-        && !(self.lex.ts_mode && self.tok.type == TokenType.LT)) {
+    if (!self.class_head_unnamed()) {
         if (!self.is_ident_token(self.tok)) return self.unexpected()~;
         name = self.ident_node(self.tok);
         self.next()!;
@@ -375,8 +383,7 @@ fn uint? Parser.class_expr(&self) {
     uint start = self.tok.pos;
     self.next()!;
     uint name = 0;
-    if (self.tok.type != TokenType.EXTENDS && self.tok.type != TokenType.LBRACE
-        && !(self.lex.ts_mode && self.tok.type == TokenType.LT)) {
+    if (!self.class_head_unnamed()) {
         if (!self.is_ident_token(self.tok)) return self.unexpected()~;
         name = self.ident_node(self.tok);
         self.next()!;
