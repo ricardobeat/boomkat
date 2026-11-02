@@ -73,7 +73,9 @@ regression. Compile errors are expected for parse-negative tests. `--log` writes
 per-test verdicts for failure clustering.
 
 TypeScript stripping uses `just ts-conformance [phase-dir]`, with
-`tsc --erasableSyntaxOnly` as the compilation oracle. Fetch the corpus with
+`tsc --erasableSyntaxOnly` as the compilation oracle. The TypeScript compiler's
+own sources are a broader stress test: `python3 scripts/fetch_ts_source.py
+--check` fetches them and compiles every module. Fetch the corpus with
 `python3 scripts/fetch_ts_conformance.py` if it is missing. Runner options and
 exclusions are in `scripts/run_ts_conformance.py`.
 
@@ -91,6 +93,15 @@ it is excluded from default builds:
 ```sh
 just build-asan
 echo test262/test/<path>.js | ./out/test262_runner_asan --worker
+```
+
+A crash in the host itself is easiest to pin down with the GC-stress build,
+which collects at every allocation and turns a missed root into a deterministic
+report naming the failing function:
+
+```sh
+make out/boomkat_gc_stress
+./out/boomkat_gc_stress <file>
 ```
 
 Debug targets use full debug info because the configured toolchain's Linux
