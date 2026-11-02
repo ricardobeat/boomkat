@@ -14,6 +14,7 @@ struct SsaPlanData @feat(SLJIT) {
     uint edge_count;
     uint native_accesses;
     uint native_bindings;
+    uint native_integer_bindings;
     ulong binding_reads @if($feat(SLJIT_STATS));
     ulong field_reads @if($feat(SLJIT_STATS));
     ulong array_reads @if($feat(SLJIT_STATS));

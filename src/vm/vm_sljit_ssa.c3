@@ -120,10 +120,14 @@ fn void* ssa_emit(LoopPlan* plan, CompiledFunction* cf, Heap* h, bool single_pas
     if (plan.ssa_data != null) {
         plan.ssa_data.native_accesses = 0;
         plan.ssa_data.native_bindings = 0;
+        plan.ssa_data.native_integer_bindings = 0;
         plan.ssa_data.bounds_proofs = 0;
         plan.ssa_data.rematerialized = 0;
         foreach (value : graph.values[:graph.value_count]) {
-            if (value.op == FRESH_BINDING) plan.ssa_data.native_bindings++;
+            if (value.op == FRESH_BINDING) {
+                plan.ssa_data.native_bindings++;
+                if (value.rep == INT32) plan.ssa_data.native_integer_bindings++;
+            }
             if (value.op == ACCESS_LOAD || value.op == ACCESS_STORE) plan.ssa_data.native_accesses++;
             if ((value.op == CONST_I || value.op == CONST_F) && ssa_rematerialized(value)) plan.ssa_data.rematerialized++;
             if (value.op == ACCESS_ADDRESS && (value.proof_bits & SSA_PROOF_INDEX_BOUNDS) != 0) plan.ssa_data.bounds_proofs++;
