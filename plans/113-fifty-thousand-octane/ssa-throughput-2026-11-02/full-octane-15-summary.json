@@ -1,0 +1,95 @@
+{
+  "summary": [
+    {
+      "case": "richards",
+      "b85": 66.0,
+      "final": 67.0,
+      "speedup": 0.9850746268656716
+    },
+    {
+      "case": "deltablue",
+      "b85": 86.0,
+      "final": 88.0,
+      "speedup": 0.9772727272727273
+    },
+    {
+      "case": "crypto",
+      "b85": 166.0,
+      "final": 176.0,
+      "speedup": 0.9431818181818182
+    },
+    {
+      "case": "raytrace",
+      "b85": 161.0,
+      "final": 161.0,
+      "speedup": 1.0
+    },
+    {
+      "case": "earley-boyer",
+      "b85": 175.0,
+      "final": 175.0,
+      "speedup": 1.0
+    },
+    {
+      "case": "regexp",
+      "b85": 221.0,
+      "final": 220.0,
+      "speedup": 1.0045454545454546
+    },
+    {
+      "case": "splay",
+      "b85": 110.0,
+      "final": 114.0,
+      "speedup": 0.9649122807017544
+    },
+    {
+      "case": "navier-stokes",
+      "b85": 284.0,
+      "final": 106.0,
+      "speedup": 2.6792452830188678
+    },
+    {
+      "case": "pdfjs",
+      "b85": 363.0,
+      "final": 354.0,
+      "speedup": 1.0254237288135593
+    },
+    {
+      "case": "mandreel",
+      "b85": 552.0,
+      "final": 557.0,
+      "speedup": 0.9910233393177738
+    },
+    {
+      "case": "gbemu",
+      "b85": 272.0,
+      "final": 220.0,
+      "speedup": 1.2363636363636363
+    },
+    {
+      "case": "code-load",
+      "b85": 160.0,
+      "final": 154.0,
+      "speedup": 1.0389610389610389
+    },
+    {
+      "case": "box2d",
+      "b85": 202.0,
+      "final": 263.0,
+      "speedup": 0.7680608365019012
+    },
+    {
+      "case": "zlib",
+      "b85": 3721.0,
+      "final": 3575.0,
+      "speedup": 1.040839160839161
+    },
+    {
+      "case": "typescript",
+      "b85": 1238.0,
+      "final": 1300.0,
+      "speedup": 0.9523076923076923
+    }
+  ],
+  "geomean_speedup": 1.0584149528664133
+}

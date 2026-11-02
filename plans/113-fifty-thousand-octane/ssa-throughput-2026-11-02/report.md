@@ -115,6 +115,59 @@ Two independent causes, both found with an ASan embedding target
   logical-not 19/19, property-accessors 21/21, relational 1/1, delete 69/69,
   statements/if 69/69, statements/with 181/181.
 
+## All fifteen Octane benchmarks
+
+The mini screen covers six benchmarks; this one runs the whole set that the
+Octane score aggregates, three alternating pairs against the historical binary
+(`full-octane-15-summary.json`). Speedup is b85_ms / rat_ms, and the Octane
+score is the geometric mean of these rates, so the geometric mean of the time
+ratios is the score ratio.
+
+| Benchmark | b85 ms | rat ms | ratio |
+|---|---:|---:|---:|
+| Richards | 66 | 67 | 0.985 |
+| DeltaBlue | 86 | 88 | 0.977 |
+| Crypto | 166 | 176 | 0.943 |
+| RayTrace | 161 | 161 | 1.000 |
+| EarleyBoyer | 175 | 175 | 1.000 |
+| RegExp | 221 | 220 | 1.005 |
+| Splay | 110 | 114 | 0.965 |
+| NavierStokes | 284 | 106 | 2.679 |
+| PdfJS | 363 | 354 | 1.025 |
+| Mandreel | 552 | 557 | 0.991 |
+| Gameboy | 272 | 220 | 1.236 |
+| CodeLoad | 160 | 154 | 1.039 |
+| Box2D | 202 | 263 | 0.768 |
+| zlib | 3721 | 3575 | 1.041 |
+| TypeScript | 1238 | 1300 | 0.952 |
+
+Geometric mean **1.058**: the score is about six percent above the historical
+revision, carried by NavierStokes and Gameboy. The remaining deficits are Box2D
+(23%), TypeScript (5%), Crypto (6%), Splay (3.5%), DeltaBlue (2%), Richards
+(1.5%) and Mandreel (1%). TypeScript, zlib and PdfJS are dominated by parser and
+allocation work rather than generated code; the four smallest deficits are
+within a few milliseconds and were not attributed individually.
+
+## Rejected budget experiments
+
+Three ways of buying Box2D more native coverage were measured and discarded:
+
+- Raising the function-tier ceiling from 2 MB to 4 MB: Box2D 263 -> 250 ms, but
+  Mandreel 557 -> 580 ms. The extra coverage is a net loss because the newly
+  compiled bodies exit at a `GETPROP` thousands of times each and cover only a
+  fraction of their own body per entry.
+- `SLJIT_ADAPTIVE` budget growth and eviction: Box2D 264 -> 312 ms and Mandreel
+  556 -> 649 ms.
+- Evicting cold function plans to stay under the 2 MB ceiling (new victim scan
+  limited to function artifacts): Box2D 255 -> 259 ms, Mandreel 557 -> 598 ms.
+  Thrash from re-warmed plans costs more than the coverage gains.
+
+The post-call resume fast path was also reconsidered: sample attribution puts
+`sljit_function_entry` at 3.6% of Box2D's samples, and its checks (dependency
+retirement, read refresh, shape clock, artifact generation) are all load
+bearing because a callee may have invalidated any of them. There is no safe
+subset to skip, so this was not implemented.
+
 ## Box2D investigation findings (open)
 
 Instrumented runs (`SLJIT_STATS --stats` plus sample attribution on both

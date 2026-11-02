@@ -1,0 +1,902 @@
+[
+  {
+    "pair": 0,
+    "case": "richards",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 66.0,
+    "stdout": "Richards: 66 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "richards",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 67.0,
+    "stdout": "Richards: 67 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "deltablue",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 88.0,
+    "stdout": "DeltaBlue: 88 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "deltablue",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 86.0,
+    "stdout": "DeltaBlue: 86 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "crypto",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 166.0,
+    "stdout": "Encrypt: 11 ms\nDecrypt: 155 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "crypto",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 176.0,
+    "stdout": "Encrypt: 15 ms\nDecrypt: 161 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "raytrace",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 161.0,
+    "stdout": "RayTrace: 161 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "raytrace",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 161.0,
+    "stdout": "RayTrace: 161 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "earley-boyer",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 175.0,
+    "stdout": "Earley: 20 ms\nBoyer: 155 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "earley-boyer",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 175.0,
+    "stdout": "Earley: 17 ms\nBoyer: 158 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "regexp",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 220.0,
+    "stdout": "RegExp: 220 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "regexp",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 221.0,
+    "stdout": "RegExp: 221 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "splay",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 113.0,
+    "stdout": "Splay: 113 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "splay",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 114.0,
+    "stdout": "Splay: 114 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-stokes",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 106.0,
+    "stdout": "NavierStokes: 106 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "navier-stokes",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 284.0,
+    "stdout": "NavierStokes: 284 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "pdfjs",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 363.0,
+    "stdout": "PdfJS: 363 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "pdfjs",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 354.0,
+    "stdout": "PdfJS: 354 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "mandreel",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 560.0,
+    "stdout": "Mandreel: 560 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "mandreel",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 557.0,
+    "stdout": "Mandreel: 557 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "gbemu",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 272.0,
+    "stdout": "Gameboy: 272 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "gbemu",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 220.0,
+    "stdout": "Gameboy: 220 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "code-load",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 154.0,
+    "stdout": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 148 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "code-load",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 160.0,
+    "stdout": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 153 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "box2d",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 203.0,
+    "stdout": "Box2D: 203 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "box2d",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 263.0,
+    "stdout": "Box2D: 263 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "zlib",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 3579.0,
+    "stdout": "zlib: 3579 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "zlib",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 3721.0,
+    "stdout": "zlib: 3721 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "typescript",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 1239.0,
+    "stdout": "Typescript: 1239 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 0,
+    "case": "typescript",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 1305.0,
+    "stdout": "Typescript: 1305 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "richards",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 71.0,
+    "stdout": "Richards: 71 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "richards",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 70.0,
+    "stdout": "Richards: 70 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "deltablue",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 89.0,
+    "stdout": "DeltaBlue: 89 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "deltablue",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 91.0,
+    "stdout": "DeltaBlue: 91 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "crypto",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 187.0,
+    "stdout": "Encrypt: 16 ms\nDecrypt: 171 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "crypto",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 175.0,
+    "stdout": "Encrypt: 11 ms\nDecrypt: 164 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "raytrace",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 163.0,
+    "stdout": "RayTrace: 163 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "raytrace",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 167.0,
+    "stdout": "RayTrace: 167 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "earley-boyer",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 175.0,
+    "stdout": "Earley: 17 ms\nBoyer: 158 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "earley-boyer",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 176.0,
+    "stdout": "Earley: 21 ms\nBoyer: 155 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "regexp",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 226.0,
+    "stdout": "RegExp: 226 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "regexp",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 226.0,
+    "stdout": "RegExp: 226 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "splay",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 116.0,
+    "stdout": "Splay: 116 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "splay",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 110.0,
+    "stdout": "Splay: 110 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-stokes",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 302.0,
+    "stdout": "NavierStokes: 302 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "navier-stokes",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 107.0,
+    "stdout": "NavierStokes: 107 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "pdfjs",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 355.0,
+    "stdout": "PdfJS: 355 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "pdfjs",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 363.0,
+    "stdout": "PdfJS: 363 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "mandreel",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 552.0,
+    "stdout": "Mandreel: 552 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "mandreel",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 557.0,
+    "stdout": "Mandreel: 557 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "gbemu",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 221.0,
+    "stdout": "Gameboy: 221 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "gbemu",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 273.0,
+    "stdout": "Gameboy: 273 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "code-load",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 161.0,
+    "stdout": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 155 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "code-load",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 157.0,
+    "stdout": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 151 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "box2d",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 267.0,
+    "stdout": "Box2D: 267 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "box2d",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 202.0,
+    "stdout": "Box2D: 202 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "zlib",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 3749.0,
+    "stdout": "zlib: 3749 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "zlib",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 3583.0,
+    "stdout": "zlib: 3583 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "typescript",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 1303.0,
+    "stdout": "Typescript: 1303 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 1,
+    "case": "typescript",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 1238.0,
+    "stdout": "Typescript: 1238 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "richards",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 71.0,
+    "stdout": "Richards: 71 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "richards",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 70.0,
+    "stdout": "Richards: 70 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "deltablue",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 92.0,
+    "stdout": "DeltaBlue: 92 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "deltablue",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 88.0,
+    "stdout": "DeltaBlue: 88 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "crypto",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 176.0,
+    "stdout": "Encrypt: 11 ms\nDecrypt: 165 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "crypto",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 187.0,
+    "stdout": "Encrypt: 17 ms\nDecrypt: 170 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "raytrace",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 167.0,
+    "stdout": "RayTrace: 167 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "raytrace",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 162.0,
+    "stdout": "RayTrace: 162 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "earley-boyer",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 175.0,
+    "stdout": "Earley: 20 ms\nBoyer: 155 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "earley-boyer",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 177.0,
+    "stdout": "Earley: 17 ms\nBoyer: 160 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "regexp",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 226.0,
+    "stdout": "RegExp: 226 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "regexp",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 228.0,
+    "stdout": "RegExp: 228 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "splay",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 111.0,
+    "stdout": "Splay: 111 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "splay",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 115.0,
+    "stdout": "Splay: 115 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-stokes",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 107.0,
+    "stdout": "NavierStokes: 107 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "navier-stokes",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 297.0,
+    "stdout": "NavierStokes: 297 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "pdfjs",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 364.0,
+    "stdout": "PdfJS: 364 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "pdfjs",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 355.0,
+    "stdout": "PdfJS: 355 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "mandreel",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 558.0,
+    "stdout": "Mandreel: 558 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "mandreel",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 553.0,
+    "stdout": "Mandreel: 553 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "gbemu",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 273.0,
+    "stdout": "Gameboy: 273 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "gbemu",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 222.0,
+    "stdout": "Gameboy: 222 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "code-load",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 157.0,
+    "stdout": "CodeLoadClosure: 7 ms\nCodeLoadJQuery: 150 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "code-load",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 161.0,
+    "stdout": "CodeLoadClosure: 6 ms\nCodeLoadJQuery: 155 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "box2d",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 202.0,
+    "stdout": "Box2D: 202 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "box2d",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 263.0,
+    "stdout": "Box2D: 263 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "zlib",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 3575.0,
+    "stdout": "zlib: 3575 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "zlib",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 3750.0,
+    "stdout": "zlib: 3750 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "typescript",
+    "config": "b85",
+    "status": 0,
+    "valid": true,
+    "ms": 1240.0,
+    "stdout": "Typescript: 1240 ms\n",
+    "stderr": ""
+  },
+  {
+    "pair": 2,
+    "case": "typescript",
+    "config": "final",
+    "status": 0,
+    "valid": true,
+    "ms": 1300.0,
+    "stdout": "Typescript: 1300 ms\n",
+    "stderr": ""
+  }
+]
