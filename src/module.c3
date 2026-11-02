@@ -1781,6 +1781,10 @@ fn HObject* module_ensure_eval_promise(Heap* heap, ModuleDef* mod) {
     HObject* prom = prom_raw;
     prom.prototype = heap.promise_proto;
     builtins::promise_init(prom);
+    // The promise is internal: whoever observes the module reports its failure,
+    // an import() through its own promise and the host through the module's
+    // status. Left unhandled, a rejection would be reported a second time.
+    builtins::promise_mark_handled(prom, heap);
     prom.as_header().incref();  // ModuleDef-owned reference, held for its lifetime
     mod.eval_promise = prom;
     heap.shade_root_object(prom);
