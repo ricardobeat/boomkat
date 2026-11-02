@@ -144,6 +144,7 @@ fn void vm_destroy(Vm* vm) {
     if (vm.valstack != null) {
         vm.heap.free_func(vm.heap.heap_udata, vm.valstack);
     }
+    if (vm.tail_callers != null) vm.heap.free_func(vm.heap.heap_udata, vm.tail_callers);
     detach_vm_roots(vm.heap);
     vm.heap.free_func(vm.heap.heap_udata, vm);
 }
