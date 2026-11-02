@@ -96,9 +96,15 @@ fn FunctionPlan* sljit_function_compile(CompiledFunction* cf, ColdCtx* cold, uin
         bool full = cf.code_count > SSA_SPAN || cf.num_regs > LOOP_REGS;
         if (!full) for (uint pc = 0; pc < cf.code_count; pc++) if (cf.code[pc].op == Opcode.WIDE) { full = true; break; }
         if (full) {
-            LoopPlan* body = sljit_function_ssa_recoverable_compile(cf, cold);
-            if (body != null) return ssa_function_wrap(cf, cold, body);
-            cf.sljit_ssa_failed = true;
+            // A body whose property reads cannot be lowered belongs to the
+            // baseline region, which inlines them. The check runs before the
+            // graph is built, so such a body costs no compilation. It stays
+            // unmarked: a later rebuild may find the reads lowered.
+            if (ssa_body_reads_lowerable(h, cf)) {
+                LoopPlan* body = sljit_function_ssa_recoverable_compile(cf, cold);
+                if (body != null) return ssa_function_wrap(cf, cold, body);
+                cf.sljit_ssa_failed = true;
+            }
         }
     }
     // The view borrows the original bytecode, constants and site caches. Only

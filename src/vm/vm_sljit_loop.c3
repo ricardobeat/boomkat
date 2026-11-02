@@ -24,7 +24,8 @@ const uint LOOP_SPAN      = 512;
 const uint SSA_SPAN       = 128;
 // Largest bytecode body the whole-body SSA tier attempts. A bigger body costs
 // proportional compile and recovery work, and the baseline template region
-// inlines the same property reads for less, so it keeps those functions.
+// inlines the same property reads for less, so it keeps those functions. A
+// body whose reads cannot be lowered is left out before it is built.
 const uint SSA_BODY_OPS   = 320;
 // A specialization is abandoned for the baseline tier only after this many
 // helper calls have shown it spends more entries in helpers than in its body.

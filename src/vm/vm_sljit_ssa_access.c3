@@ -312,6 +312,11 @@ fn bool ssa_access_would_specialize(Heap* h, CompiledFunction* cf, uint pc) @fea
 fn bool ssa_access_site_refused(Heap* h, CompiledFunction* cf, uint pc) @feat(SLJIT) {
     if (pc >= cf.code_count) return false;
     DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+    return ssa_access_view_refused(h, cf, view);
+}
+
+// The same check for an instruction that is already decoded.
+fn bool ssa_access_view_refused(Heap* h, CompiledFunction* cf, DecodedBytecode view) @feat(SLJIT) {
     if (!view.valid || view.wide) return false;
     switch (view.insn.op) {
         case Opcode.GETPROPC: case Opcode.GETPROPC_CACHED: case Opcode.GETTHISC: break;
@@ -322,6 +327,20 @@ fn bool ssa_access_site_refused(Heap* h, CompiledFunction* cf, uint pc) @feat(SL
     if (ic.key.borrow() == null) return false;
     SsaFieldAccess access;
     return !ssa_access_field_spec(h, cf, view, &access);
+}
+
+// A body past the shared span pays one interpreter step for every property
+// read it cannot lower, and the baseline region inlines the same read. The
+// check runs over the bytecode, so a body that cannot win is never built.
+fn bool ssa_body_reads_lowerable(Heap* h, CompiledFunction* cf) @feat(SLJIT) {
+    if (cf.code_count <= SSA_SPAN) return true;
+    for (uint pc = 0; pc < cf.code_count;) {
+        DecodedBytecode view = bytecode::decode_bytecode(cf.code, cf.code_count, pc);
+        if (!view.valid) return true;
+        if (ssa_access_view_refused(h, cf, view)) return false;
+        pc = view.next_pc;
+    }
+    return true;
 }
 
 fn bool ssa_access_native_site(SsaGraph* g, DecodedBytecode view) @feat(SLJIT) {
