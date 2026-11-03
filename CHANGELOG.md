@@ -5,10 +5,22 @@ of commits since the previous release. Newest first.
 
 ## [Unreleased]
 
+- TypeScript 7 is now the baseline for support
+- TypeScript namespaces, enums, constructor parameter properties and
+  angle-bracket type assertions compile to runtime objects
+- TypeScript sources are always compiled as strict code, matching TypeScript 7.
 - `Intl.DisplayNames` names languages, regions, scripts, currencies, calendars and
   date-time fields in the full profile's 33 locales.
-- The CLI prints uncaught errors whose message holds non-ASCII text as UTF-8;
-  Latin-1 characters were encoded twice.
+- `Intl.DateTimeFormat` and the other formatters resolve CLDR region variants
+  such as `de-DE` to the requested locale instead of a fallback
+- `Intl.DateTimeFormat` formats non-Gregorian calendar eras and field order
+  from CLDR in English
+- `Intl.RelativeTimeFormat` handles patterns without a number and adds Hebrew,
+  Czech and Welsh
+- Failed module loads are now retried
+- `Array.prototype.toSorted` now shares `.sort` merge sort code path
+- Added 32-bit RISCV builds and ESP32 example
+- Improved embedding API for managing promises
 
 ## [0.3.0] - 2026-10-30 · 259 commits
 
