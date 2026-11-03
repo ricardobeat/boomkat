@@ -1159,6 +1159,130 @@ fn OpStatus op_if(Dispatch* ds, DecodedInsn insn) {
     return ds.needs_restart ? RESTART : NEXT;
 }
 
+// === PROPERTY ACCESS ===
+// GETPROPC_CACHED, GETPROP, GETPROP_CACHE, GETPROPC, PUTPROP, PUTPROP_NE,
+// PUTPROP_SUPER, GETPROP_SUPER, DELPROP
+fn OpStatus op_property(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = dispatch_property(ds, insn.op, regs + insn.a, regs + insn.b, regs + insn.c, insn)) return op_fail(ds, err);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+// PUTPROP with the key in constant C and the value in register B.
+fn OpStatus op_putpropc(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = dispatch_property(ds, Opcode.PUTPROP, regs + insn.a, &ds.constants[insn.c], regs + insn.b, insn)) return op_fail(ds, err);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_topropkey(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    // In-place ToPropertyKey coercion (see bytecode.c3 doc comment).
+    // Mirrors dispatch_property's GETPROP key-coercion cache-back so a
+    // later GETPROP/PUTPROP on this same register is a no-op re-coercion.
+    if (!ra.is_string()) {
+        void* key = get_prop_key(vm, ra);
+        if (key == null && vm.throw_pending) {
+            vm.throw_pending = false;
+            if (!vm_throw_value(vm, vm.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return op_uncaught(ds, &vm.throw_value);
+            }
+            return ds.needs_restart ? RESTART : NEXT;
+        }
+        if (key != null) {
+            TVal key_tv;
+            key_tv.set_string_borrowed(key);
+            vm.heap.tval_copy_ref(ra, &key_tv);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+        }
+    }
+    return NEXT;
+}
+
+fn OpStatus op_tostr(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    // STRJOIN formats this copied primitive directly into its result.
+    // Other substitutions retain their source-position coercion.
+    if (ra.is_fastint()) return NEXT;
+    // In-place ToString coercion (see the bytecode.c3 doc comment), used
+    // by template literal substitutions, which call ToString directly
+    // rather than going through ToPrimitive(default) like `+`.
+    if (!ra.is_string() || (ra.get_heapptr() != null && ((HString*)ra.get_heapptr()).is_symbol())) {
+        HString*? str = vm_to_string(vm, ra);
+        // vm_to_string may call user code (toString/@@toPrimitive) that
+        // reallocates the valstack, so refresh before touching ra again.
+        ds.regs_base = ds.act.bottom;
+        ra = &ds.regs_base[insn.a];
+        if (vm.throw_pending) {
+            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+            return ds.needs_restart ? RESTART : NEXT;
+        }
+        if (try s = str) {
+            TVal str_tv;
+            str_tv.set_string_borrowed(s);
+            vm.heap.tval_copy_ref(ra, &str_tv);
+            track_heap_store(ds.act, ra, (uint)insn.a);
+        }
+    }
+    return NEXT;
+}
+
+fn OpStatus op_retest(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = vm_retest(ds, regs + insn.a, regs + insn.b, insn)) return op_fail(ds, err);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_hof_guard(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (vm_hof_guard(ds, regs + insn.a, regs + insn.b, insn.c)) ds.curr_pc++;
+    return NEXT;
+}
+
+fn OpStatus op_hof_elem(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    bool? present = vm_hof_elem(ds, regs + insn.a, regs + insn.b, regs + insn.c, true);
+    if (catch err = present) return op_fail(ds, err);
+    if (present) ds.curr_pc++;
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_hof_get(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = vm_hof_elem(ds, regs + insn.a, regs + insn.b, regs + insn.c, false)) return op_fail(ds, err);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_hof_newarr(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = vm_hof_newarr(ds, regs + insn.a, regs + insn.b, insn)) return op_fail(ds, err);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_hof_put(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = vm_hof_put(ds, regs + insn.a, regs + insn.b, regs + insn.c)) return op_fail(ds, err);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+// === OBJECT / ARRAY CREATION ===
+// SPREAD_PROJECTION, NEWOBJ_SHAPE, INIT_SLOT, NEWOBJ, NEWARR, NEWARR_CONST,
+// NEWREGEXP, SETALEN, FREEZEOBJ, ARRSPRD, OBJSPRD, OBJREST, SPREAD_ARG,
+// FWD_ARGS, APPLY_ARGS
+fn OpStatus op_objects(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = dispatch_objects(ds, insn.op, regs + insn.a, regs + insn.b, regs + insn.c, insn)) return op_fail(ds, err);
+    // Getters, iterator closes and other user code may reallocate the
+    // valstack; refresh regs_base unless the outer loop reloads it.
+    if (!ds.needs_restart) {
+        ds.regs_base = ds.act.bottom;
+        return NEXT;
+    }
+    return RESTART;
+}
+
 // === CLOSURES ===
 // NEWCELLS, GETCELL, SETCELL, MOVECELL
 fn OpStatus op_cells(Dispatch* ds, DecodedInsn insn) {
