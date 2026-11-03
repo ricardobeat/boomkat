@@ -1,6 +1,8 @@
 # Plan 075: Official test262-harness Run — Skip-List Updates and Remaining Engine Gaps
 
-**Status:** Open (session of 2026-08-21)
+**Status:** Done, closed 2026-11-03. C3, C4 and C5 no longer reproduce, `$262.agent`
+landed with plan 109, and the skip list is down to ShadowRealm, decorators,
+legacy-regexp, export-defer and structured-clone. Opened in the session of 2026-08-21.
 **Baseline:** 81,634 / 103,759 test-variants = **78.7%** under `test262-harness` + `eshost`
 **ES core** (language + built-ins, minus Temporal and Intl): **94.7%**
 

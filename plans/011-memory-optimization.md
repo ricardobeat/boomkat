@@ -1,7 +1,8 @@
 # Register Pressure: concat holey array Failure
 
 **Date**: May 31, 2026
-**Status**: Root cause identified, fix attempted but failed — needs different approach
+**Status**: Closed 2026-11-03, superseded by plans 029–033. Earlier status: root cause
+identified, fix attempted but failed.
 
 ## Problem
 

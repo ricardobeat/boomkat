@@ -1,6 +1,7 @@
 # Plan 042: CALL callee-frame register overlay
 
-**Status:** Worked around (compiler-side register placement), not resolved.
+**Status:** Done; fixed systematically by [plan 043](043-call-frame-isolation.md). Closed 2026-11-03.
+Earlier status: worked around (compiler-side register placement).
 **Priority:** Medium — blocks clean compiler register allocation for any
 multi-CALL loop that carries live state between iterations (rest collection,
 for-of destructuring, etc.).

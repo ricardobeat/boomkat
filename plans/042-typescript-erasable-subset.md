@@ -1,6 +1,7 @@
 # Plan 042: TypeScript Erasable-Subset Support
 
-**Status:** Proposed
+**Status:** Done. Erasable syntax is stripped at parse time (`src/ast/parse_ts.c3`);
+plans 069 and 073 cover conformance.
 **Priority:** Medium — quality-of-life; lets `.ts` files run natively without a build step
 **Reference:** [TypeScript 5.8 `--erasableSyntaxOnly`](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-8.html#the---erasablesyntaxonly-option), [Node 22.6 `--experimental-strip-types`](https://nodejs.org/api/typescript.html), [Deno type stripping](https://deno.com/blog/v1.31)
 

@@ -3,7 +3,12 @@
 Goal: the CLI binary ships `console` as it does today; the `lib` static-lib
 target omits it, and an embedder can opt back in with one call.
 
-**Status: unblocked.** The `util.inspect` work has landed (`e234d4df`), and it
+**Status: done** (closed 2026-11-03). `console` and the inspect formatter are behind a
+positive `CONSOLE` feature, on in the CLI targets and off in `boomkat_dylib` and
+`boomkat_static`. An embedder enables it at build time; there is no runtime
+opt-in call.
+
+The `util.inspect` work has landed (`e234d4df`), and it
 made this plan simpler than when first written. The formatter is no longer
 tangled into `global.c3` — it is a standalone `src/builtins/inspect.c3` (1106
 lines) behind a two-function interface, `inspect_root` and `inspect_nested`,

@@ -1,6 +1,7 @@
 # Plan 051: Parallel Fix Batch — Targeting ~350 Tests
 
-**Status:** Active (session 277)
+**Status:** Done, closed 2026-11-03; superseded by the zero-fail test262 work in plans
+040 and 052. Opened in session 277.
 **Baseline:** 28,590 pass / 2,023 fail / 167 CE = 92.9%
 **Target:** ~350 additional passes
 

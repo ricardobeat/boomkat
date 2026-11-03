@@ -1,7 +1,8 @@
 # Plan 025: Remaining Gaps from 014 Review
 
 **Date:** 2026-06-11
-**Status:** Tracking undone items from plans/014-test262-review.md
+**Status:** Done, closed 2026-11-03. The items below are covered by the zero-fail
+test262 gate (plans 040 and 052).
 
 ## Summary
 

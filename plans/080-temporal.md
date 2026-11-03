@@ -1,6 +1,11 @@
 # Plan 080 — Temporal (`Temporal.*`, the IANA-tz-aware replacement for `Date`)
 
-Status: IN PROGRESS. `built-ins/Temporal` runs unconditionally in
+Status: DONE, closed 2026-11-03. The methods listed under "Not implemented" exist,
+and `Duration.total` with a calendar `relativeTo` works. Temporal ships behind
+the `TEMPORAL` feature, enabled in `boomkat-full-icu`. The Temporal test262 pass
+rate was not rerun when closing.
+
+`built-ins/Temporal` runs unconditionally in
 `scripts/run_test262.py` (no skip list, no feature-flag gate) — every
 test262 file under it is scored on every run. See "Feature list" below
 for what passes and what's left.

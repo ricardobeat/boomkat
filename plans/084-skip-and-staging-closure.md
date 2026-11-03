@@ -1,7 +1,9 @@
 # Test262 Closure After Sloppy Mode
 
 **Date:** 2026-09-15
-**Status:** 🚧 IN PROGRESS — items 2-5 done; item 1 partial; items 6-8 gated
+**Status:** ✅ DONE (2026-11-03): items 1–5 done; `using`, `Promise.allKeyed` and
+`Iterator.concat` (items 6–8) are implemented and their test262 features are
+no longer skipped.
 
 After plan 083 the suite sits at 48,331 pass / 171 fail (99.6%) with 4,961
 skips. What is left falls into three kinds of work, in the order below: bugs

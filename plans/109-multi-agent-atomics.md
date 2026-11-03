@@ -1,6 +1,9 @@
 # 109: Multi-agent Atomics and `$262.agent`
 
-Status: in progress. Goal: pass the 112 test262 files that drive a second
+Status: done, closed 2026-11-03. `built-ins/Atomics` passes 389 of 389 tests with no
+skips.
+
+Goal: pass the 112 test262 files that drive a second
 agent through `$262.agent`, and make `Atomics`/`SharedArrayBuffer` correct
 across threads, not just on one agent. Maximum ES2017 compliance for the
 `Atomics` surface.
