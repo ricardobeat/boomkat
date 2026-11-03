@@ -1027,6 +1027,9 @@ struct Heap {
     // Explicit full collection sweeps strings only when its caller guarantees
     // that no native frame borrows a raw HString pointer.
     bool  string_sweep_safe;
+    // STRING_TRACE: the mark epoch of the current or last major cycle. A
+    // string whose count word holds it survives that cycle's string sweep.
+    uint  str_mark_epoch;
 
     // Intrusive gray queue count, used by the full verification traversal.
     uint   gray_count;
@@ -5298,7 +5301,7 @@ fn void Heap.sweep_strings(&self) {
     for (uint i = 0; i < self.str_table_size; i++) {
         HString* entry = self.str_table[i];
         if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }
-        if (string_is_garbage(entry, 1)) {
+        if (self.string_is_garbage(entry, 1)) {
             self.str_table_tombstone(i);
             if (self.str_table_used > 0) { self.str_table_used--; }
             self.free_string(entry);
@@ -5317,7 +5320,7 @@ fn void Heap.sweep_large_strings(&self) {
     uint kept = 0;
     for (uint i = 0; i < self.large_string_count; i++) {
         HString* s = self.large_strings[i];
-        if (!string_is_garbage(s, 0)) {
+        if (!self.string_is_garbage(s, 0)) {
             // Survivors compact downward.
             self.large_strings[kept] = s;
             kept++;

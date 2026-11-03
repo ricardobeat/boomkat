@@ -48,10 +48,14 @@ fn GcKind Heap.gc_next_kind(&self) {
 
 // Register publication and tracing use the same admission rule.
 fn bool Heap.gc_needs_mark(&self, HeapHeader* header) @inline {
-    if (header == null || header.is_reachable()) return false;
+    if (header == null) return false;
     $if $feat(STRING_TRACE):
-        if (header.is_string()) return self.gc_kind == GcKind.MAJOR && !header.is_pinned();
+        // A string's mark is its epoch, not the reachable bit.
+        if (header.is_string()) {
+            return self.gc_kind == GcKind.MAJOR && !header.is_pinned() && header.refcount != self.str_mark_epoch;
+        }
     $endif
+    if (header.is_reachable()) return false;
     return self.gc_kind == GcKind.MAJOR || !header.gc.old || self.gc_oracle_running;
 }
 

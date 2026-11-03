@@ -32,7 +32,13 @@ Heap* strtrace_cycle @feat(STRING_TRACE);
 
 fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJOR) {
     $if $feat(STRING_TRACE):
-        if (kind == GcKind.MAJOR) strtrace_cycle = self;
+        if (kind == GcKind.MAJOR) {
+            strtrace_cycle = self;
+            // A fresh epoch unmarks every string at once; the pinned sentinel
+            // and a newborn's 1 are never epochs.
+            self.str_mark_epoch++;
+            if (self.str_mark_epoch == types::STRING_PINNED_REFCOUNT || self.str_mark_epoch < 2) self.str_mark_epoch = 2;
+        }
     $endif
     self.gc_keep_temproots = keep_temproots;
     self.gc_kind = kind;
@@ -170,21 +176,21 @@ fn bool Heap.gc_collects_strings(&self) {
 }
 
 // A string the sweep may free. Counted strings die when only the table, if
-// any, still holds them; traced strings when the cycle did not reach them.
-fn bool string_is_garbage(HString* s, uint table_reference) @inline {
+// any, still holds them; traced strings when the cycle's epoch did not reach
+// them. The epoch test is idempotent, so a table that rehashes between sweep
+// slices may present a string twice.
+fn bool Heap.string_is_garbage(&self, HString* s, uint table_reference) @inline {
     $if $feat(STRING_TRACE):
-        HeapHeader* h = (HeapHeader*)s;
-        if (h.is_pinned()) return false;
-        if (h.is_reachable()) { h.clear_reachable(); return false; }
-        return true;
+        return !((HeapHeader*)s).is_pinned() && s.refcount != self.str_mark_epoch;
     $else
         return s.refcount == table_reference;
     $endif
 }
 
-// STRING_TRACE: set a string's mark bit for the major cycle in progress.
-// Strings have no children and no `old` bit; minor cycles neither mark nor
-// sweep them, so their bits change only in major cycles.
+// STRING_TRACE: mark a string for the major cycle in progress by writing the
+// cycle's epoch into its count word, which traced strings do not otherwise
+// use. Strings have no children and no `old` bit; minor cycles neither mark
+// nor sweep them.
 fn void Heap.mark_string(&self, HString* s) @inline {
     $if $feat(STRING_TRACE):
         if (s == null || self.gc_kind != GcKind.MAJOR || self.gc_phase == GcPhase.IDLE) return;
@@ -192,7 +198,7 @@ fn void Heap.mark_string(&self, HString* s) @inline {
         if (h.is_pinned()) return;
         if (self.gc_oracle_running) {
             $if $feat(GC_VERIFY):
-                if (!h.is_reachable()) {
+                if (s.refcount != self.str_mark_epoch) {
                     io::eprintfn("[GC_VERIFY] incremental mark missed reachable string %p len=%d interned=%d symbol=%d",
                         s, s.length, (int)s.flags.is_interned, (int)s.flags.is_symbol);
                     self.fatal("GC_VERIFY: incremental string mark mismatch");
@@ -200,7 +206,7 @@ fn void Heap.mark_string(&self, HString* s) @inline {
             $endif
             return;
         }
-        h.set_reachable();
+        s.refcount = self.str_mark_epoch;
     $else
         $if $feat(GC_VERIFY):
             self.verify_string_owner(s);
@@ -284,12 +290,18 @@ fn void Heap.mark_string_side_tables(&self) @feat(STRING_TRACE) {
     }
 }
 
+// STRING_TRACE: a minor cycle marks no strings, so it must not sweep them.
+macro bool Heap.gc_skips_string_sweep(&self) @private {
+    return $feat(STRING_TRACE) && self.gc_kind == GcKind.MINOR;
+}
+
 fn void Heap.gc_sweep_strings_step(&self, uint budget, bool quiescent) {
     if (!quiescent) return;
+    if (self.gc_skips_string_sweep()) { self.gc_sweep_stage++; return; }
     while (budget > 0 && self.gc_string_index < self.str_table_size) {
         self.mark_work_last++;
         HString* entry = self.str_table[self.gc_string_index];
-        if (entry != null && entry != STR_TABLE_TOMBSTONE && string_is_garbage(entry, 1)) {
+        if (entry != null && entry != STR_TABLE_TOMBSTONE && self.string_is_garbage(entry, 1)) {
             self.str_table_tombstone(self.gc_string_index);
             if (self.str_table_used > 0) self.str_table_used--;
             self.free_string(entry);
@@ -302,10 +314,11 @@ fn void Heap.gc_sweep_strings_step(&self, uint budget, bool quiescent) {
 
 fn void Heap.gc_sweep_large_strings_step(&self, uint budget, bool quiescent) {
     if (!quiescent) return;
+    if (self.gc_skips_string_sweep()) { self.gc_sweep_stage++; return; }
     while (budget > 0 && self.gc_large_string_index < self.large_string_count) {
         self.mark_work_last++;
         HString* entry = self.large_strings[self.gc_large_string_index];
-        if (string_is_garbage(entry, 0)) {
+        if (self.string_is_garbage(entry, 0)) {
             entry.registry_slot = 0;
             self.large_string_count--;
             if (self.gc_large_string_index < self.large_string_count) {
