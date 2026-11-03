@@ -8,6 +8,7 @@ import boomkat::hobject;
 import boomkat::env;
 import boomkat::builtins;
 import boomkat::esm;
+import boomkat::compiler;
 import std::math;
 
 // Operation functions: one callable implementation per opcode, or per group
@@ -1282,6 +1283,462 @@ fn OpStatus op_objects(Dispatch* ds, DecodedInsn insn) {
     }
     return RESTART;
 }
+
+// === FUNCTION CALLS ===
+// CALL, CALL_S, CALL_UNDEF_THIS, CALL_VAR, CALL_GLOBAL, TAILCALL_UNDEF_THIS,
+// TAILCALL_VAR, TAILCALL_GLOBAL, TAILCALL_CALL, TAILCALL_CALL_S
+fn OpStatus op_call(Dispatch* ds, DecodedInsn insn) {
+    // Inline the direct-compiled-function fast path (the fib/recursion
+    // shape) so the hot loop avoids the `bl dispatch_calls` + its own
+    // inner-switch dispatch entirely. Guard checks live inside the
+    // @inline helper itself; anything that doesn't fit (generators,
+    // class ctors called without new, bound/builtin/lightfunc callees,
+    // non-callables) falls back to dispatch_calls unchanged.
+    bool fast_handled = false;
+    TVal? fast_result = try_fast_compiled_call(ds, insn.op, insn, &fast_handled);
+    if (fast_handled) {
+        if (catch err = fast_result) return op_fail(ds, err);
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    return op_calls(ds, insn);
+}
+
+// CALL_PROP, SETPROTO, GETPROTO, SUPER_CALL, SUPER_CALL_S, NEWTARGET,
+// CLASS_SCALAR_GUARD, NEW_OBJ, NEW_OBJ_S, TAILCALL
+fn OpStatus op_calls(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = dispatch_calls(ds, insn.op, regs + insn.a, regs + insn.b, regs + insn.c, insn)) return op_fail(ds, err);
+    if (ds.halt) return HALT;
+    // Refresh regs_base after builtin calls that may have triggered valstack
+    // reallocation via heap.call_fn (compiled-function paths set needs_restart
+    // and reload via the outer loop; builtin paths return without setting it).
+    if (!ds.needs_restart) {
+        ds.regs_base = ds.act.bottom;
+        return NEXT;
+    }
+    return RESTART;
+}
+
+// === GENERATORS ===
+// LOAD_RESUME, AWAIT, YIELD, YIELD_STAR, YIELD_STAR_ASYNC, GEN_START
+fn OpStatus op_generators(Dispatch* ds, DecodedInsn insn) {
+    TVal* regs = ds.regs_base;
+    if (catch err = dispatch_generators(ds, insn.op, regs + insn.a, regs + insn.b, regs + insn.c, insn)) return op_fail(ds, err);
+    if (ds.halt) return HALT;
+    // yield* calls the delegate's methods inline, which may reallocate the valstack.
+    if (!ds.needs_restart) {
+        ds.regs_base = ds.act.bottom;
+        return NEXT;
+    }
+    return RESTART;
+}
+
+// === DYNAMIC IMPORT ===
+// DYN_IMPORT, DYN_IMPORT_DEFER, DYN_IMPORT_SOURCE
+fn OpStatus op_dyn_import(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = ds.regs_base + insn.c;
+    if (!Opcode.DYN_IMPORT_SOURCE.is_enabled()) return op_fail(ds, VM_ERROR);
+    // Read the specifier before any write to A (A may reuse B's slot).
+    TVal spec_tv = *rb;
+    HString*? spec_opt = vm_to_string(vm, &spec_tv);
+    // vm_to_string can call a user toString, re-entering the VM, so refresh.
+    ds.regs_base = ds.act.bottom;
+    // §13.3.10 step 6-7: an abrupt completion from ToString(specifier)
+    // does not throw synchronously; IfAbruptRejectPromise rejects the
+    // returned promise with the thrown value. Capture it, clear the
+    // pending throw, and hand back an already-rejected promise.
+    if (vm.throw_pending) {
+        TVal reason = vm.throw_value;
+        vm.throw_pending = false;
+        vm.throw_value.set_undefined();
+        TVal? rej_opt = esm::dynamic_import_reject(vm.heap, vm, &reason);
+        ds.regs_base = ds.act.bottom;
+        vm.heap.decref_tval(&reason);
+        if (catch err = rej_opt) {
+            if (!vm_throw_error(vm, vm.heap.type_err_proto, "dynamic import failed", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return op_fail(ds, VM_ERROR);
+            }
+            return ds.needs_restart ? RESTART : NEXT;
+        }
+        TVal rej_tv = rej_opt;
+        TVal* rej_dst = ds.regs_base + (uint)insn.a;
+        vm.heap.tval_copy_ref(rej_dst, &rej_tv);
+        vm.heap.decref_tval(&rej_tv);
+        return NEXT;
+    }
+    HString* spec_str = null;
+    if (try s = spec_opt) spec_str = s;
+    if (spec_str == null) {
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "invalid dynamic import specifier", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    // §13.3.10 GetImportAttributes: validate the options argument (C
+    // operand). A non-object options/with, a throwing `with`/attribute
+    // getter or `ownKeys`, or a non-String attribute value rejects the
+    // promise (IfAbruptRejectPromise) rather than throwing. Snapshot the
+    // string data first: validation can re-enter the VM and move the
+    // interned string's backing, and rc reads from the register file.
+    TVal opts_tv = *rc;
+    TVal opt_reason;
+    opt_reason.set_undefined();
+    compiler::ModuleAttrType attr_type = compiler::ModuleAttrType.NONE;
+    if (!esm::validate_import_options(vm.heap, vm, &opts_tv, &opt_reason, &attr_type)) {
+        ds.regs_base = ds.act.bottom;
+        TVal? orej_opt = esm::dynamic_import_reject(vm.heap, vm, &opt_reason);
+        ds.regs_base = ds.act.bottom;
+        vm.heap.decref_tval(&opt_reason);
+        if (catch err = orej_opt) {
+            if (!vm_throw_error(vm, vm.heap.type_err_proto, "dynamic import failed", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return op_fail(ds, VM_ERROR);
+            }
+            return ds.needs_restart ? RESTART : NEXT;
+        }
+        TVal orej_tv = orej_opt;
+        TVal* orej_dst = ds.regs_base + (uint)insn.a;
+        vm.heap.tval_copy_ref(orej_dst, &orej_tv);
+        vm.heap.decref_tval(&orej_tv);
+        return NEXT;
+    }
+    ds.regs_base = ds.act.bottom;
+    builtins::StrBuf spec_text;
+    spec_text.init(vm.heap);
+    defer spec_text.free();
+    TVal? prom_opt = esm::dynamic_import(vm.heap, vm, builtins::utf8_text(&spec_text, spec_str), attr_type,
+                                         insn.op == Opcode.DYN_IMPORT_DEFER,
+                                         insn.op == Opcode.DYN_IMPORT_SOURCE);
+    // The nested module evaluation may have reallocated the valstack.
+    ds.regs_base = ds.act.bottom;
+    if (catch err = prom_opt) {
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "dynamic import failed", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    TVal prom_tv = prom_opt;
+    TVal* dst = ds.regs_base + (uint)insn.a;
+    vm.heap.tval_copy_ref(dst, &prom_tv);
+    // Drop the caller-owned reference dynamic_import returned.
+    vm.heap.decref_tval(&prom_tv);
+    return NEXT;
+}
+
+fn OpStatus op_import_meta(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    if (!Opcode.IMPORT_META.is_enabled()) return op_fail(ds, VM_ERROR);
+    // `import.meta` (ECMA-262 §13.3.12). GetActiveScriptOrModule returns
+    // the defining module of the running function, so a function that
+    // returns import.meta yields its own module's object even when called
+    // from another module. The active function's filename carries the
+    // owning module's normalized name (stamped by stamp_module_filename);
+    // fall back to heap.current_module_name for the module body itself.
+    char[] owner_name = vm.heap.current_module_name;
+    CompiledFunction* act_func = (CompiledFunction*)ds.act.func;
+    if (act_func != null) {
+        char[] fn_name = act_func.get_filename();
+        if (fn_name.len > 0) owner_name = fn_name;
+    }
+    esm::ModuleDef* mod = esm::heap_find_loaded_module(vm.heap, owner_name);
+    if (mod == null) {
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "import.meta is not available outside module code", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    HObject*? meta_opt = esm::get_import_meta(vm.heap, mod);
+    ds.regs_base = ds.act.bottom;
+    if (catch err = meta_opt) {
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "failed to create import.meta", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    TVal meta_tv;
+    meta_tv.set_object(meta_opt);
+    TVal* meta_dst = ds.regs_base + (uint)insn.a;
+    vm.heap.tval_copy_ref(meta_dst, &meta_tv);
+    return NEXT;
+}
+
+// === RETURNS ===
+// RET, RETUNDEF
+fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    // The threaded return handlers take the common pops; this is the
+    // full return, for every frame they decline.
+    TVal val;
+    if (insn.op == Opcode.RET) {
+        val = *ra;
+    } else {
+        val.set_undefined();
+    }
+    // Safe point: run deferred GC before returning to caller
+    vm.heap.safepoint_gc_on_call();
+    // Check for active finally catchers: if we're returning through
+    // a try-finally, save the return value and jump to the finally
+    // handler.  After ENDFINALLY, the saved value will be used.
+    // Walk up to the nearest catcher with a finally. The innermost
+    // catcher may be a catch-only try (no finally_pc), in which case
+    // the return must still route through an enclosing finally.
+    Catcher* ret_cat = find_and_unlink_finally_catcher(vm, ds.act);
+    if (ret_cat != null && ret_cat.finally_pc != null) {
+        // Save return value
+        catcher_set_return(vm.heap, ret_cat, val);
+        // If PENDING_RETURN is already set, we're inside the finally
+        // block that was entered due to an earlier return.  Just update
+        // the return value and let execution continue normally, since
+        // ENDFINALLY at the end of the finally block will complete the
+        // return with the new value.  Without this check, we'd loop
+        // infinitely back to the same finally block.
+        if (!(ret_cat.flags & CATCHER_FLAG_PENDING_RETURN)) {
+            ret_cat.flags |= CATCHER_FLAG_PENDING_RETURN;
+            // Only jump to finally_pc if we're NOT already executing
+            // the finally body. The finally block can be entered via
+            // a throw from the try (caught by catch which then throws,
+            // landing us in finally via vm_throw_value), or via the
+            // catch handler returning. In those paths PENDING_RETURN
+            // is not yet set when the first RET inside the finally
+            // body runs. Jumping to finally_pc again would re-enter
+            // the FINALLY opcode and re-execute the finally body.
+            if ((ret_cat.flags & CATCHER_FLAG_IN_FINALLY) == 0) {
+                ds.curr_pc = ret_cat.finally_pc;
+                ds.act.curr_pc = ds.curr_pc;
+            } else if (ret_cat.endfinally_pc != null) {
+                // A `return` executed inside the finally body itself.
+                // It overrides the finally's earlier pending completion
+                // and must abort the remaining finally statements, so
+                // jump straight to ENDFINALLY (which will complete this
+                // return), mirroring break/continue/throw.
+                ds.curr_pc = ret_cat.endfinally_pc;
+                ds.act.curr_pc = ds.curr_pc;
+            }
+        } else if ((ret_cat.flags & CATCHER_FLAG_IN_FINALLY) != 0
+                   && ret_cat.endfinally_pc != null) {
+            // PENDING_RETURN was already set (the finally was entered
+            // because of an earlier return) and now a second `return`
+            // runs inside the finally body.  The new value already
+            // overwrote return_val above; abort the rest of the body
+            // and jump to ENDFINALLY to complete with it.
+            ds.curr_pc = ret_cat.endfinally_pc;
+            ds.act.curr_pc = ds.curr_pc;
+        }
+        return NEXT;
+    }
+
+    Activation* callee_act = &vm.activations[vm.activation_count - 1];
+    TVal* callee_result = callee_act.retval;
+
+    // ECMA-262 §9.2.2 step 13.c: derived constructor returning a non-object
+    // non-undefined value must throw a TypeError, but the throw must be
+    // raised in the caller's context (not catchable inside the constructor),
+    // so we set a flag to throw after restoring the caller frame.
+    bool derived_return_error = (callee_act.flags & ACT_FLAG_CONSTRUCT) != 0
+            && (callee_act.flags & ACT_FLAG_DERIVED) != 0
+            && !val.is_object()
+            && !val.is_undefined();
+
+    // `return undefined;` from a derived constructor is equivalent to
+    // bare `return;` (RETUNDEF), where the same TDZ check applies.
+    bool derived_this_error = val.is_undefined() && derived_ctor_returns_undefined_uninitialized(callee_act);
+    if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) record_constructor_capacity(callee_act);
+
+    // Protect the return value: if its only reference lives in a
+    // callee register, decref_callee_regs below would free it.
+    bool val_pinned = false;
+    if (val.is_heap_allocated() && val.get_heapptr() != null) {
+        ((HeapHeader*)val.get_heapptr()).incref();
+        val_pinned = true;
+    }
+
+    // Free catchers a return-from-try left on the chain: an early
+    // return never reaches CATCH/ENDTRY's pop paths, and this frame
+    // is now popping for good.
+    free_catcher_chain(vm, callee_act);
+    // Decref callee registers before popping
+    decref_callee_regs(vm, callee_act);
+
+    vm.activation_count--;
+    vm.gc_root_frame_count_changed();
+
+    // Async function: resolve the promise with the return value and
+    // return the promise. This must go through promise_resolve_with_value
+    // (not a bare promise_settle) so that a returned thenable/Promise is
+    // adopted per ECMA-262 §25.5.5.4 AsyncFunctionStart and §27.2.1.3.2, so the
+    // async function's promise takes on the eventual settlement of the
+    // returned promise rather than fulfilling with the promise object.
+    if ((callee_act.flags & ACT_FLAG_ASYNC) != 0 && callee_act.async_promise != null) {
+        builtins::promise_resolve_with_value(callee_act.async_promise, val, vm.heap, (void*)vm);
+        // Release pin on original return value (promise now holds a ref)
+        if (val_pinned) {
+            vm.heap.decref_tval(&val);
+        }
+        // Replace val with the promise. set_object increfs, so this is
+        // a genuine owned reference and val_pinned stays accurate: the
+        // writeback below either transfers it into callee_result (the
+        // val_pinned branch: decref dst, raw write, clear the flag) or
+        // the trailing `if (val_pinned) decref_tval(&val)` releases it.
+        // The promise's birth ref is a separate reference held by
+        // callee_act.async_promise, and vm_calls.c3 pre-installed one
+        // more into the result register; do not conflate the three.
+        val.set_object(callee_act.async_promise);
+        val_pinned = true;
+    }
+
+    if (vm.activation_count == 0) {
+        vm.heap.tval_copy_ref(&vm.return_val, &val);
+        if (val_pinned) vm.heap.decref_tval(&val);
+        callee_act.release_callee(vm.heap);
+        ds.halt_value = vm.return_val;
+        return HALT;
+    }
+    // Write return value to caller's result register
+    if (callee_result != null) {
+        // Borrowed callee (CALL_VAR from a global binding): the old
+        // value in callee_result is the borrowed closure, which this
+        // frame never incref'd it, so overwrite raw and never decref.
+        bool ret_borrowed = (callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
+        // Constructor: if callee returned an object, use it; otherwise use 'this'.
+        // (Derived non-object non-undefined case was already converted to a throw above.)
+        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
+            if (val.is_object()) {
+                vm.heap.tval_copy_ref(callee_result, &val);
+            } else {
+                vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
+            }
+        } else {
+            // Fast path: skip refcounting when return value is not a heap ref
+            if (!val.is_heap_allocated()) {
+                if (!ret_borrowed && callee_result.is_heap_allocated()) {
+                    vm.heap.decref_tval(callee_result);
+                }
+                *callee_result = val;
+            } else if (val_pinned) {
+                // Transfer the pin reference: decref dst, raw write.
+                if (!ret_borrowed) vm.heap.decref_tval(callee_result);
+                *callee_result = val;
+                val_pinned = false;
+            } else if (ret_borrowed) {
+                // Incref new value, raw-overwrite the borrowed old value.
+                ((HeapHeader*)val.get_heapptr()).incref();
+                *callee_result = val;
+            } else {
+                vm.heap.tval_copy_ref(callee_result, &val);
+            }
+        }
+    }
+    if (val_pinned) vm.heap.decref_tval(&val);
+    callee_act.release_refs(vm.heap);
+    // Restore the caller state inline, skipping the outer loop restart.
+    ds.act = &vm.activations[vm.activation_count - 1];
+    vm.valstack_bottom = ds.act.bottom;
+    vm.valstack_top = callee_act.caller_valstack_top;
+    // The write-back above may have parked a heap reference (e.g. a
+    // large non-interned string transferred via the pin) in a caller
+    // register the caller itself never tracked. Raise the caller's
+    // heap_reg_count so its eventual decref_callee_regs sweep releases
+    // the reference instead of leaking it. Gated on val/construct so
+    // the dominant primitive-return path (deep numeric recursion)
+    // skips the slot reload: a heap value can only have landed in the
+    // slot from `val` itself or from a construct call's this_binding.
+    if ((val.is_heap_allocated() || (callee_act.flags & ACT_FLAG_CONSTRUCT) != 0)
+        && callee_result != null && callee_result >= ds.act.bottom
+        && callee_result.is_heap_allocated()) {
+        track_heap_store(ds.act, callee_result, (uint)(callee_result - ds.act.bottom));
+    }
+    CompiledFunction* caller_func = (CompiledFunction*)ds.act.func;
+    vm.heap.enter_realm(caller_func.realm);
+    if (caller_func != vm.current_func) {
+        vm.current_func = caller_func;
+        ds.code_base = caller_func.code;
+        ds.code_count = caller_func.code_count;
+        ds.code_end = ds.code_base + ds.code_count;
+        ds.constants = caller_func.constants;
+        ds.bind_caches(caller_func);
+        ds.nregs = caller_func.num_regs;
+    }
+    ds.curr_pc = ds.act.curr_pc;
+    ds.regs_base = ds.act.bottom;
+
+    // After a super-constructor returns (callee was CONSTRUCT, caller is DERIVED),
+    // initialize the derived constructor's this_binding with the constructed object.
+    // This is §9.2.2's initialized state, after which LDTHIS succeeds.
+    bool super_already_bound = false;
+    Activation* super_bound_act = null;
+    if ((callee_act.flags & ACT_FLAG_SUPER_CTOR) != 0
+            && vm.activation_count > 0
+            && callee_result != null && callee_result.is_object()) {
+        // §8.1.1.3.1 BindThisValue step 3, escaped-arrow case: if the
+        // caller's `this_binding` already carries the "super was called"
+        // flag (stamped on the derived ctor's this by the first super()
+        // and re-resolved via captured_this for arrows), the derived
+        // ctor's `this` was already initialised, so re-binding throws
+        // ReferenceError. Without this, the live-frame walk returns
+        // false when the derived ctor's frame is gone.
+        if ((callee_act.flags & ACT_FLAG_SUPER_REBIND) != 0) {
+            super_already_bound = true;
+        }
+        // The result of super() is in callee_result (already written
+        // above). The immediate caller may be an arrow or a method the
+        // arrow was invoked through, so walk up to the derived ctor.
+        if (!super_already_bound) {
+            super_already_bound = super_init_this_chain(vm, &vm.activations[vm.activation_count - 1], callee_result, &super_bound_act);
+        }
+    }
+
+    // ECMA-262 §9.2.2 step 13.c: now in the caller's context, throw TypeError.
+    // The activation has already been popped, so this throw is not catchable
+    // inside the constructor's own try-catch handlers.
+    if (derived_this_error) {
+        if (!vm_throw_error(vm, vm.heap.ref_err_proto,
+                "Must call super constructor before returning from derived constructor",
+                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_uncaught(ds, &vm.throw_value);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    if (derived_return_error) {
+        if (!vm_throw_error(vm, vm.heap.type_err_proto,
+                "Derived constructors may only return object or undefined",
+                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_uncaught(ds, &vm.throw_value);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    // §8.1.1.3.1 BindThisValue step 3: this_binding was already
+    // initialized by a prior super() call, so the superclass constructor
+    // still ran (its side effects already happened above), but binding
+    // the result to `this` a second time is a ReferenceError.
+    if (super_already_bound) {
+        if (!vm_throw_error(vm, vm.heap.ref_err_proto,
+                "Super constructor may only be called once",
+                ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_uncaught(ds, &vm.throw_value);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+    // Private class fields (ECMA-262 §9.2.2 step 8 InitializeInstanceElements,
+    // called for DERIVED constructors right after `this` is bound by super()).
+    if (super_bound_act != null) {
+        CompiledFunction* super_bound_target = (CompiledFunction*)super_bound_act.func;
+        if (catch verr = vm_init_private_members(vm, super_bound_act.lex_env, super_bound_act.var_env,
+                super_bound_target, super_bound_act.this_binding, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+    }
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+// RET_GEN, RETUNDEF_GEN
+fn OpStatus op_ret_gen(Dispatch* ds, DecodedInsn insn) {
+    if (catch err = dispatch_returns(ds, insn.op, ds.regs_base + insn.a)) return op_fail(ds, err);
+    if (ds.halt) return HALT;
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
 
 // === CLOSURES ===
 // NEWCELLS, GETCELL, SETCELL, MOVECELL
