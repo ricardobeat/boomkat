@@ -1,0 +1,43 @@
+== suite --stats
+Richards: 4603
+DeltaBlue: 3260
+Crypto: 4620
+RayTrace: 3038
+EarleyBoyer: 3516
+RegExp: 1120
+Splay: 8516
+SplayLatency: 20924
+NavierStokes: 4801
+PdfJS: 6655
+Mandreel: 2219
+MandreelLatency: 25178
+Gameboy: 14210
+CodeLoad: 28791
+zlib: 3560
+Typescript: 20599
+Score (version 9): 6441
+SLJIT totals functions=161 loops=102 templates=0 code_bytes=2379920
+SLJIT budget bytes=2379920 limit=4194304 native_work=0 evictions=0
+== navier-first
+NavierStokes: 21179
+Richards: 4402
+Score (version 9): 6582
+== navier standalone stats
+SLJIT totals functions=21 loops=8 templates=0 code_bytes=504176
+SLJIT budget bytes=504176 limit=4194304 native_work=0 evictions=0
+== richards standalone stats
+SLJIT totals functions=22 loops=0 templates=0 code_bytes=233904
+SLJIT budget bytes=233904 limit=4194304 native_work=0 evictions=0
+== raytrace standalone stats
+SLJIT totals functions=42 loops=0 templates=0 code_bytes=474776
+SLJIT budget bytes=474776 limit=4194304 native_work=0 evictions=0
+== pdfjs standalone stats
+SLJIT totals functions=116 loops=15 templates=0 code_bytes=2094848
+SLJIT budget bytes=2094848 limit=4194304 native_work=0 evictions=0
+== mandreel standalone stats
+SLJIT totals functions=43 loops=14 templates=0 code_bytes=2113400
+SLJIT budget bytes=2113400 limit=4194304 native_work=0 evictions=0
+== box2d standalone stats
+SLJIT totals functions=132 loops=3 templates=0 code_bytes=2096264
+SLJIT budget bytes=2096264 limit=4194304 native_work=0 evictions=0
+DONE

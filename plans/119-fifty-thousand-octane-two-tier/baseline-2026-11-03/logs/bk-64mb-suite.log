@@ -1,0 +1,20 @@
+Richards: 4466
+DeltaBlue: 2999
+Crypto: 4379
+RayTrace: 2916
+EarleyBoyer: 3232
+RegExp: 1082
+Splay: 8043
+SplayLatency: 20263
+NavierStokes: 23058
+PdfJS: 7226
+Mandreel: 2789
+MandreelLatency: 24558
+Gameboy: 10053
+CodeLoad: 21464
+Box2D: 5417
+zlib: 4229
+Typescript: 7195
+Score (version 9): 6307
+SLJIT totals functions=1666 loops=84 templates=0 code_bytes=36429528
+SLJIT budget bytes=36429528 limit=134217728 native_work=0 evictions=0

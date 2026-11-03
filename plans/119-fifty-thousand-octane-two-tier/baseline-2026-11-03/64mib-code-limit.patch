@@ -1,0 +1,11 @@
+--- a/src/vm/vm_sljit_budget.c3	2026-11-02 17:06:30
++++ b/src/vm/vm_sljit_budget.c3	2026-11-03 01:31:24
+@@ -5,7 +5,7 @@
+ import std::core::mem;
+ 
+ const usz JIT_INITIAL_CODE_LIMIT = 256 * 1024;
+-const usz JIT_MAX_CODE_LIMIT = 2 * 1024 * 1024;
++const usz JIT_MAX_CODE_LIMIT = 64 * 1024 * 1024;
+ // A bounded reserve for hot standalone loops after function admission
+ // saturates. The adaptive policy retains its independent limit.
+ const usz JIT_LOOP_RESERVE_LIMIT = 2 * JIT_MAX_CODE_LIMIT;

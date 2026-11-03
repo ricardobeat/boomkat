@@ -1,7 +1,11 @@
 # 113: The 50,000 full-Octane target
 
-Status: **ACTIVE — architecture correctness accepted; performance blocked by regressions, 2026-11-02.**
-50K remains unachieved. This is the active roadmap for plans 107–108, 110–112 and 116–118.
+Status: **CLOSED — superseded by [plan 119](119-fifty-thousand-octane-two-tier.md), 2026-11-03.**
+
+50K was not reached: full Octane in one process scored 6,400 at rat `bcb55ef9`.
+Plan 119 owns the JIT roadmap and acceptance criteria, including the unfinished
+scope of plans 107–108, 110–112 and 116–118. The status statements,
+measurements and priorities below are historical evidence.
 
 ## Objective and design
 

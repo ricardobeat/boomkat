@@ -1,0 +1,139 @@
+=== jsc-llint 01:20:02 load={ 2.30 3.31 2.66 }
+exit 0
+Richards: 2263
+DeltaBlue: 2039
+Crypto: 2335
+RayTrace: 5506
+EarleyBoyer: 7527
+RegExp: 1126
+Splay: 12240
+SplayLatency: 41978
+NavierStokes: 3406
+PdfJS: 14904
+Mandreel: 1746
+MandreelLatency: 9550
+Gameboy: 11440
+CodeLoad: 104987
+Box2D: 9199
+zlib: 2978
+Typescript: 28711
+----
+Score (version 9): 6951
+       89.24 real        89.26 user         0.67 sys
+          1102675968  maximum resident set size
+=== jsc-baseline 01:21:31 load={ 3.19 3.35 2.74 }
+exit 0
+Richards: 8402
+DeltaBlue: 8966
+Crypto: 9630
+RayTrace: 15022
+EarleyBoyer: 32351
+RegExp: 15001
+Splay: 36793
+SplayLatency: 112506
+NavierStokes: 5383
+PdfJS: 49681
+Mandreel: 7331
+MandreelLatency: 34145
+Gameboy: 42725
+CodeLoad: 118169
+Box2D: 21924
+zlib: 11757
+Typescript: 92329
+----
+Score (version 9): 23302
+       41.11 real        41.87 user         0.41 sys
+          1919238144  maximum resident set size
+=== jsc-dfg 01:22:12 load={ 2.97 3.27 2.74 }
+exit 0
+Richards: 31150
+DeltaBlue: 40153
+Crypto: 55796
+RayTrace: 78291
+EarleyBoyer: 91971
+RegExp: 24184
+Splay: 72600
+SplayLatency: 200257
+NavierStokes: 32648
+PdfJS: 112723
+Mandreel: 54032
+MandreelLatency: 113300
+Gameboy: 158615
+CodeLoad: 115334
+Box2D: 128214
+zlib: 95929
+Typescript: 188061
+----
+Score (version 9): 78645
+       28.64 real        31.13 user         0.52 sys
+          1905164288  maximum resident set size
+=== jsc-full 01:22:41 load={ 2.58 3.15 2.71 }
+exit 0
+Richards: 57998
+DeltaBlue: 101359
+Crypto: 105624
+RayTrace: 251226
+EarleyBoyer: 148671
+RegExp: 28058
+Splay: 106509
+SplayLatency: 249273
+NavierStokes: 52281
+PdfJS: 134527
+Mandreel: 120948
+MandreelLatency: 216748
+Gameboy: 222340
+CodeLoad: 107136
+Box2D: 179282
+zlib: 142154
+Typescript: 220217
+----
+Score (version 9): 124692
+       27.97 real        33.59 user         0.63 sys
+          2189574144  maximum resident set size
+=== bk-interp 01:23:09 load={ 2.95 3.18 2.74 }
+exit 0
+Richards: 1522
+DeltaBlue: 1480
+Crypto: 2611
+RayTrace: 2948
+EarleyBoyer: 3575
+RegExp: 1141
+Splay: 8019
+SplayLatency: 21981
+NavierStokes: 4348
+PdfJS: 6058
+Mandreel: 2043
+MandreelLatency: 11984
+Gameboy: 13493
+CodeLoad: 28651
+Box2D: 7413
+zlib: 3133
+Typescript: 21564
+----
+Score (version 9): 5214
+       88.40 real        87.80 user         0.32 sys
+          1703084032  maximum resident set size
+=== bk-jit 01:24:38 load={ 2.88 3.10 2.75 }
+exit 0
+Richards: 4579
+DeltaBlue: 3190
+Crypto: 4556
+RayTrace: 2891
+EarleyBoyer: 3386
+RegExp: 1127
+Splay: 8076
+SplayLatency: 21935
+NavierStokes: 4868
+PdfJS: 6168
+Mandreel: 2253
+MandreelLatency: 25965
+Gameboy: 14159
+CodeLoad: 28645
+Box2D: 7244
+zlib: 3571
+Typescript: 21159
+----
+Score (version 9): 6400
+       80.88 real        80.58 user         0.26 sys
+          1695842304  maximum resident set size
+DONE

@@ -1,0 +1,135 @@
+== richards.jit.sample.txt  samples=1059
+   jit-code 98%  jit-runtime/compile 2%
+     2.4%  boomkat.vm.sljit_native_read
+== deltablue.jit.sample.txt  samples=1216
+   jit-code 73%  interpreter 11%  jit-runtime/compile 11%  libc/memory 2%  gc/alloc 2%  property/object 0%  other 0%
+     5.8%  boomkat.vm.sljit_native_read
+     2.9%  boomkat.vm.sljit_function_entry
+     1.6%  boomkat.vm.th_new_obj
+     1.6%  boomkat.vm.th_putthisc
+     1.6%  boomkat.vm.th_call
+     1.5%  boomkat.vm.th_return_general
+     1.4%  boomkat.vm.th_try_fast_return
+     1.2%  boomkat.hobject.hobject_free_step
+     0.9%  boomkat.vm.th_call_redispatched
+     0.8%  boomkat.heap.Heap.gc_sweep_objects_step
+== raytrace.jit.sample.txt  samples=1223
+   interpreter 61%  jit-code 22%  jit-runtime/compile 12%  gc/alloc 3%  other 1%
+     8.0%  boomkat.vm.sljit_function_entry
+     7.8%  boomkat.vm.th_putthisc
+     7.8%  boomkat.vm.th_apply_args
+     7.1%  boomkat.vm.th_try_fast_return
+     5.8%  boomkat.vm.th_getpropc_cached
+     5.5%  boomkat.vm.th_return_general
+     5.2%  boomkat.vm.th_call
+     5.1%  boomkat.vm.th_new_obj
+     4.9%  boomkat.vm.th_resume_caller
+     3.8%  boomkat.vm.th_ldreg
+== box2d.jit.sample.txt  samples=415
+   jit-code 46%  interpreter 46%  jit-runtime/compile 9%
+    16.4%  boomkat.vm.th_getpropc_cached
+     5.1%  boomkat.vm.sljit_function_entry
+     5.1%  boomkat.vm.th_call
+     3.9%  boomkat.vm.th_try_fast_return
+     3.6%  boomkat.vm.sljit_native_read
+     2.7%  boomkat.vm.th_getthisc
+     2.7%  boomkat.vm.th_putpropc
+     2.4%  boomkat.vm.vm_dispatch
+     2.2%  boomkat.vm.th_getcap
+     1.9%  boomkat.vm.th_add
+== earley.jit.sample.txt  samples=3391
+   interpreter 53%  gc/alloc 15%  jit-code 9%  jit-runtime/compile 9%  other 7%  property/object 5%  libc/memory 2%  frontend 0%  regexp 0%
+     7.1%  boomkat.vm.th_try_fast_return
+     5.4%  boomkat.vm.th_getpropc_cached
+     5.3%  boomkat.vm.sljit_function_entry
+     4.7%  boomkat.heap.Heap.gc_sweep_objects_step
+     4.3%  boomkat.vm.init_simple_constructor
+     4.2%  boomkat.vm.vm_dispatch
+     3.7%  boomkat.vm.th_call_undef_this
+     3.5%  boomkat.vm.th_ldreg
+     3.2%  boomkat.vm.th_call_global
+     2.6%  boomkat.vm.th_getglobal
+== splay.jit.sample.txt  samples=1272
+   jit-code 32%  interpreter 25%  gc/alloc 21%  jit-runtime/compile 10%  other 6%  libc/memory 2%  property/object 1%  strings 1%
+     9.3%  boomkat.heap.Heap.gc_sweep_objects_step
+     5.6%  boomkat.vm.th_return_general
+     4.7%  boomkat.vm.sljit_native_operation
+     4.2%  boomkat.vm.sljit_function_entry
+     3.3%  boomkat.heap.Heap.mark_traced_value
+     2.3%  boomkat.vm.th_putpropc
+     2.2%  boomkat.vm.th_try_fast_return
+     2.1%  boomkat.heap.Heap.alloc_plain_object
+     2.0%  boomkat.vm.th_getpropc_cached
+     2.0%  boomkat.vm.vm_dispatch
+== pdfjs.jit.sample.txt  samples=670
+   jit-code 35%  interpreter 26%  gc/alloc 22%  strings 7%  other 4%  property/object 2%  libc/memory 2%  jit-runtime/compile 2%  regexp 1%
+     5.5%  boomkat.vm.vm_dispatch
+     4.5%  boomkat.heap.Heap.gc_scan_object_step
+     2.8%  boomkat.heap.Heap.mark_tval
+     2.5%  boomkat.heap.Heap.gc_prune_weak_step
+     2.5%  boomkat.heap.Heap.gc_sweep_objects_step
+     2.2%  boomkat.heap.Heap.gc_scan_compiled_slot
+     2.2%  boomkat.heap.Heap.gc_scan_roots_step
+     2.2%  boomkat.heap.Heap.mark_header
+     2.2%  boomkat.vm.th_if
+     2.1%  boomkat.vm.th_invoke_builtin
+== typescript.jit.sample.txt  samples=3398
+   interpreter 72%  jit-code 12%  property/object 6%  jit-runtime/compile 4%  gc/alloc 3%  other 2%  libc/memory 0%  strings 0%
+    11.3%  boomkat.vm.th_call
+    10.9%  boomkat.vm.th_getpropc_cached
+     5.8%  boomkat.vm.th_try_fast_return
+     4.8%  boomkat.vm.th_getthisc
+     4.3%  boomkat.vm.th_if
+     3.6%  boomkat.vm.th_ldreg
+     3.2%  boomkat.hobject.HObject.find_prop_idx
+     3.1%  boomkat.vm.th_get_other_shape
+     2.8%  boomkat.vm.sljit_function_entry
+     2.6%  boomkat.vm.th_putthisc
+== typescript.jit64.sample.txt  samples=4156
+   interpreter 49%  jit-code 21%  jit-runtime/compile 15%  property/object 6%  other 5%  gc/alloc 2%  libc/memory 1%  frontend 1%  strings 0%
+     7.1%  boomkat.vm.th_call
+     6.5%  boomkat.vm.th_try_fast_return
+     5.4%  boomkat.vm.th_getpropc_cached
+     4.6%  boomkat.vm.sljit_function_entry
+     3.6%  boomkat.vm.th_getthisc
+     3.4%  boomkat.hobject.HObject.find_prop_idx
+     2.3%  boomkat.vm.th_resume_caller
+     2.1%  boomkat.vm.th_return_general
+     2.0%  boomkat.vm.th_putthisc
+     2.0%  boomkat.vm.th_if
+== codeload.jit.sample.txt  samples=1175
+   frontend 49%  jit-code 29%  jit-runtime/compile 10%  strings 4%  other 4%  property/object 2%  libc/memory 1%  regexp 1%  gc/alloc 0%
+    10.1%  boomkat.vm.sljit_function_ssa_refresh
+     9.4%  boomkat.ast.build_line_table
+     4.8%  boomkat.compiler.moveelim_compute_liveness
+     3.0%  boomkat.lexer.Lexer.scan_token_raw
+     2.9%  boomkat.lexer.Lexer.scan_punctuator
+     2.9%  boomkat.lexer.Lexer.skip_whitespace_and_comments
+     2.3%  boomkat.ast.AtomTable.intern
+     2.2%  boomkat.lexer.Lexer.scan_identifier
+     2.1%  boomkat.ast.Early.check_ident
+     2.0%  boomkat.lexer.Lexer.scan_token
+== richards.interp.sample.txt  samples=1240
+   interpreter 98%  jit-code 2%
+    18.4%  boomkat.vm.th_call
+    15.2%  boomkat.vm.th_getthisc
+    12.7%  boomkat.vm.th_try_fast_return
+    12.0%  boomkat.vm.th_getpropc_cached
+     5.7%  boomkat.vm.th_putthisc
+     4.5%  boomkat.vm.th_jmp_null
+     4.4%  boomkat.vm.th_ldreg
+     3.6%  boomkat.vm.th_if
+     2.9%  boomkat.vm.th_resume_caller
+     2.2%  boomkat.vm.th_jmp_eq
+== raytrace.interp.sample.txt  samples=1244
+   interpreter 88%  jit-code 6%  gc/alloc 4%  other 2%  property/object 0%
+    16.3%  boomkat.vm.th_getpropc_cached
+     8.8%  boomkat.vm.th_call
+     7.9%  boomkat.vm.th_apply_args
+     7.5%  boomkat.vm.th_try_fast_return
+     6.8%  boomkat.vm.th_putthisc
+     5.5%  boomkat.vm.th_return_general
+     5.0%  boomkat.vm.th_new_obj
+     4.7%  boomkat.vm.th_ldreg
+     3.3%  boomkat.vm.th_getthisc
+     3.3%  boomkat.vm.th_if
