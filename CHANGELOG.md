@@ -6,7 +6,9 @@ of commits since the previous release. Newest first.
 ## [Unreleased]
 
 - `Intl.DisplayNames` names languages, regions, scripts, currencies, calendars and
-  date-time fields in the full profile's 30 locales.
+  date-time fields in the full profile's 33 locales.
+- The CLI prints uncaught errors whose message holds non-ASCII text as UTF-8;
+  Latin-1 characters were encoded twice.
 
 ## [0.3.0] - 2026-10-30 · 259 commits
 
