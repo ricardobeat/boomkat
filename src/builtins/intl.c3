@@ -326,7 +326,7 @@ fn bool intl_init_options(BuiltinContext* ctx, IntlNumberState* state, TVal loca
             first_tag = tag.token_text();
             state.us_locale = locale_is_us(tag.token_text());
             state.locale = math::max(intl_row_for_tag(first_tag), 0);
-            state.label_mode = intl_label_mode(first_tag, state.locale);
+            state.label_mode = intl_label_mode(first_tag, state.locale, !plural);
         }
     }
     int digits = 0;
@@ -527,7 +527,7 @@ fn HObject* intl_resolved(BuiltinContext* ctx, IntlNumberState* state) {
     char[48] locale_buffer;
     IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
     char[32] label_buffer;
-    char[] base = state.locale == 0 ? (state.us_locale ? "en-US" : "en") : intl_row_label((usz)state.locale, state.label_mode, label_buffer[..]);
+    char[] base = intl_resolved_tag((usz)state.locale, state.label_mode, state.us_locale, label_buffer[..]);
     intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(base, state.plural ? (IntlNumbering){ .index = INTL_DIGIT_LATN } : numbering, locale_buffer[..]));
     if (state.plural) {
         intl_put_string(ctx.heap, out, "type", state.ordinal ? "ordinal" : "cardinal");

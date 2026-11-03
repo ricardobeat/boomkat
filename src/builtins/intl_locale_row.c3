@@ -234,16 +234,43 @@ fn int intl_row_for_tag(char[] tag) {
     return -1;
 }
 
-// How a row's tag is adjusted to report the request: 0 keeps it, 1 drops its script
-// ("zh-TW" resolved to the zh-Hant-TW row), 2 adds the likely script ("es-Latn-419"
-// resolved to the es-419 row). Only a request in the row's language and region adapts.
-fn int intl_label_mode(char[] tag, int row) {
+// Whether CLDR ships a locale for lang[-script][-region].
+fn bool intl_region_available(char[] lang, char[] script, char[] region) {
+    char[24] buffer;
+    if (lang.len + script.len + region.len + 2 > buffer.len) return false;
+    char[] wanted = intl_join_tag(buffer[..], lang, script, region);
+    char* tags = &INTL_AVAILABLE_TAGS;
+    usz start = 0;
+    for (usz i = 0; i < INTL_AVAILABLE_TAGS.len; i++) {
+        if (tags[i] != 0) continue;
+        if (intl_tag_eq(tags[start:i - start], wanted)) return true;
+        start = i + 1;
+    }
+    return false;
+}
+
+const int INTL_LABEL_SCRIPT_SHIFT = 2;
+const int INTL_LABEL_REGION_SHIFT = 10;
+
+// How a row's tag is adjusted to report the request. Bits 0-1: 0 keeps it, 1 drops its script
+// ("zh-TW" resolved to the zh-Hant-TW row), 2 adds the likely script ("es-Latn-419" resolved
+// to the es-419 row), 3 reports the request itself because CLDR has a locale for it ("de-DE"
+// on the de row): bits 2-9 hold its script and bits 10 and up its region plus one. "de-XX" has
+// no locale and still reports "de". `available` is false for the services whose ICU data
+// is not per region (PluralRules, Collator).
+fn int intl_label_mode(char[] tag, int row, bool available = true) {
     if (row < 0) return 0;
     LocaleId requested;
     if (!requested.parse(tag)) return 0;
     LocaleId found;
     found.parse(intl_row_text((usz)row, intl_row((usz)row).tag));
-    if (found.reg().len == 0 || !intl_tag_eq(requested.reg(), found.reg()) || !intl_tag_eq(requested.lang(), found.lang())) return 0;
+    if (!intl_tag_eq(requested.lang(), found.lang())) return 0;
+    if (available && (requested.reg().len > 0 || requested.scr().len > 0) && intl_region_available(requested.lang(), requested.scr(), requested.reg())) {
+        int script = requested.scr().len > 0 ? (int)locale_likely_script_index(requested.scr()) : 0;
+        int region = requested.reg().len > 0 ? locale_region_pack(requested.reg()) + 1 : 0;
+        return 3 | (script << INTL_LABEL_SCRIPT_SHIFT) | (region << INTL_LABEL_REGION_SHIFT);
+    }
+    if (found.reg().len == 0 || !intl_tag_eq(requested.reg(), found.reg())) return 0;
     if (requested.scr().len == 0 && found.scr().len > 0) return 1;
     if (requested.scr().len > 0 && found.scr().len == 0) {
         found.maximize();
@@ -258,8 +285,22 @@ fn char[] intl_row_label(usz row, int mode, char[] buf) {
     if (mode == 0) return tag;
     LocaleId id;
     id.parse(tag);
+    if ((mode & 3) == 3) {
+        char[3] code;
+        int region = mode >> INTL_LABEL_REGION_SHIFT;
+        usz n = region > 0 ? locale_region_unpack(region - 1, &code) : 0;
+        int script = (mode >> INTL_LABEL_SCRIPT_SHIFT) & 0xFF;
+        return intl_join_tag(buf, id.lang(), script > 0 ? locale_script_at((usz)script - 1) : "", code[:n]);
+    }
     if (mode == 2) id.maximize();
     return intl_join_tag(buf, id.lang(), mode == 1 ? "" : id.scr(), id.reg());
+}
+
+// The resolved locale of a service backed by locale rows. Row 0 is English: "en-US" for the
+// default locale, "en" for an en request without a region.
+fn char[] intl_resolved_tag(usz row, int mode, bool us_locale, char[] buf) {
+    if (row == 0 && mode == 0) return us_locale ? "en-US" : "en";
+    return intl_row_label(row, mode, buf);
 }
 
 // A unit's pattern: kind 0 is the one form, 1 the other form, 2 the per-unit pattern

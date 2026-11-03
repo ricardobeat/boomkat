@@ -558,7 +558,7 @@ fn char[] coll_selectable_type_name(usz index) @feat(INTL_COLLATOR) {
 // without a script the request did not name.
 fn char[] coll_locale_label(char[] tag, int coll_locale, char[] buf) @feat(INTL_COLLATOR) {
     int row = intl_row_for_tag(tag);
-    if (row >= 0) return intl_row_label((usz)row, intl_label_mode(tag, row), buf);
+    if (row >= 0) return intl_row_label((usz)row, intl_label_mode(tag, row, false), buf);
     LocaleId requested;
     requested.parse(tag);
     LocaleId found;

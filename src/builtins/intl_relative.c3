@@ -131,7 +131,7 @@ fn void builtin_intl_relative_resolved(BuiltinContext* ctx) {
     IntlNumbering numbering = { .index = intl_numbering_index(state.number.numbering), .keep_extension = state.number.numbering_ext };
     usz row = (usz)state.number.locale;
     char[32] label_buffer;
-    char[] tag = row > 0 ? intl_row_label(row, state.number.label_mode, label_buffer[..]) : state.number.us_locale ? "en-US" : "en";
+    char[] tag = intl_resolved_tag(row, state.number.label_mode, state.number.us_locale, label_buffer[..]);
     intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(tag, numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);
     intl_put_string(ctx.heap, out, "numeric", state.auto_numeric ? "auto" : "always");

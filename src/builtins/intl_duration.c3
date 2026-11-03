@@ -133,6 +133,7 @@ fn void builtin_intl_duration_format(BuiltinContext* ctx) {
     TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
     char[] first_tag = "en-US";
     settings.locale = 0;
+    settings.us_locale = true;
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
         first_tag = tag.token_text();
@@ -177,7 +178,7 @@ fn void builtin_intl_duration_resolved(BuiltinContext* ctx) {
     IntlNumbering numbering = { .index = intl_numbering_index(state.numbering), .keep_extension = state.numbering_ext };
     usz row = (usz)state.locale;
     char[32] label_buffer;
-    char[] tag = row > 0 ? intl_row_label(row, state.label_mode, label_buffer[..]) : state.us_locale ? "en-US" : "en";
+    char[] tag = intl_resolved_tag(row, state.label_mode, state.us_locale, label_buffer[..]);
     intl_put_string(ctx.heap, out, "locale", intl_resolved_locale(tag, numbering, locale_buffer[..]));
     intl_put_string(ctx.heap, out, "numberingSystem", intl_digit_name(numbering.index));
     intl_put_string(ctx.heap, out, "style", styles[state.style]);

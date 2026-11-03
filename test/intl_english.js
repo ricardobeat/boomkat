@@ -22,7 +22,7 @@ eq(Object.prototype.toString.call(nf), "[object Intl.NumberFormat]");
 eq(Intl.NumberFormat().format(1000), "1,000");
 eq(nf.resolvedOptions().locale, "en-US");
 eq(new Intl.NumberFormat("tlh").resolvedOptions().locale, "en-US");
-eq(new Intl.NumberFormat("en-GB").resolvedOptions().locale, "en");
+eq(new Intl.NumberFormat("en-GB").resolvedOptions().locale, "en-GB");
 eq(Intl.NumberFormat.supportedLocalesOf(["EN-us", "tlh", "en-US", "en-GB"]).join(","), "en-US,en-GB");
 eq(Intl.NumberFormat.supportedLocalesOf(Symbol()).length, 0);
 var cash = new Intl.NumberFormat("en", {style: "currency", currency: "usd"});

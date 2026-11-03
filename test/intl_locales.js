@@ -6,9 +6,9 @@ function eq(actual, expected) {
 if (new Intl.NumberFormat('de').resolvedOptions().locale === 'de') {
     // A likely-subtag match retains the request; an unavailable region truncates to the language.
     eq(new Intl.NumberFormat('zh-TW').resolvedOptions().locale, 'zh-TW');
-    eq(new Intl.NumberFormat('zh-HK').resolvedOptions().locale, 'zh');
+    eq(new Intl.NumberFormat('zh-HK').resolvedOptions().locale, 'zh-HK');
     eq(new Intl.NumberFormat('zh-Hant').resolvedOptions().locale, 'zh-Hant');
-    eq(new Intl.NumberFormat('fr-CA').resolvedOptions().locale, 'fr');
+    eq(new Intl.NumberFormat('fr-CA').resolvedOptions().locale, 'fr-CA');
     eq(new Intl.NumberFormat('en-IN').format(1234567), '12,34,567');
 
     // Symbols and grouping come from the row.
