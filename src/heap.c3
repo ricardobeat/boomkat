@@ -2429,6 +2429,9 @@ fn void Heap.free_compiled_funcs(&self) {
  * Release every managed object, then free the heap struct itself.
  */
 fn void Heap.destroy(&self) {
+    $if $feat(STRING_TRACE):
+        if (strtrace_cycle == self) strtrace_cycle = null;
+    $endif
     agent::heap_release(self);
     self.clear_concat_cache();
     self.free_realms();

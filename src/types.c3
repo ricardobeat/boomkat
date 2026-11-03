@@ -4,6 +4,8 @@
 module boomkat::types;
 
 import boomkat::features;
+import boomkat::heap;
+import boomkat::hstring;
 import std::math;
 
 // ============================================================================
@@ -926,7 +928,10 @@ fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; 
 // refcount, so this does nothing for them. See STRING_PINNED_REFCOUNT.
 fn void HeapHeader.incref(&self) @inline {
     // Only strings are counted; see TVal.is_refcounted.
-    $if !$feat(STRING_TRACE):
+    $if $feat(STRING_TRACE):
+        // Every new reference is a store the major cycle in progress must see.
+        if (heap::strtrace_cycle != null && self.is_string()) heap::strtrace_cycle.shade_string((HString*)self);
+    $else
         if (!self.is_string() || self.refcount == STRING_PINNED_REFCOUNT) return;
         self.refcount++;
     $endif

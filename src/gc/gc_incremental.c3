@@ -26,7 +26,14 @@ fn void Heap.gc_begin_cycle(&self, bool safepoint, GcKind kind = GcKind.MAJOR) {
     self.gc_start_cycle(false, kind);
 }
 
+// STRING_TRACE: the heap running a major cycle, which shades every string
+// that gains a reference until the cycle ends. One global, not per thread.
+Heap* strtrace_cycle @if($feat(STRING_TRACE));
+
 fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJOR) {
+    $if $feat(STRING_TRACE):
+        if (kind == GcKind.MAJOR) strtrace_cycle = self;
+    $endif
     self.gc_keep_temproots = keep_temproots;
     self.gc_kind = kind;
     // A major cycle drops the set: its scan clears each owner's flag.
@@ -319,6 +326,9 @@ fn void Heap.gc_finish_cycle(&self) {
     gcprofile::gcprof_generation(self.gc_kind == GcKind.MINOR);
     self.gc_phase = GcPhase.IDLE;
     self.gc_running = false;
+    $if $feat(STRING_TRACE):
+        if (strtrace_cycle == self) strtrace_cycle = null;
+    $endif
     self.sweep_active = false;
     self.gc_roots_done = false;
     self.gc_weak_done = false;

@@ -85,6 +85,9 @@ fn bool Heap.gc_scan_generator_step(&self, uint budget) {
             case 2:
                 if (c.forin != null) {
                     self.mark_hobject(c.forin.target);
+                    $if $feat(STRING_TRACE):
+                        for (uint i = 0; i < c.forin.count; i++) self.mark_string(c.forin.keys[i].borrow());
+                    $endif
                     c.forin = c.forin.parent;
                 } else { c.stage++; }
             case 3:

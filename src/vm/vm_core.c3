@@ -428,6 +428,9 @@ fn bool scan_activation_root_unit(Vm* vm, heap::Heap* h, Activation* act, bool s
                 return false;
             }
             h.shade_root_object(fi.target);
+            $if $feat(STRING_TRACE):
+                for (uint i = 0; i < fi.count; i++) h.shade_string(fi.keys[i].borrow());
+            $endif
             vm.gc_root_chain = fi.parent;
         case 3:
             if (act.func == null || act.bottom == null) return true;
