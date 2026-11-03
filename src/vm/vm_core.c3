@@ -256,6 +256,60 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
 //
 // It also covers the activations saved in vm_call_fn_impl's shadow frame list,
 // so outer call frames survive a nested Vm.run().
+// End of the register span of activation `i`. Lower bound: declared registers
+// plus the builtin scratch margin, since valstack_top is not raised by inline
+// JS-to-JS calls and so cannot bound the frame. Staged arguments through the
+// next frame's bottom or the published top are included: spare allocation
+// capacity can hold pointers from completed callbacks.
+fn TVal* activation_span_end(Vm* vm, uint i) @inline {
+    Activation* a = &vm.activations[i];
+    TVal* frame_end = a.bottom;
+    if (a.func != null) {
+        CompiledFunction* acf = (CompiledFunction*)a.func;
+        frame_end = a.bottom + acf.num_regs + FRAME_SCRATCH_SLOTS;
+    }
+    if (i + 1 < vm.activation_count) {
+        TVal* nb = vm.activations[i + 1].bottom;
+        if (nb > frame_end) { frame_end = nb; }
+    } else if (vm.valstack_top > frame_end) {
+        frame_end = vm.valstack_top;
+    }
+    return min(frame_end, vm.valstack_end);
+}
+
+// End of the register span of a saved outer activation. Its physical span is
+// not tracked, so this is num_regs plus the scratch slots reserved at call sites.
+fn TVal* shadow_span_end(ShadowActFrame* shadow, uint i) @inline {
+    Activation* sa = &shadow.acts[i];
+    if (sa.func == null || sa.bottom == null) return sa.bottom;
+    CompiledFunction* scf = (CompiledFunction*)sa.func;
+    return min(sa.bottom + scf.num_regs + FRAME_SCRATCH_SLOTS, shadow.stack_end);
+}
+
+// Report every live frame slot to the heap's zero-count flush: the same spans
+// vm_mark_activations marks, including shadow activations. The slots are
+// compared by value and never dereferenced, see Heap.zct_hold.
+fn void vm_scan_activation_slots(void* vm_ptr, void* heap_ptr) {
+    Vm* vm = (Vm*)vm_ptr;
+    heap::Heap* h = (heap::Heap*)heap_ptr;
+    for (uint i = 0; i < vm.activation_count; i++) {
+        Activation* a = &vm.activations[i];
+        if (a.func == null || a.bottom == null) continue;
+        TVal* end = activation_span_end(vm, i);
+        for (TVal* tv = a.bottom; tv < end; tv++) h.zct_hold(tv);
+    }
+    ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
+    while (shadow != null) {
+        for (uint i = 0; i < shadow.count; i++) {
+            Activation* sa = &shadow.acts[i];
+            if (sa.func == null || sa.bottom == null) continue;
+            TVal* end = shadow_span_end(shadow, i);
+            for (TVal* tv = sa.bottom; tv < end; tv++) h.zct_hold(tv);
+        }
+        shadow = (ShadowActFrame*)shadow.prev;
+    }
+}
+
 fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     Vm* vm = (Vm*)vm_ptr;
     heap::Heap* h = (heap::Heap*)heap_ptr;
@@ -276,23 +330,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     for (uint i = 0; i < vm.activation_count; i++) {
         mark_activation_envs(h, &vm.activations[i]);
         mark_activation_fields(h, &vm.activations[i]);
-        Activation* a = &vm.activations[i];
-        // Lower bound on the span: declared registers plus the builtin scratch margin.
-        // valstack_top is not raised by inline JS-to-JS calls, so it cannot bound the frame.
-        TVal* frame_end = a.bottom;
-        if (a.func != null) {
-            CompiledFunction* acf = (CompiledFunction*)a.func;
-            frame_end = a.bottom + acf.num_regs + FRAME_SCRATCH_SLOTS;
-        }
-        // Include staged arguments through the next frame or published top.
-        // Spare allocation capacity can hold pointers from completed callbacks.
-        if (i + 1 < vm.activation_count) {
-            TVal* nb = vm.activations[i + 1].bottom;
-            if (nb > frame_end) { frame_end = nb; }
-        } else if (vm.valstack_top > frame_end) {
-            frame_end = vm.valstack_top;
-        }
-        mark_activation_regs(h, a, min(frame_end, vm.valstack_end));
+        mark_activation_regs(h, &vm.activations[i], activation_span_end(vm, i));
     }
 
     // Saved outer activations from vm_call_fn_impl frames. Their physical span is not
@@ -302,12 +340,7 @@ fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
         for (uint i = 0; i < shadow.count; i++) {
             mark_activation_envs(h, &shadow.acts[i]);
             mark_activation_fields(h, &shadow.acts[i]);
-            Activation* sa = &shadow.acts[i];
-            if (sa.func != null && sa.bottom != null) {
-                CompiledFunction* scf = (CompiledFunction*)sa.func;
-                TVal* send = min(sa.bottom + scf.num_regs + FRAME_SCRATCH_SLOTS, shadow.stack_end);
-                mark_activation_regs(h, sa, send);
-            }
+            mark_activation_regs(h, &shadow.acts[i], shadow_span_end(shadow, i));
         }
         shadow = (ShadowActFrame*)shadow.prev;
     }

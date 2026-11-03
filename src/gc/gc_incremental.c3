@@ -167,9 +167,7 @@ fn void Heap.gc_sweep_strings_step(&self, uint budget, bool quiescent) {
         self.mark_work_last++;
         HString* entry = self.str_table[self.gc_string_index];
         if (entry != null && entry != STR_TABLE_TOMBSTONE && entry.refcount == 1) {
-            self.str_table_tombstone(self.gc_string_index);
-            if (self.str_table_used > 0) self.str_table_used--;
-            self.free_string(entry);
+            self.zct_push(entry, true);
         }
         self.gc_string_index++;
         budget--;
@@ -182,19 +180,15 @@ fn void Heap.gc_sweep_large_strings_step(&self, uint budget, bool quiescent) {
     while (budget > 0 && self.gc_large_string_index < self.large_string_count) {
         self.mark_work_last++;
         HString* entry = self.large_strings[self.gc_large_string_index];
-        if (entry.refcount == 0) {
-            self.large_string_count--;
-            if (self.gc_large_string_index < self.large_string_count) {
-                self.large_strings[self.gc_large_string_index] = self.large_strings[self.large_string_count];
-                self.large_strings[self.gc_large_string_index].registry_slot = self.gc_large_string_index + 1;
-            }
-            self.free_string(entry);
-        } else {
-            self.gc_large_string_index++;
-        }
+        if (entry.refcount == 0) self.zct_push(entry, true);
+        self.gc_large_string_index++;
         budget--;
     }
-    if (self.gc_large_string_index >= self.large_string_count) self.gc_sweep_stage++;
+    if (self.gc_large_string_index >= self.large_string_count) {
+        // Both string stages have queued their candidates; this is the free.
+        self.zct_flush(true);
+        self.gc_sweep_stage++;
+    }
 }
 
 fn void Heap.gc_finish_cycle(&self) {

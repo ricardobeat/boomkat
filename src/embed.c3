@@ -849,21 +849,12 @@ fn void slot_release(Runtime* rt, ulong id) {
     SlotEntry* e = slot_entry(rt, id);
     if (e == null) return;
 
-    // A string whose only other owner is the intern table is garbage now. Small
-    // strings do not count toward the GC trigger, so a host that only mints
-    // strings would never reach a sweep; freeing here keeps the table bounded.
-    // Inside a native frame a builtin may still borrow the raw pointer, so the
-    // string is left for the sweep.
-    if (e.v.is_string() && rt.heap.native_frame_depth == 0) {
-        HeapHeader* hdr = (HeapHeader*)e.v.get_heapptr();
-        hstring::HString* hs = (hstring::HString*)hdr;
-        if (!hdr.is_pinned() && hs.flags.is_interned && hdr.refcount == 2) {
-            rt.heap.str_table_remove(hs);
-            rt.heap.free_string(hs);
-            e.v.set_undefined();
-        }
-    }
     if (e.v.is_heap_allocated()) rt.heap.decref_tval(&e.v);
+    // Small strings do not count toward the GC trigger, so a host that only
+    // mints strings would never reach a safepoint; flushing here keeps the
+    // table bounded. Inside a native frame a builtin may still borrow a raw
+    // pointer, so the queue is left for a quiescent flush.
+    if (rt.heap.native_frame_depth == 0 && rt.heap.zct_flush_due()) rt.heap.zct_flush(true);
     e.v.set_undefined();
     e.used = false;
     if (rt.live > 0) rt.live--;
