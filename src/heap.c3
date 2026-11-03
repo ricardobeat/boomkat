@@ -4670,6 +4670,9 @@ fn void Heap.drain_gray(&self) {
                 break;
             case ObjClass.ERROR:
                 self.mark_tval(&(*obj.extra_ptr()).err.captured_stack);
+            case ObjClass.REGEXP:
+                // The pattern source is a string, counted until STRING_TRACE.
+                self.mark_tval(&(*obj.extra_ptr()).regexp.pattern_str);
                 break;
             case ObjClass.TEMPORAL_DURATION:
             case ObjClass.TEMPORAL_PLAIN_DATE:
