@@ -7,7 +7,7 @@
 # the target's own "sources", expanding directory entries to their .c3
 # files) so this file never drifts from what c3c itself actually builds.
 
-target_sources = $(shell jq -r '.["c-sources"][]' project.json) \
+target_sources = $(shell jq -r '.["c-sources"][]?, .targets["$(1)"]["c-sources"][]?' project.json) \
                  $(shell jq -r '.targets["$(1)"].sources[]' project.json | while read -r s; do \
                      if [ -d "$$s" ]; then find "$$s" -name '*.c3'; else echo "$$s"; fi; \
                  done)
@@ -63,6 +63,8 @@ SLIM_LINK_FLAGS := -z -Wl,-s -z -Wl,--gc-sections
 TINY_STRIP := strip
 endif
 
+SLJIT_DEPS := $(wildcard vendor/sljit/sljit_src/*.h vendor/sljit/sljit_src/*.c vendor/sljit/sljit_src/allocator_src/*.c)
+
 # TINY also omits the compact unwind table: the engine catches JavaScript
 # exceptions itself and the build emits no native backtraces, so nothing in it
 # unwinds through these frames. DWARF unwind data stays in the binary, which is
@@ -97,7 +99,7 @@ boomkat_debug: out/boomkat_debug
 # missed GC root into a deterministic failure instead of a rare field crash.
 boomkat_gc_stress: out/boomkat_gc_stress
 
-out/test262_runner: project.json $(call target_sources,test262_runner)
+out/test262_runner: project.json $(call target_sources,test262_runner) $(SLJIT_DEPS)
 	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-test262_runner
 
@@ -121,11 +123,11 @@ restore-default-profile:
 $(patsubst out/.profile-%,out/%,$(profile_overrides)): restore-default-profile
 endif
 
-out/boomkat: project.json $(call target_sources,boomkat)
+out/boomkat: project.json $(call target_sources,boomkat) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat
 
-out/boomkat-full-icu: project.json $(call target_sources,boomkat-full-icu)
+out/boomkat-full-icu: project.json $(call target_sources,boomkat-full-icu) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat-full-icu $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat-full-icu
 
@@ -157,7 +159,7 @@ out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
 # c3c names the file from the target's `name` key, so the static archive lands
 # at out/boomkat.a and the dylib at out/boomkat.dylib.
 lib: out/boomkat.a
-out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static)
+out/boomkat.a: project.json include/boomkat.h $(call target_sources,boomkat_static) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat_static $(C3C_BUILDFLAGS)
 	@rm -f out/.profile-boomkat.a
 
@@ -189,7 +191,7 @@ check-abi:
 # install_name_tool step rewrites it to @rpath so it can be installed at any
 # PREFIX. The shared link is named libboomkat so embedders write `-lboomkat`.
 shared: out/boomkat.$(SHLIB_EXT)
-out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(BK_EXPORT_LIST) $(call target_sources,boomkat_dylib)
+out/boomkat.$(SHLIB_EXT): project.json include/boomkat.h $(BK_EXPORT_LIST) $(call target_sources,boomkat_dylib) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat_dylib $(C3C_BUILDFLAGS) $(BK_EXPORT_LDFLAG)
 	@rm -f out/.profile-boomkat.$(SHLIB_EXT)
 ifeq ($(UNAME_S),Darwin)
@@ -561,6 +563,9 @@ test-object-model-api: out/object_model
 test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle
 	./out/api_lifecycle
+
+out/jit_capi: test/capi/jit.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/jit.c out/boomkat.a $(BK_LDLIBS) -o out/jit_capi
 
 out/binary_api: test/capi/binary.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/binary.c \

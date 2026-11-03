@@ -273,6 +273,15 @@ binary ABI guarantee.
 Registrations last until runtime destruction. Registering the same name twice
 replaces the global binding; a function object JS already holds keeps working.
 
+## Native compilation
+
+`runtime.set_jit()` enables native compilation and `runtime.set_jit(false)`
+returns to the interpreter. The setting is off by default, applies to every
+context sharing the runtime, and belongs to the engine thread. The method
+returns false for a runtime that was not created or a build without the
+backend; [build-flags.md](../../docs/build-flags.md#jit) lists what a source
+build needs.
+
 ## Event-loop hooks
 
 `runtime.set_promise_rejection_tracker(handler, udata:)` installs a callback with

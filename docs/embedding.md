@@ -88,6 +88,15 @@ runtimes. A watchdog may call `bk_request_interrupt(runtime)` concurrently;
 stop and join it before destroying the runtime. Requests stay latched until
 `bk_clear_interrupt`. Poll handlers must not reenter the engine.
 
+## Native compilation
+
+The standard libraries include the JIT backend, off by default. Call
+`bk_set_jit(runtime, 1)` to enable it in every context sharing the runtime,
+and `bk_set_jit(runtime, 0)` to return to the interpreter. Enabling returns
+`BK_ERR_INVALID` when the build or architecture lacks support. The setter
+belongs to the engine thread, like the other runtime configuration calls.
+[build-flags.md](build-flags.md#jit) lists what a source build needs.
+
 ## Values and exceptions
 
 A `bk_value` is an opaque 64-bit handle. Outside any local scope, value results

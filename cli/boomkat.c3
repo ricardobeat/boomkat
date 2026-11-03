@@ -47,6 +47,8 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
 fn int main(String[] args) {
     // Source runs as a module unless --script selects the Script goal.
     bool script = false;
+    bool jit = false;
+    bool jit_stress = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
         bool bytecode_input = false;
@@ -85,6 +87,11 @@ fn int main(String[] args) {
         $endif
         if (a == "--script") {
             script = true;
+        } else if (a == "--jit") {
+            jit = true;
+        } else if (a == "--jit-stress") {
+            jit = true;
+            jit_stress = true;
         } else if (a == "--ignore-unhandled-promises") {
             ignore_unhandled_rejections = true;
         } else if (a == "--jsx") {
@@ -163,6 +170,12 @@ fn int main(String[] args) {
 
     Heap*? hp = heap::create(null, null, null, null, &cli_fatal);
     if (catch h = hp) { io::eprintfn("boomkat: could not create heap"); return 1; }
+    if (jit && !hp.set_jit(true)) {
+        io::eprintfn("boomkat: JIT is not available in this build");
+        hp.destroy();
+        return 2;
+    }
+    if (jit_stress) (void)hp.set_jit_stress(true);
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
 
     $if features::PORTABLE_BYTECODE:
@@ -239,9 +252,9 @@ const String CLI_VERSION = "0.3.0";
 
 fn void print_usage() {
     $if features::JSX:
-        io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]");
+        io::printfn("Usage: boomkat [--script]%s [--ignore-unhandled-promises] [--memory-limit=MB] [JSX OPTIONS] [FILE | -]", $feat(SLJIT) ? " [--jit]" : "");
     $else
-        io::printn("Usage: boomkat [--script] [--ignore-unhandled-promises] [--memory-limit=MB] [FILE | -]");
+        io::printfn("Usage: boomkat [--script]%s [--ignore-unhandled-promises] [--memory-limit=MB] [FILE | -]", $feat(SLJIT) ? " [--jit]" : "");
     $endif
     $if features::PORTABLE_BYTECODE:
         io::printn("       boomkat [--script] --compile OUTPUT.bkbc INPUT.js");
@@ -261,6 +274,10 @@ fn void print_usage() {
     $endif
     io::printn("--ignore-unhandled-promises does not report unhandled promise rejections or let them");
     io::printn("set a non-zero exit status (by default they are reported and exit with status 1).");
+    $if $feat(SLJIT):
+        io::printn("--jit enables native compilation of eligible hot functions (off by default).");
+        io::printn("--jit-stress also compiles on the first call and keeps every entry (test setting).");
+    $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");
     $if features::JSX:
