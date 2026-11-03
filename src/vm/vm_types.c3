@@ -511,6 +511,8 @@ struct Dispatch {
     // ordinary "continue to next instruction" of an empty optional return.
     bool halt;
     TVal halt_value;
+    // The fault a FAULT-status operation function failed the run with.
+    fault failure;
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first

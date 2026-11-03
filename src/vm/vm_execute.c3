@@ -2979,96 +2979,22 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         opprof_record(op);
     $endif
 
+    OpStatus status;
     switch (op) @jump {
 
     // === LOAD / STORE ===
-    case Opcode.LDREG:
-        // Fast path: if source is not a heap ref (fastint, undefined, etc.),
-        // skip full refcounting and decref dst only if it held a heap pointer.
-        if (!rb.is_heap_allocated()) {
-            if (ra.is_heap_allocated()) {
-                vm.heap.decref_tval(ra);
-            }
-            *ra = *rb;
-        } else {
-            vm.heap.tval_copy_ref(ra, rb);
-            track_heap_store(ds.act, ra, (uint)insn.a);
-        }
-        continue;
-
-    case Opcode.LDCONST: {
-        uint bc = insn.get_bc();
-        if (bc < vm.current_func.const_count) {
-            vm.heap.tval_copy_ref(ra, &ds.constants[bc]);
-        } else {
-            vm.heap.set_reg_undefined(ra);
-        }
-        continue;
-    }
-
-    case Opcode.SETCONST: {
-        uint bc = insn.get_bc();
-        if (bc < vm.current_func.const_count) {
-            vm.heap.tval_copy_ref(&ds.constants[bc], ra);
-        }
-        continue;
-    }
-
-    case Opcode.LDINT:
-        vm.heap.set_reg_fastint(ra, (long)insn.get_sbc());
-        continue;
-
-    case Opcode.LDINTX: {
-        // Always immediately preceded by the LDINT writing ra's high
-        // bits, so ra is a fastint here and holds no old heap reference.
-        long ix_high = ra.get_fastint();
-        vm.heap.set_reg_fastint(ra, (ix_high << 16) | (long)insn.get_bc());
-        continue;
-    }
-
-    case Opcode.LDUNDEF:
-        vm.heap.set_reg_undefined(ra);
-        continue;
-
-    case Opcode.LDNULL:
-        vm.heap.set_reg_null(ra);
-        continue;
-
-    case Opcode.LDTRUE:
-        vm.heap.set_reg_boolean(ra, true);
-        continue;
-
-    case Opcode.LDFALSE:
-        vm.heap.set_reg_boolean(ra, false);
-        continue;
-
+    case Opcode.LDREG:    status = op_ldreg(ds, insn);
+    case Opcode.LDCONST:  status = op_ldconst(ds, insn);
+    case Opcode.SETCONST: status = op_setconst(ds, insn);
+    case Opcode.LDINT:    status = op_ldint(ds, insn);
+    case Opcode.LDINTX:   status = op_ldintx(ds, insn);
+    case Opcode.LDUNDEF:  status = op_ldundef(ds, insn);
+    case Opcode.LDNULL:   status = op_ldnull(ds, insn);
+    case Opcode.LDTRUE:   status = op_ldtrue(ds, insn);
+    case Opcode.LDFALSE:  status = op_ldfalse(ds, insn);
     case Opcode.LDTHIS:
     case Opcode.GETTHISC:
-    case Opcode.PUTTHISC:
-        // Derived constructors have an uninitialized `this` (TDZ sentinel)
-        // until super() is called. Accessing `this` before super() → ReferenceError.
-        if (env::is_tdz_sentinel(&ds.act.this_binding)) {
-            if (!vm_throw_error(vm, vm.heap.ref_err_proto,
-                    "Must call super constructor in derived class before accessing 'this' or returning from derived constructor",
-                    ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                return vm_uncaught_error(vm, &vm.throw_value);
-            }
-            continue;
-        }
-        if (op == Opcode.LDTHIS) {
-            vm.heap.tval_copy_ref(ra, &ds.act.this_binding);
-            track_heap_store(ds.act, ra, (uint)insn.a);
-        } else {
-            // The fused property forms read and write through the binding
-            // itself: GETTHISC into A, PUTTHISC from A.
-            TVal this_value = ds.act.this_binding;
-            if (op == Opcode.GETTHISC) {
-                if (catch err = dispatch_property(ds, op, ra, &this_value, rc, insn)) { return err~; }
-            } else if (catch err = dispatch_property(ds, Opcode.PUTPROP, &this_value, &ds.constants[insn.c], ra, insn)) {
-                return err~;
-            }
-        }
-        continue;
+    case Opcode.PUTTHISC: status = op_ldthis(ds, insn);
 
     // === ARITHMETIC ===
     case Opcode.ADD_FUSED:
@@ -6247,14 +6173,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.NEWCELLS:
     case Opcode.GETCELL:
     case Opcode.SETCELL:
-    case Opcode.MOVECELL:
-        if (catch err = dispatch_cells(ds, op, ra, rb, rc, insn)) { return err~; }
-        continue;
+    case Opcode.MOVECELL: status = op_cells(ds, insn);
 
     case Opcode.CLOSURE:
-    case Opcode.GETBOUND:
-        if (catch err = dispatch_closures(ds, op, ra, rb, rc, insn)) { return err~; }
-        continue;
+    case Opcode.GETBOUND: status = op_closure(ds, insn);
 
     // === ITERATOR ===
     case Opcode.INITFOR:
@@ -6264,9 +6186,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.ARRAY_PATTERN_GUARD:
     case Opcode.ITER_OPEN_FAST:
     case Opcode.DESTRUCT_ARRAY_FAST:
-    case Opcode.DESTRUCT_ARRAY_REST_FAST:
-        if (catch err = dispatch_iterator(ds, op, ra, rb, rc, insn)) { return err~; }
-        continue;
+    case Opcode.DESTRUCT_ARRAY_REST_FAST: status = op_iterator(ds, insn);
 
     // === EXCEPTION HANDLING ===
     case Opcode.TRY:
@@ -6276,10 +6196,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.THROW_SYNTAX:
     case Opcode.CATCH:
     case Opcode.FINALLY:
-    case Opcode.ENDFINALLY:
-        if (catch err = dispatch_exceptions(ds, op, ra, rb, rc, insn)) { return err~; }
-        if (ds.halt) { return ds.halt_value; }
-        continue;
+    case Opcode.ENDFINALLY: status = op_exceptions(ds, insn);
 
     // === MISC ===
     case Opcode.NOP:
@@ -6314,15 +6231,16 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.CHK_BRAND:
     case Opcode.HAS_BRAND:
     case Opcode.INITPROP_PRIV:
-    case Opcode.GETPROP_PRIVATE:
-        if (catch err = dispatch_misc(ds, op, ra, rb, rc, insn)) { return err~; }
-        // Getters, iterator closes and other user code may reallocate the
-        // valstack; refresh regs_base unless the outer loop reloads it.
-        if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
-        continue;
+    case Opcode.GETPROP_PRIVATE: status = op_misc(ds, insn);
 
     default:
         return VM_ERROR~;
+    }
+    switch (status) {
+        case NEXT:
+        case RESTART: continue;
+        case HALT:    return ds.halt_value;
+        case FAULT:   return ds.failure~;
     }
     }
     return (TVal){};
