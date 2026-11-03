@@ -51,7 +51,7 @@ def main():
     if args.target == 'boomkat_tiny':
         command += ['--show-backtrace=no']
     use_make = (args.intl == args.temporal == args.collator == 'default' and not args.debug
-                and args.target in ('boomkat', 'boomkat_slim', 'boomkat_tiny',
+                and args.target in ('boomkat', 'boomkat_strtrace', 'boomkat_slim', 'boomkat_tiny',
                                     'boomkat_tiny_compile', 'boomkat-full-icu', 'test262_runner'))
     if use_make:
         command = ['make', 'out/' + args.target]

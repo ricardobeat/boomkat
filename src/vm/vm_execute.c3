@@ -355,15 +355,14 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
                              HString* ls, Units tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
-    if (ra != rb) return false;
+    // A traced string has no count to prove a single owner, so it never
+    // grows in place.
+    if (ra != rb || $feat(STRING_TRACE)) return false;
     if (ls.length < CONCAT_ACCUM_MIN && ls.capacity <= ls.byte_len()) return false;
     if (ls.flags.is_interned || ls.flags.is_symbol) return false;
     if (((types::HeapHeader*)ls).is_temproot()) return false;
     if (!ra.is_string() || ra.get_heapptr() != (void*)ls) return false;
 
-    // A traced string has no count to prove a single owner, so it never
-    // grows in place.
-    if ($feat(STRING_TRACE)) return false;
     uint rc_val = ((types::HeapHeader*)ls).refcount;
     if (rc_val != 1 && (rc_val != 2
         || !concat_binding_owns(vm, act, ls, reg_idx, next_insn))) return false;

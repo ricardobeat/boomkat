@@ -127,6 +127,10 @@ out/boomkat: project.json $(call target_sources,boomkat) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat
 
+out/boomkat_strtrace: project.json $(call target_sources,boomkat_strtrace) $(SLJIT_DEPS)
+	$(C3C_BUILD) boomkat_strtrace $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_strtrace
+
 out/boomkat-full-icu: project.json $(call target_sources,boomkat-full-icu) $(SLJIT_DEPS)
 	$(C3C_BUILD) boomkat-full-icu $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat-full-icu
