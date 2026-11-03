@@ -1,6 +1,6 @@
 # 119: 50K Octane on a two-tier JIT
 
-Status: **ACTIVE, 2026-11-03.** Supersedes [plan 113](113-fifty-thousand-octane.md).
+Status: **ACTIVE, 2026-11-03, on branch `jit`.** Supersedes [plan 113](113-fifty-thousand-octane.md).
 Full original Octane at rat `bcb55ef9` scores 6,400 in one process. The target is 50,000.
 
 ## Objective
@@ -351,6 +351,29 @@ generated code calls an out-of-line stub, and no frame transition refuses string
 - A compile-work budget instead of the 320-op body bound.
 - Later: allocation sinking for RayTrace, EarleyBoyer and Box2D.
 
+## Branch
+
+The work is on `jit`, branched from `main` on 2026-11-03, not on `rat`. `main`
+has no JIT; `rat` is 251 commits and about 20K lines of tier code over it, and
+its interpreter hooks (`sljit_function_backedge`, the `sljit_loop_ready` mask,
+template and function dispatch, `sljit_function_resumes`) are shaped around the
+five tiers the baseline replaces. Rebasing them across the 35 `main` commits that
+touch the same compiler and VM files would have been done mostly to delete the
+result. The 5,214 to 6,400 that rat's tiers gave is given up until the baseline
+tier passes it.
+
+Ported from `rat` as the first commit: `vendor/sljit`, `src/jit/` (the shim and
+the C3 bindings), the `SLJIT` build token and targets, `Heap.set_jit` and
+`set_jit_stress`, the `--jit` and `--jit-stress` switches in the CLI and the
+test262 runner, `bk_set_jit` and `JsRuntime.set_jit`, the SLJIT ABI test and
+the C API switch test, `scripts/run_jit_diff.sh`, `scripts/octane_score.py` and
+the `bench_interleaved.py` JIT flags. Left on `rat`, to be ported or rewritten
+when a milestone needs them: the prototype-arm ICs in `hobject.c3`, write
+dependencies, `bytecode_cfg.c3`, the moveelim liveness work, the regexp
+required-substring filter in `re_wrapper.c`, and the `gen.c3` dead-jump
+elimination. `rat` stays as reference for the NaN-box guards, the deopt layout
+and the call entry sequence.
+
 ## Milestones
 
 ### 0. Measurement gate
@@ -365,15 +388,12 @@ quick screen, not a gate.
 Add a native-coverage measure per benchmark: interpreter dispatches with the JIT
 on, divided by dispatches with it off.
 
-Acceptance: the script reproduces the measurements above within noise.
+Acceptance: the script reproduces the measurements above within noise, and
+records the `main` interpreter score the `jit` branch starts from.
 
 ### 1. Defects
 
-Fix defects 1 and 2.
-
-Acceptance: neither `sljit_function_ssa_refresh` nor
-`sljit_retire_invalid_dependencies` appears in a CodeLoad profile, and the suite
-score does not drop.
+Dropped: defects 1 and 2 are in rat code that is not carried to `jit`.
 
 ### 2. String ownership decision
 
@@ -392,10 +412,12 @@ test262 and the local suites pass in both script modes and as modules.
 
 ### 4. Baseline tier
 
-Write a new emitter for the baseline tier and port the function tier's
-arithmetic, compare-and-branch and shape-check fast paths into it. The function
-tier's contract (leave on anything unhandled, cache state baked into code) is the
-opposite of the baseline's, so it is not retrofitted.
+Write a new emitter for the baseline tier, taking the arithmetic,
+compare-and-branch and shape-check fast paths from rat's function tier
+(`src/vm/vm_sljit_function.c3`, `vm_sljit_property.c3`, `vm_sljit_typed.c3`
+on `rat`) where they fit. The function tier's contract (leave on anything
+unhandled, cache state baked into code) is the opposite of the baseline's, so
+it is not retrofitted.
 
 Acceptance:
 
@@ -410,14 +432,11 @@ interpreter score, JSC's baseline configuration would be about 2.9x its
 interpreter configuration. Applied to boomkat's interpreter that is roughly 15K;
 boomkat's slower collector, strings and frontend will keep it below that.
 
-Then delete what the baseline replaces: function regions, the straight-line loop
-tier, the template tier, read refresh, and the stall, demotion and rebuild
-heuristics. The numeric SSA loop path stays until the optimizing tier replaces
-it. SSA feature work, apart from fixes, waits for this milestone.
-
 ### 5. Optimizing tier
 
-Rebuild the SSA tier on baseline frames as described under Design.
+Build the SSA tier on baseline frames as described under Design, reusing rat's
+graph, dominance, liveness, range and LICM code (`src/vm/vm_sljit_ssa_*.c3`
+on `rat`) where it fits the new frame contract.
 
 Acceptance: per-benchmark gains in the full suite; deoptimization, inlining and
 call nodes covered by the differential and embedding suites; bounded compile time
@@ -446,7 +465,7 @@ and memory.
   ASan target, on ARM64 and x64.
 - Interleaved timing runs on a calm machine, and investigation of repeatable
   regressions above about 3%.
-- Performance work on rat keeps a linear history so regressions can be bisected.
+- Performance work on `jit` keeps a linear history so regressions can be bisected.
 
 ## Evidence
 
