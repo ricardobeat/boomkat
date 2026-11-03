@@ -2319,6 +2319,7 @@ fn bool desc_get(BuiltinContext* ctx, HObject* obj, hstring::HString* key, TVal*
             ctx.heap.has_error = false;
             return false;
         }
+        hold_call_result(ctx.heap, *out);
         return true;
     }
     // PROP_DATA

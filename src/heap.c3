@@ -998,9 +998,10 @@ struct Heap {
     uint            external_buffer_count;
     uint            external_buffer_capacity;
     uint            external_buffer_free;   // EXTERNAL_NONE when no record is free
-    // Values handed to add-ons for the duration of one call. A GC root, so a
-    // handle keeps its value alive without the add-on doing anything; reset
-    // per call rather than released individually.
+    // Values handed to add-ons for the duration of one call, and the call
+    // results a builtin's argument conversions keep for the same span. A GC
+    // root, so a handle keeps its value alive without the add-on doing
+    // anything; rewound per call rather than released individually.
     TVal*           addon_handles;
     uint            addon_handle_count;
     uint            addon_handle_capacity;

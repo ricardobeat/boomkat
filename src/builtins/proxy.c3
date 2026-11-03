@@ -361,7 +361,9 @@ fn bool js_get_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, T
                 if (!tval_is_callable(d.getter)) { out.set_undefined(); return true; }
                 if (heap.call_fn == null) { out.set_undefined(); return true; }
                 *out = heap.call_fn(vm, d.getter, null, 0, receiver);
-                return !heap.has_error;
+                if (heap.has_error) return false;
+                hold_call_result(heap, *out);
+                return true;
             }
             *out = d.value;
             return true;
@@ -639,6 +641,7 @@ fn bool proxy_mop_get(void* vm, Heap* heap, HObject* proxy, HString* key, TVal r
             return false;
         }
     }
+    hold_call_result(heap, result);
     *out = result;
     return true;
 }
