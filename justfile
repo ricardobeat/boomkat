@@ -582,3 +582,22 @@ test-api:
 test-c3-api:
     c3c build embedding_lifecycle --build-dir out/build/embedding_lifecycle
     ./out/embedding_lifecycle
+
+# Check CLI and C API runtime JIT switches.
+test-jit:
+    @make out/boomkat out/jit_capi
+    ./out/boomkat --script test/abstract_eq.js
+    ./out/boomkat --jit --script test/abstract_eq.js
+    c3c build jit_api --build-dir out/build/jit_api
+    ./out/jit_api
+    ./out/jit_capi
+
+# Differential JIT run: local suites with and without --jit must agree.
+test-jit-diff:
+    @make out/boomkat
+    bash scripts/run_jit_diff.sh ./out/boomkat
+
+# Differential JIT run over the main test262 areas.
+test262-jit-diff:
+    @make out/test262_runner
+    bash scripts/run_jit_diff.sh --test262 ./out/test262_runner

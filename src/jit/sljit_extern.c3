@@ -1,0 +1,130 @@
+// SLJIT handles stay opaque. The shim exposes platform register encodings.
+module boomkat::jit;
+
+extern fn void* sljit_create_compiler(void* allocator_data);
+extern fn void sljit_free_compiler(void* compiler);
+extern fn void* sljit_alloc_memory(void* compiler, int size);
+extern fn int sljit_emit_enter(void* compiler, int options, int arg_types, int scratches, int saveds, int local_size);
+extern fn int sljit_set_context(void* compiler, int options, int arg_types, int scratches, int saveds, int local_size);
+extern fn int sljit_emit_op0(void* compiler, int op);
+extern fn int sljit_emit_op1(void* compiler, int op, int dst, long dstw, int src, long srcw);
+extern fn int sljit_emit_op2(void* compiler, int op, int dst, long dstw, int src1, long src1w, int src2, long src2w);
+extern fn int sljit_emit_op_flags(void* compiler, int op, int dst, long dstw, int condition);
+extern fn int sljit_emit_fop1(void* compiler, int op, int dst, long dw, int src, long sw);
+extern fn int sljit_emit_fop2(void* compiler, int op, int dst, long dw, int left, long lw, int right, long rw);
+extern fn int sljit_emit_fcopy(void* compiler, int op, int freg, int reg);
+extern fn void* sljit_emit_fcmp(void* compiler, int op, int left, long lw, int right, long rw);
+extern fn void* sljit_emit_label(void* compiler);
+extern fn void* sljit_emit_op_addr(void* compiler, int op, int dst, long dstw);
+extern fn void* sljit_emit_jump(void* compiler, int type);
+extern fn void* sljit_emit_call(void* compiler, int type, int arg_types);
+extern fn void* sljit_emit_cmp(void* compiler, int type, int src1, long src1w, int src2, long src2w);
+extern fn void sljit_set_label(void* jump, void* label);
+extern fn void sljit_set_target(void* jump, usz target);
+extern fn void sljit_set_jump_addr(usz addr, usz new_target, long executable_offset);
+extern fn int sljit_emit_return(void* compiler, int op, int src, long srcw);
+extern fn int sljit_emit_return_void(void* compiler);
+extern fn int sljit_emit_return_to(void* compiler, int src, long srcw);
+extern fn void* sljit_generate_code(void* compiler, int options, void* exec_allocator_data);
+extern fn void sljit_free_code(void* code, void* exec_allocator_data);
+extern fn int sljit_shim_sqrt_f64(void* compiler, int freg);
+extern fn int sljit_shim_info(int key);
+extern fn usz sljit_shim_code_size(void* compiler);
+extern fn usz sljit_shim_label_addr(void* label);
+extern fn usz sljit_shim_jump_addr(void* jump);
+extern fn long sljit_shim_executable_offset(void* compiler);
+extern fn int sljit_emit_ijump(void* compiler, int type, int src, long sw);
+extern fn int sljit_emit_icall(void* compiler, int type, int arg_types, int src, long sw);
+
+const int SLJIT_IMM               = 0x7f;
+const int SLJIT_MEM               = 0x80;
+const int SLJIT_LMUL_UW           = 2;
+const int SLJIT_DIVMOD_SW         = 5;
+const int SLJIT_MOV               = 32;
+const int SLJIT_MOV_U8            = 33;
+const int SLJIT_MOV_S8            = 34;
+const int SLJIT_MOV_U16           = 35;
+const int SLJIT_MOV_S16           = 36;
+const int SLJIT_MOV_S32           = 38;
+const int SLJIT_MOV_U32           = 37;
+const int SLJIT_ADD               = 64;
+const int SLJIT_SUB               = 66;
+const int SLJIT_SET_Z             = 0x0200;
+const int SLJIT_MUL               = 68;
+const int SLJIT_AND               = 69;
+const int SLJIT_OR                = 70;
+const int SLJIT_XOR               = 71;
+const int SLJIT_SHL               = 72;
+const int SLJIT_LSHR              = 74;
+const int SLJIT_ASHR              = 76;
+const int SLJIT_EQUAL             = 0;
+const int SLJIT_NOT_EQUAL         = 1;
+const int SLJIT_LESS              = 2;
+const int SLJIT_GREATER_EQUAL     = 3;
+const int SLJIT_GREATER           = 4;
+const int SLJIT_LESS_EQUAL        = 5;
+const int SLJIT_SIG_LESS          = 6;
+const int SLJIT_SIG_GREATER_EQUAL = 7;
+const int SLJIT_SIG_GREATER       = 8;
+const int SLJIT_SIG_LESS_EQUAL    = 9;
+const int SLJIT_JUMP              = 36;
+const int SLJIT_CALL              = 38;
+// Internal calls use scratch arguments and may share S0..S2. KEEP(n) is
+// encoded as n, and is valid only together with ENTER_REG_ARG (1 <= n <= 3).
+const int SLJIT_ENTER_REG_ARG     = 0x4;
+const int SLJIT_CALL_REG_ARG      = 39;
+const int SLJIT_REWRITABLE_JUMP   = 0x10000;
+const int SLJIT_ARGS1WW           = 0x11;
+const int SLJIT_ARGS1WW_R         = 0x91;
+const int SLJIT_ARGS2WWW_R        = 0x991;
+const int SLJIT_ARGS2WWW          = 0x111;
+const int SLJIT_ARGS3WWW          = 0x1111;
+const int SLJIT_ARGS3WWW_R        = 0x9991;
+const int SLJIT_ARGS4WWWW         = 0x11111;
+const int SLJIT_ARGS4WWWW_R       = 0x99991;
+
+// Indexed operands encode base + (index << shift); shift is the operand
+// offset passed to the emitting instruction, restricted by SLJIT to 0..3.
+fn int mem_index(int base, int index) @inline => SLJIT_MEM | base | (index << 8);
+
+fn int reg_r(int i) @inline => 1 + i;
+fn int reg_s(int i) @inline => sljit_shim_info(0) - i;
+fn int enter_keep(int count) @inline {
+    assert(count >= 1 && count <= 3);
+    return count;
+}
+
+fn bool bind_sljit_runtime() {
+    return sljit_shim_info(0) >= 13 && sljit_shim_info(1) >= 6
+        && sljit_has_cpu_feature(SLJIT_HAS_FPU) != 0 && sljit_shim_info(2) >= 10;
+}
+
+const int SLJIT_MOV_F64           = 144;
+const int SLJIT_CONV_F64_FROM_F32 = 145;
+const int SLJIT_CONV_SW_FROM_F64  = 146;
+const int SLJIT_CONV_F64_FROM_SW  = 148;
+const int SLJIT_ADD_F64           = 176;
+const int SLJIT_SUB_F64           = 177;
+const int SLJIT_MUL_F64           = 178;
+const int SLJIT_DIV_F64           = 179;
+
+const int SLJIT_32                    = 0x100;
+const int SLJIT_COPY_TO_F64           = 1;
+const int SLJIT_COPY_FROM_F64         = 2;
+const int SLJIT_NEG_F64               = 153;
+const int SLJIT_UNORDERED                  = 22;
+const int SLJIT_ORDERED                    = 23;
+const int SLJIT_ORDERED_EQUAL              = 24;
+const int SLJIT_UNORDERED_OR_NOT_EQUAL     = 25;
+const int SLJIT_ORDERED_LESS               = 26;
+const int SLJIT_UNORDERED_OR_GREATER_EQUAL = 27;
+const int SLJIT_ORDERED_GREATER            = 28;
+const int SLJIT_UNORDERED_OR_LESS_EQUAL    = 29;
+const int SLJIT_UNORDERED_OR_EQUAL         = 30;
+const int SLJIT_ORDERED_NOT_EQUAL          = 31;
+const int SLJIT_UNORDERED_OR_LESS          = 32;
+const int SLJIT_ORDERED_GREATER_EQUAL      = 33;
+const int SLJIT_UNORDERED_OR_GREATER       = 34;
+const int SLJIT_ORDERED_LESS_EQUAL         = 35;
+
+const int SLJIT_ABS_F64 = 154;

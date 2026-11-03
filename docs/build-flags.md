@@ -27,3 +27,21 @@
 | `-O0` | Disable optimization for debugging (`just build-debug <target>`) |
 | `"sanitize": "address"` | Enable AddressSanitizer in a build target (`just build-asan` builds the test262 runner) |
 | `"debug-info": "full"` | Emit full debug information; used by the debug and profiling targets |
+
+## JIT
+
+The `SLJIT` feature compiles the native backend into the CLI and the C
+libraries; native compilation itself stays off until it is switched on.
+`boomkat --jit file.js` enables it for one run, and `--jit-stress` also
+compiles every function on its first call (a test setting). Embedders call
+`bk_set_jit(runtime, 1)` or, in C3, `runtime.set_jit(true)`; zero or false
+disables it again. The setting is shared by every context in the runtime.
+
+The backend runs on 64-bit NaN-boxing builds with threaded dispatch, which the
+slim and tiny profiles are not. Where it is unavailable, `--jit` reports an
+error and exits with status 2, the C setter returns `BK_ERR_INVALID`, and the
+C3 setter returns false; disabling always succeeds.
+
+A source build with `SLJIT` also compiles `vendor/sljit/sljit_src/sljitLir.c`
+and `src/jit/sljit_shim.c` with `vendor/sljit/sljit_src` on the include path;
+the `boomkat` target in `project.json` shows the settings.

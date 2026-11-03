@@ -40,7 +40,20 @@
       "features": [
         "THREADED_DISPATCH",
         "PRINT",
-        "CONSOLE"
+        "CONSOLE",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
       ]
     },
     "boomkat_slim": {
@@ -280,7 +293,20 @@
       "panic-msg": false,
       "debug-info": "none",
       "features": [
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
       ]
     },
     "boomkat_static": {
@@ -296,7 +322,20 @@
       "panic-msg": false,
       "debug-info": "none",
       "features": [
-        "THREADED_DISPATCH"
+        "THREADED_DISPATCH",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
       ]
     },
     "boomkat_esp32": {
@@ -377,7 +416,20 @@
         "INTL",
         "INTL_FULL",
         "TEMPORAL",
-        "INTL_COLLATOR"
+        "INTL_COLLATOR",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
       ]
     },
     "test262_runner_asan": {
@@ -653,6 +705,31 @@
       ],
       "cflags": "-O2 -ffunction-sections -fdata-sections"
     },
+    "jit_api": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/jit_abi.c3"
+      ],
+      "opt": "O2",
+      "single-module": true,
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ],
+      "features": [
+        "THREADED_DISPATCH",
+        "SLJIT"
+      ]
+    },
     "embedding_lifecycle": {
       "type": "executable",
       "sources": [
@@ -699,7 +776,20 @@
         "INTL",
         "INTL_FULL",
         "TEMPORAL",
-        "INTL_COLLATOR"
+        "INTL_COLLATOR",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
       ]
     }
   }
