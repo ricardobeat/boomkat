@@ -49,6 +49,9 @@ fn GcKind Heap.gc_next_kind(&self) {
 // Register publication and tracing use the same admission rule.
 fn bool Heap.gc_needs_mark(&self, HeapHeader* header) @inline {
     if (header == null || header.is_reachable()) return false;
+    $if $feat(STRING_TRACE):
+        if (header.is_string()) return self.gc_kind == GcKind.MAJOR && !header.is_pinned();
+    $endif
     return self.gc_kind == GcKind.MAJOR || !header.gc.old || self.gc_oracle_running;
 }
 

@@ -81,7 +81,12 @@ fn WeakEntry* Heap.weak_entry(&self, ulong weak) {
 // The target, or null once it died.
 fn HeapHeader* Heap.weak_get(&self, ulong weak) {
     WeakEntry* e = self.weak_entry(weak);
-    return e == null ? null : e.target;
+    if (e == null) return null;
+    $if $feat(STRING_TRACE):
+        // A symbol read before the string sweep must outlive it.
+        if (e.target != null && e.target.is_string()) self.shade_string((HString*)e.target);
+    $endif
+    return e.target;
 }
 
 fn void Heap.weak_free_handle(&self, ulong weak) {

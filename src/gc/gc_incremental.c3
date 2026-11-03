@@ -180,9 +180,20 @@ fn bool string_is_garbage(HString* s, uint table_reference) @inline {
 // sweep them, so their bits change only in major cycles.
 fn void Heap.mark_string(&self, HString* s) @inline {
     $if $feat(STRING_TRACE):
-        if (s == null || self.gc_kind != GcKind.MAJOR || self.gc_oracle_running) return;
+        if (s == null || self.gc_kind != GcKind.MAJOR || self.gc_phase == GcPhase.IDLE) return;
         HeapHeader* h = (HeapHeader*)s;
-        if (!h.is_pinned()) h.set_reachable();
+        if (h.is_pinned()) return;
+        if (self.gc_oracle_running) {
+            $if $feat(GC_VERIFY):
+                if (!h.is_reachable()) {
+                    io::eprintfn("[GC_VERIFY] incremental mark missed reachable string %p len=%d interned=%d symbol=%d",
+                        s, s.length, (int)s.flags.is_interned, (int)s.flags.is_symbol);
+                    self.fatal("GC_VERIFY: incremental string mark mismatch");
+                }
+            $endif
+            return;
+        }
+        h.set_reachable();
     $else
         $if $feat(GC_VERIFY):
             self.verify_string_owner(s);
@@ -436,11 +447,11 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock
             self.gc_mark_schedule_stage = (self.gc_mark_schedule_stage + 1) % 5;
             if (self.gc_roots_done && self.gc_mark_queues_empty()) {
                 if (self.gc_weak_done && (quiescent || self.gc_blocking)) {
-                    $if $feat(GC_VERIFY):
-                        self.verify_incremental_mark();
-                    $endif
                     $if $feat(STRING_TRACE):
                         if (self.gc_kind == GcKind.MAJOR) self.mark_string_side_tables();
+                    $endif
+                    $if $feat(GC_VERIFY):
+                        self.verify_incremental_mark();
                     $endif
                     self.gc_phase = GcPhase.SWEEP;
                     self.weak_condemn();
