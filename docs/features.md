@@ -177,8 +177,9 @@ registers `.compile()`, but the runner excludes tests tagged `legacy-regexp`.
 | Explicit resource management | Full: `using`/`await using` declarations, DisposableStack, AsyncDisposableStack, SuppressedError and the @@dispose/@@asyncDispose symbols |
 | Cross-realm | Shared-heap realms with independent globals and intrinsics; `$262.createRealm` supported |
 | Multi-agent | Agents are threads with their own runtime; `$262.agent` supported; the C API cannot share a buffer between runtimes yet |
+| Await dictionaries | `Promise.allKeyed` and `Promise.allSettledKeyed` |
 | ShadowRealm, decorators | Not implemented yet |
-| `export defer`, await dictionaries | Excluded by feature token |
+| `export defer` | Excluded by feature token |
 | `structuredClone` | Host API excluded |
 
 `staging/` runs through the same skip rules. Deferred and source-phase imports,
