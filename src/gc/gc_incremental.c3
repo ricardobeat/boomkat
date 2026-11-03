@@ -229,8 +229,11 @@ fn void Heap.shade_string(&self, HString* s) @inline @feat(STRING_TRACE) {
 fn void Heap.string_born(&self, HString* s, usz bytes) @feat(STRING_TRACE) {
     self.large_string_register(s);
     self.shade_string(s);
+    // Nothing frees a traced string before the next major cycle, so every
+    // string must request one: a unit like any node, plus its size like any
+    // large backing store.
     self.gc_aux_alloc_bytes += bytes;
-    if (bytes <= 1024) self.charge_allocation(1);
+    self.charge_allocation(1 + (long)(bytes >> 10));
 }
 
 // STRING_TRACE: mark the strings that side tables hold outside any traced
