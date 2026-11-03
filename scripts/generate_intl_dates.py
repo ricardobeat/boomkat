@@ -7,6 +7,7 @@ import re
 import struct
 from pathlib import Path
 from generate_intl_english import resource
+from generate_intl_locales import Chains, get_path, string_of
 
 
 def tzdb_names(path):
@@ -22,6 +23,41 @@ def tzdb_names(path):
         names.append(prev.decode())
         pos += 2 + rest
     return names
+
+
+# The calendar types whose English date patterns differ, in the order of intl_calendar_family.
+CALENDAR_FAMILIES = ['generic', 'chinese', 'hebrew', 'islamic', 'japanese', 'iso8601']
+
+
+def merged_formats(chains, calendar):
+    """A calendar's English availableFormats as ICU's pattern generator loads them: each locale
+    along the chain adds the skeletons it lacks, and an alias adds its target's."""
+    formats = {}
+    for ident in chains.chain('en'):
+        node = chains.file('locales', ident)
+        block = get_path(node, ['calendar', calendar, 'availableFormats']) if node else None
+        if isinstance(block, list) and block and block[0].startswith('/LOCALE/'):
+            block = merged_formats(chains, block[0].split('/')[3])
+        for key, value in (block or {}).items():
+            if isinstance(value, list):
+                formats.setdefault(key, value[0])
+    return formats
+
+
+def all_formats(chains, calendar):
+    """The date styles' skeletons, which ICU loads first, then the availableFormats."""
+    patterns = chains.lookup('locales', 'en', ['calendar', calendar, 'DateTimePatterns'])
+    skeletons = chains.lookup('locales', 'en', ['calendar', calendar, 'DateTimeSkeletons']) or []
+    formats = {string_of(skeleton): string_of(pattern) for pattern, skeleton in zip(patterns[4:8], skeletons[4:8])}
+    formats.update(merged_formats(chains, calendar))
+    return formats
+
+
+def date_formats(formats):
+    """The skeletons made of era, year, month, weekday and day fields only, in the order ICU
+    matches them: by first letter, then as loaded."""
+    keys = [key for key in formats if re.fullmatch(r'G*[yUr]*M*E*d*', key)]
+    return [(key, formats[key]) for key in sorted(keys, key=lambda key: key[0])]
 
 
 def main():
@@ -59,6 +95,19 @@ def main():
             for f, pattern in fields.items():
                 out.append('    { '+intern(sk)+", '"+f+"', "+intern(pattern[0])+' },')
     out += ['};']
+    chains = Chains(args.source)
+    styles, starts, entries = [], [], []
+    for family in CALENDAR_FAMILIES:
+        patterns = chains.lookup('locales', 'en', ['calendar', family, 'DateTimePatterns'])
+        styles += [intern(string_of(p)) for p in patterns[4:8]]
+        starts.append(len(entries))
+        for skeleton, pattern in date_formats(all_formats(chains, family)):
+            entries.append('    { '+intern(skeleton)+', '+intern(pattern)+' },')
+    starts.append(len(entries))
+    out += ['// Date styles and date skeletons of the calendar families (see CALENDAR_FAMILIES).',
+            'const ushort[*] INTL_CALENDAR_STYLES = {', '    '+', '.join(styles)+',', '};',
+            'const ushort[*] INTL_CALENDAR_START = {', '    '+', '.join(map(str, starts))+',', '};',
+            'const IntlDatePattern[*] INTL_CALENDAR_PATTERNS = {'] + entries + ['};']
     names = resource(data/'zone/en.txt')['zoneStrings']
     zones = resource(data/'misc/metaZones.txt')['metazoneInfo']
     def epoch(s):
