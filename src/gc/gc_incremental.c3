@@ -28,7 +28,7 @@ fn void Heap.gc_begin_cycle(&self, bool safepoint, GcKind kind = GcKind.MAJOR) {
 
 // STRING_TRACE: the heap running a major cycle, which shades every string
 // that gains a reference until the cycle ends. One global, not per thread.
-Heap* strtrace_cycle @if($feat(STRING_TRACE));
+Heap* strtrace_cycle @feat(STRING_TRACE);
 
 fn void Heap.gc_start_cycle(&self, bool keep_temproots, GcKind kind = GcKind.MAJOR) {
     $if $feat(STRING_TRACE):

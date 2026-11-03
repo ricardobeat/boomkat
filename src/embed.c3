@@ -857,7 +857,8 @@ fn void slot_release(Runtime* rt, ulong id) {
     if (e.v.is_string() && rt.heap.native_frame_depth == 0) {
         HeapHeader* hdr = (HeapHeader*)e.v.get_heapptr();
         hstring::HString* hs = (hstring::HString*)hdr;
-        if (!hdr.is_pinned() && hs.flags.is_interned && hdr.refcount == 2) {
+        // A traced string's count never moves; its sweep decides.
+        if (!$feat(STRING_TRACE) && !hdr.is_pinned() && hs.flags.is_interned && hdr.refcount == 2) {
             rt.heap.str_table_remove(hs);
             rt.heap.free_string(hs);
             e.v.set_undefined();
