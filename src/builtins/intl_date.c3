@@ -150,7 +150,20 @@ fn char intl_date_hour_symbol(IntlDateState* state) {
     return state.hour_cycle == 11 ? 'K' : state.hour_cycle == 12 ? 'h' : state.hour_cycle == 24 ? 'k' : 'H';
 }
 
-fn void intl_date_adjust_pattern(IntlDateState* state, char[] pattern, char[] output, usz* pos) {
+// The skeleton ICU is asked to match: each requested date field at the width its option names.
+fn usz intl_date_request(IntlDateState* state, char[] out) {
+    DateTimeFormatOpts* f = &state.fmt;
+    usz len = 0;
+    foreach (field : "GyMEd") {
+        bool requested = field == 'G' ? f.era != 0 : field == 'y' ? f.year != 0 : field == 'M' ? f.month != 0 : field == 'E' ? f.weekday != 0 : f.day != 0;
+        if (requested) for (int i = 0; i < intl_date_width(state, field); i++) date_buf_push(out, &len, field);
+    }
+    return len;
+}
+
+// With keep_dates the pattern's date fields keep their own widths, as in a date style or a pattern
+// ICU has already matched to the requested skeleton.
+fn void intl_date_adjust_pattern(IntlDateState* state, char[] pattern, char[] output, usz* pos, bool keep_dates = false) {
     bool quote = false;
     for (usz i = 0; i < pattern.len;) {
         char c = pattern[i];
@@ -159,6 +172,8 @@ fn void intl_date_adjust_pattern(IntlDateState* state, char[] pattern, char[] ou
         usz j = i + 1;
         while (j < pattern.len && pattern[j] == c) j++;
         int width = intl_date_width(state, c);
+        char field = intl_date_field(c);
+        if (keep_dates && (field == 'G' || field == 'y' || field == 'M' || field == 'E' || field == 'd')) width = (int)(j - i);
         // A single M in a locale pattern is the month number, even where the option asks for names ("9月").
         if (state.row > 0 && intl_date_field(c) == 'M' && j - i == 1 && (state.fmt.month == DTF_LONG || state.fmt.month == DTF_SHORT || state.fmt.month == DTF_NARROW)) width = 1;
         if (intl_date_field(c) == 'h') c = intl_date_hour_symbol(state);
@@ -266,6 +281,106 @@ fn int intl_date_skeleton_index(char[] skeleton) {
     return -1;
 }
 
+// The index of the pattern family of a non-Gregorian calendar in INTL_CALENDAR_STYLES, or -1.
+fn int intl_calendar_family(CalendarId cal) {
+    switch (cal) {
+        case BUDDHIST: case COPTIC: case ETHIOAA: case ETHIOPIC: case INDIAN: case PERSIAN: case ROC: return 0;
+        case CHINESE: case DANGI: return 1;
+        case HEBREW: return 2;
+        case ISLAMIC_CIVIL: case ISLAMIC_TBLA: case ISLAMIC_UMALQURA: return 3;
+        case JAPANESE: return 4;
+        case ISO8601: return 5;
+        default: return -1;
+    }
+}
+
+// A skeleton field as ICU's pattern generator types it: len 0 when absent, type > 0 for numeric
+// fields (0x100 + width), < 0 for names (short -0x103, long -0x104, narrow -0x101, shorter -0x102).
+struct IntlSkeletonField { int type; int len; }
+
+fn int intl_skeleton_category(char c) {
+    switch (c) {
+        case 'G': return 0;
+        case 'y': case 'Y': case 'u': case 'U': case 'r': return 1;
+        case 'M': case 'L': return 2;
+        case 'E': case 'c': case 'e': return 3;
+        case 'd': return 4;
+        default: return -1;
+    }
+}
+
+fn int intl_skeleton_type(char c, int len) {
+    bool name = c == 'G' || c == 'E' || c == 'U' || ((c == 'M' || c == 'L' || c == 'c' || c == 'e') && len >= 3);
+    int variant = c == 'r' ? 0x30 : c == 'u' ? 0x20 : c == 'Y' ? 0x10 : 0;
+    if (!name) return 0x100 + variant + len;
+    switch (len) {
+        case 4: return -0x104;
+        case 5: return -0x101;
+        case 6: return -0x102;
+        default: return -0x103;
+    }
+}
+
+fn void intl_skeleton_fields(char[] skeleton, IntlSkeletonField[] fields) {
+    foreach (&field : fields) *field = {};
+    for (usz i = 0; i < skeleton.len;) {
+        usz j = i + 1;
+        while (j < skeleton.len && skeleton[j] == skeleton[i]) j++;
+        int category = intl_skeleton_category(skeleton[i]);
+        if (category >= 0) fields[category] = { intl_skeleton_type(skeleton[i], (int)(j - i)), (int)(j - i) };
+        i = j;
+    }
+}
+
+// ICU's distance between a requested skeleton and an available one.
+fn int intl_skeleton_distance(IntlSkeletonField[] want, IntlSkeletonField[] have) {
+    int total = 0;
+    for (usz i = 0; i < want.len; i++) {
+        if (want[i].len == 0 && have[i].len == 0) continue;
+        if (want[i].len == 0) { total += 0x10000; continue; }
+        if (have[i].len == 0) { total += 0x1000; continue; }
+        int gap = want[i].type - have[i].type;
+        total += gap < 0 ? -gap : gap;
+    }
+    return total;
+}
+
+// Writes the pattern of the family's available skeleton nearest the request, its fields widened or
+// narrowed to the request as ICU does, and returns its length; 0 when no skeleton has the same fields.
+fn usz intl_calendar_pattern(int family, char[] request, char[] out) {
+    IntlSkeletonField[5] want;
+    intl_skeleton_fields(request, want[..]);
+    int best = 0x1000;
+    IntlSkeletonField[5] have;
+    char[] pattern;
+    for (usz i = INTL_CALENDAR_START[family]; i < INTL_CALENDAR_START[family + 1]; i++) {
+        IntlSkeletonField[5] candidate;
+        intl_skeleton_fields(intl_date_data_string(INTL_CALENDAR_PATTERNS[i].skeleton), candidate[..]);
+        int distance = intl_skeleton_distance(want[..], candidate[..]);
+        if (distance >= best) continue;
+        best = distance;
+        have = candidate;
+        pattern = intl_date_data_string(INTL_CALENDAR_PATTERNS[i].pattern);
+    }
+    usz len = 0;
+    bool quote = false;
+    for (usz i = 0; i < pattern.len;) {
+        char c = pattern[i];
+        if (c == '\'') quote = !quote;
+        int category = quote ? -1 : intl_skeleton_category(c);
+        if (category < 0) { date_buf_push(out, &len, c); i++; continue; }
+        usz j = i + 1;
+        while (j < pattern.len && pattern[j] == c) j++;
+        int width = (int)(j - i);
+        IntlSkeletonField asked = want[category];
+        bool kept = asked.len == have[category].len || (intl_skeleton_type(c, width) > 0) != (have[category].type > 0);
+        if (!kept) width = asked.len;
+        for (int k = 0; k < width; k++) date_buf_push(out, &len, c);
+        i = j;
+    }
+    return len;
+}
+
 // The decimal separator for fractional seconds: the row's, else the numbering system's.
 fn char[] intl_date_decimal(IntlDateState* state) {
     if (state.row > 0) return intl_row_text((usz)state.row, intl_row((usz)state.row).decimal);
@@ -276,7 +391,9 @@ fn char[] intl_date_decimal(IntlDateState* state) {
 // glue; the English tables cover what a row lacks.
 fn void intl_date_pattern(IntlDateState* state) {
     DateTimeFormatOpts* f = &state.fmt;
-    if (state.calendar == CHINESE || state.calendar == DANGI) f.era = 0;
+    int family = state.row == 0 ? intl_calendar_family(state.calendar) : -1;
+    if (family < 0 && (state.calendar == CHINESE || state.calendar == DANGI)) f.era = 0;
+    bool from_family = false;
     usz row = (usz)state.row;
     state.pattern_len = 0;
     state.skeleton_len = 0;
@@ -287,7 +404,7 @@ fn void intl_date_pattern(IntlDateState* state) {
     char[256] combined;
     usz combined_len = 0;
     if (f.date_style != 0 || f.time_style != 0) {
-        if (f.date_style != 0) date_buf_append(date_pattern[..], &date_len, intl_date_text(state, IntlDateField.DATE_STYLES, (usz)(f.date_style - 1), intl_date_data_string(INTL_DATE_STYLES[3 + f.date_style])));
+        if (f.date_style != 0) date_buf_append(date_pattern[..], &date_len, intl_date_text(state, IntlDateField.DATE_STYLES, (usz)(f.date_style - 1), intl_date_data_string(family < 0 ? INTL_DATE_STYLES[3 + f.date_style] : INTL_CALENDAR_STYLES[family * 4 + f.date_style - 1])));
         if (f.time_style != 0) {
             char[] style = intl_date_text(state, IntlDateField.TIME_STYLES, (usz)(f.time_style - 1), intl_date_data_string(INTL_DATE_STYLES[f.time_style - 1]));
             // The 24-hour counterpart has no day-period marker.
@@ -305,8 +422,14 @@ fn void intl_date_pattern(IntlDateState* state) {
         if (f.month != 0) for (int i = 0; i < (f.month >= 3 ? 3 : 1); i++) date_buf_push(skeleton[..], &sk_len, 'M');
         if (f.weekday != 0) date_buf_push(skeleton[..], &sk_len, 'E');
         if (f.day != 0) date_buf_push(skeleton[..], &sk_len, 'd');
+        if (family >= 0) {
+            char[16] request;
+            usz request_len = intl_date_request(state, request[..]);
+            date_len = intl_calendar_pattern(family, request[:request_len], date_pattern[..]);
+        }
+        from_family = date_len > 0;
         int date_match = intl_date_skeleton_index(skeleton[:sk_len]);
-        if (date_match >= 0) date_buf_append(date_pattern[..], &date_len, intl_row_date_text(row, IntlDateField.SKELETONS, (usz)date_match));
+        if (date_len == 0 && date_match >= 0) date_buf_append(date_pattern[..], &date_len, intl_row_date_text(row, IntlDateField.SKELETONS, (usz)date_match));
         if (date_len == 0 && date_match >= 0) date_buf_append(date_pattern[..], &date_len, intl_date_data_string(INTL_DATE_PATTERNS[date_match].pattern));
         if (date_len == 0 && sk_len > 0) {
             if (f.weekday != 0) date_buf_append(date_pattern[..], &date_len, "E");
@@ -356,7 +479,7 @@ fn void intl_date_pattern(IntlDateState* state) {
     } else {
         date_buf_append(combined[..], &combined_len, time_pattern[:time_len]);
     }
-    intl_date_adjust_pattern(state, combined[:combined_len], state.pattern[..], &state.pattern_len);
+    intl_date_adjust_pattern(state, combined[:combined_len], state.pattern[..], &state.pattern_len, f.date_style != 0 || from_family);
     date_buf_normalize_spaces(state.pattern[..], &state.pattern_len);
 }
 
@@ -729,6 +852,8 @@ fn char[] intl_date_type(char symbol) {
     switch (intl_date_field(symbol)) {
         case 'G': return "era";
         case 'y': return "year";
+        case 'r': return "relatedYear";
+        case 'U': return "yearName";
         case 'M': return "month";
         case 'd': return "day";
         case 'E': return "weekday";
@@ -785,6 +910,8 @@ fn void intl_date_emit(BuiltinContext* ctx, IntlDateState* state, IntlDateFields
                 date_buf_append_num(buf[..], &len, width == 2 ? shown % 100 : shown, width == 2 ? 2 : 1);
                 numeric = true;
             }
+            case 'r': { date_buf_append_num(buf[..], &len, dt.year, 1); numeric = true; }
+            case 'U': date_buf_append(buf[..], &len, intl_lunar_year_name(state, dt.year));
             case 'M': {
                 if (!temporal::calendar_is_iso_based(state.calendar)) { intl_lunar_month_text(state, dt, width, buf[..], &len); }
                 else if (width < 3) { date_buf_append_num(buf[..], &len, dt.month + 1, width); numeric = true; }

@@ -2,7 +2,7 @@
 // Do not edit.
 module boomkat::builtins;
 
-// Cyclic year names (sexagenary, index (year - 4) mod 60) and wide month names for the Chinese calendar.
+// Cyclic year names (sexagenary, index (year - 4) mod 60) and month names for the Chinese calendar.
 const String[*] LUNAR_YEAR_NAMES_ZH = {
     "甲子", "乙丑", "丙寅", "丁卯",
     "戊辰", "己巳", "庚午", "辛未",
@@ -42,17 +42,15 @@ const String[*] LUNAR_MONTH_NAMES_EN = {
     "Fifth Month", "Sixth Month", "Seventh Month", "Eighth Month",
     "Ninth Month", "Tenth Month", "Eleventh Month", "Twelfth Month",
 };
+const String[*] LUNAR_MONTH_ABBREVIATIONS_EN = {
+    "Mo1", "Mo2", "Mo3", "Mo4",
+    "Mo5", "Mo6", "Mo7", "Mo8",
+    "Mo9", "Mo10", "Mo11", "Mo12",
+};
 const String[*] LUNAR_MONTH_NAMES_ZH = {
     "正月", "二月", "三月", "四月",
     "五月", "六月", "七月", "八月",
     "九月", "十月", "十一月", "腊月",
-};
-
-// Islamic civil month names, English (the islamic CLDR names apply to islamic-civil).
-const String[*] LUNAR_MONTH_NAMES_HIJRI_EN = {
-    "Muharram", "Safar", "Rabiʻ I", "Rabiʻ II",
-    "Jumada I", "Jumada II", "Rajab", "Shaʻban",
-    "Ramadan", "Shawwal", "Dhuʻl-Qiʻdah", "Dhuʻl-Hijjah",
 };
 
 // Hebrew month names, English, as ICU lists them: the common-year order skips "Adar II".
@@ -96,6 +94,18 @@ const String[*] CALENDAR_MONTH_NAMES_INDIAN = {
     "Chaitra", "Vaisakha", "Jyaistha", "Asadha",
     "Sravana", "Bhadra", "Asvina", "Kartika",
     "Agrahayana", "Pausa", "Magha", "Phalguna",
+    "1", "2", "3", "4",
+    "5", "6", "7", "8",
+    "9", "10", "11", "12",
+};
+
+const String[*] CALENDAR_MONTH_NAMES_ISLAMIC = {
+    "Muharram", "Safar", "Rabiʻ I", "Rabiʻ II",
+    "Jumada I", "Jumada II", "Rajab", "Shaʻban",
+    "Ramadan", "Shawwal", "Dhuʻl-Qiʻdah", "Dhuʻl-Hijjah",
+    "Muh.", "Saf.", "Rab. I", "Rab. II",
+    "Jum. I", "Jum. II", "Raj.", "Sha.",
+    "Ram.", "Shaw.", "Dhuʻl-Q.", "Dhuʻl-H.",
     "1", "2", "3", "4",
     "5", "6", "7", "8",
     "9", "10", "11", "12",

@@ -12,20 +12,25 @@ fn bool intl_calendar(char[] name, CalendarId* out) {
 }
 
 
-// The related year, then the sexagenary year name. English puts the name in parentheses, as CLDR's
-// "r(U)" pattern does; Chinese joins them directly, so the locale's own year suffix follows.
+// The sexagenary name of a related year.
+fn char[] intl_lunar_year_name(IntlDateState* state, long year) {
+    long cycle = (year - 4) % 60;
+    if (cycle < 0) cycle += 60;
+    return (char[])(state.zh_names ? LUNAR_YEAR_NAMES_ZH[cycle] : LUNAR_YEAR_NAMES_EN[cycle]);
+}
+
+// The related year, then the sexagenary year name. Other locales than Chinese put the name in
+// parentheses, as CLDR's "r(U)" pattern does; Chinese joins them directly, so the locale's own year
+// suffix follows.
 fn bool intl_lunar_year_parts(BuiltinContext* ctx, IntlDateState* state, IntlDateFields* dt, HObject* parts, StrBuf* text, uint* count, char[] source) {
     char[32] num;
     usz num_len = 0;
     date_buf_append_num(num[..], &num_len, dt.year, 1);
     if (!intl_date_part(ctx, parts, text, "relatedYear", num[:num_len], count, source)) return false;
-    long cycle = (dt.year - 4) % 60;
-    if (cycle < 0) cycle += 60;
-    if (state.zh_names) {
-        return intl_date_part(ctx, parts, text, "yearName", (char[])LUNAR_YEAR_NAMES_ZH[cycle], count, source);
-    }
+    char[] name = intl_lunar_year_name(state, dt.year);
+    if (state.zh_names) return intl_date_part(ctx, parts, text, "yearName", name, count, source);
     if (!intl_date_part(ctx, parts, text, "literal", "(", count, source)) return false;
-    if (!intl_date_part(ctx, parts, text, "yearName", (char[])LUNAR_YEAR_NAMES_EN[cycle], count, source)) return false;
+    if (!intl_date_part(ctx, parts, text, "yearName", name, count, source)) return false;
     return intl_date_part(ctx, parts, text, "literal", ")", count, source);
 }
 
@@ -43,14 +48,6 @@ fn void intl_lunar_month_text(IntlDateState* state, IntlDateFields* dt, int widt
         date_buf_append(buf, len, (char[])HEBREW_MONTH_NAMES_EN[name]);
         return;
     }
-    if (state.calendar == ISLAMIC_CIVIL || state.calendar == ISLAMIC_TBLA || state.calendar == ISLAMIC_UMALQURA) {
-        if (width < 3) {
-            date_buf_append_num(buf, len, dt.month + 1, width);
-        } else {
-            date_buf_append(buf, len, (char[])LUNAR_MONTH_NAMES_HIJRI_EN[dt.month]);
-        }
-        return;
-    }
     if (state.calendar != CHINESE && state.calendar != DANGI) {
         if (width < 3) { date_buf_append_num(buf, len, dt.month + 1, width); return; }
         String[] names;
@@ -59,11 +56,22 @@ fn void intl_lunar_month_text(IntlDateState* state, IntlDateFields* dt, int widt
             case COPTIC: names = CALENDAR_MONTH_NAMES_COPTIC[..];
             case ETHIOPIC: case ETHIOAA: names = CALENDAR_MONTH_NAMES_ETHIOPIC[..];
             case INDIAN: names = CALENDAR_MONTH_NAMES_INDIAN[..];
+            case ISLAMIC_CIVIL: case ISLAMIC_TBLA: case ISLAMIC_UMALQURA: names = CALENDAR_MONTH_NAMES_ISLAMIC[..];
             case PERSIAN: names = CALENDAR_MONTH_NAMES_PERSIAN[..];
             default: return;
         }
         int block = width == 3 ? 1 : width == 5 ? 2 : 0;
         date_buf_append(buf, len, (char[])names[(long)(block * months) + dt.month]);
+        return;
+    }
+    if (state.row == 0 && width >= 3) {
+        // English: "Mo4" abbreviated, the number narrow; a leap month appends CLDR's "bis", or "b" narrow.
+        switch (width) {
+            case 3: date_buf_append(buf, len, (char[])LUNAR_MONTH_ABBREVIATIONS_EN[dt.month]);
+            case 4: date_buf_append(buf, len, (char[])LUNAR_MONTH_NAMES_EN[dt.month]);
+            default: date_buf_append_num(buf, len, dt.month + 1, 1);
+        }
+        if (dt.leap) date_buf_append(buf, len, width == 5 ? "b" : "bis");
         return;
     }
     if (width < 3 || (dt.leap && !state.zh_names)) {
