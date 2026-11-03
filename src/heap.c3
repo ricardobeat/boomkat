@@ -871,6 +871,16 @@ struct Heap {
     uint         large_string_count;
     uint         large_string_capacity;
 
+    // Zero-count table: strings whose count fell to the level of their table
+    // reference, freed by Heap.zct_flush once no frame or temp root holds them.
+    HString**    zct;
+    uint         zct_count;
+    uint         zct_capacity;
+    uint         zct_threshold;      /// Entry count that schedules the next flush
+    ulong        zct_bytes;          /// Allocation bytes of the queued strings
+    void**       zct_set;            /// Scratch pointer set the frame scan probes
+    uint         zct_set_mask;
+
     ConcatCacheEntry[CONCAT_CACHE_SIZE] concat_cache;
 
     // Built-in strings cache (indexed by string constant IDs)
@@ -1231,6 +1241,7 @@ struct Heap {
     // Marks activation-record env bindings during GC.
     MarkActivationsFn   mark_activations_fn;
     MarkActivationsSliceFn mark_activations_slice_fn;
+    MarkActivationsFn   scan_activation_slots_fn;  /// Frame scan for Heap.zct_flush
     // Marks or frees a suspended generator's Catcher chain. See CatcherChainFn.
     CatcherChainFn      catcher_chain_fn;
 
@@ -1720,6 +1731,7 @@ fn Heap*? create(
     h.gc_trigger_counter    = GC_INITIAL_TRIGGER;
     h.gc_pending            = false;
     h.gc_quiescent_pending  = false;
+    h.zct_threshold         = ZCT_MIN_THRESHOLD;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
     h.gc_call_budget        = GC_CALL_INTERVAL;
     h.env_alloc_budget      = 1024;
@@ -2456,6 +2468,19 @@ fn void Heap.destroy(&self) {
     // string decref loop: mixing decref with the str_table backshift-delete
     // would corrupt the table for the sweep below.
     self.tearing_down = true;
+    // Queued strings are freed through the table and the registry below.
+    self.zct_count = 0;
+    self.zct_bytes = 0;
+    if (self.zct != null) {
+        self.free_func(self.heap_udata, self.zct);
+        self.zct = null;
+        self.zct_capacity = 0;
+    }
+    if (self.zct_set != null) {
+        self.free_func(self.heap_udata, self.zct_set);
+        self.zct_set = null;
+        self.zct_set_mask = 0;
+    }
     if (self.gc_free_object != null) {
         hobject::hobject_free(self.gc_free_object, self, true);
         self.gc_free_object = null;
@@ -2727,6 +2752,11 @@ fn void Heap.reset(&self) {
 
     self.free_compiled_funcs();
     self.compiled_func_count = 0;  // the array itself stays allocated for reuse
+
+    // Queued strings are freed through the registry and the table below.
+    self.zct_count = 0;
+    self.zct_bytes = 0;
+    self.zct_threshold = ZCT_MIN_THRESHOLD;
 
     // Large strings are in neither str_table nor the object vectors, so the registry
     // is the only list that can reach them. Skipping this pass would leave them
@@ -3759,6 +3789,7 @@ fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
  */
 fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
+    if (s.flags.zct_queued) self.zct_forget(s);
     usz total = s.alloc_size();
     if (s.flags.has_extdata) s.release_external();
 
@@ -3792,8 +3823,177 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
     if (!hdr.is_string() || hdr.is_pinned()) {
         return;
     }
-    if (--hdr.refcount == 0) {
-        hstring::HString* s = (hstring::HString*)hdr;
+    hstring::HString* s = (hstring::HString*)hdr;
+    uint table_reference = s.flags.is_interned ? 1u : 0u;
+    if (--hdr.refcount <= table_reference) self.zct_push(s);
+}
+
+// ============================================================================
+// Zero-count table
+// ============================================================================
+//
+// A string whose count falls to the level of its table reference is queued
+// here rather than freed. The flush frees an entry once no live frame slot,
+// temp root or owner refers to it. Registers hold counts today, so the frame
+// scan is a safety net; once registers stop counting it is the only thing that
+// keeps a string a frame still reads alive.
+
+// A flush is scheduled once this many strings, or this many bytes, are queued.
+const uint  ZCT_MIN_THRESHOLD   = 1024;
+const ulong ZCT_BYTES_THRESHOLD = 1 << 20;
+
+/**
+ * Queue a string at its table's level. A string already queued stays where
+ * it is: a count gained and dropped again while queued changes nothing. An
+ * interned string, or a registry string a sweep found at 0, is deferred: it
+ * is freed only by a quiescent flush, as the sweeps alone freed it before.
+ */
+fn void Heap.zct_push(&self, HString* s, bool from_sweep = false) {
+    if (s.flags.zct_queued) return;
+    if (self.zct_count == self.zct_capacity) {
+        uint new_cap = self.zct_capacity == 0 ? ZCT_MIN_THRESHOLD : self.zct_capacity * 2;
+        void* grown = self.realloc_func(self.heap_udata, self.zct, HString*::size * (usz)new_cap);
+        if (grown == null) {
+            // Left for the sweep, as a string the registry could not take is.
+            return;
+        }
+        self.zct          = (HString**)grown;
+        self.zct_capacity = new_cap;
+    }
+    s.flags.zct_queued   = true;
+    s.flags.zct_deferred = from_sweep || s.flags.is_interned;
+    self.zct[self.zct_count++] = s;
+    self.zct_bytes += (ulong)s.alloc_size();
+    if (self.zct_count >= self.zct_threshold || self.zct_bytes >= ZCT_BYTES_THRESHOLD) {
+        self.gc_pending = true;
+    }
+}
+
+// Whether the next safepoint should flush.
+fn bool Heap.zct_flush_due(&self) @inline {
+    return self.zct_count >= self.zct_threshold || self.zct_bytes >= ZCT_BYTES_THRESHOLD;
+}
+
+/**
+ * Drop a queued string's entry without freeing it. Only a caller that frees a
+ * string the flush has not reached needs this, which no steady-state path
+ * does, so the search is linear.
+ */
+fn void Heap.zct_forget(&self, HString* s) {
+    for (uint i = 0; i < self.zct_count; i++) {
+        if (self.zct[i] == s) {
+            self.zct[i] = null;
+            break;
+        }
+    }
+    s.flags.zct_queued   = false;
+    s.flags.zct_deferred = false;
+}
+
+fn usz zct_set_hash(void* p) @inline => ((usz)p >> 4) * 0x9E37_79B9_7F4A_7C15;
+
+/**
+ * Note a frame slot the flush must treat as a holder. The slot is compared
+ * against the queued pointers by value and never dereferenced: spare stack
+ * capacity may hold the bits of a string already freed.
+ */
+fn void Heap.zct_hold(&self, TVal* slot) @inline {
+    if (!slot.is_heap_allocated()) return;
+    void* p = slot.get_heapptr();
+    if (p == null) return;
+    usz idx = zct_set_hash(p) & self.zct_set_mask;
+    for (;;) {
+        void* entry = self.zct_set[idx];
+        if (entry == null) return;
+        if (((usz)entry & ~(usz)1) == (usz)p) {
+            self.zct_set[idx] = (void*)((usz)p | 1);
+            return;
+        }
+        idx = (idx + 1) & self.zct_set_mask;
+    }
+}
+
+fn bool Heap.zct_held(&self, HString* s) @inline {
+    usz idx = zct_set_hash(s) & self.zct_set_mask;
+    for (;;) {
+        void* entry = self.zct_set[idx];
+        if (entry == null) return false;
+        if (((usz)entry & ~(usz)1) == (usz)s) return ((usz)entry & 1) != 0;
+        idx = (idx + 1) & self.zct_set_mask;
+    }
+}
+
+/**
+ * Free the queued strings nothing holds. Each entry is dropped if it has an
+ * owner again (a count above its table reference) or is pinned; kept if a temp
+ * root or a live frame slot holds it, or if it is deferred and the flush is
+ * not quiescent; and freed otherwise. The next threshold is twice the
+ * survivors, with a floor.
+ *
+ * `quiescent` means what it means for the string sweeps: no native frame is
+ * active, so no raw borrowed pointer can outlive its count.
+ */
+fn void Heap.zct_flush(&self, bool quiescent) {
+    if (self.zct_count == 0) {
+        self.zct_threshold = ZCT_MIN_THRESHOLD;
+        return;
+    }
+    // The scratch set holds every queued pointer at a load below one half.
+    uint want = 1;
+    while (want < self.zct_count * 2) want <<= 1;
+    if (self.zct_set == null || self.zct_set_mask + 1 < want) {
+        if (self.zct_set != null) self.free_func(self.heap_udata, self.zct_set);
+        self.zct_set = (void**)self.alloc_func(self.heap_udata, usz::size * (usz)want);
+        if (self.zct_set == null) {
+            self.zct_set_mask = 0;
+            // Without the scan nothing can be freed safely; try again later.
+            self.zct_threshold = self.zct_count * 2;
+            return;
+        }
+        self.zct_set_mask = want - 1;
+    }
+    mem::clear(self.zct_set, (sz)((usz)(self.zct_set_mask + 1) * usz::size));
+    for (uint i = 0; i < self.zct_count; i++) {
+        HString* s = self.zct[i];
+        if (s == null) continue;
+        usz idx = zct_set_hash(s) & self.zct_set_mask;
+        while (self.zct_set[idx] != null) idx = (idx + 1) & self.zct_set_mask;
+        self.zct_set[idx] = s;
+    }
+    if (self.scan_activation_slots_fn != null && self.curr_thread != null) {
+        self.scan_activation_slots_fn(self.curr_thread, self);
+    }
+
+    uint kept = 0;
+    ulong kept_bytes = 0;
+    for (uint i = 0; i < self.zct_count; i++) {
+        HString* s = self.zct[i];
+        if (s == null) continue;
+        HeapHeader* hdr = (HeapHeader*)s;
+        uint table_reference = s.flags.is_interned ? 1u : 0u;
+        if (hdr.is_pinned() || s.refcount > table_reference) {
+            s.flags.zct_queued   = false;
+            s.flags.zct_deferred = false;
+            continue;
+        }
+        if (hdr.is_temproot() || self.zct_held(s) || (s.flags.zct_deferred && !quiescent)) {
+            self.zct[kept++] = s;
+            kept_bytes += (ulong)s.alloc_size();
+            continue;
+        }
+        $if $feat(HEAP_VERIFY):
+            uint frame; uint slot;
+            if (self.is_in_activation_regs(hdr, &frame, &slot)) {
+                io::eprintfn("[HEAP_VERIFY] zct_flush: string %p (refs=%d) still held by frame %d slot %d",
+                             (void*)s, s.refcount, frame, slot);
+                self.fatal("HEAP_VERIFY: freeing a string a register holds");
+            }
+            if (self.is_in_generator_saved_regs(hdr)) {
+                self.fatal("HEAP_VERIFY: freeing a string a suspended generator holds");
+            }
+        $endif
+        s.flags.zct_queued   = false;
+        s.flags.zct_deferred = false;
         if (s.flags.is_interned) {
             self.str_table_remove(s);
         } else {
@@ -3801,6 +4001,9 @@ fn void Heap.decref(&self, HeapHeader* hdr) {
         }
         self.free_string(s);
     }
+    self.zct_count = kept;
+    self.zct_bytes = kept_bytes;
+    self.zct_threshold = max(kept * 2, ZCT_MIN_THRESHOLD);
 }
 
 /**
@@ -5301,12 +5504,9 @@ fn void Heap.sweep_strings(&self) {
     for (uint i = 0; i < self.str_table_size; i++) {
         HString* entry = self.str_table[i];
         if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }
-        if (entry.refcount == 1) {
-            self.str_table_tombstone(i);
-            if (self.str_table_used > 0) { self.str_table_used--; }
-            self.free_string(entry);
-        }
+        if (entry.refcount == 1) self.zct_push(entry, true);
     }
+    self.zct_flush(true);
 
     if (self.str_table_used < self.str_table_size / 4 && self.str_table_size > INITIAL_STR_TABLE_SIZE) {
         self.str_table_shrink();
@@ -5317,19 +5517,11 @@ fn void Heap.sweep_strings(&self) {
 // Counted owners keep a string alive independently of object tracing.
 fn void Heap.sweep_large_strings(&self) {
     self.mark_work_last += (ulong)self.large_string_count;
-    uint kept = 0;
     for (uint i = 0; i < self.large_string_count; i++) {
         HString* s = self.large_strings[i];
-        if (s.refcount != 0) {
-            // Survivors compact downward.
-            self.large_strings[kept] = s;
-            kept++;
-            s.registry_slot = kept;
-        } else {
-            self.free_string(s);
-        }
+        if (s.refcount == 0) self.zct_push(s, true);
     }
-    self.large_string_count = kept;
+    self.zct_flush(true);
 }
 
 // Blocking collection uses the scheduled collector with native pins when
@@ -5394,6 +5586,14 @@ fn void Heap.trigger_gc(&self) {
 fn void Heap.safepoint_gc(&self, uint work_budget = GC_SLICE_WORK) {
     if (self.gc_inhibit != 0) return;
     bool quiescent = self.native_frame_depth == 0;
+    if (self.zct_flush_due()) {
+        self.zct_flush(quiescent);
+        // The flush may have been the only pending work.
+        if (self.gc_phase == GcPhase.IDLE && !self.gc_requested && self.gc_gen_retired == null
+            && self.gc_generator_release_cursor.state == null) {
+            self.gc_pending = self.zct_flush_due();
+        }
+    }
     if (quiescent && self.gc_full_requested) {
         self.gc_full_requested = false;
         self.mark_and_sweep(true, true);

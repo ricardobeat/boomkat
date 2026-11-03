@@ -58,6 +58,7 @@ $endif
     heap.curr_thread = vm;
     heap.mark_activations_fn = &vm_mark_activations;
     heap.mark_activations_slice_fn = &vm_mark_activations_slice;
+    heap.scan_activation_slots_fn = &vm_scan_activation_slots;
     heap.catcher_chain_fn = &vm_catcher_chain_bridge;
     defer catch detach_vm_roots(heap);
 
@@ -134,6 +135,7 @@ fn void detach_vm_roots(Heap* h) {
     h.valstack_top_ptr = null;
     h.mark_activations_fn = null;
     h.mark_activations_slice_fn = null;
+    h.scan_activation_slots_fn = null;
 }
 
 // Destroy a VM and release all owned resources.
@@ -203,6 +205,7 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.heap.curr_thread = vm;
     vm.heap.mark_activations_fn = &vm_mark_activations;
     vm.heap.mark_activations_slice_fn = &vm_mark_activations_slice;
+    vm.heap.scan_activation_slots_fn = &vm_scan_activation_slots;
     vm.heap.catcher_chain_fn = &vm_catcher_chain_bridge;
 
     EnvRecord*? global = env::env_create(heap, null);

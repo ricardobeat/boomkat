@@ -113,6 +113,13 @@ bitstruct HStringFlags : uint {
     bool  is_interned       : 14;
     // A weak handle refers to this symbol (gc_weak.c3).
     bool  weak_target       : 15;
+    // Queued in the heap's zero-count table (Heap.zct). Set by the queueing
+    // path, cleared when the flush drops or frees the entry.
+    bool  zct_queued        : 16;
+    // The queued entry may be freed only by a quiescent flush: the string
+    // reached the table's own level (interned at 1, registry at 0) rather
+    // than count 0 through decref, so a native frame may still borrow it.
+    bool  zct_deferred      : 17;
 }
 
 // ============================================================================
