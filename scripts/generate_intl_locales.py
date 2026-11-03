@@ -56,8 +56,11 @@ class Chains:
         current = locale_id
         while current:
             ids.append(current)
+            explicit = (self.file('locales', current) or {}).get('%%Parent')
             if current in self.parent:
                 current = self.parent[current]
+            elif explicit:
+                current = explicit[0]
             elif '_' in current:
                 current = current.rpartition('_')[0]
             else:

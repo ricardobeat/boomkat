@@ -487,7 +487,6 @@ enum Builtin : uint (String js_name, ichar js_arity, bool constructable) {
     INTL_DATE_RANGE_PARTS {"formatRangeToParts", 2, false},
     INTL_NUMBER_FORMAT {"NumberFormat", 0, true},
     INTL_PLURAL_RULES {"PluralRules", 0, true},
-    INTL_SUPPORTED_LOCALES {"supportedLocalesOf", 1, false},
     INTL_SUPPORTED_LOCALES_ROWS {"supportedLocalesOf", 1, false},
     INTL_NUMBER_RESOLVED {"resolvedOptions", 0, false},
     INTL_PLURAL_RESOLVED {"resolvedOptions", 0, false},

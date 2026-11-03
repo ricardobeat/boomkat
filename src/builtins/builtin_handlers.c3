@@ -9,7 +9,6 @@ macro init_builtin_handlers() {
     $if $feat(INTL):
         builtin_dispatch_table[Builtin.INTL_NUMBER_FORMAT.ordinal] = &builtin_intl_number_format;
         builtin_dispatch_table[Builtin.INTL_PLURAL_RULES.ordinal] = &builtin_intl_plural_rules;
-        builtin_dispatch_table[Builtin.INTL_SUPPORTED_LOCALES.ordinal] = &builtin_intl_supported_locales;
         builtin_dispatch_table[Builtin.INTL_SUPPORTED_LOCALES_ROWS.ordinal] = &builtin_intl_supported_locales_rows;
         builtin_dispatch_table[Builtin.INTL_NUMBER_RESOLVED.ordinal] = &builtin_intl_number_resolved;
         builtin_dispatch_table[Builtin.INTL_PLURAL_RESOLVED.ordinal] = &builtin_intl_plural_resolved;
