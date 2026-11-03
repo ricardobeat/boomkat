@@ -12,7 +12,7 @@ eq(region.of('us'), 'United States');
 eq(region.of('419'), 'Latin America');
 eq(new Intl.DisplayNames('en', { type: 'region', style: 'short' }).of('HK'), 'Hong Kong');
 eq(new Intl.DisplayNames('en', { type: 'script' }).of('latn'), 'Latin');
-eq(new Intl.DisplayNames('en', { type: 'currency' }).of('usd'), 'US dollar');
+eq(new Intl.DisplayNames('en', { type: 'currency' }).of('usd'), 'US Dollar');
 eq(new Intl.DisplayNames('en', { type: 'currency', style: 'narrow' }).of('cad'), '$');
 eq(new Intl.DisplayNames('en', { type: 'calendar' }).of('gregory'), 'Gregorian Calendar');
 eq(new Intl.DisplayNames('en', { type: 'dateTimeField' }).of('weekOfYear'), 'week');

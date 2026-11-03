@@ -5,6 +5,9 @@ of commits since the previous release. Newest first.
 
 ## [Unreleased]
 
+- `Intl.DisplayNames` names languages, regions, scripts, currencies, calendars and
+  date-time fields in the full profile's 30 locales.
+
 ## [0.3.0] - 2026-10-30 · 259 commits
 
 - Strings stored as Latin-1 or UTF-16; faster JSON on non-ASCII text.

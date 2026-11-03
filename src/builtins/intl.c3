@@ -117,7 +117,6 @@ fn HObject* intl_array(BuiltinContext* ctx) {
 
 // Which canonicalized tags intl_locales keeps.
 enum IntlLocaleFilter {
-    ENGLISH,    // en tags only, for the services that ship English data alone
     ROWS,       // tags with a locale row
     COLLATION,  // tags with a locale row or a collation tailoring
     ALL,        // every tag, for getCanonicalLocales
@@ -125,7 +124,7 @@ enum IntlLocaleFilter {
 
 // Locale-list traversal preserves HasProperty/Get ordering for proxies and
 // sparse arrays.
-fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, IntlLocaleFilter filter = ENGLISH) {
+fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, IntlLocaleFilter filter) {
     HObject* out = intl_array(ctx);
     if (out == null || locales.is_undefined()) return out;
     bool single = (locales.is_string() && !((HString*)locales.get_heapptr()).is_symbol()) ||
@@ -189,7 +188,6 @@ fn HObject* intl_locales(BuiltinContext* ctx, TVal locales, IntlLocaleFilter fil
         id.write(&canonical);
         bool keep;
         switch (filter) {
-            case ENGLISH: keep = locale_equal_ci(id.lang(), "en");
             case ROWS: keep = intl_row_for_tag(canonical.bytes()) >= 0;
             case COLLATION:
                 $if $feat(INTL_COLLATOR):
@@ -499,15 +497,6 @@ fn void builtin_intl_plural_rules(BuiltinContext* ctx) { intl_construct(ctx, tru
 
 fn void builtin_intl_supported_locales_rows(BuiltinContext* ctx) {
     HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0), IntlLocaleFilter.ROWS);
-    if (ctx.should_throw) return;
-    HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
-    if (ctx.should_throw) return;
-    (void)intl_choice(ctx, opts, "localeMatcher", {"best fit", "lookup"});
-    if (!ctx.should_throw) ctx.result_object(locales);
-}
-
-fn void builtin_intl_supported_locales(BuiltinContext* ctx) {
-    HObject* locales = intl_locales(ctx, builtin_arg(ctx, 0));
     if (ctx.should_throw) return;
     HObject* opts = intl_options(ctx, builtin_arg(ctx, 1));
     if (ctx.should_throw) return;
