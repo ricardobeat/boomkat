@@ -4,7 +4,10 @@ import boomkat::types;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hstring;
+import boomkat::hobject;
 import boomkat::env;
+import boomkat::builtins;
+import boomkat::esm;
 import std::math;
 
 // Operation functions: one callable implementation per opcode, or per group
@@ -140,11 +143,11 @@ fn OpStatus op_ldthis(Dispatch* ds, DecodedInsn insn) {
 }
 
 // === ARITHMETIC ===
-// The register operand C, or for an immediate form the immediate as a
-// number operand in C's place. `imm` holds the immediate and must outlive
-// the use of the result.
+// The register operand C, or for an immediate form (arithmetic, bitwise,
+// shift or compare-and-branch) the immediate as a number operand in C's
+// place. `imm` holds the immediate and must outlive the use of the result.
 fn TVal* op_operand_c(Dispatch* ds, DecodedInsn insn, TVal* imm) {
-    if (!bytecode::is_imm_form(insn.op)) return ds.regs_base + insn.c;
+    if (!bytecode::is_imm_form(insn.op) && !is_cmp_branch_imm(insn.op)) return ds.regs_base + insn.c;
     imm.set_fastint(bytecode::imm_value(insn.op, insn.c));
     return imm;
 }
@@ -712,6 +715,448 @@ fn OpStatus op_ushr(Dispatch* ds, DecodedInsn insn) {
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
     vm.heap.set_reg_fastint(ra, (long)(ushr_b >> (ushr_c & 0x1F)));
     return NEXT;
+}
+
+// The immediate compare-and-branch forms JMP_NLTI..JMP_SNEQI.
+fn bool is_cmp_branch_imm(Opcode op) @inline => op.ordinal >= Opcode.JMP_NLTI.ordinal && op.ordinal <= Opcode.JMP_SNEQI.ordinal;
+// === COMPARISON ===
+fn OpStatus op_eq(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = ds.regs_base + insn.c;
+    vm.heap.set_reg_boolean(ra, abstract_eq(vm, rb, rc));
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_neq(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = ds.regs_base + insn.c;
+    vm.heap.set_reg_boolean(ra, !abstract_eq(vm, rb, rc));
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_seq(Dispatch* ds, DecodedInsn insn) {
+    ds.vm.heap.set_reg_boolean(ds.regs_base + insn.a, strict_eq(ds.regs_base + insn.b, ds.regs_base + insn.c));
+    return NEXT;
+}
+
+fn OpStatus op_sneq(Dispatch* ds, DecodedInsn insn) {
+    ds.vm.heap.set_reg_boolean(ds.regs_base + insn.a, !strict_eq(ds.regs_base + insn.b, ds.regs_base + insn.c));
+    return NEXT;
+}
+
+// LT, LE, GT, GE
+fn OpStatus op_lt(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = ds.regs_base + insn.c;
+    uint order = vm_relational_order(vm, rb, rc);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    if (ds.needs_restart) return RESTART;
+    // LT..GE share their outcome sets with JMP_LT..JMP_GE.
+    char on = CMP_BRANCH_ON[Opcode.JMP_LT.ordinal - Opcode.JMP_NLT.ordinal + insn.op.ordinal - Opcode.LT.ordinal];
+    vm.heap.set_reg_boolean(ra, ((on >> order) & 1) != 0);
+    return NEXT;
+}
+
+// JMP_NLT..JMP_SNEQ and their immediate forms JMP_NLTI..JMP_SNEQI.
+// Fused compare-and-branch: A is the signed branch offset, relative to
+// the next instruction. The outcome sets are CMP_BRANCH_ON's.
+fn OpStatus op_jmp_cmp(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal imm_operand;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = op_operand_c(ds, insn, &imm_operand);
+    Opcode op = is_cmp_branch_imm(insn.op) ? bytecode::reg_form(insn.op) : insn.op;
+    uint order;
+    if (op >= Opcode.JMP_SEQ) {
+        order = strict_eq(rb, rc) ? ORDER_EQ : ORDER_UN;
+    } else {
+        order = vm_relational_order(vm, rb, rc);
+        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+        if (ds.needs_restart) return RESTART;
+    }
+    if (((CMP_BRANCH_ON[op.ordinal - Opcode.JMP_NLT.ordinal] >> order) & 1) != 0) {
+        if (!vm_branch(ds, (int)(ichar)insn.a)) return op_fail(ds, VM_ERROR);
+    }
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+// JMP_EQ, JMP_NEQ
+// Loose-equality branches. abstract_eq may run user code, so a throw is
+// checked before the branch decision.
+fn OpStatus op_jmp_eq(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = ds.regs_base + insn.c;
+    bool equal = abstract_eq(vm, rb, rc);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    if (ds.needs_restart) return RESTART;
+    if (equal == (insn.op == Opcode.JMP_EQ)) {
+        if (!vm_branch(ds, (int)(ichar)insn.a)) return op_fail(ds, VM_ERROR);
+    }
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+// JMP_NULL, JMP_NNULL
+// Comparison with null or undefined never coerces: C repeats B.
+fn OpStatus op_jmp_null(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* rb = ds.regs_base + insn.b;
+    bool nullish = rb.is_nullish() || (rb.is_object() && rb.get_heapptr() == (void*)vm.heap.htmldda_obj);
+    if (nullish == (insn.op == Opcode.JMP_NULL)) {
+        if (!vm_branch(ds, (int)(ichar)insn.a)) return op_fail(ds, VM_ERROR);
+    }
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_instanceof(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = ds.regs_base + insn.c;
+    // ECMA-262 §11.8.6: RelationalExpression instanceof ShiftExpression
+    // ra may alias rb (compiler optimization), so read rb before writing ra.
+    TVal lval = *rb;
+    TVal rval = *rc;
+    vm.heap.set_reg_boolean(ra, false);
+
+    // OrdinaryHasInstance walks the LEFT operand's prototype chain and
+    // answers false for a non-Object. A LIGHTFUNC builtin is an Object,
+    // and its chain runs through Function.prototype, so it has to be
+    // promoted before that test rather than silently answering false
+    // for `JSON.parse instanceof Function`.
+    builtins::promote_lightfunc_tval(vm.heap, &lval);
+
+    if (rval.is_lightfunc()) {
+        // LIGHTFUNC builtins are callable; look up their prototype
+        uint fn_idx = (uint)(usz)rval.get_heapptr();
+        HObject* proto_obj = lightfunc_get_proto(vm, fn_idx);
+        if (proto_obj != null && lval.is_object()) {
+            HObject* lbh = (HObject*)lval.get_heapptr();
+            if (lbh.is_prototype_of(proto_obj)) {
+                vm.heap.set_reg_boolean(ra, true);
+            }
+        }
+        return NEXT;
+    }
+
+    if (!rval.is_object()) {
+        // TypeError: right-hand side must be an object
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Right-hand side of instanceof is not an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+
+    HObject* rfunc = (HObject*)rval.get_heapptr();
+
+    // The common case: an ordinary function inheriting the intrinsic
+    // @@hasInstance. These lookups fill the megamorphic cache, which lets
+    // the threaded handler answer later visits.
+    if (lval.is_object() && instanceof_default(vm, rfunc, (HObject*)lval.get_heapptr(), ra)) return NEXT;
+
+    // ECMA-262 §12.9.4 makes GetMethod(C, @@hasInstance) step 2, so it must run
+    // BEFORE the IsCallable check (step 5). Get() must invoke any
+    // accessor getter and propagate its error (test get-err).
+    if (vm.heap.hasinstance_symbol != null) {
+        HString* hasinst_key = vm.heap.hasinstance_symbol;
+        TVal hasinst_val;
+        hasinst_val.set_undefined();
+        bool have_value = false;
+        AccessorResult hi_acc = rfunc.find_accessor_proto(hasinst_key, true, vm.heap);
+        if (hi_acc.found) {
+            // Accessor property: invoke the getter (this = original
+            // receiver = rfunc). A throwing getter propagates.
+            TVal this_for_getter;
+            this_for_getter.set_object(rfunc);
+            TVal getter_result = vm.heap.call_fn(vm, hi_acc.accessor_fn, null, 0, this_for_getter);
+            if (vm_check_call_fn_error(vm)) {
+                if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+                return ds.needs_restart ? RESTART : NEXT;
+            }
+            hasinst_val = getter_result;
+            have_value = true;
+        } else {
+            // Data property (or not present). Read raw value via the
+            // prototype chain; fall back to undefined if missing.
+            TVal? raw = rfunc.get_prop_proto(hasinst_key, vm.heap);
+            if (try raw_v = raw) {
+                hasinst_val = raw_v;
+                have_value = true;
+            }
+        }
+        // ECMA-262 §7.3.9 GetMethod: undefined/null → no method (fall through).
+        // Anything else must be callable; otherwise TypeError.
+        if (have_value && !hasinst_val.is_undefined() && !hasinst_val.is_null()) {
+            bool hasinst_callable = hasinst_val.is_lightfunc() ||
+                (hasinst_val.is_object() && hasinst_val.get_heapptr() != null &&
+                 ((HObject*)hasinst_val.get_heapptr()).is_callable());
+            if (!hasinst_callable) {
+                if (!vm_throw_error(vm, vm.heap.type_err_proto, "Symbol.hasInstance value is not a function", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return op_fail(ds, VM_ERROR);
+                }
+                return ds.needs_restart ? RESTART : NEXT;
+            }
+            // Call @@hasInstance with this=C(rval), arg=O(lval)
+            TVal result = vm.heap.call_fn(vm, hasinst_val, &lval, 1, rval);
+            if (vm_check_call_fn_error(vm)) {
+                if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+                return ds.needs_restart ? RESTART : NEXT;
+            }
+            vm.heap.set_reg_boolean(ra, builtins::builtin_to_boolean(&result));
+            return NEXT;
+        }
+    }
+
+    // Proxy exotic on the RHS: OrdinaryHasInstance with [[Get]] of
+    // "prototype" routed through the proxy.
+    if (rfunc.is_proxy()) {
+        if (!lval.is_object()) { return NEXT; }
+        HString* pk = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
+        TVal pproto;
+        if (!builtins::proxy_mop_get(vm, vm.heap, rfunc, pk, rval, &pproto)) {
+            TVal perr = vm.heap.error_value;
+            vm.heap.has_error = false;
+            if (!vm_throw_value(vm, perr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return op_uncaught(ds, &perr);
+            }
+            return ds.needs_restart ? RESTART : NEXT;
+        }
+        if (!pproto.is_object()) {
+            if (!vm_throw_error(vm, vm.heap.type_err_proto, "'prototype' property is not an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                return op_fail(ds, VM_ERROR);
+            }
+            return ds.needs_restart ? RESTART : NEXT;
+        }
+        HObject* pproto_obj = (HObject*)pproto.get_heapptr();
+        HObject* pcur = (HObject*)lval.get_heapptr();
+        if (!instanceof_walk_chain(vm, ds, pcur, pproto_obj, ra)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+
+    // ECMA-262 §12.9.4 step 5: If IsCallable(C) is false, throw TypeError.
+    // (Reached only when @@hasInstance is undefined/missing.)
+    if (!rfunc.is_callable()) {
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "Right-hand side of instanceof is not callable", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+
+    // §15.3.5.3 step 1: If Type(lval) is not Object → false
+    if (!lval.is_object()) {
+        return NEXT;
+    }
+
+    // Read rval.prototype, which is ECMA-262 §7.3.19 OrdinaryHasInstance step 4.
+    // Get() must invoke accessor getters (per ECMA-262 §7.3.1), so we first
+    // check for an accessor property in the prototype chain and call
+    // its getter; otherwise fall back to the raw data-property value.
+    HString* proto_key_str = (HString*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE];
+    TVal proto_val;
+    AccessorResult acc = rfunc.find_accessor_proto(proto_key_str, true, vm.heap);
+    if (acc.found) {
+        // ECMA-262 §7.3.1 Get(O, P): an accessor's getter is called with
+        // `this` bound to the original receiver (rfunc). The getter
+        // may throw or return any value.
+        TVal this_for_getter;
+        this_for_getter.set_object(rfunc);
+        proto_val = vm.heap.call_fn(vm, acc.accessor_fn, null, 0, this_for_getter);
+        if (vm_check_call_fn_error(vm)) {
+            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+            return ds.needs_restart ? RESTART : NEXT;
+        }
+    } else {
+        proto_val = get_prop_with_proto(rfunc, proto_key_str, vm.heap);
+    }
+    if (!proto_val.is_object()) {
+        // ECMA-262 §7.3.19 OrdinaryHasInstance step 6: If Type(P) is not
+        // Object, throw a TypeError exception. The spec does NOT
+        // allow the silent-false fallback, since the result must always
+        // be defined (or an abrupt completion).
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "'prototype' property is not an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+
+    HObject* proto_obj = (HObject*)proto_val.get_heapptr();
+    HObject* cur = (HObject*)lval.get_heapptr();
+    if (!instanceof_walk_chain(vm, ds, cur, proto_obj, ra)) {
+        return op_fail(ds, VM_ERROR);
+    }
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+fn OpStatus op_in(Dispatch* ds, DecodedInsn insn) {
+    Vm* vm = ds.vm;
+    TVal* ra = ds.regs_base + insn.a;
+    TVal* rb = ds.regs_base + insn.b;
+    TVal* rc = ds.regs_base + insn.c;
+    // ECMA-262 §11.8.7: RelationalExpression in ShiftExpression
+    // Right side must be an object; TypeError otherwise.
+    // Returns true if the object has a property with the given name
+    // (own or inherited, checked through [[HasProperty]]).
+    //
+    // NOTE: Read rb (key) BEFORE writing ra, because ra may alias rb
+    // (compiler can emit IN r3, r3, r4 when result overwrites the key).
+    // `in` requires an Object on the right, and a LIGHTFUNC builtin is
+    // one, so promote before the type test. The promoted value stays a
+    // local: writing it back into the register would need the store
+    // barrier and ownership tracking that a plain TVal copy does not do,
+    // and the cache makes re-promoting on the next iteration a lookup.
+    TVal rin = *rc;
+    builtins::promote_lightfunc_tval(vm.heap, &rin);
+    if (!rin.is_object()) {
+        vm.heap.set_reg_boolean(ra, false);
+        if (!vm_throw_error(vm, vm.heap.type_err_proto, "in requires an object", ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return op_fail(ds, VM_ERROR);
+        }
+        return ds.needs_restart ? RESTART : NEXT;
+    }
+
+    HObject* obj = (HObject*)rin.get_heapptr();
+
+    // Deferred namespace (import defer): [[HasProperty]] with a
+    // string key evaluates the module first.
+    if (obj.flags.exotic_deferred_ns) {
+        void* dkey = get_prop_key(vm, rb);
+        if (!esm::deferred_trigger_exempt_key((HString*)dkey)) {
+            if (!esm::force_deferred_namespace(vm.heap, vm, obj)) {
+                TVal derr = vm.heap.error_value;
+                vm.heap.has_error = false;
+                if (!vm_throw_value(vm, derr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return op_uncaught(ds, &derr);
+                }
+                return ds.needs_restart ? RESTART : NEXT;
+            }
+        }
+    }
+
+    // Proxy exotic: route through [[Has]].
+    if (obj.is_proxy()) {
+        void* pkey = get_prop_key(vm, rb);
+        bool has = false;
+        if (pkey != null) {
+            if (!builtins::proxy_mop_has(vm, vm.heap, obj, (HString*)pkey, &has)) {
+                TVal perr = vm.heap.error_value;
+                vm.heap.has_error = false;
+                if (!vm_throw_value(vm, perr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                    return op_uncaught(ds, &perr);
+                }
+                return ds.needs_restart ? RESTART : NEXT;
+            }
+        }
+        vm.heap.set_reg_boolean(ra, has);
+        return NEXT;
+    }
+
+    // TypedArray: numeric index membership (0..length-1, not detached).
+    if (builtins::is_typed_array_class(obj.get_class())) {
+        long idx_long = -1;
+        bool is_int_idx = false;
+        if (rb.is_fastint()) { idx_long = rb.get_fastint(); is_int_idx = true; }
+        else if (rb.is_number()) {
+            double d = rb.get_number();
+            idx_long = (long)d;
+            is_int_idx = (d == (double)idx_long);
+        } else if (rb.is_string()) {
+            HString* skey = (HString*)rb.get_heapptr();
+            if (skey != null && skey.is_arridx()) { idx_long = (long)skey.array_index(); is_int_idx = true; }
+        }
+        if (is_int_idx) {
+            HObject* buf = (*obj.extra_ptr()).view.buffer;
+            uint shift = builtins::ta_elem_shift(obj.get_class());
+            uint elem_count = (buf != null && (*buf.extra_ptr()).ab.resizable)
+                ? builtins::ta_element_count(obj)
+                : (*obj.extra_ptr()).view.byte_length >> shift;
+            vm.heap.set_reg_boolean(ra, idx_long >= 0 && buf != null && (*buf.extra_ptr()).ab.data != null
+                && (ulong)idx_long < (ulong)elem_count);
+            return NEXT;
+        }
+    }
+
+    // Fast path: dense array / arguments indexed check (numeric keys)
+    if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) && obj.array_part() != null && (rb.is_fastint() || rb.is_number())) {
+        long idx_long = -1;
+        bool dense_index = false;
+        if (rb.is_fastint()) {
+            idx_long = rb.get_fastint();
+            dense_index = idx_long >= 0 && idx_long < (long)obj.array_size;
+        } else {
+            double numeric_key = rb.get_number();
+            if (numeric_key >= 0.0
+                && numeric_key < (double)obj.array_size
+                && numeric_key == (double)(long)numeric_key) {
+                idx_long = (long)numeric_key;
+                dense_index = true;
+            }
+        }
+        if (dense_index) {
+            TVal? av = obj.get_array_idx((uint)idx_long);
+            if (try v = av) {
+                vm.heap.set_reg_boolean(ra, true);
+                return NEXT;
+            }
+            // A hole or dense miss may still be an own named property
+            // (including an explicit `undefined`) or a prototype hit.
+        }
+    }
+
+    // Fast path: dense array with string key that might be an index
+    if ((obj.get_class() == hobject::ObjClass.ARRAY || obj.get_class() == hobject::ObjClass.ARGUMENTS) && obj.array_part() != null && rb.is_string()) {
+        HString* skey = (HString*)rb.get_heapptr();
+        uint skey_idx = skey.array_index();
+        if (skey_idx != hstring::ARRIDX_NONE && skey_idx < (uint)obj.array_size) {
+            TVal? av = obj.get_array_idx(skey_idx);
+            if (try v = av) {
+                vm.heap.set_reg_boolean(ra, true);
+                return NEXT;
+            }
+        }
+    }
+
+    void* key = get_prop_key(vm, rb);
+    if (key != null) {
+        // STRING exotic: integer index keys in [0, clen) are own properties served lazily.
+        if (obj.flags.exotic_stringobj && (*obj.extra_ptr()).prim.primitive_value.is_string()) {
+            HString* key_hstr = (HString*)key;
+            if (key_hstr != null && key_hstr.is_arridx()) {
+                HString* prim_str = (HString*)(*obj.extra_ptr()).prim.primitive_value.get_heapptr();
+                if (prim_str != null && key_hstr.array_index() < prim_str.unit_len()) {
+                    vm.heap.set_reg_boolean(ra, true);
+                    return NEXT;
+                }
+            }
+        }
+        vm.heap.set_reg_boolean(ra, obj.has_prop_proto(key, vm.heap));
+    } else {
+        vm.heap.set_reg_boolean(ra, false);
+    }
+    return NEXT;
+}
+
+// === CONTROL FLOW ===
+fn OpStatus op_jump(Dispatch* ds, DecodedInsn insn) {
+    if (!vm_branch(ds, insn.get_sabc())) return op_fail(ds, VM_ERROR);
+    return ds.needs_restart ? RESTART : NEXT;
+}
+
+// IF_TRUE, IF_FALSE
+fn OpStatus op_if(Dispatch* ds, DecodedInsn insn) {
+    if (is_truthy(ds.regs_base + insn.a, ds.vm.heap) == (insn.op == Opcode.IF_TRUE)) {
+        if (!vm_branch(ds, insn.get_sbc())) return op_fail(ds, VM_ERROR);
+    }
+    return ds.needs_restart ? RESTART : NEXT;
 }
 
 // === CLOSURES ===
