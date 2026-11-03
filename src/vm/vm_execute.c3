@@ -3072,83 +3072,16 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.PUTPROP_NE:
     case Opcode.PUTPROP_SUPER:
     case Opcode.GETPROP_SUPER:
-    case Opcode.DELPROP:
-        if (catch err = dispatch_property(ds, op, ra, rb, rc, insn)) { return err~; }
-        continue;
-
-    case Opcode.PUTPROPC:
-        // PUTPROP with the key in constant C and the value in register B.
-        if (catch err = dispatch_property(ds, Opcode.PUTPROP, ra, &ds.constants[insn.c], rb, insn)) { return err~; }
-        continue;
-
-    case Opcode.TOPROPKEY: {
-        // In-place ToPropertyKey coercion (see bytecode.c3 doc comment).
-        // Mirrors dispatch_property's GETPROP key-coercion cache-back so a
-        // later GETPROP/PUTPROP on this same register is a no-op re-coercion.
-        if (!ra.is_string()) {
-            void* key = get_prop_key(vm, ra);
-            if (key == null && vm.throw_pending) {
-                vm.throw_pending = false;
-                if (!vm_throw_value(vm, vm.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                    return vm_uncaught_error(vm, &vm.throw_value);
-                }
-                continue;
-            }
-            if (key != null) {
-                TVal key_tv;
-                key_tv.set_string_borrowed(key);
-                vm.heap.tval_copy_ref(ra, &key_tv);
-                track_heap_store(ds.act, ra, (uint)insn.a);
-            }
-        }
-        continue;
-    }
-
-    case Opcode.TOSTR: {
-        // STRJOIN formats this copied primitive directly into its result.
-        // Other substitutions retain their source-position coercion.
-        if (ra.is_fastint()) continue;
-        // In-place ToString coercion (see the bytecode.c3 doc comment), used
-        // by template literal substitutions, which call ToString directly
-        // rather than going through ToPrimitive(default) like `+`.
-        if (!ra.is_string() || (ra.get_heapptr() != null && ((HString*)ra.get_heapptr()).is_symbol())) {
-            HString*? str = vm_to_string(vm, ra);
-            // vm_to_string may call user code (toString/@@toPrimitive) that
-            // reallocates the valstack, so refresh before touching ra again.
-            ds.regs_base = ds.act.bottom;
-            ra = &ds.regs_base[insn.a];
-            if (vm.throw_pending) {
-                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                continue;
-            }
-            if (try s = str) {
-                TVal str_tv;
-                str_tv.set_string_borrowed(s);
-                vm.heap.tval_copy_ref(ra, &str_tv);
-                track_heap_store(ds.act, ra, (uint)insn.a);
-            }
-        }
-        continue;
-    }
-
-    case Opcode.RETEST:
-        if (catch err = vm_retest(ds, ra, rb, insn)) { return err~; }
-        continue;
-    case Opcode.HOF_GUARD:
-        if (vm_hof_guard(ds, ra, rb, insn.c)) ds.curr_pc++;
-        continue;
-    case Opcode.HOF_ELEM:
-        if (vm_hof_elem(ds, ra, rb, rc, true)!) ds.curr_pc++;
-        continue;
-    case Opcode.HOF_GET:
-        vm_hof_elem(ds, ra, rb, rc, false)!;
-        continue;
-    case Opcode.HOF_NEWARR:
-        vm_hof_newarr(ds, ra, rb, insn)!;
-        continue;
-    case Opcode.HOF_PUT:
-        vm_hof_put(ds, ra, rb, rc)!;
-        continue;
+    case Opcode.DELPROP:     status = op_property(ds, insn);
+    case Opcode.PUTPROPC:    status = op_putpropc(ds, insn);
+    case Opcode.TOPROPKEY:   status = op_topropkey(ds, insn);
+    case Opcode.TOSTR:       status = op_tostr(ds, insn);
+    case Opcode.RETEST:      status = op_retest(ds, insn);
+    case Opcode.HOF_GUARD:   status = op_hof_guard(ds, insn);
+    case Opcode.HOF_ELEM:    status = op_hof_elem(ds, insn);
+    case Opcode.HOF_GET:     status = op_hof_get(ds, insn);
+    case Opcode.HOF_NEWARR:  status = op_hof_newarr(ds, insn);
+    case Opcode.HOF_PUT:     status = op_hof_put(ds, insn);
 
     // === OBJECT / ARRAY CREATION ===
     case Opcode.SPREAD_PROJECTION:
@@ -3165,12 +3098,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.OBJREST:
     case Opcode.SPREAD_ARG:
     case Opcode.FWD_ARGS:
-    case Opcode.APPLY_ARGS:
-        if (catch err = dispatch_objects(ds, op, ra, rb, rc, insn)) { return err~; }
-        // Getters, iterator closes and other user code may reallocate the
-        // valstack; refresh regs_base unless the outer loop reloads it.
-        if (!ds.needs_restart) { ds.regs_base = ds.act.bottom; }
-        continue;
+    case Opcode.APPLY_ARGS:  status = op_objects(ds, insn);
 
     // === FUNCTION CALLS ===
     case Opcode.CALL:
