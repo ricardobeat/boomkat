@@ -389,6 +389,9 @@ fn HString*? hstring_alloc_storage(void* heap_ptr, uint len, bool wide, uint has
     s.capacity = (uint)cap_bytes;
     s.data_ptr()[s.byte_len()] = 0;
     if (wide) s.data_ptr()[s.byte_len() + 1] = 0;
+    $if $feat(STRING_TRACE):
+        ((heap::Heap*)heap_ptr).string_born(s, total);
+    $endif
     return s;
 }
 
@@ -419,6 +422,9 @@ fn HString*? hstring_alloc_external(void* heap_ptr, Units data, ExtRelease relea
         uint index;
         s.flags.is_arridx = is_valid_array_index(s.latin1(), &index);
     }
+    $if $feat(STRING_TRACE):
+        ((heap::Heap*)heap_ptr).string_born(s, total);
+    $endif
     return s;
 }
 

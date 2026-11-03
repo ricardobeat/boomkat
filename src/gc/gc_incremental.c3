@@ -4,6 +4,7 @@ import boomkat::gcprofile;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::types;
+import boomkat::bytecode;
 import std::time;
 import std::io;
 
@@ -161,12 +162,116 @@ fn bool Heap.gc_collects_strings(&self) {
     return !self.gc_blocking || self.string_sweep_safe;
 }
 
+// A string the sweep may free. Counted strings die when only the table, if
+// any, still holds them; traced strings when the cycle did not reach them.
+fn bool string_is_garbage(HString* s, uint table_reference) @inline {
+    $if $feat(STRING_TRACE):
+        HeapHeader* h = (HeapHeader*)s;
+        if (h.is_pinned()) return false;
+        if (h.is_reachable()) { h.clear_reachable(); return false; }
+        return true;
+    $else
+        return s.refcount == table_reference;
+    $endif
+}
+
+// STRING_TRACE: set a string's mark bit for the major cycle in progress.
+// Strings have no children and no `old` bit; minor cycles neither mark nor
+// sweep them, so their bits change only in major cycles.
+fn void Heap.mark_string(&self, HString* s) @inline {
+    $if $feat(STRING_TRACE):
+        if (s == null || self.gc_kind != GcKind.MAJOR || self.gc_oracle_running) return;
+        HeapHeader* h = (HeapHeader*)s;
+        if (!h.is_pinned()) h.set_reachable();
+    $else
+        $if $feat(GC_VERIFY):
+            self.verify_string_owner(s);
+        $endif
+    $endif
+}
+
+// STRING_TRACE: keep a string that becomes reachable again while a major cycle
+// runs: allocation, an intern-table or weak-handle hit, a register or side
+// table store. Before the string sweep ends, the cycle must not free it.
+fn void Heap.shade_string(&self, HString* s) @inline @feat(STRING_TRACE) {
+    if (self.gc_phase == GcPhase.IDLE) return;
+    if (self.gc_phase == GcPhase.SWEEP && self.gc_sweep_stage > 4) return;
+    self.mark_string(s);
+}
+
+// STRING_TRACE: every string enters the large-string registry at birth, so the
+// sweep reaches it whether or not anything interns or registers it later, and
+// counts toward collection pressure like any other node.
+fn void Heap.string_born(&self, HString* s, usz bytes) @feat(STRING_TRACE) {
+    self.large_string_register(s);
+    self.shade_string(s);
+    self.gc_aux_alloc_bytes += bytes;
+    if (bytes <= 1024) self.charge_allocation(1);
+}
+
+// STRING_TRACE: mark the strings that side tables hold outside any traced
+// TVal. Runs once per major cycle at the switch to sweep, a quiescent point,
+// so these tables need no write barrier: what they hold now is what they keep,
+// and what they gain later comes from black strings.
+fn void Heap.mark_string_side_tables(&self) @feat(STRING_TRACE) {
+    for (uint id = 1; id < self.shape_count; id++) {
+        if (!self.shape_slot_live(id)) continue;
+        hobject::Shape* sh = self.shapes[id];
+        hobject::ShapeProperty* sp = sh.props();
+        for (uint i = 0; i < sh.own_count; i++) self.mark_string(sp[i].key.borrow());
+        if (sh.json_plan != null) {
+            for (uint i = 0; i < sh.json_plan.count; i++) self.mark_string(sh.json_plan.entries[i].key.borrow());
+        }
+        if (sh.own_key_plan != null) {
+            for (uint i = 0; i < sh.own_key_plan.count; i++) self.mark_string(sh.own_key_plan.keys[i].borrow());
+        }
+    }
+    for (uint i = 0; i <= self.trans_mask; i++) {
+        if (self.trans_table[i].parent_id != SHAPE_NONE) self.mark_string(self.trans_table[i].key.borrow());
+    }
+    if (self.mega_cache != null) {
+        for (uint i = 0; i < MEGA_CACHE_SIZE; i++) self.mark_string(self.mega_cache[i].key.borrow());
+    }
+    for (uint f = 0; f < self.compiled_func_count; f++) {
+        bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[f];
+        if (cf == null) continue;
+        self.mark_string(cf.closure_name.borrow());
+        self.mark_string((HString*)cf.brand_name_hstr);
+        self.mark_string((HString*)cf.super_binding_name);
+        self.mark_string((HString*)cf.static_super_binding_name);
+        self.mark_string((HString*)cf.home_object_binding_name);
+        if (cf.ic_entries != null) {
+            hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+            for (uint i = 0; i < cf.ic_count; i++) self.mark_string(entries[i].key.borrow());
+        }
+    }
+    for (uint i = 0; i < self.checkpoint_count; i++) self.mark_string(self.checkpoint_entries[i].key.borrow());
+    for (Realm* r = self.realms; r != null; r = r.next) {
+        // The current realm's state is the heap's inline copy.
+        if (r == self.realm || (r == self.realms && self.realm == null)) continue;
+        for (uint i = 0; i < r.state.checkpoint_count; i++) self.mark_string(r.state.checkpoint_entries[i].key.borrow());
+        self.mark_string(r.state.intl_fallback_symbol);
+    }
+    self.mark_string(self.realm_state.intl_fallback_symbol);
+    for (uint i = 0; i < self.host_class_count; i++) self.mark_string(self.host_classes[i].name.borrow());
+    for (uint i = 0; i < self.host_fn_count; i++) self.mark_string(self.host_fns[i].name.borrow());
+    foreach (&e : self.concat_cache) {
+        self.mark_string(e.result);
+        self.mark_string(e.left);
+        self.mark_string(e.right);
+    }
+    for (uint i = 0; i < self.symbol_registry_count; i++) {
+        self.mark_string(self.symbol_registry_keys[i]);
+        self.mark_string(self.symbol_registry_syms[i]);
+    }
+}
+
 fn void Heap.gc_sweep_strings_step(&self, uint budget, bool quiescent) {
     if (!quiescent) return;
     while (budget > 0 && self.gc_string_index < self.str_table_size) {
         self.mark_work_last++;
         HString* entry = self.str_table[self.gc_string_index];
-        if (entry != null && entry != STR_TABLE_TOMBSTONE && entry.refcount == 1) {
+        if (entry != null && entry != STR_TABLE_TOMBSTONE && string_is_garbage(entry, 1)) {
             self.str_table_tombstone(self.gc_string_index);
             if (self.str_table_used > 0) self.str_table_used--;
             self.free_string(entry);
@@ -182,7 +287,8 @@ fn void Heap.gc_sweep_large_strings_step(&self, uint budget, bool quiescent) {
     while (budget > 0 && self.gc_large_string_index < self.large_string_count) {
         self.mark_work_last++;
         HString* entry = self.large_strings[self.gc_large_string_index];
-        if (entry.refcount == 0) {
+        if (string_is_garbage(entry, 0)) {
+            entry.registry_slot = 0;
             self.large_string_count--;
             if (self.gc_large_string_index < self.large_string_count) {
                 self.large_strings[self.gc_large_string_index] = self.large_strings[self.large_string_count];
@@ -332,6 +438,9 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock
                 if (self.gc_weak_done && (quiescent || self.gc_blocking)) {
                     $if $feat(GC_VERIFY):
                         self.verify_incremental_mark();
+                    $endif
+                    $if $feat(STRING_TRACE):
+                        if (self.gc_kind == GcKind.MAJOR) self.mark_string_side_tables();
                     $endif
                     self.gc_phase = GcPhase.SWEEP;
                     self.weak_condemn();

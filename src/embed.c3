@@ -1247,7 +1247,7 @@ fn void host_trampoline(builtins::BuiltinContext* bctx, void* udata) {
         if (slot_get(rt, exception, &thrown)) {
             builtins::host_throw(bctx, thrown);
             // The native dispatch borrows throw_value after this trampoline returns.
-            if (thrown.is_refcounted()) rt.heap.@set_edge(null, rt.heap.error_value, thrown);
+            if (thrown.is_string()) rt.heap.@set_edge(null, rt.heap.error_value, thrown);
             slot_release(rt, exception);
         } else {
             builtins::host_throw_error(bctx, builtins::HOST_ERR_ERROR, "C function failed without an exception");

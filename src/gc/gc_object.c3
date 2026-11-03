@@ -275,14 +275,10 @@ fn void Heap.gc_scan_object_fields(&self, HObject* obj) {
                 }
                 break;
             case ObjClass.STRING_ITERATOR:
-                $if $feat(GC_VERIFY):
-                    self.verify_string_owner((*obj.extra_ptr()).str_iter.string.borrow());
-                $endif
+                self.mark_string((*obj.extra_ptr()).str_iter.string.borrow());
                 break;
             case ObjClass.REGEXP_STRING_ITERATOR:
-                $if $feat(GC_VERIFY):
-                    self.verify_string_owner((*obj.extra_ptr()).regexp_iter.string.borrow());
-                $endif
+                self.mark_string((*obj.extra_ptr()).regexp_iter.string.borrow());
                 if ((*obj.extra_ptr()).regexp_iter.regexp != null) {
                     self.mark_hobject((*obj.extra_ptr()).regexp_iter.regexp);
                 }

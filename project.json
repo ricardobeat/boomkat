@@ -56,6 +56,39 @@
         "vendor/sljit/sljit_src"
       ]
     },
+    "boomkat_strtrace": {
+      "type": "executable",
+      "name": "boomkat_strtrace",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "fp-math": "relaxed",
+      "panic-msg": false,
+      "debug-info": "none",
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "SLJIT",
+        "STRING_TRACE"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "boomkat_slim": {
       "type": "executable",
       "name": "boomkat_slim",
@@ -233,6 +266,28 @@
         "INTL_COLLATOR"
       ]
     },
+    "boomkat_strtrace_gc_stress": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "GC_STRESS",
+        "GC_VERIFY",
+        "POOL_BYPASS",
+        "PRINT",
+        "CONSOLE",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR",
+        "STRING_TRACE"
+      ]
+    },
     "boomkat_threaded_asan": {
       "type": "executable",
       "sources": [
@@ -397,6 +452,40 @@
         "vendor/sljit/sljit_src"
       ]
     },
+    "test262_runner_strtrace": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/test262_runner.c3"
+      ],
+      "opt": "O2",
+      "optsize": "small",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR",
+        "SLJIT",
+        "STRING_TRACE"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "test262_runner_asan": {
       "type": "executable",
       "sources": [
@@ -414,6 +503,26 @@
         "INTL_FULL",
         "TEMPORAL",
         "INTL_COLLATOR"
+      ]
+    },
+    "test262_runner_strtrace_asan": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/test262_runner.c3"
+      ],
+      "opt": "O0",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "PRINT",
+        "CONSOLE",
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR",
+        "STRING_TRACE"
       ]
     },
     "test262_runner_verify": {

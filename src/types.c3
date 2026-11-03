@@ -421,16 +421,27 @@ $endif
 // buffer or BigInt, or an internal ENVREF. A store of such a value into an
 // object passes the incremental insertion barrier; strings are counted.
 macro bool TVal.is_traced(&self) {
+$if $feat(STRING_TRACE):
+$if USE_NANBOX:
+    return nanbox_tag_in(self.bits, TAG_STRING, TAG_ENVREF);
+$else
+    return self.tag == STRING || self.tag == OBJECT || self.tag == BUFFER || self.tag == BIGINT || self.tag == ENVREF;
+$endif
+$else
 $if USE_NANBOX:
     return nanbox_tag_in(self.bits, TAG_OBJECT, TAG_ENVREF);
 $else
     return self.tag == OBJECT || self.tag == BUFFER || self.tag == BIGINT || self.tag == ENVREF;
+$endif
 $endif
 }
 
 // True when the value holds a reference count: a string. Objects, buffers and
 // BigInts are reclaimed only by the collector.
 macro bool TVal.is_refcounted(&self) {
+$if $feat(STRING_TRACE):
+    return false;
+$endif
 $if USE_NANBOX:
     return (self.bits >> 48) == TAG_STRING;
 $else
@@ -915,8 +926,10 @@ fn bool  HeapHeader.is_bigint(&self) { return self.flags.htype == HType.BIGINT; 
 // refcount, so this does nothing for them. See STRING_PINNED_REFCOUNT.
 fn void HeapHeader.incref(&self) @inline {
     // Only strings are counted; see TVal.is_refcounted.
-    if (!self.is_string() || self.refcount == STRING_PINNED_REFCOUNT) return;
-    self.refcount++;
+    $if !$feat(STRING_TRACE):
+        if (!self.is_string() || self.refcount == STRING_PINNED_REFCOUNT) return;
+        self.refcount++;
+    $endif
 }
 
 // ---------------------------------------------------------------------------

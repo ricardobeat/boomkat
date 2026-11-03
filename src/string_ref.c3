@@ -14,6 +14,9 @@ fn HString* StringRef.borrow(self) @inline {
 // Acquire before releasing so replacement with the same string is safe.
 fn void StringRef.set(&self, heap::Heap* h, HString* value) @inline {
     if (value != null) ((HeapHeader*)value).incref();
+    $if $feat(STRING_TRACE):
+        h.shade_string(value);
+    $endif
     self.release(h);
     *self = (StringRef)value;
 }

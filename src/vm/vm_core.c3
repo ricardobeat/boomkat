@@ -225,6 +225,9 @@ fn void shade_generator_chains(Vm* vm, heap::GeneratorState* gs) {
     }
     for (heap::ForInState* fi = (heap::ForInState*)gs.forin; fi != null; fi = fi.parent) {
         vm.heap.shade_root_object(fi.target);
+        $if $feat(STRING_TRACE):
+            for (uint i = 0; i < fi.count; i++) vm.heap.shade_string(fi.keys[i].borrow());
+        $endif
     }
 }
 
@@ -247,6 +250,9 @@ fn void mark_activation_fields(heap::Heap* h, Activation* act) @inline {
     heap::ForInState* fi = (heap::ForInState*)act.forin;
     while (fi != null) {
         if (fi.target != null) { h.mark_hobject(fi.target); }
+        $if $feat(STRING_TRACE):
+            for (uint i = 0; i < fi.count; i++) h.mark_string(fi.keys[i].borrow());
+        $endif
         fi = fi.parent;
     }
 }

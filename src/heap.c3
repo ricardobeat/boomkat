@@ -3744,6 +3744,9 @@ fn void Heap.set_reg_envref(&self, TVal* reg, void* value) @inline {
 fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
     TVal acquired;
     acquired.set_string(s);
+    $if $feat(STRING_TRACE):
+        self.shade_string(s);
+    $endif
     self.decref_tval(reg);
     *reg = acquired;
 }
@@ -3758,6 +3761,9 @@ fn void Heap.free_string(&self, hstring::HString* s) {
     if (s.flags.has_extdata) s.release_external();
 
     if (s.flags.weak_target) self.weak_target_died((HeapHeader*)s);
+    $if $feat(STRING_TRACE):
+        if (!s.flags.is_interned) self.large_string_unregister(s);
+    $endif
     gcprofile::gcprof_string_free(total);
     if (s.length == 1 && s.flags.is_ascii) {
         gcprofile::gcprof_ascii_char_free();
@@ -3784,7 +3790,8 @@ fn void Heap.free_string(&self, hstring::HString* s) {
 fn void Heap.decref(&self, HeapHeader* hdr) {
     // Pinned headers, meaning builtin strings, well-known symbols, and the
     // small-int cache, keep a fixed refcount. See HeapHeader.set_pinned.
-    if (!hdr.is_string() || hdr.is_pinned()) {
+    // Traced strings have no count.
+    if ($feat(STRING_TRACE) || !hdr.is_string() || hdr.is_pinned()) {
         return;
     }
     if (--hdr.refcount == 0) {
@@ -4203,12 +4210,7 @@ fn void Heap.mark_tval(&self, TVal* v) {
     if (v.is_object()) {
         self.mark_hobject((HObject*)v.get_heapptr());
     } else if (v.is_string()) {
-        HString* s = (HString*)v.get_heapptr();
-        if (s != null) {
-            $if $feat(GC_VERIFY):
-                self.verify_string_owner(s);
-            $endif
-        }
+        self.mark_string((HString*)v.get_heapptr());
     } else if (v.is_bigint() || v.is_buffer()) {
         self.mark_header((HeapHeader*)v.get_heapptr());
     } else if (v.is_envref()) {
@@ -4385,6 +4387,9 @@ fn void Heap.mark_generator_state_full(&self, GeneratorState* gs) {
     ForInState* gfi = (ForInState*)gs.forin;
     while (gfi != null) {
         if (gfi.target != null) { self.mark_hobject(gfi.target); }
+        $if $feat(STRING_TRACE):
+            for (uint i = 0; i < gfi.count; i++) self.mark_string(gfi.keys[i].borrow());
+        $endif
         gfi = gfi.parent;
     }
     // Same for the catcher chain, for the same reason mark_activation_fields
@@ -4466,9 +4471,7 @@ fn void Heap.mark_temporal(&self, HObjectTemporal* t, ObjClass kind) {
     if (t.big_ns != null) {
         self.mark_header((HeapHeader*)t.big_ns);
     }
-    $if $feat(GC_VERIFY):
-        if (kind == ObjClass.TEMPORAL_TIMEZONE) self.verify_string_owner(t.identifier.borrow());
-    $endif
+    if (kind == ObjClass.TEMPORAL_TIMEZONE) self.mark_string(t.identifier.borrow());
     if (t.timezone != null) { self.mark_hobject(t.timezone); }
 }
 
@@ -4627,14 +4630,10 @@ fn void Heap.drain_gray(&self) {
                 }
                 break;
             case ObjClass.STRING_ITERATOR:
-                $if $feat(GC_VERIFY):
-                    self.verify_string_owner((*obj.extra_ptr()).str_iter.string.borrow());
-                $endif
+                self.mark_string((*obj.extra_ptr()).str_iter.string.borrow());
                 break;
             case ObjClass.REGEXP_STRING_ITERATOR:
-                $if $feat(GC_VERIFY):
-                    self.verify_string_owner((*obj.extra_ptr()).regexp_iter.string.borrow());
-                $endif
+                self.mark_string((*obj.extra_ptr()).regexp_iter.string.borrow());
                 if ((*obj.extra_ptr()).regexp_iter.regexp != null) {
                     self.mark_hobject((*obj.extra_ptr()).regexp_iter.regexp);
                 }
@@ -5296,7 +5295,7 @@ fn void Heap.sweep_strings(&self) {
     for (uint i = 0; i < self.str_table_size; i++) {
         HString* entry = self.str_table[i];
         if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }
-        if (entry.refcount == 1) {
+        if (string_is_garbage(entry, 1)) {
             self.str_table_tombstone(i);
             if (self.str_table_used > 0) { self.str_table_used--; }
             self.free_string(entry);
@@ -5315,12 +5314,13 @@ fn void Heap.sweep_large_strings(&self) {
     uint kept = 0;
     for (uint i = 0; i < self.large_string_count; i++) {
         HString* s = self.large_strings[i];
-        if (s.refcount != 0) {
+        if (!string_is_garbage(s, 0)) {
             // Survivors compact downward.
             self.large_strings[kept] = s;
             kept++;
             s.registry_slot = kept;
         } else {
+            s.registry_slot = 0;
             self.free_string(s);
         }
     }
@@ -5574,7 +5574,12 @@ fn HString* Heap.str_table_lookup(&self, hstring::Units data, uint hash, bool hi
             HString* entry = self.str_table[idx];
             if (entry.flags.is_hidden == hidden && entry.length == data.len
                 && entry.flags.is_wide == data.wide
-                && mem::equals(entry.data_ptr(), data.ptr, (sz)data.byte_len())) return entry;
+                && mem::equals(entry.data_ptr(), data.ptr, (sz)data.byte_len())) {
+                $if $feat(STRING_TRACE):
+                    self.shade_string(entry);
+                $endif
+                return entry;
+            }
         }
         idx = (idx + 1) & mask;
     }
@@ -5644,6 +5649,9 @@ fn bool Heap.str_table_insert(&self, HString* hstr) {
  * registry) and incref for the slot the table now holds.
  */
 fn void Heap.str_table_adopt(&self, HString* hstr) {
+    $if $feat(STRING_TRACE):
+        self.large_string_unregister(hstr);
+    $endif
     hstr.flags.is_interned = true;
     ((HeapHeader*)hstr).incref();
 }
@@ -5676,6 +5684,10 @@ fn void Heap.str_table_remove(&self, hstring::HString* hstr) {
  * refcounted leaf, so the caller need not fail.
  */
 fn void Heap.large_string_register(&self, HString* s) {
+    $if $feat(STRING_TRACE):
+        // Every string is registered at allocation; see Heap.string_born.
+        if (s.registry_slot != 0 || s.flags.is_interned) return;
+    $endif
     if (self.large_string_count == self.large_string_capacity) {
         uint new_cap = self.large_string_capacity == 0 ? 64 : self.large_string_capacity * 2;
         void* grown = self.realloc_func(self.heap_udata, self.large_strings,

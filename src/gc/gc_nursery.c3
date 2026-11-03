@@ -2,6 +2,7 @@ module boomkat::heap;
 
 import boomkat::hobject;
 import boomkat::types;
+import boomkat::hstring;
 import boomkat::gcprofile;
 
 const uint GC_MAX_MINORS = 64;
@@ -52,6 +53,9 @@ fn bool Heap.gc_needs_mark(&self, HeapHeader* header) @inline {
 }
 
 fn void Heap.mark_header(&self, HeapHeader* header) @inline {
+    $if $feat(STRING_TRACE):
+        if (header != null && header.is_string()) { self.mark_string((HString*)header); return; }
+    $endif
     if (!self.gc_needs_mark(header)) return;
     header.set_reachable();
     if (header.is_object()) self.gray_push((HObject*)header);
