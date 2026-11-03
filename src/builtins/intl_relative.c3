@@ -197,15 +197,17 @@ fn void intl_relative_render(BuiltinContext* ctx, bool as_parts) {
     uint count = 0;
     StrBuf result; result.init(ctx.heap);
     defer result.free();
-    if (state.auto_numeric && (value == -1 || value == 0 || value == 1)) {
+    bool far_day = index == 3 && (value == -2 || value == 2);
+    if (state.auto_numeric && (far_day || value == -1 || value == 0 || value == 1)) {
         // ToString(-0) is "0", so -0 selects the "this" phrase too. A row without a phrase falls
-        // through to the numeric pattern.
+        // through to the numeric pattern. CLDR names the day before yesterday and after tomorrow.
         char[] phrase;
         if (row > 0) {
-            usz base = ((usz)index * 3 + (usz)style) * INTL_RELATIVE_CELLS;
-            phrase = intl_relative_cell(row, base + (usz)(value == -1 ? 0 : value == 0 ? 1 : 2));
+            usz at = ((usz)index * 3 + (usz)style) * INTL_RELATIVE_CELLS + (usz)(value == -1 ? 0 : value == 0 ? 1 : 2);
+            if (far_day) at = INTL_RELATIVE_FAR_DAY + (usz)style * 2 + (usz)(value == 2 ? 1 : 0);
+            phrase = intl_relative_cell(row, at);
         } else {
-            phrase = value == -1 ? unit.last[style] : value == 0 ? unit.current[style] : unit.next[style];
+            phrase = value == -1 ? unit.last[style] : value == 0 ? unit.current[style] : value == 1 ? unit.next[style] : (String)"";
         }
         if (phrase.len > 0) {
             intl_part(ctx, parts, &result, "literal", phrase, &count);
@@ -219,14 +221,19 @@ fn void intl_relative_render(BuiltinContext* ctx, bool as_parts) {
     plural.plural = true;
     char[] category = intl_select(ctx, &plural, magnitude);
     if (ctx.should_throw) return;
-    // A row pattern is split at its {0}. English, and any row without a pattern, builds "in 2 days"
-    // or "2 days ago" from the English unit table.
+    // A row pattern is split at its {0}; one without a {0} ("قبل يومين") is the whole result. English,
+    // and any row without a pattern, builds "in 2 days" or "2 days ago" from the English unit table.
     StrBuf english; english.init(ctx.heap);
     defer english.free();
     char[] prefix;
     char[] suffix;
     char[] pattern = row > 0 ? intl_relative_pattern(row, (usz)index, style, past, category) : "";
     int slot = pattern.len > 0 ? intl_relative_slot(pattern) : -1;
+    if (pattern.len > 0 && slot < 0) {
+        intl_part(ctx, parts, &result, "literal", pattern, &count);
+        intl_relative_finish(ctx, parts, count, &result);
+        return;
+    }
     if (slot >= 0) {
         usz at = (usz)slot;
         prefix = pattern[:at];

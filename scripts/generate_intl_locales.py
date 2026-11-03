@@ -20,7 +20,7 @@ from generate_intl_english import resource, UNITS
 HERE = Path(__file__).resolve().parent
 
 # ICU locale ids. en is row 0 and the default; the rest are emitted under INTL_FULL.
-LOCALES = ['en', 'en_IN', 'ar', 'ar_EG', 'de', 'de_AT', 'es', 'es_419', 'fa', 'fr', 'gv', 'hi',
+LOCALES = ['en', 'en_IN', 'ar', 'ar_EG', 'cs', 'cy', 'de', 'de_AT', 'es', 'es_419', 'fa', 'fr', 'gv', 'he', 'hi',
            'it', 'ja', 'ko', 'ln', 'pl', 'pt', 'pt_PT', 'ru', 'si', 'sl', 'sr', 'sr_Latn', 'sv', 'th', 'tr',
            'zh', 'zh_Hant', 'zh_Hant_TW']
 CATEGORIES = ['zero', 'one', 'two', 'few', 'many', 'other']
@@ -381,24 +381,28 @@ RELATIVE_CELLS = 3 + 2 * len(CATEGORIES)
 
 def build_relative(chains, locale_id, pool):
     """One locale's RelativeTimeFormat phrases and patterns as pool offsets, 0 where the
-    locale has no entry. A missing field is inherited as CLDR does: narrow from short, short
-    from long."""
+    locale has no entry. A missing phrase or direction is inherited as CLDR does: narrow from
+    short, short from long. The day phrases for -2 and 2 follow the unit cells, by style."""
     def text(value):
         value = string_of(value)
         return pool.add(value) if value else 0
     fields = lambda key: chains.lookup('locales', locale_id, ['fields', key]) or {}
-    out = []
+    out, far = [], []
     for unit in RELATIVE_UNITS:
-        inherited = {}
+        inherited = {'relative': {}, 'future': {}, 'past': {}}
         for style in RELATIVE_STYLES:
             node = fields(unit + style)
-            relative = node.get('relative') or inherited.get('relative') or {}
-            times = node.get('relativeTime') or inherited.get('relativeTime') or {}
-            inherited = {'relative': relative, 'relativeTime': times}
-            out += [text(relative.get(key)) for key in ['\"-1\"', '\"0\"', '\"1\"']]
+            times = node.get('relativeTime') or {}
+            merged = {'relative': {**inherited['relative'], **(node.get('relative') or {})}}
             for direction in ['future', 'past']:
-                out += [text((times.get(direction) or {}).get(cat)) for cat in CATEGORIES]
-    return out
+                merged[direction] = times.get(direction) or inherited[direction]
+            inherited = merged
+            out += [text(merged['relative'].get(key)) for key in ['\"-1\"', '\"0\"', '\"1\"']]
+            for direction in ['future', 'past']:
+                out += [text(merged[direction].get(cat)) for cat in CATEGORIES]
+            if unit == 'day':
+                far += [text(merged['relative'].get(key)) for key in ['\"-2\"', '\"2\"']]
+    return out + far
 
 
 # ListFormat entries in INTL_LIST_PATTERNS order (type * 3 + style), with the CLDR list block of each type.
@@ -568,7 +572,10 @@ def write_extra(path, rows, compact, units, currencies, currency_at, data, bases
     out += c_array('ushort', 'INTL_EXTRA_DATES', dates, 12, ' ' + gate)
     out += '// RelativeTimeFormat cells per row, unit-major: unit, then style (long, short, narrow), each with\n'
     out += '// the -1, 0 and 1 phrases and then future and past by plural category (zero..other).\n'
-    out += f'const usz INTL_RELATIVE_ROW_SIZE = {len(RELATIVE_UNITS) * len(RELATIVE_STYLES) * RELATIVE_CELLS};\n'
+    unit_cells = len(RELATIVE_UNITS) * len(RELATIVE_STYLES) * RELATIVE_CELLS
+    out += '// Then the day phrases for -2 and 2 per style.\n'
+    out += f'const usz INTL_RELATIVE_FAR_DAY = {unit_cells};\n'
+    out += f'const usz INTL_RELATIVE_ROW_SIZE = {unit_cells + 2 * len(RELATIVE_STYLES)};\n'
     out += c_array('ushort', 'INTL_EXTRA_RELATIVE', relative, 12, ' ' + gate)
     out += '// ListFormat separators per row, in INTL_LIST_PATTERNS order, each as pair, start, middle, end.\n'
     out += f'const usz INTL_LIST_ROW_SIZE = {len(LIST_TYPES) * len(LIST_STYLE_SUFFIX) * len(LIST_LEAVES)};\n'
