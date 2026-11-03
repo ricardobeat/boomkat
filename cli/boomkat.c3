@@ -421,8 +421,9 @@ fn void print_tval_stderr(Heap* hp, TVal* v) {
     io::eprintf("[object]");
 }
 
+// A raw byte sink for write_utf8: eprintf's %c would encode bytes above 0x7F again.
 fn void stderr_put_byte(char c, void* udata) {
-    io::eprintf("%c", c);
+    (void)io::stderr().write_byte(c);
 }
 
 fn void print_hstring_stderr(HString* s) {

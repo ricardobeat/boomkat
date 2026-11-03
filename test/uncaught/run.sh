@@ -77,6 +77,11 @@ check "throw subclass"    'class E extends Error {}; throw new E("sub");' \
 check "throw custom ctor" 'function T(m){ this.message = m; } throw new T("t262");' \
       "Uncaught T: t262"
 
+# Messages print as UTF-8 whatever the string's storage: a Latin-1 character
+# used to be encoded twice (U+00A0 came out as "Â ") and a non-BMP one once.
+check "non-ASCII message" 'throw new Error("1\u00a02 \u00e9 \u4e2d \ud83d\ude00");' \
+      "$(printf 'Uncaught Error: 1\302\2402 \303\251 \344\270\255 \360\237\230\200')"
+
 # A throw escaping a sync function called from a nested frame still unwinds to
 # the same top-level reporting path.
 check "throw from nested"  'function g(){ throw "deep"; } function f(){ g(); } f();' \
