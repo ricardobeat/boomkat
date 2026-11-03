@@ -182,7 +182,13 @@ fn OpStatus op_add(Dispatch* ds, DecodedInsn insn) {
     if (rb.get_tag() == OBJECT) { prim_b = to_primitive_value(vm, rb, 0); }
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
     if (ds.needs_restart) return RESTART;
-    if (rc.get_tag() == OBJECT) { prim_c = to_primitive_value(vm, rc, 0); }
+    // A primitive that came out of a call is owned by the call-result slot
+    // alone, which the right operand's ToPrimitive overwrites. Hold it.
+    bool hold_b = rc.get_tag() == OBJECT;
+    heap::ValueRoot held_b;
+    if (hold_b) vm.heap.push_value_root(&held_b, prim_b);
+    defer if (hold_b) vm.heap.pop_value_root(&held_b);
+    if (hold_b) prim_c = to_primitive_value(vm, rc, 0);
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
     if (ds.needs_restart) return RESTART;
     TValTag pt_b = prim_b.get_tag();

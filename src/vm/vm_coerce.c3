@@ -63,7 +63,13 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
         px = to_primitive_value(vm, x, 2);  // hint: number
         if (vm.throw_pending) return 0;
     }
-    if (py.get_tag() == OBJECT) {
+    // A primitive that came out of a call is owned by the call-result slot
+    // alone, which the second operand's ToPrimitive overwrites. Hold it.
+    bool hold_x = py.get_tag() == OBJECT;
+    heap::ValueRoot held_x;
+    if (hold_x) vm.heap.push_value_root(&held_x, px);
+    defer if (hold_x) vm.heap.pop_value_root(&held_x);
+    if (hold_x) {
         py = to_primitive_value(vm, y, 2);
         if (vm.throw_pending) return 0;
     }

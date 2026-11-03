@@ -77,7 +77,13 @@ fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* r
         pb = to_primitive_value(vm, rb, 2);
         if (vm.throw_pending) return BigIntOpResult.THREW;
     }
-    if (pc.is_object()) {
+    // A primitive that came out of a call is owned by the call-result slot
+    // alone, which the second operand's ToPrimitive overwrites. Hold it.
+    bool hold_b = pc.is_object();
+    heap::ValueRoot held_b;
+    if (hold_b) vm.heap.push_value_root(&held_b, pb);
+    defer if (hold_b) vm.heap.pop_value_root(&held_b);
+    if (hold_b) {
         pc = to_primitive_value(vm, rc, 2);
         if (vm.throw_pending) return BigIntOpResult.THREW;
     }
