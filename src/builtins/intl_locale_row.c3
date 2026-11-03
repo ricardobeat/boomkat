@@ -96,7 +96,8 @@ fn char[] intl_list_cell(usz row, usz index) {
 }
 
 // Cells per unit and style in a RelativeTimeFormat row: the -1, 0 and 1 phrases, then future and
-// past by plural category (zero..other). The layout is written by scripts/generate_intl_locales.py.
+// past by plural category (zero..other). After all units come the day -2 and 2 phrases per style
+// (INTL_RELATIVE_FAR_DAY). The layout is written by scripts/generate_intl_locales.py.
 const usz INTL_RELATIVE_CELLS = 15;
 
 // The text of one RelativeTimeFormat cell, or empty when the row has none or for row 0.
