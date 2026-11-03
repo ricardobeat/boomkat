@@ -85,6 +85,7 @@ fn void builtin_intl_list_format(BuiltinContext* ctx) {
     if (ctx.should_throw) return;
     TVal? first = supported.get_prop(ctx.heap.int_to_hstring(0), ctx.heap);
     settings.locale = 0;
+    settings.us_locale = true;
     if (try v = first) {
         HString* tag = (HString*)v.get_heapptr();
         settings.us_locale = locale_is_us(tag.token_text());
@@ -116,7 +117,7 @@ fn void builtin_intl_list_resolved(BuiltinContext* ctx) {
     char[][] types = {"conjunction", "disjunction", "unit"};
     char[][] styles = {"long", "short", "narrow"};
     char[32] label_buffer;
-    char[] tag = state.locale > 0 ? intl_row_label((usz)state.locale, state.label_mode, label_buffer[..]) : state.us_locale ? "en-US" : "en";
+    char[] tag = intl_resolved_tag((usz)state.locale, state.label_mode, state.us_locale, label_buffer[..]);
     intl_put_string(ctx.heap, out, "locale", tag);
     intl_put_string(ctx.heap, out, "type", types[state.type]);
     intl_put_string(ctx.heap, out, "style", styles[state.style]);

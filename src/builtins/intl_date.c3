@@ -410,12 +410,8 @@ fn bool intl_date_options(BuiltinContext* ctx, IntlDateState* state, TVal locale
     bool supported_extension = intl_calendar(ca_extension, &extension_calendar);
     state.calendar = supported_calendar ? option_calendar : supported_extension ? extension_calendar : GREGORY;
     state.zh_names = tag.len >= 2 && locale_eq_ci(tag[:2], "zh");
-    if (state.row > 0) {
-        char[32] label_buffer;
-        date_buf_append(state.locale[..], &state.locale_len, intl_row_label((usz)state.row, intl_label_mode(tag, state.row), label_buffer[..]));
-    } else {
-        date_buf_append(state.locale[..], &state.locale_len, state.us_locale ? "en-US" : "en");
-    }
+    char[32] label_buffer;
+    date_buf_append(state.locale[..], &state.locale_len, intl_resolved_tag((usz)state.row, intl_label_mode(tag, state.row), state.us_locale, label_buffer[..]));
     bool ca_keep = (!supported_calendar || mem_eq_bytes(ca_option, ca_extension)) && supported_extension;
     bool hc_keep = (hc == 0 || (hc == 11 && mem_eq_bytes(hc_extension, "h11")) || (hc == 12 && mem_eq_bytes(hc_extension, "h12")) || (hc == 23 && mem_eq_bytes(hc_extension, "h23")) || (hc == 24 && mem_eq_bytes(hc_extension, "h24"))) && hour12 < 0 && (mem_eq_bytes(hc_extension, "h11") || mem_eq_bytes(hc_extension, "h12") || mem_eq_bytes(hc_extension, "h23") || mem_eq_bytes(hc_extension, "h24"));
     IntlNumbering resolved_numbering = intl_resolve_numbering(tag, numbering == null ? "" : numbering.token_text(), numbering != null);

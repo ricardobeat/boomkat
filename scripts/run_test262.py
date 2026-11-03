@@ -348,6 +348,8 @@ INTL_LOCALES_ONLY_FILES = frozenset({
     "intl402/DateTimeFormat/prototype/resolvedOptions/hourCycle-timeStyle.js",
 })
 LOCALE_DATA_FILES = INTL_LOCALES_ONLY_FILES | frozenset({
+    "intl402/DateTimeFormat/prototype/format/german-weekday-no-year.js",
+    "intl402/DateTimeFormat/prototype/format/numbering-system.js",
     "intl402/Temporal/Instant/prototype/toLocaleString/basic.js",
     "intl402/Temporal/Instant/prototype/toLocaleString/dateStyle.js",
     "intl402/Temporal/Instant/prototype/toLocaleString/datestyle-not-adjusted-when-no-conflicting-options.js",
