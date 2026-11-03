@@ -144,7 +144,9 @@ fn HString* to_primitive_string(BuiltinContext* ctx, TVal* value, String message
         builtin_throw(ctx, ctx.heap.type_err_proto, message);
         return null;
     }
-    return (HString*)prim.get_heapptr();
+    HString* s = (HString*)prim.get_heapptr();
+    if (value.is_object()) builtin_hold_result(ctx, s);
+    return s;
 }
 
 // GetTemporalCalendarIdentifierWithISODefault for a bag that is not a Temporal object.

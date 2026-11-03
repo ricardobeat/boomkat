@@ -23,8 +23,25 @@ import std::math;
 // silent-drop of non-writable bindings (a named fnexpr's own name, the
 // built-in global immutables). The write is dropped but the expression still
 // evaluates to the incremented value (ECMA-262 declarative SetMutableBinding, step 5.2).
+// ToNumeric for the operand of ++ and -- (ECMA-262 UpdateExpression step 2):
+// an object is converted before the step, so one whose valueOf yields a BigInt
+// steps as a BigInt. Returns false with the throw pending.
+fn bool incdec_to_numeric(Vm* vm, TVal* old_val) @inline {
+    if (!old_val.is_object()) return true;
+    TVal prim = to_primitive_value(vm, old_val, 2);
+    if (vm.throw_pending) return false;
+    *old_val = prim;
+    return true;
+}
+
 fn TVal? incdec_compute_no_write(Dispatch* ds, TVal old_val, bool is_inc, TVal* out) {
     Vm* vm = ds.vm;
+    if (!incdec_to_numeric(vm, &old_val)) {
+        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+            return vm_uncaught_error(vm, &vm.throw_value);
+        }
+        return (TVal){};
+    }
     if (old_val.is_fastint()) {
         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -88,9 +105,12 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             if (rb.is_fastint()) {
                 vm.heap.set_reg_fastint(ra, rb.get_fastint());
             } else {
-                double tn_b = vm_to_number(vm,rb);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
-                vm.heap.set_reg_number(ra, tn_b);
+                TVal tn_prim;
+                if (!vm_to_numeric(vm, rb, &tn_prim)) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    return (TVal){};
+                }
+                vm.heap.tval_copy_ref(ra, &tn_prim);
             }
             return (TVal){};
 
@@ -193,6 +213,21 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 if (vm_bigint_incdec(vm, ra, true) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                 }
+            } else if (ra.is_object()) {
+                // ToNumeric first: a BigInt result steps as a BigInt.
+                TVal prim;
+                if (!vm_to_numeric(vm, ra, &prim)) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    return (TVal){};
+                }
+                vm.heap.tval_copy_ref(ra, &prim);
+                if (prim.is_bigint()) {
+                    if (vm_bigint_incdec(vm, ra, true) == BigIntOpResult.THREW) {
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    }
+                } else {
+                    vm.heap.set_reg_number(ra, prim.get_number() + 1.0);
+                }
             } else {
                 // Slow path: convert to number, increment, store back.
                 // ra may hold an owned heap reference (e.g. a large
@@ -209,6 +244,21 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             } else if (ra.is_bigint()) {
                 if (vm_bigint_incdec(vm, ra, false) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                }
+            } else if (ra.is_object()) {
+                // ToNumeric first: a BigInt result steps as a BigInt.
+                TVal prim;
+                if (!vm_to_numeric(vm, ra, &prim)) {
+                    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    return (TVal){};
+                }
+                vm.heap.tval_copy_ref(ra, &prim);
+                if (prim.is_bigint()) {
+                    if (vm_bigint_incdec(vm, ra, false) == BigIntOpResult.THREW) {
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                    }
+                } else {
+                    vm.heap.set_reg_number(ra, prim.get_number() - 1.0);
                 }
             } else {
                 // See INC: release ra's owned heap reference before the
@@ -274,6 +324,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone. lex_env is the parent
                             // env here, so a hit is a legitimate parent lookup. Own-local leaks throw
                             // 'not defined' and are caught by test/test_register_locals.js.
+                            if (!incdec_to_numeric(vm, &old_val)) {
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
                             if (old_val.is_fastint()) {
                                 long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                                 if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -353,6 +407,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             if (!vm_throw_error_fmt_str(vm, vm.heap.type_err_proto, "Assignment to constant variable '%s'", name_hstr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
                                 return VM_ERROR~;
                             }
+                            return (TVal){};
+                        }
+                        if (!incdec_to_numeric(vm, &old_val)) {
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             return (TVal){};
                         }
                         TVal new_val = old_val;
@@ -499,6 +557,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         }
                         return (TVal){};
                     }
+                    if (!incdec_to_numeric(vm, &old_val)) {
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        return (TVal){};
+                    }
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -617,7 +679,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             vm.heap.set_reg_number(ra, (double)v);
                         }
                         return (TVal){};
-                    } else if (!old_val.is_bigint() && !env::is_tdz_sentinel(&old_val)) {
+                    } else if (!old_val.is_bigint() && !old_val.is_object() && !env::is_tdz_sentinel(&old_val)) {
                         double d = vm_to_number(vm,&old_val);
                         if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                         double new_d = d + (is_inc ? 1.0 : -1.0);
@@ -625,7 +687,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         vm.heap.set_reg_number(ra, new_d);
                         return (TVal){};
                     }
-                    // BigInt / TDZ: fall through to slow path.
+                    // BigInt / object / TDZ: fall through to slow path.
                 }
             }
 
@@ -683,6 +745,10 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         }
                         return (TVal){};
                     }
+                    if (!incdec_to_numeric(vm, &old_val)) {
+                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                        return (TVal){};
+                    }
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -730,23 +796,38 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     TVal old_val = ds.act.var_env.bindings.prop_values()[vidx].get();
                     hobject::PropFlags fl = ds.act.var_env.bindings.get_prop_flags((uint)vidx, ds.vm.heap);
                     if (!fl.is_accessor && fl.writable && !env::is_tdz_sentinel(&old_val)) {
+                        if (!incdec_to_numeric(vm, &old_val)) {
+                            if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                            return (TVal){};
+                        }
+                        hobject::PropValue* vslot = &ds.act.var_env.bindings.prop_values()[vidx];
                         if (old_val.is_fastint()) {
                             long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                             if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
-                                ds.act.var_env.bindings.prop_values()[vidx].set_fastint(v);
+                                vslot.set_fastint(v);
                                 vm.heap.set_reg_fastint(ra, v);
                             } else {
-                                ds.act.var_env.bindings.prop_values()[vidx].set_number((double)v);
+                                vslot.set_number((double)v);
                                 vm.heap.set_reg_number(ra, (double)v);
                             }
-                        } else if (!old_val.is_bigint()) {
+                        } else if (old_val.is_bigint()) {
+                            hbigint::HBigInt*? nr = bigint_step(vm.heap, old_val.get_bigint(), is_inc);
+                            if (catch nr) {
+                                vm_set_range_error(vm, "BigInt is too large to allocate");
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            if (!vm_set_slot_bigint(vm, ds.act.var_env.bindings, vslot, nr)) {
+                                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
+                                return (TVal){};
+                            }
+                            vm.heap.copy_slot_to_tval(ra, vslot);
+                        } else {
                             double d = vm_to_number(vm,&old_val);
                             if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
                             double new_d = d + (is_inc ? 1.0 : -1.0);
-                            ds.act.var_env.bindings.prop_values()[vidx].set_number(new_d);
+                            vslot.set_number(new_d);
                             vm.heap.set_reg_number(ra, new_d);
-                        } else {
-                            return VM_ERROR~;
                         }
                         found = true;
                         ic_env = ds.act.var_env;

@@ -741,22 +741,54 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
     return *val;
 }
 
-// ECMA-262 ToNumeric (hint number) for both operands of a bitwise or shift op:
-// lval is fully converted before rval is touched, so a Symbol lval throws before rval's
-// ToPrimitive runs. Converting first also catches an object whose ToPrimitive yields a
-// BigInt, which a BigInt check on the raw operands would miss (e.g. `Object(1n) << 1n`).
-//
-// Writes BigInts as-is and other values as NUMBER into *out_b/*out_c. Returns false with
-// vm.throw_pending set if either step throws.
-fn bool vm_bitwise_to_primitive(Vm* vm, TVal* rb, TVal* rc, TVal* out_b, TVal* out_c) {
-    if (!vm_to_numeric_bitwise(vm, rb, out_b)) return false;
-    if (!vm_to_numeric_bitwise(vm, rc, out_c)) return false;
+// The operands of a binary numeric operator after ToNumeric (ECMA-262
+// ApplyStringOrNumericBinaryOperator): `b` and `c` point at the registers when
+// neither held an object, otherwise at the converted primitives, each a BigInt
+// or a NUMBER. The left result is rooted across the right operand's
+// conversion and the operation itself: a BigInt that came out of a call is
+// owned by the call-result slot alone, which the next call overwrites.
+struct NumericOperands {
+    TVal* b;
+    TVal* c;
+    TVal prim_b;
+    TVal prim_c;
+    heap::ValueRoot held_b;
+    bool rooted;
+}
+
+// ToNumeric on both operands: the left is fully converted before the right is
+// touched, so a Symbol on the left throws before the right's ToPrimitive runs,
+// and an object whose ToPrimitive yields a BigInt is seen as a BigInt, which a
+// check on the raw registers would miss (`Object(1n) << 1n`). Returns false
+// with vm.throw_pending set, and nothing rooted, when either step throws;
+// otherwise the caller releases `ops` once the operands are consumed.
+fn bool vm_numeric_operands(Vm* vm, TVal* rb, TVal* rc, NumericOperands* ops) {
+    ops.b = rb;
+    ops.c = rc;
+    ops.rooted = false;
+    if (!rb.is_object() && !rc.is_object()) return true;
+    if (!vm_to_numeric(vm, rb, &ops.prim_b)) return false;
+    vm.heap.push_value_root(&ops.held_b, ops.prim_b);
+    ops.rooted = true;
+    if (!vm_to_numeric(vm, rc, &ops.prim_c)) {
+        ops.release(vm);
+        return false;
+    }
+    ops.b = &ops.prim_b;
+    ops.c = &ops.prim_c;
     return true;
+}
+
+fn void NumericOperands.release(&self, Vm* vm) @inline {
+    if (self.rooted) {
+        vm.heap.pop_value_root(&self.held_b);
+        self.rooted = false;
+    }
 }
 
 // ToNumeric for one operand: ToPrimitive (hint number), then BigInt passes through and
 // everything else goes through ToNumber, which throws on a Symbol.
-fn bool vm_to_numeric_bitwise(Vm* vm, TVal* val, TVal* out) {
+fn bool vm_to_numeric(Vm* vm, TVal* val, TVal* out) {
     TVal prim = *val;
     if (val.get_tag() == OBJECT) {
         prim = to_primitive_value(vm, val, 2);

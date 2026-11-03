@@ -3023,6 +3023,7 @@ fn HString* builtin_to_string_vm(BuiltinContext* ctx, TVal* val) {
         } else if (!prim.is_object()) {
             res = builtin_to_string(ctx.heap, &prim);
         }
+        builtin_hold_result(ctx, res);
     } else {
         res = builtin_to_string(ctx.heap, val);
     }
@@ -3040,6 +3041,25 @@ fn HString* builtin_hold(HString* s) @inline {
 
 fn void builtin_unhold(BuiltinContext* ctx, HString* s) @inline {
     if (s != null) ctx.heap.decref((HeapHeader*)s);
+}
+
+// The same hold for the span of the current builtin call: the value joins the
+// heap's handle table, which dispatch_builtin rewinds when the builtin
+// returns. The argument conversions and the getter and proxy-trap reads below
+// use it, so a builtin that converts an argument or reads a property and then
+// runs more user code keeps the string it was given. Outside a builtin frame
+// (the VM's own reads, the C API's conversions) nothing rewinds the table, and
+// the result stays borrowed.
+fn void hold_call_result(Heap* heap, TVal value) {
+    if (!value.is_refcounted() || heap.native_frame_depth == 0) return;
+    heap.addon_handle_push(value);
+}
+
+fn void builtin_hold_result(BuiltinContext* ctx, HString* s) @inline {
+    if (s == null) return;
+    TVal value;
+    value.set_string_borrowed(s);
+    hold_call_result(ctx.heap, value);
 }
 
 // ToPropertyKey (ES §7.1.19): like ToString but a Symbol is a valid property
@@ -3078,6 +3098,7 @@ fn HString* builtin_to_property_key_vm(BuiltinContext* ctx, TVal* val) {
         // pass through: their unique hash keeps them distinct in the table.
         if (!res.flags.is_interned) res = ctx.heap.ensure_interned(res);
         res.set_temproot();
+        if (val.is_object()) builtin_hold_result(ctx, res);
     }
     return res;
 }
@@ -4138,8 +4159,12 @@ fn void dispatch_builtin(uint fn_index, BuiltinContext* ctx) {
     // (user callbacks, getters, species constructors), leaving that object
     // reachable only from a raw C3 local. Marking the frame keeps GC from
     // clearing its temproot at a safepoint inside that nested execution.
+    // Strings the builtin's argument conversions held (builtin_hold_result)
+    // are released with the frame.
+    uint handle_mark = ctx.heap.addon_handle_count;
     ctx.heap.native_frame_depth++;
     handler(ctx);
+    ctx.heap.addon_handles_rewind(handle_mark);
     ctx.heap.leave_native_frame();
 }
 

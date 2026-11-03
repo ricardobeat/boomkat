@@ -236,13 +236,6 @@ fn OpStatus op_sub(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = ds.regs_base + insn.c;
-    if (rb.is_bigint() || rc.is_bigint()) {
-        if (vm_bigint_binop(vm, Opcode.SUB, ra, rb, rc) == BigIntOpResult.THREW) {
-            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-            if (ds.needs_restart) return RESTART;
-        }
-        return NEXT;
-    }
     if (types::both_fastint(rb, rc)) {
         long diff = rb.get_fastint() - rc.get_fastint();
         if (diff >= types::FASTINT_MIN && diff <= types::FASTINT_MAX) {
@@ -250,14 +243,26 @@ fn OpStatus op_sub(Dispatch* ds, DecodedInsn insn) {
         } else {
             vm.heap.set_reg_number(ra, (double)diff);
         }
-    } else {
-        double sub_b = vm_to_number(vm,rb);
+        return NEXT;
+    }
+    NumericOperands ops;
+    if (!vm_numeric_operands(vm, rb, rc, &ops)) {
         if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
         if (ds.needs_restart) return RESTART;
-        double sub_c = vm_to_number(vm,rc);
-        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-        vm.heap.set_reg_number(ra, sub_b - sub_c);
     }
+    defer ops.release(vm);
+    if (ops.b.is_bigint() || ops.c.is_bigint()) {
+        if (vm_bigint_binop(vm, Opcode.SUB, ra, ops.b, ops.c) == BigIntOpResult.THREW) {
+            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+            if (ds.needs_restart) return RESTART;
+        }
+        return NEXT;
+    }
+    double sub_b = vm_to_number(vm, ops.b);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    double sub_c = vm_to_number(vm, ops.c);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    vm.heap.set_reg_number(ra, sub_b - sub_c);
     return NEXT;
 }
 
@@ -457,17 +462,21 @@ fn OpStatus op_subi(Dispatch* ds, DecodedInsn insn) {
         return NEXT;
     }
     TVal immv; immv.set_fastint(imm);
-    if (rb.is_bigint()) {
-        if (vm_bigint_binop(vm, Opcode.SUB, ra, rb, &immv) == BigIntOpResult.THREW) {
+    // ToNumeric(rb) first, so an object whose valueOf yields a BigInt takes the
+    // BigInt path. The immediate is always a plain number.
+    TVal prim_b;
+    if (!vm_to_numeric(vm, rb, &prim_b)) {
+        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+        if (ds.needs_restart) return RESTART;
+    }
+    if (prim_b.is_bigint()) {
+        if (vm_bigint_binop(vm, Opcode.SUB, ra, &prim_b, &immv) == BigIntOpResult.THREW) {
             if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
             if (ds.needs_restart) return RESTART;
         }
         return NEXT;
     }
-    double sub_b = vm_to_number(vm, rb);
-    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-    if (ds.needs_restart) return RESTART;
-    vm.heap.set_reg_number(ra, sub_b - (double)imm);
+    vm.heap.set_reg_number(ra, prim_b.get_number() - (double)imm);
     return NEXT;
 }
 
@@ -478,13 +487,6 @@ fn OpStatus op_mul(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = op_operand_c(ds, insn, &imm_operand);
-    if (rb.is_bigint() || rc.is_bigint()) {
-        if (vm_bigint_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {
-            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-            if (ds.needs_restart) return RESTART;
-        }
-        return NEXT;
-    }
     if (types::both_fastint(rb, rc)) {
         // 48-bit operands can overflow 64-bit signed long (2^47 * 2^47 = 2^94).
         // Guard: if both operands fit in 31 bits the product fits in 62 bits
@@ -506,14 +508,26 @@ fn OpStatus op_mul(Dispatch* ds, DecodedInsn insn) {
         } else {
             vm.heap.set_reg_number(ra, (double)mul_b * (double)mul_c);
         }
-    } else {
-        double mul_b = vm_to_number(vm,rb);
+        return NEXT;
+    }
+    NumericOperands ops;
+    if (!vm_numeric_operands(vm, rb, rc, &ops)) {
         if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
         if (ds.needs_restart) return RESTART;
-        double mul_c = vm_to_number(vm,rc);
-        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-        vm.heap.set_reg_number(ra, mul_b * mul_c);
     }
+    defer ops.release(vm);
+    if (ops.b.is_bigint() || ops.c.is_bigint()) {
+        if (vm_bigint_binop(vm, Opcode.MUL, ra, ops.b, ops.c) == BigIntOpResult.THREW) {
+            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+            if (ds.needs_restart) return RESTART;
+        }
+        return NEXT;
+    }
+    double mul_b = vm_to_number(vm, ops.b);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    double mul_c = vm_to_number(vm, ops.c);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    vm.heap.set_reg_number(ra, mul_b * mul_c);
     return NEXT;
 }
 
@@ -522,17 +536,22 @@ fn OpStatus op_div(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = ds.regs_base + insn.c;
-    if (rb.is_bigint() || rc.is_bigint()) {
-        if (vm_bigint_binop(vm, Opcode.DIV, ra, rb, rc) == BigIntOpResult.THREW) {
+    NumericOperands ops;
+    if (!vm_numeric_operands(vm, rb, rc, &ops)) {
+        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+        if (ds.needs_restart) return RESTART;
+    }
+    defer ops.release(vm);
+    if (ops.b.is_bigint() || ops.c.is_bigint()) {
+        if (vm_bigint_binop(vm, Opcode.DIV, ra, ops.b, ops.c) == BigIntOpResult.THREW) {
             if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
             if (ds.needs_restart) return RESTART;
         }
         return NEXT;
     }
-    double div_b = vm_to_number(vm,rb);
+    double div_b = vm_to_number(vm, ops.b);
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-    if (ds.needs_restart) return RESTART;
-    double div_c = vm_to_number(vm,rc);
+    double div_c = vm_to_number(vm, ops.c);
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
     vm.heap.set_reg_number(ra, div_b / div_c);
     return NEXT;
@@ -543,13 +562,6 @@ fn OpStatus op_mod(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = ds.regs_base + insn.c;
-    if (rb.is_bigint() || rc.is_bigint()) {
-        if (vm_bigint_binop(vm, Opcode.MOD, ra, rb, rc) == BigIntOpResult.THREW) {
-            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-            if (ds.needs_restart) return RESTART;
-        }
-        return NEXT;
-    }
     if (types::both_fastint(rb, rc) && rc.get_fastint() != 0) {
         long mod_result = rb.get_fastint() % rc.get_fastint();
         if (mod_result == 0 && rb.get_fastint() < 0) {
@@ -558,14 +570,26 @@ fn OpStatus op_mod(Dispatch* ds, DecodedInsn insn) {
         } else {
             vm.heap.set_reg_fastint(ra, mod_result);
         }
-    } else {
-        double mod_b = vm_to_number(vm,rb);
+        return NEXT;
+    }
+    NumericOperands ops;
+    if (!vm_numeric_operands(vm, rb, rc, &ops)) {
         if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
         if (ds.needs_restart) return RESTART;
-        double mod_c = vm_to_number(vm,rc);
-        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-        vm.heap.set_reg_number(ra, (mod_b % mod_c));
     }
+    defer ops.release(vm);
+    if (ops.b.is_bigint() || ops.c.is_bigint()) {
+        if (vm_bigint_binop(vm, Opcode.MOD, ra, ops.b, ops.c) == BigIntOpResult.THREW) {
+            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+            if (ds.needs_restart) return RESTART;
+        }
+        return NEXT;
+    }
+    double mod_b = vm_to_number(vm, ops.b);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    double mod_c = vm_to_number(vm, ops.c);
+    if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+    vm.heap.set_reg_number(ra, (mod_b % mod_c));
     return NEXT;
 }
 
@@ -574,17 +598,22 @@ fn OpStatus op_exp(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = ds.regs_base + insn.c;
-    if (rb.is_bigint() || rc.is_bigint()) {
-        if (vm_bigint_binop(vm, Opcode.EXP, ra, rb, rc) == BigIntOpResult.THREW) {
+    NumericOperands ops;
+    if (!vm_numeric_operands(vm, rb, rc, &ops)) {
+        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+        if (ds.needs_restart) return RESTART;
+    }
+    defer ops.release(vm);
+    if (ops.b.is_bigint() || ops.c.is_bigint()) {
+        if (vm_bigint_binop(vm, Opcode.EXP, ra, ops.b, ops.c) == BigIntOpResult.THREW) {
             if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
             if (ds.needs_restart) return RESTART;
         }
         return NEXT;
     }
-    double exp_b = vm_to_number(vm,rb);
+    double exp_b = vm_to_number(vm, ops.b);
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-    if (ds.needs_restart) return RESTART;
-    double exp_c = vm_to_number(vm,rc);
+    double exp_c = vm_to_number(vm, ops.c);
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
     // ECMA-262 §12.6.4 (same result as Math.pow): a NaN exponent is NaN
     // even for base 1, and abs(base) == 1 with a ±Infinity exponent is
@@ -694,31 +723,25 @@ fn OpStatus op_ushr(Dispatch* ds, DecodedInsn insn) {
     TVal* ra = ds.regs_base + insn.a;
     TVal* rb = ds.regs_base + insn.b;
     TVal* rc = op_operand_c(ds, insn, &imm_operand);
-    // See BAND above. Note ECMA-262 §12.9.4 step 6 makes >>> throw
-    // TypeError when EITHER ToNumeric result is BigInt (no BigInt
-    // unsigned-shift exists), and vm_bigint_binop(USHR, ...) already
-    // encodes that, so routing an object-that-yields-BigInt through
-    // the same is_bigint() dispatch below is correct here too.
-    TVal* eb = rb; TVal* ec = rc;
-    TVal ushr_prim_b; TVal ushr_prim_c;
-    if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-        if (!vm_bitwise_to_primitive(vm, rb, rc, &ushr_prim_b, &ushr_prim_c)) {
-            if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-            if (ds.needs_restart) return RESTART;
-        }
-        eb = &ushr_prim_b; ec = &ushr_prim_c;
+    // See BAND above. ECMA-262 §12.9.4 step 6 makes >>> throw TypeError when
+    // EITHER ToNumeric result is a BigInt (no BigInt unsigned shift exists),
+    // which vm_bigint_binop(USHR, ...) encodes.
+    NumericOperands ops;
+    if (!vm_numeric_operands(vm, rb, rc, &ops)) {
+        if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
+        if (ds.needs_restart) return RESTART;
     }
-    if (eb.is_bigint() || ec.is_bigint()) {
-        if (vm_bigint_binop(vm, Opcode.USHR, ra, eb, ec) == BigIntOpResult.THREW) {
+    defer ops.release(vm);
+    if (ops.b.is_bigint() || ops.c.is_bigint()) {
+        if (vm_bigint_binop(vm, Opcode.USHR, ra, ops.b, ops.c) == BigIntOpResult.THREW) {
             if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
             if (ds.needs_restart) return RESTART;
         }
         return NEXT;
     }
-    uint ushr_b = (uint)types::toint32(vm_to_number(vm,eb));
+    uint ushr_b = (uint)types::toint32(vm_to_number(vm, ops.b));
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
-    if (ds.needs_restart) return RESTART;
-    int  ushr_c = types::toint32(vm_to_number(vm,ec));
+    int  ushr_c = types::toint32(vm_to_number(vm, ops.c));
     if (!@tonum_ok(vm, ds)) return op_uncaught(ds, &vm.throw_value);
     vm.heap.set_reg_fastint(ra, (long)(ushr_b >> (ushr_c & 0x1F)));
     return NEXT;

@@ -2536,10 +2536,10 @@ macro int @bitop_apply($op, int b, int c) {
 }
 
 // Shared skeleton for BAND/BOR/BXOR/SHL/SHR (ECMA-262 §12.12.3 / §12.9.3):
-// ToPrimitive both operands if either is an object, ToNumeric-dispatch on
-// BigInt, then apply the operator via a fastint fast path or the general
-// ToInt32 slow path. Right-operand masking (`& 0x1F`) for the shift ops is
-// baked into @bitop_apply's SHL/SHR cases above, so it isn't repeated here.
+// a fastint fast path, otherwise ToNumeric both operands, dispatch on BigInt,
+// then apply the operator via the general ToInt32 path. Right-operand masking
+// (`& 0x1F`) for the shift ops is baked into @bitop_apply's SHL/SHR cases
+// above, so it isn't repeated here.
 //
 // USHR is deliberately NOT expressible here: its left operand is ToUint32
 // (unsigned), not ToInt32, and it has no fastint fast path at all — folding
@@ -2557,27 +2557,24 @@ macro int @bitop_apply($op, int b, int c) {
 // inferred from docs) that this differs from control flow written directly
 // in a macro's own statements.
 macro @bitop(TVal* ra, TVal* rb, TVal* rc, $op, vm, Dispatch* ds; @body()) {
-    TVal* eb = rb; TVal* ec = rc;
-    TVal prim_b; TVal prim_c;
-    if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-        if (!vm_bitwise_to_primitive(vm, rb, rc, &prim_b, &prim_c)) {
-            @body();
-        }
-        eb = &prim_b; ec = &prim_c;
+    if (types::both_fastint(rb, rc)) {
+        vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, (int)rb.get_fastint(), (int)rc.get_fastint()));
+        return;
     }
-    if (eb.is_bigint() || ec.is_bigint()) {
-        if (vm_bigint_binop(vm, $op, ra, eb, ec) == BigIntOpResult.THREW) {
+    NumericOperands ops;
+    if (!vm_numeric_operands(vm, rb, rc, &ops)) {
+        @body();
+    }
+    defer ops.release(vm);
+    if (ops.b.is_bigint() || ops.c.is_bigint()) {
+        if (vm_bigint_binop(vm, $op, ra, ops.b, ops.c) == BigIntOpResult.THREW) {
             @body();
         }
         return;
     }
-    if (types::both_fastint(eb, ec)) {
-        vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, (int)eb.get_fastint(), (int)ec.get_fastint()));
-        return;
-    }
-    int b = types::toint32(vm_to_number(vm,eb));
+    int b = types::toint32(vm_to_number(vm, ops.b));
     @body();
-    int c = types::toint32(vm_to_number(vm,ec));
+    int c = types::toint32(vm_to_number(vm, ops.c));
     @body();
     vm.heap.set_reg_fastint(ra, (long)@bitop_apply($op, b, c));
 }
