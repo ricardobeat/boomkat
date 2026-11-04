@@ -5601,39 +5601,6 @@ fn void Heap.request_gc(&self) @inline {
     self.gc_pending = true;
 }
 
-/**
- * Free interned strings that only the string table still holds, replacing their
- * slots with tombstones, then shrink the table when sparse.
- *
- * The caller must guarantee that no native frame borrows a raw HString pointer.
- */
-fn void Heap.sweep_strings(&self) {
-    if (self.str_table_size == 0) { return; }
-    // Scanning table slots is collection work and belongs in the next trigger.
-    self.mark_work_last += (ulong)self.str_table_size;
-    for (uint i = 0; i < self.str_table_size; i++) {
-        HString* entry = self.str_table[i];
-        if (entry == null || entry == STR_TABLE_TOMBSTONE) { continue; }
-        if (entry.refcount == 1) self.zct_push(entry, true);
-    }
-    self.zct_flush(true);
-
-    if (self.str_table_used < self.str_table_size / 4 && self.str_table_size > INITIAL_STR_TABLE_SIZE) {
-        self.str_table_shrink();
-    }
-}
-
-// The registry tracks allocations for teardown and temporary native borrows.
-// Counted owners keep a string alive independently of object tracing.
-fn void Heap.sweep_large_strings(&self) {
-    self.mark_work_last += (ulong)self.large_string_count;
-    for (uint i = 0; i < self.large_string_count; i++) {
-        HString* s = self.large_strings[i];
-        if (s.refcount == 0) self.zct_push(s, true);
-    }
-    self.zct_flush(true);
-}
-
 // Blocking collection uses the scheduled collector with native pins when
 // raw initialization locals can still be live. A nested request waits for
 // the current scheduled cycle to reach a quiescent boundary.
