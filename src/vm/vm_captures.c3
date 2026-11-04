@@ -129,9 +129,7 @@ fn TVal? dispatch_cells(Dispatch* ds, Opcode op, TVal* ra, TVal* rb,
             if (cells == null || cells.get_class() != hobject::ObjClass.OBJECT
                 || slot_idx >= cells.prop_count) return (TVal){};
             hobject::PropValue* slot = &cells.prop_values()[slot_idx];
-            vm.heap.decref_slot(slot);
-            vm.heap.store_slot(cells, slot, *ra);
-            ra.set_undefined();
+            vm.heap.tval_move_slot_fast(cells, slot, ra);
             return (TVal){};
         }
         default: return (TVal){};

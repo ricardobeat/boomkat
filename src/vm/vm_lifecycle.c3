@@ -54,6 +54,7 @@ $endif
 
     // Register valstack with heap for GC root scanning
     heap.valstack_base = vm.valstack;
+    heap.valstack_limit = vm.valstack_end;
     heap.valstack_top_ptr = &vm.valstack_top;
     heap.curr_thread = vm;
     heap.mark_activations_fn = &vm_mark_activations;
@@ -132,6 +133,7 @@ fn void detach_vm_roots(Heap* h) {
     h.curr_thread = null;
     h.vm_ptr = null;
     h.valstack_base = null;
+    h.valstack_limit = null;
     h.valstack_top_ptr = null;
     h.mark_activations_fn = null;
     h.mark_activations_slice_fn = null;
@@ -201,6 +203,7 @@ fn bool vm_reset(Vm* vm, Heap* heap) {
     vm.return_val.set_undefined();
 
     vm.heap.valstack_base = vm.valstack;
+    vm.heap.valstack_limit = vm.valstack_end;
     vm.heap.valstack_top_ptr = &vm.valstack_top;
     vm.heap.curr_thread = vm;
     vm.heap.mark_activations_fn = &vm_mark_activations;

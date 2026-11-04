@@ -31,11 +31,19 @@ const uint AYS_AWAIT_RETVAL   = 7; // resuming after Await(received.value) (miss
 
 // A synchronous body takes the saved register references and clears their slots.
 // Keeping an extra saved owner would prevent in-place growth of local strings.
-// Persistent async resumes retain their owners when the destination is the
-// saved buffer. Other destinations release their existing owned values.
+// A persistent async body resumes on its retained segment, which has just
+// become the current one: the counts its saved registers held while
+// suspended are released in place (the address rule, Heap.in_register_segment).
+// Other destinations release their existing owned values.
 fn void restore_generator_registers(Vm* vm, GeneratorState* gs, TVal* dst,
                                    uint count, bool consume) @inline {
-    if (gs.persistent_async && dst == gs.saved_regs) return;
+    if (gs.persistent_async && dst == gs.saved_regs) {
+        for (uint i = 0; i < gs.num_regs; i++) {
+            TVal* tv = &gs.saved_regs[i];
+            if (tv.is_string() && tv.get_heapptr() != null) vm.heap.decref((HeapHeader*)tv.get_heapptr());
+        }
+        return;
+    }
     TVal empty;
     empty.set_undefined();
     for (uint i = 0; i < count; i++) {
@@ -724,7 +732,13 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 uint copied_live = 0;
                 for (uint i = 0; i < gs.num_regs; i++) {
                     if (i < save_span && (!has_live_mask || (live_mask & (1UL << i)) != 0)) {
-                        if (!in_place) vm.heap.move_tval_ref(&gs.saved_regs[i], &regs_src[i]);
+                        if (!in_place) {
+                            vm.heap.move_tval_ref(&gs.saved_regs[i], &regs_src[i]);
+                        } else if (regs_src[i].is_string() && regs_src[i].get_heapptr() != null) {
+                            // The segment stops being current: the retained
+                            // register takes the count the resume releases.
+                            ((HeapHeader*)regs_src[i].get_heapptr()).incref();
+                        }
                         vm.heap.shade_root_tval(gs.saved_regs[i]);
                         copied_live++;
                     } else if (in_place) {

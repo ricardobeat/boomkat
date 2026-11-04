@@ -310,6 +310,45 @@ fn void vm_scan_activation_slots(void* vm_ptr, void* heap_ptr) {
     }
 }
 
+// Deferred counting's address rule: a slot of the current register segment
+// holds no count, every other holder does. When vm_run_async_continuation
+// makes the segment [vm.valstack, vm.valstack_end) non-current, every string
+// in its live spans takes a count, and the same slots release one when it is
+// current again. The spans are the ones vm_scan_activation_slots walks, cut
+// to the segment so that a shadow activation of a segment already suspended
+// is not counted twice. Both calls see the same activations and shadow list.
+fn void vm_segment_counts(Vm* vm, bool retain) {
+    TVal* lo = vm.valstack;
+    TVal* hi = vm.valstack_end;
+    for (uint i = 0; i < vm.activation_count; i++) {
+        Activation* a = &vm.activations[i];
+        if (a.func == null || a.bottom == null) continue;
+        segment_span_counts(vm, max(a.bottom, lo), min(activation_span_end(vm, i), hi), retain);
+    }
+    ShadowActFrame* shadow = (ShadowActFrame*)vm.shadow_act_list;
+    while (shadow != null) {
+        for (uint i = 0; i < shadow.count; i++) {
+            Activation* sa = &shadow.acts[i];
+            if (sa.func == null || sa.bottom == null) continue;
+            segment_span_counts(vm, max(sa.bottom, lo), min(shadow_span_end(shadow, i), hi), retain);
+        }
+        shadow = (ShadowActFrame*)shadow.prev;
+    }
+}
+
+fn void segment_span_counts(Vm* vm, TVal* from, TVal* to, bool retain) @inline {
+    for (TVal* tv = from; tv < to; tv++) {
+        if (!tv.is_string()) continue;
+        void* p = tv.get_heapptr();
+        if (p == null) continue;
+        if (retain) {
+            ((HeapHeader*)p).incref();
+        } else {
+            vm.heap.decref((HeapHeader*)p);
+        }
+    }
+}
+
 fn void vm_mark_activations(void* vm_ptr, void* heap_ptr) {
     Vm* vm = (Vm*)vm_ptr;
     heap::Heap* h = (heap::Heap*)heap_ptr;
@@ -694,6 +733,7 @@ macro Activation* activation_begin(Vm* vm, TVal callee) {
     act.forin = null;
     act.new_target = null;
     act.heap_reg_count = 0;
+    act.serial = ++vm.activation_serial;
     act.caller_valstack_top = vm.valstack_top;
     // Sloppy `arguments.callee` returns the running callee. Lightfuncs are
     // already their own TV; heap functions are wrapped in an HObject by the
@@ -795,10 +835,7 @@ fn void release_unwound_refs(Vm* vm, Activation* act) @inline {
         }
         first = max(first, parent_end);
     }
-    for (TVal* slot = first; slot < end; slot++) {
-        vm.heap.decref_tval(slot);
-        slot.set_undefined();
-    }
+    for (TVal* slot = first; slot < end; slot++) slot.set_undefined();
     act.release_refs(vm.heap);
 }
 
@@ -970,36 +1007,21 @@ fn void decref_callee_regs(Vm* vm, Activation* callee_act) {
     sweep_callee_regs(vm, callee_act);
 }
 
-// Release and clear the registers of `callee_act` that may hold a heap
-// reference. The caller has dealt with a mapped arguments object.
+// Clear the registers of `callee_act` that may hold a heap reference. The
+// caller has dealt with a mapped arguments object. Registers hold no counts,
+// so a pop releases nothing; a string the frame alone kept readable sits in
+// the zero-count table and is freed by the next flush that finds no slot
+// holding it. The clearing still matters: callee frames overlap the caller's
+// register window, and the collector reads every frame's span as live.
 fn void sweep_callee_regs(Vm* vm, Activation* callee_act) @inline {
     if (callee_act.heap_reg_count == 0) return;  // fast path: no heap refs
     CompiledFunction* callee_func = (CompiledFunction*)callee_act.func;
     uint nregs = callee_func.num_regs;
-    if (nregs == 0) return;  // no registers to decref
+    if (nregs == 0) return;
     TVal* regs = callee_act.bottom;
     uint limit = callee_act.heap_reg_count - 1;
     if (limit >= nregs) limit = nregs - 1;
-    // Exempt the range being released from the verifier's "still holds it"
-    // scan: these registers are the release, and their addresses are shared
-    // with the caller's window, so the scan would otherwise report the pop's
-    // own slot as a live holder.
-    $if $feat(HEAP_VERIFY):
-        vm.heap.decref_exempt_lo = regs;
-        vm.heap.decref_exempt_hi = regs + limit + 1;
-    $endif
-    for (uint i = 0; i <= limit; i++) {
-        // Clear the slot after releasing the ref: callee frames overlap the
-        // caller's register window (sliding-window calls), and the caller's
-        // own decref_callee_regs would otherwise decref the stale bits a
-        // second time, underflowing the refcount.
-        vm.heap.decref_tval(&regs[i]);
-        regs[i].set_undefined();
-    }
-    $if $feat(HEAP_VERIFY):
-        vm.heap.decref_exempt_lo = null;
-        vm.heap.decref_exempt_hi = null;
-    $endif
+    for (uint i = 0; i <= limit; i++) regs[i].set_undefined();
 }
 
 // Verify that a frame about to be popped leaves no heap bits behind.
@@ -1194,17 +1216,9 @@ fn TVal handle_return(Vm* vm, TVal val) @inline {
             }
         }
         TVal* result_slot = callee_result;
-        if ((callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0) {
-            // Borrowed callee: the old value in result_slot is the non-owned
-            // borrowed closure, so incref the result and raw-overwrite, never
-            // decref the borrowed value.
-            if (final_val.is_heap_allocated() && final_val.get_heapptr() != null) {
-                ((HeapHeader*)final_val.get_heapptr()).incref();
-            }
-            *result_slot = final_val;
-        } else {
-            vm.heap.tval_copy_ref(result_slot, &final_val);
-        }
+        // A borrowed callee's old value in result_slot is an uncounted
+        // closure, so the copy's release of it is a no-op either way.
+        vm.heap.tval_copy_ref(result_slot, &final_val);
         // A heap result (e.g. a large non-interned string) now lives in a
         // caller register the caller may never have tracked. Raise the
         // caller's heap_reg_count so its decref_callee_regs sweep releases the

@@ -1732,20 +1732,12 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                     sctx.callee_obj = setter_obj;
                                     stage[0] = setter_fn;
                                     stage[1] = setter_this;
-                                    // incref the assigned value's heap ptr so the builtin
-                                    // dispatch's cleanup decref balances the copy at stage[2].
-                                    if (put_val.is_heap_allocated()) {
-                                        ((types::HeapHeader*)put_val.get_heapptr()).incref();
-                                    }
                                     stage[2] = put_val;
                                     builtins::dispatch_builtin(setter_fn_idx, &sctx);
                                     ds.regs_base = ds.act.bottom;
-                                    // Cleanup: decrement the borrowed reference at stage[2]
-                                    // (the builtin dispatch path doesn't always decref args).
-                                    vm.heap.decref_tval(&stage[2]);
+                                    // Clear the staged frame: registers hold no counts.
                                     stage[2].set_undefined();
                                     stage[0].set_undefined();
-                                    vm.heap.decref_tval(&stage[1]);
                                     stage[1].set_undefined();
                                     if (sctx.should_throw) {
                                         if (!vm_throw_value(vm, sctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {
@@ -2012,19 +2004,14 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 sctx.callee_obj = setter_obj;
                                 stage[0] = acc.accessor_fn;
                                 stage[1] = setter_this;
-                                if (put_val.is_heap_allocated()) {
-                                    ((types::HeapHeader*)put_val.get_heapptr()).incref();
-                                }
                                 stage[2] = put_val;
                                 builtins::dispatch_builtin(setter_fn_idx, &sctx);
                                 ds.regs_base = ds.act.bottom;
-                                // Release and clear the whole staged frame; see the
-                                // own-property setter path above for why the slots
-                                // cannot be left populated.
-                                vm.heap.decref_tval(&stage[2]);
+                                // Clear the whole staged frame; see the own-property
+                                // setter path above for why the slots cannot be left
+                                // populated.
                                 stage[2].set_undefined();
                                 stage[0].set_undefined();
-                                vm.heap.decref_tval(&stage[1]);
                                 stage[1].set_undefined();
                                 if (sctx.should_throw) {
                                     if (!vm_throw_value(vm, sctx.throw_value, ds.act, &ds.curr_pc, &ds.needs_restart)) {

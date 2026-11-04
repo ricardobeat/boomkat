@@ -1363,35 +1363,12 @@ fn void builtin_bound_call(BuiltinContext* ctx) {
                     return;
                 }
             }
-            // Compiled function or BUILTIN_FN, use re-dispatch.
-            // Decref the old callee slot (bound function g) and incref the downstream
-            // function being installed: the register slot transfers ownership and the
-            // next GETVAR/tval_copy_ref will decref whatever is in the slot.
-            ctx.heap.decref_tval(&ctx.regs[ctx.base_reg - 2]);
+            // Compiled function or BUILTIN_FN, use re-dispatch. Registers hold
+            // no counts; a string that loses its last counted holder is queued
+            // and the flush's frame scan keeps whatever a slot still holds.
             ctx.regs[ctx.base_reg - 2] = downstream;
-            if (downstream.is_heap_allocated()) {
-                ((types::HeapHeader*)downstream.get_heapptr()).incref();
-            }
-            // Same ownership transfer for the this-slot: decref old, write new.
-            ctx.heap.decref_tval(&ctx.regs[ctx.base_reg - 1]);
             ctx.regs[ctx.base_reg - 1] = bound_this;
-            if (bound_this.is_heap_allocated()) {
-                ((types::HeapHeader*)bound_this.get_heapptr()).incref();
-            }
             for (uint i = 0; i < total_argc && i < 65535; i++) {
-                // The callee frame takes ownership of each arg register and will
-                // decref it when the slot is overwritten or the frame unwinds.
-                // The bound args (indices < bound_argc) were read out of the
-                // stored args array via get_prop_proto without an incref, so we
-                // must add the reference here to balance that future decref,
-                // otherwise a bound-and-passed heap value (e.g. a constructor)
-                // is over-decreffed and freed while still live. The appended
-                // call args (i >= bound_argc) were moved out of the caller's
-                // own registers, which relinquish their reference, so they need
-                // no extra incref.
-                if (i < bound_argc && all_args[i].is_heap_allocated()) {
-                    ((types::HeapHeader*)all_args[i].get_heapptr()).incref();
-                }
                 ctx.regs[ctx.base_reg + i] = all_args[i];
             }
             ctx.needs_re_dispatch = true;

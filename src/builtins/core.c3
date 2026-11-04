@@ -377,11 +377,7 @@ fn void BuiltinContext.copy_result(&self, TVal value) @inline {
 }
 
 fn void BuiltinContext.take_result(&self, TVal* value) @inline {
-    TVal* destination = self.result.view();
-    if (destination == value) return;
-    self.heap.decref_tval(destination);
-    *destination = *value;
-    value.set_undefined();
+    self.heap.move_tval_ref(self.result.view(), value);
 }
 
 fn void BuiltinContext.result_string(&self, void* value) @inline {

@@ -1624,39 +1624,17 @@ fn OpStatus op_ret(Dispatch* ds, DecodedInsn insn) {
         ds.halt_value = vm.return_val;
         return HALT;
     }
-    // Write return value to caller's result register
+    // Write return value to caller's result register. A borrowed callee's
+    // old value there is an uncounted closure, so the copy's release of it
+    // is a no-op; a register destination takes no count, and the pin below
+    // then queues a string only the caller's register holds.
     if (callee_result != null) {
-        // Borrowed callee (CALL_VAR from a global binding): the old
-        // value in callee_result is the borrowed closure, which this
-        // frame never incref'd it, so overwrite raw and never decref.
-        bool ret_borrowed = (callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
         // Constructor: if callee returned an object, use it; otherwise use 'this'.
         // (Derived non-object non-undefined case was already converted to a throw above.)
-        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
-            if (val.is_object()) {
-                vm.heap.tval_copy_ref(callee_result, &val);
-            } else {
-                vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
-            }
+        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0 && !val.is_object()) {
+            vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
         } else {
-            // Fast path: skip refcounting when return value is not a heap ref
-            if (!val.is_heap_allocated()) {
-                if (!ret_borrowed && callee_result.is_heap_allocated()) {
-                    vm.heap.decref_tval(callee_result);
-                }
-                *callee_result = val;
-            } else if (val_pinned) {
-                // Transfer the pin reference: decref dst, raw write.
-                if (!ret_borrowed) vm.heap.decref_tval(callee_result);
-                *callee_result = val;
-                val_pinned = false;
-            } else if (ret_borrowed) {
-                // Incref new value, raw-overwrite the borrowed old value.
-                ((HeapHeader*)val.get_heapptr()).incref();
-                *callee_result = val;
-            } else {
-                vm.heap.tval_copy_ref(callee_result, &val);
-            }
+            vm.heap.tval_copy_ref(callee_result, &val);
         }
     }
     if (val_pinned) vm.heap.decref_tval(&val);
@@ -2127,9 +2105,7 @@ fn OpStatus op_putvar_assign(Dispatch* ds, DecodedInsn insn) {
         HObject* cap_owner;
         hobject::PropValue* captured = capture_value_slot(ds.act, bc, vm.heap, true, &cap_owner);
         if (captured != null) {
-            vm.heap.decref_slot(captured);
-            vm.heap.store_slot(cap_owner, captured, *ra);
-            ra.set_undefined();
+            vm.heap.tval_move_slot_fast(cap_owner, captured, ra);
             return NEXT;
         }
         bc = vm.current_func.capture_names[bc];
@@ -2156,13 +2132,10 @@ fn OpStatus op_putvar_assign(Dispatch* ds, DecodedInsn insn) {
                         hobject::PropValue* pv = vic.slot();
                         hobject::PropFlags fl = vic.prop_flags;
                         if (!slot_is_tdz(pv) && fl.writable && !fl.is_accessor) {
-                            // Move ra's value into the slot: decref the old
-                            // slot value, take ra's reference, clear ra. Net
-                            // refcount effect matches the slow path
-                            // (binding gains a ref, register loses one).
-                            vm.heap.decref_slot(pv);
-                            vm.heap.store_slot(b, pv, *ra);
-                            ra.set_undefined();
+                            // Move ra's value into the slot: the binding
+                            // takes a count, the old value is released, and
+                            // ra is cleared.
+                            vm.heap.tval_move_slot_fast(b, pv, ra);
                             return NEXT;
                         }
                     }
@@ -2323,9 +2296,7 @@ fn OpStatus op_putvar_snap(Dispatch* ds, DecodedInsn insn) {
         HObject* cap_owner;
         hobject::PropValue* captured = capture_value_slot(ds.act, name_idx, vm.heap, true, &cap_owner);
         if (captured != null) {
-            vm.heap.decref_slot(captured);
-            vm.heap.store_slot(cap_owner, captured, *ra);
-            ra.set_undefined();
+            vm.heap.tval_move_slot_fast(cap_owner, captured, ra);
             return NEXT;
         }
         name_idx = vm.current_func.capture_names[name_idx];
