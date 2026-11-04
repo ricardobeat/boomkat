@@ -25,11 +25,13 @@ while [ $# -gt 0 ]; do
 done
 [ $# -gt 0 ] || { echo "usage: guard.sh [-m MB] [-t SECONDS] -- command..." >&2; exit 2; }
 
-# A new session puts the child and its descendants in one process group.
+# A new session puts the child and its descendants in one process group. A
+# background job reads /dev/null unless its stdin is redirected explicitly, so
+# hand it ours.
 if command -v setsid >/dev/null 2>&1; then
-    setsid "$@" &
+    setsid "$@" <&0 &
 else
-    perl -e 'use POSIX; POSIX::setsid(); exec @ARGV' "$@" &
+    perl -e 'use POSIX; POSIX::setsid(); exec @ARGV' "$@" <&0 &
 fi
 pid=$!
 start=$(date +%s)
