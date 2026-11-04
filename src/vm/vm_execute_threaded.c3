@@ -261,22 +261,23 @@ fn Instruction* th_addi(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     if (!rb.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
     long sum = rb.get_fastint() + (long)(ichar)insn.c;
-    if (!types::fits_fastint(sum) || !th_can_release(ra)) return pc;
-    th_do_release(ra);
+    if (!types::fits_fastint(sum)) return pc;
     ra.set_fastint(sum);
     return th_next(pc + 1, handlers, regs, cold);
 }
 
-// Inline refcount helpers, split into a test and a mutation.
+// Inline refcount helpers for property and binding slots, split into a test
+// and a mutation.
 //
-// Calling Heap.incref/decref from a threaded handler makes LLVM frame the whole
-// function -- five stp/ldp pairs saving ten callee-saved registers on every
-// instruction. Doing the common case inline keeps the handler a leaf, which was
-// worth ~8% on captured-variable loops.
+// Registers hold no counts (Heap.in_register_segment), so a register store
+// neither retains nor releases. A slot still does: calling Heap.decref from a
+// threaded handler makes LLVM frame the whole function -- five stp/ldp pairs
+// saving ten callee-saved registers on every instruction -- so the common
+// case is done inline, which keeps the handler a leaf.
 //
-// The split matters: a handler that touches both sides must confirm BOTH are
-// inlinable before mutating either, or a bail after a completed retain leaks
-// the reference it took.
+// The split matters: a handler that touches both a retain and a release must
+// confirm the release is inlinable before mutating either, or a bail after a
+// completed retain leaks the reference it took.
 
 // A pinned string (builtin strings, well-known symbols, the small-int cache,
 // interned constants) keeps a fixed refcount, so retaining or releasing one is
@@ -291,32 +292,26 @@ macro void th_do_retain(TVal* v) @private {
 }
 
 // True when the reference `slot` holds can be dropped with a plain decrement:
-// the fast half of Heap.decref. A string that would hit zero goes to the
-// switch, which frees it.
-macro bool th_can_release(TVal* slot) @private {
-    if (!slot.is_refcounted()) return true;
-    void* p = slot.get_heapptr();
-    if (p == null) return true;
-    types::HeapHeader* h = (types::HeapHeader*)p;
-    return h.is_pinned() || h.refcount > 1;
-}
-
-macro void th_do_release(TVal* slot) @private {
-    if (!slot.is_refcounted()) return;
-    void* p = slot.get_heapptr();
-    if (p == null) return;
-    types::HeapHeader* h = (types::HeapHeader*)p;
-    if (!h.is_pinned()) h.refcount--;
-}
-
+// the fast half of Heap.decref. A string the decrement would leave at its
+// table level (1 interned, else 0) must be queued in the zero-count table,
+// which only the switch's Heap.decref does.
 macro bool th_can_release_slot(hobject::PropValue* slot) @private {
     TVal value = slot.get();
-    return th_can_release(&value);
+    if (!value.is_refcounted()) return true;
+    void* p = value.get_heapptr();
+    if (p == null) return true;
+    hstring::HString* s = (hstring::HString*)p;
+    types::HeapHeader* h = (types::HeapHeader*)p;
+    return h.is_pinned() || h.refcount > (s.flags.is_interned ? 2u : 1u);
 }
 
 macro void th_do_release_slot(hobject::PropValue* slot) @private {
     TVal value = slot.get();
-    th_do_release(&value);
+    if (!value.is_refcounted()) return;
+    void* p = value.get_heapptr();
+    if (p == null) return;
+    types::HeapHeader* h = (types::HeapHeader*)p;
+    if (!h.is_pinned()) h.refcount--;
 }
 
 // The switch shades a publication that needs tracing in this collection. Keep the
@@ -337,9 +332,7 @@ macro bool th_move(TVal* regs, uint a, TVal value, ColdCtx* cold) @private {
         *ra = value;
         return true;
     }
-    if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return false;
-    th_do_retain(&value);
-    th_do_release(ra);
+    if (!th_can_publish(cold.heap, value)) return false;
     *ra = value;
     track_heap_store(cold.act, ra, a);
     return true;
@@ -355,9 +348,6 @@ fn Instruction* th_ldthis(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     // Derived-constructor TDZ errors and collector shading use the switch.
     if (env::is_tdz_sentinel(&value) || !th_can_publish(cold.heap, value)) return pc;
     TVal* ra = regs + pc.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_retain(&value);
-    th_do_release(ra);
     *ra = value;
     track_heap_store(cold.act, ra, (uint)pc.a);
     pc++;
@@ -443,17 +433,7 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
         if (character == null || !((types::HeapHeader*)character).is_pinned()) return pc;
 
         TVal* dest = regs + insn.a;
-        bool dest_pinned = false;
-        if (dest.is_refcounted()) {
-            void* dest_ptr = dest.get_heapptr();
-            dest_pinned = dest_ptr != null
-                && ((types::HeapHeader*)dest_ptr).is_pinned();
-        }
-        if (!dest_pinned && !th_can_release(dest)) return pc;
-        if (!dest_pinned) th_do_release(dest);
-        TVal value;
-        value.set_string(character);
-        *dest = value;
+        dest.set_string_borrowed(character);
         track_heap_store(cold.act, dest, (uint)insn.a);
         (*iterator.extra_ptr()).str_iter.index = index + 1;
         return th_next(pc + 3, handlers, regs, cold);
@@ -500,8 +480,6 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
     if (!value.is_fastint() && !value.is_number()) return pc;
 
     TVal* dest = regs + insn.a;
-    if (!th_can_release(dest)) return pc;
-    th_do_release(dest);
     *dest = value;
     (*iterator.extra_ptr()).iter.index = resume;
 
@@ -558,14 +536,6 @@ fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TV
         }
     }
     if (target != null && th_call_gate(cold)) target = null;
-    if (target != null && callee_reg + 1 < act.heap_reg_count) {
-        TVal* bottom = regs + callee_reg + 2;
-        TVal* owned_end = regs + act.heap_reg_count;
-        if (owned_end > bottom + target.num_regs) owned_end = bottom + target.num_regs;
-        for (TVal* p = bottom + nargs; p < owned_end; p++) {
-            if (!th_can_release(p)) { target = null; break; }
-        }
-    }
     if (target == null) {
         vm.eval_redispatched = builtins::is_intrinsic_eval(callee);
         vm.threaded_call = { .op = Opcode.CALL, .a = result_reg, .b = callee_reg, .c = nargs };
@@ -602,9 +572,8 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
         if (text != null && text.is_ascii() && index.is_fastint()) {
             long offset = index.get_fastint();
             TVal* dest = regs + result_reg;
-            if (offset >= 0 && offset < (long)text.unit_len() && th_can_release(dest)) {
+            if (offset >= 0 && offset < (long)text.unit_len()) {
                 uint code = text.unit_at((uint)offset);
-                th_do_release(dest);
                 dest.set_fastint((long)code);
                 return th_next(pc + 1, handlers, regs, cold);
             }
@@ -713,20 +682,8 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     TVal* bottom = regs + callee_reg + 2;
 
     // The frame takes over the caller's `this` slot and the window above the
-    // arguments, where a dead temporary the caller owns may still hold a
-    // string. Release it inline; one the release would free sends the call to
-    // the switch, which keeps this handler a leaf. The caller has only stored
-    // the callee in its register, which the switch repeats.
-    if (@unlikely(callee_reg + 1 < caller.heap_reg_count)) {
-        TVal* owned_end = regs + caller.heap_reg_count;
-        if (owned_end > bottom + nregs) owned_end = bottom + nregs;
-        if (clear_this && !th_can_release(regs + callee_reg + 1)) return pc;
-        for (TVal* p = bottom + nargs; p < owned_end; p++) {
-            if (!th_can_release(p)) return pc;
-        }
-        if (clear_this) th_do_release(regs + callee_reg + 1);
-        for (TVal* p = bottom + nargs; p < owned_end; p++) th_do_release(p);
-    }
+    // arguments. Registers hold no counts, so a dead temporary there needs no
+    // release; the frame's own stores overwrite it.
     if (clear_this) regs[callee_reg + 1].set_undefined();
     Activation* la = &vm.activations[vm.activation_count];
     la.parent = caller;
@@ -752,6 +709,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
         }
     }
     la.heap_reg_count = 0;
+    la.serial = ++vm.activation_serial;
     la.caller_valstack_top = vm.valstack_top;
     la.this_binding = this_value;
     if (this_valid) la.flags |= ACT_FLAG_THIS_VALID;
@@ -833,9 +791,7 @@ fn bool th_trivial_call(TVal* regs, ColdCtx* cold, CompiledFunction* target,
             return false;
     }
     TVal* dest = regs + result_reg;
-    if (!th_can_publish(cold.heap, value) || !th_can_release(dest)) return false;
-    th_do_retain(&value);
-    th_do_release(dest);
+    if (!th_can_publish(cold.heap, value)) return false;
     *dest = value;
     track_heap_store(cold.act, dest, result_reg);
     return true;
@@ -898,7 +854,7 @@ fn Instruction* th_apply_args(Instruction* pc, HandlerTable* handlers, TVal* reg
     TVal* window = regs + callee + 2;
     if (!th_can_publish(cold.heap, regs[callee + 1]) || !th_can_publish(cold.heap, this_arg)) return pc;
     for (uint i = 0; i < nargs; i++) {
-        if (!th_can_publish(cold.heap, regs[i]) || (i > 0 && !th_can_release(&window[i]))) return pc;
+        if (!th_can_publish(cold.heap, regs[i])) return pc;
     }
     if (th_call_gate(cold)) return pc;
 
@@ -909,8 +865,6 @@ fn Instruction* th_apply_args(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (nargs == 0) window[0].set_undefined();
     for (uint i = 0; i < nargs; i++) {
         TVal value = regs[i];
-        th_do_retain(&value);
-        if (i > 0) th_do_release(&window[i]);
         window[i] = value;
         track_heap_store(act, &window[i], callee + 2 + i);
     }
@@ -998,7 +952,6 @@ fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs,
     TVal callee = vic.slot_ptr.get();
     if (env::is_tdz_sentinel(&callee)) return pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
     if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
@@ -1006,7 +959,6 @@ fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs,
     // binding that is not permanent can be reassigned during the call, so the
     // register is tracked and the frame roots its own reference.
     bool borrowed = is_permanent_env(vm, (EnvRecord*)vic.env);
-    th_do_release(ra);
     *ra = callee;
     if (!borrowed) track_heap_store(act, ra, insn.a);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, borrowed, true, th_undefined(), false);
@@ -1022,11 +974,9 @@ fn Instruction* th_call_global(Instruction* pc, HandlerTable* handlers, TVal* re
     if (slot_is_tdz(pv)) return pc;
     TVal callee = pv.get();
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return pc;
     if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
-    th_do_release(ra);
     *ra = callee;
     return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
 }
@@ -1048,23 +998,15 @@ macro bool th_frame_is_replaceable(Vm* vm, Activation* fa) @private {
         && !((CompiledFunction*)fa.func).maps_formals();
 }
 
-// The register half of a tail call from a frame that tracks heap registers: the
-// arguments in the callee window become the new frame's own references, and
-// every tracked register below the window is released, as the switch's
-// takeover does. The callee register is skipped, since a function is not
-// counted.
+// The register half of a tail call from a frame that tracks heap registers:
+// every tracked register below the callee window is cleared, as the switch's
+// takeover does. Registers hold no counts, so nothing is retained or
+// released. The callee register is skipped.
 fn void th_tail_release_regs(Vm* vm, Activation* fa, TVal* regs, uint callee_reg, uint nargs) @private @noinline {
-    TVal* args = regs + callee_reg + 2;
-    for (uint i = 0; i < nargs; i++) {
-        if (args[i].is_heap_allocated() && args[i].get_heapptr() != null) {
-            ((types::HeapHeader*)args[i].get_heapptr()).incref();
-        }
-    }
     uint limit = callee_reg + 2;
     if (limit > fa.heap_reg_count) limit = fa.heap_reg_count;
     for (uint i = 0; i < limit; i++) {
         if (i == callee_reg) continue;
-        vm.heap.decref_tval(&regs[i]);
         regs[i].set_undefined();
     }
 }
@@ -1110,6 +1052,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     fa.tv_func.set_object_borrowed(function);
     fa.this_binding = this_value;
     fa.heap_reg_count = tracked ? nargs : 0;
+    fa.serial = ++vm.activation_serial;
 
     TVal* fill = regs + nargs;
     TVal* fill_end = regs + nregs;
@@ -1195,8 +1138,6 @@ fn Instruction* th_tailcall_call(Instruction* pc, HandlerTable* handlers, TVal* 
 fn Instruction* th_ldint(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_fastint((long)insn.get_sbc());
     pc++;
     {
@@ -1220,11 +1161,8 @@ fn Instruction* th_ldint(Instruction* pc, HandlerTable* handlers, TVal* regs, Co
                         TVal value = elements[index].get();
                         if (value.is_fastint() || value.is_number()) {
                             TVal* destination = regs + next.a;
-                            if (th_can_release(destination)) {
-                                th_do_release(destination);
-                                *destination = value;
-                                return th_next(pc + 1, handlers, regs, cold);
-                            }
+                            *destination = value;
+                            return th_next(pc + 1, handlers, regs, cold);
                         }
                     }
                 }
@@ -1240,8 +1178,7 @@ fn Instruction* th_subi(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     if (!rb.is_fastint()) return pc; // bigint / coercion / throw -> switch
     TVal* ra = regs + insn.a;
     long diff = rb.get_fastint() - (long)(ichar)insn.c;
-    if (!types::fits_fastint(diff) || !th_can_release(ra)) return pc;
-    th_do_release(ra);
+    if (!types::fits_fastint(diff)) return pc;
     ra.set_fastint(diff);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1346,15 +1283,12 @@ fn Instruction* th_add_fused(Instruction* pc, HandlerTable* handlers, TVal* regs
     long sum = left.get_fastint() + right.get_fastint();
     if (!types::fits_fastint(sum)) return pc;
     TVal* intermediate = regs + first.a;
-    if (!th_can_release(intermediate)) return pc;
-    th_do_release(intermediate);
     intermediate.set_fastint(sum);
     uint other = second.b == first.a ? second.c : second.b;
     if (regs[other].is_fastint()) {
         long total = sum + regs[other].get_fastint();
         TVal* result = regs + second.a;
-        if (types::fits_fastint(total) && th_can_release(result)) {
-            th_do_release(result);
+        if (types::fits_fastint(total)) {
             result.set_fastint(total);
             $if $feat(OP_PROFILE):
                 opprof_thread_complete();
@@ -1379,9 +1313,7 @@ fn Instruction* th_finish_add_numeric(Instruction* pc, HandlerTable* handlers,
         return th_next(pc + 1, handlers, regs, cold);
     }
     TVal* result = regs + second.a;
-    if (!th_can_release(result)) return pc + 1;
     double total = second.b == first.a ? sum + value : value + sum;
-    th_do_release(result);
     result.set_number(total);
     $if $feat(OP_PROFILE): opprof_record(second.op, true, true); $endif
     return th_next(pc + 2, handlers, regs, cold);
@@ -1394,8 +1326,7 @@ fn Instruction* th_add(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
     TVal* ra = regs + insn.a;
     if (types::both_fastint(rb, rc)) {
         long sum = rb.get_fastint() + rc.get_fastint();
-        if (!types::fits_fastint(sum) || !th_can_release(ra)) return pc;
-        th_do_release(ra);
+        if (!types::fits_fastint(sum)) return pc;
         ra.set_fastint(sum);
         return th_next(pc + 1, handlers, regs, cold);
     }
@@ -1415,8 +1346,6 @@ fn Instruction* th_add_numeric(Instruction* pc, HandlerTable* handlers,
     if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) {
         return th_add_concat(pc, handlers, regs, cold);
     }
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_number(x + y);
     if (fused) return th_finish_add_numeric(pc, handlers, regs, cold, ra.get_number());
     return th_next(pc + 1, handlers, regs, cold);
@@ -1480,8 +1409,7 @@ fn Instruction* th_eq(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdC
     TVal* ra = regs + insn.a;
     bool strict = insn.op == Opcode.SEQ || insn.op == Opcode.SNEQ;
     uint order = strict ? th_strict_order(rb, rc) : th_loose_order(rb, rc, cold.heap);
-    if (order == TH_EQ_UNKNOWN || !th_can_release(ra)) return pc;
-    th_do_release(ra);
+    if (order == TH_EQ_UNKNOWN) return pc;
     ra.set_boolean((order == ORDER_EQ) != (insn.op == Opcode.NEQ || insn.op == Opcode.SNEQ));
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1501,8 +1429,6 @@ fn Instruction* th_relational(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
         order = th_order_num(x, y);
     }
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     // LT..GE take the same rows as JMP_LT..JMP_GE.
     ra.set_boolean(((CMP_BRANCH_ON[insn.op.ordinal - Opcode.LT.ordinal + 4] >> order) & 1) != 0);
     return th_next(pc + 1, handlers, regs, cold);
@@ -1522,8 +1448,6 @@ fn Instruction* th_instanceof(Instruction* pc, HandlerTable* handlers, TVal* reg
     if (!hobject::uses_default_has_instance(h, rfunc)) return pc;
     if (!rb.is_object()) {
         TVal* ra = regs + pc.a;
-        if (!th_can_release(ra)) return pc;
-        th_do_release(ra);
         ra.set_boolean(false);
         return th_next(pc + 1, handlers, regs, cold);
     }
@@ -1542,8 +1466,6 @@ fn Instruction* th_instanceof(Instruction* pc, HandlerTable* handlers, TVal* reg
         if (cur == probe) { found = true; break; }
     }
     TVal* ra = regs + pc.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_boolean(found);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1589,9 +1511,7 @@ fn Instruction* th_typeof(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     TVal value;
     value.set_string_borrowed(typeof_string(cold.vm, regs + pc.b));
     TVal* ra = regs + pc.a;
-    if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return pc;
-    th_do_retain(&value);
-    th_do_release(ra);
+    if (!th_can_publish(cold.heap, value)) return pc;
     *ra = value;
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1599,8 +1519,6 @@ fn Instruction* th_typeof(Instruction* pc, HandlerTable* handlers, TVal* regs, C
 fn Instruction* th_lnot(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* ra = regs + pc.a;
     bool value = !is_truthy(regs + pc.b, cold.heap);
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_boolean(value);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1610,9 +1528,8 @@ fn Instruction* th_unm(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
     TVal* rb = regs + pc.b;
     TVal* ra = regs + pc.a;
     double x;
-    if (!th_numeric_operand(rb, &x) || !th_can_release(ra)) return pc;
+    if (!th_numeric_operand(rb, &x)) return pc;
     long n = rb.is_fastint() ? rb.get_fastint() : 0;
-    th_do_release(ra);
     if (n != 0 && types::fits_fastint(-n)) {
         ra.set_fastint(-n);
     } else {
@@ -1628,15 +1545,12 @@ fn Instruction* th_sub(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
     TVal* ra = regs + insn.a;
     if (types::both_fastint(rb, rc)) {
         long diff = rb.get_fastint() - rc.get_fastint();
-        if (!types::fits_fastint(diff) || !th_can_release(ra)) return pc;
-        th_do_release(ra);
+        if (!types::fits_fastint(diff)) return pc;
         ra.set_fastint(diff);
         return th_next(pc + 1, handlers, regs, cold);
     }
     double x; double y;
     if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_number(x - y);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1654,15 +1568,11 @@ fn Instruction* th_mul(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
         long product = x * y;
         // A zero product of opposite-signed operands is -0, which no fastint holds.
         if ((product == 0 && (x ^ y) < 0) || !types::fits_fastint(product)) return pc;
-        if (!th_can_release(ra)) return pc;
-        th_do_release(ra);
         ra.set_fastint(product);
         return th_next(pc + 1, handlers, regs, cold);
     }
     double x; double y;
     if (!th_numeric_operand(rb, &x) || !th_numeric_operand(rc, &y)) return pc;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_number(x * y);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1674,8 +1584,6 @@ fn Instruction* th_div(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
     TVal* ra = regs + insn.a;
     double x; double y;
     if (!th_numeric_operand(regs + insn.b, &x) || !th_numeric_operand(regs + insn.c, &y)) return pc;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_number(x / y);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1692,8 +1600,6 @@ fn Instruction* th_muli(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
     long product = x * y;
     // A zero product of opposite-signed operands is -0, which no fastint holds.
     if ((product == 0 && (x ^ y) < 0) || !types::fits_fastint(product)) return pc;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_fastint(product);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1708,8 +1614,6 @@ fn Instruction* th_mod(Instruction* pc, HandlerTable* handlers, TVal* regs, Cold
     long y = rc.get_fastint();
     // A negative dividend can yield -0 and a zero divisor yields NaN.
     if (x < 0 || y <= 0) return pc;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_fastint(x % y);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1729,8 +1633,6 @@ macro Instruction* th_bitop($op, $imm, Instruction* pc, HandlerTable* handlers, 
         if (!types::both_fastint(rb, rc)) return pc;
         y = (int)rc.get_fastint();
     $endif
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_fastint(th_int32_op($op, (int)rb.get_fastint(), y));
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1784,8 +1686,6 @@ fn Instruction* th_wide(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
         default:
             return th_wide_test(pc, handlers, regs, cold);
     }
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_fastint(result);
     return th_next(pc + 2, handlers, regs, cold);
 }
@@ -1830,8 +1730,6 @@ fn Instruction* th_wide_test(Instruction* pc, HandlerTable* handlers, TVal* regs
         default:
             return pc;
     }
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_boolean(result);
     return th_next(pc + 2, handlers, regs, cold);
 }
@@ -1884,9 +1782,6 @@ fn Instruction* th_ldconst(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     TVal value = f.constants[bc];
     if (!th_can_publish(cold.heap, value)) return pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_retain(&value);
-    th_do_release(ra);
     *ra = value;
     if (value.is_heap_allocated()) track_heap_store(cold.act, ra, (uint)insn.a);
     return th_next(pc + 1, handlers, regs, cold);
@@ -1894,16 +1789,12 @@ fn Instruction* th_ldconst(Instruction* pc, HandlerTable* handlers, TVal* regs, 
 
 fn Instruction* th_ldundef(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* ra = regs + pc.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_undefined();
     return th_next(pc + 1, handlers, regs, cold);
 }
 
 fn Instruction* th_ldnull(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* ra = regs + pc.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_null();
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -1911,18 +1802,14 @@ fn Instruction* th_ldnull(Instruction* pc, HandlerTable* handlers, TVal* regs, C
 // LDTRUE and LDFALSE share a handler: the opcode is the value.
 fn Instruction* th_ldbool(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* ra = regs + pc.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_boolean(pc.op == Opcode.LDTRUE);
     return th_next(pc + 1, handlers, regs, cold);
 }
 
 fn Instruction* th_class_scalar_guard(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     TVal* result = regs + pc.a + 1;
-    if (!th_can_release(result)) return pc;
     hobject::ICEntry* ic = cold.vm.current_func.ic_entries != null ? th_ic_at(cold, pc) : null;
     bool matches = scalar_class_matches(cold.vm, regs + pc.a, pc.b, pc.c, ic);
-    th_do_release(result);
     result.set_boolean(matches);
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -2157,15 +2044,10 @@ fn Instruction* th_getglobal(Instruction* pc, HandlerTable* handlers, TVal* regs
     }
     if (!value.is_heap_allocated() && !ra.is_heap_allocated()) {
         // An ENVREF is traced but has no refcount or heap-register bit.
-        if (!th_can_release(ra)) return pc;
-        th_do_release(ra);
         *ra = value;
     } else {
         // Retain and release inline so an object-valued global keeps this
         // handler on the same path as primitive globals.
-        if (!th_can_release(ra)) return pc;
-        th_do_retain(&value);
-        th_do_release(ra);
         *ra = value;
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
@@ -2181,8 +2063,9 @@ fn Instruction* th_putglobal(Instruction* pc, HandlerTable* handlers, TVal* regs
     if (gic == null || !gic.varref_store_ok) return pc;
     TVal* ra = regs + insn.a;
     hobject::PropValue* slot = gic.slot_ptr;
-    // Only a traced source needs a barrier, and only a string needs release.
-    if (ra.is_traced() || slot.get().is_refcounted()) {
+    // Only a traced source needs a barrier, and a string on either side
+    // needs a count taken or released.
+    if (ra.is_traced() || ra.is_refcounted() || slot.get().is_refcounted()) {
         return th_putglobal_move(pc, handlers, regs, cold, (HObject*)gic.bindings, slot);
     }
     *slot = (hobject::PropValue)*ra;
@@ -2211,8 +2094,6 @@ fn Instruction* th_inc_global_impl(Instruction* pc, HandlerTable* handlers, TVal
     // Leaving the fastint range makes a double, which the switch stores.
     if (v < types::FASTINT_MIN || v > types::FASTINT_MAX) return pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     slot.set_fastint(v);
     ra.set_fastint(v);
     pc++;
@@ -2263,6 +2144,7 @@ fn Instruction* th_putcap(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     hobject::PropValue* slot = capture_value_slot(cold.act, capture_index, cold.heap, true, &owner);
     if (slot == null || !th_can_release_slot(slot)) return pc;
     TVal* src = regs + pc.a;
+    th_do_retain(src);
     th_do_release_slot(slot);
     cold.heap.store_slot(owner, slot, *src);
     src.set_undefined();
@@ -2288,10 +2170,7 @@ fn Instruction* th_getcell(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (slot == null) return pc;
     TVal value = slot.get();
     TVal* dst = regs + pc.a;
-    if (!th_can_publish(cold.heap, value)
-        || !th_can_release(dst)) return pc;
-    th_do_retain(&value);
-    th_do_release(dst);
+    if (!th_can_publish(cold.heap, value)) return pc;
     *dst = value;
     track_heap_store(cold.act, dst, (uint)pc.a);
     return th_next(pc + 1, handlers, regs, cold);
@@ -2313,6 +2192,7 @@ fn Instruction* th_movecell(Instruction* pc, HandlerTable* handlers, TVal* regs,
     hobject::PropValue* slot = th_cell_slot(pc, regs, &owner);
     TVal* src = regs + pc.a;
     if (slot == null || !th_can_release_slot(slot)) return pc;
+    th_do_retain(src);
     th_do_release_slot(slot);
     cold.heap.store_slot(owner, slot, *src);
     src.set_undefined();
@@ -2341,9 +2221,7 @@ fn Instruction* th_getvar(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     // Both sides are tested before either is mutated: bailing out after a
     // completed retain would leak the reference it took.
     if (!th_can_publish(cold.heap, v)
-        || !th_can_release(ra)) return pc;
-    th_do_retain(&v);
-    th_do_release(ra);
+       ) return pc;
     *ra = v;
     track_heap_store(act, ra, (uint)insn.a);
     pc++;
@@ -2364,6 +2242,7 @@ fn Instruction* th_putvar_assign(Instruction* pc, HandlerTable* handlers, TVal* 
     // Inline release, as in th_getvar: keeps the handler leaf without pushing
     // heap-valued bindings onto the switch.
     if (!th_can_release_slot(pv)) return pc;
+    th_do_retain(ra);
     th_do_release_slot(pv);
     vm.heap.store_slot((HObject*)vic.bindings, pv, *ra);
     ra.set_undefined();
@@ -2392,6 +2271,7 @@ fn Instruction* th_putvar_snap(Instruction* pc, HandlerTable* handlers, TVal* re
     if (!flags.writable || flags.is_accessor) return pc;
     hobject::PropValue* slot = &bindings.prop_values()[vic.prop_idx];
     if (slot_is_tdz(slot) || !th_can_release_slot(slot)) return pc;
+    th_do_retain(value);
     th_do_release_slot(slot);
     cold.heap.store_slot(bindings, slot, *value);
     value.set_undefined();
@@ -2408,8 +2288,7 @@ fn Instruction* th_resolvevar(Instruction* pc, HandlerTable* handlers, TVal* reg
     TVal ref;
     ref.set_envref(vic.env);
     TVal* ra = regs + pc.a;
-    if (!th_can_publish(cold.heap, ref) || !th_can_release(ra)) return pc;
-    th_do_release(ra);
+    if (!th_can_publish(cold.heap, ref)) return pc;
     *ra = ref;
     track_heap_store(cold.act, ra, (uint)pc.a);
     return th_next(pc + 1, handlers, regs, cold);
@@ -2434,8 +2313,7 @@ fn Instruction* th_inc_var(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     if (!old_val.is_fastint() || !vic.prop_flags.writable) return pc;
     long next = old_val.get_fastint() + 1L;
     TVal* ra = regs + insn.a;
-    if (!types::fits_fastint(next) || !th_can_release(ra)) return pc;
-    th_do_release(ra);
+    if (!types::fits_fastint(next)) return pc;
     slot.set_fastint(next);
     ra.set_fastint(next);
     return th_next(pc + 1, handlers, regs, cold);
@@ -2446,8 +2324,6 @@ fn Instruction* th_tonumeric(Instruction* pc, HandlerTable* handlers, TVal* regs
     TVal* rb = regs + insn.b;
     if (!rb.is_fastint()) return pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
-    th_do_release(ra);
     ra.set_fastint(rb.get_fastint());
     pc++;
     return th_next(pc, handlers, regs, cold);
@@ -2504,9 +2380,7 @@ fn Instruction* th_get_computed(Instruction* pc, HandlerTable* handlers, TVal* r
         }
     }
     TVal* ra = regs + pc.a;
-    if (!th_can_publish(h, value) || !th_can_release(ra)) return pc;
-    th_do_retain(&value);
-    th_do_release(ra);
+    if (!th_can_publish(h, value)) return pc;
     *ra = value;
     if (value.is_heap_allocated()) track_heap_store(cold.act, ra, (uint)pc.a);
     return th_next(pc + 1, handlers, regs, cold);
@@ -2554,14 +2428,9 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     TVal* ra = regs + insn.a;
     if (!th_can_publish(cold.heap, value)) return pc;
     if (value.is_heap_allocated()) {
-        if (!th_can_release(ra)) return pc;
-        th_do_retain(&value);
-        th_do_release(ra);
         *ra = value;
         track_heap_store(cold.act, ra, (uint)insn.a);
     } else {
-        if (!th_can_release(ra)) return pc;
-        th_do_release(ra);
         *ra = value;
     }
     pc++;
@@ -2588,7 +2457,7 @@ fn Instruction* th_get_typed_element(Instruction* pc, HandlerTable* handlers, TV
     uint count;
     char* base = th_typed_array_base(obj, &count);
     TVal* ra = regs + insn.a;
-    if (base == null || idx < 0 || idx >= (long)count || !th_can_release(ra)) return pc;
+    if (base == null || idx < 0 || idx >= (long)count) return pc;
     hobject::ObjClass cls = obj.get_class();
     char* ep = base + ((uint)idx << builtins::ta_elem_shift(cls));
     // Elements are aligned to their size. Integer kinds that fit a fastint
@@ -2605,7 +2474,6 @@ fn Instruction* th_get_typed_element(Instruction* pc, HandlerTable* handlers, TV
         case hobject::ObjClass.BIGUINT64ARRAY: return pc;
         default: value = builtins::ta_load_number(ep, cls);
     }
-    th_do_release(ra);
     *ra = value;
     return th_next(pc + 1, handlers, regs, cold);
 }
@@ -2658,9 +2526,7 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
         if (!rb.is_string() || str.is_symbol() || ((HString*)key).is_arridx()) return pc;
         if (key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
             TVal* destination = regs + insn.a;
-            if (!th_can_release(destination)) return pc;
             long length = (long)str.unit_len();
-            th_do_release(destination);
             destination.set_fastint(length);
             return th_next(pc + 1, handlers, regs, cold);
         }
@@ -2671,8 +2537,6 @@ fn Instruction* th_getpropc(Instruction* pc, HandlerTable* handlers, TVal* regs,
     if (hobj.get_class() == hobject::ObjClass.ARRAY
         && key == (void*)vm.heap.strs[heap::BuiltinStr.LENGTH]) {
         TVal* destination = regs + insn.a;
-        if (!th_can_release(destination)) return pc;
-        th_do_release(destination);
         destination.set_fastint((long)*hobj.array_len_ptr());
         pc++;
         return th_next(pc, handlers, regs, cold);
@@ -2710,10 +2574,9 @@ fn Instruction* th_call_getter(Instruction* pc, HandlerTable* handlers, TVal* re
     TVal receiver = this_receiver ? cold.act.this_binding : regs[insn.b];
     TVal* ra = regs + insn.a;
     CompiledFunction* target = th_lean_target(vm, getter, ra + 2, false);
-    if (target == null || !th_can_release(ra) || !th_can_release(ra + 1)) return pc;
+    if (target == null) return pc;
     if (!receiver.is_object() && !target.is_strict() && !target.ignores_this()) return pc;
     if (th_call_gate(cold)) return pc;
-    th_do_release(ra);
     *ra = getter;
     track_heap_store(cold.act, ra, insn.a);
     return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, 0, false, true,
@@ -2749,8 +2612,7 @@ fn Instruction* th_getproto(Instruction* pc, HandlerTable* handlers, TVal* regs,
         value.set_null();
     }
     TVal* ra = regs + pc.a;
-    if (!th_can_publish(cold.heap, value) || !th_can_release(ra)) return pc;
-    th_do_release(ra);
+    if (!th_can_publish(cold.heap, value)) return pc;
     *ra = value;
     if (value.is_object()) track_heap_store(cold.act, ra, (uint)pc.a);
     return th_next(pc + 1, handlers, regs, cold);
@@ -2885,8 +2747,6 @@ fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* r
     }
     if (!th_can_publish(vm.heap, ic_val)) return pc;
     if (!ic_val.is_heap_allocated()) {
-        if (!th_can_release(ra)) return pc;
-        th_do_release(ra);
         *ra = ic_val;
     } else {
         // Inline refcount, matching th_getvar/th_ldreg (c32cc52b): tval_copy_ref
@@ -2895,9 +2755,6 @@ fn Instruction* th_publish_read(Instruction* pc, HandlerTable* handlers, TVal* r
         // decref is a decrement plus a zero test whose free path is rare. Both
         // sides are tested before either is mutated: bailing after a completed
         // retain would leak the reference it took.
-        if (!th_can_release(ra)) return pc;
-        th_do_retain(&ic_val);
-        th_do_release(ra);
         *ra = ic_val;
         track_heap_store(cold.act, ra, (uint)insn.a);
     }
@@ -3141,7 +2998,6 @@ fn Instruction* th_newarr_const(Instruction* pc, HandlerTable* handlers, TVal* r
 fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
     TVal* ra = regs + insn.a;
-    if (!th_can_release(ra)) return pc;
     heap::Heap* h = cold.heap;
     HObject*? new_obj = insn.op == Opcode.NEWOBJ_SHAPE
         ? h.alloc_shaped_object(insn.get_bc())
@@ -3149,7 +3005,6 @@ fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, C
     HObject* o = new_obj ?? null;
     if (o == null) return pc;
     o.prototype = h.object_proto;
-    th_do_release(ra);
     ra.set_object(o);
     track_heap_store(cold.act, ra, (uint)insn.a);
     return th_next(pc + 1, handlers, regs, cold);
@@ -3180,7 +3035,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return pc;
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
     TVal* ra = regs + insn.a;
-    if (!proto.is_object() || !th_can_release(ra)) return pc;
+    if (!proto.is_object()) return pc;
     if (!simple && th_call_gate(cold)) return pc;
     HObject* obj = vm.heap.alloc_plain_object() ?? null;
     if (obj == null) return pc;
@@ -3197,7 +3052,6 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
                              this_value, true, new_target: ctor);
     }
     if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return pc;
-    th_do_release(ra);
     ra.set_object(obj);
     track_heap_store(cold.act, ra, (uint)insn.a);
     return th_next(pc + 1, handlers, regs, cold);

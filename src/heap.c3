@@ -877,12 +877,14 @@ struct Heap {
     uint         zct_count;
     uint         zct_capacity;
     uint         zct_threshold;      /// Entry count that schedules the next flush
+    ulong        zct_bytes_threshold; /// Queued bytes that schedule the next flush
     ulong        zct_bytes;          /// Allocation bytes of the queued strings
     void**       zct_set;            /// Scratch pointer set the frame scan probes
     uint         zct_set_mask;
     bool         zct_flushing;       /// A flush is freeing; nested flushes return
 
     ConcatCacheEntry[CONCAT_CACHE_SIZE] concat_cache;
+    AccumBirth[ACCUM_BIRTH_SIZE] accum_births;
 
     // Built-in strings cache (indexed by string constant IDs)
     void*[STRS_CACHE_SIZE]  strs;
@@ -1061,14 +1063,6 @@ struct Heap {
     // Current execution thread (HThread*)
     void* curr_thread;
 
-    // HEAP_VERIFY: register range a frame pop is currently releasing. The
-    // decref-to-zero check skips these slots, because the release it is
-    // watching is exactly what clears them: a frame's registers are shared
-    // with the caller's window, so a scan attributes the slot being released
-    // to an enclosing frame and reports the release itself.
-    TVal* decref_exempt_lo;
-    TVal* decref_exempt_hi;
-
     // Longjmp state for error handling
     LongjmpState lj;
 
@@ -1224,7 +1218,12 @@ struct Heap {
     // Valstack window the GC scans for roots. valstack_base is refreshed on VM
     // create and resize. valstack_top_ptr points at vm.valstack_top so the GC
     // reads the live value and push/pop need no synchronization.
+    //
+    // [valstack_base, valstack_limit) is the current register segment: a slot
+    // in it never holds a string count (see Heap.in_register_segment), and the
+    // VM keeps both bounds in step everywhere vm.valstack changes.
     TVal*      valstack_base;
+    TVal*      valstack_limit;
     TVal**     valstack_top_ptr;
 
     // GC re-entrancy guard
@@ -1733,6 +1732,7 @@ fn Heap*? create(
     h.gc_pending            = false;
     h.gc_quiescent_pending  = false;
     h.zct_threshold         = ZCT_MIN_THRESHOLD;
+    h.zct_bytes_threshold   = ZCT_BYTES_THRESHOLD;
     h.bwd_gc_budget         = BWD_GC_INTERVAL;
     h.gc_call_budget        = GC_CALL_INTERVAL;
     h.env_alloc_budget      = 1024;
@@ -2758,6 +2758,7 @@ fn void Heap.reset(&self) {
     self.zct_count = 0;
     self.zct_bytes = 0;
     self.zct_threshold = ZCT_MIN_THRESHOLD;
+    self.zct_bytes_threshold = ZCT_BYTES_THRESHOLD;
 
     // Large strings are in neither str_table nor the object vectors, so the registry
     // is the only list that can reach them. Skipping this pass would leave them
@@ -2848,9 +2849,9 @@ fn void Heap.reset(&self) {
     // Remaining heap state: GC roots, execution state, prototypes.
     self.flags            = 0;
     self.curr_thread      = null;
-    self.decref_exempt_lo = null;
-    self.decref_exempt_hi = null;
     self.valstack_base    = null;
+    self.valstack_limit   = null;
+    mem::clear(&self.accum_births, (sz)(AccumBirth::size * ACCUM_BIRTH_SIZE));
     self.valstack_top_ptr = null;
     self.resume_gen       = null;
     self.did_yield        = false;
@@ -3723,6 +3724,58 @@ fn void Heap.free(&self, void* ptr) {
     self.free_func(self.heap_udata, ptr);
 }
 
+// Deferred reference counting: a slot inside the current register segment
+// holds no count. Every other holder (property slots, bindings, captures,
+// vm.return_val, C locals, a non-current segment) holds one as before. The
+// helpers below decide by the destination's address, so a store into a
+// register neither retains the new value nor releases the old one, and a
+// string whose only holder is a register sits in the zero-count table until
+// the flush finds no frame slot that still reads it.
+fn bool Heap.in_register_segment(&self, TVal* slot) @inline {
+    return slot >= self.valstack_base && slot < self.valstack_limit;
+}
+
+// Queue a string that has no counted holder, so a flush can free it once no
+// register reads it. A register store of a fresh (count 0) string owes this.
+fn void Heap.note_unowned(&self, hstring::HString* s) @inline {
+    HeapHeader* hdr = (HeapHeader*)s;
+    if (hdr.is_pinned()) return;
+    uint table_reference = s.flags.is_interned ? 1u : 0u;
+    if (hdr.refcount <= table_reference) self.zct_push(s);
+}
+
+// Where a concat result was born: the register index and the frame instance
+// (Activation.serial) the concat path stored it into. The accumulator proof
+// (vm_concat_accumulate) needs it because registers hold no counts: a count
+// of 0 says no counted holder exists, and the birth says which register may
+// still read it. Direct-mapped by pointer; a collision evicts, which only
+// costs an in-place append. Cleared when the string is freed.
+const usz ACCUM_BIRTH_SIZE = 64;
+
+struct AccumBirth {
+    hstring::HString* string;
+    uint              reg;
+    ulong             serial;
+}
+
+fn AccumBirth* Heap.accum_birth_slot(&self, hstring::HString* s) @inline {
+    return &self.accum_births[(((usz)s >> 4) * 0x9E37_79B9_7F4A_7C15 >> 32) & (ACCUM_BIRTH_SIZE - 1)];
+}
+
+fn void Heap.accum_birth_set(&self, hstring::HString* s, uint reg, ulong serial) @inline {
+    *self.accum_birth_slot(s) = { .string = s, .reg = reg, .serial = serial };
+}
+
+fn bool Heap.accum_birth_matches(&self, hstring::HString* s, uint reg, ulong serial) @inline {
+    AccumBirth* b = self.accum_birth_slot(s);
+    return b.string == s && b.reg == reg && b.serial == serial;
+}
+
+fn void Heap.accum_birth_forget(&self, hstring::HString* s) @inline {
+    AccumBirth* b = self.accum_birth_slot(s);
+    if (b.string == s) b.string = null;
+}
+
 // Register stores release the overwritten string after evaluating the input.
 fn void Heap.set_reg_fastint(&self, TVal* reg, long value) @inline {
     self.decref_tval(reg);
@@ -3778,6 +3831,11 @@ fn void Heap.set_reg_envref(&self, TVal* reg, void* value) @inline {
 }
 
 fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
+    if (self.in_register_segment(reg)) {
+        reg.set_string_borrowed(s);
+        if (s != null) self.note_unowned(s);
+        return;
+    }
     TVal acquired;
     acquired.set_string(s);
     self.decref_tval(reg);
@@ -3791,6 +3849,7 @@ fn void Heap.set_reg_string(&self, TVal* reg, hstring::HString* s) @inline {
 fn void Heap.free_string(&self, hstring::HString* s) {
     if (s == null) { return; }
     if (s.flags.zct_queued) self.zct_forget(s);
+    self.accum_birth_forget(s);
     usz total = s.alloc_size();
     if (s.flags.has_extdata) s.release_external();
 
@@ -3865,14 +3924,14 @@ fn void Heap.zct_push(&self, HString* s, bool from_sweep = false) {
     s.flags.zct_deferred = from_sweep || s.flags.is_interned;
     self.zct[self.zct_count++] = s;
     self.zct_bytes += (ulong)s.alloc_size();
-    if (self.zct_count >= self.zct_threshold || self.zct_bytes >= ZCT_BYTES_THRESHOLD) {
+    if (self.zct_flush_due()) {
         self.gc_pending = true;
     }
 }
 
 // Whether the next safepoint should flush.
 fn bool Heap.zct_flush_due(&self) @inline {
-    return self.zct_count >= self.zct_threshold || self.zct_bytes >= ZCT_BYTES_THRESHOLD;
+    return self.zct_count >= self.zct_threshold || self.zct_bytes >= self.zct_bytes_threshold;
 }
 
 /**
@@ -3891,7 +3950,7 @@ fn void Heap.zct_forget(&self, HString* s) {
     s.flags.zct_deferred = false;
 }
 
-fn usz zct_set_hash(void* p) @inline => ((usz)p >> 4) * 0x9E37_79B9_7F4A_7C15;
+fn usz zct_set_hash(void* p) @inline => ((((usz)p >> 4) * 0x9E37_79B9_7F4A_7C15) >> 32);
 
 /**
  * Note a frame slot the flush must treat as a holder. The slot is compared
@@ -3926,9 +3985,9 @@ fn bool Heap.zct_held(&self, HString* s) @inline {
 
 /**
  * Free the queued strings nothing holds. Each entry is dropped if it has an
- * owner again (a count above its table reference) or is pinned; kept if a temp
- * root or a live frame slot holds it, or if it is deferred and the flush is
- * not quiescent; and freed otherwise. The next threshold is twice the
+ * owner again (a count above its table reference) or is pinned; kept if a live
+ * frame slot holds it, or if the flush is not quiescent and it is a temp root
+ * or deferred; and freed otherwise. The next threshold is twice the
  * survivors, with a floor.
  *
  * `quiescent` means what it means for the string sweeps: no native frame is
@@ -3942,6 +4001,7 @@ fn void Heap.zct_flush(&self, bool quiescent) {
     defer self.zct_flushing = false;
     if (self.zct_count == 0) {
         self.zct_threshold = ZCT_MIN_THRESHOLD;
+        self.zct_bytes_threshold = ZCT_BYTES_THRESHOLD;
         return;
     }
     // The scratch set holds every queued pointer at a load below one half.
@@ -3954,6 +4014,7 @@ fn void Heap.zct_flush(&self, bool quiescent) {
             self.zct_set_mask = 0;
             // Without the scan nothing can be freed safely; try again later.
             self.zct_threshold = self.zct_count * 2;
+            self.zct_bytes_threshold = self.zct_bytes * 2;
             return;
         }
         self.zct_set_mask = want - 1;
@@ -3983,7 +4044,9 @@ fn void Heap.zct_flush(&self, bool quiescent) {
             s.flags.zct_deferred = false;
             continue;
         }
-        if (hdr.is_temproot() || self.zct_held(s) || (s.flags.zct_deferred && !quiescent)) {
+        // A temp root guards a string a native frame borrows without a count.
+        // Nothing clears the flag on a string, so it only holds while one runs.
+        if ((hdr.is_temproot() && !quiescent) || self.zct_held(s) || (s.flags.zct_deferred && !quiescent)) {
             self.zct[kept++] = s;
             kept_bytes += (ulong)s.alloc_size();
             continue;
@@ -4018,6 +4081,9 @@ fn void Heap.zct_flush(&self, bool quiescent) {
     self.zct_count = kept;
     self.zct_bytes = kept_bytes;
     self.zct_threshold = max(kept * 2, ZCT_MIN_THRESHOLD);
+    // Survivors a register still reads are re-queued by every flush, so the
+    // byte trigger counts only what is queued beyond them.
+    self.zct_bytes_threshold = kept_bytes + ZCT_BYTES_THRESHOLD;
 }
 
 /**
@@ -4029,7 +4095,7 @@ fn void Heap.decref_tval(&self, TVal* tv) @inline {
     $if $feat(SCAN_POISON):
         self.reject_poison(tv, "decref_tval");
     $endif
-    if (tv.is_refcounted()) {
+    if (tv.is_refcounted() && !self.in_register_segment(tv)) {
         void* ptr = tv.get_heapptr();
         if (ptr != null) {
             self.decref((HeapHeader*)ptr);
@@ -4051,19 +4117,31 @@ fn void Heap.copy_tval_to_slot(&self, HObject* owner, hobject::PropValue* dst, T
     self.store_slot_ref(owner, dst, src);
 }
 
+// The slot owns its value; a register destination releases the count after
+// the store, a counted destination takes it over.
 fn void Heap.move_slot_to_tval(&self, TVal* dst, hobject::PropValue* src) @inline {
     TVal value = src.get();
     self.shade_root_tval(value);
     self.decref_tval(dst);
     *dst = value;
     src.set_undefined();
+    if (self.in_register_segment(dst)) self.decref_tval(&value);
 }
 
 // Copy a TVal from src to dst, keeping refcounts balanced. Increfs src, then
 // decrefs the old dst value, then copies the bits. Does nothing when dst == src.
+// A register destination only stores: it holds no count either way.
 fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
     if (dst != src) {
         self.shade_root_tval(*src);
+        if (self.in_register_segment(dst)) {
+            *dst = *src;
+            // A fresh string no holder has counted yet still needs its entry.
+            if (src.is_refcounted() && src.get_heapptr() != null) {
+                self.note_unowned((hstring::HString*)src.get_heapptr());
+            }
+            return;
+        }
         // The incref comes first so that when src and dst hold the same object
         // at refcount 1, such as assigning one global to another, the decref
         // below cannot free it before the new reference is anchored.
@@ -4078,14 +4156,25 @@ fn void Heap.tval_copy_ref(&self, TVal* dst, TVal* src) @inline {
     }
 }
 
-// Both slots own their values. Shade the incoming value before releasing
-// the destination, then transfer its reference and clear the source slot.
+// Move a value between two slots and clear the source. Shade the incoming
+// value before releasing the destination. A count moves with the value when
+// both slots are counted holders; a register source gives the counted
+// destination a fresh count, and a register destination releases the counted
+// source's count after the store.
 fn void Heap.move_tval_ref(&self, TVal* dst, TVal* src) @inline {
     if (dst == src) return;
     self.shade_root_tval(*src);
+    bool dst_counted = !self.in_register_segment(dst);
+    bool src_counted = !self.in_register_segment(src);
+    if (dst_counted && !src_counted && src.is_refcounted()) {
+        void* ptr = src.get_heapptr();
+        if (ptr != null) ((HeapHeader*)ptr).incref();
+    }
     self.decref_tval(dst);
-    *dst = *src;
+    TVal value = *src;
+    *dst = value;
     src.set_undefined();
+    if (src_counted && !dst_counted) self.decref_tval(&value);
 }
 
 fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
@@ -4101,6 +4190,11 @@ fn void Heap.store_builtin_result(&self, TVal* dst, TVal* result) @inline {
 // preserves src's refcount whether src is a heap value or a primitive.
 fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst, TVal* src) @inline {
     self.write_barrier(owner, *src);
+    // A register source holds no count, so the slot takes a fresh one.
+    if (src.is_refcounted() && self.in_register_segment(src)) {
+        void* ptr = src.get_heapptr();
+        if (ptr != null) ((HeapHeader*)ptr).incref();
+    }
     TVal old = dst.get();
     if (old.is_heap_allocated()) {
         void* ptr = old.get_heapptr();
@@ -4405,12 +4499,16 @@ fn void Heap.reject_poison_ptr(&self, void* ptr, ZString where) @feat(SCAN_POISO
     }
 }
 
-// A quiescent root cannot depend on a temporary native borrow.
+// A live string at or below its table level has no counted holder, so only a
+// register or a native borrow can be keeping it; the zero-count table must have
+// it queued, or no flush will ever look at it again. A native frame may hold
+// a fresh string it has not stored yet.
 fn void Heap.verify_string_owner(&self, HString* value) @feat(GC_VERIFY) {
     if (value == null || self.native_frame_depth != 0) return;
+    if (((HeapHeader*)value).is_pinned()) return;
     uint table_reference = value.flags.is_interned ? 1u : 0u;
-    if (value.refcount <= table_reference) {
-        io::eprintfn("[GC_VERIFY] live string lacks an owner: refs=%d interned=%d bytes=%d",
+    if (value.refcount <= table_reference && !value.flags.zct_queued) {
+        io::eprintfn("[GC_VERIFY] live string is neither counted nor queued: refs=%d interned=%d bytes=%d",
             value.refcount, (int)value.flags.is_interned, value.length);
         self.fatal("GC_VERIFY: unowned live string");
     }
@@ -5420,8 +5518,6 @@ $if $feat(HEAP_VERIFY):
         }
         for (uint i = 0; i < nregs; i++) {
             TVal* tv = &a.bottom[i];
-            if (self.decref_exempt_lo != null
-                && tv >= self.decref_exempt_lo && tv < self.decref_exempt_hi) continue;
             if (!tv.is_heap_allocated()) continue;
             if (tv.get_heapptr() == (void*)ptr) {
                 if (out_frame != null) *out_frame = f;

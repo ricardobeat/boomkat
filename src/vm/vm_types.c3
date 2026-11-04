@@ -131,6 +131,12 @@ struct Activation {
     // decref_callee_regs' early-out would then skip a frame whose only heap
     // value sits in register 0.
     uint heap_reg_count;
+    // Identifies this frame instance: a fresh value from vm.activation_serial
+    // at every push, including a tail-call takeover and a generator or async
+    // resume. The concat accumulator's birth record names a register of a
+    // serial, so a string left in a pooled slot by an earlier frame, or by an
+    // earlier instance of the same resumed body, never proves unique.
+    ulong serial;
     // This activation's `this` binding.
     TVal this_binding;
     // The `new.target` value: the constructor a `new` expression named, or the
@@ -375,6 +381,7 @@ struct Vm {
     Activation* activations;
     uint activation_capacity;
     uint activation_count;
+    ulong activation_serial;  /// Last Activation.serial handed out
     // Grown on demand to cover the deepest tail-called slot, so code that
     // never makes a tail call pays nothing. See TailCaller.
     TailCaller* tail_callers;

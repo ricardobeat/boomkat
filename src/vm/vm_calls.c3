@@ -277,10 +277,10 @@ fn bool mapped_args_write(Vm* vm, HObject* args_obj, uint idx, TVal* val) @inlin
     if (env_slot != null) {
         vm.heap.store_slot_ref(holder, env_slot, val);
     } else {
-        TVal* slot = &owner.bottom[idx];
-        if (slot.is_string() || slot.is_bigint()) { vm.heap.decref_tval(slot); }
-        *slot = *val;
-        if (val.is_string() || val.is_bigint()) { void* p = val.get_heapptr(); if (p != null) ((types::HeapHeader*)p).incref(); }
+        vm.heap.tval_copy_ref(&owner.bottom[idx], val);
+        // The value now sits in a register of a frame that may not be the
+        // current one, where the accumulator's frame scan cannot see it.
+        if (val.is_string()) vm.heap.accum_birth_forget((HString*)val.get_heapptr());
     }
     if (pidx >= 0) {
         vm.heap.store_slot_ref(args_obj, &args_obj.prop_values()[pidx], val);
@@ -1904,6 +1904,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     // sync: any field added to activation_begin belongs here too.
                     new_act.async_gen_state = null;
                                     new_act.forin = null;
+                    new_act.serial = ++vm.activation_serial;
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;

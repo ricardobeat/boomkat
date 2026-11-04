@@ -294,59 +294,16 @@ fn TVal? dispatch_exceptions(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         return (TVal){};
                     }
                     if (callee_result != null) {
-                        // Borrowed callee (CALL_VAR from a global binding): callee_result
-                        // aliases a closure this frame never incref'd, so overwrite it raw
-                        // and never decref it. The plain RET path does the same.
-                        bool ret_borrowed = (callee_act.flags & ACT_FLAG_BORROWED_CALLEE) != 0;
+                        // The copy decides by the destination's address, as the
+                        // plain RET path does; a borrowed callee's old value there
+                        // is an uncounted closure.
                         // ECMA-262 [[Construct]]: a non-object return yields 'this'. The
                         // inner RET set PENDING_RETURN and skipped this logic, since
                         // a finally intercepted the return.
-                        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0) {
-                            if (val.is_object()) {
-                                if (!val.is_heap_allocated()) {
-                                    if (!ret_borrowed && callee_result.is_heap_allocated()) {
-                                        vm.heap.decref_tval(callee_result);
-                                    }
-                                    *callee_result = val;
-                                } else if (val_pinned) {
-                                    if (!ret_borrowed) vm.heap.decref_tval(callee_result);
-                                    *callee_result = val;
-                                    val_pinned = false;
-                                } else if (ret_borrowed) {
-                                    ((HeapHeader*)val.get_heapptr()).incref();
-                                    *callee_result = val;
-                                } else {
-                                    vm.heap.tval_copy_ref(callee_result, &val);
-                                }
-                            } else {
-                                // Non-object return (undefined) → use 'this' binding
-                                if (!ret_borrowed && callee_result.is_heap_allocated()) {
-                                    vm.heap.decref_tval(callee_result);
-                                }
-                                // A borrowed slot is overwritten raw, so take the reference here.
-                                if (ret_borrowed && callee_act.this_binding.is_heap_allocated()
-                                    && callee_act.this_binding.get_heapptr() != null) {
-                                    ((HeapHeader*)callee_act.this_binding.get_heapptr()).incref();
-                                }
-                                *callee_result = callee_act.this_binding;
-                            }
+                        if ((callee_act.flags & ACT_FLAG_CONSTRUCT) != 0 && !val.is_object()) {
+                            vm.heap.tval_copy_ref(callee_result, &callee_act.this_binding);
                         } else {
-                            // Non-constructor: copy the return value.
-                            if (!val.is_heap_allocated()) {
-                                if (!ret_borrowed && callee_result.is_heap_allocated()) {
-                                    vm.heap.decref_tval(callee_result);
-                                }
-                                *callee_result = val;
-                            } else if (val_pinned) {
-                                if (!ret_borrowed) vm.heap.decref_tval(callee_result);
-                                *callee_result = val;
-                                val_pinned = false;
-                            } else if (ret_borrowed) {
-                                ((HeapHeader*)val.get_heapptr()).incref();
-                                *callee_result = val;
-                            } else {
-                                vm.heap.tval_copy_ref(callee_result, &val);
-                            }
+                            vm.heap.tval_copy_ref(callee_result, &val);
                         }
                     }
                     if (val_pinned) vm.heap.decref_tval(&val);

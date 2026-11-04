@@ -348,10 +348,32 @@ fn bool concat_binding_owns(Vm* vm, Activation* act, HString* value,
     return false;
 }
 
+// True when a slot of `act`'s register span other than `ra` holds `s`. The
+// span is the one the collector and the zero-count flush read for the frame.
+fn bool concat_frame_holds_elsewhere(Vm* vm, Activation* act, TVal* ra, HString* s) @private {
+    usz index = (usz)(act - vm.activations);
+    if (index >= vm.activation_count) return true;
+    TVal* end = activation_span_end(vm, (uint)index);
+    for (TVal* tv = act.bottom; tv < end; tv++) {
+        if (tv != ra && tv.is_string() && tv.get_heapptr() == (void*)s) return true;
+    }
+    return false;
+}
+
 // Only the destination register and its proven write-back binding may own a
-// mutable accumulator. Interned strings, symbols, native temporary roots and
-// overlapping tails retain immutable-copy semantics. The result stays
-// non-interned; property-key consumers canonicalize it with ensure_interned.
+// mutable accumulator. Registers hold no counts, so the proof is: no counted
+// holder (count 0, or 1 when it is the binding the next instruction
+// replaces); the string was born by the concat path into this register of
+// this frame instance (Heap.accum_birth_matches); and no other slot of the
+// frame's span holds it. A frame below cannot hold a string born here with
+// no count: it would have had to come down as a return (which pops this
+// instance), through a counted holder (count above 0), or through a mapped
+// arguments write (which forgets the birth). A frame above cannot be live
+// while this one runs. A generator that yielded it was resumed as a new
+// instance, so the serial no longer matches. Interned strings, symbols,
+// native temporary roots and overlapping tails retain immutable-copy
+// semantics. The result stays non-interned; property-key consumers
+// canonicalize it with ensure_interned.
 fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
                              HString* ls, Units tail, uint reg_idx,
                              bytecode::Instruction* next_insn) {
@@ -362,8 +384,10 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     if (!ra.is_string() || ra.get_heapptr() != (void*)ls) return false;
 
     uint rc_val = ((types::HeapHeader*)ls).refcount;
-    if (rc_val != 1 && (rc_val != 2
+    if (rc_val != 0 && (rc_val != 1
         || !concat_binding_owns(vm, act, ls, reg_idx, next_insn))) return false;
+    if (!vm.heap.accum_birth_matches(ls, reg_idx, act.serial)) return false;
+    if (concat_frame_holds_elsewhere(vm, act, ra, ls)) return false;
     // Appending a slice of the accumulator's own buffer would read the units
     // the append is concurrently writing, and growing would leave `tail`
     // dangling at the old allocation. `s += s` is the reachable case; the
@@ -398,6 +422,7 @@ fn bool vm_concat_accumulate(Vm* vm, Activation* act, TVal* ra, TVal* rb,
     // The register takes the grown buffer. An owning binding releases its
     // old buffer when the following store replaces it.
     vm.heap.set_reg_string(ra, grown);
+    vm.heap.accum_birth_set(grown, reg_idx, act.serial);
     track_heap_store(act, ra, reg_idx);
     return true;
 }
@@ -505,6 +530,7 @@ fn ConcatStatus vm_concat(Vm* vm, Activation* act, TVal* ra, TVal* rb, HString* 
         return ConcatStatus.DONE;
     }
     vm.heap.set_reg_string(ra, result);
+    if (!result.flags.is_interned) vm.heap.accum_birth_set(result, reg_idx, act.serial);
     track_heap_store(act, ra, reg_idx);
     return ConcatStatus.DONE;
 }
@@ -1075,6 +1101,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             act.curr_pc = target.code;
             act.async_promise = null;
             act.async_gen_state = null;
+            act.serial = ++vm.activation_serial;
 
             // Check for generator/async resume: if heap.resume_gen is set
             // and matches this function, restore the saved PC and registers.
@@ -1449,6 +1476,8 @@ fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
     if (saved_count >= vm.activation_capacity) {
         return builtins::async_run_continuation(vm.heap, (void*)vm, job, value);
     }
+    // The outer segment stops being current: its live slots take counts.
+    vm_segment_counts(vm, true);
     ShadowActFrame shadow;
     vm.save_activation_roots(&shadow, vm.activations[0:saved_count]);
     TVal* saved_stack = vm.valstack;
@@ -1468,8 +1497,15 @@ fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
     vm.valstack_end = gs.saved_regs + gs.async_regs_capacity;
     vm.async_stack_state = gs;
     vm.heap.valstack_base = vm.valstack;
+    vm.heap.valstack_limit = vm.valstack_end;
     TVal result = builtins::async_run_continuation(vm.heap, (void*)vm, job, value);
     if (gs.state == GEN_EXECUTING) gs.state = GEN_COMPLETED;
+    // A finished body leaves its last register values behind. They hold no
+    // counts while this segment is current, and releasing the state would
+    // otherwise treat them as counted.
+    if (gs.state == GEN_COMPLETED && gs.saved_regs != null) {
+        for (uint i = 0; i < gs.num_regs; i++) gs.saved_regs[i].set_undefined();
+    }
     vm.valstack = saved_stack;
     vm.valstack_size = saved_size;
     vm.valstack_top = saved_top;
@@ -1477,11 +1513,13 @@ fn TVal vm_run_async_continuation(Vm* vm, HObject* job, TVal value) {
     vm.valstack_end = saved_end;
     vm.async_stack_state = saved_owner;
     vm.heap.valstack_base = saved_stack;
+    vm.heap.valstack_limit = saved_end;
     vm.activations -= (sz)saved_count;
     vm.activation_capacity += saved_count;
     vm.activation_count = saved_count;
     vm.gc_root_active_replaced();
     vm.pop_activation_roots(&shadow);
+    vm_segment_counts(vm, false);
     return result;
 }
 

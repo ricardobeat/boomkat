@@ -220,6 +220,7 @@ fn bool ensure_valstack_grow(Vm* vm, uint needed) {
 
     // Update heap's valstack GC root pointers (base may have moved)
     vm.heap.valstack_base = vm.valstack;
+    vm.heap.valstack_limit = vm.valstack_end;
     // valstack_top_ptr still points to vm.valstack_top (stable struct field)
 
     return true;
