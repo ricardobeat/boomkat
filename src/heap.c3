@@ -880,6 +880,7 @@ struct Heap {
     ulong        zct_bytes;          /// Allocation bytes of the queued strings
     void**       zct_set;            /// Scratch pointer set the frame scan probes
     uint         zct_set_mask;
+    bool         zct_flushing;       /// A flush is freeing; nested flushes return
 
     ConcatCacheEntry[CONCAT_CACHE_SIZE] concat_cache;
 
@@ -3934,6 +3935,11 @@ fn bool Heap.zct_held(&self, HString* s) @inline {
  * active, so no raw borrowed pointer can outlive its count.
  */
 fn void Heap.zct_flush(&self, bool quiescent) {
+    // Freeing runs weak-target and external-release hooks, which may queue
+    // more strings; they wait for the next flush rather than nest.
+    if (self.zct_flushing) return;
+    self.zct_flushing = true;
+    defer self.zct_flushing = false;
     if (self.zct_count == 0) {
         self.zct_threshold = ZCT_MIN_THRESHOLD;
         return;
@@ -3966,7 +3972,8 @@ fn void Heap.zct_flush(&self, bool quiescent) {
 
     uint kept = 0;
     ulong kept_bytes = 0;
-    for (uint i = 0; i < self.zct_count; i++) {
+    uint scanned = self.zct_count;
+    for (uint i = 0; i < scanned; i++) {
         HString* s = self.zct[i];
         if (s == null) continue;
         HeapHeader* hdr = (HeapHeader*)s;
@@ -4000,6 +4007,13 @@ fn void Heap.zct_flush(&self, bool quiescent) {
             self.large_string_unregister(s);
         }
         self.free_string(s);
+    }
+    // Entries the frees queued sit past the scanned range; keep them.
+    for (uint i = scanned; i < self.zct_count; i++) {
+        HString* s = self.zct[i];
+        if (s == null) continue;
+        self.zct[kept++] = s;
+        kept_bytes += (ulong)s.alloc_size();
     }
     self.zct_count = kept;
     self.zct_bytes = kept_bytes;
