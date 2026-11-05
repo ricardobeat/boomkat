@@ -140,7 +140,7 @@ fn bool opt_has_feedback(CompiledFunction* f) {
     if (f.ic_entries == null) return false;
     hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
     for (uint i = 0; i < f.code_count; i++) {
-        if (ic[i].feedback != 0) return true;
+        if ((ic[i].feedback & hobject::FB_OPERANDS) != 0) return true;
     }
     return false;
 }

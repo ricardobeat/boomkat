@@ -1717,6 +1717,11 @@ fn void baseline_dump_feedback(Heap* h) {
         hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
         for (uint i = 0; i < cf.code_count; i++) {
             char fb = entries[i].feedback;
+            if ((fb & hobject::FB_CALL) != 0) {
+                io::eprintfn("feedback fn#%d +%d %s -> fn#%d%s", fi, i, cf.code[i].op, entries[i].prop_idx,
+                             (fb & hobject::FB_POLY) != 0 ? " poly" : "");
+                continue;
+            }
             if (fb == 0 || !vm::has_feedback(cf.code[i].op)) continue;
             io::eprintfn("feedback fn#%d +%d %s %s%s%s%s", fi, i, cf.code[i].op,
                          (fb & hobject::FB_OVF) != 0 ? "ovf " : "", (fb & hobject::FB_DBL) != 0 ? "dbl " : "",

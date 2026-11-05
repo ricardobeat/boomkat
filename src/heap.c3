@@ -3419,6 +3419,7 @@ fn void Heap.track_compiled_func(&self, void* cf) {
     }
     uint index = self.compiled_func_count;
     self.compiled_funcs[index] = cf;
+    ((bytecode::CompiledFunction*)cf).func_index = index;
     if (self.gc_phase == GcPhase.MARK && !self.gc_new_compiled_pending) {
         self.gc_new_compiled_index = index;
         self.gc_new_compiled_subindex = 0;

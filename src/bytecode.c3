@@ -2001,6 +2001,9 @@ struct CompiledFunction {
     // `code[pc_offset]`.
     void*           ic_entries;  // ICEntry* (opaque to avoid import cycle)
     uint            ic_count;
+    // Position in Heap.compiled_funcs, which keeps the function until the heap
+    // is destroyed: call-site feedback names a callee by it.
+    uint            func_index;
 
     // ---- Variable IC (GETVAR/TYPEOFIDENT) --------------------------------
     // Per-GETVAR/TYPEOFIDENT site inline cache. Parallel to the instruction
