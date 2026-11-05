@@ -587,7 +587,7 @@ fn void Asm.emit_return_body(&self) {
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT));
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    self.emit_result_window(&helper, false);
+    self.emit_result_window(&helper, true);
     sljit_set_label(primitive, sljit_emit_label(c));
     // th_tracked_regs_uncounted: no tracked register holds a string.
     uint nregs = self.f.num_regs;
@@ -606,14 +606,11 @@ fn void Asm.emit_return_body(&self) {
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)types::TAG_STRING));
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, TVal::size);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), scan);
-    // Every check passed: track an object result, then clear the tracked
+    // Every check passed (an object result was tracked with the first, which a
+    // later bail to the helper leaves harmlessly raised): clear the tracked
     // registers (th_clear_tracked_regs).
     untracked.bind(sljit_emit_label(c));
     self.mov(R0, 0, sp, SUB_VALUE_OFF);
-    sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
-    void* no_track = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT);
-    self.emit_result_window(&helper, true);
-    sljit_set_label(no_track, sljit_emit_label(c));
     self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
     Jumps cleared;
     cleared.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
