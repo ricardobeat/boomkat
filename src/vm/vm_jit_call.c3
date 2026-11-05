@@ -83,3 +83,122 @@ fn long jit_call_return(Dispatch* ds, long status, ulong old_floor, ulong next_a
     ds.curr_pc = pc;
     return pc == (Instruction*)(usz)next_arg ? 0 : jit::BASELINE_REDISPATCH;
 }
+
+// RET and RETUNDEF of a frame a native call site waits for, as the threaded
+// leaf return (th_leaf_return, th_pop_frame): returns BASELINE_RETURNED with
+// the caller current and ds.curr_pc at its resume point, or 0 when the return
+// takes its thunk. A caller in another realm takes the thunk too.
+fn long jit_ret(Dispatch* ds, ulong next_arg) {
+    Vm* vm = ds.vm;
+    if (ds.jit_floor == 0 || vm.activation_count != ds.jit_floor + 1) return 0;
+    Activation* fa = ds.act;
+    Activation* up = &vm.activations[vm.activation_count - 2];
+    if (up.func != fa.func && (up.func == null || ((CompiledFunction*)up.func).realm != vm.heap.realm)) return 0;
+    Instruction* pc = (Instruction*)(usz)next_arg - 1;
+    bool is_undefined = pc.op == Opcode.RETUNDEF;
+    TVal value;
+    if (is_undefined) {
+        value.set_undefined();
+    } else {
+        value = ds.regs_base[pc.a];
+    }
+    Activation* caller;
+    bool cross_function;
+    if (!th_leaf_return(vm, fa, value, is_undefined, &caller, &cross_function)) return 0;
+    th_pop_frame(&ds.cold, fa, caller);
+    ds.curr_pc = caller.curr_pc;
+    return jit::BASELINE_RETURNED;
+}
+
+// The owner of the cached prototype property entry `ic` names for the
+// receiver `hobj`, whose shape matched, as ic_resolve_slot resolves it; null
+// when the entry no longer describes the chain or the owner is a proxy.
+fn HObject* jit_ic_owner(hobject::ICEntry* ic, HObject* hobj) {
+    HObject* owner = hobject::ic_resolve_owner(ic, hobj);
+    if (owner == null || owner.is_proxy()) return null;
+    return owner;
+}
+
+// An absent-property add through the site entry `ic`, whose key matched, to
+// the plain object `hobj`, as th_put_cached's absent case and th_put_absent:
+// a value that needs no count or barrier work, appended into spare property
+// capacity. False leaves the store to the thunk.
+fn bool jit_put_absent(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) {
+    if (!hobject::ic_matches_absent_put(ic, hobj, ic.key.borrow(), h)) return false;
+    if (value.is_heap_allocated()) {
+        if (!value.is_object() || h.gc_phase == heap::GcPhase.MARK || hobj.gc.old) return false;
+    }
+    if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) return false;
+    if (hobj.gc.prototype_observed) h.bump_prototype_epoch();
+    hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
+    *slot = (hobject::PropValue)*value;
+    hobj.prop_count++;
+    hobj.shape_id = ic.absent_next_shape;
+    return true;
+}
+
+// A handler table whose every entry stops: a threaded handler called with it
+// runs its own instruction and returns the next pc instead of continuing.
+HandlerTable jit_stop_table @private;
+bool jit_relay_ready @private;
+
+fn Instruction* jit_stop(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private => pc;
+
+fn void jit_relay_init() @private @noinline {
+    init_threaded_handlers();
+    for (usz i = 0; i < TH_TABLE_SIZE; i++) jit_stop_table.fns[i] = &jit_stop;
+    jit_relay_ready = true;
+}
+
+// Run the instruction before `next` through its threaded handler, as the
+// burst would: true when the handler completed it and fell through to
+// `next`, false when it declined (the operation function runs it).
+fn bool jit_relay(Dispatch* ds, Instruction* next) {
+    if (!jit_relay_ready) jit_relay_init();
+    if (ds.ic_base == null || ds.var_ic_base == null) return false;
+    Instruction* pc = next - 1;
+    ColdCtx* cold = &ds.cold;
+    th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    return g_threaded_table.fns[pc.op.ordinal](pc, &jit_stop_table, ds.regs_base, cold) == next;
+}
+
+// A CALL whose callee is a builtin, through th_call_native as the threaded
+// burst runs it (identity fast paths such as charCodeAt, then the builtin's
+// own dispatch) instead of op_call. False when it declined before running
+// anything; otherwise `status` is what the operation function would return,
+// with the burst's throw and re-dispatch handoffs completed as vm_dispatch
+// completes them.
+fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status) {
+    if (!jit_relay_ready) jit_relay_init();
+    if (ds.ic_base == null || ds.var_ic_base == null) return false;
+    Vm* vm = ds.vm;
+    Instruction* pc = next - 1;
+    TVal* regs = ds.regs_base;
+    if (th_lean_target(vm, regs[pc.b], regs + pc.b + 2, false) != null) return false;
+    ColdCtx* cold = &ds.cold;
+    th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    Instruction* r = th_call_native(pc, &jit_stop_table, regs, cold, pc.b, pc.a, pc.c);
+    ThreadedHandoff handoff = vm.threaded_handoff;
+    vm.threaded_handoff = ThreadedHandoff.NONE;
+    switch (handoff) {
+        case THROW:
+            TVal err_val = vm.threaded_throw;
+            ds.curr_pc = next;
+            if (!vm_throw_value(vm, err_val, ds.act, &ds.curr_pc, &ds.needs_restart)) {
+                *status = op_uncaught(ds, &err_val);
+            } else {
+                *status = ds.needs_restart ? RESTART : NEXT;
+            }
+            return true;
+        case CALL:
+            ds.curr_pc = next;
+            *status = op_calls(ds, vm.threaded_call);
+            return true;
+        case NONE:
+            break;
+    }
+    if (r == pc) return false;
+    ds.curr_pc = r;
+    *status = NEXT;
+    return true;
+}
