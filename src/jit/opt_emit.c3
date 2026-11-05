@@ -747,8 +747,34 @@ fn void OptCg.emit_fop(&self, uint i, OptNode* n) {
 }
 
 // A conditional branch: leave the taken jumps in `jumps`.
+// BRANCH_WINDOW: the baseline's equality or null test over two window slots; the rare cases
+// leave through the slow path.
+fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
+    uint rb = (uint)(n.imm & 0xFFFFF);
+    uint rc = (uint)(n.imm >> 20);
+    Jumps yes;
+    Jumps no;
+    self.a.call.len = 0;
+    if (n.cc >= 4) {
+        self.a.null_test(rb, &yes, &no);
+    } else {
+        self.a.load(R0, rb);
+        self.a.load(R1, rc);
+        self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
+    }
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    bool on_yes = (n.cc & 1) == 0;
+    Jumps* take = on_yes ? &yes : &no;
+    Jumps* skip = on_yes ? &no : &yes;
+    uint count = take.len > 8 ? 8 : take.len;
+    for (uint k = 0; k < count; k++) jumps[k] = take.at[k];
+    skip.bind(sljit_emit_label(self.a.c));
+    return count;
+}
+
 fn uint OptCg.emit_test(&self, uint i, OptNode* n, void** jumps) {
     void* c = self.a.c;
+    if (n.op == OptOp.BRANCH_WINDOW) return self.emit_window_branch(i, n, jumps);
     if (n.op == OptOp.BRANCH) {
         if (n.imm == (long)OptRep.INT32.ordinal) {
             int x = self.int_reg(n.a, R0);
@@ -871,6 +897,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_edge(pos, 0, true);
         case BRANCH:
         case BRANCH_TRUTH:
+        case BRANCH_WINDOW:
             void*[8] jumps;
             uint count = self.emit_test(i, n, &jumps[0]);
             self.emit_edge(pos, 1, true);

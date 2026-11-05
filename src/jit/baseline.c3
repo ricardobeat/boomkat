@@ -1607,11 +1607,10 @@ fn void Asm.to_double(&self, int fr, int reg) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// JMP_NULL / JMP_NNULL, as th_jmp_null.
-fn void Asm.emit_jmp_null(&self, bool on_null, uint r, uint target, bool backward) {
+// Sort register `r` into `nullish` (null, undefined or the [[IsHTMLDDA]] object) and `other`,
+// as th_jmp_null; the rare cases take the slow path.
+fn void Asm.null_test(&self, uint r, Jumps* nullish, Jumps* other) {
     void* c = self.c;
-    Jumps nullish;
-    Jumps other;
     self.load(R0, r);
     nullish.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
     nullish.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_NULL));
@@ -1620,6 +1619,13 @@ fn void Asm.emit_jmp_null(&self, bool on_null, uint r, uint target, bool backwar
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.heap, self.htmldda_off);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, R2, 0));
     other.add(sljit_emit_jump(c, SLJIT_JUMP));
+}
+
+// JMP_NULL / JMP_NNULL.
+fn void Asm.emit_jmp_null(&self, bool on_null, uint r, uint target, bool backward) {
+    Jumps nullish;
+    Jumps other;
+    self.null_test(r, &nullish, &other);
     if (on_null) {
         self.finish_test(&nullish, &other, target, backward);
     } else {
