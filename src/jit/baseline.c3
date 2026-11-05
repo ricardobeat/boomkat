@@ -137,6 +137,11 @@ struct JitStats {
     bool count_ops;
     ulong[Opcode::values.len] fast_hits;
     ulong[Opcode::values.len] slow_calls;
+    // Thunk calls the threaded handler or the builtin call path completed
+    // without the operation function, moved out of slow_calls at run time.
+    ulong[Opcode::values.len] relay_done;
+    // Inline reads answered by an entry's polymorphic set.
+    ulong[Opcode::values.len] poly_hits;
 }
 
 struct BaselineCode {
@@ -316,6 +321,9 @@ struct Stub {
     uint at;
     char call_len;
     char alt_len;
+    char poly_len;
+    // Where the polymorphic arm resumes the inline path.
+    void* poly_back;
 }
 
 // Load `n` jumps of the stub pool, starting at `at`, into `j`.
@@ -339,6 +347,8 @@ const int ARRAY_SLOT_SUB = -5;
 const int CAPTURE_REF_SUB = -6;
 const int TYPED_GET_SUB = -7;
 const int TYPED_PUT_SUB = -8;
+const int POLY_SUB = -9;
+const int INDEX_SUB = -10;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -377,6 +387,10 @@ struct Asm {
     bool wide;
     Jumps call;
     Jumps alt;
+    // Receiver shapes other than a read entry's own, for the polymorphic arm
+    // (emit_poly_arm), which continues at poly_back.
+    Jumps poly;
+    void* poly_back;
 }
 
 fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
@@ -479,6 +493,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         a.decode(i);
         a.call.len = 0;
         a.alt.len = 0;
+        a.poly.len = 0;
         a.labels[i] = sljit_emit_label(c);
         bc.insns++;
         if (a.emit_call()) {
@@ -487,10 +502,12 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         } else {
             a.emit_thunk_call(i);
         }
-        if (a.call.len != 0 || a.alt.len != 0) {
-            a.stubs.push({ .insn = i, .at = (uint)a.stub_jumps.len(), .call_len = (char)a.call.len, .alt_len = (char)a.alt.len });
+        if (a.call.len != 0 || a.alt.len != 0 || a.poly.len != 0) {
+            a.stubs.push({ .insn = i, .at = (uint)a.stub_jumps.len(), .call_len = (char)a.call.len,
+                           .alt_len = (char)a.alt.len, .poly_len = (char)a.poly.len, .poly_back = a.poly_back });
             for (uint k = 0; k < a.call.len; k++) a.stub_jumps.push(a.call.at[k]);
             for (uint k = 0; k < a.alt.len; k++) a.stub_jumps.push(a.alt.at[k]);
+            for (uint k = 0; k < a.poly.len; k++) a.stub_jumps.push(a.poly.at[k]);
         }
         i = a.next;
     }
@@ -507,6 +524,12 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
             alt.load(&a.stub_jumps, stub.at + stub.call_len, stub.alt_len);
             alt.bind(sljit_emit_label(c));
             a.emit_alt();
+        }
+        if (stub.poly_len != 0) {
+            Jumps poly;
+            poly.load(&a.stub_jumps, stub.at + stub.call_len + stub.alt_len, stub.poly_len);
+            poly.bind(sljit_emit_label(c));
+            a.emit_poly_arm(stub.poly_back);
         }
         a.call.bind(sljit_emit_label(c));
         a.emit_thunk_call(stub.insn);
@@ -543,14 +566,22 @@ fn void Asm.decode(&self, uint i) {
 }
 
 // Whether the inline path of `op` reads its operands as the operation
-// function does when a WIDE prefix widens them. Calls, returns and the
-// cached access sites decode their instruction again at run time or key
-// their cache by the instruction's address, so they keep the thunk.
+// function does when a WIDE prefix widens them. Calls and returns decode
+// their instruction again at run time, and the constant-key sites switch
+// opcodes in place, so they keep the thunk. The keyed property sites and
+// the captures take their widened registers, and their cache entry is the
+// payload word's.
 fn bool wide_inline(Opcode op) {
     switch (op) {
         case RET:
         case RETUNDEF:
             return false;
+        case GETPROP:
+        case GETPROP_CACHE:
+        case PUTPROP:
+        case GETCAP:
+        case PUTCAP:
+            return true;
         default:
             return !is_access_op(op) || op == Opcode.LDREG || op == Opcode.LDTHIS;
     }
@@ -601,7 +632,7 @@ fn void Asm.emit_subroutines(&self) {
     void* c = self.c;
     int ret = SLJIT_MEM | reg_sp();
     // One label per opcode, then the shared helpers by -id.
-    void*[Opcode::values.len + 8] labels;
+    void*[Opcode::values.len + 10] labels;
     foreach (call : self.subs) {
         usz slot = sub_slot(call.sub);
         if (labels[slot] != null) continue;
@@ -617,6 +648,10 @@ fn void Asm.emit_subroutines(&self) {
             case TYPED_GET_SUB:
             case TYPED_PUT_SUB:
                 self.emit_typed_body(call.sub == TYPED_PUT_SUB);
+            case POLY_SUB:
+                self.emit_poly_body();
+            case INDEX_SUB:
+                self.emit_index_body();
             case TRUTH_SUB:
             case STRICT_EQ_SUB:
             case LOOSE_EQ_SUB:
@@ -1303,12 +1338,27 @@ fn void Asm.truth_rest(&self, Jumps* truthy, Jumps* falsy, Jumps* slow) {
     truthy.add(sljit_emit_jump(c, SLJIT_JUMP));
 }
 
-// `reg`, a fastint or a double within the int32 range, as its ToInt32 in the
-// low 32 bits; the slow path otherwise. Uses R3 and FR0.
+// `reg`, a fastint, a double within the int32 range, a boolean, undefined
+// or null, as its ToInt32 in the low 32 bits; the slow path otherwise. Uses
+// R3 and FR0.
 fn void Asm.int32_operand(&self, int reg) {
     void* c = self.c;
+    Jumps done;
     sljit_emit_op2(c, SLJIT_ASHR, R3, 0, reg, 0, SLJIT_IMM, 48);
-    void* is_int = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT);
+    done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT));
+    // ToNumber gives 0 or 1 for a boolean and NaN, whose ToInt32 is 0, for
+    // undefined and null.
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, reg, 0, SLJIT_IMM, K_BOOL);
+    void* not_bool = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, 2);
+    sljit_emit_op1(c, SLJIT_MOV, reg, 0, R3, 0);
+    done.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(not_bool, sljit_emit_label(c));
+    void* is_undef = sljit_emit_cmp(c, SLJIT_EQUAL, reg, 0, SLJIT_IMM, K_UNDEF);
+    void* not_null = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, reg, 0, SLJIT_IMM, K_NULL);
+    sljit_set_label(is_undef, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, reg, 0, SLJIT_IMM, 0);
+    done.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(not_null, sljit_emit_label(c));
     self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, reg, 0, SLJIT_IMM, K_INT));
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, reg);
     // Out-of-range doubles, infinities and NaN either give a value outside the
@@ -1316,7 +1366,7 @@ fn void Asm.int32_operand(&self, int reg) {
     sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, reg, 0, FR0, 0);
     sljit_emit_op2(c, SLJIT_ADD, R3, 0, reg, 0, SLJIT_IMM, 1L << 31);
     self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, 1L << 32));
-    sljit_set_label(is_int, sljit_emit_label(c));
+    done.bind(sljit_emit_label(c));
 }
 
 // Decide equality of R0 and R1, strict as th_strict_order or loose as
@@ -1460,13 +1510,20 @@ fn void init_thunks() @noinline @private {
                     insn.op = p.op;
                 $endif
                 $if @relayed($op):
-                    if ((arg & 1) == 0 && vm::jit_relay(ds, next)) return 0;
+                    if ((arg & 1) == 0 && vm::jit_relay(ds, next)) {
+                        count_relayed(ds, $op);
+                        return 0;
+                    }
                 $endif
                 Activation* act = ds.act;
                 CompiledFunction* func = ds.vm.current_func;
                 OpStatus s;
                 $if $op == Opcode.CALL:
-                    if ((arg & 1) != 0 || !vm::jit_call_builtin(ds, next, &s)) s = @run_op($op, ds, insn);
+                    if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s)) {
+                        count_relayed(ds, $op);
+                    } else {
+                        s = @run_op($op, ds, insn);
+                    }
                 $else
                     s = @run_op($op, ds, insn);
                 $endif
@@ -1488,6 +1545,14 @@ fn void init_thunks() @noinline @private {
     thunks_ready = true;
 }
 
+// Move one thunk call of `op` from the slow count to the relayed completions.
+fn void count_relayed(Dispatch* ds, Opcode op) @inline {
+    JitStats* st = &ds.heap.jit_stats;
+    if (!st.count_ops) return;
+    st.slow_calls[op.ordinal]--;
+    st.relay_done[op.ordinal]++;
+}
+
 // Opcodes without a thunk: the WIDE prefix, which is never dispatched alone,
 // and the enum's end marker.
 macro bool @excluded(Opcode $op) @const {
@@ -1501,20 +1566,36 @@ macro bool @excluded(Opcode $op) @const {
 }
 
 // Opcodes whose thunk first runs the threaded handler (vm::jit_relay), which
-// completes the common cases the inline paths leave out (polymorphic and
-// megamorphic property sites, typed-array elements, global stores,
-// instanceof, allocation) without the operation function. None of these
-// handlers switches frames or reads past its own instruction.
+// completes the common cases the inline paths leave out without the
+// operation function: megamorphic property sites, typed-array elements,
+// concatenation and mixed number additions, integer remainders, cells,
+// variable sites filled under another activation's scope chain, scope
+// declarations, global stores, instanceof and allocation. None of these
+// handlers switches frames or continues past its own instruction.
 macro bool @relayed(Opcode $op) @const {
     $switch $op:
         $case Opcode.GETPROPC:
         $case Opcode.GETPROPC_CACHED:
         $case Opcode.GETPROP:
+        $case Opcode.GETPROP_CACHE:
         $case Opcode.GETTHISC:
         $case Opcode.PUTPROP:
         $case Opcode.PUTPROPC:
         $case Opcode.PUTTHISC:
         $case Opcode.PUTGLOBAL:
+        $case Opcode.ADD:
+        $case Opcode.GETVAR:
+        $case Opcode.PUTVAR_ASSIGN:
+        $case Opcode.PUTVAR_SNAP:
+        $case Opcode.RESOLVEVAR:
+        $case Opcode.THROW_UNRESOLVED:
+        $case Opcode.INC_VAR:
+        $case Opcode.DECLVAR:
+        $case Opcode.DECLVAR_HOIST:
+        $case Opcode.GETCELL:
+        $case Opcode.SETCELL:
+        $case Opcode.MOVECELL:
+        $case Opcode.MOD:
         $case Opcode.INSTANCEOF:
         $case Opcode.TYPEOF:
         $case Opcode.NEWOBJ:
