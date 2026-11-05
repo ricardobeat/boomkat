@@ -2521,13 +2521,25 @@ fn bool vm_poll_interrupt(Vm* vm, Activation* act, Instruction** curr_pc, bool* 
 fn bool vm_branch(Dispatch* ds, int offset) @inline {
     if (offset < 0) {
         Heap* h = ds.vm.heap;
+        bool hot = false;
         if (--h.bwd_gc_budget == 0) {
             if (h.gc_pending) h.safepoint_gc(heap::GC_LOOP_WORK);
             h.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+            // An interpreted loop that got hot continues in native code:
+            // Vm.run restarts and enters the frame at the branch target.
+            $if $feat(SLJIT):
+                hot = h.jit_enabled && !ds.jit_native && jit::baseline_loop_hot(h, ds.vm.current_func);
+            $endif
         }
         if (h.capi_interrupt_fn != null || h.capi_runtime != null) {
             vm_charge_interrupt(h);
             if (vm_poll_interrupt(ds.vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return ds.needs_restart;
+        }
+        if (hot) {
+            ds.curr_pc += offset;
+            ds.act.curr_pc = ds.curr_pc;
+            ds.needs_restart = true;
+            return true;
         }
     }
     ds.curr_pc += offset;

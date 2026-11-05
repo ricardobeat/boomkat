@@ -53,9 +53,17 @@
 // function sees the real register window, and the interrupt and back-edge
 // polls stay inside the operation functions.
 //
-// Not compiled: generators and async functions, script, module and eval
-// top-level code, functions that open a `with` scope, and any function
-// containing an opcode without a thunk.
+// Every opcode but the WIDE prefix has a thunk; a WIDE pair runs the inline
+// path of its opcode where the operands read the same widened. Generators
+// and async functions suspend through their thunks and resume through the
+// entry table once the resume has restored the frame.
+//
+// Functions compile at their BASELINE_ENTRY_THRESHOLD-th entry. An
+// interpreted backward branch that uses up the GC budget credits its function
+// BASELINE_LOOP_CREDIT entries (vm_branch, which both dispatchers reach on
+// expiry); once the function has code, Vm.run restarts and enters it at the
+// branch target. Script, module and eval top-level code runs once and
+// compiles only this way.
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::vm;
@@ -68,6 +76,11 @@ import std::collections::list;
 const char BASELINE_MAX_ATTEMPTS = 2;
 // Frame entries before a function compiles without --jit-stress.
 const uint BASELINE_ENTRY_THRESHOLD = 2;
+// Entries one expiry of the back-edge budget (heap::BWD_GC_INTERVAL backward
+// branches, counted across all frames) credits to the function whose branch
+// used it up: a function called once compiles at its loop's first expiry, and
+// top-level code, which is never credited for entering, at its second.
+const uint BASELINE_LOOP_CREDIT = 1;
 // Generated code and entry tables, in bytes, past which compiles are refused.
 const usz BASELINE_CODE_CAP = 64 * 1024 * 1024;
 // A native run's result when its target is not an instruction start: the
@@ -79,9 +92,8 @@ struct JitStats {
     usz table_bytes;
     usz insns;
     uint compiled;
-    uint excluded_suspending;
-    uint excluded_top_level;
-    uint excluded_with;
+    // Compiles made by a hot interpreted loop, which then continued natively.
+    uint loop_entries;
     uint excluded_opcode;
     uint failed;
     uint capped;
@@ -116,17 +128,36 @@ alias Thunk = fn long(Dispatch* ds, ulong next_pc);
 
 // Native code for `f`, compiling it when the policy says so, or null when the
 // frame runs in the interpreter.
+// Top-level code runs once, so it compiles only from a hot loop.
 fn void* baseline_code(Heap* h, CompiledFunction* f) @inline {
     if (f.jit_code != null) return ((BaselineCode*)f.jit_code).exec;
-    if (f.jit_refused) return null;
+    if (f.jit_refused || is_top_level(f)) return null;
     if (!h.jit_stress && ++f.jit_entries < BASELINE_ENTRY_THRESHOLD) return null;
     return baseline_try_compile(h, f);
+}
+
+fn bool is_top_level(CompiledFunction* f) @inline => f.flags.is_global || f.flags.is_module || f.flags.is_eval;
+
+// Whether the interpreted frame of `f`, whose loop just used up the back-edge
+// budget, should continue in native code, compiling `f` when the policy says
+// so. Each expiry credits BASELINE_LOOP_CREDIT entries.
+fn bool baseline_loop_hot(Heap* h, CompiledFunction* f) @noinline {
+    if (f.jit_code != null) return true;
+    if (f.jit_refused) return false;
+    f.jit_entries += BASELINE_LOOP_CREDIT;
+    if (!h.jit_stress && f.jit_entries < BASELINE_ENTRY_THRESHOLD) return false;
+    if (baseline_try_compile(h, f) == null) return false;
+    h.jit_stats.loop_entries++;
+    return true;
 }
 
 fn long baseline_run(void* exec, Dispatch* ds) @inline {
     ds.jit_floor = 0;
     ds.jit_depth = 0;
-    return ((BaselineFn)exec)(ds);
+    ds.jit_native = true;
+    long status = ((BaselineFn)exec)(ds);
+    ds.jit_native = false;
+    return status;
 }
 
 // The native entry of a compiled function.
@@ -140,34 +171,28 @@ fn void baseline_free(Heap* h, CompiledFunction* f) {
     f.jit_code = null;
 }
 
-enum Refusal : char { NONE, SUSPENDING, TOP_LEVEL, WITH, OPCODE }
-
-fn Refusal baseline_refusal(CompiledFunction* f) {
-    if (f.flags.is_generator || f.flags.is_async) return SUSPENDING;
-    if (f.flags.is_global || f.flags.is_module || f.flags.is_eval) return TOP_LEVEL;
-    if (f.code == null || f.code_count == 0) return OPCODE;
+// Whether every instruction of `f` has a thunk.
+fn bool baseline_compilable(CompiledFunction* f) {
+    if (f.code == null || f.code_count == 0) return false;
     for (uint i = 0; i < f.code_count; i++) {
         Instruction w = f.code[i];
-        if (w.op.ordinal >= Opcode::values.len) return OPCODE;
+        if (w.op.ordinal >= Opcode::values.len) return false;
         if (w.op == Opcode.WIDE) {
-            if (i + 1 >= f.code_count) return OPCODE;
+            if (i + 1 >= f.code_count) return false;
             w = f.code[++i];
-            if (w.op.ordinal >= Opcode::values.len) return OPCODE;
+            if (w.op.ordinal >= Opcode::values.len) return false;
         }
-        if (w.op == Opcode.WITH_START || w.op == Opcode.WITH_END) return WITH;
-        if (thunks()[w.op.ordinal] == null) return OPCODE;
+        if (thunks()[w.op.ordinal] == null) return false;
     }
-    return NONE;
+    return true;
 }
 
 fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
     JitStats* st = &h.jit_stats;
-    switch (baseline_refusal(f)) {
-        case SUSPENDING: st.excluded_suspending++; f.jit_refused = true; return null;
-        case TOP_LEVEL:  st.excluded_top_level++;  f.jit_refused = true; return null;
-        case WITH:       st.excluded_with++;       f.jit_refused = true; return null;
-        case OPCODE:     st.excluded_opcode++;     f.jit_refused = true; return null;
-        case NONE: break;
+    if (!baseline_compilable(f)) {
+        st.excluded_opcode++;
+        f.jit_refused = true;
+        return null;
     }
     if (st.code_bytes + st.table_bytes >= BASELINE_CODE_CAP) {
         st.capped++;
@@ -295,7 +320,8 @@ struct Asm {
     // The instruction being emitted.
     uint i;
     uint next;
-    Instruction w;
+    DecodedInsn w;
+    bool wide;
     Jumps call;
     Jumps alt;
 }
@@ -383,9 +409,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     sljit_emit_return(c, SLJIT_MOV, R0, 0);
 
     for (uint i = 0; i < count;) {
-        a.i = i;
-        a.w = f.code[i];
-        a.next = i + (a.w.op == Opcode.WIDE ? 2 : 1);
+        a.decode(i);
         a.call.len = 0;
         a.alt.len = 0;
         a.labels[i] = sljit_emit_label(c);
@@ -404,9 +428,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
 
     // Out-of-line paths, each returning to the following instruction.
     foreach (&stub : a.stubs) {
-        a.i = stub.insn;
-        a.w = f.code[stub.insn];
-        a.next = stub.insn + 1;
+        a.decode(stub.insn);
         a.call = stub.call;
         a.alt = {};
         if (stub.alt.len != 0) {
@@ -430,6 +452,36 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
 }
 
 // --- Emission helpers ---
+
+// Make instruction `i` the current one, its operands widened by a WIDE prefix
+// as the thunk decodes them.
+fn void Asm.decode(&self, uint i) {
+    Instruction p = self.f.code[i];
+    self.i = i;
+    self.wide = p.op == Opcode.WIDE;
+    if (!self.wide) {
+        self.w = { .op = p.op, .a = p.a, .b = p.b, .c = p.c };
+        self.next = i + 1;
+        return;
+    }
+    Instruction x = self.f.code[i + 1];
+    self.w = { .op = x.op, .a = x.a | (uint)p.a << 8, .b = x.b | (uint)p.b << 8, .c = x.c | (uint)p.c << 8 };
+    self.next = i + 2;
+}
+
+// Whether the inline path of `op` reads its operands as the operation
+// function does when a WIDE prefix widens them. Calls, returns and the
+// cached access sites decode their instruction again at run time or key
+// their cache by the instruction's address, so they keep the thunk.
+fn bool wide_inline(Opcode op) {
+    switch (op) {
+        case RET:
+        case RETUNDEF:
+            return false;
+        default:
+            return !is_access_op(op) || op == Opcode.LDREG || op == Opcode.LDTHIS;
+    }
+}
 
 fn void Asm.go(&self, void* jump, uint target) {
     if (target <= self.i) {
@@ -532,6 +584,7 @@ const int CALL_FRAME_BYTES = 16;
 // declined call takes the thunk; a trivial callee completes in the helper.
 fn bool Asm.emit_call(&self) {
     void* c = self.c;
+    if (self.wide) return false;
     switch (self.w.op) {
         case CALL:
         case CALL_UNDEF_THIS:
@@ -699,8 +752,9 @@ $if !types::USE_NANBOX:
     return false;
 $else
     void* c = self.c;
-    Instruction w = self.w;
+    DecodedInsn w = self.w;
     Opcode op = w.op;
+    if (self.wide && !wide_inline(op)) return false;
     uint ra = w.a;
     uint rb = w.b;
     uint rc = w.c;
@@ -903,7 +957,7 @@ $endif
 // The number path entered when an operand is not a fastint.
 fn void Asm.emit_alt(&self) {
     void* c = self.c;
-    Instruction w = self.w;
+    DecodedInsn w = self.w;
     Opcode op = w.op;
     if (op == JMP_SEQ || op == JMP_SNEQ || op == JMP_EQ || op == JMP_NEQ) {
         Jumps eq;
@@ -1353,21 +1407,11 @@ fn void init_thunks() @noinline @private {
 }
 
 // Opcodes without a thunk: the WIDE prefix, which is never dispatched alone,
-// the generator and async suspension ops, and `with` scope entry and exit.
+// and the enum's end marker.
 macro bool @excluded(Opcode $op) @const {
     $switch $op:
         $case Opcode.WIDE:
         $case Opcode.LAST_OP:
-        $case Opcode.LOAD_RESUME:
-        $case Opcode.AWAIT:
-        $case Opcode.YIELD:
-        $case Opcode.YIELD_STAR:
-        $case Opcode.YIELD_STAR_ASYNC:
-        $case Opcode.GEN_START:
-        $case Opcode.RET_GEN:
-        $case Opcode.RETUNDEF_GEN:
-        $case Opcode.WITH_START:
-        $case Opcode.WITH_END:
             return true;
         $default:
             return false;
@@ -1547,6 +1591,16 @@ macro OpStatus @run_op(Opcode $op, Dispatch* ds, DecodedInsn insn) {
 
         $case Opcode.RET:
         $case Opcode.RETUNDEF: return vm::op_ret(ds, insn);
+        $case Opcode.RET_GEN:
+        $case Opcode.RETUNDEF_GEN: return vm::op_ret_gen(ds, insn);
+        $case Opcode.LOAD_RESUME:
+        $case Opcode.AWAIT:
+        $case Opcode.YIELD:
+        $case Opcode.YIELD_STAR:
+        $case Opcode.YIELD_STAR_ASYNC:
+        $case Opcode.GEN_START: return vm::op_generators(ds, insn);
+        $case Opcode.WITH_START: return vm::op_with_start(ds, insn);
+        $case Opcode.WITH_END: return vm::op_with_end(ds, insn);
 
         $case Opcode.RESOLVEVAR: return vm::op_resolvevar(ds, insn);
         $case Opcode.THROW_UNRESOLVED: return vm::op_throw_unresolved(ds, insn);

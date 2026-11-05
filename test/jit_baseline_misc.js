@@ -233,5 +233,144 @@ function C() { this.z = 4; this.w = 5; this.x = 6; }
     out("typed " + acc + " " + typeof f64[9]);
 })();
 
-for (var li = 0; li < lines.length; li++) print(lines[li]);
-print("jit_baseline_misc: " + lines.length + " lines");
+// --- Hot loops entered from the interpreter ---
+(function () {
+    // Called once: the loop switches to native code mid-run.
+    function once(n) {
+        var s = 0, o = { k: 1 }, str = "";
+        for (var i = 0; i < n; i++) {
+            s += i * o.k;
+            if ((i & 1023) === 0) str += i % 7;
+            if (i === 5000) o = { k: 2 };
+        }
+        return s + " " + str;
+    }
+    out("once " + once(20000));
+    // A loop whose body throws and catches across the switch.
+    function catcher(n) {
+        var caught = 0;
+        for (var i = 0; i < n; i++) {
+            try { if (i % 997 === 0) throw new Error("e" + i); } catch (e) { caught++; }
+        }
+        return caught;
+    }
+    out("catcher " + catcher(10000));
+    // Nested loops and a labelled continue that crosses a finally.
+    function nested() {
+        var t = 0;
+        outer: for (var i = 0; i < 60; i++) {
+            for (var j = 0; j < 60; j++) {
+                try { if (j === i) continue outer; t += j; } finally { t ^= 1; }
+            }
+        }
+        return t;
+    }
+    out("nested " + nested());
+})();
+
+// --- Generators ---
+(function () {
+    function* count(n) { for (var i = 0; i < n; i++) yield i; return "done"; }
+    var sum = 0, last;
+    var g = count(3000);
+    for (;;) { var r = g.next(); if (r.done) { last = r.value; break; } sum += r.value; }
+    out("gen " + sum + " " + last);
+    function* inner() { var x = yield 1; out("inner got " + x); try { yield 2; } finally { out("inner finally"); } }
+    function* outer() { var r = yield* inner(); yield 3; return r; }
+    var o = outer();
+    out(JSON.stringify([o.next(), o.next("a"), o.return(9), o.next()]));
+    function* thrower() { try { yield 1; } catch (e) { yield "caught " + e; } }
+    var t = thrower(); t.next();
+    out(JSON.stringify(t.throw("x")) + " " + JSON.stringify(t.next()));
+    function* hot() {
+        var acc = 0;
+        for (var i = 0; i < 5000; i++) { acc += i; if (i % 1000 === 0) yield acc; }
+        return acc;
+    }
+    out("hot " + Array.from(hot()).join(","));
+    function* fib() { var a = 0, b = 1; for (;;) { yield a; var c = a + b; a = b; b = c; } }
+    var fs = []; for (var v of fib()) { if (v > 1000) break; fs.push(v); }
+    out("fib " + fs.join(" "));
+    var spread = [...count(5)];
+    out("spread " + spread);
+    function* recur(n) { if (n > 0) { yield n; yield* recur(n - 1); } }
+    out("recur " + [...recur(6)]);
+    class C { *[Symbol.iterator]() { yield* [1, 2, 3]; } }
+    out("class gen " + [...new C()]);
+})();
+
+// --- with ---
+(function () {
+    var obj = { a: 1, b: 2 };
+    function useWith(n) {
+        var t = 0;
+        with (obj) {
+            for (var i = 0; i < n; i++) { t += a + b; if (i === 500) b = 10; }
+        }
+        return t;
+    }
+    out("with " + useWith(3000) + " " + obj.b);
+    function shadow(o) { var a = "outer"; with (o) { return a; } }
+    out("shadow " + shadow({ a: "inner" }) + " " + shadow({}));
+    function withThrow() {
+        try { with ({ x: 1 }) { throw x + 1; } } catch (e) { return "with threw " + e; }
+    }
+    out(withThrow());
+    var scoped = { [Symbol.unscopables]: { hidden: true }, hidden: "no", seen: "yes" };
+    function unscop() { var hidden = "local"; with (scoped) { return hidden + " " + seen; } }
+    out("unscopables " + unscop());
+})();
+
+// --- eval top level with a hot loop ---
+out("eval " + eval("var es = 0; for (var ei = 0; ei < 5000; ei++) es += ei & 15; es"));
+out("indirect eval " + (0, eval)("var ies = ''; for (var k = 0; k < 3000; k++) if (k % 600 === 0) ies += k; ies"));
+(function () {
+    "use strict";
+    out("strict eval " + eval("let s = 1; for (let i = 0; i < 4000; i++) s = (s * 3) % 1009; s"));
+})();
+
+// --- WIDE operands: more than 256 registers and constants ---
+(function () {
+    var src = "var t = 0;";
+    for (var i = 0; i < 300; i++) src += "var v" + i + " = " + (i + 0.5) + ";";
+    src += "for (var j = 0; j < 2000; j++) { t = t + v299 - v298 + (j & 3); if (v299 < v1) t = -1; }";
+    src += "return t + ' ' + (v150 * 2) + ' ' + (v299 === v299);";
+    var f = new Function(src);
+    out("wide " + f() + " " + f());
+    var src2 = "var a = [];";
+    for (var i = 0; i < 280; i++) src2 += "var w" + i + " = 's" + i + "';";
+    src2 += "for (var j = 0; j < 1000; j++) { if (w279 === 's279') a.length = j; w0 = j + 1; w279 = w279; }";
+    src2 += "return a.length + w0 + w140;";
+    out("wide2 " + new Function(src2)());
+})();
+
+// --- Async functions ---
+var asyncDone = (async function () {
+    async function sq(x) { await null; return x * x; }
+    var s = 0;
+    for (var i = 0; i < 200; i++) s += await sq(i);
+    out("async " + s);
+    async function fails() { await 1; throw new Error("boom"); }
+    try { await fails(); } catch (e) { out("async caught " + e.message); }
+    async function* agen(n) { for (var i = 0; i < n; i++) { await null; yield i; } }
+    var parts = [];
+    for await (var v of agen(50)) parts.push(v);
+    out("async gen " + parts.length + " " + parts[49]);
+    async function hotAwait() {
+        var t = 0;
+        for (var i = 0; i < 5000; i++) { t += i; if (i % 2000 === 0) await t; }
+        return t;
+    }
+    out("hot await " + await hotAwait());
+    var order = [];
+    await Promise.all([1, 2, 3].map(async function (k) { order.push("a" + k); await null; order.push("b" + k); }));
+    out("order " + order.join(","));
+    async function* yieldStar() { yield* agen(3); yield* [7, 8]; }
+    var ys = []; for await (var y of yieldStar()) ys.push(y);
+    out("async yield* " + ys);
+})();
+
+asyncDone.then(function () {
+    for (var li = 0; li < lines.length; li++) print(lines[li]);
+    print("jit_baseline_misc: " + lines.length + " lines");
+}, function (e) { print("async failure " + e); });

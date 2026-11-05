@@ -258,7 +258,7 @@ fn bool is_access_op(Opcode op) {
 // thunk.
 fn bool Asm.emit_access(&self, bool consts_fixed) {
     CompiledFunction* f = self.f;
-    Instruction w = self.w;
+    DecodedInsn w = self.w;
     Opcode op = w.op;
     bool has_ic = f.ic_entries != null && f.var_ic_entries != null;
     long ic = has_ic ? (long)(usz)&((hobject::ICEntry*)f.ic_entries)[self.i] : 0;

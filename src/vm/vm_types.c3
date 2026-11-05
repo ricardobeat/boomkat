@@ -521,9 +521,11 @@ struct Dispatch {
     fault failure;
     // Baseline tier: the activation count at which a return hands control
     // back to a native call site waiting for it (0: none waits), and the
-    // native calls nested on the C stack.
+    // native calls nested on the C stack, and whether native code is running
+    // the frame (a back edge then needs no switch to native code).
     uint jit_floor @if($feat(SLJIT));
     uint jit_depth @if($feat(SLJIT));
+    bool jit_native @if($feat(SLJIT));
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first
