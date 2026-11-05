@@ -561,6 +561,12 @@ test-jit-diff:
     @make out/boomkat
     bash scripts/run_jit_diff.sh ./out/boomkat
 
+# Optimizing tier: the local suites with every function optimized, and every exit reason forced.
+test-opt:
+    @make out/boomkat
+    JIT_FLAGS="--opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat
+    bash scripts/opt_exit_check.sh
+
 # Differential JIT run over the main test262 areas.
 test262-jit-diff:
     @make out/test262_runner

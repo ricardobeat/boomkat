@@ -2116,6 +2116,10 @@ struct CompiledFunction {
     uint            jit_entries @if($feat(SLJIT));  // Frame entries counted toward compilation
     char            jit_attempts @if($feat(SLJIT)); // Failed compiles
     bool            jit_refused @if($feat(SLJIT));  // Stays interpreted
+    void*           opt_code @if($feat(SLJIT));     // jit::OptCode* while optimized code is installed
+    uint            opt_entries @if($feat(SLJIT));  // Entries counted toward optimizing
+    char            opt_state @if($feat(SLJIT));    // jit::OPT_*
+    char            opt_reopts @if($feat(SLJIT));   // Optimized code discarded so far
 }
 
 // ============================================================================

@@ -7,6 +7,8 @@
 # and never retires an entry, so the comparison exercises the compiler rather
 # than the warmup policy. Timings in suite output are normalized away.
 #
+# JIT_FLAGS replaces the JIT's flags, for example JIT_FLAGS="--opt-always --jit-stress" to run the optimizing tier.
+#
 # Usage: bash scripts/run_jit_diff.sh [engine_binary]
 #        bash scripts/run_jit_diff.sh --test262 [engine_binary]
 #
@@ -31,7 +33,7 @@ exec "$ENGINE" "\$@"
 EOF
 cat > "$TMP/jit" <<EOF
 #!/bin/sh
-exec "$ENGINE" --jit --jit-stress "\$@"
+exec "$ENGINE" ${JIT_FLAGS:---jit --jit-stress} "\$@"
 EOF
 chmod +x "$TMP/interp" "$TMP/jit"
 
