@@ -156,6 +156,8 @@ struct BaselineCode {
     // One native address per instruction word, parallel to the code.
     // The entry a native call site calls directly (baseline_call.c3), or null.
     void* call_entry;
+    // The first shared subroutine, which ends the call entry (--jit-dump-feedback).
+    void* subs;
     void*[*] entries;
 }
 
@@ -378,6 +380,8 @@ struct Asm {
     void* c;
     CompiledFunction* f;
     void*[] labels;
+    // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
+    void*[Opcode::values.len + 12] sub_labels;
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
@@ -563,12 +567,26 @@ fn void Asm.emit_stubs(&self) {
 // native address of each entry. `entries` are the instruction words whose
 // labels fill bc.entries.
 fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) {
+    void* subs = sljit_emit_label(self.c);
     self.emit_subroutines();
     foreach (g : self.gotos) sljit_set_label(g.jump, self.labels[g.target]);
     bc.exec = sljit_generate_code(self.c, 0, null);
     if (bc.exec == null) { h.free_func(h.heap_udata, bc); return null; }
     bc.code_bytes = sljit_shim_code_size(self.c);
     if (call_entry != null) bc.call_entry = (void*)sljit_shim_label_addr(call_entry);
+    bc.subs = (void*)sljit_shim_label_addr(subs);
+    if (h.jit_stats.dump_feedback) {
+        foreach (slot, label : self.sub_labels) {
+            if (label == null) continue;
+            String[12] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
+                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN" };
+            if (slot < Opcode::values.len) {
+                io::eprintfn("sub fn#%d %s %x", self.f.func_index, Opcode::values[slot], (usz)sljit_shim_label_addr(label));
+            } else {
+                io::eprintfn("sub fn#%d %s %x", self.f.func_index, helpers[slot - Opcode::values.len], (usz)sljit_shim_label_addr(label));
+            }
+        }
+    }
     return bc;
 }
 
@@ -725,7 +743,7 @@ fn void Asm.emit_subroutines(&self) {
     int ret = SLJIT_MEM | reg_sp();
     int sp = ret;
     // One label per opcode, then the shared helpers by -id.
-    void*[Opcode::values.len + 12] labels;
+    void*[] labels = self.sub_labels[..];
     foreach (call : self.subs) {
         usz slot = sub_slot(call.sub);
         if (labels[slot] != null) continue;
@@ -1727,6 +1745,22 @@ fn void baseline_dump_feedback(Heap* h) {
                          (fb & hobject::FB_OVF) != 0 ? "ovf " : "", (fb & hobject::FB_DBL) != 0 ? "dbl " : "",
                          (fb & hobject::FB_STR) != 0 ? "str " : "", (fb & hobject::FB_OTHER) != 0 ? "other" : "");
         }
+    }
+}
+
+// Print where every function's native code lives, for attributing profiler samples:
+// "map fn#<index> <name> <start> <end> [opt]" then "ents fn#<index> <address of
+// each instruction word>" (--jit-dump-feedback).
+fn void baseline_dump_map(Heap* h) {
+    for (uint fi = 0; fi < h.compiled_func_count; fi++) {
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+        if (cf == null || cf.jit_code == null) continue;
+        BaselineCode* bc = (BaselineCode*)cf.jit_code;
+        io::eprintfn("map fn#%d n%d %x %x %x %x%s", fi, cf.code_count, (usz)bc.exec,
+                     (usz)bc.exec + bc.code_bytes, (usz)bc.call_entry, (usz)bc.subs, cf.opt_code != null ? " opt" : "");
+        io::eprintf("ents fn#%d", fi);
+        for (usz i = 0; i < bc.insns; i++) io::eprintf(" %x:%s", (usz)bc.entries[i], cf.code[i].op);
+        io::eprintfn("");
     }
 }
 
