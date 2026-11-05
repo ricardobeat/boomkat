@@ -838,8 +838,11 @@ fn bool Asm.emit_call(&self) {
         sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
         direct_done = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     }
-    if (self.w.op == Opcode.CALL_UNDEF_THIS || (self.w.op == Opcode.CALL && self.w.b + 1 < self.f.num_regs)) {
+    bool global = self.w.op == Opcode.CALL_GLOBAL && self.f.ic_entries != null && self.f.var_ic_entries != null
+        && !self.global_callee_trivial();
+    if (global || self.w.op == Opcode.CALL_UNDEF_THIS || (self.w.op == Opcode.CALL && self.w.b + 1 < self.f.num_regs)) {
         Jumps generic;
+        if (global) self.load_global_callee(&generic);
         self.emit_direct_call(&generic);
         direct_done = sljit_emit_jump(c, SLJIT_JUMP);
         generic.bind(sljit_emit_label(c));

@@ -122,7 +122,7 @@ fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
 }
 
 // The compiled function a callee register holds, or null.
-fn CompiledFunction* jit_compiled_callee(TVal callee) @private @inline {
+fn CompiledFunction* jit_compiled_callee(TVal callee) @inline {
     if (!callee.is_object()) return null;
     HObject* fn_obj = (HObject*)callee.get_heapptr();
     if (fn_obj == null || !fn_obj.is_callable() || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
