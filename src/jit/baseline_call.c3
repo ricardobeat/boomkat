@@ -357,13 +357,15 @@ fn void Asm.emit_view(&self, CompiledFunction* f) {
     self.mov(m | ds, k.ds_nregs, SLJIT_IMM, f.num_regs, SLJIT_MOV_U32);
 }
 
-// A CALL or CALL_UNDEF_THIS called directly through its callee's call
-// entry (see the top of this file), by the shared call subroutine. `generic`
+// A CALL, CALL_UNDEF_THIS or CALL_GLOBAL called directly through its callee's
+// call entry (see the top of this file), by the shared call subroutine. `generic`
 // collects the path that takes the helper call (vm::jit_call) instead.
 fn void Asm.emit_direct_call(&self, Jumps* generic) {
     void* c = self.c;
-    uint callee = self.w.b;
-    long packed = (long)self.w.c | (self.w.op == Opcode.CALL ? CALL_METHOD : CALL_PLAIN);
+    bool global = self.w.op == Opcode.CALL_GLOBAL;
+    uint callee = global ? self.w.a : self.w.b;
+    uint nargs = global ? self.w.b : self.w.c;
+    long packed = (long)nargs | (self.w.op == Opcode.CALL ? CALL_METHOD : CALL_PLAIN);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)self.w.a * TVal::size);
     self.mov(R3, 0, SLJIT_IMM, packed);
@@ -658,4 +660,31 @@ fn void Asm.emit_return_body(&self) {
     helper.bind(sljit_emit_label(c));
     self.mov(R0, 0, SLJIT_IMM, 0);
     sljit_set_label(done, sljit_emit_label(c));
+}
+
+// CALL_GLOBAL's callee as @lean_call_global reads it: the global binding the
+// instruction's variable entry caches, stored in the callee register. Any
+// other state, and a callee that is not an object, joins `generic`.
+fn void Asm.load_global_callee(&self, Jumps* generic) {
+    void* c = self.c;
+    long vic = (long)(usz)&((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
+    self.var_slot(vic, false);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    self.guard_not_tdz();
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    for (uint k = 0; k < self.call.len; k++) generic.add(self.call.at[k]);
+    self.call.len = 0;
+    self.store(self.w.a, R0);
+}
+
+// Whether the global the CALL_GLOBAL's entry caches is a trivial function,
+// which vm::jit_call completes in place faster than a direct call declines.
+fn bool Asm.global_callee_trivial(&self) {
+    hobject::VarICEntry* vic = &((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
+    if (vic.slot_ptr == null) return false;
+    CompiledFunction* target = vm::jit_compiled_callee(vic.slot_ptr.get());
+    if (target == null) return false;
+    target.classify_lean_call();
+    return target.call_flags.trivial_call != 0;
 }
