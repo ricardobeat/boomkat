@@ -345,6 +345,126 @@ out("indirect eval " + (0, eval)("var ies = ''; for (var k = 0; k < 3000; k++) i
 })();
 
 // --- Async functions ---
+// --- Construct and apply calls from native code ---
+(function () {
+    function P(x) { this.x = x; }
+    P.prototype.get = function () { return this.x; };
+    function PObj(x) { this.x = x; return { y: x }; }
+    function PPrim(x) { this.x = x; return 7; }
+    function PNt() { this.nt = new.target === PNt; }
+    function PThrow(x) { if (x === 3) throw new Error("ctor " + x); this.x = x; }
+    function Simple(a, b) { this.a = a; this.b = b; }
+    class B { constructor(v) { this.v = v; } }
+    class D extends B { constructor(v) { super(v + 1); this.w = new.target === D; } }
+    var Klass = function () { this.initialize.apply(this, arguments); };
+    Klass.prototype.initialize = function (a, b, c) { this.sum = a + (b || 0) + (c || 0); this.n = arguments.length; };
+    function fwd() { return target.apply(null, arguments); }
+    function target(a, b) { return (a | 0) * 10 + (b | 0) + arguments.length * 100; }
+    function fwdThis() { return getThis.apply(this, arguments); }
+    function getThis() { return this === undefined ? "u" : typeof this; }
+    var parts = [];
+    for (var i = 0; i < 6; i++) {
+        parts.push(new P(i).get(), new PObj(i).y, new PObj(i).x, new PPrim(i).x, new PNt().nt,
+                   new D(i).v, new D(i).w, new Simple(i, "s").b, new Klass(i, 2).sum, new Klass(i).n,
+                   new Klass(i, 1, 1).sum, fwd(i, 2), fwd(i), fwd(), fwdThis.call(i, 1), fwdThis.call({}));
+        try { new PThrow(i); parts.push("ok"); } catch (e) { parts.push(e.message); }
+    }
+    out("construct " + parts.join(","));
+    var al = { length: 3, 0: 1, 1: 2, 2: 3 };
+    var ap = [];
+    for (var i = 0; i < 4; i++) ap.push(target.apply(null, al), target.apply(null, [i]), Math.max.apply(Math, [i, 5, 2]));
+    out("apply " + ap.join(","));
+    // Method calls on primitives and through getters.
+    String.prototype.twice = function () { return this + this; };
+    Number.prototype.inc = function () { return this + 1; };
+    var go = { get f() { return function (z) { return z * 2; }; } };
+    var mp = [];
+    for (var i = 0; i < 5; i++) mp.push("ab".twice(), (i).inc(), true.toString(), go.f(i), "xyz".charAt(i));
+    out("prim methods " + mp.join(","));
+    delete String.prototype.twice; delete Number.prototype.inc;
+    // Tail calls in strict code.
+    var tc = (function () {
+        "use strict";
+        function down(n, acc) { if (n === 0) return acc; return down(n - 1, acc + 1); }
+        function even(n) { return n === 0 ? true : odd(n - 1); }
+        function odd(n) { return n === 0 ? false : even(n - 1); }
+        return down(20000, 0) + " " + even(10001);
+    })();
+    out("tail " + tc);
+    // Literals with spread, holes and computed keys.
+    var lp = [];
+    for (var i = 0; i < 4; i++) {
+        var k = "k" + i;
+        var o = { a: i, [k]: i * 2, ...{ s: i }, b: "x" + i, c: null, d: { e: i } };
+        var arr = [i, , i + 1, ...[7, 8], , "s" + i];
+        lp.push(JSON.stringify(o), arr.length, 1 in arr, arr[4], JSON.stringify(arr));
+    }
+    out("literals " + lp.join(" "));
+})();
+
+// --- Typed-array elements ---
+(function () {
+    var kinds = [Int8Array, Uint8Array, Uint8ClampedArray, Int16Array, Uint16Array,
+                 Int32Array, Uint32Array, Float32Array, Float64Array];
+    if (typeof Float16Array === "function") kinds.push(Float16Array);
+    var vals = [0, -0, 1, -1, 127, 128, 255, 256, -129, 32767, 32768, 65535, 65536,
+                2147483647, 2147483648, -2147483648, 4294967295, 4294967296,
+                1.5, -1.5, 2.5, 0.1, NaN, Infinity, -Infinity, 1e20, -1e-320,
+                "7", true, null, undefined, { valueOf: function () { return 9; } }];
+    function put(a, i, v) { a[i] = v; }
+    function get(a, i) { return a[i]; }
+    for (var k = 0; k < kinds.length; k++) {
+        var a = new kinds[k](8);
+        var parts = [];
+        for (var r = 0; r < 3; r++) {
+            for (var j = 0; j < vals.length; j++) {
+                put(a, j & 7, vals[j]);
+                parts.push(show(get(a, j & 7)));
+            }
+        }
+        parts.push(show(get(a, 8)), show(get(a, -1)), show(get(a, 1.5)), show(get(a, "1")));
+        put(a, 8, 5); put(a, -1, 5); put(a, 1.5, 5); put(a, "2", 6);
+        parts.push(show(get(a, 2)), show(a[-1]), show(a[1.5]), String(a.length));
+        out(kinds[k].name + " " + parts.join(" "));
+    }
+    // HEAP32[i >> 2] with views over one buffer at offsets.
+    var buf = new ArrayBuffer(64);
+    var h32 = new Int32Array(buf), h8 = new Uint8Array(buf), f64 = new Float64Array(buf, 8, 4);
+    var sum = 0;
+    for (var i = 0; i < 2000; i++) {
+        h32[(i * 4 & 63) >> 2] = i * 7919 | 0;
+        sum = (sum + h8[i & 63] + h32[(i & 15)]) | 0;
+        f64[i & 3] = i / 3;
+        sum += f64[(i + 1) & 3] | 0;
+    }
+    out("heap " + sum + " " + show(f64[3]) + " " + show(h32[2]));
+    // A detached buffer reads undefined and drops stores.
+    var dbuf = new ArrayBuffer(16), dv = new Int32Array(dbuf);
+    for (var i = 0; i < 4; i++) put(dv, i, i + 1);
+    var before = get(dv, 1);
+    if (typeof structuredClone === "function") structuredClone(dbuf, { transfer: [dbuf] });
+    else if (typeof dbuf.transfer === "function") dbuf.transfer();
+    put(dv, 1, 9);
+    out("detached " + before + " " + show(get(dv, 1)) + " " + dv.length);
+    // A resizable buffer and a length-tracking view.
+    if (typeof ArrayBuffer.prototype.resize === "function") {
+        var rb = new ArrayBuffer(8, { maxByteLength: 32 }), rv = new Uint16Array(rb);
+        for (var i = 0; i < 4; i++) put(rv, i, i * 1000);
+        rb.resize(4);
+        out("resizable " + show(get(rv, 1)) + " " + show(get(rv, 3)) + " " + rv.length);
+    }
+    // A proxy over a typed array, and a typed array as a prototype.
+    var tp = new Proxy(new Int32Array(4), {});
+    put(tp, 1, 3); out("proxy " + get(tp, 1));
+    var sub = Object.create(new Int32Array([4, 5]));
+    out("proto " + show(get(sub, 1)) + " " + show(get(sub, 0)));
+    // Elements and the switch path mixed at one site.
+    var mixed = [new Int32Array([1, 2]), [3, 4], new Float64Array([5.5, 6.5]), { 1: "x" }, "ab"];
+    var ms = [];
+    for (var r = 0; r < 4; r++) for (var m = 0; m < mixed.length; m++) ms.push(show(get(mixed[m], 1)));
+    out("mixed " + ms.join(","));
+})();
+
 var asyncDone = (async function () {
     async function sq(x) { await null; return x * x; }
     var s = 0;

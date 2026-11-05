@@ -74,6 +74,7 @@ const int SLJIT_FAST_CALL         = 37;
 const int SLJIT_FAST_RETURN       = 112;
 const int SLJIT_FAST_ENTER        = 118;
 const int SLJIT_CALL              = 38;
+const int SLJIT_CALL_RETURN       = 0x20000;
 // Internal calls use scratch arguments and may share S0..S2. KEEP(n) is
 // encoded as n, and is valid only together with ENTER_REG_ARG (1 <= n <= 3).
 const int SLJIT_ENTER_REG_ARG     = 0x4;
