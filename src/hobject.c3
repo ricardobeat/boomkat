@@ -22,6 +22,7 @@ import boomkat::bytecode;
 import boomkat::env;
 import boomkat::re_bindings;
 import boomkat::heap;
+import boomkat::builtins;
 import boomkat::lib::temporal;
 import boomkat::pagepool;
 import boomkat::agent;
@@ -4193,6 +4194,22 @@ fn bool force_deferred_ns_on_chain(HObject* cur, void* key, heap::Heap* h) @inli
     return h.force_deferred_ns_fn(h, h.vm_ptr, cur);
 }
 
+// Integer-indexed exotic lookup (ECMA-262 10.4.5.2 and 10.4.5.4) for a typed
+// array met on a prototype chain walk. Returns false when `key` is not a
+// canonical numeric index string, so the walk goes on. Otherwise the key is
+// consumed whether or not the index is valid: `*found` says whether an
+// element exists and `*out` holds it.
+fn bool ta_chain_index(HObject* cur, void* key, heap::Heap* h, bool* found, TVal* out) @inline {
+    if (key == null || !builtins::is_typed_array_class(cur.get_class())) return false;
+    double num;
+    if (!builtins::ta_key_numeric_index(h, (hstring::HString*)key, &num)) return false;
+    builtins::ProxyDesc d;
+    builtins::ta_own_index_desc(h, cur, num, &d);
+    *found = d.found;
+    if (d.found) *out = d.value;
+    return true;
+}
+
 // Walk the prototype chain once, returning whichever of an accessor or a data
 // property is found first, along with its owner.
 //
@@ -4253,6 +4270,15 @@ fn PropLookupResult HObject.get_prop_or_accessor_proto(&self, void* key, bool wa
         }
         if (cur.is_proxy() && !want_getter) {
             return { .kind = PropLookupKind.PROP_NOT_FOUND };
+        }
+        // A typed array element has no stable slot, so like a dense element
+        // it is reported without an owner and stays out of every cache. An
+        // invalid numeric index ends the walk.
+        bool ta_found;
+        TVal ta_val;
+        if (ta_chain_index(cur, key, h, &ta_found, &ta_val)) {
+            if (!ta_found || !want_getter) return { .kind = PropLookupKind.PROP_NOT_FOUND };
+            return { .kind = PropLookupKind.PROP_DATA, .data_val = ta_val, .owner = null };
         }
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
@@ -4329,6 +4355,9 @@ fn bool HObject.has_prop_proto(&self, void* key, heap::Heap* h) {
             }
             return false;
         }
+        bool ta_found;
+        TVal ta_val;
+        if (ta_chain_index(cur, key, h, &ta_found, &ta_val)) return ta_found;
         if (cur.find_prop_idx(key, h) >= 0) {
             return true;
         }
@@ -4390,6 +4419,7 @@ fn PropProtoResult HObject.get_prop_proto_full(&self, void* key, heap::Heap* h) 
             }
             return result;
         }
+        if (ta_chain_index(cur, key, h, &result.found, &result.value)) return result;
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
             result.found = true;
