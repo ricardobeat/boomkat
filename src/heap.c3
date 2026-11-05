@@ -1172,6 +1172,7 @@ struct Heap {
 
     bool                jit_enabled @if($feat(SLJIT));
     bool                jit_stress @if($feat(SLJIT));
+    jit::JitStats       jit_stats @if($feat(SLJIT));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
     // the host keeps the heap alive until every watchdog has stopped.
@@ -2396,6 +2397,7 @@ fn void Heap.free_compiled_funcs(&self) {
     for (uint i = 0; i < self.compiled_func_count; i++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
         if (cf == null) continue;
+        $if $feat(SLJIT): jit::baseline_free(self, cf); $endif
         if (cf.code != null) { self.free_func(self.heap_udata, cf.code); }
         if (cf.await_live != null) { self.free_func(self.heap_udata, cf.await_live); }
         if (cf.capture_names != null) { self.free_func(self.heap_udata, cf.capture_names); }

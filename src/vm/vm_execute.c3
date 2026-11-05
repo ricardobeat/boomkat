@@ -11,6 +11,7 @@ import boomkat::builtins;
 import boomkat::esm;
 import boomkat::compiler;
 import boomkat::re_bindings;
+import boomkat::jit;
 import std::io;
 import std::math;
 
@@ -2928,10 +2929,51 @@ fn TVal? Vm.run(Vm* vm) {
             }
         }
 
+    $if $feat(SLJIT):
+        if (vm.heap.jit_enabled && vm.threaded_handoff == ThreadedHandoff.NONE) {
+            void* native = jit::baseline_code(vm.heap, vm.current_func);
+            if (native != null) {
+                switch (jit::baseline_run(native, &ds)) {
+                    case OpStatus.RESTART.ordinal: continue;
+                    case OpStatus.HALT.ordinal: return ds.halt_value;
+                    case OpStatus.FAULT.ordinal: return ds.failure~;
+                    default: break; // BASELINE_INTERPRET: the interpreter takes the frame.
+                }
+            }
+        }
+    $endif
+
         TVal? result = vm_dispatch(&ds);
         if (!ds.needs_restart) return result;
     }
     return vm.return_val;
+}
+
+// Calls and returns switch frames in place, without a restart. With the JIT
+// on, the switch made by the body's operation becomes a restart instead, so
+// Vm.run enters the new frame and runs its native code when it has some.
+macro OpStatus @jit_frame_switch(Dispatch* ds, #op) {
+    $if $feat(SLJIT):
+        if (@likely(!ds.vm.heap.jit_enabled)) return #op;
+        Activation* act = ds.act;
+        CompiledFunction* func = ds.vm.current_func;
+        return jit_restart_switched(ds, act, func, #op);
+    $else
+        return #op;
+    $endif
+}
+
+// Turn a NEXT that left a different frame or function current into a
+// restart when the JIT is on, saving the new frame's resume point.
+fn OpStatus jit_restart_switched(Dispatch* ds, Activation* act, CompiledFunction* func, OpStatus status) @inline {
+    $if $feat(SLJIT):
+        if (status == NEXT && (ds.act != act || ds.vm.current_func != func)) {
+            ds.act.curr_pc = ds.curr_pc;
+            ds.needs_restart = true;
+            return RESTART;
+        }
+    $endif
+    return status;
 }
 
 // Run instructions in the current frame until one of them needs Vm.run to
@@ -3145,7 +3187,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.TAILCALL_VAR:
     case Opcode.TAILCALL_GLOBAL:
     case Opcode.TAILCALL_CALL:
-    case Opcode.TAILCALL_CALL_S: status = op_call(ds, insn);
+    case Opcode.TAILCALL_CALL_S: status = @jit_frame_switch(ds, op_call(ds, insn));
 
     case Opcode.CALL_PROP:
     case Opcode.SETPROTO:
@@ -3156,7 +3198,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.CLASS_SCALAR_GUARD:
     case Opcode.NEW_OBJ:
     case Opcode.NEW_OBJ_S:
-    case Opcode.TAILCALL: status = op_calls(ds, insn);
+    case Opcode.TAILCALL: status = @jit_frame_switch(ds, op_calls(ds, insn));
 
     // === GENERATORS ===
     case Opcode.LOAD_RESUME:
@@ -3174,7 +3216,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
 
     // === RETURNS ===
     case Opcode.RET:
-    case Opcode.RETUNDEF: status = op_ret(ds, insn);
+    case Opcode.RETUNDEF: status = @jit_frame_switch(ds, op_ret(ds, insn));
     case Opcode.RET_GEN:
     case Opcode.RETUNDEF_GEN: status = op_ret_gen(ds, insn);
 
@@ -3238,7 +3280,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     case Opcode.THROW_SYNTAX:
     case Opcode.CATCH:
     case Opcode.FINALLY:
-    case Opcode.ENDFINALLY: status = op_exceptions(ds, insn);
+    case Opcode.ENDFINALLY: status = @jit_frame_switch(ds, op_exceptions(ds, insn));
 
     // === MISC ===
     case Opcode.NOP:

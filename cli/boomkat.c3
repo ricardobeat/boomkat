@@ -21,6 +21,7 @@ import boomkat::lexer;
 import boomkat::types;
 import boomkat::bytecode;
 import boomkat::esm;
+import boomkat::jit;
 import boomkat::agent;
 import std::io, libc;
 
@@ -49,6 +50,7 @@ fn int main(String[] args) {
     bool script = false;
     bool jit = false;
     bool jit_stress = false;
+    bool jit_stats = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
         bool bytecode_input = false;
@@ -92,6 +94,8 @@ fn int main(String[] args) {
         } else if (a == "--jit-stress") {
             jit = true;
             jit_stress = true;
+        } else if (a == "--jit-stats") {
+            jit_stats = true;
         } else if (a == "--ignore-unhandled-promises") {
             ignore_unhandled_rejections = true;
         } else if (a == "--jsx") {
@@ -196,6 +200,15 @@ fn int main(String[] args) {
         hp.destroy();
     }
 
+    $if $feat(SLJIT):
+        defer if (jit_stats) {
+            jit::JitStats* st = &hp.jit_stats;
+            io::eprintfn("jit: compiled %d, code %d bytes, tables %d bytes; excluded: suspending %d, top-level %d, with %d, opcode %d; failed %d, capped %d",
+                st.compiled, st.code_bytes, st.table_bytes, st.excluded_suspending, st.excluded_top_level,
+                st.excluded_with, st.excluded_opcode, st.failed, st.capped);
+        }
+    $endif
+
     // Agents a script started with $262.agent end before the heap does.
     defer builtins::agent_host_shutdown();
 
@@ -277,6 +290,7 @@ fn void print_usage() {
     $if $feat(SLJIT):
         io::printn("--jit enables native compilation of eligible hot functions (off by default).");
         io::printn("--jit-stress also compiles on the first call and keeps every entry (test setting).");
+        io::printn("--jit-stats prints baseline compile counts on exit.");
     $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");
