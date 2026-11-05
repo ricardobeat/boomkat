@@ -917,8 +917,15 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     cg.emit_poll_stubs();
     cg.emit_osr_entries();
     cg.emit_exit_stubs();
+    // A direct call enters at the first block, which holds no values in registers unless the
+    // function starts with a loop.
+    void* call_entry = null;
+    if (call_entry_eligible(f) && !g.blocks[0].osr) {
+        a.labels[0] = cg.labels[0];
+        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count));
+    }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
-    if (a.finish(h, bc, null) == null) return null;
+    if (a.finish(h, bc, call_entry) == null) return null;
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(to_base);
     }

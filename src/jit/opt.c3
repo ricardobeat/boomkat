@@ -96,10 +96,15 @@ struct OptPolicy {
 // Count an entry into native code of `f` (one for each `credit`) toward
 // optimizing it, and do so when the policy says.
 fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1) @noinline {
-    if (f.opt_state != OPT_NONE || f.opt_code != null) return;
+    if (f.opt_state != OPT_NONE || f.opt_code != null) {
+        // The baseline call entry declines at the threshold; start its count over.
+        f.opt_entries = 0;
+        return;
+    }
     f.opt_entries += credit;
     if (!h.opt.always && f.opt_entries < OPT_ENTRY_THRESHOLD) return;
-    opt_try_compile(h, f);
+    // Without the feedback to specialize on, the next attempt waits for another round of entries.
+    if (!opt_try_compile(h, f) && f.opt_state == OPT_NONE) f.opt_entries = 0;
 }
 
 // The optimized code a baseline frame of `f` continues in at the backward

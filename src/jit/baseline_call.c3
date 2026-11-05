@@ -183,8 +183,11 @@ fn void Asm.mov(&self, int dst, long dstw, int src, long srcw, int op = SLJIT_MO
 }
 
 // The call entry of the function being compiled (see the top of this file).
-// Emitted after the body; enters the body at its first instruction.
-fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc) {
+// Emitted after the body; enters the body at its first instruction. `scratches`
+// and `locals` are the frame the body was emitted for. With `count_opt` the entry
+// counts toward the optimizing tier, and declines when the count reaches the
+// threshold so that the helper path considers the function.
+fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratches = 5 | (2 << 8), int locals = CALL_FRAME_BYTES, bool count_opt = false) {
     void* c = self.c;
     CompiledFunction* f = self.f;
     CallLayout* k = call_layout();
@@ -199,7 +202,14 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc) {
     int la = reg_s(5);
     Jumps decline;
     void* entry = sljit_emit_label(c);
-    sljit_emit_enter(c, 0, SLJIT_ARGS4WWWW, 5 | (2 << 8), 6, CALL_FRAME_BYTES);
+    sljit_emit_enter(c, 0, SLJIT_ARGS4WWWW, scratches, 6, locals);
+    if (count_opt) {
+        long counter = (long)(usz)&f.opt_entries;
+        self.mov(R0, 0, m, counter, SLJIT_MOV_U32);
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 1);
+        self.mov(m, counter, R0, 0, SLJIT_MOV_U32);
+        decline.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, OPT_ENTRY_THRESHOLD));
+    }
 
     // th_lean_target, @lean_gate and the receiver test, before any write.
     self.mov(R0, 0, m | ds, k.ds_heap);

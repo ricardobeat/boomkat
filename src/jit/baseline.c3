@@ -632,7 +632,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     a.labels[count] = sljit_emit_label(c);
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), dispatch);
     a.emit_stubs();
-    void* call_entry = call_entry_eligible(f) ? a.emit_call_entry(table_reg, bc) : null;
+    void* call_entry = call_entry_eligible(f) ? a.emit_call_entry(table_reg, bc, count_opt: h.opt.enabled && !h.opt.always) : null;
     if (a.finish(h, bc, call_entry) == null) return null;
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(a.labels[i]);
