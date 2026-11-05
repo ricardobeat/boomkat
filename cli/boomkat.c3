@@ -203,8 +203,8 @@ fn int main(String[] args) {
     $if $feat(SLJIT):
         defer if (jit_stats) {
             jit::JitStats* st = &hp.jit_stats;
-            io::eprintfn("jit: compiled %d, code %d bytes, tables %d bytes; excluded: suspending %d, top-level %d, with %d, opcode %d; failed %d, capped %d",
-                st.compiled, st.code_bytes, st.table_bytes, st.excluded_suspending, st.excluded_top_level,
+            io::eprintfn("jit: compiled %d, code %d bytes for %d instructions, tables %d bytes; excluded: suspending %d, top-level %d, with %d, opcode %d; failed %d, capped %d",
+                st.compiled, st.code_bytes, st.insns, st.table_bytes, st.excluded_suspending, st.excluded_top_level,
                 st.excluded_with, st.excluded_opcode, st.failed, st.capped);
         }
     $endif
