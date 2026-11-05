@@ -164,5 +164,23 @@ function selfRet(o) { return o.self() === o; }
 for (var i = 0; i < 40; i++) selfRet(new Acc(i));
 log(selfRet(new Acc(1)));
 
+// Inline returns: object and string results, frames that track heap
+// registers (objects, strings and closures in locals), and chained returns.
+function mkObj(k) { var a = { k: k }; var b = [k, k + 1]; return a; }
+function mkStr(k) { var a = { k: k }; var s = "v" + k; return s; }
+function mkThis() { var t = { n: 1 }; return this; }
+function retChain(n) { var o = mkObj(n); var s = mkStr(n); return o.k + s.length + (mkThis.call(o) === o ? 1 : 0); }
+var rsum = 0;
+for (var i = 0; i < 60; i++) rsum += retChain(i);
+log(rsum);
+function keepAlive(n) { var objs = []; for (var k = 0; k < n; k++) objs.push(mkObj(k)); return objs.length; }
+for (var i = 0; i < 40; i++) keepAlive(30);
+log(keepAlive(50));
+function retNested(n) { return n === 0 ? { depth: 0 } : { depth: retNested(n - 1).depth + 1 }; }
+log(retNested(40).depth);
+function retMany(n) { var x = "a" + n, y = { n: n }, z = function () { return n; }; return z() + y.n + x.length; }
+for (var i = 0; i < 40; i++) retMany(i);
+log(retMany(7));
+
 function cleanup() { log(out.length + " lines"); console.log(out.join("\n")); }
 Promise.resolve().then(function () {}).then(cleanup);
