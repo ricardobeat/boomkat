@@ -2067,6 +2067,12 @@ struct CompiledFunction {
     // instance method). Used the same way as super_binding_name/
     // static_super_binding_name for direct eval's super.x resolution.
     void*           home_object_binding_name;
+
+    // ---- Baseline tier (src/jit/baseline.c3) ------------------------------
+    void*           jit_code @if($feat(SLJIT));     // jit::BaselineCode*, or null
+    uint            jit_entries @if($feat(SLJIT));  // Frame entries counted toward compilation
+    char            jit_attempts @if($feat(SLJIT)); // Failed compiles
+    bool            jit_refused @if($feat(SLJIT));  // Stays interpreted
 }
 
 // ============================================================================
