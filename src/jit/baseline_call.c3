@@ -86,6 +86,7 @@ struct CallLayout {
     long fn_lex_env;
     long fn_builtin;
     long cf_jit_code;
+    long cf_num_regs;
     long bc_call_entry;
     long env_flags;
     long fn_mask;
@@ -149,6 +150,7 @@ fn CallLayout* call_layout() {
     l.fn_lex_env = (char*)&o.extra.func.lex_env - base;
     l.fn_builtin = (char*)&o.extra.func.builtin_fn_index - base;
     l.cf_jit_code = (char*)&cf.jit_code - base;
+    l.cf_num_regs = (char*)&cf.num_regs - base;
     l.bc_call_entry = (char*)&bc.call_entry - base;
     l.env_flags = (char*)&e.flags - base;
     // th_lean_target's callable_kind() == COMPILED_FN, narrowed as the
@@ -478,7 +480,6 @@ fn void Asm.emit_return(&self, Jumps* helper) {
     if (self.f.maps_formals()) { helper.add(sljit_emit_jump(c, SLJIT_JUMP)); return; }
     if (self.w.op == Opcode.RET) {
         self.load(R0, self.w.a);
-        helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_STRING_START));
     } else {
         self.mov(R0, 0, SLJIT_IMM, K_UNDEF);
     }
@@ -487,8 +488,41 @@ fn void Asm.emit_return(&self, Jumps* helper) {
     helper.add(sljit_emit_jump(c, SLJIT_JUMP));
 }
 
-// The return subroutine: with a result in R0 that is not a heap value, pop
-// the frame for the native call site waiting at ds.jit_floor in
+// The caller's result slot lies inside the caller's window, which the
+// object result needs (R4 is the returning frame's activation). With `track`
+// it also raises the caller's watermark to cover the slot, as
+// track_heap_store does. Clobbers R1-R3.
+fn void Asm.emit_result_window(&self, Jumps* helper, bool track) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    sljit_emit_op2(c, SLJIT_SUB, R1, 0, R4, 0, SLJIT_IMM, (long)Activation::size);
+    self.mov(R3, 0, m | R1, l.act_func);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    self.mov(R3, 0, m | R3, k.cf_num_regs, SLJIT_MOV_U16);
+    sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
+    self.mov(R2, 0, m | R1, k.act_bottom);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, R2, 0);
+    self.mov(R4, 0, m | self.ds, self.lay.ds_act);
+    self.mov(R4, 0, m | R4, k.act_retval);
+    helper.add(sljit_emit_cmp(c, SLJIT_LESS, R4, 0, R2, 0));
+    helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, R3, 0));
+    if (track) {
+        sljit_emit_op2(c, SLJIT_SUB, R4, 0, R4, 0, R2, 0);
+        sljit_emit_op2(c, SLJIT_LSHR, R4, 0, R4, 0, SLJIT_IMM, 3);
+        sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
+        self.mov(R3, 0, m | R1, l.act_hrc, SLJIT_MOV_U32);
+        void* covered = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R4, 0, R3, 0);
+        self.mov(m | R1, l.act_hrc, R4, 0, SLJIT_MOV_U32);
+        sljit_set_label(covered, sljit_emit_label(c));
+    }
+    self.mov(R4, 0, m | self.ds, self.lay.ds_act);
+}
+
+// The return subroutine: with a result in R0 that is not a string, buffer or
+// BigInt, pop the frame for the native call site waiting at ds.jit_floor in
 // th_leaf_return's plain case and leave with BASELINE_RETURNED; otherwise
 // return to the site, which calls vm::jit_ret.
 fn void Asm.emit_return_body(&self) {
@@ -497,6 +531,7 @@ fn void Asm.emit_return_body(&self) {
     Layout* l = self.lay;
     int m = SLJIT_MEM;
     int ds = self.ds;
+    int sp = SLJIT_MEM | reg_sp();
     Jumps helper;
     // Waiting: jit_floor != 0 and activation_count == jit_floor + 1.
     self.mov(R1, 0, m | ds, k.ds_floor, SLJIT_MOV_U32);
@@ -519,8 +554,6 @@ fn void Asm.emit_return_body(&self) {
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, m | R4, k.act_forin);
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
-    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, m | R3, k.vm_current_func);
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)self.f));
     // A result slot holding no count, unless the frame borrows its callee.
@@ -533,8 +566,60 @@ fn void Asm.emit_return_body(&self) {
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, vm::ACT_FLAG_BORROWED_CALLEE);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     sljit_set_label(uncounted, sljit_emit_label(c));
+    // The result: a value with no heap pointer, or an object (stored where
+    // the caller's watermark tracks it, as th_leaf_return does). Strings and
+    // the other heap kinds take the helper.
+    self.mov(sp, SUB_VALUE_OFF, R0, 0);
+    sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
+    void* primitive = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, (long)types::TAG_STRING);
+    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT));
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    self.emit_result_window(&helper, false);
+    sljit_set_label(primitive, sljit_emit_label(c));
+    // th_tracked_regs_uncounted: no tracked register holds a string.
+    uint nregs = self.f.num_regs;
+    self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
+    Jumps untracked;
+    untracked.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    void* below = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, SLJIT_IMM, (long)nregs);
+    self.mov(R1, 0, SLJIT_IMM, (long)nregs);
+    sljit_set_label(below, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 3);
+    self.mov(R2, 0, m | R4, k.act_bottom);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R2, 0);
+    void* scan = sljit_emit_label(c);
+    self.mov(R0, 0, m | R2, 0);
+    sljit_emit_op2(c, SLJIT_LSHR, R0, 0, R0, 0, SLJIT_IMM, 48);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)types::TAG_STRING));
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, TVal::size);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), scan);
+    // Every check passed: track an object result, then clear the tracked
+    // registers (th_clear_tracked_regs).
+    untracked.bind(sljit_emit_label(c));
+    self.mov(R0, 0, sp, SUB_VALUE_OFF);
+    sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
+    void* no_track = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT);
+    self.emit_result_window(&helper, true);
+    sljit_set_label(no_track, sljit_emit_label(c));
+    self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
+    Jumps cleared;
+    cleared.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    void* below2 = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, SLJIT_IMM, (long)nregs);
+    self.mov(R1, 0, SLJIT_IMM, (long)nregs);
+    sljit_set_label(below2, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 3);
+    self.mov(R2, 0, m | R4, k.act_bottom);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R2, 0);
+    void* clear = sljit_emit_label(c);
+    self.mov(m | R2, 0, SLJIT_IMM, K_UNDEF);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, TVal::size);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), clear);
+    cleared.bind(sljit_emit_label(c));
     // th_leaf_return's write-back and th_pop_frame; the caller is the
     // activation below the frame.
+    self.mov(R3, 0, m | ds, k.ds_vm);
+    self.mov(R2, 0, m | R4, k.act_retval);
     self.mov(m | R2, 0, R0, 0);
     self.mov(R0, 0, m | R4, k.act_flags, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, ~(long)vm::ACT_FLAG_CALLEE_OWNED & 0xFFFFFFFF);

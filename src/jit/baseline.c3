@@ -634,6 +634,7 @@ const long SUB_RET_OFF = 0;
 fn void Asm.emit_subroutines(&self) {
     void* c = self.c;
     int ret = SLJIT_MEM | reg_sp();
+    int sp = ret;
     // One label per opcode, then the shared helpers by -id.
     void*[Opcode::values.len + 12] labels;
     foreach (call : self.subs) {
@@ -681,6 +682,29 @@ fn void Asm.emit_subroutines(&self) {
                 sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_FALSE);
                 done.bind(sljit_emit_label(c));
             default:
+                // A relayed opcode first tries its threaded handler through
+                // vm::jit_relay without the thunk's decode, as the thunk does
+                // for a narrow instruction; a decline continues into the thunk.
+                Opcode sub_op = Opcode::values[call.sub];
+                void* wide_pair = null;
+                void* declined = null;
+                bool relayed_op = is_relayed_op(sub_op);
+                if (relayed_op) {
+                    self.mov(sp, SUB_VALUE_OFF, R1, 0);
+                    sljit_emit_op2(c, SLJIT_AND, R2, 0, R1, 0, SLJIT_IMM, 1);
+                    wide_pair = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0);
+                    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+                    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_relay);
+                    declined = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+                    self.count(&self.stats.relay_done[0], sub_op);
+                    self.count(&self.stats.slow_calls[0], sub_op, -1);
+                    sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+                    sljit_emit_op_src(c, SLJIT_FAST_RETURN, ret, SUB_RET_OFF);
+                    void* thunk_path = sljit_emit_label(c);
+                    sljit_set_label(wide_pair, thunk_path);
+                    sljit_set_label(declined, thunk_path);
+                    self.mov(R1, 0, sp, SUB_VALUE_OFF);
+                }
                 sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
                 sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_MEM | self.thunks, (long)call.sub * Thunk::size);
                 sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
@@ -1612,6 +1636,16 @@ macro bool @relayed(Opcode $op) @const {
         $default:
             return false;
     $endswitch
+}
+
+// Whether `op` is relayed (@relayed), for the code generator's use at run time.
+fn bool is_relayed_op(Opcode op) {
+    $foreach $op : Opcode::values:
+        $if !@excluded($op) && @relayed($op):
+            if (op == $op) return true;
+        $endif
+    $endforeach
+    return false;
 }
 
 // The operation function vm_dispatch runs for `$op`.

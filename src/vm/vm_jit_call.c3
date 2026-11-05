@@ -266,6 +266,7 @@ fn void jit_relay_init() @private @noinline {
 fn bool jit_relay(Dispatch* ds, Instruction* next) {
     if (!jit_relay_ready) jit_relay_init();
     if (ds.ic_base == null || ds.var_ic_base == null) return false;
+    ds.curr_pc = next;
     Instruction* pc = next - 1;
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);

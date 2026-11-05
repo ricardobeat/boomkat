@@ -53,6 +53,10 @@ struct Layout {
     long ic_chain;
     long ic_key;
     long chain_proto0;
+    long epoch_value;
+    long epoch_current;
+    long epoch_first;
+    long epoch_owner;
     long chain_shape0;
     long ep_value;
     long ep_current;
@@ -153,6 +157,11 @@ fn Layout* layout() {
     l.ic_chain = (char*)&ic.chain - base;
     l.ic_key = (char*)&ic.key - base;
     l.chain_proto0 = (char*)&ch.snapshot.protos[0] - base;
+    hobject::ICChainEpoch* ep = (hobject::ICChainEpoch*)(usz)4096;
+    l.epoch_value = (char*)&ep.value - (char*)ep;
+    l.epoch_current = (char*)&ep.current - (char*)ep;
+    l.epoch_first = (char*)&ep.first - (char*)ep;
+    l.epoch_owner = (char*)&ep.owner - (char*)ep;
     l.chain_shape0 = (char*)&ch.snapshot.shapes[0] - base;
     l.ep_value = (char*)&ch.epoch.value - base;
     l.poly_count = (char*)&ch.poly.count - base;
@@ -574,10 +583,30 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
     void* own = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    // A prototype owner, resolved as ic_resolve_slot does.
+    // A prototype owner, resolved as ic_resolve_slot does. An epoch entry
+    // is replayed inline (ic_resolve_owner's epoch case: a plain receiver
+    // whose prototype is the recorded first link and no prototype mutation
+    // since); any other chain takes the helper.
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
+    Jumps general;
+    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_EPOCH & 0xFF));
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R2, l.ic_chain);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
+    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R3, l.epoch_first));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.epoch_current);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R3, l.epoch_value));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.epoch_owner);
+    self.guard_not_proxy(R0, R3);
+    void* resolved = sljit_emit_jump(c, SLJIT_JUMP);
+    general.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ic_owner);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(resolved, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     sljit_set_label(own, sljit_emit_label(c));
@@ -1201,10 +1230,10 @@ fn void Asm.emit_put_cap(&self, uint rv, uint index) {
 }
 
 // Count one execution of `op` in `counts` when --jit-count-ops asked for counts.
-fn void Asm.count(&self, ulong* counts, Opcode op) {
+fn void Asm.count(&self, ulong* counts, Opcode op, long delta = 1) {
     if (!self.counting) return;
     long at = (long)(usz)&counts[op.ordinal];
-    sljit_emit_op2(self.c, SLJIT_ADD, SLJIT_MEM, at, SLJIT_MEM, at, SLJIT_IMM, 1);
+    sljit_emit_op2(self.c, SLJIT_ADD, SLJIT_MEM, at, SLJIT_MEM, at, SLJIT_IMM, delta);
 }
 
 // The --jit-count-ops counts: inline completions against thunk calls of each
