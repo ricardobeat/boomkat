@@ -107,6 +107,14 @@ struct Layout {
     long ab_data;
     long ab_resizable;
     long ab_immutable;
+    long heap_mega;
+    long me_key;
+    long me_shape;
+    long me_idx;
+    long me_proto;
+    long me_proto_shape;
+    long me_epoch;
+    long me_accessor;
 }
 
 Layout layout_data @private;
@@ -123,6 +131,7 @@ fn Layout* layout() {
     CompiledFunction* cf = (CompiledFunction*)base;
     hobject::Shape* sh = (hobject::Shape*)base;
     hobject::ICEntry* ic = (hobject::ICEntry*)base;
+    hobject::MegamorphicEntry* me = (hobject::MegamorphicEntry*)base;
     hobject::ICChain* ch = (hobject::ICChain*)base;
     hobject::VarICEntry* vic = (hobject::VarICEntry*)base;
     hobject::CaptureRef* cr = (hobject::CaptureRef*)base;
@@ -138,6 +147,14 @@ fn Layout* layout() {
     l.heap_gc_oracle = (char*)&h.gc_oracle_running - base;
     l.heap_shapes = (char*)&h.shapes - base;
     l.heap_epoch = (char*)&h.shape_recycle_epoch - base;
+    l.heap_mega = (char*)&h.mega_cache - base;
+    l.me_key = (char*)&me.key - base;
+    l.me_shape = (char*)&me.shape_id - base;
+    l.me_idx = (char*)&me.prop_idx - base;
+    l.me_proto = (char*)&me.proto - base;
+    l.me_proto_shape = (char*)&me.proto_shape_id - base;
+    l.me_epoch = (char*)&me.recycle_epoch - base;
+    l.me_accessor = (char*)&me.is_accessor - base;
     l.obj_shape = (char*)&o.shape_id - base;
     l.obj_gc = (char*)&o.gc - base;
     l.obj_proto = (char*)&o.prototype - base;
@@ -656,9 +673,91 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
 fn void Asm.emit_poly_arm(&self, void* back) {
     void* c = self.c;
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = POLY_SUB });
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+    void* missed = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE);
     self.count(&self.stats.poly_hits[0], self.w.op);
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), back);
+    sljit_set_label(missed, sljit_emit_label(c));
+    if (self.w.op == Opcode.GETPROPC || self.w.op == Opcode.GETPROPC_CACHED || self.w.op == Opcode.GETTHISC) {
+        // The receiver is still in R1 (the poly subroutine keeps it).
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1]);
+        self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = MEGA_SUB });
+        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        self.publish(self.w.a);
+        self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
+    } else {
+        self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+    }
+}
+
+// The megamorphic cache subroutine, as hobject::mega_cache_lookup for a read
+// th_get_shared would answer with a data property: R1 the receiver (a plain
+// object), R2 its read entry (whose key the site has matched). R2 is SUB_TRUE
+// with the value in R0, or SUB_FALSE. Uses R0 to R4.
+fn void Asm.emit_mega_body(&self) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    const long HASH_SHAPE = 2654435761;
+    const long HASH_PROTO = 2246822519;
+    Jumps miss;
+    // A plain object: th_get_shared's mega_cacheable, narrowed as the epoch case is.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R1, l.obj_shape);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, m | R2, l.ic_key);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | self.heap, l.heap_mega);
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    // The own entry, hashed by key and shape.
+    sljit_emit_op2(c, SLJIT_MUL | SLJIT_32, R0, 0, R3, 0, SLJIT_IMM, HASH_SHAPE);
+    sljit_emit_op2(c, SLJIT_XOR | SLJIT_32, R0, 0, R0, 0, R2, 0);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, heap::MEGA_CACHE_SIZE - 1);
+    sljit_emit_op2(c, SLJIT_MUL, R0, 0, R0, 0, SLJIT_IMM, (long)hobject::MegamorphicEntry::size);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R4, 0);
+    Jumps own_miss;
+    own_miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, m | R0, l.me_key));
+    own_miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, m | R0, l.me_shape));
+    own_miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | R0, l.me_proto, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R0, l.me_epoch);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R4, 0, m | self.heap, l.heap_epoch));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R4, 0, m | R0, l.me_accessor);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R0, l.me_idx);
+    self.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+    Jumps hit;
+    hit.add(sljit_emit_jump(c, SLJIT_JUMP));
+    // The entry for a property of the receiver's prototype, which also hashes it.
+    own_miss.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R1, l.obj_proto);
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op2(c, SLJIT_MUL | SLJIT_32, R0, 0, R3, 0, SLJIT_IMM, HASH_SHAPE);
+    sljit_emit_op2(c, SLJIT_XOR | SLJIT_32, R0, 0, R0, 0, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, R4, 0);
+    sljit_emit_op2(c, SLJIT_LSHR | SLJIT_32, R1, 0, R1, 0, SLJIT_IMM, 4);
+    sljit_emit_op2(c, SLJIT_MUL | SLJIT_32, R1, 0, R1, 0, SLJIT_IMM, HASH_PROTO);
+    sljit_emit_op2(c, SLJIT_XOR | SLJIT_32, R0, 0, R0, 0, R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, heap::MEGA_CACHE_SIZE - 1);
+    sljit_emit_op2(c, SLJIT_MUL, R0, 0, R0, 0, SLJIT_IMM, (long)hobject::MegamorphicEntry::size);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, m | self.heap, l.heap_mega);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, m | R0, l.me_key));
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, m | R0, l.me_shape));
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, m | R0, l.me_proto));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R0, l.me_epoch);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R1, 0, m | self.heap, l.heap_epoch));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R4, l.obj_shape);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R1, 0, m | R0, l.me_proto_shape));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, m | R0, l.me_accessor);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R0, l.me_idx);
+    self.prop_base(R0, R4);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+    hit.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_TRUE);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    miss.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_FALSE);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // The polymorphic set subroutine: R2 SUB_TRUE with the slot index of shape R3
