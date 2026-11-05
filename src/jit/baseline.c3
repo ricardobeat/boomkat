@@ -11,8 +11,8 @@
 // A CALL, CALL_UNDEF_THIS, CALL_VAR or CALL_GLOBAL whose callee the threaded
 // handlers would enter as a lean call, and a NEW_OBJ or APPLY_ARGS the
 // threaded handlers enter, whose callee has native code, runs it on the C
-// stack (vm::jit_call_enter). The call site saves ds.jit_floor in its
-// stack frame and sets it to the caller's activation count; the callee's
+// stack (vm::jit_call). The call saves ds.jit_floor in its C
+// frame and sets it to the caller's activation count; the callee's
 // frame sits one above. A thunk that leaves the activation count equal to
 // the floor after switching frames returns BASELINE_RETURNED, and the call
 // site restores the floor, reloads the caller's frame and continues at the
@@ -150,6 +150,8 @@ struct BaselineCode {
     usz table_bytes;
     usz insns;
     // One native address per instruction word, parallel to the code.
+    // The entry a native call site calls directly (baseline_call.c3), or null.
+    void* call_entry;
     void*[*] entries;
 }
 
@@ -349,6 +351,8 @@ const int TYPED_GET_SUB = -7;
 const int TYPED_PUT_SUB = -8;
 const int POLY_SUB = -9;
 const int INDEX_SUB = -10;
+const int CALL_SUB = -11;
+const int RETURN_SUB = -12;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -370,7 +374,6 @@ struct Asm {
     int thunks;
     int heap;
     long pc_off;
-    long floor_off;
     long regs_off;
     long budget_off;
     long interrupt_off;
@@ -419,7 +422,6 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         .thunks = reg_s(4),
         .heap = reg_s(5),
         .pc_off = (char*)&dl.curr_pc - (char*)dl,
-        .floor_off = (char*)&dl.jit_floor - (char*)dl,
         .regs_off = (char*)&dl.regs_base - (char*)dl,
         .budget_off = (char*)&hl.bwd_gc_budget - (char*)hl,
         .interrupt_off = (char*)&hl.capi_interrupt_fn - (char*)hl,
@@ -535,12 +537,14 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         a.emit_thunk_call(stub.insn);
         a.go(sljit_emit_jump(c, SLJIT_JUMP), a.next);
     }
+    void* call_entry = call_entry_eligible(f) ? a.emit_call_entry(table_reg, bc) : null;
     a.emit_subroutines();
     foreach (g : a.gotos) sljit_set_label(g.jump, a.labels[g.target]);
 
     bc.exec = sljit_generate_code(c, 0, null);
     if (bc.exec == null) { h.free_func(h.heap_udata, bc); return null; }
     bc.code_bytes = sljit_shim_code_size(c);
+    if (call_entry != null) bc.call_entry = (void*)sljit_shim_label_addr(call_entry);
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(a.labels[i]);
     }
@@ -621,9 +625,8 @@ fn void Asm.call_test_sub(&self, int sub, Jumps* yes, Jumps* no) {
     self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
 }
 
-// Stack offset of the return address a shared subroutine saves; offset 0
-// holds a native call site's saved floor.
-const long SUB_RET_OFF = 8;
+// Stack offset of the return address a shared subroutine saves.
+const long SUB_RET_OFF = 0;
 
 // The shared subroutines the code fast-calls, one per opcode whose thunk it
 // calls plus the publish: each saves its return address, which a nonzero
@@ -632,7 +635,7 @@ fn void Asm.emit_subroutines(&self) {
     void* c = self.c;
     int ret = SLJIT_MEM | reg_sp();
     // One label per opcode, then the shared helpers by -id.
-    void*[Opcode::values.len + 10] labels;
+    void*[Opcode::values.len + 12] labels;
     foreach (call : self.subs) {
         usz slot = sub_slot(call.sub);
         if (labels[slot] != null) continue;
@@ -652,6 +655,10 @@ fn void Asm.emit_subroutines(&self) {
                 self.emit_poly_body();
             case INDEX_SUB:
                 self.emit_index_body();
+            case CALL_SUB:
+                self.emit_call_body();
+            case RETURN_SUB:
+                self.emit_return_body();
             case TRUTH_SUB:
             case STRICT_EQ_SUB:
             case LOOSE_EQ_SUB:
@@ -687,15 +694,15 @@ fn void Asm.emit_subroutines(&self) {
 }
 
 // Stack offset where the typed-array store subroutine keeps the value.
-const long SUB_VALUE_OFF = 16;
+const long SUB_VALUE_OFF = 8;
 
-// Stack bytes of a native function's frame: the floor a native call site
-// saves across its callee, a subroutine's return address and the value the
-// typed-array store keeps.
-const int CALL_FRAME_BYTES = 24;
+// Stack bytes of a native function's frame: a subroutine's return address,
+// the value the typed-array store keeps and the floor a direct call site
+// restores and its resume point (CALL_FLOOR_OFF, CALL_RESUME_OFF).
+const int CALL_FRAME_BYTES = 32;
 
-// A call the threaded handlers take as a lean call: jit_call_enter publishes
-// the callee's frame and the callee's native code runs on the C stack. A
+// A call the threaded handlers take as a lean call: vm::jit_call publishes
+// the callee's frame and runs the callee's native code on the C stack. A
 // declined call takes the thunk; a trivial callee completes in the helper.
 fn bool Asm.emit_call(&self) {
     void* c = self.c;
@@ -711,26 +718,20 @@ fn bool Asm.emit_call(&self) {
         default:
             return false;
     }
-    int sp = SLJIT_MEM | reg_sp();
-    long next = (long)self.next * Instruction::size;
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | self.ds, self.floor_off);
-    sljit_emit_op1(c, SLJIT_MOV, sp, 0, R0, 0);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, next);
+    void* direct_done = null;
+    if (self.w.op == Opcode.CALL_UNDEF_THIS || (self.w.op == Opcode.CALL && self.w.b + 1 < self.f.num_regs)) {
+        Jumps generic;
+        self.emit_direct_call(&generic);
+        direct_done = sljit_emit_jump(c, SLJIT_JUMP);
+        generic.bind(sljit_emit_label(c));
+    }
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_enter);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    void* done = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)vm::JIT_CALL_DONE);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, R2, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, 0);
-    sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.code, 0, SLJIT_IMM, next);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_call_return);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
-    sljit_set_label(done, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+    if (direct_done != null) sljit_set_label(direct_done, sljit_emit_label(c));
     return true;
 }
 
@@ -1003,7 +1004,11 @@ $else
             self.store(ra, R0);
         case RET:
         case RETUNDEF:
-            // vm::jit_ret: the leaf return to a waiting native call site.
+            // The plain return to a waiting native call site inline, else
+            // vm::jit_ret.
+            Jumps ret_helper;
+            self.emit_return(&ret_helper);
+            ret_helper.bind(sljit_emit_label(c));
             sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
             sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
             sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ret);
