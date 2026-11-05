@@ -227,6 +227,8 @@ fn Layout* layout() {
     l.class_mask = 0x3FL << 16;
     // emit_typed_body reads the proxy bit and the class as one field.
     assert(l.proxy_mask == 1L << 15);
+    // guard_plain tests the class and these flags as one field.
+    assert(((l.proxy_mask | l.module_ns_mask | l.deferred_ns_mask) & l.class_mask) == 0);
     assert(l.class_array == (long)hobject::ObjClass.ARRAY.ordinal << 16);
     types::GcBits g;
     g.old = true;
@@ -413,6 +415,19 @@ fn void Asm.guard_not_proxy(&self, int obj, int tmp) {
     $if features::PROXY:
         self.guard_flags_clear(obj, self.lay.proxy_mask, tmp);
     $endif
+}
+
+// The slow path unless object `obj` is a plain object: class Object and no proxy or namespace
+// flag. Uses R2 and R3.
+fn void Asm.guard_plain(&self, int obj) {
+    Layout* l = self.lay;
+    long mask = l.class_mask | l.module_ns_mask | l.deferred_ns_mask;
+    $if features::PROXY:
+        mask |= l.proxy_mask;
+    $endif
+    sljit_emit_op1(self.c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | obj, 0);
+    sljit_emit_op2(self.c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, mask);
+    self.call.add(sljit_emit_cmp(self.c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.class_object));
 }
 
 // dst = the property values of object `obj`, as HObject.prop_values.

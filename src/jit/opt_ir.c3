@@ -45,6 +45,10 @@ enum OptOp : char {
     // A PUTPROP (imm its pc) of the number node b to the element at INT32 node a, exiting where
     // LOAD_ELEM would. It defines nothing.
     STORE_ELEM,
+    // A GETPROPC, GETPROPC_CACHED or GETTHISC (imm its pc) read of the own data property its
+    // cache names, from a plain object of the cache's shape; exits for any other receiver. Of rep
+    // NONE it writes the value to the window, else it is a number of the node's rep.
+    LOAD_FIELD,
     PHI,
     // A new node holding the value of `a`.
     COPY,

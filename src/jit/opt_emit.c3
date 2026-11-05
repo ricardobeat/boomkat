@@ -11,6 +11,7 @@ import boomkat::heap;
 import boomkat::bytecode;
 import boomkat::types;
 import boomkat::features;
+import boomkat::hobject;
 import std::collections::list;
 
 // Where a jump leaves the optimized code from: the resume point and the
@@ -620,6 +621,48 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     self.def_from_r0(i, n);
 }
 
+// The shape of the object in `obj` against the id its cell holds, which the heap clears when the
+// id goes out of use. Uses R2 and R3.
+fn void OptCg.guard_shape_cell(&self, int obj, uint shape) {
+    uint* cell = &self.oc.cells[self.oc.cell_count++];
+    *cell = shape;
+    sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | obj, self.a.lay.obj_shape);
+    sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM, (long)(usz)cell);
+    self.a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, R2, 0));
+}
+
+// A read of the own data property its cache names, as emit_get does for a hit on the entry's shape:
+// the receiver a plain object (any object for GETTHISC) of that shape, the value at the slot.
+// Everything else leaves for the baseline code.
+fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.decode((uint)n.imm);
+    a.call.len = 0;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
+    if (a.w.op == Opcode.GETTHISC) {
+        a.load_this(R0);
+    } else {
+        a.load(R0, a.w.b);
+    }
+    a.unbox_object(R1, R0);
+    if (a.w.op == Opcode.GETTHISC) {
+        a.guard_not_proxy(R1, R2);
+    } else {
+        a.guard_plain(R1);
+    }
+    self.guard_shape_cell(R1, ic.shape_id);
+    a.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)ic.prop_idx * 8);
+    self.exit_calls(i, OptExit.SHAPE);
+    if (n.rep == OptRep.NONE) {
+        a.publish(a.w.a);
+        self.exit_calls(i, OptExit.SLOW_PATH);
+    } else {
+        self.def_from_r0(i, n);
+    }
+}
+
 // PUTPROP of a number to an element, as emit_put_elem: it overwrites a present element of a
 // dense array, or stores into a typed array; anything else leaves for the baseline code.
 fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
@@ -838,7 +881,7 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
 fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -862,6 +905,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_load_elem(i, n);
         case STORE_ELEM:
             self.emit_store_elem(i, n);
+        case LOAD_FIELD:
+            self.emit_load_field(i, n);
         case COPY:
             self.emit_copy(n, i);
         case ADD_I32:
@@ -925,6 +970,12 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
     sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
 
+    uint fields = 0;
+    foreach (&nd : g.nodes) fields += nd.op == OptOp.LOAD_FIELD ? 1 : 0;
+    if (fields != 0) {
+        oc.cells = h.alloc_func(h.heap_udata, fields * uint::size);
+        if (oc.cells == null) return null;
+    }
     OptCg cg = { .a = &a, .h = h, .g = g, .oc = oc, .pools = pools };
     cg.init();
     defer cg.free();
