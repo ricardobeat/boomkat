@@ -371,6 +371,7 @@ const int POLY_SUB = -9;
 const int INDEX_SUB = -10;
 const int CALL_SUB = -11;
 const int RETURN_SUB = -12;
+const int MEGA_SUB = -13;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -381,7 +382,7 @@ struct Asm {
     CompiledFunction* f;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
-    void*[Opcode::values.len + 12] sub_labels;
+    void*[Opcode::values.len + 13] sub_labels;
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
@@ -578,8 +579,8 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     if (h.jit_stats.dump_feedback) {
         foreach (slot, label : self.sub_labels) {
             if (label == null) continue;
-            String[12] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
-                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN" };
+            String[13] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
+                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA" };
             if (slot < Opcode::values.len) {
                 io::eprintfn("sub fn#%d %s %x", self.f.func_index, Opcode::values[slot], (usz)sljit_shim_label_addr(label));
             } else {
@@ -767,6 +768,8 @@ fn void Asm.emit_subroutines(&self) {
                 self.emit_call_body();
             case RETURN_SUB:
                 self.emit_return_body();
+            case MEGA_SUB:
+                self.emit_mega_body();
             case TRUTH_SUB:
             case STRICT_EQ_SUB:
             case LOOSE_EQ_SUB:
