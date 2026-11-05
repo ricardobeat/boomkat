@@ -338,21 +338,20 @@ fn bool tval_is_callable(TVal v) {
 fn bool js_get_with_receiver(void* vm, Heap* heap, HObject* obj, HString* key, TVal receiver, TVal* out) {
     // Integer-Indexed exotic [[Get]] (ES2022 §10.4.5.8): canonical numeric
     // index keys never walk the prototype chain.
-    if (is_typed_array_class(obj.get_class())) {
-        double num;
-        if (ta_key_numeric_index(heap, key, &num)) {
-            ProxyDesc d;
-            ta_own_index_desc(heap, obj, num, &d);
-            *out = d.found ? d.value : (TVal){};
-            if (!d.found) out.set_undefined();
-            return true;
-        }
-    }
+    // A typed array further up the chain answers the same way.
     HObject* cur = obj;
     uint depth = 0;
     while (cur != null && depth < 256) {
         if (cur.is_proxy()) {
             return proxy_mop_get(vm, heap, cur, key, receiver, out);
+        }
+        double num;
+        if (is_typed_array_class(cur.get_class()) && ta_key_numeric_index(heap, key, &num)) {
+            ProxyDesc d;
+            ta_own_index_desc(heap, cur, num, &d);
+            *out = d.value;
+            if (!d.found) out.set_undefined();
+            return true;
         }
         ProxyDesc d;
         ordinary_own_desc(heap, cur, key, &d);
@@ -539,18 +538,17 @@ fn bool js_has_property(void* vm, Heap* heap, HObject* obj, HString* key, bool* 
     // Integer-Indexed exotic [[HasProperty]] (ES2022 §10.4.5.2): a canonical
     // numeric index key never falls through to OrdinaryHasProperty / the
     // prototype chain, whether or not it is a valid in-bounds index.
-    if (is_typed_array_class(obj.get_class())) {
-        double num;
-        if (ta_key_numeric_index(heap, key, &num)) {
-            *out = ta_is_valid_integer_index(obj, num);
-            return true;
-        }
-    }
+    // A typed array further up the chain answers the same way.
     HObject* cur = obj;
     uint depth = 0;
     while (cur != null && depth < 256) {
         if (cur.is_proxy()) {
             return proxy_mop_has(vm, heap, cur, key, out);
+        }
+        double num;
+        if (is_typed_array_class(cur.get_class()) && ta_key_numeric_index(heap, key, &num)) {
+            *out = ta_is_valid_integer_index(cur, num);
+            return true;
         }
         ProxyDesc d;
         ordinary_own_desc(heap, cur, key, &d);
