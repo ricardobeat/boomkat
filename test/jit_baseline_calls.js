@@ -184,3 +184,24 @@ log(retMany(7));
 
 function cleanup() { log(out.length + " lines"); console.log(out.join("\n")); }
 Promise.resolve().then(function () {}).then(cleanup);
+
+// NEW_OBJ of a simple constructor completes in place.
+(function () {
+  function P(a, b) { this.a = a; this.b = b; }
+  P.prototype.sum = function () { return this.a + this.b; };
+  var t = 0;
+  for (var i = 0; i < 3000; i++) t += new P(i, 1).sum();
+  print("newSimple " + t);
+  var q = new P(1);
+  print("newSimple undef " + q.b + " " + Object.keys(q));
+  P.prototype = { sum: function () { return -1; } };
+  var r = new P(5, 6);
+  print("newSimple proto " + r.sum() + " " + (r instanceof P));
+  P.prototype = 3;
+  var s = new P(7, 8);
+  print("newSimple badproto " + (Object.getPrototypeOf(s) === Object.prototype) + " " + s.a);
+  Object.defineProperty(Object.prototype, "a", { set: function (v) { print("setter " + v); }, configurable: true });
+  var u = new P(9, 10);
+  print("newSimple setter " + Object.keys(u));
+  delete Object.prototype.a;
+})();
