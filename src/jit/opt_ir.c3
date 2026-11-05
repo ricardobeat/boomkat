@@ -36,9 +36,15 @@ enum OptOp : char {
     // (exit NOT_NUMBER), as an INT32 or FLOAT64.
     CHECK_I32,
     CHECK_NUM,
-    // A GETCAP read as a number of the node's rep, stored through to its slot; exits when the
-    // capture is not one of the plain cases or not that kind of number.
+    // A GETCAP (imm its pc) read as a number of the node's rep; exits when the capture is not
+    // one of the plain cases or not that kind of number.
     LOAD_CAP,
+    // A GETPROP (imm its pc) of the dense or typed array element at INT32 node a, as a number of
+    // the node's rep; exits for any other object, an index out of range, a hole or another value.
+    LOAD_ELEM,
+    // A PUTPROP (imm its pc) of the number node b to the element at INT32 node a, exiting where
+    // LOAD_ELEM would. It defines nothing.
+    STORE_ELEM,
     PHI,
     // A new node holding the value of `a`.
     COPY,
@@ -63,6 +69,7 @@ enum OptOp : char {
     SUB_F64,
     MUL_F64,
     DIV_F64,
+    NEG_F64,
     // A jump to succ[0]; a conditional branch (BRANCH: JMP_* row cc over a and b
     // of rep imm, BRANCH_TRUTH: IF_TRUE/IF_FALSE over a, or the window slot imm
     // when a is NO_NODE, cc nonzero for IF_FALSE) takes succ[0] when it holds and

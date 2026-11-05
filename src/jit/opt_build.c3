@@ -74,13 +74,13 @@ struct OptBuild {
     // By instruction: the target of a backward branch.
     bool* osr_target;
     OptRegState* cur;
-    // The pc of the GETCAP, still run as GENERIC, that last defined each register in this block,
-    // or NO_NODE; a numeric use of the register asks for that GETCAP to be a typed load.
-    uint* cap_def;
-    // The rep a numeric use asked of the GETCAP at each pc (OptOverride.block); the next round
-    // builds those as LOAD_CAP nodes.
-    List {OptOverride} cap_reps;
-    bool cap_changed;
+    // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
+    // this block, or NO_NODE; a numeric use of the register asks for it to be a typed load.
+    uint* load_def;
+    // The rep a numeric use asked of the load at each pc (OptOverride.block); the next round
+    // builds those as LOAD_CAP and LOAD_ELEM nodes.
+    List {OptOverride} load_reps;
+    bool load_changed;
     // The register states at the end and at the start of each block, by position.
     OptRegState* ends;
     OptRegState* entries;
@@ -132,11 +132,11 @@ fn void OptBuild.free(&self) {
     mem::free(self.loop_end);
     mem::free(self.osr_target);
     mem::free(self.cur);
-    mem::free(self.cap_def);
+    mem::free(self.load_def);
     mem::free(self.ends);
     mem::free(self.entries);
     self.overrides.free();
-    self.cap_reps.free();
+    self.load_reps.free();
 }
 
 // --- Control flow analysis ---
@@ -346,7 +346,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
     if (reg >= self.nregs) return;
     if (node != NO_NODE && !self.g.nodes[node].is_const() && self.g.nodes[node].op != OptOp.PHI) self.g.nodes[node].home = reg;
     self.cur[reg] = { .node = node, .dirty = dirty };
-    self.cap_def[reg] = NO_NODE;
+    self.load_def[reg] = NO_NODE;
 }
 
 fn uint OptBuild.const_i32(&self, long v) => self.add(OptOp.CONST_I32, OptRep.INT32, NO_NODE, NO_NODE, v);
@@ -366,7 +366,7 @@ fn uint OptBuild.const_f64(&self, double v) {
 fn uint OptBuild.operand(&self, uint reg, OptRep want) {
     if (reg >= self.nregs) return NO_NODE;
     OptRegState s = self.cur[reg];
-    if (s.node == NO_NODE && self.cap_def[reg] != NO_NODE) self.ask_cap(self.cap_def[reg], reg, want);
+    if (s.node == NO_NODE && self.load_def[reg] != NO_NODE) self.ask_load(self.load_def[reg], reg, want);
     if (s.node == NO_NODE) {
         uint n = self.guarded(want == OptRep.INT32 ? OptOp.CHECK_I32 : OptOp.CHECK_NUM, want, reg);
         self.set(reg, n, false);
@@ -458,42 +458,99 @@ fn uint OptBuild.bit_operand(&self, uint reg, bool numbers) {
     return self.operand(reg, OptRep.INT32);
 }
 
-// A numeric use of `reg` found it still in the window, written by the GETCAP at `pc`: have the
-// next round build that GETCAP as a typed load of `want`.
-fn void OptBuild.ask_cap(&self, uint pc, uint reg, OptRep want) {
-    foreach (&c : self.cap_reps) {
+// A numeric use of `reg` found it still in the window, written by the GETCAP or GETPROP at `pc`:
+// have the next round build that as a typed load of `want`.
+fn void OptBuild.ask_load(&self, uint pc, uint reg, OptRep want) {
+    foreach (&c : self.load_reps) {
         if (c.block != pc) continue;
         if (c.rep != want) {
             c.rep = want;
-            self.cap_changed = true;
+            self.load_changed = true;
         }
         return;
     }
-    self.cap_reps.push({ .block = pc, .reg = reg, .rep = want });
-    self.cap_changed = true;
+    self.load_reps.push({ .block = pc, .reg = reg, .rep = want });
+    self.load_changed = true;
+}
+
+// The typed load a numeric use asked of the instruction at this pc, or NO_NODE.
+fn uint OptBuild.typed_load(&self, OptOp op, uint a) {
+    foreach (c : self.load_reps) {
+        if (c.block != self.pc) continue;
+        uint n = self.add(op, c.rep, a, NO_NODE, (long)self.pc);
+        self.snapshot(n);
+        self.set(self.w.a, n);
+        return n;
+    }
+    return NO_NODE;
 }
 
 // GETCAP: a typed load when a numeric use asked for one, else GENERIC.
-fn bool OptBuild.load_cap(&self) {
-    foreach (c : self.cap_reps) {
-        if (c.block != self.pc) continue;
-        uint n = self.add(OptOp.LOAD_CAP, c.rep, NO_NODE, NO_NODE, (long)self.pc);
-        self.snapshot(n);
-        OptNode* node = &self.g.nodes[n];
-        for (uint i = 0; i < node.dirty_count; i++) {
-            self.cur[self.g.dirty[(sz)(node.dirty_first + i)].reg].dirty = false;
-        }
-        self.set(self.w.a, n, false);
+fn bool OptBuild.get_cap(&self) {
+    if (self.typed_load(OptOp.LOAD_CAP, NO_NODE) != NO_NODE) return true;
+    if (!self.generic()) return false;
+    if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pc;
+    return true;
+}
+
+// Whether the instruction being lowered has been cached for a string key.
+fn bool OptBuild.string_keyed(&self) {
+    if (self.f.ic_entries == null) return true;
+    return ((hobject::ICEntry*)self.f.ic_entries)[self.next_pc - 1].key.borrow() != null;
+}
+
+// Whether register `r` can be an element index: an INT32 node, or the window while the
+// instruction has seen no string key.
+fn bool OptBuild.index_ok(&self, uint r) {
+    if (r >= self.nregs) return false;
+    if (self.cur[r].node == NO_NODE) return !self.string_keyed();
+    return self.rep_of(self.cur[r].node) == OptRep.INT32;
+}
+
+// Whether register `r` holds an object (or other value) in the window.
+fn bool OptBuild.in_window(&self, uint r) => r < self.nregs && self.cur[r].node == NO_NODE;
+
+// GETPROP of an element at an integer index, from an object in the window.
+fn bool OptBuild.get_elem(&self) {
+    if (!self.in_window(self.w.b) || !self.index_ok(self.w.c)) return self.generic();
+    bool asked = false;
+    foreach (c : self.load_reps) asked |= c.block == self.pc;
+    if (asked) {
+        uint idx = self.operand(self.w.c, OptRep.INT32);
+        if (idx == NO_NODE) return self.generic();
+        self.typed_load(OptOp.LOAD_ELEM, idx);
         return true;
     }
-    return self.generic();
+    if (!self.generic()) return false;
+    if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pc;
+    return true;
+}
+
+// PUTPROP of a numeric node to an element at an integer index, into an object in the window.
+fn bool OptBuild.put_elem(&self) {
+    uint rv = self.w.c;
+    if (!self.in_window(self.w.a) || !self.index_ok(self.w.b) || rv >= self.nregs || self.cur[rv].node == NO_NODE) return self.generic();
+    uint idx = self.operand(self.w.b, OptRep.INT32);
+    uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, self.cur[rv].node, (long)self.pc);
+    self.snapshot(n);
+    return true;
+}
+
+// UNM of a number, as a double.
+fn bool OptBuild.negate(&self) {
+    char fb = self.feedback();
+    if ((fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0) return self.generic();
+    uint x = self.operand(self.w.b, OptRep.FLOAT64);
+    if (x == NO_NODE) return self.generic();
+    self.set(self.w.a, self.add(OptOp.NEG_F64, OptRep.FLOAT64, x));
+    return true;
 }
 
 // Register `r` no longer holds a numeric node.
 fn void OptBuild.kill(&self, uint r) {
     if (r >= self.nregs) return;
     self.cur[r] = { .node = NO_NODE, .dirty = false };
-    self.cap_def[r] = NO_NODE;
+    self.load_def[r] = NO_NODE;
 }
 
 // The instruction as the baseline emitter runs it: the registers it can read
@@ -541,7 +598,6 @@ fn bool OptBuild.generic(&self) {
     self.kill(key_kill);
     if (first_kill < self.nregs) for (uint r = first_kill; r < self.nregs; r++) self.kill(r);
     self.kill(def);
-    if (op == Opcode.GETCAP && self.w.a < self.nregs) self.cap_def[self.w.a] = self.pc;
     uint first = (uint)self.g.dirty.len();
     for (uint r = 0; r < self.nregs; r++) {
         if (self.cur[r].node != NO_NODE && self.live_out[self.insn].test(r)) {
@@ -681,7 +737,13 @@ fn bool OptBuild.lower(&self) {
         case CONTINUE:
             return self.refuse_op(op);
         case GETCAP:
-            return self.load_cap();
+            return self.get_cap();
+        case GETPROP:
+            return self.get_elem();
+        case PUTPROP:
+            return self.put_elem();
+        case UNM:
+            return self.negate();
         default:
             if (is_jmp_reg(op) || is_jmp_imm(op)) return self.cmp_branch();
             if (bytecode::is_cmp_branch(op)) return self.refuse_op(op);
@@ -730,7 +792,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
     OptBlock blk = { .first = (uint)self.g.nodes.len(), .pc = self.pc };
     for (uint r = 0; r < self.nregs; r++) {
         self.cur[r] = { .node = NO_NODE, .dirty = false };
-        self.cap_def[r] = NO_NODE;
+        self.load_def[r] = NO_NODE;
     }
     uint fwd = 0;
     uint back = 0;
@@ -884,18 +946,18 @@ fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild
     b.f = f;
     b.g = g;
     b.overrides.init(mem);
-    b.cap_reps.init(mem);
+    b.load_reps.init(mem);
     if (!b.analyze()) return b.refused;
     uint n = b.nregs;
     b.cur = mem::new_array(OptRegState, n);
-    b.cap_def = mem::new_array(uint, n);
+    b.load_def = mem::new_array(uint, n);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
     for (uint round = 0; round < OPT_BUILD_ROUNDS; round++) {
         if (!b.build_round()) { *refused_op = b.refused_op; return b.refused; }
         bool again = b.repair();
-        again |= b.cap_changed;
-        b.cap_changed = false;
+        again |= b.load_changed;
+        b.load_changed = false;
         if (!again) {
             b.compute_edges();
             return OptRefuse.NONE;

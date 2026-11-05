@@ -10,6 +10,7 @@ module boomkat::jit @feat(SLJIT);
 import boomkat::heap;
 import boomkat::bytecode;
 import boomkat::types;
+import boomkat::features;
 import std::collections::list;
 
 // Where a jump leaves the optimized code from: the resume point and the
@@ -534,16 +535,10 @@ fn void OptCg.number_from_r0(&self, uint i, int fr) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// GETCAP as a number: the baseline's capture read, leaving for the baseline code on the
-// slow cases and on a value that is not of the node's kind. The slot is written too, and so
-// are the registers the GENERIC node it replaces had stored.
-fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
+// The number in R0 as node `n`'s value, leaving for the baseline code when it is not of the
+// node's kind. The jumps pending in the assembler's slow path list go to the same exit.
+fn void OptCg.def_from_r0(&self, uint i, OptNode* n) {
     void* c = self.a.c;
-    self.store_dirty(n.dirty_first, n.dirty_count);
-    self.a.decode((uint)n.imm);
-    self.a.call.len = 0;
-    self.a.emit_get_cap_value(self.a.w.get_bc());
-    self.exit_calls(i, OptExit.SLOW_PATH);
     if (n.rep == OptRep.INT32) {
         self.a.guard_int(R0);
         self.exit_calls(i, OptExit.NOT_INT32);
@@ -557,7 +552,101 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
         self.number_from_r0(i, dst);
         self.def_flt(i, dst);
     }
-    self.store_node(i, n.home);
+}
+
+// GETCAP as a number: the baseline's capture read, leaving for the baseline code on the slow
+// cases and on a value that is not of the node's kind.
+fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
+    self.a.decode((uint)n.imm);
+    self.a.call.len = 0;
+    self.a.emit_get_cap_value(self.a.w.get_bc());
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    self.def_from_r0(i, n);
+}
+
+// INT32 node `n` boxed as a fastint into R3.
+fn void OptCg.box_index(&self, uint n) {
+    void* c = self.a.c;
+    int r = self.int_reg(n, R3);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, r, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
+    sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, K_INT);
+}
+
+// The boxed value of number node `n` in `dst`.
+fn void OptCg.box_node(&self, uint n, int dst) {
+    void* c = self.a.c;
+    OptNode* nd = &self.g.nodes[n];
+    if (nd.op == OptOp.CONST_I32) {
+        sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_INT | (nd.imm & (PAYLOAD_SPAN - 1)));
+    } else if (nd.op == OptOp.CONST_F64) {
+        sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, nd.imm);
+    } else if (nd.reg < 0) {
+        self.a.load(dst, nd.home);
+    } else if (nd.rep == OptRep.INT32) {
+        sljit_emit_op2(c, SLJIT_AND, dst, 0, nd.reg, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
+        sljit_emit_op2(c, SLJIT_OR, dst, 0, dst, 0, SLJIT_IMM, K_INT);
+    } else {
+        sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, nd.reg, dst);
+        void* ok = sljit_emit_cmp(c, SLJIT_LESS, dst, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, CANONICAL_NAN);
+        sljit_set_label(ok, sljit_emit_label(c));
+    }
+}
+
+// GETPROP of an element as the baseline's emit_get_elem reads it, with the index in a node: a
+// dense array's element or a typed array's. Everything else leaves for the baseline code.
+fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.decode((uint)n.imm);
+    a.call.len = 0;
+    a.load(R0, a.w.b);
+    a.unbox_object(R1, R0);
+    self.box_index(n.a);
+    void* other = a.array_or_typed(0);
+    a.array_slot();
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
+    $if features::BUFFERS:
+        void* done = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(other, sljit_emit_label(c));
+        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        sljit_set_label(done, sljit_emit_label(c));
+    $else
+        a.call.add(other);
+    $endif
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    self.def_from_r0(i, n);
+}
+
+// PUTPROP of a number to an element, as emit_put_elem: it overwrites a present element of a
+// dense array, or stores into a typed array; anything else leaves for the baseline code.
+fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.decode((uint)n.imm);
+    a.call.len = 0;
+    a.load(R0, a.w.a);
+    a.unbox_object(R1, R0);
+    self.box_index(n.a);
+    void* other = a.array_or_typed(a.lay.indexed_named_mask);
+    a.array_slot();
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
+    self.box_node(n.b, R2);
+    a.guard_old_value();
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
+    $if features::BUFFERS:
+        void* done = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(other, sljit_emit_label(c));
+        self.box_node(n.b, R0);
+        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        sljit_set_label(done, sljit_emit_label(c));
+    $else
+        a.call.add(other);
+    $endif
+    self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {
@@ -723,7 +812,7 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
 fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -743,6 +832,10 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_check_num(i, n);
         case LOAD_CAP:
             self.emit_load_cap(i, n);
+        case LOAD_ELEM:
+            self.emit_load_elem(i, n);
+        case STORE_ELEM:
+            self.emit_store_elem(i, n);
         case COPY:
             self.emit_copy(n, i);
         case ADD_I32:
@@ -769,6 +862,11 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case MUL_F64:
         case DIV_F64:
             self.emit_fop(i, n);
+        case NEG_F64:
+            int x = self.flt_reg(n.a, FR0);
+            int dst = self.flt_dst(i, FR0);
+            sljit_emit_fop1(c, SLJIT_NEG_F64, dst, 0, x, 0);
+            self.def_flt(i, dst);
         case JUMP:
             self.emit_edge(pos, 0, true);
         case BRANCH:

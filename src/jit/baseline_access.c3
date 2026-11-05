@@ -691,14 +691,19 @@ fn void Asm.guard_shape(&self, int obj, int ic) {
 // be counted, and an object value needs no barrier work (not marking, and an
 // owner that is not old). Uses R2 and R3.
 fn void Asm.store_slot(&self, uint rv) {
+    self.guard_old_value();
+    self.store_value(rv);
+}
+
+// The slow path unless the value in the slot at R0 can be overwritten without work: a
+// number or other inert value, or an object. Uses R3.
+fn void Asm.guard_old_value(&self) {
     void* c = self.c;
-    Layout* l = self.lay;
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R0, 0);
     void* old_ok = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
     self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
     sljit_set_label(old_ok, sljit_emit_label(c));
-    self.store_value(rv);
 }
 
 // Store register `rv` into the slot at R0 of the object in R1 when the value
