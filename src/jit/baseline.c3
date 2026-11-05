@@ -747,6 +747,12 @@ fn bool Asm.emit_call(&self) {
             return false;
     }
     void* direct_done = null;
+    if (self.w.op == Opcode.NEW_OBJ) {
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
+        direct_done = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    }
     if (self.w.op == Opcode.CALL_UNDEF_THIS || (self.w.op == Opcode.CALL && self.w.b + 1 < self.f.num_regs)) {
         Jumps generic;
         self.emit_direct_call(&generic);

@@ -128,6 +128,42 @@ fn CompiledFunction* jit_compiled_callee(TVal callee) @private @inline {
     return (*fn_obj.extra_ptr()).func.comp_func;
 }
 
+// NEW_OBJ of a simple constructor, completed in place as th_new_obj does:
+// 0 when the object is built and stored, JIT_CALL_SLOW to leave the
+// instruction to jit_call.
+fn long jit_new_simple(Dispatch* ds, Instruction* next) {
+    Instruction* pc = next - 1;
+    Instruction insn = *pc;
+    TVal* regs = ds.regs_base;
+    TVal callee = regs[insn.b];
+    if (!callee.is_object() || ds.ic_base == null) return JIT_CALL_SLOW;
+    HObject* ctor = (HObject*)callee.get_heapptr();
+    if (!ctor.is_callable() || !ctor.is_constructable()
+        || ctor.callable_kind() != hobject::CallableKind.COMPILED_FN) return JIT_CALL_SLOW;
+    CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
+    if (target == null) return JIT_CALL_SLOW;
+    target.classify_lean_call();
+    if (!target.call_flags.simple_constructor || target.is_arrow() || target.is_derived_ctor()
+        || target.brand_name_hstr != null || target.field_init_func != null) return JIT_CALL_SLOW;
+    Vm* vm = ds.vm;
+    hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
+    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
+        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
+        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return JIT_CALL_SLOW;
+    TVal proto = ctor.prop_values()[ic.prop_idx].get();
+    if (!proto.is_object()) return JIT_CALL_SLOW;
+    ds.curr_pc = next;
+    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    if (obj == null) return JIT_CALL_SLOW;
+    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
+    if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return JIT_CALL_SLOW;
+    TVal* ra = regs + insn.a;
+    ra.set_object(obj);
+    track_heap_store(ds.act, ra, (uint)insn.a);
+    ds.heap.jit_stats.calls_trivial++;
+    return 0;
+}
+
 // NEW_OBJ and APPLY_ARGS (with the CALL_S it is fused with) through their
 // threaded handlers, th_new_obj and th_apply_args, which publish the
 // callee's frame, or complete a simple constructor in place, or decline
