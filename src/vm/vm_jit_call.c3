@@ -17,12 +17,58 @@ const uint JIT_NATIVE_DEPTH_CAP = 100;
 // A call site's result when the callee completed without a frame.
 const usz JIT_CALL_DONE = 1;
 
+// A call site's result when the call takes its thunk.
+const long JIT_CALL_SLOW = -1;
+
+// The native call at the instruction before `next`: publish the callee's
+// frame (jit_call_enter), run its native code on the C stack and resume the
+// caller once it returned. Returns 0 to continue at `next`,
+// BASELINE_REDISPATCH when the caller resumes elsewhere (a handler caught a
+// throw), JIT_CALL_SLOW when the call takes its thunk, or the callee's status
+// for Vm.run. One C frame per call keeps the floor in a local.
+fn long jit_call(Dispatch* ds, ulong next_arg) {
+    Instruction* next = (Instruction*)(usz)next_arg;
+    uint old_floor = ds.jit_floor;
+    void* entry = jit_call_enter(ds, next);
+    if (entry == null) return JIT_CALL_SLOW;
+    if (entry == (void*)JIT_CALL_DONE) return 0;
+    long status = ((jit::BaselineFn)entry)(ds);
+    ds.jit_floor = old_floor;
+    ds.jit_depth--;
+    if (status != jit::BASELINE_RETURNED) return status;
+    Vm* vm = ds.vm;
+    Activation* act = &vm.activations[vm.activation_count - 1];
+    ds.act = act;
+    CompiledFunction* f = (CompiledFunction*)act.func;
+    if (vm.heap.realm != f.realm) vm.heap.enter_realm(f.realm);
+    vm.current_func = f;
+    if (f.code != ds.code_base) jit_view(ds, f);
+    ds.regs_base = act.bottom;
+    return ds.curr_pc == next ? 0 : jit::BASELINE_REDISPATCH;
+}
+
+// Enter the realm of the frame a native call site resumes.
+fn void jit_enter_frame_realm(Dispatch* ds) {
+    ds.vm.heap.enter_realm(((CompiledFunction*)ds.act.func).realm);
+}
+
+// Point ds's code, constant and cache view at `f`, a function that has run
+// (its caches exist), as Dispatch.load_frame does.
+fn void jit_view(Dispatch* ds, CompiledFunction* f) @private @inline {
+    ds.code_base = f.code;
+    ds.code_count = f.code_count;
+    ds.code_end = f.code + f.code_count;
+    ds.constants = f.constants;
+    ds.ic_base = (hobject::ICEntry*)f.ic_entries;
+    ds.var_ic_base = (hobject::VarICEntry*)f.var_ic_entries;
+    ds.nregs = f.num_regs;
+}
+
 // Publish the frame of the call at the instruction before `next` and return
 // the callee's native entry, JIT_CALL_DONE for a trivial callee, or null when
 // the call takes its thunk. On a native entry ds describes the callee's frame
 // and ds.jit_floor the caller's depth.
-fn void* jit_call_enter(Dispatch* ds, ulong next_arg) {
-    Instruction* next = (Instruction*)(usz)next_arg;
+fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
     Instruction* pc = next - 1;
     Vm* vm = ds.vm;
     jit::JitStats* st = &ds.heap.jit_stats;
@@ -64,7 +110,10 @@ fn void* jit_call_enter(Dispatch* ds, ulong next_arg) {
     if (r == ENTERED_ARGS) {
         bind_register_arguments(vm, la, target, (HObject*)la.tv_func.get_heapptr(), la.bottom, nargs);
     }
-    ds.load_frame();
+    // The publish made the callee's activation and registers current and
+    // checked its realm; its code view is all that is left to load.
+    jit_view(ds, target);
+    ds.curr_pc = target.code;
     ds.jit_floor = vm.activation_count - 1;
     ds.jit_depth++;
     st.calls_native++;
@@ -108,20 +157,6 @@ fn void* jit_call_relayed(Dispatch* ds, Instruction* pc, jit::JitStats* st) @pri
     ds.jit_depth++;
     st.calls_native++;
     return jit::baseline_entry(target);
-}
-
-// Finish a native call: restore the floor the call site saved and, when the
-// callee returned to it, reload the caller's frame. Returns 0 to continue at
-// `next`, BASELINE_REDISPATCH when the caller resumes elsewhere (a handler
-// caught a throw), or the callee's status for Vm.run.
-fn long jit_call_return(Dispatch* ds, long status, ulong old_floor, ulong next_arg) {
-    ds.jit_floor = (uint)old_floor;
-    ds.jit_depth--;
-    if (status != jit::BASELINE_RETURNED) return status;
-    Instruction* pc = ds.curr_pc;
-    ds.load_frame();
-    ds.curr_pc = pc;
-    return pc == (Instruction*)(usz)next_arg ? 0 : jit::BASELINE_REDISPATCH;
 }
 
 // RET and RETUNDEF as the threaded returns (th_leaf_return and
