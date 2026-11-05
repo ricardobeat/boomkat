@@ -284,6 +284,8 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
 // A thunk's result when the operation left ds.curr_pc somewhere other than
 // the following instruction: the code dispatches through the entry table.
 const long BASELINE_REDISPATCH = OpStatus::values.len + 1;
+// A thunk result at least this is the address of code to continue in.
+const long BASELINE_CODE_MIN = 65536;
 // A native function's result when its activation returned to the native call
 // site waiting at ds.jit_floor.
 const long BASELINE_RETURNED = OpStatus::values.len + 2;
@@ -468,11 +470,11 @@ fn void Asm.release(&self) {
 // instruction's dispatch point. Leaves the entry table's register in
 // `table_reg` and returns the label that reloads the window and dispatches on
 // ds.curr_pc through it.
-fn void* Asm.emit_prologue(&self, int table_reg, BaselineCode* bc, int scratches = 5 | (2 << 8)) {
+fn void* Asm.emit_prologue(&self, int table_reg, BaselineCode* bc, int scratches = 5 | (2 << 8), int locals = CALL_FRAME_BYTES) {
     void* c = self.c;
     int ds_mem = SLJIT_MEM | self.ds;
     Dispatch* dl = (Dispatch*)(usz)4096;
-    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, scratches, 6, CALL_FRAME_BYTES);
+    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, scratches, 6, locals);
     sljit_emit_op1(c, SLJIT_MOV, self.code, 0, ds_mem, (char*)&dl.code_base - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, self.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
@@ -487,6 +489,12 @@ fn void Asm.emit_nonzero_exit(&self, void* dispatch) {
     // A thunk's nonzero result: redispatch, or leave with the status.
     self.nonzero = sljit_emit_label(c);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_REDISPATCH), dispatch);
+    // An address: the optimized code to continue in (opt_osr).
+    void* status = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, BASELINE_CODE_MIN);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, R2, 0);
+    sljit_set_label(status, sljit_emit_label(c));
     // A restart into a frame with native code continues there as a tail
     // call when Vm.run would enter it directly (vm::jit_switch).
     void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
@@ -567,10 +575,10 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
 // The prologue, then the code that dispatches on ds.curr_pc through the entry
 // table with the register window reloaded. Returns the dispatch label; an
 // instruction without an entry leaves for the interpreter.
-fn void* Asm.emit_dispatch(&self, int table_reg, BaselineCode* bc, uint count, int scratches = 5 | (2 << 8)) {
+fn void* Asm.emit_dispatch(&self, int table_reg, BaselineCode* bc, uint count, int scratches = 5 | (2 << 8), int locals = CALL_FRAME_BYTES) {
     void* c = self.c;
     int ds_mem = SLJIT_MEM | self.ds;
-    void* dispatch = self.emit_prologue(table_reg, bc, scratches);
+    void* dispatch = self.emit_prologue(table_reg, bc, scratches, locals);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, ds_mem, self.regs_off);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.pc_off);
     sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, self.code, 0);
@@ -1676,7 +1684,14 @@ fn void init_thunks() @noinline @private {
                     return BASELINE_RETURNED;
                 }
                 s = vm::jit_restart_switched(ds, act, func, s);
-                if (s == NEXT && ds.curr_pc != next) return BASELINE_REDISPATCH;
+                if (s == NEXT && ds.curr_pc != next) {
+                    // A taken backward branch may continue in optimized code.
+                    if (@unlikely(ds.heap.opt.enabled) && ds.curr_pc < next && ds.act == act) {
+                        void* code = opt_osr(ds, func);
+                        if (code != null) return (long)(usz)code;
+                    }
+                    return BASELINE_REDISPATCH;
+                }
                 return (long)s.ordinal;
             };
         $endif

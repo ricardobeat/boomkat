@@ -47,6 +47,14 @@ struct OptMoveItem {
 
 const int FLT_KEY = 1000;
 
+// A back edge's poll: the jumps that take its slow path, and where the loop resumes.
+struct OptPoll {
+    void*[2] jumps;
+    uint jump_count;
+    void* resume;
+    uint target;
+}
+
 struct OptCg {
     Asm* a;
     OptGraph* g;
@@ -54,9 +62,11 @@ struct OptCg {
     OptCode* oc;
     OptPools pools;
     void*[] labels;
+    void*[] osr_labels;
     List{OptGoto} gotos;
     List{OptExitRef} exits;
     List{OptTaken} taken;
+    List{OptPoll} polls;
     bool forced_done;
 }
 
@@ -64,13 +74,16 @@ fn void OptCg.init(&self) {
     self.gotos.init(mem);
     self.exits.init(mem);
     self.taken.init(mem);
+    self.polls.init(mem);
 }
 
 fn void OptCg.free(&self) {
     self.gotos.free();
     self.exits.free();
     self.taken.free();
+    self.polls.free();
     mem::free(self.labels);
+    mem::free(self.osr_labels);
 }
 
 fn void* OptCg.c(&self) @inline => self.a.c;
@@ -218,6 +231,15 @@ fn void OptCg.exit_at(&self, void* jump, uint node, OptExit reason) {
     self.exits.push({ .jump = jump, .pc = n.pc, .dirty_first = n.dirty_first, .dirty_count = n.dirty_count, .reason = (uint)reason.ordinal });
 }
 
+fn void OptCg.exit_clean_dirty(&self, void* jump, uint pc, uint first, uint count, OptExit reason) {
+    self.exits.push({ .jump = jump, .pc = pc, .dirty_first = first, .dirty_count = count, .reason = (uint)reason.ordinal });
+}
+
+// An exit to the baseline code at `pc` with nothing to store: the window holds every value.
+fn void OptCg.exit_clean(&self, void* jump, uint pc, OptExit reason) {
+    self.exits.push({ .jump = jump, .pc = pc, .dirty_first = 0, .dirty_count = 0, .reason = (uint)reason.ordinal });
+}
+
 // Every jump the baseline helpers collected in `call` leaves through `reason`.
 fn void OptCg.exit_calls(&self, uint node, OptExit reason) {
     for (uint k = 0; k < self.a.call.len; k++) self.exit_at(self.a.call.at[k], node, reason);
@@ -344,17 +366,53 @@ fn void OptCg.emit_moves(&self, OptBlock* blk, uint e) {
     }
 }
 
-// The budget and interrupt poll of a back edge to block `target`: when it
-// fires the code leaves for the baseline code at the loop header.
+// The budget and interrupt poll of a back edge to block `target`. Its slow path
+// runs out of line (emit_poll_stubs).
 fn void OptCg.emit_poll(&self, uint target) {
-    OptBlock* h = &self.g.blocks[target];
     self.a.call.len = 0;
     self.a.back_edge();
-    for (uint k = 0; k < self.a.call.len; k++) {
-        self.exits.push({ .jump = self.a.call.at[k], .pc = h.pc, .dirty_first = h.entry_first, .dirty_count = h.entry_count,
-                          .reason = (uint)OptExit.INTERRUPT.ordinal });
-    }
+    OptPoll p = { .jump_count = self.a.call.len, .target = target };
+    for (uint k = 0; k < p.jump_count; k++) p.jumps[k] = self.a.call.at[k];
     self.a.call.len = 0;
+    p.resume = sljit_emit_label(self.a.c);
+    self.polls.push(p);
+}
+
+// The slow path of each poll: store the registers the header holds in the
+// window, as the garbage collector reads it there, call opt_poll preserving
+// the registers in use, and resume the loop or, when a hook is installed,
+// leave for the baseline code at the header.
+fn void OptCg.emit_poll_stubs(&self) {
+    void* c = self.a.c;
+    int saved = 0;
+    foreach (&p : self.polls) {
+        OptBlock* h = &self.g.blocks[p.target];
+        void* label = sljit_emit_label(c);
+        for (uint k = 0; k < p.jump_count; k++) sljit_set_label(p.jumps[k], label);
+        self.store_dirty(h.entry_first, h.entry_count);
+        long off = CALL_FRAME_BYTES;
+        for (int k = 0; k < self.pools.int_count; k++, off += 8) {
+            sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), off, self.pools.int_first + k, 0);
+        }
+        for (int k = 0; k < self.pools.flt_count; k++, off += 8) {
+            sljit_emit_fop1(c, SLJIT_MOV_F64, SLJIT_MEM | reg_sp(), off, self.pools.flt_first + k, 0);
+        }
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.a.code, 0, SLJIT_IMM, (long)h.pc * Instruction::size);
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.a.ds, self.a.pc_off, R1, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&opt_poll);
+        sljit_emit_op1(c, SLJIT_MOV, R4, 0, R0, 0);
+        off = CALL_FRAME_BYTES;
+        for (int k = 0; k < self.pools.int_count; k++, off += 8) {
+            sljit_emit_op1(c, SLJIT_MOV, self.pools.int_first + k, 0, SLJIT_MEM | reg_sp(), off);
+        }
+        for (int k = 0; k < self.pools.flt_count; k++, off += 8) {
+            sljit_emit_fop1(c, SLJIT_MOV_F64, self.pools.flt_first + k, 0, SLJIT_MEM | reg_sp(), off);
+        }
+        self.exit_clean_dirty(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0), h.pc, h.entry_first, h.entry_count, OptExit.INTERRUPT);
+        sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), p.resume);
+        saved++;
+    }
 }
 
 // Continue to block `target` from block `pos`: fall through when it is next.
@@ -394,6 +452,42 @@ fn void OptCg.emit_taken_stubs(&self) {
         void* label = sljit_emit_label(c);
         for (uint k = 0; k < t.jump_count; k++) sljit_set_label(t.jumps[k], label);
         self.emit_edge(t.block, 0, false);
+    }
+}
+
+// --- Entry from baseline code ---
+
+// The entry of an OSR block: every numeric node live at its start is loaded
+// from the window, guarded by the type the graph assumes.
+fn void OptCg.emit_osr_entries(&self) {
+    void* c = self.a.c;
+    for (uint pos = 0; pos < self.g.blocks.len(); pos++) {
+        OptBlock* blk = &self.g.blocks[pos];
+        if (!blk.osr) continue;
+        self.osr_labels[pos] = sljit_emit_label(c);
+        for (uint k = 0; k < blk.osr_count; k++) {
+            OptDirty d = self.g.dirty[(sz)(blk.osr_first + k)];
+            OptNode* n = &self.g.nodes[d.node];
+            // A spilled value is in its slot already.
+            if (n.reg < 0) continue;
+            self.a.call.len = 0;
+            if (n.rep == OptRep.INT32) {
+                self.a.load(R0, d.reg);
+                self.a.guard_int(R0);
+                for (uint j = 0; j < self.a.call.len; j++) self.exit_clean(self.a.call.at[j], blk.pc, OptExit.NOT_INT32);
+                self.a.call.len = 0;
+                sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+                sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
+                sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
+                self.exit_clean(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), blk.pc, OptExit.NOT_INT32);
+                sljit_emit_op1(c, SLJIT_MOV, n.reg, 0, R0, 0);
+            } else {
+                self.a.load_number(n.reg, d.reg);
+                for (uint j = 0; j < self.a.call.len; j++) self.exit_clean(self.a.call.at[j], blk.pc, OptExit.NOT_NUMBER);
+                self.a.call.len = 0;
+            }
+        }
+        self.gotos.push({ .jump = sljit_emit_jump(c, SLJIT_JUMP), .block = pos });
     }
 }
 
@@ -656,7 +750,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     Asm a = asm_new(c, h, f);
     defer a.release();
     int table_reg = reg_s(2);
-    void* dispatch = a.emit_dispatch(table_reg, bc, count, pools.scratches | (pools.fscratches << 8));
+    void* dispatch = a.emit_dispatch(table_reg, bc, count, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count));
     a.emit_nonzero_exit(dispatch);
     // An entry that is not an entry of the optimized code continues in the baseline code.
     void* to_base = sljit_emit_label(c);
@@ -668,6 +762,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     defer cg.free();
     uint blocks = (uint)g.blocks.len();
     cg.labels = mem::new_array(void*, blocks);
+    cg.osr_labels = mem::new_array(void*, blocks);
     for (uint pos = 0; pos < blocks; pos++) {
         OptBlock* blk = &g.blocks[pos];
         cg.labels[pos] = sljit_emit_label(c);
@@ -678,6 +773,8 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     }
     a.emit_stubs();
     cg.emit_taken_stubs();
+    cg.emit_poll_stubs();
+    cg.emit_osr_entries();
     cg.emit_exit_stubs();
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, null) == null) return null;
@@ -685,5 +782,8 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(to_base);
     }
     bc.entries[0] = (void*)sljit_shim_label_addr(cg.labels[0]);
+    for (uint pos = 0; pos < blocks; pos++) {
+        if (g.blocks[pos].osr) bc.entries[g.blocks[pos].pc] = (void*)sljit_shim_label_addr(cg.osr_labels[pos]);
+    }
     return bc;
 }

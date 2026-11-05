@@ -127,6 +127,11 @@ struct OptBlock {
     // For a header: the phis' (register, node) pairs, which a poll's exit stores.
     uint entry_first;
     uint entry_count;
+    // Entered from baseline code (the target of a backward branch): the numeric
+    // nodes live at its start, which the entry reloads from the window.
+    bool osr;
+    uint osr_first;
+    uint osr_count;
 }
 
 struct OptGraph {

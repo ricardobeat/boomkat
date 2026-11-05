@@ -70,6 +70,14 @@ fn void OptGraph.compute_uses(&self) {
             }
         }
     }
+    // The nodes an entry from baseline code loads are all live together once the
+    // block's phis are defined.
+    foreach (&blk : self.blocks) {
+        if (!blk.osr) continue;
+        uint point = blk.first;
+        while (point + 1 < blk.end && self.nodes[point].op == OptOp.PHI) point++;
+        for (uint k = 0; k < blk.osr_count; k++) self.use(self.dirty[(sz)(blk.osr_first + k)].node, point);
+    }
     foreach (&blk : self.blocks) {
         if (!blk.header) continue;
         uint end = self.blocks[(sz)blk.loop_end].end - 1;

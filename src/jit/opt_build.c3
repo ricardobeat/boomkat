@@ -71,6 +71,8 @@ struct OptBuild {
     // Immediate dominators by position.
     uint* idom;
     uint* loop_end;
+    // By instruction: the target of a backward branch.
+    bool* osr_target;
     OptRegState* cur;
     // The register states at the end and at the start of each block, by position.
     OptRegState* ends;
@@ -121,6 +123,7 @@ fn void OptBuild.free(&self) {
     mem::free(self.pred_list);
     mem::free(self.idom);
     mem::free(self.loop_end);
+    mem::free(self.osr_target);
     mem::free(self.cur);
     mem::free(self.ends);
     mem::free(self.entries);
@@ -179,6 +182,11 @@ fn bool OptBuild.analyze(&self) {
     self.live_out = self.live_sets;
     self.live_in = self.live_sets + count;
 
+    self.osr_target = mem::new_array(bool, count);
+    for (uint i = 0; i < count; i++) {
+        uint t = cfg.nodes[i].branch_target;
+        if (t != compiler::CFG_NO_INSTRUCTION && t <= i) self.osr_target[t] = true;
+    }
     uint nb = self.nb;
     self.b_first = mem::new_array(uint, nb);
     self.b_last = mem::new_array(uint, nb);
@@ -713,6 +721,15 @@ fn void OptBuild.begin_block(&self, uint pos) {
             if (self.cur[r].node != NO_NODE && self.cur[r].dirty) self.g.dirty.push({ .reg = r, .node = self.cur[r].node });
         }
         blk.entry_count = (uint)self.g.dirty.len() - blk.entry_first;
+    }
+    if (self.osr_target[first_insn]) {
+        blk.osr = true;
+        blk.osr_first = (uint)self.g.dirty.len();
+        for (uint r = 0; r < self.nregs; r++) {
+            uint node = self.cur[r].node;
+            if (node != NO_NODE && !self.g.nodes[node].is_const()) self.g.dirty.push({ .reg = r, .node = node });
+        }
+        blk.osr_count = (uint)self.g.dirty.len() - blk.osr_first;
     }
     mem::copy(&self.entries[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
     self.g.blocks.push(blk);

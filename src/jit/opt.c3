@@ -102,6 +102,29 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1) @noinline 
     opt_try_compile(h, f);
 }
 
+// The optimized code a baseline frame of `f` continues in at the backward
+// branch it just took, compiling `f` when the loop's credit says so; null when
+// there is none. The code enters at ds.curr_pc, which it knows when it is a
+// loop entry and otherwise hands back to the baseline code.
+fn void* opt_osr(Dispatch* ds, CompiledFunction* f) @noinline {
+    Heap* h = ds.heap;
+    opt_note_entry(h, f, BASELINE_LOOP_CREDIT);
+    if (f.opt_code == null || f.opt_state != OPT_ACTIVE) return null;
+    return ((BaselineCode*)f.jit_code).exec;
+}
+
+// The slow path of a back edge's poll in optimized code: the budget expired or a
+// hook is installed. Zero continues the loop; nonzero leaves for the baseline code.
+fn long opt_poll(Dispatch* ds) {
+    Heap* h = ds.heap;
+    if (h.capi_interrupt_fn != null || h.capi_runtime != null) return 1;
+    if (--h.bwd_gc_budget == 0) {
+        if (h.gc_pending) h.safepoint_gc(heap::GC_LOOP_WORK);
+        h.bwd_gc_budget = heap::BWD_GC_INTERVAL;
+    }
+    return 0;
+}
+
 // Whether any instruction of `f` has recorded a non-int32 operand, the sign
 // that the baseline has seen what there is to specialize on.
 fn bool opt_has_feedback(CompiledFunction* f) {
