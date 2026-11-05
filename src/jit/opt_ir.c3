@@ -77,6 +77,9 @@ enum OptOp : char {
     JUMP,
     BRANCH,
     BRANCH_TRUTH,
+    // A branch on two window slots (imm: b | c << 20) by the baseline's equality test: cc is
+    // 0 JMP_SEQ, 1 JMP_SNEQ, 2 JMP_EQ, 3 JMP_NEQ, 4 JMP_NULL, 5 JMP_NNULL.
+    BRANCH_WINDOW,
     // The bytecode instruction at pc, through the baseline emitter.
     GENERIC,
 }

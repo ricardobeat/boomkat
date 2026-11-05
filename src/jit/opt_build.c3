@@ -636,7 +636,39 @@ fn bool OptBuild.truth_branch(&self) {
     if (r >= self.nregs) return self.refuse(OptRefuse.BRANCH_OPERANDS);
     uint node = self.cur[r].node;
     bool negate = self.w.op == Opcode.IF_FALSE;
-    return self.terminator(OptOp.BRANCH_TRUTH, node, NO_NODE, (long)r, negate ? 1 : 0);
+    if (!self.terminator(OptOp.BRANCH_TRUTH, node, NO_NODE, (long)r, negate ? 1 : 0)) return false;
+    // A window value can leave through the slow path.
+    if (node == NO_NODE) self.snapshot((uint)self.g.nodes.len() - 1);
+    return true;
+}
+
+// JMP_SEQ/SNEQ/EQ/NEQ/NULL/NNULL: values in the window go through the baseline's tests; once
+// either operand is a numeric node the operands compare as numbers.
+fn bool OptBuild.equality_branch(&self) {
+    Opcode op = self.w.op;
+    bool unary = op == Opcode.JMP_NULL || op == Opcode.JMP_NNULL;
+    uint rb = self.w.b;
+    uint rc = unary ? rb : self.w.c;
+    if (rb >= self.nregs || rc >= self.nregs) return self.refuse(OptRefuse.BRANCH_OPERANDS);
+    if (self.cur[rb].node != NO_NODE || self.cur[rc].node != NO_NODE) {
+        return unary ? self.refuse_op(op) : self.numeric_equality();
+    }
+    uint kind = op.ordinal - Opcode.JMP_SEQ.ordinal;
+    if (!self.terminator(OptOp.BRANCH_WINDOW, NO_NODE, NO_NODE, (long)rb | ((long)rc << 20), (char)kind)) return false;
+    self.snapshot((uint)self.g.nodes.len() - 1);
+    return true;
+}
+
+// Loose or strict equality of two numeric nodes: the same compare as the strict branch.
+fn bool OptBuild.numeric_equality(&self) {
+    Opcode op = self.w.op;
+    uint row = (op == Opcode.JMP_SEQ || op == Opcode.JMP_EQ) ? 8 : 9;
+    OptRep rep = self.arith_rep(self.w.b, self.w.c);
+    if (rep == OptRep.NONE) return self.refuse(OptRefuse.BRANCH_OPERANDS);
+    uint x = self.operand(self.w.b, rep);
+    uint y = self.operand(self.w.c, rep);
+    if (x == NO_NODE || y == NO_NODE) return self.refuse(OptRefuse.BRANCH_OPERANDS);
+    return self.terminator(OptOp.BRANCH, x, y, (long)rep.ordinal, (char)row);
 }
 
 // Lower instruction `self.insn`.
@@ -745,6 +777,7 @@ fn bool OptBuild.lower(&self) {
         case UNM:
             return self.negate();
         default:
+            if (op == Opcode.JMP_SEQ || op == Opcode.JMP_SNEQ || (op.ordinal >= Opcode.JMP_EQ.ordinal && op.ordinal <= Opcode.JMP_NNULL.ordinal)) return self.equality_branch();
             if (is_jmp_reg(op) || is_jmp_imm(op)) return self.cmp_branch();
             if (bytecode::is_cmp_branch(op)) return self.refuse_op(op);
             return self.generic();
