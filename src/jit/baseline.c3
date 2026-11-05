@@ -396,6 +396,8 @@ struct Asm {
     Layout* lay;
     void* length_key;
     bool counting;
+    // False once a SETCONST can change the constant table.
+    bool consts_fixed;
     JitStats* stats;
     // The instruction being emitted.
     uint i;
@@ -410,18 +412,12 @@ struct Asm {
     void* poly_back;
 }
 
-fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = null) {
+// The emitter state for compiling `f`, over compiler `c`: instruction labels
+// and starts, the stub and subroutine pools, and the register conventions
+// (ds, code, table, window, thunks and heap in the saved registers). Release
+// it with Asm.release.
+fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
     uint count = f.code_count;
-    usz table_bytes = BaselineCode::size + (usz)count * void*::size;
-    BaselineCode* bc = h.alloc_func(h.heap_udata, table_bytes);
-    if (bc == null) return null;
-    mem::clear(bc, (sz)table_bytes);
-    bc.table_bytes = table_bytes;
-
-    void* c = sljit_create_compiler(null);
-    if (c == null) { h.free_func(h.heap_udata, bc); return null; }
-    defer sljit_free_compiler(c);
-
     // Field offsets, taken from a layout pointer that is never dereferenced.
     Dispatch* dl = (Dispatch*)(usz)4096;
     Heap* hl = (Heap*)(usz)4096;
@@ -444,38 +440,154 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
         .lay = layout(),
         .length_key = (void*)h.strs[heap::BuiltinStr.LENGTH],
         .counting = h.jit_stats.count_ops,
+        .consts_fixed = true,
         .stats = &h.jit_stats,
     };
     a.gotos.init(mem);
     a.stubs.init(mem);
     a.stub_jumps.init(mem);
     a.subs.init(mem);
-    defer {
-        mem::free(a.labels);
-        mem::free(a.starts);
-        a.gotos.free();
-        a.stubs.free();
-        a.stub_jumps.free();
-        a.subs.free();
-    }
-    bool consts_fixed = true;
     for (uint i = 0; i < count;) {
         a.starts[i] = true;
-        if (f.code[i].op == Opcode.SETCONST) consts_fixed = false;
+        if (f.code[i].op == Opcode.SETCONST) a.consts_fixed = false;
         i += f.code[i].op == Opcode.WIDE ? 2 : 1;
     }
+    return a;
+}
+
+fn void Asm.release(&self) {
+    mem::free(self.labels);
+    mem::free(self.starts);
+    self.gotos.free();
+    self.stubs.free();
+    self.stub_jumps.free();
+    self.subs.free();
+}
+
+// The function's entry: the saved registers set up, then the first
+// instruction's dispatch point. Leaves the entry table's register in
+// `table_reg` and returns the label that reloads the window and dispatches on
+// ds.curr_pc through it.
+fn void* Asm.emit_prologue(&self, int table_reg, BaselineCode* bc, int scratches = 5 | (2 << 8)) {
+    void* c = self.c;
+    int ds_mem = SLJIT_MEM | self.ds;
+    Dispatch* dl = (Dispatch*)(usz)4096;
+    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, scratches, 6, CALL_FRAME_BYTES);
+    sljit_emit_op1(c, SLJIT_MOV, self.code, 0, ds_mem, (char*)&dl.code_base - (char*)dl);
+    sljit_emit_op1(c, SLJIT_MOV, self.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
+    sljit_emit_op1(c, SLJIT_MOV, table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
+    sljit_emit_op1(c, SLJIT_MOV, self.thunks, 0, SLJIT_IMM, (long)(usz)&thunks()[0]);
+    return sljit_emit_label(c);
+}
+
+// The shared exit: a thunk's nonzero result redispatches or leaves with the
+// status. `dispatch` is the label that redispatches through the entry table.
+fn void Asm.emit_nonzero_exit(&self, void* dispatch) {
+    void* c = self.c;
+    // A thunk's nonzero result: redispatch, or leave with the status.
+    self.nonzero = sljit_emit_label(c);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_REDISPATCH), dispatch);
+    // A restart into a frame with native code continues there as a tail
+    // call when Vm.run would enter it directly (vm::jit_switch).
+    void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_switch);
+    void* stay = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, R2, 0);
+    sljit_set_label(stay, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
+    sljit_set_label(leave, sljit_emit_label(c));
+    sljit_emit_return(c, SLJIT_MOV, R0, 0);
+}
+
+// Emit instruction `i`: its inline path, or a call to its thunk, and record
+// its out-of-line paths for emit_stubs. Falls through to the instruction
+// after it (self.next).
+fn void Asm.emit_insn(&self, uint i) {
+    self.decode(i);
+    self.call.len = 0;
+    self.alt.len = 0;
+    self.poly.len = 0;
+    if (self.emit_call()) {
+    } else if (self.emit_fast(self.consts_fixed)) {
+        if (is_access_op(self.w.op)) self.count(&self.stats.fast_hits[0], self.w.op);
+    } else {
+        self.emit_thunk_call(i);
+    }
+    if (self.call.len != 0 || self.alt.len != 0 || self.poly.len != 0) {
+        self.stubs.push({ .insn = i, .at = (uint)self.stub_jumps.len(), .call_len = (char)self.call.len,
+                          .alt_len = (char)self.alt.len, .poly_len = (char)self.poly.len, .poly_back = self.poly_back });
+        for (uint k = 0; k < self.call.len; k++) self.stub_jumps.push(self.call.at[k]);
+        for (uint k = 0; k < self.alt.len; k++) self.stub_jumps.push(self.alt.at[k]);
+        for (uint k = 0; k < self.poly.len; k++) self.stub_jumps.push(self.poly.at[k]);
+    }
+}
+
+// The out-of-line paths of the emitted instructions, each returning to the
+// instruction after its own.
+fn void Asm.emit_stubs(&self) {
+    void* c = self.c;
+    foreach (&stub : self.stubs) {
+        self.decode(stub.insn);
+        self.call.load(&self.stub_jumps, stub.at, stub.call_len);
+        self.alt.len = 0;
+        if (stub.alt_len != 0) {
+            Jumps alt;
+            alt.load(&self.stub_jumps, stub.at + stub.call_len, stub.alt_len);
+            alt.bind(sljit_emit_label(c));
+            self.emit_alt();
+        }
+        if (stub.poly_len != 0) {
+            Jumps poly;
+            poly.load(&self.stub_jumps, stub.at + stub.call_len + stub.alt_len, stub.poly_len);
+            poly.bind(sljit_emit_label(c));
+            self.emit_poly_arm(stub.poly_back);
+        }
+        self.call.bind(sljit_emit_label(c));
+        self.emit_thunk_call(stub.insn);
+        self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
+    }
+}
+
+// Generate the code: the shared subroutines, the pending jumps bound, and the
+// native address of each entry. `entries` are the instruction words whose
+// labels fill bc.entries.
+fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) {
+    self.emit_subroutines();
+    foreach (g : self.gotos) sljit_set_label(g.jump, self.labels[g.target]);
+    bc.exec = sljit_generate_code(self.c, 0, null);
+    if (bc.exec == null) { h.free_func(h.heap_udata, bc); return null; }
+    bc.code_bytes = sljit_shim_code_size(self.c);
+    if (call_entry != null) bc.call_entry = (void*)sljit_shim_label_addr(call_entry);
+    return bc;
+}
+
+fn BaselineCode* baseline_alloc(Heap* h, uint count) {
+    usz table_bytes = BaselineCode::size + (usz)count * void*::size;
+    BaselineCode* bc = h.alloc_func(h.heap_udata, table_bytes);
+    if (bc == null) return null;
+    mem::clear(bc, (sz)table_bytes);
+    bc.table_bytes = table_bytes;
+    return bc;
+}
+
+fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = null) {
+    uint count = f.code_count;
+    BaselineCode* bc = baseline_alloc(h, count);
+    if (bc == null) return null;
+    void* c = sljit_create_compiler(null);
+    if (c == null) { h.free_func(h.heap_udata, bc); return null; }
+    defer sljit_free_compiler(c);
+    Asm a = asm_new(c, h, f);
+    defer a.release();
     int table_reg = reg_s(2);
     int ds_mem = SLJIT_MEM | a.ds;
 
-    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, 5 | (2 << 8), 6, CALL_FRAME_BYTES);
-    sljit_emit_op1(c, SLJIT_MOV, a.code, 0, ds_mem, (char*)&dl.code_base - (char*)dl);
-    sljit_emit_op1(c, SLJIT_MOV, a.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
-    sljit_emit_op1(c, SLJIT_MOV, table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
-    sljit_emit_op1(c, SLJIT_MOV, a.thunks, 0, SLJIT_IMM, (long)(usz)&thunks()[0]);
-
+    void* dispatch = a.emit_prologue(table_reg, bc);
     // Dispatch on ds.curr_pc through the entry table, with the register
     // window reloaded.
-    void* dispatch = sljit_emit_label(c);
     sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, ds_mem, a.regs_off);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, a.pc_off);
     sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, a.code, 0);
@@ -488,82 +600,25 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     sljit_set_label(out_of_range, interpret);
     sljit_set_label(no_entry, interpret);
     sljit_emit_return(c, SLJIT_MOV, SLJIT_IMM, BASELINE_INTERPRET);
-    // A thunk's nonzero result: redispatch, or leave with the status.
-    a.nonzero = sljit_emit_label(c);
-    sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_REDISPATCH), dispatch);
-    // A restart into a frame with native code continues there as a tail
-    // call when Vm.run would enter it directly (vm::jit_switch).
-    void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_switch);
-    void* stay = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, R2, 0);
-    sljit_set_label(stay, sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
-    sljit_set_label(leave, sljit_emit_label(c));
-    sljit_emit_return(c, SLJIT_MOV, R0, 0);
+    a.emit_nonzero_exit(dispatch);
 
     bool forced_done = false;
     for (uint i = 0; i < count;) {
-        a.decode(i);
-        a.call.len = 0;
-        a.alt.len = 0;
-        a.poly.len = 0;
         a.labels[i] = sljit_emit_label(c);
         if (oc != null && h.opt.force_reason != 0 && i >= h.opt.force_at && !forced_done) {
             forced_done = true;
+            a.decode(i);
             a.emit_opt_exit(oc, h.opt.force_reason - 1, true);
         }
         bc.insns++;
-        if (a.emit_call()) {
-        } else if (a.emit_fast(consts_fixed)) {
-            if (is_access_op(a.w.op)) a.count(&a.stats.fast_hits[0], a.w.op);
-        } else {
-            a.emit_thunk_call(i);
-        }
-        if (a.call.len != 0 || a.alt.len != 0 || a.poly.len != 0) {
-            a.stubs.push({ .insn = i, .at = (uint)a.stub_jumps.len(), .call_len = (char)a.call.len,
-                           .alt_len = (char)a.alt.len, .poly_len = (char)a.poly.len, .poly_back = a.poly_back });
-            for (uint k = 0; k < a.call.len; k++) a.stub_jumps.push(a.call.at[k]);
-            for (uint k = 0; k < a.alt.len; k++) a.stub_jumps.push(a.alt.at[k]);
-            for (uint k = 0; k < a.poly.len; k++) a.stub_jumps.push(a.poly.at[k]);
-        }
+        a.emit_insn(i);
         i = a.next;
     }
     a.labels[count] = sljit_emit_label(c);
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), dispatch);
-
-    // Out-of-line paths, each returning to the following instruction.
-    foreach (&stub : a.stubs) {
-        a.decode(stub.insn);
-        a.call.load(&a.stub_jumps, stub.at, stub.call_len);
-        a.alt.len = 0;
-        if (stub.alt_len != 0) {
-            Jumps alt;
-            alt.load(&a.stub_jumps, stub.at + stub.call_len, stub.alt_len);
-            alt.bind(sljit_emit_label(c));
-            a.emit_alt();
-        }
-        if (stub.poly_len != 0) {
-            Jumps poly;
-            poly.load(&a.stub_jumps, stub.at + stub.call_len + stub.alt_len, stub.poly_len);
-            poly.bind(sljit_emit_label(c));
-            a.emit_poly_arm(stub.poly_back);
-        }
-        a.call.bind(sljit_emit_label(c));
-        a.emit_thunk_call(stub.insn);
-        a.go(sljit_emit_jump(c, SLJIT_JUMP), a.next);
-    }
+    a.emit_stubs();
     void* call_entry = call_entry_eligible(f) ? a.emit_call_entry(table_reg, bc) : null;
-    a.emit_subroutines();
-    foreach (g : a.gotos) sljit_set_label(g.jump, a.labels[g.target]);
-
-    bc.exec = sljit_generate_code(c, 0, null);
-    if (bc.exec == null) { h.free_func(h.heap_udata, bc); return null; }
-    bc.code_bytes = sljit_shim_code_size(c);
-    if (call_entry != null) bc.call_entry = (void*)sljit_shim_label_addr(call_entry);
+    if (a.finish(h, bc, call_entry) == null) return null;
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(a.labels[i]);
     }
