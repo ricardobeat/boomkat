@@ -180,6 +180,9 @@ fn int main(String[] args) {
         return 2;
     }
     if (jit_stress) (void)hp.set_jit_stress(true);
+    $if $feat(SLJIT):
+        hp.jit_stats.count_ops = jit_stats;
+    $endif
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
 
     $if features::PORTABLE_BYTECODE:
@@ -208,6 +211,7 @@ fn int main(String[] args) {
                 st.excluded_with, st.excluded_opcode, st.failed, st.capped);
             io::eprintfn("jit calls: native %d, trivial %d; thunk: no code %d, depth cap %d, not compiled %d, declined %d",
                 st.calls_native, st.calls_trivial, st.calls_no_code, st.calls_depth, st.calls_builtin, st.calls_declined);
+            jit::baseline_print_counts(st);
         }
     $endif
 

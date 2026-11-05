@@ -30,7 +30,9 @@
 // their slow path on any failed guard: out of line, a number path where the
 // threaded handlers have one, then the thunk call. A backward branch charges
 // the GC budget inline and takes the slow path when it expires or an
-// interrupt hook is installed, so vm_branch runs the safepoint.
+// interrupt hook is installed, so vm_branch runs the safepoint. Property,
+// global, variable and capture access run their inline cache hits inline
+// (baseline_access.c3).
 //
 // Every other instruction, and every slow path, calls its opcode's thunk with
 // the following instruction's address (bit 0 marks a WIDE pair). Each opcode
@@ -94,6 +96,11 @@ struct JitStats {
     ulong calls_depth;
     ulong calls_builtin;
     ulong calls_declined;
+    // Per-opcode counts of inline completions and thunk calls, emitted only
+    // into code compiled while count_ops is set (--jit-stats).
+    bool count_ops;
+    ulong[Opcode::values.len] fast_hits;
+    ulong[Opcode::values.len] slow_calls;
 }
 
 struct BaselineCode {
@@ -223,7 +230,7 @@ struct Goto {
 }
 
 struct Jumps {
-    void*[12] at;
+    void*[64] at;
     uint len;
 }
 
@@ -264,6 +271,10 @@ struct Asm {
     long interrupt_off;
     long runtime_off;
     long htmldda_off;
+    Layout* lay;
+    void* length_key;
+    bool counting;
+    JitStats* stats;
     // The instruction being emitted.
     uint i;
     uint next;
@@ -304,6 +315,10 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         .interrupt_off = (char*)&hl.capi_interrupt_fn - (char*)hl,
         .runtime_off = (char*)&hl.capi_runtime - (char*)hl,
         .htmldda_off = (char*)&hl.htmldda_obj - (char*)hl,
+        .lay = layout(),
+        .length_key = (void*)h.strs[heap::BuiltinStr.LENGTH],
+        .counting = h.jit_stats.count_ops,
+        .stats = &h.jit_stats,
     };
     a.gotos.init(mem);
     a.stubs.init(mem);
@@ -356,7 +371,12 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         a.alt.len = 0;
         a.labels[i] = sljit_emit_label(c);
         bc.insns++;
-        if (!a.emit_call() && !a.emit_fast(consts_fixed)) a.emit_thunk_call(i);
+        if (a.emit_call()) {
+        } else if (a.emit_fast(consts_fixed)) {
+            if (is_access_op(a.w.op)) a.count(&a.stats.fast_hits[0], a.w.op);
+        } else {
+            a.emit_thunk_call(i);
+        }
         if (a.call.len != 0 || a.alt.len != 0) a.stubs.push({ .insn = i, .call = a.call, .alt = a.alt });
         i = a.next;
     }
@@ -407,6 +427,7 @@ fn void Asm.emit_thunk_call(&self, uint i) {
     bool wide = w.op == Opcode.WIDE;
     Opcode op = wide ? self.f.code[i + 1].op : w.op;
     uint next = i + (wide ? 2 : 1);
+    self.count(&self.stats.slow_calls[0], op);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)next * Instruction::size + (wide ? 1 : 0));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_MEM | self.thunks, (long)op.ordinal * Thunk::size);
@@ -603,6 +624,7 @@ $else
     uint ra = w.a;
     uint rb = w.b;
     uint rc = w.c;
+    if (is_access_op(op)) return self.emit_access(consts_fixed);
     if (is_jmp_reg(op) || is_jmp_imm(op)) {
         long t = self.target((int)(ichar)w.a);
         if (t < 0) return false;
@@ -656,11 +678,6 @@ $else
             if (!v.is_inert()) return false;
             self.guard_dest(ra);
             self.store(ra, SLJIT_IMM, (long)v.bits);
-        case LDREG:
-            self.load(R0, rb);
-            self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_STRING_START));
-            self.guard_dest(ra);
-            self.store(ra, R0);
         case JUMP:
             int off = w.get_sabc();
             long t = self.target(off);
