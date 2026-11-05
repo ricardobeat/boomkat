@@ -1173,6 +1173,7 @@ struct Heap {
     bool                jit_enabled @if($feat(SLJIT));
     bool                jit_stress @if($feat(SLJIT));
     jit::JitStats       jit_stats @if($feat(SLJIT));
+    jit::OptPolicy      opt @if($feat(SLJIT));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;
     // the host keeps the heap alive until every watchdog has stopped.
@@ -2394,6 +2395,7 @@ fn hobject::Shape* Heap.get_shape(&self, uint shape_id) {
  * interned strings.
  */
 fn void Heap.free_compiled_funcs(&self) {
+    $if $feat(SLJIT): jit::opt_reap(self); $endif
     for (uint i = 0; i < self.compiled_func_count; i++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[i];
         if (cf == null) continue;

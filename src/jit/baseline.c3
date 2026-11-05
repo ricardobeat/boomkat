@@ -166,7 +166,10 @@ alias Thunk = fn long(Dispatch* ds, ulong next_pc);
 // frame runs in the interpreter.
 // Top-level code runs once, so it compiles only from a hot loop.
 fn void* baseline_code(Heap* h, CompiledFunction* f) @inline {
-    if (f.jit_code != null) return ((BaselineCode*)f.jit_code).exec;
+    if (f.jit_code != null) {
+        if (@unlikely(h.opt.enabled)) opt_note_entry(h, f);
+        return ((BaselineCode*)f.jit_code).exec;
+    }
     if (f.jit_refused || is_top_level(f)) return null;
     if (!h.jit_stress && ++f.jit_entries < BASELINE_ENTRY_THRESHOLD) return null;
     return baseline_try_compile(h, f);
@@ -178,7 +181,10 @@ fn bool is_top_level(CompiledFunction* f) @inline => f.flags.is_global || f.flag
 // budget, should continue in native code, compiling `f` when the policy says
 // so. Each expiry credits BASELINE_LOOP_CREDIT entries.
 fn bool baseline_loop_hot(Heap* h, CompiledFunction* f) @noinline {
-    if (f.jit_code != null) return true;
+    if (f.jit_code != null) {
+        if (h.opt.enabled) opt_note_entry(h, f, BASELINE_LOOP_CREDIT);
+        return true;
+    }
     if (f.jit_refused) return false;
     f.jit_entries += BASELINE_LOOP_CREDIT;
     if (!h.jit_stress && f.jit_entries < BASELINE_ENTRY_THRESHOLD) return false;
@@ -191,8 +197,10 @@ fn long baseline_run(void* exec, Dispatch* ds) @inline {
     ds.jit_floor = 0;
     ds.jit_depth = 0;
     ds.jit_native = true;
+    ds.heap.opt.running++;
     long status = ((BaselineFn)exec)(ds);
     ds.jit_native = false;
+    if (--ds.heap.opt.running == 0 && ds.heap.opt.retired != null) opt_reap(ds.heap);
     return status;
 }
 
@@ -200,6 +208,7 @@ fn long baseline_run(void* exec, Dispatch* ds) @inline {
 fn void* baseline_entry(CompiledFunction* f) @inline => ((BaselineCode*)f.jit_code).exec;
 
 fn void baseline_free(Heap* h, CompiledFunction* f) {
+    opt_free(h, f);
     BaselineCode* bc = f.jit_code;
     if (bc == null) return;
     h.jit_stats.live_bytes -= bc.code_bytes + bc.table_bytes;
@@ -268,7 +277,8 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
     if (st.live_bytes > st.peak_bytes) st.peak_bytes = st.live_bytes;
     st.compiled++;
     f.jit_code = bc;
-    return bc.exec;
+    if (h.opt.always) opt_try_compile(h, f);
+    return ((BaselineCode*)f.jit_code).exec;
 }
 
 // A thunk's result when the operation left ds.curr_pc somewhere other than
@@ -400,7 +410,7 @@ struct Asm {
     void* poly_back;
 }
 
-fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
+fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = null) {
     uint count = f.code_count;
     usz table_bytes = BaselineCode::size + (usz)count * void*::size;
     BaselineCode* bc = h.alloc_func(h.heap_udata, table_bytes);
@@ -495,12 +505,17 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     sljit_set_label(leave, sljit_emit_label(c));
     sljit_emit_return(c, SLJIT_MOV, R0, 0);
 
+    bool forced_done = false;
     for (uint i = 0; i < count;) {
         a.decode(i);
         a.call.len = 0;
         a.alt.len = 0;
         a.poly.len = 0;
         a.labels[i] = sljit_emit_label(c);
+        if (oc != null && h.opt.force_reason != 0 && i >= h.opt.force_at && !forced_done) {
+            forced_done = true;
+            a.emit_opt_exit(oc, h.opt.force_reason - 1, true);
+        }
         bc.insns++;
         if (a.emit_call()) {
         } else if (a.emit_fast(consts_fixed)) {

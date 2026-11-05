@@ -117,6 +117,7 @@ fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
     ds.jit_floor = vm.activation_count - 1;
     ds.jit_depth++;
     st.calls_native++;
+    if (@unlikely(ds.heap.opt.enabled)) jit::opt_note_entry(ds.heap, target);
     return jit::baseline_entry(target);
 }
 
@@ -192,6 +193,7 @@ fn void* jit_call_relayed(Dispatch* ds, Instruction* pc, jit::JitStats* st) @pri
     ds.jit_floor = vm.activation_count - 1;
     ds.jit_depth++;
     st.calls_native++;
+    if (@unlikely(ds.heap.opt.enabled)) jit::opt_note_entry(ds.heap, target);
     return jit::baseline_entry(target);
 }
 

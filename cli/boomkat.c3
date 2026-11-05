@@ -50,6 +50,10 @@ fn int main(String[] args) {
     bool script = false;
     bool jit = false;
     bool jit_stress = false;
+    bool opt = false;
+    bool opt_always = false;
+    uint opt_exit_max = 0;
+    String opt_force;
     bool jit_stats = false;
     bool jit_count_ops = false;
     bool jit_dump_feedback = false;
@@ -96,6 +100,25 @@ fn int main(String[] args) {
         } else if (a == "--jit-stress") {
             jit = true;
             jit_stress = true;
+        } else if (a == "--opt") {
+            jit = true;
+            opt = true;
+        } else if (a == "--opt-always") {
+            jit = true;
+            opt = true;
+            opt_always = true;
+        } else if (a.starts_with("--opt-force-exit=")) {
+            // REASON[:INSN[:COUNT]]: every optimized body leaves through REASON COUNT times at instruction INSN.
+            jit = true;
+            opt = true;
+            opt_always = true;
+            opt_force = a[17..];
+        } else if (a.starts_with("--opt-exit-max=")) {
+            jit = true;
+            opt = true;
+            uint? n = a[15..].to_uint();
+            if (catch n) { io::eprintfn("boomkat: bad --opt-exit-max"); return 2; }
+            opt_exit_max = n;
         } else if (a == "--jit-stats") {
             jit_stats = true;
         } else if (a == "--jit-dump-feedback") {
@@ -188,6 +211,18 @@ fn int main(String[] args) {
     }
     if (jit_stress) (void)hp.set_jit_stress(true);
     $if $feat(SLJIT):
+        if (opt) {
+            hp.opt.enabled = true;
+            hp.opt.always = opt_always;
+            if (opt_exit_max != 0) hp.opt.exit_max = opt_exit_max;
+            if (opt_force.len != 0 && !jit::opt_parse_force(&hp.opt, opt_force)) {
+                io::eprintfn("boomkat: bad --opt-force-exit spec '%s'", opt_force);
+                hp.destroy();
+                return 2;
+            }
+        }
+    $endif
+    $if $feat(SLJIT):
         hp.jit_stats.count_ops = jit_count_ops;
         hp.jit_stats.dump_feedback = jit_dump_feedback;
         hp.jit_stats.timing = jit_stats;
@@ -224,6 +259,7 @@ fn int main(String[] args) {
             io::eprintfn("jit compile: %.1f ms total, longest %.2f ms (%d instruction words)",
                 (double)st.compile_ns / 1e6, (double)st.compile_max_ns / 1e6, st.compile_max_insns);
             jit::baseline_print_counts(st);
+            if (opt) jit::opt_print_stats(hp);
         }
     $endif
 
