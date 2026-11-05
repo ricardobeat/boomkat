@@ -464,7 +464,22 @@ fn void Asm.guard_not_tdz(&self) {
 // subroutine. Uses R1 to R3.
 fn void Asm.publish(&self, uint ra) {
     void* c = self.c;
+    Layout* l = self.lay;
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+    // An object while the collector is not marking is the common case: store it
+    // and raise the watermark here, as the subroutine does.
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    void* not_object = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
+    void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+    self.store(ra, R0);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.act_hrc);
+    void* done_obj = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, ra);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, l.act_hrc, SLJIT_IMM, (long)ra + 1);
+    void* done_hrc = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_object, sljit_emit_label(c));
+    sljit_set_label(marking, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, ra);
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUBLISH_SUB });
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
@@ -472,6 +487,8 @@ fn void Asm.publish(&self, uint ra) {
     sljit_set_label(inert, sljit_emit_label(c));
     self.store(ra, R0);
     sljit_set_label(done, sljit_emit_label(c));
+    sljit_set_label(done_obj, sljit_emit_label(c));
+    sljit_set_label(done_hrc, sljit_emit_label(c));
 }
 
 // The publish subroutine: store the heap value R0 into the register whose
