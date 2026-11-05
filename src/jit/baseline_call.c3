@@ -497,6 +497,9 @@ fn void Asm.emit_return(&self, Jumps* helper) {
     }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = RETURN_SUB });
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
+    // The subroutine returns the result in R1 for the helper, which reads it
+    // from the register the subroutine may have cleared.
+    if (self.w.op == Opcode.RET) self.store(self.w.a, R1);
     helper.add(sljit_emit_jump(c, SLJIT_JUMP));
 }
 
@@ -545,6 +548,9 @@ fn void Asm.emit_return_body(&self) {
     int ds = self.ds;
     int sp = SLJIT_MEM | reg_sp();
     Jumps helper;
+    // The result stays at SUB_VALUE_OFF: the fused pass below may clear the
+    // register it came from before it finds a reason to take the helper.
+    self.mov(sp, SUB_VALUE_OFF, R0, 0);
     // Waiting: jit_floor != 0 and activation_count == jit_floor + 1.
     self.mov(R1, 0, m | ds, k.ds_floor, SLJIT_MOV_U32);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
@@ -581,7 +587,6 @@ fn void Asm.emit_return_body(&self) {
     // The result: a value with no heap pointer, or an object (stored where
     // the caller's watermark tracks it, as th_leaf_return does). Strings and
     // the other heap kinds take the helper.
-    self.mov(sp, SUB_VALUE_OFF, R0, 0);
     sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
     void* primitive = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, (long)types::TAG_STRING);
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT));
@@ -589,42 +594,30 @@ fn void Asm.emit_return_body(&self) {
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.emit_result_window(&helper, true);
     sljit_set_label(primitive, sljit_emit_label(c));
-    // th_tracked_regs_uncounted: no tracked register holds a string.
+    // th_tracked_regs_uncounted and th_clear_tracked_regs in one pass: no
+    // tracked register holds a string, and each is cleared on the way. A
+    // string found part-way takes the helper with the earlier registers
+    // already clear, which it sweeps again harmlessly; the site stores the
+    // result back (see emit_return).
     uint nregs = self.f.num_regs;
     self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
-    Jumps untracked;
-    untracked.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    Jumps cleared;
+    cleared.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     void* below = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, SLJIT_IMM, (long)nregs);
     self.mov(R1, 0, SLJIT_IMM, (long)nregs);
     sljit_set_label(below, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 3);
     self.mov(R2, 0, m | R4, k.act_bottom);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R2, 0);
-    void* scan = sljit_emit_label(c);
+    void* sweep = sljit_emit_label(c);
     self.mov(R0, 0, m | R2, 0);
     sljit_emit_op2(c, SLJIT_LSHR, R0, 0, R0, 0, SLJIT_IMM, 48);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)types::TAG_STRING));
-    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, TVal::size);
-    sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), scan);
-    // Every check passed (an object result was tracked with the first, which a
-    // later bail to the helper leaves harmlessly raised): clear the tracked
-    // registers (th_clear_tracked_regs).
-    untracked.bind(sljit_emit_label(c));
-    self.mov(R0, 0, sp, SUB_VALUE_OFF);
-    self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
-    Jumps cleared;
-    cleared.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    void* below2 = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, SLJIT_IMM, (long)nregs);
-    self.mov(R1, 0, SLJIT_IMM, (long)nregs);
-    sljit_set_label(below2, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 3);
-    self.mov(R2, 0, m | R4, k.act_bottom);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R2, 0);
-    void* clear = sljit_emit_label(c);
     self.mov(m | R2, 0, SLJIT_IMM, K_UNDEF);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, TVal::size);
-    sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), clear);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), sweep);
     cleared.bind(sljit_emit_label(c));
+    self.mov(R0, 0, sp, SUB_VALUE_OFF);
     // th_leaf_return's write-back and th_pop_frame; the caller is the
     // activation below the frame.
     self.mov(R3, 0, m | ds, k.ds_vm);
@@ -655,6 +648,7 @@ fn void Asm.emit_return_body(&self) {
     self.mov(R0, 0, SLJIT_IMM, BASELINE_RETURNED);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     helper.bind(sljit_emit_label(c));
+    self.mov(R1, 0, sp, SUB_VALUE_OFF);
     self.mov(R0, 0, SLJIT_IMM, 0);
     sljit_set_label(done, sljit_emit_label(c));
 }
