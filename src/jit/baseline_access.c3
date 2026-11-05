@@ -1177,6 +1177,12 @@ fn void Asm.emit_capture_ref_body(&self) {
 // GETCAP as th_getcap and capture_read_slot: a value snapshot, a cell, or an
 // unshadowed binding outside its TDZ.
 fn void Asm.emit_get_cap(&self, uint ra, uint index) {
+    self.emit_get_cap_value(index);
+    self.publish(ra);
+}
+
+// The value GETCAP reads, in R0; the slow path for anything else.
+fn void Asm.emit_get_cap_value(&self, uint index) {
     void* c = self.c;
     Layout* l = self.lay;
     Jumps loaded;
@@ -1203,7 +1209,6 @@ fn void Asm.emit_get_cap(&self, uint ra, uint index) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R2), 3);
     self.guard_not_tdz();
     loaded.bind(sljit_emit_label(c));
-    self.publish(ra);
 }
 
 // PUTCAP into a cell, as th_putcap and capture_value_slot's cell case; a value
