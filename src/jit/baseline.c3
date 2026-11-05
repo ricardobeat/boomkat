@@ -25,9 +25,8 @@
 //
 // Instructions that need no runtime call in the common case (register
 // loads, jumps and branches, number arithmetic, comparisons and bitwise ops)
-// run inline. They guard their operand tags as the threaded handlers do, keep
-// the destination's string release for the operation function, and take
-// their slow path on any failed guard: out of line, a number path where the
+// run inline. They guard their operand tags as the threaded handlers do and
+// take their slow path on any failed guard: out of line, a number path where the
 // threaded handlers have one, then the thunk call. A backward branch charges
 // the GC budget inline and takes the slow path when it expires or an
 // interrupt hook is installed, so vm_branch runs the safepoint. Property,
@@ -97,7 +96,7 @@ struct JitStats {
     ulong calls_builtin;
     ulong calls_declined;
     // Per-opcode counts of inline completions and thunk calls, emitted only
-    // into code compiled while count_ops is set (--jit-stats).
+    // into code compiled while count_ops is set (--jit-count-ops).
     bool count_ops;
     ulong[Opcode::values.len] fast_hits;
     ulong[Opcode::values.len] slow_calls;
@@ -219,7 +218,6 @@ const long K_UNDEF = (long)(types::TAG_UNDEFINED << 48);
 const long K_NULL = (long)(types::TAG_NULL_VAL << 48);
 const long K_STRING_START = (long)(types::TAG_STRING << 48);
 const long STAG_INT = (long)types::TAG_FASTINT - 0x10000;
-const long STAG_STRING = (long)types::TAG_STRING - 0x10000;
 const long PAYLOAD_SPAN = 1L << 48;
 const long CANONICAL_NAN = 0x7FF8000000000000;
 
@@ -251,6 +249,24 @@ struct Stub {
     Jumps alt;
 }
 
+// A fast call to one of the function's shared subroutines: an opcode's
+// thunk call, or the heap-value register publish (PUBLISH_SUB).
+struct SubCall {
+    void* jump;
+    int sub;
+}
+
+const int PUBLISH_SUB = -1;
+const int TRUTH_SUB = -2;
+const int STRICT_EQ_SUB = -3;
+const int LOOSE_EQ_SUB = -4;
+const int ARRAY_SLOT_SUB = -5;
+const int CAPTURE_REF_SUB = -6;
+// Subroutine results in R2 for the truth and equality subroutines.
+const long SUB_FALSE = 0;
+const long SUB_TRUE = 1;
+const long SUB_SLOW = 2;
+
 struct Asm {
     void* c;
     CompiledFunction* f;
@@ -258,6 +274,7 @@ struct Asm {
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
+    List{SubCall} subs;
     void* nonzero;
     int ds;
     int code;
@@ -322,11 +339,13 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     };
     a.gotos.init(mem);
     a.stubs.init(mem);
+    a.subs.init(mem);
     defer {
         mem::free(a.labels);
         mem::free(a.starts);
         a.gotos.free();
         a.stubs.free();
+        a.subs.free();
     }
     bool consts_fixed = true;
     for (uint i = 0; i < count;) {
@@ -398,6 +417,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         a.emit_thunk_call(stub.insn);
         a.go(sljit_emit_jump(c, SLJIT_JUMP), a.next);
     }
+    a.emit_subroutines();
     foreach (g : a.gotos) sljit_set_label(g.jump, a.labels[g.target]);
 
     bc.exec = sljit_generate_code(c, 0, null);
@@ -420,7 +440,8 @@ fn void Asm.go(&self, void* jump, uint target) {
 }
 
 // Call instruction `i`'s thunk with the following instruction's address (bit
-// 0 marks a WIDE pair), leave on a nonzero status and reload the registers.
+// 0 marks a WIDE pair) through the opcode's shared subroutine, which leaves
+// on a nonzero status and reloads the registers.
 fn void Asm.emit_thunk_call(&self, uint i) {
     void* c = self.c;
     Instruction w = self.f.code[i];
@@ -429,14 +450,81 @@ fn void Asm.emit_thunk_call(&self, uint i) {
     uint next = i + (wide ? 2 : 1);
     self.count(&self.stats.slow_calls[0], op);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)next * Instruction::size + (wide ? 1 : 0));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_MEM | self.thunks, (long)op.ordinal * Thunk::size);
-    sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
-    sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+    self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = (int)op.ordinal });
+}
+
+fn usz sub_slot(int sub) @inline => sub < 0 ? Opcode::values.len + (usz)(-sub) - 1 : (usz)sub;
+
+// Fast-call shared subroutine `sub` and branch on its R2 result: `yes`,
+// `no`, or the slow path.
+fn void Asm.call_test_sub(&self, int sub, Jumps* yes, Jumps* no) {
+    void* c = self.c;
+    self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = sub });
+    yes.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+    no.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, SUB_FALSE));
+    self.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+}
+
+// Stack offset of the return address a shared subroutine saves; offset 0
+// holds a native call site's saved floor.
+const long SUB_RET_OFF = 8;
+
+// The shared subroutines the code fast-calls, one per opcode whose thunk it
+// calls plus the publish: each saves its return address, which a nonzero
+// thunk status abandons for the shared exit.
+fn void Asm.emit_subroutines(&self) {
+    void* c = self.c;
+    int ret = SLJIT_MEM | reg_sp();
+    // One label per opcode, then the shared helpers by -id.
+    void*[Opcode::values.len + 6] labels;
+    foreach (call : self.subs) {
+        usz slot = sub_slot(call.sub);
+        if (labels[slot] != null) continue;
+        labels[slot] = sljit_emit_label(c);
+        sljit_emit_op_dst(c, SLJIT_FAST_ENTER, ret, SUB_RET_OFF);
+        switch (call.sub) {
+            case PUBLISH_SUB:
+                self.emit_publish_body();
+            case ARRAY_SLOT_SUB:
+                self.emit_array_slot_body();
+            case CAPTURE_REF_SUB:
+                self.emit_capture_ref_body();
+            case TRUTH_SUB:
+            case STRICT_EQ_SUB:
+            case LOOSE_EQ_SUB:
+                Jumps yes;
+                Jumps no;
+                Jumps slow;
+                if (call.sub == TRUTH_SUB) {
+                    self.truth_rest(&yes, &no, &slow);
+                } else {
+                    self.equality(call.sub == STRICT_EQ_SUB, &yes, &no, &slow);
+                }
+                Jumps done;
+                yes.bind(sljit_emit_label(c));
+                sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_TRUE);
+                done.add(sljit_emit_jump(c, SLJIT_JUMP));
+                slow.bind(sljit_emit_label(c));
+                sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_SLOW);
+                done.add(sljit_emit_jump(c, SLJIT_JUMP));
+                no.bind(sljit_emit_label(c));
+                sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_FALSE);
+                done.bind(sljit_emit_label(c));
+            default:
+                sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+                sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_MEM | self.thunks, (long)call.sub * Thunk::size);
+                sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
+                sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+        }
+        sljit_emit_op_src(c, SLJIT_FAST_RETURN, ret, SUB_RET_OFF);
+    }
+    foreach (call : self.subs) {
+        sljit_set_label(call.jump, labels[sub_slot(call.sub)]);
+    }
 }
 
 // Stack bytes of a native function's frame: the floor a native call site
-// saves across its callee.
+// saves across its callee, and a subroutine's return address.
 const int CALL_FRAME_BYTES = 16;
 
 // A call the threaded handlers take as a lean call: jit_call_enter publishes
@@ -494,14 +582,6 @@ fn void Asm.guard_int(&self, int reg) {
 fn void Asm.guard_int_alt(&self, int reg) {
     sljit_emit_op2(self.c, SLJIT_ASHR, R3, 0, reg, 0, SLJIT_IMM, 48);
     self.alt.add(sljit_emit_cmp(self.c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT));
-}
-
-// A register store releases a string the register held, which only the
-// operation function does: a string destination takes the slow path.
-fn void Asm.guard_dest(&self, uint r) {
-    self.load(R2, r);
-    sljit_emit_op2(self.c, SLJIT_ASHR, R2, 0, R2, 0, SLJIT_IMM, 48);
-    self.call.add(sljit_emit_cmp(self.c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, STAG_STRING));
 }
 
 // `reg`, a fastint payload shifted left by 16, boxed as a fastint.
@@ -648,7 +728,6 @@ $else
     }
     switch (op) {
         case LDINT:
-            self.guard_dest(ra);
             self.store(ra, SLJIT_IMM, K_INT | ((long)w.get_sbc() & (PAYLOAD_SPAN - 1)));
         case LDINTX:
             // The LDINT before it left a fastint in A, so A holds no string.
@@ -669,15 +748,20 @@ $else
                 case LDNULL: v.set_null();
                 default: v.set_boolean(op == LDTRUE);
             }
-            self.guard_dest(ra);
             self.store(ra, SLJIT_IMM, (long)v.bits);
         case LDCONST:
             uint index = w.get_bc();
             if (!consts_fixed || index >= self.f.const_count) return false;
             TVal v = self.f.constants[index];
-            if (!v.is_inert()) return false;
-            self.guard_dest(ra);
-            self.store(ra, SLJIT_IMM, (long)v.bits);
+            if (v.is_inert()) {
+                self.store(ra, SLJIT_IMM, (long)v.bits);
+            } else if (v.is_string()) {
+                // th_ldconst: the constant table counts the string.
+                self.store(ra, SLJIT_IMM, (long)v.bits);
+                self.track_heap_store(ra);
+            } else {
+                return false;
+            }
         case JUMP:
             int off = w.get_sabc();
             long t = self.target(off);
@@ -704,9 +788,9 @@ $else
             long t = self.target((int)(ichar)w.a);
             if (t < 0) return false;
             self.load(R0, rb);
-            self.guard_int(R0);
+            self.guard_int_alt(R0);
             self.load(R1, rc);
-            self.guard_int(R1);
+            self.guard_int_alt(R1);
             self.branch(false, op == JMP_EQ ? SLJIT_EQUAL : SLJIT_NOT_EQUAL, R1, 0, (uint)t, (ichar)w.a < 0);
         case ADD:
         case ADD_FUSED:
@@ -715,7 +799,6 @@ $else
             self.guard_int_alt(R0);
             self.load(R1, rc);
             self.guard_int_alt(R1);
-            if (ra != rb && ra != rc) self.guard_dest(ra);
             sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
             sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 16);
             sljit_emit_op2(c, (op == SUB ? SLJIT_SUB : SLJIT_ADD) | SLJIT_SET_OVERFLOW, R0, 0, R0, 0, R1, 0);
@@ -726,7 +809,6 @@ $else
         case SUBI:
             self.load(R0, rb);
             self.guard_int_alt(R0);
-            if (ra != rb) self.guard_dest(ra);
             long imm = (long)(ichar)w.c << 16;
             sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
             sljit_emit_op2(c, (op == SUBI ? SLJIT_SUB : SLJIT_ADD) | SLJIT_SET_OVERFLOW, R0, 0, R0, 0, SLJIT_IMM, imm);
@@ -747,8 +829,15 @@ $else
             // A number is its own ToNumeric.
             self.load(R0, rb);
             self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT + PAYLOAD_SPAN));
-            if (ra != rb) self.guard_dest(ra);
             self.store(ra, R0);
+        case RET:
+        case RETUNDEF:
+            // vm::jit_ret: the leaf return to a waiting native call site.
+            sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
+            sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+            sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ret);
+            self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+            sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.nonzero);
         case MUL:
         case MULI:
             self.emit_mul(op == MULI, ra, rb, rc);
@@ -766,13 +855,39 @@ $else
         case SHLI:
         case SHRI:
         case USHRI:
-            self.emit_bitop(op, ra, rb, rc);
+            self.emit_bitop(op, ra, rb, rc, false);
         case EQ:
         case NEQ:
         case SEQ:
         case SNEQ:
             bool negate = op == NEQ || op == SNEQ;
             self.emit_compare(negate ? SLJIT_NOT_EQUAL : SLJIT_EQUAL, false, ra, rb, rc);
+        case LNOT:
+            // th_lnot
+            Jumps truthy;
+            Jumps falsy;
+            self.truth_test(rb, &truthy, &falsy);
+            truthy.bind(sljit_emit_label(c));
+            self.store(ra, SLJIT_IMM, K_BOOL);
+            void* done = sljit_emit_jump(c, SLJIT_JUMP);
+            falsy.bind(sljit_emit_label(c));
+            self.store(ra, SLJIT_IMM, K_BOOL | 1);
+            sljit_set_label(done, sljit_emit_label(c));
+        case UNM:
+            // th_unm: a nonzero fastint whose negation fits, -0 for zero, and
+            // doubles out of line.
+            self.load(R0, rb);
+            self.guard_int_alt(R0);
+            sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+            void* nonzero = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
+            self.store(ra, SLJIT_IMM, (long)(1UL << 63));
+            void* done = sljit_emit_jump(c, SLJIT_JUMP);
+            sljit_set_label(nonzero, sljit_emit_label(c));
+            sljit_emit_op2(c, SLJIT_SUB | SLJIT_SET_OVERFLOW, R0, 0, SLJIT_IMM, 0, R0, 0);
+            self.alt.add(sljit_emit_jump(c, SLJIT_OVERFLOW));
+            self.box_shifted(R0);
+            self.store(ra, R0);
+            sljit_set_label(done, sljit_emit_label(c));
         case LT:
         case LE:
         case GT:
@@ -790,6 +905,17 @@ fn void Asm.emit_alt(&self) {
     void* c = self.c;
     Instruction w = self.w;
     Opcode op = w.op;
+    if (op == JMP_SEQ || op == JMP_SNEQ || op == JMP_EQ || op == JMP_NEQ) {
+        Jumps eq;
+        Jumps ne;
+        self.load(R0, w.b);
+        self.load(R1, w.c);
+        self.call_test_sub(op == JMP_SEQ || op == JMP_SNEQ ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &eq, &ne);
+        uint t = (uint)self.target((int)(ichar)w.a);
+        bool on_eq = op == JMP_SEQ || op == JMP_EQ;
+        self.finish_test(on_eq ? &eq : &ne, on_eq ? &ne : &eq, t, (ichar)w.a < 0);
+        return;
+    }
     if (is_jmp_reg(op) || is_jmp_imm(op)) {
         bool imm = is_jmp_imm(op);
         uint row = imm ? op.ordinal - Opcode.JMP_NLTI.ordinal : op.ordinal - Opcode.JMP_NLT.ordinal;
@@ -811,7 +937,6 @@ fn void Asm.emit_alt(&self) {
         case MUL:       self.emit_number_binop(SLJIT_MUL_F64, w.a, w.b, w.c);
         case ADDI:
         case SUBI:
-            self.guard_dest(w.a);
             self.load_number(FR0, w.b);
             self.load_imm_number(FR1, (long)(ichar)w.c);
             sljit_emit_fop2(c, op == SUBI ? SLJIT_SUB_F64 : SLJIT_ADD_F64, FR0, 0, FR0, 0, FR1, 0);
@@ -824,14 +949,49 @@ fn void Asm.emit_alt(&self) {
             self.load_imm_number(FR1, 1);
             sljit_emit_fop2(c, op == DEC ? SLJIT_SUB_F64 : SLJIT_ADD_F64, FR0, 0, FR0, 0, FR1, 0);
             self.store_number(w.a);
+        case EQ:
+        case NEQ:
+        case SEQ:
+        case SNEQ:
+            Jumps eq;
+            Jumps ne;
+            self.load(R0, w.b);
+            self.load(R1, w.c);
+            self.call_test_sub(op == SEQ || op == SNEQ ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &eq, &ne);
+            bool negate = op == NEQ || op == SNEQ;
+            eq.bind(sljit_emit_label(c));
+            self.store(w.a, SLJIT_IMM, K_BOOL | (negate ? 0 : 1));
+            self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
+            ne.bind(sljit_emit_label(c));
+            self.store(w.a, SLJIT_IMM, K_BOOL | (negate ? 1 : 0));
+        case UNM:
+            // A double, or a fastint whose negation is not a fastint.
+            self.load_number(FR0, w.b);
+            sljit_emit_fop1(c, SLJIT_NEG_F64, FR0, 0, FR0, 0);
+            self.store_number(w.a);
+        case BAND:
+        case BOR:
+        case BXOR:
+        case SHL:
+        case SHR:
+        case USHR:
+        case BANDI:
+        case BORI:
+        case BXORI:
+        case SHLI:
+        case SHRI:
+        case USHRI:
+            self.emit_bitop(op, w.a, w.b, w.c, true);
         case LT:
         case LE:
         case GT:
         case GE:
-            self.guard_dest(w.a);
             self.load_number(FR0, w.b);
             self.load_number(FR1, w.c);
             self.bool_result(true, JMP_FLOAT_COND[4 + op.ordinal - Opcode.LT.ordinal], w.a);
+        case GETPROPC:
+        case GETPROPC_CACHED:
+            self.emit_length(w.a, w.b);
         default:
             unreachable("no number path for %s", op);
     }
@@ -840,7 +1000,6 @@ fn void Asm.emit_alt(&self) {
 
 // A = B <fop> C on two numbers; anything else takes the slow path.
 fn void Asm.emit_number_binop(&self, int fop, uint ra, uint rb, uint rc) {
-    self.guard_dest(ra);
     self.load_number(FR0, rb);
     self.load_number(FR1, rc);
     sljit_emit_fop2(self.c, fop, FR0, 0, FR0, 0, FR1, 0);
@@ -869,10 +1028,9 @@ fn void Asm.emit_compare(&self, int cond, bool relational, uint ra, uint rb, uin
         sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
         sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 16);
     } else {
-        self.guard_int(R0);
-        self.guard_int(R1);
+        self.guard_int_alt(R0);
+        self.guard_int_alt(R1);
     }
-    self.guard_dest(ra);
     self.bool_result(false, cond, ra);
 }
 
@@ -888,7 +1046,6 @@ fn void Asm.emit_mul(&self, bool imm, uint ra, uint rb, uint rc) {
         self.load(R1, rc);
         self.guard_int_alt(R1);
     }
-    if (ra != rb && (imm || ra != rc)) self.guard_dest(ra);
     sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, R0, 0, SLJIT_IMM, 1L << 46);
     self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, 1L << 47));
@@ -910,22 +1067,23 @@ fn void Asm.emit_mul(&self, bool imm, uint ra, uint rb, uint rc) {
     self.store(ra, R0);
 }
 
-// The bitwise and shift operators on fastints, as th_bitop.
-fn void Asm.emit_bitop(&self, Opcode op, uint ra, uint rb, uint rc) {
+// The bitwise and shift operators on fastints, as th_bitop, entering the
+// number path otherwise. The number path (`numbers`) also takes doubles whose
+// ToInt32 is their truncation, which holds within the int32 range.
+fn void Asm.emit_bitop(&self, Opcode op, uint ra, uint rb, uint rc, bool numbers) {
     void* c = self.c;
     bool imm = bytecode::is_imm_form(op);
     Opcode base = imm ? bytecode::reg_form(op) : op;
     self.load(R0, rb);
-    self.guard_int(R0);
+    if (numbers) { self.int32_operand(R0); } else { self.guard_int_alt(R0); }
     int src = SLJIT_IMM;
     long srcw = (long)(rc & 0xFF);
     if (!imm) {
         self.load(R1, rc);
-        self.guard_int(R1);
+        if (numbers) { self.int32_operand(R1); } else { self.guard_int_alt(R1); }
         src = R1;
         srcw = 0;
     }
-    if (ra != rb && (imm || ra != rc)) self.guard_dest(ra);
     int sop;
     switch (base) {
         case BAND: sop = SLJIT_AND;
@@ -946,12 +1104,23 @@ fn void Asm.emit_bitop(&self, Opcode op, uint ra, uint rb, uint rc) {
     self.store(ra, R0);
 }
 
-// IF_TRUE / IF_FALSE on a boolean, fastint, double, object, undefined or null, as
-// is_truthy decides them; anything else takes the slow path.
+// IF_TRUE / IF_FALSE, as is_truthy decides them.
 fn void Asm.emit_if(&self, bool on_true, uint r, uint target, bool backward) {
-    void* c = self.c;
     Jumps truthy;
     Jumps falsy;
+    self.truth_test(r, &truthy, &falsy);
+    if (on_true) {
+        self.finish_test(&truthy, &falsy, target, backward);
+    } else {
+        self.finish_test(&falsy, &truthy, target, backward);
+    }
+}
+
+// Jump to `truthy` or `falsy` as is_truthy decides register `r`: a boolean,
+// fastint, double, object, undefined, null or string; anything else takes the
+// slow path. Uses R0 to R2, FR0 and FR1.
+fn void Asm.truth_test(&self, uint r, Jumps* truthy, Jumps* falsy) {
+    void* c = self.c;
     self.load(R0, r);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_BOOL);
     void* not_bool = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, 2);
@@ -964,6 +1133,15 @@ fn void Asm.emit_if(&self, bool on_true, uint r, uint target, bool backward) {
     truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     falsy.add(sljit_emit_jump(c, SLJIT_JUMP));
     sljit_set_label(not_int, sljit_emit_label(c));
+    falsy.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
+    falsy.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_NULL));
+    self.call_test_sub(TRUTH_SUB, truthy, falsy);
+}
+
+// The truth subroutine's tests of R0 that truth_test leaves out: a double, a
+// string or an object; anything else is slow. Uses R1, R2, FR0 and FR1.
+fn void Asm.truth_rest(&self, Jumps* truthy, Jumps* falsy, Jumps* slow) {
+    void* c = self.c;
     // A double is truthy unless it is zero or NaN.
     void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
@@ -971,19 +1149,130 @@ fn void Asm.emit_if(&self, bool on_true, uint r, uint target, bool backward) {
     truthy.add(sljit_emit_fcmp(c, SLJIT_ORDERED_NOT_EQUAL, FR0, 0, FR1, 0));
     falsy.add(sljit_emit_jump(c, SLJIT_JUMP));
     sljit_set_label(not_double, sljit_emit_label(c));
-    falsy.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
-    falsy.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_NULL));
+    // A string is truthy when it is not empty or is a symbol.
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, self.lay.str_length);
+    truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, self.lay.str_flags);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, self.lay.symbol_mask);
+    truthy.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    falsy.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(not_string, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
     // An object is truthy unless it is the realm's [[IsHTMLDDA]] object.
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.heap, self.htmldda_off);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, R2, 0));
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, R2, 0));
     truthy.add(sljit_emit_jump(c, SLJIT_JUMP));
-    if (on_true) {
-        self.finish_test(&truthy, &falsy, target, backward);
-    } else {
-        self.finish_test(&falsy, &truthy, target, backward);
+}
+
+// `reg`, a fastint or a double within the int32 range, as its ToInt32 in the
+// low 32 bits; the slow path otherwise. Uses R3 and FR0.
+fn void Asm.int32_operand(&self, int reg) {
+    void* c = self.c;
+    sljit_emit_op2(c, SLJIT_ASHR, R3, 0, reg, 0, SLJIT_IMM, 48);
+    void* is_int = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT);
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, reg, 0, SLJIT_IMM, K_INT));
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, reg);
+    // Out-of-range doubles, infinities and NaN either give a value outside the
+    // int32 range or, for NaN on some targets, 0, which is NaN's ToInt32.
+    sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, reg, 0, FR0, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, reg, 0, SLJIT_IMM, 1L << 31);
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, 1L << 32));
+    sljit_set_label(is_int, sljit_emit_label(c));
+}
+
+// Decide equality of R0 and R1, strict as th_strict_order or loose as
+// th_loose_order, jumping to `eq`, `ne`, or `slow` for the pairs those
+// handlers leave to the switch: the body of the equality subroutines. Uses
+// R0 to R3, FR0 and FR1.
+fn void Asm.equality(&self, bool strict, Jumps* eq, Jumps* ne, Jumps* slow) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    if (!strict) {
+        // Null and undefined equal each other and the [[IsHTMLDDA]] object.
+        Jumps nullish;
+        sljit_emit_op2(c, SLJIT_LSHR, R2, 0, R0, 0, SLJIT_IMM, 48);
+        sljit_emit_op2(c, SLJIT_SUB, R2, 0, R2, 0, SLJIT_IMM, (long)types::TAG_UNDEFINED);
+        sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R1, 0, SLJIT_IMM, 48);
+        sljit_emit_op2(c, SLJIT_SUB, R3, 0, R3, 0, SLJIT_IMM, (long)types::TAG_UNDEFINED);
+        void* b_nullish = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, SLJIT_IMM, 1);
+        void* c_nullish = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R3, 0, SLJIT_IMM, 1);
+        void* neither = sljit_emit_jump(c, SLJIT_JUMP);
+        // R1 nullish, R0 not: test R0.
+        sljit_set_label(c_nullish, sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, R0, 0);
+        void* test_other = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(b_nullish, sljit_emit_label(c));
+        eq.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R3, 0, SLJIT_IMM, 1));
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, R1, 0);
+        sljit_set_label(test_other, sljit_emit_label(c));
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+        ne.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.heap, self.htmldda_off);
+        eq.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, R2, 0));
+        ne.add(sljit_emit_jump(c, SLJIT_JUMP));
+        sljit_set_label(neither, sljit_emit_label(c));
     }
+    // Numbers: a fastint or a double on both sides compares numerically; one
+    // number and one other value differ (strict) or coerce (loose).
+    void* b_other = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT + PAYLOAD_SPAN);
+    if (strict) {
+        ne.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, K_INT + PAYLOAD_SPAN));
+    } else {
+        slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, K_INT + PAYLOAD_SPAN));
+    }
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R0, 0, R1, 0);
+    void* not_ints = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_INT);
+    eq.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, R1, 0));
+    ne.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(not_ints, sljit_emit_label(c));
+    self.to_double(FR0, R0);
+    self.to_double(FR1, R1);
+    eq.add(sljit_emit_fcmp(c, SLJIT_ORDERED_EQUAL, FR0, 0, FR1, 0));
+    ne.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(b_other, sljit_emit_label(c));
+    if (strict) {
+        ne.add(sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, K_INT + PAYLOAD_SPAN));
+    } else {
+        slow.add(sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, K_INT + PAYLOAD_SPAN));
+    }
+    // Neither is a number: identical bits are equal, and values of different
+    // tags differ (strict) or coerce (loose).
+    eq.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, R1, 0));
+    sljit_emit_op2(c, SLJIT_LSHR, R2, 0, R0, 0, SLJIT_IMM, 48);
+    sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R1, 0, SLJIT_IMM, 48);
+    if (strict) {
+        ne.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, R3, 0));
+    } else {
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, R3, 0));
+    }
+    // Two BigInts compare by value in the switch; two strings differ when
+    // both are interned.
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, (long)types::TAG_BIGINT));
+    ne.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, (long)types::TAG_STRING));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_STRING_START);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R0, l.str_flags);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.str_flags);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, R3, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.interned_mask);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    ne.add(sljit_emit_jump(c, SLJIT_JUMP));
+}
+
+// FR(fr) = the number `reg` holds, a double or a fastint. Uses R3.
+fn void Asm.to_double(&self, int fr, int reg) {
+    void* c = self.c;
+    void* is_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, reg, 0, SLJIT_IMM, K_INT);
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, fr, reg);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(is_int, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_SHL, R3, 0, reg, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R3, 0, SLJIT_IMM, 16);
+    sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, fr, 0, R3, 0);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // JMP_NULL / JMP_NNULL, as th_jmp_null.
@@ -1034,9 +1323,17 @@ fn void init_thunks() @noinline @private {
                 $if $op == Opcode.GETPROPC || $op == Opcode.GETPROPC_CACHED:
                     insn.op = p.op;
                 $endif
+                $if @relayed($op):
+                    if ((arg & 1) == 0 && vm::jit_relay(ds, next)) return 0;
+                $endif
                 Activation* act = ds.act;
                 CompiledFunction* func = ds.vm.current_func;
-                OpStatus s = @run_op($op, ds, insn);
+                OpStatus s;
+                $if $op == Opcode.CALL:
+                    if ((arg & 1) != 0 || !vm::jit_call_builtin(ds, next, &s)) s = @run_op($op, ds, insn);
+                $else
+                    s = @run_op($op, ds, insn);
+                $endif
                 if (s == NEXT && ds.needs_restart) return (long)OpStatus.RESTART.ordinal;
                 // A frame switched to in place is the caller a native call
                 // site waits for when the depth is back at its floor, and is
@@ -1071,6 +1368,34 @@ macro bool @excluded(Opcode $op) @const {
         $case Opcode.RETUNDEF_GEN:
         $case Opcode.WITH_START:
         $case Opcode.WITH_END:
+            return true;
+        $default:
+            return false;
+    $endswitch
+}
+
+// Opcodes whose thunk first runs the threaded handler (vm::jit_relay), which
+// completes the common cases the inline paths leave out (polymorphic and
+// megamorphic property sites, typed-array elements, global stores,
+// instanceof, allocation) without the operation function. None of these
+// handlers switches frames or reads past its own instruction.
+macro bool @relayed(Opcode $op) @const {
+    $switch $op:
+        $case Opcode.GETPROPC:
+        $case Opcode.GETPROPC_CACHED:
+        $case Opcode.GETPROP:
+        $case Opcode.GETTHISC:
+        $case Opcode.PUTPROP:
+        $case Opcode.PUTPROPC:
+        $case Opcode.PUTTHISC:
+        $case Opcode.PUTGLOBAL:
+        $case Opcode.INSTANCEOF:
+        $case Opcode.TYPEOF:
+        $case Opcode.NEWOBJ:
+        $case Opcode.NEWOBJ_SHAPE:
+        $case Opcode.NEWARR:
+        $case Opcode.NEWARR_CONST:
+        $case Opcode.INIT_SLOT:
             return true;
         $default:
             return false;

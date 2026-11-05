@@ -87,6 +87,10 @@ struct Layout {
     long accessor_mask;
     long writable_mask;
     long symbol_mask;
+    long interned_mask;
+    long queued_mask;
+    long interned_shift;
+    long str_refcount;
 }
 
 Layout layout_data @private;
@@ -156,6 +160,7 @@ fn Layout* layout() {
     l.cr_is_value = (char*)&cr.is_value - base;
     l.str_flags = (char*)&s.flags - base;
     l.str_length = (char*)&s.length - base;
+    l.str_refcount = (char*)&s.refcount - base;
 
     hobject::ObjFlags f;
     f.exotic_proxyobj = true;
@@ -212,6 +217,15 @@ fn Layout* layout() {
     hstring::HStringFlags sf;
     sf.is_symbol = true;
     l.symbol_mask = (long)(uint)sf;
+    sf = {};
+    sf.is_interned = true;
+    l.interned_mask = (long)(uint)sf;
+    sf = {};
+    sf.zct_queued = true;
+    l.queued_mask = (long)(uint)sf;
+    while ((l.interned_mask >> l.interned_shift) != 1) l.interned_shift++;
+    // publish orders the two bits.
+    assert(l.queued_mask > l.interned_mask);
     // The flag guards read the first word of an object or string.
     assert(l.str_flags == 0);
     layout_ready = true;
@@ -378,32 +392,77 @@ fn void Asm.guard_not_tdz(&self) {
     sljit_set_label(plain, sljit_emit_label(c));
 }
 
-// Store R0 into register `ra` as th_publish_read does for an inert value or an
-// object: the object raises the frame's heap-register watermark, and anything
-// else, or an object while marking, takes the slow path. Uses R1 and R2.
+// Store R0 into register `ra` as th_move and th_publish_read do: an inert
+// value is a plain store, and anything else goes through the shared publish
+// subroutine. Uses R1 to R3.
 fn void Asm.publish(&self, uint ra) {
     void* c = self.c;
-    Layout* l = self.lay;
-    self.guard_dest(ra);
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
-    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
-    self.guard_not_marking(R1);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, ra);
+    self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUBLISH_SUB });
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(inert, sljit_emit_label(c));
     self.store(ra, R0);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
+// The publish subroutine: store the heap value R0 into the register whose
+// index R1 holds, raising the frame's heap-register watermark, and set R2 to
+// 0; or set R2 nonzero for the slow path. An object needs no work beyond the
+// watermark unless incremental marking runs; a string needs no ZCT entry when
+// a counted holder or the queue already has it (Heap.note_unowned).
+fn void Asm.emit_publish_body(&self) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    Jumps fail;
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    // Queued already, or counted beyond the intern table's own count.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.str_flags);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.interned_mask | l.queued_mask);
+    void* queued = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, l.queued_mask);
+    sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R3, 0, SLJIT_IMM, l.interned_shift);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R2, l.str_refcount);
+    fail.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, R3, 0));
+    void* counted = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_string, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
+    void* stored = sljit_emit_label(c);
+    sljit_set_label(counted, stored);
+    sljit_set_label(queued, stored);
+    sljit_emit_op1(c, SLJIT_MOV, mem_index(self.regs, R1), 3, R0, 0);
     // track_heap_store
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.act_hrc);
+    void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, R1, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R1, 0, SLJIT_IMM, 1);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, l.act_hrc, R2, 0);
+    sljit_set_label(covered, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, 0);
+    void* ok = sljit_emit_jump(c, SLJIT_JUMP);
+    fail.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, 1);
+    sljit_set_label(ok, sljit_emit_label(c));
+}
+
+// track_heap_store for register `ra`. Uses R1 and R2.
+fn void Asm.track_heap_store(&self, uint ra) {
+    void* c = self.c;
+    Layout* l = self.lay;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.act_hrc);
     void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, ra);
     sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, l.act_hrc, SLJIT_IMM, (long)ra + 1);
-    void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(inert, sljit_emit_label(c));
-    self.store(ra, R0);
-    void* end = sljit_emit_label(c);
-    sljit_set_label(covered, end);
-    sljit_set_label(done, end);
+    sljit_set_label(covered, sljit_emit_label(c));
 }
 
-// LDREG of anything but a string or BigInt, as th_ldreg.
+// LDREG as th_ldreg and th_move, through the publish; a string in a
+// register is counted or queued already, so only an unqueued one, a BigInt,
+// or a traced value while marking takes the slow path.
 fn void Asm.emit_ldreg(&self, uint ra, uint rb) {
     self.load(R0, rb);
     self.publish(ra);
@@ -419,20 +478,13 @@ fn void Asm.emit_ldreg(&self, uint ra, uint rb) {
 fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_key, bool plain, bool length) {
     void* c = self.c;
     Layout* l = self.lay;
-    Jumps done;
     if (length) {
-        // A string primitive's own length.
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
-        void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
-        self.guard_flags_clear(R1, l.symbol_mask, R2);
-        self.guard_dest(ra);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.str_length);
-        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
-        self.store(ra, R0);
-        done.add(sljit_emit_jump(c, SLJIT_JUMP));
-        sljit_set_label(not_string, sljit_emit_label(c));
+        // A string or an array takes its length out of line (emit_length).
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        self.alt.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    } else {
+        self.unbox_object(R1, R0);
     }
-    self.unbox_object(R1, R0);
     self.guard_not_proxy(R1, R2);
     if (plain) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
@@ -444,13 +496,7 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     if (length) {
         sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
         sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask);
-        void* not_array = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array);
-        self.guard_dest(ra);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_array_len);
-        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
-        self.store(ra, R0);
-        done.add(sljit_emit_jump(c, SLJIT_JUMP));
-        sljit_set_label(not_array, sljit_emit_label(c));
+        self.alt.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
     }
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     if (key_reg >= 0) {
@@ -469,41 +515,40 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
     void* own = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
-    void* snapshot = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 1);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_EPOCH));
-    // The epoch payload: a plain receiver whose first link is the recorded
-    // one while the mutation epoch holds, as ic_resolve_owner.
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
-    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, l.ic_chain);
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R1, l.obj_proto);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R0, l.ep_first));
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R0, l.ep_current);
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, 0);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R0, l.ep_value));
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R0, l.ep_owner);
-    self.guard_not_proxy(R1, R0);
-    void* epoch_done = sljit_emit_jump(c, SLJIT_JUMP);
-    // One link up: the snapshot's prototype and its shape, as ic_resolve_owner.
-    sljit_set_label(snapshot, sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, l.ic_chain);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.obj_proto);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R0, l.chain_proto0));
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, l.chain_shape0);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R0, 0));
-    self.guard_not_proxy(R1, R0);
-    void* resolved = sljit_emit_label(c);
-    sljit_set_label(own, resolved);
-    sljit_set_label(epoch_done, resolved);
+    // A prototype owner, resolved as ic_resolve_slot does.
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ic_owner);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+    sljit_set_label(own, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
     self.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
     self.publish(ra);
-    done.bind(sljit_emit_label(c));
+}
+
+// The length of the string or array register `rb` holds, as th_getpropc
+// reads it before the cache; anything else takes the slow path.
+fn void Asm.emit_length(&self, uint ra, uint rb) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    self.load(R0, rb);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    self.guard_flags_clear(R1, l.symbol_mask, R2);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.str_length);
+    void* store = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_string, sljit_emit_label(c));
+    self.unbox_object(R1, R0);
+    self.guard_not_proxy(R1, R2);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask);
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_array_len);
+    sljit_set_label(store, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+    self.store(ra, R0);
 }
 
 // The slow path unless object `obj`'s shape is the one entry `ic` (in its
@@ -605,87 +650,41 @@ fn void Asm.put_key_check(&self, long key, int key_reg) {
     }
 }
 
-// Stack offset of the spill slot an absent-add store uses; offset 0 holds a
-// native call site's saved floor.
-const long SPILL_OFF = 8;
-
-// An absent-property add to the plain object in R1 through the entry in R2,
-// as th_put_absent and ic_matches_absent_put: the receiver keeps the entry's
-// shape under the current recycle epoch and is extensible, its whole chain
-// matches the snapshot and ends in null, and the property table has room.
+// An absent-property add to the plain object in R1 through the entry in R2:
+// the key check inline, the rest in vm::jit_put_absent.
 fn void Asm.emit_put_absent(&self, long ic, long key, int key_reg, uint rv) {
     void* c = self.c;
-    Layout* l = self.lay;
-    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
     self.put_key_check(key, key_reg);
-    self.guard_shape(R1, R2);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.ic_gen);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | self.heap, l.heap_epoch);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
-    sljit_emit_op2(c, SLJIT_AND, R3, 0, R0, 0, SLJIT_IMM, l.extensible_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
-    sljit_emit_op2(c, SLJIT_AND, R3, 0, R0, 0, SLJIT_IMM, l.plain_exotic_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
-    // ic_matches_absent_chain, unrolled: R1 counts the links, R0 holds the
-    // snapshot and R3 walks the chain.
-    int spill = SLJIT_MEM | reg_sp();
-    sljit_emit_op1(c, SLJIT_MOV, spill, SPILL_OFF, R1, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R1, l.obj_proto);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, l.ic_chain);
-    sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, l.ic_chain_len);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, SLJIT_IMM, (long)hobject::IC_MAX_CHAIN));
-    Jumps ends;
-    for (uint k = 0; k < hobject::IC_MAX_CHAIN; k++) {
-        ends.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, k));
-        self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R0, l.chain_proto0 + (long)k * 8));
-        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.obj_shape);
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R2, 0, SLJIT_MEM | R0, l.chain_shape0 + (long)k * 4));
-        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, 0);
-        sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_object));
-        sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.obj_proto);
-    }
-    ends.bind(sljit_emit_label(c));
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, spill, SPILL_OFF);
-    // A prototype's layout change bumps an epoch, which the thunk does.
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_gc);
-    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.proto_observed_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R1, l.obj_prop_hash, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_prop_count);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_prop_capacity);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R0, 0));
-    self.prop_base(R0, R1);
-    sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
-    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
-    self.store_value(rv);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_prop_count);
-    sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, SLJIT_IMM, 1);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, l.obj_prop_count, R3, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_absent_next);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, l.obj_shape, R3, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
 }
 
 // R0 = the address of element R3 (a fastint) of the dense part of the array
 // in R1, as HObject.array_part; the slow path for a negative index or one
-// past the dense part. Uses R2.
+// past the dense part. Uses R2 and R3, through the shared subroutine.
 fn void Asm.array_slot(&self) {
     void* c = self.c;
+    self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = ARRAY_SLOT_SUB });
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+}
+
+// The array slot subroutine: array_slot's address in R0, or 0.
+fn void Asm.emit_array_slot_body(&self) {
+    void* c = self.c;
     Layout* l = self.lay;
+    Jumps fail;
     sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 16);
     sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R3, 0, SLJIT_IMM, 16);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_array_size);
     // Unsigned, so a negative index fails too.
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R2, 0));
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R2, 0));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_prop_alloc);
     void* allocated = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_array_inline_cap);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R1, 0, SLJIT_IMM, (long)hobject::OBJ_SIZE_ARRAY);
     void* based = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(allocated, sljit_emit_label(c));
@@ -695,6 +694,10 @@ fn void Asm.array_slot(&self) {
     sljit_set_label(based, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    fail.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 0);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // The slow path unless R1 is an array that is not a proxy and has none of
@@ -792,20 +795,36 @@ fn void Asm.emit_put_var(&self, uint rv, long vic) {
 
 // R1 = capture record `index` of the running closure, as capture_refs_of; the
 // slow path when the frame runs other code or the index is out of range.
+// Uses R0 to R3, through the shared subroutine.
 fn void Asm.capture_ref(&self, uint index) {
     void* c = self.c;
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, index);
+    self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = CAPTURE_REF_SUB });
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+}
+
+// The capture record subroutine: record R2 in R1, or 0.
+fn void Asm.emit_capture_ref_body(&self) {
+    void* c = self.c;
     Layout* l = self.lay;
+    Jumps fail;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
-    self.unbox_object(R3, R0);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | R3, l.fn_comp_func);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_MEM | R1, l.act_func));
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R2, l.cf_capture_count);
-    self.call.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, SLJIT_IMM, index));
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R0, 0, SLJIT_IMM, (long)index * hobject::CaptureRef::size);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.fn_comp_func);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R1, l.act_func));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R3, l.cf_capture_count);
+    fail.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R3, 0, R2, 0));
+    sljit_emit_op2(c, SLJIT_MUL, R2, 0, R2, 0, SLJIT_IMM, (long)hobject::CaptureRef::size);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R0, 0, R2, 0);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    fail.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, 0);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // GETCAP as th_getcap and capture_read_slot: a value snapshot, a cell, or an
@@ -863,14 +882,14 @@ fn void Asm.emit_put_cap(&self, uint rv, uint index) {
     self.store(rv, SLJIT_IMM, K_UNDEF);
 }
 
-// Count one execution of `op` in `counts` when --jit-stats asked for counts.
+// Count one execution of `op` in `counts` when --jit-count-ops asked for counts.
 fn void Asm.count(&self, ulong* counts, Opcode op) {
     if (!self.counting) return;
     long at = (long)(usz)&counts[op.ordinal];
     sljit_emit_op2(self.c, SLJIT_ADD, SLJIT_MEM, at, SLJIT_MEM, at, SLJIT_IMM, 1);
 }
 
-// The --jit-stats counts: inline completions against thunk calls of each
+// The --jit-count-ops counts: inline completions against thunk calls of each
 // access opcode, then the opcodes with the most thunk calls.
 fn void baseline_print_counts(JitStats* st) {
     if (!st.count_ops) return;

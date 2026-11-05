@@ -3230,14 +3230,10 @@ fn Instruction* th_resume_other_realm(HandlerTable* handlers, ColdCtx* cold, Act
     return th_next(caller.curr_pc, handlers, caller.bottom, cold);
 }
 
-// Pop the returning frame `fa` and continue in `caller`. The result is already
-// written. A leaf, so the return handlers tail-jump here with no frame of
-// their own; an owned `this` is released by the caller of this routine.
-fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activation* fa,
-                                 Activation* caller, bool cross_function) @private {
-    $if $feat(OP_PROFILE): opprof_thread_complete(); $endif
+// Pop the returning frame `fa`, making `caller` current; the result is
+// already written.
+macro void th_pop_frame(ColdCtx* cold, Activation* fa, Activation* caller) @private {
     Vm* vm = cold.vm;
-    Instruction* caller_pc = caller.curr_pc;
     TVal* caller_top = fa.caller_valstack_top;
     fa.release_callee(vm.heap);
     vm.activation_count--;
@@ -3247,6 +3243,17 @@ fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activati
     vm.valstack_bottom = caller.bottom;
     vm.valstack_top = caller_top;
     *cold.regs_base_ptr = caller.bottom;
+}
+
+// Pop the returning frame `fa` and continue in `caller`. The result is already
+// written. A leaf, so the return handlers tail-jump here with no frame of
+// their own; an owned `this` is released by the caller of this routine.
+fn Instruction* th_resume_caller(HandlerTable* handlers, ColdCtx* cold, Activation* fa,
+                                 Activation* caller, bool cross_function) @private {
+    $if $feat(OP_PROFILE): opprof_thread_complete(); $endif
+    Vm* vm = cold.vm;
+    Instruction* caller_pc = caller.curr_pc;
+    th_pop_frame(cold, fa, caller);
 
     if (cross_function) {
         // The current burst's bounds and IC biases belong to the returning
@@ -3411,8 +3418,20 @@ macro void th_clear_tracked_regs(Activation* fa) @private {
 // any other to th_return_general, and from there to the switch.
 fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
                                   ColdCtx* cold, TVal value, bool is_undefined) {
-    Vm* vm = cold.vm;
     Activation* fa = cold.act;
+    Activation* caller;
+    bool cross_function;
+    if (th_leaf_return(cold.vm, fa, value, is_undefined, &caller, &cross_function)) {
+        return th_resume_caller(handlers, cold, fa, caller, cross_function);
+    }
+    return th_return_slow(pc, handlers, cold, value, is_undefined);
+}
+
+// The leaf return's checks and result write-back: true when the frame `fa` is
+// plain enough and its result is written into the caller's register, with
+// `caller_out` and `cross_out` describing the caller the pop resumes.
+macro bool th_leaf_return(Vm* vm, Activation* fa, TVal value, bool is_undefined,
+                          Activation** caller_out, bool* cross_out) @private {
     if (th_frame_is_replaceable(vm, fa)
         && (fa.heap_reg_count == 0 || th_tracked_regs_uncounted(fa))
         && !vm.heap.gc_safepoint_due(false)) {
@@ -3436,10 +3455,12 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
             th_clear_tracked_regs(fa);
             *result = value;
             if (object_return) track_heap_store(caller, result, (uint)(result - caller.bottom));
-            return th_resume_caller(handlers, cold, fa, caller, cross_function);
+            *caller_out = caller;
+            *cross_out = cross_function;
+            return true;
         }
     }
-    return th_return_slow(pc, handlers, cold, value, is_undefined);
+    return false;
 }
 
 // th_try_fast_return's other cases, in one tail call so that it stays a leaf:

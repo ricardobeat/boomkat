@@ -34,6 +34,8 @@ extern fn usz sljit_shim_label_addr(void* label);
 extern fn usz sljit_shim_jump_addr(void* jump);
 extern fn long sljit_shim_executable_offset(void* compiler);
 extern fn int sljit_emit_ijump(void* compiler, int type, int src, long sw);
+extern fn int sljit_emit_op_src(void* compiler, int op, int src, long srcw);
+extern fn int sljit_emit_op_dst(void* compiler, int op, int dst, long dstw);
 extern fn int sljit_emit_icall(void* compiler, int type, int arg_types, int src, long sw);
 
 const int SLJIT_IMM               = 0x7f;
@@ -68,6 +70,9 @@ const int SLJIT_SIG_GREATER_EQUAL = 7;
 const int SLJIT_SIG_GREATER       = 8;
 const int SLJIT_SIG_LESS_EQUAL    = 9;
 const int SLJIT_JUMP              = 36;
+const int SLJIT_FAST_CALL         = 37;
+const int SLJIT_FAST_RETURN       = 112;
+const int SLJIT_FAST_ENTER        = 118;
 const int SLJIT_CALL              = 38;
 // Internal calls use scratch arguments and may share S0..S2. KEEP(n) is
 // encoded as n, and is valid only together with ENTER_REG_ARG (1 <= n <= 3).
