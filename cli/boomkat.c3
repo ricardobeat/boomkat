@@ -52,6 +52,7 @@ fn int main(String[] args) {
     bool jit_stress = false;
     bool opt = false;
     bool opt_always = false;
+    bool opt_dump = false;
     uint opt_exit_max = 0;
     String opt_force;
     bool jit_stats = false;
@@ -107,6 +108,10 @@ fn int main(String[] args) {
             jit = true;
             opt = true;
             opt_always = true;
+        } else if (a == "--opt-dump") {
+            jit = true;
+            opt = true;
+            opt_dump = true;
         } else if (a.starts_with("--opt-force-exit=")) {
             // REASON[:INSN[:COUNT]]: every optimized body leaves through REASON COUNT times at instruction INSN.
             jit = true;
@@ -214,6 +219,7 @@ fn int main(String[] args) {
         if (opt) {
             hp.opt.enabled = true;
             hp.opt.always = opt_always;
+            hp.opt.dump = opt_dump;
             if (opt_exit_max != 0) hp.opt.exit_max = opt_exit_max;
             if (opt_force.len != 0 && !jit::opt_parse_force(&hp.opt, opt_force)) {
                 io::eprintfn("boomkat: bad --opt-force-exit spec '%s'", opt_force);

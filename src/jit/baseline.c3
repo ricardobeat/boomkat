@@ -564,6 +564,28 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     return bc;
 }
 
+// The prologue, then the code that dispatches on ds.curr_pc through the entry
+// table with the register window reloaded. Returns the dispatch label; an
+// instruction without an entry leaves for the interpreter.
+fn void* Asm.emit_dispatch(&self, int table_reg, BaselineCode* bc, uint count, int scratches = 5 | (2 << 8)) {
+    void* c = self.c;
+    int ds_mem = SLJIT_MEM | self.ds;
+    void* dispatch = self.emit_prologue(table_reg, bc, scratches);
+    sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, ds_mem, self.regs_off);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.pc_off);
+    sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, self.code, 0);
+    sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R1, 0, SLJIT_IMM, 2);
+    void* out_of_range = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, count);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(table_reg, R1), 3);
+    void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
+    void* interpret = sljit_emit_label(c);
+    sljit_set_label(out_of_range, interpret);
+    sljit_set_label(no_entry, interpret);
+    sljit_emit_return(c, SLJIT_MOV, SLJIT_IMM, BASELINE_INTERPRET);
+    return dispatch;
+}
+
 fn BaselineCode* baseline_alloc(Heap* h, uint count) {
     usz table_bytes = BaselineCode::size + (usz)count * void*::size;
     BaselineCode* bc = h.alloc_func(h.heap_udata, table_bytes);
@@ -583,23 +605,8 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     Asm a = asm_new(c, h, f);
     defer a.release();
     int table_reg = reg_s(2);
-    int ds_mem = SLJIT_MEM | a.ds;
 
-    void* dispatch = a.emit_prologue(table_reg, bc);
-    // Dispatch on ds.curr_pc through the entry table, with the register
-    // window reloaded.
-    sljit_emit_op1(c, SLJIT_MOV, a.regs, 0, ds_mem, a.regs_off);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, a.pc_off);
-    sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, a.code, 0);
-    sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R1, 0, SLJIT_IMM, 2);
-    void* out_of_range = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, count);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(table_reg, R1), 3);
-    void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
-    void* interpret = sljit_emit_label(c);
-    sljit_set_label(out_of_range, interpret);
-    sljit_set_label(no_entry, interpret);
-    sljit_emit_return(c, SLJIT_MOV, SLJIT_IMM, BASELINE_INTERPRET);
+    void* dispatch = a.emit_dispatch(table_reg, bc, count);
     a.emit_nonzero_exit(dispatch);
 
     bool forced_done = false;

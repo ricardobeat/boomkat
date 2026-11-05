@@ -36,6 +36,9 @@ enum OptExit : char (String label) {
     ALLOC_SLOW {"alloc-slow"},
     THROW_PATH {"throw-path"},
     FORCED {"forced"},
+    // A back edge's budget or interrupt poll fired; not a failed speculation.
+    INTERRUPT {"interrupt"},
+    SLOW_PATH {"slow-path"},
 }
 
 const char OPT_NONE = 0;
@@ -68,6 +71,8 @@ struct OptPolicy {
     bool enabled;
     // Optimize every function as soon as it has baseline code.
     bool always;
+    // Print each optimized function's graph (--opt-dump).
+    bool dump;
     // Test hook: zero, or one more than the OptExit every optimized body
     // takes `force_count` times at instruction `force_at`.
     uint force_reason;
@@ -83,6 +88,8 @@ struct OptPolicy {
     ulong discards;
     ulong reopts;
     ulong refused;
+    ulong[OptRefuse::values.len] refused_why;
+    ulong[256] refused_ops;
     ulong[OptExit::values.len] exits;
 }
 
@@ -106,26 +113,44 @@ fn bool opt_has_feedback(CompiledFunction* f) {
     return false;
 }
 
+fn bool opt_refuse(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op) {
+    h.opt.refused++;
+    h.opt.refused_why[why.ordinal]++;
+    if (why == OptRefuse.OPCODE) h.opt.refused_ops[op.ordinal]++;
+    f.opt_state = OPT_REFUSED;
+    return false;
+}
+
 fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     OptPolicy* p = &h.opt;
     JitStats* st = &h.jit_stats;
     if (f.jit_code == null || f.opt_code != null || f.opt_state != OPT_NONE) return false;
     if (!p.always && !opt_has_feedback(f)) return false;
-    if (p.live_bytes >= OPT_CODE_MAX) { f.opt_state = OPT_REFUSED; p.refused++; return false; }
+    if (p.live_bytes >= OPT_CODE_MAX) return opt_refuse(h, f, OptRefuse.BUDGET, Opcode.NOP);
+    if (!opt_function_eligible(f)) return opt_refuse(h, f, OptRefuse.FUNCTION, Opcode.NOP);
+    long t0 = st.timing ? (long)clock::now() : 0;
+    OptGraph g;
+    g.init();
+    defer g.free();
+    OptBuild b;
+    Opcode refused_op = Opcode.NOP;
+    OptRefuse why = opt_build_graph(h, f, &g, &b, &refused_op);
+    defer b.free();
+    OptPools pools = opt_pools();
+    if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
+    if (why != OptRefuse.NONE) return opt_refuse(h, f, why, refused_op);
     OptCode* oc = h.alloc_func(h.heap_udata, OptCode::size);
     if (oc == null) return false;
     mem::clear(oc, OptCode::size);
     oc.f = f;
     oc.base = f.jit_code;
     if (p.force_reason != 0) oc.forced = p.force_count;
-    long t0 = st.timing ? (long)clock::now() : 0;
-    BaselineCode* code = baseline_compile(h, f, oc);
+    if (p.dump) g.dump(f);
+    BaselineCode* code = opt_emit(h, f, &g, oc, pools);
     if (st.timing) st.compile_ns += (ulong)((long)clock::now() - t0);
     if (code == null) {
         h.free_func(h.heap_udata, oc);
-        f.opt_state = OPT_REFUSED;
-        p.refused++;
-        return false;
+        return opt_refuse(h, f, OptRefuse.COMPILE, Opcode.NOP);
     }
     oc.code = code;
     usz bytes = code.code_bytes + code.table_bytes;
@@ -191,6 +216,13 @@ fn void opt_free(Heap* h, CompiledFunction* f) {
 fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     Heap* h = ds.heap;
     h.opt.exits[reason]++;
+    // An overflow of the int32 range is what the next compile specializes on.
+    if (reason == OptExit.OVERFLOW.ordinal && oc.f.ic_entries != null) {
+        uint at = (uint)(ds.curr_pc - ds.code_base);
+        if (oc.f.code[at].op == Opcode.WIDE) at++;
+        ((hobject::ICEntry*)oc.f.ic_entries)[at].feedback |= hobject::FB_OVF;
+    }
+    if (reason == OptExit.INTERRUPT.ordinal) return 0;
     oc.exits++;
     if (oc.f.opt_code == oc && oc.exits >= (h.opt.exit_max != 0 ? h.opt.exit_max : OPT_EXIT_MAX)) opt_discard(h, oc.f);
     return 0;
@@ -225,6 +257,12 @@ fn void opt_print_stats(Heap* h) {
                  p.compiled, p.reopts, p.discards, p.refused, p.live_bytes);
     foreach (r : OptExit::values) {
         if (p.exits[r.ordinal] != 0) io::eprintfn("opt exit %s: %d", r.label, p.exits[r.ordinal]);
+    }
+    foreach (r : OptRefuse::values) {
+        if (p.refused_why[r.ordinal] != 0) io::eprintfn("opt refused %s: %d", r.label, p.refused_why[r.ordinal]);
+    }
+    foreach (op : Opcode::values) {
+        if (p.refused_ops[op.ordinal] != 0) io::eprintfn("opt refused opcode %s: %d", op, p.refused_ops[op.ordinal]);
     }
 }
 
