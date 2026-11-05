@@ -234,6 +234,11 @@ fn bool jit_relay(Dispatch* ds, Instruction* next) {
     Instruction* pc = next - 1;
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    // A variable site filled under another activation's scope chain is
+    // rearmed first, as th_var_rearm does before running the handler again.
+    if ((pc.op == Opcode.GETVAR || pc.op == Opcode.PUTVAR_ASSIGN || pc.op == Opcode.INC_VAR)
+        && th_var_ic_moved(pc, cold)
+        && !var_ic_rearm(th_ic_entry(pc, cold), cold.act.lex_env, cold.heap)) return false;
     return g_threaded_table.fns[pc.op.ordinal](pc, &jit_stop_table, ds.regs_base, cold) == next;
 }
 

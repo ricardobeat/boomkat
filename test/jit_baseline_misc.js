@@ -465,6 +465,126 @@ out("indirect eval " + (0, eval)("var ies = ''; for (var k = 0; k < 3000; k++) i
     out("mixed " + ms.join(","));
 })();
 
+// --- Bitwise operators on booleans, undefined and null ---
+(function () {
+    var vals = [undefined, null, true, false, 0, -0, 7, -1, 2147483647, -2147483648,
+                4294967295, 3000000000.5, -1.5, NaN, Infinity, "9", { valueOf: function () { return 6; } }];
+    function bits(a, b) { return [a & b, a | b, a ^ b, a << b, a >> b, a >>> b, a | 0, a & 255, a >>> 0, ~a].join(" "); }
+    var acc = [];
+    for (var r = 0; r < 3; r++)
+        for (var i = 0; i < vals.length; i++)
+            for (var j = 0; j < vals.length; j += 3) acc.push(bits(vals[i], vals[j]));
+    out("bits " + acc.length + " " + acc[0] + " | " + acc[5] + " | " + acc[acc.length - 1]);
+    try { out(1n & true); } catch (e) { out("bigint & bool " + e.name); }
+})();
+
+// --- Integral double keys on arrays and typed arrays ---
+(function () {
+    function rw(a, keys) {
+        var r = [];
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            r.push(show(a[k]));
+            a[k] = i;
+            r.push(show(a[k]));
+        }
+        return r.join(",");
+    }
+    var half = 0.5;
+    var keys = [0, half * 2, 4 / 2, 1.5, -0 * half, -1 * 1, half * 6, half * 8, 2147483648 * 1.0, NaN, Infinity, 1e300];
+    for (var r = 0; r < 3; r++) {
+        out("dkey arr " + rw([10, 20, 30, , 50], keys));
+        out("dkey i32 " + rw(new Int32Array(4), keys));
+        out("dkey f64 " + rw(new Float64Array(3), keys));
+        var o = { "1": "one", "1.5": "x" };
+        out("dkey obj " + rw(o, keys) + " " + Object.keys(o).join("|"));
+    }
+})();
+
+// --- Compound element assignment (GETPROP_CACHE) ---
+(function () {
+    var a = [1, 2, 3], o = { p: 1, q: "s" }, t = new Uint8Array(4);
+    var ks = ["p", "q", "p"];
+    for (var i = 0; i < 300; i++) {
+        a[i % 3] += i;
+        o[ks[i % 3]] += 1;
+        t[i & 3] += 7;
+        a[(i % 3) / 1] *= 1;
+    }
+    out("compound " + a + " " + o.p + " " + o.q.length + " " + Array.prototype.join.call(t));
+})();
+
+// --- Polymorphic reads, shape changes and prototype methods ---
+(function () {
+    function mk(n) {
+        var objs = [];
+        for (var i = 0; i < n; i++) { var o = {}; o["p" + i] = i; o.x = i * 10; o.y = "s" + i; objs.push(o); }
+        return objs;
+    }
+    function readx(o) { return o.x; }
+    function ready(o) { return o.y; }
+    function Pt(x) { this.x = x; }
+    Pt.prototype.get = function () { return this.x; };
+    function run(n) {
+        var objs = mk(n), s = 0, t = "";
+        for (var r = 0; r < 50; r++) for (var i = 0; i < objs.length; i++) { s += readx(objs[i]); t = ready(objs[i]); }
+        objs[0].x = 99; delete objs[1].x; objs[2].x = "str";
+        Object.defineProperty(objs[n - 1], "x", { get: function () { return "getter"; } });
+        for (var i = 0; i < objs.length; i++) t += "," + readx(objs[i]);
+        var p = new Pt(4), q = Object.create(Pt.prototype); q.z = 1; q.x = 7;
+        for (var i = 0; i < 20; i++) s += p.get() + q.get();
+        return s + t;
+    }
+    out("poly " + run(3) + " " + run(5) + " " + run(6) + " " + run(9));
+})();
+
+// --- Variables in scopes with eval, cells and remainders ---
+(function () {
+    function scoped(n) {
+        eval("var ev = " + n);
+        var s = 0;
+        for (var i = 0; i < 20; i++) { s += ev; ev = ev + 1; ev++; }
+        return s + ev;
+    }
+    var t = 0;
+    for (var k = 0; k < 40; k++) t += scoped(k);
+    var fs = [];
+    for (let i = 0; i < 30; i++) fs.push(function () { i += 2; return i % 7; });
+    var m = 0;
+    for (var r = 0; r < 5; r++) for (var j = 0; j < fs.length; j++) m += fs[j]();
+    var rem = [];
+    for (var i = -3; i < 40; i++) rem.push(i % 5, i % -3, (i * 0.5) % 2);
+    out("vars " + t + " " + m + " " + rem.slice(0, 12).map(show).join(","));
+})();
+
+// --- Functions wide enough to need WIDE operands ---
+(function () {
+    var src = "var c = 0; var arr = [1, 2, 3]; var buf = new Int32Array(8);\n";
+    for (var i = 0; i < 300; i++) src += "var v" + i + " = " + i + ";\n";
+    var locals = "";
+    for (var i = 0; i < 280; i++) locals += "var w" + i + " = v" + i + " + 1; ";
+    src += "function inner() { " + locals + "v1 = w279 - w0; return v299 + v0 + c + v1; }\n";
+    src += "for (var k = 0; k < 50; k++) { c += inner(); arr[k % 3] = v298 + k; buf[k & 7] = arr[k % 3]; c += buf[(k + 1) & 7]; v299 = v299 + 1; }\n";
+    src += "return [c, arr.join(), Array.prototype.join.call(buf), v299].join(' ');";
+    var wide = new Function(src);
+    for (var r = 0; r < 3; r++) out("wide " + wide());
+})();
+
+// --- Objects moving through registers during incremental marking ---
+(function () {
+    var keep = [], sum = 0;
+    for (var i = 0; i < 60000; i++) {
+        var o = { v: i, next: keep.length ? keep[keep.length - 1] : null };
+        var p = o, q = p.next;
+        if (q) sum += q.v;
+        if ((i & 15) === 0) keep.push(p);
+        if (keep.length > 500) keep = keep.slice(250);
+        var junk = [i, i + 1, { a: i }];
+        sum += junk.length;
+    }
+    out("marking " + sum + " " + keep.length);
+})();
+
 var asyncDone = (async function () {
     async function sq(x) { await null; return x * x; }
     var s = 0;

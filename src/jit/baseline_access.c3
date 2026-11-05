@@ -46,6 +46,9 @@ struct Layout {
     long ic_idx;
     long ic_flags;
     long ic_chain_len;
+    long poly_count;
+    long poly_shapes;
+    long poly_idx;
     long ic_has_proto;
     long ic_chain;
     long ic_key;
@@ -82,6 +85,9 @@ struct Layout {
     long class_object;
     long class_array;
     long old_mask;
+    long reachable_mask;
+    long heap_gc_kind;
+    long heap_gc_oracle;
     long inline_words_shift;
     long inline_words_mask;
     long accessor_mask;
@@ -124,6 +130,8 @@ fn Layout* layout() {
     l.act_tv_func = (char*)&act.tv_func - base;
     l.act_func = (char*)&act.func - base;
     l.heap_gc_phase = (char*)&h.gc_phase - base;
+    l.heap_gc_kind = (char*)&h.gc_kind - base;
+    l.heap_gc_oracle = (char*)&h.gc_oracle_running - base;
     l.heap_shapes = (char*)&h.shapes - base;
     l.heap_epoch = (char*)&h.shape_recycle_epoch - base;
     l.obj_shape = (char*)&o.shape_id - base;
@@ -147,6 +155,9 @@ fn Layout* layout() {
     l.chain_proto0 = (char*)&ch.snapshot.protos[0] - base;
     l.chain_shape0 = (char*)&ch.snapshot.shapes[0] - base;
     l.ep_value = (char*)&ch.epoch.value - base;
+    l.poly_count = (char*)&ch.poly.count - base;
+    l.poly_shapes = (char*)&ch.poly.shapes - base;
+    l.poly_idx = (char*)&ch.poly.prop_idx - base;
     l.ep_current = (char*)&ch.epoch.current - base;
     l.ep_first = (char*)&ch.epoch.first - base;
     l.ep_owner = (char*)&ch.epoch.owner - base;
@@ -211,6 +222,10 @@ fn Layout* layout() {
     types::GcBits g;
     g.old = true;
     l.old_mask = (long)(uint)g;
+    types::HeapFlags hf;
+    hf.reachable = true;
+    l.reachable_mask = (long)(uint)hf;
+    $assert heap::GcKind::size == 1 && bool::size == 1;
     g = {};
     g.prototype_observed = true;
     l.proto_observed_mask = (long)(uint)g;
@@ -251,6 +266,7 @@ fn bool is_access_op(Opcode op) {
         case GETPROPC:
         case GETPROPC_CACHED:
         case GETPROP:
+        case GETPROP_CACHE:
         case GETTHISC:
         case PUTPROP:
         case PUTPROPC:
@@ -276,8 +292,11 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
     DecodedInsn w = self.w;
     Opcode op = w.op;
     bool has_ic = f.ic_entries != null && f.var_ic_entries != null;
-    long ic = has_ic ? (long)(usz)&((hobject::ICEntry*)f.ic_entries)[self.i] : 0;
-    long vic = has_ic ? (long)(usz)&((hobject::VarICEntry*)f.var_ic_entries)[self.i] : 0;
+    // The cache entry of the instruction word the operation function sees,
+    // the payload of a WIDE pair.
+    uint at = self.next - 1;
+    long ic = has_ic ? (long)(usz)&((hobject::ICEntry*)f.ic_entries)[at] : 0;
+    long vic = has_ic ? (long)(usz)&((hobject::VarICEntry*)f.var_ic_entries)[at] : 0;
     switch (op) {
         case LDREG:
             self.emit_ldreg(w.a, w.b);
@@ -294,15 +313,20 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
             self.load(R0, w.b);
             self.emit_get(w.a, ic, (long)(usz)key.get_heapptr(), -1, true, false, key.get_heapptr() == self.length_key);
         case GETPROP:
+        case GETPROP_CACHE:
+            // GETPROP_CACHE writes its key back coerced, which leaves an
+            // integer or string key as it is.
             if (!has_ic) return false;
             // th_getprop_array: an index into an array, or a string key.
             Jumps done;
             self.load(R3, w.c);
             sljit_emit_op2(self.c, SLJIT_XOR, R0, 0, R3, 0, SLJIT_IMM, K_INT);
             void* not_index = sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+            void* elem = sljit_emit_label(self.c);
             self.emit_get_elem(w.a, w.b);
             done.add(sljit_emit_jump(self.c, SLJIT_JUMP));
             sljit_set_label(not_index, sljit_emit_label(self.c));
+            self.index_from_double(elem);
             self.load(R0, w.b);
             self.emit_get(w.a, ic, 0, (int)w.c, true, true, false);
             done.bind(sljit_emit_label(self.c));
@@ -328,9 +352,11 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
             self.load(R3, w.b);
             sljit_emit_op2(self.c, SLJIT_XOR, R0, 0, R3, 0, SLJIT_IMM, K_INT);
             void* not_index = sljit_emit_cmp(self.c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+            void* elem = sljit_emit_label(self.c);
             self.emit_put_elem(w.a, w.c);
             done.add(sljit_emit_jump(self.c, SLJIT_JUMP));
             sljit_set_label(not_index, sljit_emit_label(self.c));
+            self.index_from_double(elem);
             self.load(R0, w.a);
             self.emit_put(ic, 0, (int)w.b, w.c);
             done.bind(sljit_emit_label(self.c));
@@ -427,7 +453,8 @@ fn void Asm.publish(&self, uint ra) {
 // The publish subroutine: store the heap value R0 into the register whose
 // index R1 holds, raising the frame's heap-register watermark, and set R2 to
 // 0; or set R2 nonzero for the slow path. An object needs no work beyond the
-// watermark unless incremental marking runs; a string needs no ZCT entry when
+// watermark unless incremental marking still has to mark it; a string needs
+// no ZCT entry when
 // a counted holder or the queue already has it (Heap.note_unowned).
 fn void Asm.emit_publish_body(&self) {
     void* c = self.c;
@@ -446,11 +473,25 @@ fn void Asm.emit_publish_body(&self) {
     sljit_set_label(not_string, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
     fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
-    sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
-    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
-    void* stored = sljit_emit_label(c);
-    sljit_set_label(counted, stored);
-    sljit_set_label(queued, stored);
+    Jumps publishable;
+    publishable.add(counted);
+    publishable.add(queued);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
+    publishable.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
+    // While marking, as th_can_publish: an object the collector has no mark
+    // left to give, being reachable already or old during a minor collection.
+    publishable.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, 0);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.reachable_mask);
+    publishable.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_kind);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcKind.MAJOR.ordinal));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_oracle);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.obj_gc);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.old_mask);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    publishable.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, mem_index(self.regs, R1), 3, R0, 0);
     // track_heap_store
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.ds, l.ds_act);
@@ -526,7 +567,8 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     } else {
         self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, 0));
     }
-    self.guard_shape(R1, R2);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
+    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
@@ -540,9 +582,47 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     sljit_set_label(own, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
+    self.poly_back = sljit_emit_label(c);
     self.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
     self.publish(ra);
+}
+
+// Another receiver shape at a read site, as th_get_other_shape and
+// ic_poly_slot: an own data read of the entry's polymorphic set. Entered with
+// the receiver in R1, its shape in R3 and the entry in R2; continues at
+// `back` with the slot index in R3.
+fn void Asm.emit_poly_arm(&self, void* back) {
+    void* c = self.c;
+    self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = POLY_SUB });
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+    self.count(&self.stats.poly_hits[0], self.w.op);
+    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), back);
+}
+
+// The polymorphic set subroutine: R2 SUB_TRUE with the slot index of shape R3
+// in R3 when entry R2's set holds the shape, whose shapes are distinct, and
+// SUB_FALSE otherwise. Uses R0.
+fn void Asm.emit_poly_body(&self) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    Jumps miss;
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(char)hobject::IC_CHAIN_POLY));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | R2, l.ic_chain);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.poly_count);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, l.poly_shapes);
+    void* next_arm = sljit_emit_label(c);
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op2(c, SLJIT_SUB, R0, 0, R0, 0, SLJIT_IMM, 1);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, mem_index(R2, R0), 2, R3, 0), next_arm);
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, l.poly_idx - l.poly_shapes);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, mem_index(R2, R0), 2);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_TRUE);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    miss.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_FALSE);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // The length of the string or array register `rb` holds, as th_getpropc
@@ -733,6 +813,40 @@ fn void* Asm.array_or_typed(&self, long extra) {
     void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_array);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
     return other;
+}
+
+// A double key in R3 whose value is an integer in [0, 2^31) names the same
+// element as that integer (its ToString is the integer's), so it re-enters
+// the element path `elem` as a fastint in R3; another double takes the slow
+// path, and a key that is not a double falls through.
+fn void Asm.index_from_double(&self, void* elem) {
+    Jumps yes;
+    Jumps no;
+    self.call_test_sub(INDEX_SUB, &yes, &no);
+    for (uint k = 0; k < yes.len; k++) sljit_set_label(yes.at[k], elem);
+    no.bind(sljit_emit_label(self.c));
+}
+
+// The double index subroutine: R2 SUB_TRUE with the fastint in R3 for a
+// double R3 holding an integer in [0, 2^31), SUB_FALSE for a key that is not
+// a double, SUB_SLOW for any other double. Uses R0, FR0 and FR1.
+fn void Asm.emit_index_body(&self) {
+    void* c = self.c;
+    Jumps slow;
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_FALSE);
+    void* done = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, K_INT);
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R3);
+    sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, R0, 0, FR0, 0);
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, 1L << 31));
+    sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR1, 0, R0, 0);
+    slow.add(sljit_emit_fcmp(c, SLJIT_UNORDERED_OR_NOT_EQUAL, FR0, 0, FR1, 0));
+    sljit_emit_op2(c, SLJIT_OR, R3, 0, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_TRUE);
+    void* joined = sljit_emit_jump(c, SLJIT_JUMP);
+    slow.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_SLOW);
+    sljit_set_label(joined, sljit_emit_label(c));
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // A read of a dense array element, index in R3, as th_getprop_array: a hole
@@ -1101,10 +1215,18 @@ fn void baseline_print_counts(JitStats* st) {
         if (!is_access_op(op)) continue;
         ulong fast = st.fast_hits[op.ordinal];
         ulong slow = st.slow_calls[op.ordinal];
-        if (fast + slow == 0) continue;
-        io::eprintfn("jit op %s: inline %d, thunk %d (%.1f%% inline)", op, fast, slow,
-                     100.0 * (double)fast / (double)(fast + slow));
+        ulong relay = st.relay_done[op.ordinal];
+        if (fast + slow + relay == 0) continue;
+        io::eprintfn("jit op %s: inline %d (polymorphic %d), relayed %d, thunk %d (%.1f%% inline)", op, fast,
+                     st.poly_hits[op.ordinal], relay, slow, 100.0 * (double)fast / (double)(fast + slow + relay));
     }
+    ulong slow_total;
+    ulong relay_total;
+    foreach (k, n : st.slow_calls) {
+        slow_total += n;
+        relay_total += st.relay_done[k];
+    }
+    io::eprintfn("jit thunk calls: %d to the operation function, %d relayed completions", slow_total, relay_total);
     bool[Opcode::values.len] shown;
     for (uint rank = 0; rank < 10; rank++) {
         int best = -1;
@@ -1113,7 +1235,8 @@ fn void baseline_print_counts(JitStats* st) {
         }
         if (best < 0) break;
         shown[best] = true;
-        io::eprintfn("jit slow %d: %s %d", rank + 1, Opcode::values[best], st.slow_calls[best]);
+        io::eprintfn("jit slow %d: %s %d (relayed %d)", rank + 1, Opcode::values[best], st.slow_calls[best],
+                     st.relay_done[best]);
     }
 }
 
