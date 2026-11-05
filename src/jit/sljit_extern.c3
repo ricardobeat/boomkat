@@ -89,6 +89,8 @@ fn int mem_index(int base, int index) @inline => SLJIT_MEM | base | (index << 8)
 
 fn int reg_r(int i) @inline => 1 + i;
 fn int reg_s(int i) @inline => sljit_shim_info(0) - i;
+// SLJIT_SP: the stack pointer, for the frame's local area.
+fn int reg_sp() @inline => sljit_shim_info(0) + 1;
 fn int enter_keep(int count) @inline {
     assert(count >= 1 && count <= 3);
     return count;

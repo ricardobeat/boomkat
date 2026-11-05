@@ -520,6 +520,11 @@ struct Dispatch {
     TVal halt_value;
     // The fault a FAULT-status operation function failed the run with.
     fault failure;
+    // Baseline tier: the activation count at which a return hands control
+    // back to a native call site waiting for it (0: none waits), and the
+    // native calls nested on the C stack.
+    uint jit_floor @if($feat(SLJIT));
+    uint jit_depth @if($feat(SLJIT));
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first
