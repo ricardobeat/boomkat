@@ -665,6 +665,11 @@ fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plai
     return target;
 }
 
+// Record `target` as a callee of the call instruction at `pc`.
+macro void @note_callee(Instruction* pc, ColdCtx* cold, CompiledFunction* target) @private {
+    hobject::ic_note_callee(th_ic_at(cold, pc), target.func_index);
+}
+
 // Push the frame of a lean call and continue in its body. The caller has
 // checked th_lean_target and th_call_gate, and has stored the callee in
 // register `callee_reg`; `borrowed` says the register holds a binding's value
@@ -870,6 +875,7 @@ macro LeanCall @lean_call_method(Instruction* pc, TVal* regs, ColdCtx* cold, boo
     Vm* vm = cold.vm;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, false);
     if (target == null) return NATIVE;
+    @note_callee(pc, cold, target);
     TVal receiver = regs[insn.b + 1];
     bool this_valid = false;
     TVal this_value = th_undefined();
@@ -952,6 +958,7 @@ macro LeanCall @lean_call_undef_this(Instruction* pc, TVal* regs, ColdCtx* cold,
     if (@lean_gate(cold, $jit)) return DECLINE;
     CompiledFunction* target = th_lean_target(cold.vm, regs[insn.b], regs + insn.b + 2, true);
     if (target == null) return DECLINE;
+    @note_callee(pc, cold, target);
     if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return DONE;
     return @lean_publish(pc, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false, $jit);
 }
@@ -1040,6 +1047,7 @@ macro LeanCall @lean_call_var(Instruction* pc, TVal* regs, ColdCtx* cold, bool $
     TVal* ra = regs + insn.a;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
     if (target == null) return DECLINE;
+    @note_callee(pc, cold, target);
     if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return DONE;
     $if $jit:
         if (target.jit_code == null) return NO_CODE;
@@ -1068,6 +1076,7 @@ macro LeanCall @lean_call_global(Instruction* pc, TVal* regs, ColdCtx* cold, boo
     TVal callee = pv.get();
     CompiledFunction* target = th_lean_target(cold.vm, callee, regs + insn.a + 2, true);
     if (target == null) return DECLINE;
+    @note_callee(pc, cold, target);
     if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return DONE;
     $if $jit:
         if (target.jit_code == null) return NO_CODE;

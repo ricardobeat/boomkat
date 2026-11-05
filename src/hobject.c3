@@ -3638,6 +3638,24 @@ const char FB_DBL   = 2;   // a double operand
 const char FB_STR   = 4;   // a string operand
 const char FB_OTHER = 8;   // an object, undefined, null, boolean, symbol or BigInt operand
 
+// ICEntry.feedback bits of a call instruction, which uses none of the other
+// fields but prop_idx: FB_CALL says prop_idx is the func_index of the compiled
+// function the site has called, FB_POLY that it has called a second one.
+const char FB_CALL = 16;
+const char FB_POLY = 32;
+// The bits an arithmetic, bitwise or compare instruction records.
+const char FB_OPERANDS = 15;
+
+// Record that the call instruction caching `ic` called function number `index`.
+fn void ic_note_callee(ICEntry* ic, uint index) @inline {
+    if ((ic.feedback & FB_CALL) == 0) {
+        ic.prop_idx = index;
+        ic.feedback |= FB_CALL;
+    } else if (ic.prop_idx != index) {
+        ic.feedback |= FB_POLY;
+    }
+}
+
 // The feedback bits of one operand: none for an integer.
 fn char fb_class(TVal* v) @inline {
     if (v.is_fastint()) return 0;
