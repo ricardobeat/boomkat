@@ -36,6 +36,9 @@ enum OptOp : char {
     // (exit NOT_NUMBER), as an INT32 or FLOAT64.
     CHECK_I32,
     CHECK_NUM,
+    // A GETCAP read as a number of the node's rep, stored through to its slot; exits when the
+    // capture is not one of the plain cases or not that kind of number.
+    LOAD_CAP,
     PHI,
     // A new node holding the value of `a`.
     COPY,
@@ -172,6 +175,7 @@ fn void OptGraph.dump(&self, CompiledFunction* f) {
         io::eprintfn("block %d pc=%d%s succ=[%d %d] n=%d", pos, blk.pc, blk.header ? " loop-header" : "", blk.succ[0], blk.succ[1], blk.succ_count);
         for (uint i = blk.first; i < blk.end; i++) {
             OptNode* n = &self.nodes[i];
+            if (n.op == OptOp.GENERIC) io::eprintf("  [%s]", f.code[(uint)n.imm].op);
             io::eprintf("  n%d %s rep=%s a=%d b=%d imm=%d pc=%d reg=%d home=%d last=%d cc=%d", i, n.op, n.rep, (int)n.a, (int)n.b, n.imm, n.pc, n.reg, n.home, n.last_use, n.cc);
             if (n.dirty_count != 0) {
                 io::eprintf(" dirty=");

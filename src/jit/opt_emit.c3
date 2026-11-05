@@ -519,6 +519,47 @@ fn void OptCg.emit_check_num(&self, uint i, OptNode* n) {
     if (n.reg < 0) self.store_flt(n.home, dst);
 }
 
+// A double from the value in R0, which must be a number (exit NOT_NUMBER): into `fr`.
+fn void OptCg.number_from_r0(&self, uint i, int fr) {
+    void* c = self.a.c;
+    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, fr, R0);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_double, sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_ASHR, R1, 0, R0, 0, SLJIT_IMM, 48);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, STAG_INT), i, OptExit.NOT_NUMBER);
+    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, fr, 0, R0, 0);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
+// GETCAP as a number: the baseline's capture read, leaving for the baseline code on the
+// slow cases and on a value that is not of the node's kind. The slot is written too, and so
+// are the registers the GENERIC node it replaces had stored.
+fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    self.store_dirty(n.dirty_first, n.dirty_count);
+    self.a.decode((uint)n.imm);
+    self.a.call.len = 0;
+    self.a.emit_get_cap_value(self.a.w.get_bc());
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    if (n.rep == OptRep.INT32) {
+        self.a.guard_int(R0);
+        self.exit_calls(i, OptExit.NOT_INT32);
+        sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+        sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
+        sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), i, OptExit.NOT_INT32);
+        self.def_int(i, R0);
+    } else {
+        int dst = self.flt_dst(i, FR0);
+        self.number_from_r0(i, dst);
+        self.def_flt(i, dst);
+    }
+    self.store_node(i, n.home);
+}
+
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {
     void* c = self.a.c;
     if (n.rep == OptRep.INT32) {
@@ -682,7 +723,7 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
 fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -700,6 +741,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_check_int(i, n);
         case CHECK_NUM:
             self.emit_check_num(i, n);
+        case LOAD_CAP:
+            self.emit_load_cap(i, n);
         case COPY:
             self.emit_copy(n, i);
         case ADD_I32:
