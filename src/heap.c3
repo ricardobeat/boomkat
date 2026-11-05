@@ -2173,6 +2173,7 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
             }
         }
     }
+    $if $feat(SLJIT): jit::opt_purge_shapes(self); $endif
     while (self.shape_retired_head != SHAPE_FREE_END) {
         uint id = self.shape_retired_head;
         self.shape_retired_head = (uint)((uptr)self.shapes[id] & ~SHAPE_FREE_TAG);

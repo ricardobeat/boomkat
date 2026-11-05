@@ -65,6 +65,10 @@ struct OptCode {
     uint exits;
     // Test hook (--opt-force-exit): exits still to take at the chosen pc.
     uint forced;
+    // The shape id each field access of the code compares against, in memory so that
+    // Heap.purge_retired_shapes can clear one whose id is about to be reused.
+    uint* cells;
+    uint cell_count;
 }
 
 struct OptPolicy {
@@ -177,6 +181,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     BaselineCode* code = opt_emit(h, f, &g, oc, pools);
     if (st.timing) st.compile_ns += (ulong)((long)clock::now() - t0);
     if (code == null) {
+        if (oc.cells != null) h.free_func(h.heap_udata, oc.cells);
         h.free_func(h.heap_udata, oc);
         return opt_refuse(h, f, OptRefuse.COMPILE, Opcode.NOP);
     }
@@ -208,6 +213,23 @@ fn void opt_discard(Heap* h, CompiledFunction* f) {
     f.opt_state = f.opt_reopts > OPT_REOPT_MAX ? OPT_REFUSED_EXITS : OPT_NONE;
 }
 
+// Clear the shape ids of `oc` that no live shape holds, before the heap reuses them.
+fn void OptCode.purge_cells(&self, Heap* h) {
+    for (uint i = 0; i < self.cell_count; i++) {
+        uint id = self.cells[i];
+        if (id != heap::SHAPE_NONE && (id >= h.shape_count || !h.shape_slot_live(id))) self.cells[i] = heap::SHAPE_NONE;
+    }
+}
+
+// Heap.purge_retired_shapes is about to free shape ids: no optimized code may keep one.
+fn void opt_purge_shapes(Heap* h) {
+    for (uint fi = 0; fi < h.compiled_func_count; fi++) {
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+        if (cf != null && cf.opt_code != null) ((OptCode*)cf.opt_code).purge_cells(h);
+    }
+    for (OptCode* oc = h.opt.retired; oc != null; oc = oc.next_retired) oc.purge_cells(h);
+}
+
 fn void opt_release(Heap* h, OptCode* oc) {
     BaselineCode* code = oc.code;
     usz bytes = code.code_bytes + code.table_bytes;
@@ -215,6 +237,7 @@ fn void opt_release(Heap* h, OptCode* oc) {
     h.jit_stats.live_bytes -= bytes;
     sljit_free_code(code.exec, null);
     h.free_func(h.heap_udata, code);
+    if (oc.cells != null) h.free_func(h.heap_udata, oc.cells);
     h.free_func(h.heap_udata, oc);
 }
 

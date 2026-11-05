@@ -510,6 +510,35 @@ fn bool OptBuild.index_ok(&self, uint r) {
 // Whether register `r` holds an object (or other value) in the window.
 fn bool OptBuild.in_window(&self, uint r) => r < self.nregs && self.cur[r].node == NO_NODE;
 
+// The cache entry of the instruction being lowered when it names an own data property of a
+// plain object that the optimized code can read by slot, else null.
+fn hobject::ICEntry* OptBuild.own_field(&self) {
+    if (self.f.ic_entries == null) return null;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.next_pc - 1];
+    void* key = (void*)ic.key.borrow();
+    if (key == null || ic.shape_id == heap::SHAPE_NONE || ic.has_proto || ic.chain_len != 0) return null;
+    if (ic.prop_idx == hobject::IC_PROP_ABSENT || ic.prop_flags.is_accessor) return null;
+    if (key == (void*)self.h.strs[heap::BuiltinStr.LENGTH]) return null;
+    if (self.w.op != Opcode.GETTHISC) {
+        if (self.w.c >= self.f.const_count || !self.f.constants[self.w.c].is_string()) return null;
+        if (self.f.constants[self.w.c].get_heapptr() != key) return null;
+    }
+    return ic;
+}
+
+// GETPROPC, GETPROPC_CACHED and GETTHISC of an own property by the shape its cache holds: a
+// typed load when a numeric use asked for one, else a read into the window.
+fn bool OptBuild.get_field(&self) {
+    if (self.own_field() == null || (self.w.op != Opcode.GETTHISC && !self.in_window(self.w.b))) return self.generic();
+    if (self.typed_load(OptOp.LOAD_FIELD, NO_NODE) != NO_NODE) return true;
+    uint n = self.add(OptOp.LOAD_FIELD, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    uint ra = self.w.a;
+    self.kill(ra);
+    if (ra < self.nregs) self.load_def[ra] = self.pc;
+    return true;
+}
+
 // GETPROP of an element at an integer index, from an object in the window.
 fn bool OptBuild.get_elem(&self) {
     if (!self.in_window(self.w.b) || !self.index_ok(self.w.c)) return self.generic();
@@ -772,6 +801,10 @@ fn bool OptBuild.lower(&self) {
             return self.get_cap();
         case GETPROP:
             return self.get_elem();
+        case GETPROPC:
+        case GETPROPC_CACHED:
+        case GETTHISC:
+            return self.get_field();
         case PUTPROP:
             return self.put_elem();
         case UNM:
