@@ -153,6 +153,55 @@ fn TVal* op_operand_c(Dispatch* ds, DecodedInsn insn, TVal* imm) {
     return imm;
 }
 
+// Whether `op` is one whose operand classes the optimizing tier reads: the
+// arithmetic, bitwise, shift, compare and step instructions with register
+// or immediate operands.
+fn bool has_feedback(Opcode op) @inline {
+    return (op.ordinal >= Opcode.ADD.ordinal && op.ordinal <= Opcode.MOD.ordinal)
+        || (op.ordinal >= Opcode.BAND.ordinal && op.ordinal <= Opcode.GE.ordinal)
+        || bytecode::is_imm_form(op) || bytecode::is_cmp_branch(op)
+        || op == Opcode.INC || op == Opcode.DEC || op == Opcode.INC_LT || op == Opcode.UNM || op == Opcode.UNP
+        || op == Opcode.BNOT || op == Opcode.TONUMERIC || op == Opcode.ADD_FUSED;
+}
+
+// Record the operand classes `insn` met, which a tier reached off its integer
+// path, in the instruction's inline cache entry (ICEntry.feedback). Both
+// operands integers means the result left the fastint range, when the
+// instruction was `declined` by a handler that would have completed it.
+fn void note_feedback(Dispatch* ds, DecodedInsn insn, bool declined = true) {
+    if (ds.ic_base == null) return;
+    TVal* regs = ds.regs_base;
+    TVal imm;
+    char bits;
+    switch (insn.op) {
+        case Opcode.INC:
+        case Opcode.DEC:
+        case Opcode.INC_LT:
+            bits = hobject::fb_class(regs + insn.a);
+        case Opcode.UNM:
+        case Opcode.UNP:
+        case Opcode.BNOT:
+        case Opcode.TONUMERIC:
+            bits = hobject::fb_class(regs + insn.b);
+        default:
+            bits = hobject::fb_class(regs + insn.b) | hobject::fb_class(op_operand_c(ds, insn, &imm));
+    }
+    if (bits == 0 && declined) {
+        // Two integers off the integer path means the result left the fastint
+        // range, for the operators that can; a compare or bit operation that
+        // reached here only had no integer path of its own.
+        switch (insn.op) {
+            case Opcode.ADD: case Opcode.ADD_FUSED: case Opcode.SUB: case Opcode.MUL: case Opcode.DIV:
+            case Opcode.MOD: case Opcode.ADDI: case Opcode.SUBI: case Opcode.MULI: case Opcode.INC:
+            case Opcode.DEC: case Opcode.INC_LT: case Opcode.UNM:
+                bits = hobject::FB_OVF;
+            default:
+                return;
+        }
+    }
+    if (bits != 0) (ds.ic_base + (uint)(ds.curr_pc - 1 - ds.code_base)).feedback |= bits;
+}
+
 // ADD_FUSED, ADD
 fn OpStatus op_add(Dispatch* ds, DecodedInsn insn) {
     Vm* vm = ds.vm;

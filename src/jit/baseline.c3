@@ -73,8 +73,10 @@ module boomkat::jit @feat(SLJIT);
 import boomkat::vm;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hobject;
 import boomkat::types;
 import std::collections::list;
+import std::io;
 import std::time::clock;
 
 // Compiles of one function before it stays interpreted.
@@ -135,6 +137,8 @@ struct JitStats {
     // Per-opcode counts of inline completions and thunk calls, emitted only
     // into code compiled while count_ops is set (--jit-count-ops).
     bool count_ops;
+    // Print every instruction's recorded operand feedback at exit (--jit-dump-feedback).
+    bool dump_feedback;
     ulong[Opcode::values.len] fast_hits;
     ulong[Opcode::values.len] slow_calls;
     // Thunk calls the threaded handler or the builtin call path completed
@@ -1100,6 +1104,21 @@ $else
 $endif
 }
 
+// Record a double operand in the instruction's feedback byte, for the
+// optimizing tier. An operand that then fails the number loads is recorded by
+// the slow path as well. Uses R2 and R3.
+fn void Asm.note_double(&self) {
+    CompiledFunction* f = self.f;
+    if (f.ic_entries == null) return;
+    void* c = self.c;
+    hobject::ICEntry* entry = &((hobject::ICEntry*)f.ic_entries)[self.next - 1];
+    long at = (long)(usz)&entry.feedback;
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, at);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | R2, 0);
+    sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, (long)hobject::FB_DBL);
+    sljit_emit_op1(c, SLJIT_MOV_U8, SLJIT_MEM | R2, 0, R3, 0);
+}
+
 // The number path entered when an operand is not a fastint.
 fn void Asm.emit_alt(&self) {
     void* c = self.c;
@@ -1125,6 +1144,7 @@ fn void Asm.emit_alt(&self) {
         } else {
             self.load_number(FR1, w.c);
         }
+        self.note_double();
         uint t = (uint)self.target((int)(ichar)w.a);
         self.branch(true, JMP_FLOAT_COND[row], 0, 0, t, (ichar)w.a < 0);
         self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
@@ -1139,6 +1159,7 @@ fn void Asm.emit_alt(&self) {
         case SUBI:
             self.load_number(FR0, w.b);
             self.load_imm_number(FR1, (long)(ichar)w.c);
+            self.note_double();
             sljit_emit_fop2(c, op == SUBI ? SLJIT_SUB_F64 : SLJIT_ADD_F64, FR0, 0, FR0, 0, FR1, 0);
             self.store_number(w.a);
         case INC:
@@ -1146,6 +1167,7 @@ fn void Asm.emit_alt(&self) {
         case DEC:
             // A number register holds no string to release.
             self.load_number(FR0, w.a);
+            self.note_double();
             self.load_imm_number(FR1, 1);
             sljit_emit_fop2(c, op == DEC ? SLJIT_SUB_F64 : SLJIT_ADD_F64, FR0, 0, FR0, 0, FR1, 0);
             self.store_number(w.a);
@@ -1167,6 +1189,7 @@ fn void Asm.emit_alt(&self) {
         case UNM:
             // A double, or a fastint whose negation is not a fastint.
             self.load_number(FR0, w.b);
+            self.note_double();
             sljit_emit_fop1(c, SLJIT_NEG_F64, FR0, 0, FR0, 0);
             self.store_number(w.a);
         case BAND:
@@ -1188,6 +1211,7 @@ fn void Asm.emit_alt(&self) {
         case GE:
             self.load_number(FR0, w.b);
             self.load_number(FR1, w.c);
+            self.note_double();
             self.bool_result(true, JMP_FLOAT_COND[4 + op.ordinal - Opcode.LT.ordinal], w.a);
         case GETPROPC:
         case GETPROPC_CACHED:
@@ -1202,6 +1226,7 @@ fn void Asm.emit_alt(&self) {
 fn void Asm.emit_number_binop(&self, int fop, uint ra, uint rb, uint rc) {
     self.load_number(FR0, rb);
     self.load_number(FR1, rc);
+    self.note_double();
     sljit_emit_fop2(self.c, fop, FR0, 0, FR0, 0, FR1, 0);
     self.store_number(ra);
 }
@@ -1284,6 +1309,7 @@ fn void Asm.emit_bitop(&self, Opcode op, uint ra, uint rb, uint rc, bool numbers
         src = R1;
         srcw = 0;
     }
+    if (numbers) self.note_double();
     int sop;
     switch (base) {
         case BAND: sop = SLJIT_AND;
@@ -1547,6 +1573,7 @@ fn void init_thunks() @noinline @private {
                 Activation* act = ds.act;
                 CompiledFunction* func = ds.vm.current_func;
                 OpStatus s;
+                if (vm::has_feedback($op)) vm::note_feedback(ds, insn);
                 $if $op == Opcode.CALL:
                     if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s)) {
                         count_relayed(ds, $op);
@@ -1572,6 +1599,23 @@ fn void init_thunks() @noinline @private {
         $endif
     $endforeach
     thunks_ready = true;
+}
+
+// Print the operand feedback every function recorded, one line per
+// instruction with any: "feedback fn#<index> +<word> <op> <classes>".
+fn void baseline_dump_feedback(Heap* h) {
+    for (uint fi = 0; fi < h.compiled_func_count; fi++) {
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+        if (cf == null || cf.ic_entries == null) continue;
+        hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
+        for (uint i = 0; i < cf.code_count; i++) {
+            char fb = entries[i].feedback;
+            if (fb == 0 || !vm::has_feedback(cf.code[i].op)) continue;
+            io::eprintfn("feedback fn#%d +%d %s %s%s%s%s", fi, i, cf.code[i].op,
+                         (fb & hobject::FB_OVF) != 0 ? "ovf " : "", (fb & hobject::FB_DBL) != 0 ? "dbl " : "",
+                         (fb & hobject::FB_STR) != 0 ? "str " : "", (fb & hobject::FB_OTHER) != 0 ? "other" : "");
+        }
+    }
 }
 
 // Move one thunk call of `op` from the slow count to the relayed completions.

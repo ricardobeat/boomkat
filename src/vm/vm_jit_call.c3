@@ -270,6 +270,9 @@ fn bool jit_relay(Dispatch* ds, Instruction* next) {
     Instruction* pc = next - 1;
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    // The handler completes numbers and concatenations without the operation
+    // function, so the operand classes are recorded here.
+    if (has_feedback(pc.op)) note_feedback(ds, { .op = pc.op, .a = pc.a, .b = pc.b, .c = pc.c }, false);
     // A variable site filled under another activation's scope chain is
     // rearmed first, as th_var_rearm does before running the handler again.
     if ((pc.op == Opcode.GETVAR || pc.op == Opcode.PUTVAR_ASSIGN || pc.op == Opcode.INC_VAR)
