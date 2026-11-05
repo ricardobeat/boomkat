@@ -677,6 +677,22 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
                               bool borrowed, bool clear_this,
                               TVal this_value, bool this_valid,
                               HObject* new_target = null) @private @inline {
+    TVal* bottom = regs + callee_reg + 2;
+    if (@unlikely(th_publish_lean(pc, regs, cold, target, callee_reg, result_reg, nargs, borrowed, clear_this,
+                                  this_value, this_valid, new_target))) {
+        return th_enter_with_arguments(handlers, cold, cold.act, target,
+                                       (HObject*)regs[callee_reg].get_heapptr(), bottom, nargs);
+    }
+    return th_next(target.code, handlers, bottom, cold);
+}
+
+// The frame publication of th_enter_lean, shared with the baseline tier's
+// native calls. Returns whether the callee still needs its register
+// `arguments` object built (th_enter_with_arguments).
+fn bool th_publish_lean(Instruction* pc, TVal* regs, ColdCtx* cold, CompiledFunction* target,
+                        uint callee_reg, uint result_reg, uint nargs,
+                        bool borrowed, bool clear_this, TVal this_value, bool this_valid,
+                        HObject* new_target) @inline {
     Vm* vm = cold.vm;
     Activation* caller = cold.act;
     HObject* function = (HObject*)regs[callee_reg].get_heapptr();
@@ -750,10 +766,7 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
     }
     // The object is built once the frame is published, since building it can
     // run a collection step that scans the frame.
-    if (@unlikely(target.arguments_in_reg())) {
-        return th_enter_with_arguments(handlers, cold, la, target, function, bottom, nargs);
-    }
-    return th_next(target.code, handlers, bottom, cold);
+    return target.arguments_in_reg();
 }
 
 // Enter the body of a frame whose `arguments` object lives in a register. The
@@ -806,30 +819,80 @@ fn bool th_trivial_call(TVal* regs, ColdCtx* cold, CompiledFunction* target,
 // a receiver that is not a heap value and a callee that never reads its `this`.
 // The receiver stays in the caller's register, which roots it for the whole
 // call, so the frame borrows it as its this_binding.
-fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+// How a lean call shape resolved: declined (left to the switch), a builtin
+// for th_call_native, an IC to rearm, completed without a frame (a trivial
+// callee), or the callee's frame published (ENTERED_ARGS: its register
+// `arguments` object is still to be built). NO_CODE is the baseline tier's:
+// the callee has no native code.
+enum LeanCall : char { DECLINE, NATIVE, REARM, DONE, ENTERED, ENTERED_ARGS, NO_CODE }
+
+// th_call_gate for the threaded handlers; the baseline tier's native calls
+// test only the collector, since their nesting is bounded by their own depth
+// cap instead of TH_CALL_BURST.
+macro bool @lean_gate(ColdCtx* cold, bool $jit) @private {
+    $if $jit:
+        if (cold.heap.gc_safepoint_due(true)) { opprof_bail(GATE_GC); return true; }
+        return false;
+    $else
+        return th_call_gate(cold);
+    $endif
+}
+
+// Publish the frame once every test passed. The baseline tier enters only a
+// callee with native code.
+macro LeanCall @lean_publish(Instruction* pc, TVal* regs, ColdCtx* cold, CompiledFunction* target,
+                             uint callee_reg, uint result_reg, uint nargs, bool borrowed, bool clear_this,
+                             TVal this_value, bool this_valid, bool $jit) @private {
+    $if $jit:
+        if (target.jit_code == null) return NO_CODE;
+    $endif
+    return th_publish_lean(pc, regs, cold, target, callee_reg, result_reg, nargs, borrowed, clear_this,
+                           this_value, this_valid, null) ? ENTERED_ARGS : ENTERED;
+}
+
+// Continue a threaded handler after its call shape resolved.
+macro Instruction* @lean_continue(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                                  LeanCall outcome, uint callee_reg, uint result_reg, uint nargs) @private {
+    switch (outcome) {
+        case NATIVE: return th_call_native(pc, handlers, regs, cold, callee_reg, result_reg, nargs);
+        case REARM: return th_var_rearm(pc, handlers, regs, cold);
+        case DONE: return th_next(pc + 1, handlers, regs, cold);
+        case ENTERED: return th_next(cold.vm.current_func.code, handlers, regs + callee_reg + 2, cold);
+        case ENTERED_ARGS:
+            return th_enter_with_arguments(handlers, cold, cold.act, cold.vm.current_func,
+                                           (HObject*)regs[callee_reg].get_heapptr(), regs + callee_reg + 2, nargs);
+        default: return pc;
+    }
+}
+
+macro LeanCall @lean_call_method(Instruction* pc, TVal* regs, ColdCtx* cold, bool $jit) @private {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, false);
-    if (target == null) return th_call_native(pc, handlers, regs, cold, insn.b, insn.a, insn.c);
+    if (target == null) return NATIVE;
     TVal receiver = regs[insn.b + 1];
     bool this_valid = false;
     TVal this_value = th_undefined();
     if (receiver.is_heap_allocated()) {
         if (!receiver.is_object() || receiver.get_heapptr() == null
             || insn.b + 1 >= vm.current_func.num_regs
-            || cold.act.heap_reg_count <= insn.b + 1) { opprof_bail(RECEIVER); return pc; }
+            || cold.act.heap_reg_count <= insn.b + 1) { opprof_bail(RECEIVER); return DECLINE; }
         if (!target.call_flags.ignores_this) {
             this_value = receiver;
             this_valid = true;
         }
     } else if (!target.call_flags.ignores_this) {
         opprof_bail(PLAIN_THIS);
-        return pc;
+        return DECLINE;
     }
-    if (th_call_gate(cold)) return pc;
-    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
-    return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, false,
-                         this_value, this_valid);
+    if (@lean_gate(cold, $jit)) return DECLINE;
+    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return DONE;
+    return @lean_publish(pc, regs, cold, target, insn.b, insn.a, insn.c, false, false, this_value, this_valid, $jit);
+}
+
+fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    return @lean_continue(pc, handlers, regs, cold, @lean_call_method(pc, regs, cold, false), insn.b, insn.a, insn.c);
 }
 
 // `f.apply(x, arguments)` in a function whose arguments stay in its first registers, with the
@@ -878,15 +941,19 @@ fn Instruction* th_apply_args(Instruction* pc, HandlerTable* handlers, TVal* reg
                          this_valid ? this_arg : th_undefined(), this_valid);
 }
 
+macro LeanCall @lean_call_undef_this(Instruction* pc, TVal* regs, ColdCtx* cold, bool $jit) @private {
+    Instruction insn = *pc;
+    if (@lean_gate(cold, $jit)) return DECLINE;
+    CompiledFunction* target = th_lean_target(cold.vm, regs[insn.b], regs + insn.b + 2, true);
+    if (target == null) return DECLINE;
+    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return DONE;
+    return @lean_publish(pc, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false, $jit);
+}
+
 fn Instruction* th_call_undef_this(Instruction* pc, HandlerTable* handlers,
                                    TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    Vm* vm = cold.vm;
-    if (th_call_gate(cold)) return pc;
-    CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, true);
-    if (target == null) return pc;
-    if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return th_next(pc + 1, handlers, regs, cold);
-    return th_enter_lean(pc, handlers, regs, cold, target, insn.b, insn.a, insn.c, false, true, th_undefined(), false);
+    return @lean_continue(pc, handlers, regs, cold, @lean_call_undef_this(pc, regs, cold, false), insn.b, insn.a, insn.c);
 }
 
 // The variable IC entry for the instruction at `pc` when it still describes the
@@ -946,44 +1013,66 @@ macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private 
 const uint TH_LEAN_FRAME_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
     | ACT_FLAG_THIS_VALID | ACT_FLAG_TAIL_CALLED;
 
-fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+// The baseline tier rearms in place, then runs the same tests the threaded
+// handler runs again after its rearm.
+macro LeanCall @lean_call_var(Instruction* pc, TVal* regs, ColdCtx* cold, bool $jit) @private {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
     Activation* act = cold.act;
-    if (th_call_gate(cold)) return pc;
-    if (th_var_ic_moved(pc, cold)) return th_var_rearm(pc, handlers, regs, cold);
+    if (@lean_gate(cold, $jit)) return DECLINE;
+    if (th_var_ic_moved(pc, cold)) {
+        $if $jit:
+            if (!var_ic_rearm(th_ic_entry(pc, cold), act.lex_env, cold.heap)) return DECLINE;
+        $else
+            return REARM;
+        $endif
+    }
     hobject::VarICEntry* vic = th_var_ic_hit(pc, cold);
-    if (vic == null || vic.prop_flags.is_accessor) return pc;
+    if (vic == null || vic.prop_flags.is_accessor) return DECLINE;
     TVal callee = vic.slot_ptr.get();
-    if (env::is_tdz_sentinel(&callee)) return pc;
+    if (env::is_tdz_sentinel(&callee)) return DECLINE;
     TVal* ra = regs + insn.a;
     CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
-    if (target == null) return pc;
-    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
+    if (target == null) return DECLINE;
+    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return DONE;
+    $if $jit:
+        if (target.jit_code == null) return NO_CODE;
+    $endif
     // An object callee is not counted, so storing it needs no retain; a
     // binding that is not permanent can be reassigned during the call, so the
     // register is tracked and the frame roots its own reference.
     bool borrowed = is_permanent_env(vm, (EnvRecord*)vic.env);
     *ra = callee;
     if (!borrowed) track_heap_store(act, ra, insn.a);
-    return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, borrowed, true, th_undefined(), false);
+    return @lean_publish(pc, regs, cold, target, insn.a, insn.a, insn.b, borrowed, true, th_undefined(), false, $jit);
+}
+
+fn Instruction* th_call_var(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    Instruction insn = *pc;
+    return @lean_continue(pc, handlers, regs, cold, @lean_call_var(pc, regs, cold, false), insn.a, insn.a, insn.b);
+}
+
+macro LeanCall @lean_call_global(Instruction* pc, TVal* regs, ColdCtx* cold, bool $jit) @private {
+    Instruction insn = *pc;
+    if (@lean_gate(cold, $jit)) return DECLINE;
+    hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
+    if (gic == null) return DECLINE;
+    hobject::PropValue* pv = gic.slot_ptr;
+    if (slot_is_tdz(pv)) return DECLINE;
+    TVal callee = pv.get();
+    CompiledFunction* target = th_lean_target(cold.vm, callee, regs + insn.a + 2, true);
+    if (target == null) return DECLINE;
+    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return DONE;
+    $if $jit:
+        if (target.jit_code == null) return NO_CODE;
+    $endif
+    regs[insn.a] = callee;
+    return @lean_publish(pc, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false, $jit);
 }
 
 fn Instruction* th_call_global(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
     Instruction insn = *pc;
-    Vm* vm = cold.vm;
-    if (th_call_gate(cold)) return pc;
-    hobject::VarICEntry* gic = th_global_ic_hit(pc, cold);
-    if (gic == null) return pc;
-    hobject::PropValue* pv = gic.slot_ptr;
-    if (slot_is_tdz(pv)) return pc;
-    TVal callee = pv.get();
-    TVal* ra = regs + insn.a;
-    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
-    if (target == null) return pc;
-    if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return th_next(pc + 1, handlers, regs, cold);
-    *ra = callee;
-    return th_enter_lean(pc, handlers, regs, cold, target, insn.a, insn.a, insn.b, true, true, th_undefined(), false);
+    return @lean_continue(pc, handlers, regs, cold, @lean_call_global(pc, regs, cold, false), insn.a, insn.a, insn.b);
 }
 
 // A frame that holds nothing a plain store cannot drop: no owned register, no

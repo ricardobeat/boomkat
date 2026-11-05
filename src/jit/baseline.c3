@@ -3,10 +3,25 @@
 //
 // The native function, `fn long(Dispatch* ds)`, runs instructions of the
 // activation the Dispatch has loaded, starting at ds.curr_pc. There is no frame
-// layout of its own and no C recursion between JS frames: a call, a return, a
-// throw that leaves the frame and a halt all return an OpStatus word to Vm.run,
-// which reloads the top frame and enters its native code, or the interpreter
-// when it has none.
+// layout of its own. A throw that leaves the frame, a halt and every call the
+// native call path declines return an OpStatus word to Vm.run, which reloads
+// the top frame and enters its native code, or the interpreter when it has
+// none.
+//
+// A CALL, CALL_UNDEF_THIS, CALL_VAR or CALL_GLOBAL whose callee the threaded
+// handlers would enter as a lean call, and which has native code, runs it on
+// the C stack (vm::jit_call_enter). The call site saves ds.jit_floor in its
+// stack frame and sets it to the caller's activation count; the callee's
+// frame sits one above. A thunk that leaves the activation count equal to
+// the floor after switching frames returns BASELINE_RETURNED, and the call
+// site restores the floor, reloads the caller's frame and continues at the
+// following instruction, or through the entry table when a handler moved
+// ds.curr_pc. Vm.run clears the floor (0, never a live count after a
+// switch), so a frame it entered returns with RESTART. Any other status
+// leaves every native frame on the way up unchanged; the activation stack
+// describes the truth and each abandoned caller resumes later through the
+// entry table at its saved curr_pc. Native calls nest at most
+// vm::JIT_NATIVE_DEPTH_CAP deep per Dispatch.
 //
 // Instructions that need no runtime call in the common case (register
 // loads, jumps and branches, number arithmetic, comparisons and bitwise ops)
@@ -69,6 +84,16 @@ struct JitStats {
     uint excluded_opcode;
     uint failed;
     uint capped;
+    // Native call sites: callees entered natively, trivial callees completed
+    // in place, and calls left to the thunk because the callee had no native
+    // code yet, the depth cap was reached, a method callee was not a compiled
+    // function (builtins, bound functions), or the lean shape declined.
+    ulong calls_native;
+    ulong calls_trivial;
+    ulong calls_no_code;
+    ulong calls_depth;
+    ulong calls_builtin;
+    ulong calls_declined;
 }
 
 struct BaselineCode {
@@ -92,7 +117,14 @@ fn void* baseline_code(Heap* h, CompiledFunction* f) @inline {
     return baseline_try_compile(h, f);
 }
 
-fn long baseline_run(void* exec, Dispatch* ds) @inline => ((BaselineFn)exec)(ds);
+fn long baseline_run(void* exec, Dispatch* ds) @inline {
+    ds.jit_floor = 0;
+    ds.jit_depth = 0;
+    return ((BaselineFn)exec)(ds);
+}
+
+// The native entry of a compiled function.
+fn void* baseline_entry(CompiledFunction* f) @inline => ((BaselineCode*)f.jit_code).exec;
 
 fn void baseline_free(Heap* h, CompiledFunction* f) {
     BaselineCode* bc = f.jit_code;
@@ -160,6 +192,9 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
 // A thunk's result when the operation left ds.curr_pc somewhere other than
 // the following instruction: the code dispatches through the entry table.
 const long BASELINE_REDISPATCH = OpStatus::values.len + 1;
+// A native function's result when its activation returned to the native call
+// site waiting at ds.jit_floor.
+const long BASELINE_RETURNED = OpStatus::values.len + 2;
 
 const int R0 = 1;
 const int R1 = 2;
@@ -223,6 +258,7 @@ struct Asm {
     int thunks;
     int heap;
     long pc_off;
+    long floor_off;
     long regs_off;
     long budget_off;
     long interrupt_off;
@@ -262,6 +298,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         .thunks = reg_s(4),
         .heap = reg_s(5),
         .pc_off = (char*)&dl.curr_pc - (char*)dl,
+        .floor_off = (char*)&dl.jit_floor - (char*)dl,
         .regs_off = (char*)&dl.regs_base - (char*)dl,
         .budget_off = (char*)&hl.bwd_gc_budget - (char*)hl,
         .interrupt_off = (char*)&hl.capi_interrupt_fn - (char*)hl,
@@ -285,7 +322,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     int table_reg = reg_s(2);
     int ds_mem = SLJIT_MEM | a.ds;
 
-    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, 4 | (2 << 8), 6, 0);
+    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, 4 | (2 << 8), 6, CALL_FRAME_BYTES);
     sljit_emit_op1(c, SLJIT_MOV, a.code, 0, ds_mem, (char*)&dl.code_base - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, a.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
@@ -319,7 +356,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         a.alt.len = 0;
         a.labels[i] = sljit_emit_label(c);
         bc.insns++;
-        if (!a.emit_fast(consts_fixed)) a.emit_thunk_call(i);
+        if (!a.emit_call() && !a.emit_fast(consts_fixed)) a.emit_thunk_call(i);
         if (a.call.len != 0 || a.alt.len != 0) a.stubs.push({ .insn = i, .call = a.call, .alt = a.alt });
         i = a.next;
     }
@@ -375,6 +412,47 @@ fn void Asm.emit_thunk_call(&self, uint i) {
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_MEM | self.thunks, (long)op.ordinal * Thunk::size);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+}
+
+// Stack bytes of a native function's frame: the floor a native call site
+// saves across its callee.
+const int CALL_FRAME_BYTES = 16;
+
+// A call the threaded handlers take as a lean call: jit_call_enter publishes
+// the callee's frame and the callee's native code runs on the C stack. A
+// declined call takes the thunk; a trivial callee completes in the helper.
+fn bool Asm.emit_call(&self) {
+    void* c = self.c;
+    switch (self.w.op) {
+        case CALL:
+        case CALL_UNDEF_THIS:
+        case CALL_VAR:
+        case CALL_GLOBAL:
+            break;
+        default:
+            return false;
+    }
+    int sp = SLJIT_MEM | reg_sp();
+    long next = (long)self.next * Instruction::size;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | self.ds, self.floor_off);
+    sljit_emit_op1(c, SLJIT_MOV, sp, 0, R0, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, next);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_enter);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    void* done = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)vm::JIT_CALL_DONE);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.code, 0, SLJIT_IMM, next);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_call_return);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
+    sljit_set_label(done, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
+    return true;
 }
 
 fn void Asm.load(&self, int reg, uint r) @inline {
@@ -943,8 +1021,14 @@ fn void init_thunks() @noinline @private {
                 CompiledFunction* func = ds.vm.current_func;
                 OpStatus s = @run_op($op, ds, insn);
                 if (s == NEXT && ds.needs_restart) return (long)OpStatus.RESTART.ordinal;
-                // Native code runs one frame: a frame switched to in place is
-                // entered through Vm.run.
+                // A frame switched to in place is the caller a native call
+                // site waits for when the depth is back at its floor, and is
+                // otherwise entered through Vm.run.
+                if (s == NEXT && (ds.act != act || ds.vm.current_func != func)
+                    && ds.vm.activation_count == ds.jit_floor) {
+                    ds.act.curr_pc = ds.curr_pc;
+                    return BASELINE_RETURNED;
+                }
                 s = vm::jit_restart_switched(ds, act, func, s);
                 if (s == NEXT && ds.curr_pc != next) return BASELINE_REDISPATCH;
                 return (long)s.ordinal;
