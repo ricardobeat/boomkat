@@ -75,30 +75,43 @@ import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::types;
 import std::collections::list;
+import std::time::clock;
 
 // Compiles of one function before it stays interpreted.
 const char BASELINE_MAX_ATTEMPTS = 2;
-// Frame entries before a function compiles without --jit-stress.
-const uint BASELINE_ENTRY_THRESHOLD = 2;
+// Frame entries before a function compiles without --jit-stress. Code is
+// kept for the CompiledFunction's lifetime, so functions run only a few times
+// (loaded code, initializers) stay interpreted rather than fill the cap.
+const uint BASELINE_ENTRY_THRESHOLD = 32;
 // Entries one expiry of the back-edge budget (heap::BWD_GC_INTERVAL backward
 // branches, counted across all frames) credits to the function whose branch
 // used it up: a function called once compiles at its loop's first expiry, and
 // top-level code, which is never credited for entering, at its second.
-const uint BASELINE_LOOP_CREDIT = 1;
+const uint BASELINE_LOOP_CREDIT = BASELINE_ENTRY_THRESHOLD - 1;
 // Generated code and entry tables, in bytes, past which compiles are refused.
 const usz BASELINE_CODE_CAP = 64 * 1024 * 1024;
+// Instruction words past which a function stays interpreted. Code grows by
+// about 80 bytes and the compile's transient memory by a few hundred bytes per
+// word, and one compile is one pause, so a function this large (generated
+// initializers, mostly) costs more than native code would save.
+const uint BASELINE_MAX_WORDS = 65536;
 // A native run's result when its target is not an instruction start: the
 // interpreter continues the frame.
 const long BASELINE_INTERPRET = OpStatus::values.len;
 
 struct JitStats {
+    // Bytes of every compile so far; live_bytes counts the code and tables
+    // not yet freed, which BASELINE_CODE_CAP bounds, and peak_bytes its maximum.
     usz code_bytes;
     usz table_bytes;
+    usz live_bytes;
+    usz peak_bytes;
     usz insns;
     uint compiled;
     // Compiles made by a hot interpreted loop, which then continued natively.
     uint loop_entries;
     uint excluded_opcode;
+    uint too_large;
     uint failed;
     uint capped;
     // Native call sites: callees entered natively, trivial callees completed
@@ -113,6 +126,12 @@ struct JitStats {
     ulong calls_declined;
     // Restarts that continued in the new frame's native code without Vm.run.
     ulong switches;
+    // Compile wall time, in nanoseconds, measured only while timing is set
+    // (--jit-stats): the total, the longest single compile and its size.
+    bool timing;
+    ulong compile_ns;
+    ulong compile_max_ns;
+    uint compile_max_insns;
     // Per-opcode counts of inline completions and thunk calls, emitted only
     // into code compiled while count_ops is set (--jit-count-ops).
     bool count_ops;
@@ -172,6 +191,7 @@ fn void* baseline_entry(CompiledFunction* f) @inline => ((BaselineCode*)f.jit_co
 fn void baseline_free(Heap* h, CompiledFunction* f) {
     BaselineCode* bc = f.jit_code;
     if (bc == null) return;
+    h.jit_stats.live_bytes -= bc.code_bytes + bc.table_bytes;
     sljit_free_code(bc.exec, null);
     h.free_func(h.heap_udata, bc);
     f.jit_code = null;
@@ -200,18 +220,30 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
         f.jit_refused = true;
         return null;
     }
-    if (st.code_bytes + st.table_bytes >= BASELINE_CODE_CAP) {
+    if (f.code_count > BASELINE_MAX_WORDS) {
+        st.too_large++;
+        f.jit_refused = true;
+        return null;
+    }
+    if (st.live_bytes >= BASELINE_CODE_CAP) {
         st.capped++;
         f.jit_refused = true;
         return null;
     }
+    long t0 = st.timing ? (long)clock::now() : 0;
     BaselineCode* bc = baseline_compile(h, f);
+    if (st.timing) {
+        ulong ns = (ulong)((long)clock::now() - t0);
+        st.compile_ns += ns;
+        if (ns > st.compile_max_ns) { st.compile_max_ns = ns; st.compile_max_insns = f.code_count; }
+    }
     if (bc == null) {
         st.failed++;
         if (++f.jit_attempts >= BASELINE_MAX_ATTEMPTS) f.jit_refused = true;
         return null;
     }
-    if (st.code_bytes + st.table_bytes + bc.code_bytes + bc.table_bytes > BASELINE_CODE_CAP) {
+    usz bytes = bc.code_bytes + bc.table_bytes;
+    if (st.live_bytes + bytes > BASELINE_CODE_CAP) {
         sljit_free_code(bc.exec, null);
         h.free_func(h.heap_udata, bc);
         st.capped++;
@@ -221,6 +253,8 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
     st.code_bytes += bc.code_bytes;
     st.table_bytes += bc.table_bytes;
     st.insns += bc.insns;
+    st.live_bytes += bytes;
+    if (st.live_bytes > st.peak_bytes) st.peak_bytes = st.live_bytes;
     st.compiled++;
     f.jit_code = bc;
     return bc.exec;
@@ -275,11 +309,19 @@ fn void Jumps.bind(&self, void* label) {
 }
 
 // An instruction's out-of-line code: `alt` jumps enter its number path,
-// `call` jumps its thunk call.
+// `call` jumps its thunk call. The jumps sit in Asm.stub_jumps, `call` jumps
+// first, so a stub costs a few words however many guards it has.
 struct Stub {
     uint insn;
-    Jumps call;
-    Jumps alt;
+    uint at;
+    char call_len;
+    char alt_len;
+}
+
+// Load `n` jumps of the stub pool, starting at `at`, into `j`.
+fn void Jumps.load(&self, List{void*}* pool, uint at, uint n) {
+    for (uint k = 0; k < n; k++) self.at[k] = (*pool)[(sz)at + k];
+    self.len = n;
 }
 
 // A fast call to one of the function's shared subroutines: an opcode's
@@ -309,6 +351,7 @@ struct Asm {
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
+    List{void*} stub_jumps;
     List{SubCall} subs;
     void* nonzero;
     int ds;
@@ -375,12 +418,14 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     };
     a.gotos.init(mem);
     a.stubs.init(mem);
+    a.stub_jumps.init(mem);
     a.subs.init(mem);
     defer {
         mem::free(a.labels);
         mem::free(a.starts);
         a.gotos.free();
         a.stubs.free();
+        a.stub_jumps.free();
         a.subs.free();
     }
     bool consts_fixed = true;
@@ -442,7 +487,11 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
         } else {
             a.emit_thunk_call(i);
         }
-        if (a.call.len != 0 || a.alt.len != 0) a.stubs.push({ .insn = i, .call = a.call, .alt = a.alt });
+        if (a.call.len != 0 || a.alt.len != 0) {
+            a.stubs.push({ .insn = i, .at = (uint)a.stub_jumps.len(), .call_len = (char)a.call.len, .alt_len = (char)a.alt.len });
+            for (uint k = 0; k < a.call.len; k++) a.stub_jumps.push(a.call.at[k]);
+            for (uint k = 0; k < a.alt.len; k++) a.stub_jumps.push(a.alt.at[k]);
+        }
         i = a.next;
     }
     a.labels[count] = sljit_emit_label(c);
@@ -451,10 +500,12 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     // Out-of-line paths, each returning to the following instruction.
     foreach (&stub : a.stubs) {
         a.decode(stub.insn);
-        a.call = stub.call;
-        a.alt = {};
-        if (stub.alt.len != 0) {
-            stub.alt.bind(sljit_emit_label(c));
+        a.call.load(&a.stub_jumps, stub.at, stub.call_len);
+        a.alt.len = 0;
+        if (stub.alt_len != 0) {
+            Jumps alt;
+            alt.load(&a.stub_jumps, stub.at + stub.call_len, stub.alt_len);
+            alt.bind(sljit_emit_label(c));
             a.emit_alt();
         }
         a.call.bind(sljit_emit_label(c));
