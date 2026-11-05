@@ -32,6 +32,7 @@ fn void* jit_call_enter(Dispatch* ds, ulong next_arg) {
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
     TVal* regs = ds.regs_base;
+    if (pc.op == Opcode.NEW_OBJ || pc.op == Opcode.APPLY_ARGS) return jit_call_relayed(ds, pc, st);
     LeanCall r;
     uint nargs = pc.op == Opcode.CALL || pc.op == Opcode.CALL_UNDEF_THIS ? pc.c : pc.b;
     switch (pc.op) {
@@ -70,6 +71,45 @@ fn void* jit_call_enter(Dispatch* ds, ulong next_arg) {
     return jit::baseline_entry(target);
 }
 
+// The compiled function a callee register holds, or null.
+fn CompiledFunction* jit_compiled_callee(TVal callee) @private @inline {
+    if (!callee.is_object()) return null;
+    HObject* fn_obj = (HObject*)callee.get_heapptr();
+    if (fn_obj == null || !fn_obj.is_callable() || fn_obj.callable_kind() != hobject::CallableKind.COMPILED_FN) return null;
+    return (*fn_obj.extra_ptr()).func.comp_func;
+}
+
+// NEW_OBJ and APPLY_ARGS (with the CALL_S it is fused with) through their
+// threaded handlers, th_new_obj and th_apply_args, which publish the
+// callee's frame, or complete a simple constructor in place, or decline
+// before writing anything. A callee without native code declines first, so
+// the thunk counts its entry.
+fn void* jit_call_relayed(Dispatch* ds, Instruction* pc, jit::JitStats* st) @private {
+    Vm* vm = ds.vm;
+    TVal* regs = ds.regs_base;
+    CompiledFunction* target = jit_compiled_callee(pc.op == Opcode.NEW_OBJ ? regs[pc.b] : regs[pc.a + 1]);
+    if (target == null) { st.calls_builtin++; return null; }
+    bool simple = pc.op == Opcode.NEW_OBJ && target.call_flags.simple_constructor;
+    if (!simple && target.jit_code == null) { st.calls_no_code++; return null; }
+    if (!jit_relay_ready) jit_relay_init();
+    uint depth = vm.activation_count;
+    Instruction* r = pc.op == Opcode.NEW_OBJ
+        ? @new_obj(pc, &jit_stop_table, regs, &ds.cold, true)
+        : @apply_args(pc, &jit_stop_table, regs, &ds.cold, true);
+    if (vm.activation_count == depth) {
+        if (r == pc) { st.calls_declined++; return null; }
+        st.calls_trivial++;
+        return (void*)JIT_CALL_DONE;
+    }
+    // The caller resumes past the CALL_S an APPLY_ARGS entered; its return
+    // redispatches there.
+    ds.load_frame();
+    ds.jit_floor = vm.activation_count - 1;
+    ds.jit_depth++;
+    st.calls_native++;
+    return jit::baseline_entry(target);
+}
+
 // Finish a native call: restore the floor the call site saved and, when the
 // callee returned to it, reload the caller's frame. Returns 0 to continue at
 // `next`, BASELINE_REDISPATCH when the caller resumes elsewhere (a handler
@@ -84,16 +124,19 @@ fn long jit_call_return(Dispatch* ds, long status, ulong old_floor, ulong next_a
     return pc == (Instruction*)(usz)next_arg ? 0 : jit::BASELINE_REDISPATCH;
 }
 
-// RET and RETUNDEF of a frame a native call site waits for, as the threaded
-// leaf return (th_leaf_return, th_pop_frame): returns BASELINE_RETURNED with
-// the caller current and ds.curr_pc at its resume point, or 0 when the return
-// takes its thunk. A caller in another realm takes the thunk too.
+// RET and RETUNDEF as the threaded returns (th_leaf_return and
+// th_pop_frame, else th_return_general). For a frame a native call site waits for, returns
+// BASELINE_RETURNED with the caller current and ds.curr_pc at its resume
+// point; a caller in another realm takes the thunk. For a frame Vm.run
+// entered, returns RESTART with the caller's frame to be loaded, as op_ret's
+// frame switch does. 0 takes the thunk.
 fn long jit_ret(Dispatch* ds, ulong next_arg) {
     Vm* vm = ds.vm;
-    if (ds.jit_floor == 0 || vm.activation_count != ds.jit_floor + 1) return 0;
+    bool waiting = ds.jit_floor != 0 && vm.activation_count == ds.jit_floor + 1;
+    if (!waiting && (ds.jit_floor != 0 || ds.jit_depth != 0 || vm.activation_count < 2)) return 0;
     Activation* fa = ds.act;
     Activation* up = &vm.activations[vm.activation_count - 2];
-    if (up.func != fa.func && (up.func == null || ((CompiledFunction*)up.func).realm != vm.heap.realm)) return 0;
+    if (waiting && up.func != fa.func && (up.func == null || ((CompiledFunction*)up.func).realm != vm.heap.realm)) return 0;
     Instruction* pc = (Instruction*)(usz)next_arg - 1;
     bool is_undefined = pc.op == Opcode.RETUNDEF;
     TVal value;
@@ -104,10 +147,42 @@ fn long jit_ret(Dispatch* ds, ulong next_arg) {
     }
     Activation* caller;
     bool cross_function;
-    if (!th_leaf_return(vm, fa, value, is_undefined, &caller, &cross_function)) return 0;
-    th_pop_frame(&ds.cold, fa, caller);
+    if (th_leaf_return(vm, fa, value, is_undefined, &caller, &cross_function)) {
+        th_pop_frame(&ds.cold, fa, caller);
+    } else {
+        // Base constructors and frames with tracked string registers, as
+        // th_return_general returns them; it pops the frame or declines
+        // before writing anything.
+        if (!jit_relay_ready) jit_relay_init();
+        uint depth = vm.activation_count;
+        th_return_general(pc, &jit_stop_table, &ds.cold, value, is_undefined);
+        if (vm.activation_count == depth) return 0;
+        caller = &vm.activations[vm.activation_count - 1];
+    }
     ds.curr_pc = caller.curr_pc;
+    if (!waiting) {
+        ds.needs_restart = true;
+        return (long)OpStatus.RESTART.ordinal;
+    }
     return jit::BASELINE_RETURNED;
+}
+
+// The native entry of the frame a RESTART leaves current, loaded into ds as
+// Vm.run would load it before entering that entry, or null when the restart
+// goes to Vm.run: a native caller waits on the C stack, an interrupt hook
+// wants the restart poll, a handoff is pending, or the frame has no code
+// yet (Vm.run counts the entry and compiles).
+fn void* jit_switch(Dispatch* ds) {
+    Vm* vm = ds.vm;
+    if (ds.jit_depth != 0 || ds.jit_floor != 0 || !ds.needs_restart || vm.activation_count == 0) return null;
+    if (vm.threaded_handoff != ThreadedHandoff.NONE) return null;
+    if (vm.heap.capi_interrupt_fn != null || vm.heap.capi_runtime != null) return null;
+    CompiledFunction* f = (CompiledFunction*)vm.activations[vm.activation_count - 1].func;
+    if (f == null || f.jit_code == null) return null;
+    ds.needs_restart = false;
+    ds.load_frame();
+    ds.heap.jit_stats.switches++;
+    return jit::baseline_entry(f);
 }
 
 // The owner of the cached prototype property entry `ic` names for the

@@ -901,6 +901,12 @@ fn Instruction* th_call(Instruction* pc, HandlerTable* handlers, TVal* regs, Col
 // write, so a bail leaves the registers for the switch; a bail after the rewrite resumes at the
 // CALL_S, which finds the call already laid out.
 fn Instruction* th_apply_args(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return @apply_args(pc, handlers, regs, cold, false);
+}
+
+// th_apply_args, and with `$jit` the baseline tier's native call, which
+// tests only the collector at the gate (@lean_gate).
+macro Instruction* @apply_args(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold, bool $jit) @private {
     Instruction insn = *pc;
     Instruction call = pc[1];
     uint callee = insn.a;
@@ -924,7 +930,7 @@ fn Instruction* th_apply_args(Instruction* pc, HandlerTable* handlers, TVal* reg
     for (uint i = 0; i < nargs; i++) {
         if (!th_can_publish(cold.heap, regs[i])) return pc;
     }
-    if (th_call_gate(cold)) return pc;
+    if (@lean_gate(cold, $jit)) return pc;
 
     regs[callee] = regs[callee + 1];
     regs[callee + 1] = this_arg;
@@ -3111,6 +3117,11 @@ fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, C
 // `this`. Anything else, a cold cache or a failed allocation bails before the
 // instance is published.
 fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
+    return @new_obj(pc, handlers, regs, cold, false);
+}
+
+// th_new_obj, and with `$jit` the baseline tier's native construct call.
+macro Instruction* @new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold, bool $jit) @private {
     Vm* vm = cold.vm;
     Instruction insn = *pc;
     TVal callee = regs[insn.b];
@@ -3130,7 +3141,7 @@ fn Instruction* th_new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
     TVal* ra = regs + insn.a;
     if (!proto.is_object()) return pc;
-    if (!simple && th_call_gate(cold)) return pc;
+    if (!simple && @lean_gate(cold, $jit)) return pc;
     HObject* obj = vm.heap.alloc_plain_object() ?? null;
     if (obj == null) return pc;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());

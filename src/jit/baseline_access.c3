@@ -91,6 +91,12 @@ struct Layout {
     long queued_mask;
     long interned_shift;
     long str_refcount;
+    long view_buffer;
+    long view_offset;
+    long view_length;
+    long ab_data;
+    long ab_resizable;
+    long ab_immutable;
 }
 
 Layout layout_data @private;
@@ -161,6 +167,12 @@ fn Layout* layout() {
     l.str_flags = (char*)&s.flags - base;
     l.str_length = (char*)&s.length - base;
     l.str_refcount = (char*)&s.refcount - base;
+    l.view_buffer = (char*)&o.extra.view.buffer - base;
+    l.view_offset = (char*)&o.extra.view.byte_offset - base;
+    l.view_length = (char*)&o.extra.view.byte_length - base;
+    l.ab_data = (char*)&o.extra.ab.data - base;
+    l.ab_resizable = (char*)&o.extra.ab.resizable - base;
+    l.ab_immutable = (char*)&o.extra.ab.immutable - base;
 
     hobject::ObjFlags f;
     f.exotic_proxyobj = true;
@@ -193,6 +205,8 @@ fn Layout* layout() {
     l.class_array = (long)(uint)f;
     // The class field is bits 16..21.
     l.class_mask = 0x3FL << 16;
+    // emit_typed_body reads the proxy bit and the class as one field.
+    assert(l.proxy_mask == 1L << 15);
     assert(l.class_array == (long)hobject::ObjClass.ARRAY.ordinal << 16);
     types::GcBits g;
     g.old = true;
@@ -248,6 +262,7 @@ fn bool is_access_op(Opcode op) {
         case PUTVAR_ASSIGN:
         case LDREG:
         case LDTHIS:
+        case INIT_SLOT:
             return true;
         default:
             return false;
@@ -328,6 +343,8 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
         case PUTVAR_ASSIGN:
             if (!has_ic) return false;
             self.emit_put_var(w.a, vic);
+        case INIT_SLOT:
+            self.emit_init_slot(w.a, w.b, w.c);
         case GETCAP:
             self.emit_get_cap(w.a, w.get_bc());
         case PUTCAP:
@@ -700,9 +717,10 @@ fn void Asm.emit_array_slot_body(&self) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// The slow path unless R1 is an array that is not a proxy and has none of
-// the flags `extra`.
-fn void Asm.guard_array(&self, long extra) {
+// The slow path unless R1 is an array without the flags `extra`, as
+// guard_array, except that a jump is returned for any other class, which the
+// caller sends to the typed-array subroutine (which rejects the rest).
+fn void* Asm.array_or_typed(&self, long extra) {
     void* c = self.c;
     Layout* l = self.lay;
     long mask = l.class_mask | extra;
@@ -711,34 +729,220 @@ fn void Asm.guard_array(&self, long extra) {
     $endif
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, mask);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R2, 0, SLJIT_IMM, l.class_mask);
+    void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_array);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
+    return other;
 }
 
 // A read of a dense array element, index in R3, as th_getprop_array: a hole
-// takes the slow path, which consults the prototype chain.
+// takes the slow path, which consults the prototype chain. Another class
+// tries the typed-array subroutine (th_get_typed_element).
 fn void Asm.emit_get_elem(&self, uint ra, uint rb) {
     void* c = self.c;
     self.load(R0, rb);
     self.unbox_object(R1, R0);
-    self.guard_array(0);
+    void* other = self.array_or_typed(0);
     self.array_slot();
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
     self.publish(ra);
+    $if features::BUFFERS:
+        void* done = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(other, sljit_emit_label(c));
+        self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
+        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        // A number, which needs no publication.
+        self.store(ra, R0);
+        sljit_set_label(done, sljit_emit_label(c));
+    $else
+        self.call.add(other);
+    $endif
 }
 
 // An overwrite of a dense array element, index in R3, as
 // th_put_array_element; a hole or an undefined value takes the slow path.
+// Another class tries the typed-array subroutine (th_put_typed_element).
 fn void Asm.emit_put_elem(&self, uint ra, uint rv) {
     void* c = self.c;
     self.load(R0, ra);
     self.unbox_object(R1, R0);
-    self.guard_array(self.lay.indexed_named_mask);
+    void* other = self.array_or_typed(self.lay.indexed_named_mask);
     self.array_slot();
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     self.load(R2, rv);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, K_UNDEF));
     self.store_slot(rv);
+    $if features::BUFFERS:
+        void* done = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(other, sljit_emit_label(c));
+        self.load(R0, rv);
+        self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
+        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        sljit_set_label(done, sljit_emit_label(c));
+    $else
+        self.call.add(other);
+    $endif
+}
+
+// The store into an empty slot of a fresh fixed-shape object, as
+// th_init_slot: a plain object that is not a proxy, slot `b` below its
+// property count and still undefined, and a value store_value takes.
+fn void Asm.emit_init_slot(&self, uint ra, uint b, uint rv) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    self.load(R0, ra);
+    self.unbox_object(R1, R0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask | l.proxy_mask);
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_object));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.obj_prop_count);
+    self.call.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, SLJIT_IMM, b));
+    self.prop_base(R0, R1);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)b * TVal::size);
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
+    self.store_value(rv);
+}
+
+// One element kind the typed-array subroutines handle inline.
+struct TypedKind {
+    hobject::ObjClass cls;
+    int shift;
+    int mov;
+}
+
+const TypedKind[*] TYPED_KINDS = {
+    { hobject::ObjClass.INT32ARRAY, 2, SLJIT_MOV_S32 },
+    { hobject::ObjClass.FLOAT64ARRAY, 3, SLJIT_MOV },
+    { hobject::ObjClass.UINT8ARRAY, 0, SLJIT_MOV_U8 },
+    { hobject::ObjClass.FLOAT32ARRAY, 2, SLJIT_MOV_F64 | SLJIT_32 },
+    { hobject::ObjClass.INT16ARRAY, 1, SLJIT_MOV_S16 },
+    { hobject::ObjClass.UINT16ARRAY, 1, SLJIT_MOV_U16 },
+    { hobject::ObjClass.INT8ARRAY, 0, SLJIT_MOV_S8 },
+    { hobject::ObjClass.UINT32ARRAY, 2, SLJIT_MOV_U32 },
+    { hobject::ObjClass.UINT8CLAMPEDARRAY, 0, SLJIT_MOV_U8 },
+};
+
+// The typed-array element subroutines, as th_get_typed_element and
+// th_put_typed_element, for a fastint index into a fixed-length typed array:
+// R1 the object, R3 the boxed index and, for a store, R0 the value. A read
+// leaves the element in R0, boxed as ta_load_number does. R2 is SUB_TRUE
+// when done and SUB_SLOW for the handler: another class, a proxy, a
+// detached, resizable or (for a store) immutable buffer, an index out of
+// range, Float16 and BigInt elements, a clamped store, and a store of a
+// double into an integer kind (ToInt32) or of anything but a number.
+fn void Asm.emit_typed_body(&self, bool put) {
+$if features::BUFFERS:
+    void* c = self.c;
+    Layout* l = self.lay;
+    int sp = SLJIT_MEM | reg_sp();
+    Jumps fail;
+    Jumps ok;
+    if (put) sljit_emit_op1(c, SLJIT_MOV, sp, SUB_VALUE_OFF, R0, 0);
+    // R0 = class << 1 | proxy bit.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_LSHR, R0, 0, R0, 0, SLJIT_IMM, 15);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, 0x7F);
+    sljit_emit_op2(c, SLJIT_SUB, R2, 0, R0, 0, SLJIT_IMM, (long)hobject::ObjClass.INT8ARRAY.ordinal << 1);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM,
+        (long)(hobject::ObjClass.BIGUINT64ARRAY.ordinal - hobject::ObjClass.INT8ARRAY.ordinal + 1) << 1));
+    // Odd: a proxy, whose extra is not a view.
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R0, 0, SLJIT_IMM, 1);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    // th_typed_array_base.
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R1, l.view_buffer);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | R4, l.ab_resizable);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    if (put) {
+        sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | R4, l.ab_immutable);
+        fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R4, l.ab_data);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.view_offset);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | R1, l.view_length);
+    sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R3, 0, SLJIT_IMM, 16);
+    void*[TYPED_KINDS.len] kind_at;
+    foreach (k, kind : TYPED_KINDS) {
+        kind_at[k] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)kind.cls.ordinal << 1);
+    }
+    fail.add(sljit_emit_jump(c, SLJIT_JUMP));
+    foreach (k, kind : TYPED_KINDS) {
+        hobject::ObjClass cls = kind.cls;
+        bool is_float = cls == hobject::ObjClass.FLOAT32ARRAY || cls == hobject::ObjClass.FLOAT64ARRAY;
+        if (put && cls == hobject::ObjClass.UINT8CLAMPEDARRAY) {
+            sljit_set_label(kind_at[k], sljit_emit_label(c));
+            fail.add(sljit_emit_jump(c, SLJIT_JUMP));
+            continue;
+        }
+        sljit_set_label(kind_at[k], sljit_emit_label(c));
+        // Unsigned, so a negative index fails too.
+        sljit_emit_op2(c, SLJIT_LSHR, R2, 0, R1, 0, SLJIT_IMM, kind.shift);
+        fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R2, 0));
+        int elem = mem_index(R4, R3);
+        if (!put) {
+            if (cls == hobject::ObjClass.FLOAT32ARRAY) {
+                sljit_emit_fop1(c, SLJIT_MOV_F64 | SLJIT_32, FR0, 0, elem, kind.shift);
+                sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32, FR0, 0, FR0, 0);
+                sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+            } else {
+                sljit_emit_op1(c, kind.mov, R0, 0, elem, kind.shift);
+            }
+            if (is_float) {
+                // TVal.set_number: a NaN whose bits would read as a tag.
+                void* plain = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_INT);
+                sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, CANONICAL_NAN);
+                sljit_set_label(plain, sljit_emit_label(c));
+                ok.add(sljit_emit_jump(c, SLJIT_JUMP));
+                continue;
+            }
+            if (cls == hobject::ObjClass.UINT32ARRAY) {
+                // ta_load_number: 2^31 and above reads as a double.
+                void* small = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, 1L << 31);
+                sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR0, 0, R0, 0);
+                sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+                ok.add(sljit_emit_jump(c, SLJIT_JUMP));
+                sljit_set_label(small, sljit_emit_label(c));
+            }
+            sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
+            sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+            ok.add(sljit_emit_jump(c, SLJIT_JUMP));
+            continue;
+        }
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, sp, SUB_VALUE_OFF);
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_INT);
+        if (!is_float) {
+            // ta_store_int keeps the low bits of the fastint payload.
+            fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
+            sljit_emit_op1(c, kind.mov, elem, kind.shift, R0, 0);
+            ok.add(sljit_emit_jump(c, SLJIT_JUMP));
+            continue;
+        }
+        int f32 = cls == hobject::ObjClass.FLOAT32ARRAY ? SLJIT_32 : 0;
+        void* not_int = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+        sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
+        sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW | f32, FR0, 0, R0, 0);
+        void* stored = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(not_int, sljit_emit_label(c));
+        // A double, which ta_store_scalar narrows for Float32.
+        fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT));
+        sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
+        if (f32 != 0) sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32 | SLJIT_32, FR0, 0, FR0, 0);
+        sljit_set_label(stored, sljit_emit_label(c));
+        sljit_emit_fop1(c, SLJIT_MOV_F64 | f32, elem, kind.shift, FR0, 0);
+        ok.add(sljit_emit_jump(c, SLJIT_JUMP));
+    }
+    fail.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_SLOW);
+    void* out = sljit_emit_jump(c, SLJIT_JUMP);
+    ok.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_TRUE);
+    sljit_set_label(out, sljit_emit_label(c));
+$endif
 }
 
 // R2 = the variable entry `vic`'s binding slot while the entry is valid, as

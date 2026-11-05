@@ -9,8 +9,9 @@
 // none.
 //
 // A CALL, CALL_UNDEF_THIS, CALL_VAR or CALL_GLOBAL whose callee the threaded
-// handlers would enter as a lean call, and which has native code, runs it on
-// the C stack (vm::jit_call_enter). The call site saves ds.jit_floor in its
+// handlers would enter as a lean call, and a NEW_OBJ or APPLY_ARGS the
+// threaded handlers enter, whose callee has native code, runs it on the C
+// stack (vm::jit_call_enter). The call site saves ds.jit_floor in its
 // stack frame and sets it to the caller's activation count; the callee's
 // frame sits one above. A thunk that leaves the activation count equal to
 // the floor after switching frames returns BASELINE_RETURNED, and the call
@@ -20,7 +21,10 @@
 // switch), so a frame it entered returns with RESTART. Any other status
 // leaves every native frame on the way up unchanged; the activation stack
 // describes the truth and each abandoned caller resumes later through the
-// entry table at its saved curr_pc. Native calls nest at most
+// entry table at its saved curr_pc. A RESTART from code Vm.run entered whose
+// new frame has native code continues there as a tail call instead
+// (vm::jit_switch), and a plain return from such code pops its frame and
+// restarts the same way (vm::jit_ret). Native calls nest at most
 // vm::JIT_NATIVE_DEPTH_CAP deep per Dispatch.
 //
 // Instructions that need no runtime call in the common case (register
@@ -107,6 +111,8 @@ struct JitStats {
     ulong calls_depth;
     ulong calls_builtin;
     ulong calls_declined;
+    // Restarts that continued in the new frame's native code without Vm.run.
+    ulong switches;
     // Per-opcode counts of inline completions and thunk calls, emitted only
     // into code compiled while count_ops is set (--jit-count-ops).
     bool count_ops;
@@ -231,6 +237,8 @@ const int R0 = 1;
 const int R1 = 2;
 const int R2 = 3;
 const int R3 = 4;
+// Used only by the typed-array subroutines.
+const int R4 = 5;
 const int FR0 = 1;
 const int FR1 = 2;
 
@@ -287,6 +295,8 @@ const int STRICT_EQ_SUB = -3;
 const int LOOSE_EQ_SUB = -4;
 const int ARRAY_SLOT_SUB = -5;
 const int CAPTURE_REF_SUB = -6;
+const int TYPED_GET_SUB = -7;
+const int TYPED_PUT_SUB = -8;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -382,7 +392,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     int table_reg = reg_s(2);
     int ds_mem = SLJIT_MEM | a.ds;
 
-    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, 4 | (2 << 8), 6, CALL_FRAME_BYTES);
+    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, 5 | (2 << 8), 6, CALL_FRAME_BYTES);
     sljit_emit_op1(c, SLJIT_MOV, a.code, 0, ds_mem, (char*)&dl.code_base - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, a.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
@@ -406,6 +416,18 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f) {
     // A thunk's nonzero result: redispatch, or leave with the status.
     a.nonzero = sljit_emit_label(c);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_REDISPATCH), dispatch);
+    // A restart into a frame with native code continues there as a tail
+    // call when Vm.run would enter it directly (vm::jit_switch).
+    void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_switch);
+    void* stay = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, R2, 0);
+    sljit_set_label(stay, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
+    sljit_set_label(leave, sljit_emit_label(c));
     sljit_emit_return(c, SLJIT_MOV, R0, 0);
 
     for (uint i = 0; i < count;) {
@@ -528,7 +550,7 @@ fn void Asm.emit_subroutines(&self) {
     void* c = self.c;
     int ret = SLJIT_MEM | reg_sp();
     // One label per opcode, then the shared helpers by -id.
-    void*[Opcode::values.len + 6] labels;
+    void*[Opcode::values.len + 8] labels;
     foreach (call : self.subs) {
         usz slot = sub_slot(call.sub);
         if (labels[slot] != null) continue;
@@ -541,6 +563,9 @@ fn void Asm.emit_subroutines(&self) {
                 self.emit_array_slot_body();
             case CAPTURE_REF_SUB:
                 self.emit_capture_ref_body();
+            case TYPED_GET_SUB:
+            case TYPED_PUT_SUB:
+                self.emit_typed_body(call.sub == TYPED_PUT_SUB);
             case TRUTH_SUB:
             case STRICT_EQ_SUB:
             case LOOSE_EQ_SUB:
@@ -575,9 +600,13 @@ fn void Asm.emit_subroutines(&self) {
     }
 }
 
+// Stack offset where the typed-array store subroutine keeps the value.
+const long SUB_VALUE_OFF = 16;
+
 // Stack bytes of a native function's frame: the floor a native call site
-// saves across its callee, and a subroutine's return address.
-const int CALL_FRAME_BYTES = 16;
+// saves across its callee, a subroutine's return address and the value the
+// typed-array store keeps.
+const int CALL_FRAME_BYTES = 24;
 
 // A call the threaded handlers take as a lean call: jit_call_enter publishes
 // the callee's frame and the callee's native code runs on the C stack. A
@@ -590,6 +619,8 @@ fn bool Asm.emit_call(&self) {
         case CALL_UNDEF_THIS:
         case CALL_VAR:
         case CALL_GLOBAL:
+        case NEW_OBJ:
+        case APPLY_ARGS:
             break;
         default:
             return false;
