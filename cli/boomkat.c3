@@ -52,6 +52,7 @@ fn int main(String[] args) {
     bool jit_stress = false;
     bool jit_stats = false;
     bool jit_count_ops = false;
+    bool jit_dump_feedback = false;
     $if features::PORTABLE_BYTECODE:
         String bytecode_output;
         bool bytecode_input = false;
@@ -97,6 +98,8 @@ fn int main(String[] args) {
             jit_stress = true;
         } else if (a == "--jit-stats") {
             jit_stats = true;
+        } else if (a == "--jit-dump-feedback") {
+            jit_dump_feedback = true;
         } else if (a == "--jit-count-ops") {
             jit_stats = true;
             jit_count_ops = true;
@@ -186,6 +189,7 @@ fn int main(String[] args) {
     if (jit_stress) (void)hp.set_jit_stress(true);
     $if $feat(SLJIT):
         hp.jit_stats.count_ops = jit_count_ops;
+        hp.jit_stats.dump_feedback = jit_dump_feedback;
         hp.jit_stats.timing = jit_stats;
     $endif
     if (mem_limit_mb >= 0) hp.mem_limit = (ulong)mem_limit_mb << 20;
@@ -209,6 +213,7 @@ fn int main(String[] args) {
     }
 
     $if $feat(SLJIT):
+        defer if (jit_dump_feedback) jit::baseline_dump_feedback(hp);
         defer if (jit_stats) {
             jit::JitStats* st = &hp.jit_stats;
             io::eprintfn("jit: compiled %d (%d from hot loops), code %d bytes for %d instructions, tables %d bytes; excluded: opcode %d, too large %d; failed %d, capped %d",

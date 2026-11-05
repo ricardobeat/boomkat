@@ -1,0 +1,9 @@
+feedback fn#1 +0 ADD dbl
+feedback fn#2 +0 ADD str
+feedback fn#3 +0 ADD ovf
+feedback fn#4 +0 SUB dbl
+feedback fn#5 +0 MUL dbl
+feedback fn#6 +0 LT dbl
+feedback fn#7 +0 BORI dbl
+feedback fn#8 +0 UNM dbl
+feedback fn#9 +0 ADD dbl other

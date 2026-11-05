@@ -3067,6 +3067,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         opprof_record(op);
     $endif
 
+    $if $feat(SLJIT):
+        if (has_feedback(op)) note_feedback(ds, insn);
+    $endif
+
     OpStatus status;
     switch (op) @jump {
 

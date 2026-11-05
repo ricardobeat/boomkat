@@ -592,6 +592,11 @@ test-jit:
     ./out/jit_api
     ./out/jit_capi
 
+# Operand feedback dump of test/jit/feedback_arith.js under --jit; the interpreter alone records none of it.
+test-jit-feedback:
+    @make out/boomkat
+    ./out/boomkat --jit --jit-dump-feedback --script test/jit/feedback_arith.js 2>&1 | grep "^feedback fn#\([0-9]\|10 +\)" | sed 's/ *$//' | diff -u test/jit/feedback_arith.expected -
+
 # Differential JIT run: local suites with and without --jit must agree.
 test-jit-diff:
     @make out/boomkat

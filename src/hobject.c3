@@ -3619,6 +3619,10 @@ struct ICEntry {
     // A read owner is the final object in the recorded chain. Absent stores
     // may also have a chain, but never cache an inherited read owner.
     bool   has_proto;
+    // Operand classes an arithmetic, bitwise or compare instruction has met
+    // off its inline integer path, as FB_* bits; the optimizing tier reads it.
+    // Such an instruction uses none of the other fields.
+    char   feedback;
     // The snapshot's objects are weak identity guards. Its read owner alone
     // is rooted by the compiled-function cache scan.
     ICChain* chain;
@@ -3626,6 +3630,20 @@ struct ICEntry {
     hstring::StringRef key;
     // Absent-property PUTPROP entries: the shape after appending the key.
     uint absent_next_shape;
+}
+
+// ICEntry.feedback bits. A slot with none set is read as int32 operands.
+const char FB_OVF   = 1;   // int32 operands whose result left the fastint range, or -0
+const char FB_DBL   = 2;   // a double operand
+const char FB_STR   = 4;   // a string operand
+const char FB_OTHER = 8;   // an object, undefined, null, boolean, symbol or BigInt operand
+
+// The feedback bits of one operand: none for an integer.
+fn char fb_class(TVal* v) @inline {
+    if (v.is_fastint()) return 0;
+    if (v.is_number()) return FB_DBL;
+    if (v.is_string()) return FB_STR;
+    return FB_OTHER;
 }
 
 // An absent-property PUTPROP cache reuses the normal property-index field for
