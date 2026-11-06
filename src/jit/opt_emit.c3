@@ -692,6 +692,36 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
+// PUTPROPC or PUTTHISC of an own writable data property, as emit_put does for a hit: a plain
+// object of the cache's shape, an old value that needs no count, and a value that needs no
+// barrier. Everything else leaves for the baseline code before anything is written.
+fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.decode((uint)n.imm);
+    a.call.len = 0;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
+    bool this_op = a.w.op == Opcode.PUTTHISC;
+    if (this_op) {
+        a.load_this(R0);
+    } else {
+        a.load(R0, a.w.a);
+    }
+    a.unbox_object(R1, R0);
+    a.guard_plain(R1);
+    self.guard_shape_cell(R1, ic.shape_id);
+    a.prop_base(R0, R1);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)ic.prop_idx * 8);
+    if (n.a != NO_NODE) {
+        self.box_node(n.a, R2);
+        a.guard_old_value();
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
+    } else {
+        a.store_slot(this_op ? a.w.a : a.w.b);
+    }
+    self.exit_calls(i, OptExit.SHAPE);
+}
+
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {
     void* c = self.a.c;
     if (n.rep == OptRep.INT32) {
@@ -881,7 +911,7 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
 fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -907,6 +937,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_store_elem(i, n);
         case LOAD_FIELD:
             self.emit_load_field(i, n);
+        case STORE_FIELD:
+            self.emit_store_field(i, n);
         case COPY:
             self.emit_copy(n, i);
         case ADD_I32:
@@ -971,7 +1003,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
 
     uint fields = 0;
-    foreach (&nd : g.nodes) fields += nd.op == OptOp.LOAD_FIELD ? 1 : 0;
+    foreach (&nd : g.nodes) fields += (nd.op == OptOp.LOAD_FIELD || nd.op == OptOp.STORE_FIELD) ? 1 : 0;
     if (fields != 0) {
         oc.cells = h.alloc_func(h.heap_udata, fields * uint::size);
         if (oc.cells == null) return null;

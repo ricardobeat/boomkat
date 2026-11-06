@@ -49,6 +49,11 @@ enum OptOp : char {
     // cache names, from a plain object of the cache's shape; exits for any other receiver. Of rep
     // NONE it writes the value to the window, else it is a number of the node's rep.
     LOAD_FIELD,
+    // A PUTPROPC or PUTTHISC (imm its pc) overwrite of the own writable data property its cache
+    // names, in a plain object of the cache's shape; exits for any other receiver or a value that
+    // needs a barrier. a is the number node stored, or NO_NODE for a value in the window. It
+    // defines nothing.
+    STORE_FIELD,
     PHI,
     // A new node holding the value of `a`.
     COPY,
