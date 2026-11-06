@@ -513,6 +513,14 @@ out/tracing_api: test/capi/tracing.c include/boomkat.h out/boomkat.a
 test-tracing-api: out/tracing_api
 	./out/tracing_api
 
+out/joint_gc_api: test/capi/joint_gc.c include/boomkat.h out/boomkat.a
+	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/joint_gc.c \
+	   out/boomkat.a $(BK_LDLIBS) -o out/joint_gc_api
+
+.PHONY: test-joint-gc-api
+test-joint-gc-api: out/joint_gc_api
+	./out/joint_gc_api
+
 out/intrinsics_api: test/capi/intrinsics.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/intrinsics.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/intrinsics_api

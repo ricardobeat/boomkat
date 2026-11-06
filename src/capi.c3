@@ -3060,6 +3060,29 @@ fn void bk_gc(void* rtp, int kind) @export("bk_gc") {
     rt.heap.host_collect(kind == BK_GC_MINOR);
 }
 
+// Joint collection; see Heap.joint_begin. The tracer is the heap, as for a
+// trace callback.
+fn int bk_gc_joint_begin(void* rtp, void** tracer_out) @export("bk_gc_joint_begin") {
+    if (tracer_out != null) *tracer_out = null;
+    Runtime* rt = (Runtime*)rtp;
+    if (rt == null) return BK_ERR_INVALID;
+    if (!rt.heap.joint_begin()) return BK_ERR_FULL;
+    if (tracer_out != null) *tracer_out = (void*)rt.heap;
+    return BK_OK;
+}
+
+fn void bk_gc_joint_drain(void* rtp) @export("bk_gc_joint_drain") {
+    if (rtp != null) ((Runtime*)rtp).heap.joint_drain();
+}
+
+fn void bk_gc_joint_end(void* rtp) @export("bk_gc_joint_end") {
+    if (rtp != null) ((Runtime*)rtp).heap.joint_end();
+}
+
+fn int bk_gc_in_joint_cycle(void* rtp) @export("bk_gc_in_joint_cycle") {
+    return rtp != null && ((Runtime*)rtp).heap.gc_joint_active ? 1 : 0;
+}
+
 fn int bk_gc_step(void* rtp, ulong budget_ns) @export("bk_gc_step") {
     Runtime* rt = (Runtime*)rtp;
     if (rt == null) return 0;

@@ -617,6 +617,45 @@ slots without clearing them. A slot whose owner stops tracing it must not be
 read again. `bk_fn_def` carries the same two fields; `bk_register_fn` borrows its
 `opaque`.
 
+### Joint collection
+
+Slots and trace callbacks cover cycles that stay inside the engine's heap. A
+host with a collector of its own, such as a browser whose DOM lives on a
+separate tracing heap, has edges both ways: host objects hold JS values in
+slots, and wrappers hold host objects in their payloads. Collected separately,
+each heap must treat the other's edges as roots, so a cycle through both (a
+detached node whose listener's closure holds the node's wrapper) is never
+freed.
+
+A joint collection marks both heaps together. The host's collector drives it:
+
+```c
+bk_tracer *tracer;
+if (bk_gc_joint_begin(rt, &tracer) == BK_OK) {
+    /* The engine has marked from its own roots. Trace callbacks of wrappers it
+     * reached ran and marked their host objects. */
+    host_mark_from_roots();   /* each host object marked: */
+        bk_trace_slot(tracer, &object->listener);
+        bk_gc_joint_drain(rt);   /* may run trace callbacks again */
+    bk_gc_joint_end(rt);         /* prune weak references and sweep */
+} else {
+    /* The engine was sweeping inside a callback: treat its edges as roots. */
+}
+```
+
+`bk_gc_joint_begin` starts a blocking major cycle, marks from the engine's
+roots and holds the cycle before weak references are cleared and anything is
+swept. While it is held, the host shades values with `bk_trace_slot` on the
+returned tracer and calls `bk_gc_joint_drain` to mark from them; trace
+callbacks report the host objects they reach to the host's marker.
+`bk_gc_joint_end` finishes the cycle, running the finalizers of dead wrappers,
+before the host sweeps its own heap. No JS may run in between.
+`bk_gc_in_joint_cycle` lets a root tracer skip the slots that host marking
+reports, and keep reporting all of them in the engine's own collections.
+A joint cycle started inside a callback keeps everything the running frames
+hold, as `bk_gc` there does; collect from the event loop to free the most.
+[test/capi/joint_gc.c](../test/capi/joint_gc.c) is a complete host.
+
 Runtimes and contexts each carry `BK_DATA_SLOTS` (4) embedder pointers, set
 with `bk_set_runtime_data`/`bk_set_context_data` and read with the matching
 getters. Slots 0 to 2 belong to the host; slot 3 is reserved for the C++

@@ -900,6 +900,10 @@ struct Heap {
     EnvSweepCursor gc_aux_env_cursor;
     bool gc_blocking;
     bool gc_keep_temproots;
+    // A joint cycle (see Heap.joint_begin) holds marking before weak pruning
+    // and sweeping while an embedder's collector shades more values.
+    bool gc_joint_hold;
+    bool gc_joint_active;
     GcGeneratorCursor gc_generator_cursor;
     // Released catcher blocks awaiting reuse, linked through their first word.
     // See catcher_release.

@@ -670,6 +670,23 @@ BK_API void      bk_gc(bk_runtime runtime, int kind);
  * still in progress, so a host idle loop calls it until it returns 0. Inside a
  * callback only marking advances. */
 BK_API int       bk_gc_step(bk_runtime runtime, uint64_t budget_ns);
+/* Joint collection with an embedder's own tracing collector, for hosts whose
+ * objects and JS values point at each other (a DOM and its wrappers), so that
+ * a cycle through both heaps can be collected. bk_gc_joint_begin starts a
+ * blocking major cycle, marks everything reachable from the engine's roots
+ * (calling trace callbacks and the root tracer as usual) and holds the cycle
+ * before weak references are cleared and anything is swept. While it is held
+ * the host reports more values with bk_trace_slot on `*tracer_out` and calls
+ * bk_gc_joint_drain to mark from them, which may call trace callbacks again;
+ * bk_gc_joint_end finishes the cycle. No JS may run in between. A cycle that is
+ * already sweeping inside a callback cannot be joined: the call then returns
+ * BK_ERR_FULL and the host should treat its edges into the engine as roots for
+ * that collection. bk_gc_in_joint_cycle tells a root tracer or trace callback
+ * which kind of cycle it serves. */
+BK_API bk_status bk_gc_joint_begin(bk_runtime runtime, bk_tracer **tracer_out);
+BK_API void      bk_gc_joint_drain(bk_runtime runtime);
+BK_API void      bk_gc_joint_end(bk_runtime runtime);
+BK_API int       bk_gc_in_joint_cycle(bk_runtime runtime);
 /* Nested: while inhibited, allocation never starts or advances a cycle; bk_gc
  * and bk_gc_step still run. A collection requested meanwhile starts after the
  * last bk_gc_inhibit(runtime, 0). */
