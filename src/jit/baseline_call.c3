@@ -525,7 +525,8 @@ fn void Asm.emit_return(&self, Jumps* helper) {
         self.mov(R0, 0, SLJIT_IMM, K_UNDEF);
     }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = RETURN_SUB });
-    sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
+    // The subroutine's only nonzero status is BASELINE_RETURNED, which leaves.
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.leave_exit);
     // The subroutine returns the result in R1 for the helper, which reads it
     // from the register the subroutine may have cleared.
     if (self.w.op == Opcode.RET) self.store(self.w.a, R1);
