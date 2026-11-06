@@ -69,10 +69,32 @@ struct OptCode {
     // Heap.purge_retired_shapes can clear one whose id is about to be reused.
     uint* cells;
     uint cell_count;
+    // The exits taken from inside inlined bodies.
+    OptInlineExit* inline_exits;
+}
+
+// Where an exit from inside an inlined callee's body goes: the callee's frame is published, as the
+// call it replaced would have, and its baseline code continues at `pc`.
+struct OptInlineExit {
+    CompiledFunction* callee;
+    // The instruction after the call in the caller.
+    Instruction* resume;
+    uint base;
+    uint nargs;
+    // The callee's word the exit resumes at.
+    uint pc;
+    // The callee registers live there.
+    uint keep;
+    OptInlineExit* next;
 }
 
 struct OptPolicy {
     bool enabled;
+    // Do not inline calls.
+    bool no_inline;
+    // Callees inlined, and exits taken from inside an inlined body, over all compiles.
+    uint inlined;
+    uint inline_exits;
     // Optimize every function as soon as it has baseline code.
     bool always;
     // Print each optimized function's graph (--opt-dump).
@@ -82,6 +104,8 @@ struct OptPolicy {
     uint force_reason;
     uint force_at;
     uint force_count;
+    // The forced exit is taken at a node of an inlined body only.
+    bool force_inline;
     // Exits that discard a body, OPT_EXIT_MAX when zero.
     uint exit_max;
     // Native code in progress anywhere on the C stack; retired code is freed when it reaches zero.
@@ -145,6 +169,16 @@ fn bool opt_has_feedback(CompiledFunction* f) {
     return false;
 }
 
+// Whether any call site of `f` has recorded its callee.
+fn bool opt_has_call_feedback(CompiledFunction* f) {
+    if (f.ic_entries == null) return false;
+    hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
+    for (uint i = 0; i < f.code_count; i++) {
+        if ((ic[i].feedback & hobject::FB_CALL) != 0) return true;
+    }
+    return false;
+}
+
 fn bool opt_refuse(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op) {
     h.opt.refused++;
     h.opt.refused_why[why.ordinal]++;
@@ -158,6 +192,8 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     JitStats* st = &h.jit_stats;
     if (f.jit_code == null || f.opt_code != null || f.opt_state != OPT_NONE) return false;
     if (!p.always && !opt_has_feedback(f)) return false;
+    // Forcing exits from inlined bodies needs bodies that have a callee to inline.
+    if (p.force_inline && !opt_has_call_feedback(f)) return false;
     if (p.live_bytes >= OPT_CODE_MAX) return opt_refuse(h, f, OptRefuse.BUDGET, Opcode.NOP);
     if (!opt_function_eligible(f)) return opt_refuse(h, f, OptRefuse.FUNCTION, Opcode.NOP);
     long t0 = st.timing ? (long)clock::now() : 0;
@@ -166,10 +202,20 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     defer g.free();
     OptBuild b;
     Opcode refused_op = Opcode.NOP;
-    OptRefuse why = opt_build_graph(h, f, &g, &b, &refused_op);
-    defer b.free();
+    OptRefuse why = opt_build_graph(h, f, &g, &b, &refused_op, false);
     OptPools pools = opt_pools();
     if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
+    if (why != OptRefuse.NONE && b.sites.len() != 0) {
+        // Inlining may be what made the body too big or too hard to allocate: try without it.
+        b.free();
+        g.clear();
+        refused_op = Opcode.NOP;
+        why = opt_build_graph(h, f, &g, &b, &refused_op, true);
+        pools = opt_pools();
+        if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
+    }
+    defer b.free();
+    uint inlined = (uint)g.fns.len() - 1;
     if (why != OptRefuse.NONE) return opt_refuse(h, f, why, refused_op);
     OptCode* oc = h.alloc_func(h.heap_udata, OptCode::size);
     if (oc == null) return false;
@@ -191,6 +237,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     st.live_bytes += bytes;
     if (st.live_bytes > st.peak_bytes) st.peak_bytes = st.live_bytes;
     p.compiled++;
+    p.inlined += inlined;
     if (f.opt_reopts != 0) p.reopts++;
     f.opt_code = oc;
     f.opt_state = OPT_ACTIVE;
@@ -232,6 +279,11 @@ fn void opt_purge_shapes(Heap* h) {
 
 fn void opt_release(Heap* h, OptCode* oc) {
     BaselineCode* code = oc.code;
+    while (oc.inline_exits != null) {
+        OptInlineExit* x = oc.inline_exits;
+        oc.inline_exits = x.next;
+        h.free_func(h.heap_udata, x);
+    }
     usz bytes = code.code_bytes + code.table_bytes;
     h.opt.live_bytes -= bytes;
     h.jit_stats.live_bytes -= bytes;
@@ -279,6 +331,21 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     return 0;
 }
 
+// opt_exit for an exit from inside an inlined body: count it and publish the callee's frame. Returns
+// the baseline code of the callee to continue in at the exit's word.
+fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* site) {
+    Heap* h = ds.heap;
+    h.opt.exits[reason]++;
+    h.opt.inline_exits++;
+    CompiledFunction* callee = site.callee;
+    if (reason == OptExit.OVERFLOW.ordinal && callee.ic_entries != null) {
+        ((hobject::ICEntry*)callee.ic_entries)[site.pc].feedback |= hobject::FB_OVF;
+    }
+    oc.exits++;
+    if (oc.f.opt_code == oc && oc.exits >= (h.opt.exit_max != 0 ? h.opt.exit_max : OPT_EXIT_MAX)) opt_discard(h, oc.f);
+    return vm::jit_inline_materialize(ds, callee, site.base, site.nargs, site.resume, site.pc, site.keep);
+}
+
 // An exit at the start of instruction `i` through `reason`, taken `oc.forced`
 // times (the test hook, --opt-force-exit).
 fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
@@ -304,6 +371,7 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
 
 fn void opt_print_stats(Heap* h) {
     OptPolicy* p = &h.opt;
+    io::eprintfn("opt inline: %d callees inlined, %d exits from inlined bodies", p.inlined, p.inline_exits);
     io::eprintfn("opt: compiled %d (%d reoptimized), discarded %d, refused %d; live %d bytes",
                  p.compiled, p.reopts, p.discards, p.refused, p.live_bytes);
     foreach (r : OptExit::values) {
@@ -322,8 +390,14 @@ fn bool opt_parse_force(OptPolicy* p, String spec) {
     String[] parts = spec.tsplit(":");
     if (parts.len == 0 || parts.len > 3) return false;
     bool found = false;
+    String name = parts[0];
+    // `inline/REASON` leaves only from a node of an inlined body.
+    if (name.starts_with("inline/")) {
+        p.force_inline = true;
+        name = name[7..];
+    }
     foreach (r : OptExit::values) {
-        if (r.label == parts[0]) { p.force_reason = (uint)r.ordinal + 1; found = true; }
+        if (r.label == name) { p.force_reason = (uint)r.ordinal + 1; found = true; }
     }
     if (!found) return false;
     p.force_count = 1;

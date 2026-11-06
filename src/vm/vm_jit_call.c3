@@ -122,6 +122,43 @@ fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
     return jit::baseline_entry(target);
 }
 
+// The frame of a call that optimized code inlined, published when the inlined body leaves for the
+// callee's baseline code at `exit_pc`: the call at `resume - 1` (its function checked by the
+// optimized code, which also stored the live registers of the window) enters `callee` as
+// th_publish_lean does. Callee registers outside the `keep` mask start undefined, as an entry's
+// would. Returns the baseline code to continue in. The frame is not one a native call site waits
+// for (jit_floor and jit_depth stay), so its return unwinds to the interpreter, as after a thunk call.
+fn void* jit_inline_materialize(Dispatch* ds, CompiledFunction* callee, uint base, uint nargs,
+                                Instruction* resume, uint exit_pc, uint keep) {
+    Instruction* pc = resume - 1;
+    ds.curr_pc = resume;
+    ColdCtx* cold = &ds.cold;
+    th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    TVal* regs = ds.regs_base;
+    uint callee_reg = base - 2;
+    TVal this_value = th_undefined();
+    bool this_valid = false;
+    if (pc.op == Opcode.CALL && !callee.call_flags.ignores_this && regs[callee_reg + 1].is_object()) {
+        this_value = regs[callee_reg + 1];
+        this_valid = true;
+    }
+    // The publish's own fill would overwrite the registers the optimized code stored.
+    th_publish_lean(pc, regs, cold, callee, callee_reg, pc.a, callee.num_regs, false, pc.op != Opcode.CALL,
+                    this_value, this_valid, null);
+    Activation* la = ds.act;
+    TVal* bottom = la.bottom;
+    for (uint r = nargs; r < callee.num_regs; r++) {
+        if ((keep & (1u << r)) == 0) bottom[r].set_undefined();
+    }
+    // Every slot of the frame holds a valid value now, and the optimized code stored heap values
+    // into some without raising a count the new frame owns.
+    la.heap_reg_count = callee.num_regs;
+    jit_view(ds, callee);
+    ds.curr_pc = callee.code + exit_pc;
+    la.curr_pc = ds.curr_pc;
+    return jit::baseline_entry(callee);
+}
+
 // The compiled function a callee register holds, or null.
 fn CompiledFunction* jit_compiled_callee(TVal callee) @inline {
     if (!callee.is_object()) return null;

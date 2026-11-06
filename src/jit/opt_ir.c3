@@ -79,6 +79,17 @@ enum OptOp : char {
     MUL_F64,
     DIV_F64,
     NEG_F64,
+    // A call site's inlined callee (imm its CompiledFunction*, the call at pc, cc nonzero for a
+    // method call): exits (CALLEE) before any effect unless the callee register holds a closure of
+    // that function, the receiver and the frame a real call would publish are acceptable, and
+    // there is room for it. The nodes after it, until the next such node, are the callee's body.
+    CHECK_CALLEE,
+    // The variable a CALL_VAR (cc nonzero) or CALL_GLOBAL (imm its pc) names, stored in the call's
+    // callee register as a published value; exits (SLOW_PATH) when its cache does not hold.
+    LOAD_VAR,
+    // The window slot imm (a callee RET's register) copied to the window slot home (the call's
+    // result register) as a published store; exits (SLOW_PATH) where publish does.
+    COPY_WINDOW,
     // A jump to succ[0]; a conditional branch (BRANCH: JMP_* row cc over a and b
     // of rep imm, BRANCH_TRUTH: IF_TRUE/IF_FALSE over a, or the window slot imm
     // when a is NO_NODE, cc nonzero for IF_FALSE) takes succ[0] when it holds and
@@ -105,6 +116,13 @@ struct OptDirty {
 struct OptFn {
     CompiledFunction* f;
     uint reg_base;
+    // For an inlined callee: the word of the caller after the call, where the caller resumes once
+    // the callee frame that an exit from the body publishes returns.
+    uint resume_pc;
+    // The callee word whose result register is remap_reg of the caller, instead of its own
+    // register (uint::max when none).
+    uint remap_pc;
+    uint remap_reg;
 }
 
 struct OptNode {
@@ -125,6 +143,9 @@ struct OptNode {
     // GENERIC: the numeric registers live after it, reloaded from the window.
     uint reload_first;
     uint reload_count;
+    // Inside an inlined callee: the callee registers (bit r for callee register r) live at the
+    // node, which the callee frame an exit publishes must keep.
+    uint live_mask;
     // The window slot a node was defined into.
     uint home;
     // Allocation: the machine register, or -1 for a constant or a value that
@@ -203,6 +224,9 @@ fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op
 // and the moves of each edge.
 fn void OptGraph.dump(&self, CompiledFunction* f) {
     io::eprintfn("opt graph: %d nodes, %d blocks, code %d words", self.nodes.len(), self.blocks.len(), f.code_count);
+    for (uint i = 1; i < self.fns.len(); i++) {
+        io::eprintfn("inline fn=%d cf=fn#%d base=%d resume=%d", i, self.fns[i].f.func_index, self.fns[i].reg_base, self.fns[i].resume_pc);
+    }
     foreach (pos, &blk : self.blocks) {
         io::eprintfn("block %d pc=%d%s succ=[%d %d] n=%d", pos, blk.pc, blk.header ? " loop-header" : "", blk.succ[0], blk.succ[1], blk.succ_count);
         for (uint i = blk.first; i < blk.end; i++) {

@@ -6,13 +6,13 @@
 # scripts/guard.sh.
 set -u
 BIN=${BIN:-./out/boomkat}
-FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js"}
+FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js"}
 REASONS="overflow not-int32 not-number shape bounds hole callee inline-slowcall alloc-slow throw-path forced"
 fails=0
 for f in $FILES; do
     ref=$($BIN --memory-limit=512 --script "$f" 2>&1)
     for r in $REASONS; do
-        for spec in "$r" "$r:3:2" "$r:9:1"; do
+        for spec in "$r" "$r:3:2" "$r:9:1" "inline/$r" "inline/$r:0:2"; do
             out=$($BIN --memory-limit=512 --opt-force-exit="$spec" --script "$f" 2>&1)
             if [ "$out" != "$ref" ]; then echo "DIFF $f --opt-force-exit=$spec"; fails=$((fails+1)); fi
         done
@@ -20,6 +20,9 @@ for f in $FILES; do
     out=$($BIN --memory-limit=512 --opt-force-exit=forced:2:5 --opt-exit-max=2 --script "$f" 2>&1)
     if [ "$out" != "$ref" ]; then echo "DIFF $f discard path"; fails=$((fails+1)); fi
 done
+# An exit from an inlined body publishes the callee's frame; it must happen and be counted.
+n=$($BIN --memory-limit=512 --opt-force-exit=inline/shape --jit-stats --script test/jit/opt_inline.js 2>&1 | grep -c "^opt inline: [1-9][0-9]* callees inlined, [1-9][0-9]* exits")
+if [ "$n" != 1 ]; then echo "NOINLINEEXIT"; fails=$((fails+1)); fi
 # Each reason must be counted, and the discard path must reoptimize and refuse.
 for r in $REASONS; do
     n=$($BIN --memory-limit=512 --opt-force-exit="$r" --jit-stats --script test/jit_baseline_calls.js 2>&1 | grep -c "^opt exit $r: ")
