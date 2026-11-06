@@ -3770,7 +3770,42 @@ fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
         return false;
     }
 
-    return ic_matches_absent_chain(ic, receiver.prototype);
+    return ic_matches_absent_chain(ic, receiver.prototype) || absent_chain_cached(h, receiver.prototype, key);
+}
+
+// A prototype chain proven to lack a key, which stays true while the heap's
+// prototype epoch holds: every object on the chain was marked observed, so
+// adding the key to any of them, repointing a link or freeing one moves the
+// epoch. Keyed by the first prototype and the key; a lossy direct-mapped table.
+struct AbsentChainEntry {
+    hstring::StringRef key;
+    void* proto;
+    ulong epoch;
+}
+
+fn uint absent_hash(void* proto, void* key) @inline {
+    return (((uint)(uptr)key >> 4) ^ ((uint)(uptr)proto >> 4) * 2654435761u) & (heap::ABSENT_CACHE_SIZE - 1);
+}
+
+fn bool absent_chain_cached(heap::Heap* h, HObject* proto, void* key) @inline {
+    if (h.absent_cache == null || proto == null) return false;
+    AbsentChainEntry* e = h.absent_cache + absent_hash((void*)proto, key);
+    return e.proto == (void*)proto && e.key.borrow() == key && e.epoch == h.prototype_epoch;
+}
+
+// Record that `key` is absent from the whole chain starting at `proto`, which
+// the caller just walked: every object on it is a plain, observed prototype.
+// Anything else leaves the cache alone.
+fn void absent_chain_store(heap::Heap* h, HObject* proto, void* key) {
+    if (h.absent_cache == null || proto == null) return;
+    for (HObject* cur = proto; cur != null; cur = cur.prototype) {
+        if (!plain_property_object(cur)) return;
+        cur.gc.prototype_observed = true;
+    }
+    AbsentChainEntry* e = h.absent_cache + absent_hash((void*)proto, key);
+    e.proto = (void*)proto;
+    e.key.set(h, (HString*)key);
+    e.epoch = h.prototype_epoch;
 }
 
 fn bool ic_matches_absent_chain(ICEntry* ic, HObject* prototype) @inline {
@@ -3845,6 +3880,15 @@ fn bool HObject.append_cached_prop(&self, ICEntry* ic, TVal val, heap::Heap* h) 
     self.prop_count++;
     self.shape_id = ic.absent_next_shape;
     return true;
+}
+
+// append_cached_prop for a full property table: the cache already proves the
+// key absent, so the table grows as put_prop_new would grow it and the append
+// goes on, with none of the lookups or the shape transition put_prop_new makes.
+// Returns false when the table is a hash or cannot grow.
+fn bool HObject.append_cached_prop_grow(&self, ICEntry* ic, TVal val, heap::Heap* h) @inline {
+    if (self.prop_count >= self.prop_capacity && self.prop_hash == null) self.grow_props(h);
+    return self.append_cached_prop(ic, val, h);
 }
 
 // Record a store that added a property, only when the whole chain is short and

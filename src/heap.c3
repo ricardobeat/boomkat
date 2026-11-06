@@ -129,6 +129,7 @@ const long  GC_TRIGGER_GROW_FACTOR  = 2;
 const long  GC_MARK_WORK_DIVISOR    = 2;
 const uint  GC_CALL_INTERVAL        = 8;
 const uint  MEGA_CACHE_SIZE         = 512;
+const uint  ABSENT_CACHE_SIZE       = 1024;
 // Initial capacity for Array.prototype.join's in-progress set, allocated on
 // first use (most programs never nest a join) and grown as needed.
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
@@ -1369,6 +1370,13 @@ struct Heap {
     // allocated separately to keep the hot Heap struct small.
     hobject::MegamorphicEntry* mega_cache;
 
+    // (prototype, key) pairs proven absent along the whole prototype chain,
+    // valid while prototype_epoch has not moved: absent-property stores whose
+    // receivers share one shape but not one prototype (a base constructor
+    // run for many subclasses) pass the chain test through it. Allocated
+    // apart from the Heap struct like mega_cache.
+    hobject::AbsentChainEntry* absent_cache;
+
     // Pinned HString* for the integer keys 0 to 255, filled in on first use.
     // Pinning (HeapHeader.set_pinned) keeps them alive through RC and GC sweep
     // and makes incref and decref no-ops.
@@ -1841,6 +1849,11 @@ fn Heap*? create(
     h.mega_cache = (hobject::MegamorphicEntry*)alloc::malloc_try(mem, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size)) ?? null;
     if (h.mega_cache != null) {
         mem::clear(h.mega_cache, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size));
+    }
+
+    h.absent_cache = (hobject::AbsentChainEntry*)alloc::malloc_try(mem, (sz)(ABSENT_CACHE_SIZE * hobject::AbsentChainEntry::size)) ?? null;
+    if (h.absent_cache != null) {
+        mem::clear(h.absent_cache, (sz)(ABSENT_CACHE_SIZE * hobject::AbsentChainEntry::size));
     }
 
     // 16 entries of (handler, arg, downstream), so 48 TVal slots.
@@ -2651,6 +2664,11 @@ fn void Heap.destroy(&self) {
         self.mega_cache = null;
     }
 
+    if (self.absent_cache != null) {
+        mem::free(self.absent_cache);
+        self.absent_cache = null;
+    }
+
     // Free module cache
     self.drain_catcher_pool();
     self.free_module_cache();
@@ -2964,6 +2982,9 @@ fn void Heap.reset(&self) {
     // place would let new objects hit them and read wrong property values.
     if (self.mega_cache != null) {
         mem::clear(self.mega_cache, (sz)(MEGA_CACHE_SIZE * hobject::MegamorphicEntry::size));
+    }
+    if (self.absent_cache != null) {
+        mem::clear(self.absent_cache, (sz)(ABSENT_CACHE_SIZE * hobject::AbsentChainEntry::size));
     }
 
     $foreach $field : RealmState::members:
