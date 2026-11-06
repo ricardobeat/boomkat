@@ -311,7 +311,7 @@ fn bool is_access_op(Opcode op) {
         case INIT_SLOT:
             return true;
         default:
-            return false;
+            return is_var_op(op);
     }
 }
 
@@ -406,7 +406,7 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
         case PUTCAP:
             self.emit_put_cap(w.a, w.get_bc());
         default:
-            return false;
+            return self.emit_var_access(has_ic, ic, vic, consts_fixed);
     }
     return true;
 }
@@ -1394,11 +1394,13 @@ $endif
 fn void Asm.var_slot(&self, long vic, bool scoped) {
     void* c = self.c;
     Layout* l = self.lay;
+    // A re-armed entry runs the instruction again from here (emit_var_alt).
+    if (scoped) self.poly_back = sljit_emit_label(c);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, vic);
     if (scoped) {
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
+        self.alt.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
     }
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.vic_epoch);
     sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | self.heap, l.heap_epoch);
@@ -1437,7 +1439,7 @@ fn void Asm.emit_put_var(&self, uint rv, long vic) {
     void* plain = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0);
     self.call.add(sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
     sljit_set_label(plain, sljit_emit_label(c));
-    self.store_slot(rv);
+    self.store_slot_moved(rv);
     self.store(rv, SLJIT_IMM, K_UNDEF);
 }
 

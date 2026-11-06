@@ -636,6 +636,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                 hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
                     ic_env.bindings.shape_id, (uint)ic_prop_idx,
                     (void*)ds.act.lex_env, false, vm.heap);
+                var_ic_note_rearm(ds.var_ic_base + pc_off, ds.act.lex_env, ic_env, vm.heap);
             }
             return (TVal){};
         }
