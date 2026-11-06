@@ -390,6 +390,8 @@ struct Asm {
     List{void*} stub_jumps;
     List{SubCall} subs;
     void* nonzero;
+    // Leaves with the status in R0, for a status known to need no dispatch.
+    void* leave_exit;
     int ds;
     int code;
     int regs;
@@ -492,6 +494,8 @@ fn void* Asm.emit_prologue(&self, int table_reg, BaselineCode* bc, int scratches
 // status. `dispatch` is the label that redispatches through the entry table.
 fn void Asm.emit_nonzero_exit(&self, void* dispatch) {
     void* c = self.c;
+    self.leave_exit = sljit_emit_label(c);
+    sljit_emit_return(c, SLJIT_MOV, R0, 0);
     // A thunk's nonzero result: redispatch, or leave with the status.
     self.nonzero = sljit_emit_label(c);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_REDISPATCH), dispatch);
