@@ -74,6 +74,12 @@ struct OptBuild {
     // By instruction: the target of a backward branch.
     bool* osr_target;
     OptRegState* cur;
+    // Per JS register, and at index nregs for `this`: the shape id of the object it holds when the
+    // last LOAD_FIELD or STORE_FIELD on it passed its guards and nothing since can have changed
+    // that, else SHAPE_NONE; and whether that node also proved the object plain (GETTHISC only
+    // proves it is not a proxy).
+    uint* fact_shape;
+    bool* fact_plain;
     // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
     // this block, or NO_NODE; a numeric use of the register asks for it to be a typed load.
     uint* load_def;
@@ -133,6 +139,8 @@ fn void OptBuild.free(&self) {
     mem::free(self.osr_target);
     mem::free(self.cur);
     mem::free(self.load_def);
+    mem::free(self.fact_shape);
+    mem::free(self.fact_plain);
     mem::free(self.ends);
     mem::free(self.entries);
     self.overrides.free();
@@ -347,6 +355,38 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
     if (node != NO_NODE && !self.g.nodes[node].is_const() && self.g.nodes[node].op != OptOp.PHI) self.g.nodes[node].home = reg;
     self.cur[reg] = { .node = node, .dirty = dirty };
     self.load_def[reg] = NO_NODE;
+    self.fact_shape[reg] = heap::SHAPE_NONE;
+}
+
+// Facts about objects are only held across nodes that neither run code nor allocate: LOAD_FIELD,
+// STORE_FIELD (an overwrite, so never a shape change), LOAD_ELEM, STORE_ELEM, numeric ops and
+// branches. Nothing then can collect an object, recycle a shape id or rebind a register, so the
+// shape cell a node compared is still the receiver's. Every GENERIC, block start and write to the
+// register drops its facts.
+fn void OptBuild.forget_facts(&self) {
+    for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
+}
+
+// The register a field node reads its receiver from: nregs for `this`.
+fn uint OptBuild.field_receiver(&self) {
+    switch (self.w.op) {
+        case GETTHISC: case PUTTHISC: return self.nregs;
+        case GETPROPC: case GETPROPC_CACHED: return self.w.b;
+        default: return self.w.a;
+    }
+}
+
+// Whether the receiver of the field node being lowered is already known to be an object of
+// `shape` that passes the node's guards.
+fn bool OptBuild.guards_known(&self, uint reg, uint shape) {
+    if (reg > self.nregs || self.fact_shape[reg] != shape) return false;
+    return self.fact_plain[reg] || self.w.op == Opcode.GETTHISC;
+}
+
+fn void OptBuild.learn(&self, uint reg, uint shape) {
+    if (reg > self.nregs) return;
+    self.fact_shape[reg] = shape;
+    self.fact_plain[reg] = self.w.op != Opcode.GETTHISC;
 }
 
 fn uint OptBuild.const_i32(&self, long v) => self.add(OptOp.CONST_I32, OptRep.INT32, NO_NODE, NO_NODE, v);
@@ -529,13 +569,23 @@ fn hobject::ICEntry* OptBuild.own_field(&self) {
 // GETPROPC, GETPROPC_CACHED and GETTHISC of an own property by the shape its cache holds: a
 // typed load when a numeric use asked for one, else a read into the window.
 fn bool OptBuild.get_field(&self) {
-    if (self.own_field() == null || (self.w.op != Opcode.GETTHISC && !self.in_window(self.w.b))) return self.generic();
-    if (self.typed_load(OptOp.LOAD_FIELD, NO_NODE) != NO_NODE) return true;
-    uint n = self.add(OptOp.LOAD_FIELD, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
-    self.snapshot(n);
-    uint ra = self.w.a;
-    self.kill(ra);
-    if (ra < self.nregs) self.load_def[ra] = self.pc;
+    hobject::ICEntry* ic = self.own_field();
+    if (ic == null || (self.w.op != Opcode.GETTHISC && !self.in_window(self.w.b))) return self.generic();
+    uint recv = self.field_receiver();
+    bool known = self.guards_known(recv, ic.shape_id);
+    uint shape = ic.shape_id;
+    uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
+    if (n == NO_NODE) {
+        n = self.add(OptOp.LOAD_FIELD, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+        self.snapshot(n);
+        uint ra = self.w.a;
+        self.kill(ra);
+        if (ra < self.nregs) self.load_def[ra] = self.pc;
+    }
+    self.g.nodes[n].cc = known ? 1 : 0;
+    self.learn(recv, shape);
+    // The load may have overwritten its own receiver register.
+    if (recv < self.nregs && recv == self.w.a) self.fact_shape[recv] = heap::SHAPE_NONE;
     return true;
 }
 
@@ -547,8 +597,11 @@ fn bool OptBuild.put_field(&self) {
     if (ic == null || !ic.prop_flags.writable || (!this_op && !self.in_window(self.w.a))) return self.generic();
     uint rv = this_op ? self.w.a : self.w.b;
     if (rv >= self.nregs) return self.generic();
+    uint recv = self.field_receiver();
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, self.cur[rv].node, NO_NODE, (long)self.pc);
     self.snapshot(n);
+    self.g.nodes[n].cc = self.guards_known(recv, ic.shape_id) ? 1 : 0;
+    self.learn(recv, ic.shape_id);
     return true;
 }
 
@@ -593,6 +646,7 @@ fn void OptBuild.kill(&self, uint r) {
     if (r >= self.nregs) return;
     self.cur[r] = { .node = NO_NODE, .dirty = false };
     self.load_def[r] = NO_NODE;
+    self.fact_shape[r] = heap::SHAPE_NONE;
 }
 
 // The instruction as the baseline emitter runs it: the registers it can read
@@ -631,6 +685,7 @@ fn bool OptBuild.generic(&self) {
         }
     }
     uint n = self.add(OptOp.GENERIC, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.forget_facts();
     self.snapshot(n);
     OptNode* node = &self.g.nodes[n];
     for (uint i = 0; i < node.dirty_count; i++) {
@@ -876,6 +931,8 @@ fn void OptBuild.begin_block(&self, uint pos) {
         self.cur[r] = { .node = NO_NODE, .dirty = false };
         self.load_def[r] = NO_NODE;
     }
+    // Facts do not cross a block start: a back edge or a join may come from any generic.
+    self.forget_facts();
     uint fwd = 0;
     uint back = 0;
     uint single = 0;
@@ -1033,6 +1090,8 @@ fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild
     uint n = b.nregs;
     b.cur = mem::new_array(OptRegState, n);
     b.load_def = mem::new_array(uint, n);
+    b.fact_shape = mem::new_array(uint, (usz)n + 1);
+    b.fact_plain = mem::new_array(bool, (usz)n + 1);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
     for (uint round = 0; round < OPT_BUILD_ROUNDS; round++) {

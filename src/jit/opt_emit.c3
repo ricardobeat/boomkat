@@ -645,13 +645,18 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.b);
     }
-    a.unbox_object(R1, R0);
-    if (a.w.op == Opcode.GETTHISC) {
-        a.guard_not_proxy(R1, R2);
+    if (n.cc != 0) {
+        // The receiver was proven an object of this shape by an earlier node (see OptBuild.forget_facts).
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
     } else {
-        a.guard_plain(R1);
+        a.unbox_object(R1, R0);
+        if (a.w.op == Opcode.GETTHISC) {
+            a.guard_not_proxy(R1, R2);
+        } else {
+            a.guard_plain(R1);
+        }
+        self.guard_shape_cell(R1, ic.shape_id);
     }
-    self.guard_shape_cell(R1, ic.shape_id);
     a.prop_base(R0, R1);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)ic.prop_idx * 8);
     self.exit_calls(i, OptExit.SHAPE);
@@ -707,9 +712,13 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.a);
     }
-    a.unbox_object(R1, R0);
-    a.guard_plain(R1);
-    self.guard_shape_cell(R1, ic.shape_id);
+    if (n.cc != 0) {
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    } else {
+        a.unbox_object(R1, R0);
+        a.guard_plain(R1);
+        self.guard_shape_cell(R1, ic.shape_id);
+    }
     a.prop_base(R0, R1);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)ic.prop_idx * 8);
     if (n.a != NO_NODE) {
