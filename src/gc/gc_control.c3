@@ -1,5 +1,6 @@
 module boomkat::heap;
 
+import boomkat::hobject;
 import boomkat::types;
 import std::time;
 
@@ -135,6 +136,60 @@ fn void Heap.host_collect(&self, bool minor) {
         return;
     }
     self.mark_and_sweep(self.native_frame_depth == 0, true);
+}
+
+// Joint collection with an embedder's tracing collector. The embedder's heap
+// and this one point into each other (host objects own JS values, wrappers own
+// host objects), so a cycle through both is garbage only if neither side's
+// marking reaches it. joint_begin starts a blocking major cycle and marks from
+// this heap's roots, then holds the cycle before weak pruning and sweeping.
+// While it is held the embedder shades values it reaches (bk_trace_slot with
+// the heap as tracer) and drains with joint_drain, whose trace callbacks report
+// edges back to the embedder's marker. joint_end prunes weak references and
+// sweeps. A cycle already in flight is finished first; inside a native call it
+// cannot be, and joint_begin refuses so the embedder falls back to treating
+// its edges as roots.
+fn bool Heap.joint_begin(&self) {
+    if (self.gc_in_step || self.gc_joint_active) return false;
+    if (self.gc_phase != GcPhase.IDLE) {
+        if (self.native_frame_depth != 0) return false;
+        while (self.gc_phase != GcPhase.IDLE) self.gc_step(uint::max, true);
+    }
+    if (self.gc_running) return false;
+    bool keep_temproots = self.native_frame_depth != 0;
+    self.gc_joint_active = true;
+    self.gc_blocking = true;
+    self.gc_start_cycle(keep_temproots);
+    if (keep_temproots) {
+        HeapObjectCursor pinned_objects;
+        for (HeapHeader* cur = self.next_object(&pinned_objects); cur != null;
+             cur = self.next_object(&pinned_objects)) {
+            if (!cur.is_temproot()) continue;
+            cur.set_reachable();
+            if (cur.is_object()) self.gray_push((HObject*)cur);
+        }
+        hobject::env_pool_seed_or_clear_pins(self, false);
+    }
+    self.gc_joint_hold = true;
+    self.joint_drain();
+    return true;
+}
+
+fn void Heap.joint_drain(&self) {
+    if (!self.gc_joint_active || self.gc_in_step) return;
+    while (self.gc_phase == GcPhase.MARK && !(self.gc_roots_done && self.gc_mark_queues_empty())) {
+        self.gc_step(uint::max, !self.gc_keep_temproots);
+    }
+}
+
+fn void Heap.joint_end(&self) {
+    if (!self.gc_joint_active) return;
+    bool keep_temproots = self.gc_keep_temproots;
+    self.gc_joint_hold = false;
+    while (self.gc_phase != GcPhase.IDLE) self.gc_step(uint::max, !keep_temproots);
+    self.gc_quiescent_pending = keep_temproots;
+    self.gc_blocking = false;
+    self.gc_joint_active = false;
 }
 
 // Collector work for at most `budget_ns`, starting a cycle when none is

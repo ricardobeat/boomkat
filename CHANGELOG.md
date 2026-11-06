@@ -5,6 +5,9 @@ of commits since the previous release. Newest first.
 
 ## [Unreleased]
 
+- Joint collection with an embedder's tracing collector (`bk_gc_joint_begin`,
+  `bk_gc_joint_drain`, `bk_gc_joint_end`, `bk_gc_in_joint_cycle`), so cycles
+  between host objects and their wrappers are collected
 - `bk_to_string` and `bk_to_number` report exceptions thrown by user
   `toString`, `valueOf` and `Symbol.toPrimitive` instead of returning a bad
   string handle or NaN

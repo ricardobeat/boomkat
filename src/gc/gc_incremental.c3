@@ -295,6 +295,9 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock
         batches++;
         uint batch = remaining > 64 ? 64 : remaining;
         if (self.gc_phase == GcPhase.MARK) {
+            // A held joint cycle stops once marking reaches a fixed point; the
+            // embedder may shade more values before it lets the cycle go on.
+            if (self.gc_joint_hold && self.gc_roots_done && self.gc_mark_queues_empty()) return completed;
             // Only a queue with work consumes the slice allowance. Empty
             // queues stay in the round-robin order when they receive edges.
             for (uint skipped = 0; skipped < 5; skipped++) {
@@ -305,7 +308,7 @@ fn uint Heap.gc_step(&self, uint work_budget, bool quiescent, NanoDuration clock
             remaining -= batch;
             completed += batch;
             long phase_start = gcprofile::gcprof_now();
-            if (self.gc_roots_done && self.gc_mark_queues_empty() && !self.gc_weak_done) {
+            if (self.gc_roots_done && self.gc_mark_queues_empty() && !self.gc_weak_done && !self.gc_joint_hold) {
                 self.gc_weak_done = self.gc_prune_weak_step(batch);
                 gcprofile::gcprof_phase(26, &phase_start);
             } else {
