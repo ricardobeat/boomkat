@@ -377,18 +377,20 @@ struct Vm {
 
     // Native reentry advances activations past the suspended caller segment.
     // activation_capacity bounds every push against the shared storage end.
-    Activation[MAX_CALLS] activation_storage;
+    // The fields every call and return touches precede the large storage so
+    // that generated code reaches them with a short displacement.
     Activation* activations;
     uint activation_capacity;
     uint activation_count;
     ulong activation_serial;  /// Last Activation.serial handed out
+    CompiledFunction* current_func;
+    Activation[MAX_CALLS] activation_storage;
     // Grown on demand to cover the deepest tail-called slot, so code that
     // never makes a tail call pays nothing. See TailCaller.
     TailCaller* tail_callers;
     uint tail_caller_cap;
 
     // Current execution state (stable pointers reloaded on restart)
-    CompiledFunction* current_func;
     Instruction* curr_pc; /// Current PC, kept in sync with the dispatch loop's local
 
     // Global environment

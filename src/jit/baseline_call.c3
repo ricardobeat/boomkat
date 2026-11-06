@@ -87,6 +87,9 @@ struct CallLayout {
     long fn_builtin;
     long cf_jit_code;
     long cf_num_regs;
+    long cf_constants;
+    long cf_ic_entries;
+    long cf_var_ic_entries;
     long bc_call_entry;
     long env_flags;
     long fn_mask;
@@ -151,6 +154,9 @@ fn CallLayout* call_layout() {
     l.fn_builtin = (char*)&o.extra.func.builtin_fn_index - base;
     l.cf_jit_code = (char*)&cf.jit_code - base;
     l.cf_num_regs = (char*)&cf.num_regs - base;
+    l.cf_constants = (char*)&cf.constants - base;
+    l.cf_ic_entries = (char*)&cf.ic_entries - base;
+    l.cf_var_ic_entries = (char*)&cf.var_ic_entries - base;
     l.bc_call_entry = (char*)&bc.call_entry - base;
     l.env_flags = (char*)&e.flags - base;
     // th_lean_target's callable_kind() == COMPILED_FN, narrowed as the
@@ -248,7 +254,9 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     sljit_set_label(no_cap, sljit_emit_label(c));
 
     // th_publish_lean. R0 = activation_count, R1 = lex_env (cap), R2 =
-    // var_env (env), R3 = the function object.
+    // var_env (env), R3 = the function object. Constants the stores share are
+    // kept in registers once they are free: Z (R0) zero, U (packed) undefined,
+    // F (R3) the function, C (retval) its code.
     sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN);
     void* keep_this = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0);
     self.mov(m | bottom, -(long)TVal::size, SLJIT_IMM, K_UNDEF);
@@ -259,8 +267,8 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     self.mov(m | vm, k.vm_count, R0, 0, SLJIT_MOV_U32);
     self.mov(R4, 0, m | ds, l.ds_act);
     self.mov(m | la, k.act_parent, R4, 0);
-    self.mov(m | la, l.act_func, SLJIT_IMM, (long)(usz)f);
     self.mov(m | la, k.act_var_env, R2, 0);
+    self.mov(m | la, k.act_retval, retval, 0);
     // lex_env = cap unless cap is null, the env itself or not declarative.
     env::EnvFlags decl_flag;
     decl_flag.is_declarative = true;
@@ -274,63 +282,73 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     self.mov(R1, 0, R2, 0);
     sljit_set_label(lex_done, sljit_emit_label(c));
     self.mov(m | la, l.act_lex_env, R1, 0);
-    self.mov(m | la, k.act_cat, SLJIT_IMM, 0);
-    self.mov(m | la, k.act_forin, SLJIT_IMM, 0);
-    self.mov(m | la, k.act_async_gen_state, SLJIT_IMM, 0);
-    self.mov(m | la, k.act_async_promise, SLJIT_IMM, 0);
-    self.mov(m | la, k.act_new_target, SLJIT_IMM, 0);
-    self.mov(m | la, k.act_curr_pc, SLJIT_IMM, (long)(usz)f.code);
+    // A method call on an object receiver keeps it as this_binding unless the
+    // callee ignores it; every other shape leaves `this` undefined.
+    int zero = R0;
+    int undef = packed;
+    int fr = R3;
+    int code = retval;
+    if (!f.call_flags.ignores_this) sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM);
+    self.mov(zero, 0, SLJIT_IMM, 0);
+    self.mov(undef, 0, SLJIT_IMM, K_UNDEF);
+    self.mov(code, 0, SLJIT_IMM, (long)(usz)f.code);
+    self.mov(m | la, k.act_cat, zero, 0);
+    self.mov(m | la, k.act_forin, zero, 0);
+    self.mov(m | la, k.act_async_gen_state, zero, 0);
+    self.mov(m | la, k.act_async_promise, zero, 0);
+    self.mov(m | la, k.act_new_target, zero, 0);
+    self.mov(m | la, k.act_curr_pc, code, 0);
     self.mov(m | la, k.act_bottom, bottom, 0);
-    self.mov(m | la, k.act_retval, retval, 0);
-    sljit_emit_op2(c, SLJIT_OR, R1, 0, R3, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op2(c, SLJIT_OR, R1, 0, fr, 0, SLJIT_IMM, K_OBJ);
     self.mov(m | la, l.act_tv_func, R1, 0);
-    self.mov(m | la, l.act_hrc, SLJIT_IMM, 0, SLJIT_MOV_U32);
+    self.mov(m | la, l.act_hrc, zero, 0, SLJIT_MOV_U32);
+    self.mov(fr, 0, SLJIT_IMM, (long)(usz)f);
+    self.mov(m | la, l.act_func, fr, 0);
     self.mov(R1, 0, m | vm, k.vm_serial);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, 1);
     self.mov(m | vm, k.vm_serial, R1, 0);
     self.mov(m | la, k.act_serial, R1, 0);
     self.mov(R1, 0, m | vm, k.vm_valstack_top);
     self.mov(m | la, k.act_caller_top, R1, 0);
-    // A method call on an object receiver keeps it as this_binding unless the
-    // callee ignores it; every other shape leaves `this` undefined.
-    self.mov(m | la, k.act_flags, SLJIT_IMM, 0, SLJIT_MOV_U32);
-    self.mov(m | la, l.act_this, SLJIT_IMM, K_UNDEF);
+    self.mov(m | la, k.act_flags, zero, 0, SLJIT_MOV_U32);
+    self.mov(m | la, l.act_this, undef, 0);
     if (!f.call_flags.ignores_this) {
-        sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM);
         void* no_this = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
         self.mov(R1, 0, m | bottom, -(long)TVal::size);
         self.mov(m | la, l.act_this, R1, 0);
-        self.mov(m | la, k.act_flags, SLJIT_IMM, vm::ACT_FLAG_THIS_VALID, SLJIT_MOV_U32);
+        self.mov(R1, 0, SLJIT_IMM, vm::ACT_FLAG_THIS_VALID);
+        self.mov(m | la, k.act_flags, R1, 0, SLJIT_MOV_U32);
         sljit_set_label(no_this, sljit_emit_label(c));
     }
     // Locals and the scratch slots start undefined (exact arity: no surplus).
     uint from = f.num_formals;
     if (clear_end - from <= 12) {
-        for (uint i = from; i < clear_end; i++) self.mov(m | bottom, (long)i * TVal::size, SLJIT_IMM, K_UNDEF);
+        for (uint i = from; i < clear_end; i++) self.mov(m | bottom, (long)i * TVal::size, undef, 0);
     } else {
         sljit_emit_op2(c, SLJIT_ADD, R0, 0, bottom, 0, SLJIT_IMM, (long)from * TVal::size);
         sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)clear_end * TVal::size);
         void* loop = sljit_emit_label(c);
-        self.mov(m | R0, 0, SLJIT_IMM, K_UNDEF);
+        self.mov(m | R0, 0, undef, 0);
         sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, TVal::size);
         sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R0, 0, R1, 0), loop);
+        self.mov(zero, 0, SLJIT_IMM, 0);
     }
     if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, SLJIT_IMM, K_INT);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)f.num_regs * TVal::size);
     self.mov(m | vm, k.vm_valstack_top, R1, 0);
     self.mov(m | vm, k.vm_valstack_bottom, bottom, 0);
     self.mov(m | ds, l.ds_act, la, 0);
-    self.mov(m | ds, k.ds_capture_refs, SLJIT_IMM, 0);
+    self.mov(m | ds, k.ds_capture_refs, zero, 0);
     self.mov(R1, 0, m | ds, k.ds_regs_base_ptr);
     self.mov(m | R1, 0, bottom, 0);
-    self.mov(m | vm, k.vm_current_func, SLJIT_IMM, (long)(usz)f);
+    self.mov(m | vm, k.vm_current_func, fr, 0);
     self.mov(m | ds, k.ds_ic_bias, SLJIT_IMM, (long)((usz)f.ic_entries - (usz)f.code * vm::TH_IC_SCALE));
     self.mov(m | ds, k.ds_var_ic_bias, SLJIT_IMM, (long)((usz)f.var_ic_entries - (usz)f.code * vm::TH_VAR_IC_SCALE));
-    self.emit_view(f);
-    self.mov(m | ds, self.pc_off, SLJIT_IMM, (long)(usz)f.code);
+    self.emit_view(f, fr, code);
+    self.mov(m | ds, self.pc_off, code, 0);
     // The body's saved registers, as the main entry sets them.
     self.mov(self.regs, 0, bottom, 0);
-    self.mov(self.code, 0, SLJIT_IMM, (long)(usz)f.code);
+    self.mov(self.code, 0, code, 0);
     self.mov(self.heap, 0, m | ds, k.ds_heap);
     self.mov(table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
     self.mov(self.thunks, 0, SLJIT_IMM, (long)(usz)&thunks()[0]);
@@ -342,19 +360,27 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
 }
 
 // Point ds's code, constant and cache view at `f`, as Dispatch.load_frame
-// does for a function that has run.
-fn void Asm.emit_view(&self, CompiledFunction* f) {
+// does for a function that has run. `fr` holds `f` and `code` its code
+// pointer, both loaded by the caller; the cache pointers and the constant
+// pool are read through `fr` (one load each in place of a 48-bit immediate).
+// Clobbers R1.
+fn void Asm.emit_view(&self, CompiledFunction* f, int fr, int code) {
     CallLayout* k = call_layout();
     int m = SLJIT_MEM;
     int ds = self.ds;
-    self.mov(m | ds, k.ds_code_base, SLJIT_IMM, (long)(usz)f.code);
-    self.mov(m | ds, k.ds_code_count, SLJIT_IMM, f.code_count, SLJIT_MOV_U32);
-    self.mov(m | ds, k.ds_code_end, SLJIT_IMM, (long)(usz)(f.code + f.code_count));
-    self.mov(R1, 0, SLJIT_MEM, (long)(usz)&f.constants);
+    self.mov(m | ds, k.ds_code_base, code, 0);
+    self.mov(R1, 0, SLJIT_IMM, f.code_count);
+    self.mov(m | ds, k.ds_code_count, R1, 0, SLJIT_MOV_U32);
+    sljit_emit_op2(self.c, SLJIT_ADD, R1, 0, code, 0, SLJIT_IMM, (long)f.code_count * Instruction::size);
+    self.mov(m | ds, k.ds_code_end, R1, 0);
+    self.mov(R1, 0, m | fr, k.cf_constants);
     self.mov(m | ds, k.ds_constants, R1, 0);
-    self.mov(m | ds, k.ds_ic_base, SLJIT_IMM, (long)(usz)f.ic_entries);
-    self.mov(m | ds, k.ds_var_ic_base, SLJIT_IMM, (long)(usz)f.var_ic_entries);
-    self.mov(m | ds, k.ds_nregs, SLJIT_IMM, f.num_regs, SLJIT_MOV_U32);
+    self.mov(R1, 0, m | fr, k.cf_ic_entries);
+    self.mov(m | ds, k.ds_ic_base, R1, 0);
+    self.mov(R1, 0, m | fr, k.cf_var_ic_entries);
+    self.mov(m | ds, k.ds_var_ic_base, R1, 0);
+    self.mov(R1, 0, SLJIT_IMM, f.num_regs);
+    self.mov(m | ds, k.ds_nregs, R1, 0, SLJIT_MOV_U32);
 }
 
 // A CALL, CALL_UNDEF_THIS or CALL_GLOBAL called directly through its callee's
@@ -464,14 +490,17 @@ fn void Asm.emit_call_body(&self) {
     self.mov(R0, 0, m | ds, l.ds_act);
     self.mov(self.regs, 0, m | R0, k.act_bottom);
     self.mov(m | ds, self.regs_off, self.regs, 0);
+    self.mov(R3, 0, SLJIT_IMM, (long)(usz)f);
     self.mov(R0, 0, m | ds, k.ds_vm);
-    self.mov(m | R0, k.vm_current_func, SLJIT_IMM, (long)(usz)f);
+    self.mov(m | R0, k.vm_current_func, R3, 0);
     self.mov(R1, 0, m | self.heap, k.heap_realm);
     void* same_realm = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)f.realm);
     self.mov(R0, 0, ds, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_enter_frame_realm);
+    self.mov(R3, 0, SLJIT_IMM, (long)(usz)f);
     sljit_set_label(same_realm, sljit_emit_label(c));
-    self.emit_view(f);
+    self.mov(R4, 0, SLJIT_IMM, (long)(usz)f.code);
+    self.emit_view(f, R3, R4);
     self.mov(R0, 0, m | ds, self.pc_off);
     self.mov(R1, 0, sp, CALL_RESUME_OFF);
     self.mov(R2, 0, R0, 0);
