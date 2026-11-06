@@ -174,6 +174,27 @@ fn void OptCg.store_flt(&self, uint slot, int fsrc) {
     self.a.store(slot, R0);
 }
 
+// OBJECT node `n` in a register: its own, or `tmp` loaded from its home slot.
+fn int OptCg.obj_reg(&self, uint n, int tmp) {
+    OptNode* nd = &self.g.nodes[n];
+    if (nd.reg >= 0) return nd.reg;
+    self.a.load(tmp, nd.home);
+    return tmp;
+}
+
+// The boxed object or inert value in `src` stored to window slot `slot`, raising the frame's
+// heap_reg_count over it as Asm.publish does. Uses R2 and R3.
+fn void OptCg.store_object(&self, uint slot, int src) {
+    void* c = self.a.c;
+    Layout* l = self.a.lay;
+    self.a.store(slot, src);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.a.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.act_hrc);
+    void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, (long)slot);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, l.act_hrc, SLJIT_IMM, (long)slot + 1);
+    sljit_set_label(covered, sljit_emit_label(c));
+}
+
 // The value of node `n` stored to window slot `slot`, boxed.
 fn void OptCg.store_node(&self, uint n, uint slot) {
     void* c = self.a.c;
@@ -184,6 +205,8 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
         self.a.store(slot, SLJIT_IMM, nd.imm);
     } else if (nd.reg < 0) {
         // Lives in its home slot already.
+    } else if (nd.rep == OptRep.OBJECT) {
+        self.store_object(slot, nd.reg);
     } else if (nd.rep == OptRep.INT32) {
         sljit_emit_op2(c, SLJIT_AND, R0, 0, nd.reg, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
@@ -211,6 +234,16 @@ fn void OptCg.def_int(&self, uint n, int src) {
     sljit_emit_op2(c, SLJIT_AND, R1, 0, src, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
     sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, SLJIT_IMM, K_INT);
     self.a.store(nd.home, R1);
+}
+
+// The result of OBJECT node `n`, computed into register `src`.
+fn void OptCg.def_obj(&self, uint n, int src) {
+    OptNode* nd = &self.g.nodes[n];
+    if (nd.reg >= 0) {
+        if (nd.reg != src) sljit_emit_op1(self.a.c, SLJIT_MOV, nd.reg, 0, src, 0);
+        return;
+    }
+    self.store_object(nd.home, src);
 }
 
 fn void OptCg.def_flt(&self, uint n, int fsrc) {
@@ -770,20 +803,23 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     a.call.len = 0;
     OptPoly* poly = &self.g.polys[(sz)(n.poly - 1)];
     bool known_slot = false;
+    int rr = R0;
     if (a.w.op == Opcode.GETTHISC) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
             a.load_this(R0);
         }
+    } else if (n.b != NO_NODE) {
+        rr = self.obj_reg(n.b, R0);
     } else {
         a.load(R0, a.w.b);
     }
     if (n.cc != 0) {
         // The receiver was proven an object of this shape by an earlier node (see OptBuild.forget_facts).
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
     } else {
-        a.unbox_object(R1, R0);
+        a.unbox_object(R1, rr);
         a.guard_not_proxy(R1, R2);
         if (poly.count > 1) {
             self.select_slot(poly);
@@ -802,6 +838,15 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     if (n.rep == OptRep.NONE) {
         a.publish(a.w.a);
         self.exit_calls(i, OptExit.SLOW_PATH);
+    } else if (n.rep == OptRep.OBJECT) {
+        // An object or an inert value, while the collector is not marking: the invariant of OptRep.OBJECT.
+        void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+        sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
+        self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal), i, OptExit.SLOW_PATH);
+        sljit_set_label(inert, sljit_emit_label(c));
+        self.def_obj(i, R0);
     } else {
         self.def_from_r0(i, n);
     }
@@ -847,19 +892,22 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     OptPoly* poly = &self.g.polys[(sz)(n.poly - 1)];
     bool known_slot = false;
     bool this_op = a.w.op == Opcode.PUTTHISC;
+    int rr = R0;
     if (this_op) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
             a.load_this(R0);
         }
+    } else if (n.b != NO_NODE) {
+        rr = self.obj_reg(n.b, R0);
     } else {
         a.load(R0, a.w.a);
     }
     if (n.cc != 0) {
-        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
     } else {
-        a.unbox_object(R1, R0);
+        a.unbox_object(R1, rr);
         a.guard_plain(R1);
         if (poly.count > 1) {
             self.select_slot(poly);
@@ -872,7 +920,12 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
         a.prop_base(R0, R1);
         sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)poly.idx[0] * 8);
     }
-    if (n.a != NO_NODE) {
+    if (n.a != NO_NODE && self.g.nodes[n.a].rep == OptRep.OBJECT) {
+        int vr = self.obj_reg(n.a, R2);
+        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
+        a.guard_old_value();
+        a.store_value_r2();
+    } else if (n.a != NO_NODE) {
         self.box_node(n.a, R2);
         a.guard_old_value();
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
@@ -972,7 +1025,12 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
 
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {
     void* c = self.a.c;
-    if (n.rep == OptRep.INT32) {
+    if (n.rep == OptRep.OBJECT) {
+        int r = self.obj_reg(n.a, R0);
+        int dst = self.int_dst(i, R0);
+        if (dst != r) sljit_emit_op1(c, SLJIT_MOV, dst, 0, r, 0);
+        self.def_obj(i, dst);
+    } else if (n.rep == OptRep.INT32) {
         int r;
         long rw;
         self.int_src(n.a, R0, &r, &rw);
@@ -1148,7 +1206,9 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
         OptDirty d = self.g.dirty[(sz)(n.reload_first + k)];
         OptNode* nd = &self.g.nodes[d.node];
         if (nd.reg < 0 || nd.is_const()) continue;
-        if (nd.rep == OptRep.INT32) {
+        if (nd.rep == OptRep.OBJECT) {
+            self.a.load(nd.reg, d.reg);
+        } else if (nd.rep == OptRep.INT32) {
             self.load_unboxed(nd.reg, d.reg);
         } else {
             self.reload_flt(nd.reg, d.reg);
@@ -1202,6 +1262,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_copy_window(i, n);
         case STORE_CONST:
             self.a.store(n.home, SLJIT_IMM, n.imm);
+        case STORE_OBJ:
+            self.store_node(n.a, (uint)n.imm);
         case COPY:
             self.emit_copy(n, i);
         case ADD_I32:

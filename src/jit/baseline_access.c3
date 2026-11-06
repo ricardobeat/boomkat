@@ -939,10 +939,15 @@ fn void Asm.guard_old_value(&self, Jumps* miss = null) {
 // needs no count and no barrier work; jump to `miss` (the slow path by
 // default) otherwise. Uses R2, R3.
 fn void Asm.store_value(&self, uint rv, Jumps* miss = null) {
+    self.load(R2, rv);
+    self.store_value_r2(miss);
+}
+
+// store_value of the value already in R2.
+fn void Asm.store_value_r2(&self, Jumps* miss = null) {
     void* c = self.c;
     Layout* l = self.lay;
     if (!miss) miss = &self.call;
-    self.load(R2, rv);
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R2, 0, SLJIT_IMM, K_OBJ);
     miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));

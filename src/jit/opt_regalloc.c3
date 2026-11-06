@@ -109,14 +109,14 @@ fn bool OptGraph.allocate(&self, OptPools* pools) {
         for (sz k = 0; k < active.len();) {
             OptNode* a = &self.nodes[active[k]];
             if (a.last_use <= i) {
-                if (a.rep == OptRep.INT32) { ifree[a.reg - pools.int_first] = true; } else { ffree[a.reg - pools.flt_first] = true; }
+                if (a.rep.is_gpr()) { ifree[a.reg - pools.int_first] = true; } else { ffree[a.reg - pools.flt_first] = true; }
                 active.remove_at(k);
             } else {
                 k++;
             }
         }
         if (!n.allocated()) continue;
-        bool is_int = n.rep == OptRep.INT32;
+        bool is_int = n.rep.is_gpr();
         bool* free = is_int ? &ifree[0] : &ffree[0];
         int first = is_int ? pools.int_first : pools.flt_first;
         int total = is_int ? pools.int_count : pools.flt_count;

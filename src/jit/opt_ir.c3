@@ -12,6 +12,19 @@
 // A node's "home" is the window slot of the register it was defined into. No
 // node is held by two registers, so a register's slot is only ever the home of
 // the node that register currently holds.
+//
+// OBJECT nodes: a property read whose result is used as the receiver of another field access is
+// an OBJECT node, the 64-bit boxed value (an object, or an inert value such as null; never a
+// string, a bigint or any other value that publication has to count) in a machine register. The
+// collector reads only the window, so the invariant that keeps it sound is: an OBJECT node is
+// created only while incremental marking is off (else the load leaves for the baseline code,
+// which shades what it publishes), and it is stored to its home slot, raising the frame's
+// heap_reg_count as Asm.publish does, before anything that can collect or inspect the window
+// runs: a GENERIC node, an exit, a back edge's poll (the registers that cross a block join are
+// stored on the edge, as OBJECT nodes never form phis) and any node that reads the window slot
+// (STORE_OBJ). Marking cannot begin in between, as only those points can allocate or call. A
+// node that finds no machine register lives in its home slot from its definition on, as the
+// numeric ones do.
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::bytecode;
@@ -26,6 +39,8 @@ enum OptRep : char {
     INT32,
     // A double in a floating point register.
     FLOAT64,
+    // A boxed object or inert value in a machine register (see the invariant above).
+    OBJECT,
 }
 
 enum OptOp : char {
@@ -46,15 +61,21 @@ enum OptOp : char {
     // LOAD_ELEM would. It defines nothing.
     STORE_ELEM,
     // A GETPROPC, GETPROPC_CACHED or GETTHISC (imm its pc) read of the own data property its
-    // cache names, from a non-proxy object of the cache's shapes; exits for any other receiver. Of rep
-    // NONE it writes the value to the window, else it is a number of the node's rep.
+    // cache names, from a non-proxy object of the cache's shapes; exits for any other receiver. The
+    // receiver is the OBJECT node b, or the window register when b is NO_NODE. Of rep NONE it writes
+    // the value to the window, of rep OBJECT it leaves it in a register (exiting when the value is
+    // a string or another counted value, or incremental marking runs), else it is a number of the
+    // node's rep.
     LOAD_FIELD,
     // A PUTPROPC or PUTTHISC (imm its pc) overwrite of the own writable data property its cache
     // names, in a plain object of the cache's shape; exits for any other receiver or a value that
-    // needs a barrier. a is the number node stored, or NO_NODE for a value in the window. It
-    // defines nothing.
+    // needs a barrier. a is the number or OBJECT node stored, or NO_NODE for a value in the window;
+    // b the OBJECT node receiver, or NO_NODE for the window. It defines nothing.
     STORE_FIELD,
     PHI,
+    // The OBJECT node a, stored to its home window slot imm (the register) and now clean; for the
+    // window readers that cannot take a node (a branch, an element access, a call).
+    STORE_OBJ,
     // A new node holding the value of `a`.
     COPY,
     // INT32 operands a, b. These exit (OVERFLOW) on a result out of int32 range;
@@ -244,6 +265,9 @@ fn void OptGraph.free(&self) {
 }
 
 fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64;
+
+// Whether a node of this rep lives in an integer register.
+fn bool OptRep.is_gpr(self) @inline => self == OptRep.INT32 || self == OptRep.OBJECT;
 
 // Print the graph to stderr: one line per node, with the register allocation
 // and the moves of each edge.
