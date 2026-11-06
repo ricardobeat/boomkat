@@ -62,7 +62,7 @@ enum OptInlineReject : char (String label) {
     FORMALS {"argument count differs"},
     TOP_LEVEL {"top level code"},
     WINDOW_LIVE {"call window live after the call"},
-    BLOCKS {"branches in the callee"},
+    BLOCKS {"loop in the callee"},
     WIDE {"wide instruction"},
     NO_RET {"no final return"},
     READ_UNDEF {"reads an unwritten register"},
@@ -103,6 +103,12 @@ struct OptInlineSite {
     uint remap;
     // A build failure of this site is already counted in --jit-stats.
     bool counted;
+    // A body with forward branches and several returns, which analyze splices into the caller's
+    // control flow graph (OptBuild.flatten) instead of lowering in place: the first of its
+    // instructions in that graph, the caller's pc of the call, and the nodes' origin.
+    bool flat;
+    uint flat_off;
+    uint head_pc;
 }
 
 struct OptBuild {
@@ -133,6 +139,19 @@ struct OptBuild {
     bool* osr_target;
     // The caller's register count; nregs also covers the callee windows of the inline sites.
     uint caller_regs;
+    // With flat sites, per instruction of the spliced graph: the flat site plus one whose body it
+    // belongs to or zero, and for a body's last instructions how it returns: 1 a value, 2 undefined.
+    uint* fl_site;
+    uint* fl_kind;
+    // Per site: the OptGraph.fns entry its head pushed in this round.
+    uint* site_fn;
+    uint flat_count;
+    // Flat sites to leave as calls (by the caller's pc of the call), and why the last build was
+    // abandoned: a flat body that could not be lowered, whose site is then excluded in a rebuild.
+    uint* exclude;
+    uint exclude_count;
+    bool flat_fail;
+    uint flat_fail_pc;
     List{OptInlineSite} sites;
     // By caller instruction: its inline site plus one, or zero.
     uint* site_of;
@@ -200,6 +219,7 @@ fn DecodedCfg* OptBuild.cur_cfg(&self) @inline => self.cur_fn == 0 ? &self.cfg :
 fn bool OptBuild.live_in_at(&self, uint r) {
     if (self.cur_fn == 0) return self.live_in[self.insn].test(r);
     OptInlineSite* s = &self.sites[self.cur_site];
+    if (s.flat) return self.live_in[self.insn].test(r);
     if (r >= s.base) {
         uint k = r - s.base;
         return k < s.cf.num_regs && s.live_in[self.insn].test(k);
@@ -226,13 +246,27 @@ fn uint inline_reg_mask(Opcode op) {
             return 3;
         case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             return 7;
+        // The forward branches of a body with several blocks: A is the offset of the compares.
+        case JMP_NLT..JMP_GE:
+            return 6;
+        case JMP_NLTI..JMP_SNEQI:
+            return 2;
+        case IF_TRUE: case IF_FALSE:
+            return 1;
         default:
             return 0;
     }
 }
 
-// Whether an inlined body may hold `op`: the opcodes with registers above, and RETUNDEF.
-fn bool inline_op_ok(Opcode op) @inline => inline_reg_mask(op) != 0 || op == Opcode.RETUNDEF;
+// Whether an inlined body may hold `op`: the opcodes with registers above, RETUNDEF and JUMP.
+fn bool inline_op_ok(Opcode op) @inline => inline_reg_mask(op) != 0 || op == Opcode.RETUNDEF || op == Opcode.JUMP;
+
+// The forward-branching opcodes of an inlined body.
+fn bool inline_branch_op(Opcode op) @inline {
+    return op == Opcode.JUMP || op == Opcode.IF_TRUE || op == Opcode.IF_FALSE
+        || (op.ordinal >= Opcode.JMP_NLT.ordinal && op.ordinal <= Opcode.JMP_GE.ordinal)
+        || (op.ordinal >= Opcode.JMP_NLTI.ordinal && op.ordinal <= Opcode.JMP_SNEQI.ordinal);
+}
 
 // The callee registers `w` (an instruction of an inlined body) reads and writes, as bit sets.
 fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
@@ -253,8 +287,12 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
             *writes = 1u << w.a;
         case PUTPROPC:
             *reads = (1u << w.a) | (1u << w.b);
-        case PUTTHISC: case RET:
+        case PUTTHISC: case RET: case IF_TRUE: case IF_FALSE:
             *reads = 1u << w.a;
+        case JMP_NLT..JMP_GE:
+            *reads = (1u << w.b) | (1u << w.c);
+        case JMP_NLTI..JMP_SNEQI:
+            *reads = 1u << w.b;
         default:
             break;
     }
@@ -312,6 +350,9 @@ fn void OptBuild.free(&self) {
     foreach (&s : self.sites) s.free_site();
     self.sites.free();
     mem::free(self.site_of);
+    mem::free(self.fl_site);
+    mem::free(self.fl_kind);
+    mem::free(self.site_fn);
 }
 
 fn void OptInlineSite.free_site(&self) {
@@ -374,7 +415,12 @@ fn bool OptBuild.analyze(&self) {
     self.live_out = self.live_sets;
     self.live_in = self.live_sets + count;
     self.find_sites();
-    if ((usz)self.nb * self.nregs > OPT_STATE_MAX) return self.refuse(OptRefuse.BUDGET);
+    if (self.flat_count != 0) {
+        if (!self.flatten()) return self.refuse(OptRefuse.CFG);
+        count = cfg.instruction_count;
+        self.nb = cfg.block_count;
+    }
+    if (self.nb > OPT_BLOCK_MAX || (usz)self.nb * self.nregs > OPT_STATE_MAX) return self.refuse(OptRefuse.BUDGET);
 
     self.osr_target = mem::new_array(bool, count);
     for (uint i = 0; i < count; i++) {
@@ -520,7 +566,12 @@ fn void OptBuild.snapshot(&self, uint node) {
     n.dirty_count = (uint)self.g.dirty.len() - first;
     if (self.cur_fn != 0) {
         OptInlineSite* s = &self.sites[self.cur_site];
-        for (uint k = 0; k < s.cf.num_regs; k++) if (s.live_in[self.insn].test(k) && (s.defined[self.insn] & (1u << k)) != 0) n.live_mask |= 1u << k;
+        if (s.flat) {
+            uint local = self.insn - s.flat_off;
+            for (uint k = 0; k < s.cf.num_regs; k++) if (self.live_in[self.insn].test(s.base + k) && (s.defined[local] & (1u << k)) != 0) n.live_mask |= 1u << k;
+        } else {
+            for (uint k = 0; k < s.cf.num_regs; k++) if (s.live_in[self.insn].test(k) && (s.defined[self.insn] & (1u << k)) != 0) n.live_mask |= 1u << k;
+        }
     }
 }
 
@@ -1032,38 +1083,65 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
         Opcode op = cfg.nodes[k].view.insn.op;
         if (!inline_op_ok(op)) { self.rej_op = op; return self.reject(OptInlineReject.OPCODE); }
     }
-    if (cfg.block_count != 1) return self.reject(OptInlineReject.BLOCKS);
+    // Forward branches only: a loop in the callee stays a call.
+    if (cfg.has_backedge) return self.reject(OptInlineReject.BLOCKS);
+    s.flat = cfg.block_count != 1;
     Opcode last_op = cfg.nodes[cfg.instruction_count - 1].view.insn.op;
     if (last_op != Opcode.RET && last_op != Opcode.RETUNDEF) return self.reject(OptInlineReject.NO_RET);
     // Nothing but the arguments may be read before it is written: the window slots are not cleared.
     s.defined = mem::new_array(uint, cfg.instruction_count);
-    uint defined = nargs >= 32 ? ~0u : (1u << nargs) - 1;
-    for (uint k = 0; k < cfg.instruction_count; k++) {
-        DecodedInsn w = cfg.nodes[k].view.insn;
-        uint reads;
-        uint writes;
-        inline_rw(&w, &reads, &writes);
-        if ((reads & ~defined) != 0) return self.reject(OptInlineReject.READ_UNDEF);
-        s.defined[k] = defined;
-        defined |= writes;
-    }
+    uint argmask = nargs >= 32 ? ~0u : (1u << nargs) - 1;
     s.remap = uint::max;
-    if (cfg.instruction_count >= 2 && last_op == Opcode.RET) {
-        uint last = cfg.instruction_count - 2;
-        uint rr = cfg.nodes[last + 1].view.insn.a;
-        uint reads;
-        uint writes;
-        DecodedInsn lw = cfg.nodes[last].view.insn;
-        inline_rw(&lw, &reads, &writes);
-        bool alone = writes == (1u << rr);
-        for (uint k = 0; k < last && alone; k++) {
-            DecodedInsn kw = cfg.nodes[k].view.insn;
-            uint r2;
-            uint w2;
-            inline_rw(&kw, &r2, &w2);
-            if (((r2 | w2) & (1u << rr)) != 0) alone = false;
+    if (s.flat) {
+        // A forward dataflow: what every path to an instruction has written.
+        bool* reached = mem::new_array(bool, cfg.instruction_count);
+        defer mem::free(reached);
+        s.defined[0] = argmask;
+        reached[0] = true;
+        for (uint k = 0; k < cfg.instruction_count; k++) {
+            if (!reached[k]) continue;
+            DecodedCfgNode* node = &cfg.nodes[k];
+            uint reads;
+            uint writes;
+            inline_rw(&node.view.insn, &reads, &writes);
+            if ((reads & ~s.defined[k]) != 0) return self.reject(OptInlineReject.READ_UNDEF);
+            uint out = s.defined[k] | writes;
+            for (uint e = 0; e < node.successor_count; e++) {
+                uint t = node.successors[e];
+                if (t <= k) return self.reject(OptInlineReject.BLOCKS);
+                s.defined[t] = reached[t] ? (s.defined[t] & out) : out;
+                reached[t] = true;
+            }
+            if (node.successor_count == 0 && node.view.insn.op != Opcode.RET && node.view.insn.op != Opcode.RETUNDEF) return self.reject(OptInlineReject.NO_RET);
         }
-        if (alone) s.remap = last;
+    } else {
+        uint defined = argmask;
+        for (uint k = 0; k < cfg.instruction_count; k++) {
+            DecodedInsn w = cfg.nodes[k].view.insn;
+            uint reads;
+            uint writes;
+            inline_rw(&w, &reads, &writes);
+            if ((reads & ~defined) != 0) return self.reject(OptInlineReject.READ_UNDEF);
+            s.defined[k] = defined;
+            defined |= writes;
+        }
+        if (cfg.instruction_count >= 2 && last_op == Opcode.RET) {
+            uint last = cfg.instruction_count - 2;
+            uint rr = cfg.nodes[last + 1].view.insn.a;
+            uint reads;
+            uint writes;
+            DecodedInsn lw = cfg.nodes[last].view.insn;
+            inline_rw(&lw, &reads, &writes);
+            bool alone = writes == (1u << rr);
+            for (uint k = 0; k < last && alone; k++) {
+                DecodedInsn kw = cfg.nodes[k].view.insn;
+                uint r2;
+                uint w2;
+                inline_rw(&kw, &r2, &w2);
+                if (((r2 | w2) & (1u << rr)) != 0) alone = false;
+            }
+            if (alone) s.remap = last;
+        }
     }
     uint saved_fn = self.cur_fn;
     uint saved_site = self.cur_site;
@@ -1079,6 +1157,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
             case INC: case DEC: case UNM:
+            case JMP_NLT..JMP_GE: case JMP_NLTI..JMP_SNEQI:
                 ok = (self.feedback() & (hobject::FB_STR | hobject::FB_OTHER)) == 0;
             case GETPROPC: case GETPROPC_CACHED:
                 ok = self.own_field() != null;
@@ -1169,6 +1248,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s) {
 fn void OptBuild.find_sites(&self) {
     if (self.no_inline || self.h.opt.no_inline) return;
     uint count = self.cfg.instruction_count;
+    uint flat_total = 0;
     for (uint i = 0; i < count; i++) {
         OptInlineSite s;
         self.rej = OptInlineReject.BUILD;
@@ -1178,12 +1258,200 @@ fn void OptBuild.find_sites(&self) {
             if (is_call && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
             continue;
         }
+        if (s.flat) {
+            // The splice needs the instruction after the call as the join, a room in the graph,
+            // and the site not to have failed an earlier build.
+            bool skip = i + 1 >= count || flat_total + s.cfg.instruction_count + count > compiler::DEFAULT_CFG_BUDGET.max_instructions;
+            for (uint e = 0; e < self.exclude_count; e++) skip = skip || self.exclude[e] == self.cfg.nodes[i].view.pc;
+            if (!skip && self.h.opt.inline_seen >= self.h.opt.inline_max) skip = true;
+            if (skip) {
+                s.free_site();
+                continue;
+            }
+            self.h.opt.inline_seen++;
+            flat_total += s.cfg.instruction_count;
+            s.head_pc = self.cfg.nodes[i].view.pc;
+            self.flat_count++;
+        }
         if (self.site_of == null) self.site_of = mem::new_array(uint, count);
         self.sites.push(s);
         self.site_of[i] = (uint)self.sites.len();
         uint need = s.base + s.cf.num_regs;
         if (need > self.nregs) self.nregs = need;
     }
+}
+
+// Splice the bodies of the flat sites into the caller's control flow graph: each call stays as the
+// head, followed by its callee's instructions with their registers shifted into the call's window,
+// their edges re-pointed, and every return turned into a copy of the value to the call's result
+// register with an edge to the instruction after the call. Blocks, order and liveness are then
+// derived from the whole, so the merge of the returns is an ordinary phi. Each node keeps the
+// callee's pc and feedback for lowering (OptBuild.context); only the register operands and the
+// returns are rewritten.
+fn bool OptBuild.flatten(&self) {
+    DecodedCfg* old = &self.cfg;
+    uint ocount = old.instruction_count;
+    uint* fmap = mem::new_array(uint, (sz)ocount + 1);
+    defer mem::free(fmap);
+    uint total = 0;
+    for (uint i = 0; i < ocount; i++) {
+        fmap[i] = total++;
+        if (self.site_of[i] != 0) {
+            OptInlineSite* s = &self.sites[(sz)self.site_of[i] - 1];
+            if (s.flat) total += s.cfg.instruction_count;
+        }
+    }
+    fmap[ocount] = total;
+    usz bytes = (usz)total * DecodedCfgNode::size;
+    void* storage = self.h.alloc_func(self.h.heap_udata, bytes);
+    if (storage == null) return false;
+    mem::clear(storage, (sz)bytes);
+    DecodedCfg flat = { .nodes = (DecodedCfgNode*)storage, .instruction_count = total, .word_count = old.word_count, .has_wide = old.has_wide, .storage = storage, .owner = self.h };
+    self.fl_site = mem::new_array(uint, total);
+    self.fl_kind = mem::new_array(uint, total);
+    self.site_fn = mem::new_array(uint, self.sites.len());
+    uint* flat_site_of = mem::new_array(uint, total);
+    uint* scratch = mem::new_array(uint, total);
+    defer mem::free(scratch);
+    for (uint i = 0; i < ocount; i++) {
+        uint o = fmap[i];
+        DecodedCfgNode node = old.nodes[i];
+        for (uint k = 0; k < node.successor_count; k++) node.successors[k] = fmap[node.successors[k]];
+        if (node.branch_target != compiler::CFG_NO_INSTRUCTION) node.branch_target = fmap[node.branch_target];
+        uint si1 = self.site_of[i];
+        if (si1 != 0) {
+            OptInlineSite* s = &self.sites[(sz)si1 - 1];
+            s.insn = o;
+            flat_site_of[o] = si1;
+            if (s.flat) {
+                // The head runs into the body.
+                node.successors[0] = o + 1;
+                node.successor_count = 1;
+                node.branch_target = compiler::CFG_NO_INSTRUCTION;
+                uint off = o + 1;
+                uint join = fmap[i + 1];
+                uint result = node.view.insn.a;
+                s.flat_off = off;
+                DecodedCfg* cc = &s.cfg;
+                for (uint j = 0; j < cc.instruction_count; j++) {
+                    DecodedCfgNode cn = cc.nodes[j];
+                    inline_rebase(&cn.view.insn, s.base);
+                    for (uint k = 0; k < cn.successor_count; k++) cn.successors[k] += off;
+                    if (cn.branch_target != compiler::CFG_NO_INSTRUCTION) cn.branch_target += off;
+                    cn.block_entry = false;
+                    cn.external = false;
+                    cn.call = false;
+                    Opcode op = cn.view.insn.op;
+                    if (op == Opcode.RET || op == Opcode.RETUNDEF) {
+                        uint src = cn.view.insn.a;
+                        cn.view.insn.op = op == Opcode.RET ? Opcode.LDREG : Opcode.LDUNDEF;
+                        cn.view.insn.a = result;
+                        cn.view.insn.b = op == Opcode.RET ? src : 0;
+                        cn.view.insn.c = 0;
+                        cn.roles = compiler::moveelim_roles[cn.view.insn.op.ordinal];
+                        cn.successors[0] = join;
+                        cn.successor_count = 1;
+                        cn.branch_target = compiler::CFG_NO_INSTRUCTION;
+                        self.fl_kind[off + j] = op == Opcode.RET ? 1 : 2;
+                    }
+                    flat.nodes[off + j] = cn;
+                    self.fl_site[off + j] = si1;
+                }
+            }
+        }
+        flat.nodes[o] = node;
+    }
+    compiler::bytecode_cfg_finish(&flat, scratch);
+    compiler::bytecode_cfg_free(&self.cfg);
+    self.cfg = flat;
+    mem::free(self.site_of);
+    self.site_of = flat_site_of;
+    // Liveness over the whole graph, with room for the callee windows.
+    mem::free(self.live_sets);
+    mem::free(self.live_words);
+    uint words = (self.nregs + 32) / 32;
+    self.live_sets = mem::new_array(RegSet, (usz)total * 2);
+    self.live_words = mem::new_array(uint, ((usz)total * 2 + 1) * words);
+    for (uint i = 0; i < total * 2; i++) self.live_sets[i] = { .words = self.live_words + (usz)i * words, .word_count = words };
+    RegSet scratch_set = { .words = self.live_words + (usz)total * 2 * words, .word_count = words };
+    compiler::bytecode_cfg_liveness(&self.cfg, self.live_sets, self.live_sets + total, &scratch_set, true, false, true);
+    self.live_out = self.live_sets;
+    self.live_in = self.live_sets + total;
+    return true;
+}
+
+// A flat body that cannot be lowered: abandon this build, to be redone with the site left as a call.
+fn void OptBuild.fail_flat(&self, uint pc) {
+    self.flat_fail = true;
+    self.flat_fail_pc = pc;
+}
+
+// The call of a flat site: the guards of the inlined call, as try_inline does, and the entry of its
+// body, whose instructions follow in the graph.
+fn bool OptBuild.enter_flat(&self, uint si) {
+    OptInlineSite* s = &self.sites[si];
+    uint callee_reg = s.base - 2;
+    if (!s.var_call && (!self.in_window(callee_reg) || !self.in_window(callee_reg + 1))) {
+        self.count_reject(OptInlineReject.STATE, Opcode.NOP);
+        self.fail_flat(s.head_pc);
+        return true;
+    }
+    uint resume = self.next_pc;
+    uint result = self.w.a;
+    if (s.var_call) {
+        uint load = self.add(OptOp.LOAD_VAR, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+        self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
+        self.snapshot(load);
+        self.kill(callee_reg);
+    }
+    uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, NO_NODE, NO_NODE, (long)(usz)s.cf);
+    self.g.nodes[chk].cc = s.method ? 1 : 0;
+    self.snapshot(chk);
+    self.g.fns.push({ .f = s.cf, .reg_base = s.base, .resume_pc = resume, .remap_pc = uint::max, .remap_reg = result });
+    self.site_fn[si] = (uint)self.g.fns.len() - 1;
+    // The locals and temporaries start as nothing known; the arguments keep their state.
+    for (uint r = s.base + s.cf.num_formals; r < self.nregs; r++) self.kill(r);
+    self.inlined++;
+    return true;
+}
+
+// A flat body's return: the value becomes the call's result register. A number is a new node in
+// that register; a window value is copied to its slot.
+fn bool OptBuild.flat_return(&self, uint result, uint ra) {
+    if (ra >= self.nregs || result >= self.nregs) return false;
+    uint src = self.cur[ra].node;
+    if (src != NO_NODE) {
+        if (!self.g.nodes[src].is_const()) src = self.add(OptOp.COPY, self.rep_of(src), src);
+        self.set(result, src);
+        return true;
+    }
+    uint n = self.add(OptOp.COPY_WINDOW, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.g.nodes[n].home = result;
+    self.snapshot(n);
+    self.kill(result);
+    return true;
+}
+
+// An instruction of a flat body.
+fn bool OptBuild.lower_flat(&self) {
+    OptInlineSite* s = &self.sites[self.cur_site];
+    uint kind = self.fl_kind[self.insn];
+    self.inline_failed = false;
+    self.inline_unsafe = false;
+    bool ok = true;
+    if (kind == 1) {
+        ok = self.flat_return(self.w.a, self.w.b);
+    } else if (kind == 2) {
+        self.store_const(self.w.a, K_UNDEF);
+    } else {
+        ok = self.lower_op();
+    }
+    if (!ok || self.inline_failed || self.inline_unsafe) {
+        if (!s.counted) self.count_reject(self.inline_unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD, Opcode.NOP);
+        s.counted = true;
+        self.fail_flat(s.head_pc);
+    }
+    return true;
 }
 
 // Store the boxed constant `bits` to window slot `reg` (a register of an inlined body or the call's
@@ -1222,6 +1490,7 @@ fn bool OptBuild.try_inline(&self) {
     if (self.cur_fn != 0 || self.site_of == null || self.site_of[self.insn] == 0) return false;
     uint si = self.site_of[self.insn] - 1;
     OptInlineSite* s = &self.sites[si];
+    if (s.flat) return self.enter_flat(si);
     if (self.h.opt.inline_seen >= self.h.opt.inline_max) return false;
     self.h.opt.inline_seen++;
     uint callee_reg = s.base - 2;
@@ -1315,6 +1584,11 @@ fn bool OptBuild.try_inline(&self) {
 
 // Lower instruction `self.insn`.
 fn bool OptBuild.lower(&self) {
+    if (self.cur_fn != 0 && self.sites[self.cur_site].flat) return self.lower_flat();
+    return self.lower_op();
+}
+
+fn bool OptBuild.lower_op(&self) {
     DecodedInsn w = self.w;
     Opcode op = w.op;
     uint ra = w.a;
@@ -1419,10 +1693,17 @@ fn bool OptBuild.lower(&self) {
                 default: v.set_boolean(op == LDTRUE);
             }
             // A register the body never reads again needs no value.
-            uint k = self.cur_cfg().nodes[self.insn].view.insn.a;
-            if (self.w.a == k + self.sites[self.cur_site].base && !self.sites[self.cur_site].live_out[self.insn].test(k)) {
-                self.kill(ra);
-                return true;
+            if (self.sites[self.cur_site].flat) {
+                if (!self.live_out[self.insn].test(ra)) {
+                    self.kill(ra);
+                    return true;
+                }
+            } else {
+                uint k = self.cur_cfg().nodes[self.insn].view.insn.a;
+                if (self.w.a == k + self.sites[self.cur_site].base && !self.sites[self.cur_site].live_out[self.insn].test(k)) {
+                    self.kill(ra);
+                    return true;
+                }
             }
             self.store_const(ra, (long)v.bits);
         case GETCAP:
@@ -1478,7 +1759,12 @@ fn bool OptBuild.set_override(&self, uint pos, uint reg, OptRep rep) {
 }
 
 fn void OptBuild.context(&self, uint i) {
-    DecodedCfgNode* node = &self.cur_cfg().nodes[i];
+    DecodedCfgNode* node = &self.cfg.nodes[i];
+    if (self.fl_site != null) {
+        uint si1 = self.fl_site[i];
+        self.cur_site = si1 == 0 ? 0 : si1 - 1;
+        self.cur_fn = si1 == 0 ? 0 : self.site_fn[si1 - 1];
+    }
     self.insn = i;
     self.pc = node.view.pc;
     self.next_pc = node.view.next_pc;
@@ -1587,6 +1873,10 @@ fn bool OptBuild.build_round(&self) {
                 if (self.refused == OptRefuse.NONE) self.refuse(OptRefuse.FUNCTION);
                 return false;
             }
+            if (self.flat_fail) {
+                self.refuse(OptRefuse.FUNCTION);
+                return false;
+            }
         }
         self.end_block(pos);
     }
@@ -1646,9 +1936,23 @@ fn void OptBuild.compute_edges(&self) {
     }
 }
 
-// Build the graph of `f` into `g`. Returns NONE on success, else why not.
+// Build the graph of `f` into `g`. Returns NONE on success, else why not. A flat inline site whose
+// body cannot be lowered is left as a call and the graph is built again.
 fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline) {
+    uint[16] exclude;
+    uint excluded = 0;
+    while (true) {
+        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded);
+        if (why == OptRefuse.NONE || !b.flat_fail || excluded == exclude.len) return why;
+        exclude[excluded++] = b.flat_fail_pc;
+        b.free();
+    }
+}
+
+fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count) {
     *b = {};
+    b.exclude = exclude;
+    b.exclude_count = exclude_count;
     b.no_inline = no_inline;
     b.h = h;
     b.f = f;

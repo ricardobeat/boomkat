@@ -170,12 +170,41 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
         if (branch || !fallthrough || (split_calls && node.call)) cfg.nodes[i + 1].block_entry = true;
         if (split_calls && node.call) cfg.nodes[i + 1].external = true;
     }
+    bytecode_cfg_number_blocks(cfg);
+    complete = true;
+    return true;
+}
+
+fn void bytecode_cfg_number_blocks(DecodedCfg* cfg) {
+    cfg.block_count = 0;
     for (uint i = 0; i < cfg.instruction_count; i++) {
         if (cfg.nodes[i].block_entry) cfg.block_count++;
         cfg.nodes[i].block = cfg.block_count - 1;
     }
-    complete = true;
-    return true;
+}
+
+// Derive the blocks of a graph whose nodes carry their edges (successors, branch_target) but not
+// yet their block structure, as when a callee's nodes have been spliced into a caller's: a node
+// starts a block when it is the first, has several incoming edges, or is reached by anything but
+// the plain fallthrough of its predecessor. `scratch` holds instruction_count words.
+fn void bytecode_cfg_finish(DecodedCfg* cfg, uint* scratch) {
+    uint count = cfg.instruction_count;
+    for (uint i = 0; i < count; i++) { scratch[i] = 0; cfg.nodes[i].block_entry = false; }
+    cfg.has_backedge = false;
+    for (uint i = 0; i < count; i++) {
+        DecodedCfgNode* node = &cfg.nodes[i];
+        bool plain = node.successor_count == 1 && node.successors[0] == i + 1 && node.branch_target == CFG_NO_INSTRUCTION;
+        for (uint k = 0; k < node.successor_count; k++) {
+            uint s = node.successors[k];
+            scratch[s]++;
+            if (!plain) cfg.nodes[s].block_entry = true;
+            cfg.has_backedge |= s <= i;
+        }
+        if (!plain && i + 1 < count) cfg.nodes[i + 1].block_entry = true;
+    }
+    for (uint i = 0; i < count; i++) if (scratch[i] != 1) cfg.nodes[i].block_entry = true;
+    cfg.nodes[0].block_entry = true;
+    bytecode_cfg_number_blocks(cfg);
 }
 
 // With `exact`, the operands of CALL_VAR, CALL_GLOBAL and PUTPROPC that are constant indices or counts
@@ -189,6 +218,17 @@ fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true, bool
                 return;
             case PUTPROPC:
                 uses.set((uint)ins.a);
+                uses.set((uint)ins.b);
+                return;
+            case IF_TRUE: case IF_FALSE:
+                uses.set((uint)ins.a);
+                return;
+            case JMP_NLT..JMP_NNULL:
+                // A is the offset; JMP_NULL and JMP_NNULL repeat B in C.
+                uses.set((uint)ins.b);
+                uses.set((uint)ins.c);
+                return;
+            case JMP_NLTI..JMP_SNEQI:
                 uses.set((uint)ins.b);
                 return;
             default:
