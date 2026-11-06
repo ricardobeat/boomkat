@@ -461,6 +461,12 @@ fn void Asm.prop_base(&self, int dst, int obj) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
+// Jump to `to` while incremental marking runs.
+fn void Asm.guard_not_marking_to(&self, Jumps* to, int tmp) {
+    sljit_emit_op1(self.c, SLJIT_MOV_U8, tmp, 0, SLJIT_MEM | self.heap, self.lay.heap_gc_phase);
+    to.add(sljit_emit_cmp(self.c, SLJIT_EQUAL, tmp, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
+}
+
 // The slow path while incremental marking runs.
 fn void Asm.guard_not_marking(&self, int tmp) {
     sljit_emit_op1(self.c, SLJIT_MOV_U8, tmp, 0, SLJIT_MEM | self.heap, self.lay.heap_gc_phase);
@@ -913,15 +919,106 @@ fn void Asm.put_key_check(&self, long key, int key_reg) {
 }
 
 // An absent-property add to the plain object in R1 through the entry in R2:
-// the key check inline, the rest in vm::jit_put_absent.
+// the key check inline, the rest in the put-absent subroutine.
 fn void Asm.emit_put_absent(&self, long ic, long key, int key_reg, uint rv) {
     void* c = self.c;
     self.put_key_check(key, key_reg);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
     sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
+    self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUT_ABSENT_SUB });
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+}
+
+// The put-absent subroutine: R1 the receiver, R2 its site entry (whose key
+// matched), R3 the address of the value. R0 is nonzero when the key was
+// appended, 0 for the slow path. It is vm::jit_put_absent's common case
+// inline: ic_matches_absent_put (shape, recycle epoch, extensible plain
+// object, the recorded prototype chain ending in null), a value that needs no
+// count or barrier work, spare capacity and no hash table, and a receiver
+// never observed as a prototype (which needs an epoch bump). Any other state
+// calls that helper, which decides again.
+fn void Asm.emit_put_absent_body(&self) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    int sp = m | reg_sp();
+    Jumps fail;
+    self.mov(sp, SUB_VALUE_OFF, R3, 0);
+    // A plain object, extensible; a chain walk's objects are checked alike.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, l.class_object));
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.extensible_mask);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R2, l.ic_has_proto);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, l.obj_shape);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, l.ic_shape);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | self.heap, l.heap_epoch);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, l.ic_gen);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
+    // ic_matches_absent_chain, unrolled: link i is checked while chain_len > i
+    // (a chain_len past IC_MAX_CHAIN, the epoch payload, never matches), then
+    // the walk must have reached the end of the prototype chain.
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R1, l.obj_proto);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R2, l.ic_chain_len);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, (long)hobject::IC_MAX_CHAIN));
+    Jumps walked;
+    for (long i = 0; i < hobject::IC_MAX_CHAIN; i++) {
+        if (i > 0) {
+            sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R2, l.ic_chain_len);
+        }
+        walked.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, SLJIT_IMM, i));
+        fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | R2, l.ic_chain);
+        fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, m | R3, l.chain_proto0 + i * 8));
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R3, l.chain_shape0 + i * 4);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R4, l.obj_shape);
+        fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R4, 0);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+        fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+        sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R4, l.obj_proto);
+    }
+    walked.bind(sljit_emit_label(c));
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    // Spare capacity, no hash table, not a prototype.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, l.obj_prop_count);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R1, l.obj_prop_capacity);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, R3, 0));
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | R1, l.obj_prop_hash, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R1, l.obj_gc);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R4, 0, SLJIT_IMM, l.proto_observed_mask);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    // The value: inert, or an object while not marking into a young owner.
+    self.mov(R3, 0, sp, SUB_VALUE_OFF);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | R3, 0);
+    void* inert = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R3, 0, SLJIT_IMM, K_OBJ);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.guard_not_marking_to(&fail, R0);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R4, 0, SLJIT_IMM, l.old_mask);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(inert, sljit_emit_label(c));
+    // Append: the slot at prop_count was never owned, so it needs no old-value work.
+    self.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R1, l.obj_prop_count);
+    sljit_emit_op2(c, SLJIT_SHL, R4, 0, R4, 0, SLJIT_IMM, 3);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R4, 0);
+    sljit_emit_op1(c, SLJIT_MOV, m | R0, 0, R3, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R1, l.obj_prop_count);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R1, l.obj_prop_count, R4, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R2, l.ic_absent_next);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R1, l.obj_shape, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 1);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    fail.bind(sljit_emit_label(c));
+    self.mov(R3, 0, sp, SUB_VALUE_OFF);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // R0 = the address of element R3 (a fastint) of the dense part of the array
