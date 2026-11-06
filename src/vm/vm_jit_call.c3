@@ -10,6 +10,7 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::env;
+import boomkat::builtins;
 
 // Native calls nested on one Dispatch's C stack before a call takes the
 // slow path, which leaves through Vm.run.
@@ -79,10 +80,11 @@ fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
     TVal* regs = ds.regs_base;
-    if (pc.op == Opcode.NEW_OBJ || pc.op == Opcode.APPLY_ARGS) return jit_call_relayed(ds, pc, st);
     LeanCall r;
-    uint nargs = pc.op == Opcode.CALL || pc.op == Opcode.CALL_UNDEF_THIS ? pc.c : pc.b;
+    uint nargs = pc.op == Opcode.CALL || pc.op == Opcode.CALL_UNDEF_THIS || pc.op == Opcode.NEW_OBJ ? pc.c : pc.b;
     switch (pc.op) {
+        case NEW_OBJ: r = jit_new_lean(pc, regs, ds, cold, vm);
+        case APPLY_ARGS: r = jit_apply_lean(pc, regs, cold, vm, &nargs);
         case CALL: r = @lean_call_method(pc, regs, cold, true);
         case CALL_UNDEF_THIS: r = @lean_call_undef_this(pc, regs, cold, true);
         case CALL_VAR: r = @lean_call_var(pc, regs, cold, true);
@@ -167,6 +169,93 @@ fn CompiledFunction* jit_compiled_callee(TVal callee) @inline {
     return (*fn_obj.extra_ptr()).func.comp_func;
 }
 
+// APPLY_ARGS (with the CALL_S it is fused with) as th_apply_args runs it: the
+// register `arguments` of the running function spread into the callee's
+// window, whose frame is published for the CALL_S. `nargs` receives the count.
+fn LeanCall jit_apply_lean(Instruction* pc, TVal* regs, ColdCtx* cold, Vm* vm, uint* nargs_out) @private @inline {
+    Instruction insn = *pc;
+    Instruction call = pc[1];
+    uint callee = insn.a;
+    Activation* act = cold.act;
+    TVal args_slot = regs[((CompiledFunction*)act.func).arguments_reg];
+    if (call.op != Opcode.CALL_S || call.b != callee || !args_slot.is_fastint()
+        || !builtins::is_intrinsic_apply(regs[callee])) return DECLINE;
+    CompiledFunction* target = jit_compiled_callee(regs[callee + 1]);
+    if (target == null) return NATIVE;
+    if (target.jit_code == null) return NO_CODE;
+    target = th_lean_target(vm, regs[callee + 1], regs + callee + 2, false);
+    uint nargs = (uint)args_slot.get_fastint();
+    if (target == null || nargs > target.num_regs) return DECLINE;
+    TVal this_arg = regs[callee + 2];
+    bool this_valid = false;
+    if (this_arg.is_heap_allocated()) {
+        if (!this_arg.is_object() || this_arg.get_heapptr() == null) return DECLINE;
+        this_valid = !target.call_flags.ignores_this;
+    } else if (!target.call_flags.ignores_this) {
+        return DECLINE;
+    }
+    TVal* window = regs + callee + 2;
+    if (!th_can_publish(cold.heap, regs[callee + 1]) || !th_can_publish(cold.heap, this_arg)) return DECLINE;
+    for (uint i = 0; i < nargs; i++) {
+        if (!th_can_publish(cold.heap, regs[i])) return DECLINE;
+    }
+    if (@lean_gate(cold, true)) return DECLINE;
+
+    regs[callee] = regs[callee + 1];
+    regs[callee + 1] = this_arg;
+    track_heap_store(act, regs + callee, callee);
+    track_heap_store(act, regs + callee + 1, callee + 1);
+    if (nargs == 0) window[0].set_undefined();
+    for (uint i = 0; i < nargs; i++) {
+        TVal value = regs[i];
+        window[i] = value;
+        track_heap_store(act, &window[i], callee + 2 + i);
+    }
+    regs[insn.c].set_fastint((long)nargs);
+    *nargs_out = nargs;
+    return th_publish_lean(pc + 1, regs, cold, target, callee, call.a, nargs, false, !this_valid,
+                           this_valid ? this_arg : th_undefined(), this_valid, null) ? ENTERED_ARGS : ENTERED;
+}
+
+// NEW_OBJ of a lean constructor jit_new_simple left: its object and its
+// frame are published as th_new_obj does. DECLINE leaves the instruction to its thunk before
+// anything is written.
+fn LeanCall jit_new_lean(Instruction* pc, TVal* regs, Dispatch* ds, ColdCtx* cold, Vm* vm) @private @inline {
+    Instruction insn = *pc;
+    TVal callee = regs[insn.b];
+    if (!callee.is_object()) return NATIVE;
+    HObject* ctor = (HObject*)callee.get_heapptr();
+    if (!ctor.is_callable() || !ctor.is_constructable()
+        || ctor.callable_kind() != hobject::CallableKind.COMPILED_FN) return NATIVE;
+    CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
+    if (target == null) return NATIVE;
+    // jit_new_simple completed a simple constructor or declined it.
+    if (target.call_flags.simple_constructor) return DECLINE;
+    if (target.is_arrow() || target.is_derived_ctor() || target.brand_name_hstr != null
+        || target.field_init_func != null) return DECLINE;
+    if (target.jit_code == null) return NO_CODE;
+    if (th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return DECLINE;
+    hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
+    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
+        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
+        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return DECLINE;
+    TVal proto = ctor.prop_values()[ic.prop_idx].get();
+    if (!proto.is_object()) return DECLINE;
+    if (@lean_gate(cold, true)) return DECLINE;
+    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    if (obj == null) return DECLINE;
+    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
+    if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
+        obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
+    }
+    // The frame holds the new object as its `this`, and its return answers it
+    // unless the body returns an object.
+    TVal this_value;
+    this_value.set_object(obj);
+    return th_publish_lean(pc, regs, cold, target, insn.b, insn.a, insn.c, false, false,
+                           this_value, true, ctor) ? ENTERED_ARGS : ENTERED;
+}
+
 // NEW_OBJ of a simple constructor, completed in place as th_new_obj does:
 // 0 when the object is built and stored, JIT_CALL_SLOW to leave the
 // instruction to jit_call.
@@ -202,38 +291,6 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next) {
     track_heap_store(ds.act, ra, (uint)insn.a);
     ds.heap.jit_stats.calls_trivial++;
     return 0;
-}
-
-// NEW_OBJ and APPLY_ARGS (with the CALL_S it is fused with) through their
-// threaded handlers, th_new_obj and th_apply_args, which publish the
-// callee's frame, or complete a simple constructor in place, or decline
-// before writing anything. A callee without native code declines first, so
-// the thunk counts its entry.
-fn void* jit_call_relayed(Dispatch* ds, Instruction* pc, jit::JitStats* st) @private {
-    Vm* vm = ds.vm;
-    TVal* regs = ds.regs_base;
-    CompiledFunction* target = jit_compiled_callee(pc.op == Opcode.NEW_OBJ ? regs[pc.b] : regs[pc.a + 1]);
-    if (target == null) { st.calls_builtin++; return null; }
-    bool simple = pc.op == Opcode.NEW_OBJ && target.call_flags.simple_constructor;
-    if (!simple && target.jit_code == null) { st.calls_no_code++; return null; }
-    if (!jit_relay_ready) jit_relay_init();
-    uint depth = vm.activation_count;
-    Instruction* r = pc.op == Opcode.NEW_OBJ
-        ? @new_obj(pc, &jit_stop_table, regs, &ds.cold, true)
-        : @apply_args(pc, &jit_stop_table, regs, &ds.cold, true);
-    if (vm.activation_count == depth) {
-        if (r == pc) { st.calls_declined++; return null; }
-        st.calls_trivial++;
-        return (void*)JIT_CALL_DONE;
-    }
-    // The caller resumes past the CALL_S an APPLY_ARGS entered; its return
-    // redispatches there.
-    ds.load_frame();
-    ds.jit_floor = vm.activation_count - 1;
-    ds.jit_depth++;
-    st.calls_native++;
-    if (@unlikely(ds.heap.opt.enabled)) jit::opt_note_entry(ds.heap, target);
-    return jit::baseline_entry(target);
 }
 
 // RET and RETUNDEF as the threaded returns (th_leaf_return and
