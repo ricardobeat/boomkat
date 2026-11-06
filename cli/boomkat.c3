@@ -56,6 +56,7 @@ fn int main(String[] args) {
     bool opt = false;
     bool opt_always = false;
     bool opt_dump = false;
+    bool opt_no_inline = false;
     uint opt_exit_max = 0;
     String opt_force;
     bool jit_stats = false;
@@ -111,6 +112,10 @@ fn int main(String[] args) {
             jit = true;
             opt = true;
             opt_always = true;
+        } else if (a == "--opt-no-inline") {
+            jit = true;
+            opt = true;
+            opt_no_inline = true;
         } else if (a == "--opt-dump") {
             jit = true;
             opt = true;
@@ -223,6 +228,7 @@ fn int main(String[] args) {
             hp.opt.enabled = true;
             hp.opt.always = opt_always;
             hp.opt.dump = opt_dump;
+            hp.opt.no_inline = opt_no_inline;
             if (opt_exit_max != 0) hp.opt.exit_max = opt_exit_max;
             if (opt_force.len != 0 && !jit::opt_parse_force(&hp.opt, opt_force)) {
                 io::eprintfn("boomkat: bad --opt-force-exit spec '%s'", opt_force);
