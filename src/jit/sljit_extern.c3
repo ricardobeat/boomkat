@@ -41,6 +41,7 @@ extern fn int sljit_emit_icall(void* compiler, int type, int arg_types, int src,
 const int SLJIT_IMM               = 0x7f;
 const int SLJIT_MEM               = 0x80;
 const int SLJIT_LMUL_UW           = 2;
+const int SLJIT_DIVMOD_UW         = 4;
 const int SLJIT_DIVMOD_SW         = 5;
 const int SLJIT_MOV               = 32;
 const int SLJIT_MOV_U8            = 33;

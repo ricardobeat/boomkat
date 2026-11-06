@@ -562,7 +562,7 @@ fn void Asm.emit_stubs(&self) {
             self.emit_poly_arm(stub.poly_back);
         }
         self.call.bind(sljit_emit_label(c));
-        self.emit_add_concat();
+        self.emit_op_helper();
         self.emit_thunk_call(stub.insn);
         self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
     }
@@ -1168,6 +1168,8 @@ $else
             self.emit_mul(op == MULI, ra, rb, rc);
         case DIV:
             self.emit_number_binop(SLJIT_DIV_F64, ra, rb, rc);
+        case MOD:
+            self.emit_mod();
         case BAND:
         case BOR:
         case BXOR:
