@@ -102,7 +102,7 @@ fn void Asm.emit_op_helper(&self) {
         case GETPROPC:
         case GETPROPC_CACHED:
             if (self.f.constants[self.w.c].get_heapptr() != self.length_key) return;
-            helper = &vm::jit_get_args_length;
+            helper = &vm::jit_get_length;
         default: return;
     }
     void* c = self.c;
