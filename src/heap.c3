@@ -837,6 +837,10 @@ struct Realm {
 
 struct Heap {
     inline RealmState realm_state;
+    // The two bytes every native call and return reads, kept ahead of the
+    // large tables so that they sit within a short displacement.
+    bool  gc_pending;            /// The next safepoint has collector work: a collection or a sweep step
+    GcPhase gc_phase;
     // Only primary-realm lightfuncs need virtual-property deletion bits.
     ulong[LF_DELETED_WORDS] lf_deleted_props;
     // Allocator callbacks
@@ -892,10 +896,8 @@ struct Heap {
 
     // GC state
     long  gc_trigger_counter;
-    bool  gc_pending;            /// The next safepoint has collector work: a collection or a sweep step
     bool  gc_full_requested;     /// Host request completed at the next quiescent safepoint
     bool  gc_requested;          /// A collection is due; see request_gc
-    GcPhase gc_phase;
     GcKind gc_kind;
     uint gc_minors;
     uint gc_old_count;
