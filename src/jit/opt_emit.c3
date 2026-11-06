@@ -844,7 +844,14 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
         self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
         sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal), i, OptExit.SLOW_PATH);
+        void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+        void* quiet = sljit_emit_jump(c, SLJIT_JUMP);
+        // While marking the object is published at once, which marks it as the baseline's store does.
+        sljit_set_label(marking, sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)n.home);
+        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUBLISH_SUB });
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
+        sljit_set_label(quiet, sljit_emit_label(c));
         sljit_set_label(inert, sljit_emit_label(c));
         self.def_obj(i, R0);
     } else {
