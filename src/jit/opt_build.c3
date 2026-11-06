@@ -771,7 +771,9 @@ fn bool OptBuild.put_field(&self) {
     bool this_op = self.w.op == Opcode.PUTTHISC;
     if (ic == null || !ic.prop_flags.writable || (!this_op && !self.in_window(self.w.a))) return self.generic();
     uint rv = this_op ? self.w.a : self.w.b;
-    if (rv >= self.nregs) return self.generic();
+    // A value in the window may be a heap value, which needs the counted and traced store: the
+    // baseline's, with the registers stored and reloaded around it, not an exit on every store.
+    if (rv >= self.nregs || self.cur[rv].node == NO_NODE) return self.generic();
     uint recv = self.field_receiver();
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, self.cur[rv].node, NO_NODE, (long)self.pc);
     self.snapshot(n);
