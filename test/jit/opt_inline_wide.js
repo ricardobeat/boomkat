@@ -118,4 +118,41 @@ for (var e = 0; e < eqs.length; e++) {
     show("eqObjs" + e, drivers[e](eqs[e], [objA, objB, objA, 1, 2], 100));
 }
 
+// --- Global reads and `this` in an inlined body ---
+var SCALE = 3;
+var HALF = 0.5;
+var gObj = { k: 4 };
+var gStr = "g";
+function Gm(v) { this.v = v; }
+Gm.prototype.scaled = function (a) { if (a > 5) return a * SCALE; return a + SCALE; };
+Gm.prototype.half = function (a) { if (a < 0) return 0; return a * HALF; };
+Gm.prototype.self = function (a) { var t = this; if (a > 5) return t.v + a; return a; };
+Gm.prototype.selfRet = function (a) { if (a > 5) return this; return this.v; };
+Gm.prototype.objRead = function (a) { if (a > 5) return gObj.k + a; return a; };
+Gm.prototype.coldGlobal = function (a) { if (a > 100000) return SCALE + a; return a + 1; };
+Gm.prototype.strGlobal = function (a) { if (a > 5) return gStr; return a; };
+var gm = new Gm(2);
+var gnames = ["scaled", "half", "self", "selfRet", "objRead", "coldGlobal", "strGlobal"];
+for (var e = 0; e < gnames.length; e++) for (var i = 0; i < 3000; i++) { gm[gnames[e]](i & 7); gm[gnames[e]](2); }
+var gdrivers = gnames.map(function (nm) {
+    return new Function("o", "n", "m", "var s = 0.5; for (var i = 0; i < n; i++) { var r = o." + nm + "((i * m) & 255); s = (typeof r === 'number' ? r : (typeof r === 'string' ? 77 : r.v)) + s; } return s;");
+});
+for (var e = 0; e < gnames.length; e++) {
+    for (var k = 0; k < N; k++) gdrivers[e](gm, 40, 1);
+    show("glob" + gnames[e], gdrivers[e](gm, 200, 1));
+    show("globOther" + gnames[e], gdrivers[e](new Gm(1.5), 200, 3));
+}
+// The globals change under the optimized code.
+SCALE = 4.5;
+HALF = 2;
+gObj = { k: 9 };
+for (var e = 0; e < gnames.length; e++) show("globChanged" + gnames[e], gdrivers[e](gm, 200, 1));
+SCALE = "s";
+show("globString", gdrivers[0](gm, 50, 1));
+SCALE = 3;
+var big = new Gm(1);
+function viaBig(n) { var s = 0.5; for (var i = 0; i < n; i++) s = big.coldGlobal(i * 1000) + s; return s; }
+for (var k = 0; k < N; k++) viaBig(50);
+show("coldGlobalHot", viaBig(300));
+
 print(out.join("\n"));

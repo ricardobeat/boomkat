@@ -621,6 +621,21 @@ fn void OptCg.def_from_r0(&self, uint i, OptNode* n) {
     }
 }
 
+// GETGLOBAL of an inlined body as a number: the baseline's cached read, leaving for the baseline
+// code on the slow cases and on a value that is not of the node's kind.
+fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
+    Asm* a = self.a;
+    a.decode((uint)n.imm);
+    a.call.len = 0;
+    a.alt.len = 0;
+    long vic = (long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1];
+    a.var_slot(vic, false);
+    sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    a.guard_not_tdz();
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    self.def_from_r0(i, n);
+}
+
 // GETCAP as a number: the baseline's capture read, leaving for the baseline code on the slow
 // cases and on a value that is not of the node's kind.
 fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
@@ -931,7 +946,9 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
     a.call.len = 0;
     a.alt.len = 0;
     long vic = (long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1];
-    a.emit_get_var(a.w.a, vic, n.cc != 0);
+    uint ra = a.w.a;
+    if (n.fidx != 0) ra += self.g.fns[n.fidx].reg_base;
+    a.emit_get_var(ra, vic, n.cc != 0);
     // A moved entry re-arms in the baseline code.
     for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
     a.alt.len = 0;
@@ -944,7 +961,11 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     a.decode((uint)n.imm);
     a.call.len = 0;
-    a.load(R0, a.w.a + self.g.fns[n.fidx].reg_base);
+    if (n.cc != 0) {
+        a.load(R0, self.g.fns[n.fidx].reg_base - 1);
+    } else {
+        a.load(R0, a.w.a + self.g.fns[n.fidx].reg_base);
+    }
     a.publish(n.home);
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
@@ -1139,7 +1160,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -1175,6 +1196,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_check_callee(i, n);
         case LOAD_VAR:
             self.emit_load_var(i, n);
+        case LOAD_GLOBAL:
+            self.emit_load_global(i, n);
         case COPY_WINDOW:
             self.emit_copy_window(i, n);
         case STORE_CONST:
