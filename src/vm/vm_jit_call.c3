@@ -324,7 +324,9 @@ fn hobject::PropValue* jit_get_missed(Heap* h, HObject* hobj, void* key, hobject
             if (cur.get_prop_flags((uint)idx, h).is_accessor) return null;
             // The entry follows the receiver as the switch's lookup refills it, except that a
             // polymorphic set keeps its shapes.
-            if (ic != null && (ic.key.borrow() == null || (ic.key.borrow() == key && ic.chain_len != hobject::IC_CHAIN_POLY))) {
+            if (ic != null && ic.key.borrow() == key && depth == 0 && jit_poly_read(h, ic, hobj, (uint)idx)) {
+                // The receiver joined the entry's polymorphic set.
+            } else if (ic != null && (ic.key.borrow() == null || (ic.key.borrow() == key && ic.chain_len != hobject::IC_CHAIN_POLY))) {
                 ic_fill_read_heap(h, ic, hobj, key, cur);
             }
             if (depth <= 1) hobject::mega_cache_store(h, hobj, key, cur, idx, false);
@@ -335,6 +337,34 @@ fn hobject::PropValue* jit_get_missed(Heap* h, HObject* hobj, void* key, hobject
     if (cur != null) return null;
     jit_undefined.set_undefined();
     return (hobject::PropValue*)&jit_undefined;
+}
+
+// An own data read of `hobj` at `idx` through the entry `ic` caching the same key for another shape
+// joins the entry's polymorphic set, as th_get_shared does, so the optimizing tier sees every shape
+// of the site. With the set full, an entry that is already polymorphic moves to the receiver's shape.
+// False leaves the entry to the caller.
+fn bool jit_poly_read(Heap* h, hobject::ICEntry* ic, HObject* hobj, uint idx) {
+    if (ic.shape_id == hobj.shape_id || ic.has_proto) return false;
+    if (hobject::ic_poly_add(ic, hobj.shape_id, idx, h)) return true;
+    if (ic.chain_len != hobject::IC_CHAIN_POLY) return false;
+    ic.shape_id = hobj.shape_id;
+    ic.prop_idx = idx;
+    ic.prop_flags = hobj.get_prop_flags(idx, h);
+    return true;
+}
+
+// A read the megamorphic cache answered, `value` its result: when the property is an own data
+// property of the plain receiver, the site's entry takes the receiver's shape into its polymorphic
+// set (th_get_shared does the same), so the optimizing tier sees every shape the site meets. A set
+// that is full is left alone. Returns `value`.
+fn ulong jit_poly_note(Heap* h, HObject* hobj, hobject::ICEntry* ic, ulong value) {
+    if (ic.chain_len == hobject::IC_CHAIN_POLY && ic.chain.poly.count == hobject::IC_POLY_MAX) return value;
+    void* key = (void*)ic.key.borrow();
+    if (key == null) return value;
+    int idx = hobj.find_prop_idx(key, h);
+    if (idx < 0 || hobj.get_prop_flags((uint)idx, h).is_accessor) return value;
+    jit_poly_read(h, ic, hobj, (uint)idx);
+    return value;
 }
 
 const uint JIT_WALK_DEPTH = 6;

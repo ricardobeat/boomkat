@@ -46,7 +46,7 @@ enum OptOp : char {
     // LOAD_ELEM would. It defines nothing.
     STORE_ELEM,
     // A GETPROPC, GETPROPC_CACHED or GETTHISC (imm its pc) read of the own data property its
-    // cache names, from a plain object of the cache's shape; exits for any other receiver. Of rep
+    // cache names, from a non-proxy object of the cache's shapes; exits for any other receiver. Of rep
     // NONE it writes the value to the window, else it is a number of the node's rep.
     LOAD_FIELD,
     // A PUTPROPC or PUTTHISC (imm its pc) overwrite of the own writable data property its cache
@@ -146,6 +146,8 @@ struct OptNode {
     // Inside an inlined callee: the callee registers (bit r for callee register r) live at the
     // node, which the callee frame an exit publishes must keep.
     uint live_mask;
+    // LOAD_FIELD, STORE_FIELD: 1 + the index in OptGraph.polys of the receiver shapes it accepts.
+    uint poly;
     // The window slot a node was defined into.
     uint home;
     // Allocation: the machine register, or -1 for a constant or a value that
@@ -187,7 +189,18 @@ struct OptBlock {
     uint osr_count;
 }
 
+const uint OPT_POLY_MAX = 4;
+
+// The receiver shapes a field access accepts, in the order its code compares them, each with the
+// slot its property has in an object of that shape.
+struct OptPoly {
+    uint count;
+    uint[OPT_POLY_MAX] shape;
+    uint[OPT_POLY_MAX] idx;
+}
+
 struct OptGraph {
+    List{OptPoly} polys;
     List{OptNode} nodes;
     List{OptBlock} blocks;
     List{OptMove} moves;
@@ -196,6 +209,7 @@ struct OptGraph {
 }
 
 fn void OptGraph.init(&self) {
+    self.polys.init(mem);
     self.nodes.init(mem);
     self.blocks.init(mem);
     self.moves.init(mem);
@@ -204,6 +218,7 @@ fn void OptGraph.init(&self) {
 }
 
 fn void OptGraph.clear(&self) {
+    self.polys.clear();
     self.nodes.clear();
     self.blocks.clear();
     self.moves.clear();
@@ -211,6 +226,7 @@ fn void OptGraph.clear(&self) {
 }
 
 fn void OptGraph.free(&self) {
+    self.polys.free();
     self.nodes.free();
     self.blocks.free();
     self.moves.free();

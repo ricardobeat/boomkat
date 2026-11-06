@@ -3705,6 +3705,30 @@ fn bool ic_poly_add(ICEntry* ic, uint shape_id, uint prop_idx, heap::Heap* h) {
     return true;
 }
 
+// Fill a store entry for an own writable data property of `hobj`, found at `idx`. A site whose
+// entry cached the same key for another shape keeps that shape in its polymorphic set, which only
+// the optimizing tier reads: the entry itself, as every store hit path matches it, holds one shape.
+fn void ic_fill_put_own(ICEntry* ic, HObject* hobj, uint idx, PropFlags flags, HString* key, heap::Heap* h) {
+    bool own_same = ic.key.borrow() == (void*)key && ic.shape_id != heap::SHAPE_NONE && !ic.has_proto
+        && ic.prop_idx != IC_PROP_ABSENT && ic.prop_idx != IC_PROP_MISSING
+        && !ic.prop_flags.is_accessor && ic.prop_flags.writable
+        && (ic.chain_len == 0 || ic.chain_len == IC_CHAIN_POLY);
+    if (own_same && ic.shape_id != hobj.shape_id) {
+        bool known = false;
+        if (ic.chain_len == IC_CHAIN_POLY) {
+            for (uint i = 0; i < ic.chain.poly.count; i++) known = known || ic.chain.poly.shapes[i] == ic.shape_id;
+        }
+        if (!known) ic_poly_add(ic, ic.shape_id, ic.prop_idx, h);
+    }
+    ic.shape_id = hobj.shape_id;
+    ic.shape_gen = hobj.shape_generation(h);
+    ic.has_proto = false;
+    if (!own_same) ic.chain_len = 0;
+    ic.prop_idx = idx;
+    ic.prop_flags = flags;
+    ic.key.set(h, key);
+}
+
 // Allocation failure leaves the previous cache entry untouched.
 fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
     if (ic.chain != null) return true;
