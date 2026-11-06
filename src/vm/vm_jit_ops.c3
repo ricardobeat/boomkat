@@ -4,6 +4,7 @@
 // registers untouched, when the operation function has to run it.
 module boomkat::vm @feat(SLJIT);
 
+import boomkat::builtins;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hobject;
@@ -110,11 +111,13 @@ fn bool jit_put_elem(Dispatch* ds, Instruction* next) {
     return true;
 }
 
-// A GETPROPC or GETPROPC_CACHED of `length` on an arguments object that still
-// has the shape of its argument count (th_getprop_array's test), whose
-// property table holds the arguments, then `length`: the value is the slot
-// after them. The site's key is the constant `length`.
-fn bool jit_get_args_length(Dispatch* ds, Instruction* next) {
+// A GETPROPC or GETPROPC_CACHED of `length` the inline paths left, the site's
+// key being the constant `length`. On an arguments object that still has the
+// shape of its argument count (th_getprop_array's test) whose property table
+// holds the arguments, then `length`, the value is the slot after them. On a
+// typed array the site's entry must resolve to the intrinsic %TypedArray%
+// length getter, whose result is the element count (0 once detached).
+fn bool jit_get_length(Dispatch* ds, Instruction* next) {
     if (!jit_relay_ready) jit_relay_init();
     Instruction* pc = next - 1;
     TVal* regs = ds.regs_base;
@@ -122,7 +125,22 @@ fn bool jit_get_args_length(Dispatch* ds, Instruction* next) {
     heap::Heap* h = ds.cold.heap;
     if (!rb.is_object()) return false;
     HObject* obj = (HObject*)rb.get_heapptr();
-    if (obj.get_class() != hobject::ObjClass.ARGUMENTS || obj.is_proxy()) return false;
+    if (obj.is_proxy()) return false;
+    if (builtins::is_typed_array_class(obj.get_class())) {
+        hobject::ICEntry* ic = &ds.ic_base[pc - ds.code_base];
+        if (ic.shape_id != obj.shape_id || !ic.prop_flags.is_accessor || ic.prop_idx == hobject::IC_PROP_MISSING) return false;
+        hobject::PropValue* slot = hobject::ic_resolve_slot(ic, obj);
+        if (slot == null) return false;
+        TVal getter = hobject::hobject_access_getter(slot.get());
+        if (!getter.is_object()) return false;
+        HObject* getter_fn = (HObject*)getter.get_heapptr();
+        if (getter_fn == null || !getter_fn.is_callable() || getter_fn.callable_kind() != hobject::CallableKind.BUILTIN_FN
+            || (*getter_fn.extra_ptr()).func.builtin_fn_index != (int)builtins::Builtin.TYPEDARRAY_PROTO_LENGTH_GET.ordinal) return false;
+        ds.curr_pc = next;
+        h.set_reg_fastint(regs + pc.a, (long)builtins::ta_element_count(obj));
+        return true;
+    }
+    if (obj.get_class() != hobject::ObjClass.ARGUMENTS) return false;
     uint nargs = *obj.array_len_ptr();
     if (nargs >= h.args_shapes.len || obj.shape_id != h.args_shapes[nargs]) return false;
     ds.curr_pc = next;
