@@ -2320,6 +2320,7 @@ fn OpStatus op_putvar_assign(Dispatch* ds, DecodedInsn insn) {
                         hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)owner,
                             (void*)owner.bindings, owner.bindings.shape_id, (uint)owner_idx,
                             (void*)ds.act.lex_env, false, vm.heap);
+                        var_ic_note_rearm(ds.var_ic_base + pc_off, ds.act.lex_env, owner, vm.heap);
                     }
                 }
             }
