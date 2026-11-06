@@ -324,7 +324,7 @@ fn bool jit_put_absent(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value
 // several shapes keeps the one it has. False leaves the store to the thunk.
 fn bool jit_put_missed(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) {
     HString* key = (HString*)ic.key.borrow();
-    return key != null && put_by_lookup(h, hobj, key, value, null, false);
+    return key != null && put_by_lookup(h, hobj, key, value, ic, false);
 }
 
 // NEWARR, NEWARR_CONST, NEWOBJ and NEWOBJ_SHAPE as their threaded handlers
