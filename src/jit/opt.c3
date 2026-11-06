@@ -92,6 +92,9 @@ struct OptPolicy {
     bool enabled;
     // Do not inline calls.
     bool no_inline;
+    // Bisection aid (--opt-inline-max=N): inline only the first N sites tried, over all compiles.
+    uint inline_max;
+    uint inline_seen;
     // Callees inlined, and exits taken from inside an inlined body, over all compiles.
     uint inlined;
     uint inline_exits;
