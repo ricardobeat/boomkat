@@ -166,4 +166,44 @@ show("recurse-odd", drive(odd, 5));
 show("recurse-deep", recurse(3000, p));
 try { (function over() { return over() + getX(p); })(); } catch (e) { show("overflow-depth", e instanceof RangeError); }
 
+// Callees returning a constant or undefined (LDUNDEF, LDNULL, LDTRUE, LDFALSE, RETUNDEF), and one that
+// writes a field and then returns nothing.
+function retUndef(a, b) { var c = a + b; }
+function retUndef2(a, b) { return; }
+function retNull(a, b) { return null; }
+function retTrue(a, b) { return true; }
+function retFalse(a, b) { return false; }
+function varUndef(a, b) { var u; return u; }
+function setRet(a, o) { o.x = a; }
+warm(retUndef, 1, 2);
+warm(retUndef2, 1, 2);
+warm(retNull, 1, 2);
+warm(retTrue, 1, 2);
+warm(retFalse, 1, 2);
+warm(varUndef, 1, 2);
+warm(setRet, 1, { x: 0 });
+var constsObj = { x: 0 };
+function consts(n) {
+    var s = 0.5, o = constsObj, t = 0;
+    for (var i = 0; i < n; i++) {
+        s = s + i + 0.25;
+        var u = retUndef(s, i), u2 = retUndef2(s, i), nu = retNull(s, i), tr = retTrue(s, i), fa = retFalse(s, i);
+        var vu = varUndef(s, i), su = setRet(i, o);
+        t += (u === undefined) + (u2 === undefined) + (nu === null) + (tr === true) + (fa === false) + (vu === undefined) + (su === undefined) + o.x;
+    }
+    return s + t;
+}
+for (var k = 0; k < N; k++) consts(50);
+show("consts", consts(100));
+
+// A callee that has not run enough to have baseline code when its caller is optimized.
+function coldAdd(a, b) { var c = a + b; return c; }
+function coldCaller(n) {
+    var s = 0.5;
+    for (var i = 0; i < n; i++) s = coldAdd(s, i) + 0.25;
+    return s;
+}
+for (var k = 0; k < N; k++) coldCaller(20);
+show("cold-callee", coldCaller(200));
+
 print(out.join("\n"));

@@ -95,6 +95,10 @@ struct OptPolicy {
     // Callees inlined, and exits taken from inside an inlined body, over all compiles.
     uint inlined;
     uint inline_exits;
+    // Call sites with a known callee that were not inlined, by OptInlineReject, and by opcode for
+    // the callees refused for one.
+    ulong[OptInlineReject::values.len] inline_rejected;
+    ulong[Opcode::values.len] inline_rejected_ops;
     // Optimize every function as soon as it has baseline code.
     bool always;
     // Print each optimized function's graph (--opt-dump).
@@ -372,6 +376,12 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
 fn void opt_print_stats(Heap* h) {
     OptPolicy* p = &h.opt;
     io::eprintfn("opt inline: %d callees inlined, %d exits from inlined bodies", p.inlined, p.inline_exits);
+    foreach (r : OptInlineReject::values) {
+        if (p.inline_rejected[r.ordinal] != 0) io::eprintfn("opt inline rejected %s: %d", r.label, p.inline_rejected[r.ordinal]);
+    }
+    foreach (op : Opcode::values) {
+        if (p.inline_rejected_ops[op.ordinal] != 0) io::eprintfn("opt inline rejected opcode %s: %d", op, p.inline_rejected_ops[op.ordinal]);
+    }
     io::eprintfn("opt: compiled %d (%d reoptimized), discarded %d, refused %d; live %d bytes",
                  p.compiled, p.reopts, p.discards, p.refused, p.live_bytes);
     foreach (r : OptExit::values) {

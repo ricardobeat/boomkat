@@ -90,6 +90,8 @@ enum OptOp : char {
     // The window slot imm (a callee RET's register) copied to the window slot home (the call's
     // result register) as a published store; exits (SLOW_PATH) where publish does.
     COPY_WINDOW,
+    // The boxed constant imm (undefined, null or a boolean) stored to the window slot home.
+    STORE_CONST,
     // A jump to succ[0]; a conditional branch (BRANCH: JMP_* row cc over a and b
     // of rep imm, BRANCH_TRUTH: IF_TRUE/IF_FALSE over a, or the window slot imm
     // when a is NO_NODE, cc nonzero for IF_FALSE) takes succ[0] when it holds and

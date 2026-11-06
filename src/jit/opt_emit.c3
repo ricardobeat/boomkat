@@ -1177,6 +1177,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_load_var(i, n);
         case COPY_WINDOW:
             self.emit_copy_window(i, n);
+        case STORE_CONST:
+            self.a.store(n.home, SLJIT_IMM, n.imm);
         case COPY:
             self.emit_copy(n, i);
         case ADD_I32:

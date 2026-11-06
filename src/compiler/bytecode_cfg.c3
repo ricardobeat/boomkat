@@ -178,7 +178,23 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     return true;
 }
 
-fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true) {
+// With `exact`, the operands of CALL_VAR, CALL_GLOBAL and PUTPROPC that are constant indices or counts
+// are not taken for registers, as the conservative analysis of move elimination does.
+fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true, bool exact = false) {
+    if (exact) {
+        DecodedInsn ins = self.view.insn;
+        switch (ins.op) {
+            case CALL_VAR: case CALL_GLOBAL:
+                if (call_windows) moveelim_mark_range(uses, (uint)ins.a, (uint)ins.a + 1 + (uint)ins.b);
+                return;
+            case PUTPROPC:
+                uses.set((uint)ins.a);
+                uses.set((uint)ins.b);
+                return;
+            default:
+                break;
+        }
+    }
     // General windows and read/modify/write operands use the same canonical
     // routines as packed move elimination; high registers stay ordinary bits.
     moveelim_add_decoded_uses(self.view.insn, uses, call_windows);
@@ -191,7 +207,7 @@ fn bool DecodedCfgNode.must_def(&self, uint* reg) {
 // word_slots adapts existing callers whose arrays and recovery queries use PCs;
 // WIDE payload slots are cleared but never traversed as instructions.
 fn void bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in,
-    RegSet* scratch, bool call_windows = true, bool word_slots = false) {
+    RegSet* scratch, bool call_windows = true, bool word_slots = false, bool exact = false) {
     uint slots = word_slots ? cfg.word_count : cfg.instruction_count;
     for (uint i = 0; i < slots; i++) { live_out[i].clear(); live_in[i].clear(); }
     bool first = true;
@@ -216,7 +232,7 @@ fn void bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in
             live_in[slot].copy_from(scratch);
             uint def;
             if (node.must_def(&def)) live_in[slot].unset(def);
-            node.reads(&live_in[slot], call_windows);
+            node.reads(&live_in[slot], call_windows, exact);
         }
         first = false;
     }
