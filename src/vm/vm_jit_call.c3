@@ -301,17 +301,30 @@ TVal jit_undefined @private;
 // An absent-property add through the site entry `ic`, whose key matched, to
 // the plain object `hobj`, as th_put_cached's absent case and th_put_absent:
 // a value that needs no count or barrier work, appended into spare property
-// capacity. False leaves the store to the thunk.
+// capacity. Anything else is jit_put_missed's.
 fn bool jit_put_absent(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) {
-    if (!hobject::ic_matches_absent_put(ic, hobj, ic.key.borrow(), h)) return false;
-    if (value.is_heap_allocated()) return hobj.append_cached_prop(ic, *value, h);
-    if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) return false;
-    if (hobj.gc.prototype_observed) h.bump_prototype_epoch();
-    hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
-    *slot = (hobject::PropValue)*value;
-    hobj.prop_count++;
-    hobj.shape_id = ic.absent_next_shape;
-    return true;
+    if (hobject::ic_matches_absent_put(ic, hobj, ic.key.borrow(), h)) {
+        if (value.is_heap_allocated()) {
+            if (hobj.append_cached_prop(ic, *value, h)) return true;
+        } else if (hobj.prop_count < hobj.prop_capacity && hobj.prop_hash == null) {
+            if (hobj.gc.prototype_observed) h.bump_prototype_epoch();
+            hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
+            *slot = (hobject::PropValue)*value;
+            hobj.prop_count++;
+            hobj.shape_id = ic.absent_next_shape;
+            return true;
+        }
+    }
+    return jit_put_missed(h, hobj, ic, value);
+}
+
+// A store of the site's constant key, which matched the entry `ic`, to the
+// plain object `hobj` when the entry's cached state does not fit it, as
+// th_put_lookup runs it. The entry is left as it is, so a site that sees
+// several shapes keeps the one it has. False leaves the store to the thunk.
+fn bool jit_put_missed(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) {
+    HString* key = (HString*)ic.key.borrow();
+    return key != null && put_by_lookup(h, hobj, key, value, null, false);
 }
 
 // NEWARR, NEWARR_CONST, NEWOBJ and NEWOBJ_SHAPE as their threaded handlers
