@@ -539,6 +539,19 @@ fn bool OptBuild.get_field(&self) {
     return true;
 }
 
+// PUTPROPC and PUTTHISC of an own writable data property by the shape its cache holds, from an
+// object in the window; a numeric value is stored without being published first.
+fn bool OptBuild.put_field(&self) {
+    hobject::ICEntry* ic = self.own_field();
+    bool this_op = self.w.op == Opcode.PUTTHISC;
+    if (ic == null || !ic.prop_flags.writable || (!this_op && !self.in_window(self.w.a))) return self.generic();
+    uint rv = this_op ? self.w.a : self.w.b;
+    if (rv >= self.nregs) return self.generic();
+    uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, self.cur[rv].node, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    return true;
+}
+
 // GETPROP of an element at an integer index, from an object in the window.
 fn bool OptBuild.get_elem(&self) {
     if (!self.in_window(self.w.b) || !self.index_ok(self.w.c)) return self.generic();
@@ -807,6 +820,9 @@ fn bool OptBuild.lower(&self) {
             return self.get_field();
         case PUTPROP:
             return self.put_elem();
+        case PUTPROPC:
+        case PUTTHISC:
+            return self.put_field();
         case UNM:
             return self.negate();
         default:
