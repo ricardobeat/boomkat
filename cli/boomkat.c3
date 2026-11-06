@@ -46,6 +46,9 @@ fn void cli_rejection_tracker(void* heap_raw, void* vm, TVal promise, TVal reaso
 }
 
 fn int main(String[] args) {
+    $if $feat(OP_PROFILE):
+        defer vm::opprof_dump();
+    $endif
     // Source runs as a module unless --script selects the Script goal.
     bool script = false;
     bool jit = false;

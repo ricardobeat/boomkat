@@ -56,6 +56,40 @@
         "vendor/sljit/sljit_src"
       ]
     },
+      "boomkat_opprofile_jit": {
+        "type": "executable",
+        "name": "boomkat_opprofile_jit",
+        "sources": [
+          "src",
+          "cli/boomkat.c3"
+        ],
+        "opt": "O2",
+        "optsize": "small",
+        "single-module": true,
+        "fp-math": "relaxed",
+        "panic-msg": false,
+        "debug-info": "none",
+        "features": [
+          "THREADED_DISPATCH",
+          "PRINT",
+          "CONSOLE",
+          "SLJIT",
+          "OP_PROFILE",
+          "TRACE_VM"
+        ],
+        "c-sources": [
+          "vendor/sljit/sljit_src/sljitLir.c",
+          "src/jit/sljit_shim.c"
+        ],
+        "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+        "c-include-dirs": [
+          "vendor/dtoa",
+          "vendor/libregexp",
+          "vendor/libunicode",
+          "src",
+          "vendor/sljit/sljit_src"
+        ]
+      },
     "boomkat_slim": {
       "type": "executable",
       "name": "boomkat_slim",
