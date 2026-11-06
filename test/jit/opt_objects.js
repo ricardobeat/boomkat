@@ -118,4 +118,19 @@ function walk(h) {
 var wsum = 0;
 for (var i = 0; i < 2000; i++) wsum += walk(l0);
 check("walk", wsum, 2000 * (0 + 1 + 1 + 2 + 2 + 3 + 3));
+
+// Constants loaded into registers around object reads, and a register copied from a read that is
+// then reassigned before use.
+function consts(o, n) {
+    var a = null, b = undefined, c = true, d = false, h = o;
+    var s = 0;
+    while (h !== null) { s += h.v; a = h.next; h = a; if (a === null) b = 7; c = !c; }
+    return s + (b === 7 ? 100 : 0) + (a === null ? 1000 : 0) + (c ? 1 : 0) + (d ? 5 : 0);
+}
+var cs = 0;
+for (var i = 0; i < 4000; i++) cs += consts(l0, i);
+print("consts", cs);
+var wlast = 0;
+for (var i = 0; i < 4000; i++) { var junk = new Array(50); wlast += walk(i % 7 == 0 ? { v: 1, next: { v: 2, next: null } } : l0); }
+print("wlast", wlast);
 print("done");
