@@ -433,6 +433,7 @@ TVal jit_undefined @private;
 // capacity. Anything else is jit_put_missed's.
 fn bool jit_put_absent(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) {
     if (hobject::ic_matches_absent_put(ic, hobj, ic.key.borrow(), h)) {
+        if (hobj.prop_count >= hobj.prop_capacity && hobj.prop_hash == null) hobj.grow_props(h);
         if (value.is_heap_allocated()) {
             if (hobj.append_cached_prop(ic, *value, h)) return true;
         } else if (hobj.prop_count < hobj.prop_capacity && hobj.prop_hash == null) {

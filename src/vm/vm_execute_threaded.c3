@@ -2891,10 +2891,10 @@ fn Instruction* th_store_slot_ref_next(Instruction* pc, HandlerTable* handlers, 
 
 // The reference-counted and traced half of an absent-property append, out of
 // line for the same reason as th_store_slot_ref_next. A full property table
-// bails to the switch, which grows it.
+// is grown here: the cache proves the key absent.
 fn Instruction* th_append_ref_next(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                                    HObject* hobj, hobject::ICEntry* ic, void* key, TVal* value) @private @noinline {
-    if (!hobj.append_cached_prop(ic, *value, cold.heap)) {
+    if (!hobj.append_cached_prop_grow(ic, *value, cold.heap)) {
         return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, null);
     }
     return th_next(pc + 1, handlers, regs, cold);
@@ -2905,9 +2905,8 @@ fn Instruction* th_append_ref_next(Instruction* pc, HandlerTable* handlers, TVal
 // to, so a hit needs no lookup of the key or of the transition.
 fn Instruction* th_put_absent(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
                               HObject* hobj, hobject::ICEntry* ic, void* key, TVal* value) @private @inline {
-    if (value.is_heap_allocated()) return th_append_ref_next(pc, handlers, regs, cold, hobj, ic, key, value);
-    if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) {
-        return th_put_lookup(pc, handlers, regs, cold, hobj, (HString*)key, value, null);
+    if (value.is_heap_allocated() || hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) {
+        return th_append_ref_next(pc, handlers, regs, cold, hobj, ic, key, value);
     }
     if (hobj.gc.prototype_observed) cold.heap.bump_prototype_epoch();
     hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
@@ -2995,6 +2994,7 @@ fn bool put_by_lookup(heap::Heap* h, HObject* hobj, HString* key, TVal* value, h
         }
         cur = cur.prototype;
     }
+    if (ic != null && cur == null && hobj.prototype != null) hobject::absent_chain_store(h, hobj.prototype, (void*)interned);
     uint incoming = hobj.shape_id;
     uint epoch = h.shape_recycle_epoch;
     if (fresh_name) hobj.note_computed_name(interned);
