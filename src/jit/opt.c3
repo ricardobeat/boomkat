@@ -55,6 +55,8 @@ const char OPT_REFUSED_EXITS = 3;
 const uint OPT_ENTRY_THRESHOLD = 1000;
 // The attempts on call feedback alone that found nothing to inline before the function waits for operand feedback.
 const char OPT_DECLINE_MAX = 3;
+// Own-field accesses with a recorded shape that make a function worth optimizing on their own.
+const uint OPT_FIELD_SITES = 2;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
 const usz OPT_CODE_MAX = 512 * 1024;
@@ -183,11 +185,33 @@ fn bool opt_has_operand_feedback(CompiledFunction* f) {
 fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     if (opt_has_operand_feedback(f)) return true;
     if (f.ic_entries == null || f.opt_declined >= OPT_DECLINE_MAX) return false;
+    if (opt_has_field_feedback(f)) return true;
     hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
     // A function of integers alone records no operand feedback, but a call to a body the tier can
     // inline is something to specialize on.
     for (uint i = 0; i < f.code_count; i++) {
         if ((ic[i].feedback & hobject::FB_CALL) != 0 && opt_inline_plausible(h, f, i)) return true;
+    }
+    return false;
+}
+
+// Whether `f` has run at least OPT_FIELD_SITES property accesses that the tier can lower to a
+// guarded slot access: own data properties with a recorded shape. Such a function has shapes to
+// specialize on even though its arithmetic never left int32.
+fn bool opt_has_field_feedback(CompiledFunction* f) {
+    if (f.ic_entries == null) return false;
+    hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
+    uint sites = 0;
+    for (uint i = 0; i < f.code_count; i++) {
+        switch (f.code[i].op) {
+            case GETPROPC: case GETPROPC_CACHED: case GETTHISC: case PUTPROPC: case PUTTHISC:
+                hobject::ICEntry* e = &ic[i];
+                if (e.key.borrow() == null || e.shape_id == heap::SHAPE_NONE || e.has_proto) break;
+                if (e.chain_len != 0 && e.chain_len != hobject::IC_CHAIN_POLY) break;
+                if (e.prop_idx == hobject::IC_PROP_ABSENT || e.prop_flags.is_accessor) break;
+                if (++sites >= OPT_FIELD_SITES) return true;
+            default:
+        }
     }
     return false;
 }
@@ -258,7 +282,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     defer b.free();
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined.
-    if (why == OptRefuse.NONE && inlined == 0 && !p.always && !opt_has_operand_feedback(f)) {
+    if (why == OptRefuse.NONE && inlined == 0 && !p.always && !opt_has_operand_feedback(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
         f.opt_declined++;
         return false;
     }
