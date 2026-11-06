@@ -307,7 +307,8 @@ fn bool jit_relay(Dispatch* ds, Instruction* next) {
     if (ds.ic_base == null || ds.var_ic_base == null) return false;
     ds.curr_pc = next;
     Instruction* pc = next - 1;
-    $if $feat(OP_PROFILE): opprof_relay[pc.op.ordinal]++; $endif
+    $if $feat(OP_PROFILE): opprof_relay[pc.op.ordinal]++; opprof_relay_site((CompiledFunction*)ds.act.func, pc);
+    $endif
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
     // The handler completes numbers and concatenations without the operation
