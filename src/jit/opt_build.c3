@@ -118,8 +118,8 @@ struct OptBuild {
     OptRegState* cur;
     // Per JS register, and at index nregs for `this`: the shape id of the object it holds when the
     // last LOAD_FIELD or STORE_FIELD on it passed its guards and nothing since can have changed
-    // that, else SHAPE_NONE; and whether that node also proved the object plain (GETTHISC only
-    // proves it is not a proxy).
+    // that, else SHAPE_NONE; and whether that node also proved the object plain (a load only proves
+    // it is not a proxy, which is all a load needs).
     uint* fact_shape;
     bool* fact_plain;
     // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
@@ -515,13 +515,13 @@ fn uint OptBuild.field_receiver(&self) {
 // `shape` that passes the node's guards.
 fn bool OptBuild.guards_known(&self, uint reg, uint shape) {
     if (reg > self.nregs || self.fact_shape[reg] != shape) return false;
-    return self.fact_plain[reg] || self.w.op == Opcode.GETTHISC;
+    return self.fact_plain[reg] || (self.w.op != Opcode.PUTPROPC && self.w.op != Opcode.PUTTHISC);
 }
 
 fn void OptBuild.learn(&self, uint reg, uint shape) {
     if (reg > self.nregs) return;
     self.fact_shape[reg] = shape;
-    self.fact_plain[reg] = self.w.op != Opcode.GETTHISC;
+    self.fact_plain[reg] = self.w.op == Opcode.PUTPROPC || self.w.op == Opcode.PUTTHISC;
 }
 
 fn uint OptBuild.const_i32(&self, long v) => self.add(OptOp.CONST_I32, OptRep.INT32, NO_NODE, NO_NODE, v);
@@ -694,14 +694,47 @@ fn hobject::ICEntry* OptBuild.own_field(&self) {
     if (f.ic_entries == null) return null;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     void* key = (void*)ic.key.borrow();
-    if (key == null || ic.shape_id == heap::SHAPE_NONE || ic.has_proto || ic.chain_len != 0) return null;
+    if (key == null || ic.shape_id == heap::SHAPE_NONE || ic.has_proto) return null;
+    if (ic.chain_len != 0 && ic.chain_len != hobject::IC_CHAIN_POLY) return null;
     if (ic.prop_idx == hobject::IC_PROP_ABSENT || ic.prop_flags.is_accessor) return null;
     if (key == (void*)self.h.strs[heap::BuiltinStr.LENGTH]) return null;
     if (self.w.op != Opcode.GETTHISC) {
         if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string()) return null;
         if (f.constants[self.w.c].get_heapptr() != key) return null;
     }
+    // More shapes than the code compares leave the site to the baseline.
+    OptPoly p;
+    if (!field_shapes(ic, &p)) return null;
     return ic;
+}
+
+// The distinct receiver shapes the entry `ic` of an own data property caches, the entry's own
+// first and then its polymorphic set, each with its slot. False when there are more than
+// OPT_POLY_MAX.
+fn bool field_shapes(hobject::ICEntry* ic, OptPoly* p) {
+    p.count = 1;
+    p.shape[0] = ic.shape_id;
+    p.idx[0] = ic.prop_idx;
+    if (ic.chain_len != hobject::IC_CHAIN_POLY) return true;
+    hobject::ICPolySet* set = &ic.chain.poly;
+    for (uint i = 0; i < set.count; i++) {
+        bool dup = false;
+        for (uint k = 0; k < p.count; k++) dup = dup || p.shape[k] == set.shapes[i];
+        if (dup) continue;
+        if (p.count == OPT_POLY_MAX) return false;
+        p.shape[p.count] = set.shapes[i];
+        p.idx[p.count] = set.prop_idx[i];
+        p.count++;
+    }
+    return true;
+}
+
+// Record the shapes of the entry `ic` for the node `n` being lowered.
+fn void OptBuild.set_poly(&self, uint n, hobject::ICEntry* ic) {
+    OptPoly p;
+    field_shapes(ic, &p);
+    self.g.polys.push(p);
+    self.g.nodes[n].poly = (uint)self.g.polys.len();
 }
 
 // GETPROPC, GETPROPC_CACHED and GETTHISC of an own property by the shape its cache holds: a
@@ -710,7 +743,8 @@ fn bool OptBuild.get_field(&self) {
     hobject::ICEntry* ic = self.own_field();
     if (ic == null || (self.w.op != Opcode.GETTHISC && !self.in_window(self.w.b))) return self.generic();
     uint recv = self.field_receiver();
-    bool known = self.guards_known(recv, ic.shape_id);
+    bool mono = ic.chain_len == 0;
+    bool known = mono && self.guards_known(recv, ic.shape_id);
     uint shape = ic.shape_id;
     uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
     if (n == NO_NODE) {
@@ -723,7 +757,8 @@ fn bool OptBuild.get_field(&self) {
         if (self.cur_fn != 0 && ra >= self.caller_regs) self.inline_unsafe = true;
     }
     self.g.nodes[n].cc = known ? 1 : 0;
-    self.learn(recv, shape);
+    self.set_poly(n, ic);
+    if (mono) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
     if (recv < self.nregs && recv == self.w.a) self.fact_shape[recv] = heap::SHAPE_NONE;
     return true;
@@ -740,8 +775,10 @@ fn bool OptBuild.put_field(&self) {
     uint recv = self.field_receiver();
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, self.cur[rv].node, NO_NODE, (long)self.pc);
     self.snapshot(n);
-    self.g.nodes[n].cc = self.guards_known(recv, ic.shape_id) ? 1 : 0;
-    self.learn(recv, ic.shape_id);
+    bool mono = ic.chain_len == 0;
+    self.g.nodes[n].cc = (mono && self.guards_known(recv, ic.shape_id)) ? 1 : 0;
+    self.set_poly(n, ic);
+    if (mono) self.learn(recv, ic.shape_id);
     return true;
 }
 

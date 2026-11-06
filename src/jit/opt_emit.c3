@@ -697,6 +697,54 @@ fn void OptCg.guard_shape_cell(&self, int obj, uint shape) {
     self.a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, R2, 0));
 }
 
+// The slot address in R0 of the property of the plain object in R1, whose shape is one of those
+// `p` names: the shapes are compared in order against cells the heap clears when an id goes out of
+// use, and each has the slot its property has there. A shape none of them matches leaves for the
+// baseline code. Uses R0 to R3.
+fn void OptCg.select_slot(&self, OptPoly* p) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    uint k = p.count;
+    void*[OPT_POLY_MAX] hit;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, a.lay.obj_shape);
+    for (uint i = 0; i < k; i++) {
+        uint* cell = &self.oc.cells[self.oc.cell_count++];
+        *cell = p.shape[i];
+        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM, (long)(usz)cell);
+        if (i + 1 < k) {
+            hit[i] = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R3, 0, R2, 0);
+        } else {
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, R2, 0));
+        }
+    }
+    // The slot of the last shape is the fall-through body; shapes with that slot join it.
+    uint last = p.idx[k - 1];
+    void* label = sljit_emit_label(c);
+    for (uint i = 0; i + 1 < k; i++) {
+        if (p.idx[i] == last) { sljit_set_label(hit[i], label); hit[i] = null; }
+    }
+    a.prop_base(R0, R1);
+    if (last != 0) sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)last * 8);
+    void*[OPT_POLY_MAX] done;
+    uint done_count = 0;
+    for (uint i = 0; i + 1 < k; i++) {
+        if (hit[i] == null) continue;
+        uint idx = p.idx[i];
+        done[done_count++] = sljit_emit_jump(c, SLJIT_JUMP);
+        label = sljit_emit_label(c);
+        // Every later shape with the same slot shares this body.
+        for (uint j = i; j + 1 < k; j++) {
+            if (hit[j] != null && p.idx[j] == idx) { sljit_set_label(hit[j], label); hit[j] = null; }
+        }
+        a.prop_base(R0, R1);
+        if (idx != 0) sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)idx * 8);
+    }
+    if (done_count != 0) {
+        label = sljit_emit_label(c);
+        for (uint i = 0; i < done_count; i++) sljit_set_label(done[i], label);
+    }
+}
+
 // A read of the own data property its cache names, as emit_get does for a hit on the entry's shape:
 // the receiver a plain object (any object for GETTHISC) of that shape, the value at the slot.
 // Everything else leaves for the baseline code.
@@ -705,7 +753,8 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     self.decode(n);
     a.call.len = 0;
-    hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
+    OptPoly* poly = &self.g.polys[(sz)(n.poly - 1)];
+    bool known_slot = false;
     if (a.w.op == Opcode.GETTHISC) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
@@ -720,15 +769,20 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
     } else {
         a.unbox_object(R1, R0);
-        if (a.w.op == Opcode.GETTHISC) {
-            a.guard_not_proxy(R1, R2);
+        a.guard_not_proxy(R1, R2);
+        if (poly.count > 1) {
+            self.select_slot(poly);
+            known_slot = true;
         } else {
-            a.guard_plain(R1);
+            self.guard_shape_cell(R1, poly.shape[0]);
         }
-        self.guard_shape_cell(R1, ic.shape_id);
     }
-    a.prop_base(R0, R1);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)ic.prop_idx * 8);
+    if (known_slot) {
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    } else {
+        a.prop_base(R0, R1);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)poly.idx[0] * 8);
+    }
     self.exit_calls(i, OptExit.SHAPE);
     if (n.rep == OptRep.NONE) {
         a.publish(a.w.a);
@@ -775,7 +829,8 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     self.decode(n);
     a.call.len = 0;
-    hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
+    OptPoly* poly = &self.g.polys[(sz)(n.poly - 1)];
+    bool known_slot = false;
     bool this_op = a.w.op == Opcode.PUTTHISC;
     if (this_op) {
         if (n.fidx != 0) {
@@ -791,10 +846,17 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     } else {
         a.unbox_object(R1, R0);
         a.guard_plain(R1);
-        self.guard_shape_cell(R1, ic.shape_id);
+        if (poly.count > 1) {
+            self.select_slot(poly);
+            known_slot = true;
+        } else {
+            self.guard_shape_cell(R1, poly.shape[0]);
+        }
     }
-    a.prop_base(R0, R1);
-    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)ic.prop_idx * 8);
+    if (!known_slot) {
+        a.prop_base(R0, R1);
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)poly.idx[0] * 8);
+    }
     if (n.a != NO_NODE) {
         self.box_node(n.a, R2);
         a.guard_old_value();
@@ -1179,7 +1241,9 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
 
     uint fields = 0;
-    foreach (&nd : g.nodes) fields += (nd.op == OptOp.LOAD_FIELD || nd.op == OptOp.STORE_FIELD) ? 1 : 0;
+    foreach (&nd : g.nodes) {
+        if (nd.op == OptOp.LOAD_FIELD || nd.op == OptOp.STORE_FIELD) fields += g.polys[(sz)(nd.poly - 1)].count;
+    }
     if (fields != 0) {
         oc.cells = h.alloc_func(h.heap_udata, fields * uint::size);
         if (oc.cells == null) return null;

@@ -2973,13 +2973,7 @@ fn bool put_by_lookup(heap::Heap* h, HObject* hobj, HString* key, TVal* value, h
         // move. The hit path matches the key by pointer, so only the interned
         // key itself is cached.
         if (ic != null && interned == key) {
-            ic.shape_id = hobj.shape_id;
-            ic.shape_gen = hobj.shape_generation(h);
-            ic.has_proto = false;
-            ic.chain_len = 0;
-            ic.prop_idx = (uint)idx;
-            ic.prop_flags = flags;
-            ic.key.set(h, interned);
+            hobject::ic_fill_put_own(ic, hobj, (uint)idx, flags, interned, h);
         }
         hobject::PropValue* slot = &hobj.prop_values()[idx];
         if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {

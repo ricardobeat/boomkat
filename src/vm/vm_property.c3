@@ -1881,16 +1881,7 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                             if (ds.ic_base != null && rb.is_string() && rb.get_heapptr() == key) {
                                 uint put_pc_off = (uint)(ds.curr_pc - 1 - ds.code_base);
                                 hobject::ICEntry* put_ic = ds.ic_base + put_pc_off;
-                                put_ic.shape_id = hobj.shape_id;
-                                put_ic.shape_gen = hobj.shape_generation(ds.vm.heap);
-                                put_ic.has_proto = false;
-                                put_ic.chain_len = 0;
-                                put_ic.prop_idx = (uint)exist_idx;
-                                put_ic.prop_flags = exist_flags;
-                                // incref before decref, for the reason given at the
-                                // GETPROP fill: the slot's own reference may be the
-                                // key's last one when the same key is re-cached.
-                                put_ic.key.set(vm.heap, (HString*)key);
+                                hobject::ic_fill_put_own(put_ic, hobj, (uint)exist_idx, exist_flags, (HString*)key, vm.heap);
                             }
                         }
                     } else {
