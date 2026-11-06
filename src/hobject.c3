@@ -4042,11 +4042,18 @@ fn void mega_cache_store(heap::Heap* h, HObject* hobj, void* key, HObject* owner
 // rfunc is callable and unbound, and its @@hasInstance, found through the
 // megamorphic cache, is the one on this realm's Function.prototype. That
 // property is neither writable nor configurable, so its owner names its value.
+// A cold cache is filled by the full lookup, as the switch does for an object
+// left operand; a primitive one never reaches that lookup, and would otherwise
+// find the cache cold on every visit.
 fn bool uses_default_has_instance(heap::Heap* h, HObject* rfunc) {
     if (!rfunc.is_callable() || rfunc.flags.is_bound || rfunc.is_proxy() || h.hasinstance_symbol == null) return false;
     MegamorphicEntry* me;
     PropValue* slot = mega_cache_lookup(h, rfunc, (void*)h.hasinstance_symbol, &me);
-    return slot != null && !me.is_accessor && me.proto == (void*)h.function_proto;
+    if (slot == null) {
+        PropLookupResult hi = rfunc.get_prop_or_accessor_proto((void*)h.hasinstance_symbol, true, h);
+        return hi.kind == PropLookupKind.PROP_DATA && hi.owner == h.function_proto;
+    }
+    return !me.is_accessor && me.proto == (void*)h.function_proto;
 }
 
 // Inline cache for a GETVAR or TYPEOFIDENT site: the resolved environment
