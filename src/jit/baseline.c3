@@ -561,6 +561,7 @@ fn void Asm.emit_stubs(&self) {
             self.emit_poly_arm(stub.poly_back);
         }
         self.call.bind(sljit_emit_label(c));
+        self.emit_add_concat();
         self.emit_thunk_call(stub.insn);
         self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
     }
@@ -1211,6 +1212,8 @@ $else
             self.box_shifted(R0);
             self.store(ra, R0);
             sljit_set_label(done, sljit_emit_label(c));
+        case TYPEOF: return self.emit_typeof();
+        case INSTANCEOF: return self.emit_instanceof();
         case LT:
         case LE:
         case GT:
