@@ -39,6 +39,8 @@ enum OptExit : char (String label) {
     // A back edge's budget or interrupt poll fired; not a failed speculation.
     INTERRUPT {"interrupt"},
     SLOW_PATH {"slow-path"},
+    // An inlined body's instruction that had never run was reached.
+    COLD {"cold"},
 }
 
 const char OPT_NONE = 0;

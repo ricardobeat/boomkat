@@ -1221,6 +1221,14 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.defer_taken(pos, &jumps[0], count);
         case GENERIC:
             self.emit_generic(i, n);
+        case EXIT:
+            self.store_dirty(n.dirty_first, n.dirty_count);
+            self.a.i = n.pc;
+            if (n.fidx != 0) {
+                self.emit_inline_exit(n.fidx, n.pc, n.live_mask, OptExit.COLD.ordinal, false);
+            } else {
+                self.a.emit_opt_exit(self.oc, OptExit.COLD.ordinal, false);
+            }
     }
 }
 

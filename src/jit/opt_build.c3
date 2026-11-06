@@ -152,6 +152,19 @@ struct OptBuild {
     uint exclude_count;
     bool flat_fail;
     uint flat_fail_pc;
+    // A flat body that failed to lower in this round (its site and why): it only counts once the
+    // round is done and no typed load was requested, which would build the round again.
+    bool flat_pend;
+    uint flat_pend_site;
+    OptInlineReject flat_pend_why;
+    // The round is to be built again whatever it holds.
+    bool void_round;
+    // Per block position, in this round: the block ends in an unconditional exit (OptOp.EXIT) or
+    // is reachable only through such blocks. It has no successors in the graph.
+    bool* dead;
+    // The instruction just lowered was an unconditional exit, and the head pc of its flat site.
+    bool cold_exit;
+    uint cold_site;
     List{OptInlineSite} sites;
     // By caller instruction: its inline site plus one, or zero.
     uint* site_of;
@@ -353,6 +366,7 @@ fn void OptBuild.free(&self) {
     mem::free(self.fl_site);
     mem::free(self.fl_kind);
     mem::free(self.site_fn);
+    mem::free(self.dead);
 }
 
 fn void OptInlineSite.free_site(&self) {
@@ -805,6 +819,20 @@ fn hobject::ICEntry* OptBuild.own_field(&self) {
     return ic;
 }
 
+// Whether the field instruction being lowered has never run: its cache was never filled. A flat
+// body leaves such an instruction as an unconditional exit to the callee's baseline code.
+fn bool OptBuild.cold_field(&self) {
+    switch (self.w.op) {
+        case GETPROPC: case GETPROPC_CACHED: case GETTHISC: case PUTPROPC: case PUTTHISC:
+            CompiledFunction* f = self.cur_f();
+            if (f.ic_entries == null) return false;
+            hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+            return (void*)ic.key.borrow() == null;
+        default:
+            return false;
+    }
+}
+
 // The distinct receiver shapes the entry `ic` of an own data property caches, the entry's own
 // first and then its polymorphic set, each with its slot. False when there are more than
 // OPT_POLY_MAX.
@@ -1160,18 +1188,18 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             case JMP_NLT..JMP_GE: case JMP_NLTI..JMP_SNEQI:
                 ok = (self.feedback() & (hobject::FB_STR | hobject::FB_OTHER)) == 0;
             case GETPROPC: case GETPROPC_CACHED:
-                ok = self.own_field() != null;
+                ok = self.own_field() != null || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case GETTHISC:
-                ok = s.method && self.own_field() != null;
+                ok = (s.method && self.own_field() != null) || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case PUTPROPC:
                 hobject::ICEntry* ic = self.own_field();
-                ok = ic != null && ic.prop_flags.writable;
+                ok = (ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case PUTTHISC:
                 hobject::ICEntry* ic = self.own_field();
-                ok = s.method && ic != null && ic.prop_flags.writable;
+                ok = (s.method && ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case LDCONST:
                 uint index = self.w.get_bc();
@@ -1381,9 +1409,23 @@ fn bool OptBuild.flatten(&self) {
 }
 
 // A flat body that cannot be lowered: abandon this build, to be redone with the site left as a call.
-fn void OptBuild.fail_flat(&self, uint pc) {
+fn void OptBuild.fail_flat(&self, uint si, OptInlineReject why) {
+    if (self.flat_pend) return;
+    self.flat_pend = true;
+    self.flat_pend_site = si;
+    self.flat_pend_why = why;
+}
+
+// The round is over (or cannot go on): abandon the build for the failed flat site, unless a
+// numeric use asked for a typed load, which the next round builds the body with.
+fn bool OptBuild.settle_flat(&self) {
+    if (!self.flat_pend || self.load_changed) return false;
+    OptInlineSite* s = &self.sites[self.flat_pend_site];
+    if (!s.counted) self.count_reject(self.flat_pend_why, Opcode.NOP);
+    s.counted = true;
     self.flat_fail = true;
-    self.flat_fail_pc = pc;
+    self.flat_fail_pc = s.head_pc;
+    return true;
 }
 
 // The call of a flat site: the guards of the inlined call, as try_inline does, and the entry of its
@@ -1392,8 +1434,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
     OptInlineSite* s = &self.sites[si];
     uint callee_reg = s.base - 2;
     if (!s.var_call && (!self.in_window(callee_reg) || !self.in_window(callee_reg + 1))) {
-        self.count_reject(OptInlineReject.STATE, Opcode.NOP);
-        self.fail_flat(s.head_pc);
+        self.fail_flat(si, OptInlineReject.STATE);
         return true;
     }
     uint resume = self.next_pc;
@@ -1443,14 +1484,17 @@ fn bool OptBuild.lower_flat(&self) {
         ok = self.flat_return(self.w.a, self.w.b);
     } else if (kind == 2) {
         self.store_const(self.w.a, K_UNDEF);
+    } else if (self.cold_field()) {
+        // Never executed: leave for the callee's baseline code here, and lower nothing after it
+        // on this path.
+        uint n = self.add(OptOp.EXIT, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+        self.snapshot(n);
+        self.cold_exit = true;
+        self.cold_site = self.cur_site;
     } else {
         ok = self.lower_op();
     }
-    if (!ok || self.inline_failed || self.inline_unsafe) {
-        if (!s.counted) self.count_reject(self.inline_unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD, Opcode.NOP);
-        s.counted = true;
-        self.fail_flat(s.head_pc);
-    }
+    if (!ok || self.inline_failed || self.inline_unsafe) self.fail_flat(self.cur_site, self.inline_unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD);
     return true;
 }
 
@@ -1789,7 +1833,11 @@ fn void OptBuild.begin_block(&self, uint pos) {
     uint back = 0;
     uint single = 0;
     foreach (p : self.preds(pos)) {
-        if (p < pos) { fwd++; single = p; } else { back++; }
+        if (p < pos) {
+            if (!self.dead[p]) { fwd++; single = p; }
+        } else {
+            back++;
+        }
     }
     blk.header = back > 0;
     blk.loop_end = self.loop_end[pos];
@@ -1804,7 +1852,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
             bool numeric = true;
             OptRep rep = OptRep.INT32;
             foreach (p : self.preds(pos)) {
-                if (p >= pos) continue;
+                if (p >= pos || self.dead[p]) continue;
                 OptRegState s = self.ends[(usz)p * self.nregs + r];
                 if (s.node == NO_NODE) { numeric = false; break; }
                 if (self.rep_of(s.node) == OptRep.FLOAT64) rep = OptRep.FLOAT64;
@@ -1836,6 +1884,16 @@ fn void OptBuild.begin_block(&self, uint pos) {
     }
     mem::copy(&self.entries[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
     self.g.blocks.push(blk);
+    // Reached only through unconditional exits: a body's block gets one of its own.
+    if (pos != 0 && fwd == 0 && back == 0) {
+        if (self.fl_site == null || self.fl_site[first_insn] == 0) {
+            self.fail_flat(self.cold_site, OptInlineReject.BUILD);
+        } else {
+            self.dead[pos] = true;
+            uint n = self.add(OptOp.EXIT, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+            self.snapshot(n);
+        }
+    }
 }
 
 fn bool is_terminator_op(Opcode op) {
@@ -1848,6 +1906,12 @@ fn void OptBuild.end_block(&self, uint pos) {
     self.context(last);
     DecodedCfgNode* node = &self.cfg.nodes[last];
     OptBlock* blk = &self.g.blocks[pos];
+    if (self.dead[pos]) {
+        blk.succ_count = 0;
+        blk.end = (uint)self.g.nodes.len();
+        mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
+        return;
+    }
     blk.succ_count = node.successor_count;
     for (uint k = 0; k < blk.succ_count; k++) blk.succ[k] = self.pos_of[self.succ_block(b, k)];
     if (blk.succ_count == 1 && is_terminator_op(node.view.insn.op) && node.view.insn.op != Opcode.JUMP) {
@@ -1863,23 +1927,30 @@ fn bool OptBuild.build_round(&self) {
     self.g.clear();
     self.g.fns.size = 1;
     self.inlined = 0;
+    self.flat_pend = false;
+    self.void_round = false;
+    for (uint pos = 0; pos < self.nrpo; pos++) self.dead[pos] = false;
     for (uint pos = 0; pos < self.nrpo; pos++) {
         self.pos = pos;
+        self.cold_exit = false;
         self.begin_block(pos);
         uint b = self.rpo[pos];
-        for (uint i = self.b_first[b]; i <= self.b_last[b]; i++) {
+        for (uint i = self.b_first[b]; i <= self.b_last[b] && !self.dead[pos]; i++) {
             self.context(i);
             if (!self.lower()) {
                 if (self.refused == OptRefuse.NONE) self.refuse(OptRefuse.FUNCTION);
+                self.settle_flat();
                 return false;
             }
-            if (self.flat_fail) {
-                self.refuse(OptRefuse.FUNCTION);
-                return false;
-            }
+            if (self.cold_exit) self.dead[pos] = true;
         }
         self.end_block(pos);
     }
+    if (self.settle_flat()) {
+        self.refuse(OptRefuse.FUNCTION);
+        return false;
+    }
+    self.void_round = self.flat_pend;
     return true;
 }
 
@@ -1966,12 +2037,26 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     uint n = b.nregs;
     b.cur = mem::new_array(OptRegState, n);
     b.load_def = mem::new_array(uint, n);
+    b.dead = mem::new_array(bool, b.nrpo);
     b.fact_shape = mem::new_array(uint, (usz)n + 1);
     b.fact_plain = mem::new_array(bool, (usz)n + 1);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
     for (uint round = 0; round < OPT_BUILD_ROUNDS; round++) {
-        if (!b.build_round()) { *refused_op = b.refused_op; return b.refused; }
+        if (!b.build_round()) {
+            // A refusal that a typed load requested in this round may cause is not final.
+            if (b.load_changed && !b.flat_fail) {
+                b.load_changed = false;
+                b.refused = OptRefuse.NONE;
+                continue;
+            }
+            *refused_op = b.refused_op;
+            return b.refused;
+        }
+        if (b.void_round) {
+            b.load_changed = false;
+            continue;
+        }
         bool again = b.repair();
         again |= b.load_changed;
         b.load_changed = false;
