@@ -48,6 +48,33 @@ enum OptRefuse : char (String label) {
     COMPILE {"code generation"},
 }
 
+// Why a call site with a known callee is not inlined (--jit-stats counts them).
+enum OptInlineReject : char (String label) {
+    POLY {"polymorphic call"},
+    WINDOW {"window beyond the caller's registers"},
+    SELF {"recursive"},
+    NO_JIT {"callee has no baseline code"},
+    NO_JIT_TRIVIAL {"trivial callee has no baseline code"},
+    INELIGIBLE {"callee not eligible"},
+    NOT_LEAN {"callee not a lean call"},
+    ARGS {"arguments or rest object"},
+    SIZE {"callee too big"},
+    FORMALS {"argument count differs"},
+    TOP_LEVEL {"top level code"},
+    WINDOW_LIVE {"call window live after the call"},
+    BLOCKS {"branches in the callee"},
+    WIDE {"wide instruction"},
+    NO_RET {"no final return"},
+    READ_UNDEF {"reads an unwritten register"},
+    OPCODE {"opcode (see below)"},
+    FEEDBACK {"arithmetic feedback not numeric"},
+    FIELD {"field is not an own data field"},
+    CONSTANT {"constant is not a number"},
+    BUILD {"body not lowerable at build"},
+    UNSAFE {"heap value in the callee window"},
+    STATE {"call state not usable"},
+}
+
 // The words of bytecode an inlined callee may have.
 const uint INLINE_WORDS_MAX = 40;
 
@@ -74,6 +101,8 @@ struct OptInlineSite {
     // return and nothing else touches that register: it writes the call's result register
     // directly. uint::max when there is none.
     uint remap;
+    // A build failure of this site is already counted in --jit-stats.
+    bool counted;
 }
 
 struct OptBuild {
@@ -114,6 +143,9 @@ struct OptBuild {
     bool inline_failed;
     bool inline_unsafe;
     bool no_inline;
+    // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE).
+    OptInlineReject rej;
+    Opcode rej_op;
     uint inlined;
     OptRegState* cur;
     // Per JS register, and at index nregs for `this`: the shape id of the object it holds when the
@@ -187,6 +219,7 @@ fn uint OptBuild.pckey(&self) @inline => self.pc | (self.cur_fn << 24);
 fn uint inline_reg_mask(Opcode op) {
     switch (op) {
         case LDINT: case LDCONST: case INC: case DEC: case GETTHISC: case PUTTHISC: case RET:
+        case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
             return 1;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -198,12 +231,15 @@ fn uint inline_reg_mask(Opcode op) {
     }
 }
 
+// Whether an inlined body may hold `op`: the opcodes with registers above, and RETUNDEF.
+fn bool inline_op_ok(Opcode op) @inline => inline_reg_mask(op) != 0 || op == Opcode.RETUNDEF;
+
 // The callee registers `w` (an instruction of an inlined body) reads and writes, as bit sets.
 fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
     *reads = 0;
     *writes = 0;
     switch (w.op) {
-        case LDINT: case LDCONST: case GETTHISC:
+        case LDINT: case LDCONST: case GETTHISC: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
             *writes = 1u << w.a;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -230,6 +266,16 @@ fn void inline_rebase(DecodedInsn* w, uint base) {
     if ((mask & 1) != 0) w.a += base;
     if ((mask & 2) != 0) w.b += base;
     if ((mask & 4) != 0) w.c += base;
+}
+
+fn bool OptBuild.reject(&self, OptInlineReject why) {
+    self.rej = why;
+    return false;
+}
+
+fn void OptBuild.count_reject(&self, OptInlineReject why, Opcode op) {
+    self.h.opt.inline_rejected[why.ordinal]++;
+    if (why == OptInlineReject.OPCODE) self.h.opt.inline_rejected_ops[op.ordinal]++;
 }
 
 fn bool OptBuild.refuse(&self, OptRefuse why) {
@@ -324,7 +370,7 @@ fn bool OptBuild.analyze(&self) {
     self.live_words = mem::new_array(uint, ((usz)count * 2 + 1) * words);
     for (uint i = 0; i < count * 2; i++) self.live_sets[i] = { .words = self.live_words + (usz)i * words, .word_count = words };
     RegSet scratch = { .words = self.live_words + (usz)count * 2 * words, .word_count = words };
-    compiler::bytecode_cfg_liveness(cfg, self.live_sets, self.live_sets + count, &scratch, true, false);
+    compiler::bytecode_cfg_liveness(cfg, self.live_sets, self.live_sets + count, &scratch, true, false, true);
     self.live_out = self.live_sets;
     self.live_in = self.live_sets + count;
     self.find_sites();
@@ -980,23 +1026,29 @@ fn void OptBuild.inline_context(&self, OptInlineSite* s, uint k) {
 fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     CompiledFunction* cf = s.cf;
     DecodedCfg* cfg = &s.cfg;
-    if (cfg.block_count != 1 || cfg.has_wide || cfg.instruction_count == 0) return false;
-    if (cfg.nodes[cfg.instruction_count - 1].view.insn.op != Opcode.RET) return false;
+    if (cfg.has_wide || cfg.instruction_count == 0) return self.reject(OptInlineReject.WIDE);
+    // The first opcode outside the whitelist is the better reason for a body that also branches.
+    for (uint k = 0; k < cfg.instruction_count; k++) {
+        Opcode op = cfg.nodes[k].view.insn.op;
+        if (!inline_op_ok(op)) { self.rej_op = op; return self.reject(OptInlineReject.OPCODE); }
+    }
+    if (cfg.block_count != 1) return self.reject(OptInlineReject.BLOCKS);
+    Opcode last_op = cfg.nodes[cfg.instruction_count - 1].view.insn.op;
+    if (last_op != Opcode.RET && last_op != Opcode.RETUNDEF) return self.reject(OptInlineReject.NO_RET);
     // Nothing but the arguments may be read before it is written: the window slots are not cleared.
     s.defined = mem::new_array(uint, cfg.instruction_count);
     uint defined = nargs >= 32 ? ~0u : (1u << nargs) - 1;
     for (uint k = 0; k < cfg.instruction_count; k++) {
         DecodedInsn w = cfg.nodes[k].view.insn;
-        if (inline_reg_mask(w.op) == 0) return false;
         uint reads;
         uint writes;
         inline_rw(&w, &reads, &writes);
-        if ((reads & ~defined) != 0) return false;
+        if ((reads & ~defined) != 0) return self.reject(OptInlineReject.READ_UNDEF);
         s.defined[k] = defined;
         defined |= writes;
     }
     s.remap = uint::max;
-    if (cfg.instruction_count >= 2) {
+    if (cfg.instruction_count >= 2 && last_op == Opcode.RET) {
         uint last = cfg.instruction_count - 2;
         uint rr = cfg.nodes[last + 1].view.insn.a;
         uint reads;
@@ -1019,10 +1071,10 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     self.cur_fn = (uint)self.g.fns.len() - 1;
     self.cur_site = 0;
     bool ok = true;
+    OptInlineReject why = OptInlineReject.FEEDBACK;
     for (uint k = 0; k < cfg.instruction_count && ok; k++) {
         self.inline_context(s, k);
         Opcode op = self.w.op;
-        if (inline_reg_mask(op) == 0) { ok = false; break; }
         switch (op) {
             case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -1030,21 +1082,27 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 ok = (self.feedback() & (hobject::FB_STR | hobject::FB_OTHER)) == 0;
             case GETPROPC: case GETPROPC_CACHED:
                 ok = self.own_field() != null;
+                why = OptInlineReject.FIELD;
             case GETTHISC:
                 ok = s.method && self.own_field() != null;
+                why = OptInlineReject.FIELD;
             case PUTPROPC:
                 hobject::ICEntry* ic = self.own_field();
                 ok = ic != null && ic.prop_flags.writable;
+                why = OptInlineReject.FIELD;
             case PUTTHISC:
                 hobject::ICEntry* ic = self.own_field();
                 ok = s.method && ic != null && ic.prop_flags.writable;
+                why = OptInlineReject.FIELD;
             case LDCONST:
                 uint index = self.w.get_bc();
                 ok = index < cf.const_count && (cf.constants[index].is_fastint() || cf.constants[index].is_number());
+                why = OptInlineReject.CONSTANT;
             default:
                 break;
         }
     }
+    if (!ok) self.reject(why);
     self.g.fns.size = self.g.fns.len() - 1;
     self.cur_fn = saved_fn;
     self.cur_site = saved_site;
@@ -1060,24 +1118,29 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s) {
     if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) || view.wide || f.ic_entries == null) return false;
     if (var_call && f.var_ic_entries == null) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[view.next_pc - 1];
-    if ((ic.feedback & hobject::FB_CALL) == 0 || (ic.feedback & hobject::FB_POLY) != 0) return false;
+    if ((ic.feedback & hobject::FB_CALL) == 0) return false;
+    if ((ic.feedback & hobject::FB_POLY) != 0) return self.reject(OptInlineReject.POLY);
     if (ic.prop_idx >= self.h.compiled_func_count) return false;
     CompiledFunction* cf = (CompiledFunction*)self.h.compiled_funcs[ic.prop_idx];
     uint callee_reg = var_call ? view.insn.a : view.insn.b;
     uint nargs = var_call ? view.insn.b : view.insn.c;
     bool method = op == Opcode.CALL;
     // The window the call publishes lies in the caller's registers as far as the arguments go.
-    if (cf == null || cf == f || callee_reg + 2 + nargs > self.caller_regs) return false;
+    if (cf == null) return false;
+    if (cf == f) return self.reject(OptInlineReject.SELF);
+    if (callee_reg + 2 + nargs > self.caller_regs) return self.reject(OptInlineReject.WINDOW);
     cf.classify_lean_call();
-    if (cf.jit_code == null || cf.realm != f.realm || !opt_function_eligible(cf)) return false;
-    if (!cf.call_flags.lean_call || (!method && !cf.call_flags.lean_plain)) return false;
-    if (cf.arguments_in_reg() || cf.call_flags.rest_length_only || cf.ic_entries == null || cf.var_ic_entries == null) return false;
-    if (cf.num_formals != nargs || cf.num_regs > 32 || cf.code_count > INLINE_WORDS_MAX || is_top_level(cf)) return false;
+    if (cf.realm != f.realm || !opt_function_eligible(cf)) return self.reject(OptInlineReject.INELIGIBLE);
+    if (!cf.call_flags.lean_call || (!method && !cf.call_flags.lean_plain)) return self.reject(OptInlineReject.NOT_LEAN);
+    if (cf.arguments_in_reg() || cf.call_flags.rest_length_only || cf.ic_entries == null || cf.var_ic_entries == null) return self.reject(OptInlineReject.ARGS);
+    if (is_top_level(cf)) return self.reject(OptInlineReject.TOP_LEVEL);
+    if (cf.num_formals != nargs) return self.reject(OptInlineReject.FORMALS);
+    if (cf.num_regs > 32 || cf.code_count > INLINE_WORDS_MAX) return self.reject(OptInlineReject.SIZE);
     // What a call leaves behind is its result: the rest of its window is dead after it.
     // (A call that names no receiver leaves `this` implicit, which liveness takes for live around a loop.)
     for (uint r = callee_reg; r < self.caller_regs; r++) {
         if (r == view.insn.a || (!method && r == callee_reg + 1)) continue;
-        if (self.live_out[i].test(r)) return false;
+        if (self.live_out[i].test(r)) return self.reject(OptInlineReject.WINDOW_LIVE);
     }
     *s = { .insn = i, .cf = cf, .base = callee_reg + 2, .method = method, .var_call = var_call };
     bool ok = compiler::bytecode_cfg_build(&s.cfg, cf.code, cf.code_count, self.h);
@@ -1088,10 +1151,15 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s) {
         s.live_words = mem::new_array(uint, ((usz)count * 2 + 1) * words);
         for (uint k = 0; k < count * 2; k++) s.live_sets[k] = { .words = s.live_words + (usz)k * words, .word_count = words };
         RegSet scratch = { .words = s.live_words + (usz)count * 2 * words, .word_count = words };
-        compiler::bytecode_cfg_liveness(&s.cfg, s.live_sets, s.live_sets + count, &scratch, true, false);
+        compiler::bytecode_cfg_liveness(&s.cfg, s.live_sets, s.live_sets + count, &scratch, true, false, true);
         s.live_out = s.live_sets;
         s.live_in = s.live_sets + count;
         ok = self.inline_body_ok(s, nargs);
+    }
+    // An exit from the body continues in the callee's baseline code: compile it now if it has none.
+    if (ok && cf.jit_code == null) {
+        ok = !cf.jit_refused && baseline_try_compile(self.h, cf, false) != null;
+        if (!ok) self.reject(cf.call_flags.trivial_call != 0 ? OptInlineReject.NO_JIT_TRIVIAL : OptInlineReject.NO_JIT);
     }
     if (!ok) s.free_site();
     return ok;
@@ -1103,13 +1171,27 @@ fn void OptBuild.find_sites(&self) {
     uint count = self.cfg.instruction_count;
     for (uint i = 0; i < count; i++) {
         OptInlineSite s;
-        if (!self.inline_candidate(i, &s)) continue;
+        self.rej = OptInlineReject.BUILD;
+        if (!self.inline_candidate(i, &s)) {
+            Opcode cop = self.cfg.nodes[i].view.insn.op;
+            bool is_call = cop == Opcode.CALL || cop == Opcode.CALL_UNDEF_THIS || cop == Opcode.CALL_VAR || cop == Opcode.CALL_GLOBAL;
+            if (is_call && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
+            continue;
+        }
         if (self.site_of == null) self.site_of = mem::new_array(uint, count);
         self.sites.push(s);
         self.site_of[i] = (uint)self.sites.len();
         uint need = s.base + s.cf.num_regs;
         if (need > self.nregs) self.nregs = need;
     }
+}
+
+// Store the boxed constant `bits` to window slot `reg` (a register of an inlined body or the call's
+// result): nothing is known of the register after, as a read from the window.
+fn void OptBuild.store_const(&self, uint reg, long bits) {
+    uint n = self.add(OptOp.STORE_CONST, OptRep.NONE, NO_NODE, NO_NODE, bits);
+    self.g.nodes[n].home = reg;
+    self.kill(reg);
 }
 
 // The return of an inlined body: its value becomes the call's result register. A number is a new
@@ -1142,7 +1224,11 @@ fn bool OptBuild.try_inline(&self) {
     OptInlineSite* s = &self.sites[si];
     uint callee_reg = s.base - 2;
     // The function and its receiver are read from the window by the guard and by an exit.
-    if (!s.var_call && (!self.in_window(callee_reg) || !self.in_window(callee_reg + 1))) return false;
+    if (!s.var_call && (!self.in_window(callee_reg) || !self.in_window(callee_reg + 1))) {
+        if (!s.counted) self.count_reject(OptInlineReject.STATE, Opcode.NOP);
+        s.counted = true;
+        return false;
+    }
     uint n = self.nregs;
     OptRegState* save_cur = mem::new_array(OptRegState, n);
     uint* save_def = mem::new_array(uint, n);
@@ -1186,15 +1272,20 @@ fn bool OptBuild.try_inline(&self) {
         self.inline_context(s, k);
         if (self.w.op == Opcode.RET) {
             ok = self.inline_return(result, &result_node);
+        } else if (self.w.op == Opcode.RETUNDEF) {
+            self.store_const(result, K_UNDEF);
         } else {
             ok = self.lower();
         }
         if (self.inline_failed) ok = false;
     }
-    if (self.inline_unsafe) ok = false;
+    bool unsafe = self.inline_unsafe;
+    if (unsafe) ok = false;
     self.cur_fn = 0;
     self.context(site_insn);
     if (!ok) {
+        if (!s.counted) self.count_reject(unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD, Opcode.NOP);
+        s.counted = true;
         self.g.nodes.size = nodes0;
         self.g.dirty.size = dirty0;
         self.g.fns.size = fns0;
@@ -1317,6 +1408,21 @@ fn bool OptBuild.lower(&self) {
         case BREAK:
         case CONTINUE:
             return self.refuse_op(op);
+        case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
+            if (self.cur_fn == 0) return self.generic();
+            TVal v;
+            switch (op) {
+                case LDUNDEF: v.set_undefined();
+                case LDNULL: v.set_null();
+                default: v.set_boolean(op == LDTRUE);
+            }
+            // A register the body never reads again needs no value.
+            uint k = self.cur_cfg().nodes[self.insn].view.insn.a;
+            if (self.w.a == k + self.sites[self.cur_site].base && !self.sites[self.cur_site].live_out[self.insn].test(k)) {
+                self.kill(ra);
+                return true;
+            }
+            self.store_const(ra, (long)v.bits);
         case GETCAP:
             return self.get_cap();
         case GETPROP:

@@ -235,7 +235,7 @@ fn bool baseline_compilable(CompiledFunction* f) {
     return true;
 }
 
-fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
+fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true) @noinline {
     JitStats* st = &h.jit_stats;
     if (!baseline_compilable(f)) {
         st.excluded_opcode++;
@@ -279,7 +279,7 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f) @noinline {
     if (st.live_bytes > st.peak_bytes) st.peak_bytes = st.live_bytes;
     st.compiled++;
     f.jit_code = bc;
-    if (h.opt.always) opt_try_compile(h, f);
+    if (optimize && h.opt.always) opt_try_compile(h, f);
     return ((BaselineCode*)f.jit_code).exec;
 }
 
