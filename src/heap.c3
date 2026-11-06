@@ -121,11 +121,12 @@ const long  GC_TRIGGER_GROW_FACTOR  = 2;
 //     divisor  32      86ms    76MB
 //     divisor  64      98ms    77MB
 //
-// 16 is not a compromise between the two: collecting a little more often
-// keeps the working set in cache, so below it the extra floating garbage
-// costs time as well as memory, and above it the collection frequency starts
-// to dominate again.
-const long  GC_MARK_WORK_DIVISOR    = 16;
+// 16 is the best of those for a loop over one array. A whole program also
+// pays for scanning every compiled function's constants in each major cycle,
+// and that cost grows with the code loaded: in the full Octane bundle RayTrace
+// ran 30% below its standalone score at 16. At 2 the whole-bundle composite
+// rose 2-5% (RayTrace +35%, PdfJS +10..40%, Splay within 3%) for +2% peak RSS.
+const long  GC_MARK_WORK_DIVISOR    = 2;
 const uint  GC_CALL_INTERVAL        = 8;
 const uint  MEGA_CACHE_SIZE         = 512;
 // Initial capacity for Array.prototype.join's in-progress set, allocated on
