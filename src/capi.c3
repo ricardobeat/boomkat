@@ -902,6 +902,10 @@ fn double bk_to_number(void* ctxp, ulong id) @export("bk_to_number") {
         vm_fault(rt);
         return (double)(0.0 / 0.0);
     }
+    if (rt.vm.throw_pending) {
+        embed::take_pending_throw(rt);
+        return (double)(0.0 / 0.0);
+    }
     return d;
 }
 

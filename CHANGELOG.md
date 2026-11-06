@@ -5,6 +5,9 @@ of commits since the previous release. Newest first.
 
 ## [Unreleased]
 
+- `bk_to_string` and `bk_to_number` report exceptions thrown by user
+  `toString`, `valueOf` and `Symbol.toPrimitive` instead of returning a bad
+  string handle or NaN
 - TypeScript 7 is now the baseline for support
 - TypeScript namespaces, enums, constructor parameter properties and
   angle-bracket type assertions compile to runtime objects
