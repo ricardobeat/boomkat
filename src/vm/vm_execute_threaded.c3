@@ -219,6 +219,7 @@ macro Instruction* th_next(Instruction* pc, HandlerTable* handlers, TVal* regs, 
     $if $feat(OP_PROFILE):
         opprof_thread_complete();
         opprof_thread_begin(next.op);
+        opprof_note_func((CompiledFunction*)cold.act.func);
     $endif
     opprof_th_record(next.op);
     // Tail call -> indirect tail jump at -O2.
