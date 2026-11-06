@@ -525,6 +525,7 @@ fn void Asm.emit_insn(&self, uint i) {
     self.alt.len = 0;
     self.poly.len = 0;
     if (self.emit_call()) {
+    } else if (self.emit_alloc()) {
     } else if (self.emit_fast(self.consts_fixed)) {
         if (is_access_op(self.w.op)) self.count(&self.stats.fast_hits[0], self.w.op);
     } else {
