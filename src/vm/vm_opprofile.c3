@@ -20,6 +20,16 @@ const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 tlocal ulong[OPPROF_N] opprof_singles;
 tlocal ulong[OPPROF_N] opprof_relay;
+struct RelaySite { Instruction* pc; CompiledFunction* f; ulong count; }
+tlocal RelaySite[4096] opprof_relay_sites;
+fn void opprof_relay_site(CompiledFunction* f, Instruction* pc) {
+    usz h = ((usz)pc >> 2) & 4095;
+    for (uint i = 0; i < 4096; i++) {
+        RelaySite* s = &opprof_relay_sites[(h + i) & 4095];
+        if (s.pc == pc) { s.count++; return; }
+        if (s.pc == null) { s.pc = pc; s.f = f; s.count = 1; return; }
+    }
+}
 // Executed bytecodes by function index, and the function's code length.
 tlocal ulong[16384] opprof_func_count;
 tlocal uint[16384] opprof_func_len;
@@ -217,6 +227,15 @@ $if $feat(OP_PROFILE):
     }
     io::eprintn("## relayed by opcode");
     for (uint i = 0; i < OPPROF_N; i++) if (opprof_relay[i] > 1000) io::eprintfn("%d\t%s", opprof_relay[i], (ZString)bytecode::get_opcode_name((Opcode)i));
+    io::eprintn("## hottest relay sites (count fn#index pc op key)");
+    for (uint k = 0; k < 12; k++) {
+        RelaySite* best = &opprof_relay_sites[0];
+        foreach (&r : opprof_relay_sites) if (r.count > best.count) best = r;
+        if (best.count == 0) break;
+        Instruction w = *best.pc;
+        io::eprintfn("%d\tfn#%d\t%d\t%s\t%d", best.count, best.f.func_index, (uint)(best.pc - best.f.code), (ZString)bytecode::get_opcode_name(w.op), w.c);
+        best.count = 0;
+    }
     io::eprintn("## dynamic by function (count index code_words)");
     for (uint k = 0; k < 14; k++) {
         uint best = 0;
