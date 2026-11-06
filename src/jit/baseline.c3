@@ -551,6 +551,7 @@ fn void Asm.emit_stubs(&self) {
             Jumps alt;
             alt.load(&self.stub_jumps, stub.at + stub.call_len, stub.alt_len);
             alt.bind(sljit_emit_label(c));
+            self.poly_back = stub.poly_back;
             self.emit_alt();
         }
         if (stub.poly_len != 0) {
@@ -1242,6 +1243,7 @@ fn void Asm.emit_alt(&self) {
     void* c = self.c;
     DecodedInsn w = self.w;
     Opcode op = w.op;
+    if (self.emit_var_alt()) return;
     if (op == JMP_SEQ || op == JMP_SNEQ || op == JMP_EQ || op == JMP_NEQ) {
         Jumps eq;
         Jumps ne;

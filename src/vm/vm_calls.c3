@@ -1323,6 +1323,7 @@ fn void? resolve_call_var(Dispatch* ds, uint name_const_idx, uint callee_reg, bo
             hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
                 ic_env.bindings.shape_id, (uint)ic_prop_idx, (void*)ds.act.lex_env,
                 false, vm.heap);
+            var_ic_note_rearm(ds.var_ic_base + pc_off, ds.act.lex_env, ic_env, vm.heap);
         }
     } else {
         if (catch err = resolve_call_proto_fallback(ds, key, ra, callee_reg)) return err~;
@@ -1484,6 +1485,7 @@ fn void? resolve_call_global(Dispatch* ds, uint name_const_idx, uint callee_reg,
             hobject::var_ic_fill(ds.var_ic_base + pc_off, (void*)ic_env, (void*)ic_env.bindings,
                 ic_env.bindings.shape_id, (uint)ic_prop_idx, (void*)ds.act.lex_env,
                 false, vm.heap);
+            var_ic_note_rearm(ds.var_ic_base + pc_off, ds.act.lex_env, ic_env, vm.heap);
         }
     } else {
         if (catch err = resolve_call_proto_fallback(ds, key, ra, callee_reg)) return err~;
