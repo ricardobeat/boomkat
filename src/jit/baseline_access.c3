@@ -863,11 +863,12 @@ fn void Asm.emit_length(&self, uint ra, uint rb) {
 
 // The slow path unless object `obj`'s shape is the one entry `ic` (in its
 // register) holds. Uses R0 and R3.
-fn void Asm.guard_shape(&self, int obj, int ic) {
+fn void Asm.guard_shape(&self, int obj, int ic, Jumps* miss = null) {
     Layout* l = self.lay;
+    if (!miss) miss = &self.call;
     sljit_emit_op1(self.c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | obj, l.obj_shape);
     sljit_emit_op1(self.c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | ic, l.ic_shape);
-    self.call.add(sljit_emit_cmp(self.c, SLJIT_NOT_EQUAL, R3, 0, R0, 0));
+    miss.add(sljit_emit_cmp(self.c, SLJIT_NOT_EQUAL, R3, 0, R0, 0));
 }
 
 // Store register `rv` into the slot at R0, owned by the object in R1, as the
@@ -883,10 +884,17 @@ fn void Asm.store_slot(&self, uint rv) {
 // barrier takes the counted and traced store of th_store_slot_ref instead of
 // the slow path. Uses R0 to R3.
 fn void Asm.store_slot_counted(&self, uint rv) {
-    void* c = self.c;
     Jumps counted;
     self.guard_old_value(&counted);
-    self.store_value(rv, &counted);
+    self.store_value_counted(rv, &counted);
+}
+
+// store_value into the slot at R0 of the object in R1, where the store
+// store_value declines (jumps to `counted`, which the caller may have added
+// to) takes the counted and traced store of th_store_slot_ref. Uses R0 to R3.
+fn void Asm.store_value_counted(&self, uint rv, Jumps* counted) {
+    void* c = self.c;
+    self.store_value(rv, counted);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     counted.bind(sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
@@ -948,18 +956,19 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv) {
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
     void* absent = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)hobject::IC_PROP_ABSENT);
     self.put_key_check(key, key_reg);
-    self.guard_shape(R1, R2);
+    Jumps miss;
+    self.guard_shape(R1, R2, &miss);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
     // live_shape_generation: heap.shapes[shape_id].generation.
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.heap, l.heap_shapes);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, l.shape_gen);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_gen);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R0, 0));
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R0, 0));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask | l.writable_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.writable_mask));
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.writable_mask));
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
     self.prop_base(R0, R1);
     sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
@@ -968,7 +977,16 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv) {
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(absent, sljit_emit_label(c));
     self.emit_put_absent(ic, key, key_reg, rv);
+    void* absent_done = sljit_emit_jump(c, SLJIT_JUMP);
+    // The entry does not fit the receiver: the store by lookup.
+    miss.bind(sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_missed);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_set_label(done, sljit_emit_label(c));
+    sljit_set_label(absent_done, sljit_emit_label(c));
 }
 
 // The site key check of a store: the constant `key`, or the string in
@@ -1231,7 +1249,7 @@ fn void Asm.emit_put_elem(&self, uint ra, uint rv) {
 
 // The store into an empty slot of a fresh fixed-shape object, as
 // th_init_slot: a plain object that is not a proxy, slot `b` below its
-// property count and still undefined, and a value store_value takes.
+// property count and still undefined; a heap value takes the counted store.
 fn void Asm.emit_init_slot(&self, uint ra, uint b, uint rv) {
     void* c = self.c;
     Layout* l = self.lay;
@@ -1245,7 +1263,8 @@ fn void Asm.emit_init_slot(&self, uint ra, uint b, uint rv) {
     self.prop_base(R0, R1);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)b * TVal::size);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
-    self.store_value(rv);
+    Jumps counted;
+    self.store_value_counted(rv, &counted);
 }
 
 // One element kind the typed-array subroutines handle inline.

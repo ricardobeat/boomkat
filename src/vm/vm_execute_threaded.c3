@@ -2957,18 +2957,16 @@ fn Instruction* th_put_cached(Instruction* pc, HandlerTable* handlers, TVal* reg
 // new property when the receiver is extensible and the first holder of the key
 // on its chain, if any, is a writable data property (OrdinarySet). The chain
 // must consist of plain objects, so no proxy or exotic [[Set]] is skipped.
-// Any other case bails to the switch, which runs the whole of [[Set]]: an
+// Any other case returns false to the switch, which runs the whole of [[Set]]: an
 // accessor or read-only property, an array index or hidden new key, or a
 // non-extensible receiver. A non-null `ic` is refilled for the receiver.
-fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                              HObject* hobj, HString* key, TVal* value, hobject::ICEntry* ic) @private @noinline {
-    heap::Heap* h = cold.heap;
-    bool fresh_name = pc.op == Opcode.PUTPROP && !key.flags.is_interned;
+fn bool put_by_lookup(heap::Heap* h, HObject* hobj, HString* key, TVal* value, hobject::ICEntry* ic,
+                      bool fresh_name) @inline {
     HString* interned = h.ensure_interned(key);
     int idx = hobj.find_prop_idx((void*)interned, h);
     if (idx >= 0) {
         hobject::PropFlags flags = hobj.get_prop_flags((uint)idx, h);
-        if (flags.is_accessor || !flags.writable) return pc;
+        if (flags.is_accessor || !flags.writable) return false;
         // An own entry stays valid on a dictionary too, since indexes never
         // move. The hit path matches the key by pointer, so only the interned
         // key itself is cached.
@@ -2983,19 +2981,20 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
         }
         hobject::PropValue* slot = &hobj.prop_values()[idx];
         if (value.is_heap_allocated() || slot.get().is_heap_allocated()) {
-            return th_store_slot_ref_next(pc, handlers, regs, cold, hobj, slot, value);
+            h.store_slot_ref(hobj, slot, value);
+        } else {
+            *slot = (hobject::PropValue)*value;
         }
-        *slot = (hobject::PropValue)*value;
-        return th_next(pc + 1, handlers, regs, cold);
+        return true;
     }
-    if (!hobj.flags.extensible || interned.flags.is_arridx || interned.flags.is_hidden) return pc;
+    if (!hobj.flags.extensible || interned.flags.is_arridx || interned.flags.is_hidden) return false;
     HObject* cur = hobj.prototype;
     for (uint depth = 0; cur != null; depth++) {
-        if (depth >= hobject::MAX_PROTO_DEPTH || !hobject::plain_property_object(cur)) return pc;
+        if (depth >= hobject::MAX_PROTO_DEPTH || !hobject::plain_property_object(cur)) return false;
         int at = cur.find_prop_idx((void*)interned, h);
         if (at >= 0) {
             hobject::PropFlags flags = cur.get_prop_flags((uint)at, h);
-            if (flags.is_accessor || !flags.writable) return pc;
+            if (flags.is_accessor || !flags.writable) return false;
             break;
         }
         cur = cur.prototype;
@@ -3003,10 +3002,17 @@ fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* reg
     uint incoming = hobj.shape_id;
     uint epoch = h.shape_recycle_epoch;
     if (fresh_name) hobj.note_computed_name(interned);
-    if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return pc;
+    if (!hobj.put_prop_new((void*)interned, *value, hobject::PROP_FLAGS_WEC, h)) return false;
     if (ic != null) {
         hobject::ic_fill_absent_put(ic, hobj, (void*)interned, incoming, hobj.shape_id, epoch, h);
     }
+    return true;
+}
+
+fn Instruction* th_put_lookup(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
+                              HObject* hobj, HString* key, TVal* value, hobject::ICEntry* ic) @private @noinline {
+    bool fresh_name = pc.op == Opcode.PUTPROP && !key.flags.is_interned;
+    if (!put_by_lookup(cold.heap, hobj, key, value, ic, fresh_name)) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
 
