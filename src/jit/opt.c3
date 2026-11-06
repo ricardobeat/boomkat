@@ -51,6 +51,8 @@ const char OPT_REFUSED_EXITS = 3;
 // Frame entries (and loop credits) before a function with feedback is
 // optimized; exits that discard its code; and the reoptimizations allowed.
 const uint OPT_ENTRY_THRESHOLD = 1000;
+// The attempts on call feedback alone that found nothing to inline before the function waits for operand feedback.
+const char OPT_DECLINE_MAX = 3;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
 const usz OPT_CODE_MAX = 512 * 1024;
@@ -167,13 +169,43 @@ fn long opt_poll(Dispatch* ds) {
 
 // Whether any instruction of `f` has recorded a non-int32 operand, the sign
 // that the baseline has seen what there is to specialize on.
-fn bool opt_has_feedback(CompiledFunction* f) {
+fn bool opt_has_operand_feedback(CompiledFunction* f) {
     if (f.ic_entries == null) return false;
     hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
     for (uint i = 0; i < f.code_count; i++) {
         if ((ic[i].feedback & hobject::FB_OPERANDS) != 0) return true;
     }
     return false;
+}
+
+fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
+    if (opt_has_operand_feedback(f)) return true;
+    if (f.ic_entries == null || f.opt_declined >= OPT_DECLINE_MAX) return false;
+    hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
+    // A function of integers alone records no operand feedback, but a call to a body the tier can
+    // inline is something to specialize on.
+    for (uint i = 0; i < f.code_count; i++) {
+        if ((ic[i].feedback & hobject::FB_CALL) != 0 && opt_inline_plausible(h, f, i)) return true;
+    }
+    return false;
+}
+
+// Whether the call at word `i` of `f` names a callee that looks like an inline site: the cheap part
+// of OptBuild.inline_candidate, the size and the opcodes of its body.
+fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i) {
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
+    Opcode op = f.code[i].op;
+    bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
+    if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) return false;
+    if ((ic.feedback & hobject::FB_POLY) != 0 || ic.prop_idx >= h.compiled_func_count) return false;
+    CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[ic.prop_idx];
+    uint nargs = var_call ? f.code[i].b : f.code[i].c;
+    if (cf == null || cf == f || cf.code_count > INLINE_WORDS_MAX || cf.num_regs > 32 || cf.num_formals != nargs) return false;
+    if (!opt_function_eligible(cf)) return false;
+    cf.classify_lean_call();
+    if (!cf.call_flags.lean_call || (op != Opcode.CALL && !cf.call_flags.lean_plain)) return false;
+    for (uint k = 0; k < cf.code_count; k++) if (!inline_op_ok(cf.code[k].op)) return false;
+    return true;
 }
 
 // Whether any call site of `f` has recorded its callee.
@@ -198,7 +230,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     OptPolicy* p = &h.opt;
     JitStats* st = &h.jit_stats;
     if (f.jit_code == null || f.opt_code != null || f.opt_state != OPT_NONE) return false;
-    if (!p.always && !opt_has_feedback(f)) return false;
+    if (!p.always && !opt_has_feedback(h, f)) return false;
     // Forcing exits from inlined bodies needs bodies that have a callee to inline.
     if (p.force_inline && !opt_has_call_feedback(f)) return false;
     if (p.live_bytes >= OPT_CODE_MAX) return opt_refuse(h, f, OptRefuse.BUDGET, Opcode.NOP);
@@ -223,6 +255,11 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     }
     defer b.free();
     uint inlined = (uint)g.fns.len() - 1;
+    // Call feedback alone is worth optimizing for only when the call was inlined.
+    if (why == OptRefuse.NONE && inlined == 0 && !p.always && !opt_has_operand_feedback(f)) {
+        f.opt_declined++;
+        return false;
+    }
     if (why != OptRefuse.NONE) return opt_refuse(h, f, why, refused_op);
     OptCode* oc = h.alloc_func(h.heap_udata, OptCode::size);
     if (oc == null) return false;

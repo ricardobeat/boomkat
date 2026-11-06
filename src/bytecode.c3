@@ -2128,6 +2128,7 @@ struct CompiledFunction {
     uint            opt_entries @if($feat(SLJIT));  // Entries counted toward optimizing
     char            opt_state @if($feat(SLJIT));    // jit::OPT_*
     char            opt_reopts @if($feat(SLJIT));   // Optimized code discarded so far
+    char            opt_declined @if($feat(SLJIT)); // Attempts on call feedback alone that inlined nothing
 }
 
 // ============================================================================
