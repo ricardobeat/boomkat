@@ -20,6 +20,7 @@ const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 tlocal ulong[OPPROF_N] opprof_singles;
 tlocal ulong[OPPROF_N] opprof_relay;
+tlocal ulong[2] opprof_runentry;
 struct RelaySite { Instruction* pc; CompiledFunction* f; ulong count; }
 tlocal RelaySite[4096] opprof_relay_sites;
 fn void opprof_relay_site(CompiledFunction* f, Instruction* pc) {
@@ -216,6 +217,9 @@ $if $feat(OP_PROFILE):
     }
     ulong total = 0;
     for (uint i = 0; i < OPPROF_N; i++) { total += opprof_singles[i]; }
+    ulong relays = 0;
+    for (uint i = 0; i < OPPROF_N; i++) relays += opprof_relay[i];
+    io::eprintfn("# NOT_NATIVE interpreted=%d relayed=%d sum=%d", total, relays, total + relays);
     io::eprintfn("# OP_PROFILE total_dispatches=%d executed_bytecodes=%d threaded_dispatches=%d switch_dispatches=%d fused_bytecodes=%d",
         opprof_switch_dispatches + opprof_threaded_dispatches, total,
         opprof_threaded_dispatches, opprof_switch_dispatches, opprof_fused_bytecodes);
@@ -225,6 +229,7 @@ $if $feat(OP_PROFILE):
             io::eprintfn("%d\t%s", opprof_switch_singles[i], (ZString)bytecode::get_opcode_name((Opcode)i));
         }
     }
+    io::eprintfn("## Vm.run frame entries: interpreted=%d native=%d", opprof_runentry[0], opprof_runentry[1]);
     io::eprintn("## relayed by opcode");
     for (uint i = 0; i < OPPROF_N; i++) if (opprof_relay[i] > 1000) io::eprintfn("%d\t%s", opprof_relay[i], (ZString)bytecode::get_opcode_name((Opcode)i));
     io::eprintn("## hottest relay sites (count fn#index pc op key)");

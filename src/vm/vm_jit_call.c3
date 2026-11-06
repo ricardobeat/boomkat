@@ -354,7 +354,12 @@ fn bool jit_store_slot(Heap* h, HObject* hobj, hobject::PropValue* slot, TVal* v
 HandlerTable jit_stop_table @private;
 bool jit_relay_ready @private;
 
-fn Instruction* jit_stop(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private => pc;
+fn Instruction* jit_stop(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) @private {
+    // th_next charged the instruction after the one the handler ran; no
+    // instruction is dispatched here.
+    $if $feat(OP_PROFILE): opprof_pending_valid = false; $endif
+    return pc;
+}
 
 fn void jit_relay_init() @private @noinline {
     init_threaded_handlers();
