@@ -144,8 +144,9 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next) {
     CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
     if (target == null) return JIT_CALL_SLOW;
     target.classify_lean_call();
-    if (!target.call_flags.simple_constructor || target.is_arrow() || target.is_derived_ctor()
-        || target.brand_name_hstr != null || target.field_init_func != null) return JIT_CALL_SLOW;
+    // simple_constructor is only set for a constructable, non-derived function
+    // without a brand or field initializers.
+    if (!target.call_flags.simple_constructor) return JIT_CALL_SLOW;
     Vm* vm = ds.vm;
     hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
     if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
