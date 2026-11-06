@@ -1174,6 +1174,9 @@ struct Heap {
     bool                jit_enabled @if($feat(SLJIT));
     bool                jit_stress @if($feat(SLJIT));
     jit::JitStats       jit_stats @if($feat(SLJIT));
+    // The constant key of the store site whose native miss path is running,
+    // for vm::jit_put_site: a site whose cache never filled has no key of its own.
+    void*               jit_site_key @if($feat(SLJIT));
     jit::OptPolicy      opt @if($feat(SLJIT));
 
     // Only this field is shared with watchdog threads. All accesses are atomic;

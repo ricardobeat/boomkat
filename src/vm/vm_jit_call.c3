@@ -332,6 +332,15 @@ fn bool jit_put_missed(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value
     return key != null && put_by_lookup(h, hobj, key, value, ic, false);
 }
 
+// jit_put_missed for a site whose entry does not hold the site's constant key,
+// which the emitted code left in h.jit_site_key: an entry that never filled
+// stays empty for a receiver the cache cannot describe, and every store of the
+// site would otherwise take its thunk.
+fn bool jit_put_site(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) {
+    HString* key = (HString*)h.jit_site_key;
+    return key != null && put_by_lookup(h, hobj, key, value, ic, false);
+}
+
 // NEWARR, NEWARR_CONST, NEWOBJ and NEWOBJ_SHAPE as their threaded handlers
 // run them, without the handler's table call and bias setup: true when the
 // result register is written, false when the allocation failed and the
