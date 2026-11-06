@@ -1264,11 +1264,15 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
             bc.insns++;
         }
     }
+    cg.use_fn(0);
     a.emit_stubs();
     cg.emit_taken_stubs();
     cg.emit_poll_stubs();
     cg.emit_osr_entries();
     cg.emit_exit_stubs();
+    // The exit stubs of inlined bodies leave the emitter on a callee; the call entry, its
+    // subroutines and the code after a native call's return belong to the function being compiled.
+    cg.use_fn(0);
     // A direct call enters at the first block, which holds no values in registers unless the
     // function starts with a loop.
     void* call_entry = null;
