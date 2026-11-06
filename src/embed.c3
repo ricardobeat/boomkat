@@ -207,6 +207,7 @@ struct Runtime {
     HostReg* cfn_regs;
     uint     cfn_data_class;   // id + 1, or 0 before the first use
     uint     script_class;     // host class of bk_compile scripts, id + 1, or 0
+    uint     pending_global_class;   // class of a BK_CONTEXT_HOST_GLOBAL global before bk_set_global_class, id + 1, or 0
     // bk_set_module_loader: the host's loader and the engine hooks over it.
     ModuleLoader     module_loader;
     esm::ModuleHostHooks module_hooks;
@@ -307,6 +308,7 @@ fn void activate_context(Runtime* rt, Ctx* ctx) @noinline {
 // Context options, from bk_context_options.
 const uint CONTEXT_NO_EVAL = 1;
 const uint CONTEXT_CANNOT_BLOCK = 2;
+const uint CONTEXT_HOST_GLOBAL = 4;
 
 // A context: the runtime's primary realm on first use, a new realm after. A
 // context with options, or with a host global object (`global` and its

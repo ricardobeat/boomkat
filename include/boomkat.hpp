@@ -1116,9 +1116,10 @@ struct RuntimeOptions {
     uint64_t heap_limit = 0;
 };
 
-/* A new context's options. flags: BK_CONTEXT_NO_EVAL, BK_CONTEXT_CANNOT_BLOCK.
- * With global_class, the global object is an instance of that class owning
- * global_payload. */
+/* A new context's options. flags: BK_CONTEXT_NO_EVAL, BK_CONTEXT_CANNOT_BLOCK,
+ * BK_CONTEXT_HOST_GLOBAL. With global_class, the global object is an instance
+ * of that class owning global_payload. With BK_CONTEXT_HOST_GLOBAL, the class
+ * comes later from bk_set_global_class. */
 struct ContextOptions {
     unsigned flags = 0;
     bk_class global_class = 0;
