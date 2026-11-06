@@ -2944,6 +2944,7 @@ fn TVal? Vm.run(Vm* vm) {
     $if $feat(SLJIT):
         if (vm.heap.jit_enabled && vm.threaded_handoff == ThreadedHandoff.NONE) {
             void* native = jit::baseline_code(vm.heap, vm.current_func);
+            $if $feat(OP_PROFILE): opprof_runentry[native != null ? 1 : 0]++; if (native == null) opprof_relay_site(vm.current_func, ds.curr_pc); $endif
             if (native != null) {
                 switch (jit::baseline_run(native, &ds)) {
                     case OpStatus.RESTART.ordinal: continue;
