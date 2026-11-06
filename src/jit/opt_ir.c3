@@ -87,6 +87,10 @@ enum OptOp : char {
     // The variable a CALL_VAR (cc nonzero) or CALL_GLOBAL (imm its pc) names, stored in the call's
     // callee register as a published value; exits (SLOW_PATH) when its cache does not hold.
     LOAD_VAR,
+    // A GETGLOBAL of an inlined body (imm its pc) read as a number of the node's rep; exits when
+    // its cache does not hold or the value is not that kind of number.
+    LOAD_GLOBAL,
+    // (cc nonzero: the receiver slot of the inlined call, for an LDTHIS.)
     // The window slot imm (a callee RET's register) copied to the window slot home (the call's
     // result register) as a published store; exits (SLOW_PATH) where publish does.
     COPY_WINDOW,

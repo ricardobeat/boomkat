@@ -70,6 +70,8 @@ enum OptInlineReject : char (String label) {
     FEEDBACK {"arithmetic feedback not numeric"},
     FIELD {"field is not an own data field"},
     CONSTANT {"constant is not a number"},
+    GLOBAL {"global not cached"},
+    THIS {"this of a plain call"},
     BUILD {"body not lowerable at build"},
     UNSAFE {"heap value in the callee window"},
     STATE {"call state not usable"},
@@ -253,6 +255,7 @@ fn uint inline_reg_mask(Opcode op) {
     switch (op) {
         case LDINT: case LDCONST: case INC: case DEC: case GETTHISC: case PUTTHISC: case RET:
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
+        case GETGLOBAL: case LDTHIS:
             return 1;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -289,6 +292,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
     *writes = 0;
     switch (w.op) {
         case LDINT: case LDCONST: case GETTHISC: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
+        case GETGLOBAL: case LDTHIS:
             *writes = 1u << w.a;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -784,6 +788,35 @@ fn bool OptBuild.get_cap(&self) {
     return true;
 }
 
+// GETGLOBAL in an inlined body: a typed load when a numeric use asked for one, else the value read
+// into the window; the cache not holding leaves for the callee's baseline code. A value of any kind
+// in a slot beyond the caller's frame would be out of the collector's sight.
+fn bool OptBuild.get_global(&self) {
+    uint ra = self.w.a;
+    if (ra >= self.nregs) return false;
+    if (self.typed_load(OptOp.LOAD_GLOBAL, NO_NODE) != NO_NODE) return true;
+    uint n = self.add(OptOp.LOAD_VAR, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    self.kill(ra);
+    self.load_def[ra] = self.pckey();
+    if (ra >= self.caller_regs) self.inline_unsafe = true;
+    return true;
+}
+
+// LDTHIS in an inlined method call: the receiver the call checked to be an object, copied to the
+// register.
+fn bool OptBuild.load_this(&self) {
+    uint ra = self.w.a;
+    if (ra >= self.nregs) return false;
+    uint n = self.add(OptOp.COPY_WINDOW, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.g.nodes[n].home = ra;
+    self.g.nodes[n].cc = 1;
+    self.snapshot(n);
+    self.kill(ra);
+    if (ra >= self.caller_regs) self.inline_unsafe = true;
+    return true;
+}
+
 // Whether the instruction being lowered has been cached for a string key.
 fn bool OptBuild.string_keyed(&self) {
     CompiledFunction* f = self.cur_f();
@@ -832,6 +865,10 @@ fn bool OptBuild.cold_field(&self) {
             if (f.ic_entries == null) return false;
             hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
             return (void*)ic.key.borrow() == null;
+        case GETGLOBAL:
+            CompiledFunction* f = self.cur_f();
+            if (f.var_ic_entries == null) return false;
+            return ((hobject::VarICEntry*)f.var_ic_entries)[self.next_pc - 1].env == null;
         default:
             return false;
     }
@@ -1205,6 +1242,12 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 hobject::ICEntry* ic = self.own_field();
                 ok = (s.method && ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
+            case GETGLOBAL:
+                ok = (s.flat && self.cold_field()) || ((hobject::VarICEntry*)cf.var_ic_entries)[self.next_pc - 1].env != null;
+                why = OptInlineReject.GLOBAL;
+            case LDTHIS:
+                ok = s.method;
+                why = OptInlineReject.THIS;
             case LDCONST:
                 uint index = self.w.get_bc();
                 ok = index < cf.const_count && (cf.constants[index].is_fastint() || cf.constants[index].is_number());
@@ -1760,6 +1803,12 @@ fn bool OptBuild.lower_op(&self) {
             self.store_const(ra, (long)v.bits);
         case GETCAP:
             return self.get_cap();
+        case GETGLOBAL:
+            if (self.cur_fn == 0) return self.generic();
+            return self.get_global();
+        case LDTHIS:
+            if (self.cur_fn == 0) return self.generic();
+            return self.load_this();
         case GETPROP:
             return self.get_elem();
         case GETPROPC:

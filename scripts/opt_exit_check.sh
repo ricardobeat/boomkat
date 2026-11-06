@@ -6,7 +6,7 @@
 # scripts/guard.sh.
 set -u
 BIN=${BIN:-./out/boomkat}
-FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js test/jit/opt_poly_field.js test/jit/opt_inline_view.js test/jit/opt_inline_branch.js test/jit/opt_inline_wide.js"}
+FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js test/jit/opt_poly_field.js test/jit/opt_inline_view.js test/jit/opt_inline_branch.js test/jit/opt_inline_wide.js test/jit/opt_inline_wide_global.js"}
 REASONS="overflow not-int32 not-number shape bounds hole callee inline-slowcall alloc-slow throw-path forced"
 fails=0
 for f in $FILES; do
