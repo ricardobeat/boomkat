@@ -1334,6 +1334,9 @@ fn void Asm.emit_alt(&self) {
         case GETPROPC:
         case GETPROPC_CACHED:
             self.emit_length(w.a, w.b);
+        case GETPROP:
+        case GETPROP_CACHE:
+            self.emit_get_keyed(w.a, w.b, w.c);
         default:
             unreachable("no number path for %s", op);
     }

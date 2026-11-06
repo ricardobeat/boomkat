@@ -8,6 +8,7 @@ import boomkat::bytecode;
 import boomkat::types;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hstring;
 import boomkat::env;
 
 // Native calls nested on one Dispatch's C stack before a call takes the
@@ -268,21 +269,55 @@ fn HObject* jit_ic_owner(hobject::ICEntry* ic, HObject* hobj) {
     return owner;
 }
 
+// The slot of the data property `key`, an interned name, on the
+// plain object `hobj` or on a plain prototype within JIT_WALK_DEPTH links of
+// it, or a slot holding undefined when the key is on none of the chain, after
+// the site's cache tests missed; null for
+// anything else (an accessor, an exotic object on the way, a longer chain),
+// which the thunk resolves. It is get_prop_or_accessor_proto's walk, noting an
+// owner on the receiver or its prototype in the megamorphic cache as that does.
+fn hobject::PropValue* jit_get_missed(Heap* h, HObject* hobj, void* key) {
+    hstring::HString* name = (hstring::HString*)key;
+    if (name == null || !name.is_interned() || name.is_arridx() || name.is_hidden()) return null;
+    HObject* cur = hobj;
+    for (uint depth = 0; cur != null && depth <= JIT_WALK_DEPTH; depth++) {
+        if (!hobject::plain_property_object(cur)) return null;
+        int idx = cur.find_prop_idx(key, h);
+        if (idx >= 0) {
+            if (cur.get_prop_flags((uint)idx, h).is_accessor) return null;
+            if (depth <= 1) hobject::mega_cache_store(h, hobj, key, cur, idx, false);
+            return &cur.prop_values()[idx];
+        }
+        cur = cur.prototype;
+    }
+    if (cur != null) return null;
+    jit_undefined.set_undefined();
+    return (hobject::PropValue*)&jit_undefined;
+}
+
+const uint JIT_WALK_DEPTH = 6;
+TVal jit_undefined @private;
+
 // An absent-property add through the site entry `ic`, whose key matched, to
 // the plain object `hobj`, as th_put_cached's absent case and th_put_absent:
 // a value that needs no count or barrier work, appended into spare property
 // capacity. False leaves the store to the thunk.
 fn bool jit_put_absent(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value) {
     if (!hobject::ic_matches_absent_put(ic, hobj, ic.key.borrow(), h)) return false;
-    if (value.is_heap_allocated()) {
-        if (!value.is_object() || h.gc_phase == heap::GcPhase.MARK || hobj.gc.old) return false;
-    }
+    if (value.is_heap_allocated()) return hobj.append_cached_prop(ic, *value, h);
     if (hobj.prop_count >= hobj.prop_capacity || hobj.prop_hash != null) return false;
     if (hobj.gc.prototype_observed) h.bump_prototype_epoch();
     hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
     *slot = (hobject::PropValue)*value;
     hobj.prop_count++;
     hobj.shape_id = ic.absent_next_shape;
+    return true;
+}
+
+// The counted and traced store of `value` over `slot`, owned by `hobj`, that
+// th_store_slot_ref_next runs for a store the plain path declines.
+fn bool jit_store_slot(Heap* h, HObject* hobj, hobject::PropValue* slot, TVal* value) {
+    h.store_slot_ref(hobj, slot, value);
     return true;
 }
 

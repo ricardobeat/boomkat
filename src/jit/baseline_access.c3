@@ -108,6 +108,7 @@ struct Layout {
     long ab_resizable;
     long ab_immutable;
     long heap_mega;
+    long heap_string_proto;
     long me_key;
     long me_shape;
     long me_idx;
@@ -148,6 +149,7 @@ fn Layout* layout() {
     l.heap_shapes = (char*)&h.shapes - base;
     l.heap_epoch = (char*)&h.shape_recycle_epoch - base;
     l.heap_mega = (char*)&h.mega_cache - base;
+    l.heap_string_proto = (char*)&h.string_proto - base;
     l.me_key = (char*)&me.key - base;
     l.me_shape = (char*)&me.shape_id - base;
     l.me_idx = (char*)&me.prop_idx - base;
@@ -604,6 +606,16 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
         // A string or an array takes its length out of line (emit_length).
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
         self.alt.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    } else if (key != 0 && !((hstring::HString*)key).is_arridx()) {
+        // A string primitive reads through String.prototype, whose entry the
+        // site holds (th_getpropc); a symbol and any other value go to the thunk.
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        self.guard_flags_clear(R1, l.symbol_mask, R2);
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.heap, l.heap_string_proto);
+        sljit_set_label(object, sljit_emit_label(c));
     } else {
         self.unbox_object(R1, R0);
     }
@@ -621,41 +633,47 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
         self.alt.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
     }
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
     if (key_reg >= 0) {
-        self.load(R3, (uint)key_reg);
-        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_STRING_START);
-        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R2, l.ic_key));
+        // Another string key takes the keyed read out of line (emit_get_keyed).
+        self.load(R4, (uint)key_reg);
+        sljit_emit_op2(c, SLJIT_XOR, R4, 0, R4, 0, SLJIT_IMM, K_STRING_START);
+        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        self.alt.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_MEM | R2, l.ic_key));
     } else if (check_key) {
         self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, key));
     } else {
         self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, 0));
     }
-    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
     self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    // An accessor or an absent read (whose entry carries the accessor bit as
+    // its marker) goes to the arm, whose helper settles it.
+    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
     void* own = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     // A prototype owner, resolved as ic_resolve_slot does. An epoch entry
     // is replayed inline (ic_resolve_owner's epoch case: a plain receiver
     // whose prototype is the recorded first link and no prototype mutation
-    // since); any other chain takes the helper.
+    // since); a receiver it does not describe goes to the polymorphic arm,
+    // which ends in the megamorphic cache as th_get_cached's th_get_shared
+    // does (receivers of one shape with different prototypes alternate here).
+    // Any other chain takes the helper.
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
     Jumps general;
     general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_EPOCH & 0xFF));
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R2, l.ic_chain);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R2, l.ic_chain);
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
-    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R3, l.epoch_first));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.epoch_current);
+    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_first));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_current);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    general.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R3, l.epoch_value));
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.epoch_owner);
-    self.guard_not_proxy(R0, R3);
+    self.poly.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_value));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_owner);
+    self.guard_not_proxy(R0, R4);
     void* resolved = sljit_emit_jump(c, SLJIT_JUMP);
     general.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
@@ -687,7 +705,16 @@ fn void Asm.emit_poly_arm(&self, void* back) {
         // The receiver is still in R1 (the poly subroutine keeps it).
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1]);
         self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = MEGA_SUB });
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        void* cached = sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE);
+        // The cache has no entry: the helper reads the data property and notes
+        // it there, as the switch's lookup does.
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1]);
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | R2, self.lay.ic_key);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+        self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+        sljit_set_label(cached, sljit_emit_label(c));
         self.publish(self.w.a);
         self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
     } else {
@@ -698,11 +725,13 @@ fn void Asm.emit_poly_arm(&self, void* back) {
 // The megamorphic cache subroutine, as hobject::mega_cache_lookup for a read
 // th_get_shared would answer with a data property: R1 the receiver (a plain
 // object), R2 its read entry (whose key the site has matched). R2 is SUB_TRUE
-// with the value in R0, or SUB_FALSE. Uses R0 to R4.
+// with the value in R0, or SUB_FALSE with R1 intact. Uses R0 to R4.
 fn void Asm.emit_mega_body(&self) {
     void* c = self.c;
     Layout* l = self.lay;
     int m = SLJIT_MEM;
+    int sp = m | reg_sp();
+    self.mov(sp, SUB_VALUE_OFF, R1, 0);
     const long HASH_SHAPE = 2654435761;
     const long HASH_PROTO = 2246822519;
     Jumps miss;
@@ -762,8 +791,26 @@ fn void Asm.emit_mega_body(&self) {
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_TRUE);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     miss.bind(sljit_emit_label(c));
+    self.mov(R1, 0, sp, SUB_VALUE_OFF);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, SUB_FALSE);
     sljit_set_label(done, sljit_emit_label(c));
+}
+
+// A computed read whose string key is not the site entry's, as th_getprop
+// reaches the switch for it: an own or inherited data property of a plain
+// object, or undefined for a key absent from the chain, found by the helper
+// without disturbing the entry.
+fn void Asm.emit_get_keyed(&self, uint ra, uint rb, uint rkey) {
+    void* c = self.c;
+    self.load(R2, rkey);
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R2, 0, SLJIT_IMM, K_STRING_START);
+    self.load(R1, rb);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    self.publish(ra);
 }
 
 // The polymorphic set subroutine: R2 SUB_TRUE with the slot index of shape R3
@@ -832,30 +879,51 @@ fn void Asm.store_slot(&self, uint rv) {
     self.store_value(rv);
 }
 
-// The slow path unless the value in the slot at R0 can be overwritten without work: a
-// number or other inert value, or an object. Uses R3.
-fn void Asm.guard_old_value(&self) {
+// store_slot for a value that stays in register `rv`: what needs a count or a
+// barrier takes the counted and traced store of th_store_slot_ref instead of
+// the slow path. Uses R0 to R3.
+fn void Asm.store_slot_counted(&self, uint rv) {
     void* c = self.c;
+    Jumps counted;
+    self.guard_old_value(&counted);
+    self.store_value(rv, &counted);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    counted.bind(sljit_emit_label(c));
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_store_slot);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
+// Jump to `miss` (the slow path by default) unless the value in the slot at R0
+// can be overwritten without work: a number or other inert value, or an
+// object. Uses R3.
+fn void Asm.guard_old_value(&self, Jumps* miss = null) {
+    void* c = self.c;
+    if (!miss) miss = &self.call;
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R0, 0);
     void* old_ok = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
     sljit_set_label(old_ok, sljit_emit_label(c));
 }
 
 // Store register `rv` into the slot at R0 of the object in R1 when the value
-// needs no count and no barrier work; the slow path otherwise. Uses R2, R3.
-fn void Asm.store_value(&self, uint rv) {
+// needs no count and no barrier work; jump to `miss` (the slow path by
+// default) otherwise. Uses R2, R3.
+fn void Asm.store_value(&self, uint rv, Jumps* miss = null) {
     void* c = self.c;
     Layout* l = self.lay;
+    if (!miss) miss = &self.call;
     self.load(R2, rv);
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R2, 0, SLJIT_IMM, K_OBJ);
-    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
-    self.guard_not_marking(R3);
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.guard_not_marking_to(miss, R3);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_gc);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.old_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
     sljit_set_label(inert, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
 }
@@ -896,7 +964,7 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv) {
     self.prop_base(R0, R1);
     sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
-    self.store_slot(rv);
+    self.store_slot_counted(rv);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(absent, sljit_emit_label(c));
     self.emit_put_absent(ic, key, key_reg, rv);
@@ -932,9 +1000,9 @@ fn void Asm.emit_put_absent(&self, long ic, long key, int key_reg, uint rv) {
 // matched), R3 the address of the value. R0 is nonzero when the key was
 // appended, 0 for the slow path. It is vm::jit_put_absent's common case
 // inline: ic_matches_absent_put (shape, recycle epoch, extensible plain
-// object, the recorded prototype chain ending in null), a value that needs no
-// count or barrier work, spare capacity and no hash table, and a receiver
-// never observed as a prototype (which needs an epoch bump). Any other state
+// object, the recorded prototype chain ending in null), a value that needs
+// no barrier work beyond the counted store, spare capacity and no hash table,
+// and a receiver never observed as a prototype (which needs an epoch bump). Any other state
 // calls that helper, which decides again.
 fn void Asm.emit_put_absent_body(&self) {
     void* c = self.c;
@@ -1148,7 +1216,7 @@ fn void Asm.emit_put_elem(&self, uint ra, uint rv) {
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     self.load(R2, rv);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, K_UNDEF));
-    self.store_slot(rv);
+    self.store_slot_counted(rv);
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
