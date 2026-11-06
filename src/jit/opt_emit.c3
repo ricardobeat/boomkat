@@ -19,6 +19,8 @@ import std::collections::list;
 struct OptExitRef {
     void* jump;
     uint pc;
+    // The OptGraph.fns entry that pc indexes.
+    uint fidx;
     uint dirty_first;
     uint dirty_count;
     uint reason;
@@ -226,11 +228,18 @@ fn int OptCg.flt_dst(&self, uint n, int ftmp) @inline {
     return r >= 0 ? r : ftmp;
 }
 
+// Make the baseline emitter's current function the graph's `fidx`, whose bytecode a node's pc and
+// imm index. A no-op for the function being compiled.
+fn void OptCg.use_fn(&self, uint fidx) {
+    CompiledFunction* f = self.g.fns[fidx].f;
+    if (self.a.f != f) self.a.f = f;
+}
+
 // --- Exits ---
 
 fn void OptCg.exit_at(&self, void* jump, uint node, OptExit reason) {
     OptNode* n = &self.g.nodes[node];
-    self.exits.push({ .jump = jump, .pc = n.pc, .dirty_first = n.dirty_first, .dirty_count = n.dirty_count, .reason = (uint)reason.ordinal });
+    self.exits.push({ .jump = jump, .pc = n.pc, .fidx = n.fidx, .dirty_first = n.dirty_first, .dirty_count = n.dirty_count, .reason = (uint)reason.ordinal });
 }
 
 fn void OptCg.exit_clean_dirty(&self, void* jump, uint pc, uint first, uint count, OptExit reason) {
@@ -258,11 +267,12 @@ fn void OptCg.emit_exit_stubs(&self) {
         // Jumps of one site share the stub.
         while (i < count) {
             OptExitRef x = self.exits[(sz)i];
-            if (x.pc != e.pc || x.dirty_first != e.dirty_first || x.reason != e.reason) break;
+            if (x.pc != e.pc || x.fidx != e.fidx || x.dirty_first != e.dirty_first || x.reason != e.reason) break;
             sljit_set_label(x.jump, label);
             i++;
         }
         self.store_dirty(e.dirty_first, e.dirty_count);
+        self.use_fn(e.fidx);
         self.a.i = e.pc;
         self.a.emit_opt_exit(self.oc, e.reason, false);
     }
@@ -920,6 +930,7 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
 fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
+    self.use_fn(n.fidx);
     if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD) {
         if (self.force_here(n)) {
             self.forced_done = true;
