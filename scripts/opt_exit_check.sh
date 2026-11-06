@@ -9,17 +9,25 @@ BIN=${BIN:-./out/boomkat}
 FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js test/jit/opt_poly_field.js test/jit/opt_inline_view.js test/jit/opt_inline_branch.js test/jit/opt_inline_wide.js test/jit/opt_inline_wide_global.js"}
 REASONS="overflow not-int32 not-number shape bounds hole callee inline-slowcall alloc-slow throw-path forced"
 fails=0
-for f in $FILES; do
+# Each file is independent: check them in parallel (JOBS, default the core count).
+JOBS=${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc)}
+export BIN REASONS
+check_task() {   # file reason ("discard" for the discard path)
+    f=$1; r=$2
     ref=$($BIN --memory-limit=512 --script "$f" 2>&1)
-    for r in $REASONS; do
-        for spec in "$r" "$r:3:2" "$r:9:1" "inline/$r" "inline/$r:0:2"; do
-            out=$($BIN --memory-limit=512 --opt-force-exit="$spec" --script "$f" 2>&1)
-            if [ "$out" != "$ref" ]; then echo "DIFF $f --opt-force-exit=$spec"; fails=$((fails+1)); fi
-        done
+    if [ "$r" = discard ]; then
+        out=$($BIN --memory-limit=512 --opt-force-exit=forced:2:5 --opt-exit-max=2 --script "$f" 2>&1)
+        if [ "$out" != "$ref" ]; then echo "DIFF $f discard path"; fi
+        return
+    fi
+    for spec in "$r" "$r:3:2" "$r:9:1" "inline/$r" "inline/$r:0:2"; do
+        out=$($BIN --memory-limit=512 --opt-force-exit="$spec" --script "$f" 2>&1)
+        if [ "$out" != "$ref" ]; then echo "DIFF $f --opt-force-exit=$spec"; fi
     done
-    out=$($BIN --memory-limit=512 --opt-force-exit=forced:2:5 --opt-exit-max=2 --script "$f" 2>&1)
-    if [ "$out" != "$ref" ]; then echo "DIFF $f discard path"; fails=$((fails+1)); fi
-done
+}
+export -f check_task
+diffs=$(for f in $FILES; do for r in $REASONS discard; do echo "$f $r"; done; done | xargs -P "$JOBS" -L1 bash -c 'check_task $0 $1')
+if [ -n "$diffs" ]; then echo "$diffs"; fails=$(echo "$diffs" | wc -l | tr -d ' '); fi
 # An exit from an inlined body publishes the callee's frame; it must happen and be counted.
 n=$($BIN --memory-limit=512 --opt-force-exit=inline/shape --jit-stats --script test/jit/opt_inline.js 2>&1 | grep -c "^opt inline: [1-9][0-9]* callees inlined, [1-9][0-9]* exits")
 if [ "$n" != 1 ]; then echo "NOINLINEEXIT"; fails=$((fails+1)); fi
