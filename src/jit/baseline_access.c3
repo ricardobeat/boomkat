@@ -709,9 +709,10 @@ fn void Asm.emit_poly_arm(&self, void* back) {
         // The cache has no entry: the helper reads the data property and notes
         // it there, as the switch's lookup does.
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1]);
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, R2, 0);
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | R2, self.lay.ic_key);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
         self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
         sljit_set_label(cached, sljit_emit_label(c));
@@ -806,8 +807,9 @@ fn void Asm.emit_get_keyed(&self, uint ra, uint rb, uint rkey) {
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R2, 0, SLJIT_IMM, K_STRING_START);
     self.load(R1, rb);
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     self.publish(ra);

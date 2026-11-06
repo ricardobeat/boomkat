@@ -276,7 +276,7 @@ fn HObject* jit_ic_owner(hobject::ICEntry* ic, HObject* hobj) {
 // anything else (an accessor, an exotic object on the way, a longer chain),
 // which the thunk resolves. It is get_prop_or_accessor_proto's walk, noting an
 // owner on the receiver or its prototype in the megamorphic cache as that does.
-fn hobject::PropValue* jit_get_missed(Heap* h, HObject* hobj, void* key) {
+fn hobject::PropValue* jit_get_missed(Heap* h, HObject* hobj, void* key, hobject::ICEntry* ic) {
     hstring::HString* name = (hstring::HString*)key;
     if (name == null || !name.is_interned() || name.is_arridx() || name.is_hidden()) return null;
     HObject* cur = hobj;
@@ -285,6 +285,11 @@ fn hobject::PropValue* jit_get_missed(Heap* h, HObject* hobj, void* key) {
         int idx = cur.find_prop_idx(key, h);
         if (idx >= 0) {
             if (cur.get_prop_flags((uint)idx, h).is_accessor) return null;
+            // The entry follows the receiver as the switch's lookup refills it, except that a
+            // polymorphic set keeps its shapes.
+            if (ic != null && (ic.key.borrow() == null || (ic.key.borrow() == key && ic.chain_len != hobject::IC_CHAIN_POLY))) {
+                ic_fill_read_heap(h, ic, hobj, key, cur);
+            }
             if (depth <= 1) hobject::mega_cache_store(h, hobj, key, cur, idx, false);
             return &cur.prop_values()[idx];
         }
