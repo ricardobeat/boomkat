@@ -125,9 +125,15 @@ BK_API void bk_free_runtime(bk_runtime runtime);
  * evaluation still works. BK_CONTEXT_CANNOT_BLOCK makes Atomics.wait throw.
  * With `global_class`, the global object is an instance of that class owning
  * `global_payload` (the class finalizer runs for it), with the class
- * prototype as its prototype. Returns NULL for unknown flags or class. */
+ * prototype as its prototype. Returns NULL for unknown flags or class.
+ * BK_CONTEXT_HOST_GLOBAL (without global_class) makes the global object a host
+ * instance whose class comes later, from bk_set_global_class, so the class
+ * and its parents can be defined in the new realm itself, as a browser
+ * defines Window and EventTarget per realm. Until then the global object has
+ * no class or payload and inherits from Object.prototype. */
 #define BK_CONTEXT_NO_EVAL      1u
 #define BK_CONTEXT_CANNOT_BLOCK 2u
+#define BK_CONTEXT_HOST_GLOBAL  4u
 typedef uint32_t bk_class;
 typedef struct {
     unsigned flags;
@@ -619,6 +625,11 @@ BK_API void *bk_get_instance_payload(bk_ctx ctx, bk_value value, bk_class cls);
 BK_API bk_status bk_set_instance_payload(bk_ctx ctx, bk_value value, bk_class cls, void *payload);
 /* new Proxy(target, handler). */
 BK_API bk_value bk_new_proxy(bk_ctx ctx, bk_value target, bk_value handler);
+/* Give the global object of a BK_CONTEXT_HOST_GLOBAL context its class and
+ * payload, and the class prototype as its prototype. Once per context; the
+ * class must not have exotic hooks. The class finalizer then runs for
+ * `payload` when the global object is freed. */
+BK_API bk_status bk_set_global_class(bk_ctx ctx, bk_class cls, void *payload);
 /* The class of a host instance, or 0. */
 BK_API bk_class bk_get_instance_class(bk_ctx ctx, bk_value value);
 /* Run finalizers deferred by BK_CLASS_DEFER_FINALIZE. Returns how many ran. */

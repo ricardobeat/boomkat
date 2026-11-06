@@ -5,6 +5,8 @@ of commits since the previous release. Newest first.
 
 ## [Unreleased]
 
+- `BK_CONTEXT_HOST_GLOBAL` and `bk_set_global_class` let a context define its
+  global object's class, and that class's parents, in its own realm
 - Joint collection with an embedder's tracing collector (`bk_gc_joint_begin`,
   `bk_gc_joint_drain`, `bk_gc_joint_end`, `bk_gc_in_joint_cycle`), so cycles
   between host objects and their wrappers are collected

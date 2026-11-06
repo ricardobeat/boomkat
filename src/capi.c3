@@ -172,7 +172,7 @@ struct BkContextOptions {
     void* global_payload;
 }
 
-const uint CONTEXT_FLAGS = embed::CONTEXT_NO_EVAL | embed::CONTEXT_CANNOT_BLOCK;
+const uint CONTEXT_FLAGS = embed::CONTEXT_NO_EVAL | embed::CONTEXT_CANNOT_BLOCK | embed::CONTEXT_HOST_GLOBAL;
 
 // A context with `options`, or the defaults when it is null. A host-class
 // global object owns `global_payload` from the moment the context exists.
@@ -183,6 +183,28 @@ fn void* bk_new_context(void* rtp, BkContextOptions* options) @export("bk_new_co
     if ((options.flags & ~CONTEXT_FLAGS) != 0) return null;
     HObject* global = null;
     HObject* proto = null;
+    bool host_global = (options.flags & embed::CONTEXT_HOST_GLOBAL) != 0;
+    if (host_global && options.global_class != 0) return null;
+    if (host_global) {
+        // A host global without a class yet: a placeholder internal class that
+        // brand checks ignore, until bk_set_global_class gives it one.
+        if (rt.pending_global_class == 0) {
+            long id = rt.heap.register_host_class(null, null, null, (void*)rt.heap.str(heap::BuiltinStr.EMPTY), null);
+            if (id < 0) return null;
+            rt.pending_global_class = (uint)id + 1;
+        }
+        HObject*? raw = rt.heap.alloc_object(hobject::ObjClass.HOST);
+        if (catch raw) return null;
+        global = raw;
+        (*global.extra_ptr()).host.class_id = rt.pending_global_class - 1;
+        (*global.extra_ptr()).host.payload = null;
+        Ctx* ctx = embed::new_context(rt, options.flags & ~embed::CONTEXT_HOST_GLOBAL, global, null);
+        if (ctx == null) return null;
+        // Until it has a class, the global inherits from the realm's Object.prototype.
+        embed::select_context(ctx);
+        rt.heap.set_prototype(global, rt.heap.object_proto);
+        return ctx;
+    }
     if (options.global_class != 0) {
         heap::HostClassEntry* e = api_class(rt, options.global_class);
         if (e == null) return null;
@@ -2094,6 +2116,31 @@ fn int bk_set_instance_payload(void* ctxp, ulong id, uint cls, void* payload) @e
         return fail(rt, BK_ERR_INVALID, "instance already has a payload");
     }
     (*o.extra_ptr()).host.payload = payload;
+    return BK_OK;
+}
+
+// Gives a BK_CONTEXT_HOST_GLOBAL context's global object its class, payload
+// and the class prototype, once, after the class exists in that realm.
+fn int bk_set_global_class(void* ctxp, uint cls, void* payload) @export("bk_set_global_class") {
+    Runtime* rt = rt_of(ctxp);
+    if (rt == null) return BK_ERR_INVALID;
+    embed::clear_err(rt);
+    heap::HostClassEntry* e = api_class(rt, cls);
+    if (e == null) return fail(rt, BK_ERR_INVALID, "unknown class");
+    if (e.exotic != null) return fail(rt, BK_ERR_INVALID, "a global class cannot have exotic hooks");
+    if (rt.vm.global_env == null || rt.vm.global_env.bindings == null) return fail(rt, BK_ERR_INVALID, "context has no global object");
+    HObject* global = rt.vm.global_env.bindings;
+    if (rt.pending_global_class == 0 || global.get_class() != hobject::ObjClass.HOST
+        || (*global.extra_ptr()).host.class_id != rt.pending_global_class - 1) {
+        return fail(rt, BK_ERR_INVALID, "the global object's class is already set");
+    }
+    Heap* hp = rt.heap;
+    (*global.extra_ptr()).host.class_id = cls - 1;
+    (*global.extra_ptr()).host.payload = payload;
+    hp.set_prototype(global, e.proto);
+    // An old object with host edges stays remembered, so minor collections
+    // trace the payload from here on.
+    if (global.gc.old && e.gc_mark != null) hp.remember(global);
     return BK_OK;
 }
 

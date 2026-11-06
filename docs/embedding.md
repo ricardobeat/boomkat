@@ -77,6 +77,22 @@ bk_context_options page = { BK_CONTEXT_NO_EVAL, window_class, window };
 bk_ctx js = bk_new_context(runtime, &page);
 ```
 
+`global_class` must exist before the context does, so its prototype comes from
+another realm. A host that defines its classes per realm, as a browser defines
+`Window` and `EventTarget` for each page, passes `BK_CONTEXT_HOST_GLOBAL`
+instead. The global object is then a host instance with no class or payload,
+inheriting from `Object.prototype`, until `bk_set_global_class` gives it a class
+defined in the new realm, that class's prototype and a payload. It can be called
+once per context, and the class must not have exotic hooks.
+
+```c
+bk_context_options page = { BK_CONTEXT_HOST_GLOBAL, 0, NULL };
+bk_ctx js = bk_new_context(runtime, &page);
+bk_class event_target = bk_define_class(js, &event_target_def, NULL, NULL);
+bk_class window_class = bk_define_class(js, &window_def, NULL, NULL);  /* parent: event_target */
+bk_set_global_class(js, window_class, window);
+```
+
 Context records and realms live until runtime destruction, so escaped functions
 keep working after the host releases their original context. Releasing a context
 clears its pending exception and invalidates the host's use of that pointer.
