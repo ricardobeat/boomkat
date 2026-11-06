@@ -286,6 +286,21 @@ fn bool jit_put_absent(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value
     return true;
 }
 
+// NEWARR, NEWARR_CONST, NEWOBJ and NEWOBJ_SHAPE as their threaded handlers
+// run them, without the handler's table call and bias setup: true when the
+// result register is written, false when the allocation failed and the
+// instruction is left to the thunk.
+fn bool jit_alloc(Dispatch* ds, Instruction* next) {
+    Instruction* pc = next - 1;
+    Vm* vm = ds.vm;
+    ds.curr_pc = next;
+    switch (pc.op) {
+        case NEWARR: return alloc_newarr(vm, ds.act, ds.regs_base, *pc);
+        case NEWARR_CONST: return alloc_newarr_const(vm, ds.act, ds.regs_base, *pc);
+        default: return alloc_newobj(ds.heap, ds.act, ds.regs_base, *pc);
+    }
+}
+
 // A handler table whose every entry stops: a threaded handler called with it
 // runs its own instruction and returns the next pc instead of continuing.
 HandlerTable jit_stop_table @private;

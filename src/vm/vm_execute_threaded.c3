@@ -3075,49 +3075,61 @@ fn Instruction* th_putthisc(Instruction* pc, HandlerTable* handlers, TVal* regs,
 // mirrors the switch case, which documents the register-ownership order. A
 // failed allocation bails, and the switch repeats it and reports the failure.
 fn Instruction* th_newarr(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    Vm* vm = cold.vm;
-    Instruction insn = *pc;
-    TVal* ra = regs + insn.a;
-    uint capacity_hint = insn.get_bc();
-    vm.heap.set_reg_undefined(ra);
-    HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, capacity_hint);
-    HObject* a = new_arr ?? null;
-    if (a == null) return pc;
-    a.prototype = vm.heap.array_proto;
-    vm.heap.set_reg_object(ra, a);
-    track_heap_store(cold.act, ra, (uint)insn.a);
-    if (capacity_hint > a.array_size) a.grow_array(capacity_hint, vm.heap);
+    if (!alloc_newarr(cold.vm, cold.act, regs, *pc)) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
 
 fn Instruction* th_newarr_const(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
-    Vm* vm = cold.vm;
-    TVal* dst = regs + insn.a;
-    vm.heap.set_reg_undefined(dst);
-    HObject* array = vm.heap.alloc_constant_array(vm.current_func.constants + insn.get_bc()) ?? null;
-    if (array == null) return pc;
-    vm.heap.set_reg_object(dst, array);
-    track_heap_store(cold.act, dst, (uint)insn.a);
+    if (!alloc_newarr_const(cold.vm, cold.act, regs, *pc)) return pc;
     return th_next(pc + 1, handlers, regs, cold);
 }
 
 // NEWOBJ and NEWOBJ_SHAPE, out of line like th_newarr for the same reason. A
 // failed allocation bails, and the switch repeats it and reports the failure.
-// The new object needs no shading: allocation shades it during marking.
 fn Instruction* th_newobj(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold) {
-    Instruction insn = *pc;
+    if (!alloc_newobj(cold.heap, cold.act, regs, *pc)) return pc;
+    return th_next(pc + 1, handlers, regs, cold);
+}
+
+// The allocation ops' bodies, shared with the baseline tier's direct calls
+// (jit_alloc). False when the allocation failed before the result register
+// was written.
+fn bool alloc_newarr(Vm* vm, Activation* act, TVal* regs, Instruction insn) @inline {
     TVal* ra = regs + insn.a;
-    heap::Heap* h = cold.heap;
+    uint capacity_hint = insn.get_bc();
+    vm.heap.set_reg_undefined(ra);
+    HObject*? new_arr = vm.heap.alloc_object(hobject::ObjClass.ARRAY, capacity_hint);
+    HObject* a = new_arr ?? null;
+    if (a == null) return false;
+    a.prototype = vm.heap.array_proto;
+    vm.heap.set_reg_object(ra, a);
+    track_heap_store(act, ra, (uint)insn.a);
+    if (capacity_hint > a.array_size) a.grow_array(capacity_hint, vm.heap);
+    return true;
+}
+
+fn bool alloc_newarr_const(Vm* vm, Activation* act, TVal* regs, Instruction insn) @inline {
+    TVal* dst = regs + insn.a;
+    vm.heap.set_reg_undefined(dst);
+    HObject* array = vm.heap.alloc_constant_array(vm.current_func.constants + insn.get_bc()) ?? null;
+    if (array == null) return false;
+    vm.heap.set_reg_object(dst, array);
+    track_heap_store(act, dst, (uint)insn.a);
+    return true;
+}
+
+// The new object needs no shading: allocation shades it during marking.
+fn bool alloc_newobj(heap::Heap* h, Activation* act, TVal* regs, Instruction insn) @inline {
+    TVal* ra = regs + insn.a;
     HObject*? new_obj = insn.op == Opcode.NEWOBJ_SHAPE
         ? h.alloc_shaped_object(insn.get_bc())
         : h.alloc_plain_object();
     HObject* o = new_obj ?? null;
-    if (o == null) return pc;
+    if (o == null) return false;
     o.prototype = h.object_proto;
     ra.set_object(o);
-    track_heap_store(cold.act, ra, (uint)insn.a);
-    return th_next(pc + 1, handlers, regs, cold);
+    track_heap_store(act, ra, (uint)insn.a);
+    return true;
 }
 
 // NEW_OBJ of a base constructor whose `prototype` read the switch has cached at
