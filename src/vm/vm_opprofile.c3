@@ -19,6 +19,10 @@ const uint OPPROF_N = (uint)Opcode.LAST_OP.ordinal + 1;
 // only rewrites within one function body, so those cross-frame pairs are not candidates.
 tlocal ulong[OPPROF_N][OPPROF_N] opprof_pairs;
 tlocal ulong[OPPROF_N] opprof_singles;
+tlocal ulong[OPPROF_N] opprof_relay;
+// Executed bytecodes by function index, and the function's code length.
+tlocal ulong[16384] opprof_func_count;
+tlocal uint[16384] opprof_func_len;
 tlocal ulong opprof_switch_dispatches;
 tlocal ulong[OPPROF_N] opprof_switch_singles;
 tlocal ulong opprof_threaded_dispatches;
@@ -64,6 +68,12 @@ macro void opprof_th_record(Opcode op) {
         opprof_th_pairs[opprof_th_prev][cur]++;
         opprof_th_prev = cur;
     $endif
+}
+
+macro void opprof_note_func(CompiledFunction* f) {
+    if (f == null || f.func_index >= 16384) return;
+    opprof_func_count[f.func_index]++;
+    opprof_func_len[f.func_index] = f.code_count;
 }
 
 fn void opprof_record(Opcode op, bool threaded = false, bool fused = false) @inline {
@@ -204,6 +214,16 @@ $if $feat(OP_PROFILE):
         if (opprof_switch_singles[i] > 1000) {
             io::eprintfn("%d\t%s", opprof_switch_singles[i], (ZString)bytecode::get_opcode_name((Opcode)i));
         }
+    }
+    io::eprintn("## relayed by opcode");
+    for (uint i = 0; i < OPPROF_N; i++) if (opprof_relay[i] > 1000) io::eprintfn("%d\t%s", opprof_relay[i], (ZString)bytecode::get_opcode_name((Opcode)i));
+    io::eprintn("## dynamic by function (count index code_words)");
+    for (uint k = 0; k < 14; k++) {
+        uint best = 0;
+        for (uint i = 1; i < 16384; i++) if (opprof_func_count[i] > opprof_func_count[best]) best = i;
+        if (opprof_func_count[best] == 0) break;
+        io::eprintfn("%d\tfn#%d\t%d", opprof_func_count[best], best, opprof_func_len[best]);
+        opprof_func_count[best] = 0;
     }
     opprof_dump_table("dynamic", &opprof_singles, &opprof_pairs);
     ulong th_total = 0;
