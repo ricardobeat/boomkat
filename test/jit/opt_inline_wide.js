@@ -87,4 +87,35 @@ q.extra = 3;
 show("readOther", callRead(q, 50, 5000));
 show("otherString", callRead(new Pt("s", 1), 50, 5000));
 
+// --- Equality branches in a flat body ---
+function same(a, b) { if (a === b) return 1; return 0; }
+function differ(a, b) { if (a !== b) return 3; return 4; }
+function loose(a, b) { if (a == b) return 5; return 6; }
+function looseNot(a, b) { if (a != b) return 7; return 8; }
+function isNull(a, b) { if (a == null) return 9; return a + b; }
+function notNull(a, b) { if (a != null) return a + b; return 10; }
+function eqImm(a, b) { if (a === 3) return b; return a + b; }
+function nested(a, b) {
+    if (a === b) { if (a == 0) return 11; return 12; }
+    if (b != null) return a + b;
+    return 13;
+}
+var objA = { v: 1 }, objB = { v: 2 };
+function warmEq(f, a, b) { for (var i = 0; i < 3000; i++) f(a, b); }
+var eqs = [same, differ, loose, looseNot, isNull, notNull, eqImm, nested];
+for (var e = 0; e < eqs.length; e++) { warmEq(eqs[e], 1, 2); warmEq(eqs[e], 2, 2); }
+// One driver per callee, so that each call site has a single target.
+var eqNames = ["same", "differ", "loose", "looseNot", "isNull", "notNull", "eqImm", "nested"];
+var drivers = eqNames.map(function (nm) {
+    return new Function(nm, "vals", "n", "var s = 0.5; for (var i = 0; i < n; i++) { var a = vals[i % vals.length], b = vals[(i * 7 + 1) % vals.length]; var r = " + nm + "(a, b); s = (typeof r === 'number' ? r : 100) + s; } return s;");
+});
+var nums = [0, 1, 2, 3, 3, 4, 5, 8];
+var mixed = [0, 1, 2, 3, 3, 4, 5, 8, 2.5, "3", null, undefined, objA, objB, objA, true, NaN, -0];
+for (var e = 0; e < eqs.length; e++) {
+    for (var k = 0; k < N; k++) drivers[e](eqs[e], nums, 40);
+    show("eqNums" + e, drivers[e](eqs[e], nums, 200));
+    show("eqMixed" + e, drivers[e](eqs[e], mixed, 200));
+    show("eqObjs" + e, drivers[e](eqs[e], [objA, objB, objA, 1, 2], 100));
+}
+
 print(out.join("\n"));

@@ -260,8 +260,10 @@ fn uint inline_reg_mask(Opcode op) {
         case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             return 7;
         // The forward branches of a body with several blocks: A is the offset of the compares.
-        case JMP_NLT..JMP_GE:
+        case JMP_NLT..JMP_NEQ:
             return 6;
+        case JMP_NULL: case JMP_NNULL:
+            return 2;
         case JMP_NLTI..JMP_SNEQI:
             return 2;
         case IF_TRUE: case IF_FALSE:
@@ -277,7 +279,7 @@ fn bool inline_op_ok(Opcode op) @inline => inline_reg_mask(op) != 0 || op == Opc
 // The forward-branching opcodes of an inlined body.
 fn bool inline_branch_op(Opcode op) @inline {
     return op == Opcode.JUMP || op == Opcode.IF_TRUE || op == Opcode.IF_FALSE
-        || (op.ordinal >= Opcode.JMP_NLT.ordinal && op.ordinal <= Opcode.JMP_GE.ordinal)
+        || (op.ordinal >= Opcode.JMP_NLT.ordinal && op.ordinal <= Opcode.JMP_NNULL.ordinal)
         || (op.ordinal >= Opcode.JMP_NLTI.ordinal && op.ordinal <= Opcode.JMP_SNEQI.ordinal);
 }
 
@@ -302,8 +304,10 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
             *reads = (1u << w.a) | (1u << w.b);
         case PUTTHISC: case RET: case IF_TRUE: case IF_FALSE:
             *reads = 1u << w.a;
-        case JMP_NLT..JMP_GE:
+        case JMP_NLT..JMP_NEQ:
             *reads = (1u << w.b) | (1u << w.c);
+        case JMP_NULL: case JMP_NNULL:
+            *reads = 1u << w.b;
         case JMP_NLTI..JMP_SNEQI:
             *reads = 1u << w.b;
         default:
@@ -1494,7 +1498,11 @@ fn bool OptBuild.lower_flat(&self) {
     } else {
         ok = self.lower_op();
     }
-    if (!ok || self.inline_failed || self.inline_unsafe) self.fail_flat(self.cur_site, self.inline_unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD);
+    if (!ok || self.inline_failed || self.inline_unsafe) {
+        // A refusal inside the body is the site's failure, not the function's.
+        self.refused = OptRefuse.NONE;
+        self.fail_flat(self.cur_site, self.inline_unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD);
+    }
     return true;
 }
 
@@ -2055,6 +2063,7 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
         }
         if (b.void_round) {
             b.load_changed = false;
+            b.refused = OptRefuse.NONE;
             continue;
         }
         bool again = b.repair();
