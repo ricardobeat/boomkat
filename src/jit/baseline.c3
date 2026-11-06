@@ -863,6 +863,14 @@ fn bool Asm.emit_call(&self) {
             return false;
     }
     void* direct_done = null;
+    void* cc_done = null;
+    if (self.charcodeat_site()) {
+        Jumps miss;
+        self.emit_charcodeat(&miss);
+        self.count(&self.stats.fast_hits[0], self.w.op);
+        cc_done = sljit_emit_jump(c, SLJIT_JUMP);
+        miss.bind(sljit_emit_label(c));
+    }
     if (self.w.op == Opcode.NEW_OBJ) {
         sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
@@ -884,7 +892,11 @@ fn bool Asm.emit_call(&self) {
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
-    if (direct_done != null) sljit_set_label(direct_done, sljit_emit_label(c));
+    if (direct_done != null || cc_done != null) {
+        void* end = sljit_emit_label(c);
+        if (direct_done != null) sljit_set_label(direct_done, end);
+        if (cc_done != null) sljit_set_label(cc_done, end);
+    }
     return true;
 }
 

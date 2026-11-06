@@ -98,6 +98,7 @@ struct Layout {
     long accessor_mask;
     long writable_mask;
     long symbol_mask;
+    long ascii_mask;
     long interned_mask;
     long queued_mask;
     long interned_shift;
@@ -278,6 +279,9 @@ fn Layout* layout() {
     hstring::HStringFlags sf;
     sf.is_symbol = true;
     l.symbol_mask = (long)(uint)sf;
+    sf = {};
+    sf.is_ascii = true;
+    l.ascii_mask = (long)(uint)sf;
     sf = {};
     sf.is_interned = true;
     l.interned_mask = (long)(uint)sf;
