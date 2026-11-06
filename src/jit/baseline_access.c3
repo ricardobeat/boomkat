@@ -31,6 +31,7 @@ struct Layout {
     long heap_gc_phase;
     long heap_shapes;
     long heap_epoch;
+    long heap_site_key;
     long obj_shape;
     long obj_gc;
     long obj_proto;
@@ -148,6 +149,7 @@ fn Layout* layout() {
     l.heap_gc_oracle = (char*)&h.gc_oracle_running - base;
     l.heap_shapes = (char*)&h.shapes - base;
     l.heap_epoch = (char*)&h.shape_recycle_epoch - base;
+    l.heap_site_key = (char*)&h.jit_site_key - base;
     l.heap_mega = (char*)&h.mega_cache - base;
     l.heap_string_proto = (char*)&h.string_proto - base;
     l.me_key = (char*)&me.key - base;
@@ -957,8 +959,10 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv) {
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
     void* absent = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)hobject::IC_PROP_ABSENT);
-    self.put_key_check(key, key_reg);
+    // A constant key the entry does not hold (an entry that never filled) is
+    // stored by lookup too, which fills it when the receiver can be cached.
     Jumps miss;
+    self.put_key_check(key, key_reg, key_reg < 0 ? &miss : &self.call);
     self.guard_shape(R1, R2, &miss);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
     miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
@@ -978,13 +982,18 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv) {
     self.store_slot_counted(rv);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(absent, sljit_emit_label(c));
-    self.emit_put_absent(ic, key, key_reg, rv);
+    self.emit_put_absent(ic, key, key_reg, rv, key_reg < 0 ? &miss : &self.call);
     void* absent_done = sljit_emit_jump(c, SLJIT_JUMP);
     // The entry does not fit the receiver: the store by lookup.
     miss.bind(sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_missed);
+    if (key_reg < 0) {
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.heap, l.heap_site_key, SLJIT_IMM, key);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_site);
+    } else {
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_missed);
+    }
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_set_label(done, sljit_emit_label(c));
@@ -993,24 +1002,24 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv) {
 
 // The site key check of a store: the constant `key`, or the string in
 // register `key_reg`, against the entry in R2. Uses R3.
-fn void Asm.put_key_check(&self, long key, int key_reg) {
+fn void Asm.put_key_check(&self, long key, int key_reg, Jumps* to) {
     void* c = self.c;
     Layout* l = self.lay;
     if (key_reg >= 0) {
         self.load(R3, (uint)key_reg);
         sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_STRING_START);
-        self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R2, l.ic_key));
+        to.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        to.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R2, l.ic_key));
     } else {
-        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, key));
+        to.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, key));
     }
 }
 
 // An absent-property add to the plain object in R1 through the entry in R2:
 // the key check inline, the rest in the put-absent subroutine.
-fn void Asm.emit_put_absent(&self, long ic, long key, int key_reg, uint rv) {
+fn void Asm.emit_put_absent(&self, long ic, long key, int key_reg, uint rv, Jumps* key_miss) {
     void* c = self.c;
-    self.put_key_check(key, key_reg);
+    self.put_key_check(key, key_reg, key_miss);
     sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUT_ABSENT_SUB });
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
