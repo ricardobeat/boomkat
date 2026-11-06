@@ -1556,6 +1556,8 @@ fn Instruction* th_instanceof(Instruction* pc, HandlerTable* handlers, TVal* reg
     heap::Heap* h = cold.heap;
     HObject* rfunc = (HObject*)rc.get_heapptr();
     if (!hobject::uses_default_has_instance(h, rfunc)) return pc;
+    // A lightfunc is an object that the switch promotes before the walk.
+    if (rb.is_lightfunc()) return pc;
     if (!rb.is_object()) {
         TVal* ra = regs + pc.a;
         ra.set_boolean(false);

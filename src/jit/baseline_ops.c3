@@ -86,14 +86,50 @@ fn bool Asm.emit_instanceof(&self) {
     return true;
 }
 
-// An ADD that left the number paths, at the end of its out-of-line path: the
-// concatenation through vm::jit_add_concat, else the thunk that follows.
-fn void Asm.emit_add_concat(&self) {
-    if (self.w.op != Opcode.ADD || self.wide) return;
+// The start of an instruction's out-of-line path: the helper of vm_jit_ops.c3
+// that completes what its inline path left, continuing at the next
+// instruction, else the thunk that follows. The concatenating ADD, MOD's
+// numbers, an element read or store and `arguments.length` have one.
+fn void Asm.emit_op_helper(&self) {
+    if (self.wide) return;
+    void* helper;
+    switch (self.w.op) {
+        case ADD: helper = &vm::jit_add_concat;
+        case MOD: helper = &vm::jit_mod;
+        case GETPROP:
+        case GETPROP_CACHE: helper = &vm::jit_get_elem;
+        case PUTPROP: helper = &vm::jit_put_elem;
+        case GETPROPC:
+        case GETPROPC_CACHED:
+            if (self.f.constants[self.w.c].get_heapptr() != self.length_key) return;
+            helper = &vm::jit_get_args_length;
+        default: return;
+    }
     void* c = self.c;
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_add_concat);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)helper);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     self.go(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.next);
+}
+
+// MOD of two fastints with a non-negative dividend and a positive divisor,
+// as th_mod: the remainder is a fastint and never -0 or NaN. Anything else is
+// the operand-class cases of jit_mod.
+fn void Asm.emit_mod(&self) {
+    void* c = self.c;
+    self.load(R0, self.w.b);
+    self.guard_int(R0);
+    self.load(R1, self.w.c);
+    self.guard_int(R1);
+    // The payloads, sign-extended.
+    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R1, 0, R1, 0, SLJIT_IMM, 16);
+    self.call.add(sljit_emit_cmp(c, SLJIT_SIG_LESS, R0, 0, SLJIT_IMM, 0));
+    self.call.add(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL, R1, 0, SLJIT_IMM, 0));
+    sljit_emit_op0(c, SLJIT_DIVMOD_UW);
+    sljit_emit_op2(c, SLJIT_OR, R1, 0, R1, 0, SLJIT_IMM, K_INT);
+    self.store(self.w.a, R1);
 }
