@@ -83,19 +83,23 @@ fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
 // false, leaving the entry alone, when the owner is deeper than the snapshot
 // can describe, a dictionary-mode receiver could gain a shadowing key, or a
 // dictionary-mode prototype sits on a chain the epoch cannot cover.
-fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HObject* owner) @local {
+fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HObject* owner) {
+    return ic_fill_read_heap(vm.heap, ic, hobj, key, owner);
+}
+
+fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj, void* key, HObject* owner) {
     bool is_own = owner == hobj;
     uint chain_len = 0;
     void*[hobject::IC_MAX_CHAIN] chain_protos;
     uint[hobject::IC_MAX_CHAIN] chain_shapes;
     bool dict_proto = false;
     if (!is_own) {
-        if (hobj.in_dict_mode(vm.heap)) return false;
+        if (hobj.in_dict_mode(heap)) return false;
         HObject* walk = hobj;
         while (chain_len < hobject::IC_MAX_CHAIN) {
             HObject* next = walk.prototype;
             if (next == null) return false;
-            dict_proto = dict_proto || next.in_dict_mode(vm.heap);
+            dict_proto = dict_proto || next.in_dict_mode(heap);
             chain_protos[chain_len] = (void*)next;
             chain_shapes[chain_len] = next.shape_id;
             chain_len++;
@@ -104,7 +108,7 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
         }
         if (chain_protos[chain_len - 1] != (void*)owner) return false;
     }
-    int owner_idx = owner.find_prop_idx(key, vm.heap);
+    int owner_idx = owner.find_prop_idx(key, heap);
     if (owner_idx < 0) return false;
     // Ordinary named chains can share one mutation token, which also covers
     // dictionary-mode prototypes: their indexes move only through epoch-bumping
@@ -117,32 +121,32 @@ fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HOb
         epoch_chain = hobject::plain_property_object((HObject*)chain_protos[i]);
     }
     if (dict_proto && !epoch_chain) return false;
-    if (chain_len > 0 && !hobject::ic_reserve_chain(ic, vm.heap)) return false;
+    if (chain_len > 0 && !hobject::ic_reserve_chain(ic, heap)) return false;
     ic.shape_id = hobj.shape_id;
-    ic.shape_gen = hobj.shape_generation(vm.heap);
+    ic.shape_gen = hobj.shape_generation(heap);
     ic.has_proto = !is_own;
-    if (!is_own) vm.heap.shade_root_object(owner);
+    if (!is_own) heap.shade_root_object(owner);
     ic.chain_len = (char)chain_len;
     for (uint i = 0; i < chain_len; i++) {
         ic.chain.snapshot.protos[i] = chain_protos[i];
         ic.chain.snapshot.shapes[i] = chain_shapes[i];
     }
     ic.prop_idx = (uint)owner_idx;
-    ic.prop_flags = owner.get_prop_flags((uint)owner_idx, vm.heap);
+    ic.prop_flags = owner.get_prop_flags((uint)owner_idx, heap);
     if (epoch_chain) {
         for (uint i = 0; i < chain_len; i++) {
             ((HObject*)chain_protos[i]).gc.prototype_observed = true;
         }
         ic.chain_len = hobject::IC_CHAIN_EPOCH;
-        ic.chain.epoch.value = vm.heap.prototype_epoch;
-        ic.chain.epoch.current = &vm.heap.prototype_epoch;
+        ic.chain.epoch.value = heap.prototype_epoch;
+        ic.chain.epoch.current = &heap.prototype_epoch;
         ic.chain.epoch.first = hobj.prototype;
         ic.chain.epoch.owner = owner;
     }
     // Retain the new key before releasing the old one: re-caching the same
     // string whose only live reference is this entry would otherwise free it
     // before the retain.
-    ic.key.set(vm.heap, (HString*)key);
+    ic.key.set(heap, (HString*)key);
     return true;
 }
 
