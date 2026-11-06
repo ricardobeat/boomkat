@@ -99,6 +99,14 @@ struct OptDirty {
     uint node;
 }
 
+// A function whose bytecode appears in the graph: fns[0] is the function being optimized, the
+// others are inlined callees. A callee's registers are the caller's, shifted by reg_base: callee
+// register r is register reg_base + r of the graph.
+struct OptFn {
+    CompiledFunction* f;
+    uint reg_base;
+}
+
 struct OptNode {
     OptOp op;
     OptRep rep;
@@ -108,6 +116,8 @@ struct OptNode {
     long imm;
     // The bytecode word the node came from; an exit resumes there.
     uint pc;
+    // The OptGraph.fns entry whose bytecode pc and imm (for the nodes that carry one) index.
+    uint fidx;
     // The dirty registers live at the node: an exit stores them, a GENERIC
     // stores them before it runs.
     uint dirty_first;
@@ -161,6 +171,7 @@ struct OptGraph {
     List{OptBlock} blocks;
     List{OptMove} moves;
     List{OptDirty} dirty;
+    List{OptFn} fns;
 }
 
 fn void OptGraph.init(&self) {
@@ -168,6 +179,7 @@ fn void OptGraph.init(&self) {
     self.blocks.init(mem);
     self.moves.init(mem);
     self.dirty.init(mem);
+    self.fns.init(mem);
 }
 
 fn void OptGraph.clear(&self) {
@@ -182,6 +194,7 @@ fn void OptGraph.free(&self) {
     self.blocks.free();
     self.moves.free();
     self.dirty.free();
+    self.fns.free();
 }
 
 fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64;
@@ -194,8 +207,9 @@ fn void OptGraph.dump(&self, CompiledFunction* f) {
         io::eprintfn("block %d pc=%d%s succ=[%d %d] n=%d", pos, blk.pc, blk.header ? " loop-header" : "", blk.succ[0], blk.succ[1], blk.succ_count);
         for (uint i = blk.first; i < blk.end; i++) {
             OptNode* n = &self.nodes[i];
-            if (n.op == OptOp.GENERIC) io::eprintf("  [%s]", f.code[(uint)n.imm].op);
+            if (n.op == OptOp.GENERIC) io::eprintf("  [%s]", self.fns[n.fidx].f.code[(uint)n.imm].op);
             io::eprintf("  n%d %s rep=%s a=%d b=%d imm=%d pc=%d reg=%d home=%d last=%d cc=%d", i, n.op, n.rep, (int)n.a, (int)n.b, n.imm, n.pc, n.reg, n.home, n.last_use, n.cc);
+            if (n.fidx != 0) io::eprintf(" fn=%d", n.fidx);
             if (n.dirty_count != 0) {
                 io::eprintf(" dirty=");
                 for (uint k = 0; k < n.dirty_count; k++) io::eprintf("r%d:n%d ", self.dirty[(sz)(n.dirty_first + k)].reg, self.dirty[(sz)(n.dirty_first + k)].node);

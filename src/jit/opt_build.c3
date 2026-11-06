@@ -93,6 +93,8 @@ struct OptBuild {
     List{OptOverride} overrides;
     OptRefuse refused;
     Opcode refused_op;
+    // The OptGraph.fns entry of the instruction being lowered, which insn, pc and next_pc index.
+    uint cur_fn;
     // The instruction being lowered.
     uint insn;
     uint pc;
@@ -113,6 +115,13 @@ $else
     return !f.mapped_arguments();
 $endif
 }
+
+// The function, control flow graph and liveness of the instruction being lowered. Until an inlined
+// body is lowered these are the primary function's.
+fn CompiledFunction* OptBuild.cur_f(&self) @inline => self.g.fns[self.cur_fn].f;
+fn DecodedCfg* OptBuild.cur_cfg(&self) @inline => &self.cfg;
+fn RegSet* OptBuild.cur_live_in(&self) @inline => self.live_in;
+fn RegSet* OptBuild.cur_live_out(&self) @inline => self.live_out;
 
 fn bool OptBuild.refuse(&self, OptRefuse why) {
     if (self.refused == OptRefuse.NONE) self.refused = why;
@@ -324,7 +333,7 @@ fn bool OptBuild.find_loops(&self) {
 fn OptRep OptBuild.rep_of(&self, uint node) @inline => self.g.nodes[node].rep;
 
 fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_NODE, long imm = 0) {
-    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .imm = imm, .pc = self.pc, .reg = -1 };
+    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1 };
     self.g.nodes.push(n);
     return (uint)self.g.nodes.len() - 1;
 }
@@ -334,7 +343,7 @@ fn void OptBuild.snapshot(&self, uint node) {
     uint first = (uint)self.g.dirty.len();
     for (uint r = 0; r < self.nregs; r++) {
         OptRegState s = self.cur[r];
-        if (s.node != NO_NODE && s.dirty && self.live_in[self.insn].test(r)) {
+        if (s.node != NO_NODE && s.dirty && self.cur_live_in()[self.insn].test(r)) {
             self.g.dirty.push({ .reg = r, .node = s.node });
         }
     }
@@ -442,8 +451,9 @@ fn bool OptBuild.state_float(&self, uint reg) {
 
 // The feedback the baseline recorded for the instruction being lowered.
 fn char OptBuild.feedback(&self) {
-    if (self.f.ic_entries == null) return 0;
-    return ((hobject::ICEntry*)self.f.ic_entries)[self.next_pc - 1].feedback;
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return 0;
+    return ((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1].feedback;
 }
 
 // The rep an arithmetic or comparison instruction runs in: FLOAT64 when an
@@ -535,8 +545,9 @@ fn bool OptBuild.get_cap(&self) {
 
 // Whether the instruction being lowered has been cached for a string key.
 fn bool OptBuild.string_keyed(&self) {
-    if (self.f.ic_entries == null) return true;
-    return ((hobject::ICEntry*)self.f.ic_entries)[self.next_pc - 1].key.borrow() != null;
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return true;
+    return ((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1].key.borrow() != null;
 }
 
 // Whether register `r` can be an element index: an INT32 node, or the window while the
@@ -553,15 +564,16 @@ fn bool OptBuild.in_window(&self, uint r) => r < self.nregs && self.cur[r].node 
 // The cache entry of the instruction being lowered when it names an own data property of a
 // plain object that the optimized code can read by slot, else null.
 fn hobject::ICEntry* OptBuild.own_field(&self) {
-    if (self.f.ic_entries == null) return null;
-    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.next_pc - 1];
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return null;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     void* key = (void*)ic.key.borrow();
     if (key == null || ic.shape_id == heap::SHAPE_NONE || ic.has_proto || ic.chain_len != 0) return null;
     if (ic.prop_idx == hobject::IC_PROP_ABSENT || ic.prop_flags.is_accessor) return null;
     if (key == (void*)self.h.strs[heap::BuiltinStr.LENGTH]) return null;
     if (self.w.op != Opcode.GETTHISC) {
-        if (self.w.c >= self.f.const_count || !self.f.constants[self.w.c].is_string()) return null;
-        if (self.f.constants[self.w.c].get_heapptr() != key) return null;
+        if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string()) return null;
+        if (f.constants[self.w.c].get_heapptr() != key) return null;
     }
     return ic;
 }
@@ -660,7 +672,7 @@ fn bool OptBuild.generic(&self) {
     uint key_kill = NO_NODE;     // GETPROP_CACHE writes the coerced key back to C
     uint def = NO_NODE;
     Opcode op = self.w.op;
-    if (!self.cfg.nodes[self.insn].must_def(&def)) {
+    if (!self.cur_cfg().nodes[self.insn].must_def(&def)) {
         def = NO_NODE;
         switch (op) {
             case NEWOBJ: case NEWARR: case NEWARR_CONST: case CLOSURE: case NEWREGEXP:
@@ -697,7 +709,7 @@ fn bool OptBuild.generic(&self) {
     self.kill(def);
     uint first = (uint)self.g.dirty.len();
     for (uint r = 0; r < self.nregs; r++) {
-        if (self.cur[r].node != NO_NODE && self.live_out[self.insn].test(r)) {
+        if (self.cur[r].node != NO_NODE && self.cur_live_out()[self.insn].test(r)) {
             self.g.dirty.push({ .reg = r, .node = self.cur[r].node });
         }
     }
@@ -780,8 +792,8 @@ fn bool OptBuild.lower(&self) {
             self.set(ra, self.const_i32((long)w.get_sbc()));
         case LDCONST:
             uint index = w.get_bc();
-            if (!self.consts_ok || index >= self.f.const_count) return self.generic();
-            TVal v = self.f.constants[index];
+            if (!self.consts_ok || index >= self.cur_f().const_count) return self.generic();
+            TVal v = self.cur_f().constants[index];
             if (v.is_fastint()) {
                 long x = v.get_fastint();
                 if (x >= -2147483648 && x <= 2147483647) {
@@ -912,7 +924,7 @@ fn bool OptBuild.set_override(&self, uint pos, uint reg, OptRep rep) {
 }
 
 fn void OptBuild.context(&self, uint i) {
-    DecodedCfgNode* node = &self.cfg.nodes[i];
+    DecodedCfgNode* node = &self.cur_cfg().nodes[i];
     self.insn = i;
     self.pc = node.view.pc;
     self.next_pc = node.view.next_pc;
@@ -1084,6 +1096,8 @@ fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild
     b.h = h;
     b.f = f;
     b.g = g;
+    g.fns.clear();
+    g.fns.push({ .f = f, .reg_base = 0 });
     b.overrides.init(mem);
     b.load_reps.init(mem);
     if (!b.analyze()) return b.refused;
