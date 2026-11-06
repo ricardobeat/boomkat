@@ -1222,6 +1222,8 @@ fn bool OptBuild.try_inline(&self) {
     if (self.cur_fn != 0 || self.site_of == null || self.site_of[self.insn] == 0) return false;
     uint si = self.site_of[self.insn] - 1;
     OptInlineSite* s = &self.sites[si];
+    if (self.h.opt.inline_seen >= self.h.opt.inline_max) return false;
+    self.h.opt.inline_seen++;
     uint callee_reg = s.base - 2;
     // The function and its receiver are read from the window by the guard and by an exit.
     if (!s.var_call && (!self.in_window(callee_reg) || !self.in_window(callee_reg + 1))) {
