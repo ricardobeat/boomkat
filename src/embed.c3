@@ -1555,8 +1555,28 @@ fn int to_string(Runtime* rt, TVal v, HString** out) {
         set_err(rt, BK_ERR_INTERNAL, "could not convert value to string");
         return BK_ERR_INTERNAL;
     }
+    // A coercion that ran user code (toString, valueOf, Symbol.toPrimitive)
+    // and threw leaves the throw pending on the VM and returns null rather
+    // than a fault, so it is taken here.
+    if (rt.vm.throw_pending) return take_pending_throw(rt);
+    if (s == null) {
+        set_err(rt, BK_ERR_INTERNAL, "could not convert value to string");
+        return BK_ERR_INTERNAL;
+    }
     *out = s;
     return BK_OK;
+}
+
+// Moves a throw the VM left pending outside a dispatch loop into the host's
+// exception slot.
+fn int take_pending_throw(Runtime* rt) {
+    if (rt.heap.uncatchable_throw) return interrupt_status(rt);
+    TVal thrown = rt.vm.throw_value;
+    describe_error(rt, &thrown);
+    rt.vm.throw_pending = false;
+    rt.heap.decref_tval(&rt.vm.throw_value);
+    rt.vm.throw_value.set_undefined();
+    return BK_ERR_THROW;
 }
 
 // ============================================================================

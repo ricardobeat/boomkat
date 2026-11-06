@@ -24,6 +24,28 @@ static bk_value eval(bk_ctx ctx, const char *src) {
     return bk_eval_ex(ctx, src, strlen(src), "errors.js", BK_EVAL_GLOBAL);
 }
 
+/* coerce(v): bk_to_string, or bk_to_number with a second argument, rethrowing what the coercion threw. */
+static bk_value coerce(bk_ctx ctx, bk_value this_value, unsigned argc, const bk_value *argv, void *opaque) {
+    (void)this_value; (void)opaque;
+    if (argc > 1) {
+        double d = bk_to_number(ctx, argv[0]);
+        if (bk_get_error_code(ctx) == BK_ERR_THROW) return bk_throw(ctx, bk_get_exception(ctx));
+        return bk_new_number(ctx, d);
+    }
+    bk_value s = bk_to_string(ctx, argv[0]);
+    if (bk_is_exception(s)) return bk_throw(ctx, bk_get_exception(ctx));
+    return s;
+}
+
+static void expect_eval_string(bk_ctx ctx, const char *src, const char *want) {
+    bk_value r = eval(ctx, src);
+    assert(!bk_is_exception(r));
+    const char *got = bk_cstr(ctx, r, NULL);
+    if (!got || strcmp(got, want) != 0) fprintf(stderr, "%s: got %s, want %s\n", src, got ? got : "(null)", want);
+    assert(got && strcmp(got, want) == 0);
+    bk_free_value(ctx, r);
+}
+
 int main(void) {
     bk_ctx ctx = bk_create();
 
@@ -80,6 +102,18 @@ int main(void) {
     /* An uncaught throw leaves the next script's native getters working. */
     bk_value size = eval(ctx, "new Map([[1, 2]]).size");
     assert(size && bk_to_number(ctx, size) == 1);
+
+    /* Coercions that run user code report its throw, also inside a callback. */
+    bk_register_fn(ctx, 0, "coerce", coerce, 1, 0, NULL);
+    expect_eval_string(ctx, "try { coerce({ toString() { throw new RangeError('s'); } }); 'none' } catch (e) { e.message }", "s");
+    expect_eval_string(ctx, "try { coerce({ [Symbol.toPrimitive]() { return {}; } }); 'none' } catch (e) { e.name }", "TypeError");
+    expect_eval_string(ctx, "try { coerce(Symbol()); 'none' } catch (e) { e.name }", "TypeError");
+    expect_eval_string(ctx, "try { coerce({ valueOf() { throw 3; } }, 1); 'none' } catch (e) { 'caught ' + e }", "caught 3");
+    bk_value thrower = eval(ctx, "({ toString() { throw new Error('top'); } })");
+    assert(bk_is_exception(bk_to_string(ctx, thrower)));
+    assert(bk_get_error_code(ctx) == BK_ERR_THROW && strcmp(bk_get_error_message(ctx), "Error: top") == 0);
+    bk_free_value(ctx, bk_get_exception(ctx));
+    bk_free_value(ctx, thrower);
 
     bk_destroy(ctx);
     puts("errors: PASS");
