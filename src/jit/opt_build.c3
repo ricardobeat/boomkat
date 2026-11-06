@@ -1774,7 +1774,10 @@ fn bool OptBuild.lower_op(&self) {
             }
         case LDREG:
         case TONUMERIC:
-            if (rb >= self.nregs || self.cur[rb].node == NO_NODE) return self.generic();
+            if (rb >= self.nregs) return self.generic();
+            // A property read's result still in the window may be wanted as an object node.
+            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_object(rb);
+            if (self.cur[rb].node == NO_NODE) return self.generic();
             if (op == Opcode.TONUMERIC && self.is_object(rb)) return self.generic();
             uint src = self.cur[rb].node;
             if (!self.g.nodes[src].is_const()) src = self.add(OptOp.COPY, self.rep_of(src), src);
@@ -1845,7 +1848,6 @@ fn bool OptBuild.lower_op(&self) {
         case CONTINUE:
             return self.refuse_op(op);
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
-            if (self.cur_fn == 0) return self.generic();
             TVal v;
             switch (op) {
                 case LDUNDEF: v.set_undefined();
@@ -1853,7 +1855,9 @@ fn bool OptBuild.lower_op(&self) {
                 default: v.set_boolean(op == LDTRUE);
             }
             // A register the body never reads again needs no value.
-            if (self.sites[self.cur_site].flat) {
+            if (self.cur_fn == 0) {
+                // The function's own constant load: a store to the window slot.
+            } else if (self.sites[self.cur_site].flat) {
                 if (!self.live_out[self.insn].test(ra)) {
                     self.kill(ra);
                     return true;
