@@ -29,6 +29,8 @@ import boomkat::heap;
 import boomkat::types;
 import boomkat::hobject;
 import boomkat::env;
+import boomkat::builtins;
+import boomkat::hstring;
 
 // Bits of a call entry's packed argument above the argument count: the call
 // passes an undefined receiver (CALL_UNDEF_THIS), or a method call's receiver
@@ -400,6 +402,60 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
     generic.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     self.count(&self.stats.fast_hits[0], self.w.op);
+}
+
+// Whether the CALL being emitted reads as `x.charCodeAt(i)`: one argument and
+// a callee register a GETPROPC of that key loaded a few instructions before.
+// Only a hint for emitting the inline path; the path tests the callee itself.
+fn bool Asm.charcodeat_site(&self) {
+    if (self.wide || self.w.op != Opcode.CALL || self.w.c != 1 || self.w.b + 2 >= self.f.num_regs) return false;
+    if (!self.consts_fixed) return false;
+    for (uint back = 1; back <= 8 && back <= self.i; back++) {
+        Instruction p = self.f.code[self.i - back];
+        if (p.op != Opcode.GETPROPC && p.op != Opcode.GETPROPC_CACHED) continue;
+        if (p.a != self.w.b) continue;
+        if (p.c >= self.f.const_count || !self.f.constants[p.c].is_string()) return false;
+        hstring::HString* key = (hstring::HString*)self.f.constants[p.c].get_heapptr();
+        return !key.is_symbol() && key.latin1() == "charCodeAt";
+    }
+    return false;
+}
+
+// `x.charCodeAt(i)` for a plain ASCII string primitive `x` and a fastint in
+// range, as th_call_native completes it, without entering the call machinery.
+// `miss` collects every other case, which nothing was written for.
+fn void Asm.emit_charcodeat(&self, Jumps* miss) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    uint rb = self.w.b;
+    self.load(R0, rb);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    self.mov(R1, 0, m | R0, 0, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, k.fn_mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, k.fn_want));
+    self.mov(R1, 0, m | R0, k.fn_builtin, SLJIT_MOV_S32);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)builtins::Builtin.STRING_PROTO_CHARCODEAT.ordinal));
+    self.load(R1, rb + 1);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_STRING_START);
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.mov(R2, 0, m | R1, 0, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.ascii_mask | l.symbol_mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.ascii_mask));
+    self.load(R3, rb + 2);
+    sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R3, 0, SLJIT_IMM, 48);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, STAG_INT));
+    sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R3, 0, SLJIT_IMM, 16);
+    self.mov(R2, 0, m | R1, l.str_length, SLJIT_MOV_U32);
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R2, 0));
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R3, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R1, (long)hstring::HSTRING_HDR_SIZE);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+    self.store(self.w.a, R0);
 }
 
 // The call subroutine. In: R1 the callee's window (the function two slots
