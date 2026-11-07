@@ -727,10 +727,25 @@ fn void Asm.emit_poly_arm(&self, void* back) {
         // receiver at SUB_VALUE_OFF.
         sljit_set_label(cached, sljit_emit_label(c));
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, R0, 0);
-        self.mov(R1, 0, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF);
+        // jit_poly_note changes nothing for an entry that names a prototype owner or whose
+        // polymorphic set is full, which is most of its calls: the checks run here.
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&((hobject::ICEntry*)self.f.ic_entries)[self.next - 1]);
+        Jumps no_note;
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, self.lay.ic_has_proto);
+        no_note.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, self.lay.ic_chain_len);
+        void* not_poly = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_CHAIN_POLY & 0xFF);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, self.lay.ic_chain);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R0, 0);
+        no_note.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)hobject::IC_POLY_MAX));
+        sljit_set_label(not_poly, sljit_emit_label(c));
+        self.mov(R1, 0, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
         sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_poly_note);
+        void* noted = sljit_emit_jump(c, SLJIT_JUMP);
+        no_note.bind(sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, R3, 0);
+        sljit_set_label(noted, sljit_emit_label(c));
         sljit_set_label(published, sljit_emit_label(c));
         self.publish(self.w.a);
         self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
