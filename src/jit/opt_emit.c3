@@ -895,6 +895,10 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
 fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
+    if (n.b == NO_NODE) {
+        self.emit_store_elem_window(i, n);
+        return;
+    }
     a.decode((uint)n.imm);
     a.call.len = 0;
     a.load(R0, a.w.a);
@@ -913,6 +917,62 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
         a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
         sljit_set_label(done, sljit_emit_label(c));
+    $else
+        a.call.add(other);
+    $endif
+    self.exit_calls(i, OptExit.SLOW_PATH);
+}
+
+// PUTPROP of the window value C to an element, as Asm.emit_put_elem: the counted and traced store
+// of th_store_slot_ref takes a C call, so on that path the live nodes are stored first and
+// reloaded after.
+fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    int sp = SLJIT_MEM | reg_sp();
+    self.decode(n);
+    a.call.len = 0;
+    a.load(R0, a.w.a);
+    a.unbox_object(R1, R0);
+    self.box_index(n.a);
+    void* other = a.array_or_typed(a.lay.indexed_named_mask);
+    a.array_slot();
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
+    a.load(R2, a.w.c);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, K_UNDEF));
+    Jumps counted;
+    a.guard_old_value(&counted);
+    a.store_value_r2(&counted);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    counted.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, sp, SUB_VALUE_OFF, R0, 0);
+    self.store_dirty(n.dirty_first, n.dirty_count);
+    a.load(R0, a.w.a);
+    a.unbox_object(R1, R0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, SUB_VALUE_OFF);
+    sljit_emit_op2(c, SLJIT_ADD, R3, 0, a.regs, 0, SLJIT_IMM, (long)a.w.c * TVal::size);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_store_slot);
+    for (uint k = 0; k < n.reload_count; k++) {
+        OptDirty d = self.g.dirty[(sz)(n.reload_first + k)];
+        OptNode* nd = &self.g.nodes[d.node];
+        if (nd.reg < 0 || nd.is_const()) continue;
+        if (nd.rep == OptRep.OBJECT) {
+            a.load(nd.reg, d.reg);
+        } else if (nd.rep == OptRep.INT32) {
+            self.load_unboxed(nd.reg, d.reg);
+        } else {
+            self.reload_flt(nd.reg, d.reg);
+        }
+    }
+    sljit_set_label(done, sljit_emit_label(c));
+    $if features::BUFFERS:
+        void* typed_done = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(other, sljit_emit_label(c));
+        a.load(R0, a.w.c);
+        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        sljit_set_label(typed_done, sljit_emit_label(c));
     $else
         a.call.add(other);
     $endif
