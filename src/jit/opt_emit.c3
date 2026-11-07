@@ -28,6 +28,8 @@ struct OptExitRef {
     uint reason;
     // For an exit from an inlined body: the callee registers live at the resume point.
     uint mask;
+    // The node the exit leaves from, whose sunk objects it allocates (OptMat), or NO_NODE.
+    uint node;
 }
 
 struct OptGoto {
@@ -290,16 +292,16 @@ fn void OptCg.decode(&self, OptNode* n) {
 
 fn void OptCg.exit_at(&self, void* jump, uint node, OptExit reason) {
     OptNode* n = &self.g.nodes[node];
-    self.exits.push({ .jump = jump, .pc = n.pc, .fidx = n.fidx, .dirty_first = n.dirty_first, .dirty_count = n.dirty_count, .reason = (uint)reason.ordinal, .mask = n.live_mask });
+    self.exits.push({ .jump = jump, .pc = n.pc, .fidx = n.fidx, .dirty_first = n.dirty_first, .dirty_count = n.dirty_count, .reason = (uint)reason.ordinal, .mask = n.live_mask, .node = node });
 }
 
 fn void OptCg.exit_clean_dirty(&self, void* jump, uint pc, uint first, uint count, OptExit reason) {
-    self.exits.push({ .jump = jump, .pc = pc, .dirty_first = first, .dirty_count = count, .reason = (uint)reason.ordinal });
+    self.exits.push({ .jump = jump, .pc = pc, .dirty_first = first, .dirty_count = count, .reason = (uint)reason.ordinal, .node = NO_NODE });
 }
 
 // An exit to the baseline code at `pc` with nothing to store: the window holds every value.
 fn void OptCg.exit_clean(&self, void* jump, uint pc, OptExit reason) {
-    self.exits.push({ .jump = jump, .pc = pc, .dirty_first = 0, .dirty_count = 0, .reason = (uint)reason.ordinal });
+    self.exits.push({ .jump = jump, .pc = pc, .dirty_first = 0, .dirty_count = 0, .reason = (uint)reason.ordinal, .node = NO_NODE });
 }
 
 // Every jump the baseline helpers collected in `call` leaves through `reason`.
@@ -319,10 +321,12 @@ fn void OptCg.emit_exit_stubs(&self) {
         while (i < count) {
             OptExitRef x = self.exits[(sz)i];
             if (x.pc != e.pc || x.fidx != e.fidx || x.dirty_first != e.dirty_first || x.reason != e.reason || x.mask != e.mask) break;
+            if (x.node != e.node && self.g.mats.len() != 0) break;
             sljit_set_label(x.jump, label);
             i++;
         }
         self.store_dirty(e.dirty_first, e.dirty_count);
+        self.materialize(e.node);
         self.use_fn(e.fidx);
         self.a.i = e.pc;
         if (e.fidx != 0) {
@@ -961,7 +965,16 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         a.load(R0, a.w.b);
     }
     bool chain = n.cc == 2;
-    if (n.cc == 1) {
+    if (n.cc == 3) {
+        // A key the prototype chain of a sunk object answers: the data property its site validated.
+        OptSinkSite* site = (OptSinkSite*)self.g.sinks[(sz)(n.c >> 8)].site;
+        uint k = n.c & 0xFF;
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM, (long)(usz)&site.read_owner[k]);
+        a.prop_base(R0, R1);
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM, (long)(usz)&site.read_off[k]);
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
+        known_slot = true;
+    } else if (n.cc == 1) {
         // The receiver was proven an object of this shape by an earlier node (see OptBuild.forget_facts).
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
     } else {
@@ -1263,7 +1276,8 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     uint end = callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS;
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)end * TVal::size);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | R0, k.vm_valstack_end);
-    if ((n.cc & 3) == 1 && !cf.call_flags.ignores_this) {
+    // A sunk receiver (c names its sink) is an object any exit allocates into the frame it publishes.
+    if ((n.cc & 3) == 1 && !cf.call_flags.ignores_this && !(n.b == NO_NODE && n.c != NO_NODE)) {
         // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
         // that any exit stores into a frame it publishes.
         if (n.b != NO_NODE) {
@@ -1341,6 +1355,117 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
     self.def_obj(i, R0);
+    self.count_alloc(&self.h.opt.alloc_runs);
+}
+
+// The NEW_OBJECT of a sunk allocation: no object, only the check that the state its site validated
+// (OptSinkSite) still holds, else vm::jit_opt_sink_check validates the site again with the registers
+// in use saved around the call; what that refuses leaves for the baseline code at the NEW_OBJ.
+fn void OptCg.emit_sunk_object(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    CompiledFunction* cf = (CompiledFunction*)(usz)n.imm;
+    a.decode(n.pc);
+    OptFn* caller = &self.g.fns[n.fidx];
+    uint callee_reg = a.w.b + caller.reg_base;
+    OptSink* sk = &self.g.sinks[(sz)n.c];
+    OptSinkSite* site = self.h.alloc_func(self.h.heap_udata, OptSinkSite::size);
+    mem::clear(site, OptSinkSite::size);
+    site.next = self.oc.sink_sites;
+    self.oc.sink_sites = site;
+    site.new_ic = &((hobject::ICEntry*)caller.f.ic_entries)[a.next - 1];
+    uint want = cf.call_flags.constructor_capacity;
+    uint adds = 0;
+    for (uint k = 0; k < cf.code_count; k++) if (cf.code[k].op == Opcode.PUTTHISC) adds++;
+    site.want = adds > want ? adds : want;
+    site.add_count = sk.add_count;
+    site.read_count = sk.read_count;
+    for (uint k = 0; k < sk.add_count; k++) site.keys[k] = sk.keys[k];
+    for (uint k = 0; k < sk.read_count; k++) site.read_keys[k] = sk.reads[k];
+    sk.site = site;
+    if (n.a != NO_NODE) {
+        int r = self.obj_reg(n.a, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    } else {
+        a.load(R1, callee_reg);
+    }
+    // The guard before proved it an object.
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
+    void*[5] slow;
+    slow[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM, (long)(usz)&site.ctor);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, a.lay.obj_shape);
+    slow[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM, (long)(usz)&site.ctor_shape);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.prototype_epoch - (char*)self.h));
+    slow[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM, (long)(usz)&site.epoch);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.shape_recycle_epoch - (char*)self.h));
+    slow[3] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM, (long)(usz)&site.recycle);
+    a.prop_base(R0, R1);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM, (long)(usz)&site.proto_off);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    slow[4] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM, (long)(usz)&site.proto_bits);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    void* label = sljit_emit_label(c);
+    foreach (j : slow) sljit_set_label(j, label);
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_sink_check);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
+    sljit_set_label(done, sljit_emit_label(c));
+    self.count_alloc(&self.h.opt.sink_runs);
+}
+
+// With --jit-count-ops, the count of `counter` raised where the code passes.
+fn void OptCg.count_alloc(&self, ulong* counter) {
+    if (!self.h.jit_stats.count_ops) return;
+    long at = (long)(usz)counter;
+    sljit_emit_op2(self.a.c, SLJIT_ADD, SLJIT_MEM, at, SLJIT_MEM, at, SLJIT_IMM, 1);
+}
+
+// The sunk objects an exit from node `node` sees (its OptMat entries), after its dirty registers
+// are stored: each allocated by vm::jit_opt_sink_materialize with the fields it has there, and
+// stored to every register that holds it.
+fn bool OptCg.has_mats(&self, uint node) {
+    foreach (&m : self.g.mats) if (m.node == node) return true;
+    return false;
+}
+
+fn void OptCg.materialize(&self, uint node) {
+    if (node == NO_NODE || self.g.mats.len() == 0) return;
+    void* c = self.a.c;
+    OptNode* n = &self.g.nodes[node];
+    // The field values into each site first: the calls clobber the registers that hold them.
+    foreach (&m : self.g.mats) {
+        if (m.node != node) continue;
+        OptSinkSite* site = (OptSinkSite*)self.g.sinks[(sz)m.sink].site;
+        for (uint k = 0; k < m.count; k++) {
+            uint v = self.g.mat_vals[(sz)(m.vals_first + k)];
+            int r = R0;
+            if (self.g.nodes[v].rep == OptRep.OBJECT) {
+                r = self.obj_reg(v, R0);
+            } else {
+                self.box_node(v, R0);
+            }
+            sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM, (long)(usz)&site.values[k], r, 0);
+        }
+    }
+    foreach (&m : self.g.mats) {
+        if (m.node != node) continue;
+        OptSinkSite* site = (OptSinkSite*)self.g.sinks[(sz)m.sink].site;
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)site);
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)m.count);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_sink_materialize);
+        for (uint k = 0; k < n.dirty_count; k++) {
+            OptDirty d = self.g.dirty[(sz)(n.dirty_first + k)];
+            OptNode* nd = &self.g.nodes[d.node];
+            if (nd.sunk && nd.c == m.sink) self.store_object(d.reg, R0);
+        }
+    }
 }
 
 // PUTTHISC of an inlined constructor that adds its key to an object, as the baseline's emit_put does
@@ -1783,13 +1908,22 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN) {
         if (self.force_here(n)) {
             self.forced_done = true;
+            // The hook falls through once its count is spent: an allocation for the exit must not run then.
+            void* spent = null;
+            if (self.has_mats(i)) {
+                sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)(usz)&self.oc.forced);
+                sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | R0, 0);
+                spent = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0);
+            }
             self.store_dirty(n.dirty_first, n.dirty_count);
+            self.materialize(i);
             self.a.i = n.pc;
             if (n.fidx != 0) {
                 self.emit_inline_exit(n.fidx, n.pc, n.live_mask, self.h.opt.force_reason - 1, true);
             } else {
                 self.a.emit_opt_exit(self.oc, self.h.opt.force_reason - 1, true);
             }
+            if (spent != null) sljit_set_label(spent, sljit_emit_label(c));
         }
     }
     switch (n.op) {
@@ -1825,7 +1959,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case STORE_OBJ:
             self.store_node(n.a, (uint)n.imm);
         case COPY:
-            self.emit_copy(n, i);
+            if (!n.sunk) self.emit_copy(n, i);
         case ADD_I32:
         case SUB_I32:
             self.emit_addsub(i, n);
@@ -1875,7 +2009,13 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case GENERIC:
             self.emit_generic(i, n);
         case NEW_OBJECT:
-            self.emit_new_object(i, n);
+            if (n.sunk) {
+                self.emit_sunk_object(i, n);
+            } else {
+                self.emit_new_object(i, n);
+            }
+        case SUNK:
+            break;
         case ADD_FIELD:
             self.emit_add_field(i, n);
         case CHECK_BUILTIN:
@@ -1884,6 +2024,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_move_window(n);
         case EXIT:
             self.store_dirty(n.dirty_first, n.dirty_count);
+            self.materialize(i);
             self.a.i = n.pc;
             if (n.fidx != 0) {
                 self.emit_inline_exit(n.fidx, n.pc, n.live_mask, OptExit.COLD.ordinal, false);

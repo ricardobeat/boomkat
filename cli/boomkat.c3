@@ -57,6 +57,7 @@ fn int main(String[] args) {
     bool opt_always = false;
     bool opt_dump = false;
     bool opt_no_inline = false;
+    bool opt_no_sink = false;
     uint opt_inline_max = uint::max;
     uint opt_exit_max = 0;
     String opt_force;
@@ -117,6 +118,10 @@ fn int main(String[] args) {
             jit = true;
             opt = true;
             opt_no_inline = true;
+        } else if (a == "--opt-no-sink") {
+            jit = true;
+            opt = true;
+            opt_no_sink = true;
         } else if (a.starts_with("--opt-inline-max=")) {
             jit = true;
             opt = true;
@@ -234,6 +239,7 @@ fn int main(String[] args) {
             hp.opt.always = opt_always;
             hp.opt.dump = opt_dump;
             hp.opt.no_inline = opt_no_inline;
+            hp.opt.no_sink = opt_no_sink;
             hp.opt.inline_max = opt_inline_max;
             if (opt_exit_max != 0) hp.opt.exit_max = opt_exit_max;
             if (opt_force.len != 0 && !jit::opt_parse_force(&hp.opt, opt_force)) {

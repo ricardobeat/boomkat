@@ -52,7 +52,7 @@ fn bool OptGraph.pinned(&self, OptNode* n) @inline {
 }
 
 fn bool OptNode.allocated(&self) @inline {
-    return self.rep != OptRep.NONE && !self.is_const();
+    return self.rep != OptRep.NONE && !self.is_const() && !self.sunk;
 }
 
 // Compute each value's last use: operands, the registers an exit or a GENERIC
@@ -65,9 +65,13 @@ fn void OptGraph.compute_uses(&self) {
         OptNode* n = &self.nodes[i];
         self.use(n.a, i);
         self.use(n.b, i);
-        self.use(n.c, i);
+        self.use(n.c_node(), i);
         for (uint k = 0; k < n.dirty_count; k++) self.use(self.dirty[(sz)(n.dirty_first + k)].node, i);
         for (uint k = 0; k < n.reload_count; k++) self.use(self.dirty[(sz)(n.reload_first + k)].node, i);
+    }
+    // An exit that allocates a sunk object reads the values of its fields.
+    foreach (&m : self.mats) {
+        for (uint k = 0; k < m.count; k++) self.use(self.mat_vals[(sz)(m.vals_first + k)], m.node);
     }
     foreach (&blk : self.blocks) {
         for (uint e = 0; e < blk.succ_count; e++) {
@@ -141,10 +145,11 @@ fn bool OptGraph.allocate(&self, OptPools* pools) {
         uint furthest = 0;
         for (sz k = 0; k < active.len(); k++) {
             OptNode* a = &self.nodes[active[k]];
-            if (a.rep != n.rep || a.op == OptOp.PHI || self.pinned(a)) continue;
+            if (a.rep != n.rep || a.op == OptOp.PHI || self.pinned(a) || a.held) continue;
             if (victim == active.len() || a.last_use > furthest) { victim = k; furthest = a.last_use; }
         }
-        if (n.op != OptOp.PHI && !self.pinned(n) && (victim == active.len() || n.last_use >= furthest)) {
+        // A field value of a sunk object that finds no register fails OptGraph.sink_spilled.
+        if (n.op != OptOp.PHI && !self.pinned(n) && (victim == active.len() || (n.last_use >= furthest && !n.held))) {
             n.reg = -1;
             continue;
         }

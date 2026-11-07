@@ -1168,6 +1168,7 @@ fn bool OptBuild.get_field(&self) {
         n = self.add(OptOp.LOAD_FIELD, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
         self.snapshot(n);
         uint ra = self.w.a;
+        self.g.nodes[n].home = ra;
         self.kill(ra);
         if (ra < self.nregs) self.load_def[ra] = self.pckey();
         // A value of any kind in a slot beyond the caller's frame would be out of the collector's sight.
@@ -1175,6 +1176,7 @@ fn bool OptBuild.get_field(&self) {
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].b = rnode;
+    self.g.nodes[n].key = (void*)ic.key.borrow();
     self.set_poly(n, ic);
     if (mono) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
@@ -1208,6 +1210,7 @@ fn bool OptBuild.put_field(&self) {
     if (rv >= self.nregs || self.cur[rv].node == NO_NODE) return self.generic();
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, self.cur[rv].node, rnode, (long)self.pc);
     self.snapshot(n);
+    self.g.nodes[n].key = (void*)ic.key.borrow();
     bool mono = ic.chain_len == 0;
     self.g.nodes[n].cc = (mono && self.guards_known(recv, ic.shape_id)) ? 1 : 0;
     self.set_poly(n, ic);
@@ -1220,13 +1223,15 @@ fn bool OptBuild.put_field(&self) {
 fn bool OptBuild.add_field(&self) {
     uint recv = self.field_receiver();
     uint rv = self.w.a;
-    if (self.absent_field() == null || !self.is_object(recv) || rv >= self.nregs) return self.generic();
+    hobject::ICEntry* ic = self.absent_field();
+    if (ic == null || !self.is_object(recv) || rv >= self.nregs) return self.generic();
     uint value = self.cur[rv].node;
     // A window value is read from its slot, which lies in the caller's frame (beyond it there are
     // only nodes, see OptBuild.inline_unsafe).
     if (value == NO_NODE && rv >= self.caller_regs) return self.generic();
     uint n = self.add(OptOp.ADD_FIELD, OptRep.NONE, value, self.cur[recv].node, (long)self.pc);
     self.snapshot(n);
+    self.g.nodes[n].key = (void*)ic.key.borrow();
     // The object's shape changed, under whatever register a fact names it by.
     self.forget_facts();
     return true;

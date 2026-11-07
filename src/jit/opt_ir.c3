@@ -46,6 +46,13 @@
 // registers, so the machine registers that hold values across it are saved in the frame around it
 // (OptCg.spill_live). The object is an OBJECT node homed in the receiver slot of the NEW_OBJ, the
 // constructor's `this`, where an exit from the body stores it for the frame it publishes.
+//
+// Allocation sinking (opt_sink.c3): a NEW_OBJECT whose object only flows through COPY nodes into
+// the receivers of field accesses, the receiver of an inlined call and the dirty registers of exits
+// is not allocated at all. Its nodes are `sunk` (no register, no code), its fields are the nodes
+// stored into them, and every exit that can see it allocates it with the fields it has there
+// (OptMat) and stores it to each slot that holds it, before the frames are published. The exit is
+// the only collecting point such an object meets, and its allocation does not collect either.
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::bytecode;
@@ -176,7 +183,8 @@ enum OptOp : char {
     // object with the prototype the instruction's cache reads from the constructor, the OBJECT node
     // the inlined body takes as `this`. Exits (ALLOC_SLOW) before any effect when the constructor is
     // not constructable, the cache does not hold or the allocation fails. a, when not NO_NODE, is the
-    // OBJECT node holding the constructor.
+    // OBJECT node holding the constructor. Sunk, it allocates nothing: c is its OptGraph.sinks
+    // entry, and it exits where the allocation would unless the state its site validated holds.
     NEW_OBJECT,
     // The guard of an inlined forwarding call (`f.apply(x, arguments)`, OptBuild.forward_window):
     // exits (CALLEE) unless the OBJECT node a, or the window slot home when a is NO_NODE, holds the
@@ -191,6 +199,9 @@ enum OptOp : char {
     // OBJECT node stored, or NO_NODE for a value in the window. Exits before any effect when the add
     // is not one the cache describes. It defines nothing.
     ADD_FIELD,
+    // A field access of a sunk object, done in the graph: no code. Its dirty registers stay for the
+    // exit the test hook may force there.
+    SUNK,
 }
 
 // A window slot and the node whose value belongs in it.
@@ -254,6 +265,32 @@ struct OptNode {
     int reg;
     // The last node position that uses this value.
     uint last_use;
+    // The field key of a LOAD_FIELD, STORE_FIELD or ADD_FIELD (an interned string).
+    void* key;
+    // A NEW_OBJECT, or a COPY of one, whose object is not allocated (c names its sink).
+    bool sunk;
+    // A field value of a sunk object, which an exit stores into it: kept in a register.
+    bool held;
+}
+
+// A sunk allocation: its NEW_OBJECT node, the keys its fields are added under, in order, and the
+// keys read from its prototype chain. `site` is the run-time OptSinkSite the emitter made.
+struct OptSink {
+    uint node;
+    uint add_count;
+    uint read_count;
+    void*[OPT_SINK_FIELDS] keys;
+    void*[OPT_SINK_READS] reads;
+    void* site;
+}
+
+// An exit at `node` that allocates sunk object `sink` with its first `count` fields, the values
+// mat_vals[vals_first ..].
+struct OptMat {
+    uint node;
+    uint sink;
+    uint count;
+    uint vals_first;
 }
 
 // An edge's work: a phi receives `src`, converted when its rep differs; with
@@ -305,9 +342,15 @@ struct OptGraph {
     List{OptMove} moves;
     List{OptDirty} dirty;
     List{OptFn} fns;
+    List{OptSink} sinks;
+    List{OptMat} mats;
+    List{uint} mat_vals;
 }
 
 fn void OptGraph.init(&self) {
+    self.sinks.init(mem);
+    self.mats.init(mem);
+    self.mat_vals.init(mem);
     self.polys.init(mem);
     self.nodes.init(mem);
     self.blocks.init(mem);
@@ -317,6 +360,9 @@ fn void OptGraph.init(&self) {
 }
 
 fn void OptGraph.clear(&self) {
+    self.sinks.clear();
+    self.mats.clear();
+    self.mat_vals.clear();
     self.polys.clear();
     self.nodes.clear();
     self.blocks.clear();
@@ -325,6 +371,9 @@ fn void OptGraph.clear(&self) {
 }
 
 fn void OptGraph.free(&self) {
+    self.sinks.free();
+    self.mats.free();
+    self.mat_vals.free();
     self.polys.free();
     self.nodes.free();
     self.blocks.free();
@@ -352,6 +401,7 @@ fn void OptGraph.dump(&self, CompiledFunction* f) {
             if (n.op == OptOp.GENERIC) io::eprintf("  [%s]", self.fns[n.fidx].f.code[(uint)n.imm].op);
             io::eprintf("  n%d %s rep=%s a=%d b=%d imm=%d pc=%d reg=%d home=%d last=%d cc=%d", i, n.op, n.rep, (int)n.a, (int)n.b, n.imm, n.pc, n.reg, n.home, n.last_use, n.cc);
             if (n.fidx != 0) io::eprintf(" fn=%d", n.fidx);
+            if (n.sunk) io::eprintf(" sunk=%d", n.c);
             if (n.dirty_count != 0) {
                 io::eprintf(" dirty=");
                 for (uint k = 0; k < n.dirty_count; k++) io::eprintf("r%d:n%d ", self.dirty[(sz)(n.dirty_first + k)].reg, self.dirty[(sz)(n.dirty_first + k)].node);
