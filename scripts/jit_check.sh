@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fast JIT validation. For every test/*.js and test/jit/*.js the stdout+stderr+exit code under
-# --jit, --jit --opt and --jit --opt --opt-always must equal the interpreter's (the interpreter
+# --jit, --jit --opt, --jit --opt --opt-always and the same with a 20 KB optimized-code cap (eviction) must equal the interpreter's (the interpreter
 # runs once per file); then the optimizing-tier exit check (scripts/opt_exit_check.sh, skipped
 # with QUICK=1). Prints "jit-check OK" or "jit-check FAIL n" plus the diffs.
 #   scripts/jit_check.sh [BIN]    BIN defaults to ./out/boomkat; JOBS defaults to the core count.
@@ -16,7 +16,7 @@ start=$(date +%s)
 one() {
     f=$1
     ref=$(timeout 60 "$BIN" --memory-limit=512 --script "$f" 2>&1; echo "exit=$?")
-    for mode in "--jit" "--jit --opt" "--jit --opt --opt-always"; do
+    for mode in "--jit" "--jit --opt" "--jit --opt --opt-always" "--jit --opt --opt-always --opt-code-max=20000"; do
         # shellcheck disable=SC2086
         out=$(timeout 120 "$BIN" --memory-limit=512 $mode --script "$f" 2>&1; echo "exit=$?")
         [ "$ref" = "$out" ] || echo "DIFF $f [$mode]"
@@ -27,7 +27,7 @@ ls test/*.js test/jit/*.js | grep -v test_async_500k > "$TMP/files"
 n=$(wc -l < "$TMP/files" | tr -d ' ')
 xargs -P "$JOBS" -I{} bash -c 'one {}' < "$TMP/files" > "$TMP/diffs" 2>&1
 fails=$(grep -c '^DIFF' "$TMP/diffs"); fails=${fails:-0}
-echo "jit-check: $n files x 3 modes in $(( $(date +%s) - start ))s, $fails diffs"
+echo "jit-check: $n files x 4 modes in $(( $(date +%s) - start ))s, $fails diffs"
 cat "$TMP/diffs"
 if [ "${QUICK:-0}" != 1 ]; then
     s2=$(date +%s)

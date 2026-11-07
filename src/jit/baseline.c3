@@ -158,6 +158,8 @@ struct BaselineCode {
     void* call_entry;
     // The first shared subroutine, which ends the call entry (--jit-dump-feedback).
     void* subs;
+    // Optimized code only: set by every entry, cleared by the eviction sweep (opt_make_room).
+    char touched;
     void*[*] entries;
 }
 

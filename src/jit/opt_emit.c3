@@ -2139,7 +2139,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     void* call_entry = null;
     if (call_entry_eligible(f) && !g.blocks[0].osr) {
         a.labels[0] = cg.labels[0];
-        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count));
+        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count), touch: true);
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;
