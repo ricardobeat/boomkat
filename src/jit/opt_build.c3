@@ -2881,7 +2881,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
                 if (self.rep_of(s.node) == OptRep.FLOAT64) rep = OptRep.FLOAT64;
             }
             if (!numeric) {
-                if (back == 0 && r >= self.caller_regs) self.cur[r] = self.same_object(pos, r);
+                if (back == 0) self.cur[r] = self.same_object(pos, r);
                 continue;
             }
             int ov = self.override_of(pos, r);
@@ -2922,9 +2922,9 @@ fn void OptBuild.begin_block(&self, uint pos) {
     }
 }
 
-// The OBJECT node every forward predecessor of the block at `pos` holds in register `r`, typically a
-// nested call's callee or receiver beyond the caller's frame, which no slot can hold across the
-// edges: the one node, kept in its machine register, needs no phi. Else nothing.
+// The OBJECT node every forward predecessor of the block at `pos` holds in register `r`: the one
+// node, kept where it is, needs no phi and no store on the edges. A nested call's callee or receiver
+// beyond the caller's frame cannot be stored there at all. Else nothing.
 fn OptRegState OptBuild.same_object(&self, uint pos, uint r) {
     OptRegState same = { .node = NO_NODE };
     foreach (p : self.preds(pos)) {
