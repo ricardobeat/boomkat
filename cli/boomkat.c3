@@ -60,6 +60,7 @@ fn int main(String[] args) {
     bool opt_no_sink = false;
     uint opt_inline_max = uint::max;
     uint opt_exit_max = 0;
+    usz opt_code_max = 0;
     String opt_force;
     bool jit_stats = false;
     bool jit_count_ops = false;
@@ -126,6 +127,10 @@ fn int main(String[] args) {
             jit = true;
             opt = true;
             opt_inline_max = (uint)a[17..].to_uint()!!;
+        } else if (a.starts_with("--opt-code-max=")) {
+            jit = true;
+            opt = true;
+            opt_code_max = (usz)a[15..].to_uint()!!;
         } else if (a == "--opt-dump") {
             jit = true;
             opt = true;
@@ -242,6 +247,7 @@ fn int main(String[] args) {
             hp.opt.no_sink = opt_no_sink;
             hp.opt.inline_max = opt_inline_max;
             if (opt_exit_max != 0) hp.opt.exit_max = opt_exit_max;
+            if (opt_code_max != 0) hp.opt.code_max = opt_code_max;
             if (opt_force.len != 0 && !jit::opt_parse_force(&hp.opt, opt_force)) {
                 io::eprintfn("boomkat: bad --opt-force-exit spec '%s'", opt_force);
                 hp.destroy();

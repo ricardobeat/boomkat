@@ -201,8 +201,9 @@ fn void Asm.mov(&self, int dst, long dstw, int src, long srcw, int op = SLJIT_MO
 // Emitted after the body; enters the body at its first instruction. `scratches`
 // and `locals` are the frame the body was emitted for. With `count_opt` the entry
 // counts toward the optimizing tier, and declines when the count reaches the
-// threshold so that the helper path considers the function.
-fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratches = 5 | (2 << 8), int locals = CALL_FRAME_BYTES, bool count_opt = false) {
+// threshold so that the helper path considers the function. `touch` marks the code as entered
+// (BaselineCode.touched).
+fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratches = 5 | (2 << 8), int locals = CALL_FRAME_BYTES, bool count_opt = false, bool touch = false) {
     void* c = self.c;
     CompiledFunction* f = self.f;
     CallLayout* k = call_layout();
@@ -360,6 +361,8 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     self.mov(self.code, 0, code, 0);
     self.mov(self.heap, 0, m | ds, k.ds_heap);
     self.mov(table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
+    // Optimized code records the entry for the eviction sweep (opt_make_room).
+    if (touch) self.mov(m | table_reg, (long)(usz)&bc.touched - (long)(usz)&bc.entries[0], SLJIT_IMM, 1, SLJIT_MOV_U8);
     self.mov(self.thunks, 0, SLJIT_IMM, (long)(usz)&thunks()[0]);
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.labels[0]);
 
