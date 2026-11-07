@@ -266,3 +266,108 @@ fn bool Asm.emit_alloc(&self) {
     if (done != null) sljit_set_label(done, sljit_emit_label(c));
     return true;
 }
+
+// NEW_OBJ of a simple constructor (CompiledFunction.classify_simple_constructor) built without a
+// call: the object and its stores in line, as vm::jit_new_simple builds them. What the constructor
+// is, which argument each store reads and where the stores leave the shape are in the site's
+// NewSite, which jit_new_simple arms, so the code needs no feedback from before it was compiled:
+// a site whose first construction comes after the function was compiled takes it as well. Every
+// jump in `miss` leaves nothing changed and takes that helper. Null, with nothing emitted, when
+// this build does not allocate inline or the code has no room for the site.
+fn NewSite* Asm.emit_new_inline(&self, Jumps* miss) {
+    if (self.wide || !inline_alloc_ok() || self.new_sites == null || self.new_site_next >= self.new_site_count) return null;
+    Heap* h = self.hp;
+    void* c = self.c;
+    Layout* l = self.lay;
+    CallLayout* k = call_layout();
+    int m = SLJIT_MEM;
+    NewSite* site = &self.new_sites[self.new_site_next++];
+    foreach (&slot : site.arg) *slot = NEW_ARG_NONE;
+    // The callee: a constructable closure of the armed function, as emit_check_callee tests it.
+    self.load(R1, self.w.b);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    miss.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    hobject::ObjFlags ctor_bit;
+    ctor_bit.constructable = true;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R0, 0);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask | (long)(uint)ctor_bit);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want | (long)(uint)ctor_bit));
+    sljit_emit_op1(c, SLJIT_MOV_S32, R4, 0, m | R0, k.fn_builtin);
+    miss.add(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0));
+    // An unarmed site holds no function, which no closure has.
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R0, l.fn_comp_func);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_MEM, (long)(usz)&site.cf));
+    // The armed state: the constructor's shape, the epochs, and the prototype in its slot.
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R0, l.obj_shape);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM, (long)(usz)&site.ctor_shape));
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | self.heap, (long)((char*)&h.prototype_epoch - (char*)h));
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM, (long)(usz)&site.epoch));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | self.heap, l.heap_epoch);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM, (long)(usz)&site.recycle));
+    // Heap.set_prototype also walks the other realms when there are any.
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | self.heap, l.heap_realms, SLJIT_IMM, 0));
+    self.prop_base(R1, R0);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM, (long)(usz)&site.proto_off);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R3, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | R1, 0);
+    // An unarmed site holds 0, which no prototype boxes to.
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM, (long)(usz)&site.proto_bits));
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, l.obj_shape);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM, (long)(usz)&site.proto_shape));
+    sljit_emit_op1(c, SLJIT_MOV, m | reg_sp(), SUB_VALUE_OFF, R2, 0);
+    // Each argument a store reads is an inert value, an object or a string, which only needs a
+    // count (checked before anything is allocated). R2 is the argument window.
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)(self.w.b + 2) * TVal::size);
+    for (uint j = 0; j < hobject::INLINE_PROPS; j++) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&site.arg[j]);
+        void* skip = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)NEW_ARG_UNDEF);
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, mem_index(R2, R1), 3);
+        void* inert = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
+        sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, SLJIT_IMM, K_STRING_START);
+        void* string = sljit_emit_cmp(c, SLJIT_LESS, R4, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        sljit_set_label(inert, sljit_emit_label(c));
+        sljit_set_label(string, sljit_emit_label(c));
+        sljit_set_label(skip, sljit_emit_label(c));
+    }
+    InlineAlloc plan = self.plain_object_plan();
+    self.emit_inline_alloc(&plan, miss);
+    // The stores, the slots a store names (a slot past the last is NEW_ARG_NONE), then the
+    // count and the shape they lead to.
+    long base = (long)hobject::plain_object_gc(false, 0).inline_words * 8;
+    sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)(self.w.b + 2) * TVal::size);
+    Jumps stored;
+    for (uint j = 0; j < hobject::INLINE_PROPS; j++) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&site.arg[j]);
+        stored.add(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)NEW_ARG_NONE));
+        void* given = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)NEW_ARG_UNDEF);
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, l.undefined_bits);
+        void* have = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(given, sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, mem_index(R2, R1), 3);
+        sljit_set_label(have, sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, m | R0, base + (long)j * 8, R3, 0);
+        // A string the slot holds is counted, as TVal.incref_if_heap does; a pinned one is not.
+        sljit_emit_op2(c, SLJIT_XOR, R4, 0, R3, 0, SLJIT_IMM, K_STRING_START);
+        void* not_string = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, PAYLOAD_SPAN);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R4, l.str_refcount);
+        void* pinned = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R1, 0, SLJIT_IMM, (long)types::STRING_PINNED_REFCOUNT);
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, 1);
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R4, l.str_refcount, R1, 0);
+        sljit_set_label(not_string, sljit_emit_label(c));
+        sljit_set_label(pinned, sljit_emit_label(c));
+    }
+    stored.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&site.count);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_count, R1, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM, (long)(usz)&site.final_shape);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_shape, R1, 0);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    self.store(self.w.a, R0);
+    self.track_heap_store(self.w.a);
+    self.count(&self.stats.fast_hits[0], self.w.op);
+    return site;
+}

@@ -148,6 +148,33 @@ struct JitStats {
     ulong[Opcode::values.len] poly_hits;
 }
 
+// The run-time state of one inlined NEW_OBJ of a simple constructor (baseline_alloc.c3
+// Asm.emit_new_inline), armed by vm::jit_new_simple once it has built an object from the
+// constructor's cached stores. The emitted code builds the object itself while the callee is a
+// closure of `cf`, and the constructor's shape and `prototype` slot, the prototype's shape and
+// the heap's prototype and shape-recycle epochs are those it was armed with: every object of
+// the prototype chain is marked observed, so a change to any of them moves the prototype epoch.
+struct NewSite {
+    // The constructor's function; 0 while unarmed.
+    CompiledFunction* cf;
+    ulong proto_bits;
+    ulong epoch;
+    // The byte offset of the `prototype` slot in the constructor's values.
+    ulong proto_off;
+    uint ctor_shape;
+    uint recycle;
+    uint proto_shape;
+    // The shape the replayed stores leave the object in, and how many there are.
+    uint final_shape;
+    uint count;
+    // The argument each store reads: its index, NEW_ARG_UNDEF for one the site does not pass, or
+    // NEW_ARG_NONE for a slot past the last store.
+    uint[hobject::INLINE_PROPS] arg;
+}
+
+const uint NEW_ARG_UNDEF = 0xFFFFFFFE;
+const uint NEW_ARG_NONE = 0xFFFFFFFF;
+
 struct BaselineCode {
     void* exec;
     usz code_bytes;
@@ -428,6 +455,10 @@ struct Asm {
     // (emit_poly_arm), which continues at poly_back.
     Jumps poly;
     void* poly_back;
+    // The NewSites the code has room for (null in optimized code), and how many are taken.
+    NewSite* new_sites;
+    uint new_site_count;
+    uint new_site_next;
 }
 
 // The emitter state for compiling `f`, over compiler `c`: instruction labels
@@ -630,8 +661,9 @@ fn void* Asm.emit_dispatch(&self, int table_reg, BaselineCode* bc, uint count, i
     return dispatch;
 }
 
-fn BaselineCode* baseline_alloc(Heap* h, uint count) {
-    usz table_bytes = BaselineCode::size + (usz)count * void*::size;
+// A code allocation: the entry table of `count` words, then `sites` NewSites.
+fn BaselineCode* baseline_alloc(Heap* h, uint count, uint sites = 0) {
+    usz table_bytes = BaselineCode::size + (usz)count * void*::size + (usz)sites * NewSite::size;
     BaselineCode* bc = h.alloc_func(h.heap_udata, table_bytes);
     if (bc == null) return null;
     mem::clear(bc, (sz)table_bytes);
@@ -641,13 +673,17 @@ fn BaselineCode* baseline_alloc(Heap* h, uint count) {
 
 fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = null) {
     uint count = f.code_count;
-    BaselineCode* bc = baseline_alloc(h, count);
+    uint news = 0;
+    for (uint i = 0; i < count; i++) if (f.code[i].op == Opcode.NEW_OBJ) news++;
+    BaselineCode* bc = baseline_alloc(h, count, news);
     if (bc == null) return null;
     void* c = sljit_create_compiler(null);
     if (c == null) { h.free_func(h.heap_udata, bc); return null; }
     defer sljit_free_compiler(c);
     Asm a = asm_new(c, h, f);
     defer a.release();
+    a.new_sites = (NewSite*)((char*)bc + BaselineCode::size + (usz)count * void*::size);
+    a.new_site_count = news;
     int table_reg = reg_s(2);
 
     void* dispatch = a.emit_dispatch(table_reg, bc, count);
@@ -883,10 +919,18 @@ fn bool Asm.emit_call(&self) {
         cc_done = sljit_emit_jump(c, SLJIT_JUMP);
         miss.bind(sljit_emit_label(c));
     }
+    void* new_done = null;
     if (self.w.op == Opcode.NEW_OBJ) {
+        Jumps miss;
+        NewSite* site = self.emit_new_inline(&miss);
+        if (site != null) {
+            new_done = sljit_emit_jump(c, SLJIT_JUMP);
+            miss.bind(sljit_emit_label(c));
+        }
         sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
         direct_done = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     }
     bool global = self.w.op == Opcode.CALL_GLOBAL && self.f.ic_entries != null && self.f.var_ic_entries != null
@@ -904,10 +948,11 @@ fn bool Asm.emit_call(&self) {
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
-    if (direct_done != null || cc_done != null) {
+    if (direct_done != null || cc_done != null || new_done != null) {
         void* end = sljit_emit_label(c);
         if (direct_done != null) sljit_set_label(direct_done, end);
         if (cc_done != null) sljit_set_label(cc_done, end);
+        if (new_done != null) sljit_set_label(new_done, end);
     }
     return true;
 }
