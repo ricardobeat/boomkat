@@ -1107,6 +1107,97 @@ fn void OptCg.emit_mul(&self, uint i, OptNode* n) {
     self.def_int(i, R2);
 }
 
+// MOD_I32: the baseline's unsigned remainder, once the dividend is known to be non-negative and the
+// divisor positive.
+fn void OptCg.emit_mod(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    int x = self.int_reg(n.a, R0);
+    int y = self.int_reg(n.b, R1);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_SIG_LESS, x, 0, SLJIT_IMM, 0), i, OptExit.OVERFLOW);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_SIG_LESS_EQUAL, y, 0, SLJIT_IMM, 0), i, OptExit.OVERFLOW);
+    if (x != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, x, 0);
+    if (y != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, y, 0);
+    sljit_emit_op0(c, SLJIT_DIVMOD_UW);
+    self.def_int(i, R1);
+}
+
+// Store `yes` to window slot `home` where the jumps in `taken` land, `no` on the way through.
+fn void OptCg.store_bool(&self, uint home, void* taken, long yes, long no) {
+    void* c = self.a.c;
+    self.a.store(home, SLJIT_IMM, no);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(taken, sljit_emit_label(c));
+    self.a.store(home, SLJIT_IMM, yes);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
+// COMPARE: the boolean of a numeric comparison, stored to the window.
+fn void OptCg.emit_compare(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    void* holds;
+    if (n.imm == (long)OptRep.INT32.ordinal) {
+        int x = self.int_reg(n.a, R0);
+        int y;
+        long yw;
+        self.int_src(n.b, R1, &y, &yw);
+        holds = sljit_emit_cmp(c, JMP_INT_COND[n.cc], x, 0, y, yw);
+    } else {
+        int x = self.flt_reg(n.a, FR0);
+        int y = self.flt_reg(n.b, FR1);
+        holds = sljit_emit_fcmp(c, JMP_FLOAT_COND[n.cc], x, 0, y, 0);
+    }
+    self.store_bool(n.home, holds, K_BOOL | 1, K_BOOL);
+}
+
+// COMPARE_WINDOW: the baseline's equality test of two window slots, stored as a boolean.
+fn void OptCg.emit_compare_window(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Jumps yes;
+    Jumps no;
+    self.a.call.len = 0;
+    self.a.load(R0, (uint)(n.imm & 0xFFFFF));
+    self.a.load(R1, (uint)(n.imm >> 20));
+    self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    bool negate = (n.cc & 1) != 0;
+    yes.bind(sljit_emit_label(c));
+    self.a.store(n.home, SLJIT_IMM, K_BOOL | (negate ? 0 : 1));
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    no.bind(sljit_emit_label(c));
+    self.a.store(n.home, SLJIT_IMM, K_BOOL | (negate ? 1 : 0));
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
+// LNOT: the negated truth of a number node or window slot, stored as a boolean.
+fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    if (n.a != NO_NODE) {
+        void* truthy;
+        if (self.g.nodes[n.a].rep == OptRep.INT32) {
+            int x = self.int_reg(n.a, R0);
+            truthy = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, x, 0, SLJIT_IMM, 0);
+        } else {
+            int x = self.flt_reg(n.a, FR0);
+            sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_IMM, 0);
+            sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR1, R4);
+            truthy = sljit_emit_fcmp(c, SLJIT_ORDERED_NOT_EQUAL, x, 0, FR1, 0);
+        }
+        self.store_bool(n.home, truthy, K_BOOL, K_BOOL | 1);
+        return;
+    }
+    Jumps truthy;
+    Jumps falsy;
+    self.a.call.len = 0;
+    self.a.truth_test((uint)n.imm, &truthy, &falsy);
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    truthy.bind(sljit_emit_label(c));
+    self.a.store(n.home, SLJIT_IMM, K_BOOL);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    falsy.bind(sljit_emit_label(c));
+    self.a.store(n.home, SLJIT_IMM, K_BOOL | 1);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
 fn void OptCg.emit_bitop(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     int x = self.int_reg(n.a, R0);
@@ -1253,7 +1344,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -1304,6 +1395,14 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_addsub(i, n);
         case MUL_I32:
             self.emit_mul(i, n);
+        case MOD_I32:
+            self.emit_mod(i, n);
+        case COMPARE:
+            self.emit_compare(i, n);
+        case COMPARE_WINDOW:
+            self.emit_compare_window(i, n);
+        case LNOT:
+            self.emit_lnot(i, n);
         case AND_I32:
         case OR_I32:
         case XOR_I32:
