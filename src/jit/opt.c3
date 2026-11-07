@@ -79,18 +79,31 @@ struct OptCode {
     OptInlineExit* inline_exits;
 }
 
-// Where an exit from inside an inlined callee's body goes: the callee's frame is published, as the
-// call it replaced would have, and its baseline code continues at `pc`.
-struct OptInlineExit {
+// Calls an optimized body inlines into each other at most, the outermost included.
+const uint OPT_INLINE_DEPTH = 3;
+
+// One frame an exit from inside an inlined body publishes: the call it replaced, as that call
+// would have entered `callee`.
+struct OptInlineFrame {
     CompiledFunction* callee;
-    // The instruction after the call in the caller.
+    // The instruction after the call in its caller (the frame published before this one, or the
+    // optimized function's).
     Instruction* resume;
+    // The callee's register 0 as a register of the optimized function's frame.
     uint base;
     uint nargs;
-    // The callee's word the exit resumes at.
-    uint pc;
-    // The callee registers live there.
+    // The callee registers that hold values there: live at the exit for the innermost frame,
+    // live across its own inlined call for the others.
     uint keep;
+}
+
+// Where an exit from inside an inlined callee's body goes: the frames of the calls it is nested
+// in are published, outermost first, and the innermost callee's baseline code continues at `pc`.
+struct OptInlineExit {
+    OptInlineFrame[OPT_INLINE_DEPTH] frames;
+    uint depth;
+    // The innermost callee's word the exit resumes at.
+    uint pc;
     OptInlineExit* next;
 }
 
@@ -117,8 +130,9 @@ struct OptPolicy {
     uint force_reason;
     uint force_at;
     uint force_count;
-    // The forced exit is taken at a node of an inlined body only.
+    // The forced exit is taken at a node of an inlined body only, nested at least force_depth deep.
     bool force_inline;
+    uint force_depth;
     // Exits that discard a body, OPT_EXIT_MAX when zero.
     uint exit_max;
     // Native code in progress anywhere on the C stack; retired code is freed when it reaches zero.
@@ -218,7 +232,7 @@ fn bool opt_has_field_feedback(CompiledFunction* f) {
 
 // Whether the call at word `i` of `f` names a callee that looks like an inline site: the cheap part
 // of OptBuild.inline_candidate, the size and the opcodes of its body.
-fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i) {
+fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 1) {
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
     Opcode op = f.code[i].op;
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
@@ -230,7 +244,12 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i) {
     if (!opt_function_eligible(cf)) return false;
     cf.classify_lean_call();
     if (!cf.call_flags.lean_call || (op != Opcode.CALL && !cf.call_flags.lean_plain)) return false;
-    for (uint k = 0; k < cf.code_count; k++) if (!inline_op_ok(cf.code[k].op)) return false;
+    for (uint k = 0; k < cf.code_count; k++) {
+        Opcode kop = cf.code[k].op;
+        if (!inline_op_ok(kop)) return false;
+        // A call in the body must be one to inline in turn (OptBuild.add_children).
+        if (inline_call_op(kop) && (depth >= OPT_INLINE_DEPTH || cf.ic_entries == null || !opt_inline_plausible(h, cf, k, depth + 1))) return false;
+    }
     return true;
 }
 
@@ -401,19 +420,19 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     return 0;
 }
 
-// opt_exit for an exit from inside an inlined body: count it and publish the callee's frame. Returns
-// the baseline code of the callee to continue in at the exit's word.
+// opt_exit for an exit from inside an inlined body: count it and publish the frames of the calls
+// it is nested in. Returns the baseline code of the innermost callee to continue in at the exit's word.
 fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* site) {
     Heap* h = ds.heap;
     h.opt.exits[reason]++;
     h.opt.inline_exits++;
-    CompiledFunction* callee = site.callee;
+    CompiledFunction* callee = site.frames[site.depth - 1].callee;
     if (reason == OptExit.OVERFLOW.ordinal && callee.ic_entries != null) {
         ((hobject::ICEntry*)callee.ic_entries)[site.pc].feedback |= hobject::FB_OVF;
     }
     oc.exits++;
     if (oc.f.opt_code == oc && oc.exits >= (h.opt.exit_max != 0 ? h.opt.exit_max : OPT_EXIT_MAX)) opt_discard(h, oc.f);
-    return vm::jit_inline_materialize(ds, callee, site.base, site.nargs, site.resume, site.pc, site.keep);
+    return vm::jit_inline_materialize(ds, site);
 }
 
 // An exit at the start of instruction `i` through `reason`, taken `oc.forced`
@@ -467,10 +486,16 @@ fn bool opt_parse_force(OptPolicy* p, String spec) {
     if (parts.len == 0 || parts.len > 3) return false;
     bool found = false;
     String name = parts[0];
-    // `inline/REASON` leaves only from a node of an inlined body.
+    // `inline/REASON` leaves only from a node of an inlined body; `inline2/` and `inline3/` from
+    // one nested in that many inlined calls.
+    p.force_depth = 1;
     if (name.starts_with("inline/")) {
         p.force_inline = true;
         name = name[7..];
+    } else if (name.len > 8 && name.starts_with("inline") && name[7] == '/' && name[6] >= '2' && name[6] <= '3') {
+        p.force_inline = true;
+        p.force_depth = name[6] - '0';
+        name = name[8..];
     }
     foreach (r : OptExit::values) {
         if (r.label == name) { p.force_reason = (uint)r.ordinal + 1; found = true; }
