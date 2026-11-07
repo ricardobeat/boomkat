@@ -177,14 +177,16 @@ fn void* jit_inline_materialize(Dispatch* ds, jit::OptInlineExit* site) {
         // A NEW_OBJ's frame constructs the object the optimized code built, which it stored in the
         // receiver slot, as jit_new_lean's frame would.
         bool construct = pc.op == Opcode.NEW_OBJ;
+        // A forwarding call (CALL_S after APPLY_ARGS) has the receiver a method call has.
+        bool method = pc.op == Opcode.CALL || pc.op == Opcode.CALL_S;
         HObject* new_target = construct ? (HObject*)regs[callee_reg].get_heapptr() : null;
-        if ((construct || (pc.op == Opcode.CALL && !callee.call_flags.ignores_this)) && regs[callee_reg + 1].is_object()) {
+        if ((construct || (method && !callee.call_flags.ignores_this)) && regs[callee_reg + 1].is_object()) {
             this_value = regs[callee_reg + 1];
             this_valid = true;
         }
         // The publish's own fill would overwrite the registers the optimized code stored.
-        th_publish_lean(pc, regs, cold, callee, callee_reg, pc.a, callee.num_regs, false, pc.op != Opcode.CALL && !construct,
-                        this_value, this_valid, new_target);
+        bool needs_arguments = th_publish_lean(pc, regs, cold, callee, callee_reg, pc.a, callee.num_regs, false, !method && !construct,
+                                               this_value, this_valid, new_target);
         Activation* la = ds.act;
         TVal* bottom = la.bottom;
         if (level + 1 < site.depth) {
@@ -193,9 +195,13 @@ fn void* jit_inline_materialize(Dispatch* ds, jit::OptInlineExit* site) {
         }
         uint own = level + 1 < site.depth ? site.frames[level + 1].base - fr.base : callee.num_regs;
         if (own > callee.num_regs) own = callee.num_regs;
-        for (uint r = fr.nargs; r < own; r++) {
+        // An argument no longer live is not stored either.
+        for (uint r = 0; r < own; r++) {
             if ((fr.keep & (1u << r)) == 0) bottom[r].set_undefined();
         }
+        // A forwarding callee's `arguments` is the count of the arguments it keeps in its first
+        // registers (CallFlags.forward_args), which the optimizer checked fits.
+        if (needs_arguments) bind_register_arguments(ds.vm, la, callee, (HObject*)la.tv_func.get_heapptr(), bottom, fr.nargs);
         // Every slot of the frame holds a valid value now, and the optimized code stored heap values
         // into some without raising a count the new frame owns.
         la.heap_reg_count = callee.num_regs;
@@ -232,6 +238,7 @@ fn LeanCall jit_apply_lean(Instruction* pc, TVal* regs, ColdCtx* cold, Vm* vm, u
     target = th_lean_target(vm, regs[callee + 1], regs + callee + 2, false);
     uint nargs = (uint)args_slot.get_fastint();
     if (target == null || nargs > target.num_regs) return DECLINE;
+    @note_callee(pc, cold, target);
     TVal this_arg = regs[callee + 2];
     bool this_valid = false;
     if (this_arg.is_heap_allocated()) {
