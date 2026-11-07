@@ -77,7 +77,6 @@ enum OptInlineReject : char (String label) {
     UNSAFE {"heap value in the callee window"},
     STATE {"call state not usable"},
     DEPTH {"inlined calls nested too deep"},
-    SCOPED {"scoped variable call in an inlined body"},
     CTOR {"not a base constructor"},
     CTOR_BODY {"constructor body not straight-line"},
     NESTED_FLAT {"nested callee body not straight-line"},
@@ -916,14 +915,22 @@ fn bool OptBuild.get_scoped(&self) {
     return self.get_variable(true);
 }
 
+// The OBJECT node holding the closure of the body being lowered (NO_NODE when it is in its window
+// slot, or the function's own body); false when the slot holds a node of another kind.
+fn bool OptBuild.body_closure(&self, uint* node) {
+    *node = NO_NODE;
+    if (self.cur_fn == 0) return true;
+    uint c = self.cur[self.sites[self.cur_site].base - 2].node;
+    if (c != NO_NODE && self.rep_of(c) != OptRep.OBJECT) return false;
+    *node = c;
+    return true;
+}
+
 fn bool OptBuild.get_variable(&self, bool scoped) {
     uint ra = self.w.a;
     if (ra >= self.nregs) return false;
     uint closure = NO_NODE;
-    if (scoped) {
-        closure = self.cur[self.sites[self.cur_site].base - 2].node;
-        if (closure != NO_NODE && self.rep_of(closure) != OptRep.OBJECT) return self.generic();
-    }
+    if (scoped && !self.body_closure(&closure)) return self.generic();
     uint t = self.typed_load(OptOp.LOAD_GLOBAL, NO_NODE);
     if (t != NO_NODE) {
         self.g.nodes[t].cc = scoped ? 1 : 0;
@@ -1728,8 +1735,6 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
         if (a.cf == cf) return self.reject(OptInlineReject.SELF);
     }
     if (depth > OPT_INLINE_DEPTH) return self.reject(OptInlineReject.DEPTH);
-    // A CALL_VAR's variable cache is keyed by the running frame's scope, the outermost's.
-    if (ps != null && op == Opcode.CALL_VAR) return self.reject(OptInlineReject.SCOPED);
     // (A forwarding call's arguments are moved into its window from the body's first registers.)
     if (!forward && callee_reg + 2 + nargs > regs) return self.reject(OptInlineReject.WINDOW);
     cf.classify_lean_call();
@@ -2004,7 +2009,12 @@ fn bool OptBuild.enter_flat(&self, uint si) {
     uint resume = self.next_pc;
     uint result = self.w.a;
     if (s.var_call) {
-        uint load = self.add(OptOp.LOAD_VAR, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+        uint closure;
+        if (!self.body_closure(&closure)) {
+            self.fail_flat(si, OptInlineReject.STATE);
+            return true;
+        }
+        uint load = self.add(OptOp.LOAD_VAR, OptRep.NONE, NO_NODE, closure, (long)self.pc);
         self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
         self.snapshot(load);
         self.kill(callee_reg);
@@ -2232,12 +2242,15 @@ fn bool OptBuild.try_inline(&self) {
     uint callee_node = NO_NODE;
     uint recv_node = NO_NODE;
     uint apply_node = NO_NODE;
+    uint scope_node = NO_NODE;
     bool state_ok = true;
     if (s.forward) {
         // Before a forwarding call moves them: `apply`, the function it runs and the receiver.
         state_ok = self.call_operand(callee_reg, &apply_node) && self.call_operand(callee_reg + 1, &callee_node)
             && self.call_operand(callee_reg + 2, &recv_node);
-    } else if (!s.var_call) {
+    } else if (s.var_call) {
+        state_ok = self.body_closure(&scope_node);
+    } else {
         state_ok = self.call_operand(callee_reg, &callee_node);
         // A NEW_OBJ's receiver slot receives the object the inline allocates.
         if (state_ok && !s.construct && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.call_operand(callee_reg + 1, &recv_node);
@@ -2271,7 +2284,7 @@ fn bool OptBuild.try_inline(&self) {
         // The callee is read from its variable into the callee register, as the call would; beyond
         // the caller's frame into an OBJECT node.
         bool beyond = callee_reg >= self.caller_regs;
-        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+        uint load = self.add(OptOp.LOAD_VAR, beyond ? OptRep.OBJECT : OptRep.NONE, NO_NODE, scope_node, (long)self.pc);
         self.g.nodes[load].cc = self.w.op == Opcode.CALL_VAR ? 1 : 0;
         self.snapshot(load);
         if (beyond) {

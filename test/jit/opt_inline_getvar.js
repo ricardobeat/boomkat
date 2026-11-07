@@ -107,4 +107,21 @@ var other = function (x) { return x - gnum; };
 for (var k = 0; k < 3000; k++) run7([dyns[0], dyns[1]], 10);
 show("guard", run7([dyns[0], other, dyns[2]], 300));
 
+// A variable call nested in an inlined body: the callee is read through that body's closure scope,
+// and is the same function for every closure (one nested site) or differs between them.
+function step(x) { return x + 1; }
+function mkCall(k) { eval("var h = function (x) { return step(x) + k; }"); return function (x) { return h(x) * 2; }; }
+function mkCall2(k) { eval("var h = step"); return function (x) { return h(x) + k; }; }
+var calls = [mkCall(1), mkCall(10), mkCall(100)];
+var calls2 = [mkCall2(1), mkCall2(2)];
+for (var w = 0; w < 3; w++) { calls[w](1); }
+calls2[0](1); calls2[1](1);
+function run8(n) {
+    var s = 0;
+    for (var i = 0; i < n; i++) s += calls[i % 3](i) + calls2[i & 1](i);
+    return s;
+}
+for (var k = 0; k < 3000; k++) run8(10);
+show("varcall", run8(300));
+
 print(out.join("\n"));
