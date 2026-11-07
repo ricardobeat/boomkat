@@ -657,6 +657,26 @@ struct RegExpGuard {
     ushort[builtins::REGEXP_GUARD_SLOTS] slots;
 }
 
+// The shape a RegExp match array ends with, for one capture count and one set of
+// non-participating groups (bit i set: group i + 1 is undefined). That set fixes
+// which index keys the array carries in its named table, and so the whole shape.
+// `epoch` is the shape-recycle epoch when `shape_id` was recorded; a `shape_id` of 0 marks an empty entry.
+const uint SLICE_CACHE_SIZE = 256;
+// Slices longer than this skip the cache; a compare costs more than it saves.
+const uint SLICE_CACHE_MAX_LEN = 48;
+
+fn uint slice_cache_index(char* p, uint len) @inline {
+    uint h = len * 0x9E37_79B1 ^ (uint)p[0] * 0x85EB_CA6B ^ (uint)p[len >> 1] * 0xC2B2_AE35 ^ (uint)p[len - 1] * 0x27D4_EB2F;
+    return (h ^ (h >> 15)) & (SLICE_CACHE_SIZE - 1);
+}
+
+struct MatchShape {
+    ulong unmatched;
+    uint  ncaps;
+    uint  shape_id;
+    uint  epoch;
+}
+
 struct PromiseSpeciesGuard {
     uint epoch;
     uint proto_shape;
@@ -814,6 +834,11 @@ struct RealmState {
     uint                fn_proto_shape;
     uint[5]             args_shapes;
     RegExpGuard         regexp_guard;
+    MatchShape[4]       match_shapes;
+    // Recent interned results of str_slice, found by a few bytes of content so
+    // a repeated substring skips the hash and the string table. Entries are weak
+    // like the table's: str_table_remove drops one, reset clears them all.
+    hstring::HString*[SLICE_CACHE_SIZE] slice_cache;
     PromiseSpeciesGuard promise_species_guard;
     CheckpointEntry* checkpoint_entries;
     uint      checkpoint_count;
@@ -2067,6 +2092,8 @@ fn void Heap.init_shapes(&self) {
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
+    self.match_shapes = {};
+    self.slice_cache = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_retired_head = SHAPE_FREE_END;
@@ -3074,6 +3101,8 @@ fn void Heap.reset(&self) {
     self.shape_recycle_epoch = 0;
     self.var_ic_filled = false;
     self.regexp_guard = {};
+    self.match_shapes = {};
+    self.slice_cache = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_retired_head = SHAPE_FREE_END;
@@ -5957,6 +5986,10 @@ fn void Heap.str_table_adopt(&self, HString* hstr) {
  * Sets the slot to a tombstone so probe chains remain intact.
  */
 fn void Heap.str_table_remove(&self, hstring::HString* hstr) {
+    if (!hstr.flags.is_wide && hstr.length >= 2 && hstr.length <= SLICE_CACHE_MAX_LEN) {
+        uint ci = slice_cache_index((char*)hstr.data_ptr(), hstr.length);
+        if (self.slice_cache[ci] == hstr) self.slice_cache[ci] = null;
+    }
     if (self.str_table_size == 0) { return; }
     uint mask = self.str_table_size - 1;
     uint* tags = self.str_tags();
@@ -6290,7 +6323,13 @@ fn HString* Heap.str_slice(&self, HString* s, uint from, uint to) {
     Units u = s.units();
     u.ptr += (usz)from << (u.wide ? 1 : 0);
     u.len = to - from;
-    return self.str_intern_span(u);
+    if (u.wide || u.len < 2 || u.len > SLICE_CACHE_MAX_LEN) return self.str_intern_span(u);
+    uint ci = slice_cache_index((char*)u.ptr, u.len);
+    HString* hit = self.slice_cache[ci];
+    if (hit != null && hit.length == u.len && mem::equals(hit.data_ptr(), u.ptr, (sz)u.len)) return hit;
+    HString* r = self.str_intern_units(u);
+    if (r != null && r.flags.is_interned && !r.flags.is_wide && r.length == u.len) self.slice_cache[ci] = r;
+    return r;
 }
 
 // The one-unit string holding `unit`, which may be a lone surrogate.
