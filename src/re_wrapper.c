@@ -38,6 +38,9 @@ struct ReCompiled {
     int      anchored;
     int      prefix_len;
     char     prefix[16];
+    /* Code units that can begin a match, when has_first_set. */
+    int      has_first_set;
+    LREFirstSet first_set;
 };
 
 static const char* re_find_prefix(const char* input, size_t len,
@@ -152,6 +155,7 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
     re->capture_count = lre_get_capture_count(bc);
     re->refcount = 1;
     re_scan_prefix(re, pattern, pattern_len, lre_flags);
+    re->has_first_set = lre_get_first_set(bc, &re->first_set);
 
     if (error_msg && error_msg_size > 0) error_msg[0] = '\0';
     return re;
@@ -295,8 +299,10 @@ int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
      * even when lre_exec was passed a larger capture buffer. */
     uint8_t* capture_stack[RE_MAX_CAPTURES * 2];
     uint8_t** capture = capture_stack;
-    if (re->capture_count > RE_MAX_CAPTURES) {
-        capture = (uint8_t**)calloc((size_t)re->capture_count * 2, sizeof(uint8_t*));
+    /* The buffer also holds the quantifier registers after the captures. */
+    int alloc_count = lre_get_alloc_count(re->bc);
+    if (alloc_count > RE_MAX_CAPTURES * 2) {
+        capture = (uint8_t**)calloc((size_t)alloc_count, sizeof(uint8_t*));
         if (!capture) return RE_ERROR;
     }
 
@@ -305,8 +311,9 @@ int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
      * (surrogate-pair combining) under the u or v flag; the stride is 2 bytes
      * either way, so wide input is always passed as 1. A Latin-1 string holds
      * no surrogate, so unicode mode needs no promotion there. */
-    int ret = lre_exec(capture, re->bc, (const uint8_t*)input, start_offset, input_len,
-                       input_wide ? 1 : 0, interrupt);
+    int ret = lre_exec_ex(capture, re->bc, (const uint8_t*)input, start_offset, input_len,
+                          input_wide ? 1 : 0, interrupt,
+                          re->has_first_set ? &re->first_set : NULL);
     if (ret == RE_MATCH) {
         size_t shift = input_wide ? 1 : 0;
         const uint8_t* base = (const uint8_t*)input;

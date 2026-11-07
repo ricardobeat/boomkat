@@ -3332,12 +3332,189 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
     }
 }
 
+/* First-unit filter (boomkat). Walks the bytecode from the start of the
+   pattern body and records every code unit that can begin a match. Zero-width
+   assertions and lookarounds are skipped, which only widens the set. Returns
+   false when some path can match without consuming a character (or the walk
+   is too complex), in which case every position is a candidate. Units >= 256
+   are summarised by fs->wide. */
+static void lre_fs_add(LREFirstSet *fs, uint32_t c)
+{
+    if (c < 256)
+        fs->bits[c >> 5] |= 1u << (c & 31);
+    else
+        fs->wide = 1;
+}
+
+static void lre_fs_add_range(LREFirstSet *fs, uint32_t low, uint32_t high,
+                             bool icase, bool is_unicode)
+{
+    uint32_t c;
+    if (high >= 256)
+        fs->wide = 1;
+    if (icase) {
+        /* the matcher canonicalizes the input unit before the range test */
+        fs->wide = 1;
+        for (c = 0; c < 256; c++) {
+            uint32_t k = lre_canonicalize(c, is_unicode);
+            if (k >= low && k <= high)
+                lre_fs_add(fs, c);
+        }
+    } else {
+        for (c = low; c <= high && c < 256; c++)
+            lre_fs_add(fs, c);
+    }
+}
+
+bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs)
+{
+    const uint8_t *code, *code_end;
+    uint32_t work[32];
+    int nwork = 0, steps = 0, re_flags;
+    bool is_unicode;
+
+    memset(fs, 0, sizeof(*fs));
+    fs->single = -1;
+    re_flags = lre_get_flags(bc_buf);
+    if (re_flags & LRE_FLAG_STICKY)
+        return false;
+    is_unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    code = bc_buf + RE_HEADER_LEN;
+    code_end = code + get_u32(bc_buf + RE_HEADER_BYTECODE_LEN);
+    if (code_end - code < 11 || code[0] != REOP_split_goto_first ||
+        get_u32(code + 1) != 6 || code[5] != REOP_any || code[6] != REOP_goto)
+        return false;
+    work[nwork++] = 11;
+    while (nwork > 0) {
+        uint32_t pos = work[--nwork];
+        for (;;) {
+            const uint8_t *pc;
+            int opcode, i, n;
+            if (++steps > 1024 || code + pos >= code_end)
+                return false;
+            pc = code + pos;
+            opcode = pc[0];
+            if (opcode <= 0 || opcode >= REOP_COUNT)
+                return false;
+            switch (opcode) {
+            case REOP_char:
+            case REOP_char_i:
+            case REOP_char32:
+            case REOP_char32_i:
+                {
+                    uint32_t v = (opcode == REOP_char || opcode == REOP_char_i) ?
+                        get_u16(pc + 1) : get_u32(pc + 1);
+                    if (v >= 0x10000) {
+                        fs->wide = 1; /* starts with a high surrogate */
+                    } else if (opcode == REOP_char_i || opcode == REOP_char32_i) {
+                        lre_fs_add_range(fs, v, v, true, is_unicode);
+                    } else {
+                        lre_fs_add(fs, v);
+                    }
+                }
+                goto next_path;
+            case REOP_range:
+            case REOP_range_i:
+                n = get_u16(pc + 1);
+                for (i = 0; i < n; i++) {
+                    uint32_t low = get_u16(pc + 3 + i * 4);
+                    uint32_t high = get_u16(pc + 3 + i * 4 + 2);
+                    lre_fs_add_range(fs, low, high, opcode == REOP_range_i, is_unicode);
+                }
+                goto next_path;
+            case REOP_range32:
+            case REOP_range32_i:
+                n = get_u16(pc + 1);
+                for (i = 0; i < n; i++) {
+                    uint32_t low = get_u32(pc + 3 + i * 8);
+                    uint32_t high = get_u32(pc + 3 + i * 8 + 4);
+                    lre_fs_add_range(fs, low, high, opcode == REOP_range32_i, is_unicode);
+                }
+                goto next_path;
+            case REOP_space:
+            case REOP_not_space:
+                fs->wide = 1;
+                for (i = 0; i < 256; i++) {
+                    if ((lre_is_space(i) != 0) == (opcode == REOP_space))
+                        lre_fs_add(fs, i);
+                }
+                goto next_path;
+            case REOP_dot:
+                fs->wide = 1;
+                for (i = 0; i < 256; i++) {
+                    if (i != '\n' && i != '\r')
+                        lre_fs_add(fs, i);
+                }
+                goto next_path;
+            case REOP_save_start:
+            case REOP_save_end:
+            case REOP_save_reset:
+            case REOP_set_i32:
+            case REOP_set_char_pos:
+            case REOP_check_advance:
+            case REOP_line_start:
+            case REOP_line_start_m:
+            case REOP_line_end:
+            case REOP_line_end_m:
+            case REOP_word_boundary:
+            case REOP_word_boundary_i:
+            case REOP_not_word_boundary:
+            case REOP_not_word_boundary_i:
+                pos += reopcode_info[opcode].size;
+                break;
+            case REOP_goto:
+                pos += 5 + (int32_t)get_u32(pc + 1);
+                break;
+            case REOP_lookahead:
+            case REOP_negative_lookahead:
+                /* continue after the lookaround body */
+                pos += 5 + (int32_t)get_u32(pc + 1);
+                break;
+            case REOP_split_goto_first:
+            case REOP_split_next_first:
+                if (nwork == countof(work))
+                    return false;
+                work[nwork++] = pos + 5 + (int32_t)get_u32(pc + 1);
+                pos += 5;
+                break;
+            default:
+                /* match, any, loops, back references, prev, ... */
+                return false;
+            }
+        }
+    next_path: ;
+    }
+    {
+        int count = 0, last = -1, i;
+        for (i = 0; i < 256; i++) {
+            if (fs->bits[i >> 5] & (1u << (i & 31))) {
+                count++;
+                last = i;
+            }
+        }
+        if (count == 256 && fs->wide)
+            return false;
+        if (count == 1 && !fs->wide)
+            fs->single = last;
+    }
+    return true;
+}
+
+static inline bool lre_fs_test(const LREFirstSet *fs, uint32_t c)
+{
+    if (c < 256)
+        return (fs->bits[c >> 5] >> (c & 31)) & 1;
+    return fs->wide;
+}
+
 /* Return 1 if match, 0 if not match or < 0 if error (see LRE_RET_x). cindex is the
    starting position of the match and must be such as 0 <= cindex <=
-   clen. */
-int lre_exec(uint8_t **capture,
-             const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
-             int cbuf_type, void *opaque)
+   clen. With a first-unit filter `fs` (from lre_get_first_set on the same
+   bytecode), the start-position loop runs here: only positions whose unit is
+   in the set enter the backtracking matcher. */
+int lre_exec_ex(uint8_t **capture,
+                const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
+                int cbuf_type, void *opaque, const LREFirstSet *fs)
 {
     REExecContext s_s, *s = &s_s;
     int re_flags, i, ret;
@@ -3368,11 +3545,71 @@ int lre_exec(uint8_t **capture,
         }
     }
 
+    pc = bc_buf + RE_HEADER_LEN;
+    if (fs) {
+        /* The bytecode starts with the position loop (split, any, goto);
+           lre_get_first_set only accepts such bytecode. */
+        const uint8_t *body = pc + 11;
+        const uint8_t *end = s->cbuf_end;
+        int ctype = s->cbuf_type;
+        for (;;) {
+            if (ctype == 0) {
+                if (fs->single >= 0) {
+                    cptr = memchr(cptr, fs->single, end - cptr);
+                    if (!cptr) {
+                        ret = 0;
+                        break;
+                    }
+                } else {
+                    while (cptr < end && !lre_fs_test(fs, *cptr))
+                        cptr++;
+                }
+            } else {
+                while (cptr < end) {
+                    uint32_t u = *(const uint16_t *)cptr;
+                    if (lre_fs_test(fs, u))
+                        break;
+                    /* step by code point in unicode mode, as `any` does */
+                    if (ctype == 2 && is_hi_surrogate(u) && cptr + 2 < end &&
+                        is_lo_surrogate(((const uint16_t *)cptr)[1]))
+                        cptr += 4;
+                    else
+                        cptr += 2;
+                }
+            }
+            if (cptr >= end) {
+                ret = 0;
+                break;
+            }
+            for(i = 0; i < s->capture_count * 2; i++)
+                capture[i] = NULL;
+            ret = lre_exec_backtrack(s, capture, body, cptr);
+            if (ret != 0)
+                break;
+            if (lre_poll_timeout(s)) {
+                ret = LRE_RET_TIMEOUT;
+                break;
+            }
+            if (ctype == 0) {
+                cptr++;
+            } else {
+                uint32_t u = *(const uint16_t *)cptr;
+                if (ctype == 2 && is_hi_surrogate(u) && cptr + 2 < end &&
+                    is_lo_surrogate(((const uint16_t *)cptr)[1]))
+                    cptr += 4;
+                else
+                    cptr += 2;
+            }
+        }
+        if (s->stack_buf != s->static_stack_buf)
+            lre_realloc(s->opaque, s->stack_buf, 0);
+        return ret;
+    }
+
     /* Unsticky search: the bytecode starts with the position-iterating loop
        (split, any, goto). When the first consuming opcode is a BMP literal,
        jump to the first code unit that can start a match instead of pushing
        a backtrack state at every position. */
-    pc = bc_buf + RE_HEADER_LEN;
     if (pc[0] == REOP_split_goto_first && get_u32(pc + 1) == 6 &&
         pc[5] == REOP_any && pc[6] == REOP_goto) {
         pc += 11;
@@ -3409,6 +3646,13 @@ int lre_exec(uint8_t **capture,
     if (s->stack_buf != s->static_stack_buf)
         lre_realloc(s->opaque, s->stack_buf, 0);
     return ret;
+}
+
+int lre_exec(uint8_t **capture,
+             const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
+             int cbuf_type, void *opaque)
+{
+    return lre_exec_ex(capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque, NULL);
 }
 
 int lre_get_alloc_count(const uint8_t *bc_buf)
