@@ -3604,6 +3604,11 @@ static void lre_fs_add_range(LREFirstSet *fs, uint32_t low, uint32_t high,
     }
 }
 
+#define FS_POS_MASK   0x0fffffffu
+#define FS_FLAG_SHIFT 28
+#define FS_SAW_START  1u
+#define FS_SAW_END    2u
+
 bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs)
 {
     const uint8_t *code, *code_end;
@@ -3624,7 +3629,9 @@ bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs)
         return false;
     work[nwork++] = 11;
     while (nwork > 0) {
-        uint32_t pos = work[--nwork];
+        /* the high bits record the anchors the path has passed */
+        uint32_t pos = work[--nwork] & FS_POS_MASK;
+        uint32_t flags = work[nwork] >> FS_FLAG_SHIFT;
         for (;;) {
             const uint8_t *pc;
             int opcode, i, n;
@@ -3690,9 +3697,17 @@ bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs)
             case REOP_set_i32:
             case REOP_set_char_pos:
             case REOP_check_advance:
+                pos += reopcode_info[opcode].size;
+                break;
             case REOP_line_start:
-            case REOP_line_start_m:
+                flags |= FS_SAW_START;
+                pos += reopcode_info[opcode].size;
+                break;
             case REOP_line_end:
+                flags |= FS_SAW_END;
+                pos += reopcode_info[opcode].size;
+                break;
+            case REOP_line_start_m:
             case REOP_line_end_m:
             case REOP_word_boundary:
             case REOP_word_boundary_i:
@@ -3713,7 +3728,7 @@ bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs)
                     /* the run may be empty */
                     if (nwork == countof(work))
                         return false;
-                    work[nwork++] = pos + 7 + get_u32(pc + 3);
+                    work[nwork++] = (pos + 7 + get_u32(pc + 3)) | (flags << FS_FLAG_SHIFT);
                 }
                 pos += 7;
                 break;
@@ -3721,9 +3736,19 @@ bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs)
             case REOP_split_next_first:
                 if (nwork == countof(work))
                     return false;
-                work[nwork++] = pos + 5 + (int32_t)get_u32(pc + 1);
+                work[nwork++] = (pos + 5 + (int32_t)get_u32(pc + 1)) | (flags << FS_FLAG_SHIFT);
                 pos += 5;
                 break;
+            case REOP_match:
+                /* An empty match is only possible where the anchors on its
+                   path hold: a `^` pins it to the start, a `$` to the end. */
+                if (flags & FS_SAW_START)
+                    fs->at_start = 1;
+                else if (flags & FS_SAW_END)
+                    fs->at_end = 1;
+                else
+                    return false;
+                goto next_path;
             default:
                 /* match, any, loops, back references, prev, ... */
                 return false;
@@ -3741,7 +3766,7 @@ bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs)
         }
         if (count == 256 && fs->wide)
             return false;
-        if (count == 1 && !fs->wide)
+        if (count == 1 && !fs->wide && !fs->at_start && !fs->at_end)
             fs->single = last;
     }
     return true;
@@ -3800,6 +3825,8 @@ int lre_exec_ex(uint8_t **capture,
         const uint8_t *end = s->cbuf_end;
         int ctype = s->cbuf_type;
         for (;;) {
+            if (fs->at_start && cptr == s->cbuf)
+                goto try_here; /* an empty match may sit at the start */
             if (ctype == 0) {
                 if (fs->single >= 0) {
                     cptr = memchr(cptr, fs->single, end - cptr);
@@ -3825,12 +3852,22 @@ int lre_exec_ex(uint8_t **capture,
                 }
             }
             if (cptr >= end) {
-                ret = 0;
+                if (fs->at_end || (fs->at_start && cptr == s->cbuf)) {
+                    /* only an empty match at the end can still succeed */
+                    ret = lre_exec_backtrack(s, capture, body, cptr);
+                } else {
+                    ret = 0;
+                }
                 break;
             }
+        try_here:
             ret = lre_exec_backtrack(s, capture, body, cptr);
             if (ret != 0)
                 break;
+            if (cptr >= end) {
+                ret = 0;
+                break;
+            }
             if (lre_poll_timeout(s)) {
                 ret = LRE_RET_TIMEOUT;
                 break;
