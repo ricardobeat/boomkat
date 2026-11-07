@@ -1459,15 +1459,22 @@ $endif
 
 // R2 = the variable entry `vic`'s binding slot while the entry is valid, as
 // th_var_ic_hit (and th_var_ic_moved when `scoped`); the slow path otherwise.
-fn void Asm.var_slot(&self, long vic, bool scoped) {
+//
+// An inlined body's scoped read passes the register of its callee closure, whose scope the entry
+// must be filled for: the running activation's is the outermost caller's (closure_lex_env).
+fn void Asm.var_slot(&self, long vic, bool scoped, uint closure_reg = uint::max, int closure = -1) {
     void* c = self.c;
     Layout* l = self.lay;
     // A re-armed entry runs the instruction again from here (emit_var_alt).
     if (scoped) self.poly_back = sljit_emit_label(c);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, vic);
     if (scoped) {
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
+        if (closure_reg != uint::max) {
+            self.closure_lex_env(closure_reg, closure);
+        } else {
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
+        }
         self.alt.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
     }
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.vic_epoch);
@@ -1478,9 +1485,9 @@ fn void Asm.var_slot(&self, long vic, bool scoped) {
 }
 
 // GETGLOBAL as th_getglobal, GETVAR as th_getvar.
-fn void Asm.emit_get_var(&self, uint ra, long vic, bool scoped) {
+fn void Asm.emit_get_var(&self, uint ra, long vic, bool scoped, uint closure_reg = uint::max, int closure = -1) {
     void* c = self.c;
-    self.var_slot(vic, scoped);
+    self.var_slot(vic, scoped, closure_reg, closure);
     if (scoped) {
         sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, self.lay.vic_flags);
         sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, self.lay.accessor_mask);

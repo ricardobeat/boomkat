@@ -669,9 +669,23 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     a.call.len = 0;
     a.alt.len = 0;
     long vic = (long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1];
-    a.var_slot(vic, false);
+    // A GETVAR (cc nonzero) is read through the scope of its body's closure.
+    uint creg = uint::max;
+    int closure = -1;
+    if (n.cc != 0) {
+        creg = self.g.fns[n.fidx].reg_base - 2;
+        closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
+    }
+    a.var_slot(vic, n.cc != 0, creg, closure);
+    if (n.cc != 0) {
+        sljit_emit_op1(self.a.c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, a.lay.vic_flags);
+        sljit_emit_op2(self.a.c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, a.lay.accessor_mask);
+        a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    }
     sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     a.guard_not_tdz();
+    for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
+    a.alt.len = 0;
     self.exit_calls(i, OptExit.SLOW_PATH);
     if (n.rep == OptRep.OBJECT) {
         self.finish_object(i, n);
@@ -1331,10 +1345,19 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
     a.alt.len = 0;
     long vic = (long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1];
     uint ra = a.w.a;
-    if (n.fidx != 0) ra += self.g.fns[n.fidx].reg_base;
+    // A scoped read of an inlined body takes the scope of that body's closure, not the running frame's.
+    uint creg = uint::max;
+    int closure = -1;
+    if (n.fidx != 0) {
+        ra += self.g.fns[n.fidx].reg_base;
+        if (n.cc != 0) {
+            creg = self.g.fns[n.fidx].reg_base - 2;
+            closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
+        }
+    }
     if (n.rep == OptRep.OBJECT) {
         // A callee register beyond the caller's frame: the value stays in a register.
-        a.var_slot(vic, n.cc != 0);
+        a.var_slot(vic, n.cc != 0, creg, closure);
         if (n.cc != 0) {
             sljit_emit_op1(self.a.c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, a.lay.vic_flags);
             sljit_emit_op2(self.a.c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, a.lay.accessor_mask);
@@ -1348,7 +1371,7 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
         self.finish_object(i, n);
         return;
     }
-    a.emit_get_var(ra, vic, n.cc != 0);
+    a.emit_get_var(ra, vic, n.cc != 0, creg, closure);
     // A moved entry re-arms in the baseline code.
     for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
     a.alt.len = 0;
