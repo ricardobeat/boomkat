@@ -3643,6 +3643,10 @@ const char FB_OTHER = 8;   // an object, undefined, null, boolean, symbol or Big
 // function the site has called, FB_POLY that it has called a second one.
 const char FB_CALL = 16;
 const char FB_POLY = 32;
+// A call whose callee register held Function.prototype.call, which ran the function FB_CALL names
+// on the receiver and arguments it shifted down (`X.call(this, a)`): the optimizer inlines X behind
+// a guard on the builtin.
+const char FB_DOTCALL = 128;
 // The bits an arithmetic, bitwise or compare instruction records.
 const char FB_OPERANDS = 15;
 // ICEntry.feedback bit of a NEW_OBJ, whose entry caches the constructor's `prototype` read:
@@ -3656,6 +3660,17 @@ fn void ic_note_callee(ICEntry* ic, uint index) @inline {
         ic.prop_idx = index;
         ic.feedback |= FB_CALL;
     } else if (ic.prop_idx != index) {
+        ic.feedback |= FB_POLY;
+    }
+}
+
+// Record that the call instruction caching `ic` ran function number `index` through the intrinsic
+// Function.prototype.call. A site that has called anything else is polymorphic.
+fn void ic_note_dotcall(ICEntry* ic, uint index) @inline {
+    if ((ic.feedback & FB_CALL) == 0) {
+        ic.prop_idx = index;
+        ic.feedback |= FB_CALL | FB_DOTCALL;
+    } else if (ic.prop_idx != index || (ic.feedback & FB_DOTCALL) == 0) {
         ic.feedback |= FB_POLY;
     }
 }

@@ -501,7 +501,7 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
 // the arguments; anything else is handed to vm_dispatch as a plain CALL, which
 // is how the switch finishes a re-dispatched call.
 fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TVal* regs, ColdCtx* cold,
-                                     uint callee_reg, uint result_reg, uint nargs) @private @noinline {
+                                     uint callee_reg, uint result_reg, uint nargs, bool dotcall = false) @private @noinline {
     Vm* vm = cold.vm;
     Activation* act = cold.act;
     uint window_end = callee_reg + 2 + nargs;
@@ -536,6 +536,8 @@ fn Instruction* th_call_redispatched(Instruction* pc, HandlerTable* handlers, TV
             target = null;
         }
     }
+    // The function Function.prototype.call ran, for the optimizer's inlining (OptBuild.inline_candidate).
+    if (target != null && dotcall) hobject::ic_note_dotcall(th_ic_at(cold, pc), target.func_index);
     if (target != null && th_call_gate(cold)) target = null;
     if (target == null) {
         vm.eval_redispatched = builtins::is_intrinsic_eval(callee);
@@ -599,7 +601,8 @@ fn Instruction* th_call_native(Instruction* pc, HandlerTable* handlers, TVal* re
         return pc + 1;
     }
     if (ctx.needs_re_dispatch) {
-        return th_call_redispatched(pc, handlers, regs, cold, callee_reg, result_reg, ctx.re_nargs);
+        return th_call_redispatched(pc, handlers, regs, cold, callee_reg, result_reg, ctx.re_nargs,
+                                    fn_idx == builtins::Builtin.FUNCTION_PROTO_CALL.ordinal);
     }
     cold.heap.store_builtin_result(regs + result_reg, &result);
     track_heap_store(act, regs + result_reg, result_reg);
