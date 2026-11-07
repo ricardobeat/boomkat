@@ -16,6 +16,7 @@ import boomkat::heap;
 import boomkat::types;
 import boomkat::hobject;
 import boomkat::hstring;
+import boomkat::pagepool;
 import boomkat::features;
 import std::io;
 
@@ -118,6 +119,32 @@ struct Layout {
     long me_proto_shape;
     long me_epoch;
     long me_accessor;
+    // Inline allocation (baseline_alloc.c3): the heap's counters, young list and
+    // pools, and the pool and page fields the bump pop reads.
+    long heap_trigger;
+    long heap_alloc_since;
+    long heap_live;
+    long heap_mem_budget;
+    long heap_young_size;
+    long heap_young_cap;
+    long heap_young_entries;
+    long heap_object_proto;
+    long heap_array_proto;
+    long heap_realms;
+    long heap_pool_plain;
+    long heap_pool_compact;
+    long heap_pool_shaped;
+    long heap_pool_arrays;
+    long pool_size;
+    long pool_avail_head;
+    long pool_block_size;
+    long pool_capacity;
+    long page_freelist;
+    long page_bump;
+    long page_used;
+    long undefined_bits;
+    long obj_array_used;
+    long obj_size_array;
 }
 
 Layout layout_data @private;
@@ -215,6 +242,34 @@ fn Layout* layout() {
     l.ab_data = (char*)&o.extra.ab.data - base;
     l.ab_resizable = (char*)&o.extra.ab.resizable - base;
     l.ab_immutable = (char*)&o.extra.ab.immutable - base;
+    l.heap_trigger = (char*)&h.gc_trigger_counter - base;
+    l.heap_alloc_since = (char*)&h.gc_alloc_since_begin - base;
+    l.heap_live = (char*)&h.live_obj_count - base;
+    l.heap_mem_budget = (char*)&h.mem_check_budget - base;
+    l.heap_young_size = (char*)&h.objects_young.size - base;
+    l.heap_young_cap = (char*)&h.objects_young.capacity - base;
+    l.heap_young_entries = (char*)&h.objects_young.entries - base;
+    l.heap_object_proto = (char*)&h.object_proto - base;
+    l.heap_array_proto = (char*)&h.array_proto - base;
+    l.heap_realms = (char*)&h.realms - base;
+    l.heap_pool_plain = (char*)&h.obj_pool_plain - base;
+    l.heap_pool_compact = (char*)&h.obj_pool_compact - base;
+    l.heap_pool_shaped = (char*)&h.obj_pool_shaped - base;
+    l.heap_pool_arrays = (char*)&h.obj_pool_inline_arrays - base;
+    pagepool::PagePool* pool = (pagepool::PagePool*)base;
+    pagepool::PoolPage* page = (pagepool::PoolPage*)base;
+    l.pool_size = pagepool::PagePool::size;
+    l.pool_avail_head = (char*)&pool.avail_head - base;
+    l.pool_block_size = (char*)&pool.block_size - base;
+    l.pool_capacity = (char*)&pool.capacity - base;
+    l.page_freelist = (char*)&page.freelist - base;
+    l.page_bump = (char*)&page.bump - base;
+    l.page_used = (char*)&page.used - base;
+    l.obj_array_used = (char*)&o.array_used - base;
+    l.obj_size_array = hobject::OBJ_SIZE_ARRAY;
+    hobject::PropValue undef;
+    undef.set_undefined();
+    l.undefined_bits = *(long*)&undef;
 
     hobject::ObjFlags f;
     f.exotic_proxyobj = true;

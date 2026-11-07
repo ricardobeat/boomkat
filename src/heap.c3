@@ -3617,10 +3617,7 @@ $endif
         raw = self.alloc(size)!;
     }
     HObject* obj = (HObject*)raw;
-    obj.init_header({ .htype = HType.OBJECT, .extensible = true, .obj_class = hobject::ObjClass.OBJECT,
-                      .pool_fallback = !from_pool },
-                    { .compact_props = compact, .shaped_props = shaped,
-                      .inline_words = hobject::inline_words_for_class(hobject::ObjClass.OBJECT) }, capacity);
+    obj.init_header(hobject::plain_object_flags(from_pool), hobject::plain_object_gc(compact, shaped), capacity);
     self.adopt_object(obj);
     return obj;
 }
@@ -3635,9 +3632,7 @@ $endif
     bool from_pool = raw != null;
     if (!from_pool) raw = self.alloc(hobject::inline_array_alloc_size(capacity))!;
     HObject* obj = (HObject*)raw;
-    obj.init_header({ .htype = HType.OBJECT, .extensible = true, .obj_class = hobject::ObjClass.ARRAY,
-                      .exotic_array = true, .array_len_writable = true, .pool_fallback = !from_pool },
-                    { .inline_words = hobject::inline_words_for_class(hobject::ObjClass.ARRAY) }, 0);
+    obj.init_header(hobject::inline_array_flags(from_pool), hobject::inline_array_gc(), 0);
     obj.array_size = capacity;
     obj.array_len_ptr()[0] = 0;
     obj.array_inline_capacity_ptr()[0] = capacity;
@@ -3683,9 +3678,7 @@ fn HObject*? Heap.alloc_constant_array(&self, TVal* values) {
 fn HObject*? Heap.alloc_shaped_object(&self, uint shape_id, hobject::ObjClass cls = hobject::ObjClass.OBJECT) {
     hobject::Shape* shape = self.get_shape(shape_id);
     uint count = shape.offset + shape.own_count;
-    uint capacity = count <= hobject::COMPACT_INLINE_PROPS ? hobject::COMPACT_INLINE_PROPS
-        : count > hobject::INLINE_PROPS && count <= hobject::SHAPED_INLINE_MAX_PROPS
-            ? count : hobject::INLINE_PROPS;
+    uint capacity = hobject::shape_inline_capacity(count);
     HObject* obj = cls == hobject::ObjClass.OBJECT ? self.alloc_plain_object(capacity)!
         : self.alloc_object(cls, 0, capacity)!;
     self.install_shape(obj, shape_id, count)!;

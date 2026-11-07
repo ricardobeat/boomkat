@@ -2821,6 +2821,32 @@ fn void HObject.init_header(&self, ObjFlags flags, GcBits gc, uint prop_capacity
     self.prop_hash = null;
 }
 
+// The header words a fresh ordinary object or inline literal array starts with.
+// Heap.alloc_plain_object, Heap.alloc_inline_array and the JIT's inline
+// allocation (jit::Asm.emit_inline_alloc) all take them from here.
+fn ObjFlags plain_object_flags(bool from_pool) @inline {
+    return { .htype = HType.OBJECT, .extensible = true, .obj_class = ObjClass.OBJECT, .pool_fallback = !from_pool };
+}
+
+fn types::GcBits plain_object_gc(bool compact, uint shaped) @inline {
+    return { .compact_props = compact, .shaped_props = shaped, .inline_words = inline_words_for_class(ObjClass.OBJECT) };
+}
+
+fn ObjFlags inline_array_flags(bool from_pool) @inline {
+    return { .htype = HType.OBJECT, .extensible = true, .obj_class = ObjClass.ARRAY, .exotic_array = true,
+             .array_len_writable = true, .pool_fallback = !from_pool };
+}
+
+// The inline slot capacity Heap.alloc_shaped_object asks for to hold `count` properties.
+fn uint shape_inline_capacity(uint count) @inline {
+    return count <= COMPACT_INLINE_PROPS ? COMPACT_INLINE_PROPS
+        : count > INLINE_PROPS && count <= SHAPED_INLINE_MAX_PROPS ? count : INLINE_PROPS;
+}
+
+fn types::GcBits inline_array_gc() @inline {
+    return { .inline_words = inline_words_for_class(ObjClass.ARRAY) };
+}
+
 // The pool for ordinary objects created with the compact, a sized or the
 // plain inline layout, as recorded in GcBits.
 fn pagepool::PagePool* plain_object_pool(heap::Heap* h, bool compact, uint shaped) @inline {
