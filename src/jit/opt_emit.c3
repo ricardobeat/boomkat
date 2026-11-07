@@ -727,7 +727,7 @@ fn void OptCg.box_node(&self, uint n, int dst) {
 fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
-    a.decode((uint)n.imm);
+    self.decode(n);
     a.call.len = 0;
     a.load(R0, a.w.b);
     a.unbox_object(R1, R0);
@@ -746,6 +746,11 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         a.call.add(other);
     $endif
     self.exit_calls(i, OptExit.SLOW_PATH);
+    if (n.rep == OptRep.NONE) {
+        a.publish(a.w.a);
+        self.exit_calls(i, OptExit.SLOW_PATH);
+        return;
+    }
     self.def_from_r0(i, n);
 }
 

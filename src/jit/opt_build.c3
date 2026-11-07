@@ -257,10 +257,12 @@ fn uint inline_reg_mask(Opcode op) {
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case LDTHIS: case GETCAP:
             return 1;
-        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT:
+        case GETPROP:
+            return 7;
+        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
             return 3;
-        case ADD: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+        case ADD: case ADD_FUSED: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
         case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
             return 7;
         // The forward branches of a body with several blocks: A is the offset of the compares.
@@ -295,11 +297,14 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
         case LDINT: case LDCONST: case GETTHISC: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case LDTHIS: case GETCAP:
             *writes = 1u << w.a;
-        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case LNOT:
+        case GETPROP:
+            *reads = (1u << w.b) | (1u << w.c);
+            *writes = 1u << w.a;
+        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
             *reads = 1u << w.b;
             *writes = 1u << w.a;
-        case ADD: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+        case ADD: case ADD_FUSED: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
         case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
             *reads = (1u << w.b) | (1u << w.c);
             *writes = 1u << w.a;
@@ -1041,6 +1046,19 @@ fn bool OptBuild.get_elem(&self) {
         self.typed_load(OptOp.LOAD_ELEM, idx);
         return true;
     }
+    if (self.cur_fn != 0) {
+        // An inlined body reads the element into the window; a slot beyond the caller's frame
+        // would be out of the collector's sight.
+        uint ra = self.w.a;
+        uint idx = self.operand(self.w.c, OptRep.INT32);
+        if (ra >= self.nregs || idx == NO_NODE) return self.generic();
+        uint n = self.add(OptOp.LOAD_ELEM, OptRep.NONE, idx, NO_NODE, (long)self.pc);
+        self.snapshot(n);
+        self.kill(ra);
+        self.load_def[ra] = self.pckey();
+        if (ra >= self.caller_regs) self.inline_unsafe = true;
+        return true;
+    }
     if (!self.generic()) return false;
     if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pckey();
     return true;
@@ -1388,9 +1406,9 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
         self.inline_context(s, k);
         Opcode op = self.w.op;
         switch (op) {
-            case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+            case ADD: case ADD_FUSED: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
-            case INC: case DEC: case UNM: case LT: case LE: case GT: case GE:
+            case INC: case DEC: case UNM: case BNOT: case LT: case LE: case GT: case GE:
             case JMP_NLT..JMP_GE: case JMP_NLTI..JMP_SNEQI:
                 ok = (self.feedback() & (hobject::FB_STR | hobject::FB_OTHER)) == 0;
             case MOD:
@@ -1888,7 +1906,7 @@ fn bool OptBuild.lower_op(&self) {
             uint src = self.cur[rb].node;
             if (!self.g.nodes[src].is_const()) src = self.add(OptOp.COPY, self.rep_of(src), src);
             self.set(ra, src);
-        case ADD:
+        case ADD: case ADD_FUSED:
             return self.arith(OptOp.ADD_I32, OptOp.ADD_F64, rb, rc, false, 0);
         case SUB:
             return self.arith(OptOp.SUB_I32, OptOp.SUB_F64, rb, rc, false, 0);
@@ -1997,6 +2015,9 @@ fn bool OptBuild.lower_op(&self) {
             return self.put_field();
         case UNM:
             return self.negate();
+        case BNOT:
+            // ~x is x ^ -1 for ToInt32(x).
+            return self.bitop(OptOp.XOR_I32, rb, NO_NODE, true, -1);
         case MOD:
             return self.modulo();
         case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
