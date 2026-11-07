@@ -810,6 +810,31 @@ fn void OptCg.box_node(&self, uint n, int dst) {
     }
 }
 
+// LOAD_LENGTH: an array's length as emit_length reads it, as an INT32. Anything else, and a
+// length above the int32 range, leaves for the baseline code.
+fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    self.decode(n);
+    a.call.len = 0;
+    int rr = R0;
+    if (n.b != NO_NODE) {
+        rr = self.obj_reg(n.b, R0);
+    } else {
+        a.load(R0, a.w.b);
+    }
+    a.unbox_object(R1, rr);
+    a.guard_not_proxy(R1, R2);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_array_len);
+    a.call.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, 0x7FFFFFFF));
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    self.def_int(i, R0);
+}
+
 // GETPROP of an element as the baseline's emit_get_elem reads it, with the index in a node: a
 // dense array's element or a typed array's. Everything else leaves for the baseline code.
 fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
@@ -848,6 +873,10 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     if (n.rep == OptRep.NONE) {
         a.publish(a.w.a);
         self.exit_calls(i, OptExit.SLOW_PATH);
+        return;
+    }
+    if (n.rep == OptRep.OBJECT) {
+        self.finish_object(i, n);
         return;
     }
     self.def_from_r0(i, n);
@@ -969,6 +998,11 @@ fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, long fl
     if (n.rep == OptRep.NONE) {
         // A number, which needs no publication.
         a.store(a.w.a, R0);
+        return;
+    }
+    // A number is an inert value, which an OBJECT node holds as it is.
+    if (n.rep == OptRep.OBJECT) {
+        self.def_obj(i, R0);
         return;
     }
     self.def_from_r0(i, n);
@@ -1876,6 +1910,70 @@ fn void OptCg.emit_check_builtin(&self, uint i, OptNode* n) {
     sljit_set_label(light, sljit_emit_label(c));
 }
 
+// ARRAY_PUSH: opt_array_push with the registers in use saved around the call; what it refuses
+// leaves for the baseline code at the CALL.
+fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    self.decode(n);
+    uint callee = a.w.b;
+    if (n.a == NO_NODE) {
+        a.load(R2, callee + 2);
+    } else if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
+        int v = self.obj_reg(n.a, R2);
+        if (v != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, v, 0);
+    } else {
+        self.box_node(n.a, R2);
+    }
+    if (n.b == NO_NODE) {
+        a.load(R1, callee + 1);
+    } else {
+        int r = self.obj_reg(n.b, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    }
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_array_push);
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_SIG_LESS, R0, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
+    self.def_int(i, R0);
+}
+
+// Array.prototype.push of the boxed `value` onto `obj` for ARRAY_PUSH, as the builtin's dense fast
+// path appends it, growing the storage (which allocates without collecting); the new length, or -1
+// with nothing done for any other receiver or value.
+fn long opt_array_push(Dispatch* ds, HObject* obj, ulong value) {
+$if types::USE_NANBOX:
+    TVal v = { .bits = value };
+    Heap* h = ds.heap;
+    if (obj.get_class() != hobject::ObjClass.ARRAY || obj.prop_count != 0 || !obj.flags.extensible
+        || !obj.flags.array_len_writable || obj.flags.has_indexed_named_prop || v.is_undefined()) return -1;
+    uint len = *obj.array_len_ptr();
+    if (len >= 0x1000000u) return -1;
+    if (len < obj.array_size) {
+        hobject::PropValue* dense = obj.array_part();
+        if (dense == null || !dense[len].get().is_undefined()) return -1;
+    } else if (obj.array_size != 0 && obj.array_part() == null) {
+        return -1;
+    }
+    HObject* array_proto = h.array_proto;
+    HObject* object_proto = h.object_proto;
+    if (array_proto == null || object_proto == null || obj.prototype != array_proto
+        || array_proto.get_class() != hobject::ObjClass.ARRAY
+        || object_proto.get_class() != hobject::ObjClass.OBJECT
+        || array_proto.prototype != object_proto || object_proto.prototype != null
+        || array_proto.flags.has_indexed_named_prop || array_proto.array_used > 0
+        || object_proto.flags.has_indexed_named_prop || object_proto.array_used > 0) return -1;
+    if (!obj.set_array_idx(len, v, h)) return -1;
+    *obj.array_len_ptr() = len + 1;
+    return (long)len + 1;
+$else
+    return -1;
+$endif
+}
+
 // A register move of a forwarding call within the caller's frame: the value is one the frame
 // holds already, so only the heap-register count may have to cover the new slot.
 fn void OptCg.emit_move_window(&self, OptNode* n) {
@@ -2102,11 +2200,23 @@ fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
     Jumps yes;
     Jumps no;
     self.a.call.len = 0;
-    if (n.cc >= 4) {
-        self.a.null_test(rb, &yes, &no);
+    void* c = self.a.c;
+    // An operand held in an OBJECT node (a, b) is taken from its register.
+    if (n.a != NO_NODE) {
+        int x = self.obj_reg(n.a, R0);
+        if (x != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, x, 0);
     } else {
         self.a.load(R0, rb);
-        self.a.load(R1, rc);
+    }
+    if (n.cc >= 4) {
+        self.a.null_test_r0(&yes, &no);
+    } else {
+        if (n.b != NO_NODE) {
+            int y = self.obj_reg(n.b, R1);
+            if (y != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, y, 0);
+        } else {
+            self.a.load(R1, rc);
+        }
         self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
     }
     self.exit_calls(i, OptExit.SLOW_PATH);
@@ -2188,7 +2298,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN || n.op == OptOp.ARRAY_PUSH) {
         if (self.force_here(n)) {
             self.forced_done = true;
             // The hook falls through once its count is spent: an allocation for the exit must not run then.
@@ -2227,6 +2337,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_store_elem(i, n);
         case LOAD_FIELD:
             self.emit_load_field(i, n);
+        case LOAD_LENGTH:
+            self.emit_load_length(i, n);
         case STORE_FIELD:
             self.emit_store_field(i, n);
         case CHECK_CALLEE:
@@ -2303,6 +2415,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_add_field(i, n);
         case CHECK_BUILTIN:
             self.emit_check_builtin(i, n);
+        case ARRAY_PUSH:
+            self.emit_array_push(i, n);
         case MOVE_WINDOW:
             self.emit_move_window(n);
         case EXIT:

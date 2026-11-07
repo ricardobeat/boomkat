@@ -22,6 +22,7 @@ import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::types;
+import boomkat::builtins;
 import std::io;
 import std::collections::list;
 import std::time::clock;
@@ -301,6 +302,7 @@ fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     // inline is something to specialize on.
     for (uint i = 0; i < f.code_count; i++) {
         if ((ic[i].feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0 && opt_inline_plausible(h, f, i)) return true;
+        if (opt_push_site(h, f, i)) return true;
     }
     return false;
 }
@@ -360,9 +362,61 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 
         Opcode kop = cf.code[k].op;
         if (!inline_op_ok(kop)) return false;
         // A call in the body must be one to inline in turn (OptBuild.add_children).
-        if (inline_call_op(kop) && (depth >= OPT_INLINE_DEPTH || cf.ic_entries == null || !opt_inline_plausible(h, cf, k, depth + 1))) return false;
+        if (inline_call_op(kop) && !opt_push_site(h, cf, k) && (depth >= OPT_INLINE_DEPTH || cf.ic_entries == null || !opt_inline_plausible(h, cf, k, depth + 1))) return false;
     }
     return true;
+}
+
+// Whether the CALL at word `i` of `f` passes one argument to Array.prototype.push as far as the
+// read that loaded its callee says: the nearest instruction before it naming the callee register as
+// its A operand, through register copies, is a GETPROPC or GETPROPC_CACHED whose cache holds that
+// builtin on a prototype. The optimized code guards the callee itself (OptBuild.push_call).
+fn bool opt_push_site(Heap* h, CompiledFunction* f, uint i) {
+    if (f.ic_entries == null || i == 0 || i >= f.code_count) return false;
+    Instruction w = f.code[i];
+    if (w.op != Opcode.CALL || w.c != 1 || f.code[i - 1].op == Opcode.WIDE) return false;
+    uint reg = w.b;
+    for (uint k = i; k > 0 && i - k < 8; k--) {
+        Instruction p = f.code[k - 1];
+        if (p.op == Opcode.WIDE) return false;
+        if (p.a != reg) continue;
+        if (p.op == Opcode.LDREG) {
+            reg = p.b;
+            continue;
+        }
+        if (p.op != Opcode.GETPROPC && p.op != Opcode.GETPROPC_CACHED) return false;
+        if (k >= 2 && f.code[k - 2].op == Opcode.WIDE) return false;
+        return opt_cached_builtin(&((hobject::ICEntry*)f.ic_entries)[k - 1]) == (int)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal;
+    }
+    return false;
+}
+
+// The number of the builtin function the read cache `ic` holds as a data property of a prototype,
+// or -1.
+fn int opt_cached_builtin(hobject::ICEntry* ic) {
+$if types::USE_NANBOX:
+    if (ic.key.borrow() == null || !ic.has_proto || ic.prop_flags.is_accessor) return -1;
+    HObject* owner;
+    if (ic.chain_len == hobject::IC_CHAIN_EPOCH) {
+        owner = ic.chain.epoch.owner;
+    } else if (ic.chain_len > 0 && (uint)ic.chain_len <= hobject::IC_MAX_CHAIN) {
+        owner = (HObject*)ic.chain.snapshot.protos[(uint)ic.chain_len - 1];
+    } else {
+        return -1;
+    }
+    if (owner == null || ic.prop_idx >= owner.prop_count) return -1;
+    TVal v = owner.prop_values()[ic.prop_idx].get();
+    if (v.bits >> 48 == types::TAG_LIGHTFUNC) {
+        ulong index = v.bits & 0xFFFFFFFFFFFF;
+        return index < 0x10000 ? (int)index : -1;
+    }
+    if (!v.is_object()) return -1;
+    HObject* fo = (HObject*)v.get_heapptr();
+    if (fo == null || !fo.is_callable() || fo.callable_kind() != hobject::CallableKind.BUILTIN_FN) return -1;
+    return (*fo.extra_ptr()).func.builtin_fn_index;
+$else
+    return -1;
+$endif
 }
 
 // The one compiled function the call or NEW_OBJ at word `i` of `f` has called, by its feedback, or
@@ -482,7 +536,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     defer b.free();
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined.
-    if (why == OptRefuse.NONE && inlined == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
+    if (why == OptRefuse.NONE && inlined == 0 && b.pushes == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
         f.opt_declined++;
         return false;
     }

@@ -29,6 +29,9 @@ struct OptOverride {
     uint block;
     uint reg;
     OptRep rep;
+    // An OBJECT rep asked only to keep a read out of a window slot beyond the caller's frame
+    // (OptBuild.get_field), which a numeric use may still turn into its own rep.
+    bool soft;
 }
 
 struct OptRegState {
@@ -208,8 +211,14 @@ struct OptBuild {
     bool inline_failed;
     bool inline_unsafe;
     bool no_inline;
-    // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE).
+    // Calls of Array.prototype.push built as ARRAY_PUSH nodes.
+    uint pushes;
+    // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE), and the
+    // call it was looking at, for --opt-log: the caller, its call word and the callee once known.
     OptInlineReject rej;
+    CompiledFunction* rej_caller;
+    CompiledFunction* rej_callee;
+    uint rej_pc;
     Opcode rej_op;
     uint inlined;
     OptRegState* cur;
@@ -431,6 +440,16 @@ fn bool OptBuild.reject(&self, OptInlineReject why) {
 
 fn void OptBuild.count_reject(&self, OptInlineReject why, Opcode op) {
     self.h.opt.inline_rejected[why.ordinal]++;
+    if (self.h.opt.log && self.rej_caller != null) {
+        io::eprintf("opt inline-reject ");
+        opt_log_fn(self.rej_caller);
+        io::eprintf(" +%d", self.rej_pc);
+        if (self.rej_callee != null) {
+            io::eprintf(" -> ");
+            opt_log_fn(self.rej_callee);
+        }
+        io::eprintfn(why == OptInlineReject.OPCODE ? " %s %s" : " %s", why.label, op);
+    }
     if (why == OptInlineReject.OPCODE) self.h.opt.inline_rejected_ops[op.ordinal]++;
 }
 
@@ -772,6 +791,13 @@ fn uint OptBuild.operand(&self, uint reg, OptRep want) {
     if (reg >= self.nregs) return NO_NODE;
     OptRegState s = self.cur[reg];
     if (s.node != NO_NODE && self.rep_of(s.node) == OptRep.OBJECT) {
+        // A field read of this body kept beyond the caller's frame as an OBJECT node only for want
+        // of a use (OptBuild.get_field): the next round reads it as a number.
+        OptNode* ld = &self.g.nodes[s.node];
+        bool load = ld.op == OptOp.LOAD_FIELD || ld.op == OptOp.LOAD_ELEM || ld.op == OptOp.LOAD_GLOBAL;
+        if (self.cur_fn != 0 && reg >= self.caller_regs && load && ld.fidx == self.cur_fn) {
+            self.ask_load(ld.pc | ((self.cur_site + 1) << 24), reg, want);
+        }
         // A number was asked of a register that holds an object: read it from the window as any other
         // value there (the guard exits when it is not a number).
         self.publish_object(reg);
@@ -942,8 +968,9 @@ fn uint OptBuild.bit_operand(&self, uint reg, bool numbers) {
 fn void OptBuild.ask_load(&self, uint pc, uint reg, OptRep want) {
     foreach (&c : self.load_reps) {
         if (c.block != pc) continue;
-        if (c.rep != want && c.rep != OptRep.OBJECT) {
+        if (c.rep != want && (c.rep != OptRep.OBJECT || c.soft)) {
             c.rep = want;
+            c.soft = false;
             self.load_changed = true;
         }
         return;
@@ -1040,7 +1067,7 @@ fn bool OptBuild.get_variable(&self, bool scoped) {
     self.snapshot(n);
     self.kill(ra);
     self.load_def[ra] = self.pckey();
-    if (ra >= self.caller_regs) self.inline_unsafe = true;
+    if (ra >= self.caller_regs) self.soft_object(ra);
     return true;
 }
 
@@ -1119,6 +1146,19 @@ fn bool OptBuild.in_window(&self, uint r) {
     return true;
 }
 
+// The read being lowered into register `ra`, beyond the caller's frame, left its value in the window,
+// out of the collector's sight: the next round builds it as an OBJECT node, which stays in a
+// register, unless a numeric use asks for a number (OptOverride.soft). The body waits for it.
+fn void OptBuild.soft_object(&self, uint ra) {
+    bool asked = false;
+    foreach (c : self.load_reps) asked |= c.block == self.pckey();
+    if (!asked) {
+        self.load_reps.push({ .block = self.pckey(), .reg = ra, .rep = OptRep.OBJECT, .soft = true });
+        self.load_changed = true;
+    }
+    self.inline_unsafe = true;
+}
+
 // The register `reg`, still in the window, was written by a property read the next round can
 // build as an OBJECT node.
 fn void OptBuild.ask_object(&self, uint reg) {
@@ -1131,8 +1171,9 @@ fn void OptBuild.ask_object(&self, uint reg) {
     if ((key & 0xFFFFFF) >= kf.code_count) return;
     Opcode o = kf.code[key & 0xFFFFFF].op;
     // A global read is a load only in an inlined body (the function's own is a GENERIC).
+    // An element read is a load only in an inlined body (the function's own is a GENERIC).
     if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC && o != Opcode.GETCAP
-        && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR) || si1 == 0)) return;
+        && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR && o != Opcode.GETPROP) || si1 == 0)) return;
     foreach (&c : self.load_reps) if (c.block == key) return;
     self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.OBJECT });
     self.load_changed = true;
@@ -1230,6 +1271,7 @@ fn void OptBuild.set_poly(&self, uint n, hobject::ICEntry* ic) {
 // GETPROPC, GETPROPC_CACHED and GETTHISC of an own property by the shape its cache holds: a
 // typed load when a numeric use asked for one, else a read into the window.
 fn bool OptBuild.get_field(&self) {
+    if (self.length_site()) return self.get_length();
     hobject::ICEntry* ic = self.own_field(true);
     if (ic == null) return self.generic();
     uint recv = self.field_receiver();
@@ -1259,8 +1301,10 @@ fn bool OptBuild.get_field(&self) {
         self.g.nodes[n].home = ra;
         self.kill(ra);
         if (ra < self.nregs) self.load_def[ra] = self.pckey();
-        // A value of any kind in a slot beyond the caller's frame would be out of the collector's sight.
-        if (self.cur_fn != 0 && ra >= self.caller_regs) self.inline_unsafe = true;
+        // A value of any kind in a slot beyond the caller's frame would be out of the collector's
+        // sight: the next round builds the read as an OBJECT node, which stays in a register, unless
+        // a numeric use asks for a number.
+        if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_object(ra);
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].b = rnode;
@@ -1269,6 +1313,70 @@ fn bool OptBuild.get_field(&self) {
     if (mono) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
     if (recv < self.nregs && recv == self.w.a) self.fact_shape[recv] = heap::SHAPE_NONE;
+    return true;
+}
+
+// Whether the instruction being lowered is a GETPROPC or GETPROPC_CACHED of the constant key
+// `length` that has not exited repeatedly. The baseline reads an array's length before its cache
+// and records nothing, so the read is taken for an array's; a string's leaves through the exit,
+// and the ban that follows lowers the site generically.
+fn bool OptBuild.length_site(&self) {
+    if (self.w.op != Opcode.GETPROPC && self.w.op != Opcode.GETPROPC_CACHED) return false;
+    CompiledFunction* f = self.cur_f();
+    if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string()) return false;
+    if (f.constants[self.w.c].get_heapptr() != (void*)self.h.strs[heap::BuiltinStr.LENGTH]) return false;
+    return !opt_site_banned(self.f, f, self.next_pc - 1);
+}
+
+// The `length` of an array (OptBuild.length_site), as an INT32 node.
+fn bool OptBuild.get_length(&self) {
+    uint recv = self.w.b;
+    uint rnode = NO_NODE;
+    if (self.is_object(recv)) {
+        rnode = self.cur[recv].node;
+    } else if (self.in_window(recv)) {
+        self.ask_object(recv);
+    } else {
+        return self.generic();
+    }
+    if (self.w.a >= self.nregs) return self.generic();
+    uint n = self.add(OptOp.LOAD_LENGTH, OptRep.INT32, NO_NODE, rnode, (long)self.pc);
+    self.snapshot(n);
+    self.set(self.w.a, n);
+    return true;
+}
+
+// A CALL of Array.prototype.push with one argument (opt_push_site): a CHECK_BUILTIN of the callee,
+// then an ARRAY_PUSH of the argument onto the receiver, whose result is the new length. In an
+// inlined body an operand beyond the caller's frame must be an OBJECT node; one a read left in the
+// window asks for that in the next round.
+fn bool OptBuild.push_call(&self) {
+    if (self.w.op != Opcode.CALL || self.wide || !opt_push_site(self.h, self.cur_f(), self.next_pc - 1)) return false;
+    if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return false;
+    uint callee = self.w.b;
+    uint ra = self.w.a;
+    if (callee + 2 >= self.nregs || ra >= self.nregs) return false;
+    uint[3] nodes;
+    for (uint k = 0; k < 3; k++) {
+        uint r = callee + k;
+        nodes[k] = NO_NODE;
+        if (self.cur[r].node != NO_NODE && (k == 2 || self.is_object(r))) {
+            nodes[k] = self.cur[r].node;
+        } else if (self.cur_fn != 0 && r >= self.caller_regs) {
+            if (!self.call_operand(r, &nodes[k])) return self.cur_fn == 0 ? false : self.generic();
+        } else if (!self.in_window(r)) {
+            return self.cur_fn == 0 ? false : self.generic();
+        }
+    }
+    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, nodes[0], NO_NODE, (long)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal);
+    self.g.nodes[chk].home = callee;
+    self.snapshot(chk);
+    uint n = self.add(OptOp.ARRAY_PUSH, OptRep.INT32, nodes[2], nodes[1], (long)self.pc);
+    self.snapshot(n);
+    self.set(ra, n);
+    // The array's storage may have moved.
+    self.forget_facts();
+    self.pushes++;
     return true;
 }
 
@@ -1366,7 +1474,7 @@ fn bool OptBuild.get_elem(&self) {
         self.snapshot(n);
         self.kill(ra);
         self.load_def[ra] = self.pckey();
-        if (ra >= self.caller_regs) self.inline_unsafe = true;
+        if (ra >= self.caller_regs) self.soft_object(ra);
         return true;
     }
     if (!self.generic()) return false;
@@ -1608,15 +1716,23 @@ fn bool OptBuild.equality_branch(&self) {
     uint rb = self.w.b;
     uint rc = unary ? rb : self.w.c;
     if (rb >= self.nregs || rc >= self.nregs) return self.refuse(OptRefuse.BRANCH_OPERANDS);
-    if (self.is_object(rb)) self.publish_object(rb);
-    if (self.is_object(rc)) self.publish_object(rc);
     bool numeric_b = self.cur[rb].node != NO_NODE && !self.is_object(rb);
     bool numeric_c = self.cur[rc].node != NO_NODE && !self.is_object(rc);
     if (numeric_b || numeric_c) {
+        if (self.is_object(rb)) self.publish_object(rb);
+        if (self.is_object(rc)) self.publish_object(rc);
         return unary ? self.refuse_op(op) : self.numeric_equality();
     }
+    // An OBJECT operand is tested in its register; a value a read left in a slot beyond the
+    // caller's frame asks for that read to be an OBJECT node in the next round.
+    uint xb = self.is_object(rb) ? self.cur[rb].node : NO_NODE;
+    uint xc = self.is_object(rc) ? self.cur[rc].node : NO_NODE;
+    if (self.cur_fn != 0) {
+        if (xb == NO_NODE && rb >= self.caller_regs) self.call_operand(rb, &xb);
+        if (xc == NO_NODE && rc >= self.caller_regs) self.call_operand(rc, &xc);
+    }
     uint kind = op.ordinal - Opcode.JMP_SEQ.ordinal;
-    if (!self.terminator(OptOp.BRANCH_WINDOW, NO_NODE, NO_NODE, (long)rb | ((long)rc << 20), (char)kind)) return false;
+    if (!self.terminator(OptOp.BRANCH_WINDOW, xb, unary ? NO_NODE : xc, (long)rb | ((long)rc << 20), (char)kind)) return false;
     self.snapshot((uint)self.g.nodes.len() - 1);
     return true;
 }
@@ -1667,7 +1783,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     for (uint k = 0; k < cfg.instruction_count; k++) {
         Opcode op = cfg.nodes[k].view.insn.op;
         if (!inline_op_ok(op)) { self.rej_op = op; return self.reject(OptInlineReject.OPCODE); }
-        s.has_calls |= inline_call_op(op);
+        s.has_calls |= inline_call_op(op) && !opt_push_site(self.h, cf, cfg.nodes[k].view.pc);
         // A CALL_S is a spread call unless it completes a forwarding call, which only a function
         // whose `arguments` register holds the argument count makes.
         bool paired = op == Opcode.APPLY_ARGS ? forward_pair(cfg, k) : (op != Opcode.CALL_S || (k > 0 && forward_pair(cfg, k - 1)));
@@ -1775,7 +1891,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 // An exit at every negative dividend or non-positive divisor would not pay.
                 ok = (self.feedback() & hobject::FB_OPERANDS) == 0;
             case GETPROPC: case GETPROPC_CACHED:
-                ok = self.own_field(true) != null || (s.flat && self.cold_field());
+                ok = self.length_site() || self.own_field(true) != null || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case GETTHISC:
                 ok = ((s.method || s.construct) && self.own_field(true) != null) || (s.flat && self.cold_field());
@@ -1853,6 +1969,9 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     if (forward) live_out = &ps.live_out[i + 1];
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[view.next_pc - 1];
     if ((ic.feedback & (construct ? hobject::FB_CTOR : hobject::FB_CALL)) == 0) return false;
+    self.rej_caller = f;
+    self.rej_pc = view.pc;
+    self.rej_callee = null;
     CompiledFunction* cf;
     // A forwarding function shared by many callers forwards to many functions: the call that
     // reached it, the site's parent, records the function it forwarded to from there.
@@ -1874,6 +1993,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     bool method = op == Opcode.CALL || forward;
     // The window the call publishes lies in the caller's registers as far as the arguments go.
     if (cf == null) return false;
+    self.rej_callee = cf;
     if (construct && !opt_base_constructor(cf)) return self.reject(OptInlineReject.CTOR);
     if (cf == f || cf == self.f) return self.reject(OptInlineReject.SELF);
     for (OptInlineSite* a = ps; a != null; a = a.parent == 0 ? null : &self.sites[(sz)a.parent - 1]) {
@@ -2020,6 +2140,8 @@ fn void OptBuild.find_sites(&self) {
         flat_total += size;
         self.flat_count++;
     }
+    // The rejections counted while building name no site of their own.
+    self.rej_caller = null;
 }
 
 // Find the nested inline sites of the calls in the body of site `si`, recursively, and widen nregs
@@ -2031,6 +2153,8 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
     self.sites[si].child_of = mem::new_array(uint, count);
     for (uint k = 0; k < count; k++) {
         if (!inline_call_op(self.sites[si].cfg.nodes[k].view.insn.op)) continue;
+        // A push the body builds as a node (OptBuild.push_call).
+        if (opt_push_site(self.h, self.sites[si].cf, self.sites[si].cfg.nodes[k].view.pc)) continue;
         OptInlineSite c;
         self.rej = OptInlineReject.BUILD;
         Opcode cop = self.sites[si].cfg.nodes[k].view.insn.op;
@@ -2889,6 +3013,7 @@ fn bool OptBuild.lower_op(&self) {
         case CALL_GLOBAL:
         case NEW_OBJ:
         case APPLY_ARGS:
+            if (self.push_call()) return true;
             if (self.try_inline()) return true;
             return self.generic();
         case CALL_S:
