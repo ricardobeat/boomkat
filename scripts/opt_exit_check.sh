@@ -60,5 +60,9 @@ if [ -z "$n" ] || [ "$n" -gt 8 ]; then echo "NOINLINEBAN $n"; fails=$((fails+1))
 # The 20 KB code cap evicts optimized bodies that were not entered since the last sweep.
 n=$($BIN --memory-limit=512 --jit --opt --opt-always --opt-code-max=20000 --jit-stats --script test/jit/opt_inline_getvar.js 2>&1 | grep -c "^opt: [1-9][0-9]* evicted")
 if [ "$n" != 1 ]; then echo "NOEVICT"; fails=$((fails+1)); fi
+# High phi pressure must retain the safe initial global-helper inlining; overflow
+# recompilation may fall back when synthetic conversions cannot fit in registers.
+n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_global_phi.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ globalPhi:[0-9]+ .* inlined [1-9][0-9]* ')
+if [ "$n" = 0 ]; then echo "NOGLOBALPHIINLINE"; fails=$((fails+1)); fi
 echo "opt-exits fails=$fails"
 [ "$fails" = 0 ]

@@ -467,9 +467,30 @@ fn bool opt_refuse(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op) {
     if (h.opt.log) {
         io::eprintf("opt refuse ");
         opt_log_fn(f);
-        io::eprintfn(" %s %s", why.label, op);
+        io::eprintfn(" %s %s words %d registers %d", why.label, op, f.code_count, f.num_regs);
     }
     return false;
+}
+
+// Retry allocation with unallocated phis kept in frame slots, preserving the
+// current inlining policy. The incoming graph has already failed allocation.
+fn OptRefuse opt_window_phis(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, List{OptJoin}* windowed) {
+    OptRefuse why = OptRefuse.PRESSURE;
+    for (uint round = 0; why == OptRefuse.PRESSURE && round < OPT_PRESSURE_ROUNDS; round++) {
+        if (round == 0) {
+            // The graph that failed names its phis.
+            OptPools pools = opt_pools();
+            g.allocate(&pools, windowed);
+        }
+        bool plain = b.no_inline;
+        b.free();
+        g.clear();
+        *refused_op = Opcode.NOP;
+        why = opt_build_graph(h, f, g, b, refused_op, plain, windowed);
+        OptPools pools = opt_pools();
+        if (why == OptRefuse.NONE && !g.allocate(&pools, windowed)) why = OptRefuse.PRESSURE;
+    }
+    return why;
 }
 
 fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
@@ -506,33 +527,21 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
         pools = opt_pools();
         if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
     }
+    // Try frame slots for excess phis before discarding otherwise useful inlined bodies.
+    List{OptJoin} windowed;
+    windowed.init(mem);
+    defer windowed.free();
+    if (why == OptRefuse.PRESSURE) why = opt_window_phis(h, f, &g, &b, &refused_op, &windowed);
     if (why != OptRefuse.NONE && b.sites.len() != 0) {
         // Inlining may be what made the body too big or too hard to allocate: try without it.
         b.free();
         g.clear();
+        windowed.clear();
         refused_op = Opcode.NOP;
         why = opt_build_graph(h, f, &g, &b, &refused_op, true);
-        pools = opt_pools();
-        if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
-    }
-    // More values live in phis than there are registers: the joins of the phis that found none
-    // keep those values in their window slots, over a few rebuilds.
-    List{OptJoin} windowed;
-    windowed.init(mem);
-    defer windowed.free();
-    for (uint round = 0; why == OptRefuse.PRESSURE && round < OPT_PRESSURE_ROUNDS; round++) {
-        if (round == 0) {
-            // The graph that failed names its phis (the first build's, or the plain one's).
-            pools = opt_pools();
-            g.allocate(&pools, &windowed);
-        }
-        bool plain = b.no_inline;
-        b.free();
-        g.clear();
-        refused_op = Opcode.NOP;
-        why = opt_build_graph(h, f, &g, &b, &refused_op, plain, &windowed);
-        pools = opt_pools();
-        if (why == OptRefuse.NONE && !g.allocate(&pools, &windowed)) why = OptRefuse.PRESSURE;
+        OptPools pools2 = opt_pools();
+        if (why == OptRefuse.NONE && !g.allocate(&pools2)) why = OptRefuse.PRESSURE;
+        if (why == OptRefuse.PRESSURE) why = opt_window_phis(h, f, &g, &b, &refused_op, &windowed);
     }
     defer b.free();
     uint inlined = (uint)g.fns.len() - 1;
