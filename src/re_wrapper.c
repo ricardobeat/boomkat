@@ -38,31 +38,112 @@ struct ReCompiled {
     int      anchored;
     int      prefix_len;
     char     prefix[16];
+    /* the whole pattern is the prefix: a found prefix is the match */
+    int      literal_only;
+    int      prefix_rare;   /* index of the prefix byte to search for */
     int      required_len;
+    int      required_rare;
     char     required[16];
     /* Code units that can begin a match, when has_first_set. */
     int      has_first_set;
     LREFirstSet first_set;
 };
 
-static const char* re_find_prefix(const char* input, size_t len,
-                               const char* prefix, size_t prefix_len)
+/* Rough frequency of an ASCII byte in typical text, used to pick the byte
+ * a literal search scans for. */
+static int re_byte_commonness(unsigned char c)
 {
-#ifdef _WIN32
-    /* The Windows CRT has no memmem; prefixes are nonempty and at most 16 bytes. */
-    if (len < prefix_len) return NULL;
-    size_t remaining = len - prefix_len + 1;
-    while (remaining > 0) {
-        const char* candidate = memchr(input, (unsigned char)prefix[0], remaining);
-        if (!candidate) return NULL;
-        if (memcmp(candidate, prefix, prefix_len) == 0) return candidate;
-        remaining -= (size_t)(candidate - input) + 1;
-        input = candidate + 1;
+    if (c == ' ') return 100;
+    if (strchr("etaoinsrhl\",:.", c)) return 80;
+    if (c >= 'a' && c <= 'z') return 50;
+    if (c >= '0' && c <= '9') return 45;
+    if (c >= 'A' && c <= 'Z') return 30;
+    if (strchr("/=_-()", c)) return 25;
+    return 15;
+}
+
+static int re_pick_rare(const char* lit, int n)
+{
+    int best = 0;
+    for (int i = 1; i < n; i++) {
+        if (re_byte_commonness((unsigned char)lit[i]) < re_byte_commonness((unsigned char)lit[best]))
+            best = i;
+    }
+    return best;
+}
+
+/* The first occurrence of `lit` in `len` bytes, found by scanning for its
+ * byte at index `rare` and comparing the rest. */
+static const char* re_find_lit8(const char* input, size_t len,
+                                const char* lit, size_t n, size_t rare)
+{
+    if (len < n) return NULL;
+    const char* p = input + rare;
+    const char* last = input + (len - n) + rare;
+    while (p <= last) {
+        const char* hit = memchr(p, (unsigned char)lit[rare], (size_t)(last - p) + 1);
+        if (!hit) return NULL;
+        if (memcmp(hit - rare, lit, n) == 0) return hit - rare;
+        p = hit + 1;
     }
     return NULL;
-#else
-    return memmem(input, len, prefix, prefix_len);
+}
+
+/* The first unit equal to `u` in [p, end), or NULL. */
+static const uint16_t* re_find_unit16(const uint16_t* p, const uint16_t* end, uint16_t u)
+{
+#if (defined(__GNUC__) || defined(__clang__)) && defined(__BYTE_ORDER__) && \
+    __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    const uint64_t ones = 0x0001000100010001ULL;
+    const uint64_t pat = ones * u;
+    while (end - p >= 4) {
+        uint64_t w;
+        memcpy(&w, p, sizeof(w));
+        w ^= pat;
+        /* the lowest flagged lane is the first unit equal to u */
+        uint64_t z = (w - ones) & ~w & 0x8000800080008000ULL;
+        if (z) return p + (__builtin_ctzll(z) >> 4);
+        p += 4;
+    }
 #endif
+    for (; p < end; p++) {
+        if (*p == u) return p;
+    }
+    return NULL;
+}
+
+/* The first occurrence of the ASCII `lit` in `len` 16-bit units, or NULL. */
+static const uint16_t* re_find_lit16(const uint16_t* input, size_t len,
+                                     const char* lit, size_t n, size_t rare)
+{
+    if (len < n) return NULL;
+    const uint16_t* p = input + rare;
+    const uint16_t* end = input + (len - n) + rare + 1;
+    while (p < end) {
+        const uint16_t* hit = re_find_unit16(p, end, (unsigned char)lit[rare]);
+        if (!hit) return NULL;
+        const uint16_t* cand = hit - rare;
+        size_t k = 0;
+        while (k < n && cand[k] == (unsigned char)lit[k]) k++;
+        if (k == n) return cand;
+        p = hit + 1;
+    }
+    return NULL;
+}
+
+/* The unit offset of the first occurrence of `lit` at or after `start`, or -1. */
+static long re_find_lit(const void* input, int input_wide, int start, int input_len,
+                        const char* lit, int n, int rare)
+{
+    size_t rest = (size_t)(input_len - start);
+    if (input_wide) {
+        const uint16_t* base = (const uint16_t*)input;
+        const uint16_t* hit = re_find_lit16(base + start, rest, lit, (size_t)n, (size_t)rare);
+        return hit ? (long)(hit - base) : -1;
+    }
+    const char* base = (const char*)input;
+    const char* hit = re_find_lit8(base + start, rest, lit, (size_t)n, (size_t)rare);
+    return hit ? (long)(hit - base) : -1;
 }
 
 /* Records the literal prefix every match of `pattern` must start with. Any
@@ -85,8 +166,11 @@ static void re_scan_prefix(ReCompiled* re, const char* pattern, size_t len, int 
         if (c >= 0x80 || c < 0x20 || strchr("\\^$.|?*+()[]{}", c)) break;
         re->prefix[n++] = (char)c;
     }
+    /* a multiline `^` is an assertion the prefix does not cover */
+    re->literal_only = i == len && n > 0 && (pattern[0] != '^' || re->anchored);
     if (i < len && n > 0 && strchr("?*+{", pattern[i])) n--;
     re->prefix_len = n;
+    re->prefix_rare = re_pick_rare(re->prefix, n);
     if (n == 0) re->anchored = 0;
 }
 
@@ -98,6 +182,7 @@ static void re_scan_prefix(ReCompiled* re, const char* pattern, size_t len, int 
 static void re_scan_required(ReCompiled* re, const char* pattern, size_t len, int flags)
 {
     re->required_len = 0;
+    re->required_rare = 0;
     if (re->prefix_len || (flags & (LRE_FLAG_IGNORECASE | LRE_FLAG_UNICODE_SETS))) return;
     char run[sizeof(re->required)], best[sizeof(re->required)];
     size_t run_len = 0, best_len = 0;
@@ -149,6 +234,7 @@ static void re_scan_required(ReCompiled* re, const char* pattern, size_t len, in
     if (best_len >= 3) {
         memcpy(re->required, best, best_len);
         re->required_len = (int)best_len;
+        re->required_rare = re_pick_rare(re->required, (int)best_len);
     }
 }
 
@@ -294,19 +380,6 @@ static uint8_t* cesu8_pattern_to_utf8(const char* input, size_t input_len, size_
     return out;
 }
 
-/* The first occurrence of the ASCII `prefix` in `n` 16-bit units, or NULL. */
-static const uint16_t* re_find_prefix16(const uint16_t* input, size_t n,
-                                        const char* prefix, size_t prefix_len)
-{
-    if (n < prefix_len) return NULL;
-    for (size_t i = 0; i + prefix_len <= n; i++) {
-        size_t k = 0;
-        while (k < prefix_len && input[i + k] == (unsigned char)prefix[k]) k++;
-        if (k == prefix_len) return input + i;
-    }
-    return NULL;
-}
-
 /*
  * Run `re` over `input_len` code units of `input`, starting at unit
  * `start_offset`. The input is Latin-1 bytes, or native-endian UTF-16 when
@@ -323,42 +396,39 @@ int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
      * finds exactly the occurrences of the pattern's leading characters. */
     if (re->prefix_len > 0) {
         int n = re->prefix_len;
+        bool sticky = (lre_get_flags(re->bc) & LRE_FLAG_STICKY) != 0;
         long found = -1;
-        if (re->anchored) {
-            if (start_offset != 0 || input_len < n) return RE_NO_MATCH;
+        if (start_offset > input_len) return RE_NO_MATCH;
+        if (re->anchored || sticky) {
+            /* the match can only start at start_offset */
+            if (re->anchored && start_offset != 0) return RE_NO_MATCH;
+            if (input_len - start_offset < n) return RE_NO_MATCH;
             for (int i = 0; i < n; i++) {
-                unsigned u = input_wide ? ((const uint16_t*)input)[i]
-                                        : ((const uint8_t*)input)[i];
+                unsigned u = input_wide ? ((const uint16_t*)input)[start_offset + i]
+                                        : ((const uint8_t*)input)[start_offset + i];
                 if (u != (unsigned char)re->prefix[i]) return RE_NO_MATCH;
             }
+            found = start_offset;
         } else {
-            if (start_offset > input_len) return RE_NO_MATCH;
-            if (input_wide) {
-                const uint16_t* hit = re_find_prefix16((const uint16_t*)input + start_offset,
-                    (size_t)(input_len - start_offset), re->prefix, (size_t)n);
-                if (hit) found = hit - (const uint16_t*)input;
-            } else {
-                const char* hit = re_find_prefix((const char*)input + start_offset,
-                    (size_t)(input_len - start_offset), re->prefix, (size_t)n);
-                if (hit) found = hit - (const char*)input;
-            }
+            found = re_find_lit(input, input_wide, start_offset, input_len,
+                                re->prefix, n, re->prefix_rare);
             if (found < 0) return RE_NO_MATCH;
-            /* A sticky match must start at the caller's exact position. Every
-             * other match starts at or after this first prefix occurrence. */
-            if (!(lre_get_flags(re->bc) & LRE_FLAG_STICKY))
-                start_offset = (int)found;
+            /* Every match starts at or after this first prefix occurrence. */
+            start_offset = (int)found;
+        }
+        if (re->literal_only) {
+            if (out_start) *out_start = (int)found;
+            if (out_end) *out_end = (int)found + n;
+            if (out_num_captures) *out_num_captures = 0;
+            return RE_MATCH;
         }
     }
 
     if (start_offset >= 0 && re->required_len > 0) {
         if (start_offset > input_len) return RE_NO_MATCH;
-        size_t rest = (size_t)(input_len - start_offset);
-        const void* hit = input_wide
-            ? (const void*)re_find_prefix16((const uint16_t*)input + start_offset, rest,
-                                            re->required, (size_t)re->required_len)
-            : (const void*)re_find_prefix((const char*)input + start_offset, rest,
-                                          re->required, (size_t)re->required_len);
-        if (!hit) return RE_NO_MATCH;
+        if (re_find_lit(input, input_wide, start_offset, input_len,
+                        re->required, re->required_len, re->required_rare) < 0)
+            return RE_NO_MATCH;
     }
 
     int total_captures = re->capture_count;

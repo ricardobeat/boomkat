@@ -68,4 +68,33 @@ eq('aaa'.replace(/(?:)/g, '-'), '-a-a-a-', 'empty pattern');
 var long = new Array(2001).join('.') + 'X';
 eq(m(/[XY]$/, long), [2000, 'X'], 'long skip');
 
+// Whole-literal patterns and literal searches in both string widths.
+eq(m(/d1/, 'xd2d1'), [3, 'd1'], 'literal');
+eq(m(/d1/, '‰xd2d1'), [4, 'd1'], 'literal in a wide string');
+eq(m(/^d1/, 'xd1'), null, 'anchored literal');
+eq(m(/^d1/m, 'x\nd1'), [2, 'd1'], 'multiline literal');
+eq(m(/^d1/m, 'xd1'), null, 'multiline literal needs a line start');
+var my = /^a/my;
+my.lastIndex = 1;
+eq(my.test(' a'), false, 'sticky multiline literal within a line');
+eq(m(/Qngr\(/, 'a"Qngr('), [2, 'Qngr('], 'escaped literal');
+var lg = /ab/g;
+eq([lg.exec('abxab').index, lg.lastIndex, lg.exec('abxab').index, lg.lastIndex, lg.exec('abxab'), lg.lastIndex],
+   [0, 2, 3, 5, null, 0], 'global literal');
+var ly = /ab/y;
+ly.lastIndex = 1;
+eq(ly.exec('xxab'), null, 'sticky literal does not search');
+ly.lastIndex = 2;
+eq(ly.exec('xxab').index, 2, 'sticky literal at position');
+ly.lastIndex = 2;
+eq(ly.exec('xx‰ab'), null, 'sticky literal wide mismatch');
+ly.lastIndex = 3;
+eq(ly.exec('xx‰ab').index, 3, 'sticky literal wide');
+eq('a=b=c'.split(/=/), ['a', 'b', 'c'], 'literal split');
+eq('a=b=c‰'.replace(/=/g, '-'), 'a-b-c‰', 'literal replace wide');
+var wideLong = new Array(40).join('‰x"') + '"\\/Qngr(';
+eq(/"\\\/Qngr\(/.exec(wideLong).index, 39 * 3, 'wide literal after many partial candidates');
+eq(/(^|x)"\\\/Qngr\(\d/.exec(wideLong), null, 'required literal present but no match');
+eq(m(/\ud83d/u, '😀'), null, 'unicode literal never splits a pair');
+
 print('ok');
