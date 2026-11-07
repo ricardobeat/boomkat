@@ -68,6 +68,8 @@ const usz OPT_CODE_MAX = 4 * 1024 * 1024;
 // Exits at one site that discard a body and make the next build lower the site generically.
 const uint OPT_SITE_EXITS = 2;
 const uint OPT_BAN_MAX = 16;
+// OptBan.pc naming every site of the function.
+const uint OPT_BAN_ALL = 0xFFFFFFFF;
 const uint OPT_HIT_SLOTS = 8;
 
 // An instruction (word `pc` of `cf`, which may be an inlined callee) whose speculation failed
@@ -87,6 +89,7 @@ struct OptSiteHit {
     CompiledFunction* cf;
     uint pc;
     uint count;
+    bool call;
 }
 
 struct OptCode {
@@ -325,7 +328,7 @@ fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc) {
     OptBans* bans = root.opt_bans;
     if (bans == null) return false;
     for (uint i = 0; i < bans.count; i++) {
-        if (bans.items[i].cf == cf && bans.items[i].pc == pc) return true;
+        if (bans.items[i].cf == cf && (bans.items[i].pc == pc || bans.items[i].pc == OPT_BAN_ALL)) return true;
     }
     return false;
 }
@@ -549,6 +552,7 @@ fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reas
         hit.cf = cf;
         hit.pc = pc;
         hit.count = 0;
+        hit.call = reason == OptExit.CALLEE.ordinal;
     }
     return ++hit.count >= OPT_SITE_EXITS;
 }
@@ -557,7 +561,11 @@ fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reas
 fn void opt_ban_hits(Heap* h, OptCode* oc) {
     CompiledFunction* root = oc.f;
     foreach (&x : oc.hits) {
-        if (x.count == 0 || opt_site_banned(root, x.cf, x.pc)) continue;
+        if (x.count == 0) continue;
+        // The cache of one site a body exits from is as stale as its neighbours', which the body would
+        // exit from next: the second time a body of the function is discarded, none is speculated on.
+        uint pc = root.opt_reopts != 0 && !x.call ? OPT_BAN_ALL : x.pc;
+        if (opt_site_banned(root, x.cf, pc)) continue;
         OptBans* bans = root.opt_bans;
         if (bans == null) {
             bans = h.alloc_func(h.heap_udata, OptBans::size);
@@ -566,7 +574,7 @@ fn void opt_ban_hits(Heap* h, OptCode* oc) {
             root.opt_bans = bans;
         }
         if (bans.count >= OPT_BAN_MAX) return;
-        bans.items[bans.count++] = { .cf = x.cf, .pc = x.pc };
+        bans.items[bans.count++] = { .cf = x.cf, .pc = pc };
         h.opt.bans++;
     }
 }
