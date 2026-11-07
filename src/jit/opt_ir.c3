@@ -168,6 +168,12 @@ enum OptOp : char {
     // `!` of the number node a, or of the window slot imm when a is NO_NODE (the slow path exits),
     // stored to window slot home.
     LNOT,
+    // A CALL (pc) of Array.prototype.push, after the CHECK_BUILTIN of its callee: the value a (a
+    // node, or the window slot after the receiver when NO_NODE) appended to the array b (an OBJECT
+    // node, or the receiver's window slot), growing its storage without a collection; the new
+    // length as an INT32. Exits (SLOW_PATH) before any effect for anything but an extensible plain
+    // array with a writable length on the built-in prototype chain.
+    ARRAY_PUSH,
     // An unconditional exit (COLD) to the baseline code at pc, with the dirty registers stored: an
     // instruction of an inlined body that has never run. The block has no successors.
     EXIT,
