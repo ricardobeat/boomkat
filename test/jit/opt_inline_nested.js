@@ -101,4 +101,10 @@ for (var k3 = 0; k3 < 300; k3++) {
 }
 show("recursive", rec);
 
+// A callee with branches nested in an inlined body stays a call there.
+function nfBranch(x) { return x ? x : 7; }
+function nfOuter(a) { return nfBranch(a) + 1; }
+function nfRun() { var s = 0; for (var i = 0; i < 100000; i++) s += nfOuter(i & 3); return s; }
+show("nested branch", nfRun());
+
 print(out.join("\n"));

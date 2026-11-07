@@ -80,6 +80,7 @@ enum OptInlineReject : char (String label) {
     SCOPED {"scoped variable call in an inlined body"},
     CTOR {"not a base constructor"},
     CTOR_BODY {"constructor body not straight-line"},
+    NESTED_FLAT {"nested callee body not straight-line"},
 }
 
 // The words of bytecode an inlined callee may have, and the callees nested in one inline site may
@@ -1502,6 +1503,8 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     // Forward branches only: a loop in the callee stays a call.
     if (cfg.has_backedge) return self.reject(OptInlineReject.BLOCKS);
     s.flat = cfg.block_count != 1;
+    // Only the function's own calls are spliced (OptBuild.flatten): a nested body is lowered in place.
+    if (s.flat && s.parent != 0) return self.reject(OptInlineReject.NESTED_FLAT);
     // An inlined constructor is lowered in place: its allocation and return are the site's.
     if (s.construct && s.flat) return self.reject(OptInlineReject.CTOR_BODY);
     // Calls nest only in a body lowered in place (OptBuild.try_inline), as deep as OPT_INLINE_DEPTH.
