@@ -2245,6 +2245,20 @@ fn void CompiledFunction.classify_lean_call(&self) {
     self.call_flags.lean_known = true;
 }
 
+// Whether a call can enter the function as a lean call does once its function scope is created
+// (the baseline tier's native call, vm::@lean_publish): lean except for needs_env and a name
+// binding, with no `arguments` and no arrow. `plain` asks the same of a call with an undefined
+// receiver, as CallFlags.lean_plain does.
+fn bool CompiledFunction.env_call_ok(&self, bool plain) {
+    FuncFlags fl = self.flags;
+    return fl.needs_env && !fl.is_eval && !fl.is_arrow
+        && !fl.is_class_ctor && !fl.is_generator && !fl.is_async
+        && (!fl.has_rest || self.call_flags.rest_length_only)
+        && !fl.uses_arguments && !fl.needs_lex_bridge
+        && !fl.has_direct_eval && !fl.eval_allows_new_target
+        && (!plain || fl.is_strict || self.call_flags.ignores_this);
+}
+
 // Returns `true` when the function accesses its own environment bindings, so
 // the CALL fast path must create a scope for it. See FuncFlags.needs_env.
 macro bool CompiledFunction.needs_env(&self) {

@@ -798,6 +798,12 @@ fn long jit_enter_redispatched(Dispatch* ds, Instruction* next, DecodedInsn call
 // must be the one new, fresh frame. Returns what jit_call returns, or JIT_NO_RAW when the frame
 // is left to the restart.
 fn long jit_enter_pushed(Dispatch* ds, Instruction* next, uint count_before) {
+    long entered = jit_try_enter_pushed(ds, next, count_before);
+    if (entered == JIT_NO_RAW) ds.heap.jit_stats.calls_restarted++;
+    return entered;
+}
+
+fn long jit_try_enter_pushed(Dispatch* ds, Instruction* next, uint count_before) @private @inline {
     Vm* vm = ds.vm;
     if (vm.activation_count != count_before + 1 || ds.jit_depth >= JIT_NATIVE_DEPTH_CAP
         || vm.threaded_handoff != ThreadedHandoff.NONE
@@ -813,6 +819,7 @@ fn long jit_enter_pushed(Dispatch* ds, Instruction* next, uint count_before) {
     ds.jit_floor = vm.activation_count - 1;
     ds.jit_depth++;
     ds.heap.jit_stats.calls_native++;
+    ds.heap.jit_stats.calls_pushed++;
     return jit_run_entered(ds, entry, old_floor, next);
 }
 

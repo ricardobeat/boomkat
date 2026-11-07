@@ -648,14 +648,16 @@ macro bool th_call_gate(ColdCtx* cold) @private {
 // `with` scope to splice, no activation slot or value-stack room for the frame.
 // `bottom` is the callee's register window; `plain` says the receiver is
 // undefined, which only a strict or this-ignoring callee can take as is.
-fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plain) @private @inline {
+// With `env`, a function that needs only its function scope created (env_call_ok) qualifies too.
+fn CompiledFunction* th_lean_target(Vm* vm, TVal callee, TVal* bottom, bool plain, bool env = false) @private @inline {
     if (!callee.is_object()) { opprof_bail(NOT_COMPILED); return null; }
     HObject* function = (HObject*)callee.get_heapptr();
     if (function == null || !function.is_callable()
         || function.callable_kind() != hobject::CallableKind.COMPILED_FN) { opprof_bail(NOT_COMPILED); return null; }
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     CompiledFunction* target = fd.comp_func;
-    if (target == null || !(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)) {
+    if (target == null || (!(plain ? target.call_flags.lean_plain : target.call_flags.lean_call)
+                           && !(env && target.env_call_ok(plain)))) {
         opprof_bail(plain && target != null && target.call_flags.lean_call ? PLAIN_THIS : NOT_LEAN_FN);
         return null;
     }
@@ -719,13 +721,20 @@ fn Instruction* th_enter_lean(Instruction* pc, HandlerTable* handlers, TVal* reg
 fn bool th_publish_lean(Instruction* pc, TVal* regs, ColdCtx* cold, CompiledFunction* target,
                         uint callee_reg, uint result_reg, uint nargs,
                         bool borrowed, bool clear_this, TVal this_value, bool this_valid,
-                        HObject* new_target) @inline {
+                        HObject* new_target, EnvRecord* own_env = null) @inline {
     Vm* vm = cold.vm;
     Activation* caller = cold.act;
     HObject* function = (HObject*)regs[callee_reg].get_heapptr();
     HObjectFunction* fd = &(*function.extra_ptr()).func;
     EnvRecord* env = fd.var_env;
     EnvRecord* cap = fd.lex_env;
+    EnvRecord* lex = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+    // A function scope created for the call (@lean_publish) heads the chain as
+    // try_fast_compiled_call places it.
+    if (own_env != null) {
+        lex = lex == env && !target.is_namebinding() ? own_env : resolve_call_lex_env(vm, function, target, own_env);
+        env = own_env;
+    }
     uint nregs = target.num_regs;
     TVal* bottom = regs + callee_reg + 2;
 
@@ -737,7 +746,7 @@ fn bool th_publish_lean(Instruction* pc, TVal* regs, ColdCtx* cold, CompiledFunc
     la.parent = caller;
     la.func = target;
     la.var_env = env;
-    la.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+    la.lex_env = lex;
     la.cat = null;
     la.forin = null;
     la.async_gen_state = null;
@@ -763,6 +772,10 @@ fn bool th_publish_lean(Instruction* pc, TVal* regs, ColdCtx* cold, CompiledFunc
     if (this_valid) la.flags |= ACT_FLAG_THIS_VALID;
     if (new_target != null) la.flags |= ACT_FLAG_CONSTRUCT;
     vm.activation_count++;
+    if (own_env != null) {
+        vm.heap.shade_root_env(env);
+        vm.heap.shade_root_env(lex);
+    }
 
     // Missing formals and every local start undefined; surplus arguments stay.
     // Two slots per iteration halves the loop's branches on every entry.
@@ -872,9 +885,21 @@ macro LeanCall @lean_publish(Instruction* pc, TVal* regs, ColdCtx* cold, Compile
                              TVal this_value, bool this_valid, bool $jit) @private {
     $if $jit:
         if (target.jit_code == null) return NO_CODE;
+        // A function that needs its function scope gets it here, before anything is published;
+        // the allocation does not collect (the gate tested the collector).
+        EnvRecord* own_env = null;
+        if (target.flags.needs_env) {
+            HObject* function = (HObject*)regs[callee_reg].get_heapptr();
+            HObjectFunction* fd = &(*function.extra_ptr()).func;
+            own_env = env::env_create_function_scope(cold.heap, fd.var_env, target.scope_capacity()) ?? null;
+            if (own_env == null) return DECLINE;
+        }
+        return th_publish_lean(pc, regs, cold, target, callee_reg, result_reg, nargs, borrowed, clear_this,
+                               this_value, this_valid, null, own_env) ? ENTERED_ARGS : ENTERED;
+    $else
+        return th_publish_lean(pc, regs, cold, target, callee_reg, result_reg, nargs, borrowed, clear_this,
+                               this_value, this_valid, null) ? ENTERED_ARGS : ENTERED;
     $endif
-    return th_publish_lean(pc, regs, cold, target, callee_reg, result_reg, nargs, borrowed, clear_this,
-                           this_value, this_valid, null) ? ENTERED_ARGS : ENTERED;
 }
 
 // Continue a threaded handler after its call shape resolved.
@@ -895,7 +920,7 @@ macro Instruction* @lean_continue(Instruction* pc, HandlerTable* handlers, TVal*
 macro LeanCall @lean_call_method(Instruction* pc, TVal* regs, ColdCtx* cold, bool $jit) @private {
     Instruction insn = *pc;
     Vm* vm = cold.vm;
-    CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, false);
+    CompiledFunction* target = th_lean_target(vm, regs[insn.b], regs + insn.b + 2, false, $jit);
     if (target == null) return NATIVE;
     @note_callee(pc, cold, target);
     TVal receiver = regs[insn.b + 1];
@@ -981,7 +1006,7 @@ macro Instruction* @apply_args(Instruction* pc, HandlerTable* handlers, TVal* re
 macro LeanCall @lean_call_undef_this(Instruction* pc, TVal* regs, ColdCtx* cold, bool $jit) @private {
     Instruction insn = *pc;
     if (@lean_gate(cold, $jit)) return DECLINE;
-    CompiledFunction* target = th_lean_target(cold.vm, regs[insn.b], regs + insn.b + 2, true);
+    CompiledFunction* target = th_lean_target(cold.vm, regs[insn.b], regs + insn.b + 2, true, $jit);
     if (target == null) return DECLINE;
     @note_callee(pc, cold, target);
     if (th_trivial_call(regs, cold, target, insn.b, insn.a, insn.c)) return DONE;
@@ -1070,7 +1095,7 @@ macro LeanCall @lean_call_var(Instruction* pc, TVal* regs, ColdCtx* cold, bool $
     TVal callee = vic.slot_ptr.get();
     if (env::is_tdz_sentinel(&callee)) return DECLINE;
     TVal* ra = regs + insn.a;
-    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true);
+    CompiledFunction* target = th_lean_target(vm, callee, regs + insn.a + 2, true, $jit);
     if (target == null) return DECLINE;
     @note_callee(pc, cold, target);
     if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return DONE;
@@ -1099,7 +1124,7 @@ macro LeanCall @lean_call_global(Instruction* pc, TVal* regs, ColdCtx* cold, boo
     hobject::PropValue* pv = gic.slot_ptr;
     if (slot_is_tdz(pv)) return DECLINE;
     TVal callee = pv.get();
-    CompiledFunction* target = th_lean_target(cold.vm, callee, regs + insn.a + 2, true);
+    CompiledFunction* target = th_lean_target(cold.vm, callee, regs + insn.a + 2, true, $jit);
     if (target == null) return DECLINE;
     @note_callee(pc, cold, target);
     if (th_trivial_call(regs, cold, target, insn.a, insn.a, insn.b)) return DONE;
