@@ -122,6 +122,11 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     }
     if (dict_proto && !epoch_chain) return false;
     if (chain_len > 0 && !hobject::ic_reserve_chain(ic, heap)) return false;
+    if (epoch_chain && ic.key.borrow() == key) {
+        hobject::ic_proto_note(ic, hobj.shape_id, hobj.prototype, heap);
+    } else if (ic.chain != null && ic.chain.protos != null && ic.key.borrow() != key) {
+        ic.chain.protos.count = 0;
+    }
     ic.shape_id = hobj.shape_id;
     ic.shape_gen = hobj.shape_generation(heap);
     ic.has_proto = !is_own;
@@ -148,6 +153,28 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     // before the retain.
     ic.key.set(heap, (HString*)key);
     return true;
+}
+
+// A read at the site of the epoch entry `ic` whose receiver `hobj` the entry does not hold (an
+// optimized load left for it): when the property is an ordinary data property of a prototype an
+// epoch entry could cache, its case joins the entry's prototype-read set. True when the set gained it.
+fn bool ic_note_proto_read(Heap* heap, hobject::ICEntry* ic, HObject* hobj) {
+    void* key = (void*)ic.key.borrow();
+    if (key == null || !ic.has_proto || ic.chain_len != hobject::IC_CHAIN_EPOCH || ic.chain == null) return false;
+    if (((HString*)key).is_arridx() || ((HString*)key).is_hidden()) return false;
+    if (!hobject::plain_property_object(hobj) || hobj.in_dict_mode(heap) || hobj.find_prop_idx(key, heap) >= 0) return false;
+    HObject* walk = hobj;
+    for (uint depth = 0; depth < hobject::IC_MAX_CHAIN; depth++) {
+        walk = walk.prototype;
+        if (walk == null || !hobject::plain_property_object(walk)) return false;
+        int idx = walk.find_prop_idx(key, heap);
+        if (idx < 0) continue;
+        if (walk.get_prop_flags((uint)idx, heap).is_accessor) return false;
+        for (HObject* p = hobj.prototype; p != walk; p = p.prototype) p.gc.prototype_observed = true;
+        walk.gc.prototype_observed = true;
+        return hobject::ic_proto_add(ic, hobj.shape_id, hobj.prototype, walk, (uint)idx, heap);
+    }
+    return false;
 }
 
 // Cold tail: the virtual .name/.length/.prototype reads on a LIGHTFUNC plus

@@ -1853,6 +1853,11 @@ fn void baseline_dump_feedback(Heap* h) {
                 io::eprintfn("%s", (fb & hobject::FB_POLY) != 0 ? " poly" : "");
                 continue;
             }
+            hobject::ICEntry* pe = &entries[i];
+            if (pe.key.borrow() != null && pe.chain != null && pe.chain.protos != null && pe.chain.protos.count != 0) {
+                io::eprintfn("feedback fn#%d +%d %s protos %d%s%s", fi, i, cf.code[i].op, pe.chain.protos.count,
+                             pe.chain.protos.mega ? " mega" : "", pe.chain.protos.epoch == h.prototype_epoch ? "" : " stale");
+            }
             if (fb == 0 || !vm::has_feedback(cf.code[i].op)) continue;
             io::eprintfn("feedback fn#%d +%d %s %s%s%s%s", fi, i, cf.code[i].op,
                          (fb & hobject::FB_OVF) != 0 ? "ovf " : "", (fb & hobject::FB_DBL) != 0 ? "dbl " : "",
