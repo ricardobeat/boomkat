@@ -1070,6 +1070,46 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 }
 
 // ============================================================================
+// Runs @@replace for a pristine receiver whose pattern has no named groups.
+// False leaves everything untouched for the generic path.
+fn bool regexp_replace_try_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
+                                    bool replace_is_fn, TVal replace_val, HString* replace_hs) {
+    if (!regexp_is_pristine(ctx.heap, rx)) return false;
+    void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
+    int jsf = (*rx.extra_ptr()).regexp.flags;
+    if (re_bindings::re_get_groupnames(re_data) != null || ((jsf & 32) != 0 && (jsf & 1) == 0)) return false;
+    regexp_replace_pristine(ctx, rx, s_hstr, replace_is_fn, replace_val, replace_hs);
+    return true;
+}
+
+// String.prototype.replace(rx, replaceValue) with a pristine `rx`: the
+// property read of rx[@@replace] and the call through the VM are skipped.
+// `regexp_proto_pristine` covers @@replace itself, and `rx` owns nothing but
+// lastIndex, so that read can only find the intrinsic. Returns false, having
+// run no script, when the generic protocol must run instead.
+fn bool regexp_string_replace_fast(BuiltinContext* ctx, HObject* rx, HString* s_hstr) {
+    Heap* heap = ctx.heap;
+    if (rx.get_class() != hobject::ObjClass.REGEXP || !regexp_is_pristine(heap, rx)) return false;
+    TVal replace_val;
+    replace_val.set_undefined();
+    bool replace_is_fn = false;
+    if (ctx.argc > 1) {
+        replace_val = ctx.regs[ctx.base_reg + 1];
+        replace_is_fn = replace_val.is_lightfunc() ||
+            (replace_val.is_object() && replace_val.get_heapptr() != null &&
+             ((HObject*)replace_val.get_heapptr()).is_callable());
+        // ToString of an object can run script that changes the receiver.
+        if (!replace_is_fn && replace_val.is_object()) return false;
+    }
+    HString* replace_hs = null;
+    if (!replace_is_fn) {
+        replace_hs = ctx.argc > 1 ? builtin_to_string_vm(ctx, &replace_val) : heap.str(heap::BuiltinStr.UNDEFINED);
+        if (ctx.should_throw) return true;
+        if (replace_hs == null) replace_hs = heap.str(heap::BuiltinStr.UNDEFINED);
+    }
+    return regexp_replace_try_pristine(ctx, rx, s_hstr, replace_is_fn, replace_val, replace_hs);
+}
+
 // RegExp.prototype[@@replace], ECMA-262 §22.2.5.8
 // ============================================================================
 
@@ -1223,14 +1263,20 @@ alias RrMatches = growvec::GrowVec{TVal};
 // getter is a builtin. Everything the generic @@replace and @@split read about
 // a receiver is on this list, as is `[Symbol.match]`, which `new RegExp(rx,
 // flags)` reads through IsRegExp, and `test`, which RETEST calls.
-const usz REGEXP_GUARD_SLOTS = 13;
+const usz REGEXP_GUARD_SLOTS = 16;
 const usz REGEXP_GUARD_MATCH = 2;
-// `test` follows the getters; it is a data property like `exec`.
+// Slots 3..11 are the accessors. `test` follows them; it is a data property
+// like `exec`, and so are the @@replace, @@split and @@search entry points,
+// which String.prototype.replace, split and search call after one property read.
+const usz REGEXP_GUARD_FIRST_GETTER = 3;
 const usz REGEXP_GUARD_TEST = 12;
+const usz REGEXP_GUARD_REPLACE = 13;
+const usz REGEXP_GUARD_SPLIT = 14;
+const usz REGEXP_GUARD_SEARCH = 15;
 const String[REGEXP_GUARD_SLOTS] REGEXP_GUARD_KEYS = {
     "exec", "constructor", "",
     "flags", "hasIndices", "global", "ignoreCase", "multiline", "dotAll",
-    "unicode", "unicodeSets", "sticky", "test",
+    "unicode", "unicodeSets", "sticky", "test", "", "", "",
 };
 const int[REGEXP_GUARD_SLOTS] REGEXP_GUARD_FNS = {
     Builtin.REGEXP_PROTO_EXEC.ordinal,
@@ -1246,7 +1292,24 @@ const int[REGEXP_GUARD_SLOTS] REGEXP_GUARD_FNS = {
     Builtin.REGEXP_PROTO_GET_UNICODESETS.ordinal,
     Builtin.REGEXP_PROTO_GET_STICKY.ordinal,
     Builtin.REGEXP_PROTO_TEST.ordinal,
+    Builtin.REGEXP_PROTO_SYMBOL_REPLACE.ordinal,
+    Builtin.REGEXP_PROTO_SYMBOL_SPLIT.ordinal,
+    Builtin.REGEXP_PROTO_SYMBOL_SEARCH.ordinal,
 };
+
+fn bool regexp_guard_is_getter(usz i) @inline {
+    return i >= REGEXP_GUARD_FIRST_GETTER && i < REGEXP_GUARD_TEST;
+}
+
+fn HString* regexp_guard_key(Heap* heap, usz i) {
+    switch (i) {
+        case REGEXP_GUARD_MATCH: return ensure_match_symbol(heap);
+        case REGEXP_GUARD_REPLACE: return ensure_replace_symbol(heap);
+        case REGEXP_GUARD_SPLIT: return ensure_split_symbol(heap);
+        case REGEXP_GUARD_SEARCH: return ensure_search_symbol(heap);
+        default: return builtin_intern_string(heap, REGEXP_GUARD_KEYS[i]);
+    }
+}
 
 // Resolves the guarded properties on RegExp.prototype and caches their slots
 // against its current shape. Fails when one is missing or has changed kind.
@@ -1255,11 +1318,10 @@ fn bool regexp_guard_refresh(Heap* heap) {
     RegExpGuard* g = &heap.regexp_guard;
     g.shape_id = (uint)-1;
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
-        HString* key = i == REGEXP_GUARD_MATCH
-            ? ensure_match_symbol(heap) : builtin_intern_string(heap, REGEXP_GUARD_KEYS[i]);
+        HString* key = regexp_guard_key(heap, i);
         if (key == null) return false;
         int idx = proto.find_prop_idx((void*)key, heap);
-        bool is_getter = i > REGEXP_GUARD_MATCH && i != REGEXP_GUARD_TEST;
+        bool is_getter = regexp_guard_is_getter(i);
         if (idx < 0 || proto.get_prop_flags((uint)idx, heap).is_accessor != is_getter) return false;
         g.slots[i] = (ushort)idx;
     }
@@ -1288,7 +1350,7 @@ fn bool regexp_proto_pristine(Heap* heap) {
     PropValue* values = proto.prop_values();
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
         TVal v = values[g.slots[i]].get();
-        if (i > REGEXP_GUARD_MATCH && i != REGEXP_GUARD_TEST) v = hobject::hobject_access_getter(v);
+        if (regexp_guard_is_getter(i)) v = hobject::hobject_access_getter(v);
         if (!regexp_is_builtin(v, REGEXP_GUARD_FNS[i])) return false;
     }
     return true;
@@ -1333,7 +1395,9 @@ fn bool regexp_find_matches(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     bool full_unicode = (jsf & (16 | 128)) != 0;
     int input_len = (int)s_hstr.unit_len();
 
+    int[32] bounds_storage;
     growvec::GrowVec{int} bounds = { .heap = heap };
+    bounds.use_storage(&bounds_storage, 32);
     defer bounds.free();
     if (!bounds.reserve(2 * ncap)) {
         builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
@@ -1382,9 +1446,16 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
     usz ncap = (usz)(re_bindings::re_get_capture_count(re_data) - 1);
     usz stride = 2 + 2 * ncap;
 
+    int[48] spans_storage;
     growvec::GrowVec{int} spans = { .heap = heap };
+    spans.use_storage(&spans_storage, 48);
     defer spans.free();
     if (!regexp_find_matches(ctx, rx, s_hstr, &spans, ncap)) return;
+    // No match leaves the input as the result; there is nothing to rebuild.
+    if (spans.len == 0) {
+        ctx.result_string(s_hstr);
+        return;
+    }
 
     UnitBuf out;
     out.init(heap);
@@ -1394,7 +1465,7 @@ fn void regexp_replace_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hst
     growvec::GrowVec{TVal} args = { .heap = heap };
     defer slices.free();
     defer args.free();
-    if (!slices.reserve(ncap) || !args.reserve(ncap + 3)) {
+    if (!slices.reserve(ncap) || (replace_is_fn && !args.reserve(ncap + 3))) {
         builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
         return;
     }
@@ -1493,14 +1564,7 @@ fn void builtin_regexp_proto_symbol_replace(BuiltinContext* ctx) {
 
     // Nothing above can run script once the arguments are coerced, so the
     // receiver's state is what the match loop sees.
-    if (regexp_is_pristine(heap, rx)) {
-        void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
-        int jsf = (*rx.extra_ptr()).regexp.flags;
-        if (re_bindings::re_get_groupnames(re_data) == null && ((jsf & 32) == 0 || (jsf & 1) != 0)) {
-            regexp_replace_pristine(ctx, rx, s_hstr, replace_is_fn, replace_val, replace_str_hstr);
-            return;
-        }
-    }
+    if (regexp_replace_try_pristine(ctx, rx, s_hstr, replace_is_fn, replace_val, replace_str_hstr)) return;
 
     // Step 8: flags = ? ToString(? Get(rx, "flags")).
     HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
@@ -1854,7 +1918,9 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     heap.set_prototype(arr, heap.array_proto);
     if (limit == 0) { ctx.result_object(arr); return; }
 
+    int[32] bounds_storage;
     growvec::GrowVec{int} bounds = { .heap = heap };
+    bounds.use_storage(&bounds_storage, 32);
     defer bounds.free();
     if (!bounds.reserve(2 * ncap)) {
         builtin_throw(ctx, heap.range_err_proto, "Invalid string length");
