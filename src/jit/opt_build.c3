@@ -211,8 +211,14 @@ struct OptBuild {
     bool inline_failed;
     bool inline_unsafe;
     bool no_inline;
-    // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE).
+    // Calls of Array.prototype.push built as ARRAY_PUSH nodes.
+    uint pushes;
+    // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE), and the
+    // call it was looking at, for --opt-log: the caller, its call word and the callee once known.
     OptInlineReject rej;
+    CompiledFunction* rej_caller;
+    CompiledFunction* rej_callee;
+    uint rej_pc;
     Opcode rej_op;
     uint inlined;
     OptRegState* cur;
@@ -434,6 +440,16 @@ fn bool OptBuild.reject(&self, OptInlineReject why) {
 
 fn void OptBuild.count_reject(&self, OptInlineReject why, Opcode op) {
     self.h.opt.inline_rejected[why.ordinal]++;
+    if (self.h.opt.log && self.rej_caller != null) {
+        io::eprintf("opt inline-reject ");
+        opt_log_fn(self.rej_caller);
+        io::eprintf(" +%d", self.rej_pc);
+        if (self.rej_callee != null) {
+            io::eprintf(" -> ");
+            opt_log_fn(self.rej_callee);
+        }
+        io::eprintfn(why == OptInlineReject.OPCODE ? " %s %s" : " %s", why.label, op);
+    }
     if (why == OptInlineReject.OPCODE) self.h.opt.inline_rejected_ops[op.ordinal]++;
 }
 
@@ -1323,6 +1339,40 @@ fn bool OptBuild.get_length(&self) {
     return true;
 }
 
+// A CALL of Array.prototype.push with one argument (opt_push_site): a CHECK_BUILTIN of the callee,
+// then an ARRAY_PUSH of the argument onto the receiver, whose result is the new length. In an
+// inlined body an operand beyond the caller's frame must be an OBJECT node; one a read left in the
+// window asks for that in the next round.
+fn bool OptBuild.push_call(&self) {
+    if (self.w.op != Opcode.CALL || self.wide || !opt_push_site(self.h, self.cur_f(), self.next_pc - 1)) return false;
+    if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return false;
+    uint callee = self.w.b;
+    uint ra = self.w.a;
+    if (callee + 2 >= self.nregs || ra >= self.nregs) return false;
+    uint[3] nodes;
+    for (uint k = 0; k < 3; k++) {
+        uint r = callee + k;
+        nodes[k] = NO_NODE;
+        if (self.cur[r].node != NO_NODE && (k == 2 || self.is_object(r))) {
+            nodes[k] = self.cur[r].node;
+        } else if (self.cur_fn != 0 && r >= self.caller_regs) {
+            if (!self.call_operand(r, &nodes[k])) return self.cur_fn == 0 ? false : self.generic();
+        } else if (!self.in_window(r)) {
+            return self.cur_fn == 0 ? false : self.generic();
+        }
+    }
+    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, nodes[0], NO_NODE, (long)builtins::Builtin.ARRAY_PROTO_PUSH.ordinal);
+    self.g.nodes[chk].home = callee;
+    self.snapshot(chk);
+    uint n = self.add(OptOp.ARRAY_PUSH, OptRep.INT32, nodes[2], nodes[1], (long)self.pc);
+    self.snapshot(n);
+    self.set(ra, n);
+    // The array's storage may have moved.
+    self.forget_facts();
+    self.pushes++;
+    return true;
+}
+
 // PUTPROPC and PUTTHISC of an own writable data property by the shape its cache holds, from an
 // object in the window; a numeric value is stored without being published first.
 fn bool OptBuild.put_field(&self) {
@@ -1726,7 +1776,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     for (uint k = 0; k < cfg.instruction_count; k++) {
         Opcode op = cfg.nodes[k].view.insn.op;
         if (!inline_op_ok(op)) { self.rej_op = op; return self.reject(OptInlineReject.OPCODE); }
-        s.has_calls |= inline_call_op(op);
+        s.has_calls |= inline_call_op(op) && !opt_push_site(self.h, cf, cfg.nodes[k].view.pc);
         // A CALL_S is a spread call unless it completes a forwarding call, which only a function
         // whose `arguments` register holds the argument count makes.
         bool paired = op == Opcode.APPLY_ARGS ? forward_pair(cfg, k) : (op != Opcode.CALL_S || (k > 0 && forward_pair(cfg, k - 1)));
@@ -1912,6 +1962,9 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     if (forward) live_out = &ps.live_out[i + 1];
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[view.next_pc - 1];
     if ((ic.feedback & (construct ? hobject::FB_CTOR : hobject::FB_CALL)) == 0) return false;
+    self.rej_caller = f;
+    self.rej_pc = view.pc;
+    self.rej_callee = null;
     CompiledFunction* cf;
     // A forwarding function shared by many callers forwards to many functions: the call that
     // reached it, the site's parent, records the function it forwarded to from there.
@@ -1933,6 +1986,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     bool method = op == Opcode.CALL || forward;
     // The window the call publishes lies in the caller's registers as far as the arguments go.
     if (cf == null) return false;
+    self.rej_callee = cf;
     if (construct && !opt_base_constructor(cf)) return self.reject(OptInlineReject.CTOR);
     if (cf == f || cf == self.f) return self.reject(OptInlineReject.SELF);
     for (OptInlineSite* a = ps; a != null; a = a.parent == 0 ? null : &self.sites[(sz)a.parent - 1]) {
@@ -2079,6 +2133,8 @@ fn void OptBuild.find_sites(&self) {
         flat_total += size;
         self.flat_count++;
     }
+    // The rejections counted while building name no site of their own.
+    self.rej_caller = null;
 }
 
 // Find the nested inline sites of the calls in the body of site `si`, recursively, and widen nregs
@@ -2090,6 +2146,8 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
     self.sites[si].child_of = mem::new_array(uint, count);
     for (uint k = 0; k < count; k++) {
         if (!inline_call_op(self.sites[si].cfg.nodes[k].view.insn.op)) continue;
+        // A push the body builds as a node (OptBuild.push_call).
+        if (opt_push_site(self.h, self.sites[si].cf, self.sites[si].cfg.nodes[k].view.pc)) continue;
         OptInlineSite c;
         self.rej = OptInlineReject.BUILD;
         Opcode cop = self.sites[si].cfg.nodes[k].view.insn.op;
@@ -2948,6 +3006,7 @@ fn bool OptBuild.lower_op(&self) {
         case CALL_GLOBAL:
         case NEW_OBJ:
         case APPLY_ARGS:
+            if (self.push_call()) return true;
             if (self.try_inline()) return true;
             return self.generic();
         case CALL_S:
