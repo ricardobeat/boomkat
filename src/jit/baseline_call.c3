@@ -348,11 +348,15 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
         if (i < clear_end) self.mov(m | bottom, (long)i * TVal::size, undef, 0);
     } else {
         sljit_emit_op2(c, SLJIT_ADD, R0, 0, bottom, 0, SLJIT_IMM, (long)from * TVal::size);
-        sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)clear_end * TVal::size);
+        // The extent is static: clear pairs, then the possible odd tail.
+        uint pair_end = clear_end - ((clear_end - from) & 1);
+        sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)pair_end * TVal::size);
+        self.mov(R2, 0, undef, 0);
         void* loop = sljit_emit_label(c);
-        self.mov(m | R0, 0, undef, 0);
-        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, TVal::size);
+        self.store_pair(R0, 0, undef, TVal::size, R2);
+        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 2 * TVal::size);
         sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R0, 0, R1, 0), loop);
+        if (pair_end < clear_end) self.mov(m | bottom, (long)pair_end * TVal::size, undef, 0);
         self.mov(zero, 0, SLJIT_IMM, 0);
     }
     if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, SLJIT_IMM, K_INT);
