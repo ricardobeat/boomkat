@@ -38,6 +38,8 @@ struct InlineAlloc {
     uint prop_capacity;
     uint prop_count;
     uint array_size;
+    uint array_used;     // elements copied from `copy_from`, a constant template's values
+    long copy_from;
     uint array_inline;   // the inline literal array capacity, or 0 for an object
     long proto_off;      // the Heap field holding the prototype, or NEW_OBJECT_PROTO
     long fill_off;       // where the undefined slots start
@@ -84,6 +86,17 @@ fn bool Asm.inline_alloc_plan(&self, InlineAlloc* p) {
             *p = { .pool = l.heap_pool_arrays + (long)(capacity - 1) * l.pool_size,
                    .gc = (uint)hobject::inline_array_gc(), .array_size = capacity, .array_inline = capacity,
                    .proto_off = l.heap_array_proto, .fill_off = l.obj_size_array, .fill_count = capacity };
+        case NEWARR_CONST:
+            // alloc_constant_array: an inline array holding the template's numbers.
+            if (!self.consts_fixed || self.w.get_bc() >= self.f.const_count) return false;
+            TVal* template = self.f.constants + self.w.get_bc();
+            uint length = (uint)template[0].get_fastint();
+            if (length == 0 || length > hobject::ARRAY_INLINE_MAX_CAPACITY) return false;
+            flags = hobject::inline_array_flags(true);
+            *p = { .pool = l.heap_pool_arrays + (long)(length - 1) * l.pool_size,
+                   .gc = (uint)hobject::inline_array_gc(), .array_size = length, .array_used = length,
+                   .copy_from = (long)(usz)(template + 1), .array_inline = length,
+                   .proto_off = l.heap_array_proto };
         default:
             return false;
     }
@@ -115,12 +128,19 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_capacity, SLJIT_IMM, (long)p.prop_capacity);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_count, SLJIT_IMM, (long)p.prop_count);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_size, SLJIT_IMM, (long)p.array_size);
-    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_used, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_used, SLJIT_IMM, (long)p.array_used);
     sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_prop_alloc, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_prop_hash, SLJIT_IMM, 0);
     if (p.array_inline != 0) {
-        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_len, SLJIT_IMM, 0);
+        sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_len, SLJIT_IMM, (long)p.array_used);
         sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_array_inline_cap, SLJIT_IMM, (long)p.array_inline);
+    }
+    if (p.copy_from != 0) {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, p.copy_from);
+        for (uint k = 0; k < p.array_used; k++) {
+            sljit_emit_op1(c, SLJIT_MOV, R2, 0, m | R1, (long)k * 8);
+            sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_size_array + (long)k * 8, R2, 0);
+        }
     }
     if (p.fill_count != 0) {
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, l.undefined_bits);
