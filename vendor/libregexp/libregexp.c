@@ -2862,14 +2862,16 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
         no_match:
             for(;;) {
                 REExecStateEnum type;
-                if (bp == s->stack_buf)
-                    return 0;
                 /* undo the modifications to capture[] */
                 while (sp > bp) {
                     capture[sp[-2].val] = sp[-1].ptr;
                     sp -= 2;
                 }
-                
+                /* a failed search leaves capture[] as it found it, so
+                   lre_exec_ex can retry at the next position */
+                if (bp == s->stack_buf)
+                    return 0;
+
                 pc = sp[-3].ptr;
                 cptr = sp[-2].ptr;
                 type = sp[-1].bp.type;
@@ -2902,8 +2904,9 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                     if (type == RE_EXEC_STATE_LOOKAHEAD)
                         break;
                 }
-                if (sp != s->stack_buf) {
-                    /* keep the undo info if there is a saved state */
+                {
+                    /* keep the undo info, also at the outermost level, where
+                       a failed search uses it to restore capture[] */
                     sp1 = sp;
                     while (sp1 < sp_top) {
                         next_sp = (void *)sp1[2].ptr;
@@ -3581,8 +3584,6 @@ int lre_exec_ex(uint8_t **capture,
                 ret = 0;
                 break;
             }
-            for(i = 0; i < s->capture_count * 2; i++)
-                capture[i] = NULL;
             ret = lre_exec_backtrack(s, capture, body, cptr);
             if (ret != 0)
                 break;
