@@ -1165,7 +1165,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     uint callee_reg = ((a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL) ? a.w.a : a.w.b) + caller.reg_base;
     // A forwarding call is guarded before its registers move: the function `apply` runs is in the
     // slot after the call's callee register, the receiver after it.
-    if (a.w.op == Opcode.APPLY_ARGS) callee_reg++;
+    if (a.w.op == Opcode.APPLY_ARGS || (n.cc & 4) != 0) callee_reg++;
     int m = SLJIT_MEM;
     void*[16] miss;
     uint misses = 0;
@@ -1181,7 +1181,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R0, 0);
     // A NEW_OBJ's constructor is also constructable.
     hobject::ObjFlags ctor_bit;
-    ctor_bit.constructable = n.cc == 2;
+    ctor_bit.constructable = (n.cc & 3) == 2;
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask | (long)(uint)ctor_bit);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want | (long)(uint)ctor_bit);
     sljit_emit_op1(c, SLJIT_MOV_S32, R4, 0, m | R0, k.fn_builtin);
@@ -1208,7 +1208,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     uint end = callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS;
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)end * TVal::size);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | R0, k.vm_valstack_end);
-    if (n.cc == 1 && !cf.call_flags.ignores_this) {
+    if ((n.cc & 3) == 1 && !cf.call_flags.ignores_this) {
         // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
         // that any exit stores into a frame it publishes.
         if (n.b != NO_NODE) {

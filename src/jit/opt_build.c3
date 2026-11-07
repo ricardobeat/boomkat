@@ -80,6 +80,7 @@ enum OptInlineReject : char (String label) {
     CTOR {"not a base constructor"},
     CTOR_BODY {"constructor body not straight-line"},
     NESTED_FLAT {"nested callee body not straight-line"},
+    DOTCALL_FLAT {"function called through call has several blocks"},
 }
 
 // The words of bytecode an inlined callee may have, and the callees nested in one inline site may
@@ -105,6 +106,10 @@ struct OptInlineSite {
     // The APPLY_ARGS of `f.apply(x, arguments)` in a forwarding body (forward_pair): the callee is
     // `f`, its receiver `x`, and its arguments those the forwarding body was called with.
     bool forward;
+    // An `X.call(x, args)`: the callee register holds Function.prototype.call, the receiver slot
+    // `X`, and the call runs `X` on `x` with the arguments after it (OptBuild.call_window shifts them
+    // down as the builtin does). nargs counts the arguments after `x`.
+    bool dotcall;
     // The count of arguments the call passes.
     uint nargs;
     DecodedCfg cfg;
@@ -1177,7 +1182,7 @@ fn bool OptBuild.put_field(&self) {
     bool this_op = self.w.op == Opcode.PUTTHISC;
     // A forwarded receiver is typically the object an inlined constructor is building.
     if ((ic == null || !ic.prop_flags.writable) && this_op && self.cur_fn != 0
-        && (self.sites[self.cur_site].construct || self.sites[self.cur_site].forward)) return self.add_field();
+        && (self.sites[self.cur_site].construct || self.sites[self.cur_site].forward || self.sites[self.cur_site].dotcall)) return self.add_field();
     if (ic == null || !ic.prop_flags.writable) return self.generic();
     uint recv = self.field_receiver();
     uint rnode = NO_NODE;
@@ -1571,6 +1576,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     // Forward branches only: a loop in the callee stays a call.
     if (cfg.has_backedge) return self.reject(OptInlineReject.BLOCKS);
     s.flat = cfg.block_count != 1;
+    if (s.flat && s.dotcall) return self.reject(OptInlineReject.DOTCALL_FLAT);
     // Only the function's own calls are spliced (OptBuild.flatten): a nested body is lowered in place.
     if (s.flat && s.parent != 0) return self.reject(OptInlineReject.NESTED_FLAT);
     // An inlined constructor is lowered in place: its allocation and return are the site's.
@@ -1676,7 +1682,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             case PUTTHISC:
                 hobject::ICEntry* ic = self.own_field();
                 ok = (s.method && ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field())
-                    || ((s.construct || s.forward) && ((ic != null && ic.prop_flags.writable) || self.absent_field() != null));
+                    || ((s.construct || s.forward || s.dotcall) && ((ic != null && ic.prop_flags.writable) || self.absent_field() != null));
                 why = OptInlineReject.FIELD;
             case GETGLOBAL: case GETVAR:
                 ok = (s.flat && self.cold_field()) || ((hobject::VarICEntry*)cf.var_ic_entries)[self.next_pc - 1].env != null;
@@ -1726,6 +1732,10 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     CompiledFunction* cf = opt_site_callee(self.h, f, view.next_pc - 1);
     uint callee_reg = var_call ? view.insn.a : view.insn.b;
     uint nargs = forward ? ps.nargs : (var_call ? view.insn.b : view.insn.c);
+    // `X.call(x, args)`: the site's own window (callee register, X, x, args) holds one argument more
+    // than X's.
+    bool dotcall = op == Opcode.CALL && (ic.feedback & hobject::FB_DOTCALL) != 0;
+    if (dotcall && nargs == 0) return false;
     bool method = op == Opcode.CALL || forward;
     // The window the call publishes lies in the caller's registers as far as the arguments go.
     if (cf == null) return false;
@@ -1737,6 +1747,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     if (depth > OPT_INLINE_DEPTH) return self.reject(OptInlineReject.DEPTH);
     // (A forwarding call's arguments are moved into its window from the body's first registers.)
     if (!forward && callee_reg + 2 + nargs > regs) return self.reject(OptInlineReject.WINDOW);
+    if (dotcall) nargs--;
     cf.classify_lean_call();
     if (cf.realm != f.realm || !opt_function_eligible(cf, true)) return self.reject(OptInlineReject.INELIGIBLE);
     if (!cf.call_flags.lean_call || (!method && !construct && !cf.call_flags.lean_plain)) return self.reject(OptInlineReject.NOT_LEAN);
@@ -1754,7 +1765,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
         if (live_out.test(r)) return self.reject(OptInlineReject.WINDOW_LIVE);
     }
     uint base = (ps == null ? 0 : ps.base) + callee_reg + 2;
-    *s = { .insn = i, .cf = cf, .base = base, .method = method, .construct = construct, .var_call = var_call, .forward = forward,
+    *s = { .insn = i, .cf = cf, .base = base, .method = method, .construct = construct, .var_call = var_call, .forward = forward, .dotcall = dotcall,
            .nargs = nargs, .parent = parent, .depth = depth };
     bool ok = compiler::bytecode_cfg_build(&s.cfg, cf.code, cf.code_count, self.h, forwarding: true);
     if (ok) {
@@ -2105,12 +2116,29 @@ fn bool OptBuild.forward_window(&self, OptInlineSite* s, bool* pending) {
     // The arguments lie below the call's registers, which the moves overwrite.
     if (ps.base + count > callee_reg) return false;
     uint[2 + 32] src @noinit;
-    uint[2 + 32] value @noinit;
-    bool[2 + 32] fresh;
     src[0] = callee_reg + 1;
     src[1] = callee_reg + 2;
     for (uint i = 0; i < count; i++) src[2 + i] = ps.base + i;
-    uint moves = 2 + count;
+    if (!self.move_window(&src[0], 2 + count, callee_reg, pending)) return false;
+    // The count register, as APPLY_ARGS leaves it.
+    self.set(self.w.c, self.const_i32((long)s.nargs));
+    return true;
+}
+
+// The registers of `X.call(x, args)` shifted down by one slot, as Function.prototype.call leaves its
+// window for the call it re-dispatches: X into the callee register, x after it, then the arguments.
+fn bool OptBuild.call_window(&self, OptInlineSite* s, bool* pending) {
+    uint callee_reg = s.base - 2;
+    uint count = min(s.nargs, s.cf.num_regs);
+    uint[2 + 32] src @noinit;
+    for (uint m = 0; m < 2 + count; m++) src[m] = callee_reg + 1 + m;
+    return self.move_window(&src[0], 2 + count, callee_reg, pending);
+}
+
+// Registers `src[m]` moved to `callee_reg + m`, in order, with each value read before any moves.
+fn bool OptBuild.move_window(&self, uint* src, uint moves, uint callee_reg, bool* pending) {
+    uint[2 + 32] value @noinit;
+    bool[2 + 32] fresh;
     for (uint m = 0; m < moves; m++) {
         uint r = src[m];
         uint dst = callee_reg + m;
@@ -2146,8 +2174,6 @@ fn bool OptBuild.forward_window(&self, OptInlineSite* s, bool* pending) {
             self.set(dst, self.add(OptOp.COPY, self.rep_of(v), v));
         }
     }
-    // The count register, as APPLY_ARGS leaves it.
-    self.set(self.w.c, self.const_i32((long)s.nargs));
     return true;
 }
 
@@ -2244,8 +2270,8 @@ fn bool OptBuild.try_inline(&self) {
     uint apply_node = NO_NODE;
     uint scope_node = NO_NODE;
     bool state_ok = true;
-    if (s.forward) {
-        // Before a forwarding call moves them: `apply`, the function it runs and the receiver.
+    if (s.forward || s.dotcall) {
+        // Before the call moves them: `apply` or `call`, the function it runs and the receiver.
         state_ok = self.call_operand(callee_reg, &apply_node) && self.call_operand(callee_reg + 1, &callee_node)
             && self.call_operand(callee_reg + 2, &recv_node);
     } else if (s.var_call) {
@@ -2295,16 +2321,23 @@ fn bool OptBuild.try_inline(&self) {
         }
     }
     // The guard resumes the call itself, in the caller's context.
-    if (s.forward) {
-        uint fwd = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, apply_node, NO_NODE, (long)builtins::Builtin.FUNCTION_PROTO_APPLY.ordinal);
+    if (s.forward || s.dotcall) {
+        uint fwd = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, apply_node, NO_NODE,
+                            (long)(s.dotcall ? builtins::Builtin.FUNCTION_PROTO_CALL : builtins::Builtin.FUNCTION_PROTO_APPLY).ordinal);
         self.g.nodes[fwd].home = callee_reg;
         self.snapshot(fwd);
     }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
-    self.g.nodes[chk].cc = s.construct ? 2 : (s.method ? 1 : 0);
+    // Bit 2: the function and receiver are those after the callee register (`apply`, `call`).
+    self.g.nodes[chk].cc = (s.construct ? 2 : (s.method ? 1 : 0)) | (s.dotcall ? 4 : 0);
     self.snapshot(chk);
     bool move_pending = false;
-    bool moved = !s.forward || self.forward_window(s, &move_pending);
+    bool moved = true;
+    if (s.forward) {
+        moved = self.forward_window(s, &move_pending);
+    } else if (s.dotcall) {
+        moved = self.call_window(s, &move_pending);
+    }
     // A constructor's object, allocated in the caller's context: its exit resumes the NEW_OBJ.
     uint object = NO_NODE;
     if (s.construct) {

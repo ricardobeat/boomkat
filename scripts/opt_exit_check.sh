@@ -22,7 +22,7 @@ check_task() {   # file reason ("discard" for the discard path)
     fi
     specs="$r $r:3:2 $r:9:1 inline/$r inline/$r:0:2"
     # Bodies nested in inlined bodies: exits from the second and third level too.
-    case "$f" in *nested*|*inline_new*|*inline_forward*) specs="$specs inline2/$r inline2/$r:3:2 inline3/$r inline3/$r:3:2";; esac
+    case "$f" in *nested*|*inline_new*|*inline_forward*|*inline_dotcall*) specs="$specs inline2/$r inline2/$r:3:2 inline3/$r inline3/$r:3:2";; esac
     for spec in $specs; do
         out=$($BIN --memory-limit=512 --opt-force-exit="$spec" --script "$f" 2>&1)
         if [ "$out" != "$ref" ]; then echo "DIFF $f --opt-force-exit=$spec"; fi
