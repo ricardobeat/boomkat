@@ -122,9 +122,14 @@ fn long var_rearm(Dispatch* ds, hobject::VarICEntry* vic) {
 // The out-of-line arm of GETVAR, PUTVAR_ASSIGN and INC_VAR for an entry filled
 // under another scope chain, as th_var_rearm: re-arm it and run the
 // instruction again, or fall through to the thunk when the cached binding no
-// longer applies. False for any other instruction.
+// longer applies. Also the arm of GETCAP for a capture record that never
+// resolved. False for any other instruction.
 fn bool Asm.emit_var_alt(&self) {
     Opcode op = self.w.op;
+    if (op == GETCAP) {
+        self.emit_cap_var_alt(self.w.a);
+        return true;
+    }
     if (op != GETVAR && op != PUTVAR_ASSIGN && op != INC_VAR) return false;
     void* c = self.c;
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
@@ -134,6 +139,35 @@ fn bool Asm.emit_var_alt(&self) {
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.poly_back);
     sljit_set_label(failed, sljit_emit_label(c));
     return true;
+}
+
+// GETCAP whose capture record has no owner: the binding the site's variable
+// cache holds, then the thunk. A record resolves once, when its closure is
+// created, so a capture of a function declaration hoisted after the reading
+// closure in the same scope has none, and only the thunk's own name lookup can
+// find it; that lookup fills the cache this arm reads. The head, epoch, slot,
+// flags and TDZ tests are th_var_ic_hit and th_getvar's, the same guards the
+// GETVAR path uses.
+fn void Asm.emit_cap_var_alt(&self, uint ra) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    long vic = (long)(usz)&((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, vic);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.vic_epoch);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | self.heap, l.heap_epoch);
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R1, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, l.vic_slot);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, l.vic_flags);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, l.accessor_mask);
+    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    self.guard_not_tdz();
+    self.publish(ra);
+    self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
 }
 
 // R1 = the scope chain head a lean call of the closure in window register `reg` (or in register
