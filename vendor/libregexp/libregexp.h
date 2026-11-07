@@ -63,11 +63,16 @@ int lre_exec(uint8_t **capture,
              int cbuf_type, void *opaque);
 
 /* Code units that can begin a match (boomkat): a bitmap over units < 256,
-   `wide` for any unit >= 256, `single` >= 0 when exactly one unit qualifies. */
+   `wide` for any unit >= 256, `single` >= 0 when exactly one unit qualifies.
+   A match that consumes nothing is only possible at the start of the input
+   when `at_start` is set (after a `^`) and at its end when `at_end` is set
+   (after a `$`); those positions are candidates besides the units in the set. */
 typedef struct {
     uint32_t bits[8];
     int wide;
     int single;
+    int at_start;
+    int at_end;
 } LREFirstSet;
 bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs);
 int lre_exec_ex(uint8_t **capture,

@@ -727,6 +727,10 @@ fn HObject* regexp_build_match_result(BuiltinContext* ctx, void* re_data, HStrin
     if (cached != null && arr.prop_count == (uint)(unmatched_captures + 4)) {
         hobject::Shape* shape = ctx.heap.get_shape(arr.shape_id);
         if (shape != null && shape.parent != hobject::PRIVATE_SHAPE_PARENT && !shape.dict) {
+            // Later arrays reach this shape without a transition lookup, which is
+            // what marks a shape as shared; without it each would build its own
+            // property hash.
+            shape.shared = true;
             cached.unmatched = unmatched_mask;
             cached.ncaps = (uint)num_caps;
             cached.shape_id = arr.shape_id;

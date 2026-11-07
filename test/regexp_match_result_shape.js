@@ -131,3 +131,19 @@ delete Array.prototype.index;
     }
     eq(bad, 0, 'substring cache returned a wrong string');
 })();
+
+// An unmatched group is present with the value undefined; reads, `in` and
+// redefinition of that index must keep working after the fast read.
+(function () {
+    for (var i = 0; i < 20; i++) {
+        var m = /(a)(x)?(b)/.exec('ab');
+        if (m[1] !== 'a' || m[2] !== undefined || m[3] !== 'b') throw new Error('FAIL unmatched read');
+        if (!(2 in m) || !m.hasOwnProperty(2)) throw new Error('FAIL unmatched presence');
+    }
+    var m = /(a)(x)?(b)/.exec('ab');
+    Object.defineProperty(m, 2, { get: function () { return 'got'; }, configurable: true });
+    if (m[2] !== 'got') throw new Error('FAIL accessor on unmatched index');
+    m = /(a)(x)?(b)/.exec('ab');
+    m[2] = 'set';
+    if (m[2] !== 'set') throw new Error('FAIL write to unmatched index');
+})();
