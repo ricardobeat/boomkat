@@ -1340,10 +1340,6 @@ struct Heap {
     // not care about, because it addresses values by index and re-reads the
     // base pointer every time.
     uint                shape_recycle_epoch;
-    // Advanced with the recycle epoch except when a freed shape id is handed out again: a variable
-    // cache's slot pointer and flags depend on an object's layout, not on which id names its shape,
-    // so the compiled code guards on this one and a shape recycle leaves its variable reads valid.
-    uint                layout_epoch;
     // Advanced only by mutations to prototype objects observed by read caches.
     ulong               prototype_epoch;
     // Set when a variable inline cache is filled, cleared when
@@ -2095,7 +2091,6 @@ fn void Heap.init_shapes(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
-    self.layout_epoch = 0;
     self.regexp_guard = {};
     self.match_shapes = {};
     self.slice_cache = {};
@@ -2315,7 +2310,6 @@ fn void Heap.sweep_shapes(&self, bool force = false) {
         if (self.shapes[id].parent != hobject::PRIVATE_SHAPE_PARENT) self.release_shape_slot(id);
     }
     self.shape_recycle_epoch++;
-    self.layout_epoch++;
     $if $feat(OP_PROFILE): hobject::opprof_epoch[1]++; $endif
 }
 
@@ -3105,7 +3099,6 @@ fn void Heap.reset(&self) {
     self.fn_proto_shape = 0;
     self.args_shapes = {};
     self.shape_recycle_epoch = 0;
-    self.layout_epoch = 0;
     self.var_ic_filled = false;
     self.regexp_guard = {};
     self.match_shapes = {};
@@ -5287,7 +5280,6 @@ fn void Heap.invalidate_var_ic_entries(&self) {
     if (!self.var_ic_filled) return;
     self.var_ic_filled = false;
     self.shape_recycle_epoch++;
-    self.layout_epoch++;
 }
 
 // ============================================================================
