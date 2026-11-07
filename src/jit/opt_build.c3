@@ -1058,6 +1058,8 @@ fn hobject::ICEntry* OptBuild.own_field(&self, bool inherited = false) {
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     void* key = (void*)ic.key.borrow();
     if (key == null || ic.shape_id == heap::SHAPE_NONE) return null;
+    // A site that has exited repeatedly is left to the baseline's cache.
+    if (opt_site_banned(self.f, f, self.next_pc - 1)) return null;
     // A read may also name a data property of a prototype, by the epoch guard or link snapshot of the baseline.
     bool proto = inherited && ic.has_proto && ic.prop_idx != hobject::IC_PROP_MISSING
         && (ic.chain_len == hobject::IC_CHAIN_EPOCH || (ic.chain_len > 0 && (uint)ic.chain_len <= hobject::IC_MAX_CHAIN));
@@ -1759,7 +1761,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
         if (outer.fwd_callee > self.h.compiled_func_count) return false;
         cf = (CompiledFunction*)self.h.compiled_funcs[outer.fwd_callee - 1];
     } else {
-        if ((ic.feedback & hobject::FB_POLY) != 0) return self.reject(OptInlineReject.POLY);
+        if ((ic.feedback & hobject::FB_POLY) != 0 || opt_site_banned(self.f, f, view.next_pc - 1)) return self.reject(OptInlineReject.POLY);
         cf = opt_site_callee(self.h, f, view.next_pc - 1);
     }
     uint callee_reg = var_call ? view.insn.a : view.insn.b;
