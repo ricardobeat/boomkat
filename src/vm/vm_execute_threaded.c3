@@ -3475,11 +3475,14 @@ macro bool th_leaf_return(Vm* vm, Activation* fa, TVal value, bool is_undefined,
         TVal* result = fa.retval;
         // An object result is stored where the caller's watermark tracks it, so
         // it needs a register inside the caller's window and, during marking,
-        // must already be shaded (th_return_general).
+        // must already be shaded (th_return_general). With `counted_ok` a string
+        // result is stored the same way, as tval_copy_ref stores it.
+        bool string_return = counted_ok && !is_undefined && value.is_refcounted() && value.get_heapptr() != null;
         bool object_return = !is_undefined && value.is_heap_allocated();
         if (object_return) {
-            object_return = value.is_object() && value.get_heapptr() != null
-                && caller.func != null && caller.bottom != null && th_can_publish(vm.heap, value)
+            object_return = (string_return || (value.is_object() && value.get_heapptr() != null
+                && th_can_publish(vm.heap, value)))
+                && caller.func != null && caller.bottom != null
                 && result >= caller.bottom
                 && result < caller.bottom + ((CompiledFunction*)caller.func).num_regs;
         }
@@ -3488,7 +3491,11 @@ macro bool th_leaf_return(Vm* vm, Activation* fa, TVal value, bool is_undefined,
             && ((fa.flags & ACT_FLAG_BORROWED_CALLEE) != 0 || !result.is_refcounted())) {
             if (is_undefined) value.set_undefined();
             th_clear_tracked_regs(fa);
-            *result = value;
+            if (string_return) {
+                vm.heap.tval_copy_ref(result, &value);
+            } else {
+                *result = value;
+            }
             if (object_return) track_heap_store(caller, result, (uint)(result - caller.bottom));
             *caller_out = caller;
             *cross_out = cross_function;
