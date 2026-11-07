@@ -1230,6 +1230,7 @@ fn void OptBuild.set_poly(&self, uint n, hobject::ICEntry* ic) {
 // GETPROPC, GETPROPC_CACHED and GETTHISC of an own property by the shape its cache holds: a
 // typed load when a numeric use asked for one, else a read into the window.
 fn bool OptBuild.get_field(&self) {
+    if (self.length_site()) return self.get_length();
     hobject::ICEntry* ic = self.own_field(true);
     if (ic == null) return self.generic();
     uint recv = self.field_receiver();
@@ -1269,6 +1270,36 @@ fn bool OptBuild.get_field(&self) {
     if (mono) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
     if (recv < self.nregs && recv == self.w.a) self.fact_shape[recv] = heap::SHAPE_NONE;
+    return true;
+}
+
+// Whether the instruction being lowered is a GETPROPC or GETPROPC_CACHED of the constant key
+// `length` that has not exited repeatedly. The baseline reads an array's length before its cache
+// and records nothing, so the read is taken for an array's; a string's leaves through the exit,
+// and the ban that follows lowers the site generically.
+fn bool OptBuild.length_site(&self) {
+    if (self.w.op != Opcode.GETPROPC && self.w.op != Opcode.GETPROPC_CACHED) return false;
+    CompiledFunction* f = self.cur_f();
+    if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string()) return false;
+    if (f.constants[self.w.c].get_heapptr() != (void*)self.h.strs[heap::BuiltinStr.LENGTH]) return false;
+    return !opt_site_banned(self.f, f, self.next_pc - 1);
+}
+
+// The `length` of an array (OptBuild.length_site), as an INT32 node.
+fn bool OptBuild.get_length(&self) {
+    uint recv = self.w.b;
+    uint rnode = NO_NODE;
+    if (self.is_object(recv)) {
+        rnode = self.cur[recv].node;
+    } else if (self.in_window(recv)) {
+        self.ask_object(recv);
+    } else {
+        return self.generic();
+    }
+    if (self.w.a >= self.nregs) return self.generic();
+    uint n = self.add(OptOp.LOAD_LENGTH, OptRep.INT32, NO_NODE, rnode, (long)self.pc);
+    self.snapshot(n);
+    self.set(self.w.a, n);
     return true;
 }
 
@@ -1775,7 +1806,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 // An exit at every negative dividend or non-positive divisor would not pay.
                 ok = (self.feedback() & hobject::FB_OPERANDS) == 0;
             case GETPROPC: case GETPROPC_CACHED:
-                ok = self.own_field(true) != null || (s.flat && self.cold_field());
+                ok = self.length_site() || self.own_field(true) != null || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case GETTHISC:
                 ok = ((s.method || s.construct) && self.own_field(true) != null) || (s.flat && self.cold_field());
