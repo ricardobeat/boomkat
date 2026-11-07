@@ -975,6 +975,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         a.prop_base(R0, R1);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, (long)poly.idx[0] * 8);
     }
+    if (chain && n.fidx != 0) self.chain_miss(n);
     self.exit_calls(i, OptExit.SHAPE);
     if (n.rep == OptRep.NONE) {
         a.publish(a.w.a);
@@ -984,6 +985,52 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     } else {
         self.def_from_r0(i, n);
     }
+}
+
+// The read of an inherited property in an inlined body when the entry's chain does not hold: the
+// megamorphic cache, then vm::jit_get_missed, read a data property of a plain chain, with the value
+// in R0. The entry is the callee's, which every caller shares (a forwarding constructor's
+// `this.initialize` sees every class), while each inline site sees its own receivers. What neither
+// answers leaves for the baseline code (the jumps in a.call). No code runs and nothing is allocated
+// for the collector.
+fn void OptCg.chain_miss(&self, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    CompiledFunction* f = a.f;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[a.next - 1];
+    // The key, a constant the function's code does not replace.
+    if (a.w.c >= f.const_count || !f.constants[a.w.c].is_string() || f.constants[a.w.c].get_heapptr() != (void*)ic.key.borrow()) return;
+    for (uint k = 0; k < f.code_count; k++) if (f.code[k].op == Opcode.SETCONST) return;
+    void* key = f.constants[a.w.c].get_heapptr();
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    a.call.bind(sljit_emit_label(c));
+    a.call.len = 0;
+    int rr = R0;
+    if (n.b != NO_NODE) {
+        rr = self.obj_reg(n.b, R0);
+    } else if (a.w.op == Opcode.GETTHISC) {
+        a.load(R0, self.g.fns[n.fidx].reg_base - 1);
+    } else {
+        a.load(R0, a.w.b);
+    }
+    a.unbox_object(R1, rr);
+    a.guard_not_proxy(R1, R2);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)ic);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R2, a.lay.ic_key, SLJIT_IMM, 0));
+    a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = MEGA_SUB });
+    void* cached = sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE);
+    // The mega subroutine keeps the receiver in R1 on a miss.
+    uint at = (uint)(n - &self.g.nodes[0]);
+    self.spill_live(at, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)key);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+    self.spill_live(at, false);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+    sljit_set_label(cached, sljit_emit_label(c));
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // PUTPROP of a number to an element, as emit_put_elem: it overwrites a present element of a
