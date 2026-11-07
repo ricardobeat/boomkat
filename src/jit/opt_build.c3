@@ -293,7 +293,7 @@ fn uint inline_reg_mask(Opcode op) {
     switch (op) {
         case LDINT: case LDCONST: case INC: case DEC: case GETTHISC: case PUTTHISC: case RET: case THROW:
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
-        case GETGLOBAL: case LDTHIS: case GETCAP:
+        case GETGLOBAL: case GETVAR: case LDTHIS: case GETCAP:
             return 1;
         case GETPROP: case PUTPROP:
             return 7;
@@ -357,7 +357,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
     *writes = 0;
     switch (w.op) {
         case LDINT: case LDCONST: case GETTHISC: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
-        case GETGLOBAL: case LDTHIS: case GETCAP:
+        case GETGLOBAL: case GETVAR: case LDTHIS: case GETCAP:
             *writes = 1u << w.a;
         case GETPROP:
             *reads = (1u << w.b) | (1u << w.c);
@@ -905,10 +905,33 @@ fn bool OptBuild.get_cap(&self) {
 // into the window; the cache not holding leaves for the callee's baseline code. A value of any kind
 // in a slot beyond the caller's frame would be out of the collector's sight.
 fn bool OptBuild.get_global(&self) {
+    return self.get_variable(false);
+}
+
+// GETVAR in an inlined body, as GETGLOBAL, through its scope cache. The cache is keyed by the scope
+// chain the function runs with, which is the callee closure's, not the running frame's: the read
+// takes the closure from its window slot, or from the OBJECT node a nested call's guard checked
+// (the node's cc is 1, b the closure node).
+fn bool OptBuild.get_scoped(&self) {
+    return self.get_variable(true);
+}
+
+fn bool OptBuild.get_variable(&self, bool scoped) {
     uint ra = self.w.a;
     if (ra >= self.nregs) return false;
-    if (self.typed_load(OptOp.LOAD_GLOBAL, NO_NODE) != NO_NODE) return true;
-    uint n = self.add(OptOp.LOAD_VAR, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    uint closure = NO_NODE;
+    if (scoped) {
+        closure = self.cur[self.sites[self.cur_site].base - 2].node;
+        if (closure != NO_NODE && self.rep_of(closure) != OptRep.OBJECT) return self.generic();
+    }
+    uint t = self.typed_load(OptOp.LOAD_GLOBAL, NO_NODE);
+    if (t != NO_NODE) {
+        self.g.nodes[t].cc = scoped ? 1 : 0;
+        self.g.nodes[t].b = closure;
+        return true;
+    }
+    uint n = self.add(OptOp.LOAD_VAR, OptRep.NONE, NO_NODE, closure, (long)self.pc);
+    self.g.nodes[n].cc = scoped ? 1 : 0;
     self.snapshot(n);
     self.kill(ra);
     self.load_def[ra] = self.pckey();
@@ -1004,7 +1027,7 @@ fn void OptBuild.ask_object(&self, uint reg) {
     Opcode o = kf.code[key & 0xFFFFFF].op;
     // A global read is a load only in an inlined body (the function's own is a GENERIC).
     if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC && o != Opcode.GETCAP
-        && (o != Opcode.GETGLOBAL || si1 == 0)) return;
+        && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR) || si1 == 0)) return;
     foreach (&c : self.load_reps) if (c.block == key) return;
     self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.OBJECT });
     self.load_changed = true;
@@ -1059,7 +1082,7 @@ fn bool OptBuild.cold_field(&self) {
             if (f.ic_entries == null) return false;
             hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
             return (void*)ic.key.borrow() == null;
-        case GETGLOBAL:
+        case GETGLOBAL: case GETVAR:
             CompiledFunction* f = self.cur_f();
             if (f.var_ic_entries == null) return false;
             return ((hobject::VarICEntry*)f.var_ic_entries)[self.next_pc - 1].env == null;
@@ -1648,7 +1671,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 ok = (s.method && ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field())
                     || ((s.construct || s.forward) && ((ic != null && ic.prop_flags.writable) || self.absent_field() != null));
                 why = OptInlineReject.FIELD;
-            case GETGLOBAL:
+            case GETGLOBAL: case GETVAR:
                 ok = (s.flat && self.cold_field()) || ((hobject::VarICEntry*)cf.var_ic_entries)[self.next_pc - 1].env != null;
                 why = OptInlineReject.GLOBAL;
             case LDTHIS:
@@ -2481,6 +2504,9 @@ fn bool OptBuild.lower_op(&self) {
         case GETGLOBAL:
             if (self.cur_fn == 0) return self.generic();
             return self.get_global();
+        case GETVAR:
+            if (self.cur_fn == 0) return self.generic();
+            return self.get_scoped();
         case LDTHIS:
             if (self.cur_fn == 0) return self.generic();
             return self.load_this();

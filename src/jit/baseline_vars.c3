@@ -136,6 +136,34 @@ fn bool Asm.emit_var_alt(&self) {
     return true;
 }
 
+// R1 = the scope chain head a lean call of the closure in window register `reg` (or in register
+// `closure`, when not negative) starts with, as th_publish_lean: its captured scope while that is
+// declarative, else its variable scope. Uses R1, R3 and R4; the call's guard has checked the value
+// is a function with a variable scope and no `with` capture.
+fn void Asm.closure_lex_env(&self, uint reg, int closure) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    if (closure >= 0) {
+        if (closure != R3) sljit_emit_op1(c, SLJIT_MOV, R3, 0, closure, 0);
+    } else {
+        self.load(R3, reg);
+    }
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R3, k.fn_var_env);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R3, k.fn_lex_env);
+    env::EnvFlags decl_flag;
+    decl_flag.is_declarative = true;
+    Jumps use_env;
+    use_env.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | R1, k.env_flags);
+    sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, (long)(char)decl_flag);
+    use_env.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    use_env.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R4, 0);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
 // INC_VAR as th_inc_var: a writable binding holding a fastint that stays one.
 fn void Asm.emit_inc_var(&self, uint ra, long vic) {
     void* c = self.c;
