@@ -219,7 +219,9 @@ fn void DecodedCfgNode.reads(&self, RegSet* uses, bool call_windows = true, bool
         DecodedInsn ins = self.view.insn;
         switch (ins.op) {
             case CALL_VAR: case CALL_GLOBAL:
-                if (call_windows) moveelim_mark_range(uses, (uint)ins.a, (uint)ins.a + 1 + (uint)ins.b);
+                // The call loads its callee into A and stores undefined into the receiver slot: only
+                // the arguments are read.
+                if (call_windows && ins.b != 0) moveelim_mark_range(uses, (uint)ins.a + 2, (uint)ins.a + 1 + (uint)ins.b);
                 return;
             case PUTPROPC:
                 uses.set((uint)ins.a);
@@ -277,6 +279,12 @@ fn void bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in
             live_in[slot].copy_from(scratch);
             uint def;
             if (node.must_def(&def)) live_in[slot].unset(def);
+            // Exactly, CALL_VAR and CALL_GLOBAL load their callee into A and store undefined into the
+            // receiver slot, which writes both before any argument is read.
+            if (exact && (node.view.insn.op == Opcode.CALL_VAR || node.view.insn.op == Opcode.CALL_GLOBAL)) {
+                live_in[slot].unset((uint)node.view.insn.a);
+                live_in[slot].unset((uint)node.view.insn.a + 1);
+            }
             node.reads(&live_in[slot], call_windows, exact);
         }
         first = false;
