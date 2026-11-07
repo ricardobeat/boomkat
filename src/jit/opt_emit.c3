@@ -2127,11 +2127,23 @@ fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
     Jumps yes;
     Jumps no;
     self.a.call.len = 0;
-    if (n.cc >= 4) {
-        self.a.null_test(rb, &yes, &no);
+    void* c = self.a.c;
+    // An operand held in an OBJECT node (a, b) is taken from its register.
+    if (n.a != NO_NODE) {
+        int x = self.obj_reg(n.a, R0);
+        if (x != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, x, 0);
     } else {
         self.a.load(R0, rb);
-        self.a.load(R1, rc);
+    }
+    if (n.cc >= 4) {
+        self.a.null_test_r0(&yes, &no);
+    } else {
+        if (n.b != NO_NODE) {
+            int y = self.obj_reg(n.b, R1);
+            if (y != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, y, 0);
+        } else {
+            self.a.load(R1, rc);
+        }
         self.a.call_test_sub(n.cc < 2 ? STRICT_EQ_SUB : LOOSE_EQ_SUB, &yes, &no);
     }
     self.exit_calls(i, OptExit.SLOW_PATH);
