@@ -1724,10 +1724,13 @@ fn void init_thunks() @noinline @private {
                 Activation* act = ds.act;
                 CompiledFunction* func = ds.vm.current_func;
                 OpStatus s;
+                uint count_before = ds.vm.activation_count;
                 if (vm::has_feedback($op)) vm::note_feedback(ds, insn);
                 $if $op == Opcode.CALL:
-                    if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s)) {
+                    long raw = vm::JIT_NO_RAW;
+                    if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s, &raw)) {
                         count_relayed(ds, $op);
+                        if (raw != vm::JIT_NO_RAW) return raw;
                     } else {
                         s = @run_op($op, ds, insn);
                     }
@@ -1744,6 +1747,14 @@ fn void init_thunks() @noinline @private {
                     return BASELINE_RETURNED;
                 }
                 s = vm::jit_restart_switched(ds, act, func, s);
+                $if @pushes_frame($op):
+                    // A callee the lean shapes declined, entered by pushing its frame: run its native
+                    // code here rather than unwinding every native frame above to Vm.run.
+                    if (ds.needs_restart && s == RESTART) {
+                        long entered = vm::jit_enter_pushed(ds, next, count_before);
+                        if (entered != vm::JIT_NO_RAW) return entered;
+                    }
+                $endif
                 if (s == NEXT && ds.curr_pc != next) {
                     // A taken backward branch may continue in optimized code.
                     if (@unlikely(ds.heap.opt.enabled) && ds.curr_pc < next && ds.act == act) {
@@ -1811,6 +1822,20 @@ macro bool @excluded(Opcode $op) @const {
     $switch $op:
         $case Opcode.WIDE:
         $case Opcode.LAST_OP:
+            return true;
+        $default:
+            return false;
+    $endswitch
+}
+
+// Opcodes whose operation function may enter a callee by pushing its frame and asking for a restart.
+macro bool @pushes_frame(Opcode $op) @const {
+    $switch $op:
+        $case Opcode.CALL:
+        $case Opcode.CALL_UNDEF_THIS:
+        $case Opcode.CALL_VAR:
+        $case Opcode.CALL_GLOBAL:
+        $case Opcode.NEW_OBJ:
             return true;
         $default:
             return false;
