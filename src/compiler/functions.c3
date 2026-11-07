@@ -1658,6 +1658,7 @@ fn CompiledFunction*? CompilerContext.compile_default_expr(&self, char[] inferre
     // chain, so its name resolution stays dynamic (see in_with).
     def_ctx.outer_with = self.in_with();
     def_ctx.module_goal = self.module_goal;
+    def_ctx.in_eval_derived = self.in_eval_derived;
 
     // Direct eval in a parameter default inherits the enclosing strictness.
     def_ctx.is_strict = self.is_strict;
@@ -1837,6 +1838,7 @@ fn CompiledFunction*? CompilerContext.compile_static_block(&self, uint ast_node 
     // chain, so its name resolution stays dynamic (see in_with).
     block_ctx.outer_with = self.in_with();
     block_ctx.module_goal = self.module_goal;
+    block_ctx.in_eval_derived = self.in_eval_derived;
     // A static block is class code, so it is strict whatever the enclosing
     // script's mode.
     block_ctx.is_strict = true;
@@ -1986,6 +1988,10 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
     // chain, so its name resolution stays dynamic (see in_with).
     inner_ctx.outer_with = self.in_with();
     inner_ctx.module_goal = self.module_goal;
+    // The JIT marker is semantics-free, so nested functions inherit it. Do NOT
+    // copy in_eval_code here: that would make this function's own var/function
+    // bindings configurable, which only the eval top-level context should do.
+    inner_ctx.in_eval_derived = self.in_eval_derived;
 
     inner_ctx.is_strict = self.is_strict;
     inner_ctx.lexer.set_strict(self.is_strict);
@@ -2109,6 +2115,8 @@ fn void CompilerContext.init_arrow_context(&self, CompilerContext* arrow_ctx, bo
     arrow_ctx.adopt_private_names(self);
     arrow_ctx.forbid_arguments = self.forbid_arguments;
     arrow_ctx.in_eval_code = self.in_eval_code;
+    // Arrows inherit the semantics-free JIT marker along with in_eval_code.
+    arrow_ctx.in_eval_derived = self.in_eval_derived;
     arrow_ctx.eval_direct_in_function = self.eval_direct_in_function;
     arrow_ctx.no_new_target = self.is_global || self.no_new_target;
 }

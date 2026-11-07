@@ -23,6 +23,11 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
     f.flags.is_strict = (idx.tree.field(rec, ast::FN_FLAGS) & ast::FNF_STRICT) != 0;
     f.flags.is_constructable = self.is_constructable;
     f.flags.needs_env = true;
+    // Carry the semantics-free marker on the stub; materialize_function_body
+    // inherits it into the fresh context that compiles the body later.
+    $if $feat(SLJIT):
+        f.jit_eval_derived = self.in_eval_derived;
+    $endif
     f.num_args = (ushort)idx.tree.list_len(idx.tree.field(rec, ast::FN_PARAMS));
     f.num_formals = f.num_args;
     f.lazy_paren = idx.tree.field(rec, ast::FN_PAREN) + 1;
@@ -64,6 +69,11 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     defer ctx.cleanup();
     ctx.is_strict = f.flags.is_strict;
     ctx.is_constructable = f.flags.is_constructable;
+    // The stub carries the eval marker from the original compilation; inherit
+    // it so this body and anything nested in it stay tagged.
+    $if $feat(SLJIT):
+        ctx.in_eval_derived = f.jit_eval_derived;
+    $endif
     // The source slice has no declarations for its enclosing scopes. Keep
     // free names in the captured environment rather than proving them global.
     idx.unknown_outer = true;

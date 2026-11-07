@@ -161,6 +161,7 @@ fn bool? CompilerContext.gen_scalar_new_member(&self, uint n, Val* result) {
     if (fields == null) return false;
     CompilerContext guard_ctx;
     guard_ctx.init(self.lexer, self.heap);
+    guard_ctx.in_eval_derived = self.in_eval_derived;
     defer guard_ctx.cleanup();
     guard_ctx.add_string_constant(tree.atoms.get(tree.rhs.data[n]));
     guard_ctx.inner_func_count = 2;

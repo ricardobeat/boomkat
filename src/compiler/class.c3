@@ -26,6 +26,7 @@ import std::collections::list;
 fn void CompilerContext.ensure_field_init_ctx(&self, CompilerContext* target_ctx, bool is_static) {
     target_ctx.init(self.lexer, self.heap);
     target_ctx.module_goal = self.module_goal;
+    target_ctx.in_eval_derived = self.in_eval_derived;
     // A with-env from the enclosing body is captured by this closure's scope
     // chain, so its name resolution stays dynamic (see in_with).
     target_ctx.outer_with = self.in_with();
