@@ -253,14 +253,15 @@ fn uint OptBuild.pckey(&self) @inline => self.pc | (self.cur_fn << 24);
 // body may hold; zero for any other. The rest of the operands are not registers.
 fn uint inline_reg_mask(Opcode op) {
     switch (op) {
-        case LDINT: case LDCONST: case INC: case DEC: case GETTHISC: case PUTTHISC: case RET:
+        case LDINT: case LDCONST: case INC: case DEC: case GETTHISC: case PUTTHISC: case RET: case THROW:
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case LDTHIS:
             return 1;
-        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC:
+        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
             return 3;
-        case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+        case ADD: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+        case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
             return 7;
         // The forward branches of a body with several blocks: A is the offset of the compares.
         case JMP_NLT..JMP_NEQ:
@@ -294,11 +295,12 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
         case LDINT: case LDCONST: case GETTHISC: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case LDTHIS:
             *writes = 1u << w.a;
-        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED:
+        case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case LNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
             *reads = 1u << w.b;
             *writes = 1u << w.a;
-        case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+        case ADD: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+        case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
             *reads = (1u << w.b) | (1u << w.c);
             *writes = 1u << w.a;
         case INC: case DEC:
@@ -306,7 +308,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
             *writes = 1u << w.a;
         case PUTPROPC:
             *reads = (1u << w.a) | (1u << w.b);
-        case PUTTHISC: case RET: case IF_TRUE: case IF_FALSE:
+        case PUTTHISC: case RET: case IF_TRUE: case IF_FALSE: case THROW:
             *reads = 1u << w.a;
         case JMP_NLT..JMP_NEQ:
             *reads = (1u << w.b) | (1u << w.c);
@@ -1052,6 +1054,86 @@ fn bool OptBuild.negate(&self) {
     return true;
 }
 
+// A % B of two int32 values; the emitter exits for a negative dividend and a divisor of zero or
+// below, so the remainder is never -0, NaN or a double.
+fn bool OptBuild.modulo(&self) {
+    if ((self.feedback() & hobject::FB_OPERANDS) != 0 || self.state_float(self.w.b) || self.state_float(self.w.c)) return self.generic();
+    uint x = self.operand(self.w.b, OptRep.INT32);
+    uint y = self.operand(self.w.c, OptRep.INT32);
+    if (x == NO_NODE || y == NO_NODE) return self.generic();
+    if (self.g.nodes[y].op == OptOp.CONST_I32 && self.g.nodes[y].imm <= 0) return self.generic();
+    uint n = self.add(OptOp.MOD_I32, OptRep.INT32, x, y);
+    self.snapshot(n);
+    self.set(self.w.a, n);
+    return true;
+}
+
+// EQ, NEQ, SEQ, SNEQ, LT, LE, GT, GE producing a boolean: stored to the window slot of A.
+fn bool OptBuild.compare_value(&self) {
+    Opcode op = self.w.op;
+    uint ra = self.w.a;
+    uint rb = self.w.b;
+    uint rc = self.w.c;
+    if (ra >= self.nregs || rb >= self.nregs || rc >= self.nregs) return self.generic();
+    bool equality = op.ordinal < Opcode.LT.ordinal;
+    char fb = self.feedback();
+    bool non_number = (fb & (hobject::FB_STR | hobject::FB_OTHER)) != 0;
+    if (equality) {
+        if (self.is_object(rb)) self.publish_object(rb);
+        if (self.is_object(rc)) self.publish_object(rc);
+    } else if (non_number) {
+        return self.generic();
+    }
+    bool numeric_b = self.cur[rb].node != NO_NODE && !self.is_object(rb);
+    bool numeric_c = self.cur[rc].node != NO_NODE && !self.is_object(rc);
+    if (equality && non_number) {
+        // Values the number path would only exit on: the baseline's equality test on the window.
+        if (numeric_b || numeric_c) return self.generic();
+        uint kind = op == Opcode.SEQ ? 0 : (op == Opcode.SNEQ ? 1 : (op == Opcode.EQ ? 2 : 3));
+        uint n = self.add(OptOp.COMPARE_WINDOW, OptRep.NONE, NO_NODE, NO_NODE, (long)rb | ((long)rc << 20));
+        self.g.nodes[n].cc = (char)kind;
+        self.g.nodes[n].home = ra;
+        self.snapshot(n);
+        self.kill(ra);
+        return true;
+    }
+    OptRep rep = self.arith_rep(rb, rc);
+    if (rep == OptRep.NONE) return self.generic();
+    uint x = self.operand(rb, rep);
+    uint y = self.operand(rc, rep);
+    if (x == NO_NODE || y == NO_NODE) return self.generic();
+    uint row = equality ? ((op == Opcode.EQ || op == Opcode.SEQ) ? 8 : 9) : 4 + op.ordinal - Opcode.LT.ordinal;
+    uint n = self.add(OptOp.COMPARE, OptRep.NONE, x, y, (long)rep.ordinal);
+    self.g.nodes[n].cc = (char)row;
+    self.g.nodes[n].home = ra;
+    self.kill(ra);
+    return true;
+}
+
+// `A = !B`, stored to the window slot of A.
+fn bool OptBuild.not_value(&self) {
+    uint ra = self.w.a;
+    uint rb = self.w.b;
+    if (ra >= self.nregs || rb >= self.nregs) return self.generic();
+    if (self.is_object(rb)) self.publish_object(rb);
+    uint node = self.is_object(rb) ? NO_NODE : self.cur[rb].node;
+    uint n = self.add(OptOp.LNOT, OptRep.NONE, node, NO_NODE, (long)rb);
+    self.g.nodes[n].home = ra;
+    if (node == NO_NODE) self.snapshot(n);
+    self.kill(ra);
+    return true;
+}
+
+// THROW in an inlined body is a cold path: leave for the callee's baseline code, which throws.
+fn bool OptBuild.throw_exit(&self) {
+    if (self.cur_fn == 0 || !self.sites[self.cur_site].flat) return self.generic();
+    uint n = self.add(OptOp.EXIT, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    self.cold_exit = true;
+    self.cold_site = self.cur_site;
+    return true;
+}
+
 // Register `r` no longer holds a numeric node.
 fn void OptBuild.kill(&self, uint r) {
     if (r >= self.nregs) return;
@@ -1252,7 +1334,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 s.defined[t] = reached[t] ? (s.defined[t] & out) : out;
                 reached[t] = true;
             }
-            if (node.successor_count == 0 && node.view.insn.op != Opcode.RET && node.view.insn.op != Opcode.RETUNDEF) return self.reject(OptInlineReject.NO_RET);
+            if (node.successor_count == 0 && node.view.insn.op != Opcode.RET && node.view.insn.op != Opcode.RETUNDEF && node.view.insn.op != Opcode.THROW) return self.reject(OptInlineReject.NO_RET);
         }
     } else {
         uint defined = argmask;
@@ -1296,9 +1378,12 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
         switch (op) {
             case ADD: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
-            case INC: case DEC: case UNM:
+            case INC: case DEC: case UNM: case LT: case LE: case GT: case GE:
             case JMP_NLT..JMP_GE: case JMP_NLTI..JMP_SNEQI:
                 ok = (self.feedback() & (hobject::FB_STR | hobject::FB_OTHER)) == 0;
+            case MOD:
+                // An exit at every negative dividend or non-positive divisor would not pay.
+                ok = (self.feedback() & hobject::FB_OPERANDS) == 0;
             case GETPROPC: case GETPROPC_CACHED:
                 ok = self.own_field() != null || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
@@ -1900,6 +1985,14 @@ fn bool OptBuild.lower_op(&self) {
             return self.put_field();
         case UNM:
             return self.negate();
+        case MOD:
+            return self.modulo();
+        case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
+            return self.compare_value();
+        case LNOT:
+            return self.not_value();
+        case THROW:
+            return self.throw_exit();
         case CALL:
         case CALL_UNDEF_THIS:
         case CALL_VAR:

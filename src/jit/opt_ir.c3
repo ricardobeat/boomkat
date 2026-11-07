@@ -102,6 +102,9 @@ enum OptOp : char {
     SAR_I32,
     // `>>>`: exits (OVERFLOW) when the result is above the int32 range.
     SHR_I32,
+    // INT32 operands a, b: a % b for a >= 0 and b > 0, else it exits (OVERFLOW), so no result is
+    // -0 or NaN.
+    MOD_I32,
     I32_TO_F64,
     // JS ToInt32 of a double; exits when the double is not within int64 range.
     F64_TO_I32,
@@ -127,6 +130,15 @@ enum OptOp : char {
     COPY_WINDOW,
     // The boxed constant imm (undefined, null or a boolean) stored to the window slot home.
     STORE_CONST,
+    // A boolean stored to window slot home, defining no node: numbers a, b of rep imm compared by
+    // the JMP_* row cc (as BRANCH reads it).
+    COMPARE,
+    // The same for the window slots imm (b | c << 20) by the equality test of BRANCH_WINDOW (cc
+    // 0 SEQ, 1 SNEQ, 2 EQ, 3 NEQ); the rare cases exit through the slow path.
+    COMPARE_WINDOW,
+    // `!` of the number node a, or of the window slot imm when a is NO_NODE (the slow path exits),
+    // stored to window slot home.
+    LNOT,
     // An unconditional exit (COLD) to the baseline code at pc, with the dirty registers stored: an
     // instruction of an inlined body that has never run. The block has no successors.
     EXIT,
