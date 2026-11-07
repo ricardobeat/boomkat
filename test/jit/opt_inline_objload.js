@@ -93,4 +93,16 @@ msg = "none";
 try { run1(odd3, 10); } catch (e) { msg = e instanceof TypeError ? "TypeError" : String(e); }
 show("null2", msg);
 
+// An object that must be stored where two paths join stays a call: it cannot live in a register.
+function sel(o, c) { var q = c ? o.p : o.q; return q.x; }
+sel(warm_o, true);
+sel(warm_o, false);
+function run5(o, n) {
+    var s = 0.5;
+    for (var i = 0; i < n; i++) s = sel(o, i & 1) + s;
+    return s;
+}
+for (var k = 0; k < 3000; k++) run5(warm_o, 10);
+show("join", run5(mk(5), 100));
+
 print(out.join("\n"));
