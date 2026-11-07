@@ -566,10 +566,14 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
 fn uint opt_exit_limit(Heap* h) @inline => h.opt.exit_max != 0 ? h.opt.exit_max : OPT_EXIT_MAX;
 
 // Whether `reason` is a failed guard of one instruction that a rebuild can leave unspeculated.
-fn bool opt_exit_bannable(long reason) {
+// A guard on a value's type is one a rebuild adapts to by the operand feedback, except in an inlined
+// body, whose typed loads it does not re-derive (`inlined`).
+fn bool opt_exit_bannable(long reason, bool inlined = false) {
     switch ((OptExit)reason) {
         case SHAPE: case SLOW_PATH: case CALLEE: case BOUNDS: case HOLE:
             return true;
+        case NOT_NUMBER: case NOT_INT32:
+            return inlined;
         default:
             return false;
     }
@@ -578,8 +582,8 @@ fn bool opt_exit_bannable(long reason) {
 // Count an exit of `oc` at word `pc` of `cf`; true at the OPT_SITE_EXITS-th exit at one site, which
 // discards the body: rebuilding it without those exits is better than taking them OPT_EXIT_MAX
 // times. Only a failed guard of one instruction is counted, since only that changes the next build.
-fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reason) {
-    if (!opt_exit_bannable(reason)) return false;
+fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reason, bool inlined = false) {
+    if (!opt_exit_bannable(reason, inlined)) return false;
     OptSiteHit* hit = null;
     foreach (&x : oc.hits) {
         if (x.cf == cf && x.pc == pc && x.count != 0) hit = x;
@@ -627,8 +631,10 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         ((hobject::ICEntry*)callee.ic_entries)[site.pc].feedback |= hobject::FB_OVF;
     }
     oc.exits++;
-    // A site of an inlined body cannot be lowered generically (the call would stay a call), so its exits only add up.
-    if (oc.f.opt_code == oc && oc.exits >= opt_exit_limit(h)) opt_discard(h, oc.f);
+    // A site of an inlined body cannot be lowered generically: the next build leaves the call it is
+    // in a call (inline_body_ok), as it does a call site that exited.
+    bool repeat = oc.f.opt_code == oc && opt_exit_bannable(reason, true) && opt_note_site_exit(oc, callee, site.pc, reason, true);
+    if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
     return vm::jit_inline_materialize(ds, site);
 }
 

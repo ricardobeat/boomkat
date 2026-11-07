@@ -82,6 +82,7 @@ enum OptInlineReject : char (String label) {
     NESTED_FLAT {"nested callee body not straight-line"},
     DOTCALL_FLAT {"function called through call has several blocks"},
     SPLICE {"callee body cannot be spliced"},
+    BANNED {"an instruction of the callee exited repeatedly"},
 }
 
 // The words of bytecode an inlined callee may have, and the callees nested in one inline site may
@@ -1670,6 +1671,11 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     for (uint k = 0; k < cfg.instruction_count && ok; k++) {
         self.inline_context(s, k);
         Opcode op = self.w.op;
+        if (opt_site_banned(self.f, cf, self.next_pc - 1)) {
+            ok = false;
+            why = OptInlineReject.BANNED;
+            break;
+        }
         switch (op) {
             case ADD: case ADD_FUSED: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
