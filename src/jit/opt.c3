@@ -23,6 +23,7 @@ import boomkat::heap;
 import boomkat::hobject;
 import boomkat::types;
 import std::io;
+import std::collections::list;
 import std::time::clock;
 
 enum OptExit : char (String label) {
@@ -63,6 +64,8 @@ const uint OPT_LOOP_CREDIT = OPT_ENTRY_THRESHOLD / 4;
 const char OPT_DECLINE_MAX = 3;
 // Own-field accesses with a recorded shape that make a function worth optimizing on their own.
 const uint OPT_FIELD_SITES = 2;
+// Integer arithmetic, bitwise and element instructions that make a function worth optimizing alone.
+const uint OPT_INT_WORK = 8;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
 // Bytes of optimized code kept; past them the sweep evicts the bodies not entered recently.
@@ -73,6 +76,8 @@ const uint OPT_BAN_MAX = 16;
 // OptBan.pc naming every site of the function.
 const uint OPT_BAN_ALL = 0xFFFFFFFF;
 const uint OPT_HIT_SLOTS = 8;
+// Rebuilds that move phis without a machine register to the window before the function is refused.
+const uint OPT_PRESSURE_ROUNDS = 6;
 
 // An instruction (word `pc` of `cf`, which may be an inlined callee) whose speculation failed
 // repeatedly; the optimizer lowers it as the baseline would instead of guarding it again.
@@ -288,7 +293,7 @@ fn bool opt_has_operand_feedback(CompiledFunction* f) {
 }
 
 fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
-    if (opt_has_operand_feedback(f)) return true;
+    if (opt_has_operand_feedback(f) || opt_has_int_work(f)) return true;
     if (f.ic_entries == null || f.opt_declined >= OPT_DECLINE_MAX) return false;
     if (opt_has_field_feedback(f)) return true;
     hobject::ICEntry* ic = (hobject::ICEntry*)f.ic_entries;
@@ -296,6 +301,22 @@ fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     // inline is something to specialize on.
     for (uint i = 0; i < f.code_count; i++) {
         if ((ic[i].feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0 && opt_inline_plausible(h, f, i)) return true;
+    }
+    return false;
+}
+
+// Whether `f` is mostly integer work the baseline runs boxed: at least OPT_INT_WORK arithmetic,
+// bitwise and element instructions whose feedback (none) says int32 throughout, as asm.js-style
+// code compiled from C is. Its operands never leave int32, so it records no operand feedback, yet
+// unboxed registers are what the tier gives it.
+fn bool opt_has_int_work(CompiledFunction* f) {
+    if (f.ic_entries == null) return false;
+    uint work = 0;
+    for (uint i = 0; i < f.code_count; i++) {
+        Opcode op = f.code[i].op;
+        if (vm::has_feedback(op) || op == Opcode.GETPROP || op == Opcode.PUTPROP) {
+            if (++work >= OPT_INT_WORK) return true;
+        }
     }
     return false;
 }
@@ -439,10 +460,29 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
         pools = opt_pools();
         if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
     }
+    // More values live in phis than there are registers: the joins of the phis that found none
+    // keep those values in their window slots, over a few rebuilds.
+    List{OptJoin} windowed;
+    windowed.init(mem);
+    defer windowed.free();
+    for (uint round = 0; why == OptRefuse.PRESSURE && round < OPT_PRESSURE_ROUNDS; round++) {
+        if (round == 0) {
+            // The graph that failed names its phis (the first build's, or the plain one's).
+            pools = opt_pools();
+            g.allocate(&pools, &windowed);
+        }
+        bool plain = b.no_inline;
+        b.free();
+        g.clear();
+        refused_op = Opcode.NOP;
+        why = opt_build_graph(h, f, &g, &b, &refused_op, plain, &windowed);
+        pools = opt_pools();
+        if (why == OptRefuse.NONE && !g.allocate(&pools, &windowed)) why = OptRefuse.PRESSURE;
+    }
     defer b.free();
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined.
-    if (why == OptRefuse.NONE && inlined == 0 && !p.always && !opt_has_operand_feedback(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
+    if (why == OptRefuse.NONE && inlined == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
         f.opt_declined++;
         return false;
     }
@@ -479,6 +519,11 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     f.opt_code = oc;
     f.opt_state = OPT_ACTIVE;
     f.jit_code = code;
+    if (p.log) {
+        io::eprintf("opt compile ");
+        opt_log_fn(f);
+        io::eprintfn(" words %d nodes %d inlined %d reopt %d", f.code_count, g.nodes.len(), inlined, f.opt_reopts);
+    }
     return true;
 }
 
@@ -617,7 +662,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     // A failed type guard: record the operand classes the instruction met, as the baseline would
     // have off its integer path, so that the rebuild lowers it for them instead of guarding again.
     if ((reason == OptExit.NOT_INT32.ordinal || reason == OptExit.NOT_NUMBER.ordinal) && oc.f.ic_entries != null) {
-        opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
+        opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
     }
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
     oc.exits++;
@@ -639,9 +684,15 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
 
 // OR the classes of the operands the instruction at word `pc` of `f` reads from the window into its
 // feedback, for the instructions whose feedback the optimizer reads.
-fn void opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc) {
+fn void opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc, long reason) {
     DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
-    if (!d.valid || !vm::has_feedback(d.insn.op)) return;
+    if (!d.valid) return;
+    if (!vm::has_feedback(d.insn.op)) {
+        // A typed load (an element, field, closure or global read) found a value its int32 node
+        // cannot hold: the rebuild reads it as a double (OptBuild.typed_load).
+        if (reason == OptExit.NOT_INT32.ordinal) ((hobject::ICEntry*)f.ic_entries)[d.payload_pc].feedback |= hobject::FB_DBL;
+        return;
+    }
     TVal* regs = ds.regs_base;
     TVal imm;
     char bits;

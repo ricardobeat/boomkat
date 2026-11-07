@@ -1722,6 +1722,12 @@ fn void OptCg.emit_addsub(&self, uint i, OptNode* n) {
     long yw;
     self.int_src(n.b, R1, &y, &yw);
     sljit_emit_op2(c, n.op == OptOp.ADD_I32 ? SLJIT_ADD : SLJIT_SUB, R2, 0, x, 0, y, yw);
+    if (n.cc != 0) {
+        // Only ToInt32 reads it (OptBuild.wraps): the wrapped sum.
+        sljit_emit_op1(c, SLJIT_MOV_S32, R2, 0, R2, 0);
+        self.def_int(i, R2);
+        return;
+    }
     sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, R2, 0);
     self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R2, 0), i, OptExit.OVERFLOW);
     self.def_int(i, R2);
