@@ -166,6 +166,9 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     ctx.is_global = true;
     ctx.eval_mode = true;
     ctx.in_eval_code = true;
+    // Only real eval compilations set this; global Script (compile()) reuses
+    // eval's completion bookkeeping but is not eval code, so leaves it false.
+    ctx.in_eval_derived = true;
     // Eval inherits the caller's strictness only when the call is direct
     // (ECMA-262 §19.2.1.1 step 12: "Eval code is strict mode code if it
     // begins with a Directive Prologue that contains a Use Strict Directive

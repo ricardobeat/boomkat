@@ -2124,6 +2124,10 @@ struct CompiledFunction {
     uint            jit_entries @if($feat(SLJIT));  // Frame entries counted toward compilation
     char            jit_attempts @if($feat(SLJIT)); // Failed compiles
     bool            jit_refused @if($feat(SLJIT));  // Stays interpreted
+    // Set by the compiler for the eval body and every nested/arrow function it
+    // creates. These are one-shot compilations, so the JIT declines them; kept
+    // off FuncFlags because is_eval has JS declaration-instantiation semantics.
+    bool            jit_eval_derived @if($feat(SLJIT));
     void*           opt_code @if($feat(SLJIT));     // jit::OptCode* while optimized code is installed
     uint            opt_entries @if($feat(SLJIT));  // Entries counted toward optimizing
     char            opt_state @if($feat(SLJIT));    // jit::OPT_*

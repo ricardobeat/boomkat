@@ -464,6 +464,15 @@ struct CompilerContext {
     // in expressions.c3) still apply inside it, even though the arrow must not accumulate a
     // completion value.
     bool   in_eval_code;
+    // Semantics-free JIT marker: true for an eval compilation and everything
+    // nested in its source. It changes no JS behaviour, so it is safe to inherit
+    // into nested functions and arrows, unlike in_eval_code, whose real
+    // semantics (configurable var/function bindings, branches in emit.c3 and
+    // gen.c3) must stay on the eval top-level context only. finish() copies it
+    // to CompiledFunction.jit_eval_derived so the baseline JIT can skip these
+    // one-shot functions. Only compile_eval sets it, mirroring the rule that
+    // global Script code is not eval code.
+    bool   in_eval_derived;
     // True for direct eval called from a non-arrow function body, the only context where
     // new.target is allowed in the eval source. False for indirect eval, eval at script top
     // level, eval from an arrow body, or eval from a class constructor. new_expr() reads it to
@@ -1998,6 +2007,13 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // which makes var/function bindings configurable (env_declare_var's `D`
     // argument) -- is in_eval_code.
     func.flags.is_eval = self.in_eval_code;
+    // Semantics-free copy for the baseline JIT to skip these one-shot
+    // eval-derived functions (see CompilerContext.in_eval_derived). The
+    // jit_eval_derived member is SLJIT-gated, so write it only where the
+    // member exists; this keeps non-SLJIT targets compiling.
+    $if $feat(SLJIT):
+        func.jit_eval_derived = self.in_eval_derived;
+    $endif
     func.flags.eval_src_strict = self.saw_use_strict;
     // Record whether this body may reference new.target, so a direct eval
     // called from it can inherit the permission (see
