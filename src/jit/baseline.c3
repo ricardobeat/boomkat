@@ -184,7 +184,7 @@ fn bool is_top_level(CompiledFunction* f) @inline => f.flags.is_global || f.flag
 // so. Each expiry credits BASELINE_LOOP_CREDIT entries.
 fn bool baseline_loop_hot(Heap* h, CompiledFunction* f) @noinline {
     if (f.jit_code != null) {
-        if (h.opt.enabled) opt_note_entry(h, f, BASELINE_LOOP_CREDIT);
+        if (h.opt.enabled) opt_note_entry(h, f, OPT_LOOP_CREDIT);
         return true;
     }
     if (f.jit_refused) return false;

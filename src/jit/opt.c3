@@ -53,6 +53,11 @@ const char OPT_REFUSED_EXITS = 3;
 // Frame entries (and loop credits) before a function with feedback is
 // optimized; exits that discard its code; and the reoptimizations allowed.
 const uint OPT_ENTRY_THRESHOLD = 1000;
+// Entries one expiry of the back-edge budget (heap::BWD_GC_INTERVAL backward branches, counted
+// across all frames) credits to the function whose branch used it up. A loop that iterates this
+// often is as hot as a function entered this many times; OPT_ENTRY_THRESHOLD / OPT_LOOP_CREDIT
+// expiries (a few thousand of the function's own iterations) optimize it.
+const uint OPT_LOOP_CREDIT = OPT_ENTRY_THRESHOLD / 4;
 // The attempts on call feedback alone that found nothing to inline before the function waits for operand feedback.
 const char OPT_DECLINE_MAX = 3;
 // Own-field accesses with a recorded shape that make a function worth optimizing on their own.
@@ -171,7 +176,7 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1) @noinline 
 // loop entry and otherwise hands back to the baseline code.
 fn void* opt_osr(Dispatch* ds, CompiledFunction* f) @noinline {
     Heap* h = ds.heap;
-    opt_note_entry(h, f, BASELINE_LOOP_CREDIT);
+    opt_note_entry(h, f, OPT_LOOP_CREDIT);
     if (f.opt_code == null || f.opt_state != OPT_ACTIVE) return null;
     return ((BaselineCode*)f.jit_code).exec;
 }
