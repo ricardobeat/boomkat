@@ -18,7 +18,6 @@ import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::pagepool;
 import boomkat::features;
-import boomkat::env;
 import std::io;
 
 // Field offsets and bit masks the inline paths read, taken once from layout
@@ -1329,10 +1328,9 @@ fn void Asm.emit_index_body(&self) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// A read of a dense array element, index in R3, as th_getprop_array: a hole is
-// settled by hole_element, and the rest of the instruction's slow path stays
-// the stub's. Another class tries the typed-array subroutine
-// (th_get_typed_element).
+// A read of a dense array element, index in R3, as th_getprop_array: a hole
+// takes the slow path, which consults the prototype chain. Another class
+// tries the typed-array subroutine (th_get_typed_element).
 fn void Asm.emit_get_elem(&self, uint ra, uint rb) {
     void* c = self.c;
     self.load(R0, rb);
@@ -1340,80 +1338,19 @@ fn void Asm.emit_get_elem(&self, uint ra, uint rb) {
     void* other = self.array_or_typed(0);
     self.array_slot();
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    void* hole = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
     self.publish(ra);
-    void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(hole, sljit_emit_label(c));
-    self.emit_hole_elem(ra);
     $if features::BUFFERS:
+        void* done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
         self.note_elem_class();
         self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
         self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
         // A number, which needs no publication.
         self.store(ra, R0);
+        sljit_set_label(done, sljit_emit_label(c));
     $else
         self.call.add(other);
-    $endif
-    sljit_set_label(done, sljit_emit_label(c));
-}
-
-// The value of a dense array element that holds `undefined`, as the switch's
-// read settles it: the array's own named-table entry for the index, or
-// `undefined` when no chain that could hold the index does. A non-participating
-// regexp capture is stored that way, and those reads are frequent enough to
-// outrun a thunk call. The receiver is in R1 and the index in the
-// instruction's key register; anything hole_element declines takes the stub
-// (jit_get_elem, then the thunk) as before.
-fn void Asm.emit_hole_elem(&self, uint ra) {
-    void* c = self.c;
-    self.load(R2, self.w.c);
-    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R2, 0, SLJIT_IMM, K_INT);
-    sljit_emit_op2(c, SLJIT_SHL, R2, 0, R2, 0, SLJIT_IMM, 16);
-    sljit_emit_op2(c, SLJIT_ASHR, R2, 0, R2, 0, SLJIT_IMM, 16);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&hole_element);
-    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, hole_declined()));
-    self.publish(ra);
-    self.go(sljit_emit_jump(c, SLJIT_JUMP), self.next);
-}
-
-// The value hole_element answers with when the read needs the slow path: the
-// TDZ sentinel, which no property value can be.
-fn long hole_declined() @private {
-    $if types::USE_NANBOX:
-        return (long)env::tdz_sentinel().bits;
-    $else
-        return 0;
-    $endif
-}
-
-// The value at array index `idx` of `obj`, whose dense slot there holds
-// `undefined`: the named-table entry an exotic array keeps for an index that
-// cannot live in its dense part, else `undefined` when the chain below the
-// usual Array.prototype holds no index. An accessor (whose getter runs user
-// code), a proxy, or another chain is hole_declined.
-fn long hole_element(Heap* h, HObject* obj, long idx) {
-    long declined = hole_declined();
-    if (obj.get_class() != hobject::ObjClass.ARRAY || obj.is_proxy()) return declined;
-    if (obj.prototype != h.index_clean_proto) return declined;
-    TVal value;
-    value.set_undefined();
-    if (idx >= 0 && obj.flags.has_indexed_named_prop) {
-        // A key that was never interned cannot name a property, so a null
-        // lookup means no entry rather than an index to create one for.
-        HString* key = h.find_int_hstring(idx);
-        if (key == null) return declined;
-        int slot = obj.find_prop_idx(key, h);
-        if (slot >= 0) {
-            if (obj.get_prop_flags((uint)slot, h).is_accessor) return declined;
-            value = obj.prop_values()[slot].get();
-        }
-    }
-    $if types::USE_NANBOX:
-        return (long)value.bits;
-    $else
-        return 0;
     $endif
 }
 
