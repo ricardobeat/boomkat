@@ -3617,13 +3617,38 @@ struct ICPolySet {
 
 const uint IC_POLY_MAX = 5;
 
-union ICChain {
-    ICChainSnapshot snapshot;
-    ICChainEpoch epoch;
-    ICPolySet poly;
+// Earlier receivers of an inherited ordinary read (an epoch entry) whose entry has moved on to
+// another receiver shape: each case is the receiver shape, its first prototype, the owner and the
+// owner's slot, all under the one prototype epoch. Only the optimizing tier reads it (a
+// polymorphic inherited load); the baseline keeps one entry. The objects are rooted with the
+// entry's read owner. More distinct receivers than IC_PROTO_MAX make it `mega`.
+const uint IC_PROTO_MAX = 4;
+
+struct ICProtoCase {
+    uint shape;
+    uint idx;
+    HObject* first;
+    HObject* owner;
 }
 
-$assert ICChainEpoch::size <= ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
+struct ICProtoSet {
+    ulong epoch;
+    uint count;
+    bool mega;
+    ICProtoCase[IC_PROTO_MAX] cases;
+}
+
+struct ICChain {
+    union {
+        ICChainSnapshot snapshot;
+        ICChainEpoch epoch;
+        ICPolySet poly;
+    }
+    // Allocated on the first change of receiver of an epoch read, kept until the function is freed.
+    ICProtoSet* protos;
+}
+
+$assert ICChainEpoch::size <= ICChainSnapshot::size && ICPolySet::size <= ICChainSnapshot::size : "cache payload exceeds bounded snapshot";
 
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
@@ -3853,7 +3878,49 @@ fn void ic_fill_put_own(ICEntry* ic, HObject* hobj, uint idx, PropFlags flags, H
 fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
     if (ic.chain != null) return true;
     ic.chain = (ICChain*)(h.pool_alloc(ICChain::size) ?? null);
+    if (ic.chain != null) ic.chain.protos = null;
     return ic.chain != null;
+}
+
+// The epoch entry `ic` is about to be refilled for a receiver of shape `shape` whose first prototype
+// is `first`: keep its current case in the entry's ICProtoSet when it is still valid (its epoch the
+// heap's) and names another receiver.
+fn void ic_proto_note(ICEntry* ic, uint shape, HObject* first, heap::Heap* h) {
+    if (ic.chain == null || !ic.has_proto || ic.chain_len != IC_CHAIN_EPOCH || ic.prop_flags.is_accessor) return;
+    ICChainEpoch* ep = &ic.chain.epoch;
+    if (ep.value != h.prototype_epoch || (ic.shape_id == shape && ep.first == first)) return;
+    ic_proto_add(ic, ic.shape_id, ep.first, ep.owner, ic.prop_idx, h);
+}
+
+// Add the case of receivers of shape `shape` with first prototype `first` reading slot `idx` of
+// `owner` to the prototype-read set of the epoch entry `ic`, under the heap's current prototype
+// epoch (the chain's prototypes observed). A set of an older epoch starts over. True when the set
+// gained the case.
+fn bool ic_proto_add(ICEntry* ic, uint shape, HObject* first, HObject* owner, uint idx, heap::Heap* h) {
+    ICProtoSet* set = ic.chain.protos;
+    if (set == null) {
+        set = (ICProtoSet*)(h.pool_alloc(ICProtoSet::size) ?? null);
+        if (set == null) return false;
+        *set = {};
+        ic.chain.protos = set;
+    }
+    if (set.epoch != h.prototype_epoch) {
+        set.count = 0;
+        set.mega = false;
+        set.epoch = h.prototype_epoch;
+    }
+    for (uint i = 0; i < set.count; i++) {
+        if (set.cases[i].shape == shape && set.cases[i].first == first) return false;
+    }
+    if (set.count == IC_PROTO_MAX) {
+        set.mega = true;
+        return false;
+    }
+    h.shade_root_object(first);
+    h.shade_root_object(owner);
+    set.cases[set.count] = { .shape = shape, .idx = idx, .first = first, .owner = owner };
+    set.count++;
+    return true;
 }
 
 fn HObject* ic_cached_proto(ICEntry* ic) {

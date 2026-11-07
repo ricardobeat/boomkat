@@ -731,10 +731,23 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     if (oc.f.opt_code == oc && oc.f.ic_entries != null) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
         if (oc.f.code[at].op == Opcode.WIDE) at++;
-        repeat = opt_note_site_exit(oc, oc.f, at, reason);
+        // A receiver an inherited read's set lacked joins it: the rebuild reads it too, so the
+        // exit does not count towards leaving the site to the baseline.
+        bool learnt = reason == OptExit.SHAPE.ordinal && opt_note_proto_exit(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
+        if (!learnt) repeat = opt_note_site_exit(oc, oc.f, at, reason);
     }
     if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
     return 0;
+}
+
+// A shape exit at the inherited read at word `pc` of `f` (GETPROPC, GETPROPC_CACHED): the receiver's
+// case joins the read's prototype-read set (vm::ic_note_proto_read). True when it did.
+fn bool opt_note_proto_exit(Dispatch* ds, CompiledFunction* f, uint pc) {
+    DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
+    if (!d.valid || (d.insn.op != Opcode.GETPROPC && d.insn.op != Opcode.GETPROPC_CACHED)) return false;
+    TVal* recv = ds.regs_base + d.insn.b;
+    if (!recv.is_object()) return false;
+    return vm::ic_note_proto_read(ds.heap, &((hobject::ICEntry*)f.ic_entries)[d.payload_pc], (HObject*)recv.get_heapptr());
 }
 
 // OR the classes of the operands the instruction at word `pc` of `f` reads from the window into its
