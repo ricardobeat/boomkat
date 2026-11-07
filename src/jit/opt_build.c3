@@ -282,7 +282,7 @@ fn uint inline_reg_mask(Opcode op) {
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case LDTHIS: case GETCAP:
             return 1;
-        case GETPROP:
+        case GETPROP: case PUTPROP:
             return 7;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -335,6 +335,8 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
         case GETPROP:
             *reads = (1u << w.b) | (1u << w.c);
             *writes = 1u << w.a;
+        case PUTPROP:
+            *reads = (1u << w.a) | (1u << w.b) | (1u << w.c);
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
             *reads = 1u << w.b;
@@ -1142,13 +1144,28 @@ fn bool OptBuild.get_elem(&self) {
     return true;
 }
 
-// PUTPROP of a numeric node to an element at an integer index, into an object in the window.
+// PUTPROP of a value to an element at an integer index, into an object in the window. A numeric
+// node is stored as it is; any other value is read from the window, in an inlined body only (a
+// function's own body runs it as a GENERIC), and stored with the baseline's counted store.
 fn bool OptBuild.put_elem(&self) {
     uint rv = self.w.c;
-    if (!self.in_window(self.w.a) || !self.index_ok(self.w.b) || rv >= self.nregs || self.cur[rv].node == NO_NODE || self.is_object(rv)) return self.generic();
+    if (rv >= self.nregs || !self.in_window(self.w.a) || !self.index_ok(self.w.b)) return self.generic();
+    bool numeric = self.cur[rv].node != NO_NODE && !self.is_object(rv);
+    if (!numeric && (self.cur_fn == 0 || !self.in_window(rv))) return self.generic();
     uint idx = self.operand(self.w.b, OptRep.INT32);
-    uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, self.cur[rv].node, (long)self.pc);
+    if (idx == NO_NODE) return self.generic();
+    uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, numeric ? self.cur[rv].node : NO_NODE, (long)self.pc);
     self.snapshot(n);
+    if (!numeric) {
+        // The counted store is a C call that clobbers the machine registers: the live nodes are
+        // stored before it on that path, and reloaded after.
+        uint first = (uint)self.g.dirty.len();
+        for (uint r = 0; r < self.nregs; r++) {
+            if (self.cur[r].node != NO_NODE) self.g.dirty.push({ .reg = r, .node = self.cur[r].node });
+        }
+        self.g.nodes[n].reload_first = first;
+        self.g.nodes[n].reload_count = (uint)self.g.dirty.len() - first;
+    }
     return true;
 }
 
