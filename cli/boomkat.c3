@@ -292,9 +292,11 @@ fn int main(String[] args) {
             jit::JitStats* st = &hp.jit_stats;
             io::eprintfn("jit: compiled %d (%d from hot loops), code %d bytes for %d instructions, tables %d bytes; excluded: opcode %d, too large %d; failed %d, capped %d",
                 st.compiled, st.loop_entries, st.code_bytes, st.insns, st.table_bytes, st.excluded_opcode, st.too_large, st.failed, st.capped);
-            io::eprintfn("jit calls: native %d, trivial %d; thunk: no code %d, depth cap %d, not compiled %d, declined %d (pushed %d, restarted %d); native switches %d",
-                st.calls_native, st.calls_trivial, st.calls_no_code, st.calls_depth, st.calls_builtin, st.calls_declined,
-                st.calls_pushed, st.calls_restarted, st.switches);
+            io::eprintfn("jit skipped: unprofitable %d, eval %d; cold code evicted %d in %d sweeps",
+                st.skipped_unprofitable, st.skipped_eval, st.evicted, st.sweeps);
+            io::eprintfn("jit calls: native %d, trivial %d; thunk: no code %d, depth cap %d, declined %d (pushed %d, restarted %d); builtin %d direct %d; native switches %d",
+                st.calls_native, st.calls_trivial, st.calls_no_code, st.calls_depth, st.calls_declined,
+                st.calls_pushed, st.calls_restarted, st.calls_builtin, st.calls_builtin_direct, st.switches);
             io::eprintfn("jit live: %d bytes at exit, peak %d", st.live_bytes, st.peak_bytes);
             io::eprintfn("jit compile: %.1f ms total, longest %.2f ms (%d instruction words)",
                 (double)st.compile_ns / 1e6, (double)st.compile_max_ns / 1e6, st.compile_max_insns);
