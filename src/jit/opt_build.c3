@@ -2274,11 +2274,11 @@ fn bool OptBuild.lower_op(&self) {
         case CONTINUE:
             return self.refuse_op(op);
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
-            TVal v;
+            long kv;
             switch (op) {
-                case LDUNDEF: v.set_undefined();
-                case LDNULL: v.set_null();
-                default: v.set_boolean(op == LDTRUE);
+                case LDUNDEF: kv = K_UNDEF;
+                case LDNULL: kv = K_NULL;
+                default: kv = op == LDTRUE ? K_BOOL | 1 : K_BOOL;
             }
             // A register the body never reads again needs no value.
             if (self.cur_fn == 0) {
@@ -2295,7 +2295,7 @@ fn bool OptBuild.lower_op(&self) {
                     return true;
                 }
             }
-            self.store_const(ra, (long)v.bits);
+            self.store_const(ra, kv);
         case GETCAP:
             return self.get_cap();
         case GETGLOBAL:
