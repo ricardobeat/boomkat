@@ -101,6 +101,21 @@ for (var d = 0; d < 500; d++) {
 delete Object.prototype.__inlineAllocProbe;
 delete Array.prototype.__inlineAllocProbe;
 
+// Literals of constants (NEWARR_CONST): each call returns a fresh array, whatever
+// the previous one became.
+function k1() { return [7]; }
+function k3() { return [1, 2.5, -3]; }
+function k16() { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16.5]; }
+function k17() { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]; }
+for (var c = 0; c < 4000; c++) {
+  var x1 = k1(), x3 = k3(), x16 = k16(), x17 = k17();
+  if (x1.length !== 1 || x1[0] !== 7 || x3.join() !== "1,2.5,-3" || x16[15] !== 16.5 || x16.length !== 16
+      || x17.length !== 17 || x17[16] !== 17) { check("const literal " + c, false); break; }
+  x1[0] = c; x3.push(c); x16[0] = -1; x16.length = 3; x17.pop(); x3.reverse();
+  var y3 = k3();
+  if (y3.length !== 3 || y3[0] !== 1 || k16()[0] !== 1 || k16().length !== 16) { check("const literal reuse " + c, false); break; }
+}
+
 // Weak references and finalization: an object held strongly stays dereferenceable
 // across the collections the loop causes; the registry callback never runs for it.
 var finalized = 0;
