@@ -187,6 +187,10 @@ enum OptOp : char {
     // A branch on two window slots (imm: b | c << 20) by the baseline's equality test: cc is
     // 0 JMP_SEQ, 1 JMP_SNEQ, 2 JMP_EQ, 3 JMP_NEQ, 4 JMP_NULL, 5 JMP_NNULL.
     BRANCH_WINDOW,
+    // The test before a case of a polymorphic call (OptBuild.callee_test): falls to succ[1], the
+    // case's body, when the OBJECT node a, or the window slot of the call's callee register when a
+    // is NO_NODE, holds a closure of the function imm (its CompiledFunction*); else takes succ[0].
+    BRANCH_CALLEE,
     // The bytecode instruction at pc, through the baseline emitter.
     GENERIC,
     // A NEW_OBJ (pc) of the constructor imm (its CompiledFunction*), after its CHECK_CALLEE: a plain

@@ -2229,9 +2229,34 @@ fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
     return count;
 }
 
+// BRANCH_CALLEE: jumps unless the call's callee is a plain closure of the case's function (the
+// tests of emit_check_callee that name the function; the CHECK_CALLEE of the case does the rest).
+fn uint OptCg.emit_callee_test(&self, uint i, OptNode* n, void** jumps) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    CallLayout* k = call_layout();
+    a.decode(n.pc);
+    if (n.a != NO_NODE) {
+        int r = self.obj_reg(n.a, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    } else {
+        a.load(R1, a.w.b + self.g.fns[n.fidx].reg_base);
+    }
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    jumps[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    jumps[1] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, SLJIT_MEM | R0, 0);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
+    jumps[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R0, a.lay.fn_comp_func);
+    jumps[3] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, n.imm);
+    return 4;
+}
+
 fn uint OptCg.emit_test(&self, uint i, OptNode* n, void** jumps) {
     void* c = self.a.c;
     if (n.op == OptOp.BRANCH_WINDOW) return self.emit_window_branch(i, n, jumps);
+    if (n.op == OptOp.BRANCH_CALLEE) return self.emit_callee_test(i, n, jumps);
     if (n.op == OptOp.BRANCH) {
         if (n.imm == (long)OptRep.INT32.ordinal) {
             int x = self.int_reg(n.a, R0);
@@ -2397,6 +2422,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case BRANCH:
         case BRANCH_TRUTH:
         case BRANCH_WINDOW:
+        case BRANCH_CALLEE:
             void*[8] jumps;
             uint count = self.emit_test(i, n, &jumps[0]);
             self.emit_edge(pos, 1, true);
