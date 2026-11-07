@@ -794,7 +794,8 @@ fn uint OptBuild.operand(&self, uint reg, OptRep want) {
         // A field read of this body kept beyond the caller's frame as an OBJECT node only for want
         // of a use (OptBuild.get_field): the next round reads it as a number.
         OptNode* ld = &self.g.nodes[s.node];
-        if (self.cur_fn != 0 && reg >= self.caller_regs && ld.op == OptOp.LOAD_FIELD && ld.fidx == self.cur_fn) {
+        bool load = ld.op == OptOp.LOAD_FIELD || ld.op == OptOp.LOAD_ELEM || ld.op == OptOp.LOAD_GLOBAL;
+        if (self.cur_fn != 0 && reg >= self.caller_regs && load && ld.fidx == self.cur_fn) {
             self.ask_load(ld.pc | ((self.cur_site + 1) << 24), reg, want);
         }
         // A number was asked of a register that holds an object: read it from the window as any other
@@ -1066,7 +1067,7 @@ fn bool OptBuild.get_variable(&self, bool scoped) {
     self.snapshot(n);
     self.kill(ra);
     self.load_def[ra] = self.pckey();
-    if (ra >= self.caller_regs) self.inline_unsafe = true;
+    if (ra >= self.caller_regs) self.soft_object(ra);
     return true;
 }
 
@@ -1145,6 +1146,19 @@ fn bool OptBuild.in_window(&self, uint r) {
     return true;
 }
 
+// The read being lowered into register `ra`, beyond the caller's frame, left its value in the window,
+// out of the collector's sight: the next round builds it as an OBJECT node, which stays in a
+// register, unless a numeric use asks for a number (OptOverride.soft). The body waits for it.
+fn void OptBuild.soft_object(&self, uint ra) {
+    bool asked = false;
+    foreach (c : self.load_reps) asked |= c.block == self.pckey();
+    if (!asked) {
+        self.load_reps.push({ .block = self.pckey(), .reg = ra, .rep = OptRep.OBJECT, .soft = true });
+        self.load_changed = true;
+    }
+    self.inline_unsafe = true;
+}
+
 // The register `reg`, still in the window, was written by a property read the next round can
 // build as an OBJECT node.
 fn void OptBuild.ask_object(&self, uint reg) {
@@ -1157,8 +1171,9 @@ fn void OptBuild.ask_object(&self, uint reg) {
     if ((key & 0xFFFFFF) >= kf.code_count) return;
     Opcode o = kf.code[key & 0xFFFFFF].op;
     // A global read is a load only in an inlined body (the function's own is a GENERIC).
+    // An element read is a load only in an inlined body (the function's own is a GENERIC).
     if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC && o != Opcode.GETCAP
-        && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR) || si1 == 0)) return;
+        && ((o != Opcode.GETGLOBAL && o != Opcode.GETVAR && o != Opcode.GETPROP) || si1 == 0)) return;
     foreach (&c : self.load_reps) if (c.block == key) return;
     self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.OBJECT });
     self.load_changed = true;
@@ -1289,15 +1304,7 @@ fn bool OptBuild.get_field(&self) {
         // A value of any kind in a slot beyond the caller's frame would be out of the collector's
         // sight: the next round builds the read as an OBJECT node, which stays in a register, unless
         // a numeric use asks for a number.
-        if (self.cur_fn != 0 && ra >= self.caller_regs) {
-            bool asked = false;
-            foreach (c : self.load_reps) asked |= c.block == self.pckey();
-            if (!asked) {
-                self.load_reps.push({ .block = self.pckey(), .reg = ra, .rep = OptRep.OBJECT, .soft = true });
-                self.load_changed = true;
-            }
-            self.inline_unsafe = true;
-        }
+        if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_object(ra);
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].b = rnode;
@@ -1467,7 +1474,7 @@ fn bool OptBuild.get_elem(&self) {
         self.snapshot(n);
         self.kill(ra);
         self.load_def[ra] = self.pckey();
-        if (ra >= self.caller_regs) self.inline_unsafe = true;
+        if (ra >= self.caller_regs) self.soft_object(ra);
         return true;
     }
     if (!self.generic()) return false;

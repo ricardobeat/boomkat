@@ -875,6 +875,10 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         self.exit_calls(i, OptExit.SLOW_PATH);
         return;
     }
+    if (n.rep == OptRep.OBJECT) {
+        self.finish_object(i, n);
+        return;
+    }
     self.def_from_r0(i, n);
 }
 
@@ -994,6 +998,11 @@ fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, long fl
     if (n.rep == OptRep.NONE) {
         // A number, which needs no publication.
         a.store(a.w.a, R0);
+        return;
+    }
+    // A number is an inert value, which an OBJECT node holds as it is.
+    if (n.rep == OptRep.OBJECT) {
+        self.def_obj(i, R0);
         return;
     }
     self.def_from_r0(i, n);
