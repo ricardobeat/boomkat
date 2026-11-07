@@ -3466,9 +3466,9 @@ fn Instruction* th_try_fast_return(Instruction* pc, HandlerTable* handlers,
 // plain enough and its result is written into the caller's register, with
 // `caller_out` and `cross_out` describing the caller the pop resumes.
 macro bool th_leaf_return(Vm* vm, Activation* fa, TVal value, bool is_undefined,
-                          Activation** caller_out, bool* cross_out) @private {
+                          Activation** caller_out, bool* cross_out, bool counted_ok = false) @private {
     if (th_frame_is_replaceable(vm, fa)
-        && (fa.heap_reg_count == 0 || th_tracked_regs_uncounted(fa))
+        && (counted_ok || fa.heap_reg_count == 0 || th_tracked_regs_uncounted(fa))
         && !vm.heap.gc_safepoint_due(false)) {
         Activation* caller = &vm.activations[vm.activation_count - 2];
         bool cross_function = caller.func != fa.func;
