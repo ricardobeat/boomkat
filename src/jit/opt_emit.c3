@@ -1017,8 +1017,11 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R0, 0);
-    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
-    miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want);
+    // A NEW_OBJ's constructor is also constructable.
+    hobject::ObjFlags ctor_bit;
+    ctor_bit.constructable = n.cc == 2;
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask | (long)(uint)ctor_bit);
+    miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want | (long)(uint)ctor_bit);
     sljit_emit_op1(c, SLJIT_MOV_S32, R4, 0, m | R0, k.fn_builtin);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R0, a.lay.fn_comp_func);
@@ -1043,7 +1046,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     uint end = callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS;
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)end * TVal::size);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | R0, k.vm_valstack_end);
-    if (n.cc != 0 && !cf.call_flags.ignores_this) {
+    if (n.cc == 1 && !cf.call_flags.ignores_this) {
         // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
         // that any exit stores into a frame it publishes.
         if (n.b != NO_NODE) {
@@ -1062,6 +1065,113 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
         }
     }
     for (uint j = 0; j < misses; j++) self.exit_at(miss[j], i, OptExit.CALLEE);
+}
+
+// The machine registers that hold a value across node `i` (a node defined before it whose last use
+// is after it occupies its register there) stored to the frame's save area, or loaded back from it,
+// around a call of C from inside the node. Uses no other register.
+fn void OptCg.spill_live(&self, uint i, bool save) {
+    void* c = self.a.c;
+    for (uint j = 0; j < i; j++) {
+        OptNode* nd = &self.g.nodes[j];
+        if (!nd.allocated() || nd.reg < 0 || nd.last_use <= i) continue;
+        if (nd.rep.is_gpr()) {
+            long off = CALL_FRAME_BYTES + 8 * (long)(nd.reg - self.pools.int_first);
+            if (save) {
+                sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), off, nd.reg, 0);
+            } else {
+                sljit_emit_op1(c, SLJIT_MOV, nd.reg, 0, SLJIT_MEM | reg_sp(), off);
+            }
+        } else {
+            long off = CALL_FRAME_BYTES + 8 * (long)(self.pools.int_count + nd.reg - self.pools.flt_first);
+            if (save) {
+                sljit_emit_fop1(c, SLJIT_MOV_F64, SLJIT_MEM | reg_sp(), off, nd.reg, 0);
+            } else {
+                sljit_emit_fop1(c, SLJIT_MOV_F64, nd.reg, 0, SLJIT_MEM | reg_sp(), off);
+            }
+        }
+    }
+}
+
+// The object of an inlined NEW_OBJ, built by vm::jit_opt_new_object with the registers in use saved
+// around the call; a constructor or cache it refuses leaves for the baseline code at the NEW_OBJ.
+fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    CompiledFunction* cf = (CompiledFunction*)(usz)n.imm;
+    a.decode(n.pc);
+    OptFn* caller = &self.g.fns[n.fidx];
+    uint callee_reg = a.w.b + caller.reg_base;
+    long ic = (long)(usz)&((hobject::ICEntry*)caller.f.ic_entries)[a.next - 1];
+    // The properties the body can add, or what the constructor's frames have left on their objects.
+    uint want = cf.call_flags.constructor_capacity;
+    uint adds = 0;
+    for (uint k = 0; k < cf.code_count; k++) if (cf.code[k].op == Opcode.PUTTHISC) adds++;
+    if (adds > want) want = adds;
+    if (n.a != NO_NODE) {
+        int r = self.obj_reg(n.a, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    } else {
+        a.load(R1, callee_reg);
+    }
+    // The guard before proved it an object.
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)want);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_new_object);
+    self.spill_live(i, false);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
+    self.def_obj(i, R0);
+}
+
+// PUTTHISC of an inlined constructor that adds its key to an object, as the baseline's emit_put does
+// through an absent-property entry: the key check, then the put-absent subroutine's inline add; a
+// state it does not cover calls vm::jit_put_absent with the registers in use saved, and what that
+// refuses leaves for the baseline code before anything is written.
+fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    self.decode(n);
+    a.call.len = 0;
+    CompiledFunction* f = self.g.fns[n.fidx].f;
+    long ic = (long)(usz)&((hobject::ICEntry*)f.ic_entries)[a.next - 1];
+    long key = (long)(usz)f.constants[a.w.c].get_heapptr();
+    // The value's address: its window slot, or OptCode.value for a boxed node.
+    long boxed = (long)(usz)&self.oc.value;
+    if (n.a == NO_NODE) {
+        sljit_emit_op2(c, SLJIT_ADD, R3, 0, a.regs, 0, SLJIT_IMM, (long)a.w.a * TVal::size);
+    } else {
+        if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
+            int vr = self.obj_reg(n.a, R2);
+            if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
+        } else {
+            self.box_node(n.a, R2);
+        }
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM, boxed, R2, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, boxed);
+    }
+    int rr = self.obj_reg(n.b, R1);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+    a.put_key_check(key, -1, &a.call);
+    a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUT_ABSENT_FAST_SUB });
+    void* added = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    // The subroutine leaves R1 and R2; R3 is the value's address again.
+    if (n.a == NO_NODE) {
+        sljit_emit_op2(c, SLJIT_ADD, R3, 0, a.regs, 0, SLJIT_IMM, (long)a.w.a * TVal::size);
+    } else {
+        sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, boxed);
+    }
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
+    self.spill_live(i, false);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(added, sljit_emit_label(c));
+    self.exit_calls(i, OptExit.SHAPE);
 }
 
 // The callee of a CALL_VAR or CALL_GLOBAL, read as GETVAR or GETGLOBAL read it and stored in the
@@ -1405,7 +1515,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -1499,6 +1609,10 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.defer_taken(pos, &jumps[0], count);
         case GENERIC:
             self.emit_generic(i, n);
+        case NEW_OBJECT:
+            self.emit_new_object(i, n);
+        case ADD_FIELD:
+            self.emit_add_field(i, n);
         case EXIT:
             self.store_dirty(n.dirty_first, n.dirty_count);
             self.a.i = n.pc;

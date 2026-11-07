@@ -1051,8 +1051,8 @@ fn void Asm.emit_put_absent(&self, long ic, long key, int key_reg, uint rv, Jump
 // object, the recorded prototype chain ending in null), a value that needs
 // no barrier work beyond the counted store, spare capacity and no hash table,
 // and a receiver never observed as a prototype (which needs an epoch bump). Any other state
-// calls that helper, which decides again.
-fn void Asm.emit_put_absent_body(&self) {
+// calls that helper, which decides again; without `helper` it returns 0, having changed nothing.
+fn void Asm.emit_put_absent_body(&self, bool helper = true) {
     void* c = self.c;
     Layout* l = self.lay;
     int m = SLJIT_MEM;
@@ -1130,10 +1130,14 @@ fn void Asm.emit_put_absent_body(&self) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 1);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     fail.bind(sljit_emit_label(c));
-    self.mov(R3, 0, sp, SUB_VALUE_OFF);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
-    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
+    if (helper) {
+        self.mov(R3, 0, sp, SUB_VALUE_OFF);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
+    } else {
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 0);
+    }
     sljit_set_label(done, sljit_emit_label(c));
 }
 

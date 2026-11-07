@@ -158,13 +158,17 @@ fn void* jit_inline_materialize(Dispatch* ds, jit::OptInlineExit* site) {
         uint callee_reg = fr.base - 2 - prev_base;
         TVal this_value = th_undefined();
         bool this_valid = false;
-        if (pc.op == Opcode.CALL && !callee.call_flags.ignores_this && regs[callee_reg + 1].is_object()) {
+        // A NEW_OBJ's frame constructs the object the optimized code built, which it stored in the
+        // receiver slot, as jit_new_lean's frame would.
+        bool construct = pc.op == Opcode.NEW_OBJ;
+        HObject* new_target = construct ? (HObject*)regs[callee_reg].get_heapptr() : null;
+        if ((construct || (pc.op == Opcode.CALL && !callee.call_flags.ignores_this)) && regs[callee_reg + 1].is_object()) {
             this_value = regs[callee_reg + 1];
             this_valid = true;
         }
         // The publish's own fill would overwrite the registers the optimized code stored.
-        th_publish_lean(pc, regs, cold, callee, callee_reg, pc.a, callee.num_regs, false, pc.op != Opcode.CALL,
-                        this_value, this_valid, null);
+        th_publish_lean(pc, regs, cold, callee, callee_reg, pc.a, callee.num_regs, false, pc.op != Opcode.CALL && !construct,
+                        this_value, this_valid, new_target);
         Activation* la = ds.act;
         TVal* bottom = la.bottom;
         if (level + 1 < site.depth) {
@@ -262,6 +266,7 @@ fn LeanCall jit_new_lean(Instruction* pc, TVal* regs, Dispatch* ds, ColdCtx* col
     if (target.jit_code == null) return NO_CODE;
     if (th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return DECLINE;
     hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
+    hobject::ic_note_constructor(ic, target.func_index);
     if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
         || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return DECLINE;
@@ -280,6 +285,32 @@ fn LeanCall jit_new_lean(Instruction* pc, TVal* regs, Dispatch* ds, ColdCtx* col
     this_value.set_object(obj);
     return th_publish_lean(pc, regs, cold, target, insn.b, insn.a, insn.c, false, false,
                            this_value, true, ctor) ? ENTERED_ARGS : ENTERED;
+}
+
+// The object of a NEW_OBJ whose constructor optimized code inlines (jit::OptCg.emit_new_object): a
+// plain object with the prototype the site's cache `ic` reads from `ctor`, with room for `want`
+// properties, as th_new_obj builds it; returned boxed. 0, having allocated nothing, for a constructor
+// that is not constructable, a cache that does not hold or a failed allocation. The allocation does
+// not collect (Heap.request_gc), so the optimized code's values stay where they are.
+fn ulong jit_opt_new_object(Dispatch* ds, HObject* ctor, hobject::ICEntry* ic, ulong want) {
+    Vm* vm = ds.vm;
+    if (!ctor.is_constructable()) return 0;
+    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
+        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
+        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return 0;
+    TVal proto = ctor.prop_values()[ic.prop_idx].get();
+    if (!proto.is_object()) return 0;
+    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    if (obj == null) return 0;
+    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
+    if (want > hobject::INLINE_PROPS) obj.reserve_props(vm.heap, constructor_reserve_capacity((uint)want));
+    TVal value;
+    value.set_object(obj);
+$if types::USE_NANBOX:
+    return value.bits;
+$else
+    return 0;
+$endif
 }
 
 // NEW_OBJ of a simple constructor, completed in place as th_new_obj does:
@@ -302,6 +333,7 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next) {
     if (!target.call_flags.simple_constructor) return JIT_CALL_SLOW;
     Vm* vm = ds.vm;
     hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
+    hobject::ic_note_constructor(ic, target.func_index);
     if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
         || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return JIT_CALL_SLOW;
