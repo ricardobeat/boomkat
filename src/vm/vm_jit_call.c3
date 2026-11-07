@@ -432,10 +432,47 @@ $else
 $endif
 }
 
+// Arm the site of an inlined NEW_OBJ (jit::NewSite) from the object `obj` that
+// init_simple_constructor has just built for `ctor` through the entry `ic`: the stores it
+// replayed stay valid for any object built while the state recorded here is the state the
+// emitted code compares. Every object of the prototype chain is marked observed first, so
+// that a change to any of them moves the prototype epoch the site records. Leaves the site as
+// it was when a state is not covered (a property block, another realm, a chain that is not
+// plain or has a dictionary).
+fn void jit_new_arm(Heap* h, HObject* ctor, CompiledFunction* target, hobject::ICEntry* ic, HObject* obj, uint nargs,
+                    jit::NewSite* site) @private {
+$if types::USE_NANBOX:
+    if (obj.prop_count > hobject::INLINE_PROPS || obj.prop_alloc != null || obj.prop_hash != null
+        || h.realms != null) return;
+    HObject* proto = obj.prototype;
+    for (HObject* cur = proto; cur != null; cur = cur.prototype) {
+        if (!hobject::plain_property_object(cur) || cur.in_dict_mode(h)) return;
+    }
+    for (HObject* cur = proto; cur != null; cur = cur.prototype) cur.gc.prototype_observed = true;
+    TVal value;
+    value.set_object(proto);
+    site.proto_bits = value.bits;
+    site.proto_off = (ulong)ic.prop_idx * hobject::PropValue::size;
+    site.ctor_shape = ctor.shape_id;
+    site.recycle = h.shape_recycle_epoch;
+    site.proto_shape = proto.shape_id;
+    site.final_shape = obj.shape_id;
+    site.count = obj.prop_count;
+    for (uint j = 0; j < hobject::INLINE_PROPS; j++) {
+        uint arg = jit::NEW_ARG_NONE;
+        if (j < obj.prop_count) arg = target.code[j].a < nargs ? target.code[j].a : jit::NEW_ARG_UNDEF;
+        site.arg[j] = arg;
+    }
+    site.cf = target;
+    site.epoch = h.prototype_epoch;
+$endif
+}
+
 // NEW_OBJ of a simple constructor, completed in place as th_new_obj does:
 // 0 when the object is built and stored, JIT_CALL_SLOW to leave the
-// instruction to jit_call.
-fn long jit_new_simple(Dispatch* ds, Instruction* next) {
+// instruction to jit_call. `site`, when the emitted code has an inline path for this
+// instruction, is armed once the object is built.
+fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     Instruction* pc = next - 1;
     Instruction insn = *pc;
     TVal* regs = ds.regs_base;
@@ -463,6 +500,7 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next) {
     if (obj == null) return JIT_CALL_SLOW;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return JIT_CALL_SLOW;
+    if (site != null) jit_new_arm(vm.heap, ctor, target, ic, obj, insn.c, site);
     TVal* ra = regs + insn.a;
     ra.set_object(obj);
     track_heap_store(ds.act, ra, (uint)insn.a);
