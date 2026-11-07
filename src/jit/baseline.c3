@@ -335,6 +335,7 @@ const int FR1 = 2;
 const long K_INT = (long)(types::TAG_FASTINT << 48);
 const long K_BOOL = (long)(types::TAG_BOOLEAN << 48);
 const long K_OBJ = (long)(types::TAG_OBJECT << 48);
+const long K_LIGHTFUNC = (long)(types::TAG_LIGHTFUNC << 48);
 const long K_UNDEF = (long)(types::TAG_UNDEFINED << 48);
 const long K_NULL = (long)(types::TAG_NULL_VAL << 48);
 const long K_STRING_START = (long)(types::TAG_STRING << 48);

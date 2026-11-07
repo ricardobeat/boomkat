@@ -11,10 +11,40 @@ import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::types;
 
+// Cache the right operand of the INSTANCEOF at `pc` in the site's entry, which the inline path of
+// Asm.emit_instanceof reads: the shape and generation of a callable, unbound, non-proxy object
+// whose [[Prototype]] is Function.prototype and whose layout is not a dictionary (so no key,
+// @@hasInstance among them, joins it unseen), the index of its own `prototype` data property
+// (the value is read at each use). Allocates nothing and runs no code.
+fn void jit_instanceof_fill(Dispatch* ds, Instruction* pc) @private {
+    TVal* rc = ds.regs_base + pc.c;
+    if (!rc.is_object()) return;
+    Heap* h = ds.vm.heap;
+    HObject* rfunc = (HObject*)rc.get_heapptr();
+    if (rfunc.prototype != h.function_proto || rfunc.in_dict_mode(h)
+        || !hobject::uses_default_has_instance(h, rfunc)) return;
+    hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
+    uint gen = rfunc.shape_generation(h);
+    if (ic.shape_id == rfunc.shape_id && ic.shape_gen == gen) return;
+    void* key = h.strs[BuiltinStr.PROTOTYPE];
+    int idx = rfunc.find_prop_idx(key, h);
+    if (idx < 0) return;
+    hobject::PropFlags flags = rfunc.get_prop_flags((uint)idx, h);
+    if (flags.is_accessor) return;
+    ic.shape_id = rfunc.shape_id;
+    ic.shape_gen = gen;
+    ic.prop_idx = (uint)idx;
+    ic.prop_flags = flags;
+    ic.has_proto = false;
+    ic.chain_len = 0;
+    ic.key.set(h, (HString*)key);
+}
+
 // `v instanceof F` for the instruction before `next`, through th_instanceof.
 fn bool jit_instanceof(Dispatch* ds, Instruction* next) {
     if (!jit_relay_ready) jit_relay_init();
     ds.curr_pc = next;
+    if (ds.ic_base != null) jit_instanceof_fill(ds, next - 1);
     return th_instanceof(next - 1, &jit_stop_table, ds.regs_base, &ds.cold) == next;
 }
 

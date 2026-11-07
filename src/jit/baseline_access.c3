@@ -112,6 +112,7 @@ struct Layout {
     long ab_immutable;
     long heap_mega;
     long heap_string_proto;
+    long heap_function_proto;
     long me_key;
     long me_shape;
     long me_idx;
@@ -181,6 +182,7 @@ fn Layout* layout() {
     l.heap_site_key = (char*)&h.jit_site_key - base;
     l.heap_mega = (char*)&h.mega_cache - base;
     l.heap_string_proto = (char*)&h.string_proto - base;
+    l.heap_function_proto = (char*)&h.function_proto - base;
     l.me_key = (char*)&me.key - base;
     l.me_shape = (char*)&me.shape_id - base;
     l.me_idx = (char*)&me.prop_idx - base;
