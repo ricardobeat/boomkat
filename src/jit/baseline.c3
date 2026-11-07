@@ -373,6 +373,8 @@ const int CALL_SUB = -11;
 const int RETURN_SUB = -12;
 const int MEGA_SUB = -13;
 const int PUT_ABSENT_SUB = -14;
+// The put-absent subroutine without the helper call, for the optimizing tier (OptCg.emit_add_field).
+const int PUT_ABSENT_FAST_SUB = -15;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -383,7 +385,7 @@ struct Asm {
     CompiledFunction* f;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
-    void*[Opcode::values.len + 14] sub_labels;
+    void*[Opcode::values.len + 15] sub_labels;
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
@@ -587,8 +589,8 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     if (h.jit_stats.dump_feedback) {
         foreach (slot, label : self.sub_labels) {
             if (label == null) continue;
-            String[14] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
-                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT" };
+            String[15] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
+                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT", "PUT_ABSENT_FAST" };
             if (slot < Opcode::values.len) {
                 io::eprintfn("sub fn#%d %s %x", self.f.func_index, Opcode::values[slot], (usz)sljit_shim_label_addr(label));
             } else {
@@ -779,7 +781,8 @@ fn void Asm.emit_subroutines(&self) {
             case MEGA_SUB:
                 self.emit_mega_body();
             case PUT_ABSENT_SUB:
-                self.emit_put_absent_body();
+            case PUT_ABSENT_FAST_SUB:
+                self.emit_put_absent_body(call.sub == PUT_ABSENT_SUB);
             case TRUTH_SUB:
             case STRICT_EQ_SUB:
             case LOOSE_EQ_SUB:

@@ -3645,6 +3645,10 @@ const char FB_CALL = 16;
 const char FB_POLY = 32;
 // The bits an arithmetic, bitwise or compare instruction records.
 const char FB_OPERANDS = 15;
+// ICEntry.feedback bit of a NEW_OBJ, whose entry caches the constructor's `prototype` read:
+// absent_next_shape is the func_index of the compiled constructor the site has run (FB_POLY: a
+// second one too).
+const char FB_CTOR = 64;
 
 // Record that the call instruction caching `ic` called function number `index`.
 fn void ic_note_callee(ICEntry* ic, uint index) @inline {
@@ -3652,6 +3656,16 @@ fn void ic_note_callee(ICEntry* ic, uint index) @inline {
         ic.prop_idx = index;
         ic.feedback |= FB_CALL;
     } else if (ic.prop_idx != index) {
+        ic.feedback |= FB_POLY;
+    }
+}
+
+// Record that the NEW_OBJ caching `ic` ran constructor number `index`.
+fn void ic_note_constructor(ICEntry* ic, uint index) @inline {
+    if ((ic.feedback & FB_CTOR) == 0) {
+        ic.absent_next_shape = index;
+        ic.feedback |= FB_CTOR;
+    } else if (ic.absent_next_shape != index) {
         ic.feedback |= FB_POLY;
     }
 }
