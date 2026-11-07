@@ -1333,6 +1333,56 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     }
     // The guard before proved it an object.
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    // The common case builds the object inline, from the cache the helper would read. R0 to R4 hold
+    // no values of the optimized code, so nothing is saved around it.
+    Jumps slow;
+    void* done = null;
+    if (inline_alloc_ok() && want <= hobject::INLINE_PROPS) {
+        Layout* l = a.lay;
+        int m = SLJIT_MEM;
+        // jit_opt_new_object's guards: a constructor, and the cache's own `prototype` data property.
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, 0);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.constructable_mask);
+        slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | R2, l.ic_key, SLJIT_IMM, (long)(usz)a.hp.strs[heap::BuiltinStr.PROTOTYPE]));
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R2, l.ic_has_proto);
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R1, l.obj_shape);
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, m | R2, l.ic_shape));
+        // live_shape_generation: heap.shapes[shape_id].generation.
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.heap, l.heap_shapes);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R0, l.shape_gen);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, l.ic_gen);
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
+        sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R2, l.ic_flags);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, l.ic_idx);
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, l.obj_prop_count);
+        slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R0, 0));
+        a.prop_base(R0, R1);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R0, R3), 3);
+        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN));
+        // Heap.set_prototype also walks the other realms when there are any.
+        slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | a.heap, l.heap_realms, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV, m | reg_sp(), SUB_VALUE_OFF, R2, 0);
+        InlineAlloc plan = a.plain_object_plan();
+        a.emit_inline_alloc(&plan, &slow);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        done = sljit_emit_jump(c, SLJIT_JUMP);
+        slow.bind(sljit_emit_label(c));
+        // The slow path reloads the constructor.
+        if (n.a != NO_NODE) {
+            int r = self.obj_reg(n.a, R1);
+            if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+        } else {
+            a.load(R1, callee_reg);
+        }
+        sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    }
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
@@ -1340,6 +1390,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_new_object);
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
+    if (done != null) sljit_set_label(done, sljit_emit_label(c));
     self.def_obj(i, R0);
 }
 

@@ -39,12 +39,23 @@ struct InlineAlloc {
     uint prop_count;
     uint array_size;
     uint array_inline;   // the inline literal array capacity, or 0 for an object
-    long proto_off;      // the Heap field holding the prototype
+    long proto_off;      // the Heap field holding the prototype, or NEW_OBJECT_PROTO
     long fill_off;       // where the undefined slots start
     uint fill_count;
 }
 
+// The prototype is in the frame's SUB_VALUE_OFF slot, saved across the pool subroutine.
+const long PROTO_ON_STACK = -1;
+
 // The allocation the current instruction makes, or false for one the helper keeps.
+// The plain object an inlined constructor builds (heap.alloc_plain_object).
+fn InlineAlloc Asm.plain_object_plan(&self) {
+    hobject::ObjFlags flags = hobject::plain_object_flags(true);
+    flags.temproot = true;
+    return { .pool = self.lay.heap_pool_plain, .flags = (uint)flags, .gc = (uint)hobject::plain_object_gc(false, 0),
+             .prop_capacity = hobject::INLINE_PROPS, .proto_off = PROTO_ON_STACK };
+}
+
 fn bool Asm.inline_alloc_plan(&self, InlineAlloc* p) {
     Layout* l = self.lay;
     hobject::ObjFlags flags = hobject::plain_object_flags(true);
@@ -82,7 +93,7 @@ fn bool Asm.inline_alloc_plan(&self, InlineAlloc* p) {
     return true;
 }
 
-// Allocate and initialize the object `p` describes into R0, unboxed; the jumps
+// Allocate and initialize the object `p` describes into R0, unboxed (the caller boxes it); the jumps
 // in `slow` leave nothing changed. Uses R1 to R4.
 fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     void* c = self.c;
@@ -94,7 +105,11 @@ fn void Asm.emit_inline_alloc(&self, InlineAlloc* p, Jumps* slow) {
     // HObject.init_header, then the prototype and the fill the caller's allocator adds.
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, 0, SLJIT_IMM, (long)p.flags);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_gc, SLJIT_IMM, (long)p.gc);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | self.heap, p.proto_off);
+    if (p.proto_off == PROTO_ON_STACK) {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | reg_sp(), SUB_VALUE_OFF);
+    } else {
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | self.heap, p.proto_off);
+    }
     sljit_emit_op1(c, SLJIT_MOV, m | R0, l.obj_proto, R1, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_shape, SLJIT_IMM, (long)p.shape_id);
     sljit_emit_op1(c, SLJIT_MOV_U32, m | R0, l.obj_prop_capacity, SLJIT_IMM, (long)p.prop_capacity);
