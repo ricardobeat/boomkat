@@ -1372,6 +1372,7 @@ fn void builtin_string_proto_replace(BuiltinContext* ctx) {
     if (ctx.argc >= 1 && !search_val.is_null() && !search_val.is_undefined()) {
         if (search_val.is_object() && search_val.get_heapptr() != null) {
             HObject* search_obj = (HObject*)search_val.get_heapptr();
+            if (regexp_string_replace_fast(ctx, search_obj, s_hstr) || ctx.should_throw) return;
             HString* replace_sym = ensure_replace_symbol(ctx.heap);
             if (replace_sym != null) {
                 TVal? replacer_opt = builtins_generic_get(search_obj, replace_sym, ctx);
