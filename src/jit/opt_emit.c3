@@ -2054,9 +2054,13 @@ fn void OptCg.emit_bitop(&self, uint i, OptNode* n) {
             if (y == SLJIT_IMM) yw &= 0x1F;
             int sop = n.op == OptOp.SHL_I32 ? SLJIT_MSHL : (n.op == OptOp.SAR_I32 ? SLJIT_MASHR : SLJIT_MLSHR);
             sljit_emit_op2(c, sop | SLJIT_32, dst, 0, x, 0, y, yw);
-            if (n.op == OptOp.SHR_I32) {
+            if (n.op == OptOp.SHR_I32 && n.cc == 2) {
+                // Read only by ToInt32 (OptBuild.bitop).
+                sljit_emit_op1(c, SLJIT_MOV_S32, dst, 0, dst, 0);
+            } else if (n.op == OptOp.SHR_I32) {
+                // cc 1: the zero-extended uint32, which only its I32_TO_F64 reads.
                 sljit_emit_op1(c, SLJIT_MOV_U32, dst, 0, dst, 0);
-                self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER, dst, 0, SLJIT_IMM, 0x7FFFFFFF), i, OptExit.OVERFLOW);
+                if (n.cc == 0) self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER, dst, 0, SLJIT_IMM, 0x7FFFFFFF), i, OptExit.OVERFLOW);
             } else {
                 sljit_emit_op1(c, SLJIT_MOV_S32, dst, 0, dst, 0);
             }

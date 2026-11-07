@@ -106,3 +106,10 @@ var tdz = (function () {
     return r;
 })();
 print(tdz);
+
+// Unsigned shifts: results of 2^31 and above (as doubles after the exit), and ones only ToInt32 reads.
+function ush(a, b) { return a >>> b; }
+function ushmix(a) { var u = a >>> 0; return (u >>> 1) + (u >>> 28) + ((a >>> 3) & 255) + ((a >>> 0) | 0); }
+var us = 0;
+for (var it = 0; it < 4000; it++) us += ush(it * 2654435761 | 0, it & 7) + ushmix((it * 40503) ^ -it);
+print(us, ush(-1, 0), ush(-8, 1), ushmix(-1), ushmix(-2147483648));

@@ -910,7 +910,21 @@ fn bool OptBuild.bitop(&self, OptOp op, uint rb, uint rc, bool imm, long imm_val
     uint y = imm ? self.const_i32(imm_value) : self.bit_operand(rc, numbers);
     if (x == NO_NODE || y == NO_NODE) return self.generic();
     uint n = self.add(op, OptRep.INT32, x, y);
-    if (op == OptOp.SHR_I32) self.snapshot(n);
+    if (op == OptOp.SHR_I32) {
+        if (self.cur_fn == 0 && !self.wide && self.truncated_use(self.insn, self.w.a, 3)) {
+            // Only ToInt32 reads it: the uint32 result as the int32 with its bits.
+            self.g.nodes[n].cc = 2;
+        } else if ((fb & hobject::FB_OVF) != 0) {
+            // A result of 2^31 or above has exited: the uint32 result as a double.
+            self.g.nodes[n].cc = 1;
+            // Spilled, it is stored to the slot its conversion then overwrites.
+            self.g.nodes[n].home = self.w.a;
+            self.set(self.w.a, self.add(OptOp.I32_TO_F64, OptRep.FLOAT64, n));
+            return true;
+        } else {
+            self.snapshot(n);
+        }
+    }
     self.set(self.w.a, n);
     return true;
 }
