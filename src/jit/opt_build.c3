@@ -516,7 +516,19 @@ fn uint OptBuild.intersect(&self, uint a, uint b) {
 // reason, for a function the tier does not handle.
 fn bool OptBuild.analyze(&self) {
     CompiledFunction* f = self.f;
-    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h)) return self.refuse(OptRefuse.CFG);
+    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h)) {
+        // Name the first instruction the graph decoder does not take (--opt-log).
+        for (uint pc = 0; pc < f.code_count;) {
+            DecodedBytecode view = bytecode::decode_bytecode(f.code, f.code_count, pc);
+            if (!view.valid) break;
+            if (!compiler::bytecode_cfg_control_supported(view.insn.op)) {
+                self.refused_op = view.insn.op;
+                break;
+            }
+            pc = view.next_pc;
+        }
+        return self.refuse(OptRefuse.CFG);
+    }
     DecodedCfg* cfg = &self.cfg;
     uint count = cfg.instruction_count;
     self.caller_regs = f.num_regs;
@@ -1257,6 +1269,8 @@ fn bool OptBuild.elem_receiver(&self, uint r, uint* node) {
 // GETPROP of an element at an integer index, from an object in the window.
 fn bool OptBuild.get_elem(&self) {
     uint rnode;
+    // A site that has exited repeatedly (a hole, an index past the end) runs the baseline's access.
+    if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return self.generic();
     if (!self.elem_receiver(self.w.b, &rnode) || !self.index_ok(self.w.c)) return self.generic();
     bool asked = false;
     foreach (c : self.load_reps) asked |= c.block == self.pckey();
@@ -1294,6 +1308,7 @@ fn bool OptBuild.get_elem(&self) {
 fn bool OptBuild.put_elem(&self) {
     uint rv = self.w.c;
     uint rnode;
+    if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return self.generic();
     if (rv >= self.nregs || !self.index_ok(self.w.b)) return self.generic();
     bool numeric = self.cur[rv].node != NO_NODE && !self.is_object(rv);
     if (!numeric && (self.cur_fn == 0 || !self.in_window(rv))) return self.generic();

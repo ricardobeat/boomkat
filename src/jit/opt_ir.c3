@@ -390,7 +390,7 @@ fn bool OptRep.is_gpr(self) @inline => self == OptRep.INT32 || self == OptRep.OB
 // Print the graph to stderr: one line per node, with the register allocation
 // and the moves of each edge.
 fn void OptGraph.dump(&self, CompiledFunction* f) {
-    io::eprintfn("opt graph: %d nodes, %d blocks, code %d words", self.nodes.len(), self.blocks.len(), f.code_count);
+    io::eprintfn("opt graph: fn#%d %s: %d nodes, %d blocks, code %d words", f.func_index, (String)f.name_ptr[:f.name_len], self.nodes.len(), self.blocks.len(), f.code_count);
     for (uint i = 1; i < self.fns.len(); i++) {
         io::eprintfn("inline fn=%d cf=fn#%d base=%d resume=%d parent=%d depth=%d", i, self.fns[i].f.func_index, self.fns[i].reg_base, self.fns[i].resume_pc, self.fns[i].parent, self.fns[i].depth);
     }

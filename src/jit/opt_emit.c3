@@ -585,13 +585,9 @@ fn void OptCg.emit_osr_entries(&self) {
             self.a.call.len = 0;
             if (n.rep == OptRep.INT32) {
                 self.a.load(R0, d.reg);
-                self.a.guard_int(R0);
+                self.int32_from_r0(d.reg);
                 for (uint j = 0; j < self.a.call.len; j++) self.exit_clean(self.a.call.at[j], blk.pc, OptExit.NOT_INT32);
                 self.a.call.len = 0;
-                sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
-                sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
-                sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
-                self.exit_clean(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), blk.pc, OptExit.NOT_INT32);
                 sljit_emit_op1(c, SLJIT_MOV, n.reg, 0, R0, 0);
             } else {
                 self.a.load_number(n.reg, d.reg);
@@ -610,16 +606,47 @@ fn bool OptCg.force_here(&self, OptNode* n) {
     return self.oc != null && p.force_reason != 0 && !self.forced_done && n.pc >= p.force_at && (!p.force_inline || (n.fidx != 0 && self.g.fns[n.fidx].depth >= p.force_depth));
 }
 
+// The int32 value of the number in R0, into R0: a fastint in the int32 range, or a double that
+// holds an int32 other than -0 (an integer computed in doubles, which the baseline keeps boxed as
+// one). Any other value jumps through the assembler's slow path list. With `slot`, the window slot
+// the value was read from, a converted double is written back there as the fastint: the node that
+// reads the slot takes it for holding its value unboxed (a reload after a call, an exit's frame).
+// Uses R1, R3, FR0 and FR1.
+fn void OptCg.int32_from_r0(&self, uint slot = uint::max) {
+    void* c = self.a.c;
+    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
+    sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, R1, 0, FR0, 0);
+    sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, R1, 0);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R1, 0));
+    sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR1, 0, R1, 0);
+    self.a.call.add(sljit_emit_fcmp(c, SLJIT_UNORDERED_OR_NOT_EQUAL, FR0, 0, FR1, 0));
+    // -0 converts to 0 and back to +0, which compares equal.
+    void* nonzero = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(nonzero, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, R1, 0);
+    if (slot != uint::max) {
+        sljit_emit_op2(c, SLJIT_SHL, R3, 0, R1, 0, SLJIT_IMM, 16);
+        self.a.box_shifted(R3);
+        self.a.store(slot, R3, 0);
+    }
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_double, sljit_emit_label(c));
+    self.a.guard_int(R0);
+    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0));
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
 fn void OptCg.emit_check_int(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     self.a.call.len = 0;
     self.a.load(R0, (uint)n.imm);
-    self.a.guard_int(R0);
+    self.int32_from_r0((uint)n.imm);
     self.exit_calls(i, OptExit.NOT_INT32);
-    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
-    sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
-    sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), i, OptExit.NOT_INT32);
     if (n.reg >= 0) sljit_emit_op1(c, SLJIT_MOV, n.reg, 0, R0, 0);
 }
 
@@ -651,12 +678,8 @@ fn void OptCg.number_from_r0(&self, uint i, int fr) {
 fn void OptCg.def_from_r0(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     if (n.rep == OptRep.INT32) {
-        self.a.guard_int(R0);
+        self.int32_from_r0();
         self.exit_calls(i, OptExit.NOT_INT32);
-        sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
-        sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
-        sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), i, OptExit.NOT_INT32);
         self.def_int(i, R0);
     } else {
         int dst = self.flt_dst(i, FR0);
