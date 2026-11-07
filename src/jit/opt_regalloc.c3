@@ -104,6 +104,18 @@ fn void OptGraph.compute_uses(&self) {
     }
 }
 
+// Name the frame slot that can replace this phi on the next bounded rebuild.
+fn bool OptGraph.window_phi(&self, uint node, List{OptJoin}* spill) {
+    foreach (pos, &blk : self.blocks) {
+        if (node < blk.first || node >= blk.end) continue;
+        uint reg = (uint)self.nodes[node].imm;
+        if (opt_join_windowed(spill, (uint)pos, reg)) return false;
+        spill.push({ .pos = (uint)pos, .reg = reg });
+        return true;
+    }
+    return false;
+}
+
 // Assign machine registers. False when a phi finds no register to take; with `spill`, every such
 // phi's join is added to it, for a rebuild that keeps those values in the window.
 fn bool OptGraph.allocate(&self, OptPools* pools, List{OptJoin}* spill = null) {
@@ -156,12 +168,18 @@ fn bool OptGraph.allocate(&self, OptPools* pools, List{OptJoin}* spill = null) {
             continue;
         }
         if (victim == active.len()) {
-            if (spill == null || n.op != OptOp.PHI) return false;
-            foreach (pos, &blk : self.blocks) {
-                if (i < blk.first || i >= blk.end) continue;
-                if (!opt_join_windowed(spill, (uint)pos, (uint)n.imm)) spill.push({ .pos = (uint)pos, .reg = (uint)n.imm });
-                break;
+            if (spill == null) return false;
+            if (n.op != OptOp.PHI) {
+                // A pinned temporary needs a real register. Window an active phi
+                // from that register pool instead of repeating an unchanged graph.
+                foreach (a : active) {
+                    OptNode* phi = &self.nodes[a];
+                    if (phi.op != OptOp.PHI || phi.rep.is_gpr() != is_int) continue;
+                    if (self.window_phi(a, spill)) break;
+                }
+                return false;
             }
+            self.window_phi(i, spill);
             failed = true;
             n.reg = -1;
             continue;
