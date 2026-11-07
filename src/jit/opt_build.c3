@@ -255,7 +255,7 @@ fn uint inline_reg_mask(Opcode op) {
     switch (op) {
         case LDINT: case LDCONST: case INC: case DEC: case GETTHISC: case PUTTHISC: case RET:
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
-        case GETGLOBAL: case LDTHIS:
+        case GETGLOBAL: case LDTHIS: case GETCAP:
             return 1;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -292,7 +292,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
     *writes = 0;
     switch (w.op) {
         case LDINT: case LDCONST: case GETTHISC: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
-        case GETGLOBAL: case LDTHIS:
+        case GETGLOBAL: case LDTHIS: case GETCAP:
             *writes = 1u << w.a;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
@@ -787,11 +787,23 @@ fn uint OptBuild.typed_load(&self, OptOp op, uint a) {
     return NO_NODE;
 }
 
-// GETCAP: a typed load when a numeric use asked for one, else GENERIC.
+// GETCAP: a typed load (a number, or an OBJECT) when a use asked for one; else GENERIC in the
+// function's own body, and in an inlined body the value read into the window. A value of any kind
+// in a slot beyond the caller's frame would be out of the collector's sight.
 fn bool OptBuild.get_cap(&self) {
     if (self.typed_load(OptOp.LOAD_CAP, NO_NODE) != NO_NODE) return true;
-    if (!self.generic()) return false;
-    if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pckey();
+    if (self.cur_fn == 0) {
+        if (!self.generic()) return false;
+        if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pckey();
+        return true;
+    }
+    uint ra = self.w.a;
+    if (ra >= self.nregs) return false;
+    uint n = self.add(OptOp.LOAD_CAP, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    self.kill(ra);
+    self.load_def[ra] = self.pckey();
+    if (ra >= self.caller_regs) self.inline_unsafe = true;
     return true;
 }
 
@@ -876,7 +888,7 @@ fn void OptBuild.ask_object(&self, uint reg) {
     CompiledFunction* kf = self.g.fns[fi].f;
     if ((key & 0xFFFFFF) >= kf.code_count) return;
     Opcode o = kf.code[key & 0xFFFFFF].op;
-    if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC) return;
+    if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC && o != Opcode.GETCAP) return;
     foreach (&c : self.load_reps) if (c.block == key) return;
     self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.OBJECT });
     self.load_changed = true;

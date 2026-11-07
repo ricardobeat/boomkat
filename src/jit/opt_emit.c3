@@ -672,11 +672,25 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
 // GETCAP as a number: the baseline's capture read, leaving for the baseline code on the slow
 // cases and on a value that is not of the node's kind.
 fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
-    self.a.decode((uint)n.imm);
+    self.decode(n);
     self.a.call.len = 0;
-    self.a.emit_get_cap_value(self.a.w.get_bc());
+    uint index = self.a.w.get_bc();
+    if (n.fidx != 0) {
+        // An inlined body reads the callee's closure, which the call's guard checked in its register.
+        OptFn* fn_ = &self.g.fns[n.fidx];
+        self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count);
+    } else {
+        self.a.emit_get_cap_value(index);
+    }
     self.exit_calls(i, OptExit.SLOW_PATH);
-    self.def_from_r0(i, n);
+    if (n.rep == OptRep.NONE) {
+        self.a.publish(self.a.w.a);
+        self.exit_calls(i, OptExit.SLOW_PATH);
+    } else if (n.rep == OptRep.OBJECT) {
+        self.finish_object(i, n);
+    } else {
+        self.def_from_r0(i, n);
+    }
 }
 
 // INT32 node `n` boxed as a fastint into R3.
@@ -793,6 +807,32 @@ fn void OptCg.select_slot(&self, OptPoly* p) {
     }
 }
 
+// The OBJECT result of a load, in R0: an object or an inert value, else leave for the baseline code.
+fn void OptCg.finish_object(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    // An object or an inert value, while the collector is not marking: the invariant of OptRep.OBJECT.
+    void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
+    void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+    if (self.g.pinned(n)) {
+        // The slot is beyond the caller's frame: publishing would write it in the normal flow.
+        self.exit_at(marking, i, OptExit.SLOW_PATH);
+    } else {
+        void* quiet = sljit_emit_jump(c, SLJIT_JUMP);
+        // While marking the object is published at once, which marks it as the baseline's store does.
+        sljit_set_label(marking, sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)n.home);
+        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUBLISH_SUB });
+        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
+        sljit_set_label(quiet, sljit_emit_label(c));
+    }
+    sljit_set_label(inert, sljit_emit_label(c));
+    self.def_obj(i, R0);
+}
+
 // A read of the own data property its cache names, as emit_get does for a hit on the entry's shape:
 // the receiver a plain object (any object for GETTHISC) of that shape, the value at the slot.
 // Everything else leaves for the baseline code.
@@ -839,26 +879,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         a.publish(a.w.a);
         self.exit_calls(i, OptExit.SLOW_PATH);
     } else if (n.rep == OptRep.OBJECT) {
-        // An object or an inert value, while the collector is not marking: the invariant of OptRep.OBJECT.
-        void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
-        sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
-        sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
-        void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
-        if (self.g.pinned(n)) {
-            // The slot is beyond the caller's frame: publishing would write it in the normal flow.
-            self.exit_at(marking, i, OptExit.SLOW_PATH);
-        } else {
-            void* quiet = sljit_emit_jump(c, SLJIT_JUMP);
-            // While marking the object is published at once, which marks it as the baseline's store does.
-            sljit_set_label(marking, sljit_emit_label(c));
-            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)n.home);
-            a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUBLISH_SUB });
-            self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
-            sljit_set_label(quiet, sljit_emit_label(c));
-        }
-        sljit_set_label(inert, sljit_emit_label(c));
-        self.def_obj(i, R0);
+        self.finish_object(i, n);
     } else {
         self.def_from_r0(i, n);
     }
