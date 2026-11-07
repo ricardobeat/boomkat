@@ -427,6 +427,7 @@ fn CompiledFunction* opt_site_callee(Heap* h, CompiledFunction* f, uint i) {
     bool ctor = f.code[i].op == Opcode.NEW_OBJ;
     uint index = ctor ? ic.absent_next_shape : ic.prop_idx;
     if ((ic.feedback & (ctor ? hobject::FB_CTOR : hobject::FB_CALL)) == 0 || (ic.feedback & hobject::FB_POLY) != 0) return null;
+    if (!ctor && hobject::ic_call_count(ic) != 1) return null;
     if (index >= h.compiled_func_count) return null;
     return (CompiledFunction*)h.compiled_funcs[index];
 }

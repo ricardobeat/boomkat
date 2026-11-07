@@ -3669,14 +3669,15 @@ const char FB_DBL   = 2;   // a double operand
 const char FB_STR   = 4;   // a string operand
 const char FB_OTHER = 8;   // an object, undefined, null, boolean, symbol or BigInt operand
 
-// ICEntry.feedback bits of a call instruction, which uses none of the other
-// fields but prop_idx: FB_CALL says prop_idx is the func_index of the compiled
-// function the site has called, FB_POLY that it has called a second one.
+// ICEntry.feedback bits of a call instruction, which uses none of the property fields: FB_CALL
+// says prop_idx is the func_index of the compiled function the site has called first, and the
+// further distinct ones (IC_CALL_TARGETS in all) sit in its other slots (ic_call_target); FB_POLY
+// that it has called more than that.
 const char FB_CALL = 16;
 const char FB_POLY = 32;
 // A call whose callee register held Function.prototype.call, which ran the function FB_CALL names
 // on the receiver and arguments it shifted down (`X.call(this, a)`): the optimizer inlines X behind
-// a guard on the builtin.
+// a guard on the builtin. Such a site keeps one target: any other makes it FB_POLY.
 const char FB_DOTCALL = 128;
 // The bits an arithmetic, bitwise or compare instruction records.
 const char FB_OPERANDS = 15;
@@ -3685,14 +3686,58 @@ const char FB_OPERANDS = 15;
 // second one too).
 const char FB_CTOR = 64;
 
+// The distinct functions a call instruction's feedback names before it is FB_POLY: prop_idx, then
+// shape_id, shape_gen and absent_next_shape holding a func_index plus one (zero for none). The
+// entry's key stays null, so the shape purge and the cache readers never take a call's entry for a
+// property cache.
+const uint IC_CALL_TARGETS = 4;
+
+// The slot of the further target `k` (1 to IC_CALL_TARGETS - 1) of a call's entry.
+fn uint* ic_call_slot(ICEntry* ic, uint k) @inline {
+    switch (k) {
+        case 1: return &ic.shape_id;
+        case 2: return &ic.shape_gen;
+        default: return &ic.absent_next_shape;
+    }
+}
+
+// How many distinct functions the call caching `ic` has called, up to IC_CALL_TARGETS: zero
+// before any, or when FB_POLY says more.
+fn uint ic_call_count(ICEntry* ic) {
+    if ((ic.feedback & FB_CALL) == 0 || (ic.feedback & FB_POLY) != 0) return 0;
+    uint n = 1;
+    while (n < IC_CALL_TARGETS && *ic_call_slot(ic, n) != 0) n++;
+    return n;
+}
+
+// The func_index of target `k` (below ic_call_count) of the call caching `ic`.
+fn uint ic_call_target(ICEntry* ic, uint k) {
+    return k == 0 ? ic.prop_idx : *ic_call_slot(ic, k) - 1;
+}
+
 // Record that the call instruction caching `ic` called function number `index`.
 fn void ic_note_callee(ICEntry* ic, uint index) @inline {
     if ((ic.feedback & FB_CALL) == 0) {
         ic.prop_idx = index;
         ic.feedback |= FB_CALL;
-    } else if (ic.prop_idx != index) {
-        ic.feedback |= FB_POLY;
+    } else if (ic.prop_idx != index && (ic.feedback & FB_POLY) == 0) {
+        ic_note_another(ic, index);
     }
+}
+
+// The slow half of ic_note_callee: a function other than the first.
+fn void ic_note_another(ICEntry* ic, uint index) @noinline {
+    if ((ic.feedback & FB_DOTCALL) == 0) {
+        for (uint k = 1; k < IC_CALL_TARGETS; k++) {
+            uint* slot = ic_call_slot(ic, k);
+            if (*slot == index + 1) return;
+            if (*slot == 0) {
+                *slot = index + 1;
+                return;
+            }
+        }
+    }
+    ic.feedback |= FB_POLY;
 }
 
 // Record that the call instruction caching `ic` ran function number `index` through the intrinsic
@@ -3701,7 +3746,7 @@ fn void ic_note_dotcall(ICEntry* ic, uint index) @inline {
     if ((ic.feedback & FB_CALL) == 0) {
         ic.prop_idx = index;
         ic.feedback |= FB_CALL | FB_DOTCALL;
-    } else if (ic.prop_idx != index || (ic.feedback & FB_DOTCALL) == 0) {
+    } else if (ic.prop_idx != index || (ic.feedback & FB_DOTCALL) == 0 || *ic_call_slot(ic, 1) != 0) {
         ic.feedback |= FB_POLY;
     }
 }
