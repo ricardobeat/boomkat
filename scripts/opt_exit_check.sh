@@ -6,7 +6,7 @@
 # scripts/guard.sh.
 set -u
 BIN=${BIN:-./out/boomkat}
-FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js test/jit/opt_poly_field.js test/jit/opt_inline_view.js test/jit/opt_inline_branch.js test/jit/opt_inline_wide.js test/jit/opt_inline_wide_global.js test/jit/opt_objects.js test/jit/opt_inline_objload.js test/jit/opt_inline_cap.js test/jit/opt_inline_ops.js test/jit/opt_inline_ops2.js test/jit/opt_inline_nested.js test/jit/opt_inline_putelem.js test/jit/opt_inline_new.js test/jit/opt_inline_proto.js test/jit/opt_inline_ldreg.js test/jit/call_feedback.js test/jit/opt_inline_forward.js"}
+FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js test/jit/opt_poly_field.js test/jit/opt_inline_view.js test/jit/opt_inline_branch.js test/jit/opt_inline_wide.js test/jit/opt_inline_wide_global.js test/jit/opt_objects.js test/jit/opt_inline_objload.js test/jit/opt_inline_cap.js test/jit/opt_inline_ops.js test/jit/opt_inline_ops2.js test/jit/opt_inline_nested.js test/jit/opt_inline_putelem.js test/jit/opt_inline_new.js test/jit/opt_inline_proto.js test/jit/opt_inline_ldreg.js test/jit/call_feedback.js test/jit/opt_inline_forward.js test/jit/opt_site_ban.js"}
 REASONS="overflow not-int32 not-number shape bounds hole callee inline-slowcall alloc-slow throw-path forced"
 fails=0
 # Each file is independent: check them in parallel (JOBS, default the core count).
@@ -41,5 +41,8 @@ for r in $REASONS; do
 done
 st=$($BIN --memory-limit=512 --opt-force-exit=forced:2:5 --opt-exit-max=2 --jit-stats --script test/jit_baseline_calls.js 2>&1 | grep "^opt: ")
 case "$st" in *"discarded 0"*|*"(0 reoptimized)"*|"") echo "NODISCARD: $st"; fails=$((fails+1));; esac
+# A site that exits repeatedly is lowered generically by the rebuild instead of exiting again.
+n=$($BIN --memory-limit=512 --jit --opt --jit-stats --script test/jit/opt_site_ban.js 2>&1 | grep -c "^opt: [1-9][0-9]* sites lowered generically")
+if [ "$n" != 1 ]; then echo "NOBAN"; fails=$((fails+1)); fi
 echo "opt-exits fails=$fails"
 [ "$fails" = 0 ]
