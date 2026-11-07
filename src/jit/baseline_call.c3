@@ -91,6 +91,7 @@ struct CallLayout {
     long cf_func_index;
     long ic_prop_idx;
     long ic_feedback;
+    long[hobject::IC_CALL_TARGETS] ic_call_slot;
     long cf_num_regs;
     long cf_constants;
     long cf_ic_entries;
@@ -162,6 +163,7 @@ fn CallLayout* call_layout() {
     hobject::ICEntry* ice = (hobject::ICEntry*)base;
     l.ic_prop_idx = (char*)&ice.prop_idx - base;
     l.ic_feedback = (char*)&ice.feedback - base;
+    for (uint t = 1; t < hobject::IC_CALL_TARGETS; t++) l.ic_call_slot[t] = (char*)hobject::ic_call_slot(ice, t) - base;
     l.cf_num_regs = (char*)&cf.num_regs - base;
     l.cf_constants = (char*)&cf.constants - base;
     l.cf_ic_entries = (char*)&cf.ic_entries - base;
@@ -547,18 +549,42 @@ fn void Asm.emit_note_callee(&self) {
     // rebuilt from the function slot at the end.
     self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, hobject::FB_CALL);
-    void* poly = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
+    void* another = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
     self.emit_callee_cf(R4);
     self.mov(R4, 0, m | R4, k.cf_func_index, SLJIT_MOV_U32);
     self.mov(m | R0, k.ic_prop_idx, R4, 0, SLJIT_MOV_U32);
     self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
     sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, SLJIT_IMM, hobject::FB_CALL);
     void* stored = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(poly, sljit_emit_label(c));
+    // Another function: its number plus one in the first free further slot, as
+    // hobject::ic_note_another does; FB_POLY when they are full, and at once for a
+    // site of Function.prototype.call (FB_DOTCALL). Nothing for a site that is FB_POLY.
+    sljit_set_label(another, sljit_emit_label(c));
+    self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
+    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R4, 0, SLJIT_IMM, hobject::FB_POLY);
+    void* done = sljit_emit_jump(c, SLJIT_NOT_EQUAL);
+    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R4, 0, SLJIT_IMM, hobject::FB_DOTCALL);
+    void* dotcall = sljit_emit_jump(c, SLJIT_NOT_EQUAL);
+    self.emit_callee_cf(R4);
+    self.mov(R4, 0, m | R4, k.cf_func_index, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
+    void*[hobject::IC_CALL_TARGETS * 2] ends;
+    uint nends = 0;
+    for (uint t = 1; t < hobject::IC_CALL_TARGETS; t++) {
+        ends[nends++] = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, m | R0, k.ic_call_slot[t], R4, 0);
+        void* used = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, m | R0, k.ic_call_slot[t], SLJIT_IMM, 0);
+        self.mov(m | R0, k.ic_call_slot[t], R4, 0, SLJIT_MOV_U32);
+        ends[nends++] = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(used, sljit_emit_label(c));
+    }
+    sljit_set_label(dotcall, sljit_emit_label(c));
     self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
     sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, SLJIT_IMM, hobject::FB_POLY);
     sljit_set_label(stored, sljit_emit_label(c));
     self.mov(m | R0, k.ic_feedback, R4, 0, SLJIT_MOV_U8);
+    void* label = sljit_emit_label(c);
+    for (uint j = 0; j < nends; j++) sljit_set_label(ends[j], label);
+    sljit_set_label(done, label);
     self.emit_callee_cf(R4);
     sljit_set_label(known, sljit_emit_label(c));
 }

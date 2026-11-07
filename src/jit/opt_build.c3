@@ -1982,7 +1982,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
         if (outer.fwd_callee > self.h.compiled_func_count) return false;
         cf = (CompiledFunction*)self.h.compiled_funcs[outer.fwd_callee - 1];
     } else {
-        if ((ic.feedback & hobject::FB_POLY) != 0 || opt_site_banned(self.f, f, view.next_pc - 1)) return self.reject(OptInlineReject.POLY);
+        if ((ic.feedback & hobject::FB_POLY) != 0 || (!construct && hobject::ic_call_count(ic) != 1) || opt_site_banned(self.f, f, view.next_pc - 1)) return self.reject(OptInlineReject.POLY);
         cf = opt_site_callee(self.h, f, view.next_pc - 1);
     }
     uint callee_reg = var_call ? view.insn.a : view.insn.b;
