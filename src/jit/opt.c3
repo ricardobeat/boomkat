@@ -77,6 +77,9 @@ struct OptCode {
     uint cell_count;
     // The exits taken from inside inlined bodies.
     OptInlineExit* inline_exits;
+    // A boxed value the put-absent paths of an inlined constructor read through its address
+    // (OptCg.emit_add_field); nothing runs between its store and its use.
+    ulong value;
 }
 
 // Calls an optimized body inlines into each other at most, the outermost included.
@@ -204,7 +207,7 @@ fn bool opt_has_feedback(Heap* h, CompiledFunction* f) {
     // A function of integers alone records no operand feedback, but a call to a body the tier can
     // inline is something to specialize on.
     for (uint i = 0; i < f.code_count; i++) {
-        if ((ic[i].feedback & hobject::FB_CALL) != 0 && opt_inline_plausible(h, f, i)) return true;
+        if ((ic[i].feedback & (hobject::FB_CALL | hobject::FB_CTOR)) != 0 && opt_inline_plausible(h, f, i)) return true;
     }
     return false;
 }
@@ -233,18 +236,17 @@ fn bool opt_has_field_feedback(CompiledFunction* f) {
 // Whether the call at word `i` of `f` names a callee that looks like an inline site: the cheap part
 // of OptBuild.inline_candidate, the size and the opcodes of its body.
 fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 1) {
-    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
     Opcode op = f.code[i].op;
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
-    if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) return false;
-    if ((ic.feedback & hobject::FB_CALL) == 0 || (ic.feedback & hobject::FB_POLY) != 0 || ic.prop_idx >= h.compiled_func_count) return false;
-    CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[ic.prop_idx];
+    if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && op != Opcode.NEW_OBJ && !var_call) return false;
+    CompiledFunction* cf = opt_site_callee(h, f, i);
 
     uint nargs = var_call ? f.code[i].b : f.code[i].c;
     if (cf == null || cf == f || cf.code_count > INLINE_WORDS_MAX || cf.num_regs > 32 || cf.num_formals != nargs) return false;
     if (!opt_function_eligible(cf)) return false;
+    if (op == Opcode.NEW_OBJ && !opt_base_constructor(cf)) return false;
     cf.classify_lean_call();
-    if (!cf.call_flags.lean_call || (op != Opcode.CALL && !cf.call_flags.lean_plain)) return false;
+    if (!cf.call_flags.lean_call || (op != Opcode.CALL && op != Opcode.NEW_OBJ && !cf.call_flags.lean_plain)) return false;
     for (uint k = 0; k < cf.code_count; k++) {
         Opcode kop = cf.code[k].op;
         if (!inline_op_ok(kop)) return false;
@@ -252,6 +254,24 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 
         if (inline_call_op(kop) && (depth >= OPT_INLINE_DEPTH || cf.ic_entries == null || !opt_inline_plausible(h, cf, k, depth + 1))) return false;
     }
     return true;
+}
+
+// The one compiled function the call or NEW_OBJ at word `i` of `f` has called, by its feedback, or
+// null. A NEW_OBJ's entry caches the constructor's `prototype` read and keeps the callee apart
+// (hobject::FB_CTOR).
+fn CompiledFunction* opt_site_callee(Heap* h, CompiledFunction* f, uint i) {
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[i];
+    bool ctor = f.code[i].op == Opcode.NEW_OBJ;
+    uint index = ctor ? ic.absent_next_shape : ic.prop_idx;
+    if ((ic.feedback & (ctor ? hobject::FB_CTOR : hobject::FB_CALL)) == 0 || (ic.feedback & hobject::FB_POLY) != 0) return null;
+    if (index >= h.compiled_func_count) return null;
+    return (CompiledFunction*)h.compiled_funcs[index];
+}
+
+// Whether `new` of a closure of `cf` builds a plain object and runs `cf` on it: a base
+// constructor without private names or field initializers.
+fn bool opt_base_constructor(CompiledFunction* cf) {
+    return !cf.is_arrow() && !cf.is_derived_ctor() && cf.brand_name_hstr == null && cf.field_init_func == null;
 }
 
 // Whether any call site of `f` has recorded its callee.

@@ -78,6 +78,8 @@ enum OptInlineReject : char (String label) {
     STATE {"call state not usable"},
     DEPTH {"inlined calls nested too deep"},
     SCOPED {"scoped variable call in an inlined body"},
+    CTOR {"not a base constructor"},
+    CTOR_BODY {"constructor body not straight-line"},
 }
 
 // The words of bytecode an inlined callee may have, and the callees nested in one inline site may
@@ -95,6 +97,9 @@ struct OptInlineSite {
     uint base;
     // A method call (CALL), whose receiver is the callee's `this`.
     bool method;
+    // A NEW_OBJ: the callee's `this` is the object the inline allocates (OptOp.NEW_OBJECT), in the
+    // receiver slot base - 1, and the result unless the body returns an object.
+    bool construct;
     // CALL_VAR or CALL_GLOBAL, which load the callee from a variable.
     bool var_call;
     DecodedCfg cfg;
@@ -255,7 +260,7 @@ fn bool OptBuild.live_in_at(&self, uint r) {
         return k < s.cf.num_regs && s.live_in[self.insn].test(k);
     }
     while (true) {
-        if (r == s.base - 2 || (s.method && r == s.base - 1)) return true;
+        if (r == s.base - 2 || ((s.method || s.construct) && r == s.base - 1)) return true;
         if (s.parent == 0) return self.live_out[s.insn].test(r);
         OptInlineSite* p = &self.sites[(sz)s.parent - 1];
         if (r >= p.base) {
@@ -288,7 +293,7 @@ fn uint inline_reg_mask(Opcode op) {
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
             return 3;
         // A nested inline site (OptBuild.add_children): the result and callee registers; C counts.
-        case CALL: case CALL_UNDEF_THIS:
+        case CALL: case CALL_UNDEF_THIS: case NEW_OBJ:
             return 3;
         case CALL_VAR: case CALL_GLOBAL:
             return 1;
@@ -314,7 +319,7 @@ fn bool inline_op_ok(Opcode op) @inline => inline_reg_mask(op) != 0 || op == Opc
 
 // The calls an inlined body may hold, each one a nested inline site.
 fn bool inline_call_op(Opcode op) @inline {
-    return op == Opcode.CALL || op == Opcode.CALL_UNDEF_THIS || op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
+    return op == Opcode.CALL || op == Opcode.CALL_UNDEF_THIS || op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL || op == Opcode.NEW_OBJ;
 }
 
 // The forward-branching opcodes of an inlined body.
@@ -358,7 +363,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
             *reads = 1u << w.b;
         case JMP_NLTI..JMP_SNEQI:
             *reads = 1u << w.b;
-        case CALL: case CALL_UNDEF_THIS:
+        case CALL: case CALL_UNDEF_THIS: case NEW_OBJ:
             *reads = (1u << w.b) | (w.op == Opcode.CALL ? 1u << (w.b + 1) : 0);
             for (uint k = 0; k < w.c; k++) *reads |= 1u << (w.b + 2 + k);
             *writes = 1u << w.a;
@@ -997,6 +1002,20 @@ fn hobject::ICEntry* OptBuild.own_field(&self) {
     return ic;
 }
 
+// The cache entry of the PUTTHISC being lowered when it holds an add of the instruction's key: an
+// absent-property entry of the current shape recycle epoch. The emitted code checks the rest at run
+// time (OptCg.emit_add_field).
+fn hobject::ICEntry* OptBuild.absent_field(&self) {
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null || self.w.op != Opcode.PUTTHISC) return null;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+    void* key = (void*)ic.key.borrow();
+    if (key == null || ic.prop_idx != hobject::IC_PROP_ABSENT || ic.has_proto) return null;
+    if (ic.shape_gen != self.h.shape_recycle_epoch || (uint)ic.chain_len > hobject::IC_MAX_CHAIN) return null;
+    if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string() || f.constants[self.w.c].get_heapptr() != key) return null;
+    return ic;
+}
+
 // Whether the field instruction being lowered has never run: its cache was never filled. A flat
 // body leaves such an instruction as an unconditional exit to the callee's baseline code.
 fn bool OptBuild.cold_field(&self) {
@@ -1090,6 +1109,7 @@ fn bool OptBuild.get_field(&self) {
 fn bool OptBuild.put_field(&self) {
     hobject::ICEntry* ic = self.own_field();
     bool this_op = self.w.op == Opcode.PUTTHISC;
+    if ((ic == null || !ic.prop_flags.writable) && this_op && self.cur_fn != 0 && self.sites[self.cur_site].construct) return self.add_field();
     if (ic == null || !ic.prop_flags.writable) return self.generic();
     uint recv = self.field_receiver();
     uint rnode = NO_NODE;
@@ -1112,6 +1132,23 @@ fn bool OptBuild.put_field(&self) {
     self.g.nodes[n].cc = (mono && self.guards_known(recv, ic.shape_id)) ? 1 : 0;
     self.set_poly(n, ic);
     if (mono) self.learn(recv, ic.shape_id);
+    return true;
+}
+
+// PUTTHISC of an inlined constructor that adds its key to the object the inline allocated, held in
+// the receiver slot as an OBJECT node.
+fn bool OptBuild.add_field(&self) {
+    uint recv = self.field_receiver();
+    uint rv = self.w.a;
+    if (self.absent_field() == null || !self.is_object(recv) || rv >= self.nregs) return self.generic();
+    uint value = self.cur[rv].node;
+    // A window value is read from its slot, which lies in the caller's frame (beyond it there are
+    // only nodes, see OptBuild.inline_unsafe).
+    if (value == NO_NODE && rv >= self.caller_regs) return self.generic();
+    uint n = self.add(OptOp.ADD_FIELD, OptRep.NONE, value, self.cur[recv].node, (long)self.pc);
+    self.snapshot(n);
+    // The object's shape changed, under whatever register a fact names it by.
+    self.forget_facts();
     return true;
 }
 
@@ -1435,9 +1472,14 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     // Forward branches only: a loop in the callee stays a call.
     if (cfg.has_backedge) return self.reject(OptInlineReject.BLOCKS);
     s.flat = cfg.block_count != 1;
+    // An inlined constructor is lowered in place: its allocation and return are the site's.
+    if (s.construct && s.flat) return self.reject(OptInlineReject.CTOR_BODY);
     // Calls nest only in a body lowered in place (OptBuild.try_inline), as deep as OPT_INLINE_DEPTH.
     if (s.has_calls && (s.flat || s.depth >= OPT_INLINE_DEPTH)) {
         self.rej_op = Opcode.CALL;
+        for (uint k = 0; k < cfg.instruction_count; k++) {
+            if (cfg.nodes[k].view.insn.op == Opcode.NEW_OBJ) self.rej_op = Opcode.NEW_OBJ;
+        }
         return self.reject(s.flat ? OptInlineReject.OPCODE : OptInlineReject.DEPTH);
     }
     Opcode last_op = cfg.nodes[cfg.instruction_count - 1].view.insn.op;
@@ -1479,7 +1521,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             s.defined[k] = defined;
             defined |= writes;
         }
-        if (cfg.instruction_count >= 2 && last_op == Opcode.RET) {
+        if (cfg.instruction_count >= 2 && last_op == Opcode.RET && !s.construct) {
             uint last = cfg.instruction_count - 2;
             uint rr = cfg.nodes[last + 1].view.insn.a;
             uint reads;
@@ -1521,7 +1563,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 ok = self.own_field() != null || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case GETTHISC:
-                ok = (s.method && self.own_field() != null) || (s.flat && self.cold_field());
+                ok = ((s.method || s.construct) && self.own_field() != null) || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case PUTPROPC:
                 hobject::ICEntry* ic = self.own_field();
@@ -1529,13 +1571,14 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 why = OptInlineReject.FIELD;
             case PUTTHISC:
                 hobject::ICEntry* ic = self.own_field();
-                ok = (s.method && ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field());
+                ok = (s.method && ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field())
+                    || (s.construct && ((ic != null && ic.prop_flags.writable) || self.absent_field() != null));
                 why = OptInlineReject.FIELD;
             case GETGLOBAL:
                 ok = (s.flat && self.cold_field()) || ((hobject::VarICEntry*)cf.var_ic_entries)[self.next_pc - 1].env != null;
                 why = OptInlineReject.GLOBAL;
             case LDTHIS:
-                ok = s.method;
+                ok = s.method || s.construct;
                 why = OptInlineReject.THIS;
             case LDCONST:
                 uint index = self.w.get_bc();
@@ -1565,18 +1608,19 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     RegSet* live_out = ps == null ? &self.live_out[i] : &ps.live_out[i];
     uint depth = ps == null ? 1 : ps.depth + 1;
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
-    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) || view.wide || f.ic_entries == null) return false;
+    bool construct = op == Opcode.NEW_OBJ;
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call && !construct) || view.wide || f.ic_entries == null) return false;
     if (var_call && f.var_ic_entries == null) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[view.next_pc - 1];
-    if ((ic.feedback & hobject::FB_CALL) == 0) return false;
+    if ((ic.feedback & (construct ? hobject::FB_CTOR : hobject::FB_CALL)) == 0) return false;
     if ((ic.feedback & hobject::FB_POLY) != 0) return self.reject(OptInlineReject.POLY);
-    if (ic.prop_idx >= self.h.compiled_func_count) return false;
-    CompiledFunction* cf = (CompiledFunction*)self.h.compiled_funcs[ic.prop_idx];
+    CompiledFunction* cf = opt_site_callee(self.h, f, view.next_pc - 1);
     uint callee_reg = var_call ? view.insn.a : view.insn.b;
     uint nargs = var_call ? view.insn.b : view.insn.c;
     bool method = op == Opcode.CALL;
     // The window the call publishes lies in the caller's registers as far as the arguments go.
     if (cf == null) return false;
+    if (construct && !opt_base_constructor(cf)) return self.reject(OptInlineReject.CTOR);
     if (cf == f || cf == self.f) return self.reject(OptInlineReject.SELF);
     for (OptInlineSite* a = ps; a != null; a = a.parent == 0 ? null : &self.sites[(sz)a.parent - 1]) {
         if (a.cf == cf) return self.reject(OptInlineReject.SELF);
@@ -1587,19 +1631,20 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     if (callee_reg + 2 + nargs > regs) return self.reject(OptInlineReject.WINDOW);
     cf.classify_lean_call();
     if (cf.realm != f.realm || !opt_function_eligible(cf)) return self.reject(OptInlineReject.INELIGIBLE);
-    if (!cf.call_flags.lean_call || (!method && !cf.call_flags.lean_plain)) return self.reject(OptInlineReject.NOT_LEAN);
+    if (!cf.call_flags.lean_call || (!method && !construct && !cf.call_flags.lean_plain)) return self.reject(OptInlineReject.NOT_LEAN);
     if (cf.arguments_in_reg() || cf.call_flags.rest_length_only || cf.ic_entries == null || cf.var_ic_entries == null) return self.reject(OptInlineReject.ARGS);
     if (is_top_level(cf)) return self.reject(OptInlineReject.TOP_LEVEL);
     if (cf.num_formals != nargs) return self.reject(OptInlineReject.FORMALS);
     if (cf.num_regs > 32 || cf.code_count > INLINE_WORDS_MAX) return self.reject(OptInlineReject.SIZE);
     // What a call leaves behind is its result: the rest of its window is dead after it.
-    // (A call that names no receiver leaves `this` implicit, which liveness takes for live around a loop.)
+    // (A call that names no receiver leaves `this` implicit, which liveness takes for live around a loop;
+    // a NEW_OBJ writes its object there.)
     for (uint r = callee_reg; r < regs; r++) {
-        if (r == view.insn.a || (!method && r == callee_reg + 1)) continue;
+        if (r == view.insn.a || (!method && !construct && r == callee_reg + 1)) continue;
         if (live_out.test(r)) return self.reject(OptInlineReject.WINDOW_LIVE);
     }
     uint base = (ps == null ? 0 : ps.base) + callee_reg + 2;
-    *s = { .insn = i, .cf = cf, .base = base, .method = method, .var_call = var_call, .parent = parent, .depth = depth };
+    *s = { .insn = i, .cf = cf, .base = base, .method = method, .construct = construct, .var_call = var_call, .parent = parent, .depth = depth };
     bool ok = compiler::bytecode_cfg_build(&s.cfg, cf.code, cf.code_count, self.h);
     if (ok) {
         uint count = s.cfg.instruction_count;
@@ -1632,7 +1677,7 @@ fn void OptBuild.find_sites(&self) {
         self.rej = OptInlineReject.BUILD;
         if (!self.inline_candidate(i, &s)) {
             Opcode cop = self.cfg.nodes[i].view.insn.op;
-            bool is_call = cop == Opcode.CALL || cop == Opcode.CALL_UNDEF_THIS || cop == Opcode.CALL_VAR || cop == Opcode.CALL_GLOBAL;
+            bool is_call = inline_call_op(cop);
             if (is_call && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
             continue;
         }
@@ -1665,7 +1710,7 @@ fn void OptBuild.find_sites(&self) {
             self.sites.size = si;
             self.site_of[i] = 0;
             self.nregs = nregs0;
-            self.count_reject(OptInlineReject.OPCODE, Opcode.CALL);
+            self.count_reject(OptInlineReject.OPCODE, self.rej_op == Opcode.NEW_OBJ ? Opcode.NEW_OBJ : Opcode.CALL);
         }
     }
 }
@@ -1681,10 +1726,17 @@ fn bool OptBuild.add_children(&self, uint si, uint* words) {
         if (!inline_call_op(self.sites[si].cfg.nodes[k].view.insn.op)) continue;
         OptInlineSite c;
         self.rej = OptInlineReject.BUILD;
-        if (!self.inline_candidate(k, &c, si + 1)) return false;
+        Opcode cop = self.sites[si].cfg.nodes[k].view.insn.op;
+        if (!self.inline_candidate(k, &c, si + 1)) {
+            // A constructor's own reason is worth its count too: the parent's names only the opcode.
+            if (cop == Opcode.NEW_OBJ && self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
+            self.rej_op = cop == Opcode.NEW_OBJ ? cop : Opcode.CALL;
+            return false;
+        }
         *words += c.cf.code_count;
         if (*words > INLINE_TREE_WORDS_MAX) {
             c.free_site();
+            self.rej_op = cop == Opcode.NEW_OBJ ? cop : Opcode.CALL;
             return false;
         }
         uint ci = (uint)self.sites.len();
@@ -1917,6 +1969,20 @@ fn bool OptBuild.inline_return(&self, uint result, uint* node) {
     return self.window_copy(result, 0, node);
 }
 
+// The return of an inlined constructor: the object it was given as `this` is the result unless the
+// body returns an object, which only a return of a number leaves certain; any other value keeps the
+// site a call.
+fn bool OptBuild.construct_return(&self, uint this_reg, uint* node) {
+    uint object = self.cur[this_reg].node;
+    if (object == NO_NODE || self.rep_of(object) != OptRep.OBJECT) return false;
+    if (self.w.op == Opcode.RET) {
+        uint ra = self.w.a;
+        if (ra >= self.nregs || self.cur[ra].node == NO_NODE || self.is_object(ra)) return false;
+    }
+    *node = self.add(OptOp.COPY, OptRep.OBJECT, object);
+    return true;
+}
+
 // A register the guard of a nested call reads its callee or receiver from (OptBuild.try_inline):
 // inside the caller's frame a value in the window, beyond it an OBJECT node, which `node` receives.
 // A value there that a property or global read left in the window asks for that read to be an
@@ -1977,7 +2043,8 @@ fn bool OptBuild.try_inline(&self) {
     bool state_ok = true;
     if (!s.var_call) {
         state_ok = self.call_operand(callee_reg, &callee_node);
-        if (state_ok && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.call_operand(callee_reg + 1, &recv_node);
+        // A NEW_OBJ's receiver slot receives the object the inline allocates.
+        if (state_ok && !s.construct && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.call_operand(callee_reg + 1, &recv_node);
     }
     if (!state_ok) {
         if (!s.counted && !self.inline_unsafe) self.count_reject(OptInlineReject.STATE, Opcode.NOP);
@@ -2019,8 +2086,15 @@ fn bool OptBuild.try_inline(&self) {
     }
     // The guard resumes the call itself, in the caller's context.
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
-    self.g.nodes[chk].cc = s.method ? 1 : 0;
+    self.g.nodes[chk].cc = s.construct ? 2 : (s.method ? 1 : 0);
     self.snapshot(chk);
+    // A constructor's object, allocated in the caller's context: its exit resumes the NEW_OBJ.
+    uint object = NO_NODE;
+    if (s.construct) {
+        object = self.add(OptOp.NEW_OBJECT, OptRep.OBJECT, callee_node, NO_NODE, (long)(usz)s.cf);
+        self.snapshot(object);
+        self.set(callee_reg + 1, object);
+    }
 
     uint remap_pc = s.remap == uint::max ? uint::max : s.cfg.nodes[s.remap].view.pc;
     uint parent_keep = parent_fn == 0 ? 0 : self.keep_across(&self.sites[parent_site], site_insn, callee_reg);
@@ -2036,7 +2110,9 @@ fn bool OptBuild.try_inline(&self) {
     uint result_node = NO_NODE;
     for (uint k = 0; k < s.cfg.instruction_count && ok; k++) {
         self.inline_context(s, k);
-        if (self.w.op == Opcode.RET) {
+        if (s.construct && (self.w.op == Opcode.RET || self.w.op == Opcode.RETUNDEF)) {
+            ok = self.construct_return(callee_reg + 1, &result_node);
+        } else if (self.w.op == Opcode.RET) {
             ok = self.inline_return(result, &result_node);
         } else if (self.w.op == Opcode.RETUNDEF) {
             self.store_const(result, K_UNDEF);
@@ -2256,6 +2332,7 @@ fn bool OptBuild.lower_op(&self) {
         case CALL_UNDEF_THIS:
         case CALL_VAR:
         case CALL_GLOBAL:
+        case NEW_OBJ:
             if (self.try_inline()) return true;
             return self.generic();
         default:

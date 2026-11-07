@@ -3159,6 +3159,7 @@ macro Instruction* @new_obj(Instruction* pc, HandlerTable* handlers, TVal* regs,
     bool simple = target.call_flags.simple_constructor;
     if (!simple && th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return pc;
     hobject::ICEntry* ic = th_ic_at(cold, pc);
+    hobject::ic_note_constructor(ic, target.func_index);
     if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
         || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return pc;

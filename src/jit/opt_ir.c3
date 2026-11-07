@@ -37,6 +37,15 @@
 // builder refuses the inline for a STORE_OBJ of it or an edge store of it, the allocator never
 // spills it (the function is then built without inlining), and its load exits instead of
 // publishing while the collector is marking.
+//
+// An inlined NEW_OBJ allocates (OptOp.NEW_OBJECT) and its constructor body may call the put-absent
+// helper (OptOp.ADD_FIELD). Neither is a point that can collect: the heap's allocators only request
+// a collection for the next safepoint (Heap.request_gc), and a new object is a temporary root and
+// is shaded while marking (Heap.adopt_object), so it may live in a register like any OBJECT node,
+// and the windows beyond the caller's frame need no scan extent. Such a call clobbers the scratch
+// registers, so the machine registers that hold values across it are saved in the frame around it
+// (OptCg.spill_live). The object is an OBJECT node homed in the receiver slot of the NEW_OBJ, the
+// constructor's `this`, where an exit from the body stores it for the frame it publishes.
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::bytecode;
@@ -162,6 +171,17 @@ enum OptOp : char {
     BRANCH_WINDOW,
     // The bytecode instruction at pc, through the baseline emitter.
     GENERIC,
+    // A NEW_OBJ (pc) of the constructor imm (its CompiledFunction*), after its CHECK_CALLEE: a plain
+    // object with the prototype the instruction's cache reads from the constructor, the OBJECT node
+    // the inlined body takes as `this`. Exits (ALLOC_SLOW) before any effect when the constructor is
+    // not constructable, the cache does not hold or the allocation fails. a, when not NO_NODE, is the
+    // OBJECT node holding the constructor.
+    NEW_OBJECT,
+    // A PUTTHISC (imm its pc) of an inlined constructor that adds its key to the OBJECT node b through
+    // the instruction's absent-property cache, as the baseline's put-absent path; a is the number or
+    // OBJECT node stored, or NO_NODE for a value in the window. Exits before any effect when the add
+    // is not one the cache describes. It defines nothing.
+    ADD_FIELD,
 }
 
 // A window slot and the node whose value belongs in it.
