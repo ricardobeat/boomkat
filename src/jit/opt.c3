@@ -99,8 +99,9 @@ struct OptInlineFrame {
     Instruction* resume;
     // The callee's register 0 as a register of the optimized function's frame.
     uint base;
-    // The count of arguments the call passed, which a forwarding callee's `arguments` holds.
     uint nargs;
+    // The count of arguments the call passed, which a forwarding callee's `arguments` holds.
+    uint argc;
     // The callee registers that hold values there: live at the exit for the innermost frame,
     // live across its own inlined call for the others.
     uint keep;

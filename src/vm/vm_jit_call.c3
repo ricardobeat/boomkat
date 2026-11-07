@@ -201,7 +201,7 @@ fn void* jit_inline_materialize(Dispatch* ds, jit::OptInlineExit* site) {
         }
         // A forwarding callee's `arguments` is the count of the arguments it keeps in its first
         // registers (CallFlags.forward_args), which the optimizer checked fits.
-        if (needs_arguments) bind_register_arguments(ds.vm, la, callee, (HObject*)la.tv_func.get_heapptr(), bottom, fr.nargs);
+        if (needs_arguments) bind_register_arguments(ds.vm, la, callee, (HObject*)la.tv_func.get_heapptr(), bottom, fr.argc);
         // Every slot of the frame holds a valid value now, and the optimized code stored heap values
         // into some without raising a count the new frame owns.
         la.heap_reg_count = callee.num_regs;

@@ -1342,7 +1342,8 @@ fn bool OptBuild.not_value(&self) {
     uint node = self.is_object(rb) ? NO_NODE : self.cur[rb].node;
     uint n = self.add(OptOp.LNOT, OptRep.NONE, node, NO_NODE, (long)rb);
     self.g.nodes[n].home = ra;
-    if (node == NO_NODE) self.snapshot(n);
+    // (A known operand cannot exit, but the test hook exits at any LNOT, with the frame it describes.)
+    self.snapshot(n);
     self.kill(ra);
     return true;
 }
