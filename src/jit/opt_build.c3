@@ -21,6 +21,7 @@ import std::io;
 const uint OPT_BLOCK_MAX = 1024;
 const uint OPT_STATE_MAX = 256 * 1024;
 const uint OPT_BUILD_ROUNDS = 5;
+const uint OPT_BUILD_ROUNDS_MAX = 16;
 
 // A loop phi's decision, overriding the speculation from the preheader.
 struct OptOverride {
@@ -840,9 +841,15 @@ fn uint OptBuild.typed_load(&self, OptOp op, uint a) {
 // function's own body, and in an inlined body the value read into the window. A value of any kind
 // in a slot beyond the caller's frame would be out of the collector's sight.
 fn bool OptBuild.get_cap(&self) {
-    // The read takes the callee's closure from its window slot: not one a nested call holds in a node.
-    if (self.cur_fn != 0 && self.cur[self.sites[self.cur_site].base - 2].node != NO_NODE) return self.generic();
-    if (self.typed_load(OptOp.LOAD_CAP, NO_NODE) != NO_NODE) return true;
+    // The read takes the callee's closure from its window slot, or from the OBJECT node a nested
+    // call's guard checked.
+    uint closure = self.cur_fn == 0 ? NO_NODE : self.cur[self.sites[self.cur_site].base - 2].node;
+    if (closure != NO_NODE && self.rep_of(closure) != OptRep.OBJECT) return self.generic();
+    uint t = self.typed_load(OptOp.LOAD_CAP, NO_NODE);
+    if (t != NO_NODE) {
+        self.g.nodes[t].b = closure;
+        return true;
+    }
     if (self.cur_fn == 0) {
         if (!self.generic()) return false;
         if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pckey();
@@ -850,7 +857,7 @@ fn bool OptBuild.get_cap(&self) {
     }
     uint ra = self.w.a;
     if (ra >= self.nregs) return false;
-    uint n = self.add(OptOp.LOAD_CAP, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    uint n = self.add(OptOp.LOAD_CAP, OptRep.NONE, NO_NODE, closure, (long)self.pc);
     self.snapshot(n);
     self.kill(ra);
     self.load_def[ra] = self.pckey();
@@ -2037,6 +2044,7 @@ fn bool OptBuild.try_inline(&self) {
     if (!ok) {
         // A load a later round builds as an OBJECT node is not a final refusal.
         bool pending = unsafe && self.load_changed;
+
         if (!s.counted && !pending) self.count_reject(unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD, Opcode.NOP);
         if (!pending) s.counted = true;
         // The body around a nested site waits with it.
@@ -2518,7 +2526,12 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.fact_plain = mem::new_array(bool, (usz)n + 1);
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
-    for (uint round = 0; round < OPT_BUILD_ROUNDS; round++) {
+    // A nested site's operands become OBJECT nodes over rounds of their own, each request
+    // stopping the body around it.
+    uint rounds = OPT_BUILD_ROUNDS;
+    foreach (&s : b.sites) if (s.depth > 1) rounds += 2;
+    if (rounds > OPT_BUILD_ROUNDS_MAX) rounds = OPT_BUILD_ROUNDS_MAX;
+    for (uint round = 0; round < rounds; round++) {
         if (!b.build_round()) {
             // A refusal that a typed load requested in this round may cause is not final.
             if (b.load_changed && !b.flat_fail) {

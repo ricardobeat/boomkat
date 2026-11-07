@@ -62,7 +62,8 @@ enum OptOp : char {
     CHECK_I32,
     CHECK_NUM,
     // A GETCAP (imm its pc) read as a number of the node's rep; exits when the capture is not
-    // one of the plain cases or not that kind of number.
+    // one of the plain cases or not that kind of number. In a nested inlined body b is the OBJECT
+    // node holding the callee's closure, when its register lies beyond the caller's frame.
     LOAD_CAP,
     // A GETPROP (imm its pc) of the dense or typed array element at INT32 node a, as a number of
     // the node's rep; exits for any other object, an index out of range, a hole or another value.

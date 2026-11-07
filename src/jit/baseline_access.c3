@@ -1541,10 +1541,14 @@ fn void Asm.emit_get_cap_value(&self, uint index) {
 
 // The value GETCAP reads in an inlined body, in R0: capture `index` of the closure in register
 // `callee_reg`, which the inline guard has checked to be a closure of the callee (`count` captures).
-fn void Asm.emit_get_cap_value_of(&self, uint index, uint callee_reg, uint count) {
+fn void Asm.emit_get_cap_value_of(&self, uint index, uint callee_reg, uint count, int closure = -1) {
     void* c = self.c;
     Layout* l = self.lay;
-    self.load(R3, callee_reg);
+    if (closure >= 0) {
+        if (closure != R3) sljit_emit_op1(c, SLJIT_MOV, R3, 0, closure, 0);
+    } else {
+        self.load(R3, callee_reg);
+    }
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
