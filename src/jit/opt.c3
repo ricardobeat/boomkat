@@ -180,8 +180,7 @@ struct OptPolicy {
     ulong compiled;
     ulong discards;
     ulong reopts;
-    // Rebuilds whose graph equalled the discarded body's, and sites lowered generically after exits.
-    ulong unchanged;
+    // Sites lowered generically after repeated exits.
     ulong bans;
     ulong refused;
     ulong[OptRefuse::values.len] refused_why;
@@ -333,23 +332,6 @@ fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc) {
     return false;
 }
 
-// A fingerprint of everything a body is emitted from: two builds with the same value produce the
-// same code, so a rebuild that matches the body it replaces has learnt nothing.
-fn uint opt_graph_hash(OptGraph* g) {
-    ulong x = 0xcbf29ce484222325;
-    foreach (&n : g.nodes) {
-        ulong[6] w = { (ulong)n.op.ordinal | ((ulong)n.rep.ordinal << 8) | ((ulong)(char)n.cc << 16) | ((ulong)n.poly << 24),
-                       ((ulong)n.a << 32) | n.b, ((ulong)n.c << 32) | n.pc, (ulong)n.imm, n.fidx, n.dirty_count };
-        foreach (v : w) x = (x ^ v) * 0x100000001b3;
-    }
-    foreach (&p : g.polys) {
-        x = (x ^ p.count) * 0x100000001b3;
-        for (uint i = 0; i < p.count; i++) x = (x ^ (((ulong)p.shape[i] << 32) | p.idx[i])) * 0x100000001b3;
-    }
-    foreach (&fn_ : g.fns) x = (x ^ (ulong)(usz)fn_.f) * 0x100000001b3;
-    return (uint)(x ^ (x >> 32));
-}
-
 fn bool opt_refuse(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op) {
     h.opt.refused++;
     h.opt.refused_why[why.ordinal]++;
@@ -393,14 +375,6 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
         return false;
     }
     if (why != OptRefuse.NONE) return opt_refuse(h, f, why, refused_op);
-    uint hash = opt_graph_hash(&g);
-    if (f.opt_reopts != 0 && hash == f.opt_hash && !p.always) {
-        // The discarded body's exits taught the build nothing: it would exit the same way again.
-        p.unchanged++;
-        f.opt_state = OPT_REFUSED_EXITS;
-        return false;
-    }
-    f.opt_hash = hash;
     OptCode* oc = h.alloc_func(h.heap_udata, OptCode::size);
     if (oc == null) return false;
     mem::clear(oc, OptCode::size);
@@ -590,8 +564,8 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         ((hobject::ICEntry*)callee.ic_entries)[site.pc].feedback |= hobject::FB_OVF;
     }
     oc.exits++;
-    bool repeat = oc.f.opt_code == oc && callee.ic_entries != null && opt_note_site_exit(oc, callee, site.pc, reason);
-    if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
+    // A site of an inlined body cannot be lowered generically (the call would stay a call), so its exits only add up.
+    if (oc.f.opt_code == oc && oc.exits >= opt_exit_limit(h)) opt_discard(h, oc.f);
     return vm::jit_inline_materialize(ds, site);
 }
 
@@ -629,7 +603,7 @@ fn void opt_print_stats(Heap* h) {
     }
     io::eprintfn("opt: compiled %d (%d reoptimized), discarded %d, refused %d; live %d bytes",
                  p.compiled, p.reopts, p.discards, p.refused, p.live_bytes);
-    io::eprintfn("opt: %d sites lowered generically after repeated exits, %d rebuilds unchanged", p.bans, p.unchanged);
+    io::eprintfn("opt: %d sites lowered generically after repeated exits", p.bans);
     foreach (r : OptExit::values) {
         if (p.exits[r.ordinal] != 0) io::eprintfn("opt exit %s: %d", r.label, p.exits[r.ordinal]);
     }
