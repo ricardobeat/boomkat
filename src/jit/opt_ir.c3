@@ -228,6 +228,8 @@ struct OptNode {
     char cc;
     uint a;
     uint b;
+    // LOAD_ELEM, STORE_ELEM: the OBJECT node holding the receiver, else NO_NODE for the window.
+    uint c;
     long imm;
     // The bytecode word the node came from; an exit resumes there.
     uint pc;
