@@ -349,7 +349,7 @@ fn void OptCg.emit_inline_exit(&self, uint fidx, uint pc, uint mask, uint reason
     for (uint level = depth; level > 0; level--) {
         OptFn* fn_ = &self.g.fns[at];
         site.frames[level - 1] = { .callee = fn_.f, .resume = self.g.fns[fn_.parent].f.code + fn_.resume_pc,
-                                   .base = fn_.reg_base, .nargs = fn_.nargs, .keep = keep };
+                                   .base = fn_.reg_base, .nargs = fn_.f.num_formals, .argc = fn_.nargs, .keep = keep };
         keep = fn_.parent_keep;
         at = fn_.parent;
     }
