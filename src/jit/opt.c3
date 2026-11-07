@@ -68,7 +68,7 @@ const usz OPT_CODE_MAX = 4 * 1024 * 1024;
 // Exits at one site that discard a body and make the next build lower the site generically.
 const uint OPT_SITE_EXITS = 2;
 const uint OPT_BAN_MAX = 16;
-const uint OPT_HIT_SLOTS = 4;
+const uint OPT_HIT_SLOTS = 8;
 
 // An instruction (word `pc` of `cf`, which may be an inlined callee) whose speculation failed
 // repeatedly; the optimizer lowers it as the baseline would instead of guarding it again.
@@ -431,6 +431,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
 fn void opt_discard(Heap* h, CompiledFunction* f) {
     OptCode* oc = f.opt_code;
     if (oc == null) return;
+    opt_ban_hits(h, oc);
     f.jit_code = oc.base;
     f.opt_code = null;
     oc.next_retired = h.opt.retired;
@@ -516,7 +517,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     if (oc.f.opt_code == oc && oc.f.ic_entries != null) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
         if (oc.f.code[at].op == Opcode.WIDE) at++;
-        repeat = opt_note_site_exit(h, oc, oc.f, at, reason);
+        repeat = opt_note_site_exit(oc, oc.f, at, reason);
     }
     if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
     return 0;
@@ -534,11 +535,10 @@ fn bool opt_exit_bannable(long reason) {
     }
 }
 
-// Count an exit of `oc` at word `pc` of `cf`. At the OPT_SITE_EXITS-th exit at one site, record the
-// site so that the next build lowers it generically; true then, which discards the body, since
-// rebuilding it without the exits is better than taking them OPT_EXIT_MAX times. Anything that does
-// not name a bannable site changes nothing in the next build and is left to the total.
-fn bool opt_note_site_exit(Heap* h, OptCode* oc, CompiledFunction* cf, uint pc, long reason) {
+// Count an exit of `oc` at word `pc` of `cf`; true at the OPT_SITE_EXITS-th exit at one site, which
+// discards the body: rebuilding it without those exits is better than taking them OPT_EXIT_MAX
+// times. Only a failed guard of one instruction is counted, since only that changes the next build.
+fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reason) {
     if (!opt_exit_bannable(reason)) return false;
     OptSiteHit* hit = null;
     foreach (&x : oc.hits) {
@@ -550,20 +550,25 @@ fn bool opt_note_site_exit(Heap* h, OptCode* oc, CompiledFunction* cf, uint pc, 
         hit.pc = pc;
         hit.count = 0;
     }
-    if (++hit.count < OPT_SITE_EXITS) return false;
+    return ++hit.count >= OPT_SITE_EXITS;
+}
+
+// Record every site `oc` exited from, so that the next build lowers each generically.
+fn void opt_ban_hits(Heap* h, OptCode* oc) {
     CompiledFunction* root = oc.f;
-    if (opt_site_banned(root, cf, pc)) return false;
-    OptBans* bans = root.opt_bans;
-    if (bans == null) {
-        bans = h.alloc_func(h.heap_udata, OptBans::size);
-        if (bans == null) return false;
-        mem::clear(bans, OptBans::size);
-        root.opt_bans = bans;
+    foreach (&x : oc.hits) {
+        if (x.count == 0 || opt_site_banned(root, x.cf, x.pc)) continue;
+        OptBans* bans = root.opt_bans;
+        if (bans == null) {
+            bans = h.alloc_func(h.heap_udata, OptBans::size);
+            if (bans == null) return;
+            mem::clear(bans, OptBans::size);
+            root.opt_bans = bans;
+        }
+        if (bans.count >= OPT_BAN_MAX) return;
+        bans.items[bans.count++] = { .cf = x.cf, .pc = x.pc };
+        h.opt.bans++;
     }
-    if (bans.count >= OPT_BAN_MAX) return false;
-    bans.items[bans.count++] = { .cf = cf, .pc = pc };
-    h.opt.bans++;
-    return true;
 }
 
 // opt_exit for an exit from inside an inlined body: count it and publish the frames of the calls
@@ -577,7 +582,7 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         ((hobject::ICEntry*)callee.ic_entries)[site.pc].feedback |= hobject::FB_OVF;
     }
     oc.exits++;
-    bool repeat = oc.f.opt_code == oc && callee.ic_entries != null && opt_note_site_exit(h, oc, callee, site.pc, reason);
+    bool repeat = oc.f.opt_code == oc && callee.ic_entries != null && opt_note_site_exit(oc, callee, site.pc, reason);
     if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
     return vm::jit_inline_materialize(ds, site);
 }
