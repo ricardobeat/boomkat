@@ -614,6 +614,7 @@ fn void Asm.emit_call_body(&self) {
     int ds = self.ds;
     int sp = SLJIT_MEM | reg_sp();
     Jumps slow;
+    Jumps done;
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
     slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
@@ -629,7 +630,23 @@ fn void Asm.emit_call_body(&self) {
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
     slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want));
     self.mov(R4, 0, m | R0, k.fn_builtin, SLJIT_MOV_S32);
-    slow.add(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0));
+    // A builtin callee of a plain CALL (CALL_METHOD in packed) completes here,
+    // through vm::jit_call_builtin_native, as the CALL thunk would complete it,
+    // and the site continues at its resume point without the thunk. Every other
+    // call shape, and every other callee, keeps the helper's slow path.
+    void* compiled = sljit_emit_cmp(c, SLJIT_SIG_LESS, R4, 0, SLJIT_IMM, 0);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R3, 0, SLJIT_IMM, CALL_METHOD);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    self.mov(R1, 0, sp, CALL_RESUME_OFF);
+    self.mov(R0, 0, ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
+    done.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    // The builtin ran: the value stack may have moved, so the window the site
+    // continues with is the one ds names now.
+    self.mov(self.regs, 0, m | ds, self.regs_off);
+    done.add(sljit_emit_jump(c, SLJIT_JUMP));
+    sljit_set_label(compiled, sljit_emit_label(c));
     self.mov(R4, 0, m | R0, l.fn_comp_func);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
     self.emit_note_callee();
@@ -678,14 +695,13 @@ fn void Asm.emit_call_body(&self) {
     self.mov(R1, 0, m | ds, k.ds_depth, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, 1);
     self.mov(m | ds, k.ds_depth, R1, 0, SLJIT_MOV_U32);
-    Jumps done;
     done.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED));
 
-    // The callee returned: the caller's activation is current again.
+    // The callee returned: both pop paths (the inline return and vm::jit_ret)
+    // already stored the caller's activation and ds.regs_base. Only the
+    // cached window register the site continues with needs refreshing.
     CompiledFunction* f = self.f;
-    self.mov(R0, 0, m | ds, l.ds_act);
-    self.mov(self.regs, 0, m | R0, k.act_bottom);
-    self.mov(m | ds, self.regs_off, self.regs, 0);
+    self.mov(self.regs, 0, m | ds, self.regs_off);
     self.mov(R3, 0, SLJIT_IMM, (long)(usz)f);
     self.mov(R0, 0, m | ds, k.ds_vm);
     self.mov(m | R0, k.vm_current_func, R3, 0);
@@ -699,11 +715,9 @@ fn void Asm.emit_call_body(&self) {
         self.mov(R4, 0, SLJIT_IMM, (long)(usz)f.code);
         self.emit_view(f, R3, R4);
     }
-    self.mov(R0, 0, m | ds, self.pc_off);
     self.mov(R1, 0, sp, CALL_RESUME_OFF);
-    self.mov(R2, 0, R0, 0);
     self.mov(R0, 0, SLJIT_IMM, 0);
-    done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, R1, 0));
+    done.add(sljit_emit_cmp(c, SLJIT_EQUAL, m | ds, self.pc_off, R1, 0));
     self.mov(R0, 0, SLJIT_IMM, BASELINE_REDISPATCH);
     done.add(sljit_emit_jump(c, SLJIT_JUMP));
     slow.bind(sljit_emit_label(c));

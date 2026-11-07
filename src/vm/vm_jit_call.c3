@@ -868,3 +868,23 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
     *status = NEXT;
     return true;
 }
+
+// A builtin CALL completed by a baseline native call site itself, without the
+// CALL thunk: the builtin runs as jit_call_builtin runs it, and the caller
+// continues natively at `next` when the call left it there. 0 continues at
+// `next`, JIT_CALL_SLOW declines before anything ran (the site takes its slow
+// path), and every other value is what the thunk would have returned.
+fn long jit_call_builtin_native(Dispatch* ds, Instruction* next) {
+    Activation* act = ds.act;
+    CompiledFunction* func = ds.vm.current_func;
+    uint count_before = ds.vm.activation_count;
+    ds.curr_pc = next;
+    long raw = JIT_NO_RAW;
+    OpStatus status;
+    if (!jit_call_builtin(ds, next, &status, &raw)) return JIT_CALL_SLOW;
+    jit::JitStats* st = &ds.heap.jit_stats;
+    st.calls_builtin++;
+    st.calls_builtin_direct++;
+    if (raw != JIT_NO_RAW) return raw;
+    return jit::jit_call_status(ds, next, act, func, count_before, status);
+}
