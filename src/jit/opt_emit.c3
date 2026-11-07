@@ -78,6 +78,9 @@ struct OptCg {
     List{OptTaken} taken;
     List{OptPoll} polls;
     bool forced_done;
+    // The native stack offset of the function's capture records (the running closure's), which
+    // every entry loads once (emit_cap_refs); -1 when no read of the function's own uses it.
+    long cap_slot;
 }
 
 fn void OptCg.init(&self) {
@@ -577,6 +580,7 @@ fn void OptCg.emit_osr_entries(&self) {
         OptBlock* blk = &self.g.blocks[pos];
         if (!blk.osr) continue;
         self.osr_labels[pos] = sljit_emit_label(c);
+        self.emit_cap_refs();
         for (uint k = 0; k < blk.osr_count; k++) {
             OptDirty d = self.g.dirty[(sz)(blk.osr_first + k)];
             OptNode* n = &self.g.nodes[d.node];
@@ -585,13 +589,9 @@ fn void OptCg.emit_osr_entries(&self) {
             self.a.call.len = 0;
             if (n.rep == OptRep.INT32) {
                 self.a.load(R0, d.reg);
-                self.a.guard_int(R0);
+                self.int32_from_r0(d.reg);
                 for (uint j = 0; j < self.a.call.len; j++) self.exit_clean(self.a.call.at[j], blk.pc, OptExit.NOT_INT32);
                 self.a.call.len = 0;
-                sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
-                sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
-                sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
-                self.exit_clean(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), blk.pc, OptExit.NOT_INT32);
                 sljit_emit_op1(c, SLJIT_MOV, n.reg, 0, R0, 0);
             } else {
                 self.a.load_number(n.reg, d.reg);
@@ -610,16 +610,47 @@ fn bool OptCg.force_here(&self, OptNode* n) {
     return self.oc != null && p.force_reason != 0 && !self.forced_done && n.pc >= p.force_at && (!p.force_inline || (n.fidx != 0 && self.g.fns[n.fidx].depth >= p.force_depth));
 }
 
+// The int32 value of the number in R0, into R0: a fastint in the int32 range, or a double that
+// holds an int32 other than -0 (an integer computed in doubles, which the baseline keeps boxed as
+// one). Any other value jumps through the assembler's slow path list. With `slot`, the window slot
+// the value was read from, a converted double is written back there as the fastint: the node that
+// reads the slot takes it for holding its value unboxed (a reload after a call, an exit's frame).
+// Uses R1, R3, FR0 and FR1.
+fn void OptCg.int32_from_r0(&self, uint slot = uint::max) {
+    void* c = self.a.c;
+    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
+    sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, R1, 0, FR0, 0);
+    sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, R1, 0);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R1, 0));
+    sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR1, 0, R1, 0);
+    self.a.call.add(sljit_emit_fcmp(c, SLJIT_UNORDERED_OR_NOT_EQUAL, FR0, 0, FR1, 0));
+    // -0 converts to 0 and back to +0, which compares equal.
+    void* nonzero = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_set_label(nonzero, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, R1, 0);
+    if (slot != uint::max) {
+        sljit_emit_op2(c, SLJIT_SHL, R3, 0, R1, 0, SLJIT_IMM, 16);
+        self.a.box_shifted(R3);
+        self.a.store(slot, R3, 0);
+    }
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(not_double, sljit_emit_label(c));
+    self.a.guard_int(R0);
+    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
+    sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0));
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
 fn void OptCg.emit_check_int(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     self.a.call.len = 0;
     self.a.load(R0, (uint)n.imm);
-    self.a.guard_int(R0);
+    self.int32_from_r0((uint)n.imm);
     self.exit_calls(i, OptExit.NOT_INT32);
-    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
-    sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
-    sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), i, OptExit.NOT_INT32);
     if (n.reg >= 0) sljit_emit_op1(c, SLJIT_MOV, n.reg, 0, R0, 0);
 }
 
@@ -651,12 +682,8 @@ fn void OptCg.number_from_r0(&self, uint i, int fr) {
 fn void OptCg.def_from_r0(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     if (n.rep == OptRep.INT32) {
-        self.a.guard_int(R0);
+        self.int32_from_r0();
         self.exit_calls(i, OptExit.NOT_INT32);
-        sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
-        sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
-        sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
-        self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, R0, 0), i, OptExit.NOT_INT32);
         self.def_int(i, R0);
     } else {
         int dst = self.flt_dst(i, FR0);
@@ -710,6 +737,13 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
         // A nested call's closure may be held in an OBJECT node (b) instead.
         int closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
         self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count, closure);
+    } else if (self.cap_slot >= 0 && index < self.a.f.capture_count) {
+        // The records the entry loaded; zero when the closure was not one the check accepts.
+        void* c = self.a.c;
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | reg_sp(), self.cap_slot);
+        self.a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+        if (index != 0) sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, (long)index * hobject::CaptureRef::size);
+        self.a.emit_cap_record_value();
     } else {
         self.a.emit_get_cap_value(index);
     }
@@ -722,6 +756,29 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
     } else {
         self.def_from_r0(i, n);
     }
+}
+
+// Load the running closure's capture records into the cap_slot, as the capture record subroutine
+// finds them for every read (Asm.emit_capture_ref_body): zero unless the frame's function value is
+// a closure of the function being run that has records. The count is the function's own, which
+// the reads check when they are compiled. Uses R0, R1 and R3.
+fn void OptCg.emit_cap_refs(&self) {
+    if (self.cap_slot < 0) return;
+    void* c = self.a.c;
+    Layout* l = self.a.lay;
+    Jumps fail;
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.a.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.fn_comp_func);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R1, l.act_func));
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    fail.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 0);
+    sljit_set_label(done, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), self.cap_slot, R0, 0);
 }
 
 // INT32 node `n` boxed as a fastint into R3.
@@ -767,6 +824,12 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         a.load(R0, a.w.b);
     }
     a.unbox_object(R1, rr);
+    long flags;
+    int k = self.typed_kind(0, &flags);
+    if (k >= 0) {
+        self.emit_typed_load(i, n, TYPED_KINDS[k], flags);
+        return;
+    }
     self.box_index(n.a);
     void* other = a.array_or_typed(0);
     a.array_slot();
@@ -788,6 +851,158 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         return;
     }
     self.def_from_r0(i, n);
+}
+
+// The index into TYPED_KINDS of the typed array the element access being emitted has met, by the
+// class flags its baseline code recorded (Asm.note_elem_class) under array_or_typed's mask with
+// `extra`; -1 for none (an array, a proxy, Uint8Clamped stores, or no record). The flags the
+// specialized access compares against go to `flags`.
+fn int OptCg.typed_kind(&self, long extra, long* flags) {
+$if features::BUFFERS:
+    Asm* a = self.a;
+    if (a.f.ic_entries == null) return -1;
+    long recorded = (long)((hobject::ICEntry*)a.f.ic_entries)[a.next - 1].fwd_callee;
+    Layout* l = a.lay;
+    long proxy = 0;
+    $if features::PROXY:
+        proxy = l.proxy_mask;
+    $endif
+    if (recorded == 0 || (recorded & proxy) != 0 || (recorded & ~(l.class_mask | extra | proxy)) != 0) return -1;
+    long cls = (recorded & l.class_mask) >> 16;
+    foreach (k, kind : TYPED_KINDS) {
+        if ((long)kind.cls.ordinal != cls) continue;
+        if (extra != 0 && kind.cls == hobject::ObjClass.UINT8CLAMPEDARRAY) return -1;
+        *flags = recorded;
+        return (int)k;
+    }
+    return -1;
+$else
+    return -1;
+$endif
+}
+
+// The address of element `idx` (an INT32 node) of the object in R1, which must be a typed array of
+// class flags `flags` (masked as typed_kind's) viewing a fixed-length, attached buffer, and the
+// index below its length, as Asm.emit_typed_body checks: the base in R4 and the index register,
+// returned (`put`: the buffer must be mutable too). Anything else jumps through the slow path
+// list. Uses R2 to R4.
+fn int OptCg.typed_elem_addr(&self, uint idx, TypedKind kind, long flags, long extra, bool put) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    long mask = l.class_mask | extra;
+    $if features::PROXY:
+        mask |= l.proxy_mask;
+    $endif
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, mask);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, flags));
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R1, l.view_buffer);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | R4, l.ab_resizable);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    if (put) {
+        sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | R4, l.ab_immutable);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R4, l.ab_data);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.view_offset);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.view_length);
+    if (kind.shift != 0) sljit_emit_op2(c, SLJIT_LSHR, R2, 0, R2, 0, SLJIT_IMM, kind.shift);
+    int x = self.int_reg(idx, R3);
+    // Unsigned, so a negative index fails too.
+    a.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, x, 0, R2, 0));
+    return x;
+}
+
+// LOAD_ELEM of the typed array kind its site has met (OptCg.typed_kind): the element read in
+// place, without the subroutine's dispatch over kinds; an int32 or double node takes it unboxed.
+fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, long flags) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    int x = self.typed_elem_addr(n.a, kind, flags, 0, false);
+    int elem = mem_index(R4, x);
+    bool is_float = kind.cls == hobject::ObjClass.FLOAT32ARRAY || kind.cls == hobject::ObjClass.FLOAT64ARRAY;
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    if (n.rep == OptRep.INT32 && !is_float && kind.cls != hobject::ObjClass.UINT32ARRAY) {
+        sljit_emit_op1(c, kind.mov, R0, 0, elem, kind.shift);
+        self.def_int(i, R0);
+        return;
+    }
+    if (n.rep == OptRep.FLOAT64 && is_float) {
+        int dst = self.flt_dst(i, FR0);
+        bool f32 = kind.cls == hobject::ObjClass.FLOAT32ARRAY;
+        sljit_emit_fop1(c, SLJIT_MOV_F64 | (f32 ? SLJIT_32 : 0), dst, 0, elem, kind.shift);
+        if (f32) sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32, dst, 0, dst, 0);
+        self.def_flt(i, dst);
+        return;
+    }
+    // The element boxed as ta_load_number boxes it, then as any loaded value.
+    if (kind.cls == hobject::ObjClass.FLOAT32ARRAY) {
+        sljit_emit_fop1(c, SLJIT_MOV_F64 | SLJIT_32, FR0, 0, elem, kind.shift);
+        sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32, FR0, 0, FR0, 0);
+        sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+    } else {
+        sljit_emit_op1(c, kind.mov, R0, 0, elem, kind.shift);
+    }
+    if (is_float) {
+        // TVal.set_number: a NaN whose bits would read as a tag.
+        void* plain = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, CANONICAL_NAN);
+        sljit_set_label(plain, sljit_emit_label(c));
+    } else {
+        void* boxed = null;
+        if (kind.cls == hobject::ObjClass.UINT32ARRAY) {
+            // 2^31 and above reads as a double.
+            void* small = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, 1L << 31);
+            sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR0, 0, R0, 0);
+            sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+            boxed = sljit_emit_jump(c, SLJIT_JUMP);
+            sljit_set_label(small, sljit_emit_label(c));
+        }
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+        if (boxed != null) sljit_set_label(boxed, sljit_emit_label(c));
+    }
+    if (n.rep == OptRep.NONE) {
+        // A number, which needs no publication.
+        a.store(a.w.a, R0);
+        return;
+    }
+    self.def_from_r0(i, n);
+}
+
+// STORE_ELEM of a numeric node into the typed array kind its site has met: an int32 node stores
+// its low bits to an integer kind, as ta_store_int; a float kind takes the value as a double
+// (narrowed for Float32), as ta_store_scalar.
+fn void OptCg.emit_typed_store(&self, uint i, OptNode* n, TypedKind kind, long flags) {
+    void* c = self.a.c;
+    int x = self.typed_elem_addr(n.a, kind, flags, self.a.lay.indexed_named_mask, true);
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    int elem = mem_index(R4, x);
+    OptNode* v = &self.g.nodes[n.b];
+    bool is_float = kind.cls == hobject::ObjClass.FLOAT32ARRAY || kind.cls == hobject::ObjClass.FLOAT64ARRAY;
+    if (!is_float) {
+        int r = self.int_reg(n.b, R0);
+        sljit_emit_op1(c, kind.mov, elem, kind.shift, r, 0);
+        return;
+    }
+    int f32 = kind.cls == hobject::ObjClass.FLOAT32ARRAY ? SLJIT_32 : 0;
+    int fr;
+    if (v.rep == OptRep.INT32) {
+        int r = self.int_reg(n.b, R0);
+        sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW | f32, FR0, 0, r, 0);
+        fr = FR0;
+    } else {
+        fr = self.flt_reg(n.b, FR0);
+        if (f32 != 0) {
+            sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32 | SLJIT_32, FR0, 0, fr, 0);
+            fr = FR0;
+        }
+    }
+    sljit_emit_fop1(c, SLJIT_MOV_F64 | f32, elem, kind.shift, fr, 0);
 }
 
 // The shape of the object in `obj` against the id its cell holds, which the heap clears when the
@@ -1072,6 +1287,13 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         a.load(R0, a.w.a);
     }
     a.unbox_object(R1, rr);
+    long flags;
+    int k = self.typed_kind(a.lay.indexed_named_mask, &flags);
+    // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
+    if (k >= 0 && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT32ARRAY || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT64ARRAY)) {
+        self.emit_typed_store(i, n, TYPED_KINDS[k], flags);
+        return;
+    }
     self.box_index(n.a);
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
     a.array_slot();
@@ -1699,6 +1921,12 @@ fn void OptCg.emit_addsub(&self, uint i, OptNode* n) {
     long yw;
     self.int_src(n.b, R1, &y, &yw);
     sljit_emit_op2(c, n.op == OptOp.ADD_I32 ? SLJIT_ADD : SLJIT_SUB, R2, 0, x, 0, y, yw);
+    if (n.cc != 0) {
+        // Only ToInt32 reads it (OptBuild.wraps): the wrapped sum.
+        sljit_emit_op1(c, SLJIT_MOV_S32, R2, 0, R2, 0);
+        self.def_int(i, R2);
+        return;
+    }
     sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, R2, 0);
     self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, R2, 0), i, OptExit.OVERFLOW);
     self.def_int(i, R2);
@@ -1826,9 +2054,13 @@ fn void OptCg.emit_bitop(&self, uint i, OptNode* n) {
             if (y == SLJIT_IMM) yw &= 0x1F;
             int sop = n.op == OptOp.SHL_I32 ? SLJIT_MSHL : (n.op == OptOp.SAR_I32 ? SLJIT_MASHR : SLJIT_MLSHR);
             sljit_emit_op2(c, sop | SLJIT_32, dst, 0, x, 0, y, yw);
-            if (n.op == OptOp.SHR_I32) {
+            if (n.op == OptOp.SHR_I32 && n.cc == 2) {
+                // Read only by ToInt32 (OptBuild.bitop).
+                sljit_emit_op1(c, SLJIT_MOV_S32, dst, 0, dst, 0);
+            } else if (n.op == OptOp.SHR_I32) {
+                // cc 1: the zero-extended uint32, which only its I32_TO_F64 reads.
                 sljit_emit_op1(c, SLJIT_MOV_U32, dst, 0, dst, 0);
-                self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER, dst, 0, SLJIT_IMM, 0x7FFFFFFF), i, OptExit.OVERFLOW);
+                if (n.cc == 0) self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER, dst, 0, SLJIT_IMM, 0x7FFFFFFF), i, OptExit.OVERFLOW);
             } else {
                 sljit_emit_op1(c, SLJIT_MOV_S32, dst, 0, dst, 0);
             }
@@ -2096,7 +2328,13 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     Asm a = asm_new(c, h, f);
     defer a.release();
     int table_reg = reg_s(2);
-    void* dispatch = a.emit_dispatch(table_reg, bc, count, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count));
+    // A slot past the spill area for the capture records, when a read of the function's own uses them.
+    long cap_slot = -1;
+    foreach (&nd : g.nodes) {
+        if (nd.op == OptOp.LOAD_CAP && nd.fidx == 0 && f.capture_count != 0) cap_slot = CALL_FRAME_BYTES + 8 * (long)(pools.int_count + pools.flt_count);
+    }
+    int locals = CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count) + (cap_slot >= 0 ? 8 : 0);
+    void* dispatch = a.emit_dispatch(table_reg, bc, count, pools.scratches | (pools.fscratches << 8), locals);
     a.emit_nonzero_exit(dispatch);
     // An entry that is not an entry of the optimized code continues in the baseline code.
     void* to_base = sljit_emit_label(c);
@@ -2111,7 +2349,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
         oc.cells = h.alloc_func(h.heap_udata, fields * uint::size);
         if (oc.cells == null) return null;
     }
-    OptCg cg = { .a = &a, .h = h, .g = g, .oc = oc, .pools = pools };
+    OptCg cg = { .a = &a, .h = h, .g = g, .oc = oc, .pools = pools, .cap_slot = cap_slot };
     cg.init();
     defer cg.free();
     uint blocks = (uint)g.blocks.len();
@@ -2120,6 +2358,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     for (uint pos = 0; pos < blocks; pos++) {
         OptBlock* blk = &g.blocks[pos];
         cg.labels[pos] = sljit_emit_label(c);
+        if (pos == 0) cg.emit_cap_refs();
         for (uint i = blk.first; i < blk.end; i++) {
             cg.emit_node(i, pos);
             bc.insns++;
@@ -2139,7 +2378,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     void* call_entry = null;
     if (call_entry_eligible(f) && !g.blocks[0].osr) {
         a.labels[0] = cg.labels[0];
-        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count), touch: true);
+        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), locals, touch: true);
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;

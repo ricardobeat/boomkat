@@ -104,8 +104,10 @@ fn void OptGraph.compute_uses(&self) {
     }
 }
 
-// Assign machine registers. False when a phi finds no register to take.
-fn bool OptGraph.allocate(&self, OptPools* pools) {
+// Assign machine registers. False when a phi finds no register to take; with `spill`, every such
+// phi's join is added to it, for a rebuild that keeps those values in the window.
+fn bool OptGraph.allocate(&self, OptPools* pools, List{OptJoin}* spill = null) {
+    bool failed = false;
     self.compute_uses();
     uint count = (uint)self.nodes.len();
     List{uint} active;
@@ -153,12 +155,22 @@ fn bool OptGraph.allocate(&self, OptPools* pools) {
             n.reg = -1;
             continue;
         }
-        if (victim == active.len()) return false;
+        if (victim == active.len()) {
+            if (spill == null || n.op != OptOp.PHI) return false;
+            foreach (pos, &blk : self.blocks) {
+                if (i < blk.first || i >= blk.end) continue;
+                if (!opt_join_windowed(spill, (uint)pos, (uint)n.imm)) spill.push({ .pos = (uint)pos, .reg = (uint)n.imm });
+                break;
+            }
+            failed = true;
+            n.reg = -1;
+            continue;
+        }
         OptNode* v = &self.nodes[active[victim]];
         n.reg = v.reg;
         v.reg = -1;
         active.remove_at(victim);
         active.push(i);
     }
-    return true;
+    return !failed;
 }

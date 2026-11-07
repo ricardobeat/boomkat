@@ -232,6 +232,9 @@ struct OptBuild {
     List{OptOverride} overrides;
     OptRefuse refused;
     Opcode refused_op;
+    // Joins whose phi found no machine register in an earlier build (OptGraph.allocate): their
+    // register's merged value stays in its window slot.
+    List{OptJoin}* windowed;
     // The OptGraph.fns entry of the instruction being lowered, which insn, pc and next_pc index.
     uint cur_fn;
     // The instruction being lowered.
@@ -515,7 +518,19 @@ fn uint OptBuild.intersect(&self, uint a, uint b) {
 // reason, for a function the tier does not handle.
 fn bool OptBuild.analyze(&self) {
     CompiledFunction* f = self.f;
-    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h)) return self.refuse(OptRefuse.CFG);
+    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, resolve: true)) {
+        // Name the first instruction the graph decoder does not take (--opt-log).
+        for (uint pc = 0; pc < f.code_count;) {
+            DecodedBytecode view = bytecode::decode_bytecode(f.code, f.code_count, pc);
+            if (!view.valid) break;
+            if (!compiler::bytecode_cfg_control_supported(view.insn.op) && view.insn.op != Opcode.RESOLVEVAR && view.insn.op != Opcode.THROW_UNRESOLVED) {
+                self.refused_op = view.insn.op;
+                break;
+            }
+            pc = view.next_pc;
+        }
+        return self.refuse(OptRefuse.CFG);
+    }
     DecodedCfg* cfg = &self.cfg;
     uint count = cfg.instruction_count;
     self.caller_regs = f.num_regs;
@@ -822,14 +837,66 @@ fn uint OptBuild.imm_operand(&self, long v, OptRep rep) {
 // `A = B op C` (or op imm) in the rep the feedback and operands select.
 fn bool OptBuild.arith(&self, OptOp int_op, OptOp float_op, uint rb, uint rc, bool imm, long imm_value) {
     OptRep rep = self.arith_rep(rb, imm ? NO_NODE : rc);
+    // `(a + b) | 0`: an int32 sum only ToInt32 reads is the wrapped 32-bit sum, overflow or not.
+    bool wrap = self.wraps(rb, imm ? NO_NODE : rc);
+    if (wrap) rep = OptRep.INT32;
     if (rep == OptRep.NONE) return self.generic();
     uint x = self.operand(rb, rep);
     uint y = imm ? self.imm_operand(imm_value, rep) : self.operand(rc, rep);
     if (x == NO_NODE || y == NO_NODE) return self.generic();
     uint n = self.add(rep == OptRep.INT32 ? int_op : float_op, rep, x, y);
-    if (rep == OptRep.INT32) self.snapshot(n);
+    if (wrap) {
+        self.g.nodes[n].cc = 1;
+    } else if (rep == OptRep.INT32) {
+        self.snapshot(n);
+    }
     self.set(self.w.a, n);
     return true;
+}
+
+// Whether the ADD, SUB, ADDI or SUBI being lowered may wrap: its operands are int32 (an operand in
+// the window is guarded as one before it) and its result reaches only ToInt32 (truncated_use).
+fn bool OptBuild.wraps(&self, uint rb, uint rc) {
+    Opcode op = self.w.op;
+    if (op != Opcode.ADD && op != Opcode.SUB && op != Opcode.ADDI && op != Opcode.SUBI) return false;
+    if (self.cur_fn != 0 || self.wide || (self.feedback() & (hobject::FB_DBL | hobject::FB_STR | hobject::FB_OTHER)) != 0) return false;
+    if (self.state_float(rb) || (rc != NO_NODE && self.state_float(rc))) return false;
+    if (self.is_object(rb) || (rc != NO_NODE && self.is_object(rc))) return false;
+    return self.truncated_use(self.insn, self.w.a, 3);
+}
+
+// Whether the value instruction `insn` of the function's own body writes to `reg` is read only by
+// ToInt32, so that the sum it holds may be the wrapped one: the next instruction reads it as a
+// bitwise operand, or (at most `depth` deep) as an operand of an add or subtract of int32 values
+// whose result is read only so in turn, and the register is dead after it. The exact sums of a few
+// int32 values are exact doubles, so ToInt32 of the end result is the same either way; an exit
+// between them resumes with the wrapped value, which the same argument covers, since no
+// instruction of the chain can exit on it (its other operands are int32 nodes already).
+fn bool OptBuild.truncated_use(&self, uint insn, uint reg, uint depth) {
+    DecodedCfg* cfg = &self.cfg;
+    if (reg >= self.nregs || insn + 1 >= cfg.instruction_count) return false;
+    DecodedCfgNode* next = &cfg.nodes[insn + 1];
+    if (next.view.wide) return false;
+    DecodedInsn w = next.view.insn;
+    bool dead_after = w.a == reg || !self.live_out[insn + 1].test(reg);
+    switch (w.op) {
+        case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
+            return (w.b == reg || w.c == reg) && (dead_after || w.a == reg);
+        case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
+            return w.b == reg && dead_after;
+        case ADD: case SUB: case ADDI: case SUBI:
+            if (depth == 0 || !dead_after || w.a >= self.nregs) return false;
+            bool imm = w.op == Opcode.ADDI || w.op == Opcode.SUBI;
+            if (w.b != reg && (imm || w.c != reg)) return false;
+            if (self.f.ic_entries != null && (((hobject::ICEntry*)self.f.ic_entries)[next.view.payload_pc].feedback & (hobject::FB_DBL | hobject::FB_STR | hobject::FB_OTHER)) != 0) return false;
+            if (!imm) {
+                uint other = w.b == reg ? w.c : w.b;
+                if (other != reg && (other >= self.nregs || other == self.w.a || self.cur[other].node == NO_NODE || self.rep_of(self.cur[other].node) != OptRep.INT32)) return false;
+            }
+            return self.truncated_use(insn + 1, w.a, depth - 1);
+        default:
+            return false;
+    }
 }
 
 // The bitwise operators: INT32 operands, a double taken through ToInt32 when
@@ -842,7 +909,21 @@ fn bool OptBuild.bitop(&self, OptOp op, uint rb, uint rc, bool imm, long imm_val
     uint y = imm ? self.const_i32(imm_value) : self.bit_operand(rc, numbers);
     if (x == NO_NODE || y == NO_NODE) return self.generic();
     uint n = self.add(op, OptRep.INT32, x, y);
-    if (op == OptOp.SHR_I32) self.snapshot(n);
+    if (op == OptOp.SHR_I32) {
+        if (self.cur_fn == 0 && !self.wide && self.truncated_use(self.insn, self.w.a, 3)) {
+            // Only ToInt32 reads it: the uint32 result as the int32 with its bits.
+            self.g.nodes[n].cc = 2;
+        } else if ((fb & hobject::FB_OVF) != 0) {
+            // A result of 2^31 or above has exited: the uint32 result as a double.
+            self.g.nodes[n].cc = 1;
+            // Spilled, it is stored to the slot its conversion then overwrites.
+            self.g.nodes[n].home = self.w.a;
+            self.set(self.w.a, self.add(OptOp.I32_TO_F64, OptRep.FLOAT64, n));
+            return true;
+        } else {
+            self.snapshot(n);
+        }
+    }
     self.set(self.w.a, n);
     return true;
 }
@@ -875,7 +956,11 @@ fn void OptBuild.ask_load(&self, uint pc, uint reg, OptRep want) {
 fn uint OptBuild.typed_load(&self, OptOp op, uint a) {
     foreach (c : self.load_reps) {
         if (c.block != self.pckey()) continue;
-        uint n = self.add(op, c.rep, a, NO_NODE, (long)self.pc);
+        // A load that has exited with a value an int32 node cannot hold (opt_note_operands) reads
+        // a double; its int32 uses convert it, or (as an index) leave the access to the baseline.
+        OptRep rep = c.rep;
+        if (rep == OptRep.INT32 && (self.feedback() & hobject::FB_DBL) != 0) rep = OptRep.FLOAT64;
+        uint n = self.add(op, rep, a, NO_NODE, (long)self.pc);
         self.snapshot(n);
         self.set(self.w.a, n);
         return n;
@@ -883,8 +968,8 @@ fn uint OptBuild.typed_load(&self, OptOp op, uint a) {
     return NO_NODE;
 }
 
-// GETCAP: a typed load (a number, or an OBJECT) when a use asked for one; else GENERIC in the
-// function's own body, and in an inlined body the value read into the window. A value of any kind
+// GETCAP: a typed load (a number, or an OBJECT) when a use asked for one; else the value read into
+// the window. In an inlined body a value of any kind
 // in a slot beyond the caller's frame would be out of the collector's sight.
 fn bool OptBuild.get_cap(&self) {
     // The read takes the callee's closure from its window slot, or from the OBJECT node a nested
@@ -896,13 +981,15 @@ fn bool OptBuild.get_cap(&self) {
         self.g.nodes[t].b = closure;
         return true;
     }
-    if (self.cur_fn == 0) {
+    uint ra = self.w.a;
+    if (ra >= self.nregs) return self.cur_fn == 0 ? self.generic() : false;
+    // A site that has left through the slow path repeatedly (an uninitialized binding) runs the
+    // baseline's read.
+    if (self.cur_fn == 0 && opt_site_banned(self.f, self.f, self.next_pc - 1)) {
         if (!self.generic()) return false;
-        if (self.w.a < self.nregs) self.load_def[self.w.a] = self.pckey();
+        self.load_def[ra] = self.pckey();
         return true;
     }
-    uint ra = self.w.a;
-    if (ra >= self.nregs) return false;
     uint n = self.add(OptOp.LOAD_CAP, OptRep.NONE, NO_NODE, closure, (long)self.pc);
     self.snapshot(n);
     self.kill(ra);
@@ -911,9 +998,9 @@ fn bool OptBuild.get_cap(&self) {
     return true;
 }
 
-// GETGLOBAL in an inlined body: a typed load when a numeric use asked for one, else the value read
-// into the window; the cache not holding leaves for the callee's baseline code. A value of any kind
-// in a slot beyond the caller's frame would be out of the collector's sight.
+// GETGLOBAL: a typed load when a numeric use asked for one, else the value read into the window;
+// the cache not holding leaves for the baseline code. In an inlined body a value of any kind in a
+// slot beyond the caller's frame would be out of the collector's sight.
 fn bool OptBuild.get_global(&self) {
     return self.get_variable(false);
 }
@@ -1256,6 +1343,8 @@ fn bool OptBuild.elem_receiver(&self, uint r, uint* node) {
 // GETPROP of an element at an integer index, from an object in the window.
 fn bool OptBuild.get_elem(&self) {
     uint rnode;
+    // A site that has exited repeatedly (a hole, an index past the end) runs the baseline's access.
+    if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return self.generic();
     if (!self.elem_receiver(self.w.b, &rnode) || !self.index_ok(self.w.c)) return self.generic();
     bool asked = false;
     foreach (c : self.load_reps) asked |= c.block == self.pckey();
@@ -1293,6 +1382,7 @@ fn bool OptBuild.get_elem(&self) {
 fn bool OptBuild.put_elem(&self) {
     uint rv = self.w.c;
     uint rnode;
+    if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return self.generic();
     if (rv >= self.nregs || !self.index_ok(self.w.b)) return self.generic();
     bool numeric = self.cur[rv].node != NO_NODE && !self.is_object(rv);
     if (!numeric && (self.cur_fn == 0 || !self.in_window(rv))) return self.generic();
@@ -1434,7 +1524,7 @@ fn bool OptBuild.generic(&self) {
         def = NO_NODE;
         switch (op) {
             case NEWOBJ: case NEWARR: case NEWARR_CONST: case CLOSURE: case NEWREGEXP:
-            case NEWOBJ_SHAPE: case NEWTARGET: case DELPROP: case GETPROP_SUPER: case TOPROPKEY:
+            case NEWOBJ_SHAPE: case NEWTARGET: case DELPROP: case GETPROP_SUPER: case TOPROPKEY: case RESOLVEVAR:
                 extra_kill = self.w.a;
             case GETPROP_CACHE:
                 extra_kill = self.w.a;
@@ -1448,7 +1538,7 @@ fn bool OptBuild.generic(&self) {
             case PUTVAR_SNAP: case PUTGLOBAL: case PUTCAP: case PUTCAP_SNAP: case PUTLEX: case PUTLEX_C:
             case RET: case RETUNDEF: case SETALEN: case INITPROP: case INITELEM: case CHKOBJ: case REQUIRE_OBJ:
             case NOP: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL: case CHKGLOBALVAR:
-            case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW:
+            case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW: case THROW_UNRESOLVED:
                 break;
             default:
                 return self.refuse_op(op);
@@ -2760,7 +2850,8 @@ fn bool OptBuild.lower_op(&self) {
         case GETCAP:
             return self.get_cap();
         case GETGLOBAL:
-            if (self.cur_fn == 0) return self.generic();
+            // A read that has left through the slow path repeatedly runs the baseline's.
+            if (self.cur_fn == 0 && opt_site_banned(self.f, self.f, self.next_pc - 1)) return self.generic();
             return self.get_global();
         case GETVAR:
             if (self.cur_fn == 0) return self.generic();
@@ -2898,6 +2989,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
             int ov = self.override_of(pos, r);
             if (ov == (int)OptRep.NONE.ordinal + 1) continue;
             if (ov == (int)OptRep.FLOAT64.ordinal + 1) rep = OptRep.FLOAT64;
+            if (self.windowed != null && opt_join_windowed(self.windowed, pos, r)) continue;
             uint phi = self.add(OptOp.PHI, rep, NO_NODE, NO_NODE, (long)r);
             self.g.nodes[phi].home = r;
             self.cur[r] = { .node = phi, .dirty = true };
@@ -3077,19 +3169,21 @@ fn bool OptBuild.compute_edges(&self) {
 
 // Build the graph of `f` into `g`. Returns NONE on success, else why not. A flat inline site whose
 // body cannot be lowered is left as a call and the graph is built again.
-fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline) {
+// The joins in `windowed` keep the value of their register in its window slot instead of a phi.
+fn OptRefuse opt_build_graph(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, List{OptJoin}* windowed = null) {
     uint[16] exclude;
     uint excluded = 0;
     while (true) {
-        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded);
+        OptRefuse why = opt_build_once(h, f, g, b, refused_op, no_inline, &exclude[0], excluded, windowed);
         if (why == OptRefuse.NONE || !b.flat_fail || excluded == exclude.len) return why;
         exclude[excluded++] = b.flat_fail_pc;
         b.free();
     }
 }
 
-fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count) {
+fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild* b, Opcode* refused_op, bool no_inline, uint* exclude, uint exclude_count, List{OptJoin}* windowed) {
     *b = {};
+    b.windowed = windowed;
     b.exclude = exclude;
     b.exclude_count = exclude_count;
     b.no_inline = no_inline;
@@ -3101,7 +3195,10 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.overrides.init(mem);
     b.load_reps.init(mem);
     b.sites.init(mem);
-    if (!b.analyze()) return b.refused;
+    if (!b.analyze()) {
+        *refused_op = b.refused_op;
+        return b.refused;
+    }
     uint n = b.nregs;
     b.cur = mem::new_array(OptRegState, n);
     b.load_def = mem::new_array(uint, n);

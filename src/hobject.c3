@@ -3658,7 +3658,8 @@ struct ICEntry {
     uint absent_next_shape;
     // A call instruction's: the func_index plus one of the function its callee forwarded the
     // call to with `f.apply(x, arguments)` when called from here (ic_note_forward), zero for
-    // none. (It fills the struct's tail padding.)
+    // none. An element GETPROP or PUTPROP's: the class flags of the last receiver its baseline
+    // code took to the typed-array path (Asm.note_elem_class). (It fills the struct's tail padding.)
     uint fwd_callee;
 }
 
