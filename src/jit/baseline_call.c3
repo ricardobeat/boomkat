@@ -180,6 +180,11 @@ fn CallLayout* call_layout() {
     w.callable = true;
     w.obj_class = hobject::ObjClass.FUNCTION;
     l.fn_want = (long)(uint)w;
+    // BaselineCode.view's order.
+    assert(l.ds_ic_base == l.ds_code_base + 8 && l.ds_var_ic_base == l.ds_code_base + 16
+           && l.ds_ic_bias == l.ds_code_base + 24 && l.ds_var_ic_bias == l.ds_code_base + 32
+           && l.ds_code_end == l.ds_code_base + 40 && l.ds_constants == l.ds_code_base + 48
+           && l.ds_code_count == l.ds_code_base + 56 && l.ds_nregs == l.ds_code_base + 60);
     call_layout_ready = true;
     return l;
 }
@@ -352,9 +357,11 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     self.mov(R1, 0, m | ds, k.ds_regs_base_ptr);
     self.mov(m | R1, 0, bottom, 0);
     self.mov(m | vm, k.vm_current_func, fr, 0);
-    self.mov(m | ds, k.ds_ic_bias, SLJIT_IMM, (long)((usz)f.ic_entries - (usz)f.code * vm::TH_IC_SCALE));
-    self.mov(m | ds, k.ds_var_ic_bias, SLJIT_IMM, (long)((usz)f.var_ic_entries - (usz)f.code * vm::TH_VAR_IC_SCALE));
-    self.emit_view(f, fr, code);
+    if (!self.emit_view_block(R4, R1, R2)) {
+        self.mov(m | ds, k.ds_ic_bias, SLJIT_IMM, (long)((usz)f.ic_entries - (usz)f.code * vm::TH_IC_SCALE));
+        self.mov(m | ds, k.ds_var_ic_bias, SLJIT_IMM, (long)((usz)f.var_ic_entries - (usz)f.code * vm::TH_VAR_IC_SCALE));
+        self.emit_view(f, fr, code);
+    }
     self.mov(m | ds, self.pc_off, code, 0);
     // The body's saved registers, as the main entry sets them.
     self.mov(self.regs, 0, bottom, 0);
@@ -393,6 +400,20 @@ fn void Asm.emit_view(&self, CompiledFunction* f, int fr, int code) {
     self.mov(m | ds, k.ds_var_ic_base, R1, 0);
     self.mov(R1, 0, SLJIT_IMM, f.num_regs);
     self.mov(m | ds, k.ds_nregs, R1, 0, SLJIT_MOV_U32);
+}
+
+// Copy the code allocation's view block (BaselineCode.view) into ds's view
+// with four pair moves, through `base` and the pair `r1`, `r2`. False, with
+// nothing emitted, when the allocation has no block for self.f.
+fn bool Asm.emit_view_block(&self, int base, int r1, int r2) {
+    if (self.view == null || (*self.view)[0] != (usz)self.f.code) return false;
+    long off = call_layout().ds_code_base;
+    self.mov(base, 0, SLJIT_IMM, (long)(usz)self.view);
+    for (long i = 0; i < 8; i += 2) {
+        sljit_emit_mem(self.c, SLJIT_MOV | SLJIT_MEM_LOAD, r1 | (r2 << 8), SLJIT_MEM | base, i * 8);
+        sljit_emit_mem(self.c, SLJIT_MOV | SLJIT_MEM_STORE, r1 | (r2 << 8), SLJIT_MEM | self.ds, off + i * 8);
+    }
+    return true;
 }
 
 // A CALL, CALL_UNDEF_THIS or CALL_GLOBAL called directly through its callee's
@@ -624,8 +645,10 @@ fn void Asm.emit_call_body(&self) {
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_enter_frame_realm);
     self.mov(R3, 0, SLJIT_IMM, (long)(usz)f);
     sljit_set_label(same_realm, sljit_emit_label(c));
-    self.mov(R4, 0, SLJIT_IMM, (long)(usz)f.code);
-    self.emit_view(f, R3, R4);
+    if (!self.emit_view_block(R4, R1, R2)) {
+        self.mov(R4, 0, SLJIT_IMM, (long)(usz)f.code);
+        self.emit_view(f, R3, R4);
+    }
     self.mov(R0, 0, m | ds, self.pc_off);
     self.mov(R1, 0, sp, CALL_RESUME_OFF);
     self.mov(R2, 0, R0, 0);

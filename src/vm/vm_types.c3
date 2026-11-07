@@ -482,6 +482,20 @@ struct ColdCtx {
     Instruction* code_base;
     hobject::ICEntry* ic_base;
     hobject::VarICEntry* var_ic_base;
+    // ic_base and var_ic_base rebased against code_base, so that adding the
+    // scaled address of an instruction gives its entry with no subtraction
+    // (see th_bind_ic_bias). Only the threaded handlers read them, and only
+    // for a function that has both arrays; the burst entry and every threaded
+    // frame switch set them.
+    usz ic_bias;
+    usz var_ic_bias;
+    // Dispatch's view of the function's code and constants. From code_base
+    // to nregs the fields are one block, which native calls copy whole
+    // (jit::BaselineCode.view).
+    Instruction* code_end;
+    TVal* constants;
+    uint code_count;
+    uint nregs;
     // Vm.run's Dispatch, for the outermost return's needs_restart.
     void* dispatch_ptr;
     // Vm.run's register-base slot. A threaded return changes the active
@@ -493,13 +507,6 @@ struct ColdCtx {
     // the native stack without bound; th_call_gate hands every
     // TH_CALL_BURST-th call to the switch, whose loop restarts the burst.
     uint call_burst;
-    // ic_base and var_ic_base rebased against code_base, so that adding the
-    // scaled address of an instruction gives its entry with no subtraction
-    // (see th_bind_ic_bias). Only the threaded handlers read them, and only
-    // for a function that has both arrays; the burst entry and every threaded
-    // frame switch set them.
-    usz ic_bias;
-    usz var_ic_bias;
     // The running closure's capture records, filled by the first GETCAP of
     // a frame and cleared by every threaded frame switch and burst entry.
     hobject::CaptureRef* capture_refs;
@@ -508,10 +515,6 @@ struct ColdCtx {
 
 struct Dispatch {
     inline ColdCtx cold;
-    uint code_count;
-    Instruction* code_end;
-    TVal* constants;
-    uint nregs;
     TVal* regs_base;
     Instruction* curr_pc;
     bool needs_restart;
