@@ -78,6 +78,9 @@ struct OptCg {
     List{OptTaken} taken;
     List{OptPoll} polls;
     bool forced_done;
+    // The native stack offset of the function's capture records (the running closure's), which
+    // every entry loads once (emit_cap_refs); -1 when no read of the function's own uses it.
+    long cap_slot;
 }
 
 fn void OptCg.init(&self) {
@@ -577,6 +580,7 @@ fn void OptCg.emit_osr_entries(&self) {
         OptBlock* blk = &self.g.blocks[pos];
         if (!blk.osr) continue;
         self.osr_labels[pos] = sljit_emit_label(c);
+        self.emit_cap_refs();
         for (uint k = 0; k < blk.osr_count; k++) {
             OptDirty d = self.g.dirty[(sz)(blk.osr_first + k)];
             OptNode* n = &self.g.nodes[d.node];
@@ -733,6 +737,13 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
         // A nested call's closure may be held in an OBJECT node (b) instead.
         int closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
         self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count, closure);
+    } else if (self.cap_slot >= 0 && index < self.a.f.capture_count) {
+        // The records the entry loaded; zero when the closure was not one the check accepts.
+        void* c = self.a.c;
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | reg_sp(), self.cap_slot);
+        self.a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+        if (index != 0) sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, (long)index * hobject::CaptureRef::size);
+        self.a.emit_cap_record_value();
     } else {
         self.a.emit_get_cap_value(index);
     }
@@ -745,6 +756,29 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
     } else {
         self.def_from_r0(i, n);
     }
+}
+
+// Load the running closure's capture records into the cap_slot, as the capture record subroutine
+// finds them for every read (Asm.emit_capture_ref_body): zero unless the frame's function value is
+// a closure of the function being run that has records. The count is the function's own, which
+// the reads check when they are compiled. Uses R0, R1 and R3.
+fn void OptCg.emit_cap_refs(&self) {
+    if (self.cap_slot < 0) return;
+    void* c = self.a.c;
+    Layout* l = self.a.lay;
+    Jumps fail;
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.a.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R3, l.fn_comp_func);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_MEM | R1, l.act_func));
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    fail.bind(sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 0);
+    sljit_set_label(done, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | reg_sp(), self.cap_slot, R0, 0);
 }
 
 // INT32 node `n` boxed as a fastint into R3.
@@ -2290,7 +2324,13 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     Asm a = asm_new(c, h, f);
     defer a.release();
     int table_reg = reg_s(2);
-    void* dispatch = a.emit_dispatch(table_reg, bc, count, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count));
+    // A slot past the spill area for the capture records, when a read of the function's own uses them.
+    long cap_slot = -1;
+    foreach (&nd : g.nodes) {
+        if (nd.op == OptOp.LOAD_CAP && nd.fidx == 0 && f.capture_count != 0) cap_slot = CALL_FRAME_BYTES + 8 * (long)(pools.int_count + pools.flt_count);
+    }
+    int locals = CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count) + (cap_slot >= 0 ? 8 : 0);
+    void* dispatch = a.emit_dispatch(table_reg, bc, count, pools.scratches | (pools.fscratches << 8), locals);
     a.emit_nonzero_exit(dispatch);
     // An entry that is not an entry of the optimized code continues in the baseline code.
     void* to_base = sljit_emit_label(c);
@@ -2305,7 +2345,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
         oc.cells = h.alloc_func(h.heap_udata, fields * uint::size);
         if (oc.cells == null) return null;
     }
-    OptCg cg = { .a = &a, .h = h, .g = g, .oc = oc, .pools = pools };
+    OptCg cg = { .a = &a, .h = h, .g = g, .oc = oc, .pools = pools, .cap_slot = cap_slot };
     cg.init();
     defer cg.free();
     uint blocks = (uint)g.blocks.len();
@@ -2314,6 +2354,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     for (uint pos = 0; pos < blocks; pos++) {
         OptBlock* blk = &g.blocks[pos];
         cg.labels[pos] = sljit_emit_label(c);
+        if (pos == 0) cg.emit_cap_refs();
         for (uint i = blk.first; i < blk.end; i++) {
             cg.emit_node(i, pos);
             bc.insns++;
@@ -2333,7 +2374,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     void* call_entry = null;
     if (call_entry_eligible(f) && !g.blocks[0].osr) {
         a.labels[0] = cg.labels[0];
-        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count), touch: true);
+        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), locals, touch: true);
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;

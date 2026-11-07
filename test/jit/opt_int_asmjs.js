@@ -79,3 +79,30 @@ for (var it = 0; it < 4000; it++) {
     w = (w + wrap1(a, b) + wrap3(a, b, -a) + wrapu(a, b) + wrapsh(a, b) + keep(it, it)) | 0;
 }
 print(w, wrap1(big, big), wrap3(big, big, -big), wrapu(-big, big), wrapsh(big, 2), keep(big, big), hash("the quick brown fox jumps over the lazy dog"));
+
+// Captured variables read in a hot function: one compiled function with closures over different
+// cells, a captured variable another closure reassigns mid-loop, and a `let` read before and after
+// its initialization.
+function maker(seed) {
+    var view = new Int32Array(64), bump = seed;
+    for (var k = 0; k < 64; k++) view[k] = k * seed;
+    return {
+        run: function (n) { var s = 0; for (var k = 0; k < n; k++) s = (s + view[k & 63] + bump) | 0; return s; },
+        swap: function () { view = new Int32Array(64).fill(bump); bump = (bump + 1) | 0; }
+    };
+}
+var m1 = maker(3), m2 = maker(5), cs = 0;
+for (var it = 0; it < 3000; it++) {
+    cs = (cs + m1.run(64) + m2.run(64)) | 0;
+    if ((it & 255) == 0) m1.swap();
+}
+print(cs);
+var tdz = (function () {
+    function f(n) { var s = 0; for (var k = 0; k < n; k++) s = (s + late) | 0; return s; }
+    var r = [];
+    try { f(1); } catch (e) { r.push(e instanceof ReferenceError); }
+    let late = 7;
+    for (var it = 0; it < 2000; it++) r[1] = f(10);
+    return r;
+})();
+print(tdz);
