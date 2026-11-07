@@ -2196,6 +2196,16 @@ fn void Heap.release_shape_slot(&self, uint id) {
     self.shape_retired_count++;
 }
 
+// The objects of the prototype-read set of `ic` (hobject::ICProtoSet).
+fn void Heap.mark_ic_protos(&self, hobject::ICEntry* ic) @inline {
+    if (ic.chain == null || ic.chain.protos == null) return;
+    hobject::ICProtoSet* set = ic.chain.protos;
+    for (uint i = 0; i < set.count; i++) {
+        self.mark_hobject(set.cases[i].first);
+        self.mark_hobject(set.cases[i].owner);
+    }
+}
+
 // Clear every property cache entry that names a released shape id, then make
 // the released ids reusable. A read entry stays valid while its receiver's
 // shape_id matches, so an id must not come back while an entry still names it.
@@ -2207,6 +2217,14 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
         if (cf == null || cf.ic_entries == null) continue;
         hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
         for (uint i = 0; i < cf.ic_count; i++) {
+            // A prototype-read set naming a released receiver shape is dropped as a whole.
+            if (entries[i].key.borrow() != null && entries[i].chain != null && entries[i].chain.protos != null) {
+                hobject::ICProtoSet* set = entries[i].chain.protos;
+                for (uint k = 0; k < set.count; k++) {
+                    uint id = set.cases[k].shape;
+                    if (id >= self.shape_count || !self.shape_slot_live(id)) set.count = 0;
+                }
+            }
             if (!self.ic_names_live_shapes(&entries[i])) {
                 entries[i].shape_id = SHAPE_NONE;
                 entries[i].chain_len = 0;
@@ -2455,6 +2473,7 @@ fn void Heap.free_compiled_funcs(&self) {
             hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 if (entries[ii].chain != null) {
+                    if (entries[ii].chain.protos != null) self.pool_free(entries[ii].chain.protos, hobject::ICProtoSet::size);
                     self.pool_free(entries[ii].chain, hobject::ICChain::size);
                 }
             }
@@ -5158,6 +5177,7 @@ fn void Heap.mark_roots(&self) {
             for (uint ii = 0; ii < cf.ic_count; ii++) {
                 hobject::ICEntry* ie = &ics[ii];
                 self.mark_hobject(hobject::ic_cached_proto(ie));
+                self.mark_ic_protos(ie);
             }
         }
     }

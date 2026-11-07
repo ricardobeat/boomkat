@@ -6,7 +6,7 @@
 # scripts/guard.sh.
 set -u
 BIN=${BIN:-./out/boomkat}
-FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js test/jit/opt_poly_field.js test/jit/opt_inline_view.js test/jit/opt_inline_branch.js test/jit/opt_inline_wide.js test/jit/opt_inline_wide_global.js test/jit/opt_objects.js test/jit/opt_inline_objload.js test/jit/opt_inline_cap.js test/jit/opt_inline_ops.js test/jit/opt_inline_ops2.js test/jit/opt_inline_nested.js test/jit/opt_inline_putelem.js test/jit/opt_inline_new.js test/jit/opt_inline_proto.js test/jit/opt_inline_ldreg.js test/jit/call_feedback.js test/jit/opt_inline_forward.js test/jit/opt_inline_getvar.js test/jit/opt_inline_dotcall.js test/jit/opt_inline_flatnested.js test/jit/opt_inline_fwd_site.js test/jit/opt_site_ban.js test/jit/opt_sink.js test/jit/opt_inline_exit_ban.js test/jit/opt_int_double_index.js test/jit/opt_int_asmjs.js test/jit/opt_int_typed.js test/jit/opt_poly_length.js test/jit/opt_inline_objwindow.js test/jit/opt_poly_push.js test/jit/opt_inline_elemwindow.js"}
+FILES=${FILES:-"test/jit_baseline_arith.js test/jit_baseline_calls.js test/jit_baseline_props.js test/jit_baseline_misc.js test/jit/feedback_arith.js test/jit/opt_overflow.js test/jit/opt_elements.js test/jit/opt_equality.js test/jit/opt_fields.js test/jit/opt_store_field.js test/jit/opt_guard_elim.js test/jit/call_global.js test/jit/return_tracked.js test/jit/new_obj.js test/jit/put_absent.js test/jit/typed_length.js test/jit/put_missed.js test/jit/alloc.js test/jit/ops_typeof_instanceof_add.js test/jit/props_relay.js test/jit/vars.js test/jit/elements.js test/jit/opt_inline.js test/jit/opt_poly_field.js test/jit/opt_inline_view.js test/jit/opt_inline_branch.js test/jit/opt_inline_wide.js test/jit/opt_inline_wide_global.js test/jit/opt_objects.js test/jit/opt_inline_objload.js test/jit/opt_inline_cap.js test/jit/opt_inline_ops.js test/jit/opt_inline_ops2.js test/jit/opt_inline_nested.js test/jit/opt_inline_putelem.js test/jit/opt_inline_new.js test/jit/opt_inline_proto.js test/jit/opt_inline_ldreg.js test/jit/call_feedback.js test/jit/opt_inline_forward.js test/jit/opt_inline_getvar.js test/jit/opt_inline_dotcall.js test/jit/opt_inline_flatnested.js test/jit/opt_inline_fwd_site.js test/jit/opt_site_ban.js test/jit/opt_sink.js test/jit/opt_inline_exit_ban.js test/jit/opt_int_double_index.js test/jit/opt_int_asmjs.js test/jit/opt_int_typed.js test/jit/opt_poly_length.js test/jit/opt_inline_objwindow.js test/jit/opt_poly_push.js test/jit/opt_inline_elemwindow.js test/jit/opt_poly_call.js test/jit/opt_poly_load.js test/jit/opt_poly_load_late.js"}
 REASONS="overflow not-int32 not-number shape bounds hole callee inline-slowcall alloc-slow throw-path forced"
 fails=0
 # Each file is independent: check them in parallel (JOBS, default the core count).
@@ -31,6 +31,15 @@ check_task() {   # file reason ("discard" for the discard path)
 export -f check_task
 diffs=$(for f in $FILES; do for r in $REASONS discard; do echo "$f $r"; done; done | xargs -P "$JOBS" -L1 bash -c 'check_task $0 $1')
 if [ -n "$diffs" ]; then echo "$diffs"; fails=$(echo "$diffs" | wc -l | tr -d ' '); fi
+# The polymorphic regressions must reach their optimized paths, rather than pass
+# output comparison entirely through generic calls and property reads.
+n=$($BIN --memory-limit=512 --jit --opt --opt-dump --script test/jit/opt_poly_call.js 2>&1 | grep -c BRANCH_CALLEE)
+if [ "$n" -eq 0 ]; then echo "NOPOLYCALL"; fails=$((fails+1)); fi
+st=$($BIN --memory-limit=512 --jit --opt --opt-dump --jit-stats --script test/jit/opt_poly_load_late.js 2>&1)
+case "$st" in *"opt inherited poly:"*) ;; *) echo "NOPOLYLOAD"; fails=$((fails+1));; esac
+n=$(printf '%s\n' "$st" | sed -n 's/^opt exit shape: //p')
+if [ -z "$n" ] || [ "$n" -gt 6 ]; then echo "POLYLOADCHURN $n"; fails=$((fails+1)); fi
+case "$st" in *"opt: 0 sites lowered generically"*) ;; *) echo "POLYLOADGENERIC"; fails=$((fails+1));; esac
 # An exit from an inlined body publishes the callee's frame; it must happen and be counted.
 n=$($BIN --memory-limit=512 --opt-force-exit=inline/shape --jit-stats --script test/jit/opt_inline.js 2>&1 | grep -c "^opt inline: [1-9][0-9]* callees inlined, [1-9][0-9]* exits")
 if [ "$n" != 1 ]; then echo "NOINLINEEXIT"; fails=$((fails+1)); fi

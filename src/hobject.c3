@@ -3617,13 +3617,38 @@ struct ICPolySet {
 
 const uint IC_POLY_MAX = 5;
 
-union ICChain {
-    ICChainSnapshot snapshot;
-    ICChainEpoch epoch;
-    ICPolySet poly;
+// Earlier receivers of an inherited ordinary read (an epoch entry) whose entry has moved on to
+// another receiver shape: each case is the receiver shape, its first prototype, the owner and the
+// owner's slot, all under the one prototype epoch. Only the optimizing tier reads it (a
+// polymorphic inherited load); the baseline keeps one entry. The objects are rooted with the
+// entry's read owner. More distinct receivers than IC_PROTO_MAX make it `mega`.
+const uint IC_PROTO_MAX = 4;
+
+struct ICProtoCase {
+    uint shape;
+    uint idx;
+    HObject* first;
+    HObject* owner;
 }
 
-$assert ICChain::size == ICChainSnapshot::size : "epoch cache payload exceeds bounded snapshot";
+struct ICProtoSet {
+    ulong epoch;
+    uint count;
+    bool mega;
+    ICProtoCase[IC_PROTO_MAX] cases;
+}
+
+struct ICChain {
+    union {
+        ICChainSnapshot snapshot;
+        ICChainEpoch epoch;
+        ICPolySet poly;
+    }
+    // Allocated on the first change of receiver of an epoch read, kept until the function is freed.
+    ICProtoSet* protos;
+}
+
+$assert ICChainEpoch::size <= ICChainSnapshot::size && ICPolySet::size <= ICChainSnapshot::size : "cache payload exceeds bounded snapshot";
 
 struct ICEntry {
     // Receiver shape ID when this entry was populated.
@@ -3669,14 +3694,15 @@ const char FB_DBL   = 2;   // a double operand
 const char FB_STR   = 4;   // a string operand
 const char FB_OTHER = 8;   // an object, undefined, null, boolean, symbol or BigInt operand
 
-// ICEntry.feedback bits of a call instruction, which uses none of the other
-// fields but prop_idx: FB_CALL says prop_idx is the func_index of the compiled
-// function the site has called, FB_POLY that it has called a second one.
+// ICEntry.feedback bits of a call instruction, which uses none of the property fields: FB_CALL
+// says prop_idx is the func_index of the compiled function the site has called first, and the
+// further distinct ones (IC_CALL_TARGETS in all) sit in its other slots (ic_call_target); FB_POLY
+// that it has called more than that.
 const char FB_CALL = 16;
 const char FB_POLY = 32;
 // A call whose callee register held Function.prototype.call, which ran the function FB_CALL names
 // on the receiver and arguments it shifted down (`X.call(this, a)`): the optimizer inlines X behind
-// a guard on the builtin.
+// a guard on the builtin. Such a site keeps one target: any other makes it FB_POLY.
 const char FB_DOTCALL = 128;
 // The bits an arithmetic, bitwise or compare instruction records.
 const char FB_OPERANDS = 15;
@@ -3685,14 +3711,58 @@ const char FB_OPERANDS = 15;
 // second one too).
 const char FB_CTOR = 64;
 
+// The distinct functions a call instruction's feedback names before it is FB_POLY: prop_idx, then
+// shape_id, shape_gen and absent_next_shape holding a func_index plus one (zero for none). The
+// entry's key stays null, so the shape purge and the cache readers never take a call's entry for a
+// property cache.
+const uint IC_CALL_TARGETS = 4;
+
+// The slot of the further target `k` (1 to IC_CALL_TARGETS - 1) of a call's entry.
+fn uint* ic_call_slot(ICEntry* ic, uint k) @inline {
+    switch (k) {
+        case 1: return &ic.shape_id;
+        case 2: return &ic.shape_gen;
+        default: return &ic.absent_next_shape;
+    }
+}
+
+// How many distinct functions the call caching `ic` has called, up to IC_CALL_TARGETS: zero
+// before any, or when FB_POLY says more.
+fn uint ic_call_count(ICEntry* ic) {
+    if ((ic.feedback & FB_CALL) == 0 || (ic.feedback & FB_POLY) != 0) return 0;
+    uint n = 1;
+    while (n < IC_CALL_TARGETS && *ic_call_slot(ic, n) != 0) n++;
+    return n;
+}
+
+// The func_index of target `k` (below ic_call_count) of the call caching `ic`.
+fn uint ic_call_target(ICEntry* ic, uint k) {
+    return k == 0 ? ic.prop_idx : *ic_call_slot(ic, k) - 1;
+}
+
 // Record that the call instruction caching `ic` called function number `index`.
 fn void ic_note_callee(ICEntry* ic, uint index) @inline {
     if ((ic.feedback & FB_CALL) == 0) {
         ic.prop_idx = index;
         ic.feedback |= FB_CALL;
-    } else if (ic.prop_idx != index) {
-        ic.feedback |= FB_POLY;
+    } else if (ic.prop_idx != index && (ic.feedback & FB_POLY) == 0) {
+        ic_note_another(ic, index);
     }
+}
+
+// The slow half of ic_note_callee: a function other than the first.
+fn void ic_note_another(ICEntry* ic, uint index) @noinline {
+    if ((ic.feedback & FB_DOTCALL) == 0) {
+        for (uint k = 1; k < IC_CALL_TARGETS; k++) {
+            uint* slot = ic_call_slot(ic, k);
+            if (*slot == index + 1) return;
+            if (*slot == 0) {
+                *slot = index + 1;
+                return;
+            }
+        }
+    }
+    ic.feedback |= FB_POLY;
 }
 
 // Record that the call instruction caching `ic` ran function number `index` through the intrinsic
@@ -3701,7 +3771,7 @@ fn void ic_note_dotcall(ICEntry* ic, uint index) @inline {
     if ((ic.feedback & FB_CALL) == 0) {
         ic.prop_idx = index;
         ic.feedback |= FB_CALL | FB_DOTCALL;
-    } else if (ic.prop_idx != index || (ic.feedback & FB_DOTCALL) == 0) {
+    } else if (ic.prop_idx != index || (ic.feedback & FB_DOTCALL) == 0 || *ic_call_slot(ic, 1) != 0) {
         ic.feedback |= FB_POLY;
     }
 }
@@ -3808,7 +3878,49 @@ fn void ic_fill_put_own(ICEntry* ic, HObject* hobj, uint idx, PropFlags flags, H
 fn bool ic_reserve_chain(ICEntry* ic, heap::Heap* h) {
     if (ic.chain != null) return true;
     ic.chain = (ICChain*)(h.pool_alloc(ICChain::size) ?? null);
+    if (ic.chain != null) ic.chain.protos = null;
     return ic.chain != null;
+}
+
+// The epoch entry `ic` is about to be refilled for a receiver of shape `shape` whose first prototype
+// is `first`: keep its current case in the entry's ICProtoSet when it is still valid (its epoch the
+// heap's) and names another receiver.
+fn void ic_proto_note(ICEntry* ic, uint shape, HObject* first, heap::Heap* h) {
+    if (ic.chain == null || !ic.has_proto || ic.chain_len != IC_CHAIN_EPOCH || ic.prop_flags.is_accessor) return;
+    ICChainEpoch* ep = &ic.chain.epoch;
+    if (ep.value != h.prototype_epoch || (ic.shape_id == shape && ep.first == first)) return;
+    ic_proto_add(ic, ic.shape_id, ep.first, ep.owner, ic.prop_idx, h);
+}
+
+// Add the case of receivers of shape `shape` with first prototype `first` reading slot `idx` of
+// `owner` to the prototype-read set of the epoch entry `ic`, under the heap's current prototype
+// epoch (the chain's prototypes observed). A set of an older epoch starts over. True when the set
+// gained the case.
+fn bool ic_proto_add(ICEntry* ic, uint shape, HObject* first, HObject* owner, uint idx, heap::Heap* h) {
+    ICProtoSet* set = ic.chain.protos;
+    if (set == null) {
+        set = (ICProtoSet*)(h.pool_alloc(ICProtoSet::size) ?? null);
+        if (set == null) return false;
+        *set = {};
+        ic.chain.protos = set;
+    }
+    if (set.epoch != h.prototype_epoch) {
+        set.count = 0;
+        set.mega = false;
+        set.epoch = h.prototype_epoch;
+    }
+    for (uint i = 0; i < set.count; i++) {
+        if (set.cases[i].shape == shape && set.cases[i].first == first) return false;
+    }
+    if (set.count == IC_PROTO_MAX) {
+        set.mega = true;
+        return false;
+    }
+    h.shade_root_object(first);
+    h.shade_root_object(owner);
+    set.cases[set.count] = { .shape = shape, .idx = idx, .first = first, .owner = owner };
+    set.count++;
+    return true;
 }
 
 fn HObject* ic_cached_proto(ICEntry* ic) {

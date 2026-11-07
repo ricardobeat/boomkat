@@ -15,6 +15,7 @@ import boomkat::hobject;
 import boomkat::env;
 import boomkat::vm;
 import std::collections::list;
+import std::io;
 
 // Where a jump leaves the optimized code from: the resume point and the
 // (register, node) pairs to store first.
@@ -1140,6 +1141,17 @@ fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic) {
     void* c = self.a.c;
     Asm* a = self.a;
     Layout* l = a.lay;
+    // An epoch entry that has moved between receivers keeps the earlier ones (hobject::ICProtoSet):
+    // what the entry does not hold is looked up there, at run time too, before leaving.
+    // Emit this path before the set exists too, so receivers learned after compilation can
+    // use it immediately instead of repeatedly exiting until the function is rebuilt.
+    uint kind0 = (uint)ic.chain_len & 0xFF;
+    bool poly = ic.has_proto && kind0 == ((uint)hobject::IC_CHAIN_EPOCH & 0xFF) ;
+    if (poly && self.h.opt.dump) {
+        io::eprintfn("opt inherited poly: primary plus up to %d retained cases", hobject::IC_PROTO_MAX);
+    }
+    Jumps own_call = a.call;
+    if (poly) a.call.len = 0;
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)ic);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, 0));
@@ -1183,6 +1195,49 @@ fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic) {
     }
     a.guard_not_proxy(R1, R4);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
+    void* found = null;
+    if (poly) {
+        // The entry's misses, with the receiver still in R1: each case of the set by receiver
+        // shape and first prototype, under the set's epoch.
+        found = sljit_emit_jump(c, SLJIT_JUMP);
+        Jumps miss = a.call;
+        a.call = own_call;
+        miss.bind(sljit_emit_label(c));
+        hobject::ICChain chp;
+        hobject::ICProtoSet psp;
+        hobject::ICProtoCase pcp;
+        // The epoch proves ordinary prototype chains only. Check the receiver before
+        // using a retained case, just as on the primary epoch-entry path.
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)ic);
+        sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R2, l.ic_chain);
+        a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R4, (long)((char*)&chp.protos - (char*)&chp));
+        a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, (long)((char*)&self.h.prototype_epoch - (char*)self.h));
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, (long)((char*)&psp.epoch - (char*)&psp)));
+        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R4, (long)((char*)&psp.count - (char*)&psp));
+        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
+        Jumps hits;
+        for (uint k = 0; k < hobject::IC_PROTO_MAX; k++) {
+            long at = (long)((char*)&psp.cases - (char*)&psp) + (long)k * hobject::ICProtoCase::size;
+            a.call.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R2, 0, SLJIT_IMM, (long)k));
+            void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.shape - (char*)&pcp));
+            void* other2 = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.first - (char*)&pcp));
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.owner - (char*)&pcp));
+            sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R4, at + (long)((char*)&pcp.idx - (char*)&pcp));
+            hits.add(sljit_emit_jump(c, SLJIT_JUMP));
+            void* next = sljit_emit_label(c);
+            sljit_set_label(other, next);
+            sljit_set_label(other2, next);
+        }
+        a.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+        hits.bind(sljit_emit_label(c));
+        sljit_set_label(found, sljit_emit_label(c));
+    }
     a.prop_base(R0, R1);
     sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
@@ -2229,9 +2284,34 @@ fn uint OptCg.emit_window_branch(&self, uint i, OptNode* n, void** jumps) {
     return count;
 }
 
+// BRANCH_CALLEE: jumps unless the call's callee is a plain closure of the case's function (the
+// tests of emit_check_callee that name the function; the CHECK_CALLEE of the case does the rest).
+fn uint OptCg.emit_callee_test(&self, uint i, OptNode* n, void** jumps) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    CallLayout* k = call_layout();
+    a.decode(n.pc);
+    if (n.a != NO_NODE) {
+        int r = self.obj_reg(n.a, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    } else {
+        a.load(R1, a.w.b + self.g.fns[n.fidx].reg_base);
+    }
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    jumps[0] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    jumps[1] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, SLJIT_MEM | R0, 0);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
+    jumps[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want);
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R0, a.lay.fn_comp_func);
+    jumps[3] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, n.imm);
+    return 4;
+}
+
 fn uint OptCg.emit_test(&self, uint i, OptNode* n, void** jumps) {
     void* c = self.a.c;
     if (n.op == OptOp.BRANCH_WINDOW) return self.emit_window_branch(i, n, jumps);
+    if (n.op == OptOp.BRANCH_CALLEE) return self.emit_callee_test(i, n, jumps);
     if (n.op == OptOp.BRANCH) {
         if (n.imm == (long)OptRep.INT32.ordinal) {
             int x = self.int_reg(n.a, R0);
@@ -2397,6 +2477,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case BRANCH:
         case BRANCH_TRUTH:
         case BRANCH_WINDOW:
+        case BRANCH_CALLEE:
             void*[8] jumps;
             uint count = self.emit_test(i, n, &jumps[0]);
             self.emit_edge(pos, 1, true);

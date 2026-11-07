@@ -1870,9 +1870,16 @@ fn void baseline_dump_feedback(Heap* h) {
         for (uint i = 0; i < cf.code_count; i++) {
             char fb = entries[i].feedback;
             if ((fb & hobject::FB_CALL) != 0) {
-                io::eprintfn("feedback fn#%d +%d %s -> fn#%d%s", fi, i, cf.code[i].op, entries[i].prop_idx,
-                             (fb & hobject::FB_POLY) != 0 ? " poly" : "");
+                io::eprintf("feedback fn#%d +%d %s -> fn#%d", fi, i, cf.code[i].op, entries[i].prop_idx);
+                uint n = hobject::ic_call_count(&entries[i]);
+                for (uint k = 1; k < n; k++) io::eprintf(" fn#%d", hobject::ic_call_target(&entries[i], k));
+                io::eprintfn("%s", (fb & hobject::FB_POLY) != 0 ? " poly" : "");
                 continue;
+            }
+            hobject::ICEntry* pe = &entries[i];
+            if (pe.key.borrow() != null && pe.chain != null && pe.chain.protos != null && pe.chain.protos.count != 0) {
+                io::eprintfn("feedback fn#%d +%d %s protos %d%s%s", fi, i, cf.code[i].op, pe.chain.protos.count,
+                             pe.chain.protos.mega ? " mega" : "", pe.chain.protos.epoch == h.prototype_epoch ? "" : " stale");
             }
             if (fb == 0 || !vm::has_feedback(cf.code[i].op)) continue;
             io::eprintfn("feedback fn#%d +%d %s %s%s%s%s", fi, i, cf.code[i].op,
