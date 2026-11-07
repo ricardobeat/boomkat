@@ -617,7 +617,10 @@ fn void Asm.emit_call_body(&self) {
     Jumps done;
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    // A value that is not a heap object still may be a callee: a lightfunc has
+    // that shape, so route it to the tag test below instead of to the slow
+    // path here.
+    void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     // The caller's resume point, as th_publish_lean stores it (the slow
     // paths store it too), kept for the test after the return.
@@ -719,6 +722,27 @@ fn void Asm.emit_call_body(&self) {
     self.mov(R0, 0, SLJIT_IMM, 0);
     done.add(sljit_emit_cmp(c, SLJIT_EQUAL, m | ds, self.pc_off, R1, 0));
     self.mov(R0, 0, SLJIT_IMM, BASELINE_REDISPATCH);
+    done.add(sljit_emit_jump(c, SLJIT_JUMP));
+    // A lightfunc callee of a plain CALL completes through the same helper:
+    // vm::jit_call_builtin_native's th_call_native runs a lightfunc's builtin
+    // from its payload index with the receiver slot below it, as the CALL thunk
+    // does, and a decline returns JIT_CALL_SLOW before anything was written.
+    // Any other non-object value keeps the slow path.
+    sljit_set_label(tagged, sljit_emit_label(c));
+    self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
+    slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    self.mov(sp, CALL_RESUME_OFF, R4, 0);
+    self.mov(R0, 0, m | ds, l.ds_act);
+    self.mov(m | R0, k.act_curr_pc, R4, 0);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R3, 0, SLJIT_IMM, CALL_METHOD);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    self.mov(R1, 0, sp, CALL_RESUME_OFF);
+    self.mov(R0, 0, ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
+    done.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    self.mov(self.regs, 0, m | ds, self.regs_off);
     done.add(sljit_emit_jump(c, SLJIT_JUMP));
     slow.bind(sljit_emit_label(c));
     self.mov(R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW);

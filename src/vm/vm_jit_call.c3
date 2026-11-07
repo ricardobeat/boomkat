@@ -869,11 +869,12 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
     return true;
 }
 
-// A builtin CALL completed by a baseline native call site itself, without the
-// CALL thunk: the builtin runs as jit_call_builtin runs it, and the caller
-// continues natively at `next` when the call left it there. 0 continues at
-// `next`, JIT_CALL_SLOW declines before anything ran (the site takes its slow
-// path), and every other value is what the thunk would have returned.
+// A builtin or lightfunc CALL completed by a baseline native call site itself,
+// without the CALL thunk: th_call_native classifies both callee forms, and the
+// call runs as jit_call_builtin runs it. The caller continues natively at
+// `next` when the call left it there. 0 continues at `next`, JIT_CALL_SLOW
+// declines before anything ran (the site takes its slow path), and every other
+// value is what the thunk would have returned.
 fn long jit_call_builtin_native(Dispatch* ds, Instruction* next) {
     Activation* act = ds.act;
     CompiledFunction* func = ds.vm.current_func;
