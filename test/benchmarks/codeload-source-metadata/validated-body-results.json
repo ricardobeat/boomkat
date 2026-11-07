@@ -1,0 +1,260 @@
+{
+  "binaries": {
+    "baseline": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/codeload-study/shared-lines",
+      "bytes": 5584912,
+      "sha256": "4b6bcaa70319e03fe1ede378d69593eaf1e01dc06d7c589956554aa228804177"
+    },
+    "candidate": {
+      "path": "/Users/rtomasi/cousas/boomkat/out/codeload-study/validated-body",
+      "bytes": 5584912,
+      "sha256": "0c1af37642a41e322ce4fb37664b35d4f84dc4a4396e3bb8b93918e5a5c983a9"
+    }
+  },
+  "benchmark_sha256": "e9a0668fd13eb20d9303587f92f6d7d350125726f323a936ba2e0953a29ff430",
+  "pairs": 5,
+  "samples": [
+    {
+      "round": 0,
+      "case": "CodeLoad",
+      "engine": "baseline",
+      "score": 30131,
+      "peak_rss_bytes": 688406528
+    },
+    {
+      "round": 0,
+      "case": "CodeLoad",
+      "engine": "candidate",
+      "score": 31744,
+      "peak_rss_bytes": 724156416
+    },
+    {
+      "round": 0,
+      "case": "Closure",
+      "engine": "baseline",
+      "ms": 320,
+      "peak_rss_bytes": 153075712
+    },
+    {
+      "round": 0,
+      "case": "Closure",
+      "engine": "candidate",
+      "ms": 321,
+      "peak_rss_bytes": 153354240
+    },
+    {
+      "round": 0,
+      "case": "JQuery",
+      "engine": "baseline",
+      "ms": 630,
+      "peak_rss_bytes": 168394752
+    },
+    {
+      "round": 0,
+      "case": "JQuery",
+      "engine": "candidate",
+      "ms": 628,
+      "peak_rss_bytes": 167936000
+    },
+    {
+      "round": 1,
+      "case": "CodeLoad",
+      "engine": "candidate",
+      "score": 31721,
+      "peak_rss_bytes": 722239488
+    },
+    {
+      "round": 1,
+      "case": "CodeLoad",
+      "engine": "baseline",
+      "score": 31535,
+      "peak_rss_bytes": 718520320
+    },
+    {
+      "round": 1,
+      "case": "Closure",
+      "engine": "candidate",
+      "ms": 317,
+      "peak_rss_bytes": 153239552
+    },
+    {
+      "round": 1,
+      "case": "Closure",
+      "engine": "baseline",
+      "ms": 318,
+      "peak_rss_bytes": 153174016
+    },
+    {
+      "round": 1,
+      "case": "JQuery",
+      "engine": "candidate",
+      "ms": 622,
+      "peak_rss_bytes": 168001536
+    },
+    {
+      "round": 1,
+      "case": "JQuery",
+      "engine": "baseline",
+      "ms": 616,
+      "peak_rss_bytes": 167919616
+    },
+    {
+      "round": 2,
+      "case": "CodeLoad",
+      "engine": "baseline",
+      "score": 32098,
+      "peak_rss_bytes": 732250112
+    },
+    {
+      "round": 2,
+      "case": "CodeLoad",
+      "engine": "candidate",
+      "score": 32331,
+      "peak_rss_bytes": 736362496
+    },
+    {
+      "round": 2,
+      "case": "Closure",
+      "engine": "baseline",
+      "ms": 315,
+      "peak_rss_bytes": 153108480
+    },
+    {
+      "round": 2,
+      "case": "Closure",
+      "engine": "candidate",
+      "ms": 311,
+      "peak_rss_bytes": 153239552
+    },
+    {
+      "round": 2,
+      "case": "JQuery",
+      "engine": "baseline",
+      "ms": 619,
+      "peak_rss_bytes": 167804928
+    },
+    {
+      "round": 2,
+      "case": "JQuery",
+      "engine": "candidate",
+      "ms": 618,
+      "peak_rss_bytes": 168787968
+    },
+    {
+      "round": 3,
+      "case": "CodeLoad",
+      "engine": "candidate",
+      "score": 29203,
+      "peak_rss_bytes": 654475264
+    },
+    {
+      "round": 3,
+      "case": "CodeLoad",
+      "engine": "baseline",
+      "score": 32119,
+      "peak_rss_bytes": 731594752
+    },
+    {
+      "round": 3,
+      "case": "Closure",
+      "engine": "candidate",
+      "ms": 312,
+      "peak_rss_bytes": 153157632
+    },
+    {
+      "round": 3,
+      "case": "Closure",
+      "engine": "baseline",
+      "ms": 314,
+      "peak_rss_bytes": 153042944
+    },
+    {
+      "round": 3,
+      "case": "JQuery",
+      "engine": "candidate",
+      "ms": 614,
+      "peak_rss_bytes": 168001536
+    },
+    {
+      "round": 3,
+      "case": "JQuery",
+      "engine": "baseline",
+      "ms": 618,
+      "peak_rss_bytes": 167919616
+    },
+    {
+      "round": 4,
+      "case": "CodeLoad",
+      "engine": "baseline",
+      "score": 32123,
+      "peak_rss_bytes": 732250112
+    },
+    {
+      "round": 4,
+      "case": "CodeLoad",
+      "engine": "candidate",
+      "score": 32363,
+      "peak_rss_bytes": 736903168
+    },
+    {
+      "round": 4,
+      "case": "Closure",
+      "engine": "baseline",
+      "ms": 314,
+      "peak_rss_bytes": 153206784
+    },
+    {
+      "round": 4,
+      "case": "Closure",
+      "engine": "candidate",
+      "ms": 311,
+      "peak_rss_bytes": 153042944
+    },
+    {
+      "round": 4,
+      "case": "JQuery",
+      "engine": "baseline",
+      "ms": 618,
+      "peak_rss_bytes": 168148992
+    },
+    {
+      "round": 4,
+      "case": "JQuery",
+      "engine": "candidate",
+      "ms": 614,
+      "peak_rss_bytes": 167460864
+    }
+  ],
+  "medians": {
+    "CodeLoad": {
+      "baseline": {
+        "score": 32098,
+        "peak_rss_bytes": 731594752
+      },
+      "candidate": {
+        "score": 31744,
+        "peak_rss_bytes": 724156416
+      }
+    },
+    "Closure": {
+      "baseline": {
+        "ms": 315,
+        "peak_rss_bytes": 153108480
+      },
+      "candidate": {
+        "ms": 312,
+        "peak_rss_bytes": 153239552
+      }
+    },
+    "JQuery": {
+      "baseline": {
+        "ms": 618,
+        "peak_rss_bytes": 167919616
+      },
+      "candidate": {
+        "ms": 618,
+        "peak_rss_bytes": 168001536
+      }
+    }
+  }
+}

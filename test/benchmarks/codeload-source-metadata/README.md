@@ -59,3 +59,40 @@ Validation for shared lines:
   the eventual verdicts of those eight tests. No exclusions changed.
 - A broader GC-stress sweep was stopped in the unrelated 60,000-iteration
   shape-ID stress case; only the focused lifetime checks above are claimed.
+
+## Follow-up profile and rejected experiments
+
+The same two-second jQuery profile after shared lines (`shared-lines-profile.txt`)
+attributes only 9 of 1,478 samples (0.6%) to line-table building. Liveness is now
+the largest individual leaf at 105 samples (7.1%). Lexing, AST construction,
+resolution and early checks remain distributed across many functions. Sampling
+counts are approximate, not precise attribution of total benchmark runtime.
+
+Two subsequent experiments used `3804a297` as their source baseline and the
+same saved shared-lines binary as their timing baseline:
+
+| Experiment | Pairs | CodeLoad before / after | Closure ms before / after | jQuery ms before / after |
+|---|---:|---:|---:|---:|
+| Copy fallthrough liveness instead of clear + union | 7 | 31,110 / 31,258 | 335 / 338 | 667 / 665 |
+| Reuse deferred-body early-error validation | 5 | 32,098 / 31,744 | 315 / 312 | 618 / 618 |
+
+Both were reverted: neither establishes a useful improvement. Their raw
+samples and binary hashes are in `liveness-copy-results.json` and
+`validated-body-results.json`. Compare only paired rows within each experiment;
+the absolute scores drift across batches.
+
+The first changed `moveelim_compute_liveness` to initialize the scratch output
+with `copy_from` when a fallthrough successor exists, clearing only otherwise.
+The second added an internal `validated_body` argument to `index_begin`, set
+only by `materialize_function_body`. It skipped `Early.init/run/conflicts` on
+immutable source already validated by the original eval, while preserving
+parsing and resolution. Focused checks passed for eager rejection of invalid
+uncalled bodies, strictness, regexp syntax and captures,
+but the absent speedup did not justify retaining the shortcut or broadening
+its validation. All production early-error checks remain in place.
+
+The next substantial frontend investigation should measure the initial full
+AST/resolution work separately from body materialization. These experiments
+do not justify a general lazy-parser rewrite yet. For liveness, collect sweep
+counts and bitset sizes before choosing between a worklist or block-level
+analysis; removing one word traversal was insufficient here.
