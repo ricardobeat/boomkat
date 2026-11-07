@@ -1320,6 +1320,7 @@ fn void Asm.emit_get_elem(&self, uint ra, uint rb) {
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
+        self.note_elem_class();
         self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
         self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
         // A number, which needs no publication.
@@ -1328,6 +1329,16 @@ fn void Asm.emit_get_elem(&self, uint ra, uint rb) {
     $else
         self.call.add(other);
     $endif
+}
+
+// Record the class flags array_or_typed left in R2, of a receiver that is not an array, in the
+// instruction's ICEntry.elem_class: the typed array kind the optimizing tier specializes the
+// access for (OptCg.emit_typed_elem).
+fn void Asm.note_elem_class(&self) {
+    CompiledFunction* f = self.f;
+    if (f.ic_entries == null) return;
+    hobject::ICEntry* entry = &((hobject::ICEntry*)f.ic_entries)[self.next - 1];
+    sljit_emit_op1(self.c, SLJIT_MOV_U32, SLJIT_MEM, (long)(usz)&entry.fwd_callee, R2, 0);
 }
 
 // An overwrite of a dense array element, index in R3, as
@@ -1346,6 +1357,7 @@ fn void Asm.emit_put_elem(&self, uint ra, uint rv) {
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
+        self.note_elem_class();
         self.load(R0, rv);
         self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
         self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));

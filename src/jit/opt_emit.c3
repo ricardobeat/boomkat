@@ -790,6 +790,12 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         a.load(R0, a.w.b);
     }
     a.unbox_object(R1, rr);
+    long flags;
+    int k = self.typed_kind(0, &flags);
+    if (k >= 0) {
+        self.emit_typed_load(i, n, TYPED_KINDS[k], flags);
+        return;
+    }
     self.box_index(n.a);
     void* other = a.array_or_typed(0);
     a.array_slot();
@@ -811,6 +817,158 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
         return;
     }
     self.def_from_r0(i, n);
+}
+
+// The index into TYPED_KINDS of the typed array the element access being emitted has met, by the
+// class flags its baseline code recorded (Asm.note_elem_class) under array_or_typed's mask with
+// `extra`; -1 for none (an array, a proxy, Uint8Clamped stores, or no record). The flags the
+// specialized access compares against go to `flags`.
+fn int OptCg.typed_kind(&self, long extra, long* flags) {
+$if features::BUFFERS:
+    Asm* a = self.a;
+    if (a.f.ic_entries == null) return -1;
+    long recorded = (long)((hobject::ICEntry*)a.f.ic_entries)[a.next - 1].fwd_callee;
+    Layout* l = a.lay;
+    long proxy = 0;
+    $if features::PROXY:
+        proxy = l.proxy_mask;
+    $endif
+    if (recorded == 0 || (recorded & proxy) != 0 || (recorded & ~(l.class_mask | extra | proxy)) != 0) return -1;
+    long cls = (recorded & l.class_mask) >> 16;
+    foreach (k, kind : TYPED_KINDS) {
+        if ((long)kind.cls.ordinal != cls) continue;
+        if (extra != 0 && kind.cls == hobject::ObjClass.UINT8CLAMPEDARRAY) return -1;
+        *flags = recorded;
+        return (int)k;
+    }
+    return -1;
+$else
+    return -1;
+$endif
+}
+
+// The address of element `idx` (an INT32 node) of the object in R1, which must be a typed array of
+// class flags `flags` (masked as typed_kind's) viewing a fixed-length, attached buffer, and the
+// index below its length, as Asm.emit_typed_body checks: the base in R4 and the index register,
+// returned (`put`: the buffer must be mutable too). Anything else jumps through the slow path
+// list. Uses R2 to R4.
+fn int OptCg.typed_elem_addr(&self, uint idx, TypedKind kind, long flags, long extra, bool put) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    long mask = l.class_mask | extra;
+    $if features::PROXY:
+        mask |= l.proxy_mask;
+    $endif
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, mask);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, flags));
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R1, l.view_buffer);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | R4, l.ab_resizable);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    if (put) {
+        sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | R4, l.ab_immutable);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    }
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R4, l.ab_data);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.view_offset);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.view_length);
+    if (kind.shift != 0) sljit_emit_op2(c, SLJIT_LSHR, R2, 0, R2, 0, SLJIT_IMM, kind.shift);
+    int x = self.int_reg(idx, R3);
+    // Unsigned, so a negative index fails too.
+    a.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, x, 0, R2, 0));
+    return x;
+}
+
+// LOAD_ELEM of the typed array kind its site has met (OptCg.typed_kind): the element read in
+// place, without the subroutine's dispatch over kinds; an int32 or double node takes it unboxed.
+fn void OptCg.emit_typed_load(&self, uint i, OptNode* n, TypedKind kind, long flags) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    int x = self.typed_elem_addr(n.a, kind, flags, 0, false);
+    int elem = mem_index(R4, x);
+    bool is_float = kind.cls == hobject::ObjClass.FLOAT32ARRAY || kind.cls == hobject::ObjClass.FLOAT64ARRAY;
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    if (n.rep == OptRep.INT32 && !is_float && kind.cls != hobject::ObjClass.UINT32ARRAY) {
+        sljit_emit_op1(c, kind.mov, R0, 0, elem, kind.shift);
+        self.def_int(i, R0);
+        return;
+    }
+    if (n.rep == OptRep.FLOAT64 && is_float) {
+        int dst = self.flt_dst(i, FR0);
+        bool f32 = kind.cls == hobject::ObjClass.FLOAT32ARRAY;
+        sljit_emit_fop1(c, SLJIT_MOV_F64 | (f32 ? SLJIT_32 : 0), dst, 0, elem, kind.shift);
+        if (f32) sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32, dst, 0, dst, 0);
+        self.def_flt(i, dst);
+        return;
+    }
+    // The element boxed as ta_load_number boxes it, then as any loaded value.
+    if (kind.cls == hobject::ObjClass.FLOAT32ARRAY) {
+        sljit_emit_fop1(c, SLJIT_MOV_F64 | SLJIT_32, FR0, 0, elem, kind.shift);
+        sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32, FR0, 0, FR0, 0);
+        sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+    } else {
+        sljit_emit_op1(c, kind.mov, R0, 0, elem, kind.shift);
+    }
+    if (is_float) {
+        // TVal.set_number: a NaN whose bits would read as a tag.
+        void* plain = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_INT);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, CANONICAL_NAN);
+        sljit_set_label(plain, sljit_emit_label(c));
+    } else {
+        void* boxed = null;
+        if (kind.cls == hobject::ObjClass.UINT32ARRAY) {
+            // 2^31 and above reads as a double.
+            void* small = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, 1L << 31);
+            sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW, FR0, 0, R0, 0);
+            sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+            boxed = sljit_emit_jump(c, SLJIT_JUMP);
+            sljit_set_label(small, sljit_emit_label(c));
+        }
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
+        sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
+        if (boxed != null) sljit_set_label(boxed, sljit_emit_label(c));
+    }
+    if (n.rep == OptRep.NONE) {
+        // A number, which needs no publication.
+        a.store(a.w.a, R0);
+        return;
+    }
+    self.def_from_r0(i, n);
+}
+
+// STORE_ELEM of a numeric node into the typed array kind its site has met: an int32 node stores
+// its low bits to an integer kind, as ta_store_int; a float kind takes the value as a double
+// (narrowed for Float32), as ta_store_scalar.
+fn void OptCg.emit_typed_store(&self, uint i, OptNode* n, TypedKind kind, long flags) {
+    void* c = self.a.c;
+    int x = self.typed_elem_addr(n.a, kind, flags, self.a.lay.indexed_named_mask, true);
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    int elem = mem_index(R4, x);
+    OptNode* v = &self.g.nodes[n.b];
+    bool is_float = kind.cls == hobject::ObjClass.FLOAT32ARRAY || kind.cls == hobject::ObjClass.FLOAT64ARRAY;
+    if (!is_float) {
+        int r = self.int_reg(n.b, R0);
+        sljit_emit_op1(c, kind.mov, elem, kind.shift, r, 0);
+        return;
+    }
+    int f32 = kind.cls == hobject::ObjClass.FLOAT32ARRAY ? SLJIT_32 : 0;
+    int fr;
+    if (v.rep == OptRep.INT32) {
+        int r = self.int_reg(n.b, R0);
+        sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_SW | f32, FR0, 0, r, 0);
+        fr = FR0;
+    } else {
+        fr = self.flt_reg(n.b, FR0);
+        if (f32 != 0) {
+            sljit_emit_fop1(c, SLJIT_CONV_F64_FROM_F32 | SLJIT_32, FR0, 0, fr, 0);
+            fr = FR0;
+        }
+    }
+    sljit_emit_fop1(c, SLJIT_MOV_F64 | f32, elem, kind.shift, fr, 0);
 }
 
 // The shape of the object in `obj` against the id its cell holds, which the heap clears when the
@@ -1095,6 +1253,13 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         a.load(R0, a.w.a);
     }
     a.unbox_object(R1, rr);
+    long flags;
+    int k = self.typed_kind(a.lay.indexed_named_mask, &flags);
+    // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
+    if (k >= 0 && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT32ARRAY || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT64ARRAY)) {
+        self.emit_typed_store(i, n, TYPED_KINDS[k], flags);
+        return;
+    }
     self.box_index(n.a);
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
     a.array_slot();
