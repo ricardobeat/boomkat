@@ -56,6 +56,7 @@ fn int main(String[] args) {
     bool opt = false;
     bool opt_always = false;
     bool opt_dump = false;
+    bool opt_log = false;
     bool opt_no_inline = false;
     bool opt_no_sink = false;
     uint opt_inline_max = uint::max;
@@ -131,6 +132,10 @@ fn int main(String[] args) {
             jit = true;
             opt = true;
             opt_code_max = (usz)a[15..].to_uint()!!;
+        } else if (a == "--opt-log") {
+            jit = true;
+            opt = true;
+            opt_log = true;
         } else if (a == "--opt-dump") {
             jit = true;
             opt = true;
@@ -243,6 +248,7 @@ fn int main(String[] args) {
             hp.opt.enabled = true;
             hp.opt.always = opt_always;
             hp.opt.dump = opt_dump;
+            hp.opt.log = opt_log;
             hp.opt.no_inline = opt_no_inline;
             hp.opt.no_sink = opt_no_sink;
             hp.opt.inline_max = opt_inline_max;

@@ -21,6 +21,7 @@ import boomkat::vm;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::types;
 import std::io;
 import std::time::clock;
 
@@ -205,6 +206,8 @@ struct OptPolicy {
     bool always;
     // Print each optimized function's graph (--opt-dump).
     bool dump;
+    // Print each exit, discard and refusal with its function (--opt-log).
+    bool log;
     // Test hook: zero, or one more than the OptExit every optimized body
     // takes `force_count` times at instruction `force_at`.
     uint force_reason;
@@ -385,6 +388,11 @@ fn bool opt_refuse(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op) {
     h.opt.refused_why[why.ordinal]++;
     if (why == OptRefuse.OPCODE) h.opt.refused_ops[op.ordinal]++;
     f.opt_state = OPT_REFUSED;
+    if (h.opt.log) {
+        io::eprintf("opt refuse ");
+        opt_log_fn(f);
+        io::eprintfn(" %s %s", why.label, op);
+    }
     return false;
 }
 
@@ -508,9 +516,23 @@ fn bool opt_make_room(Heap* h) @noinline {
     return h.opt.live_bytes < opt_code_limit(h);
 }
 
+// "fn#N name:line" for the --opt-log lines.
+fn void opt_log_fn(CompiledFunction* f) {
+    io::eprintf("fn#%d %s:%d", f.func_index, (String)f.name_ptr[:f.name_len], f.code_count != 0 ? f.get_line(0) : 0);
+}
+
 fn void opt_discard(Heap* h, CompiledFunction* f) {
     OptCode* oc = f.opt_code;
     if (oc == null) return;
+    if (h.opt.log) {
+        io::eprintf("opt discard ");
+        opt_log_fn(f);
+        io::eprintf(" exits %d:", oc.exits);
+        foreach (&x : oc.hits) {
+            if (x.count != 0) io::eprintf(" fn#%d+%d %s x%d", x.cf.func_index, x.pc, x.cf.code[x.pc].op, x.count);
+        }
+        io::eprintfn("");
+    }
     opt_ban_hits(h, oc);
     opt_retire(h, f, oc);
     h.opt.discards++;
@@ -592,8 +614,19 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         if (oc.f.code[at].op == Opcode.WIDE) at++;
         ((hobject::ICEntry*)oc.f.ic_entries)[at].feedback |= hobject::FB_OVF;
     }
+    // A failed type guard: record the operand classes the instruction met, as the baseline would
+    // have off its integer path, so that the rebuild lowers it for them instead of guarding again.
+    if ((reason == OptExit.NOT_INT32.ordinal || reason == OptExit.NOT_NUMBER.ordinal) && oc.f.ic_entries != null) {
+        opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
+    }
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
     oc.exits++;
+    if (h.opt.log) {
+        uint at = (uint)(ds.curr_pc - ds.code_base);
+        io::eprintf("opt exit ");
+        opt_log_fn(oc.f);
+        io::eprintfn(" +%d %s %s", at, oc.f.code[at].op, ((OptExit)reason).label);
+    }
     bool repeat = false;
     if (oc.f.opt_code == oc && oc.f.ic_entries != null) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
@@ -602,6 +635,25 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     }
     if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
     return 0;
+}
+
+// OR the classes of the operands the instruction at word `pc` of `f` reads from the window into its
+// feedback, for the instructions whose feedback the optimizer reads.
+fn void opt_note_operands(Dispatch* ds, CompiledFunction* f, uint pc) {
+    DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
+    if (!d.valid || !vm::has_feedback(d.insn.op)) return;
+    TVal* regs = ds.regs_base;
+    TVal imm;
+    char bits;
+    switch (d.insn.op) {
+        case INC: case DEC: case INC_LT:
+            bits = hobject::fb_class(regs + d.insn.a);
+        case UNM: case UNP: case BNOT: case TONUMERIC:
+            bits = hobject::fb_class(regs + d.insn.b);
+        default:
+            bits = hobject::fb_class(regs + d.insn.b) | hobject::fb_class(vm::op_operand_c(ds, d.insn, &imm));
+    }
+    ((hobject::ICEntry*)f.ic_entries)[d.payload_pc].feedback |= bits;
 }
 
 fn usz opt_code_limit(Heap* h) @inline => h.opt.code_max != 0 ? h.opt.code_max : OPT_CODE_MAX;
