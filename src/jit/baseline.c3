@@ -375,6 +375,8 @@ const int MEGA_SUB = -13;
 const int PUT_ABSENT_SUB = -14;
 // The put-absent subroutine without the helper call, for the optimizing tier (OptCg.emit_add_field).
 const int PUT_ABSENT_FAST_SUB = -15;
+// The inline object allocation's pool pop and accounting (Asm.emit_alloc_body).
+const int ALLOC_SUB = -16;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -385,7 +387,7 @@ struct Asm {
     CompiledFunction* f;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
-    void*[Opcode::values.len + 15] sub_labels;
+    void*[Opcode::values.len + 16] sub_labels;
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
@@ -406,6 +408,8 @@ struct Asm {
     long runtime_off;
     long htmldda_off;
     Layout* lay;
+    // The heap the code is compiled for: its shape table sizes NEWOBJ_SHAPE's object.
+    Heap* hp;
     void* length_key;
     bool counting;
     // False once a SETCONST can change the constant table.
@@ -450,6 +454,7 @@ fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
         .runtime_off = (char*)&hl.capi_runtime - (char*)hl,
         .htmldda_off = (char*)&hl.htmldda_obj - (char*)hl,
         .lay = layout(),
+        .hp = h,
         .length_key = (void*)h.strs[heap::BuiltinStr.LENGTH],
         .counting = h.jit_stats.count_ops,
         .consts_fixed = true,
@@ -589,8 +594,8 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     if (h.jit_stats.dump_feedback) {
         foreach (slot, label : self.sub_labels) {
             if (label == null) continue;
-            String[15] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
-                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT", "PUT_ABSENT_FAST" };
+            String[16] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
+                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT", "PUT_ABSENT_FAST", "ALLOC" };
             if (slot < Opcode::values.len) {
                 io::eprintfn("sub fn#%d %s %x", self.f.func_index, Opcode::values[slot], (usz)sljit_shim_label_addr(label));
             } else {
@@ -783,6 +788,8 @@ fn void Asm.emit_subroutines(&self) {
             case PUT_ABSENT_SUB:
             case PUT_ABSENT_FAST_SUB:
                 self.emit_put_absent_body(call.sub == PUT_ABSENT_SUB);
+            case ALLOC_SUB:
+                self.emit_alloc_body();
             case TRUTH_SUB:
             case STRICT_EQ_SUB:
             case LOOSE_EQ_SUB:
