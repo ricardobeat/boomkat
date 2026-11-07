@@ -390,6 +390,7 @@ fn void HObject.layout_moved(&self, heap::Heap* h) @inline {
     if (self.gc.prototype_observed) h.bump_prototype_epoch();
     if (self.gc.ic_bound) {
         h.shape_recycle_epoch++;
+        h.layout_epoch++;
         $if $feat(OP_PROFILE): opprof_epoch[2]++; $endif
     }
 }
@@ -4213,6 +4214,9 @@ struct VarICEntry {
     // this costs a load the hit path already has in cache instead of reaching
     // into the shapes table for the shape's generation.
     uint    recycle_epoch;
+    // The heap's layout epoch at population time, which alone keeps slot_ptr and the flags valid
+    // for compiled code and the threaded handlers (a shape-id recycle does not move a slot).
+    uint    layout_epoch;
     // Property index within bindings.props[].
     uint    prop_idx;
     // The property's flags, guarded by the shape id and recycle epoch.
@@ -4236,7 +4240,7 @@ struct VarICEntry {
     // The validated chain head. A new activation needs re-arm checks before
     // replacing it. The GETGLOBAL family runs in one activation.
     void*   search_head;
-    // The binding's slot, valid while recycle_epoch matches the heap's:
+    // The binding's slot, valid while layout_epoch matches the heap's:
     // HObject.layout_moved advances the epoch whenever the slot moves or the
     // cached flags change. Null while unpopulated.
     PropValue* slot_ptr;
@@ -4269,6 +4273,7 @@ fn void var_ic_fill(VarICEntry* vic, void* env, void* bindings, uint shape_id,
     vic.prop_idx = prop_idx;
     vic.prop_flags = bindings != null ? ((HObject*)bindings).get_prop_flags(prop_idx, h) : (PropFlags){};
     vic.recycle_epoch = h.shape_recycle_epoch;
+    vic.layout_epoch = h.layout_epoch;
     vic.props_off = bindings != null
         ? (uint)((char*)((HObject*)bindings).inline_props_ptr() - (char*)bindings) : 0;
     vic.search_head = search_head;
@@ -4341,6 +4346,7 @@ fn void var_ic_clear(VarICEntry* vic) {
     vic.prop_idx = 0;
     vic.prop_flags = {};
     vic.recycle_epoch = 0;
+    vic.layout_epoch = 0;
     vic.props_off = 0;
     vic.search_head = null;
     vic.varref_store_ok = false;

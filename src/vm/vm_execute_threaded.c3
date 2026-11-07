@@ -1052,11 +1052,12 @@ macro hobject::VarICEntry* th_global_ic_hit(Instruction* pc, ColdCtx* cold) @pri
 }
 
 macro hobject::VarICEntry* th_ic_epoch_hit(hobject::VarICEntry* vic, ColdCtx* cold) @private {
-    return (vic.recycle_epoch == cold.heap.shape_recycle_epoch && vic.slot_ptr != null) ? vic : null;
+    return (vic.layout_epoch == cold.heap.layout_epoch && vic.slot_ptr != null) ? vic : null;
 }
 
 // Each instruction has one entry in each IC array, so an entry's address is a
 // fixed multiple of the instruction's address plus a per-function bias.
+$assert(hobject::VarICEntry::size % Instruction::size == 0);
 const usz TH_VAR_IC_SCALE = hobject::VarICEntry::size / Instruction::size;
 const usz TH_IC_SCALE = hobject::ICEntry::size / Instruction::size;
 
