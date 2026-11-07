@@ -699,7 +699,7 @@ fn bool OptBuild.find_loops(&self) {
 fn OptRep OptBuild.rep_of(&self, uint node) @inline => self.g.nodes[node].rep;
 
 fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_NODE, long imm = 0) {
-    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .c = NO_NODE, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1 };
+    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .c = NO_NODE, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1, .home = NO_NODE };
     self.g.nodes.push(n);
     return (uint)self.g.nodes.len() - 1;
 }
