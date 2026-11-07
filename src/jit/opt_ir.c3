@@ -29,8 +29,10 @@
 // The exception is an OBJECT node of an inlined body whose home slot lies beyond the caller's
 // frame (slot >= the caller's num_regs): the collector does not scan it, and no pop sweeps it,
 // until an exit publishes the callee's frame. The body is a leaf (no GENERIC, no allocation, no
-// loop), so its exits are the only points that can collect, and an exit stub stores the live
-// nodes and calls jit_inline_materialize at once, which publishes a frame covering the slot. Such a
+// loop; its calls are inlined bodies in turn), so its exits are the only points that can collect,
+// and an exit stub stores the live nodes and calls jit_inline_materialize at once, which publishes
+// the frames covering the slot. The callee and receiver of a nested call, register copies and
+// returns into such slots are OBJECT nodes of this kind too. Such a
 // node therefore lives in a machine register only: it is never stored in the normal flow. The
 // builder refuses the inline for a STORE_OBJ of it or an edge store of it, the allocator never
 // spills it (the function is then built without inlining), and its load exits instead of
