@@ -90,6 +90,7 @@ struct Layout {
     long class_mask;
     long class_object;
     long class_array;
+    long class_regexp;
     long old_mask;
     long reachable_mask;
     long heap_gc_kind;
@@ -306,6 +307,9 @@ fn Layout* layout() {
     l.class_object = (long)(uint)f;
     f.obj_class = hobject::ObjClass.ARRAY;
     l.class_array = (long)(uint)f;
+    f = {};
+    f.obj_class = hobject::ObjClass.REGEXP;
+    l.class_regexp = (long)(uint)f;
     // The class field is bits 16..21.
     l.class_mask = 0x3FL << 16;
     // emit_typed_body reads the proxy bit and the class as one field.
@@ -313,6 +317,7 @@ fn Layout* layout() {
     // guard_plain tests the class and these flags as one field.
     assert(((l.proxy_mask | l.module_ns_mask | l.deferred_ns_mask) & l.class_mask) == 0);
     assert(l.class_array == (long)hobject::ObjClass.ARRAY.ordinal << 16);
+    assert(l.class_regexp == (long)hobject::ObjClass.REGEXP.ordinal << 16);
     types::GcBits g;
     g.old = true;
     l.old_mask = (long)(uint)g;
@@ -436,12 +441,17 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
             if (!has_ic || !consts_fixed || w.c >= f.const_count) return false;
             TVal key = f.constants[w.c];
             if (!key.is_string()) return false;
+            long key_ptr = (long)(usz)key.get_heapptr();
+            // `lastIndex` is an ordinary own writable data property even on a
+            // RegExp, whose only relevant exotic state is its class; the site
+            // entry still guards the key, shape, generation and writability.
+            bool regexp_lastindex = key_ptr == (long)(usz)self.hp.strs[heap::BuiltinStr.LAST_INDEX];
             if (op == PUTTHISC) {
                 self.load_this(R0);
             } else {
                 self.load(R0, w.a);
             }
-            self.emit_put(ic, (long)(usz)key.get_heapptr(), -1, op == PUTTHISC ? w.a : w.b);
+            self.emit_put(ic, key_ptr, -1, op == PUTTHISC ? w.a : w.b, regexp_lastindex);
         case PUTPROP:
             if (!has_ic) return false;
             // th_putprop: an index into an array, or a string key.
@@ -1037,14 +1047,25 @@ fn void Asm.store_value_r2(&self, Jumps* miss = null) {
 
 // A cached overwrite of an existing own writable data property of the object
 // R0 boxes, as th_put_cached: a plain object, the entry's key, shape and shape
-// generation, no prototype owner and no absent-add entry.
-fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv) {
+// generation, no prototype owner and no absent-add entry. `allow_regexp` also
+// admits a bare REGEXP receiver, whose own `lastIndex` is an ordinary data
+// property: only its class is exotic, and the site entry still guards the key,
+// shape, generation and writability before the slot is written.
+fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv, bool allow_regexp = false) {
     void* c = self.c;
     Layout* l = self.lay;
     self.unbox_object(R1, R0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, l.class_mask);
-    self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.class_object));
+    if (allow_regexp) {
+        void* plain = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, l.class_object);
+        long rx_exotic = l.class_mask | l.proxy_mask | l.module_ns_mask | l.deferred_ns_mask;
+        sljit_emit_op2(c, SLJIT_AND, R3, 0, R2, 0, SLJIT_IMM, rx_exotic);
+        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.class_regexp));
+        sljit_set_label(plain, sljit_emit_label(c));
+    } else {
+        self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, l.class_object));
+    }
     long exotic = l.module_ns_mask;
     $if features::PROXY:
         exotic |= l.proxy_mask;
