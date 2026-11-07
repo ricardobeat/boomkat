@@ -855,8 +855,16 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
     void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
     if (self.g.pinned(n)) {
-        // The slot is beyond the caller's frame: publishing would write it in the normal flow.
-        self.exit_at(marking, i, OptExit.SLOW_PATH);
+        // The slot is beyond the caller's frame, which the collector does not scan: the object is
+        // marked instead (vm::jit_opt_shade), with the registers in use saved around the call.
+        void* quiet = sljit_emit_jump(c, SLJIT_JUMP);
+        sljit_set_label(marking, sljit_emit_label(c));
+        self.spill_live(i, true);
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_shade);
+        self.spill_live(i, false);
+        sljit_set_label(quiet, sljit_emit_label(c));
     } else {
         void* quiet = sljit_emit_jump(c, SLJIT_JUMP);
         // While marking the object is published at once, which marks it as the baseline's store does.

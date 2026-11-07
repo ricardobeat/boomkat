@@ -271,6 +271,16 @@ fn LeanCall jit_apply_lean(Instruction* pc, TVal* regs, ColdCtx* cold, Vm* vm, u
                            this_valid ? this_arg : th_undefined(), this_valid, null) ? ENTERED_ARGS : ENTERED;
 }
 
+// Mark `value`, an object the optimized code read into a machine register while the collector is
+// marking (a callee register beyond the caller's frame, which the collector does not scan). Allocates
+// nothing for the collector and runs no code. Returns `value`.
+fn ulong jit_opt_shade(Heap* h, ulong value) {
+$if types::USE_NANBOX:
+    h.shade_root_tval({ .bits = value });
+$endif
+    return value;
+}
+
 // NEW_OBJ of a lean constructor jit_new_simple left: its object and its
 // frame are published as th_new_obj does. DECLINE leaves the instruction to its thunk before
 // anything is written.
