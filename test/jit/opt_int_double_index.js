@@ -46,3 +46,14 @@ for (var r = 0; r < 3; r++) {
     eq(mac(src, 0.5, dst.slice(), 0, 0, 2), mac(src, 0.5, dst.slice(), 0, 0, 2), 'fraction in loop');
 }
 print(fails === 0 ? 'ok' : 'FAILED ' + fails);
+
+// An element read typed int32 by its uses that later meets fractional doubles (a Float64Array
+// filled with integers first): the exit makes the rebuild read it as a double.
+function sumf(a, n) { var s = 0; for (var k = 0; k < n; k++) s = (s + a[k] * 2) | 0; return s; }
+var fa = new Float64Array(16);
+for (var k = 0; k < 16; k++) fa[k] = k;
+var fs = 0;
+for (var r = 0; r < 3000; r++) fs = (fs + sumf(fa, 16)) | 0;
+for (var k = 0; k < 16; k++) fa[k] = k + 0.25;
+for (var r = 0; r < 3000; r++) fs = (fs + sumf(fa, 16)) | 0;
+print(fs);

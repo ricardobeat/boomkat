@@ -113,10 +113,12 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
 // bytecode call fallthrough for liveness. A native consumer may end its CFG edge
 // at node.call and use the external successor as another root. With `forwarding` the graph may
 // hold APPLY_ARGS, whose reads of the frame's arguments the liveness does not see: for a consumer
-// that accounts for them itself.
+// that accounts for them itself. With `resolve` it may hold RESOLVEVAR, whose write of A the
+// roles do not record, and THROW_UNRESOLVED: for a consumer that knows the write itself and only
+// needs the liveness to over-approximate.
 fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     heap::Heap* h = null, DecodedOpAllowed allowed = null, bool split_calls = false,
-    DecodedCfgBudget budget = DEFAULT_CFG_BUDGET, bool forwarding = false) {
+    DecodedCfgBudget budget = DEFAULT_CFG_BUDGET, bool forwarding = false, bool resolve = false) {
     *cfg = {};
     if (code == null || count == 0 || count > budget.max_words) return false;
     ulong bytes = (ulong)count * (DecodedCfgNode::size + uint::size);
@@ -136,7 +138,8 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     for (uint pc = 0; pc < count;) {
         DecodedBytecode view = bytecode::decode_bytecode(code, count, pc);
         if (!view.valid || view.insn.op.ordinal >= Opcode::values.len
-            || (!bytecode_cfg_control_supported(view.insn.op) && !(forwarding && view.insn.op == Opcode.APPLY_ARGS))
+            || (!bytecode_cfg_control_supported(view.insn.op) && !(forwarding && view.insn.op == Opcode.APPLY_ARGS)
+                && !(resolve && (view.insn.op == Opcode.RESOLVEVAR || view.insn.op == Opcode.THROW_UNRESOLVED)))
             || (allowed != null && !allowed(view.insn.op))) return false;
         if (cfg.instruction_count == budget.max_instructions) return false;
         uint index = cfg.instruction_count++;

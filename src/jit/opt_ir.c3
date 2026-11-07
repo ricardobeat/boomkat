@@ -335,6 +335,17 @@ struct OptPoly {
     uint[OPT_POLY_MAX] idx;
 }
 
+// A join (block `pos` in reverse postorder) and a register merged there.
+struct OptJoin {
+    uint pos;
+    uint reg;
+}
+
+fn bool opt_join_windowed(List{OptJoin}* joins, uint pos, uint reg) {
+    foreach (j : *joins) if (j.pos == pos && j.reg == reg) return true;
+    return false;
+}
+
 struct OptGraph {
     List{OptPoly} polys;
     List{OptNode} nodes;
