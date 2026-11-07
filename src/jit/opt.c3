@@ -64,7 +64,7 @@ const char OPT_DECLINE_MAX = 3;
 const uint OPT_FIELD_SITES = 2;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
-const usz OPT_CODE_MAX = 512 * 1024;
+const usz OPT_CODE_MAX = 4 * 1024 * 1024;
 
 struct OptCode {
     // The code installed as f.jit_code while the function is optimized.
