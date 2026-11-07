@@ -126,6 +126,10 @@ struct JitStats {
     ulong calls_depth;
     ulong calls_builtin;
     ulong calls_declined;
+    // Declined calls whose pushed frame ran nested natively (jit_enter_pushed), and those left
+    // to the restart, which unwinds the native frames to Vm.run.
+    ulong calls_pushed;
+    ulong calls_restarted;
     // Restarts that continued in the new frame's native code without Vm.run.
     ulong switches;
     // Compile wall time, in nanoseconds, measured only while timing is set
