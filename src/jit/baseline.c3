@@ -85,11 +85,16 @@ const char BASELINE_MAX_ATTEMPTS = 2;
 // kept for the CompiledFunction's lifetime, so functions run only a few times
 // (loaded code, initializers) stay interpreted rather than fill the cap.
 const uint BASELINE_ENTRY_THRESHOLD = 32;
+// Entries an eval-derived function needs before it compiles. A library
+// evaled once (zlib) reaches this quickly; a source a loader recreates per
+// load (CodeLoad) discards each body before it does, so its compiles, which
+// would all be thrown away, never happen.
+const uint BASELINE_EVAL_ENTRY_THRESHOLD = 256;
 // Entries one expiry of the back-edge budget (heap::BWD_GC_INTERVAL backward
 // branches, counted across all frames) credits to the function whose branch
-// used it up: a function called once compiles at its loop's first expiry, and
-// top-level code, which is never credited for entering, at its second.
-const uint BASELINE_LOOP_CREDIT = BASELINE_ENTRY_THRESHOLD - 1;
+// used it up. One expiry must not pay for a whole compile: a cold call needs
+// several expiries of a genuinely hot loop before it compiles.
+const uint BASELINE_LOOP_CREDIT = 8;
 // Generated code and entry tables, in bytes, past which compiles are refused.
 const usz BASELINE_CODE_CAP = 64 * 1024 * 1024;
 // Instruction words past which a function stays interpreted. Code grows by
@@ -97,6 +102,16 @@ const usz BASELINE_CODE_CAP = 64 * 1024 * 1024;
 // word, and one compile is one pause, so a function this large (generated
 // initializers, mostly) costs more than native code would save.
 const uint BASELINE_MAX_WORDS = 65536;
+// Maximum share of a body's instruction words that may emit a thunk call, in
+// percent. A relay/thunk call pays the interpreter's dispatch plus the native
+// frame's fast call, register reload and return, so a body past this share
+// cannot repay that overhead with the inline work that remains. 60 keeps mixed
+// bodies, whose loads, jumps and arithmetic still win, compiled: it rejects
+// only the relay-dominated bodies that lose to plain interpretation.
+const uint BASELINE_MAX_THUNK_FRACTION = 60;
+// Code bytes per instruction word, used only to estimate a compile's size
+// before codegen so a cap-full compile does not pay for code it will discard.
+const usz BASELINE_BYTES_PER_WORD = 80;
 // A native run's result when its target is not an instruction start: the
 // interpreter continues the frame.
 const long BASELINE_INTERPRET = OpStatus::values.len;
@@ -116,6 +131,18 @@ struct JitStats {
     uint too_large;
     uint failed;
     uint capped;
+    // Policy skips, not compile failures: a relay-dominated body and one-shot
+    // eval code cannot repay a compile, so they stay interpreted without a
+    // permanent refusal.
+    uint skipped_unprofitable;
+    uint skipped_eval;
+    // Baseline bodies dropped to keep the cap transient, and the sweeps run.
+    // An installed body is stamped with compile_seq; retired bodies wait on
+    // retired_code until no native frame can still be running their code.
+    ulong evicted;
+    ulong sweeps;
+    uint compile_seq;
+    void* retired_code;
     // Native call sites: callees entered natively, trivial callees completed
     // in place, and calls left to the thunk because the callee had no native
     // code yet, the depth cap was reached, a method callee was not a compiled
@@ -125,6 +152,9 @@ struct JitStats {
     ulong calls_no_code;
     ulong calls_depth;
     ulong calls_builtin;
+    // The builtin calls a native call site completed itself
+    // (vm::jit_call_builtin_native) instead of returning through the thunk.
+    ulong calls_builtin_direct;
     ulong calls_declined;
     // Declined calls whose pushed frame ran nested natively (jit_enter_pushed), and those left
     // to the restart, which unwinds the native frames to Vm.run.
@@ -191,6 +221,13 @@ struct BaselineCode {
     void* subs;
     // Optimized code only: set by every entry, cleared by the eviction sweep (opt_make_room).
     char touched;
+    // Instruction words emitted as a normal-instruction thunk call, read once
+    // by the profitability filter before this body is installed.
+    uint thunk_insns;
+    // Sequence number of the install, used by the cold-code sweep to pick
+    // older bodies. An evicted body waits on this link until it can be freed.
+    uint compile_seq;
+    BaselineCode* next_retired;
     // The function's Dispatch view, code_base to nregs in ColdCtx's order,
     // which native calls and returns copy into the Dispatch whole (fill_view).
     usz[8] view;
@@ -225,7 +262,10 @@ fn void* baseline_code(Heap* h, CompiledFunction* f) @inline {
         return ((BaselineCode*)f.jit_code).exec;
     }
     if (f.jit_refused || is_top_level(f)) return null;
-    if (!h.jit_stress && ++f.jit_entries < BASELINE_ENTRY_THRESHOLD) return null;
+    // Nested functions of eval source can be the hot code of a library evaled
+    // once (zlib), so they compile after more entries rather than never.
+    uint threshold = f.jit_eval_derived ? BASELINE_EVAL_ENTRY_THRESHOLD : BASELINE_ENTRY_THRESHOLD;
+    if (!h.jit_stress && ++f.jit_entries < threshold) return null;
     return baseline_try_compile(h, f);
 }
 
@@ -233,7 +273,9 @@ fn bool is_top_level(CompiledFunction* f) @inline => f.flags.is_global || f.flag
 
 // Whether the interpreted frame of `f`, whose loop just used up the back-edge
 // budget, should continue in native code, compiling `f` when the policy says
-// so. Each expiry credits BASELINE_LOOP_CREDIT entries.
+// so. Each expiry credits BASELINE_LOOP_CREDIT entries, and one expiry can
+// never be enough on its own: a cold call must keep its loop hot for several
+// expiries before the compile is worth it.
 fn bool baseline_loop_hot(Heap* h, CompiledFunction* f) @noinline {
     if (f.jit_code != null) {
         if (h.opt.enabled) opt_note_entry(h, f, OPT_LOOP_CREDIT);
@@ -241,7 +283,8 @@ fn bool baseline_loop_hot(Heap* h, CompiledFunction* f) @noinline {
     }
     if (f.jit_refused) return false;
     f.jit_entries += BASELINE_LOOP_CREDIT;
-    if (!h.jit_stress && f.jit_entries < BASELINE_ENTRY_THRESHOLD) return false;
+    uint need = f.jit_eval_derived ? BASELINE_EVAL_ENTRY_THRESHOLD : BASELINE_ENTRY_THRESHOLD + BASELINE_LOOP_CREDIT;
+    if (!h.jit_stress && f.jit_entries < need) return false;
     if (baseline_try_compile(h, f) == null) return false;
     h.jit_stats.loop_entries++;
     return true;
@@ -254,7 +297,10 @@ fn long baseline_run(void* exec, Dispatch* ds) @inline {
     ds.heap.opt.running++;
     long status = ((BaselineFn)exec)(ds);
     ds.jit_native = false;
-    if (--ds.heap.opt.running == 0 && ds.heap.opt.retired != null) opt_reap(ds.heap);
+    if (--ds.heap.opt.running == 0 && (ds.heap.opt.retired != null || ds.heap.jit_stats.retired_code != null)) {
+        if (ds.heap.opt.retired != null) opt_reap(ds.heap);
+        baseline_reap(ds.heap);
+    }
     return status;
 }
 
@@ -262,6 +308,9 @@ fn long baseline_run(void* exec, Dispatch* ds) @inline {
 fn void* baseline_entry(CompiledFunction* f) @inline => ((BaselineCode*)f.jit_code).exec;
 
 fn void baseline_free(Heap* h, CompiledFunction* f) {
+    // Teardown is the last chance to free code that a sweep retired but no
+    // native run ever got around to reaping.
+    baseline_reap(h);
     opt_free(h, f);
     BaselineCode* bc = f.jit_code;
     if (bc == null) return;
@@ -269,6 +318,67 @@ fn void baseline_free(Heap* h, CompiledFunction* f) {
     sljit_free_code(bc.exec, null);
     h.free_func(h.heap_udata, bc);
     f.jit_code = null;
+}
+
+// A retired body is no longer reachable from f.jit_code, but a native frame
+// may still be executing it. Its bytes stop counting toward the cap at once;
+// the allocation is freed only when no native code is running.
+fn void baseline_retire(Heap* h, CompiledFunction* f, BaselineCode* bc) {
+    f.jit_code = null;
+    h.jit_stats.live_bytes -= bc.code_bytes + bc.table_bytes;
+    bc.next_retired = (BaselineCode*)h.jit_stats.retired_code;
+    h.jit_stats.retired_code = (void*)bc;
+    h.jit_stats.evicted++;
+}
+
+// Free the retired bodies, once no native frame can be running them.
+fn void baseline_reap(Heap* h) @noinline {
+    if (h.opt.running != 0) return;
+    BaselineCode* bc = (BaselineCode*)h.jit_stats.retired_code;
+    h.jit_stats.retired_code = null;
+    while (bc != null) {
+        BaselineCode* next = bc.next_retired;
+        sljit_free_code(bc.exec, null);
+        h.free_func(h.heap_udata, bc);
+        bc = next;
+    }
+}
+
+// Make room under the cap by retiring the older installed baseline bodies.
+// compile_seq is the age signal: a body that is still hot recompiles after an
+// eviction and so gets a fresh seq before the next sweep. Optimized bodies keep
+// raw baseline exec addresses (emit_opt_exit, jit_inline_materialize), so a
+// sweep that nulled jit_code would leave them dangling: only the baseline-only
+// mode sweeps.
+fn bool baseline_make_room(Heap* h, usz bytes = 0) @noinline {
+    if (h.opt.enabled) return false;
+    JitStats* st = &h.jit_stats;
+    st.sweeps++;
+    usz target = BASELINE_CODE_CAP / 2;
+    uint oldest = st.compile_seq;
+    for (uint fi = 0; fi < h.compiled_func_count; fi++) {
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+        if (cf == null || cf.jit_code == null || cf.opt_code != null) continue;
+        BaselineCode* bc = (BaselineCode*)cf.jit_code;
+        if (bc.compile_seq < oldest) oldest = bc.compile_seq;
+    }
+    uint cutoff = oldest + (st.compile_seq - oldest) / 2;
+    for (uint fi = 0; fi < h.compiled_func_count && st.live_bytes > target; fi++) {
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+        if (cf == null || cf.jit_code == null || cf.opt_code != null) continue;
+        BaselineCode* bc = (BaselineCode*)cf.jit_code;
+        if (bc.compile_seq <= cutoff) baseline_retire(h, cf, bc);
+    }
+    // Optimized code cannot be freed here, so when the cold half is not enough,
+    // drop the newer bodies too before giving up on this compile.
+    if (st.live_bytes > target) {
+        for (uint fi = 0; fi < h.compiled_func_count && st.live_bytes > target; fi++) {
+            CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+            if (cf == null || cf.jit_code == null || cf.opt_code != null) continue;
+            baseline_retire(h, cf, (BaselineCode*)cf.jit_code);
+        }
+    }
+    return st.live_bytes + bytes <= BASELINE_CODE_CAP;
 }
 
 // Whether every instruction of `f` has a thunk.
@@ -289,6 +399,14 @@ fn bool baseline_compilable(CompiledFunction* f) {
 
 fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true) @noinline {
     JitStats* st = &h.jit_stats;
+    // The eval body is one-shot: every eval call compiles a fresh one, so
+    // native code for it can never be reused. Nested eval-derived functions
+    // reach here only through baseline_code and baseline_loop_hot, whose entry
+    // thresholds already reject bodies too short-lived to repay a compile.
+    if (f.flags.is_eval) {
+        st.skipped_eval++;
+        return null;
+    }
     if (!baseline_compilable(f)) {
         st.excluded_opcode++;
         f.jit_refused = true;
@@ -299,9 +417,12 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
         f.jit_refused = true;
         return null;
     }
-    if (st.live_bytes >= BASELINE_CODE_CAP) {
+    // Codegen is wasted work when the cap will only discard its result: use
+    // the ~80 bytes of code plus the entry table per instruction word, and
+    // sweep first so this estimate does not have to be exact.
+    usz estimate = BaselineCode::size + (usz)f.code_count * (BASELINE_BYTES_PER_WORD + void*::size);
+    if (st.live_bytes + estimate > BASELINE_CODE_CAP && !baseline_make_room(h, estimate)) {
         st.capped++;
-        f.jit_refused = true;
         return null;
     }
     long t0 = st.timing ? (long)clock::now() : 0;
@@ -316,12 +437,18 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
         if (++f.jit_attempts >= BASELINE_MAX_ATTEMPTS) f.jit_refused = true;
         return null;
     }
+    if ((usz)bc.thunk_insns * 100 > bc.insns * (usz)BASELINE_MAX_THUNK_FRACTION) {
+        sljit_free_code(bc.exec, null);
+        h.free_func(h.heap_udata, bc);
+        st.skipped_unprofitable++;
+        f.jit_refused = true;
+        return null;
+    }
     usz bytes = bc.code_bytes + bc.table_bytes;
-    if (st.live_bytes + bytes > BASELINE_CODE_CAP) {
+    if (st.live_bytes + bytes > BASELINE_CODE_CAP && !baseline_make_room(h, bytes)) {
         sljit_free_code(bc.exec, null);
         h.free_func(h.heap_udata, bc);
         st.capped++;
-        f.jit_refused = true;
         return null;
     }
     st.code_bytes += bc.code_bytes;
@@ -330,6 +457,7 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
     st.live_bytes += bytes;
     if (st.live_bytes > st.peak_bytes) st.peak_bytes = st.live_bytes;
     st.compiled++;
+    bc.compile_seq = ++st.compile_seq;
     f.jit_code = bc;
     if (optimize && h.opt.always) opt_try_compile(h, f);
     return ((BaselineCode*)f.jit_code).exec;
@@ -470,6 +598,10 @@ struct Asm {
     // False once a SETCONST can change the constant table.
     bool consts_fixed;
     JitStats* stats;
+    // Normal instructions emitted through a thunk rather than an inline path.
+    // Out-of-line stub fallbacks are excluded: they are slow paths of inline
+    // work, not instructions the body dispatches through a thunk.
+    uint thunk_insns;
     // The instruction being emitted.
     uint i;
     uint next;
@@ -599,6 +731,7 @@ fn void Asm.emit_insn(&self, uint i) {
     } else if (self.emit_fast(self.consts_fixed)) {
         if (is_access_op(self.w.op)) self.count(&self.stats.fast_hits[0], self.w.op);
     } else {
+        self.thunk_insns++;
         self.emit_thunk_call(i);
     }
     if (self.call.len != 0 || self.alt.len != 0 || self.poly.len != 0) {
@@ -737,6 +870,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(a.labels[i]);
     }
+    bc.thunk_insns = a.thunk_insns;
     return bc;
 }
 
@@ -1786,9 +1920,80 @@ fn Thunk[] thunks() @inline {
     return &thunk_table;
 }
 
+// The CALL thunk's work, shared with the native call site's builtin path
+// (vm::jit_call_builtin_native): run the call through th_call_native when the
+// callee is a builtin (vm::jit_call_builtin), else through the operation
+// function, and map the outcome as the interpreter continues.
+fn long jit_call_thunk(Dispatch* ds, ulong arg) {
+    Instruction* next = (Instruction*)(usz)(arg & ~1UL);
+    ds.curr_pc = next;
+    Instruction p = next[-1];
+    DecodedInsn insn = { .op = Opcode.CALL, .a = p.a, .b = p.b, .c = p.c };
+    if ((arg & 1) != 0) {
+        Instruction x = next[-2];
+        insn.a |= (uint)x.a << 8;
+        insn.b |= (uint)x.b << 8;
+        insn.c |= (uint)x.c << 8;
+    }
+    Activation* act = ds.act;
+    CompiledFunction* func = ds.vm.current_func;
+    uint count_before = ds.vm.activation_count;
+    OpStatus s;
+    long raw = vm::JIT_NO_RAW;
+    if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s, &raw)) {
+        count_relayed(ds, Opcode.CALL);
+        if (raw != vm::JIT_NO_RAW) return raw;
+    } else {
+        s = vm::op_call(ds, insn);
+    }
+    return jit_call_status(ds, next, act, func, count_before, s);
+}
+
+// How a completed CALL leaves its caller, as the thunk's status: the operation
+// asked for a restart, a frame switch left the caller current at the native
+// call site's floor, a pushed callee runs natively here, the frame continues
+// in optimized code, it redispatches, or it leaves with the operation's own
+// status. `act`, `func` and `count_before` are the caller's, read before the
+// call ran.
+fn long jit_call_status(Dispatch* ds, Instruction* next, Activation* act, CompiledFunction* func,
+                        uint count_before, OpStatus s) {
+    if (s == NEXT && ds.needs_restart) return (long)OpStatus.RESTART.ordinal;
+    // A frame switched to in place is the caller a native call site waits for
+    // when the depth is back at its floor, and is otherwise entered through
+    // Vm.run.
+    if (s == NEXT && (ds.act != act || ds.vm.current_func != func)
+        && ds.vm.activation_count == ds.jit_floor) {
+        ds.act.curr_pc = ds.curr_pc;
+        return BASELINE_RETURNED;
+    }
+    s = vm::jit_restart_switched(ds, act, func, s);
+    // A callee the lean shapes declined, entered by pushing its frame: run its native
+    // code here rather than unwinding every native frame above to Vm.run.
+    if (ds.needs_restart && s == RESTART) {
+        long entered = vm::jit_enter_pushed(ds, next, count_before);
+        if (entered != vm::JIT_NO_RAW) return entered;
+    }
+    if (s == NEXT && ds.curr_pc != next) {
+        // A taken backward branch may continue in optimized code.
+        if (@unlikely(ds.heap.opt.enabled) && ds.curr_pc < next && ds.act == act) {
+            void* code = opt_osr(ds, func);
+            if (code != null) return (long)(usz)code;
+        }
+        return BASELINE_REDISPATCH;
+    }
+    return (long)s.ordinal;
+}
+
 fn void init_thunks() @noinline @private {
     $foreach $op : Opcode::values:
         $if !@excluded($op):
+            $if $op == Opcode.CALL:
+                // The CALL thunk body is shared with the native call site's
+                // direct builtin path (jit_call_thunk).
+                thunk_table[$op.ordinal] = fn long(Dispatch* ds, ulong arg) {
+                    return jit_call_thunk(ds, arg);
+                };
+            $else
             thunk_table[$op.ordinal] = fn long(Dispatch* ds, ulong arg) {
                 Instruction* next = (Instruction*)(usz)(arg & ~1UL);
                 ds.curr_pc = next;
@@ -1816,17 +2021,7 @@ fn void init_thunks() @noinline @private {
                 OpStatus s;
                 uint count_before = ds.vm.activation_count;
                 if (vm::has_feedback($op)) vm::note_feedback(ds, insn);
-                $if $op == Opcode.CALL:
-                    long raw = vm::JIT_NO_RAW;
-                    if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s, &raw)) {
-                        count_relayed(ds, $op);
-                        if (raw != vm::JIT_NO_RAW) return raw;
-                    } else {
-                        s = @run_op($op, ds, insn);
-                    }
-                $else
-                    s = @run_op($op, ds, insn);
-                $endif
+                s = @run_op($op, ds, insn);
                 if (s == NEXT && ds.needs_restart) return (long)OpStatus.RESTART.ordinal;
                 // A frame switched to in place is the caller a native call
                 // site waits for when the depth is back at its floor, and is
@@ -1855,6 +2050,7 @@ fn void init_thunks() @noinline @private {
                 }
                 return (long)s.ordinal;
             };
+            $endif
         $endif
     $endforeach
     thunks_ready = true;
