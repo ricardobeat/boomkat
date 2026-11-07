@@ -349,7 +349,7 @@ fn void OptCg.emit_inline_exit(&self, uint fidx, uint pc, uint mask, uint reason
     for (uint level = depth; level > 0; level--) {
         OptFn* fn_ = &self.g.fns[at];
         site.frames[level - 1] = { .callee = fn_.f, .resume = self.g.fns[fn_.parent].f.code + fn_.resume_pc,
-                                   .base = fn_.reg_base, .nargs = fn_.f.num_formals, .keep = keep };
+                                   .base = fn_.reg_base, .nargs = fn_.f.num_formals, .argc = fn_.nargs, .keep = keep };
         keep = fn_.parent_keep;
         at = fn_.parent;
     }
@@ -1149,6 +1149,9 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     // The call is an instruction of the node's function: of an inlined body for a nested call.
     OptFn* caller = &self.g.fns[n.fidx];
     uint callee_reg = ((a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL) ? a.w.a : a.w.b) + caller.reg_base;
+    // A forwarding call is guarded before its registers move: the function `apply` runs is in the
+    // slot after the call's callee register, the receiver after it.
+    if (a.w.op == Opcode.APPLY_ARGS) callee_reg++;
     int m = SLJIT_MEM;
     void*[16] miss;
     uint misses = 0;
@@ -1356,13 +1359,13 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
 // instruction that writes it from another, with publish's watermark and barrier.
 fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
     Asm* a = self.a;
-    a.decode((uint)n.imm);
     a.call.len = 0;
     uint base = self.g.fns[n.fidx].reg_base;
-    if (n.cc == 1) {
-        a.load(R0, base - 1);
+    if (n.cc == 3) {
+        a.load(R0, (uint)n.imm);
     } else {
-        a.load(R0, (n.cc == 2 ? a.w.b : a.w.a) + base);
+        a.decode((uint)n.imm);
+        a.load(R0, n.cc == 1 ? base - 1 : (n.cc == 2 ? a.w.b : a.w.a) + base);
     }
     if (n.rep == OptRep.OBJECT) {
         self.finish_object(i, n);
@@ -1370,6 +1373,45 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
     }
     a.publish(n.home);
     self.exit_calls(i, OptExit.SLOW_PATH);
+}
+
+// The guard of an inlined forwarding call: the value is the builtin function numbered n.imm (an
+// unbound, non-proxy builtin function object, as builtins::is_intrinsic_apply asks).
+fn void OptCg.emit_check_builtin(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    CallLayout* k = call_layout();
+    if (n.a != NO_NODE) {
+        int r = self.obj_reg(n.a, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    } else {
+        a.load(R1, n.home);
+    }
+    // A builtin not yet given an object of its realm is a light function.
+    void* light = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)((types::TAG_LIGHTFUNC << 48) | (ulong)n.imm));
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.CALLEE);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.CALLEE);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, SLJIT_MEM | R0, 0);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want), i, OptExit.CALLEE);
+    sljit_emit_op1(c, SLJIT_MOV_S32, R4, 0, SLJIT_MEM | R0, k.fn_builtin);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, n.imm), i, OptExit.CALLEE);
+    sljit_set_label(light, sljit_emit_label(c));
+}
+
+// A register move of a forwarding call within the caller's frame: the value is one the frame
+// holds already, so only the heap-register count may have to cover the new slot.
+fn void OptCg.emit_move_window(&self, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.load(R0, (uint)n.imm);
+    a.store(n.home, R0);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | a.ds, a.lay.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, a.lay.act_hrc);
+    void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, n.home);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, a.lay.act_hrc, SLJIT_IMM, (long)n.home + 1);
+    sljit_set_label(covered, sljit_emit_label(c));
 }
 
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {
@@ -1660,7 +1702,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN) {
         if (self.force_here(n)) {
             self.forced_done = true;
             self.store_dirty(n.dirty_first, n.dirty_count);
@@ -1758,6 +1800,10 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_new_object(i, n);
         case ADD_FIELD:
             self.emit_add_field(i, n);
+        case CHECK_BUILTIN:
+            self.emit_check_builtin(i, n);
+        case MOVE_WINDOW:
+            self.emit_move_window(n);
         case EXIT:
             self.store_dirty(n.dirty_first, n.dirty_count);
             self.a.i = n.pc;

@@ -924,6 +924,8 @@ macro Instruction* @apply_args(Instruction* pc, HandlerTable* handlers, TVal* re
     CompiledFunction* target = th_lean_target(cold.vm, regs[callee + 1], regs + callee + 2, false);
     uint nargs = (uint)args_slot.get_fastint();
     if (target == null || nargs > target.num_regs) return pc;
+    // The forwarded callee, for the optimizer's inlining (OptBuild.forward_candidate).
+    @note_callee(pc, cold, target);
     TVal this_arg = regs[callee + 2];
     bool this_valid = false;
     if (this_arg.is_heap_allocated()) {
