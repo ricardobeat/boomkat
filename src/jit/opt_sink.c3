@@ -14,6 +14,7 @@
 module boomkat::jit @feat(SLJIT);
 
 import std::collections::list;
+import std::io;
 
 const uint OPT_SINK_FIELDS = 16;
 const uint OPT_SINK_READS = 8;
@@ -77,7 +78,8 @@ fn bool OptGraph.sink_in_list(&self, OptSinkScratch* s, uint first, uint count) 
 }
 
 // Scalar-replace the allocations that never escape. Returns the count sunk.
-fn uint OptGraph.sink(&self) {
+// With `trace`, why each allocation stays is printed (--opt-dump).
+fn uint OptGraph.sink(&self, bool trace = false) {
     uint count = (uint)self.nodes.len();
     uint nblocks = (uint)self.blocks.len();
     bool has_alloc = false;
@@ -116,13 +118,13 @@ fn uint OptGraph.sink(&self) {
     uint sunk = 0;
     for (uint v = 0; v < count && self.sinks.len() < OPT_SINK_MAX; v++) {
         if (self.nodes[v].op != OptOp.NEW_OBJECT) continue;
-        if (self.try_sink(&s, v)) sunk++;
+        if (self.try_sink(&s, v, trace)) sunk++;
     }
     return sunk;
 }
 
 // The analysis of one allocation, applied when it holds.
-fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v) {
+fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v, bool trace) {
     uint count = (uint)self.nodes.len();
     uint nblocks = (uint)self.blocks.len();
     sz mats0 = self.mats.len();
@@ -135,6 +137,8 @@ fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v) {
     s.held_by[v] = true;
     uint bv = s.block_of[v];
     bool ok = true;
+    // The node the analysis stopped at.
+    uint at = NO_NODE;
     for (uint b = bv; b < nblocks && ok; b++) {
         OptBlock* blk = &self.blocks[b];
         OptSinkState st;
@@ -158,12 +162,13 @@ fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v) {
                 for (uint f = 0; f < st.count; f++) if (ps.vals[f] != st.vals[f]) st.conflict = true;
             }
             // A loop the object lives into.
-            if (blk.header && def_any) { ok = false; break; }
+            if (blk.header && def_any) { ok = false; at = blk.first; break; }
             if (st.conflict) st.def = true;
         }
         if (blk.osr && self.sink_in_list(s, blk.osr_first, blk.osr_count)) { ok = false; break; }
         for (uint j = blk.first; j < blk.end && ok; j++) {
             OptNode* n = &self.nodes[j];
+            at = j;
             if (j == v) {
                 st = { .def = true };
                 continue;
@@ -243,6 +248,14 @@ fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v) {
         }
     }
     if (!ok) {
+        if (trace && at != NO_NODE) {
+            OptNode* n = &self.nodes[at];
+            if (n.op == OptOp.GENERIC) {
+                io::eprintfn("sink: n%d stays: n%d GENERIC %s", v, at, self.fns[n.fidx].f.code[(uint)n.imm].op);
+            } else {
+                io::eprintfn("sink: n%d stays: n%d %s", v, at, n.op);
+            }
+        }
         self.mats.size = mats0;
         self.mat_vals.size = vals0;
         return false;
