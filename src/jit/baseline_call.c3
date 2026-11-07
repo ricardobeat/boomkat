@@ -88,6 +88,9 @@ struct CallLayout {
     long fn_lex_env;
     long fn_builtin;
     long cf_jit_code;
+    long cf_func_index;
+    long ic_prop_idx;
+    long ic_feedback;
     long cf_num_regs;
     long cf_constants;
     long cf_ic_entries;
@@ -155,6 +158,10 @@ fn CallLayout* call_layout() {
     l.fn_lex_env = (char*)&o.extra.func.lex_env - base;
     l.fn_builtin = (char*)&o.extra.func.builtin_fn_index - base;
     l.cf_jit_code = (char*)&cf.jit_code - base;
+    l.cf_func_index = (char*)&cf.func_index - base;
+    hobject::ICEntry* ice = (hobject::ICEntry*)base;
+    l.ic_prop_idx = (char*)&ice.prop_idx - base;
+    l.ic_feedback = (char*)&ice.feedback - base;
     l.cf_num_regs = (char*)&cf.num_regs - base;
     l.cf_constants = (char*)&cf.constants - base;
     l.cf_ic_entries = (char*)&cf.ic_entries - base;
@@ -394,6 +401,12 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
     uint callee = global ? self.w.a : self.w.b;
     uint nargs = global ? self.w.b : self.w.c;
     long packed = (long)nargs | (self.w.op == Opcode.CALL ? CALL_METHOD : CALL_PLAIN);
+    // A cold site names no function number, so the subroutine's comparison with
+    // the callee's cannot match before the feedback is recorded.
+    if (self.f.ic_entries != null) {
+        hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.i];
+        if ((ic.feedback & hobject::FB_CALL) == 0) ic.prop_idx = hobject::IC_PROP_ABSENT;
+    }
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)self.w.a * TVal::size);
     self.mov(R3, 0, SLJIT_IMM, packed);
@@ -458,6 +471,58 @@ fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     self.store(self.w.a, R0);
 }
 
+// Record the callee in R4 (its CompiledFunction) as the call feedback of the
+// site that is calling through the subroutine, as hobject::ic_note_callee does
+// for the calls the threaded handlers make. The site's cache is addressed from
+// the resume point kept on the stack. A site that already named this callee
+// costs one comparison. Keeps R1-R4; clobbers R0.
+fn void Asm.emit_note_callee(&self) {
+    if (self.f.ic_entries == null) return;
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    Layout* l = self.lay;
+    int m = SLJIT_MEM;
+    // The cache of the call instruction before the resume point.
+    self.mov(R0, 0, SLJIT_MEM | reg_sp(), CALL_RESUME_OFF);
+    usz scale = vm::TH_IC_SCALE;
+    if ((scale & (scale - 1)) == 0) {
+        long shift = 0;
+        while ((1uL << shift) < scale) shift++;
+        sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, shift);
+    } else {
+        sljit_emit_op2(c, SLJIT_MUL, R0, 0, R0, 0, SLJIT_IMM, (long)scale);
+    }
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM,
+                   (long)((usz)self.f.ic_entries - ((usz)self.f.code + Instruction::size) * scale));
+    void* known = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, m | R0, k.ic_prop_idx, m | R4, k.cf_func_index);
+    // R0 = the cache. The test of FB_CALL and the stores use R4, which is
+    // rebuilt from the function slot at the end.
+    self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
+    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, hobject::FB_CALL);
+    void* poly = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
+    self.emit_callee_cf(R4);
+    self.mov(R4, 0, m | R4, k.cf_func_index, SLJIT_MOV_U32);
+    self.mov(m | R0, k.ic_prop_idx, R4, 0, SLJIT_MOV_U32);
+    self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
+    sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, SLJIT_IMM, hobject::FB_CALL);
+    void* stored = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(poly, sljit_emit_label(c));
+    self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
+    sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, SLJIT_IMM, hobject::FB_POLY);
+    sljit_set_label(stored, sljit_emit_label(c));
+    self.mov(m | R0, k.ic_feedback, R4, 0, SLJIT_MOV_U8);
+    self.emit_callee_cf(R4);
+    sljit_set_label(known, sljit_emit_label(c));
+}
+
+// `reg` = the CompiledFunction of the callee in the window R1 (the subroutine
+// has checked that it is a compiled function with a body).
+fn void Asm.emit_callee_cf(&self, int reg) {
+    self.mov(reg, 0, SLJIT_MEM | R1, -2 * (long)TVal::size);
+    sljit_emit_op2(self.c, SLJIT_XOR, reg, 0, reg, 0, SLJIT_IMM, K_OBJ);
+    self.mov(reg, 0, SLJIT_MEM | reg, self.lay.fn_comp_func);
+}
+
 // The call subroutine. In: R1 the callee's window (the function two slots
 // below it, the receiver one below), R2 the result slot, R3 the argument
 // count with CALL_METHOD or CALL_PLAIN, R4 the caller's resume point. Tests
@@ -493,6 +558,7 @@ fn void Asm.emit_call_body(&self) {
     slow.add(sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0));
     self.mov(R4, 0, m | R0, l.fn_comp_func);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    self.emit_note_callee();
     self.mov(R4, 0, m | R4, k.cf_jit_code);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
     self.mov(R4, 0, m | R4, k.bc_call_entry);
