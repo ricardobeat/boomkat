@@ -32,6 +32,7 @@ struct Layout {
     long heap_gc_phase;
     long heap_shapes;
     long heap_epoch;
+    long heap_layout;
     long heap_site_key;
     long obj_shape;
     long obj_gc;
@@ -75,6 +76,7 @@ struct Layout {
     long proto_observed_mask;
     long vic_bindings;
     long vic_epoch;
+    long vic_layout;
     long vic_flags;
     long vic_head;
     long vic_slot;
@@ -179,6 +181,7 @@ fn Layout* layout() {
     l.heap_gc_oracle = (char*)&h.gc_oracle_running - base;
     l.heap_shapes = (char*)&h.shapes - base;
     l.heap_epoch = (char*)&h.shape_recycle_epoch - base;
+    l.heap_layout = (char*)&h.layout_epoch - base;
     l.heap_site_key = (char*)&h.jit_site_key - base;
     l.heap_mega = (char*)&h.mega_cache - base;
     l.heap_string_proto = (char*)&h.string_proto - base;
@@ -229,6 +232,7 @@ fn Layout* layout() {
     l.obj_array_inline_cap = (char*)o.array_inline_capacity_ptr() - base;
     l.vic_bindings = (char*)&vic.bindings - base;
     l.vic_epoch = (char*)&vic.recycle_epoch - base;
+    l.vic_layout = (char*)&vic.layout_epoch - base;
     l.vic_flags = (char*)&vic.prop_flags - base;
     l.vic_head = (char*)&vic.search_head - base;
     l.vic_slot = (char*)&vic.slot_ptr - base;
@@ -1550,8 +1554,8 @@ fn void Asm.var_slot(&self, long vic, bool scoped, uint closure_reg = uint::max,
         }
         self.alt.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
     }
-    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.vic_epoch);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | self.heap, l.heap_epoch);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.vic_layout);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | self.heap, l.heap_layout);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R1, 0));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, l.vic_slot);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
