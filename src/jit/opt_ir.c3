@@ -114,16 +114,21 @@ enum OptOp : char {
     // method call): exits (CALLEE) before any effect unless the callee register holds a closure of
     // that function, the receiver and the frame a real call would publish are acceptable, and
     // there is room for it. The nodes after it, until the next such node, are the callee's body.
+    // a and b, when not NO_NODE, are OBJECT nodes holding the callee and the receiver (a nested
+    // call whose window lies beyond the caller's frame).
     CHECK_CALLEE,
     // The variable a CALL_VAR (cc nonzero) or CALL_GLOBAL (imm its pc) names, stored in the call's
-    // callee register as a published value; exits (SLOW_PATH) when its cache does not hold.
+    // callee register as a published value; exits (SLOW_PATH) when its cache does not hold. Of
+    // rep OBJECT (a callee register beyond the caller's frame) it stays in a register.
     LOAD_VAR,
     // A GETGLOBAL of an inlined body (imm its pc) read as a number of the node's rep; exits when
     // its cache does not hold or the value is not that kind of number.
     LOAD_GLOBAL,
-    // (cc nonzero: the receiver slot of the inlined call, for an LDTHIS.)
     // The window slot imm (a callee RET's register) copied to the window slot home (the call's
-    // result register) as a published store; exits (SLOW_PATH) where publish does.
+    // result register) as a published store; exits (SLOW_PATH) where publish does. cc 1 copies
+    // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG).
+    // Of rep OBJECT the value stays in a register (finish_object), for a home beyond the
+    // caller's frame.
     COPY_WINDOW,
     // The boxed constant imm (undefined, null or a boolean) stored to the window slot home.
     STORE_CONST,
@@ -163,6 +168,12 @@ struct OptFn {
     // register (uint::max when none).
     uint remap_pc;
     uint remap_reg;
+    // The entry whose body holds the call (0 for the function being optimized), how many
+    // inlined calls deep this body is, and the registers of that caller's frame (by its own
+    // numbering) an exit from this body keeps when it publishes the caller's frame too.
+    uint parent;
+    uint depth;
+    uint parent_keep;
 }
 
 struct OptNode {
@@ -284,7 +295,7 @@ fn bool OptRep.is_gpr(self) @inline => self == OptRep.INT32 || self == OptRep.OB
 fn void OptGraph.dump(&self, CompiledFunction* f) {
     io::eprintfn("opt graph: %d nodes, %d blocks, code %d words", self.nodes.len(), self.blocks.len(), f.code_count);
     for (uint i = 1; i < self.fns.len(); i++) {
-        io::eprintfn("inline fn=%d cf=fn#%d base=%d resume=%d", i, self.fns[i].f.func_index, self.fns[i].reg_base, self.fns[i].resume_pc);
+        io::eprintfn("inline fn=%d cf=fn#%d base=%d resume=%d parent=%d depth=%d", i, self.fns[i].f.func_index, self.fns[i].reg_base, self.fns[i].resume_pc, self.fns[i].parent, self.fns[i].depth);
     }
     foreach (pos, &blk : self.blocks) {
         io::eprintfn("block %d pc=%d%s succ=[%d %d] n=%d", pos, blk.pc, blk.header ? " loop-header" : "", blk.succ[0], blk.succ[1], blk.succ_count);
