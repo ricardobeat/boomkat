@@ -96,6 +96,10 @@ enum OptOp : char {
     // a string or another counted value, or incremental marking runs), else it is a number of the
     // node's rep.
     LOAD_FIELD,
+    // A GETPROPC or GETPROPC_CACHED (imm its pc) of `length` from an array, as an INT32; exits
+    // (SLOW_PATH) for any other receiver or a length above the int32 range. The receiver is the
+    // OBJECT node b, or the window register when b is NO_NODE.
+    LOAD_LENGTH,
     // A PUTPROPC or PUTTHISC (imm its pc) overwrite of the own writable data property its cache
     // names, in a plain object of the cache's shape; exits for any other receiver or a value that
     // needs a barrier. a is the number or OBJECT node stored, or NO_NODE for a value in the window;

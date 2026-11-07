@@ -810,6 +810,31 @@ fn void OptCg.box_node(&self, uint n, int dst) {
     }
 }
 
+// LOAD_LENGTH: an array's length as emit_length reads it, as an INT32. Anything else, and a
+// length above the int32 range, leaves for the baseline code.
+fn void OptCg.emit_load_length(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    self.decode(n);
+    a.call.len = 0;
+    int rr = R0;
+    if (n.b != NO_NODE) {
+        rr = self.obj_reg(n.b, R0);
+    } else {
+        a.load(R0, a.w.b);
+    }
+    a.unbox_object(R1, rr);
+    a.guard_not_proxy(R1, R2);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.class_mask);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.class_array));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, l.obj_array_len);
+    a.call.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, 0x7FFFFFFF));
+    self.exit_calls(i, OptExit.SLOW_PATH);
+    self.def_int(i, R0);
+}
+
 // GETPROP of an element as the baseline's emit_get_elem reads it, with the index in a node: a
 // dense array's element or a typed array's. Everything else leaves for the baseline code.
 fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
@@ -2188,7 +2213,7 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
     void* c = self.a.c;
     OptNode* n = &self.g.nodes[i];
     self.use_fn(n.fidx);
-    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN) {
+    if (n.dirty_count != 0 || n.op == OptOp.GENERIC || n.op == OptOp.CHECK_I32 || n.op == OptOp.CHECK_NUM || n.op == OptOp.LOAD_CAP || n.op == OptOp.LOAD_ELEM || n.op == OptOp.STORE_ELEM || n.op == OptOp.LOAD_FIELD || n.op == OptOp.LOAD_LENGTH || n.op == OptOp.STORE_FIELD || n.op == OptOp.CHECK_CALLEE || n.op == OptOp.COPY_WINDOW || n.op == OptOp.LOAD_VAR || n.op == OptOp.LOAD_GLOBAL || n.op == OptOp.COMPARE_WINDOW || n.op == OptOp.LNOT || n.op == OptOp.NEW_OBJECT || n.op == OptOp.ADD_FIELD || n.op == OptOp.CHECK_BUILTIN) {
         if (self.force_here(n)) {
             self.forced_done = true;
             // The hook falls through once its count is spent: an allocation for the exit must not run then.
@@ -2227,6 +2252,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_store_elem(i, n);
         case LOAD_FIELD:
             self.emit_load_field(i, n);
+        case LOAD_LENGTH:
+            self.emit_load_length(i, n);
         case STORE_FIELD:
             self.emit_store_field(i, n);
         case CHECK_CALLEE:
