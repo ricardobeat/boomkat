@@ -48,5 +48,8 @@ if [ "$n" != 1 ]; then echo "NOBAN"; fails=$((fails+1)); fi
 # exits stay few (the fixture takes 24 before the ban).
 n=$($BIN --memory-limit=512 --jit --opt --jit-stats --script test/jit/opt_inline_exit_ban.js 2>&1 | sed -n 's/^opt inline: .* \([0-9]*\) exits from inlined bodies/\1/p')
 if [ -z "$n" ] || [ "$n" -gt 8 ]; then echo "NOINLINEBAN $n"; fails=$((fails+1)); fi
+# The 20 KB code cap evicts optimized bodies that were not entered since the last sweep.
+n=$($BIN --memory-limit=512 --jit --opt --opt-always --opt-code-max=20000 --jit-stats --script test/jit/opt_inline_getvar.js 2>&1 | grep -c "^opt: [1-9][0-9]* evicted")
+if [ "$n" != 1 ]; then echo "NOEVICT"; fails=$((fails+1)); fi
 echo "opt-exits fails=$fails"
 [ "$fails" = 0 ]

@@ -64,6 +64,7 @@ const char OPT_DECLINE_MAX = 3;
 const uint OPT_FIELD_SITES = 2;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
+// Bytes of optimized code kept; past them the sweep evicts the bodies not entered recently.
 const usz OPT_CODE_MAX = 4 * 1024 * 1024;
 // Exits at one site that discard a body and make the next build lower the site generically.
 const uint OPT_SITE_EXITS = 2;
@@ -173,6 +174,8 @@ struct OptPolicy {
     uint force_depth;
     // Exits that discard a body, OPT_EXIT_MAX when zero.
     uint exit_max;
+    // Bytes of optimized code kept, OPT_CODE_MAX when zero (--opt-code-max).
+    usz code_max;
     // Native code in progress anywhere on the C stack; retired code is freed when it reaches zero.
     uint running;
     OptCode* retired;
@@ -183,6 +186,9 @@ struct OptPolicy {
     // Sites lowered generically after repeated exits.
     ulong bans;
     ulong refused;
+    // Optimized bodies dropped by the eviction sweep to make room, and the sweeps that ran.
+    ulong evicted;
+    ulong sweeps;
     ulong[OptRefuse::values.len] refused_why;
     ulong[256] refused_ops;
     ulong[OptExit::values.len] exits;
@@ -194,6 +200,7 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1) @noinline 
     if (f.opt_state != OPT_NONE || f.opt_code != null) {
         // The baseline call entry declines at the threshold; start its count over.
         f.opt_entries = 0;
+        if (f.opt_code != null) ((BaselineCode*)f.jit_code).touched = 1;
         return;
     }
     f.opt_entries += credit;
@@ -347,7 +354,12 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     if (!p.always && !opt_has_feedback(h, f)) return false;
     // Forcing exits from inlined bodies needs bodies that have a callee to inline.
     if (p.force_inline && !opt_has_call_feedback(f)) return false;
-    if (p.live_bytes >= OPT_CODE_MAX) return opt_refuse(h, f, OptRefuse.BUDGET, Opcode.NOP);
+    if (p.live_bytes >= opt_code_limit(h) && !opt_make_room(h)) {
+        // Not a verdict on `f`: it is considered again after its next round of entries.
+        h.opt.refused++;
+        h.opt.refused_why[OptRefuse.BUDGET.ordinal]++;
+        return false;
+    }
     if (!opt_function_eligible(f)) return opt_refuse(h, f, OptRefuse.FUNCTION, Opcode.NOP);
     long t0 = st.timing ? (long)clock::now() : 0;
     OptGraph g;
@@ -390,6 +402,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
         return opt_refuse(h, f, OptRefuse.COMPILE, Opcode.NOP);
     }
     oc.code = code;
+    code.touched = 1;
     usz bytes = code.code_bytes + code.table_bytes;
     p.live_bytes += bytes;
     st.live_bytes += bytes;
@@ -403,18 +416,46 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     return true;
 }
 
-// Reinstall the baseline code of `f` and retire its optimized body, which a
-// native frame may still be running.
-fn void opt_discard(Heap* h, CompiledFunction* f) {
-    OptCode* oc = f.opt_code;
-    if (oc == null) return;
-    opt_ban_hits(h, oc);
+// Reinstall the baseline code of `f` and retire its optimized body, which a native frame may
+// still be running. Its bytes stop counting toward the budgets now; they are freed once no
+// native code is running (opt_reap).
+fn void opt_retire(Heap* h, CompiledFunction* f, OptCode* oc) {
     f.jit_code = oc.base;
     f.opt_code = null;
     oc.next_retired = h.opt.retired;
     h.opt.retired = oc;
-    h.opt.discards++;
+    usz bytes = oc.code.code_bytes + oc.code.table_bytes;
+    h.opt.live_bytes -= bytes;
+    h.jit_stats.live_bytes -= bytes;
     f.opt_entries = 0;
+}
+
+// Retire the optimized bodies that were not entered since the previous sweep, and mark the rest
+// as not entered. Their functions go back to counting entries toward a fresh optimization: an
+// eviction is neither an exit nor a refusal. True when the code now has room.
+fn bool opt_make_room(Heap* h) @noinline {
+    h.opt.sweeps++;
+    for (uint fi = 0; fi < h.compiled_func_count; fi++) {
+        CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[fi];
+        if (cf == null || cf.opt_code == null) continue;
+        OptCode* oc = cf.opt_code;
+        if (oc.code.touched != 0) {
+            oc.code.touched = 0;
+            continue;
+        }
+        opt_retire(h, cf, oc);
+        cf.opt_state = OPT_NONE;
+        h.opt.evicted++;
+    }
+    return h.opt.live_bytes < opt_code_limit(h);
+}
+
+fn void opt_discard(Heap* h, CompiledFunction* f) {
+    OptCode* oc = f.opt_code;
+    if (oc == null) return;
+    opt_ban_hits(h, oc);
+    opt_retire(h, f, oc);
+    h.opt.discards++;
     f.opt_reopts++;
     f.opt_state = f.opt_reopts > OPT_REOPT_MAX ? OPT_REFUSED_EXITS : OPT_NONE;
 }
@@ -443,9 +484,6 @@ fn void opt_release(Heap* h, OptCode* oc) {
         oc.inline_exits = x.next;
         h.free_func(h.heap_udata, x);
     }
-    usz bytes = code.code_bytes + code.table_bytes;
-    h.opt.live_bytes -= bytes;
-    h.jit_stats.live_bytes -= bytes;
     sljit_free_code(code.exec, null);
     h.free_func(h.heap_udata, code);
     if (oc.cells != null) h.free_func(h.heap_udata, oc.cells);
@@ -471,6 +509,9 @@ fn void opt_free(Heap* h, CompiledFunction* f) {
     }
     OptCode* oc = f.opt_code;
     if (oc == null) return;
+    usz bytes = oc.code.code_bytes + oc.code.table_bytes;
+    h.opt.live_bytes -= bytes;
+    h.jit_stats.live_bytes -= bytes;
     f.jit_code = oc.base;
     f.opt_code = null;
     opt_release(h, oc);
@@ -499,6 +540,8 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
     return 0;
 }
+
+fn usz opt_code_limit(Heap* h) @inline => h.opt.code_max != 0 ? h.opt.code_max : OPT_CODE_MAX;
 
 fn uint opt_exit_limit(Heap* h) @inline => h.opt.exit_max != 0 ? h.opt.exit_max : OPT_EXIT_MAX;
 
@@ -607,6 +650,7 @@ fn void opt_print_stats(Heap* h) {
     foreach (op : Opcode::values) {
         if (p.inline_rejected_ops[op.ordinal] != 0) io::eprintfn("opt inline rejected opcode %s: %d", op, p.inline_rejected_ops[op.ordinal]);
     }
+    io::eprintfn("opt: %d evicted by %d sweeps", p.evicted, p.sweeps);
     io::eprintfn("opt: compiled %d (%d reoptimized), discarded %d, refused %d; live %d bytes",
                  p.compiled, p.reopts, p.discards, p.refused, p.live_bytes);
     io::eprintfn("opt: %d sites lowered generically after repeated exits", p.bans);
