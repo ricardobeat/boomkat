@@ -93,8 +93,8 @@ const uint BASELINE_EVAL_ENTRY_THRESHOLD = 256;
 // Entries one expiry of the back-edge budget (heap::BWD_GC_INTERVAL backward
 // branches, counted across all frames) credits to the function whose branch
 // used it up. One expiry must not pay for a whole compile: a cold call needs
-// several expiries of a genuinely hot loop before it compiles.
-const uint BASELINE_LOOP_CREDIT = 8;
+// two expiries of a genuinely hot loop before it compiles.
+const uint BASELINE_LOOP_CREDIT = BASELINE_ENTRY_THRESHOLD - 1;
 // Generated code and entry tables, in bytes, past which compiles are refused.
 const usz BASELINE_CODE_CAP = 64 * 1024 * 1024;
 // Instruction words past which a function stays interpreted. Code grows by
@@ -283,7 +283,7 @@ fn bool baseline_loop_hot(Heap* h, CompiledFunction* f) @noinline {
     }
     if (f.jit_refused) return false;
     f.jit_entries += BASELINE_LOOP_CREDIT;
-    uint need = f.jit_eval_derived ? BASELINE_EVAL_ENTRY_THRESHOLD : BASELINE_ENTRY_THRESHOLD + BASELINE_LOOP_CREDIT;
+    uint need = f.jit_eval_derived ? BASELINE_EVAL_ENTRY_THRESHOLD : BASELINE_ENTRY_THRESHOLD;
     if (!h.jit_stress && f.jit_entries < need) return false;
     if (baseline_try_compile(h, f) == null) return false;
     h.jit_stats.loop_entries++;
