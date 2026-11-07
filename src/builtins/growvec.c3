@@ -9,13 +9,24 @@ struct GrowVec {
     Type* items;
     usz   len;
     usz   cap;
+    Type* stack;   /// Caller storage `items` started in; never freed, left on first growth.
+}
+
+// Starts the vector in caller storage of `n` items, so a small result never
+// allocates.
+fn void GrowVec.use_storage(&self, Type* storage, usz n) {
+    self.items = storage;
+    self.stack = storage;
+    self.cap = n;
 }
 
 // Makes room for at least `n` items in total, leaving `len` alone.
 fn bool GrowVec.reserve(&self, usz n) {
     if (n <= self.cap) return true;
-    Type* grown = (Type*)self.heap.realloc_func(self.heap.heap_udata, self.items, n * Type::size);
+    bool borrowed = self.stack != null && self.items == self.stack;
+    Type* grown = (Type*)self.heap.realloc_func(self.heap.heap_udata, borrowed ? null : self.items, n * Type::size);
     if (grown == null) return false;
+    if (borrowed) mem::copy(grown, self.items, (sz)(self.len * Type::size));
     self.items = grown;
     self.cap = n;
     return true;
@@ -28,6 +39,7 @@ fn bool GrowVec.push(&self, Type item) {
 }
 
 fn void GrowVec.free(&self) {
-    if (self.items != null) self.heap.free_func(self.heap.heap_udata, self.items);
+    if (self.items != null && self.items != self.stack) self.heap.free_func(self.heap.heap_udata, self.items);
     self.items = null;
+    self.stack = null;
 }

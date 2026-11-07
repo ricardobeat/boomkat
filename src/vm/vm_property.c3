@@ -528,6 +528,17 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 getprop_store(vm, ds, ra, &v, (uint)insn.a);
                                 return (TVal){};
                             }
+                            // An element that is present with the value undefined
+                            // (a RegExp match's unmatched group) lives only in the
+                            // named table, where it is an own data property.
+                            if (hobj.flags.has_indexed_named_prop) {
+                                int nidx = hobj.find_prop_idx(vm.heap.int_to_hstring(idx_long), vm.heap);
+                                if (nidx >= 0 && !hobj.get_prop_flags((uint)nidx, vm.heap).is_accessor) {
+                                    TVal named = hobj.prop_values()[(uint)nidx].get();
+                                    getprop_store(vm, ds, ra, &named, (uint)insn.a);
+                                    return (TVal){};
+                                }
+                            }
                             // An array hole falls through to the prototype chain.
                         }
                     }
@@ -858,7 +869,9 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                         // Slow path: full [[Get]] on String.prototype chain,
                         // invoking accessor getters with the primitive as this.
                         if (vm.heap.string_proto != null) {
-                            primitive_getprop(vm, ds, rb, vm.heap.string_proto, key, ra, (uint)insn.a);
+                            // The key is a register here, not a constant index,
+                            // when a function has too many constants for GETPROPC.
+                            primitive_getprop_cached(vm, ds, rb, vm.heap.string_proto, key, ra, (uint)insn.a);
                             if (vm.has_error) return VM_ERROR~;
                         } else {
                             vm.heap.set_reg_undefined(ra);
