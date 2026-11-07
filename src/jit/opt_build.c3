@@ -143,6 +143,11 @@ struct OptInlineSite {
     uint depth;
     bool has_calls;
     uint* child_of;
+    // One case of a polymorphic call (OptBuild.poly_sites): the body runs when the callee is a
+    // closure of cf, after a test of the callee (fl_kind 5) that otherwise goes on to the next
+    // case, poly_next minus one, or after the last to the call itself.
+    bool poly;
+    uint poly_next;
 }
 
 struct OptBuild {
@@ -1949,7 +1954,7 @@ fn bool OptBuild.splice_ok(&self, OptInlineSite* s) {
 // Whether the call at instruction `i` is an inline site, filling `s` when it is. The call is the
 // function's own for `parent` zero, else one of the body of inline site `parent - 1`, whose window
 // the new site's nests in.
-fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent = 0) {
+fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent = 0, CompiledFunction* want = null) {
     OptInlineSite* ps = parent == 0 ? null : &self.sites[(sz)parent - 1];
     DecodedBytecode view = ps == null ? self.cfg.nodes[i].view : ps.cfg.nodes[i].view;
     Opcode op = view.insn.op;
@@ -1976,7 +1981,11 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     // A forwarding function shared by many callers forwards to many functions: the call that
     // reached it, the site's parent, records the function it forwarded to from there.
     hobject::ICEntry* outer = forward ? self.site_ic(ps) : null;
-    if (outer != null && outer.fwd_callee != 0) {
+    if (want != null) {
+        // One of the callees of a polymorphic call (OptBuild.poly_sites).
+        if (opt_site_banned(self.f, f, view.next_pc - 1)) return self.reject(OptInlineReject.POLY);
+        cf = want;
+    } else if (outer != null && outer.fwd_callee != 0) {
         if (outer.fwd_callee == hobject::FWD_POLY) return self.reject(OptInlineReject.POLY);
         if (outer.fwd_callee > self.h.compiled_func_count) return false;
         cf = (CompiledFunction*)self.h.compiled_funcs[outer.fwd_callee - 1];
@@ -2077,6 +2086,7 @@ fn void OptBuild.find_sites(&self) {
     uint count = self.cfg.instruction_count;
     uint flat_total = 0;
     for (uint i = 0; i < count; i++) {
+        if (self.poly_sites(i, &flat_total)) continue;
         OptInlineSite s;
         self.rej = OptInlineReject.BUILD;
         if (!self.inline_candidate(i, &s)) {
@@ -2144,6 +2154,104 @@ fn void OptBuild.find_sites(&self) {
     self.rej_caller = null;
 }
 
+// The most callees of one polymorphic call whose bodies the graph inlines, and the bytecode words
+// of all of their trees together.
+const uint POLY_WORDS_MAX = 240;
+
+// Whether the call at instruction `i` of the function being optimized is a polymorphic one whose
+// feedback names two to four callees (hobject::ic_call_count), of which at least one is inlined:
+// then each such callee is a flat site of its own (OptInlineSite.poly, linked by poly_next from
+// site_of[i]), spliced after a test of the callee, and a callee that none names takes the call
+// itself (OptBuild.flatten), as JSC's DFG switches on the callee.
+fn bool OptBuild.poly_sites(&self, uint i, uint* flat_total) {
+    DecodedBytecode view = self.cfg.nodes[i].view;
+    Opcode op = view.insn.op;
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS) || view.wide || self.f.ic_entries == null) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[view.next_pc - 1];
+    if ((ic.feedback & hobject::FB_DOTCALL) != 0) return false;
+    uint n = hobject::ic_call_count(ic);
+    if (n < 2 || opt_site_banned(self.f, self.f, view.next_pc - 1)) return false;
+    for (uint e = 0; e < self.exclude_count; e++) if (self.exclude[e] == view.pc) return false;
+    if (self.h.opt.inline_seen >= self.h.opt.inline_max) return false;
+    if (self.site_of == null) self.site_of = mem::new_array(uint, self.cfg.instruction_count);
+    uint prev = 0;
+    uint size = 0;
+    uint words_all = 0;
+    uint nregs0 = self.nregs;
+    sz first = self.sites.len();
+    for (uint k = 0; k < n; k++) {
+        uint index = hobject::ic_call_target(ic, k);
+        if (index >= self.h.compiled_func_count || self.h.compiled_funcs[index] == null) continue;
+        CompiledFunction* cf = (CompiledFunction*)self.h.compiled_funcs[index];
+        OptInlineSite s;
+        self.rej = OptInlineReject.BUILD;
+        if (!self.inline_candidate(i, &s, 0, cf)) {
+            if (self.rej != OptInlineReject.BUILD) self.count_reject(self.rej, self.rej_op);
+            continue;
+        }
+        uint si = (uint)self.sites.len();
+        uint nregs_k = self.nregs;
+        self.sites.push(s);
+        uint need = s.base + s.cf.num_regs;
+        if (need > self.nregs) self.nregs = need;
+        uint words = s.cf.code_count;
+        bool ok = self.add_children(si, &words) && words_all + words <= POLY_WORDS_MAX;
+        uint end = (uint)self.sites.len();
+        if (ok) {
+            self.sites[si].flat = true;
+            for (uint j = end; j > si + 1; j--) {
+                OptInlineSite* t = &self.sites[(sz)j - 1];
+                if (t.flat && t.parent != 0) self.sites[(sz)t.parent - 1].flat = true;
+            }
+        }
+        uint tree = 0;
+        for (uint j = si; j < end && ok; j++) {
+            OptInlineSite* t = &self.sites[j];
+            if (!t.flat) continue;
+            ok = self.splice_ok(t);
+            t.remap = uint::max;
+            t.head_pc = view.pc;
+            tree += t.cfg.instruction_count;
+        }
+        if (!ok) {
+            if (self.rej == OptInlineReject.BUILD) self.count_reject(OptInlineReject.OPCODE, Opcode.CALL);
+            for (sz j = self.sites.len(); j > si; j--) self.sites[j - 1].free_site();
+            self.sites.size = si;
+            self.nregs = nregs_k;
+            continue;
+        }
+        words_all += words;
+        size += tree + 2;
+        self.sites[si].poly = true;
+        if (prev == 0) {
+            self.site_of[i] = si + 1;
+        } else {
+            self.sites[(sz)prev - 1].poly_next = si + 1;
+        }
+        prev = si + 1;
+    }
+    if (prev == 0) return false;
+    if (*flat_total + size + self.cfg.instruction_count > compiler::DEFAULT_CFG_BUDGET.max_instructions) {
+        for (sz j = self.sites.len(); j > first; j--) self.sites[j - 1].free_site();
+        self.sites.size = first;
+        self.site_of[i] = 0;
+        self.nregs = nregs0;
+        return true;
+    }
+    self.h.opt.inline_seen++;
+    *flat_total += size + 1;
+    self.flat_count++;
+    return true;
+}
+
+// The instructions polymorphic call `si1 - 1` (its first case) takes in the spliced graph: per case a
+// test, the call entering the body and the body, then the call itself.
+fn uint OptBuild.poly_size(&self, uint si1) {
+    uint n = 1;
+    for (uint c = si1; c != 0; c = self.sites[(sz)c - 1].poly_next) n += 2 + self.splice_size(c - 1);
+    return n;
+}
+
 // Find the nested inline sites of the calls in the body of site `si`, recursively, and widen nregs
 // to hold their windows; `words` counts the bytecode of the callees of the tree. False when a call
 // is not one (the body would hold a call), leaving the sites it added.
@@ -2194,8 +2302,14 @@ fn bool OptBuild.flatten(&self) {
     defer mem::free(fmap);
     uint total = 0;
     for (uint i = 0; i < ocount; i++) {
-        fmap[i] = total++;
-        if (self.site_of[i] != 0 && self.sites[(sz)self.site_of[i] - 1].flat) total += self.splice_size(self.site_of[i] - 1);
+        fmap[i] = total;
+        uint si1 = self.site_of[i];
+        if (si1 != 0 && self.sites[(sz)si1 - 1].poly) {
+            total += self.poly_size(si1);
+            continue;
+        }
+        total++;
+        if (si1 != 0 && self.sites[(sz)si1 - 1].flat) total += self.splice_size(si1 - 1);
     }
     fmap[ocount] = total;
     usz bytes = (usz)total * DecodedCfgNode::size;
@@ -2216,6 +2330,34 @@ fn bool OptBuild.flatten(&self) {
         for (uint k = 0; k < node.successor_count; k++) node.successors[k] = fmap[node.successors[k]];
         if (node.branch_target != compiler::CFG_NO_INSTRUCTION) node.branch_target = fmap[node.branch_target];
         uint si1 = self.site_of[i];
+        if (si1 != 0 && self.sites[(sz)si1 - 1].poly) {
+            // Per case: the test of the callee, which goes on to the next case when it is not a
+            // closure of the case's function, the call entering the body, and the body. Then the call.
+            uint at = o;
+            for (uint c = si1; c != 0; c = self.sites[(sz)c - 1].poly_next) {
+                uint enter = at + 1;
+                uint next = enter + 1 + self.splice_size(c - 1);
+                DecodedCfgNode t = node;
+                t.successors[0] = next;
+                t.successors[1] = enter;
+                t.successor_count = 2;
+                t.branch_target = next;
+                flat.nodes[at] = t;
+                self.fl_kind[at] = 5;
+                flat_site_of[at] = c;
+                DecodedCfgNode e = node;
+                e.successors[0] = enter + 1;
+                e.successor_count = 1;
+                e.branch_target = compiler::CFG_NO_INSTRUCTION;
+                flat.nodes[enter] = e;
+                flat_site_of[enter] = c;
+                self.sites[(sz)c - 1].insn = enter;
+                self.splice(c - 1, enter + 1, fmap[i + 1], node.view.insn.a, &flat, flat_site_of);
+                at = next;
+            }
+            flat.nodes[at] = node;
+            continue;
+        }
         if (si1 != 0) {
             OptInlineSite* s = &self.sites[(sz)si1 - 1];
             s.insn = o;
@@ -2838,8 +2980,24 @@ fn bool OptBuild.try_inline(&self) {
 }
 
 
+// The test of the callee before case `site_of[insn] - 1` of a polymorphic call: the case's body when
+// the callee register holds a closure of its function (BRANCH_CALLEE falls through), else the next
+// test or the call itself.
+fn bool OptBuild.callee_test(&self) {
+    uint si = self.site_of[self.insn] - 1;
+    OptInlineSite* s = &self.sites[si];
+    uint node = NO_NODE;
+    if (!self.call_operand(s.base - 2, &node)) {
+        self.fail_flat(si, OptInlineReject.STATE);
+        // The test still ends the block.
+        return self.terminator(OptOp.JUMP);
+    }
+    return self.terminator(OptOp.BRANCH_CALLEE, node, NO_NODE, (long)(usz)s.cf);
+}
+
 // Lower instruction `self.insn`.
 fn bool OptBuild.lower(&self) {
+    if (self.fl_kind != null && self.fl_kind[self.insn] == 5) return self.callee_test();
     // The body of a flat site whose call did not enter it this round, which is abandoned.
     if (self.cur_fn == 0 && self.fl_site != null && self.fl_site[self.insn] != 0) return true;
     if (self.cur_fn != 0 && self.sites[self.cur_site].flat) return self.lower_flat();
@@ -3184,11 +3342,12 @@ fn void OptBuild.end_block(&self, uint pos) {
     }
     blk.succ_count = node.successor_count;
     for (uint k = 0; k < blk.succ_count; k++) blk.succ[k] = self.pos_of[self.succ_block(b, k)];
+    bool test = self.fl_kind != null && self.fl_kind[last] == 5;
     if (blk.succ_count == 1 && is_terminator_op(node.view.insn.op) && node.view.insn.op != Opcode.JUMP) {
         blk.succ[1] = blk.succ[0];
         blk.succ_count = 2;
     }
-    if (blk.succ_count != 0 && !is_terminator_op(node.view.insn.op)) self.terminator(OptOp.JUMP);
+    if (blk.succ_count != 0 && !test && !is_terminator_op(node.view.insn.op)) self.terminator(OptOp.JUMP);
     blk.end = (uint)self.g.nodes.len();
     mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
 }
