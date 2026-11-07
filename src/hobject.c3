@@ -3630,6 +3630,10 @@ struct ICEntry {
     hstring::StringRef key;
     // Absent-property PUTPROP entries: the shape after appending the key.
     uint absent_next_shape;
+    // A call instruction's: the func_index plus one of the function its callee forwarded the
+    // call to with `f.apply(x, arguments)` when called from here (ic_note_forward), zero for
+    // none. (It fills the struct's tail padding.)
+    uint fwd_callee;
 }
 
 // ICEntry.feedback bits. A slot with none set is read as int32 operands.
@@ -3649,6 +3653,9 @@ const char FB_OPERANDS = 15;
 // absent_next_shape is the func_index of the compiled constructor the site has run (FB_POLY: a
 // second one too).
 const char FB_CTOR = 64;
+// ICEntry.feedback bit of a call instruction: its callee forwarded to a second function
+// (ic_note_forward).
+const char FB_FWD_POLY = 128;
 
 // Record that the call instruction caching `ic` called function number `index`.
 fn void ic_note_callee(ICEntry* ic, uint index) @inline {
@@ -3657,6 +3664,18 @@ fn void ic_note_callee(ICEntry* ic, uint index) @inline {
         ic.feedback |= FB_CALL;
     } else if (ic.prop_idx != index) {
         ic.feedback |= FB_POLY;
+    }
+}
+
+// Record that a forwarding function called by the call instruction caching `ic` forwarded the
+// call to function number `index`. A function shared by many callers (Class.create's constructor)
+// forwards to as many targets, but each of its call sites typically to one: the optimizer
+// inlines the forwarding call per site. FB_FWD_POLY: a second target from this site.
+fn void ic_note_forward(ICEntry* ic, uint index) @inline {
+    if (ic.fwd_callee == 0) {
+        ic.fwd_callee = index + 1;
+    } else if (ic.fwd_callee != index + 1) {
+        ic.feedback |= FB_FWD_POLY;
     }
 }
 
