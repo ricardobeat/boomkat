@@ -2,13 +2,16 @@
 """Run the full Octane 2.0 suite in one process and compare two binaries.
 
 The suite is bundled from an Octane checkout (base.js, every benchmark in
-suite order, then run.js's driver) and run with `--script`. Each run prints
-the 17 results and the composite; this script records them with the wall
-time, peak RSS, binary hash and any engine statistics lines, alternating
-between the two binaries so drift affects both sides alike.
+suite order, then run.js's driver) and run with `--script`, or supplied as a
+prebuilt concatenated bundle with --bundle. Exactly one of --octane DIR and
+--bundle PATH is required. Each run prints the 17 results and the composite;
+this script records them with the wall time, peak RSS, binary hash and any
+engine statistics lines (--jit-stats / --jit-count-ops / --opt-log, read from
+stderr), alternating between the two binaries so drift affects both sides
+alike.
 
-    python3 scripts/octane_gate.py --octane DIR [--runs 3] [--jit] \
-        [--engine-args ARGS] [--out DIR] BASE [CANDIDATE]
+    python3 scripts/octane_gate.py (--octane DIR | --bundle PATH) \\
+        [--runs 3] [--jit] [--engine-args ARGS] [--out DIR] BASE [CANDIDATE]
 
 With one binary it records a measurement; with two it prints the median per
 benchmark for each side, the ratio, and marks ratios outside 3%. Results go to
@@ -44,6 +47,18 @@ SHIM = ('if (typeof read === "undefined") { globalThis.read = function (f) '
         '{ throw new Error("read " + f); }; }\n')
 SCORE_RE = re.compile(r'^(\w+): (\d+)$')
 COMPOSITE_RE = re.compile(r'^Score \(version \d+\): (\d+)$')
+# Lines emitted by --jit-stats / --jit-count-ops / --opt-log on stderr.
+STATS_PREFIXES = ('jit:', 'jit ', 'opt:', 'opt ')
+
+
+def parse_engine_stats(stderr: str):
+    """Collect the engine statistics lines from a run's stderr."""
+    lines = []
+    for line in stderr.splitlines():
+        text = line.strip()
+        if text.startswith(STATS_PREFIXES):
+            lines.append(text)
+    return lines
 
 
 def make_bundle(octane: Path, out: Path) -> Path:
@@ -96,6 +111,7 @@ def run_once(binary: Path, args, bundle: Path, log: Path):
     return {
         'exit': proc.returncode, 'wall_s': round(wall, 2), 'max_rss': rss,
         'scores': scores, 'composite': composite, 'missing': missing, 'extra': extra,
+        'engine_stats': parse_engine_stats(proc.stderr),
     }
 
 
@@ -136,14 +152,25 @@ def report(sides, runs):
 
 
 def main():
+    # argparse treats a value beginning with '-' (e.g. --engine-args '--jit-stats')
+    # as another option. Accept it by rewriting it to the --opt=value form.
+    argv = sys.argv[1:]
+    for i, token in enumerate(argv):
+        if token == '--engine-args' and i + 1 < len(argv) and argv[i + 1].startswith('-'):
+            argv[i] = '--engine-args=' + argv[i + 1]
+            del argv[i + 1]
+            break
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--octane', required=True, type=Path, help='Octane 2.0 source directory')
+    p.add_argument('--octane', type=Path, help='Octane 2.0 source directory; builds the bundle')
+    p.add_argument('--bundle', type=Path, help='prebuilt concatenated bundle (alternative to --octane)')
     p.add_argument('--runs', type=int, default=3, help='runs per binary (default 3)')
     p.add_argument('--jit', action='store_true', help='pass --jit to both binaries')
     p.add_argument('--engine-args', default='', help='extra engine flags, one token')
     p.add_argument('--out', type=Path, default=Path('out/octane-gate'), help='results directory')
     p.add_argument('binaries', nargs='+', type=Path, metavar='BINARY')
-    a = p.parse_args()
+    a = p.parse_args(argv)
+    if (a.octane is None) == (a.bundle is None):
+        p.error('exactly one of --octane DIR and --bundle PATH is required')
     if len(a.binaries) > 2:
         p.error('at most two binaries')
     engine_args = (['--jit'] if a.jit else []) + a.engine_args.split()
@@ -151,7 +178,12 @@ def main():
     a.out.mkdir(parents=True, exist_ok=True)
     logs = a.out / 'logs'
     logs.mkdir(exist_ok=True)
-    bundle = make_bundle(a.octane, a.out)
+    if a.bundle is not None:
+        bundle = a.bundle
+        if not bundle.is_file():
+            p.error(f'--bundle file not found: {bundle}')
+    else:
+        bundle = make_bundle(a.octane, a.out)
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     sides = []
     for i, b in enumerate(a.binaries):
@@ -173,9 +205,12 @@ def main():
 
     result = {
         'captured': stamp, 'machine': platform.platform(), 'engine_args': engine_args,
-        'bundle_sha256': sha256(bundle), 'octane_dir': str(a.octane.resolve()),
+        'bundle_sha256': sha256(bundle),
+        'octane_dir': str(a.octane.resolve()) if a.octane is not None else None,
         'sides': sides, 'runs': runs,
     }
+    if a.bundle is not None:
+        result['bundle'] = str(a.bundle.resolve())
     path = a.out / f'gate-{stamp}.json'
     path.write_text(json.dumps(result, indent=2))
     print()
