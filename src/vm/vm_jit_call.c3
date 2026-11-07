@@ -239,6 +239,7 @@ fn LeanCall jit_apply_lean(Instruction* pc, TVal* regs, ColdCtx* cold, Vm* vm, u
     uint nargs = (uint)args_slot.get_fastint();
     if (target == null || nargs > target.num_regs) return DECLINE;
     @note_callee(pc, cold, target);
+    @note_forward(act, target);
     TVal this_arg = regs[callee + 2];
     bool this_valid = false;
     if (this_arg.is_heap_allocated()) {

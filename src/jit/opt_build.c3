@@ -1728,8 +1728,18 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     if (forward) live_out = &ps.live_out[i + 1];
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[view.next_pc - 1];
     if ((ic.feedback & (construct ? hobject::FB_CTOR : hobject::FB_CALL)) == 0) return false;
-    if ((ic.feedback & hobject::FB_POLY) != 0) return self.reject(OptInlineReject.POLY);
-    CompiledFunction* cf = opt_site_callee(self.h, f, view.next_pc - 1);
+    CompiledFunction* cf;
+    // A forwarding function shared by many callers forwards to many functions: the call that
+    // reached it, the site's parent, records the function it forwarded to from there.
+    hobject::ICEntry* outer = forward ? self.site_ic(ps) : null;
+    if (outer != null && outer.fwd_callee != 0) {
+        if ((outer.feedback & hobject::FB_FWD_POLY) != 0) return self.reject(OptInlineReject.POLY);
+        if (outer.fwd_callee > self.h.compiled_func_count) return false;
+        cf = (CompiledFunction*)self.h.compiled_funcs[outer.fwd_callee - 1];
+    } else {
+        if ((ic.feedback & hobject::FB_POLY) != 0) return self.reject(OptInlineReject.POLY);
+        cf = opt_site_callee(self.h, f, view.next_pc - 1);
+    }
     uint callee_reg = var_call ? view.insn.a : view.insn.b;
     uint nargs = forward ? ps.nargs : (var_call ? view.insn.b : view.insn.c);
     // `X.call(x, args)`: the site's own window (callee register, X, x, args) holds one argument more
@@ -1788,6 +1798,15 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     }
     if (!ok) s.free_site();
     return ok;
+}
+
+// The cache entry of the call instruction of site `s` in its caller's code.
+fn hobject::ICEntry* OptBuild.site_ic(&self, OptInlineSite* s) {
+    OptInlineSite* ps = s.parent == 0 ? null : &self.sites[(sz)s.parent - 1];
+    CompiledFunction* f = ps == null ? self.f : ps.cf;
+    DecodedBytecode view = ps == null ? self.cfg.nodes[s.insn].view : ps.cfg.nodes[s.insn].view;
+    if (f.ic_entries == null) return null;
+    return &((hobject::ICEntry*)f.ic_entries)[view.next_pc - 1];
 }
 
 // What a forwarding call (APPLY_ARGS) reads, which liveness does not see: the arguments, which stay

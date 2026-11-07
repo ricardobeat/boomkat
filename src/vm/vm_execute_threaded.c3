@@ -674,6 +674,24 @@ macro void @note_callee(Instruction* pc, ColdCtx* cold, CompiledFunction* target
     hobject::ic_note_callee(th_ic_at(cold, pc), target.func_index);
 }
 
+// The function a forwarding call of the running frame `act` reaches, recorded on the call that
+// entered the frame (hobject::ic_note_forward), whose caller frame's curr_pc follows it.
+macro void @note_forward(Activation* act, CompiledFunction* target) @private {
+    Activation* caller = act.parent;
+    if (caller != null && caller.curr_pc != null) {
+        CompiledFunction* cf = (CompiledFunction*)caller.func;
+        if (cf.ic_entries != null && caller.curr_pc > cf.code && caller.curr_pc <= cf.code + cf.code_count) {
+            usz at = (usz)(caller.curr_pc - cf.code) - 1;
+            switch (cf.code[at].op) {
+                case CALL: case CALL_UNDEF_THIS: case CALL_VAR: case CALL_GLOBAL: case NEW_OBJ: case CALL_S:
+                    hobject::ic_note_forward(&((hobject::ICEntry*)cf.ic_entries)[at], target.func_index);
+                default:
+                    break;
+            }
+        }
+    }
+}
+
 // Push the frame of a lean call and continue in its body. The caller has
 // checked th_lean_target and th_call_gate, and has stored the callee in
 // register `callee_reg`; `borrowed` says the register holds a binding's value
@@ -929,6 +947,7 @@ macro Instruction* @apply_args(Instruction* pc, HandlerTable* handlers, TVal* re
     if (target == null || nargs > target.num_regs) return pc;
     // The forwarded callee, for the optimizer's inlining (OptBuild.forward_candidate).
     @note_callee(pc, cold, target);
+    @note_forward(act, target);
     TVal this_arg = regs[callee + 2];
     bool this_valid = false;
     if (this_arg.is_heap_allocated()) {
