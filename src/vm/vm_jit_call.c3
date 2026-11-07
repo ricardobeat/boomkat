@@ -618,6 +618,31 @@ fn long jit_enter_redispatched(Dispatch* ds, Instruction* next, DecodedInsn call
     return jit_run_entered(ds, entry, old_floor, next);
 }
 
+// A call the operation function entered by pushing the callee's frame and asking for a restart
+// (a callee the lean shapes decline: one with a scope object of its own, a class constructor):
+// run the callee's native code as a nested native call instead of unwinding every native frame
+// above it to Vm.run. `count_before` is the activation count before the operation; the frame
+// must be the one new, fresh frame. Returns what jit_call returns, or JIT_NO_RAW when the frame
+// is left to the restart.
+fn long jit_enter_pushed(Dispatch* ds, Instruction* next, uint count_before) {
+    Vm* vm = ds.vm;
+    if (vm.activation_count != count_before + 1 || ds.jit_depth >= JIT_NATIVE_DEPTH_CAP
+        || vm.threaded_handoff != ThreadedHandoff.NONE
+        || vm.heap.capi_interrupt_fn != null || vm.heap.capi_runtime != null) return JIT_NO_RAW;
+    Activation* act = &vm.activations[vm.activation_count - 1];
+    CompiledFunction* f = (CompiledFunction*)act.func;
+    if (f == null || act.curr_pc != f.code || f.ic_entries == null || f.var_ic_entries == null) return JIT_NO_RAW;
+    void* entry = jit::baseline_code(vm.heap, f);
+    if (entry == null) return JIT_NO_RAW;
+    uint old_floor = ds.jit_floor;
+    ds.needs_restart = false;
+    ds.load_frame();
+    ds.jit_floor = vm.activation_count - 1;
+    ds.jit_depth++;
+    ds.heap.jit_stats.calls_native++;
+    return jit_run_entered(ds, entry, old_floor, next);
+}
+
 // A CALL whose callee is a builtin, through th_call_native as the threaded
 // burst runs it (identity fast paths such as charCodeAt, then the builtin's
 // own dispatch) instead of op_call. False when it declined before running
