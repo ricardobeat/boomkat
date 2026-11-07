@@ -22,6 +22,9 @@ const usz JIT_CALL_DONE = 1;
 // A call site's result when the call takes its thunk.
 const long JIT_CALL_SLOW = -1;
 
+// jit_call_builtin's `raw` when the call left no status of its own for the thunk to return.
+const long JIT_NO_RAW = -2;
+
 // The native call at the instruction before `next`: publish the callee's
 // frame (jit_call_enter), run its native code on the C stack and resume the
 // caller once it returned. Returns 0 to continue at `next`,
@@ -34,6 +37,12 @@ fn long jit_call(Dispatch* ds, ulong next_arg) {
     void* entry = jit_call_enter(ds, next);
     if (entry == null) return JIT_CALL_SLOW;
     if (entry == (void*)JIT_CALL_DONE) return 0;
+    return jit_run_entered(ds, entry, old_floor, next);
+}
+
+// Run the native entry of a published callee frame (jit_call_enter) and resume the caller once
+// it returned, as jit_call's contract has it. `old_floor` is the caller's floor.
+fn long jit_run_entered(Dispatch* ds, void* entry, uint old_floor, Instruction* next) @inline {
     long status = ((jit::BaselineFn)entry)(ds);
     ds.jit_floor = old_floor;
     ds.jit_depth--;
@@ -108,9 +117,16 @@ fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
             st.calls_declined++;
             return null;
     }
+    return jit_enter_published(ds, nargs, r == ENTERED_ARGS);
+}
+
+// The callee frame a lean publish just made current becomes the native frame: bind its register
+// arguments, load its code view and record the caller's depth as the floor. Returns its entry.
+fn void* jit_enter_published(Dispatch* ds, uint nargs, bool needs_arguments) @private @inline {
+    Vm* vm = ds.vm;
     Activation* la = ds.act;
     CompiledFunction* target = (CompiledFunction*)la.func;
-    if (r == ENTERED_ARGS) {
+    if (needs_arguments) {
         bind_register_arguments(vm, la, target, (HObject*)la.tv_func.get_heapptr(), la.bottom, nargs);
     }
     // The publish made the callee's activation and registers current and
@@ -119,7 +135,7 @@ fn void* jit_call_enter(Dispatch* ds, Instruction* next) @private @inline {
     ds.curr_pc = target.code;
     ds.jit_floor = vm.activation_count - 1;
     ds.jit_depth++;
-    st.calls_native++;
+    ds.heap.jit_stats.calls_native++;
     if (@unlikely(ds.heap.opt.enabled)) jit::opt_note_entry(ds.heap, target);
     return jit::baseline_entry(target);
 }
@@ -557,13 +573,58 @@ fn bool jit_relay(Dispatch* ds, Instruction* next) {
     return g_threaded_table.fns[pc.op.ordinal](pc, &jit_stop_table, ds.regs_base, cold) == next;
 }
 
+// The call a builtin re-dispatched (Function.prototype.call and apply rewrite their window and
+// ask for a plain CALL over it), run as a native call when its callee is a lean compiled function
+// with native code, as th_call_redispatched enters it for the threaded handlers. op_calls would
+// push the frame and restart, which leaves every native frame above it. Returns what jit_call
+// returns, or JIT_CALL_SLOW with nothing written for the caller to run op_calls.
+fn long jit_enter_redispatched(Dispatch* ds, Instruction* next, DecodedInsn call) @private {
+    Vm* vm = ds.vm;
+    if (ds.jit_depth >= JIT_NATIVE_DEPTH_CAP) return JIT_CALL_SLOW;
+    TVal* regs = ds.regs_base;
+    uint callee_reg = call.b;
+    uint nargs = call.c;
+    uint window_end = callee_reg + 2 + nargs;
+    if (window_end > vm.current_func.num_regs || vm.heap.gc_safepoint_due(true)) return JIT_CALL_SLOW;
+    TVal callee = regs[callee_reg];
+    if (!callee.is_object()) return JIT_CALL_SLOW;
+    HObject* callee_obj = (HObject*)callee.get_heapptr();
+    if (callee_obj == null || !callee_obj.is_callable()
+        || callee_obj.callable_kind() != hobject::CallableKind.COMPILED_FN) return JIT_CALL_SLOW;
+    CompiledFunction* classified = (*callee_obj.extra_ptr()).func.comp_func;
+    if (classified == null) return JIT_CALL_SLOW;
+    classified.classify_lean_call();
+    CompiledFunction* target = th_lean_target(vm, callee, regs + callee_reg + 2, false);
+    if (target == null || target.jit_code == null) return JIT_CALL_SLOW;
+    TVal receiver = regs[callee_reg + 1];
+    TVal this_value = th_undefined();
+    bool this_valid = false;
+    if (receiver.is_heap_allocated()) {
+        if (!receiver.is_object() || receiver.get_heapptr() == null) return JIT_CALL_SLOW;
+        if (!target.call_flags.ignores_this) {
+            this_value = receiver;
+            this_valid = true;
+        }
+    } else if (!target.call_flags.ignores_this) {
+        return JIT_CALL_SLOW;
+    }
+    for (uint r = callee_reg; r < window_end; r++) track_heap_store(ds.act, regs + r, r);
+    uint old_floor = ds.jit_floor;
+    ColdCtx* cold = &ds.cold;
+    th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    bool needs_arguments = th_publish_lean(next - 1, regs, cold, target, callee_reg, call.a, nargs, false, false,
+                                           this_value, this_valid, null);
+    void* entry = jit_enter_published(ds, nargs, needs_arguments);
+    return jit_run_entered(ds, entry, old_floor, next);
+}
+
 // A CALL whose callee is a builtin, through th_call_native as the threaded
 // burst runs it (identity fast paths such as charCodeAt, then the builtin's
 // own dispatch) instead of op_call. False when it declined before running
 // anything; otherwise `status` is what the operation function would return,
 // with the burst's throw and re-dispatch handoffs completed as vm_dispatch
 // completes them.
-fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status) {
+fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long* raw) {
     if (!jit_relay_ready) jit_relay_init();
     if (ds.ic_base == null || ds.var_ic_base == null) return false;
     Vm* vm = ds.vm;
@@ -587,6 +648,11 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status) {
             return true;
         case CALL:
             ds.curr_pc = next;
+            long native = jit_enter_redispatched(ds, next, vm.threaded_call);
+            if (native != JIT_CALL_SLOW) {
+                *raw = native;
+                return true;
+            }
             *status = op_calls(ds, vm.threaded_call);
             return true;
         case NONE:

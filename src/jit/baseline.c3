@@ -1726,8 +1726,10 @@ fn void init_thunks() @noinline @private {
                 OpStatus s;
                 if (vm::has_feedback($op)) vm::note_feedback(ds, insn);
                 $if $op == Opcode.CALL:
-                    if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s)) {
+                    long raw = vm::JIT_NO_RAW;
+                    if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s, &raw)) {
                         count_relayed(ds, $op);
+                        if (raw != vm::JIT_NO_RAW) return raw;
                     } else {
                         s = @run_op($op, ds, insn);
                     }
