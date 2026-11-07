@@ -113,6 +113,38 @@ struct OptCode {
     // A boxed value the put-absent paths of an inlined constructor read through its address
     // (OptCg.emit_add_field); nothing runs between its store and its use.
     ulong value;
+    // The sites of the allocations the code sinks.
+    OptSinkSite* sink_sites;
+}
+
+// The run-time state of a sunk allocation (opt_sink.c3), which vm::jit_opt_sink_check validates:
+// the object `new` of `ctor` builds has prototype `proto`, adding each key keeps a plain own data
+// property (no object of the chain has it), and each read key is the data property at byte offset
+// read_off of read_owner's values. The emitted code takes it for holding while the constructor,
+// its shape, the slot `new` reads the prototype from and the heap's prototype and shape-recycle
+// epochs are those it was validated with (every object of the chain is marked observed, so a
+// change to any moves the prototype epoch). An exit allocates the object from it, with the field
+// values its code stored in `values`.
+struct OptSinkSite {
+    void* ctor;
+    ulong proto_bits;
+    ulong epoch;
+    uint ctor_shape;
+    uint recycle;
+    // The byte offset of the prototype slot in the constructor's values.
+    ulong proto_off;
+    // The NEW_OBJ's cache, and the property count the object is built with room for.
+    hobject::ICEntry* new_ic;
+    uint want;
+    uint add_count;
+    uint read_count;
+    void* proto;
+    void*[OPT_SINK_FIELDS] keys;
+    void*[OPT_SINK_READS] read_keys;
+    void*[OPT_SINK_READS] read_owner;
+    ulong[OPT_SINK_READS] read_off;
+    ulong[OPT_SINK_FIELDS] values;
+    OptSinkSite* next;
 }
 
 // Calls an optimized body inlines into each other at most, the outermost included.
@@ -155,6 +187,15 @@ struct OptPolicy {
     // Callees inlined, and exits taken from inside an inlined body, over all compiles.
     uint inlined;
     uint inline_exits;
+    // Do not sink allocations (--opt-no-sink); allocations sunk over all compiles, and the objects
+    // exits allocated for them and the validations of their sites at run time.
+    bool no_sink;
+    uint sunk;
+    ulong sink_materialized;
+    ulong sink_checks;
+    // With --jit-count-ops: inlined NEW_OBJ objects allocated, and not allocated (sunk).
+    ulong alloc_runs;
+    ulong sink_runs;
     // Call sites with a known callee that were not inlined, by OptInlineReject, and by opcode for
     // the callees refused for one.
     ulong[OptInlineReject::values.len] inline_rejected;
@@ -357,7 +398,18 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     Opcode refused_op = Opcode.NOP;
     OptRefuse why = opt_build_graph(h, f, &g, &b, &refused_op, false);
     OptPools pools = opt_pools();
+    uint sunk = why == OptRefuse.NONE && !p.no_sink ? g.sink() : 0;
     if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
+    if (sunk != 0 && (why != OptRefuse.NONE || g.sink_spilled())) {
+        // A field value of a sunk object found no register: build the same graph without sinking.
+        b.free();
+        g.clear();
+        refused_op = Opcode.NOP;
+        sunk = 0;
+        why = opt_build_graph(h, f, &g, &b, &refused_op, false);
+        pools = opt_pools();
+        if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
+    }
     if (why != OptRefuse.NONE && b.sites.len() != 0) {
         // Inlining may be what made the body too big or too hard to allocate: try without it.
         b.free();
@@ -385,6 +437,11 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     BaselineCode* code = opt_emit(h, f, &g, oc, pools);
     if (st.timing) st.compile_ns += (ulong)((long)clock::now() - t0);
     if (code == null) {
+        while (oc.sink_sites != null) {
+            OptSinkSite* x = oc.sink_sites;
+            oc.sink_sites = x.next;
+            h.free_func(h.heap_udata, x);
+        }
         if (oc.cells != null) h.free_func(h.heap_udata, oc.cells);
         h.free_func(h.heap_udata, oc);
         return opt_refuse(h, f, OptRefuse.COMPILE, Opcode.NOP);
@@ -396,6 +453,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     if (st.live_bytes > st.peak_bytes) st.peak_bytes = st.live_bytes;
     p.compiled++;
     p.inlined += inlined;
+    p.sunk += sunk;
     if (f.opt_reopts != 0) p.reopts++;
     f.opt_code = oc;
     f.opt_state = OPT_ACTIVE;
@@ -441,6 +499,11 @@ fn void opt_release(Heap* h, OptCode* oc) {
     while (oc.inline_exits != null) {
         OptInlineExit* x = oc.inline_exits;
         oc.inline_exits = x.next;
+        h.free_func(h.heap_udata, x);
+    }
+    while (oc.sink_sites != null) {
+        OptSinkSite* x = oc.sink_sites;
+        oc.sink_sites = x.next;
         h.free_func(h.heap_udata, x);
     }
     usz bytes = code.code_bytes + code.table_bytes;
@@ -595,6 +658,8 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
 fn void opt_print_stats(Heap* h) {
     OptPolicy* p = &h.opt;
     io::eprintfn("opt inline: %d callees inlined, %d exits from inlined bodies", p.inlined, p.inline_exits);
+    io::eprintfn("opt sink: %d allocations sunk, %d site validations, %d objects allocated by exits", p.sunk, p.sink_checks, p.sink_materialized);
+    if (h.jit_stats.count_ops) io::eprintfn("opt sink: %d inlined news allocated, %d sunk", p.alloc_runs, p.sink_runs);
     foreach (r : OptInlineReject::values) {
         if (p.inline_rejected[r.ordinal] != 0) io::eprintfn("opt inline rejected %s: %d", r.label, p.inline_rejected[r.ordinal]);
     }

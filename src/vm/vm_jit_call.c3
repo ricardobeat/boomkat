@@ -347,6 +347,91 @@ $else
 $endif
 }
 
+// Validate the site of a sunk allocation (jit::OptSinkSite) for `ctor`, whose NEW_OBJ optimized
+// code does not allocate: what jit_opt_new_object would allocate with, every key the constructor
+// adds absent from the prototype chain or a writable data property there (so each add makes a plain
+// own data property), and every key
+// read from the chain a data property. The chain's objects are marked observed, so the prototype
+// epoch recorded with the rest moves when any of that changes. False, having recorded nothing,
+// leaves for the baseline code. Allocates nothing and runs no code.
+fn bool jit_opt_sink_check(Dispatch* ds, HObject* ctor, jit::OptSinkSite* site) {
+    Heap* h = ds.vm.heap;
+    h.opt.sink_checks++;
+    hobject::ICEntry* ic = site.new_ic;
+    if (!ctor.is_constructable()) return false;
+    if (ic.key.borrow() != (void*)h.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
+        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(h)
+        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return false;
+    TVal proto = ctor.prop_values()[ic.prop_idx].get();
+    if (!proto.is_object()) return false;
+    HObject* first = (HObject*)proto.get_heapptr();
+    for (HObject* cur = first; cur != null; cur = cur.prototype) {
+        if (!hobject::plain_property_object(cur)) return false;
+        // A writable data property of the chain is shadowed by the add; any other kind changes it.
+        for (uint k = 0; k < site.add_count; k++) {
+            int idx = cur.find_prop_idx(site.keys[k], h);
+            if (idx < 0) continue;
+            hobject::PropFlags pf = cur.get_prop_flags((uint)idx, h);
+            if (pf.is_accessor || !pf.writable) return false;
+        }
+    }
+    void*[jit::OPT_SINK_READS] owner;
+    ulong[jit::OPT_SINK_READS] off;
+    for (uint k = 0; k < site.read_count; k++) {
+        owner[k] = null;
+        for (HObject* cur = first; cur != null; cur = cur.prototype) {
+            int idx = cur.find_prop_idx(site.read_keys[k], h);
+            if (idx < 0) continue;
+            if (cur.get_prop_flags((uint)idx, h).is_accessor) return false;
+            owner[k] = cur;
+            off[k] = (ulong)idx * hobject::PropValue::size;
+            break;
+        }
+        if (owner[k] == null) return false;
+    }
+    for (HObject* cur = first; cur != null; cur = cur.prototype) cur.gc.prototype_observed = true;
+    for (uint k = 0; k < site.read_count; k++) {
+        site.read_owner[k] = owner[k];
+        site.read_off[k] = off[k];
+    }
+    site.ctor = ctor;
+    site.ctor_shape = ctor.shape_id;
+    site.proto_off = (ulong)ic.prop_idx * hobject::PropValue::size;
+    site.proto = first;
+$if types::USE_NANBOX:
+    site.proto_bits = proto.bits;
+$endif
+    site.recycle = h.shape_recycle_epoch;
+    site.epoch = h.prototype_epoch;
+    return true;
+}
+
+// The object of a sunk allocation that an exit sees, with its first `count` fields from
+// site.values, as the constructor's adds would have left it; returned boxed. The site was
+// validated by the code before the exit and nothing ran since. The allocation does not collect.
+fn ulong jit_opt_sink_materialize(Dispatch* ds, jit::OptSinkSite* site, ulong count) {
+    Heap* h = ds.vm.heap;
+    h.opt.sink_materialized++;
+    HObject* obj = h.alloc_plain_object() ?? null;
+    if (obj == null) unreachable("out of memory allocating a sunk object at an exit");
+    h.set_prototype(obj, (HObject*)site.proto);
+    if (site.want > hobject::INLINE_PROPS) obj.reserve_props(h, constructor_reserve_capacity(site.want));
+    for (uint k = 0; k < (uint)count; k++) {
+        TVal value;
+$if types::USE_NANBOX:
+        value = { .bits = site.values[k] };
+$endif
+        obj.put_prop_new(site.keys[k], value, hobject::PROP_FLAGS_WEC, h);
+    }
+    TVal boxed;
+    boxed.set_object(obj);
+$if types::USE_NANBOX:
+    return boxed.bits;
+$else
+    return 0;
+$endif
+}
+
 // NEW_OBJ of a simple constructor, completed in place as th_new_obj does:
 // 0 when the object is built and stored, JIT_CALL_SLOW to leave the
 // instruction to jit_call.
