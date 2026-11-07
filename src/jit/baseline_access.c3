@@ -145,6 +145,7 @@ struct Layout {
     long undefined_bits;
     long obj_array_used;
     long obj_size_array;
+    long constructable_mask;
 }
 
 Layout layout_data @private;
@@ -289,6 +290,9 @@ fn Layout* layout() {
     f.exotic_arguments = true;
     f.exotic_stringobj = true;
     l.plain_exotic_mask = (long)(uint)f;
+    f = {};
+    f.constructable = true;
+    l.constructable_mask = (long)(uint)f;
     f = {};
     f.extensible = true;
     l.extensible_mask = (long)(uint)f;
