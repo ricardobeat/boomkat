@@ -2441,6 +2441,8 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     defer sljit_free_compiler(c);
     Asm a = asm_new(c, h, f);
     defer a.release();
+    bc.fill_view(f);
+    a.view = &bc.view;
     int table_reg = reg_s(2);
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;

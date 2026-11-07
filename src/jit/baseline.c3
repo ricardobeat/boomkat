@@ -191,7 +191,26 @@ struct BaselineCode {
     void* subs;
     // Optimized code only: set by every entry, cleared by the eviction sweep (opt_make_room).
     char touched;
+    // The function's Dispatch view, code_base to nregs in ColdCtx's order,
+    // which native calls and returns copy into the Dispatch whole (fill_view).
+    usz[8] view;
     void*[*] entries;
+}
+
+// Fill `view` for `f`, as Dispatch.load_frame and th_bind_ic_bias set the view.
+fn void BaselineCode.fill_view(&self, CompiledFunction* f) {
+    $assert(usz::size == 8);
+    self.view[0] = (usz)f.code;
+    self.view[1] = (usz)f.ic_entries;
+    self.view[2] = (usz)f.var_ic_entries;
+    self.view[3] = (usz)f.ic_entries - (usz)f.code * vm::TH_IC_SCALE;
+    self.view[4] = (usz)f.var_ic_entries - (usz)f.code * vm::TH_VAR_IC_SCALE;
+    self.view[5] = (usz)(f.code + f.code_count);
+    self.view[6] = (usz)f.constants;
+    // Match the two adjacent uint fields in memory on either byte order.
+    uint* counts = (uint*)&self.view[7];
+    counts[0] = f.code_count;
+    counts[1] = f.num_regs;
 }
 
 alias BaselineFn = fn long(Dispatch* ds);
@@ -419,6 +438,8 @@ const long SUB_SLOW = 2;
 struct Asm {
     void* c;
     CompiledFunction* f;
+    // The code allocation's BaselineCode.view, or null.
+    usz[8]* view;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;
@@ -688,6 +709,8 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     Asm a = asm_new(c, h, f);
     defer a.release();
     a.new_sites = (NewSite*)((char*)bc + BaselineCode::size + (usz)count * void*::size);
+    bc.fill_view(f);
+    a.view = &bc.view;
     a.new_site_count = news;
     int table_reg = reg_s(2);
 
