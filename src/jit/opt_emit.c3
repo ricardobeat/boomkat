@@ -742,8 +742,13 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     self.decode(n);
     a.call.len = 0;
-    a.load(R0, a.w.b);
-    a.unbox_object(R1, R0);
+    int rr = R0;
+    if (n.c != NO_NODE) {
+        rr = self.obj_reg(n.c, R0);
+    } else {
+        a.load(R0, a.w.b);
+    }
+    a.unbox_object(R1, rr);
     self.box_index(n.a);
     void* other = a.array_or_typed(0);
     a.array_slot();
@@ -851,6 +856,63 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     self.def_obj(i, R0);
 }
 
+// The slot address in R0 of the property the read entry `ic` names for the plain object in R1
+// (unboxed, not a proxy): the data property of the prototype the entry's epoch guard or link
+// snapshot describes, as Asm.emit_get does for a hit. The entry is read
+// at run time, so a refill leaves the code right; a miss, an accessor and any other chain leave for
+// the baseline code. Uses R0 to R4.
+fn void OptCg.select_chain_slot(&self, hobject::ICEntry* ic) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)ic);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R2, l.ic_key, SLJIT_IMM, 0));
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R2, l.ic_shape));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_flags);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.accessor_mask);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    // The entry's kind at build time: one the code below replays, else an exit.
+    uint kind = (uint)ic.chain_len & 0xFF;
+    bool epoch = kind == ((uint)hobject::IC_CHAIN_EPOCH & 0xFF);
+    if (!ic.has_proto || (!epoch && (kind == 0 || kind > hobject::IC_MAX_CHAIN))) {
+        a.call.add(sljit_emit_jump(c, SLJIT_JUMP));
+        return;
+    }
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_has_proto);
+    a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, SLJIT_MEM | R2, l.ic_chain_len);
+    a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)kind));
+    sljit_emit_op1(c, SLJIT_MOV, R4, 0, SLJIT_MEM | R2, l.ic_chain);
+    if (epoch) {
+        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
+        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_first));
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R4, l.epoch_current);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_MEM | R4, l.epoch_value));
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R4, l.epoch_owner);
+    } else {
+        // Each link by the identity and shape the entry snapshotted, as ic_resolve_owner.
+        hobject::ICChain probe;
+        long shapes = (long)((char*)&probe.snapshot.shapes[0] - (char*)&probe);
+        long protos = (long)((char*)&probe.snapshot.protos[0] - (char*)&probe);
+        for (uint k = 0; k < kind; k++) {
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.obj_proto);
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R4, protos + (long)k * 8));
+            sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_MEM | R4, shapes + (long)k * 4));
+        }
+    }
+    a.guard_not_proxy(R1, R4);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R2, l.ic_idx);
+    a.prop_base(R0, R1);
+    sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R3, 0);
+}
+
 // A read of the own data property its cache names, as emit_get does for a hit on the entry's shape:
 // the receiver a plain object (any object for GETTHISC) of that shape, the value at the slot.
 // Everything else leaves for the baseline code.
@@ -876,13 +938,17 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     } else {
         a.load(R0, a.w.b);
     }
-    if (n.cc != 0) {
+    bool chain = n.cc == 2;
+    if (n.cc == 1) {
         // The receiver was proven an object of this shape by an earlier node (see OptBuild.forget_facts).
         sljit_emit_op2(c, SLJIT_XOR, R1, 0, rr, 0, SLJIT_IMM, K_OBJ);
     } else {
         a.unbox_object(R1, rr);
         a.guard_not_proxy(R1, R2);
-        if (poly.count > 1) {
+        if (chain) {
+            self.select_chain_slot(&((hobject::ICEntry*)a.f.ic_entries)[a.next - 1]);
+            known_slot = true;
+        } else if (poly.count > 1) {
             self.select_slot(poly);
             known_slot = true;
         } else {
@@ -917,8 +983,13 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     }
     a.decode((uint)n.imm);
     a.call.len = 0;
-    a.load(R0, a.w.a);
-    a.unbox_object(R1, R0);
+    int rr = R0;
+    if (n.c != NO_NODE) {
+        rr = self.obj_reg(n.c, R0);
+    } else {
+        a.load(R0, a.w.a);
+    }
+    a.unbox_object(R1, rr);
     self.box_index(n.a);
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
     a.array_slot();
@@ -948,8 +1019,16 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     int sp = SLJIT_MEM | reg_sp();
     self.decode(n);
     a.call.len = 0;
-    a.load(R0, a.w.a);
-    a.unbox_object(R1, R0);
+    // A receiver in an OBJECT node cannot survive the counted store's call: that store leaves
+    // for the baseline code instead.
+    bool held = n.c != NO_NODE;
+    int rr = R0;
+    if (held) {
+        rr = self.obj_reg(n.c, R0);
+    } else {
+        a.load(R0, a.w.a);
+    }
+    a.unbox_object(R1, rr);
     self.box_index(n.a);
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
     a.array_slot();
@@ -959,29 +1038,35 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     Jumps counted;
     a.guard_old_value(&counted);
     a.store_value_r2(&counted);
-    void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    counted.bind(sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, sp, SUB_VALUE_OFF, R0, 0);
-    self.store_dirty(n.dirty_first, n.dirty_count);
-    a.load(R0, a.w.a);
-    a.unbox_object(R1, R0);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, SUB_VALUE_OFF);
-    sljit_emit_op2(c, SLJIT_ADD, R3, 0, a.regs, 0, SLJIT_IMM, (long)a.w.c * TVal::size);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_store_slot);
-    for (uint k = 0; k < n.reload_count; k++) {
-        OptDirty d = self.g.dirty[(sz)(n.reload_first + k)];
-        OptNode* nd = &self.g.nodes[d.node];
-        if (nd.reg < 0 || nd.is_const()) continue;
-        if (nd.rep == OptRep.OBJECT) {
-            a.load(nd.reg, d.reg);
-        } else if (nd.rep == OptRep.INT32) {
-            self.load_unboxed(nd.reg, d.reg);
-        } else {
-            self.reload_flt(nd.reg, d.reg);
-        }
+    if (held) {
+        for (uint k = 0; k < counted.len; k++) a.call.add(counted.at[k]);
+        counted.len = 0;
     }
-    sljit_set_label(done, sljit_emit_label(c));
+    if (!held) {
+        void* done = sljit_emit_jump(c, SLJIT_JUMP);
+        counted.bind(sljit_emit_label(c));
+        sljit_emit_op1(c, SLJIT_MOV, sp, SUB_VALUE_OFF, R0, 0);
+        self.store_dirty(n.dirty_first, n.dirty_count);
+        a.load(R0, a.w.a);
+        a.unbox_object(R1, R0);
+        sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, SUB_VALUE_OFF);
+        sljit_emit_op2(c, SLJIT_ADD, R3, 0, a.regs, 0, SLJIT_IMM, (long)a.w.c * TVal::size);
+        sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
+        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_store_slot);
+        for (uint k = 0; k < n.reload_count; k++) {
+            OptDirty d = self.g.dirty[(sz)(n.reload_first + k)];
+            OptNode* nd = &self.g.nodes[d.node];
+            if (nd.reg < 0 || nd.is_const()) continue;
+            if (nd.rep == OptRep.OBJECT) {
+                a.load(nd.reg, d.reg);
+            } else if (nd.rep == OptRep.INT32) {
+                self.load_unboxed(nd.reg, d.reg);
+            } else {
+                self.reload_flt(nd.reg, d.reg);
+            }
+        }
+        sljit_set_label(done, sljit_emit_label(c));
+    }
     $if features::BUFFERS:
         void* typed_done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));

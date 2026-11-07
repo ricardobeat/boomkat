@@ -65,6 +65,7 @@ fn void OptGraph.compute_uses(&self) {
         OptNode* n = &self.nodes[i];
         self.use(n.a, i);
         self.use(n.b, i);
+        self.use(n.c, i);
         for (uint k = 0; k < n.dirty_count; k++) self.use(self.dirty[(sz)(n.dirty_first + k)].node, i);
         for (uint k = 0; k < n.reload_count; k++) self.use(self.dirty[(sz)(n.reload_first + k)].node, i);
     }

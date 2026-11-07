@@ -626,7 +626,7 @@ fn bool OptBuild.find_loops(&self) {
 fn OptRep OptBuild.rep_of(&self, uint node) @inline => self.g.nodes[node].rep;
 
 fn uint OptBuild.add(&self, OptOp op, OptRep rep, uint a = NO_NODE, uint b = NO_NODE, long imm = 0) {
-    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1 };
+    OptNode n = { .op = op, .rep = rep, .a = a, .b = b, .c = NO_NODE, .imm = imm, .pc = self.pc, .fidx = self.cur_fn, .reg = -1 };
     self.g.nodes.push(n);
     return (uint)self.g.nodes.len() - 1;
 }
@@ -983,19 +983,24 @@ fn void OptBuild.ask_object(&self, uint reg) {
 
 // The cache entry of the instruction being lowered when it names an own data property of a
 // plain object that the optimized code can read by slot, else null.
-fn hobject::ICEntry* OptBuild.own_field(&self) {
+fn hobject::ICEntry* OptBuild.own_field(&self, bool inherited = false) {
     CompiledFunction* f = self.cur_f();
     if (f.ic_entries == null) return null;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     void* key = (void*)ic.key.borrow();
-    if (key == null || ic.shape_id == heap::SHAPE_NONE || ic.has_proto) return null;
-    if (ic.chain_len != 0 && ic.chain_len != hobject::IC_CHAIN_POLY) return null;
+    if (key == null || ic.shape_id == heap::SHAPE_NONE) return null;
+    // A read may also name a data property of a prototype, by the epoch guard or link snapshot of the baseline.
+    bool proto = inherited && ic.has_proto && ic.prop_idx != hobject::IC_PROP_MISSING
+        && (ic.chain_len == hobject::IC_CHAIN_EPOCH || (ic.chain_len > 0 && (uint)ic.chain_len <= hobject::IC_MAX_CHAIN));
+    if (ic.has_proto && !proto) return null;
+    if (!proto && ic.chain_len != 0 && ic.chain_len != hobject::IC_CHAIN_POLY) return null;
     if (ic.prop_idx == hobject::IC_PROP_ABSENT || ic.prop_flags.is_accessor) return null;
     if (key == (void*)self.h.strs[heap::BuiltinStr.LENGTH]) return null;
     if (self.w.op != Opcode.GETTHISC) {
         if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string()) return null;
         if (f.constants[self.w.c].get_heapptr() != key) return null;
     }
+    if (proto) return ic;
     // More shapes than the code compares leave the site to the baseline.
     OptPoly p;
     if (!field_shapes(ic, &p)) return null;
@@ -1066,7 +1071,7 @@ fn void OptBuild.set_poly(&self, uint n, hobject::ICEntry* ic) {
 // GETPROPC, GETPROPC_CACHED and GETTHISC of an own property by the shape its cache holds: a
 // typed load when a numeric use asked for one, else a read into the window.
 fn bool OptBuild.get_field(&self) {
-    hobject::ICEntry* ic = self.own_field();
+    hobject::ICEntry* ic = self.own_field(true);
     if (ic == null) return self.generic();
     uint recv = self.field_receiver();
     uint rnode = NO_NODE;
@@ -1082,6 +1087,8 @@ fn bool OptBuild.get_field(&self) {
         // The receiver of a nested call held in an OBJECT node.
         rnode = self.cur[recv].node;
     }
+    // A property of a prototype is read through the entry at run time, with no shape fact.
+    bool inherited = ic.has_proto;
     bool mono = ic.chain_len == 0;
     bool known = mono && self.guards_known(recv, ic.shape_id);
     uint shape = ic.shape_id;
@@ -1095,7 +1102,7 @@ fn bool OptBuild.get_field(&self) {
         // A value of any kind in a slot beyond the caller's frame would be out of the collector's sight.
         if (self.cur_fn != 0 && ra >= self.caller_regs) self.inline_unsafe = true;
     }
-    self.g.nodes[n].cc = known ? 1 : 0;
+    self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].b = rnode;
     self.set_poly(n, ic);
     if (mono) self.learn(recv, shape);
@@ -1152,15 +1159,32 @@ fn bool OptBuild.add_field(&self) {
     return true;
 }
 
+// The receiver register `r` of an element access: a window value, or in an inlined body an OBJECT
+// node of a slot beyond the caller's frame, which `node` receives (it is never stored, so the access
+// takes it from its machine register). Any other OBJECT node is stored first.
+fn bool OptBuild.elem_receiver(&self, uint r, uint* node) {
+    *node = NO_NODE;
+    if (self.cur_fn != 0 && r >= self.caller_regs && self.is_object(r)) {
+        *node = self.cur[r].node;
+        return true;
+    }
+    // A receiver a property or global read left in a slot beyond the frame: the next round builds
+    // that read as an OBJECT node.
+    if (self.cur_fn != 0 && r >= self.caller_regs && r < self.nregs && self.cur[r].node == NO_NODE) self.ask_object(r);
+    return self.in_window(r);
+}
+
 // GETPROP of an element at an integer index, from an object in the window.
 fn bool OptBuild.get_elem(&self) {
-    if (!self.in_window(self.w.b) || !self.index_ok(self.w.c)) return self.generic();
+    uint rnode;
+    if (!self.elem_receiver(self.w.b, &rnode) || !self.index_ok(self.w.c)) return self.generic();
     bool asked = false;
     foreach (c : self.load_reps) asked |= c.block == self.pckey();
     if (asked) {
         uint idx = self.operand(self.w.c, OptRep.INT32);
         if (idx == NO_NODE) return self.generic();
-        self.typed_load(OptOp.LOAD_ELEM, idx);
+        uint n = self.typed_load(OptOp.LOAD_ELEM, idx);
+        self.g.nodes[n].c = rnode;
         return true;
     }
     if (self.cur_fn != 0) {
@@ -1170,6 +1194,7 @@ fn bool OptBuild.get_elem(&self) {
         uint idx = self.operand(self.w.c, OptRep.INT32);
         if (ra >= self.nregs || idx == NO_NODE) return self.generic();
         uint n = self.add(OptOp.LOAD_ELEM, OptRep.NONE, idx, NO_NODE, (long)self.pc);
+        self.g.nodes[n].c = rnode;
         self.snapshot(n);
         self.kill(ra);
         self.load_def[ra] = self.pckey();
@@ -1183,17 +1208,22 @@ fn bool OptBuild.get_elem(&self) {
 
 // PUTPROP of a value to an element at an integer index, into an object in the window. A numeric
 // node is stored as it is; any other value is read from the window, in an inlined body only (a
-// function's own body runs it as a GENERIC), and stored with the baseline's counted store.
+// function's own body runs it as a GENERIC), and stored with the baseline's counted store. A
+// receiver held in an OBJECT node leaves for the baseline code instead of the counted store, which
+// would call out with the node's register live.
 fn bool OptBuild.put_elem(&self) {
     uint rv = self.w.c;
-    if (rv >= self.nregs || !self.in_window(self.w.a) || !self.index_ok(self.w.b)) return self.generic();
+    uint rnode;
+    if (rv >= self.nregs || !self.index_ok(self.w.b)) return self.generic();
     bool numeric = self.cur[rv].node != NO_NODE && !self.is_object(rv);
     if (!numeric && (self.cur_fn == 0 || !self.in_window(rv))) return self.generic();
+    if (!self.elem_receiver(self.w.a, &rnode)) return self.generic();
     uint idx = self.operand(self.w.b, OptRep.INT32);
     if (idx == NO_NODE) return self.generic();
     uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, numeric ? self.cur[rv].node : NO_NODE, (long)self.pc);
+    self.g.nodes[n].c = rnode;
     self.snapshot(n);
-    if (!numeric) {
+    if (!numeric && rnode == NO_NODE) {
         // The counted store is a C call that clobbers the machine registers: the live nodes are
         // stored before it on that path, and reloaded after.
         uint first = (uint)self.g.dirty.len();
@@ -1560,10 +1590,10 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
                 // An exit at every negative dividend or non-positive divisor would not pay.
                 ok = (self.feedback() & hobject::FB_OPERANDS) == 0;
             case GETPROPC: case GETPROPC_CACHED:
-                ok = self.own_field() != null || (s.flat && self.cold_field());
+                ok = self.own_field(true) != null || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case GETTHISC:
-                ok = ((s.method || s.construct) && self.own_field() != null) || (s.flat && self.cold_field());
+                ok = ((s.method || s.construct) && self.own_field(true) != null) || (s.flat && self.cold_field());
                 why = OptInlineReject.FIELD;
             case PUTPROPC:
                 hobject::ICEntry* ic = self.own_field();
