@@ -199,6 +199,7 @@ struct BaselineCode {
 
 // Fill `view` for `f`, as Dispatch.load_frame and th_bind_ic_bias set the view.
 fn void BaselineCode.fill_view(&self, CompiledFunction* f) {
+    $assert(usz::size == 8);
     self.view[0] = (usz)f.code;
     self.view[1] = (usz)f.ic_entries;
     self.view[2] = (usz)f.var_ic_entries;
@@ -206,7 +207,10 @@ fn void BaselineCode.fill_view(&self, CompiledFunction* f) {
     self.view[4] = (usz)f.var_ic_entries - (usz)f.code * vm::TH_VAR_IC_SCALE;
     self.view[5] = (usz)(f.code + f.code_count);
     self.view[6] = (usz)f.constants;
-    self.view[7] = (usz)f.code_count | (usz)f.num_regs << 32;
+    // Match the two adjacent uint fields in memory on either byte order.
+    uint* counts = (uint*)&self.view[7];
+    counts[0] = f.code_count;
+    counts[1] = f.num_regs;
 }
 
 alias BaselineFn = fn long(Dispatch* ds);
