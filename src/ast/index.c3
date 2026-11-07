@@ -46,6 +46,7 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
     index_state = c;
     c.lexer = lexer::lexer_init(source, heap);
     c.tree.init(source);
+    if (c.src_buf != null) c.tree.shared_line_starts = c.src_buf.line_starts;
     uint? root = parse_program(&c.parser, &c.tree, &c.lexer, opts);
     if (catch root) return c;
     c.res.init(&c.tree);

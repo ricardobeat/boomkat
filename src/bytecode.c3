@@ -1810,6 +1810,8 @@ struct SourceBuf {
     char* data;
     // The text was allocated separately with `mem` and is freed with the header.
     bool owns_data;
+    // Filled only for deferred bodies, which reparse slices of this source.
+    uint[] line_starts;
 }
 
 fn SourceBuf* source_buf_new(char[] text) {
@@ -1819,6 +1821,7 @@ fn SourceBuf* source_buf_new(char[] text) {
     b.len = (uint)text.len;
     b.data = (char*)b + SourceBuf::size;
     b.owns_data = false;
+    b.line_starts = {};
     mem::copy(b.data, text.ptr, (sz)text.len);
     return b;
 }
@@ -1831,6 +1834,7 @@ fn SourceBuf* source_buf_adopt(char[] text) {
     b.len = (uint)text.len;
     b.data = text.ptr;
     b.owns_data = true;
+    b.line_starts = {};
     return b;
 }
 
@@ -1839,6 +1843,7 @@ fn void source_buf_release(SourceBuf* b) {
     b.refs--;
     if (b.refs != 0) return;
     if (b.owns_data) mem::free(b.data);
+    mem::free(b.line_starts.ptr);
     mem::free(b);
 }
 

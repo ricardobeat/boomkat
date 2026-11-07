@@ -380,7 +380,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ts_param_props.init(8);
     p.ts_scope_names.init(8);
     p.ts_type_imports.init(8);
-    build_line_table(ast);
+    if (ast.shared_line_starts.len == 0) build_line_table(ast);
     lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
     lex.jsx = opts.jsx;

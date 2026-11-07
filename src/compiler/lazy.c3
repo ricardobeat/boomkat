@@ -13,6 +13,11 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
     // Establish the unit-owned source before allocating a deferred template.
     SourceBuf* source = idx.share_source(self.lexer.source);
     if (source == null) return COMPILE_ERROR~;
+    if (source.line_starts.len == 0) {
+        source.line_starts = mem::new_array(uint, idx.tree.line_starts.len)[:idx.tree.line_starts.len];
+        mem::copy(source.line_starts.ptr, idx.tree.line_starts.data,
+            idx.tree.line_starts.len * uint::size);
+    }
     bytecode::source_buf_release(source);
     Heap* h = (Heap*)self.heap;
     CompiledFunction* f = (CompiledFunction*)h.alloc_func(h.heap_udata, CompiledFunction::size);

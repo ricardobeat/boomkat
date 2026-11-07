@@ -216,9 +216,10 @@ struct Ast {
     Vec{uint} rhs;
     // Variable-length lists and records. Index 0 is reserved so 0 means "none".
     Vec{uint} extra;
-    // Byte offset of the start of each line, ascending, filled by the parser as it
-    // lexes. line_starts[0] is 0.
+    // Byte offset of the start of each line, ascending. line_starts[0] is 0.
     Vec{uint} line_starts;
+    // Borrowed from the source buffer retained by AstIndex during a reparse.
+    uint[] shared_line_starts;
     AtomTable atoms;
 }
 
@@ -346,14 +347,16 @@ fn void Ast.truncate(&self, AstMark m) {
     self.extra.truncate((sz)m.extra);
 }
 
-// 1-based line and column of a byte offset. The line table covers the lines the lexer has passed,
-// which is every offset a node can name.
+// 1-based line and byte column. A shared table may extend beyond this body's
+// source slice; binary search only considers line starts at or before offset.
 fn SourcePos Ast.position(&self, uint offset) {
+    uint[] starts = self.shared_line_starts.len > 0
+        ? self.shared_line_starts : self.line_starts.data[:self.line_starts.len];
     sz lo = 0;
-    sz hi = self.line_starts.len;
+    sz hi = starts.len;
     while (hi - lo > 1) {
         sz mid = (lo + hi) / 2;
-        if (self.line_starts.data[mid] <= offset) { lo = mid; } else { hi = mid; }
+        if (starts[mid] <= offset) { lo = mid; } else { hi = mid; }
     }
-    return { (uint)lo + 1, offset - self.line_starts.data[lo] + 1 };
+    return { (uint)lo + 1, offset - starts[lo] + 1 };
 }
