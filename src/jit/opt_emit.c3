@@ -334,18 +334,25 @@ fn void OptCg.emit_exit_stubs(&self) {
 }
 
 // The exit of an inlined body at its callee's word `pc` (the dirty registers already stored):
-// publish the callee's frame (opt_inline_exit) and continue in its baseline code. With `counted`
+// publish the frames of the calls it is nested in (opt_inline_exit) and continue in the
+// innermost callee's baseline code. With `counted`
 // it is the test hook, which takes the exit `oc.forced` times and then falls through.
 fn void OptCg.emit_inline_exit(&self, uint fidx, uint pc, uint mask, uint reason, bool counted) {
     void* c = self.a.c;
-    OptFn* fn_ = &self.g.fns[fidx];
     OptInlineExit* site = self.h.alloc_func(self.h.heap_udata, OptInlineExit::size);
-    site.callee = fn_.f;
-    site.resume = self.g.fns[0].f.code + fn_.resume_pc;
-    site.base = fn_.reg_base;
-    site.nargs = fn_.f.num_formals;
+    // The frames from the innermost out: each one's caller is its entry's parent.
+    uint depth = self.g.fns[fidx].depth;
+    site.depth = depth;
     site.pc = pc;
-    site.keep = mask;
+    uint keep = mask;
+    uint at = fidx;
+    for (uint level = depth; level > 0; level--) {
+        OptFn* fn_ = &self.g.fns[at];
+        site.frames[level - 1] = { .callee = fn_.f, .resume = self.g.fns[fn_.parent].f.code + fn_.resume_pc,
+                                   .base = fn_.reg_base, .nargs = fn_.f.num_formals, .keep = keep };
+        keep = fn_.parent_keep;
+        at = fn_.parent;
+    }
     site.next = self.oc.inline_exits;
     self.oc.inline_exits = site;
     void* skip = null;
@@ -596,7 +603,7 @@ fn void OptCg.emit_osr_entries(&self) {
 
 fn bool OptCg.force_here(&self, OptNode* n) {
     OptPolicy* p = &self.h.opt;
-    return self.oc != null && p.force_reason != 0 && !self.forced_done && n.pc >= p.force_at && (!p.force_inline || n.fidx != 0);
+    return self.oc != null && p.force_reason != 0 && !self.forced_done && n.pc >= p.force_at && (!p.force_inline || (n.fidx != 0 && self.g.fns[n.fidx].depth >= p.force_depth));
 }
 
 fn void OptCg.emit_check_int(&self, uint i, OptNode* n) {
@@ -654,7 +661,7 @@ fn void OptCg.def_from_r0(&self, uint i, OptNode* n) {
     }
 }
 
-// GETGLOBAL of an inlined body as a number: the baseline's cached read, leaving for the baseline
+// GETGLOBAL of an inlined body as a number or an OBJECT node: the baseline's cached read, leaving for the baseline
 // code on the slow cases and on a value that is not of the node's kind.
 fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     Asm* a = self.a;
@@ -666,7 +673,11 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
     sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     a.guard_not_tdz();
     self.exit_calls(i, OptExit.SLOW_PATH);
-    self.def_from_r0(i, n);
+    if (n.rep == OptRep.OBJECT) {
+        self.finish_object(i, n);
+    } else {
+        self.def_from_r0(i, n);
+    }
 }
 
 // GETCAP as a number: the baseline's capture read, leaving for the baseline code on the slow
@@ -678,7 +689,9 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
     if (n.fidx != 0) {
         // An inlined body reads the callee's closure, which the call's guard checked in its register.
         OptFn* fn_ = &self.g.fns[n.fidx];
-        self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count);
+        // A nested call's closure may be held in an OBJECT node (b) instead.
+        int closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
+        self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count, closure);
     } else {
         self.a.emit_get_cap_value(index);
     }
@@ -849,7 +862,10 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     OptPoly* poly = &self.g.polys[(sz)(n.poly - 1)];
     bool known_slot = false;
     int rr = R0;
-    if (a.w.op == Opcode.GETTHISC) {
+    if (a.w.op == Opcode.GETTHISC && n.b != NO_NODE) {
+        // The receiver of a nested inlined call, held in an OBJECT node.
+        rr = self.obj_reg(n.b, R0);
+    } else if (a.w.op == Opcode.GETTHISC) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
@@ -931,7 +947,9 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
     bool known_slot = false;
     bool this_op = a.w.op == Opcode.PUTTHISC;
     int rr = R0;
-    if (this_op) {
+    if (this_op && n.b != NO_NODE) {
+        rr = self.obj_reg(n.b, R0);
+    } else if (this_op) {
         if (n.fidx != 0) {
             a.load(R0, self.g.fns[n.fidx].reg_base - 1);
         } else {
@@ -983,11 +1001,18 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     CallLayout* k = call_layout();
     CompiledFunction* cf = (CompiledFunction*)(usz)n.imm;
     a.decode(n.pc);
-    uint callee_reg = (a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL) ? a.w.a : a.w.b;
+    // The call is an instruction of the node's function: of an inlined body for a nested call.
+    OptFn* caller = &self.g.fns[n.fidx];
+    uint callee_reg = ((a.w.op == Opcode.CALL_VAR || a.w.op == Opcode.CALL_GLOBAL) ? a.w.a : a.w.b) + caller.reg_base;
     int m = SLJIT_MEM;
     void*[16] miss;
     uint misses = 0;
-    a.load(R1, callee_reg);
+    if (n.a != NO_NODE) {
+        int r = self.obj_reg(n.a, R1);
+        if (r != R1) sljit_emit_op1(c, SLJIT_MOV, R1, 0, r, 0);
+    } else {
+        a.load(R1, callee_reg);
+    }
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
@@ -1012,19 +1037,29 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, k.ds_vm);
     sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R0, k.vm_count);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, m | R0, k.vm_capacity);
+    // An exit from a nested body publishes the frames of the calls around it as well.
+    if (caller.depth != 0) sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, (long)caller.depth);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, R2, 0);
     uint end = callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS;
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)end * TVal::size);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | R0, k.vm_valstack_end);
     if (n.cc != 0 && !cf.call_flags.ignores_this) {
-        // The receiver: an object in a register the caller's frame tracks.
-        a.load(R0, callee_reg + 1);
-        sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
+        // that any exit stores into a frame it publishes.
+        if (n.b != NO_NODE) {
+            int r = self.obj_reg(n.b, R0);
+            sljit_emit_op2(c, SLJIT_XOR, R0, 0, r, 0, SLJIT_IMM, K_OBJ);
+        } else {
+            a.load(R0, callee_reg + 1);
+            sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        }
         miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
         miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, a.lay.ds_act);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R0, a.lay.act_hrc);
-        miss[misses++] = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, SLJIT_IMM, (long)callee_reg + 1);
+        if (n.b == NO_NODE) {
+            sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, a.lay.ds_act);
+            sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R0, a.lay.act_hrc);
+            miss[misses++] = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, SLJIT_IMM, (long)callee_reg + 1);
+        }
     }
     for (uint j = 0; j < misses; j++) self.exit_at(miss[j], i, OptExit.CALLEE);
 }
@@ -1039,6 +1074,22 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
     long vic = (long)(usz)&((hobject::VarICEntry*)a.f.var_ic_entries)[a.next - 1];
     uint ra = a.w.a;
     if (n.fidx != 0) ra += self.g.fns[n.fidx].reg_base;
+    if (n.rep == OptRep.OBJECT) {
+        // A callee register beyond the caller's frame: the value stays in a register.
+        a.var_slot(vic, n.cc != 0);
+        if (n.cc != 0) {
+            sljit_emit_op1(self.a.c, SLJIT_MOV_U8, R1, 0, SLJIT_MEM | R2, a.lay.vic_flags);
+            sljit_emit_op2(self.a.c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, a.lay.accessor_mask);
+            a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+        }
+        sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
+        a.guard_not_tdz();
+        for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
+        a.alt.len = 0;
+        self.exit_calls(i, OptExit.SLOW_PATH);
+        self.finish_object(i, n);
+        return;
+    }
     a.emit_get_var(ra, vic, n.cc != 0);
     // A moved entry re-arms in the baseline code.
     for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
@@ -1052,10 +1103,15 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
     Asm* a = self.a;
     a.decode((uint)n.imm);
     a.call.len = 0;
-    if (n.cc != 0) {
-        a.load(R0, self.g.fns[n.fidx].reg_base - 1);
+    uint base = self.g.fns[n.fidx].reg_base;
+    if (n.cc == 1) {
+        a.load(R0, base - 1);
     } else {
-        a.load(R0, a.w.a + self.g.fns[n.fidx].reg_base);
+        a.load(R0, (n.cc == 2 ? a.w.b : a.w.a) + base);
+    }
+    if (n.rep == OptRep.OBJECT) {
+        self.finish_object(i, n);
+        return;
     }
     a.publish(n.home);
     self.exit_calls(i, OptExit.SLOW_PATH);
