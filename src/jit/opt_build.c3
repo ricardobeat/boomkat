@@ -9,6 +9,7 @@
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::vm;
+import boomkat::builtins;
 import boomkat::bytecode;
 import boomkat::compiler;
 import boomkat::heap;
@@ -60,7 +61,6 @@ enum OptInlineReject : char (String label) {
     NOT_LEAN {"callee not a lean call"},
     ARGS {"arguments or rest object"},
     SIZE {"callee too big"},
-    FORMALS {"argument count differs"},
     TOP_LEVEL {"top level code"},
     WINDOW_LIVE {"call window live after the call"},
     BLOCKS {"loop in the callee"},
@@ -103,6 +103,11 @@ struct OptInlineSite {
     bool construct;
     // CALL_VAR or CALL_GLOBAL, which load the callee from a variable.
     bool var_call;
+    // The APPLY_ARGS of `f.apply(x, arguments)` in a forwarding body (forward_pair): the callee is
+    // `f`, its receiver `x`, and its arguments those the forwarding body was called with.
+    bool forward;
+    // The count of arguments the call passes.
+    uint nargs;
     DecodedCfg cfg;
     RegSet* live_in;
     RegSet* live_out;
@@ -232,13 +237,15 @@ struct OptBuild {
     bool consts_ok;
 }
 
-fn bool opt_function_eligible(CompiledFunction* f) {
+// Whether `f` can be optimized, or with `inlined` inlined: a sloppy function's mapped `arguments`
+// that maps no formal and is only forwarded (CallFlags.forward_args) never exists in an inlined body.
+fn bool opt_function_eligible(CompiledFunction* f, bool inlined = false) {
 $if !types::USE_NANBOX:
     return false;
 $else
     if (f.code == null || f.code_count == 0 || f.num_regs == 0 || f.num_regs >= compiler::BYTECODE_REGS_MAX) return false;
     if (f.flags.is_generator || f.flags.is_async || f.flags.has_direct_eval || f.flags.needs_lex_bridge) return false;
-    return !f.mapped_arguments();
+    return !f.mapped_arguments() || (inlined && f.call_flags.forward_args && !f.maps_formals());
 $endif
 }
 
@@ -298,6 +305,9 @@ fn uint inline_reg_mask(Opcode op) {
             return 3;
         case CALL_VAR: case CALL_GLOBAL:
             return 1;
+        // A forwarding call (OptBuild.forward_candidate): the callee and count registers.
+        case APPLY_ARGS: case CALL_S:
+            return 7;
         case ADD: case ADD_FUSED: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
         case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
             return 7;
@@ -318,9 +328,20 @@ fn uint inline_reg_mask(Opcode op) {
 // Whether an inlined body may hold `op`: the opcodes with registers above, RETUNDEF and JUMP.
 fn bool inline_op_ok(Opcode op) @inline => inline_reg_mask(op) != 0 || op == Opcode.RETUNDEF || op == Opcode.JUMP;
 
-// The calls an inlined body may hold, each one a nested inline site.
+// The calls an inlined body may hold, each one a nested inline site. A forwarding call is the site
+// of its APPLY_ARGS; the CALL_S after it is part of it.
 fn bool inline_call_op(Opcode op) @inline {
-    return op == Opcode.CALL || op == Opcode.CALL_UNDEF_THIS || op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL || op == Opcode.NEW_OBJ;
+    return op == Opcode.CALL || op == Opcode.CALL_UNDEF_THIS || op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL || op == Opcode.NEW_OBJ
+        || op == Opcode.APPLY_ARGS;
+}
+
+// Whether instruction `k` of `cfg` is the APPLY_ARGS of `f.apply(x, arguments)`, fused with the
+// CALL_S after it: the registers of the call are the callee, the function `apply` runs, its receiver.
+fn bool forward_pair(DecodedCfg* cfg, uint k) {
+    if (k + 1 >= cfg.instruction_count || cfg.nodes[k].view.wide || cfg.nodes[k + 1].view.wide) return false;
+    DecodedInsn a = cfg.nodes[k].view.insn;
+    DecodedInsn c = cfg.nodes[k + 1].view.insn;
+    return a.op == Opcode.APPLY_ARGS && c.op == Opcode.CALL_S && a.b == a.a && c.a == a.a && c.b == a.a && c.c == a.c;
 }
 
 // The forward-branching opcodes of an inlined body.
@@ -370,6 +391,13 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
             *writes = 1u << w.a;
         case CALL_VAR: case CALL_GLOBAL:
             for (uint k = 0; k < w.b; k++) *reads |= 1u << (w.a + 2 + k);
+            *writes = 1u << w.a;
+        // The forwarded arguments are the frame's first registers, which the site checks it has.
+        case APPLY_ARGS:
+            *reads = (1u << w.a) | (1u << (w.a + 1)) | (1u << (w.a + 2)) | (1u << w.c);
+            *writes = (1u << w.a) | (1u << (w.a + 1)) | (1u << (w.a + 2)) | (1u << w.c);
+        case CALL_S:
+            *reads = (1u << w.b) | (1u << (w.b + 1));
             *writes = 1u << w.a;
         default:
             break;
@@ -1110,7 +1138,9 @@ fn bool OptBuild.get_field(&self) {
 fn bool OptBuild.put_field(&self) {
     hobject::ICEntry* ic = self.own_field();
     bool this_op = self.w.op == Opcode.PUTTHISC;
-    if ((ic == null || !ic.prop_flags.writable) && this_op && self.cur_fn != 0 && self.sites[self.cur_site].construct) return self.add_field();
+    // A forwarded receiver is typically the object an inlined constructor is building.
+    if ((ic == null || !ic.prop_flags.writable) && this_op && self.cur_fn != 0
+        && (self.sites[self.cur_site].construct || self.sites[self.cur_site].forward)) return self.add_field();
     if (ic == null || !ic.prop_flags.writable) return self.generic();
     uint recv = self.field_receiver();
     uint rnode = NO_NODE;
@@ -1469,6 +1499,13 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
         Opcode op = cfg.nodes[k].view.insn.op;
         if (!inline_op_ok(op)) { self.rej_op = op; return self.reject(OptInlineReject.OPCODE); }
         s.has_calls |= inline_call_op(op);
+        // A CALL_S is a spread call unless it completes a forwarding call, which only a function
+        // whose `arguments` register holds the argument count makes.
+        bool paired = op == Opcode.APPLY_ARGS ? forward_pair(cfg, k) : (op != Opcode.CALL_S || (k > 0 && forward_pair(cfg, k - 1)));
+        if (!paired || (op == Opcode.APPLY_ARGS && !cf.call_flags.forward_args)) {
+            self.rej_op = op;
+            return self.reject(OptInlineReject.OPCODE);
+        }
     }
     // Forward branches only: a loop in the callee stays a call.
     if (cfg.has_backedge) return self.reject(OptInlineReject.BLOCKS);
@@ -1488,8 +1525,11 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
     Opcode last_op = cfg.nodes[cfg.instruction_count - 1].view.insn.op;
     if (last_op != Opcode.RET && last_op != Opcode.RETUNDEF) return self.reject(OptInlineReject.NO_RET);
     // Nothing but the arguments may be read before it is written: the window slots are not cleared.
+    // Missing formals are stored undefined (OptBuild.enter_args); surplus arguments stay, as a
+    // frame's do.
     s.defined = mem::new_array(uint, cfg.instruction_count);
-    uint argmask = nargs >= 32 ? ~0u : (1u << nargs) - 1;
+    uint given = max(nargs, cf.num_formals);
+    uint argmask = given >= 32 ? ~0u : (1u << given) - 1;
     s.remap = uint::max;
     if (s.flat) {
         // A forward dataflow: what every path to an instruction has written.
@@ -1532,7 +1572,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             DecodedInsn lw = cfg.nodes[last].view.insn;
             inline_rw(&lw, &reads, &writes);
             // A call's result register is also its callee register, which the call guard reads.
-            bool alone = writes == (1u << rr) && !inline_call_op(lw.op);
+            bool alone = writes == (1u << rr) && !inline_call_op(lw.op) && lw.op != Opcode.CALL_S;
             for (uint k = 0; k < last && alone; k++) {
                 DecodedInsn kw = cfg.nodes[k].view.insn;
                 uint r2;
@@ -1575,7 +1615,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
             case PUTTHISC:
                 hobject::ICEntry* ic = self.own_field();
                 ok = (s.method && ic != null && ic.prop_flags.writable) || (s.flat && self.cold_field())
-                    || (s.construct && ((ic != null && ic.prop_flags.writable) || self.absent_field() != null));
+                    || ((s.construct || s.forward) && ((ic != null && ic.prop_flags.writable) || self.absent_field() != null));
                 why = OptInlineReject.FIELD;
             case GETGLOBAL:
                 ok = (s.flat && self.cold_field()) || ((hobject::VarICEntry*)cf.var_ic_entries)[self.next_pc - 1].env != null;
@@ -1612,15 +1652,20 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     uint depth = ps == null ? 1 : ps.depth + 1;
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
     bool construct = op == Opcode.NEW_OBJ;
-    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call && !construct) || view.wide || f.ic_entries == null) return false;
+    bool forward = op == Opcode.APPLY_ARGS;
+    if ((op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call && !construct && !forward) || view.wide || f.ic_entries == null) return false;
     if (var_call && f.var_ic_entries == null) return false;
+    // A forwarding call passes on the arguments of the inlined body it is in, whose count is its
+    // site's (inline_body_ok checked the pair and that `arguments` holds that count).
+    if (forward && (ps == null || !forward_pair(&ps.cfg, i))) return false;
+    if (forward) live_out = &ps.live_out[i + 1];
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[view.next_pc - 1];
     if ((ic.feedback & (construct ? hobject::FB_CTOR : hobject::FB_CALL)) == 0) return false;
     if ((ic.feedback & hobject::FB_POLY) != 0) return self.reject(OptInlineReject.POLY);
     CompiledFunction* cf = opt_site_callee(self.h, f, view.next_pc - 1);
     uint callee_reg = var_call ? view.insn.a : view.insn.b;
-    uint nargs = var_call ? view.insn.b : view.insn.c;
-    bool method = op == Opcode.CALL;
+    uint nargs = forward ? ps.nargs : (var_call ? view.insn.b : view.insn.c);
+    bool method = op == Opcode.CALL || forward;
     // The window the call publishes lies in the caller's registers as far as the arguments go.
     if (cf == null) return false;
     if (construct && !opt_base_constructor(cf)) return self.reject(OptInlineReject.CTOR);
@@ -1631,13 +1676,16 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     if (depth > OPT_INLINE_DEPTH) return self.reject(OptInlineReject.DEPTH);
     // A CALL_VAR's variable cache is keyed by the running frame's scope, the outermost's.
     if (ps != null && op == Opcode.CALL_VAR) return self.reject(OptInlineReject.SCOPED);
-    if (callee_reg + 2 + nargs > regs) return self.reject(OptInlineReject.WINDOW);
+    // (A forwarding call's arguments are moved into its window from the body's first registers.)
+    if (!forward && callee_reg + 2 + nargs > regs) return self.reject(OptInlineReject.WINDOW);
     cf.classify_lean_call();
-    if (cf.realm != f.realm || !opt_function_eligible(cf)) return self.reject(OptInlineReject.INELIGIBLE);
+    if (cf.realm != f.realm || !opt_function_eligible(cf, true)) return self.reject(OptInlineReject.INELIGIBLE);
     if (!cf.call_flags.lean_call || (!method && !construct && !cf.call_flags.lean_plain)) return self.reject(OptInlineReject.NOT_LEAN);
-    if (cf.arguments_in_reg() || cf.call_flags.rest_length_only || cf.ic_entries == null || cf.var_ic_entries == null) return self.reject(OptInlineReject.ARGS);
+    // A callee may read `arguments` only to forward it: then the register holds the count of the
+    // arguments, which stay in its first registers (CallFlags.forward_args).
+    bool counted_args = cf.call_flags.forward_args && nargs <= (uint)cf.num_args + bytecode::FORWARD_ARGS_PAD;
+    if ((cf.arguments_in_reg() && !counted_args) || cf.call_flags.rest_length_only || cf.ic_entries == null || cf.var_ic_entries == null) return self.reject(OptInlineReject.ARGS);
     if (is_top_level(cf)) return self.reject(OptInlineReject.TOP_LEVEL);
-    if (cf.num_formals != nargs) return self.reject(OptInlineReject.FORMALS);
     if (cf.num_regs > 32 || cf.code_count > INLINE_WORDS_MAX) return self.reject(OptInlineReject.SIZE);
     // What a call leaves behind is its result: the rest of its window is dead after it.
     // (A call that names no receiver leaves `this` implicit, which liveness takes for live around a loop;
@@ -1647,8 +1695,9 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
         if (live_out.test(r)) return self.reject(OptInlineReject.WINDOW_LIVE);
     }
     uint base = (ps == null ? 0 : ps.base) + callee_reg + 2;
-    *s = { .insn = i, .cf = cf, .base = base, .method = method, .construct = construct, .var_call = var_call, .parent = parent, .depth = depth };
-    bool ok = compiler::bytecode_cfg_build(&s.cfg, cf.code, cf.code_count, self.h);
+    *s = { .insn = i, .cf = cf, .base = base, .method = method, .construct = construct, .var_call = var_call, .forward = forward,
+           .nargs = nargs, .parent = parent, .depth = depth };
+    bool ok = compiler::bytecode_cfg_build(&s.cfg, cf.code, cf.code_count, self.h, forwarding: true);
     if (ok) {
         uint count = s.cfg.instruction_count;
         uint words = (cf.num_regs + 32) / 32;
@@ -1659,6 +1708,7 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
         compiler::bytecode_cfg_liveness(&s.cfg, s.live_sets, s.live_sets + count, &scratch, true, false, true);
         s.live_out = s.live_sets;
         s.live_in = s.live_sets + count;
+        if (cf.arguments_in_reg()) s.forward_liveness();
         ok = self.inline_body_ok(s, nargs);
     }
     // An exit from the body continues in the callee's baseline code: compile it now if it has none.
@@ -1668,6 +1718,23 @@ fn bool OptBuild.inline_candidate(&self, uint i, OptInlineSite* s, uint parent =
     }
     if (!ok) s.free_site();
     return ok;
+}
+
+// What a forwarding call (APPLY_ARGS) reads, which liveness does not see: the arguments, which stay
+// in the body's first registers, and the registers of the call. They are taken for live from the
+// entry (the body is straight-line), so that an exit before the call publishes them.
+fn void OptInlineSite.forward_liveness(&self) {
+    uint n = min(self.nargs, self.cf.num_regs);
+    for (uint j = 0; j < self.cfg.instruction_count; j++) {
+        DecodedInsn w = self.cfg.nodes[j].view.insn;
+        if (w.op != Opcode.APPLY_ARGS) continue;
+        for (uint k = 0; k <= j; k++) {
+            for (uint r = 0; r < n; r++) self.live_in[k].set(r);
+            for (uint r = w.a; r <= w.a + 2 && r < self.cf.num_regs; r++) self.live_in[k].set(r);
+            self.live_in[k].set(w.c);
+        }
+        for (uint k = 0; k < j; k++) self.live_out[k].union_with(&self.live_in[k + 1]);
+    }
 }
 
 // Find the inline sites, and widen nregs to hold their callee windows.
@@ -1891,10 +1958,10 @@ fn bool OptBuild.enter_flat(&self, uint si) {
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, NO_NODE, NO_NODE, (long)(usz)s.cf);
     self.g.nodes[chk].cc = s.method ? 1 : 0;
     self.snapshot(chk);
-    self.g.fns.push({ .f = s.cf, .reg_base = s.base, .resume_pc = resume, .remap_pc = uint::max, .remap_reg = result, .depth = 1 });
+    self.g.fns.push({ .f = s.cf, .reg_base = s.base, .resume_pc = resume, .remap_pc = uint::max, .remap_reg = result, .depth = 1,
+                      .nargs = s.nargs });
     self.site_fn[si] = (uint)self.g.fns.len() - 1;
-    // The locals and temporaries start as nothing known; the arguments keep their state.
-    for (uint r = s.base + s.cf.num_formals; r < self.nregs; r++) self.kill(r);
+    self.enter_args(s);
     self.inlined++;
     return true;
 }
@@ -1951,6 +2018,73 @@ fn void OptBuild.store_const(&self, uint reg, long bits) {
     uint n = self.add(OptOp.STORE_CONST, OptRep.NONE, NO_NODE, NO_NODE, bits);
     self.g.nodes[n].home = reg;
     self.kill(reg);
+}
+
+// The callee's registers on entry to its inlined body: the arguments keep their state, missing formals
+// are undefined, as a frame's are, and the locals and temporaries start as nothing known.
+fn void OptBuild.enter_args(&self, OptInlineSite* s) {
+    uint given = min(s.nargs, s.cf.num_regs);
+    for (uint r = given; r < s.cf.num_formals; r++) self.store_const(s.base + r, K_UNDEF);
+    for (uint r = s.base + max(given, (uint)s.cf.num_formals); r < self.nregs; r++) self.kill(r);
+}
+
+// The registers of a forwarding call moved as th_apply_args moves them: the function `apply` runs
+// into the callee register, the receiver after it, and the arguments of the forwarding body into the
+// window. A register's node moves as a copy; a window value moves within the caller's frame or is read
+// into an OBJECT node beyond it. Those reads, which can exit, come before anything moves, so an exit
+// resumes the APPLY_ARGS on the registers as they were. False when a value cannot move, with `pending`
+// when a later round may build it as a node.
+fn bool OptBuild.forward_window(&self, OptInlineSite* s, bool* pending) {
+    OptInlineSite* ps = &self.sites[(sz)s.parent - 1];
+    uint callee_reg = s.base - 2;
+    uint count = min(s.nargs, s.cf.num_regs);
+    // The arguments lie below the call's registers, which the moves overwrite.
+    if (ps.base + count > callee_reg) return false;
+    uint[2 + 32] src @noinit;
+    uint[2 + 32] value @noinit;
+    bool[2 + 32] fresh;
+    src[0] = callee_reg + 1;
+    src[1] = callee_reg + 2;
+    for (uint i = 0; i < count; i++) src[2 + i] = ps.base + i;
+    uint moves = 2 + count;
+    for (uint m = 0; m < moves; m++) {
+        uint r = src[m];
+        uint dst = callee_reg + m;
+        if (r >= self.nregs || dst >= self.nregs) return false;
+        value[m] = self.cur[r].node;
+        if (value[m] != NO_NODE) continue;
+        if (r >= self.caller_regs) {
+            // Only nodes live beyond the caller's frame: a property read may become one next round.
+            if (self.load_def[r] != NO_NODE) {
+                self.ask_object(r);
+                *pending = true;
+            }
+            return false;
+        }
+        if (dst < self.caller_regs) continue;
+        uint n = self.add(OptOp.COPY_WINDOW, OptRep.OBJECT, NO_NODE, NO_NODE, (long)r);
+        self.g.nodes[n].cc = 3;
+        self.g.nodes[n].home = dst;
+        self.snapshot(n);
+        value[m] = n;
+        fresh[m] = true;
+    }
+    for (uint m = 0; m < moves; m++) {
+        uint dst = callee_reg + m;
+        uint v = value[m];
+        if (v == NO_NODE) {
+            uint n = self.add(OptOp.MOVE_WINDOW, OptRep.NONE, NO_NODE, NO_NODE, (long)src[m]);
+            self.g.nodes[n].home = dst;
+            self.kill(dst);
+        } else if (fresh[m] || self.g.nodes[v].is_const()) {
+            self.set(dst, v);
+        } else {
+            self.set(dst, self.add(OptOp.COPY, self.rep_of(v), v));
+        }
+    }
+    // The count register, as APPLY_ARGS leaves it.
+    self.set(self.w.c, self.const_i32((long)s.nargs));
+    return true;
 }
 
 // The return of an inlined body: its value becomes the call's result register. A number is a new
@@ -2043,8 +2177,13 @@ fn bool OptBuild.try_inline(&self) {
     // The function and its receiver are read from the window by the guard and by an exit.
     uint callee_node = NO_NODE;
     uint recv_node = NO_NODE;
+    uint apply_node = NO_NODE;
     bool state_ok = true;
-    if (!s.var_call) {
+    if (s.forward) {
+        // Before a forwarding call moves them: `apply`, the function it runs and the receiver.
+        state_ok = self.call_operand(callee_reg, &apply_node) && self.call_operand(callee_reg + 1, &callee_node)
+            && self.call_operand(callee_reg + 2, &recv_node);
+    } else if (!s.var_call) {
         state_ok = self.call_operand(callee_reg, &callee_node);
         // A NEW_OBJ's receiver slot receives the object the inline allocates.
         if (state_ok && !s.construct && (s.method || callee_reg + 1 < self.caller_regs)) state_ok = self.call_operand(callee_reg + 1, &recv_node);
@@ -2068,7 +2207,8 @@ fn bool OptBuild.try_inline(&self) {
     sz dirty0 = self.g.dirty.len();
     sz fns0 = self.g.fns.len();
     uint site_insn = self.insn;
-    uint resume = self.next_pc;
+    // A forwarding call resumes after its CALL_S, which writes the result to the callee register.
+    uint resume = s.forward ? self.next_pc + 1 : self.next_pc;
     uint result = self.w.a;
     bool parent_failed = self.inline_failed;
     bool parent_unsafe = self.inline_unsafe;
@@ -2088,9 +2228,16 @@ fn bool OptBuild.try_inline(&self) {
         }
     }
     // The guard resumes the call itself, in the caller's context.
+    if (s.forward) {
+        uint fwd = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, apply_node, NO_NODE, (long)builtins::Builtin.FUNCTION_PROTO_APPLY.ordinal);
+        self.g.nodes[fwd].home = callee_reg;
+        self.snapshot(fwd);
+    }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     self.g.nodes[chk].cc = s.construct ? 2 : (s.method ? 1 : 0);
     self.snapshot(chk);
+    bool move_pending = false;
+    bool moved = !s.forward || self.forward_window(s, &move_pending);
     // A constructor's object, allocated in the caller's context: its exit resumes the NEW_OBJ.
     uint object = NO_NODE;
     if (s.construct) {
@@ -2102,14 +2249,13 @@ fn bool OptBuild.try_inline(&self) {
     uint remap_pc = s.remap == uint::max ? uint::max : s.cfg.nodes[s.remap].view.pc;
     uint parent_keep = parent_fn == 0 ? 0 : self.keep_across(&self.sites[parent_site], site_insn, callee_reg);
     self.g.fns.push({ .f = s.cf, .reg_base = s.base, .resume_pc = resume, .remap_pc = remap_pc, .remap_reg = result,
-                      .parent = parent_fn, .depth = self.g.fns[parent_fn].depth + 1, .parent_keep = parent_keep });
+                      .parent = parent_fn, .depth = self.g.fns[parent_fn].depth + 1, .parent_keep = parent_keep, .nargs = s.nargs });
     self.cur_fn = (uint)self.g.fns.len() - 1;
     self.cur_site = si;
     self.inline_failed = false;
-    self.inline_unsafe = false;
-    // The locals and temporaries start as nothing known; the arguments keep their state.
-    for (uint r = s.base + s.cf.num_formals; r < n; r++) self.kill(r);
-    bool ok = true;
+    self.inline_unsafe = move_pending;
+    self.enter_args(s);
+    bool ok = moved;
     uint result_node = NO_NODE;
     for (uint k = 0; k < s.cfg.instruction_count && ok; k++) {
         self.inline_context(s, k);
@@ -2336,7 +2482,13 @@ fn bool OptBuild.lower_op(&self) {
         case CALL_VAR:
         case CALL_GLOBAL:
         case NEW_OBJ:
+        case APPLY_ARGS:
             if (self.try_inline()) return true;
+            return self.generic();
+        case CALL_S:
+            // The second half of a forwarding call its APPLY_ARGS inlined (an inlined body that
+            // gets here has lowered that).
+            if (self.cur_fn != 0 && self.insn > 0 && forward_pair(self.cur_cfg(), self.insn - 1)) return true;
             return self.generic();
         default:
             if (op == Opcode.JMP_SEQ || op == Opcode.JMP_SNEQ || (op.ordinal >= Opcode.JMP_EQ.ordinal && op.ordinal <= Opcode.JMP_NNULL.ordinal)) return self.equality_branch();

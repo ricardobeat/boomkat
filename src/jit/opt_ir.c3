@@ -141,7 +141,8 @@ enum OptOp : char {
     LOAD_GLOBAL,
     // The window slot imm (a callee RET's register) copied to the window slot home (the call's
     // result register) as a published store; exits (SLOW_PATH) where publish does. cc 1 copies
-    // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG).
+    // the receiver slot of the inlined call (LDTHIS), cc 2 register B of the instruction (LDREG),
+    // cc 3 the graph register imm itself (a forwarded argument, OptBuild.forward_window).
     // Of rep OBJECT the value stays in a register (finish_object), for a home beyond the
     // caller's frame.
     COPY_WINDOW,
@@ -177,6 +178,14 @@ enum OptOp : char {
     // not constructable, the cache does not hold or the allocation fails. a, when not NO_NODE, is the
     // OBJECT node holding the constructor.
     NEW_OBJECT,
+    // The guard of an inlined forwarding call (`f.apply(x, arguments)`, OptBuild.forward_window):
+    // exits (CALLEE) unless the OBJECT node a, or the window slot home when a is NO_NODE, holds the
+    // builtin function numbered imm. It defines nothing.
+    CHECK_BUILTIN,
+    // Window slot imm moved to window slot home within the caller's frame, as the interpreter moves
+    // the registers of a forwarding call: a value the frame already holds, so it only raises the
+    // frame's heap-register count. It never exits and defines nothing.
+    MOVE_WINDOW,
     // A PUTTHISC (imm its pc) of an inlined constructor that adds its key to the OBJECT node b through
     // the instruction's absent-property cache, as the baseline's put-absent path; a is the number or
     // OBJECT node stored, or NO_NODE for a value in the window. Exits before any effect when the add
@@ -209,6 +218,8 @@ struct OptFn {
     uint parent;
     uint depth;
     uint parent_keep;
+    // The count of arguments the inlined call passes.
+    uint nargs;
 }
 
 struct OptNode {

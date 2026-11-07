@@ -94,6 +94,7 @@ struct OptInlineFrame {
     Instruction* resume;
     // The callee's register 0 as a register of the optimized function's frame.
     uint base;
+    // The count of arguments the call passed, which a forwarding callee's `arguments` holds.
     uint nargs;
     // The callee registers that hold values there: live at the exit for the innermost frame,
     // live across its own inlined call for the others.
@@ -238,15 +239,15 @@ fn bool opt_has_field_feedback(CompiledFunction* f) {
 fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 1) {
     Opcode op = f.code[i].op;
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
-    if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && op != Opcode.NEW_OBJ && !var_call) return false;
+    // A forwarding call (APPLY_ARGS) of a forwarding body.
+    if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && op != Opcode.NEW_OBJ && op != Opcode.APPLY_ARGS && !var_call) return false;
     CompiledFunction* cf = opt_site_callee(h, f, i);
 
-    uint nargs = var_call ? f.code[i].b : f.code[i].c;
-    if (cf == null || cf == f || cf.code_count > INLINE_WORDS_MAX || cf.num_regs > 32 || cf.num_formals != nargs) return false;
-    if (!opt_function_eligible(cf)) return false;
+    if (cf == null || cf == f || cf.code_count > INLINE_WORDS_MAX || cf.num_regs > 32) return false;
+    if (!opt_function_eligible(cf, true)) return false;
     if (op == Opcode.NEW_OBJ && !opt_base_constructor(cf)) return false;
     cf.classify_lean_call();
-    if (!cf.call_flags.lean_call || (op != Opcode.CALL && op != Opcode.NEW_OBJ && !cf.call_flags.lean_plain)) return false;
+    if (!cf.call_flags.lean_call || (op != Opcode.CALL && op != Opcode.NEW_OBJ && op != Opcode.APPLY_ARGS && !cf.call_flags.lean_plain)) return false;
     for (uint k = 0; k < cf.code_count; k++) {
         Opcode kop = cf.code[k].op;
         if (!inline_op_ok(kop)) return false;
