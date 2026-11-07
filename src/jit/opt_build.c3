@@ -29,6 +29,9 @@ struct OptOverride {
     uint block;
     uint reg;
     OptRep rep;
+    // An OBJECT rep asked only to keep a read out of a window slot beyond the caller's frame
+    // (OptBuild.get_field), which a numeric use may still turn into its own rep.
+    bool soft;
 }
 
 struct OptRegState {
@@ -773,6 +776,12 @@ fn uint OptBuild.operand(&self, uint reg, OptRep want) {
     if (reg >= self.nregs) return NO_NODE;
     OptRegState s = self.cur[reg];
     if (s.node != NO_NODE && self.rep_of(s.node) == OptRep.OBJECT) {
+        // A field read of this body kept beyond the caller's frame as an OBJECT node only for want
+        // of a use (OptBuild.get_field): the next round reads it as a number.
+        OptNode* ld = &self.g.nodes[s.node];
+        if (self.cur_fn != 0 && reg >= self.caller_regs && ld.op == OptOp.LOAD_FIELD && ld.fidx == self.cur_fn) {
+            self.ask_load(ld.pc | ((self.cur_site + 1) << 24), reg, want);
+        }
         // A number was asked of a register that holds an object: read it from the window as any other
         // value there (the guard exits when it is not a number).
         self.publish_object(reg);
@@ -943,8 +952,9 @@ fn uint OptBuild.bit_operand(&self, uint reg, bool numbers) {
 fn void OptBuild.ask_load(&self, uint pc, uint reg, OptRep want) {
     foreach (&c : self.load_reps) {
         if (c.block != pc) continue;
-        if (c.rep != want && c.rep != OptRep.OBJECT) {
+        if (c.rep != want && (c.rep != OptRep.OBJECT || c.soft)) {
             c.rep = want;
+            c.soft = false;
             self.load_changed = true;
         }
         return;
@@ -1261,8 +1271,18 @@ fn bool OptBuild.get_field(&self) {
         self.g.nodes[n].home = ra;
         self.kill(ra);
         if (ra < self.nregs) self.load_def[ra] = self.pckey();
-        // A value of any kind in a slot beyond the caller's frame would be out of the collector's sight.
-        if (self.cur_fn != 0 && ra >= self.caller_regs) self.inline_unsafe = true;
+        // A value of any kind in a slot beyond the caller's frame would be out of the collector's
+        // sight: the next round builds the read as an OBJECT node, which stays in a register, unless
+        // a numeric use asks for a number.
+        if (self.cur_fn != 0 && ra >= self.caller_regs) {
+            bool asked = false;
+            foreach (c : self.load_reps) asked |= c.block == self.pckey();
+            if (!asked) {
+                self.load_reps.push({ .block = self.pckey(), .reg = ra, .rep = OptRep.OBJECT, .soft = true });
+                self.load_changed = true;
+            }
+            self.inline_unsafe = true;
+        }
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
     self.g.nodes[n].b = rnode;
@@ -1640,15 +1660,23 @@ fn bool OptBuild.equality_branch(&self) {
     uint rb = self.w.b;
     uint rc = unary ? rb : self.w.c;
     if (rb >= self.nregs || rc >= self.nregs) return self.refuse(OptRefuse.BRANCH_OPERANDS);
-    if (self.is_object(rb)) self.publish_object(rb);
-    if (self.is_object(rc)) self.publish_object(rc);
     bool numeric_b = self.cur[rb].node != NO_NODE && !self.is_object(rb);
     bool numeric_c = self.cur[rc].node != NO_NODE && !self.is_object(rc);
     if (numeric_b || numeric_c) {
+        if (self.is_object(rb)) self.publish_object(rb);
+        if (self.is_object(rc)) self.publish_object(rc);
         return unary ? self.refuse_op(op) : self.numeric_equality();
     }
+    // An OBJECT operand is tested in its register; a value a read left in a slot beyond the
+    // caller's frame asks for that read to be an OBJECT node in the next round.
+    uint xb = self.is_object(rb) ? self.cur[rb].node : NO_NODE;
+    uint xc = self.is_object(rc) ? self.cur[rc].node : NO_NODE;
+    if (self.cur_fn != 0) {
+        if (xb == NO_NODE && rb >= self.caller_regs) self.call_operand(rb, &xb);
+        if (xc == NO_NODE && rc >= self.caller_regs) self.call_operand(rc, &xc);
+    }
     uint kind = op.ordinal - Opcode.JMP_SEQ.ordinal;
-    if (!self.terminator(OptOp.BRANCH_WINDOW, NO_NODE, NO_NODE, (long)rb | ((long)rc << 20), (char)kind)) return false;
+    if (!self.terminator(OptOp.BRANCH_WINDOW, xb, unary ? NO_NODE : xc, (long)rb | ((long)rc << 20), (char)kind)) return false;
     self.snapshot((uint)self.g.nodes.len() - 1);
     return true;
 }

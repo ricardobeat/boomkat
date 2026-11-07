@@ -1726,8 +1726,13 @@ fn void Asm.to_double(&self, int fr, int reg) {
 // Sort register `r` into `nullish` (null, undefined or the [[IsHTMLDDA]] object) and `other`,
 // as th_jmp_null; the rare cases take the slow path.
 fn void Asm.null_test(&self, uint r, Jumps* nullish, Jumps* other) {
-    void* c = self.c;
     self.load(R0, r);
+    self.null_test_r0(nullish, other);
+}
+
+// null_test of the value in R0.
+fn void Asm.null_test_r0(&self, Jumps* nullish, Jumps* other) {
+    void* c = self.c;
     nullish.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_UNDEF));
     nullish.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, K_NULL));
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
