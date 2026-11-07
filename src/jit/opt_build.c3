@@ -848,6 +848,9 @@ fn bool OptBuild.is_object(&self, uint r) {
 // Store the OBJECT node of register `r` to its window slot if it is dirty.
 fn void OptBuild.publish_object(&self, uint r) {
     if (!self.cur[r].dirty) return;
+    // An OBJECT node of an inlined body's slot beyond the caller's frame is never stored in the
+    // normal flow (see the header of opt_ir.c3): the site stays a call.
+    if (self.cur_fn != 0 && r >= self.caller_regs) self.inline_unsafe = true;
     self.add(OptOp.STORE_OBJ, OptRep.NONE, self.cur[r].node, NO_NODE, (long)r);
     self.cur[r].dirty = false;
 }
@@ -866,8 +869,13 @@ fn bool OptBuild.in_window(&self, uint r) {
 // build as an OBJECT node.
 fn void OptBuild.ask_object(&self, uint reg) {
     uint key = self.load_def[reg];
-    if (key == NO_NODE || (key >> 24) != 0 || key >= self.f.code_count) return;
-    Opcode o = self.f.code[key].op;
+    if (key == NO_NODE) return;
+    // The key names the function the load belongs to and its pc (OptBuild.pckey).
+    uint fi = key >> 24;
+    if (fi >= (uint)self.g.fns.len()) return;
+    CompiledFunction* kf = self.g.fns[fi].f;
+    if ((key & 0xFFFFFF) >= kf.code_count) return;
+    Opcode o = kf.code[key & 0xFFFFFF].op;
     if (o != Opcode.GETPROPC && o != Opcode.GETPROPC_CACHED && o != Opcode.GETTHISC) return;
     foreach (&c : self.load_reps) if (c.block == key) return;
     self.load_reps.push({ .block = key, .reg = reg, .rep = OptRep.OBJECT });
@@ -962,7 +970,6 @@ fn bool OptBuild.get_field(&self) {
     bool known = mono && self.guards_known(recv, ic.shape_id);
     uint shape = ic.shape_id;
     uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
-    if (n != NO_NODE && self.rep_of(n) == OptRep.OBJECT && self.cur_fn != 0 && self.w.a >= self.caller_regs) self.inline_unsafe = true;
     if (n == NO_NODE) {
         n = self.add(OptOp.LOAD_FIELD, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
         self.snapshot(n);
@@ -1714,8 +1721,10 @@ fn bool OptBuild.try_inline(&self) {
     self.cur_fn = 0;
     self.context(site_insn);
     if (!ok) {
-        if (!s.counted) self.count_reject(unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD, Opcode.NOP);
-        s.counted = true;
+        // A load a later round builds as an OBJECT node is not a final refusal.
+        bool pending = unsafe && self.load_changed;
+        if (!s.counted && !pending) self.count_reject(unsafe ? OptInlineReject.UNSAFE : OptInlineReject.BUILD, Opcode.NOP);
+        if (!pending) s.counted = true;
         self.g.nodes.size = nodes0;
         self.g.dirty.size = dirty0;
         self.g.fns.size = fns0;
@@ -2107,7 +2116,7 @@ fn bool OptBuild.repair(&self) {
 
 // The moves along each edge: the phi inputs, and the dirty registers that are
 // Window in the successor.
-fn void OptBuild.compute_edges(&self) {
+fn bool OptBuild.compute_edges(&self) {
     for (uint pos = 0; pos < self.nrpo; pos++) {
         OptBlock* blk = &self.g.blocks[pos];
         for (uint e = 0; e < blk.succ_count; e++) {
@@ -2125,12 +2134,26 @@ fn void OptBuild.compute_edges(&self) {
                         self.g.moves.push({ .dst = sn.node, .src = pn.node, .slot = r });
                     }
                 } else if (pn.node != NO_NODE && pn.dirty) {
+                    // An OBJECT node of an inlined body that must be stored beyond the caller's
+                    // frame on this edge: the site is built as a call instead.
+                    if (self.g.nodes[pn.node].rep == OptRep.OBJECT && r >= self.caller_regs) {
+                        uint fi = self.g.nodes[pn.node].fidx;
+                        for (uint si = 0; si < (uint)self.sites.len(); si++) {
+                            if (self.site_fn[si] != fi || !self.sites[si].flat) continue;
+                            if (!self.sites[si].counted) self.count_reject(OptInlineReject.UNSAFE, Opcode.NOP);
+                            self.sites[si].counted = true;
+                            self.flat_fail = true;
+                            self.flat_fail_pc = self.sites[si].head_pc;
+                            return false;
+                        }
+                    }
                     self.g.moves.push({ .dst = NO_NODE, .src = pn.node, .slot = r });
                 }
             }
             blk.move_count[e] = (uint)self.g.moves.len() - blk.move_first[e];
         }
     }
+    return true;
 }
 
 // Build the graph of `f` into `g`. Returns NONE on success, else why not. A flat inline site whose
@@ -2188,7 +2211,7 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
         again |= b.load_changed;
         b.load_changed = false;
         if (!again) {
-            b.compute_edges();
+            if (!b.compute_edges()) return OptRefuse.REPAIR;
             return OptRefuse.NONE;
         }
     }

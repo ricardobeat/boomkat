@@ -44,6 +44,13 @@ fn void OptGraph.use(&self, uint node, uint at) @inline {
     if (n.last_use < at) n.last_use = at;
 }
 
+// An OBJECT node of an inlined body whose slot lies beyond the caller's frame: the collector does
+// not see that slot until an exit publishes the callee's frame, so the node must stay in a machine
+// register (opt_ir.c3).
+fn bool OptGraph.pinned(&self, OptNode* n) @inline {
+    return n.rep == OptRep.OBJECT && n.fidx != 0 && n.home >= self.fns[0].f.num_regs;
+}
+
 fn bool OptNode.allocated(&self) @inline {
     return self.rep != OptRep.NONE && !self.is_const();
 }
@@ -133,10 +140,10 @@ fn bool OptGraph.allocate(&self, OptPools* pools) {
         uint furthest = 0;
         for (sz k = 0; k < active.len(); k++) {
             OptNode* a = &self.nodes[active[k]];
-            if (a.rep != n.rep || a.op == OptOp.PHI) continue;
+            if (a.rep != n.rep || a.op == OptOp.PHI || self.pinned(a)) continue;
             if (victim == active.len() || a.last_use > furthest) { victim = k; furthest = a.last_use; }
         }
-        if (n.op != OptOp.PHI && (victim == active.len() || n.last_use >= furthest)) {
+        if (n.op != OptOp.PHI && !self.pinned(n) && (victim == active.len() || n.last_use >= furthest)) {
             n.reg = -1;
             continue;
         }
