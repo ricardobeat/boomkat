@@ -1535,10 +1535,32 @@ fn void Asm.emit_get_cap(&self, uint ra, uint index) {
 
 // The value GETCAP reads, in R0; the slow path for anything else.
 fn void Asm.emit_get_cap_value(&self, uint index) {
+    self.capture_ref(index);
+    self.emit_cap_record_value();
+}
+
+// The value GETCAP reads in an inlined body, in R0: capture `index` of the closure in register
+// `callee_reg`, which the inline guard has checked to be a closure of the callee (`count` captures).
+fn void Asm.emit_get_cap_value_of(&self, uint index, uint callee_reg, uint count) {
+    void* c = self.c;
+    Layout* l = self.lay;
+    self.load(R3, callee_reg);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R3, l.fn_capture_refs);
+    self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, index);
+    self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, count));
+    sljit_emit_op2(c, SLJIT_MUL, R2, 0, R2, 0, SLJIT_IMM, (long)hobject::CaptureRef::size);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R0, 0, R2, 0);
+    self.emit_cap_record_value();
+}
+
+// The value of the capture record in R1, in R0: a value snapshot, a cell, or an unshadowed binding
+// outside its TDZ; the slow path for anything else.
+fn void Asm.emit_cap_record_value(&self) {
     void* c = self.c;
     Layout* l = self.lay;
     Jumps loaded;
-    self.capture_ref(index);
     sljit_emit_op1(c, SLJIT_MOV_U8, R2, 0, SLJIT_MEM | R1, l.cr_is_value);
     void* not_value = sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, 0);
