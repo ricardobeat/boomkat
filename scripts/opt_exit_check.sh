@@ -55,5 +55,9 @@ if [ "$n" != 1 ]; then echo "NOEVICT"; fails=$((fails+1)); fi
 # recompilation may fall back when synthetic conversions cannot fit in registers.
 n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_global_phi.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ globalPhi:[0-9]+ .* inlined [1-9][0-9]* ')
 if [ "$n" = 0 ]; then echo "NOGLOBALPHIINLINE"; fails=$((fails+1)); fi
+# Overflow feedback introduces pinned conversions without frame homes. Phi repair
+# must make room for them and retain the recompiled inlined body safely.
+n=$($BIN --memory-limit=512 --jit --opt --opt-log --script test/jit/opt_global_phi.js 2>&1 | grep -Ec '^opt compile fn#[0-9]+ globalPhi:[0-9]+ .* inlined [1-9][0-9]* reopt [1-9][0-9]*$')
+if [ "$n" = 0 ]; then echo "NOGLOBALPHIREOPTINLINE"; fails=$((fails+1)); fi
 echo "opt-exits fails=$fails"
 [ "$fails" = 0 ]
