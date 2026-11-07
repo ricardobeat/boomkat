@@ -689,7 +689,9 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
     if (n.fidx != 0) {
         // An inlined body reads the callee's closure, which the call's guard checked in its register.
         OptFn* fn_ = &self.g.fns[n.fidx];
-        self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count);
+        // A nested call's closure may be held in an OBJECT node (b) instead.
+        int closure = n.b != NO_NODE ? self.obj_reg(n.b, R3) : -1;
+        self.a.emit_get_cap_value_of(index, fn_.reg_base - 2, fn_.f.capture_count, closure);
     } else {
         self.a.emit_get_cap_value(index);
     }

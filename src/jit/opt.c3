@@ -237,8 +237,9 @@ fn bool opt_inline_plausible(Heap* h, CompiledFunction* f, uint i, uint depth = 
     Opcode op = f.code[i].op;
     bool var_call = op == Opcode.CALL_VAR || op == Opcode.CALL_GLOBAL;
     if (op != Opcode.CALL && op != Opcode.CALL_UNDEF_THIS && !var_call) return false;
-    if ((ic.feedback & hobject::FB_POLY) != 0 || ic.prop_idx >= h.compiled_func_count) return false;
+    if ((ic.feedback & hobject::FB_CALL) == 0 || (ic.feedback & hobject::FB_POLY) != 0 || ic.prop_idx >= h.compiled_func_count) return false;
     CompiledFunction* cf = (CompiledFunction*)h.compiled_funcs[ic.prop_idx];
+
     uint nargs = var_call ? f.code[i].b : f.code[i].c;
     if (cf == null || cf == f || cf.code_count > INLINE_WORDS_MAX || cf.num_regs > 32 || cf.num_formals != nargs) return false;
     if (!opt_function_eligible(cf)) return false;
