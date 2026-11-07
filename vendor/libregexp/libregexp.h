@@ -62,6 +62,18 @@ int lre_exec(uint8_t **capture,
              const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
              int cbuf_type, void *opaque);
 
+/* Code units that can begin a match (boomkat): a bitmap over units < 256,
+   `wide` for any unit >= 256, `single` >= 0 when exactly one unit qualifies. */
+typedef struct {
+    uint32_t bits[8];
+    int wide;
+    int single;
+} LREFirstSet;
+bool lre_get_first_set(const uint8_t *bc_buf, LREFirstSet *fs);
+int lre_exec_ex(uint8_t **capture,
+                const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
+                int cbuf_type, void *opaque, const LREFirstSet *fs);
+
 int lre_parse_escape(const uint8_t **pp, int allow_utf16);
 /* lre_is_space() is provided as an inline in libunicode.h */
 
