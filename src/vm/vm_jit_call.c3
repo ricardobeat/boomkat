@@ -342,7 +342,9 @@ fn long jit_ret(Dispatch* ds, ulong next_arg) {
     }
     Activation* caller;
     bool cross_function;
-    if (th_leaf_return(vm, fa, value, is_undefined, &caller, &cross_function)) {
+    // Registers hold no counts, so tracked strings clear like objects; only the threaded
+    // handler keeps them off its leaf path, to stay free of the clearing loop's libc call.
+    if (th_leaf_return(vm, fa, value, is_undefined, &caller, &cross_function, true)) {
         th_pop_frame(&ds.cold, fa, caller);
     } else {
         // Base constructors and frames with tracked string registers, as
