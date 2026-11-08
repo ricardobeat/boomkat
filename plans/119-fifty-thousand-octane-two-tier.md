@@ -595,11 +595,13 @@ this status:
   lazily (`src/compiler/lazy.c3`). Plans 100 and 101 are done: the
   flat AST merged into `main` (`94ac53aa`), and its resolve pass carries the
   one scope index per unit that finally replaces the per-block token re-scans.
-- **Allocation**: the bounded nursery (plan 096) and the cooperative
-  incremental collector (plan 095, partial) are in place. Allocation from
-  generated code goes through the runtime helper with the object adopted as a
-  temporary root; a bump path inlined into generated code is still open, and
-  plan 082's pause-reduction items are unstarted.
+- **Allocation**: the bounded nursery (plan 096) and the slice-budgeted
+  cooperative incremental collector (plan 095) are in place, and the
+  epoch-based marking plus dictionary thresholds from plan 082 have landed.
+  Allocation from generated code goes through the runtime helper with the
+  object adopted as a temporary root; a bump path inlined into generated code
+  is still open. Plan 082's page-batching idea (release old pages in chunks at
+  safepoints instead of per node) is carried here as a suggestion for later.
 - **Object model**: the dictionary thresholds are already split by shape kind,
   `SHAPE_SOLITARY_MIN_PROPS` (64) for a shape no other object uses and
   `SHAPE_COMPUTED_MIN_PROPS` (32) when property names are computed, which is
