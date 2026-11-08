@@ -242,6 +242,8 @@ struct OptPolicy {
     ulong[OptRefuse::values.len] refused_why;
     ulong[256] refused_ops;
     ulong[OptExit::values.len] exits;
+    // Exits taken at each instruction opcode, for attributing a benchmark's exits to an opcode.
+    ulong[Opcode::values.len] exit_ops;
 }
 
 // Count an entry into native code of `f` (one for each `credit`) toward
@@ -254,7 +256,9 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1) @noinline 
         return;
     }
     f.opt_entries += credit;
-    if (!h.opt.always && f.opt_entries < OPT_ENTRY_THRESHOLD) return;
+    // A function whose body was discarded must earn a longer cool-off before each rebuild.
+    uint need = OPT_ENTRY_THRESHOLD << (f.opt_reopts > 2 ? 2 : (uint)f.opt_reopts);
+    if (!h.opt.always && f.opt_entries < need) return;
     // Without the feedback to specialize on, the next attempt waits for another round of entries.
     if (!opt_try_compile(h, f) && f.opt_state == OPT_NONE) f.opt_entries = 0;
 }
@@ -642,11 +646,17 @@ fn void opt_discard(Heap* h, CompiledFunction* f) {
         }
         io::eprintfn("");
     }
-    opt_ban_hits(h, oc);
+    // A rebuild is worth its compile only when the discard teaches the next build something. A body
+    // whose exit sites were all already banned would repeat the same speculation; one that exited
+    // where nothing is bannable (a forced exit, an int32 overflow) keeps its retries, which
+    // OPT_REOPT_MAX bounds.
+    uint hit_sites = 0;
+    uint added = opt_ban_hits(h, oc, &hit_sites);
+    bool fresh = hit_sites == 0 || added != 0;
     opt_retire(h, f, oc);
     h.opt.discards++;
     f.opt_reopts++;
-    f.opt_state = f.opt_reopts > OPT_REOPT_MAX ? OPT_REFUSED_EXITS : OPT_NONE;
+    f.opt_state = fresh && f.opt_reopts <= OPT_REOPT_MAX ? OPT_NONE : OPT_REFUSED_EXITS;
 }
 
 // Clear the shape ids of `oc` that no live shape holds, before the heap reuses them.
@@ -730,6 +740,7 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
     }
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
     oc.exits++;
+    opt_note_exit_op(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base));
     if (h.opt.log) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
         io::eprintf("opt exit ");
@@ -821,11 +832,15 @@ fn bool opt_note_site_exit(OptCode* oc, CompiledFunction* cf, uint pc, long reas
     return ++hit.count >= OPT_SITE_EXITS;
 }
 
-// Record every site `oc` exited from, so that the next build lowers each generically.
-fn void opt_ban_hits(Heap* h, OptCode* oc) {
+// Record every site `oc` exited from, so that the next build lowers each generically. Returns the
+// bans added; `hit_sites` counts the sites the body exited from, banned ones included.
+fn uint opt_ban_hits(Heap* h, OptCode* oc, uint* hit_sites) {
+    uint sites = 0;
+    uint added = 0;
     CompiledFunction* root = oc.f;
     foreach (&x : oc.hits) {
         if (x.count == 0) continue;
+        sites++;
         // The cache of one site a body exits from is as stale as its neighbours', which the body would
         // exit from next: the second time a body of the function is discarded, none is speculated on.
         uint pc = root.opt_reopts != 0 && !x.call ? OPT_BAN_ALL : x.pc;
@@ -833,14 +848,17 @@ fn void opt_ban_hits(Heap* h, OptCode* oc) {
         OptBans* bans = root.opt_bans;
         if (bans == null) {
             bans = h.alloc_func(h.heap_udata, OptBans::size);
-            if (bans == null) return;
+            if (bans == null) { *hit_sites = sites; return added; }
             mem::clear(bans, OptBans::size);
             root.opt_bans = bans;
         }
-        if (bans.count >= OPT_BAN_MAX) return;
+        if (bans.count >= OPT_BAN_MAX) { *hit_sites = sites; return added; }
         bans.items[bans.count++] = { .cf = x.cf, .pc = pc };
         h.opt.bans++;
+        added++;
     }
+    *hit_sites = sites;
+    return added;
 }
 
 // opt_exit for an exit from inside an inlined body: count it and publish the frames of the calls
@@ -854,6 +872,7 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         ((hobject::ICEntry*)callee.ic_entries)[site.pc].feedback |= hobject::FB_OVF;
     }
     oc.exits++;
+    opt_note_exit_op(&h.opt, callee, site.pc);
     // A site of an inlined body cannot be lowered generically: the next build leaves the call it is
     // in a call (inline_body_ok), as it does a call site that exited.
     bool repeat = oc.f.opt_code == oc && opt_exit_bannable(reason, true) && opt_note_site_exit(oc, callee, site.pc, reason, true);
@@ -884,6 +903,13 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
 }
 
+// Count an exit that resumes at word `pc` of `cf` under the opcode found there, for --jit-stats.
+fn void opt_note_exit_op(OptPolicy* p, CompiledFunction* cf, uint pc) {
+    if (pc >= cf.code_count) return;
+    if (cf.code[pc].op == Opcode.WIDE && pc + 1 < cf.code_count) pc++;
+    p.exit_ops[cf.code[pc].op.ordinal]++;
+}
+
 fn void opt_print_stats(Heap* h) {
     OptPolicy* p = &h.opt;
     io::eprintfn("opt inline: %d callees inlined, %d exits from inlined bodies", p.inlined, p.inline_exits);
@@ -901,6 +927,9 @@ fn void opt_print_stats(Heap* h) {
     io::eprintfn("opt: %d sites lowered generically after repeated exits", p.bans);
     foreach (r : OptExit::values) {
         if (p.exits[r.ordinal] != 0) io::eprintfn("opt exit %s: %d", r.label, p.exits[r.ordinal]);
+    }
+    foreach (op : Opcode::values) {
+        if (p.exit_ops[op.ordinal] != 0) io::eprintfn("opt exit op %s: %d", op, p.exit_ops[op.ordinal]);
     }
     foreach (r : OptRefuse::values) {
         if (p.refused_why[r.ordinal] != 0) io::eprintfn("opt refused %s: %d", r.label, p.refused_why[r.ordinal]);
