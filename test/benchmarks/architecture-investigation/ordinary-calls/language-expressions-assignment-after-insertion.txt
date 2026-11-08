@@ -1,3 +1,0 @@
-Suite | Total | Pass | Fail | Skip | CE:expected-parse | CE:expected-runtime | CE:unexpected(real bug)
-------|-------|------|------|------|-------------------|--------------------|--------------------------
-language/expressions/assignment | 485 | 485 | 0 | 0 | 0 | 0 | 0

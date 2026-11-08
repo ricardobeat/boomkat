@@ -1,3 +1,0 @@
-Suite | Total | Pass | Fail | Skip | CE:expected-parse | CE:expected-runtime | CE:unexpected(real bug)
-------|-------|------|------|------|-------------------|--------------------|--------------------------
-built-ins/GeneratorPrototype | 61 | 61 | 0 | 0 | 0 | 0 | 0
