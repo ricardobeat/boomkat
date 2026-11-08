@@ -65,10 +65,13 @@ struct Early {
     uint[9] strict_reserved;
     uint[40] keywords;
     uint keyword_count;
+    // Cached native stack floor for node(); set once per unit.
+    uptr stack_floor;
 }
 
 fn void Early.init(&self, Ast* ast) {
     self.ast = ast;
+    self.stack_floor = compiler::compile_stack_floor();
     self.labels.init(16);
     self.privates.init(16);
     self.names.init(16);
@@ -536,7 +539,7 @@ fn bool Early.is_legacy_number(&self, uint n) {
 
 fn void Early.node(&self, uint n) {
     if (n == 0 || self.failed) return;
-    if (stack_exhausted()) return self.fail_at(self.ast.main_tok.data[n], "code nested too deeply");
+    if (stack_exhausted(self.stack_floor)) return self.fail_at(self.ast.main_tok.data[n], "code nested too deeply");
     NodeTag tag = self.ast.tags.data[n];
     uint at = self.ast.main_tok.data[n];
     switch (tag) {

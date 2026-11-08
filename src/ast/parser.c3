@@ -85,6 +85,8 @@ struct Parser {
     uint err_len;
     uint err_pos;
     bool failed;
+    // Cached native stack floor for check_stack; set once per unit.
+    uptr stack_floor;
 }
 
 // ---- errors ----
@@ -114,20 +116,14 @@ fn String Parser.error_message(&self) {
 }
 
 // Guards the parser's own recursion against the native stack, as the legacy
-// compiler's check_stack does.
-fn bool stack_exhausted() {
+// compiler's check_stack does. `floor` is cached once per unit by parse_program.
+fn bool stack_exhausted(uptr floor) {
     char marker;
-    uptr sp = (uptr)&marker;
-    if (compiler::g_compile_stack_floor == 0) {
-        uptr low = compiler::boomkat_stack_low();
-        compiler::g_compile_stack_floor = low != 0 ? low + compiler::COMPILE_STACK_RESERVE
-                                                   : sp - compiler::COMPILE_STACK_FALLBACK;
-    }
-    return sp < compiler::g_compile_stack_floor;
+    return (uptr)&marker < floor;
 }
 
 fn void? Parser.check_stack(&self) {
-    if (stack_exhausted()) return self.fail("code nested too deeply")~;
+    if (stack_exhausted(self.stack_floor)) return self.fail("code nested too deeply")~;
 }
 
 // ---- tokens ----
@@ -374,6 +370,7 @@ struct ParseResult {
 fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ast = ast;
     p.lex = lex;
+    p.stack_floor = compiler::compile_stack_floor();
     p.is_module = opts.is_module;
     p.scratch.init(256);
     p.ts_exports.init(8);

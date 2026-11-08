@@ -57,19 +57,26 @@ extern fn uptr boomkat_stack_low();
 // first check computes it. Stack bounds are per thread and fixed for its life.
 tlocal uptr g_compile_stack_floor;
 
+// Resolve the per-thread stack floor once. Passes cache the result in a plain
+// field so their per-node checks avoid a thread-local load.
+fn uptr compile_stack_floor() {
+    if (g_compile_stack_floor == 0) {
+        char marker;
+        uptr sp = (uptr)&marker;
+        uptr low = boomkat_stack_low();
+        g_compile_stack_floor = low != 0 ? low + COMPILE_STACK_RESERVE
+                                         : sp - COMPILE_STACK_FALLBACK;
+    }
+    return g_compile_stack_floor;
+}
+
 // The parser recurses once per nesting level of the source, so deeply nested
 // code (`((((`, `{{{{`, `!!!!`, nested functions) would overflow the native
 // stack. Every recursive parse entry calls this first and turns an imminent
 // overflow into a SyntaxError.
 fn void? CompilerContext.check_stack(&self) {
     char marker;
-    uptr sp = (uptr)&marker;
-    if (g_compile_stack_floor == 0) {
-        uptr low = boomkat_stack_low();
-        g_compile_stack_floor = low != 0 ? low + COMPILE_STACK_RESERVE
-                                         : sp - COMPILE_STACK_FALLBACK;
-    }
-    if (sp < g_compile_stack_floor) return self.fail("code nested too deeply")~;
+    if ((uptr)&marker < self.stack_floor) return self.fail("code nested too deeply")~;
 }
 // Initial capacity of the hoisted-function-name table; grows on the heap from
 // here (see ensure_hoisted_fn_cap), so there is no fixed ceiling.
@@ -295,6 +302,8 @@ struct CompilerContext {
     ushort scalar_first_arg;
     Lexer* lexer;
     void* heap;
+    // Cached native stack floor for recursion guards (see compile_stack_floor).
+    uptr stack_floor;
 
     // Current function being compiled
     CompiledFunction* current_func;
@@ -833,6 +842,7 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     mem::clear(self, (sz)(CompilerContext::size));
     self.lexer = lex;
     self.heap = heap;
+    self.stack_floor = compile_stack_floor();
     self.disable_optimize = g_disable_optimize;
     self.next_reg = 0;
     self.max_reg = 0;

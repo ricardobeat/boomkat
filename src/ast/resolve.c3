@@ -8,6 +8,7 @@
 module boomkat::ast;
 
 import boomkat::ast::vec;
+import boomkat::compiler;
 import std::collections::list;
 
 enum ScopeKind : char {
@@ -138,10 +139,13 @@ struct Resolver {
     uint atom_eval;
     bool failed;
     uint err_pos;
+    // Cached native stack floor for node(); set once per unit.
+    uptr stack_floor;
 }
 
 fn void Resolver.init(&self, Ast* ast) {
     self.ast = ast;
+    self.stack_floor = compiler::compile_stack_floor();
     self.scopes.init(64);
     self.bindings.init(64);
     self.sites.init(64);
@@ -535,7 +539,7 @@ fn void Resolver.func_decl(&self, uint n) {
 
 fn void Resolver.node(&self, uint n) {
     if (n == 0 || self.failed) return;
-    if (stack_exhausted()) {
+    if (stack_exhausted(self.stack_floor)) {
         self.failed = true;
         self.err_pos = self.ast.main_tok.data[n];
         return;
