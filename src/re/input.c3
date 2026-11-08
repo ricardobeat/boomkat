@@ -4,7 +4,7 @@
 // per byte, or native-endian UTF-16 code units. In unicode mode (the u or v
 // flag) a surrogate pair counts as one code point. Every position the matcher
 // records stays a code-unit index, never a byte index.
-module boomkat::jit @feat(SLJIT);
+module boomkat::re_native @feat(!NO_REGEXP);
 
 import boomkat::re_bindings;
 
@@ -30,19 +30,25 @@ fn bool re_is_line_terminator(uint c) @inline {
 }
 
 // The code unit at pos, or 0 past the end of the subject.
-fn uint ReInput.unit(&self, uint pos) @inline {
-    if (pos >= self.len) return 0;
-    return self.wide ? (uint)((ushort*)self.data)[pos] : (uint)self.data[pos];
+//
+// The hot loops take the fields as arguments rather than through the struct, so
+// that the subject form and the length stay in registers across an iteration.
+fn uint re_unit_at(char* data, bool wide, uint len, uint pos) @inline {
+    if (pos >= len) return 0;
+    return wide ? (uint)((ushort*)data)[pos] : (uint)data[pos];
 }
+
+fn uint ReInput.unit(&self, uint pos) @inline => re_unit_at(self.data, self.wide, self.len, pos);
 
 // The code point starting at *pos, advancing *pos past it. A high surrogate
 // followed by a low surrogate is one code point over two units in unicode
 // mode, and two separate units otherwise.
-fn uint ReInput.code_point(&self, uint* pos) {
-    if (*pos >= self.len) return 0;
-    uint c = self.unit(*pos);
-    if (self.unicode && re_is_high_surrogate(c)) {
-        uint lo = self.unit(*pos + 1);
+fn uint re_code_point_at(char* data, bool wide, bool unicode, uint len, uint* pos) @inline {
+    if (*pos >= len) return 0;
+    uint c = re_unit_at(data, wide, len, *pos);
+    // Only a wide subject can hold a surrogate pair; a Latin-1 unit never does.
+    if (unicode && wide && re_is_high_surrogate(c)) {
+        uint lo = re_unit_at(data, wide, len, *pos + 1);
         if (re_is_low_surrogate(lo)) {
             *pos += 2;
             return 0x10000 + ((c - RE_HIGH_SURROGATE_FIRST) << 10) + (lo - RE_LOW_SURROGATE_FIRST);
@@ -52,13 +58,17 @@ fn uint ReInput.code_point(&self, uint* pos) {
     return c;
 }
 
+fn uint ReInput.code_point(&self, uint* pos) @inline {
+    return re_code_point_at(self.data, self.wide, self.unicode, self.len, pos);
+}
+
 // The code point ending just before *pos, moving *pos back onto its first
 // unit. A surrogate pair is only recombined in unicode mode.
-fn uint ReInput.prev_code_point(&self, uint* pos) {
+fn uint re_prev_code_point_at(char* data, bool wide, bool unicode, uint* pos) @inline {
     if (*pos == 0) return 0;
-    uint c = self.unit(*pos - 1);
-    if (self.unicode && re_is_low_surrogate(c) && *pos >= 2) {
-        uint hi = self.unit(*pos - 2);
+    uint c = re_unit_at(data, wide, *pos, *pos - 1);
+    if (unicode && wide && re_is_low_surrogate(c) && *pos >= 2) {
+        uint hi = re_unit_at(data, wide, *pos, *pos - 2);
         if (re_is_high_surrogate(hi)) {
             *pos -= 2;
             return 0x10000 + ((hi - RE_HIGH_SURROGATE_FIRST) << 10) + (c - RE_LOW_SURROGATE_FIRST);
@@ -66,6 +76,10 @@ fn uint ReInput.prev_code_point(&self, uint* pos) {
     }
     *pos -= 1;
     return c;
+}
+
+fn uint ReInput.prev_code_point(&self, uint* pos) @inline {
+    return re_prev_code_point_at(self.data, self.wide, self.unicode, pos);
 }
 
 fn bool ReInput.at_end(&self, uint pos) @inline {

@@ -5,7 +5,7 @@
 // in unicode mode a surrogate pair is a single code point.
 module re_input_test;
 
-import boomkat::jit;
+import boomkat::re_native;
 import std::io;
 
 int re_input_failures = 0;
@@ -34,13 +34,13 @@ ushort[] re_input_wide = { 'a', 0x00E9, 0xD83D, 0xDE00, 'z' };
 ushort[] re_input_lone = { 0xD83D, 'a' };
 
 fn void re_input_test_units() {
-    jit::ReInput narrow = {
+    re_native::ReInput narrow = {
         .data = (char*)re_input_latin1.ptr,
         .len = 4,
         .wide = false,
         .unicode = false,
     };
-    jit::ReInput wide = {
+    re_native::ReInput wide = {
         .data = (char*)re_input_wide.ptr,
         .len = 5,
         .wide = true,
@@ -65,25 +65,25 @@ fn void re_input_test_units() {
 }
 
 fn void re_input_test_code_point() {
-    jit::ReInput narrow = {
+    re_native::ReInput narrow = {
         .data = (char*)re_input_latin1.ptr,
         .len = 4,
         .wide = false,
         .unicode = false,
     };
-    jit::ReInput wide_uni = {
+    re_native::ReInput wide_uni = {
         .data = (char*)re_input_wide.ptr,
         .len = 5,
         .wide = true,
         .unicode = true,
     };
-    jit::ReInput wide_plain = {
+    re_native::ReInput wide_plain = {
         .data = (char*)re_input_wide.ptr,
         .len = 5,
         .wide = true,
         .unicode = false,
     };
-    jit::ReInput lone_uni = {
+    re_native::ReInput lone_uni = {
         .data = (char*)re_input_lone.ptr,
         .len = 2,
         .wide = true,
@@ -128,25 +128,25 @@ fn void re_input_test_code_point() {
 }
 
 fn void re_input_test_prev_code_point() {
-    jit::ReInput narrow = {
+    re_native::ReInput narrow = {
         .data = (char*)re_input_latin1.ptr,
         .len = 4,
         .wide = false,
         .unicode = false,
     };
-    jit::ReInput wide_uni = {
+    re_native::ReInput wide_uni = {
         .data = (char*)re_input_wide.ptr,
         .len = 5,
         .wide = true,
         .unicode = true,
     };
-    jit::ReInput wide_plain = {
+    re_native::ReInput wide_plain = {
         .data = (char*)re_input_wide.ptr,
         .len = 5,
         .wide = true,
         .unicode = false,
     };
-    jit::ReInput lone_uni = {
+    re_native::ReInput lone_uni = {
         .data = (char*)re_input_lone.ptr,
         .len = 2,
         .wide = true,
@@ -192,13 +192,13 @@ fn void re_input_test_prev_code_point() {
 }
 
 fn void re_input_test_predicates() {
-    jit::ReInput uni = {
+    re_native::ReInput uni = {
         .data = (char*)re_input_latin1.ptr,
         .len = 4,
         .wide = false,
         .unicode = true,
     };
-    jit::ReInput plain = {
+    re_native::ReInput plain = {
         .data = (char*)re_input_latin1.ptr,
         .len = 4,
         .wide = false,

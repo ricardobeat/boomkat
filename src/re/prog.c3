@@ -6,7 +6,7 @@
 // class pairs unpacked, so the program is decoded once, when it is first considered for
 // compilation. Anything the decoder does not model is refused here, which leaves that program on
 // the interpreter: the native path may only decline, never guess.
-module boomkat::jit @feat(SLJIT);
+module boomkat::re_native @feat(!NO_REGEXP);
 
 import std::core::mem;
 
@@ -81,23 +81,23 @@ enum ReOp : char {
     STAR,             // a: minimum; body_at/body_len: the atom this quantifies
 }
 
-// Whether the code generator models `op`. Lookarounds, back references, quantifier registers and
-// the non-BMP classes are declined: each needs state the matcher does not keep yet.
+// Whether the code generator models `op`. Lookarounds, back references and the counted-repeat
+// registers are declined: each needs state the matcher does not keep yet.
 fn bool re_op_compilable(ReOp op) {
     switch (op) {
-        case CHAR: case CHAR_I: case DOT: case ANY: case SPACE: case NOT_SPACE: case LINE_START:
-        case LINE_START_M: case LINE_END: case LINE_END_M: case GOTO: case SPLIT_GOTO_FIRST:
-        case SPLIT_NEXT_FIRST: case MATCH: case SAVE_START: case SAVE_END: case WORD_BOUNDARY:
-        case WORD_BOUNDARY_I: case NOT_WORD_BOUNDARY: case NOT_WORD_BOUNDARY_I: case RANGE:
-        case RANGE_I: case STAR:
-            return true;
-        case INVALID: case CHAR32: case CHAR32_I: case LOOKAHEAD_MATCH:
-        case NEGATIVE_LOOKAHEAD_MATCH: case SAVE_RESET: case LOOP: case LOOP_SPLIT_GOTO_FIRST:
+        case CHAR: case CHAR_I: case CHAR32: case CHAR32_I: case DOT: case ANY: case SPACE:
+        case NOT_SPACE: case LINE_START: case LINE_START_M: case LINE_END: case LINE_END_M:
+        case GOTO: case SPLIT_GOTO_FIRST: case SPLIT_NEXT_FIRST: case MATCH: case SAVE_START:
+        case SAVE_END: case SAVE_RESET: case WORD_BOUNDARY: case WORD_BOUNDARY_I:
+        case NOT_WORD_BOUNDARY: case NOT_WORD_BOUNDARY_I: case RANGE: case RANGE_I: case RANGE32:
+        case RANGE32_I: case STAR: case LOOP: case LOOP_SPLIT_GOTO_FIRST:
         case LOOP_SPLIT_NEXT_FIRST: case LOOP_CHECK_ADV_SPLIT_GOTO_FIRST:
-        case LOOP_CHECK_ADV_SPLIT_NEXT_FIRST: case SET_I32: case BACK_REFERENCE:
+        case LOOP_CHECK_ADV_SPLIT_NEXT_FIRST: case SET_I32: case SET_CHAR_POS: case CHECK_ADVANCE:
+        case PREV:
+            return true;
+        case INVALID: case LOOKAHEAD_MATCH: case NEGATIVE_LOOKAHEAD_MATCH: case BACK_REFERENCE:
         case BACK_REFERENCE_I: case BACKWARD_BACK_REFERENCE: case BACKWARD_BACK_REFERENCE_I:
-        case RANGE32: case RANGE32_I: case LOOKAHEAD: case NEGATIVE_LOOKAHEAD:
-        case SET_CHAR_POS: case CHECK_ADVANCE: case PREV:
+        case LOOKAHEAD: case NEGATIVE_LOOKAHEAD:
             return false;
     }
 }
@@ -115,12 +115,18 @@ struct ReInsn {
     uint after;
     uint body_at;
     uint body_len;
-    // RANGE and RANGE_I only: the first pair in ReProgram.ranges and how many pairs.
+    // RANGE, RANGE_I, RANGE32 and RANGE32_I only: the first pair in ReProgram.ranges and how many
+    // pairs.
     uint ranges;
     uint pair_count;
-    // CHAR and CHAR_I: the code unit. SAVE_START and SAVE_END: the capture slot. STAR: the
-    // minimum number of repetitions. Otherwise unused.
+    // CHAR and CHAR_I: the code unit. CHAR32 and CHAR32_I: the code point. SAVE_START and
+    // SAVE_END: the capture slot. SAVE_RESET: the first slot it clears, with `b` the last. STAR:
+    // the minimum number of repetitions, with `reg` holding the register it keeps the run end in.
+    // Otherwise unused.
     long a;
+    long b;
+    // STAR only: the quantifier register, in ReProgram.register_count's numbering.
+    uint reg;
 }
 
 // A decoded pattern. Every array here is owned by the program and released by ReProgram.free.
@@ -163,6 +169,42 @@ fn bool ReInsn.pairs_ascend(&self, ReProgram* prog) {
 
 fn bool ReProgram.compilable(&self) {
     foreach (insn : self.insns) if (!re_op_compilable(insn.op)) return false;
+    return true;
+}
+
+// Whether the matcher may run this program: every instruction is modelled, and
+// every slot, register, pair and branch the instructions name is inside what the
+// header and the decoder produced. A program that fails here stays on the
+// interpreter, because the matcher indexes its arrays without checking them.
+fn bool ReProgram.executable(&self) {
+    if (self.insns.len == 0 || self.capture_count == 0) return false;
+    if (!self.compilable()) return false;
+    foreach (insn : self.insns) {
+        switch (insn.op) {
+            case SAVE_START: case SAVE_END:
+                if (insn.a < 0 || (uint)insn.a >= self.capture_count) return false;
+            case SAVE_RESET:
+                if (insn.a < 0 || insn.b < insn.a || (uint)insn.b >= self.capture_count) return false;
+            case RANGE: case RANGE_I: case RANGE32: case RANGE32_I:
+                if (insn.pair_count == 0) return false;
+                if ((usz)insn.ranges + (usz)insn.pair_count * 2 > self.ranges.len) return false;
+            case STAR:
+                if (insn.reg >= self.register_count) return false;
+                if (insn.target == RE_NONE || insn.after == RE_NONE) return false;
+                if (insn.body_len == 0) return false;
+                // The quantifier's atom is one character instruction, which the run repeats.
+                if (self.insns[insn.target].at != insn.body_at) return false;
+                if (!re_consumes(self.insns[insn.target].op)) return false;
+            case SET_I32: case LOOP: case LOOP_SPLIT_GOTO_FIRST: case LOOP_SPLIT_NEXT_FIRST:
+                if (insn.reg >= self.register_count) return false;
+            case SET_CHAR_POS: case CHECK_ADVANCE:
+                if (insn.reg >= self.register_count) return false;
+            case LOOP_CHECK_ADV_SPLIT_GOTO_FIRST: case LOOP_CHECK_ADV_SPLIT_NEXT_FIRST:
+                // The counter, and the register that holds the last position.
+                if (insn.reg + 1 >= self.register_count) return false;
+            default:
+        }
+    }
     return true;
 }
 
@@ -280,7 +322,9 @@ fn bool re_prog_decode(ReProgram* prog, char* bc, uint bc_len) {
         uint size = re_insn_size(bc, at, stop);
         if (size == 0 || size > stop - at) return false;
         ReOp op = (ReOp)bc[at];
-        if (op == RANGE || op == RANGE_I) pair_count += re_get_u16(bc, at + 1);
+        if (op == RANGE || op == RANGE_I || op == RANGE32 || op == RANGE32_I) {
+            pair_count += re_get_u16(bc, at + 1);
+        }
         if (op == STAR && re_get_u32(bc, at + 3) > stop - at - 7) return false;
         at += size;
     }
@@ -308,14 +352,35 @@ fn bool re_prog_decode(ReProgram* prog, char* bc, uint bc_len) {
         insn.ranges = RE_NONE;
         insn.pair_count = 0;
         insn.a = 0;
+        insn.b = 0;
+        insn.reg = 0;
         switch (insn.op) {
             case CHAR: case CHAR_I:
                 insn.a = (long)re_get_u16(bc, at + 1);
+            case CHAR32: case CHAR32_I:
+                insn.a = (long)re_get_u32(bc, at + 1);
             case SAVE_START: case SAVE_END:
                 insn.a = (long)(uint)bc[at + 1];
-            case SET_I32:
+            case SAVE_RESET:
                 insn.a = (long)(uint)bc[at + 1];
+                insn.b = (long)(uint)bc[at + 2];
+            case SET_I32:
+                // A quantifier register, seeded with the count the repeat allows.
+                insn.reg = (uint)bc[at + 1];
+                insn.a = (long)re_get_u32(bc, at + 2);
+            case SET_CHAR_POS: case CHECK_ADVANCE:
+                insn.reg = (uint)bc[at + 1];
+            case LOOP:
+                // Step a counter down; the branch is taken while it is non-zero.
+                insn.reg = (uint)bc[at + 1];
+            case LOOP_SPLIT_GOTO_FIRST: case LOOP_SPLIT_NEXT_FIRST:
+            case LOOP_CHECK_ADV_SPLIT_GOTO_FIRST: case LOOP_CHECK_ADV_SPLIT_NEXT_FIRST:
+                // A counter, the count below which the split happens instead, and
+                // for the check_advance forms the register holding the last position.
+                insn.reg = (uint)bc[at + 1];
+                insn.a = (long)re_get_u32(bc, at + 2);
             case STAR:
+                insn.reg = (uint)bc[at + 1];
                 insn.a = (long)(uint)bc[at + 2];
                 insn.body_at = at + 7;
                 insn.body_len = re_get_u32(bc, at + 3);
@@ -328,6 +393,15 @@ fn bool re_prog_decode(ReProgram* prog, char* bc, uint bc_len) {
                     ranges[pair_at + k * 2 + 1] = re_get_u16(bc, at + 5 + k * 4);
                 }
                 pair_at += pairs * 2;
+            case RANGE32: case RANGE32_I:
+                uint pairs32 = re_get_u16(bc, at + 1);
+                insn.ranges = pair_at;
+                insn.pair_count = pairs32;
+                for (uint k = 0; k < pairs32; k++) {
+                    ranges[pair_at + k * 2] = re_get_u32(bc, at + 3 + k * 8);
+                    ranges[pair_at + k * 2 + 1] = re_get_u32(bc, at + 7 + k * 8);
+                }
+                pair_at += pairs32 * 2;
             default:
         }
         insns[index] = insn;
