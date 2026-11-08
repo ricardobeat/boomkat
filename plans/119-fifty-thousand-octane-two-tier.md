@@ -486,3 +486,89 @@ and memory.
   next to `octane/`.
 - `64mib-code-limit.patch`: the only source change in the 64 MiB build.
 - `manifest.json`: commit, binary, JSC and Octane source hashes.
+
+## Milestone 5 status, 2026-11-08
+
+The optimizing tier is in place on branch `jit` and both tiers are on by
+`--opt`. What it covers: int32 and double arithmetic in registers, typed loads,
+field reads and writes through shape guards (polymorphic up to the five shapes
+the baseline cache records), element access, calls with a callee guard and a
+branch per target, inlined callees spliced into the caller to three levels and
+200 bytecode words, allocation sinking inside inlined constructors, and typed
+array fast paths. Everything else is a GENERIC node running the baseline
+emitter's code on the window.
+
+### Acceptance, as measured
+
+One process, full Octane suite, Apple M3, load average about 2. Each
+configuration ran once, so differences under about 5% are noise.
+
+| Benchmark | interpreter | `--jit` | `--opt` |
+|---|---:|---:|---:|
+| Richards | 1,702 | 2,849 | 4,134 |
+| DeltaBlue | 1,595 | 2,096 | 3,465 |
+| Crypto | 2,866 | 6,074 | 8,723 |
+| RayTrace | 5,027 | 4,914 | 7,237 |
+| EarleyBoyer | 4,192 | 5,399 | 5,224 |
+| RegExp | 2,481 | 2,476 | 2,476 |
+| Splay | 9,192 | 11,547 | 9,810 |
+| SplayLatency | 23,419 | 24,184 | 23,880 |
+| NavierStokes | 4,462 | 6,766 | 12,489 |
+| PdfJS | 6,680 | 7,431 | 7,613 |
+| Mandreel | 2,192 | 2,881 | 4,261 |
+| MandreelLatency | 13,809 | 21,304 | 24,679 |
+| Gameboy | 14,134 | 17,849 | 17,182 |
+| CodeLoad | 32,998 | 33,986 | 33,241 |
+| Box2D | 8,464 | 8,796 | 12,120 |
+| zlib | 3,595 | 7,387 | 12,568 |
+| Typescript | 25,748 | 26,872 | 27,432 |
+| **Score** | **6,191** | **7,984** | **9,753** |
+
+- The baseline tier is 1.29x the interpreter, the optimizing tier 1.58x, and
+  `--opt` is 1.22x `--jit`. Against the 50,000 target that is 20%.
+- RegExp does not move: the score comes from libregexp, which has no native
+  compilation of its own (plan 113's RegExp JIT). The suite's regexp work is
+  inside the interpreter loop, so neither tier reaches it.
+- Two benchmarks come in below `--jit` in that run: Splay (9,810 against
+  11,547) and Gameboy (17,182 against 17,849). Interleaved repeats put them at
+  about 3% and 2% behind, so most of the gap in a single run is noise, but both
+  are real: each discards a large share of the bodies it compiles (Splay 8 of
+  20 after exits at int32 overflow) and pays for the rebuild.
+- The tier's cost is bounded and reported. Over one suite run with
+  `--opt --jit-stats`: 485 ms of compilation across both tiers, the longest
+  single compile 21 ms (a 37,006-word baseline compile), 2,089 optimizing
+  compiles for 610 discards and 97 refusals, 2.4 MB of optimized code after 20
+  sweeps of the 4 MiB cap, and 63.4 MB of generated code live at exit (65.2 MB
+  peak) against the baseline's 64 MiB cap. Peak RSS for the suite is 2.0 GiB in
+  all three configurations, so the tier does not move it.
+- Coverage: deoptimization (every exit reason forced by `opt_exit_check.sh`, and
+  the discard, ban and generic-lowering paths), inlining (nested sites, inlined
+  calls, forwarding `apply`, inlined allocations), and call nodes (a guard per
+  target, indirect and variable calls) run in the local differential, the
+  test262 differential and the embedding suites, the last under ASan.
+
+### Testing as of this status
+
+- `scripts/jit_check.sh`: 765 fixtures through the interpreter, `--jit`,
+  `--jit --opt`, `--jit --opt --opt-always`, `--jit --opt --jit-stress`, and
+  `scripts/opt_exit_check.sh` with every exit reason forced under both the
+  normal and the forced-optimizing settings: no output differences.
+- `scripts/run_jit_diff.sh` for the local suites, Rosetta, the module fixtures
+  and test262 (`language/expressions`, `language/statements`,
+  `built-ins/Array`) with `--jit --jit-stress` and with
+  `--opt --opt-always --jit-stress`: match.
+- The same differential under AddressSanitizer: match, and it found a read past
+  a shared shape's hash table during an append, fixed on the branch.
+
+### What remains for this milestone
+
+- The largest exit and refusal groups are property sites with no cache yet
+  (TypeScript: 25,416 `no cache` skips per run), calls the inliner declines
+  because the callee holds a call it cannot inline (1,229 on TypeScript), and
+  `TYPEOF`, `NEWARR` and `INIT_SLOT` inside callees. Call nodes, `TYPEOF` and
+  the allocations inside inlined bodies are the next three.
+- The optimizing tier's control flow graph budget is 4,096 words, so the
+  multi-thousand-word decoders a compiler emits (zlib's is 37,006) stay in the
+  baseline tier. Raising the budget alone was measured at -0.6% on the suite:
+  the win needs region-based compilation of a hot loop inside a large function,
+  not a bigger whole-function graph.
