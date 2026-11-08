@@ -1,6 +1,6 @@
 # 119: 50K Octane on a two-tier JIT
 
-Status: **ACTIVE, 2026-11-03, on branch `jit`.** Supersedes [plan 113](113-fifty-thousand-octane.md).
+Status: **ACTIVE, 2026-11-03, on branch `jit`.** Supersedes the first Octane JIT plan.
 Full original Octane at rat `bcb55ef9` scores 6,400 in one process. The target is 50,000.
 
 ## Objective
@@ -162,7 +162,7 @@ complexity comes from.
 
 ### Code density
 
-Plan 113's SSA throughput report
+The archived SSA throughput report
 (`113-fifty-thousand-octane/ssa-throughput-2026-11-02/report.md`) measured
 220–700 bytes per bytecode op, about 3.2 KB per computed `GETPROP` site and about
 110 bytes per register store with the reference-count path inline. Moving the
@@ -202,7 +202,7 @@ publication and root updates. The out-of-line store did not change time (see
 Code density), so the cost is in the refusals and the bookkeeping around frames
 and helpers rather than in store size. Tracing strings like objects removes all
 of these, and also removes prompt reclamation, which matters on small devices.
-Plan 094 records the current ownership boundaries.
+String ownership under reference counting records the current boundaries.
 
 ### The SSA tier
 
@@ -267,7 +267,7 @@ linear one.
   JIT.
 - CodeLoad: 26–29K against 105–118K in every JSC configuration, so this is
   frontend throughput. `build_line_table` (`src/ast/parser.c3:339`) is 9.4% of
-  it. Plans 100 (scope index) and 101 (flat AST) cover lexer and resolver costs.
+  it. A single scope index and a flat AST cover the lexer and resolver costs.
 - Allocation and GC: 15–22% of EarleyBoyer, PdfJS and Splay. RayTrace,
   EarleyBoyer and Box2D also need allocation inline in generated code.
 - Object model: an object on a shape no other object has reached moves to a
@@ -346,7 +346,7 @@ generated code calls an out-of-line stub, and no frame transition refuses string
 - Inlining guided by call-target feedback, with nested frame states.
 - Deoptimization writes interpreter-layout frames for every inlined frame and
   resumes in baseline code at the exit PC.
-- int32 induction and unboxed f64 across loops. The plan 113 JSC comparison found
+- int32 induction and unboxed f64 across loops. The earlier JSC comparison found
   lost integer induction and repeated binding validation in NavierStokes.
 - A compile-work budget instead of the 320-op body bound.
 - Later: allocation sinking for RayTrace, EarleyBoyer and Box2D.
@@ -446,17 +446,17 @@ and memory.
 
 - RegExp: compile regexps to native code with SLJIT. Reference: 15,001 in JSC's
   baseline configuration.
-- Frontend: build line tables lazily or during lexing, carry out plans 100 and
-  101, and compile function bodies lazily. Reference: 105–118K for CodeLoad in
+- Frontend: build line tables lazily or during lexing, carry out the frontend migration to a single scope
+  index and a flat AST, and compile function bodies lazily. Reference: 105–118K for CodeLoad in
   JSC.
 - Allocation: bump allocation callable from generated code, and the collector
-  work in plans 082 (pause reduction, sticky-mark nursery) and 095 (incremental
-  collection).
+  work: pause reduction, a sticky-mark nursery, and incremental
+  collection.
 - Object model: revisit the 64-property dictionary threshold for singleton objects
-  and the per-plan shape limit.
+  and the deep-shape dictionary cap.
 - `Function.prototype.apply(this, arguments)` without materializing `arguments`.
 
-## Rules carried over from plan 113
+## Rules carried over from the earlier Octane JIT plan
 
 - No replay of completed stores, exact recovery, roots held across helpers, no
   non-aliasing inferred from descriptor IDs, no entry snapshots reused after
@@ -527,7 +527,7 @@ configuration ran once, so differences under about 5% are noise.
 - The baseline tier is 1.29x the interpreter, the optimizing tier 1.58x, and
   `--opt` is 1.22x `--jit`. Against the 50,000 target that is 20%.
 - RegExp does not move: the score comes from libregexp, which has no native
-  compilation of its own (plan 113's RegExp JIT). The suite's regexp work is
+  compilation of its own. The suite's regexp work is
   inside the interpreter loop, so neither tier reaches it.
 - Two benchmarks come in below `--jit` in that run: Splay (9,810 against
   11,547) and Gameboy (17,182 against 17,849). Interleaved repeats put them at
@@ -592,15 +592,15 @@ this status:
 - **Frontend**: line tables are built once per compilation unit and shared by
   every body parsed under it (`build_line_table` in `src/ast/parser.c3` is
   guarded by `shared_line_starts.len == 0`), and function bodies are compiled
-  lazily (`src/compiler/lazy.c3`). Plans 100 and 101 are done: the
-  flat AST merged into `main` (`94ac53aa`), and its resolve pass carries the
-  one scope index per unit that finally replaces the per-block token re-scans.
-- **Allocation**: the bounded nursery (plan 096) and the slice-budgeted
-  cooperative incremental collector (plan 095) are in place, and the
-  epoch-based marking plus dictionary thresholds from plan 082 have landed.
+  lazily (`src/compiler/lazy.c3`). The flat-AST frontend migration is done: it
+  merged into `main` (`94ac53aa`), and its resolve pass carries the one scope
+  index per unit that finally replaces the per-block token re-scans.
+- **Allocation**: the bounded nursery and the slice-budgeted
+  cooperative incremental collector are in place, and the epoch-based
+  marking plus the dictionary thresholds have landed.
   Allocation from generated code goes through the runtime helper with the
   object adopted as a temporary root; a bump path inlined into generated code
-  is still open. Plan 082's page-batching idea (release old pages in chunks at
+  is still open. The page-batching idea (release old pages in chunks at
   safepoints instead of per node) is carried here as a suggestion for later.
 - **Object model**: the dictionary thresholds are already split by shape kind,
   `SHAPE_SOLITARY_MIN_PROPS` (64) for a shape no other object uses and
@@ -612,8 +612,8 @@ this status:
   inlines through it, so no arguments object is built.
 
 So every milestone-6 bullet is done in the part the tier needed; the
-milestone's last whole projects, plans 100 (one scope index per unit) and 101
-(the flat AST), have both merged into `main`. None of them is a two-tier milestone item:
+milestone's last whole projects, the one-scope-index-per-unit and
+flat-AST work, have both merged into `main`. None of them is a two-tier milestone item:
 the tiers' own acceptance is recorded above.
 
 ### Native regexp compilation, 2026-11-08
