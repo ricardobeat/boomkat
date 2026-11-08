@@ -1879,7 +1879,11 @@ fn int HObject.find_prop_idx(&self, void* key, heap::Heap* h) {
             if (self.prop_hash != null) self.drop_prop_hash(h);
             if (sh.hash_table == null) shape_build_hash(sh, h);
             if (sh.hash_table != null) {
-                return hash_table_probe(sh.hash_table, prop_hash_mask_for(self.prop_count), key);
+                // The table is sized for the keys the shape names, which an append has not reached
+                // yet: an object holding the new value already counts it, so size the probe from
+                // the shape. The key an append is adding is past the table, and probing it there
+                // finds an empty slot, which is the answer this lookup has mid-append.
+                return hash_table_probe(sh.hash_table, prop_hash_mask_for(sh.offset + sh.own_count), key);
             }
             // The table allocation failed, so fall through to the chain walk.
         } else {
