@@ -572,3 +572,40 @@ configuration ran once, so differences under about 5% are noise.
   baseline tier. Raising the budget alone was measured at -0.6% on the suite:
   the win needs region-based compilation of a hot loop inside a large function,
   not a bigger whole-function graph.
+
+## Milestone 6 status, 2026-11-08
+
+The runtime work was scheduled in parallel with the tiers. Per bullet, as of
+this status:
+
+- **RegExp**: not started. Regexps still run libregexp's bytecode in the
+  interpreter loop, and the RegExp benchmark sits at 2,476 in every
+  configuration. This is the largest single item left: nothing in either tier
+  reaches it, and plan 113's RegExp JIT work was never carried over. Reaching
+  JSC's 15,001 needs libregexp's program compiled to native code
+  (`re_compile`'s output is a bytecode array, `src/re_bindings.c3`), which is a
+  project of its own and the next thing to start.
+- **Frontend**: line tables are built once per compilation unit and shared by
+  every body parsed under it (`build_line_table` in `src/ast/parser.c3` is
+  guarded by `shared_line_starts.len == 0`), and function bodies are compiled
+  lazily (`src/compiler/lazy.c3`). The remaining frontend work is the two
+  separate plans: 100 (one scope index per unit instead of per-block token
+  re-scans) and 101 (flat AST), both still open.
+- **Allocation**: the bounded nursery (plan 096) and the cooperative
+  incremental collector (plan 095, partial) are in place. Allocation from
+  generated code goes through the runtime helper with the object adopted as a
+  temporary root; a bump path inlined into generated code is still open, and
+  plan 082's pause-reduction items are unstarted.
+- **Object model**: the dictionary thresholds are already split by shape kind,
+  `SHAPE_SOLITARY_MIN_PROPS` (64) for a shape no other object uses and
+  `SHAPE_COMPUTED_MIN_PROPS` (32) when property names are computed, which is
+  what the bullet asked to revisit.
+- **`apply(this, arguments)`**: done. A function whose only use of `arguments`
+  is to forward it keeps the arguments in its frame registers
+  (`CallFlags.forward_args`) behind `APPLY_ARGS`, and the optimizing tier
+  inlines through it, so no arguments object is built.
+
+So of the six bullets, one is done, three are done in the part the tier
+needed, and two (RegExp native compilation, plans 100/101) remain whole
+projects. None of them is a two-tier milestone item: the tiers' own acceptance
+is recorded above.
