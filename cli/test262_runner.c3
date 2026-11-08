@@ -62,11 +62,7 @@ fn int run_manifest_loop(char[] mpath) {
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
     defer hp.destroy();
-    if (runner_jit && !hp.set_jit(true)) {
-        io::eprintfn("test262_runner: JIT is not available in this build");
-        return 1;
-    }
-    if (runner_jit_stress) (void)hp.set_jit_stress(true);
+    if (!runner_apply_jit(hp)) return 1;
 
     Vm*? v_opt = vm::vm_create(hp);
     if (catch err = v_opt) { return 1; }
@@ -777,11 +773,7 @@ fn int run_worker_loop() {
     if (catch h = hp_opt) { return 1; }
     Heap* hp = hp_opt;
     defer hp.destroy();
-    if (runner_jit && !hp.set_jit(true)) {
-        io::eprintfn("test262_runner: JIT is not available in this build");
-        return 1;
-    }
-    if (runner_jit_stress) (void)hp.set_jit_stress(true);
+    if (!runner_apply_jit(hp)) return 1;
 
     Vm*? v_opt = vm::vm_create(hp);
     if (catch err = v_opt) { return 1; }
@@ -830,6 +822,29 @@ fn int run_worker_loop() {
 
 bool runner_jit;
 bool runner_jit_stress;
+bool runner_opt;
+bool runner_opt_always;
+
+// The tiers the run selects, on a heap that is about to execute the tests.
+fn bool runner_apply_jit(Heap* hp) {
+    if (runner_jit && !hp.set_jit(true)) {
+        io::eprintfn("test262_runner: JIT is not available in this build");
+        return false;
+    }
+    if (runner_jit_stress) (void)hp.set_jit_stress(true);
+    $if $feat(SLJIT):
+        if (runner_opt) {
+            hp.opt.enabled = true;
+            hp.opt.always = runner_opt_always;
+        }
+    $else
+        if (runner_opt) {
+            io::eprintfn("test262_runner: the optimizing tier is not available in this build");
+            return false;
+        }
+    $endif
+    return true;
+}
 
 fn int main(String[] args) {
     vm::test262_host_enabled = true;
@@ -843,13 +858,18 @@ fn int main(String[] args) {
         } else if (args[i] == "--jit-stress") {
             runner_jit = true;
             runner_jit_stress = true;
+        } else if (args[i] == "--opt") {
+            runner_opt = true;
+        } else if (args[i] == "--opt-always") {
+            runner_opt = true;
+            runner_opt_always = true;
         } else {
             manifest = args[i];
         }
     }
     if (worker) return run_worker_loop();
     if (manifest.len == 0) {
-        io::eprintfn("Usage: batch_test_vm <manifest_file> [--jit] [--jit-stress]");
+        io::eprintfn("Usage: batch_test_vm <manifest_file> [--jit] [--jit-stress] [--opt] [--opt-always]");
         io::eprintfn("       batch_test_vm --worker  (stdin-driven worker mode)");
         return 1;
     }
