@@ -16,14 +16,20 @@ struct DvBinding {
 // ---- lifecycle ----
 
 // Enter a deferred body: a fresh scope tree and site list. The formal params are
-// declared first so a body lexical may clash with them. Refs and flags keep
-// accumulating across nesting; only the outermost body emits them.
+// declared first so a body lexical may clash with them. Refs keep accumulating
+// across nesting, so each body's own refs are the slice its walk appended.
 fn void Parser.dv_body_enter(&self, uint params) {
+    // Only the outermost deferred body starts a fresh reference list. An eager
+    // body in between suspends the scope tracking but not this accumulation.
+    if (self.dv_marks.len == 0) { self.dv_refs.truncate(0); self.dv_flags = 0; }
     self.dv_marks.push((uint)self.dv_scopes.len);
     self.dv_marks.push((uint)self.dv_sites.len);
     self.dv_marks.push(self.dv_cur);
-    // Refs and flags accumulate across nesting into the outermost body's record.
-    if (self.dv_track == 0) { self.dv_refs.truncate(0); self.dv_flags = 0; }
+    self.dv_marks.push(self.dv_ref_base);
+    self.dv_marks.push((uint)self.dv_labels.len);
+    self.dv_marks.push(self.dv_breakable);
+    self.dv_marks.push(self.dv_iterating);
+    self.dv_ref_base = (uint)self.dv_refs.len;
     self.dv_labels.truncate(0);
     self.dv_breakable = 0;
     self.dv_iterating = 0;
@@ -40,14 +46,20 @@ fn void Parser.dv_body_enter(&self, uint params) {
 }
 
 // Leave a deferred body: check its redeclaration errors, then drop its scopes and
-// sites so the enclosing body's tracking resumes where it was.
+// sites so the enclosing body's tracking resumes where it was. A label, loop or
+// switch of the enclosing body also resumes: a nested body starts a new one.
 fn bool Parser.dv_body_leave(&self) {
     if (self.failed) return false;   // a fail_at fired during the walk
-    if (!self.dv_conflicts()) return false;
-    self.dv_scopes.truncate((sz)self.dv_marks.data[self.dv_marks.len - 3]);
-    self.dv_sites.truncate((sz)self.dv_marks.data[self.dv_marks.len - 2]);
-    self.dv_cur = self.dv_marks.data[self.dv_marks.len - 1];
-    self.dv_marks.truncate((sz)(self.dv_marks.len - 3));
+    uint n = (uint)self.dv_marks.len - 7;
+    if (!self.dv_conflicts(self.dv_marks.data[n + 1])) return false;
+    self.dv_scopes.truncate((sz)self.dv_marks.data[n + 0]);
+    self.dv_sites.truncate((sz)self.dv_marks.data[n + 1]);
+    self.dv_cur = self.dv_marks.data[n + 2];
+    self.dv_ref_base = self.dv_marks.data[n + 3];
+    self.dv_labels.truncate((sz)self.dv_marks.data[n + 4]);
+    self.dv_breakable = self.dv_marks.data[n + 5];
+    self.dv_iterating = self.dv_marks.data[n + 6];
+    self.dv_marks.truncate((sz)n);
     self.dv_track--;
     return true;
 }
@@ -191,7 +203,7 @@ fn bool dv_site_is_var_like(DeclKind k) @inline {
 // for the sloppy, non-module bodies the deferral keeps. Two passes mirror the
 // source: lexical duplicates and param/catch clashes, then var-like names against
 // the lexical names of the scopes between them and their function.
-fn bool Parser.dv_conflicts(&self) {
+fn bool Parser.dv_conflicts(&self, sz first) {
     self.dv_binds.truncate(0);
     self.dv_binds.push({});   // null binding at index 0; slot 0 means "empty"
     self.dv_bflags.truncate(0);
@@ -200,7 +212,7 @@ fn bool Parser.dv_conflicts(&self) {
     self.dv_slot_count = 0;
     sz nb = self.dv_sites.len;
     // Pass 1: lexical duplicates, parameters and catch parameters.
-    for (sz i = 0; i < nb && !self.failed; i++) {
+    for (sz i = first; i < nb && !self.failed; i++) {
         DvSite* s = &self.dv_sites.data[i];
         uint bscope = s.kind == DeclKind.VAR || s.kind == DeclKind.FUNC
             ? self.dv_scopes.data[s.scope].func : s.scope;
@@ -241,7 +253,7 @@ fn bool Parser.dv_conflicts(&self) {
     }
     // Pass 2: var-like declarations against the lexical names of the scopes
     // between them and their function.
-    for (sz i = 0; i < nb && !self.failed; i++) {
+    for (sz i = first; i < nb && !self.failed; i++) {
         DvSite* s = &self.dv_sites.data[i];
         if (!dv_site_is_var_like(s.kind)) continue;
         uint x = s.scope;

@@ -138,7 +138,8 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
     if (self.lex.ts_mode && self.tok.type != TokenType.LBRACE) {
         self.semicolon()!;
     } else {
-        body = self.function_block(&fnf, skip_ok, params)!;
+        body = self.function_block(&fnf, skip_ok, params,
+            body_kind == frontendstats::FS_BODY_UEXPR)!;
     }
     $if $feat(FRONTEND_STATS):
         frontendstats::fs_body_leave(body_kind, (uint)self.ast.tags.len - fs_nodes,
@@ -208,8 +209,43 @@ fn bool Ast.body_was_recorded(&self, uint fn_node) {
     return (self.flags.data[body] & BODY_RECORDED) != 0;
 }
 
+// Whether a call follows the function body that just closed, so the function is
+// the callee `(function () { })()`. `gen` compiles such a callee in place, so
+// recording its body would add a second parse of its whole subtree the first time
+// it runs, which costs more than the nodes the walk skipped. The decision is made
+// with the body's nodes still present; only the grammar after them is in doubt.
+fn bool Parser.call_follows(&self) {
+    if (self.tok.type == TokenType.LPAREN) return true;
+    if (self.tok.type != TokenType.RPAREN) return false;
+    // `(function () { })()` and one nesting parenthesis: look past the `)`.
+    Token save = self.tok;
+    Token save_prev = self.prev;
+    bool invoked = false;
+    uint closes = 0;
+    while (closes < 2) {
+        closes++;
+        if (catch err = self.advance()) break;
+        if (self.tok.type == TokenType.LPAREN) { invoked = true; break; }
+        if (self.tok.type != TokenType.RPAREN) break;
+    }
+    self.lex_from(save);
+    self.prev = save_prev;
+    return invoked;
+}
+
+// Put the parser back on `tok`, which a look-ahead advanced past.
+fn void Parser.lex_from(&self, Token tok) {
+    self.lex.seek_to_token(tok);
+    self.has_peek = false;
+    self.tok = tok;
+    // Re-read the token so the lexer sits after it again. A lexical error here is
+    // the body's own to report, at the same offset.
+    Token? t = self.lex_one();
+    if (catch err = t) {}
+}
+
 // `{ directives statements }` of a function body. Sets FNF_USE_STRICT and FNF_STRICT.
-fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint params = 0) {
+fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint params = 0, bool callee = false) {
     uint pos = self.tok.pos;
     self.expect(TokenType.LBRACE)!;
     uint mark = self.scratch_mark();
@@ -225,9 +261,12 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
     // deferred body's conflict state, so its tracking is paused.
     uint saved_track = self.dv_track;
     bool saved_on = self.dv_on;
+    uint ref0 = 0;
+    bool tracked = defer_body;
     if (defer_body) {
         self.dv_on = true;
         self.dv_body_enter(params);
+        ref0 = self.dv_ref_base;
     } else {
         self.dv_track = 0;
     }
@@ -241,20 +280,25 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
     }
     if (self.ctx.strict) *fnf |= FNF_STRICT;
     self.next()!;
-    if (defer_body) {
-        // Check this body's redeclaration errors, then keep only the references
-        // and dynamic-scope facts its enclosing compile needs. The body re-parses
-        // this source on first call.
+    // A callee `gen` compiles in place keeps its nodes: recording it would parse
+    // the whole subtree a second time on the first call.
+    if (defer_body && callee && self.call_follows()) defer_body = false;
+    if (tracked) {
+        // Check this body's redeclaration errors, whether or not it is recorded.
         if (!self.dv_body_leave()) return self.fail_at(self.err_pos, "invalid function body")~;
+    }
+    if (defer_body) {
+        // Keep only the references and dynamic-scope facts its enclosing compile
+        // needs. The body re-parses this source on first call.
         char body_flags = self.dv_flags;
         self.ast.truncate(amark);
         self.scratch.truncate(mark);
-        uint nrefs = (uint)self.dv_refs.len;
+        uint nrefs = (uint)self.dv_refs.len - ref0;
         uint at = self.ast.add_record(2 + nrefs);
         self.ast.set_field(at, 0, body_flags);
         self.ast.set_field(at, 1, nrefs);
-        for (sz i = 0; i < self.dv_refs.len; i++) {
-            self.ast.set_field(at, 2 + (uint)i, self.dv_refs.data[i]);
+        for (uint i = 0; i < nrefs; i++) {
+            self.ast.set_field(at, 2 + i, self.dv_refs.data[ref0 + i]);
         }
         uint stub = self.node(NodeTag.BLOCK, pos, 0, at);
         self.ast.set_flags(stub, BODY_RECORDED);

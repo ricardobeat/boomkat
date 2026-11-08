@@ -115,16 +115,17 @@ struct Parser {
     // the names it references are tracked here rather than in a second walk over
     // transient nodes. `dv_on` is set for the whole deferred subtree; the scope
     // tree and sites are per deferred body (reset at `dv_body_enter`), while
-    // `dv_refs` and `dv_flags` accumulate across nesting and are emitted on the
-    // outermost stub.
+    // `dv_refs` and `dv_flags` accumulate across nesting. A stub records only the
+    // refs its own walk appended, from `dv_ref_base` on.
     bool dv_on;
     Vec{DvScope} dv_scopes;
     Vec{DvSite} dv_sites;
     uint dv_cur;           // current scope id (0 = no scope open)
     uint dv_track;         // >0 while inside a deferred body's own walk
     Vec{uint} dv_refs;     // atoms the body references (over-approx: every ident)
+    uint dv_ref_base;      // first ref the current body appended
     char dv_flags;         // BODY_HAS_* bits seen in the body
-    Vec{uint} dv_marks;    // {scopes, sites, cur} per open nested body
+    Vec{uint} dv_marks;    // {scopes, sites, cur, ref base, labels, breakable, iterating}
     Vec{DvBinding} dv_binds;
     Vec{char} dv_bflags;
     Vec{uint} dv_slot;       // open addressing over (bscope, atom): binding id, 0 = empty
@@ -208,6 +209,12 @@ fn void? Parser.next(&self, bool as_name = false) {
     if (!as_name && self.tok.has_escape && is_escape_reserved(self.tok.type)) {
         return self.fail("keyword must not contain escaped characters")~;
     }
+    return self.advance();
+}
+
+// Advance past the current token without the reserved-word check, for a look-ahead
+// that is undone before the tokens it passed are parsed for real.
+fn void? Parser.advance(&self) {
     self.prev = self.tok;
     if (self.has_peek) {
         self.has_peek = false;
@@ -215,23 +222,6 @@ fn void? Parser.next(&self, bool as_name = false) {
         return;
     }
     self.tok = self.lex_one()!;
-}
-
-// Consume one token for a recorded body: like `next`, but through
-// `Lexer.next_token`, which feeds the scan hint that decides regex-versus-
-// division and template continuation from the token stream. A token peeked
-// before the hint was on is handed to the hint on its way out.
-fn void? Parser.record_next(&self) {
-    self.prev = self.tok;
-    if (self.has_peek) {
-        self.has_peek = false;
-        self.tok = self.peek_tok;
-        self.lex.hint.update(&self.tok);
-        return;
-    }
-    Token? t = self.lex.next_token();
-    if (catch err = t) return self.fail("invalid or unexpected token")~;
-    self.tok = t;
 }
 
 // The token after the current one.
@@ -458,6 +448,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.dv_slot.init_zero(128);
     p.dv_track = 0;
     p.dv_cur = 0;
+    p.dv_ref_base = 0;
     p.dv_flags = 0;
     p.dv_atom_eval = p.atom("eval");
     if (ast.shared_line_starts.len == 0) build_line_table(ast);
