@@ -588,13 +588,13 @@ this status:
   native path on and off. The path is off by default: on `bench/mini/regexp.js`
   the walk measures 122 ms against the interpreter's 109 ms, so turning it on
   would cost the benchmark. `BOOMKAT_RE_NATIVE=1` opts in. Closing that gap is
-  what remains of this bullet; plans 100 and 101 are still open.
+  what remains of this bullet.
 - **Frontend**: line tables are built once per compilation unit and shared by
   every body parsed under it (`build_line_table` in `src/ast/parser.c3` is
   guarded by `shared_line_starts.len == 0`), and function bodies are compiled
-  lazily (`src/compiler/lazy.c3`). The remaining frontend work is the two
-  separate plans: 100 (one scope index per unit instead of per-block token
-  re-scans) and 101 (flat AST), both still open.
+  lazily (`src/compiler/lazy.c3`). Plans 100 and 101 are done: the
+  flat AST merged into `main` (`94ac53aa`), and its resolve pass carries the
+  one scope index per unit that finally replaces the per-block token re-scans.
 - **Allocation**: the bounded nursery (plan 096) and the cooperative
   incremental collector (plan 095, partial) are in place. Allocation from
   generated code goes through the runtime helper with the object adopted as a
@@ -609,8 +609,9 @@ this status:
   (`CallFlags.forward_args`) behind `APPLY_ARGS`, and the optimizing tier
   inlines through it, so no arguments object is built.
 
-So of the six bullets, five are done in the part the tier needed, and plans
-100 and 101 remain whole projects. None of them is a two-tier milestone item:
+So every milestone-6 bullet is done in the part the tier needed; the
+milestone's last whole projects, plans 100 (one scope index per unit) and 101
+(the flat AST), have both merged into `main`. None of them is a two-tier milestone item:
 the tiers' own acceptance is recorded above.
 
 ### Native regexp compilation, 2026-11-08
