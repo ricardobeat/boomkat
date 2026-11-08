@@ -25,6 +25,7 @@ module boomkat::re_native @feat(!NO_REGEXP);
 import std::core::mem;
 import libc;
 import boomkat::re_bindings;
+import boomkat::re_jit;
 
 // A capture slot no save instruction has written.
 const uint RE_UNSET = uint::max;
@@ -77,6 +78,12 @@ struct ReNative {
     int  fs_single;    // the one unit that can begin a match, or -1
     bool fs_at_start;  // an empty match is possible at the start
     bool fs_at_end;    // and at the end
+    // The program as machine code, one body per subject form, and the bitmaps
+    // those bodies address (src/re/jit.c3). All null when the emitter declined
+    // the program, which leaves it on the walk.
+    void* code_narrow @if($feat(SLJIT));
+    void* code_wide @if($feat(SLJIT));
+    void* jit_data @if($feat(SLJIT));
 }
 
 // The state of one match: the capture and register arrays, and the two stacks
@@ -95,6 +102,11 @@ struct ReExec {
     // The heap buffer behind a stack that outgrew its fixed array, else null.
     void* heap_frames;
     void* heap_undo;
+    // The subject this run reads, and the interrupt it polls. The walk keeps its
+    // own copy of the subject in locals and polls on its own count; the compiled
+    // body reads both from here, because neither fits in its registers.
+    ReInput in;
+    ReInterrupt* interrupt;
 }
 
 // The capture slots a match ends with, in code-unit positions.
@@ -714,7 +726,14 @@ fn int re_native_run(ReNative* n, ReInput* in, uint start, ReInterrupt* interrup
     ReOutcome out;
     out.start = RE_UNSET;
     out.end = RE_UNSET;
-    int ret = re_walk(&e, n, in, start, interrupt, &out);
+    int ret = RE_NO_MATCH;
+    bool handled = false;
+    $if $feat(SLJIT):
+        e.in = *in;
+        e.interrupt = interrupt;
+        handled = boomkat::re_jit::re_jit_run(n, &e, start, &out, &ret);
+    $endif
+    if (!handled) ret = re_walk(&e, n, in, start, interrupt, &out);
     if (ret != RE_MATCH) return ret;
 
     uint groups = n.prog.capture_count;
@@ -765,6 +784,11 @@ fn void* re_native_prepare(void* re) @export("re_native_prepare") {
         n.fs_at_start = at_start != 0;
         n.fs_at_end = at_end != 0;
     }
+    // Compile what the emitter models to machine code, once, here: a run may
+    // not pay for a compiler, and a refused program is refused for good.
+    $if $feat(SLJIT):
+        boomkat::re_jit::re_jit_compile(n);
+    $endif
     return n;
 }
 
@@ -787,6 +811,9 @@ fn int re_native_exec(void* native, void* input, int input_len, int start_offset
 fn void re_native_free(void* native) @export("re_native_free") {
     ReNative* n = (ReNative*)native;
     if (n == null) return;
+    $if $feat(SLJIT):
+        boomkat::re_jit::re_jit_free(n);
+    $endif
     n.prog.free();
     mem::free(n);
 }
