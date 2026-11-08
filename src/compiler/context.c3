@@ -8,7 +8,9 @@ import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
+import boomkat::frontendstats;
 import std::io;
+import std::time;
 import std::collections::list;
 import std::collections::set;
 
@@ -1239,6 +1241,11 @@ fn bool CompilerContext.this_cannot_change(&self) {
 // Finalise compilation: allocate a CompiledFunction and copy code/constants.
 // A replacement is published through its existing template after finish().
 fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
+    $if $feat(FRONTEND_STATS):
+        time::Time fs_start = time::now();
+        frontendstats::finish_calls++;
+        defer { frontendstats::finish_us += (ulong)(time::now() - fs_start); }
+    $endif
     // An arrow whose bindings are plain parameters and locals can use its
     // captured environment directly once nothing observes them by name
     // (prune_unobserved_environment_stores drops their declarations, or keeps

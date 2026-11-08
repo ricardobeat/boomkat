@@ -24,6 +24,7 @@
 module boomkat::compiler;
 
 import boomkat::bytecode;
+import boomkat::frontendstats;
 
 // Register bitset for the liveness pass, sized to the function's register
 // high-water mark rather than the full 16-bit register file (8 KB per slot).
@@ -520,6 +521,7 @@ fn void moveelim_mark_jump_targets_and_try_regions(Instruction* code, uint code_
 // (vm_calls::mapped_args_read), so a store to a parameter is observable.
 fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* live_out, RegSet* live_in,
                                   bool mark_call_windows, RegSet* scratch, RegSet* pinned = null) {
+    frontendstats::fs_liveness_call(code_count, scratch[0].word_count);
     if (!moveelim_roles_ready) moveelim_init_roles();
     for (uint i = 0; i < code_count; i++) { live_out[i].clear(); live_in[i].clear(); }
 
@@ -539,10 +541,12 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
             default: {}
         }
     }
+    if (has_back_edge) frontendstats::fs_liveness_backedge();
 
     bool changed = true;
     bool first = true;
     while (changed) {
+        frontendstats::fs_liveness_sweep();
         if (!first && !has_back_edge) break;
         // The first sweep initializes use sets even when live-out is empty.
         // Later sweeps need to revisit only changes propagated through edges.
@@ -554,6 +558,7 @@ fn void moveelim_compute_liveness(Instruction* code, uint code_count, RegSet* li
         uint ii = code_count;
         while (ii > 0) {
             ii--;
+            frontendstats::fs_liveness_visit();
             Instruction ins = code[ii];
             Opcode op = ins.op;
 

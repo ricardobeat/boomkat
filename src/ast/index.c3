@@ -3,6 +3,8 @@ module boomkat::ast;
 import boomkat::lexer;
 import boomkat::ast::vec;
 import boomkat::bytecode;
+import boomkat::frontendstats;
+import std::time;
 
 struct ScalarClass {
     uint class_node;
@@ -37,6 +39,19 @@ struct AstIndex {
 tlocal AstIndex* index_state;
 
 fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* source_buf = null) {
+    $if $feat(FRONTEND_STATS):
+        time::Time fs_start = time::now();
+        defer {
+            ulong elapsed = (ulong)(time::now() - fs_start);
+            if (!opts.function_body) {
+                frontendstats::initial_units++;
+                frontendstats::initial_us += elapsed;
+            } else {
+                frontendstats::materialize_units++;
+                frontendstats::materialize_us += elapsed;
+            }
+        }
+    $endif
     AstIndex* c = mem::new(AstIndex);
     if (source_buf != null) {
         c.src_buf = (bytecode::SourceBuf*)source_buf;

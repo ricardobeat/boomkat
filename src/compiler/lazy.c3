@@ -6,6 +6,9 @@ import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::lexer;
 import boomkat::types;
+import boomkat::relexstats;
+import boomkat::frontendstats;
+import std::time;
 
 fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] name) {
     ast::AstIndex* idx = ast::index_state;
@@ -49,6 +52,15 @@ fn void? materialize_function(CompiledFunction* f, Heap* h) {
 }
 
 fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
+    $if $feat(RELEX_STATS):
+        relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.MATERIALIZE);
+        defer relexstats::relex_leave(relex_prev);
+    $endif
+    $if $feat(FRONTEND_STATS):
+        time::Time fs_start = time::now();
+        frontendstats::materialize_calls++;
+        defer { frontendstats::materialize_total_us += (ulong)(time::now() - fs_start); }
+    $endif
     $if features::SOURCE_COMPILER:
     heap::Realm* caller_realm = h.realm;
     if (h.realm != f.realm) h.enter_realm(f.realm);

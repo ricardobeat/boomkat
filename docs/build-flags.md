@@ -16,6 +16,7 @@
 | `OP_PROFILE` | Enable opcode profiling |
 | `GC_PROFILE` | Enable GC profiling |
 | `RELEX_STATS` | Count lexer rescanning |
+| `FRONTEND_STATS` | Time frontend phases and count liveness sweeps/bitsets (`boomkat_relexstats`) |
 | `MEMBER_STRICT` | Validate compiler member-expression tracking |
 | `GC_VERIFY` | Check incremental GC reachability and ownership |
 | `SCAN_POISON` | Poison freed scanned storage and detect stale references |

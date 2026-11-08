@@ -7,7 +7,12 @@
 // times the average source byte was lexed; 1.0 is the floor.
 //
 // PARSE covers everything outside a named pre-scan, so its excess over 1.0 is
-// the parser's own speculation and loop re-parsing.
+// the parser's own speculation and loop re-parsing. MATERIALIZE covers the
+// re-lex of a deferred body on first call; materialize_function_body enters it.
+//
+// relex_source counts each lexer_init's full source slice, so a unit that
+// creates both an outer and an inner lexer counts its bytes twice and the
+// per-kind ratio can fall below 1.0. Compare lexed_bytes across kinds instead.
 //
 // Gated on RELEX_STATS. Default builds omit the counters and increments.
 module boomkat::relexstats;
@@ -23,20 +28,24 @@ enum RelexKind : char {
     HOIST_FN_DECLS,
     CAPTURES,
     GLOBAL_VAR_SLOTS,
+    MATERIALIZE,
 }
 
 const String[*] RELEX_KIND_NAMES = {
     "parse", "lex_decls", "block_decls", "var_decls",
     "hoist_decls", "hoist_fn_decls", "captures", "global_var_slots",
+    "materialize",
 };
 
 tlocal ulong relex_source_bytes;
+tlocal ulong[RELEX_KIND_NAMES.len] relex_source_by_kind;
 tlocal ulong[RELEX_KIND_NAMES.len] relex_lexed_bytes;
 tlocal RelexKind relex_current;
 
 macro void relex_source(usz bytes) {
     $if $feat(RELEX_STATS):
         relex_source_bytes += bytes;
+        relex_source_by_kind[relex_current.ordinal] += bytes;
     $endif
 }
 
@@ -73,7 +82,8 @@ $if $feat(RELEX_STATS):
     io::eprintfn("# RELEX source_bytes=%d lexed_bytes=%d ratio=%.2f", src, total, (double)total / denom);
     foreach (i, n : relex_lexed_bytes) {
         if (n == 0) continue;
-        io::eprintfn("#   %-16s %12d  %6.2fx", RELEX_KIND_NAMES[i], n, (double)n / denom);
+        io::eprintfn("#   %-16s %12d  %6.2fx  src=%d", RELEX_KIND_NAMES[i], n,
+            (double)n / denom, relex_source_by_kind[i]);
     }
 $endif
 }

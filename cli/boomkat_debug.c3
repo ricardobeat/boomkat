@@ -18,6 +18,7 @@ import boomkat::ast;
 import boomkat::compiler;
 import boomkat::gcprofile;
 import boomkat::relexstats;
+import boomkat::frontendstats;
 import boomkat::vm;
 import boomkat::heap;
 import boomkat::lexer;
@@ -101,6 +102,9 @@ fn int main(String[] args) {
     $endif
     $if $feat(RELEX_STATS):
         defer relexstats::relex_dump();
+    $endif
+    $if $feat(FRONTEND_STATS):
+        defer frontendstats::frontend_dump();
     $endif
     if (args.len < 2) {
         print_usage(args.len > 0 ? args[0] : "boomkat");

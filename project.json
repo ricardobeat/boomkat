@@ -176,6 +176,7 @@
       "debug-info": "full",
       "features": [
         "RELEX_STATS",
+        "FRONTEND_STATS",
         "THREADED_DISPATCH",
         "PRINT",
         "CONSOLE"
