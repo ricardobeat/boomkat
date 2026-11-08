@@ -160,6 +160,41 @@ keywords,identifiers,literals,eval-code,function-code}` (27, 55, 25, 268, 536,
 347, 217 tests) all pass with no unexpected compile errors. A full test262 run
 was not performed in this session.
 
+## Post-change profile and the ASCII lexer path
+
+A fresh sample of the retained build (`retained-profile.txt`) ran the jQuery
+CodeLoad driver for 220 loads with `sample 1` starting 0.15 s in, giving 823
+main-thread samples at a 293.6 MB physical footprint (the shared-lines capture
+recorded 314.4 MB, so allocation-heavy leaves stay comparable). Grouping the
+top-level entries: compiler codegen and `finish` 29.2%, lexer 18.5%, the
+benchmark's own VM and builtins work 18.3%, AST and parser 16.6%, resolver
+8.0%, early-error pass 4.4%, allocator 3.4%. The largest leaves are register
+liveness 7.5%, `scan_token_raw` 4.9%, `scan_identifier` 4.0%,
+`scan_punctuator` 3.6%, `finish` 3.2%, `resolve_refs` 2.9%, `AtomTable.intern`
+2.7%, `regexp_literal_error` 2.7% and `Early.node` 2.7%. No single leaf is
+large enough to explain the remaining frontend cost.
+
+`scan_token_raw` decided whether a token starts an identifier by decoding a
+codepoint and asking the vendored C Unicode tables, and it did that for every
+token that was not a number, string or template, so every punctuator paid for
+a `read_codepoint` call, a save and restore of the lexer position, line and
+column, and a cross-language call. ASCII now decides on the raw byte, and
+`is_identifier_start`/`is_identifier_part` mirror the C helper's ASCII branch,
+so both calls are reachable only for multi-byte source. Seven alternating
+pairs (`lexer-ascii-results.json`):
+
+| Case | Before | After | Change |
+|---|---:|---:|---:|
+| CodeLoad score | 33,784 | 34,434 | +1.9% |
+| 1,000 Closure loads | 294 ms | 288 ms | −2.0% |
+| 100 jQuery loads | 593 ms | 586 ms | −1.2% |
+
+Every round moved in the same direction, and fixed-work peak RSS is unchanged
+(Closure 153.4 -> 153.2 MB). Validation: local suite including the 33-module
+and 39 private-field groups, and test262 `language/identifiers` (268),
+`language/literals` (536) and `language/statements` (9,347) all pass with no
+unexpected compile errors.
+
 ## Rejected experiments
 
 Each was measured with five alternating pairs and reverted.

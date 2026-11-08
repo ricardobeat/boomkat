@@ -397,6 +397,12 @@ fn bool is_line_terminator(char c) {
 // and astral-plane ID_Start. ASCII path is fast; >= 128 goes through
 // the full Unicode table.
 fn bool is_identifier_start(uint cp) @inline {
+    // Mirrors the ASCII branch of unicode_is_identifier_start, so a byte below
+    // 0x80 never crosses into the C Unicode tables.
+    if (cp < 0x80) {
+        return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z')
+            || cp == '_' || cp == '$';
+    }
     return unicode_bindings::unicode_is_identifier_start(cp) != 0;
 }
 
@@ -407,6 +413,11 @@ fn bool is_identifier_start(uint cp) @inline {
 // digits, U+19DA ᧚) + combining marks (U+0300-036F) + ZWNJ (U+200C) +
 // ZWJ (U+200D).  ASCII path is fast; >= 128 goes through the table.
 fn bool is_identifier_part(uint cp) @inline {
+    // Mirrors the ASCII branch of unicode_is_identifier_continue.
+    if (cp < 0x80) {
+        return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z')
+            || (cp >= '0' && cp <= '9') || cp == '_' || cp == '$';
+    }
     return unicode_bindings::unicode_is_identifier_continue(cp) != 0;
 }
 
@@ -2663,8 +2674,18 @@ fn Token? Lexer.scan_token_raw(&self) {
         return tok;
     }
 
-    uint cp = self.peek_codepoint();
-    if (is_identifier_start(cp) || cp == '\\') {
+    // Decide on the raw byte where possible: decoding a codepoint and consulting
+    // the Unicode tables is only reachable for multi-byte source, so the common
+    // punctuator and ASCII-identifier tokens skip both.
+    bool starts_identifier;
+    if (c < 0x80) {
+        starts_identifier = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+            || c == '_' || c == '$' || c == '\\';
+    } else {
+        uint cp = self.peek_codepoint();
+        starts_identifier = is_identifier_start(cp) || cp == '\\';
+    }
+    if (starts_identifier) {
         Token tok = self.scan_identifier()!;
         self.current = tok;
         return tok;
