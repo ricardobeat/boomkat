@@ -36,5 +36,14 @@ extern fn bool re_is_space(uint c);
 
 extern fn bool re_is_word_byte(uint c);
 
+/* The first-unit filter libregexp computed for the pattern, for the native
+ * matcher's position scan. False when there is none to use. */
+extern fn bool re_first_set(void* re, uint* bits, int* wide, int* single,
+                            int* at_start, int* at_end);
+
+/* Force the native matcher on or off, which the differential suites use to run
+ * the same pattern through both. */
+extern fn void re_set_native(int enabled);
+
 /* The compiled libregexp bytecode and its length, owned by the compiled regexp. */
 extern fn char* re_bytecode(void* re, int* len);

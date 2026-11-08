@@ -48,7 +48,43 @@ struct ReCompiled {
     /* Code units that can begin a match, when has_first_set. */
     int      has_first_set;
     LREFirstSet first_set;
+    /* The native matcher's program (src/re/exec.c3). NULL means the pattern
+     * stayed on the interpreter: either it was declined, or it was never
+     * prepared, which `native_tried` separates. */
+    void*    native;
+    int      native_tried;
 };
+
+/* The native matcher. It decodes the compiled program once and walks it; a
+ * program it does not model is declined, and the pattern keeps using
+ * libregexp's interpreter. */
+void* re_native_prepare(ReCompiled* re);
+void  re_native_free(void* native);
+int   re_native_exec(void* native, const void* input, int input_len,
+                     int start_offset, int input_wide,
+                     int* out_start, int* out_end, int* out_num_captures,
+                     int* caps_start, int* caps_end, int max_captures,
+                     ReInterrupt* interrupt);
+
+/* Whether the native matcher runs. It is off until its walk beats libregexp's
+ * interpreter on the RegExp benchmark (122 ms against 109 ms on the mini
+ * harness as landed); BOOMKAT_RE_NATIVE=1 opts in, and re_set_native forces
+ * either answer, which is how the differential suites compare the two. */
+static int re_native_state = -1;
+
+static int re_native_enabled(void)
+{
+    if (re_native_state < 0) {
+        const char* v = getenv("BOOMKAT_RE_NATIVE");
+        re_native_state = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
+    }
+    return re_native_state;
+}
+
+void re_set_native(int enabled)
+{
+    re_native_state = enabled ? 1 : 0;
+}
 
 /* Rough frequency of an ASCII byte in typical text, used to pick the byte
  * a literal search scans for. */
@@ -305,6 +341,8 @@ ReCompiled* re_compile(const char* pattern, size_t pattern_len,
     re->bc_len = bc_len;
     re->capture_count = lre_get_capture_count(bc);
     re->refcount = 1;
+    re->native = NULL;
+    re->native_tried = 0;
     re_scan_prefix(re, pattern, pattern_len, lre_flags);
     re_scan_required(re, pattern, pattern_len, lre_flags);
     re->has_first_set = lre_get_first_set(bc, &re->first_set);
@@ -435,6 +473,24 @@ int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
     int total_captures = re->capture_count;
     if (total_captures > RE_MAX_CAPTURES) total_captures = RE_MAX_CAPTURES;
 
+    /* The native matcher runs the decoded program, which is the same walk
+     * libregexp's interpreter performs, without its per-step decoding. A
+     * pattern is prepared once, on the first run that reaches here; a program
+     * the matcher declines stays declined. A timeout or a matcher error falls
+     * through to the interpreter. */
+    if (re_native_enabled()) {
+        if (!re->native_tried) {
+            re->native_tried = 1;
+            re->native = re_native_prepare(re);
+        }
+        if (re->native) {
+            int nret = re_native_exec(re->native, input, input_len, start_offset, input_wide,
+                                      out_start, out_end, out_num_captures,
+                                      caps_start, caps_end, max_captures, interrupt);
+            if (nret == RE_MATCH || nret == RE_NO_MATCH) return nret;
+        }
+    }
+
     /* lre_exec NULL-initialises capture[0..2*capture_count-1] (it reads the
      * count from the compiled bytecode header) and writes back matching
      * pointers for the captures that participate in the match. A regex with
@@ -503,6 +559,7 @@ void re_free(ReCompiled* re)
 {
     if (re) {
         if (--re->refcount > 0) return;  /* still borrowed elsewhere */
+        if (re->native) re_native_free(re->native);
         if (re->bc) lre_realloc(NULL, re->bc, 0);
         free(re);
     }
@@ -518,6 +575,24 @@ const char* re_get_groupnames(ReCompiled* re)
 {
     if (!re || !re->bc) return NULL;
     return lre_get_groupnames(re->bc);
+}
+
+/* The first-unit filter libregexp computed for this pattern, for the native
+ * matcher's position scan: 256 bits of units that can begin a match, whether a
+ * unit above 255 can too, the one unit that can when exactly one does, and
+ * whether an empty match is possible at the start or the end. False when the
+ * pattern's bytecode does not open with the position loop, which is when there
+ * is nothing to filter. */
+bool re_first_set(ReCompiled* re, uint32_t* bits, int* wide, int* single,
+                  int* at_start, int* at_end)
+{
+    if (!re || !re->bc || !re->has_first_set) return false;
+    memcpy(bits, re->first_set.bits, sizeof re->first_set.bits);
+    if (wide) *wide = re->first_set.wide;
+    if (single) *single = re->first_set.single;
+    if (at_start) *at_start = re->first_set.at_start;
+    if (at_end) *at_end = re->first_set.at_end;
+    return true;
 }
 
 /* The compiled bytecode, for the native backend's decoder. Borrowed: it lives
