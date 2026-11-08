@@ -56,6 +56,7 @@
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::bytecode;
+import boomkat::hobject;
 import std::collections::list;
 import std::io;
 
@@ -339,7 +340,11 @@ struct OptBlock {
     uint osr_count;
 }
 
-const uint OPT_POLY_MAX = 4;
+// The distinct receiver shapes one field site's code compares: as many as the baseline cache can
+// record in an entry (hobject::IC_POLY_MAX), since a longer chain has nothing to compare against.
+// Each case costs a 32-bit compare and a slot load, and eight bytes in the node and the
+// register-pressure estimate.
+const uint OPT_POLY_MAX = hobject::IC_POLY_MAX;
 
 // The receiver shapes a field access accepts, in the order its code compares them, each with the
 // slot its property has in an object of that shape.
