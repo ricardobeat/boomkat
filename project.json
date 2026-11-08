@@ -294,7 +294,7 @@
         "src",
         "cli/boomkat.c3"
       ],
-      "opt": "O1",
+      "opt": "O2",
       "optsize": "small",
       "single-module": true,
       "sanitize": "address",
@@ -308,7 +308,7 @@
         "vendor/sljit/sljit_src/sljitLir.c",
         "src/jit/sljit_shim.c"
       ],
-      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
         "vendor/dtoa",
         "vendor/libregexp",
@@ -323,7 +323,7 @@
         "src",
         "test/capi/jit_tiers.c3"
       ],
-      "opt": "O1",
+      "opt": "O2",
       "optsize": "small",
       "single-module": true,
       "sanitize": "address",
@@ -335,7 +335,7 @@
         "vendor/sljit/sljit_src/sljitLir.c",
         "src/jit/sljit_shim.c"
       ],
-      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
         "vendor/dtoa",
         "vendor/libregexp",
@@ -350,7 +350,7 @@
         "src",
         "cli/test262_runner.c3"
       ],
-      "opt": "O1",
+      "opt": "O2",
       "optsize": "small",
       "single-module": true,
       "sanitize": "address",
@@ -369,7 +369,7 @@
         "vendor/sljit/sljit_src/sljitLir.c",
         "src/jit/sljit_shim.c"
       ],
-      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "cflags": "-O2 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
       "c-include-dirs": [
         "vendor/dtoa",
         "vendor/libregexp",
