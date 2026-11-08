@@ -190,14 +190,15 @@ pairs (`lexer-ascii-results.json`):
 | 100 jQuery loads | 593 ms | 586 ms | −1.2% |
 
 Every round moved in the same direction, and fixed-work peak RSS is unchanged
-(Closure 153.4 -> 153.2 MB). Validation: local suite including the 33-module
-and 39 private-field groups, and test262 `language/identifiers` (268),
-`language/literals` (536) and `language/statements` (9,347) all pass with no
-unexpected compile errors.
+(Closure 153.4 -> 153.2 MB). Validation on the final tree: local suite
+including the 33-module and 39 private-field groups, rosetta, the deferred-eval
+regressions under the ASAN/GC_STRESS/GC_VERIFY/POOL_BYPASS build, and a full
+test262 run of 53,380 passing tests with no failures, no unexpected compile
+errors and 236 existing exclusions.
 
 ## Rejected experiments
 
-Each was measured with five alternating pairs and reverted.
+Each was measured with alternating pairs and reverted, except where noted.
 
 - Liveness second-flavor skip: run the retarget liveness only when an `LDREG`
   with a live destination survives (`moveelim_needs_retarget`). CodeLoad
@@ -210,7 +211,42 @@ Each was measured with five alternating pairs and reverted.
 - Deferring only bodies under 32 source bytes (compile tiny bodies eagerly):
   CodeLoad 32,203 -> 31,333 (−2.7%), Closure 307 -> 319 ms (+3.9%), jQuery
   −0.6%. Eager bodies cost more than the saved materializations.
+- Whitespace skip rewritten to decide the ASCII cases on the raw byte
+  (`switch` over space, tab, VT, FF, LF, CR instead of `is_whitespace` plus
+  `advance_char`): CodeLoad +0.0%, Closure +2.3%, jQuery +0.0% at seven pairs,
+  so the whitespace loop was already cheap and the rewrite was dropped.
+- A cross-unit cache of regexp-literal validation: not built, because removing
+  the validation entirely - the ceiling a cache could never beat - measured only
+  +2.5% CodeLoad, +0.0% Closure and −1.5% jQuery at five pairs. The remaining
+  cost is small next to the lookup the cache would add.
+- `lookup_keyword` rewritten to dispatch on name length: measured standalone
+  over the 17,891 identifiers of the CodeLoad jQuery source, a length dispatch
+  costs 2.6 us per 1,000 lookups against 4.8 us for the 42-entry table scan, so
+  about 2.1 ns saved per identifier, roughly 0.6% of one load. That does not
+  clear the benchmark noise band, so the table scan was left in place. This is
+  the reason for preferring structural changes over per-token peepholes at the
+  current margin.
+- A faster atom hash: not attempted after measuring the shape of the cost. 52%
+  of identifier occurrences in the CodeLoad jQuery source are one byte long, so
+  the FNV hash is about three multiplies; the 2.7% charged to `AtomTable.intern`
+  is dominated by the cache miss on the slot and entry arrays, which a cheaper
+  hash would not remove.
 - Atom-id threading of codegen name lookups: not attempted. The contained subset
   (one `atoms.find` per declaration, atom compares in `resolve_var`) lands within
   noise; the real win needs names carried as atoms through codegen, a larger
   refactor.
+
+## What the remaining cost is, and the next structural change
+
+The frontend work is now evenly spread: no leaf exceeds 8% and the largest
+single opportunity left in the lexer is worth under a percent. The one change
+with more than a few percent behind it is structural, and the profile supports
+it: the initial full-unit pass builds an AST node for every construct in the
+source, including the bodies that `gen` keeps as deferred templates and that
+are reparsed from source on first call. The parse itself has to happen, because
+a malformed body must still be a `SyntaxError` at eval time, but the node
+build (`Ast.add`, the `extra` lists and the columns they grow) is only needed
+for the top-level code and for bodies that are actually compiled. A validation
+mode that parses without appending nodes is the next change worth measuring;
+the earlier "reuse deferred-body early-error validation" experiment showed the
+checks themselves cannot simply be dropped, so this has to keep them.
