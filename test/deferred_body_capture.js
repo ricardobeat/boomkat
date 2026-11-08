@@ -77,6 +77,48 @@ function check(name, actual, expected) {
     check("direct eval sees an outer binding", readsViaEval(), 7);
 })();
 
+// ---- a nested function reads a variable declared in the same deferred body ----
+(function () {
+    // `y` is declared in F's body; N is nested in the same body and closes over it.
+    // F's body and N's body are each deferred separately, so F's record must mark
+    // `y` captured even though the reference originates in N's nested record.
+    function F() {
+        var y = 0;
+        function N() { y++; return y; }
+        globalThis.__nestCap = N;
+    }
+    F();
+    check("nested fn reads same-body var (1)", __nestCap(), 1);
+    check("nested fn reads same-body var (2)", __nestCap(), 2);
+    delete globalThis.__nestCap;
+})();
+
+(function () {
+    // Same shape, but the nested reference is a write to a same-body var.
+    function F() {
+        var z = 0;
+        function bump() { z += 10; return z; }
+        globalThis.__nestWrite = bump;
+    }
+    F();
+    check("nested fn writes same-body var (1)", __nestWrite(), 10);
+    check("nested fn writes same-body var (2)", __nestWrite(), 20);
+    delete globalThis.__nestWrite;
+})();
+
+// ---- a nested direct eval sees both same-body and enclosing bindings ----
+(function () {
+    var outer = 9;
+    function F() {
+        var local = 3;
+        function N() { return eval("local + outer"); }
+        globalThis.__nestEval = N;
+    }
+    F();
+    check("nested eval sees same-body and outer var", __nestEval(), 12);
+    delete globalThis.__nestEval;
+})();
+
 // ---- `with` inside a deferred body makes name lookup dynamic ----
 (function () {
     // `loc` must be resolved through the `with` object when present, and through
