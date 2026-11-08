@@ -578,13 +578,17 @@ configuration ran once, so differences under about 5% are noise.
 The runtime work was scheduled in parallel with the tiers. Per bullet, as of
 this status:
 
-- **RegExp**: not started. Regexps still run libregexp's bytecode in the
-  interpreter loop, and the RegExp benchmark sits at 2,476 in every
-  configuration. This is the largest single item left: nothing in either tier
-  reaches it, and plan 113's RegExp JIT work was never carried over. Reaching
-  JSC's 15,001 needs libregexp's program compiled to native code
-  (`re_compile`'s output is a bytecode array, `src/re_bindings.c3`), which is a
-  project of its own and the next thing to start.
+- **RegExp**: the native matcher is built, wired in and validated. `src/re/`
+  holds the decoder, subject cursor, class predicates and the backtracking
+  walk; it declines only lookarounds and back references, and falls back to
+  `lre_exec` for those and for any program that fails its bounds check. A
+  differential suite (`make test-native-regexp`) compares verdict, span and
+  every capture against the interpreter over every start offset and both
+  subject forms, and the full test262 suite gives identical results with the
+  native path on and off. The path is off by default: on `bench/mini/regexp.js`
+  the walk measures 122 ms against the interpreter's 109 ms, so turning it on
+  would cost the benchmark. `BOOMKAT_RE_NATIVE=1` opts in. Closing that gap is
+  what remains of this bullet; plans 100 and 101 are still open.
 - **Frontend**: line tables are built once per compilation unit and shared by
   every body parsed under it (`build_line_table` in `src/ast/parser.c3` is
   guarded by `shared_line_starts.len == 0`), and function bodies are compiled
@@ -605,66 +609,51 @@ this status:
   (`CallFlags.forward_args`) behind `APPLY_ARGS`, and the optimizing tier
   inlines through it, so no arguments object is built.
 
-So of the six bullets, one is done, three are done in the part the tier
-needed, and two (RegExp native compilation, plans 100/101) remain whole
-projects. None of them is a two-tier milestone item: the tiers' own acceptance
-is recorded above.
+So of the six bullets, five are done in the part the tier needed, and plans
+100 and 101 remain whole projects. None of them is a two-tier milestone item:
+the tiers' own acceptance is recorded above.
 
-### Native regexp compilation: the design being built, 2026-11-08
+### Native regexp compilation, 2026-11-08
 
-RegExp is the one milestone-6 bullet nothing else reaches, and the branch now
-carries its foundation in C3 (`src/jit/re_*`, C only where a header's static
-inline must be called):
+The matcher lives in `src/re/` under `boomkat::re_native @feat(!NO_REGEXP)`,
+so it builds without the `SLJIT` feature and is compiled out under
+`NO_REGEXP`:
 
-- `re_prog.c3` decodes libregexp's bytecode into instructions: opcode, byte
-  offset, resolved branch target, unpacked class pairs, minimum repetitions for
-  the greedy-run form, and the header's flags and capture and register counts.
-  It also names what the code generator will decline — lookarounds, back
-  references, the quantifier registers (`set_i32`, `set_char_pos`,
-  `check_advance`, `loop*`) and classes beyond the BMP — so a pattern only
-  leaves the interpreter when its program is understood. Its self-test asserts
-  the properties the generator relies on: instructions tile the program, every
-  branch lands on an instruction, class pairs ascend, save slots are captures.
-- `re_input.c3` is the subject cursor: code-unit and code-point stepping over
-  Latin-1 bytes and UTF-16 units, with the surrogate rules of unicode mode.
-- `re_class.c3` tests a code unit against a class instruction's pairs and
-  answers the four zero-width assertions (line start and end, with and without
-  the `m` flag, word boundary in both forms).
+- `prog.c3` decodes libregexp's bytecode once into indexed instructions:
+  resolved branch targets, unpacked class pairs, quantifier registers, and the
+  header's flags and capture and register counts. It models every opcode except
+  lookarounds and back references, and `ReProgram.executable()` bounds-checks
+  slots, registers, pairs and targets before the walk indexes them.
+- `input.c3` is the subject cursor over Latin-1 bytes and UTF-16 units, with
+  the surrogate rules of unicode mode. Its helpers take the subject fields as
+  arguments so the walk keeps them in registers.
+- `class.c3` tests a code point against a class's range pairs and answers the
+  line start, line end and word boundary assertions.
+- `exec.c3` walks the program with a backtracking frame stack and an undo
+  stack of capture and register writes. Quantified single-character atoms run
+  in a tight loop that switches on the opcode once, mirroring libregexp's
+  `lre_run_char_op`. A program that opens with the position loop uses the
+  compile-time first-unit filter to skip candidate starts.
 
-What is left is the code generator and the wiring, in this order:
+`src/re_wrapper.c` keeps an opaque handle on the compiled regexp, prepares it
+once on the first run that reaches the end of the prefix and required-literal
+fast paths, and falls through to `lre_exec_ex` on a declined program, a
+matcher error or a timeout. `re_set_native()` forces either matcher, which is
+how the differential suites compare the two; `re_first_set()` exposes the
+compile-time filter to the walk. `src/re_bindings.c3` declares both hooks.
 
-1. **The matcher ABI.** One compiled entry per (pattern, subject form):
-   `fn int re_native_run(char* subject, uint len, uint start, uint* capture)`,
-   returning 1 on a match with `capture[0]`/`capture[1]` filled, else 0. Two
-   entries, one for Latin-1 and one for UTF-16 subjects, compiled lazily and
-   cached beside the program, because the subject form decides how a unit is
-   read and how far a code point steps.
-2. **The position loop.** Every non-sticky program opens with the same three
-   instructions (split, any, goto) that walk candidate start positions; the
-   generator emits that as a native loop that steps one code point at a time,
-   trying the body at each position and at the end, and calls the body's code as
-   a local label.
-3. **The backtracking stack.** A frame records the instruction to resume, the
-   subject position, and the capture slots it overwrote, so a resume restores
-   them exactly. Frames live in a growable buffer sized from the program's
-   register count plus the stack depth the compiler computed, which the header
-   carries; the stack is a local of the generated entry, so nothing is shared
-   between calls.
-4. **Opcode mapping.** char and char_i compare a loaded unit (canonicalized for
-   the `_i` forms); dot, any, space and not_space consume one code point; range
-   and range_i call `ReClass.matches`; save_start and save_end write the capture
-   array; split and goto push and branch; star runs its inline atom body
-   greedily between its minimum and as far as it matches, pushing one frame that
-   resumes at the shorter match; match returns through the exit. The assertion
-   instructions call `ReSubject`'s predicates.
-5. **Wiring and the fallback.** The compiled regexp keeps an opaque handle to
-   its native program; `re_run` uses it when present and falls back to
-   `lre_exec` otherwise. Compilation is attempted once per pattern and subject
-   form, on the first run that reaches the fast paths' end, and a declined
-   program is remembered as declined.
+Testing: `make test-native-regexp` runs the decoder, cursor, class and
+differential suites (24,000+ comparisons covering all 95 Octane patterns plus
+targeted counted-repeat, unicode, sticky, assertion and empty-match cases).
+`BOOMKAT_RE_NATIVE=1` runs the same matcher over the whole 53,380-test
+test262 suite; the on/off logs diff to zero lines. `scripts/jit_check.sh` and
+`scripts/run_jit_diff.sh` cover the tiers, and `make test-jit-api-asan`
+covers the C API under AddressSanitizer.
 
-Acceptance for the first landing: every fixture in `test/` and the RegExp
-portion of test262 give identical verdicts and identical match results with the
-native path on and off, and the RegExp benchmark improves. Until then the native
-path stays off, and the interpreter is the only matcher — which is why these
-three modules are committed unused.
+What is left: the walk is 122 ms against the interpreter's 109 ms on
+`bench/mini/regexp.js` (interleaved, five runs each), down from 134 ms before
+the run-loop and inlining work. The remaining levers are keeping the frame and
+undo state in registers instead of through `ReExec*`, and emitting the body as
+native code instead of walking decoded instructions. Until the walk wins, the
+native path stays off by default and the interpreter is the only matcher in
+production.
