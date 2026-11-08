@@ -90,8 +90,8 @@ enum OptInlineReject : char (String label) {
 
 // The words of bytecode an inlined callee may have, and the callees nested in one inline site may
 // have together.
-const uint INLINE_WORDS_MAX = 40;
-const uint INLINE_TREE_WORDS_MAX = 120;
+const uint INLINE_WORDS_MAX = 64;
+const uint INLINE_TREE_WORDS_MAX = 200;
 
 // A call site whose callee the graph may inline (OptBuild.find_sites): a straight-line body, found
 // by the call's feedback, with its own control flow graph and liveness.
