@@ -83,9 +83,12 @@ fn bool bytecode_cfg_fallthrough(Opcode op) {
 }
 
 // Positive control-flow contract: exception handlers, suspension, indirect
-// returns, specialized skips, and unreviewed opcodes all refuse. LDINTX stays
-// outside this shared contract until its legacy multiword/role assumptions are
-// reconciled; callers must never infer fallthrough for an unknown operation.
+// returns, specialized skips, and unreviewed opcodes all refuse. The _SNAP
+// stores are accepted: they store by name through an environment probe they
+// read and fall through like the plain stores, with A the value, B the probe
+// and C the name index. LDINTX stays outside this shared contract until its
+// legacy multiword/role assumptions are reconciled; callers must never infer
+// fallthrough for an unknown operation.
 fn bool bytecode_cfg_control_supported(Opcode op) {
     switch (op) {
         case LDREG..LDINT:
@@ -95,7 +98,7 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
         case RET: case RETUNDEF: case RET_GEN: case RETUNDEF_GEN:
         case THROW: case THROW_REF: case THROW_SYNTAX:
         case GETVAR: case GETGLOBAL: case GETBOUND: case TYPEOFIDENT:
-        case PUTVAR: case PUTVAR_ASSIGN: case PUTGLOBAL:
+        case PUTVAR: case PUTVAR_ASSIGN: case PUTVAR_SNAP: case PUTGLOBAL: case PUTCAP_SNAP:
         case DECLVAR: case DECLVAR_HOIST: case DECLGLOBALFUNC: case DECLB33GLOBAL:
         case NOP: case TOPROPKEY: case TOSTR: case BREAK: case CONTINUE:
         case INC: case DEC: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL:
