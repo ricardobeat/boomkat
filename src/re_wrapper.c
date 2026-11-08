@@ -520,6 +520,18 @@ const char* re_get_groupnames(ReCompiled* re)
     return lre_get_groupnames(re->bc);
 }
 
+/* The compiled bytecode, for the native backend's decoder. Borrowed: it lives
+ * as long as the compiled regexp. */
+const uint8_t* re_bytecode(ReCompiled* re, int* len)
+{
+    if (!re || !re->bc) {
+        if (len) *len = 0;
+        return NULL;
+    }
+    if (len) *len = re->bc_len;
+    return re->bc;
+}
+
 int re_get_capture_count(ReCompiled* re)
 {
     if (!re || !re->bc) return 0;

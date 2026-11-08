@@ -35,3 +35,6 @@ extern fn uint re_canonicalize(uint c, bool is_unicode);
 extern fn bool re_is_space(uint c);
 
 extern fn bool re_is_word_byte(uint c);
+
+/* The compiled libregexp bytecode and its length, owned by the compiled regexp. */
+extern fn char* re_bytecode(void* re, int* len);

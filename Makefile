@@ -572,6 +572,25 @@ test-api-lifecycle: out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/api_lifecycle.c out/boomkat.a $(BK_LDLIBS) -o out/api_lifecycle
 	./out/api_lifecycle
 
+# The native regexp backend's own unit tests. Each target is the engine plus one self-testing
+# main, so they exercise the modules the way the engine links them.
+out/re_input_test: project.json $(call target_sources,re_input_test) $(SLJIT_DEPS)
+	$(C3C_BUILD) re_input_test $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-re_input_test
+
+out/re_class_test: project.json $(call target_sources,re_class_test) $(SLJIT_DEPS)
+	$(C3C_BUILD) re_class_test $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-re_class_test
+
+out/re_prog_test: project.json $(call target_sources,re_prog_test) $(SLJIT_DEPS)
+	$(C3C_BUILD) re_prog_test $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-re_prog_test
+
+.PHONY: test-native-regexp
+test-native-regexp: out/re_prog_test out/re_input_test
+	./out/re_prog_test
+	./out/re_input_test
+
 out/jit_capi: test/capi/jit.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/jit.c out/boomkat.a $(BK_LDLIBS) -o out/jit_capi
 

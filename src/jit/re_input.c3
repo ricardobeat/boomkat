@@ -15,6 +15,15 @@ struct ReInput {
     bool  unicode;  // u or v flag: a surrogate pair is one code point
 }
 
+const uint RE_HIGH_SURROGATE_FIRST = 0xD800;
+const uint RE_HIGH_SURROGATE_LAST = 0xDBFF;
+const uint RE_LOW_SURROGATE_FIRST = 0xDC00;
+const uint RE_LOW_SURROGATE_LAST = 0xDFFF;
+
+fn bool re_is_high_surrogate(uint c) @inline => c >= RE_HIGH_SURROGATE_FIRST && c <= RE_HIGH_SURROGATE_LAST;
+
+fn bool re_is_low_surrogate(uint c) @inline => c >= RE_LOW_SURROGATE_FIRST && c <= RE_LOW_SURROGATE_LAST;
+
 // The code unit at pos, or 0 past the end of the subject.
 fn uint ReInput.unit(&self, uint pos) @inline {
     if (pos >= self.len) return 0;
@@ -27,11 +36,11 @@ fn uint ReInput.unit(&self, uint pos) @inline {
 fn uint ReInput.code_point(&self, uint* pos) {
     if (*pos >= self.len) return 0;
     uint c = self.unit(*pos);
-    if (self.unicode && (c >> 10) == (0xD800 >> 10)) {
+    if (self.unicode && re_is_high_surrogate(c)) {
         uint lo = self.unit(*pos + 1);
-        if ((lo >> 10) == (0xDC00 >> 10)) {
+        if (re_is_low_surrogate(lo)) {
             *pos += 2;
-            return 65536 + 1024 * (c & 1023) + (lo & 1023);
+            return 0x10000 + ((c - RE_HIGH_SURROGATE_FIRST) << 10) + (lo - RE_LOW_SURROGATE_FIRST);
         }
     }
     *pos += 1;
@@ -43,11 +52,11 @@ fn uint ReInput.code_point(&self, uint* pos) {
 fn uint ReInput.prev_code_point(&self, uint* pos) {
     if (*pos == 0) return 0;
     uint c = self.unit(*pos - 1);
-    if (self.unicode && (c >> 10) == (0xDC00 >> 10) && *pos >= 2) {
+    if (self.unicode && re_is_low_surrogate(c) && *pos >= 2) {
         uint hi = self.unit(*pos - 2);
-        if ((hi >> 10) == (0xD800 >> 10)) {
+        if (re_is_high_surrogate(hi)) {
             *pos -= 2;
-            return 65536 + 1024 * (hi & 1023) + (c & 1023);
+            return 0x10000 + ((hi - RE_HIGH_SURROGATE_FIRST) << 10) + (c - RE_LOW_SURROGATE_FIRST);
         }
     }
     *pos -= 1;
