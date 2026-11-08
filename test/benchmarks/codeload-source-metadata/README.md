@@ -96,3 +96,86 @@ AST/resolution work separately from body materialization. These experiments
 do not justify a general lazy-parser rewrite yet. For liveness, collect sweep
 counts and bitset sizes before choosing between a worklist or block-level
 analysis; removing one word traversal was insufficient here.
+
+## Frontend phase split
+
+`FRONTEND_STATS` times `index_begin` split on `ParseOptions.function_body`,
+whole `materialize_function_body`, and `CompilerContext.finish`, and counts
+liveness calls, sweeps, instruction visits and bitset words.
+`test/benchmarks/codeload-source-metadata/phase_isolation.py` runs the
+equal-work drivers against `out/boomkat_relexstats` (RELEX_STATS +
+FRONTEND_STATS, no TRACE_VM, so eval deferral stays on) and reports medians.
+Three runs per case:
+
+| Counter | 100 jQuery loads | 1,000 Closure loads |
+|---|---:|---:|
+| total elapsed | 595 ms | 296 ms |
+| initial full-unit frontend | 296.1 ms (49.8%) | 173.4 ms (58.6%) |
+| materialization, frontend only | 34.9 ms | 15.4 ms |
+| materialization, including emit and finish | 69.2 ms (11.6%) | 37.4 ms (12.7%) |
+| finish, all functions | 105.3 ms (17.7%) | 41.2 ms (13.9%) |
+| materializations | 4,100 (41/load) | 2,000 (2/load) |
+| lexed bytes, initial / materialize | 9.38 MB / 0.79 MB | 9.50 MB / 0.78 MB |
+| liveness calls / sweeps | 19,890 / 46,797 | 11,090 / 25,197 |
+| liveness visits / word traversals | 3.55M / 7.11M | 1.98M / 2.89M |
+| largest bitset | 7 words | 2 words |
+
+The initial full-unit parse, resolution and validation dominates, not body
+materialization: only 41 of jQuery's ordinary bodies are ever called, and they
+re-lex 0.79 MB against 9.38 MB for the initial pass. The larger lever is the
+initial frontend. Liveness runs about 2.3 times per finished function, 92% of
+calls have a one-word (<= 32 register) set, and 31% carry a back edge, so a
+block-level or worklist rewrite cannot help much; fewer calls or fewer sweeps
+could. Note `relex_source` counts each lexer's full slice, so the per-kind
+`src=` figures double-count units that create both an outer and an inner
+lexer; compare `lexed` bytes across kinds instead.
+
+## Retained frontend changes
+
+Measured with `test/benchmarks/eval-lazy/measure.py`, five alternating pairs,
+production `boomkat-full-icu`. Compare only paired rows within a batch: absolute
+scores drift between batches, so the cumulative line gives a range.
+
+| Change | CodeLoad | Closure ms | jQuery ms |
+|---|---:|---:|---:|
+| `Early` reserved-word bitsets by atom id | +2.3% | −1.9% | −2.1% |
+| Compile stack floor cached per unit (with the row above) | +5.1% | −7.9% | −4.8% |
+| Retained pair against `fs-baseline`, three batches | +5.1% / +6.9% / +8.5% | −7.9% / −7.3% / −6.5% | −4.8% / −5.3% / −3.3% |
+
+Fixed-work peak RSS is unchanged (Closure 153.3 MB, jQuery 168.1 MB). Timed
+CodeLoad peak RSS rises (700 -> 755 MB) because the faster engine performs more
+loads.
+
+`Early` now tests reserved words with a `bool[]` indexed by atom id instead of
+two linear scans (up to 40 keywords and 9 strict-reserved words) per identifier.
+`compile_stack_floor()` resolves the per-thread stack floor once, and the
+parser, resolver and early-error passes cache it, dropping a thread-local load
+from each per-node recursion guard. The bitsets are sized after `Early.init`
+interns every reserved word; atoms interned later (private names) are never
+reserved, and a lookup past the end reads false.
+
+Validation: local suite 682 scripts, 33 modules and 39 private-field cases;
+golden bytecode 32/32; test262 `language/{reserved-words,future-reserved-words,
+keywords,identifiers,literals,eval-code,function-code}` (27, 55, 25, 268, 536,
+347, 217 tests) all pass with no unexpected compile errors. A full test262 run
+was not performed in this session.
+
+## Rejected experiments
+
+Each was measured with five alternating pairs and reverted.
+
+- Liveness second-flavor skip: run the retarget liveness only when an `LDREG`
+  with a live destination survives (`moveelim_needs_retarget`). CodeLoad
+  32,085 -> 31,976 (−0.3%), Closure −0.6%, jQuery −0.6%. The pre-scan costs more
+  than the skipped pass saves because retarget candidates are common.
+- Regexp-literal validation cache keyed by pattern atom: neutral, +0.5% / +0.7%
+  / +0.6% at five pairs and +0.2% / −0.3% / +0.3% at seven. It removes redundant
+  `lre_compile` calls but does not move the benchmark, so the added per-`Early`
+  state was not kept.
+- Deferring only bodies under 32 source bytes (compile tiny bodies eagerly):
+  CodeLoad 32,203 -> 31,333 (−2.7%), Closure 307 -> 319 ms (+3.9%), jQuery
+  −0.6%. Eager bodies cost more than the saved materializations.
+- Atom-id threading of codegen name lookups: not attempted. The contained subset
+  (one `atoms.find` per declaration, atom compares in `resolve_var`) lands within
+  noise; the real win needs names carried as atoms through codegen, a larger
+  refactor.

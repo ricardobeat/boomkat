@@ -62,9 +62,10 @@ struct Early {
     uint a_constructor;
     uint a_prototype;
     uint a_proto;
-    uint[9] strict_reserved;
-    uint[40] keywords;
-    uint keyword_count;
+    // Dense bitsets indexed by atom id, sized after init. Atoms interned later
+    // (private names) are never reserved words, so a lookup past the end is false.
+    bool[] strict_bits;
+    bool[] keyword_bits;
     // Cached native stack floor for node(); set once per unit.
     uptr stack_floor;
 }
@@ -84,16 +85,31 @@ fn void Early.init(&self, Ast* ast) {
     self.a_prototype = ast.atoms.intern("prototype");
     self.a_proto = ast.atoms.intern("__proto__");
     String[9] sr = { "implements", "interface", "let", "package", "private", "protected", "public", "static", "yield" };
-    for (usz i = 0; i < 9; i++) self.strict_reserved[i] = ast.atoms.intern((char[])sr[i]);
+    uint[9] sr_atoms;
+    for (usz i = 0; i < 9; i++) sr_atoms[i] = ast.atoms.intern((char[])sr[i]);
     String[] kw = {
         "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do",
         "else", "enum", "export", "extends", "false", "finally", "for", "function", "if", "import", "in",
         "instanceof", "new", "null", "return", "super", "switch", "this", "throw", "true", "try",
         "typeof", "var", "void", "while", "with",
     };
-    self.keyword_count = 0;
+    uint[40] kw_atoms;
+    uint kw_count = 0;
     foreach (w : kw) {
-        self.keywords[self.keyword_count++] = ast.atoms.intern((char[])w);
+        kw_atoms[kw_count++] = ast.atoms.intern((char[])w);
+    }
+    // Intern every reserved word before sizing the bitsets so the atom table is
+    // stable and each id indexes inside its bitset.
+    sz atom_cap = (sz)ast.atoms.count();
+    self.strict_bits = mem::new_array(bool, atom_cap);
+    mem::clear(self.strict_bits.ptr, atom_cap * bool::size);
+    for (usz i = 0; i < 9; i++) {
+        self.strict_bits[sr_atoms[i]] = true;
+    }
+    self.keyword_bits = mem::new_array(bool, atom_cap);
+    mem::clear(self.keyword_bits.ptr, atom_cap * bool::size);
+    for (uint i = 0; i < kw_count; i++) {
+        self.keyword_bits[kw_atoms[i]] = true;
     }
 }
 
@@ -101,6 +117,8 @@ fn void Early.free(&self) {
     self.labels.free();
     self.privates.free();
     self.names.free();
+    mem::free(self.strict_bits.ptr);
+    mem::free(self.keyword_bits.ptr);
 }
 
 fn void Early.fail_at(&self, uint pos, String msg) {
@@ -117,17 +135,11 @@ fn String Early.error_message(&self) {
 }
 
 fn bool Early.is_strict_reserved(&self, uint atom) {
-    foreach (a : self.strict_reserved) {
-        if (a == atom) return true;
-    }
-    return false;
+    return (usz)atom < self.strict_bits.len && self.strict_bits[atom];
 }
 
 fn bool Early.is_keyword(&self, uint atom) {
-    for (uint i = 0; i < self.keyword_count; i++) {
-        if (self.keywords[i] == atom) return true;
-    }
-    return false;
+    return (usz)atom < self.keyword_bits.len && self.keyword_bits[atom];
 }
 
 // ---- identifiers ----
