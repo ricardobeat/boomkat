@@ -24,6 +24,11 @@ fn bool re_is_high_surrogate(uint c) @inline => c >= RE_HIGH_SURROGATE_FIRST && 
 
 fn bool re_is_low_surrogate(uint c) @inline => c >= RE_LOW_SURROGATE_FIRST && c <= RE_LOW_SURROGATE_LAST;
 
+// The line terminators of the language: LF, CR and the two Unicode separators.
+fn bool re_is_line_terminator(uint c) @inline {
+    return c == (uint)'\n' || c == (uint)'\r' || c == 0x2028 || c == 0x2029;
+}
+
 // The code unit at pos, or 0 past the end of the subject.
 fn uint ReInput.unit(&self, uint pos) @inline {
     if (pos >= self.len) return 0;

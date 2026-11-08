@@ -317,6 +317,34 @@
         "vendor/sljit/sljit_src"
       ]
     },
+    "re_class_test": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/re_class_test.c3"
+      ],
+      "opt": "O1",
+      "optsize": "small",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "re_prog_test": {
       "type": "executable",
       "sources": [

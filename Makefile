@@ -587,9 +587,10 @@ out/re_prog_test: project.json $(call target_sources,re_prog_test) $(SLJIT_DEPS)
 	@rm -f out/.profile-re_prog_test
 
 .PHONY: test-native-regexp
-test-native-regexp: out/re_prog_test out/re_input_test
+test-native-regexp: out/re_prog_test out/re_input_test out/re_class_test
 	./out/re_prog_test
 	./out/re_input_test
+	./out/re_class_test
 
 out/jit_capi: test/capi/jit.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/jit.c out/boomkat.a $(BK_LDLIBS) -o out/jit_capi
