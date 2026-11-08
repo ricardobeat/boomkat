@@ -19,6 +19,7 @@ module boomkat::jit @feat(SLJIT);
 
 import boomkat::vm;
 import boomkat::bytecode;
+import boomkat::compiler;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::types;
@@ -244,6 +245,10 @@ struct OptPolicy {
     ulong[OptExit::values.len] exits;
     // Exits taken at each instruction opcode, for attributing a benchmark's exits to an opcode.
     ulong[Opcode::values.len] exit_ops;
+    // Field sites left to the baseline by reason, and the opcodes of functions whose control flow
+    // graph the optimizing tier could not build.
+    ulong[OptFieldSkip::values.len] field_skipped;
+    ulong[Opcode::values.len] refused_cfg_ops;
 }
 
 // Count an entry into native code of `f` (one for each `credit`) toward
@@ -463,10 +468,26 @@ fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc) {
     return false;
 }
 
+// The opcode of `f` whose control flow the builder does not support, or NOP when it refused for a
+// shape of the graph (a bad branch target, a size) that the refusal counts already cover.
+fn Opcode opt_cfg_refusal_op(CompiledFunction* f) {
+    for (uint pc = 0; pc < f.code_count;) {
+        bytecode::DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
+        if (!d.valid || d.next_pc <= pc) return Opcode.NOP;
+        if (!compiler::bytecode_cfg_control_supported(d.insn.op)) return d.insn.op;
+        pc = d.next_pc;
+    }
+    return Opcode.NOP;
+}
+
 fn bool opt_refuse(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op) {
     h.opt.refused++;
     h.opt.refused_why[why.ordinal]++;
     if (why == OptRefuse.OPCODE) h.opt.refused_ops[op.ordinal]++;
+    if (why == OptRefuse.CFG) {
+        Opcode at = opt_cfg_refusal_op(f);
+        if (at != Opcode.NOP) h.opt.refused_cfg_ops[at.ordinal]++;
+    }
     f.opt_state = OPT_REFUSED;
     if (h.opt.log) {
         io::eprintf("opt refuse ");
@@ -930,6 +951,12 @@ fn void opt_print_stats(Heap* h) {
     }
     foreach (op : Opcode::values) {
         if (p.exit_ops[op.ordinal] != 0) io::eprintfn("opt exit op %s: %d", op, p.exit_ops[op.ordinal]);
+    }
+    foreach (r : OptFieldSkip::values) {
+        if (p.field_skipped[r.ordinal] != 0) io::eprintfn("opt field skipped %s: %d", r.label, p.field_skipped[r.ordinal]);
+    }
+    foreach (op : Opcode::values) {
+        if (p.refused_cfg_ops[op.ordinal] != 0) io::eprintfn("opt refused cfg op %s: %d", op, p.refused_cfg_ops[op.ordinal]);
     }
     foreach (r : OptRefuse::values) {
         if (p.refused_why[r.ordinal] != 0) io::eprintfn("opt refused %s: %d", r.label, p.refused_why[r.ordinal]);

@@ -53,6 +53,18 @@ enum OptRefuse : char (String label) {
     COMPILE {"code generation"},
 }
 
+// Why a field instruction was left to the baseline instead of being lowered (--jit-stats).
+enum OptFieldSkip : char (String label) {
+    NO_CACHE {"no cache"},
+    BANNED {"site banned"},
+    PROTO {"inherited chain"},
+    CHAIN {"chain not cached"},
+    ABSENT {"absent or accessor"},
+    LENGTH {"length"},
+    KEY {"key is not the site constant"},
+    POLY_FULL {"more shapes than compared"},
+}
+
 // Why a call site with a known callee is not inlined (--jit-stats counts them).
 enum OptInlineReject : char (String label) {
     POLY {"polymorphic call"},
@@ -1189,27 +1201,27 @@ fn void OptBuild.ask_object(&self, uint reg) {
 // plain object that the optimized code can read by slot, else null.
 fn hobject::ICEntry* OptBuild.own_field(&self, bool inherited = false) {
     CompiledFunction* f = self.cur_f();
-    if (f.ic_entries == null) return null;
+    if (f.ic_entries == null) { self.h.opt.field_skipped[OptFieldSkip.NO_CACHE.ordinal]++; return null; }
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
     void* key = (void*)ic.key.borrow();
-    if (key == null || ic.shape_id == heap::SHAPE_NONE) return null;
+    if (key == null || ic.shape_id == heap::SHAPE_NONE) { self.h.opt.field_skipped[OptFieldSkip.NO_CACHE.ordinal]++; return null; }
     // A site that has exited repeatedly is left to the baseline's cache.
-    if (opt_site_banned(self.f, f, self.next_pc - 1)) return null;
+    if (opt_site_banned(self.f, f, self.next_pc - 1)) { self.h.opt.field_skipped[OptFieldSkip.BANNED.ordinal]++; return null; }
     // A read may also name a data property of a prototype, by the epoch guard or link snapshot of the baseline.
     bool proto = inherited && ic.has_proto && ic.prop_idx != hobject::IC_PROP_MISSING
         && (ic.chain_len == hobject::IC_CHAIN_EPOCH || (ic.chain_len > 0 && (uint)ic.chain_len <= hobject::IC_MAX_CHAIN));
-    if (ic.has_proto && !proto) return null;
-    if (!proto && ic.chain_len != 0 && ic.chain_len != hobject::IC_CHAIN_POLY) return null;
-    if (ic.prop_idx == hobject::IC_PROP_ABSENT || ic.prop_flags.is_accessor) return null;
-    if (key == (void*)self.h.strs[heap::BuiltinStr.LENGTH]) return null;
+    if (ic.has_proto && !proto) { self.h.opt.field_skipped[OptFieldSkip.PROTO.ordinal]++; return null; }
+    if (!proto && ic.chain_len != 0 && ic.chain_len != hobject::IC_CHAIN_POLY) { self.h.opt.field_skipped[OptFieldSkip.CHAIN.ordinal]++; return null; }
+    if (ic.prop_idx == hobject::IC_PROP_ABSENT || ic.prop_flags.is_accessor) { self.h.opt.field_skipped[OptFieldSkip.ABSENT.ordinal]++; return null; }
+    if (key == (void*)self.h.strs[heap::BuiltinStr.LENGTH]) { self.h.opt.field_skipped[OptFieldSkip.LENGTH.ordinal]++; return null; }
     if (self.w.op != Opcode.GETTHISC) {
-        if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string()) return null;
-        if (f.constants[self.w.c].get_heapptr() != key) return null;
+        if (self.w.c >= f.const_count || !f.constants[self.w.c].is_string()) { self.h.opt.field_skipped[OptFieldSkip.KEY.ordinal]++; return null; }
+        if (f.constants[self.w.c].get_heapptr() != key) { self.h.opt.field_skipped[OptFieldSkip.KEY.ordinal]++; return null; }
     }
     if (proto) return ic;
     // More shapes than the code compares leave the site to the baseline.
     OptPoly p;
-    if (!field_shapes(ic, &p)) return null;
+    if (!field_shapes(ic, &p)) { self.h.opt.field_skipped[OptFieldSkip.POLY_FULL.ordinal]++; return null; }
     return ic;
 }
 
