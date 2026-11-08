@@ -1283,6 +1283,18 @@ fn void? CompilerContext.hoist_decls_in(&self, uint scope, bool is_global, bool 
 
 }
 
+// A hoisted declaration is compiled before the deferral gate in
+// gen_compile_function runs, so it needs the same decision here: a body the
+// parser only recorded must become a template, or it would compile as empty.
+fn bool CompilerContext.hoist_can_defer(&self, uint fnf) {
+    return ast::index_state.defer_functions
+        && (fnf & (ast::FNF_GENERATOR | ast::FNF_ASYNC)) == 0
+        && (fnf & ast::FNF_SIMPLE_PARAMS) != 0
+        && !self.disable_optimize && !$feat(TRACE_VM) && !self.in_class_body
+        && !self.module_goal && !self.lexer.ts_mode && !self.lexer.jsx.enabled
+        && self.private_name_table.count == 0;
+}
+
 // Compile the function declaration of `s` at function level and queue it for the block prologue.
 fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
     ast::AstIndex* idx = ast::index_state;
@@ -1341,7 +1353,12 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
 
     self.is_async = hoist_is_async;
     uint ast_scope = idx.function_scope(s.decl);
-    CompiledFunction* inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: ast_scope)!;
+    CompiledFunction* inner;
+    if (self.hoist_can_defer(fnf)) {
+        inner = self.defer_function(ast_scope, fn_name2)!;
+    } else {
+        inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: ast_scope)!;
+    }
     self.gen_line(idx.tree.field(rec, ast::FN_SRC_END) - 1);
     self.is_async = false;
 
@@ -1423,7 +1440,12 @@ fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) 
         self.is_constructable = !self.is_generator && !hoist_is_async;
 
         self.is_async = hoist_is_async;
-        CompiledFunction* inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: idx.function_scope(s.decl))!;
+        CompiledFunction* inner;
+        if (self.hoist_can_defer(fnf)) {
+            inner = self.defer_function(idx.function_scope(s.decl), fn_name2)!;
+        } else {
+            inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: idx.function_scope(s.decl))!;
+        }
         self.gen_line_end(s.decl);
         self.is_async = false;
 

@@ -73,6 +73,7 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     ast::AstIndex* idx = ast::index_begin(source, h, {
         .function_body = true, .function_start = f.lazy_paren - 1,
         .strict = f.flags.is_strict,
+        .defer_functions = true,
     }, f.src_buf);
     defer ast::index_end(idx);
     require_ast(&lex, idx)!;

@@ -155,6 +155,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             .allow_super_call = allow_super_call,
             .in_class_field_init = is_direct_eval && caller_forbids_arguments,
             .private_names = private_names,
+            .defer_functions = true,
         });
     }
     defer if (cmp != null) ast::index_end(cmp);

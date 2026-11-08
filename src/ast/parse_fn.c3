@@ -5,7 +5,28 @@ import boomkat::features;
 
 import boomkat::lexer;
 import boomkat::frontendstats;
+import boomkat::bytecode;
+import boomkat::ast::vec;
 import std::time;
+
+
+// ---- deferred-body index ----
+//
+// A function body `gen` keeps as a deferred template is parsed with full grammar
+// but its nodes are discarded. These flags and the recorded references on its
+// stub are what an enclosing compile needs: the resolver marks a binding captured
+// when the body references it, and a dynamic scope inside the body reaches every
+// function around it.
+const uint BODY_HAS_EVAL = 1;
+const uint BODY_HAS_WITH = 2;
+// The body mentions an identifier spelled with a Unicode escape, so its
+// references cannot be matched to a binding by text: the enclosing compile
+// has to assume every binding it could reach is captured.
+const uint BODY_HAS_ESCAPE = 4;
+// Set on a function body's BLOCK node that holds only a stub: `gen` must keep it
+// as a template, and the resolver takes its references from the stub's record
+// instead of from nodes that are not there.
+const char BODY_RECORDED = 0x80;
 
 // ---- functions ----
 
@@ -99,6 +120,11 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
     self.ctx.in_params = false;
     self.ts_annotation()!;
     uint body = 0;
+    bool skip_ok = self.defer_bodies
+        && (body_kind == frontendstats::FS_BODY_DECL || body_kind == frontendstats::FS_BODY_UEXPR)
+        && (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0
+        && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled
+        && self.params_are_simple(params);
     $if $feat(FRONTEND_STATS):
         time::Time fs_start = time::now();
         uint fs_nodes = (uint)self.ast.tags.len;
@@ -107,7 +133,7 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
     if (self.lex.ts_mode && self.tok.type != TokenType.LBRACE) {
         self.semicolon()!;
     } else {
-        body = self.function_block(&fnf)!;
+        body = self.function_block(&fnf, skip_ok, params)!;
     }
     $if $feat(FRONTEND_STATS):
         frontendstats::fs_body_leave(body_kind, (uint)self.ast.tags.len - fs_nodes,
@@ -167,21 +193,119 @@ fn uint? Parser.formal_params(&self) {
     return self.scratch_list(mark);
 }
 
+// Whether `fn`'s body was recorded rather than parsed, so `gen` can only compile
+// it through its template and the resolver has to read the body index.
+fn bool Ast.body_was_recorded(&self, uint fn_node) {
+    uint rec = self.rhs.data[fn_node];
+    if (rec == 0) return false;
+    uint body = self.field(rec, FN_BODY);
+    if (body == 0) return false;
+    return (self.flags.data[body] & BODY_RECORDED) != 0;
+}
+
+// One Early per unit for deferred-body validation: init interns every reserved
+// word and allocates its bitsets, too costly to repeat per body. Keyed on the Ast
+// and reset at each unit's parse_program so a reused Ast address cannot leave
+// stale atom ids behind.
+tlocal Early dv_early_inst;
+tlocal Ast* dv_early_ast;
+fn void dv_early_reset() { dv_early_ast = null; }
+fn Early* dv_early(Ast* ast) {
+    if (dv_early_ast != ast) {
+        if (dv_early_ast != null) dv_early_inst.free();
+        dv_early_inst.init(ast);
+        dv_early_ast = ast;
+    }
+    dv_early_inst.reset_run();
+    return &dv_early_inst;
+}
+
+// Whether the body's nodes in [start, root] mention an identifier spelled with a
+// Unicode escape. Such a name cannot be matched to a binding by text, so the
+// enclosing compile must assume every binding it could reach is captured.
+fn bool ast_has_escape(Ast* ast, uint start, uint root) {
+    for (uint n = start; n <= root; n++) {
+        if (ast.tags.data[n] == NodeTag.IDENT && (ast.flags.data[n] & IDENT_ESCAPED) != 0) return true;
+    }
+    return false;
+}
+
+// Validate a body `gen` keeps as a deferred template and keep only what its
+// enclosing compile needs. The body is parsed with full grammar, so every syntax
+// and early error is reported at eval time even though the function is never
+// called. A nested resolver over the body's own nodes yields the same
+// declaration and reference facts an ordinary compile would, so the engine's
+// Early checks apply unchanged: `conflicts` rejects redeclarations and `run`
+// rejects structural errors. The nodes are then discarded; `dv_refs` and
+// `dv_flags` carry what the whole-unit resolver needs to mark captures and
+// dynamic scopes without walking a tree that is gone.
+fn void? Parser.dv_validate(&self, uint body, uint params) {
+    Resolver vr;
+    vr.init(self.ast);
+    ushort fflags = self.ctx.strict ? SCOPE_STRICT : 0;
+    uint fs = vr.push_scope(ScopeKind.FUNCTION, body, fflags, 0);
+    sz pc = self.ast.list_len(params);
+    for (uint i = 0; i < (uint)pc; i++) vr.bind_pattern(self.ast.list_item(params, i), DeclKind.PARAM);
+    vr.list(self.ast.lhs.data[body]);
+    // The names the body references, over-approximated as every reference it
+    // makes, including those of nested recorded bodies (folded in by
+    // recorded_body). A name the body itself declares resolves locally and
+    // captures nothing; only names reaching an enclosing scope mark a capture,
+    // which the whole-unit resolve_refs decides against the real enclosing scopes.
+    self.dv_refs.truncate(0);
+    for (sz i = 0; i < (sz)vr.refs.len; i++) self.dv_refs.push(vr.refs.data[i].atom);
+    // The body's own dynamic-scope facts, aggregated with those of nested bodies.
+    char flags = vr.agg_flags;
+    if ((vr.scopes.data[fs].flags & SCOPE_HAS_EVAL) != 0) flags |= BODY_HAS_EVAL;
+    if ((vr.scopes.data[fs].flags & SCOPE_HAS_WITH) != 0) flags |= BODY_HAS_WITH;
+    self.dv_flags = flags;
+    Early* e = dv_early(self.ast);
+    if (!e.run(body, {}) || !e.conflicts(&vr)) {
+        fault err = self.fail_at(e.err_pos, e.error_message());
+        vr.free();
+        return err~;
+    }
+    vr.free();
+}
+
 // `{ directives statements }` of a function body. Sets FNF_USE_STRICT and FNF_STRICT.
-fn uint? Parser.function_block(&self, uint* fnf) {
+fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint params = 0) {
     uint pos = self.tok.pos;
     self.expect(TokenType.LBRACE)!;
     uint mark = self.scratch_mark();
+    AstMark amark = self.ast.mark();
     char flags = 0;
     self.directive_prologue(mark, &flags)!;
     if ((flags & PROGRAM_STRICT) != 0) *fnf |= FNF_USE_STRICT;
+    bool defer_body = skip_ok && (flags & PROGRAM_STRICT) == 0 && !self.ctx.strict
+        && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled;
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
         self.scratch_push(self.statement_list_item_in_block()!);
     }
     if (self.ctx.strict) *fnf |= FNF_STRICT;
     self.next()!;
-    return self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
+    uint block = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
+    if (!defer_body) return block;
+    // A body `gen` keeps as a deferred template. Parse it in full above so every
+    // syntax and early error is reported at eval time, then discard its nodes and
+    // keep only the names it references and its dynamic-scope facts. The template
+    // re-parses this source on first call.
+    self.dv_validate(block, params)!;
+    if (ast_has_escape(self.ast, amark.nodes, block)) self.dv_flags |= BODY_HAS_ESCAPE;
+    char body_flags = self.dv_flags;
+    self.ast.truncate(amark);
+    self.scratch.truncate(mark);
+    uint nrefs = (uint)self.dv_refs.len;
+    uint at = self.ast.add_record(2 + nrefs);
+    self.ast.set_field(at, 0, body_flags);
+    self.ast.set_field(at, 1, nrefs);
+    for (sz i = 0; i < self.dv_refs.len; i++) {
+        self.ast.set_field(at, 2 + (uint)i, self.dv_refs.data[i]);
+    }
+    uint stub = self.node(NodeTag.BLOCK, pos, 0, at);
+    self.ast.set_flags(stub, BODY_RECORDED);
+    return stub;
 }
 
 // ---- binding patterns ----

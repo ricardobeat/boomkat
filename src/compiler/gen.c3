@@ -1489,7 +1489,7 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         && !self.disable_optimize && !$feat(TRACE_VM) && !self.in_class_body
         && !self.module_goal && !self.lexer.ts_mode && !self.lexer.jsx.enabled
         && self.private_name_table.count == 0
-        && n != self.eager_function) {
+        && (n != self.eager_function || tree.body_was_recorded(n))) {
         return self.defer_function(scope, name);
     }
     CompiledFunction* inner = tree.tags.data[n] == NodeTag.ARROW

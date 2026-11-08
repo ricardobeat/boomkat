@@ -32,6 +32,9 @@ struct ParseOptions {
     bool function_body;
     uint function_start;
     uint function_flags;
+    // The compiler keeps eligible function bodies as source-backed deferred
+    // templates, so this pass can record them instead of parsing them.
+    bool defer_functions;
 }
 
 // Per-function parse context, saved and restored around every function body.
@@ -63,6 +66,8 @@ struct Parser {
     fault peek_fault;
     FnCtx ctx;
     bool is_module;
+    // Parse deferrable bodies in full for validation but discard their nodes.
+    bool defer_bodies;
     // `in` is not an operator while a for-statement head's init expression parses.
     bool no_in;
     // The class being parsed sits in sloppy code; see Parser.strict_thunk.
@@ -81,6 +86,18 @@ struct Parser {
     uint ns_name;            // the namespace object the parser is inside
     bool ts_asserted;         // the last expression held an `as` or `satisfies` assertion
     uint jsx_used;           // JSX_USES_* bits: the jsx-runtime imports to inject
+    // Deferred-body validation. A body `gen` keeps as a template is parsed with
+    // full grammar but its nodes are discarded, so its declarations and the names
+    // it references are tracked here rather than in the resolver's node walk.
+    bool dv_on;
+    Vec{uint} dv_names;      // declared atom per entry
+    Vec{char} dv_kinds;      // DvKind per entry
+    Vec{uint} dv_scope;      // scope id of each entry
+    Vec{uint} dv_scope_func; // per scope: its function-scope id
+    Vec{uint} dv_scope_mark; // per scope: first entry recorded while open
+    uint dv_cur;             // current scope id
+    Vec{uint} dv_refs;       // atoms the body references (over-approx: every ident)
+    char dv_flags;           // BODY_HAS_* bits seen in the body
     char[256] err_msg;
     uint err_len;
     uint err_pos;
@@ -163,6 +180,23 @@ fn void? Parser.next(&self, bool as_name = false) {
         return;
     }
     self.tok = self.lex_one()!;
+}
+
+// Consume one token for a recorded body: like `next`, but through
+// `Lexer.next_token`, which feeds the scan hint that decides regex-versus-
+// division and template continuation from the token stream. A token peeked
+// before the hint was on is handed to the hint on its way out.
+fn void? Parser.record_next(&self) {
+    self.prev = self.tok;
+    if (self.has_peek) {
+        self.has_peek = false;
+        self.tok = self.peek_tok;
+        self.lex.hint.update(&self.tok);
+        return;
+    }
+    Token? t = self.lex.next_token();
+    if (catch err = t) return self.fail("invalid or unexpected token")~;
+    self.tok = t;
 }
 
 // The token after the current one.
@@ -372,6 +406,8 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.lex = lex;
     p.stack_floor = compiler::compile_stack_floor();
     p.is_module = opts.is_module;
+    p.defer_bodies = opts.defer_functions;
+    dv_early_reset();
     p.scratch.init(256);
     p.ts_exports.init(8);
     p.ts_param_props.init(8);

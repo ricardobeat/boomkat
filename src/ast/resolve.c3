@@ -101,7 +101,8 @@ const char REF_WRITE = 1;
 const char REF_APPLY_ARGUMENTS = 2;
 
 struct Ref {
-    uint node;
+    uint node;    // 0 for a reference taken from the body index
+    uint atom;    // the name, used when there is no node to read it from
     uint scope;
     char mode;
 }
@@ -139,6 +140,8 @@ struct Resolver {
     uint atom_eval;
     bool failed;
     uint err_pos;
+    // BODY_HAS_* seen while walking recorded bodies, folded up for the caller.
+    char agg_flags;
     // Cached native stack floor for node(); set once per unit.
     uptr stack_floor;
 }
@@ -153,6 +156,7 @@ fn void Resolver.init(&self, Ast* ast) {
     self.slots.init_zero(128);
     self.annexb.init(16);
     self.slot_count = 0;
+    self.agg_flags = 0;
     // Index 0 of each vector is the null entry.
     self.scopes.push({});
     self.bindings.push({});
@@ -271,11 +275,42 @@ fn bool Resolver.is_func_scope(&self, uint scope) @inline {
     return self.scopes.data[scope].func == scope;
 }
 
+// A body kept as a deferred template holds no nodes, so the references its code
+// makes live on the body's stub. Those are what mark an outer binding captured,
+// and what tell a dynamic scope which functions it reaches. Nested recorded
+// bodies already folded their references and flags into this one.
+fn void Resolver.recorded_body(&self, uint block) {
+    uint rec = self.ast.rhs.data[block];
+    if (rec == 0) return;
+    uint flags = self.ast.field(rec, 0);
+    uint nrefs = self.ast.field(rec, 1);
+    uint from_func = self.scopes.data[self.cur].func;
+    // These references resolve later, with the rest: a binding declared after
+    // the body in the same function still has to see them.
+    for (uint i = 0; i < nrefs; i++) {
+        uint atom = self.ast.field(rec, 2 + i);
+        self.refs.push({ .node = 0, .atom = atom, .scope = self.cur, .mode = REF_READ });
+    }
+    self.agg_flags |= (char)flags;
+    if ((flags & BODY_HAS_EVAL) != 0) self.scopes.data[from_func].flags |= SCOPE_HAS_EVAL;
+    if ((flags & BODY_HAS_ESCAPE) != 0) self.scopes.data[from_func].flags |= SCOPE_CAPTURE_ALL;
+    if ((flags & BODY_HAS_WITH) != 0) {
+        // Every function around a `with` contains it.
+        uint wf = from_func;
+        while (true) {
+            self.scopes.data[wf].flags |= SCOPE_HAS_WITH;
+            uint wp = self.scopes.data[wf].parent;
+            if (wp == 0) break;
+            wf = self.scopes.data[wp].func;
+        }
+    }
+}
+
 // ---- references ----
 
 fn void Resolver.ref(&self, uint node, char mode = REF_READ) {
     uint name = self.ast.lhs.data[node];
-    self.refs.push({ .node = node, .scope = self.cur, .mode = mode });
+    self.refs.push({ .node = node, .atom = name, .scope = self.cur, .mode = mode });
     if (name == self.atom_eval) {
         self.scopes.data[self.var_scope()].flags |= SCOPE_HAS_EVAL;
         if (self.in_params) self.scopes.data[self.var_scope()].flags |= SCOPE_EVAL_PARAMS;
@@ -393,6 +428,8 @@ fn void Resolver.function(&self, uint n, bool is_arrow) {
         self.node(body);
     } else {
         self.scopes.data[fs].inner = self.ast.main_tok.data[body] + 1;
+        // A recorded body holds no nodes: its references come from the index.
+        if ((self.ast.flags.data[body] & BODY_RECORDED) != 0) self.recorded_body(body);
         self.list(self.ast.lhs.data[body]);
     }
     // A function expression's own name is visible in its body unless the body declares it.
@@ -768,7 +805,7 @@ fn bool is_apply_arguments_call(Ast* ast, uint call, uint atom_apply, uint atom_
 fn void Resolver.resolve_refs(&self) {
     for (uint i = 0; i < (uint)self.refs.len; i++) {
         Ref r = self.refs.data[i];
-        uint name = self.ast.lhs.data[r.node];
+        uint name = r.node != 0 ? self.ast.lhs.data[r.node] : r.atom;
         uint from_func = self.scopes.data[r.scope].func;
         bool dynamic = false;
         uint s = r.scope;
