@@ -330,7 +330,7 @@ fn uint OptBuild.pckey(&self) @inline => self.pc | ((self.cur_fn == 0 ? 0 : self
 // body may hold; zero for any other. The rest of the operands are not registers.
 fn uint inline_reg_mask(Opcode op) {
     switch (op) {
-        case LDINT: case LDCONST: case INC: case DEC: case GETTHISC: case PUTTHISC: case RET: case THROW:
+        case LDINT: case LDCONST: case INC: case DEC: case INC_LT: case GETTHISC: case PUTTHISC: case RET: case THROW:
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case GETVAR: case LDTHIS: case GETCAP:
             return 1;
@@ -411,7 +411,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
         case EQ: case NEQ: case SEQ: case SNEQ: case LT: case LE: case GT: case GE:
             *reads = (1u << w.b) | (1u << w.c);
             *writes = 1u << w.a;
-        case INC: case DEC:
+        case INC: case DEC: case INC_LT:
             *reads = 1u << w.a;
             *writes = 1u << w.a;
         case PUTPROPC:
@@ -1902,7 +1902,7 @@ fn bool OptBuild.inline_body_ok(&self, OptInlineSite* s, uint nargs) {
         switch (op) {
             case ADD: case ADD_FUSED: case SUB: case MUL: case DIV: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
             case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
-            case INC: case DEC: case UNM: case BNOT: case LT: case LE: case GT: case GE:
+            case INC: case DEC: case INC_LT: case UNM: case BNOT: case LT: case LE: case GT: case GE:
             case JMP_NLT..JMP_GE: case JMP_NLTI..JMP_SNEQI:
                 ok = (self.feedback() & (hobject::FB_STR | hobject::FB_OTHER)) == 0;
             case MOD:
