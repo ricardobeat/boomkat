@@ -582,6 +582,31 @@ out/jit_capi: test/capi/jit.c include/boomkat.h out/boomkat.a
 test-jit-api: out/jit_capi
 	./out/jit_capi
 
+# ASan builds of both tiers, for the differential suites: the JIT's own hosts
+# (baseline and optimizing compilers, the exit paths) are the C code the
+# sanitizer sees, so these are the builds that turn a lifetime bug behind a
+# compiled body into an immediate report.
+.PHONY: test-jit-asan
+test-jit-asan: out/boomkat_jit_asan
+	bash scripts/run_jit_diff.sh ./out/boomkat_jit_asan
+	JIT_FLAGS="--opt --opt-always --jit-stress" bash scripts/run_jit_diff.sh ./out/boomkat_jit_asan
+
+out/boomkat_jit_asan: project.json $(call target_sources,boomkat_jit_asan) $(SLJIT_DEPS)
+	$(C3C_BUILD) boomkat_jit_asan $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_jit_asan
+
+out/test262_runner_jit_asan: project.json $(call target_sources,test262_runner_jit_asan) $(SLJIT_DEPS)
+	$(C3C_BUILD) test262_runner_jit_asan $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-test262_runner_jit_asan
+
+out/jit_tiers_asan: project.json $(call target_sources,jit_tiers_asan) $(SLJIT_DEPS)
+	$(C3C_BUILD) jit_tiers_asan $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-jit_tiers_asan
+
+.PHONY: test-jit-api-asan
+test-jit-api-asan: out/jit_tiers_asan
+	./out/jit_tiers_asan
+
 out/binary_api: test/capi/binary.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/binary.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/binary_api

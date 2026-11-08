@@ -288,6 +288,96 @@
         "INTL_COLLATOR"
       ]
     },
+    "boomkat_jit_asan": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/boomkat.c3"
+      ],
+      "opt": "O1",
+      "optsize": "small",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
+    "jit_tiers_asan": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/jit_tiers.c3"
+      ],
+      "opt": "O1",
+      "optsize": "small",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "THREADED_DISPATCH",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
+    "test262_runner_jit_asan": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "cli/test262_runner.c3"
+      ],
+      "opt": "O1",
+      "optsize": "small",
+      "single-module": true,
+      "sanitize": "address",
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "TEST262_HELPERS",
+        "INTL",
+        "INTL_FULL",
+        "TEMPORAL",
+        "INTL_COLLATOR",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "boomkat_envstrict": {
       "type": "executable",
       "sources": [
