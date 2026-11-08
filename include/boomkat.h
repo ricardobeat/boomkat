@@ -673,6 +673,16 @@ BK_API void bk_clear_interrupt(bk_runtime runtime);
 /* Off by default, shared by all contexts. Zero disables JIT; nonzero enables it.
  * Returns BK_ERR_INVALID when enabling JIT in a build without JIT support. */
 BK_API bk_status bk_set_jit(bk_runtime runtime, int enable);
+/* The speculative optimizing tier on top of that baseline tier: it builds SSA
+ * graphs for hot functions and deoptimizes back into the baseline's frames.
+ * Off by default, needs bk_set_jit, and shared by all contexts. Returns
+ * BK_ERR_INVALID when the tier cannot run: no JIT in this build, or the JIT is
+ * off, since an optimized body leaves for baseline code. */
+BK_API bk_status bk_set_jit_opt(bk_runtime runtime, int enable);
+/* Test setting: the baseline tier compiles every function on its first entry
+ * and never retires an entry, so a fault surfaces in the compiler rather than
+ * behind the warmup policy. Shared by all contexts. */
+BK_API bk_status bk_set_jit_stress(bk_runtime runtime, int enable);
 
 /* GC and resource control. */
 enum { BK_GC_MINOR = 0, BK_GC_FULL = 1 };

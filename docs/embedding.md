@@ -113,6 +113,15 @@ and `bk_set_jit(runtime, 0)` to return to the interpreter. Enabling returns
 belongs to the engine thread, like the other runtime configuration calls.
 [build-flags.md](build-flags.md#jit) lists what a source build needs.
 
+The baseline tier compiles every function it accepts. On top of it,
+`bk_set_jit_opt(runtime, 1)` enables the speculative optimizing tier, which
+builds SSA graphs for hot functions and leaves for baseline code when a guard
+fails. It needs the baseline tier on, since that is what its exits run, and
+returns `BK_ERR_INVALID` otherwise. `bk_set_jit_stress(runtime, 1)` makes the
+baseline tier compile each function on its first entry and never retire an
+entry, so a fault appears in the compiler rather than behind the warmup
+policy; it is a test setting, not a production one.
+
 ## Values and exceptions
 
 A `bk_value` is an opaque 64-bit handle. Outside any local scope, value results

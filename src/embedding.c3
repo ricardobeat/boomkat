@@ -1169,6 +1169,25 @@ fn bool JsRuntime.set_jit(&self, bool enabled = true) {
     return self.rt != null && self.rt.heap.set_jit(enabled);
 }
 
+// The speculative optimizing tier, which compiles on top of the baseline and
+// leaves for its code: false reports an unavailable build, a dead runtime, or
+// the JIT off.
+fn bool JsRuntime.set_jit_opt(&self, bool enabled = true) {
+    $if $feat(SLJIT):
+        if (self.rt == null) return false;
+        if (enabled && !self.rt.heap.jit_enabled) return false;
+        self.rt.heap.opt.enabled = enabled;
+        return true;
+    $else
+        return self.rt != null && !enabled;
+    $endif
+}
+
+// Test setting: warm every function on its first entry and never retire an entry.
+fn bool JsRuntime.set_jit_stress(&self, bool enabled = true) {
+    return self.rt != null && self.rt.heap.set_jit_stress(enabled);
+}
+
 // Install poll handlers on the engine thread. They must not re-enter JS.
 alias InterruptHandler = heap::BkInterruptFn;
 

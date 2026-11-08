@@ -3093,6 +3093,28 @@ fn int bk_set_jit(void* rtp, int enabled) @export("bk_set_jit") {
     return BK_OK;
 }
 
+// The optimizing tier compiles on top of the baseline and leaves for its code, so it needs the
+// baseline tier on.
+fn int bk_set_jit_opt(void* rtp, int enabled) @export("bk_set_jit_opt") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt == null) return BK_ERR_INVALID;
+    $if $feat(SLJIT):
+        if (enabled != 0 && !rt.heap.jit_enabled) return fail(rt, BK_ERR_INVALID, "the optimizing tier needs the JIT");
+        rt.heap.opt.enabled = enabled != 0;
+        return BK_OK;
+    $else
+        if (enabled != 0) return fail(rt, BK_ERR_INVALID, "JIT is not available in this build");
+        return BK_OK;
+    $endif
+}
+
+fn int bk_set_jit_stress(void* rtp, int enabled) @export("bk_set_jit_stress") {
+    Runtime* rt = (Runtime*)rtp;
+    if (rt == null) return BK_ERR_INVALID;
+    if (!rt.heap.set_jit_stress(enabled != 0)) return fail(rt, BK_ERR_INVALID, "JIT is not available in this build");
+    return BK_OK;
+}
+
 // ============================================================================
 // GC and resource control
 // ============================================================================

@@ -575,6 +575,13 @@ test-api-lifecycle: out/boomkat.a
 out/jit_capi: test/capi/jit.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/jit.c out/boomkat.a $(BK_LDLIBS) -o out/jit_capi
 
+# The embedding JIT suites: the same workloads with the baseline tier alone and
+# with the optimizing tier on top of it, which is where deoptimization, inlining
+# and call nodes reach the C API. Wired into `test-capi`.
+.PHONY: test-jit-api
+test-jit-api: out/jit_capi
+	./out/jit_capi
+
 out/binary_api: test/capi/binary.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/binary.c \
 	   out/boomkat.a $(BK_LDLIBS) -o out/binary_api
