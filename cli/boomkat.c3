@@ -386,8 +386,11 @@ fn void print_usage() {
     $if $feat(SLJIT):
         io::printn("--jit enables native compilation of eligible hot functions (off by default).");
         io::printn("--jit-stress also compiles on the first call and keeps every entry (test setting).");
-        io::printn("--jit-stats prints baseline compile counts on exit.");
+        io::printn("--jit-stats prints the compile and exit counters of both tiers on exit.");
         io::printn("--jit-count-ops also counts inline and thunk executions per opcode (inflates code).");
+        io::printn("--opt adds the optimizing tier: SSA graphs for hot functions, exiting into the baseline.");
+        io::printn("--opt-always compiles on the first call instead of waiting for the hot threshold.");
+        io::printn("--opt-log traces each refusal, exit and discard; --opt-dump prints each graph.");
     $endif
     io::printn("--memory-limit=MB stops the process once its resident memory passes MB");
     io::printn("(default: 80% of physical memory; 0 removes the limit).");

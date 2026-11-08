@@ -42,6 +42,12 @@ slim and tiny profiles are not. Where it is unavailable, `--jit` reports an
 error and exits with status 2, the C setter returns `BK_ERR_INVALID`, and the
 C3 setter returns false; disabling always succeeds.
 
+The optimizing tier is a second layer on top of that baseline: `--opt` for one
+run, `bk_set_jit_opt(runtime, 1)` for an embedder. It compiles hot functions into
+SSA graphs and exits into the baseline code when a guard fails, so it needs the
+baseline tier on. [jit.md](jit.md) describes both tiers, their switches and
+their limits.
+
 A source build with `SLJIT` also compiles `vendor/sljit/sljit_src/sljitLir.c`
 and `src/jit/sljit_shim.c` with `vendor/sljit/sljit_src` on the include path;
 the `boomkat` target in `project.json` shows the settings.
