@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "libregexp.h"
+#include "libunicode.h"
 #include "re_wrapper.h"
 
 /* User-provided callbacks for libregexp */
@@ -478,6 +479,24 @@ int re_run_interruptible(ReCompiled* re, const void* input, int input_len,
     if (capture != capture_stack) free(capture);
     if (ret == 0) return RE_NO_MATCH;
     return RE_ERROR;
+}
+
+/* Predicates the native regexp backend needs. libregexp and libunicode keep
+ * them as static inline functions in their headers, which C3 cannot call, so
+ * they are exported here; the matcher itself is C3. */
+uint32_t re_canonicalize(uint32_t c, bool is_unicode)
+{
+    return (uint32_t)lre_canonicalize(c, is_unicode);
+}
+
+bool re_is_space(uint32_t c)
+{
+    return lre_is_space(c) != 0;
+}
+
+bool re_is_word_byte(uint32_t c)
+{
+    return c < 256 && lre_is_word_byte((uint8_t)c) != 0;
 }
 
 void re_free(ReCompiled* re)

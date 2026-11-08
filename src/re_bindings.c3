@@ -27,3 +27,11 @@ extern fn int re_run_interruptible(void* re, void* input, int input_len,
     int start_offset, int input_wide,
     int* out_start, int* out_end, int* out_num_captures,
     int* caps_start, int* caps_end, int max_captures, ReInterrupt* interrupt);
+
+/* The predicates the native regexp backend needs, which libregexp and
+ * libunicode keep as static inline functions in their headers. */
+extern fn uint re_canonicalize(uint c, bool is_unicode);
+
+extern fn bool re_is_space(uint c);
+
+extern fn bool re_is_word_byte(uint c);
