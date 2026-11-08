@@ -474,7 +474,8 @@ fn Opcode opt_cfg_refusal_op(CompiledFunction* f) {
     for (uint pc = 0; pc < f.code_count;) {
         bytecode::DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
         if (!d.valid || d.next_pc <= pc) return Opcode.NOP;
-        if (!compiler::bytecode_cfg_control_supported(d.insn.op)) return d.insn.op;
+        // The graph decoder takes these two for a consumer that knows their write (OptBuild.analyze).
+        if (!compiler::bytecode_cfg_control_supported(d.insn.op) && d.insn.op != Opcode.RESOLVEVAR && d.insn.op != Opcode.THROW_UNRESOLVED) return d.insn.op;
         pc = d.next_pc;
     }
     return Opcode.NOP;
@@ -584,7 +585,15 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     if (p.force_reason != 0) oc.forced = p.force_count;
     if (p.dump) g.dump(f);
     BaselineCode* code = opt_emit(h, f, &g, oc, pools);
-    if (st.timing) st.compile_ns += (ulong)((long)clock::now() - t0);
+    // The total and the longest single compile cover both tiers: what a host bounds its budget by.
+    if (st.timing) {
+        ulong ns = (ulong)((long)clock::now() - t0);
+        st.compile_ns += ns;
+        if (ns > st.compile_max_ns) {
+            st.compile_max_ns = ns;
+            st.compile_max_insns = f.code_count;
+        }
+    }
     if (code == null) {
         while (oc.sink_sites != null) {
             OptSinkSite* x = oc.sink_sites;
