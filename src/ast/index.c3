@@ -64,6 +64,9 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
     if (c.src_buf != null) c.tree.shared_line_starts = c.src_buf.line_starts;
     uint? root = parse_program(&c.parser, &c.tree, &c.lexer, opts);
     if (catch root) return c;
+    $if $feat(FRONTEND_STATS):
+        if (!opts.function_body) frontendstats::initial_nodes += c.tree.node_count();
+    $endif
     c.res.init(&c.tree);
     c.res.run(root);
     c.built = true;

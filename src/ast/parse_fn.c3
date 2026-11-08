@@ -4,6 +4,8 @@ module boomkat::ast;
 import boomkat::features;
 
 import boomkat::lexer;
+import boomkat::frontendstats;
+import std::time;
 
 // ---- functions ----
 
@@ -46,7 +48,9 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
         return self.unexpected()~;
     }
     if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
-    uint rec = self.function_tail(start, fnf)!;
+    uint body_kind = decl ? frontendstats::FS_BODY_DECL
+        : (name == 0 ? frontendstats::FS_BODY_UEXPR : frontendstats::FS_BODY_OTHER);
+    uint rec = self.function_tail(start, fnf, body_kind)!;
     if (self.ast.field(rec, FN_BODY) == 0) {
         if (!decl) return self.unexpected()~;
         return self.node(NodeTag.EMPTY_STMT, start);
@@ -56,12 +60,12 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
 
 // An object or class method: the parameter list and body, returned as a nameless FUNC_EXPR.
 fn uint? Parser.method_function(&self, uint start, uint fnf, bool unused) {
-    uint rec = self.function_tail(start, fnf)!;
+    uint rec = self.function_tail(start, fnf, frontendstats::FS_BODY_OTHER)!;
     return self.node(NodeTag.FUNC_EXPR, start, 0, rec);
 }
 
 // Parameters and body of a function whose `(` is the current token. Returns the function record.
-fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
+fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
     if (!features::ASYNC_GENERATORS && (fnf_in & (FNF_ASYNC | FNF_GENERATOR)) != 0) return self.unexpected()~;
     self.check_stack()!;
     uint fnf = fnf_in;
@@ -95,11 +99,20 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in) {
     self.ctx.in_params = false;
     self.ts_annotation()!;
     uint body = 0;
+    $if $feat(FRONTEND_STATS):
+        time::Time fs_start = time::now();
+        uint fs_nodes = (uint)self.ast.tags.len;
+        frontendstats::fs_body_enter();
+    $endif
     if (self.lex.ts_mode && self.tok.type != TokenType.LBRACE) {
         self.semicolon()!;
     } else {
         body = self.function_block(&fnf)!;
     }
+    $if $feat(FRONTEND_STATS):
+        frontendstats::fs_body_leave(body_kind, (uint)self.ast.tags.len - fs_nodes,
+            (ulong)(time::now() - fs_start));
+    $endif
     if (props != 0 && body != 0) {
         uint list = self.ast.lhs.data[body];
         self.ast.lhs.data[body] = self.ts_param_prop_body(list, props, (fnf & FNF_DERIVED_CTOR) != 0)!;
