@@ -586,11 +586,18 @@ out/re_prog_test: project.json $(call target_sources,re_prog_test) $(SLJIT_DEPS)
 	$(C3C_BUILD) re_prog_test $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-re_prog_test
 
+# The matcher against libregexp, case by case: the same patterns run through both
+# and compared on verdict, span and captures.
+out/re_exec_test: project.json $(call target_sources,re_exec_test) $(SLJIT_DEPS)
+	$(C3C_BUILD) re_exec_test $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-re_exec_test
+
 .PHONY: test-native-regexp
-test-native-regexp: out/re_prog_test out/re_input_test out/re_class_test
+test-native-regexp: out/re_prog_test out/re_input_test out/re_class_test out/re_exec_test
 	./out/re_prog_test
 	./out/re_input_test
 	./out/re_class_test
+	./out/re_exec_test
 
 out/jit_capi: test/capi/jit.c include/boomkat.h out/boomkat.a
 	cc -std=c99 -Wall -Wextra -pedantic -Iinclude test/capi/jit.c out/boomkat.a $(BK_LDLIBS) -o out/jit_capi
