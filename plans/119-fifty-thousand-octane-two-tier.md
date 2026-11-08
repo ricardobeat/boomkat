@@ -609,3 +609,62 @@ So of the six bullets, one is done, three are done in the part the tier
 needed, and two (RegExp native compilation, plans 100/101) remain whole
 projects. None of them is a two-tier milestone item: the tiers' own acceptance
 is recorded above.
+
+### Native regexp compilation: the design being built, 2026-11-08
+
+RegExp is the one milestone-6 bullet nothing else reaches, and the branch now
+carries its foundation in C3 (`src/jit/re_*`, C only where a header's static
+inline must be called):
+
+- `re_prog.c3` decodes libregexp's bytecode into instructions: opcode, byte
+  offset, resolved branch target, unpacked class pairs, minimum repetitions for
+  the greedy-run form, and the header's flags and capture and register counts.
+  It also names what the code generator will decline — lookarounds, back
+  references, the quantifier registers (`set_i32`, `set_char_pos`,
+  `check_advance`, `loop*`) and classes beyond the BMP — so a pattern only
+  leaves the interpreter when its program is understood. Its self-test asserts
+  the properties the generator relies on: instructions tile the program, every
+  branch lands on an instruction, class pairs ascend, save slots are captures.
+- `re_input.c3` is the subject cursor: code-unit and code-point stepping over
+  Latin-1 bytes and UTF-16 units, with the surrogate rules of unicode mode.
+- `re_class.c3` tests a code unit against a class instruction's pairs and
+  answers the four zero-width assertions (line start and end, with and without
+  the `m` flag, word boundary in both forms).
+
+What is left is the code generator and the wiring, in this order:
+
+1. **The matcher ABI.** One compiled entry per (pattern, subject form):
+   `fn int re_native_run(char* subject, uint len, uint start, uint* capture)`,
+   returning 1 on a match with `capture[0]`/`capture[1]` filled, else 0. Two
+   entries, one for Latin-1 and one for UTF-16 subjects, compiled lazily and
+   cached beside the program, because the subject form decides how a unit is
+   read and how far a code point steps.
+2. **The position loop.** Every non-sticky program opens with the same three
+   instructions (split, any, goto) that walk candidate start positions; the
+   generator emits that as a native loop that steps one code point at a time,
+   trying the body at each position and at the end, and calls the body's code as
+   a local label.
+3. **The backtracking stack.** A frame records the instruction to resume, the
+   subject position, and the capture slots it overwrote, so a resume restores
+   them exactly. Frames live in a growable buffer sized from the program's
+   register count plus the stack depth the compiler computed, which the header
+   carries; the stack is a local of the generated entry, so nothing is shared
+   between calls.
+4. **Opcode mapping.** char and char_i compare a loaded unit (canonicalized for
+   the `_i` forms); dot, any, space and not_space consume one code point; range
+   and range_i call `ReClass.matches`; save_start and save_end write the capture
+   array; split and goto push and branch; star runs its inline atom body
+   greedily between its minimum and as far as it matches, pushing one frame that
+   resumes at the shorter match; match returns through the exit. The assertion
+   instructions call `ReSubject`'s predicates.
+5. **Wiring and the fallback.** The compiled regexp keeps an opaque handle to
+   its native program; `re_run` uses it when present and falls back to
+   `lre_exec` otherwise. Compilation is attempted once per pattern and subject
+   form, on the first run that reaches the fast paths' end, and a declined
+   program is remembered as declined.
+
+Acceptance for the first landing: every fixture in `test/` and the RegExp
+portion of test262 give identical verdicts and identical match results with the
+native path on and off, and the RegExp benchmark improves. Until then the native
+path stays off, and the interpreter is the only matcher — which is why these
+three modules are committed unused.
