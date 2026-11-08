@@ -65,6 +65,11 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
         if (!ok) return self.unexpected()~;
         name = self.ident_node(nt);
         self.next()!;
+        if (decl) {
+            DeclKind dk = self.dv_is_func_scope() ? DeclKind.FUNC : DeclKind.FUNC_BLOCK;
+            bool plain = (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0;
+            self.dv_declare(self.ast.lhs.data[name], dk, self.ast.main_tok.data[name], false, plain);
+        }
     } else if (decl && !anonymous_ok) {
         return self.unexpected()~;
     }
@@ -203,71 +208,6 @@ fn bool Ast.body_was_recorded(&self, uint fn_node) {
     return (self.flags.data[body] & BODY_RECORDED) != 0;
 }
 
-// One Early per unit for deferred-body validation: init interns every reserved
-// word and allocates its bitsets, too costly to repeat per body. Keyed on the Ast
-// and reset at each unit's parse_program so a reused Ast address cannot leave
-// stale atom ids behind.
-tlocal Early dv_early_inst;
-tlocal Ast* dv_early_ast;
-fn void dv_early_reset() { dv_early_ast = null; }
-fn Early* dv_early(Ast* ast) {
-    if (dv_early_ast != ast) {
-        if (dv_early_ast != null) dv_early_inst.free();
-        dv_early_inst.init(ast);
-        dv_early_ast = ast;
-    }
-    dv_early_inst.reset_run();
-    return &dv_early_inst;
-}
-
-// Whether the body's nodes in [start, root] mention an identifier spelled with a
-// Unicode escape. Such a name cannot be matched to a binding by text, so the
-// enclosing compile must assume every binding it could reach is captured.
-fn bool ast_has_escape(Ast* ast, uint start, uint root) {
-    for (uint n = start; n <= root; n++) {
-        if (ast.tags.data[n] == NodeTag.IDENT && (ast.flags.data[n] & IDENT_ESCAPED) != 0) return true;
-    }
-    return false;
-}
-
-// Validate a body `gen` keeps as a deferred template and keep only what its
-// enclosing compile needs. The body is parsed with full grammar, so every syntax
-// and early error is reported at eval time even though the function is never
-// called. A nested resolver over the body's own nodes yields the same
-// declaration and reference facts an ordinary compile would, so the engine's
-// Early checks apply unchanged: `conflicts` rejects redeclarations and `run`
-// rejects structural errors. The nodes are then discarded; `dv_refs` and
-// `dv_flags` carry what the whole-unit resolver needs to mark captures and
-// dynamic scopes without walking a tree that is gone.
-fn void? Parser.dv_validate(&self, uint body, uint params) {
-    Resolver vr;
-    vr.init(self.ast);
-    ushort fflags = self.ctx.strict ? SCOPE_STRICT : 0;
-    uint fs = vr.push_scope(ScopeKind.FUNCTION, body, fflags, 0);
-    sz pc = self.ast.list_len(params);
-    for (uint i = 0; i < (uint)pc; i++) vr.bind_pattern(self.ast.list_item(params, i), DeclKind.PARAM);
-    vr.list(self.ast.lhs.data[body]);
-    // The names the body references, over-approximated as every reference it
-    // makes, including those of nested recorded bodies (folded in by
-    // recorded_body). A name the body itself declares resolves locally and
-    // captures nothing; only names reaching an enclosing scope mark a capture,
-    // which the whole-unit resolve_refs decides against the real enclosing scopes.
-    self.dv_refs.truncate(0);
-    for (sz i = 0; i < (sz)vr.refs.len; i++) self.dv_refs.push(vr.refs.data[i].atom);
-    // The body's own dynamic-scope facts, aggregated with those of nested bodies.
-    char flags = vr.agg_flags;
-    if ((vr.scopes.data[fs].flags & SCOPE_HAS_EVAL) != 0) flags |= BODY_HAS_EVAL;
-    if ((vr.scopes.data[fs].flags & SCOPE_HAS_WITH) != 0) flags |= BODY_HAS_WITH;
-    self.dv_flags = flags;
-    Early* e = dv_early(self.ast);
-    if (!e.run(body, {}) || !e.conflicts(&vr)) {
-        fault err = self.fail_at(e.err_pos, e.error_message());
-        vr.free();
-        return err~;
-    }
-    vr.free();
-}
-
 // `{ directives statements }` of a function body. Sets FNF_USE_STRICT and FNF_STRICT.
 fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint params = 0) {
     uint pos = self.tok.pos;
@@ -279,33 +219,49 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
     if ((flags & PROGRAM_STRICT) != 0) *fnf |= FNF_USE_STRICT;
     bool defer_body = skip_ok && (flags & PROGRAM_STRICT) == 0 && !self.ctx.strict
         && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled;
+    // Inline validation replaces a second pass over transient nodes: a deferred
+    // body's scopes, declarations and references are tracked while its grammar
+    // parses. An eager body's declarations must not leak into an enclosing
+    // deferred body's conflict state, so its tracking is paused.
+    uint saved_track = self.dv_track;
+    bool saved_on = self.dv_on;
+    if (defer_body) {
+        self.dv_on = true;
+        self.dv_body_enter(params);
+    } else {
+        self.dv_track = 0;
+    }
+    defer {
+        self.dv_track = saved_track;
+        self.dv_on = saved_on;
+    }
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
         self.scratch_push(self.statement_list_item_in_block()!);
     }
     if (self.ctx.strict) *fnf |= FNF_STRICT;
     self.next()!;
-    uint block = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
-    if (!defer_body) return block;
-    // A body `gen` keeps as a deferred template. Parse it in full above so every
-    // syntax and early error is reported at eval time, then discard its nodes and
-    // keep only the names it references and its dynamic-scope facts. The template
-    // re-parses this source on first call.
-    self.dv_validate(block, params)!;
-    if (ast_has_escape(self.ast, amark.nodes, block)) self.dv_flags |= BODY_HAS_ESCAPE;
-    char body_flags = self.dv_flags;
-    self.ast.truncate(amark);
-    self.scratch.truncate(mark);
-    uint nrefs = (uint)self.dv_refs.len;
-    uint at = self.ast.add_record(2 + nrefs);
-    self.ast.set_field(at, 0, body_flags);
-    self.ast.set_field(at, 1, nrefs);
-    for (sz i = 0; i < self.dv_refs.len; i++) {
-        self.ast.set_field(at, 2 + (uint)i, self.dv_refs.data[i]);
+    if (defer_body) {
+        // Check this body's redeclaration errors, then keep only the references
+        // and dynamic-scope facts its enclosing compile needs. The body re-parses
+        // this source on first call.
+        if (!self.dv_body_leave()) return self.fail_at(self.err_pos, "invalid function body")~;
+        char body_flags = self.dv_flags;
+        self.ast.truncate(amark);
+        self.scratch.truncate(mark);
+        uint nrefs = (uint)self.dv_refs.len;
+        uint at = self.ast.add_record(2 + nrefs);
+        self.ast.set_field(at, 0, body_flags);
+        self.ast.set_field(at, 1, nrefs);
+        for (sz i = 0; i < self.dv_refs.len; i++) {
+            self.ast.set_field(at, 2 + (uint)i, self.dv_refs.data[i]);
+        }
+        uint stub = self.node(NodeTag.BLOCK, pos, 0, at);
+        self.ast.set_flags(stub, BODY_RECORDED);
+        return stub;
     }
-    uint stub = self.node(NodeTag.BLOCK, pos, 0, at);
-    self.ast.set_flags(stub, BODY_RECORDED);
-    return stub;
+    uint block = self.node(NodeTag.BLOCK, pos, self.scratch_list(mark));
+    return block;
 }
 
 // ---- binding patterns ----
@@ -511,6 +467,7 @@ fn uint? Parser.class_decl(&self, bool anonymous_ok = false) {
     } else if (!anonymous_ok) {
         return self.unexpected()~;
     }
+    if (name != 0) self.dv_declare(self.ast.lhs.data[name], DeclKind.CLASS, self.ast.main_tok.data[name]);
     uint rec = self.class_tail(start)!;
     return self.node(NodeTag.CLASS_DECL, start, name, rec);
 }
@@ -571,6 +528,9 @@ fn uint? Parser.class_tail(&self, uint start) {
     bool saved_strict = self.ctx.strict;
     bool saved_no_in = self.no_in;
     bool saved_sloppy = self.class_in_sloppy;
+    uint saved_track = self.dv_track;
+    self.dv_track = 0;   // a class body is strict and eager: its decls do not bind in a deferred body
+    defer self.dv_track = saved_track;
     self.class_in_sloppy = !saved_strict;
     defer self.class_in_sloppy = saved_sloppy;
     self.ctx.strict = true;

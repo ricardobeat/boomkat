@@ -164,17 +164,6 @@ fn void Early.check_ident(&self, uint n, IdRole role) {
 
 // ---- entry point ----
 
-// Clear the per-run state so one Early instance can validate many bodies after a
-// single init (which interns every reserved word and allocates its bitsets).
-fn void Early.reset_run(&self) {
-    self.labels.truncate(0);
-    self.privates.truncate(0);
-    self.names.truncate(0);
-    self.failed = false;
-    self.err_pos = 0;
-    self.ctx = {};
-}
-
 // Check the Program `root`. Returns false and sets the error on the first early error.
 fn bool Early.run(&self, uint root, ParseOptions opts = {}) {
     char f = self.ast.flags.data[root];

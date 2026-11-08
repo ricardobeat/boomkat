@@ -54,6 +54,30 @@ struct FnCtx {
     bool top_level_await;
 }
 
+// One scope of a deferred body's tree, kept only for the redeclaration checks.
+struct DvScope {
+    ScopeKind kind;
+    uint parent;
+    uint func;         // nearest enclosing function scope
+    uint first_site;   // first site recorded while this scope was open
+}
+
+// One declaration occurrence inside a deferred body, in source order.
+struct DvSite {
+    uint atom;
+    DeclKind kind;
+    uint scope;        // occurrence scope
+    uint at;           // source offset for error reporting
+    bool pattern;      // a catch parameter that is a destructuring pattern
+    bool plain;        // a sloppy plain (non-async/generator) function declaration
+}
+
+// A label inside a deferred body, kept for the break/continue early errors.
+struct DvLabel {
+    uint atom;
+    bool loop;         // the labelled statement is (through further labels) a loop
+}
+
 struct Parser {
     Ast* ast;
     Lexer* lex;
@@ -87,17 +111,28 @@ struct Parser {
     bool ts_asserted;         // the last expression held an `as` or `satisfies` assertion
     uint jsx_used;           // JSX_USES_* bits: the jsx-runtime imports to inject
     // Deferred-body validation. A body `gen` keeps as a template is parsed with
-    // full grammar but its nodes are discarded, so its declarations and the names
-    // it references are tracked here rather than in the resolver's node walk.
+    // full grammar but its nodes are discarded, so its declarations, scopes and
+    // the names it references are tracked here rather than in a second walk over
+    // transient nodes. `dv_on` is set for the whole deferred subtree; the scope
+    // tree and sites are per deferred body (reset at `dv_body_enter`), while
+    // `dv_refs` and `dv_flags` accumulate across nesting and are emitted on the
+    // outermost stub.
     bool dv_on;
-    Vec{uint} dv_names;      // declared atom per entry
-    Vec{char} dv_kinds;      // DvKind per entry
-    Vec{uint} dv_scope;      // scope id of each entry
-    Vec{uint} dv_scope_func; // per scope: its function-scope id
-    Vec{uint} dv_scope_mark; // per scope: first entry recorded while open
-    uint dv_cur;             // current scope id
-    Vec{uint} dv_refs;       // atoms the body references (over-approx: every ident)
-    char dv_flags;           // BODY_HAS_* bits seen in the body
+    Vec{DvScope} dv_scopes;
+    Vec{DvSite} dv_sites;
+    uint dv_cur;           // current scope id (0 = no scope open)
+    uint dv_track;         // >0 while inside a deferred body's own walk
+    Vec{uint} dv_refs;     // atoms the body references (over-approx: every ident)
+    char dv_flags;         // BODY_HAS_* bits seen in the body
+    Vec{uint} dv_marks;    // {scopes, sites, cur} per open nested body
+    Vec{DvBinding} dv_binds;
+    Vec{char} dv_bflags;
+    Vec{uint} dv_slot;       // open addressing over (bscope, atom): binding id, 0 = empty
+    uint dv_slot_count;
+    uint dv_atom_eval;
+    uint dv_breakable;   // loop or switch bodies enclosing the current statement
+    uint dv_iterating;   // loop bodies enclosing the current statement
+    Vec{DvLabel} dv_labels;
     char[256] err_msg;
     uint err_len;
     uint err_pos;
@@ -407,12 +442,24 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.stack_floor = compiler::compile_stack_floor();
     p.is_module = opts.is_module;
     p.defer_bodies = opts.defer_functions;
-    dv_early_reset();
     p.scratch.init(256);
     p.ts_exports.init(8);
     p.ts_param_props.init(8);
     p.ts_scope_names.init(8);
     p.ts_type_imports.init(8);
+    p.dv_scopes.init(16);
+    p.dv_scopes.push({});   // index 0 is the null scope, ids start at 1
+    p.dv_sites.init(16);
+    p.dv_refs.init(32);
+    p.dv_marks.init(8);
+    p.dv_labels.init(8);
+    p.dv_binds.init(32);
+    p.dv_bflags.init(32);
+    p.dv_slot.init_zero(128);
+    p.dv_track = 0;
+    p.dv_cur = 0;
+    p.dv_flags = 0;
+    p.dv_atom_eval = p.atom("eval");
     if (ast.shared_line_starts.len == 0) build_line_table(ast);
     lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
@@ -446,6 +493,14 @@ fn void Parser.destroy(&self) {
     self.ts_param_props.free();
     self.ts_scope_names.free();
     self.ts_type_imports.free();
+    self.dv_scopes.free();
+    self.dv_sites.free();
+    self.dv_refs.free();
+    self.dv_marks.free();
+    self.dv_labels.free();
+    self.dv_binds.free();
+    self.dv_bflags.free();
+    self.dv_slot.free();
 }
 
 // Return to the state `saved` and `lex` hold, taken before a speculative parse.

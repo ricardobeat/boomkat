@@ -1,6 +1,7 @@
 // Expression parsing.
 module boomkat::ast;
 
+import boomkat::compiler;
 import boomkat::features;
 
 import boomkat::lexer;
@@ -98,6 +99,10 @@ fn uint? Parser.assign_expr(&self) {
             self.claim_cover(self.ast.main_tok.data[lhs]);
         } else if (!self.is_simple_target(lhs, op != TokenType.ASSIGN)) {
             return self.fail_at(self.ast.main_tok.data[lhs], "invalid left-hand side in assignment")~;
+        } else if (self.dv_on && (op == TokenType.LOG_AND_ASSIGN || op == TokenType.LOG_OR_ASSIGN
+            || op == TokenType.NULLISH_ASSIGN) && self.ast.tags.data[lhs] == NodeTag.CALL) {
+            // `g() &&= 1` is a hard SyntaxError, unlike `g() = 1` (Annex B runtime ReferenceError).
+            return self.fail_at(self.ast.main_tok.data[lhs], "invalid assignment target")~;
         }
         self.next()!;
         uint rhs = self.assign_expr()!;
@@ -181,6 +186,9 @@ fn uint? Parser.binary(&self, uint min_prec) {
         return self.fail("unexpected private name")~;
     }
     uint left = self.unary()!;
+    // Operator class of the chain's current left operand: 0 none, 1 `??`, 2 `&&`/`||`.
+    // `??` may not sit next to an unparenthesised `&&` or `||`.
+    int chain = 0;
     while (true) {
         if (self.lex.ts_mode && (self.at_word("as") || self.at_word("satisfies"))) {
             self.next()!;
@@ -206,7 +214,23 @@ fn uint? Parser.binary(&self, uint min_prec) {
         if (self.is_bare_arrow(right)) return self.fail_at(self.ast.main_tok.data[right], "arrow function must be parenthesised here")~;
         NodeTag t = (op == TokenType.LOG_AND || op == TokenType.LOG_OR || op == TokenType.NULLISH)
             ? NodeTag.LOGICAL : NodeTag.BINARY;
+        int cls = t == NodeTag.LOGICAL ? (op == TokenType.NULLISH ? 1 : 2) : 0;
+        if (self.dv_on && t == NodeTag.LOGICAL) {
+            // The left operand is the previous operator of this chain; a parenthesised
+            // one starts the chain instead and is not part of it.
+            if (chain != 0 && chain != cls) {
+                return self.fail_at(op_pos, "'??' cannot be mixed with '&&' or '||' without parentheses")~;
+            }
+            // The right operand is a chain of its own, which `??` may not head.
+            if (self.ast.tags.data[right] == NodeTag.LOGICAL && (self.ast.flags.data[right] & FLAG_PAREN) == 0) {
+                int rcls = ((TokenType)(self.ast.flags.data[right] & 0x7F) == TokenType.NULLISH) ? 1 : 2;
+                if (rcls != cls) {
+                    return self.fail_at(op_pos, "'??' cannot be mixed with '&&' or '||' without parentheses")~;
+                }
+            }
+        }
         left = self.node(t, op_pos, left, right, op_flag(op));
+        chain = cls;
     }
     return left;
 }
@@ -600,7 +624,13 @@ fn uint? Parser.primary(&self) {
         case TokenType.SLASH:
         case TokenType.SLASH_ASSIGN:
             self.rescan_regex()!;
-            uint n = self.node(NodeTag.REGEX, self.tok.pos, self.atom(self.lex.source[self.tok.pos:self.tok.end - self.tok.pos]));
+            uint rpos = self.tok.pos;
+            uint raw = self.atom(self.lex.source[self.tok.pos:self.tok.end - self.tok.pos]);
+            if (self.dv_on) {
+                String err = compiler::regexp_literal_error(self.ast.atoms.get(raw));
+                if (err.len > 0) return self.fail_at(rpos, err)~;
+            }
+            uint n = self.node(NodeTag.REGEX, rpos, raw);
             self.next()!;
             return n;
         case TokenType.THIS:
@@ -641,7 +671,14 @@ fn uint Parser.string_node(&self, Token t) {
 }
 
 fn uint Parser.ident_node(&self, Token t) {
-    return self.node(NodeTag.IDENT, t.pos, self.atom(t.str_value), 0, t.has_escape ? IDENT_ESCAPED : 0);
+    uint atom = self.atom(t.str_value);
+    if (self.dv_on) {
+        // Over-approximated reference: records binding and reference identifiers
+        // alike; a name that never escapes the body marks nothing.
+        self.dv_ref(atom);
+        if (t.has_escape) self.dv_escape();
+    }
+    return self.node(NodeTag.IDENT, t.pos, atom, 0, t.has_escape ? IDENT_ESCAPED : 0);
 }
 
 // An identifier reference, or the single parameter of `x => ...`.
@@ -967,6 +1004,12 @@ fn bool Parser.modifier_applies(&self, bool star_follows_ok) {
     }
 }
 
+// A property key spelled `__proto__`: a string node whose text is `__proto__`.
+fn bool Parser.is_proto_key(&self, uint key) @inline {
+    if (self.ast.tags.data[key] != NodeTag.STRING) return false;
+    return self.ast.atoms.equals(self.ast.lhs.data[key], "__proto__");
+}
+
 fn uint? Parser.object_literal(&self) {
     uint pos = self.tok.pos;
     self.next()!;
@@ -974,8 +1017,19 @@ fn uint? Parser.object_literal(&self) {
     self.no_in = false;
     self.cover_depth++;
     uint mark = self.scratch_mark();
+    bool seen_proto = false;
     while (self.tok.type != TokenType.RBRACE) {
-        self.scratch_push(self.object_property()!);
+        uint p = self.object_property()!;
+        // A `__proto__` data property may appear only once in an object literal.
+        if (self.dv_on && self.ast.tags.data[p] == NodeTag.PROP_INIT
+            && (self.ast.flags.data[p] & PROP_COMPUTED) == 0
+            && self.is_proto_key(self.ast.lhs.data[p])) {
+            if (seen_proto) {
+                return self.fail_at(self.ast.main_tok.data[p], "duplicate __proto__ fields are not allowed in object literals")~;
+            }
+            seen_proto = true;
+        }
+        self.scratch_push(p);
         if (self.tok.type != TokenType.COMMA) break;
         self.next()!;
     }
