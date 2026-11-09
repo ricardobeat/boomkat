@@ -817,3 +817,83 @@ relay, and the loop that needs it most (`run(n)` called once, looping over
 in the baseline's loop tier, and only `--opt-always` compiles it (0.21 s to
 0.19 s on 300k iterations). A function that is entered once and loops is the
 case region compilation is for, not call nodes.
+
+## Region compilation: design, 2026-11-09
+
+Started, and stopped at the design, because the change is a hundred lines
+across five files with four invariants that only measurement can settle, and
+this session's machine could not settle them (load average 3.2, composite
+spread about 4%).
+
+### What the refusals actually are
+
+`--jit-stats` over the minis shows **no** `graph size` refusal at all: the tier
+never reaches `OPT_STATE_MAX` or `OPT_BLOCK_MAX`. Every refusal is at the
+control flow graph, and the large ones are decode failures over the whole
+`code_count`:
+
+| Function | Words | Registers | Reason |
+|---|---:|---:|---|
+| zlib `a1` | 37,006 | 518 | decode (`DEFAULT_CFG_BUDGET.max_words` is 4,096) |
+| mandreel `initPhysics` | 11,203 | 58 | decode |
+| typescript `:9881` | 2,786 | 65 | `MOVECELL` (the caveat above) |
+| pdfjs `Stream_getChar` | 18 | 11 | `TAILCALL_CALL` |
+
+So the region work that pays is not "pick a span out of an existing graph": it
+is a **bytecode slice**, because for the functions that need it the graph
+builder never decodes a first instruction.
+
+### The pieces
+
+1. **The region finder** (`opt.c3`, beside `opt_osr`). `opt_osr` is already
+   called at the backward branch the baseline takes, with `ds.curr_pc` set to
+   the loop header. From that pc: scan forward with `bytecode::decode_bytecode`
+   to the first branch whose target is that pc (the back edge, within
+   `OPT_REGION_WORDS_MAX`); then widen the span until every branch target of an
+   instruction in it lies inside it, refusing if one lies before the header. The
+   result is a closed slice `[start, count)` that `bytecode_cfg_build` accepts
+   as it stands, since it validates that every target is in range.
+2. **`pc_base` on the graph.** The slice's `DecodedCfg` keeps relative pcs
+   (`cfg.nodes[i].view.pc`), while everything the emitter reads must be
+   absolute: `OptNode.pc`, `OptBlock.pc`, exits, `bc.entries[]`, the dispatch's
+   comparison against `ds.curr_pc`, `Asm.decode`, `ic_entries[next_pc - 1]`.
+   Set `self.pc`/`self.next_pc` in `OptBuild.context` to
+   `node.view.pc + (own ? pc_base : 0)`, where `own` is `fl_site[i] == 0`:
+   an inlined body's instructions keep their callee's pcs, which `use_fn` and
+   `decode` already resolve against the callee's own code array.
+3. **The entry.** `begin_block` skips the merge and the phis for position 0, so
+   a region whose header is position 0 would have no loop-carried registers in
+   machine form, which is most of the point. A region build must take the merge
+   path at position 0: with every forward predecessor dead the speculation is
+   `INT32` for each register live at the header, and `repair` then overrides
+   from the back edge exactly as it does for a header reached from a preheader.
+   The header then has `blk.osr` set from `osr_target[0]`, which the emitter
+   already turns into the entry that reloads those nodes from the window with
+   `NOT_INT32`/`NOT_NUMBER` guards.
+4. **Leaving the region.** A slice that ends at the back edge has one block
+   whose fallthrough leaves it: the CFG gives the last instruction no
+   successor, and `end_block` then emits nothing, so the code would run into
+   whatever block is emitted next. That block needs an unconditional
+   `OptOp.EXIT` at its `next_pc`, which is the same node `cold_field` and
+   `throw_exit` already emit. Branch targets never leave the region, by (1).
+5. **The two entry points the whole-function build owns.** In `opt_emit`, a
+   region must not set `bc.entries[0]` to `labels[0]` (pc 0 is the function's
+   entry, not the region's) and must not emit `call_entry` (a direct native
+   call cannot enter a loop). `call_entry` is already skipped when
+   `g.blocks[0].osr`, which the region header sets; `bc.entries[0]` needs a
+   region flag, as does `bc.entries[pc] = to_base` staying as it is for every
+   pc outside the region.
+6. **Policy.** Retry with a region only after the whole-function build refuses,
+   and only with `no_inline` set: inlining splices callee bodies into the
+   graph, mixing pc spaces for no gain in a loop whose calls are `GENERIC`
+   anyway. `opt_try_compile` already has a no-inline retry to model the second
+   attempt on.
+
+### What to measure
+
+`bench/mini/zlib.js`, `mandreel.js` and `pdfjs.js` with `--opt`, interleaved
+against the previous binary on a calm machine, plus `--jit-stats` to confirm
+`opt: compiled` rises and the refusals fall. Acceptance is the plan's own:
+per-benchmark gains in the full suite, and the differential suites unchanged
+(`scripts/jit_check.sh`, `scripts/run_jit_diff.sh`, and its `--test262` mode
+under `--jit --opt --opt-always`).
