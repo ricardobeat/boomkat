@@ -1920,6 +1920,26 @@ fn void OptCg.emit_load_var(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
+// A TYPEOF of an inlined body: the interned name for the operand's tag, into the node's home slot.
+// The names are the heap's own builtin strings, which no collection reclaims, so a home beyond the
+// caller's frame needs no scan extent (see the header of opt_ir.c3).
+fn void OptCg.emit_typeof(&self, uint i, OptNode* n) {
+    Asm* a = self.a;
+    if (n.cc == 1) {
+        a.typeof_const(heap::BuiltinStr.NUMBER, n.home);
+        return;
+    }
+    if (n.a != NO_NODE) {
+        int src = self.obj_reg(n.a, R0);
+        if (src != R0) sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, src, 0);
+    } else {
+        a.load(R0, (uint)n.imm);
+    }
+    a.typeof_value(n.home);
+    // The instructions the name is not read off by tag, and the [[IsHTMLDDA]] object, are the thunk's.
+    self.exit_calls(i, OptExit.SLOW_PATH);
+}
+
 // A callee's returned window slot copied to the call's result register: the store of an
 // instruction that writes it from another, with publish's watermark and barrier.
 fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
@@ -2431,6 +2451,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.emit_copy_window(i, n);
         case STORE_CONST:
             self.a.store(n.home, SLJIT_IMM, n.imm);
+        case TYPEOF:
+            self.emit_typeof(i, n);
         case STORE_OBJ:
             self.store_node(n.a, (uint)n.imm);
         case COPY:

@@ -160,6 +160,11 @@ enum OptOp : char {
     COPY_WINDOW,
     // The boxed constant imm (undefined, null or a boolean) stored to the window slot home.
     STORE_CONST,
+    // A TYPEOF of an inlined body: the interned builtin name (heap.strs) of the value in the OBJECT
+    // node a, or in the window slot imm when a is NO_NODE, stored to the window slot home. cc 1 is a
+    // numeric operand, whose name is `number` with no test. The names are the heap's own strings,
+    // which no collection reclaims, so slot home may lie beyond the caller's frame (see the header).
+    TYPEOF,
     // A boolean stored to window slot home, defining no node: numbers a, b of rep imm compared by
     // the JMP_* row cc (as BRANCH reads it).
     COMPARE,

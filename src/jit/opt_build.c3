@@ -338,6 +338,7 @@ fn uint inline_reg_mask(Opcode op) {
             return 7;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
+        case TYPEOF:
             return 3;
         // A nested inline site (OptBuild.add_children): the result and callee registers; C counts.
         case CALL: case CALL_UNDEF_THIS: case NEW_OBJ:
@@ -405,6 +406,7 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
             *reads = (1u << w.a) | (1u << w.b) | (1u << w.c);
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case LNOT: case BNOT:
         case ADDI: case SUBI: case MULI: case BANDI: case BORI: case BXORI: case SHLI: case SHRI: case USHRI:
+        case TYPEOF:
             *reads = 1u << w.b;
             *writes = 1u << w.a;
         case ADD: case ADD_FUSED: case SUB: case MUL: case DIV: case MOD: case BAND: case BOR: case BXOR: case SHL: case SHR: case USHR:
@@ -1619,6 +1621,26 @@ fn bool OptBuild.throw_exit(&self) {
     self.snapshot(n);
     self.cold_exit = true;
     self.cold_site = self.cur_site;
+    return true;
+}
+
+// TYPEOF in an inlined body: the interned name of the operand's tag, as the baseline answers it out
+// of line. A numeric operand's name is `number` with no test. The function's own TYPEOF stays a
+// GENERIC.
+fn bool OptBuild.typeof_value(&self) {
+    if (self.cur_fn == 0) return self.generic();
+    uint ra = self.w.a;
+    uint rb = self.w.b;
+    if (ra >= self.nregs || rb >= self.nregs) return self.generic();
+    uint rnode = NO_NODE;
+    // A number's name is known here: an int32 or a double read as such, never a window value.
+    bool number = self.cur[rb].node != NO_NODE && !self.is_object(rb);
+    if (!number && self.is_object(rb)) rnode = self.cur[rb].node;
+    uint n = self.add(OptOp.TYPEOF, OptRep.NONE, rnode, NO_NODE, (long)rb);
+    self.g.nodes[n].home = ra;
+    self.g.nodes[n].cc = number ? 1 : 0;
+    self.snapshot(n);
+    self.kill(ra);
     return true;
 }
 
@@ -3178,6 +3200,8 @@ fn bool OptBuild.lower_op(&self) {
             return self.not_value();
         case THROW:
             return self.throw_exit();
+        case TYPEOF:
+            return self.typeof_value();
         case CALL:
         case CALL_UNDEF_THIS:
         case CALL_VAR:

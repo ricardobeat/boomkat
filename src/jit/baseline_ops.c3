@@ -35,10 +35,17 @@ fn void Asm.typeof_tag(&self, ulong tag, BuiltinStr s, Jumps* done) {
 // [[IsHTMLDDA]] object and the tags typeof_string does not name by tag take
 // the thunk.
 fn bool Asm.emit_typeof(&self) {
+    self.load(R0, self.w.b);
+    self.typeof_value(self.w.a);
+    return true;
+}
+
+// The interned name for the value in R0, stored to window slot `dst`: the body
+// of emit_typeof past the operand's load, which the optimizing tier also uses.
+fn void Asm.typeof_value(&self, uint dst) {
     void* c = self.c;
     Layout* l = self.lay;
     Jumps done;
-    self.load(R0, self.w.b);
     sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
     void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
     self.typeof_pick(BuiltinStr.NUMBER, &done);
@@ -70,9 +77,18 @@ fn bool Asm.emit_typeof(&self) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.heap, builtin_str_off(BuiltinStr.OBJECT));
     done.bind(sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_STRING_START);
-    self.store(self.w.a, R0);
-    self.track_heap_store(self.w.a);
-    return true;
+    self.store(dst, R0);
+    self.track_heap_store(dst);
+}
+
+// The interned name `s` stored to window slot `dst`, for a `typeof` whose
+// operand the graph already knows is a number.
+fn void Asm.typeof_const(&self, BuiltinStr s, uint dst) {
+    void* c = self.c;
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | self.heap, builtin_str_off(s));
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_STRING_START);
+    self.store(dst, R0);
+    self.track_heap_store(dst);
 }
 
 // INSTANCEOF as th_instanceof answers it, from the site's cache (vm::jit_instanceof fills it):
