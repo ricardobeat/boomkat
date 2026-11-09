@@ -563,12 +563,13 @@ fn uint OptBuild.intersect(&self, uint a, uint b) {
 // reason, for a function the tier does not handle.
 fn bool OptBuild.analyze(&self) {
     CompiledFunction* f = self.f;
-    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, resolve: true)) {
+    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, resolve: true, objects: true)) {
         // Name the first instruction the graph decoder does not take (--opt-log).
         for (uint pc = 0; pc < f.code_count;) {
             DecodedBytecode view = bytecode::decode_bytecode(f.code, f.code_count, pc);
             if (!view.valid) break;
-            if (!compiler::bytecode_cfg_control_supported(view.insn.op) && view.insn.op != Opcode.RESOLVEVAR && view.insn.op != Opcode.THROW_UNRESOLVED) {
+            if (!compiler::bytecode_cfg_control_supported(view.insn.op) && view.insn.op != Opcode.RESOLVEVAR
+                && view.insn.op != Opcode.THROW_UNRESOLVED && !compiler::bytecode_cfg_object_op(view.insn.op)) {
                 self.refused_op = view.insn.op;
                 break;
             }
@@ -1730,8 +1731,10 @@ fn bool OptBuild.generic(&self) {
     if (!self.cur_cfg().nodes[self.insn].must_def(&def)) {
         def = NO_NODE;
         switch (op) {
+            // The compiler's own cells: NEWCELLS builds one and GETCELL writes A.
             case NEWOBJ: case NEWARR: case NEWARR_CONST: case CLOSURE: case NEWREGEXP:
             case NEWOBJ_SHAPE: case NEWTARGET: case DELPROP: case GETPROP_SUPER: case TOPROPKEY: case RESOLVEVAR:
+            case NEWCELLS: case GETCELL:
                 extra_kill = self.w.a;
             case GETPROP_CACHE:
                 extra_kill = self.w.a;
@@ -1746,6 +1749,7 @@ fn bool OptBuild.generic(&self) {
             case RET: case RETUNDEF: case SETALEN: case INITPROP: case INITELEM: case CHKOBJ: case REQUIRE_OBJ:
             case NOP: case INC_VAR: case DEC_VAR: case INC_GLOBAL: case DEC_GLOBAL: case CHKGLOBALVAR:
             case CHKGLOBALFUNC: case CHKGLOBALLEX: case THROW: case THROW_UNRESOLVED:
+            case SETCELL:
                 break;
             default:
                 return self.refuse_op(op);

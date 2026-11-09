@@ -82,6 +82,14 @@ fn bool bytecode_cfg_fallthrough(Opcode op) {
     }
 }
 
+// The instructions `objects` admits: the compiler's own regexp, closure and cell objects, and the
+// element store of an array literal. MOVECELL is left out until its A register, which the move
+// clears, is tracked through an inlined body.
+fn bool bytecode_cfg_object_op(Opcode op) @inline {
+    return op == Opcode.NEWREGEXP || op == Opcode.CLOSURE || op == Opcode.NEWCELLS || op == Opcode.GETCELL
+        || op == Opcode.SETCELL || op == Opcode.INITELEM;
+}
+
 // Positive control-flow contract: exception handlers, suspension, indirect
 // returns, specialized skips, and unreviewed opcodes all refuse. The _SNAP
 // stores are accepted: they store by name through an environment probe they
@@ -118,10 +126,14 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
 // hold APPLY_ARGS, whose reads of the frame's arguments the liveness does not see: for a consumer
 // that accounts for them itself. With `resolve` it may hold RESOLVEVAR, whose write of A the
 // roles do not record, and THROW_UNRESOLVED: for a consumer that knows the write itself and only
-// needs the liveness to over-approximate.
+// needs the liveness to over-approximate. With `objects` it may hold the instructions that build
+// and fill the objects the compiler makes for itself (bytecode_cfg_object_op). None of them jumps,
+// so the control flow is the ordinary one, and the roles leave A a use and no def, which
+// over-approximates the register file for a consumer that lowers the instruction itself.
 fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     heap::Heap* h = null, DecodedOpAllowed allowed = null, bool split_calls = false,
-    DecodedCfgBudget budget = DEFAULT_CFG_BUDGET, bool forwarding = false, bool resolve = false) {
+    DecodedCfgBudget budget = DEFAULT_CFG_BUDGET, bool forwarding = false, bool resolve = false,
+    bool objects = false) {
     *cfg = {};
     if (code == null || count == 0 || count > budget.max_words) return false;
     ulong bytes = (ulong)count * (DecodedCfgNode::size + uint::size);
@@ -142,7 +154,8 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
         DecodedBytecode view = bytecode::decode_bytecode(code, count, pc);
         if (!view.valid || view.insn.op.ordinal >= Opcode::values.len
             || (!bytecode_cfg_control_supported(view.insn.op) && !(forwarding && view.insn.op == Opcode.APPLY_ARGS)
-                && !(resolve && (view.insn.op == Opcode.RESOLVEVAR || view.insn.op == Opcode.THROW_UNRESOLVED)))
+                && !(resolve && (view.insn.op == Opcode.RESOLVEVAR || view.insn.op == Opcode.THROW_UNRESOLVED))
+                && !(objects && bytecode_cfg_object_op(view.insn.op)))
             || (allowed != null && !allowed(view.insn.op))) return false;
         if (cfg.instruction_count == budget.max_instructions) return false;
         uint index = cfg.instruction_count++;
