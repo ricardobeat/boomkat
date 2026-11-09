@@ -75,6 +75,7 @@ struct DvSite {
 struct DvLabel {
     uint atom;
     bool loop;         // the labelled statement is (through further labels) a loop
+    uint continue_at;  // a `continue` targeting this label, resolved once the body is known
 }
 
 struct Parser {
@@ -128,11 +129,17 @@ struct Parser {
     Vec{DvBinding} dv_binds;
     Vec{char} dv_bflags;
     Vec{uint} dv_slot;       // open addressing over (bscope, atom): binding id, 0 = empty
+    Vec{uint} dv_seen;       // atom id -> stamp of the stub that last emitted it
+    uint dv_seen_gen;
     uint dv_slot_count;
     uint dv_atom_eval;
+    uint dv_atom_arguments;
+    uint dv_atom_let;
+    uint[9] dv_strict_words;
     uint dv_breakable;   // loop or switch bodies enclosing the current statement
     uint dv_iterating;   // loop bodies enclosing the current statement
     Vec{DvLabel} dv_labels;
+    uint dv_label_base;  // labels below this index belong to an enclosing body
     char[256] err_msg;
     uint err_len;
     uint err_pos;
@@ -445,11 +452,19 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.dv_binds.init(32);
     p.dv_bflags.init(32);
     p.dv_slot.init_zero(128);
+    p.dv_seen.init_zero(256);
+    p.dv_seen_gen = 0;
     p.dv_track = 0;
     p.dv_cur = 0;
     p.dv_ref_base = 0;
+    p.dv_label_base = 0;
     p.dv_flags = 0;
     p.dv_atom_eval = p.atom("eval");
+    p.dv_atom_arguments = p.atom("arguments");
+    p.dv_atom_let = p.atom("let");
+    String[9] dv_sr = { "implements", "interface", "let", "package", "private",
+        "protected", "public", "static", "yield" };
+    for (uint i = 0; i < 9; i++) p.dv_strict_words[i] = p.atom((char[])dv_sr[i]);
     if (ast.shared_line_starts.len == 0) build_line_table(ast);
     lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
@@ -491,6 +506,7 @@ fn void Parser.destroy(&self) {
     self.dv_binds.free();
     self.dv_bflags.free();
     self.dv_slot.free();
+    self.dv_seen.free();
 }
 
 // Return to the state `saved` and `lex` hold, taken before a speculative parse.

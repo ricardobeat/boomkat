@@ -281,6 +281,8 @@ bool g_disable_optimize = false;
 
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 
+fn bool disable_optimize_enabled() { return g_disable_optimize; }
+
 
 // ============================================================================
 // CompilerContext

@@ -195,6 +195,14 @@ fn uint? Parser.using_declaration(&self, bool is_await, bool in_for) {
             return self.fail_at(self.ast.main_tok.data[target], "a using declaration requires an initializer")~;
         }
         self.scratch_push(self.node(NodeTag.DECLARATOR, self.ast.main_tok.data[target], target, init));
+        if (self.dv_on) {
+            self.dv_no_let(target);
+            uint atom = self.ast.lhs.data[target];
+            if (self.ctx.strict && (atom == self.dv_atom_eval || atom == self.dv_atom_arguments)) {
+                return self.fail_at(self.ast.main_tok.data[target], "reserved word cannot be used as a binding identifier")~;
+            }
+            self.dv_declare(atom, DeclKind.CONST, self.ast.main_tok.data[target]);
+        }
         if (self.tok.type != TokenType.COMMA) break;
         self.next()!;
     }
@@ -274,11 +282,9 @@ fn uint? Parser.statement(&self) {
         uint label = self.atom(t.str_value);
         self.next()!;
         self.next()!;
-        bool loop = self.tok.type == TokenType.FOR || self.tok.type == TokenType.WHILE
-            || self.tok.type == TokenType.DO;
-        if (self.dv_on && self.dv_track != 0) self.dv_label_declare(label, t.pos, loop);
-        uint body = self.statement()!;
-        if (self.dv_on && self.dv_track != 0) self.dv_label_pop();
+        if (self.dv_on && self.dv_track != 0) self.dv_label_declare(label, t.pos);
+        uint body = self.sub_statement(true)!;
+        if (self.dv_on && self.dv_track != 0) self.dv_label_finish(body);
         return self.node(NodeTag.LABELED, t.pos, label, body);
     }
     return self.expression_statement();
@@ -361,6 +367,7 @@ fn uint? Parser.var_declaration(&self, char kind, bool in_for) {
     while (true) {
         uint target = self.binding_target()!;
         self.dv_declare_pattern(target, dk);
+        if (dk != DeclKind.VAR && self.dv_on) self.dv_no_let(target);
         self.ts_annotation(definite: true)!;
         uint init = 0;
         if (self.tok.type == TokenType.ASSIGN) {
@@ -393,17 +400,28 @@ fn uint? Parser.paren_expression(&self) {
     return e;
 }
 
+// The body of an if, loop, with or label: Resolver.sub_stmt wraps an Annex B
+// function declaration in an implicit block, and Early.sub_stmt rejects the
+// declarations that are not allowed in a single-statement position.
+fn uint? Parser.sub_statement(&self, bool if_body = false) {
+    self.dv_push_scope(ScopeKind.BLOCK);
+    defer self.dv_pop_scope();
+    uint n = self.statement()!;
+    if (self.dv_on) self.dv_sub_stmt(n, if_body);
+    return n;
+}
+
 fn uint? Parser.if_statement(&self) {
     uint pos = self.tok.pos;
     self.next()!;
     uint test = self.paren_expression()!;
-    uint cons = self.statement()!;
+    uint cons = self.sub_statement(true)!;
     uint alt = 0;
     uint else_pos = 0;
     if (self.tok.type == TokenType.ELSE) {
         else_pos = self.tok.pos;
         self.next()!;
-        alt = self.statement()!;
+        alt = self.sub_statement(true)!;
     }
     return self.node(NodeTag.IF, pos, test, self.triple(cons, alt, else_pos));
 }
@@ -414,7 +432,7 @@ fn uint? Parser.while_statement(&self) {
     uint test = self.paren_expression()!;
     self.dv_loop_enter();
     defer self.dv_loop_leave();
-    uint body = self.statement()!;
+    uint body = self.sub_statement(false)!;
     return self.node(NodeTag.WHILE, pos, test, body);
 }
 
@@ -423,7 +441,7 @@ fn uint? Parser.do_statement(&self) {
     self.next()!;
     self.dv_loop_enter();
     defer self.dv_loop_leave();
-    uint body = self.statement()!;
+    uint body = self.sub_statement(false)!;
     self.expect(TokenType.WHILE)!;
     uint test = self.paren_expression()!;
     // A semicolon after `do ... while ( )` is optional even without a line break.
@@ -486,8 +504,10 @@ fn uint? Parser.try_statement(&self) {
             self.next()!;
             self.dv_push_scope(ScopeKind.CATCH);
             has_param = true;
+            uint c0 = (uint)self.dv_sites.len;
             param = self.binding_target()!;
             self.dv_declare_pattern(param, DeclKind.CATCH);
+            if (self.dv_on && self.dv_track != 0) self.dv_catch_dup(c0);
             self.ts_annotation()!;
             self.expect(TokenType.RPAREN)!;
             catch_end = self.prev.pos;
@@ -523,6 +543,7 @@ fn uint? Parser.switch_statement(&self) {
         self.dv_pop_scope();
     }
     uint cases = self.scratch_mark();
+    bool dv_seen_default = false;
     while (self.tok.type != TokenType.RBRACE) {
         uint cpos = self.tok.pos;
         uint test = 0;
@@ -530,6 +551,10 @@ fn uint? Parser.switch_statement(&self) {
             self.next()!;
             test = self.expression()!;
         } else if (self.tok.type == TokenType.DEFAULT) {
+            if (self.dv_on) {
+                if (dv_seen_default) return self.fail_at(cpos, "More than one default clause in switch statement")~;
+                dv_seen_default = true;
+            }
             self.next()!;
         } else {
             return self.unexpected()~;
@@ -554,10 +579,11 @@ fn uint? Parser.with_statement(&self) {
     uint pos = self.tok.pos;
     self.next()!;
     uint obj = self.paren_expression()!;
+    if (self.ctx.strict) return self.fail_at(pos, "'with' statement is not allowed in strict mode")~;
     self.dv_with();
     self.dv_push_scope(ScopeKind.WITH);
     defer self.dv_pop_scope();
-    uint body = self.statement()!;
+    uint body = self.sub_statement(false)!;
     return self.node(NodeTag.WITH, pos, obj, body);
 }
 
@@ -615,6 +641,7 @@ fn uint? Parser.for_statement(&self) {
     bool is_of = self.at_word("of");
     if (self.tok.type == TokenType.IN || is_of) {
         NodeTag tag = is_of ? NodeTag.FOR_OF : NodeTag.FOR_IN;
+        if (self.dv_on) self.dv_for_in_of_head(init, is_of);
         if (!is_of && fflags != 0) return self.unexpected()~;
         if (!is_of && self.ast.tags.data[init] == NodeTag.VAR_DECL) {
             char head_kind = self.ast.flags.data[init] & VAR_KIND_MASK;
@@ -652,7 +679,7 @@ fn uint? Parser.for_statement(&self) {
         uint header_end = self.prev.pos;
         self.dv_loop_enter();
         defer self.dv_loop_leave();
-        uint body = self.statement()!;
+        uint body = self.sub_statement(false)!;
         uint rec = self.ast.add_record(3);
         self.ast.set_field(rec, 0, right);
         self.ast.set_field(rec, 1, body);
@@ -661,6 +688,7 @@ fn uint? Parser.for_statement(&self) {
     }
     if (fflags != 0) return self.unexpected()~;
     if (self.cover_init != 0) self.check_cover_init()!;
+    if (self.dv_on) self.dv_for_init_check(init);
     return self.for_rest(pos, init);
 }
 
@@ -688,6 +716,6 @@ fn uint? Parser.for_rest(&self, uint pos, uint init) {
     self.expect(TokenType.RPAREN)!;
     self.dv_loop_enter();
     defer self.dv_loop_leave();
-    uint body = self.statement()!;
+    uint body = self.sub_statement(false)!;
     return self.node(NodeTag.FOR, pos, self.quad(init, test, update, body));
 }
