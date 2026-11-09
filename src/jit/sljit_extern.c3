@@ -90,6 +90,12 @@ const int SLJIT_ARGS3WWW_R        = 0x9991;
 const int SLJIT_ARGS4WWWW         = 0x11111;
 const int SLJIT_ARGS4WWWW_R       = 0x99991;
 
+// Opcodes for sljit_emit_op_addr: the address of a label, bound with
+// sljit_set_label, in a register, for an indirect jump or call.
+const int SLJIT_MOV_ADDR          = 0;
+const int SLJIT_MOV_ABS_ADDR      = 1;
+const int SLJIT_ADD_ABS_ADDR      = 2;
+
 // Indexed operands encode base + (index << shift); shift is the operand
 // offset passed to the emitting instruction, restricted by SLJIT to 0..3.
 fn int mem_index(int base, int index) @inline => SLJIT_MEM | base | (index << 8);

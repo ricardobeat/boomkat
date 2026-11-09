@@ -87,9 +87,9 @@ fn void check(String pattern, ushort[] units, ushort flags, bool narrow) {
     }
     defer re_native::re_native_free(native);
 
-    char[64] narrow_buf;
-    ushort[64] wide_buf;
-    for (usz i = 0; i < units.len && i < 64; i++) {
+    char[300] narrow_buf;
+    ushort[300] wide_buf;
+    for (usz i = 0; i < units.len && i < 300; i++) {
         narrow_buf[i] = (char)(units[i] & 0xff);
         wide_buf[i] = units[i];
     }
@@ -282,6 +282,22 @@ fn void octane_cases() {
     }
 }
 
+// Subjects long enough that a repeated group needs more backtracking frames and
+// undo records than the buffers a run starts with, which is where the growth of
+// both stacks is exercised. The lengths straddle the initial capacities.
+fn void deep_cases() {
+    int[] lengths = { 4, 20, 40, 47, 48, 49, 60, 96, 97, 120, 200 };
+    foreach (len : lengths) {
+        ushort[300] units;
+        for (int i = 0; i < len; i++) units[i] = (ushort)('a' + (i & 1));
+        units[len] = 'b';
+        check("(a)*b", units[0..len + 1], 0, true);
+        check("a*b", units[0..len + 1], 0, true);
+        check("(?:a|b)*c", units[0..len + 1], 0, true);
+        check("(?:a|b)*$", units[0..len + 1], 0, true);
+    }
+}
+
 fn void cases() {
     // The position loop, a class and a greedy run over it.
     check("[a-c]+x", (ushort[]){'z', 'z', 'a', 'b', 'c', 'x', 'z'}, 0, true);
@@ -411,6 +427,7 @@ fn void main() {
         foreach (entry : OCTANE_PATTERNS) dump(entry.pattern, entry.flags);
         return;
     }
+    deep_cases();
     cases();
     octane_cases();
     if (failures != 0) {

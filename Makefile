@@ -592,6 +592,17 @@ out/re_exec_test: project.json $(call target_sources,re_exec_test) $(SLJIT_DEPS)
 	$(C3C_BUILD) re_exec_test $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-re_exec_test
 
+# The differential suite under AddressSanitizer: the matcher's own hosts are the
+# C code the sanitizer sees, so a lifetime bug behind a compiled body reports
+# here instead of corrupting a run.
+out/re_exec_test_asan: project.json $(call target_sources,re_exec_test_asan) $(SLJIT_DEPS)
+	$(C3C_BUILD) re_exec_test_asan $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-re_exec_test_asan
+
+.PHONY: test-native-regexp-asan
+test-native-regexp-asan: out/re_exec_test_asan
+	./out/re_exec_test_asan
+
 .PHONY: test-native-regexp
 test-native-regexp: out/re_prog_test out/re_input_test out/re_class_test out/re_exec_test
 	./out/re_prog_test

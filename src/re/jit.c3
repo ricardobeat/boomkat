@@ -4,10 +4,17 @@
 // every step and returns to a dispatch loop after each one. Here the same
 // semantics become a graph of blocks joined by direct jumps: the opcode is
 // chosen once at compile time, a class is folded into a membership bitmap, and
-// a failure jumps to the shared attempt-failed path instead of a switch arm.
+// a failure jumps to a shared backtracking path instead of a switch arm.
 // Semantics are unchanged, and the walk stays the reference: a program this
 // compiler does not model keeps the decoded program on the walk, and a machine
 // it cannot emit for keeps it on libregexp.
+//
+// The backtracking state is the walk's: a stack of frames holding a resume
+// address, a position and an undo mark. A failure unwinds to the innermost
+// frame's mark and jumps to that address, so an alternative costs one indirect
+// jump instead of an instruction dispatch. A greedy run pushes one frame for the
+// whole run and its resume address is a stub that gives back one code point per
+// visit, which is the same economy the walk's run frames make.
 //
 // Two variants are compiled per program, one per subject form. A Latin-1
 // subject is one byte per code unit and never holds a surrogate pair, so the
@@ -49,11 +56,34 @@ struct ReJitClass {
 // instruction. Owned by the program and freed with it.
 struct ReJitData {
     char[RE_JIT_BITS] space_bits;
-    char[RE_JIT_BITS] word_bits;
     ReJitClass[] classes;
     // Class index per instruction, RE_NONE for the instructions that are not
     // class tests.
     uint[] class_at;
+}
+
+// The offsets of the state the emitted code reads and writes. The walk and the
+// compiled body share one record, so these are the offsets the struct has on
+// this build.
+struct ReLayout {
+    long in_data;
+    long in_len;
+    long depth;
+    long undo_len;
+    long frames;
+    long frame_cap;
+    long regs;
+    long capture;
+    long undo;
+    long undo_cap;
+}
+
+// A greedy run's give-back path: the address its frame resumes at, the register
+// holding the position the run must keep, and where the program continues.
+struct ReJitStub {
+    void* label;
+    uint slot;
+    uint after;
 }
 
 // A jump whose destination is not emitted yet.
@@ -66,6 +96,29 @@ struct ReJitFix {
 const int FIX_INSN = 0;
 const int FIX_ATTEMPT = 1;
 const int FIX_EXHAUSTED = 2;
+const int FIX_BACKTRACK = 3;
+const int FIX_STUB = 4;
+
+// A frame's fields, and the stride between frames: the resume address, the
+// position it resumes at, and the undo depth to restore first.
+const long RE_JIT_FRAME_RESUME = 0;
+const long RE_JIT_FRAME_POS = 8;
+const long RE_JIT_FRAME_UNDO = 12;
+const long RE_JIT_FRAME_STAR = 16;
+const uint RE_JIT_FRAME_BYTES = 24;
+
+// The compiled body's own storage, past the frame slots it uses for the attempt
+// and for the frame it is unwinding.
+const long SLOT_ATTEMPT = 0;
+const long SLOT_FRAME = 8;
+const long SLOT_RUN_START = 16;
+const long SLOT_RUN_END = 24;
+const long SLOT_SCRATCH = 32;
+// The slots above, and the frame SLJIT is asked for: SLJIT places the saved
+// registers of its own prologue and what a call spills above the area the
+// emitted code addresses, so the two are sized together here and the frame
+// size is never written as a literal at the call.
+const int RE_JIT_LOCALS = SLOT_SCRATCH + 8;
 
 // The emitter's registers. Saved registers hold state that must survive a
 // helper call; scratch registers are the C ABI's argument and result registers,
@@ -89,11 +142,20 @@ struct ReAsm {
     int t2;
     int t3;
     int t4;
+    ReLayout lay;
     void*[] labels;
     ReJitFix[] fixes;
     uint fix_len;
     void* attempt;
+    void* backtrack;
     void* exhausted;
+    // Where a failed test goes instead of the backtracking path: the loop end of
+    // a greedy run turns a mismatch into "the run is over", not "the attempt
+    // failed".
+    void*[] sink;
+    uint sink_len;
+    ReJitStub[] stubs;
+    uint stub_len;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,13 +164,6 @@ struct ReAsm {
 
 fn void re_jit_bit(char* bits, uint unit) @inline {
     bits[unit >> 3] = bits[unit >> 3] | (char)(1 << (unit & 7));
-}
-
-// Record a capture or register write, as the walk does, so a failed attempt can
-// restore what it overwrote.
-fn long re_jit_write(re_native::ReExec* e, long slot, long value) {
-    e.write((uint)slot, (uint)value);
-    return 0;
 }
 
 // Start an attempt from a clean state: every value the last attempt wrote is
@@ -143,6 +198,72 @@ fn long re_jit_class_matches(re_native::ReClass* cls, long cp) {
     return cls.matches((uint)cp) ? 1 : 0;
 }
 
+// The value of a capture slot or register, for a greedy run's give-back path.
+fn long re_jit_read(re_native::ReExec* e, long slot) => (long)e.read((uint)slot);
+
+// Make room for one more undo record before the emitted write stores it.
+fn long re_jit_reserve_slots(re_native::ReExec* e) {
+    e.reserve_slots();
+    return 0;
+}
+
+// Restore every write recorded above `mark`.
+fn long re_jit_unwind(re_native::ReExec* e, long mark) {
+    e.unwind((uint)mark);
+    return 0;
+}
+
+// The code point ending just before `pos`, which a wide subject's give-back
+// needs and the narrow form computes inline.
+fn long re_jit_prev_code_point(re_native::ReExec* e, long pos) {
+    uint at = (uint)pos;
+    e.in.prev_code_point(&at);
+    return (long)at;
+}
+
+// Make room for one more frame before the emitted push stores it.
+fn long re_jit_grow(re_native::ReExec* e) {
+    e.reserve_frame();
+    return 0;
+}
+
+// The offsets of the shared run state on this build.
+fn ReLayout re_layout() {
+    re_native::ReExec* e = (re_native::ReExec*)(usz)4096;
+    ReLayout lay = {
+        .in_data = (char*)&e.in.data - (char*)e,
+        .in_len = (char*)&e.in.len - (char*)e,
+        .depth = (char*)&e.depth - (char*)e,
+        .undo_len = (char*)&e.undo_len - (char*)e,
+        .frames = (char*)&e.frames - (char*)e,
+        .frame_cap = (char*)&e.frame_cap - (char*)e,
+        .regs = (char*)&e.regs - (char*)e,
+        .capture = (char*)&e.capture - (char*)e,
+        .undo = (char*)&e.undo - (char*)e,
+        .undo_cap = (char*)&e.undo_cap - (char*)e,
+    };
+    // The emitted code stores through these offsets; a field reordered above
+    // them would silently corrupt the run.
+    assert(lay.capture == 8 && lay.regs == 16 && lay.frames == 24 && lay.undo == 32);
+    assert(lay.frame_cap == 40 && lay.undo_cap == 44 && lay.depth == 48 && lay.undo_len == 52);
+    assert(lay.in_data == 72 && lay.in_len == 80);
+    re_native::ReFrame* f = (re_native::ReFrame*)(usz)4096;
+    assert((char*)&f.resume - (char*)f == RE_JIT_FRAME_RESUME);
+    assert((char*)&f.pos - (char*)f == RE_JIT_FRAME_POS);
+    assert((char*)&f.undo - (char*)f == RE_JIT_FRAME_UNDO);
+    assert((char*)&f.star - (char*)f == RE_JIT_FRAME_STAR);
+    assert(re_native::ReFrame::size == RE_JIT_FRAME_BYTES);
+    return lay;
+}
+
+// Whether the position is a word boundary, or, with `flags` bit 1, whether it is
+// not one. Bit 0 is the ignore-case form.
+fn long re_jit_word_boundary(re_native::ReExec* e, long pos, long flags) {
+    bool boundary = e.in.word_boundary_at((uint)pos, (flags & 1) != 0);
+    bool want = (flags & 2) == 0;
+    return boundary == want ? 1 : 0;
+}
+
 // Whether a code point above the Latin-1 range is a space.
 fn long re_jit_is_space(long cp) {
     return re_bindings::re_is_space((uint)cp) ? 1 : 0;
@@ -168,6 +289,14 @@ fn void ReAsm.mov_u32(&self, int dst, long dstw, int src, long srcw) @inline {
     jit::sljit_emit_op1(self.c, jit::SLJIT_MOV_U32, dst, dstw, src, srcw);
 }
 
+fn void ReAsm.store_u32(&self, int base, long off, int src) @inline {
+    jit::sljit_emit_op1(self.c, jit::SLJIT_MOV_U32, jit::SLJIT_MEM | base, off, src, 0);
+}
+
+fn void ReAsm.load_u8(&self, int dst, int base, long off) @inline {
+    jit::sljit_emit_op1(self.c, jit::SLJIT_MOV_U8, dst, 0, jit::SLJIT_MEM | base, off);
+}
+
 fn void ReAsm.op2(&self, int op, int dst, long dstw, int a, long aw, int b, long bw) @inline {
     jit::sljit_emit_op2(self.c, op, dst, dstw, a, aw, b, bw);
 }
@@ -187,23 +316,36 @@ fn void ReAsm.leave(&self, int value) @inline {
     jit::sljit_emit_return(self.c, jit::SLJIT_MOV, jit::SLJIT_IMM, (long)value);
 }
 
-// A jump to an instruction block, a helper label, or the failure path.
+// Record a jump to be bound once every block and stub has a label.
+fn void ReAsm.add_fix(&self, void* jump, uint target, int kind) {
+    self.fixes[self.fix_len] = { .jump = jump, .target = target, .kind = kind };
+    self.fix_len++;
+}
+
+// A jump to an instruction block, a helper label, or a failure path.
 fn void ReAsm.go(&self, uint target, int kind) {
     void* jump = self.jump();
     if (kind == FIX_INSN && target < self.labels.len && self.labels[target] != null) {
         self.bind(jump, self.labels[target]);
         return;
     }
-    self.fixes[self.fix_len] = { .jump = jump, .target = target, .kind = kind };
-    self.fix_len++;
+    self.add_fix(jump, target, kind);
 }
 
-// Jump to the attempt-failed path.
-fn void ReAsm.fail(&self) @inline => self.go(0, FIX_EXHAUSTED);
+// A backward jump to a label already emitted.
+fn void ReAsm.go_label(&self, void* label) @inline => self.bind(self.jump(), label);
+
+// Jump to the backtracking path, which resumes the innermost frame or, when
+// there is none, tries the next candidate.
+fn void ReAsm.fail(&self) @inline => self.go(0, FIX_BACKTRACK);
 
 fn void ReAsm.fail_if(&self, void* jump) {
-    self.fixes[self.fix_len] = { .jump = jump, .target = 0, .kind = FIX_EXHAUSTED };
-    self.fix_len++;
+    if (self.sink.len != 0) {
+        self.sink[self.sink_len] = jump;
+        self.sink_len++;
+        return;
+    }
+    self.add_fix(jump, 0, FIX_BACKTRACK);
 }
 
 fn void ReAsm.fail_if_equal(&self, int reg, long value) @inline {
@@ -224,13 +366,18 @@ fn void ReAsm.next(&self, uint pc) {
     }
 }
 
-// The code unit at *pos into `dst`, leaving the position past it; the code
-// point when the subject is wide and the pattern unicode, so a surrogate pair
-// reads as one code point.
-fn void ReAsm.emit_read(&self) {
+// The jump taken when the position has run past the subject.
+fn void* ReAsm.emit_bounds(&self) @inline {
+    return self.cmp(jit::SLJIT_GREATER_EQUAL, self.s_pos, 0, self.s_len, 0);
+}
+
+// The code unit at *pos into t0, leaving the position past it; the code point
+// when the subject is wide and the pattern unicode, so that a surrogate pair
+// reads as one code point. The caller has established that the position is
+// inside the subject.
+fn void ReAsm.emit_unit_read(&self) {
     int t0 = self.t0;
     int t1 = self.t1;
-    self.fail_if(self.cmp(jit::SLJIT_GREATER_EQUAL, self.s_pos, 0, self.s_len, 0));
     if (!self.wide) {
         self.mov_u8(t0, 0, jit::mem_index(self.s_data, self.s_pos), 0);
         self.op2(jit::SLJIT_ADD, self.s_pos, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
@@ -260,8 +407,44 @@ fn void ReAsm.emit_read(&self) {
     self.bind(low_above, done);
 }
 
-// The unit at the position in `at` into `dst`, as a code unit: the wide form's
-// surrogate combining belongs to emit_read, not to these one-unit tests.
+// Consume one code point into t0, failing when the position is past the end.
+fn void ReAsm.emit_read(&self) {
+    self.fail_if(self.emit_bounds());
+    self.emit_unit_read();
+}
+
+// Test the code point in t0 against `insn`. A mismatch is a failure of the
+// region being emitted: the attempt, or a greedy run's loop end.
+fn void ReAsm.emit_test(&self, re_native::ReInsn* insn, uint pc) {
+    switch (insn.op) {
+        case ReOp.CHAR: case ReOp.CHAR32:
+            self.fail_if_not(self.t0, insn.a);
+        case ReOp.CHAR_I: case ReOp.CHAR32_I:
+            self.emit_canonicalize();
+            self.fail_if_not(self.t0, insn.a);
+        case ReOp.DOT:
+            self.fail_if_equal(self.t0, '\n');
+            self.fail_if_equal(self.t0, '\r');
+            if (self.wide) {
+                self.fail_if_equal(self.t0, 0x2028);
+                self.fail_if_equal(self.t0, 0x2029);
+            }
+        case ReOp.ANY:
+            break;
+        case ReOp.SPACE:
+            self.emit_space(self.t0, false);
+        case ReOp.NOT_SPACE:
+            self.emit_space(self.t0, true);
+        case ReOp.RANGE: case ReOp.RANGE_I: case ReOp.RANGE32: case ReOp.RANGE32_I:
+            self.emit_class(self.t0, self.data.class_at[pc]);
+        default:
+            // Only the single-character instructions reach here.
+            self.fail();
+    }
+}
+
+// The code unit at the position in `at` into `dst`, as a code unit: the wide
+// form's surrogate combining belongs to emit_unit_read, not to a one-unit test.
 fn void ReAsm.emit_unit(&self, int dst, int at) @inline {
     if (self.wide) {
         self.mov_u16(dst, 0, jit::mem_index(self.s_data, at), 1);
@@ -333,29 +516,6 @@ fn void ReAsm.emit_space(&self, int unit, bool invert) {
     self.bind(skip, self.label());
 }
 
-// Whether the unit in `unit` is a word character, into `out` as 0 or 1.
-fn void ReAsm.emit_word_unit(&self, int unit, int out, bool ignore_case) {
-    if (!self.wide) {
-        self.emit_bit(unit, (usz)&self.data.word_bits[0], out);
-        return;
-    }
-    void* above = self.cmp(jit::SLJIT_GREATER_EQUAL, unit, 0, jit::SLJIT_IMM, 256);
-    self.emit_bit(unit, (usz)&self.data.word_bits[0], out);
-    void* skip = self.jump();
-    self.bind(above, self.label());
-    // Above Latin-1 only the two code points that case-fold to an ASCII word
-    // character count, and only in the ignore-case form.
-    self.mov(out, 0, jit::SLJIT_IMM, 0);
-    if (ignore_case) {
-        void* long_s = self.cmp(jit::SLJIT_EQUAL, unit, 0, jit::SLJIT_IMM, 0x017F);
-        void* kelvin = self.cmp(jit::SLJIT_EQUAL, unit, 0, jit::SLJIT_IMM, 0x212A);
-        self.bind(long_s, self.label());
-        self.bind(kelvin, self.label());
-        self.mov(out, 0, jit::SLJIT_IMM, 1);
-    }
-    self.bind(skip, self.label());
-}
-
 // Fail unless the position sits at a line start, or, in multiline mode, just
 // after a line terminator.
 fn void ReAsm.emit_line_start(&self, bool multiline) {
@@ -412,24 +572,12 @@ fn void ReAsm.emit_line_end(&self, bool multiline) {
 // Fail unless exactly one of the code points around the position is a word
 // character; `invert` is the \B form, which requires the two to agree.
 fn void ReAsm.emit_word_boundary(&self, bool ignore_case, bool invert) {
-    int after = self.t3;
-    int before = self.t4;
-    self.mov(after, 0, jit::SLJIT_IMM, 0);
-    void* after_done = self.cmp(jit::SLJIT_GREATER_EQUAL, self.s_pos, 0, self.s_len, 0);
-    self.emit_unit(self.t0, self.s_pos);
-    self.emit_word_unit(self.t0, after, ignore_case);
-    self.bind(after_done, self.label());
-    self.mov(before, 0, jit::SLJIT_IMM, 0);
-    void* before_done = self.cmp(jit::SLJIT_EQUAL, self.s_pos, 0, jit::SLJIT_IMM, 0);
-    self.op2(jit::SLJIT_SUB, self.t1, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
-    self.emit_unit(self.t0, self.t1);
-    self.emit_word_unit(self.t0, before, ignore_case);
-    self.bind(before_done, self.label());
-    if (invert) {
-        self.fail_if(self.cmp(jit::SLJIT_NOT_EQUAL, before, 0, after, 0));
-    } else {
-        self.fail_if(self.cmp(jit::SLJIT_EQUAL, before, 0, after, 0));
-    }
+    self.mov(self.t0, 0, self.s_e, 0);
+    self.mov_u32(self.t1, 0, self.s_pos, 0);
+    self.mov(self.t2, 0, jit::SLJIT_IMM, (ignore_case ? 1 : 0) | (invert ? 2 : 0));
+    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW_R,
+                          jit::SLJIT_IMM, (long)(usz)&re_jit_word_boundary);
+    self.fail_if_equal(self.t0, 0);
 }
 
 // Canonicalize the code point in t0 for the ignore-case comparisons: the ASCII
@@ -460,55 +608,301 @@ fn void ReAsm.emit_canonicalize(&self) {
     self.bind(high, done);
 }
 
-// Write the capture slot or register `slot` from the current position.
-fn void ReAsm.emit_save(&self, uint slot) {
-    self.mov(self.t0, 0, self.s_e, 0);
-    self.mov(self.t1, 0, jit::SLJIT_IMM, (long)slot);
-    self.mov_u32(self.t2, 0, self.s_pos, 0);
-    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW,
-                     jit::SLJIT_IMM, (long)(usz)&re_jit_write);
+// Read the quantifier register `slot`, which sits past the captures in the
+// run's slot array. One load, since the index is known here.
+fn void ReAsm.emit_read_reg(&self, uint slot, int dst) {
+    uint base = self.prog.capture_count * 2;
+    int regs = dst == self.t0 ? self.t1 : self.t0;
+    self.mov(regs, 0, jit::SLJIT_MEM | self.s_e, self.lay.regs);
+    self.mov_u32(dst, 0, jit::SLJIT_MEM | regs, (long)(slot - base) * 4);
 }
 
+// Write the capture slot or register `slot` from a value in `value`, recording
+// what it held so a failed attempt can restore it.
+//
+// The record is written here rather than by a helper: a capture write is once or
+// twice per attempt, and a call per write showed up at the top of the profile.
+// Every write is recorded, without the walk's scan for an earlier record of the
+// same slot: restoring in reverse order undoes a repeated write just as exactly,
+// and a run that rewrites a capture is bounded by the subject's length.
+fn void ReAsm.emit_write(&self, uint slot, int value) {
+    uint captures = self.prog.capture_count * 2;
+    long array = slot < captures ? self.lay.capture : self.lay.regs;
+    long off = (long)(slot < captures ? slot : slot - captures) * 4;
+    // Room for one more record; the growth is rare, so it stays a call.
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_len);
+    self.mov_u32(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_cap);
+    void* room = self.cmp(jit::SLJIT_LESS, self.t1, 0, self.t2, 0);
+    // The helper takes the run in R0, and the value being written has to survive
+    // the call: it is spilled here, which is why only the rare path pays.
+    self.mov(jit::SLJIT_MEM | jit::reg_sp(), SLOT_SCRATCH, value, 0);
+    self.mov(self.t0, 0, self.s_e, 0);
+    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS1WW,
+                          jit::SLJIT_IMM, (long)(usz)&re_jit_reserve_slots);
+    self.mov(value, 0, jit::SLJIT_MEM | jit::reg_sp(), SLOT_SCRATCH);
+    self.bind(room, self.label());
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_len);
+    // The record: the slot, and the value it held.
+    self.mov(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo);
+    self.op2(jit::SLJIT_SHL, self.t3, 0, self.t1, 0, jit::SLJIT_IMM, 3);
+    self.op2(jit::SLJIT_ADD, self.t2, 0, self.t2, 0, self.t3, 0);
+    self.mov(self.t3, 0, jit::SLJIT_IMM, (long)slot);
+    self.store_u32(self.t2, 0, self.t3);
+    self.mov(self.t3, 0, jit::SLJIT_MEM | self.s_e, array);
+    self.mov_u32(self.t3, 0, jit::SLJIT_MEM | self.t3, off);
+    self.store_u32(self.t2, 4, self.t3);
+    self.op2(jit::SLJIT_ADD, self.t1, 0, self.t1, 0, jit::SLJIT_IMM, 1);
+    self.store_u32(self.s_e, self.lay.undo_len, self.t1);
+    // The value itself.
+    self.mov(self.t1, 0, jit::SLJIT_MEM | self.s_e, array);
+    self.mov_u32(jit::SLJIT_MEM | self.t1, off, value, 0);
+}
+
+// Write the capture slot or register `slot` from the current position.
+fn void ReAsm.emit_save(&self, uint slot) @inline => self.emit_write(slot, self.s_pos);
+
 // Write the capture slot or register `slot` from a constant.
-fn void ReAsm.emit_value(&self, uint slot, uint value) {
+fn void ReAsm.emit_value(&self, uint slot, uint value) @inline {
+    self.mov(self.t0, 0, jit::SLJIT_IMM, (long)value);
+    self.emit_write(slot, self.t0);
+}
+
+// Push a backtracking frame that resumes at `target`, from the current
+// position, undoing whatever is written from here on.
+fn void ReAsm.emit_push(&self, int kind, uint target, bool run) {
+    // Room for one more frame. Growth reallocates the stack and updates the run,
+    // so it is a call, and the depth and the base are read again afterwards.
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
+    self.mov_u32(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.frame_cap);
+    void* room = self.cmp(jit::SLJIT_LESS, self.t1, 0, self.t2, 0);
+    self.mov(self.t0, 0, self.s_e, 0);
+    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS1WW,
+                          jit::SLJIT_IMM, (long)(usz)&re_jit_grow);
+    self.bind(room, self.label());
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
+    // The resume address, bound to the block or stub this frame returns to.
+    void* resume = jit::sljit_emit_op_addr(self.c, jit::SLJIT_MOV_ADDR, self.t0, 0);
+    self.add_fix(resume, target, kind);
+    // The frame at depth, whose stride is the frame's size.
+    self.mov(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.frames);
+    self.op2(jit::SLJIT_SHL, self.t3, 0, self.t1, 0, jit::SLJIT_IMM, 1);
+    self.op2(jit::SLJIT_ADD, self.t3, 0, self.t3, 0, self.t1, 0);
+    self.op2(jit::SLJIT_SHL, self.t3, 0, self.t3, 0, jit::SLJIT_IMM, 3);
+    self.op2(jit::SLJIT_ADD, self.t2, 0, self.t2, 0, self.t3, 0);
+    self.mov(jit::SLJIT_MEM | self.t2, RE_JIT_FRAME_RESUME, self.t0, 0);
+    self.store_u32(self.t2, RE_JIT_FRAME_POS, self.s_pos);
+    self.mov_u32(self.t3, 0, jit::SLJIT_MEM | self.s_e, self.lay.undo_len);
+    self.store_u32(self.t2, RE_JIT_FRAME_UNDO, self.t3);
+    self.mov(self.t3, 0, jit::SLJIT_IMM, run ? 1 : 0);
+    jit::sljit_emit_op1(self.c, jit::SLJIT_MOV_U8, jit::SLJIT_MEM | self.t2, RE_JIT_FRAME_STAR, self.t3, 0);
+    self.op2(jit::SLJIT_ADD, self.t1, 0, self.t1, 0, jit::SLJIT_IMM, 1);
+    self.store_u32(self.s_e, self.lay.depth, self.t1);
+}
+
+// One split: the alternative is pushed and the preferred side runs.
+fn void ReAsm.emit_split(&self, uint pc, re_native::ReInsn* insn, bool target_first) {
+    if (target_first) {
+        self.emit_push(FIX_INSN, pc + 1, false);
+        self.go(insn.target, FIX_INSN);
+    } else {
+        self.emit_push(FIX_INSN, insn.target, false);
+        self.next(pc);
+    }
+}
+
+// A counted repeat: step the counter down, keep looping while it is above what
+// the pattern requires, and split once it reaches it. The check-advance forms
+// fail when the atom stopped advancing before the minimum was reached.
+fn void ReAsm.emit_loop_split(&self, uint pc, re_native::ReInsn* insn) {
+    uint base = self.prog.capture_count * 2;
+    uint slot = base + insn.reg;
+    bool checking = insn.op == ReOp.LOOP_CHECK_ADV_SPLIT_GOTO_FIRST
+        || insn.op == ReOp.LOOP_CHECK_ADV_SPLIT_NEXT_FIRST;
+    bool next_first = insn.op == ReOp.LOOP_SPLIT_NEXT_FIRST
+        || insn.op == ReOp.LOOP_CHECK_ADV_SPLIT_NEXT_FIRST;
+    self.emit_read_reg(slot, self.t3);
+    self.op2(jit::SLJIT_SUB, self.t3, 0, self.t3, 0, jit::SLJIT_IMM, 1);
+    self.mov(self.t0, 0, self.t3, 0);
+    self.emit_write(slot, self.t0);
+    // The write uses the scratch registers, so the counter is read back.
+    self.emit_read_reg(slot, self.t3);
+    // Still inside the count the pattern requires: keep looping.
+    void* settled_down = self.cmp(jit::SLJIT_LESS_EQUAL, self.t3, 0, jit::SLJIT_IMM, insn.a);
+    self.go(insn.target, FIX_INSN);
+    self.bind(settled_down, self.label());
+    if (checking) {
+        self.emit_read_reg(slot + 1, self.t0);
+        void* advanced = self.cmp(jit::SLJIT_NOT_EQUAL, self.t0, 0, self.s_pos, 0);
+        void* at_minimum = self.cmp(jit::SLJIT_EQUAL, self.t3, 0, jit::SLJIT_IMM, insn.a);
+        self.fail();
+        void* settled = self.label();
+        self.bind(advanced, settled);
+        self.bind(at_minimum, settled);
+    }
+    // The count has reached the minimum: the rest of the pattern is tried once,
+    // with the loop still available when that fails.
+    void* looping = self.cmp(jit::SLJIT_NOT_EQUAL, self.t3, 0, jit::SLJIT_IMM, 0);
+    self.next(pc);
+    self.bind(looping, self.label());
+    if (next_first) {
+        self.emit_push(FIX_INSN, insn.target, false);
+        self.next(pc);
+    } else {
+        self.emit_push(FIX_INSN, pc + 1, false);
+        self.go(insn.target, FIX_INSN);
+    }
+}
+
+// A greedy run over one single-character atom. The run takes everything the
+// atom matches; what it consumed beyond the minimum is given back one code point
+// at a time by the stub, which is the same frame economy the walk's runs make.
+fn void ReAsm.emit_star(&self, uint pc) {
+    re_native::ReInsn* insn = &self.prog.insns[pc];
+    re_native::ReInsn* body = &self.prog.insns[insn.target];
+    uint min = (uint)insn.a;
+    uint slot = self.prog.capture_count * 2 + insn.reg;
+    int sp = jit::reg_sp();
+    self.mov(jit::SLJIT_MEM | sp, SLOT_RUN_START, self.s_pos, 0);
+    void*[16] exits;
+    self.sink = exits[..];
+    self.sink_len = 0;
+    void* loop = self.label();
+    void* out_of_units = self.emit_bounds();
+    self.emit_unit_read();
+    self.emit_test(body, insn.target);
+    self.go_label(loop);
+    uint exits_len = self.sink_len;
+    self.sink = {};
+    // A test that fails leaves the position past the code point it read; the
+    // run ends just before it.
+    void* failed = self.label();
+    for (uint i = 0; i < exits_len; i++) self.bind(exits[i], failed);
+    if (self.wide) {
+        self.mov(self.t0, 0, self.s_e, 0);
+        self.mov(self.t1, 0, self.s_pos, 0);
+        jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW_R,
+                              jit::SLJIT_IMM, (long)(usz)&re_jit_prev_code_point);
+        self.mov(self.s_pos, 0, self.t0, 0);
+        self.mov_u32(self.s_pos, 0, self.t0, 0);
+    } else {
+        self.op2(jit::SLJIT_SUB, self.s_pos, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+    }
+    void* ran = self.label();
+    self.bind(out_of_units, ran);
+    // The run must cover the minimum the pattern requires.
+    self.mov(self.t0, 0, jit::SLJIT_MEM | sp, SLOT_RUN_START);
+    self.op2(jit::SLJIT_ADD, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, (long)min);
+    if (min != 0) {
+        void* enough = self.cmp(jit::SLJIT_GREATER_EQUAL, self.s_pos, 0, self.t0, 0);
+        self.fail();
+        self.bind(enough, self.label());
+    }
+    // The position the minimum ends at is kept where a give-back reads it, and
+    // across the write, which returns through registers the emitted code does
+    // not own.
+    self.mov(jit::SLJIT_MEM | sp, SLOT_RUN_END, self.t0, 0);
+    self.emit_write(slot, self.t0);
+    self.mov(self.t1, 0, jit::SLJIT_MEM | sp, SLOT_RUN_END);
+    void* no_frame = self.cmp(jit::SLJIT_EQUAL, self.s_pos, 0, self.t1, 0);
+    self.emit_push(FIX_STUB, self.stub_len, true);
+    self.go(insn.after, FIX_INSN);
+    self.bind(no_frame, self.label());
+    self.go(insn.after, FIX_INSN);
+    self.emit_giveback(self.stub_len, slot, insn.after);
+}
+
+// The out-of-line path a greedy run's frame resumes at: hand one code point back
+// and continue after the run, or drop the frame once only the minimum is left.
+fn void ReAsm.emit_giveback(&self, uint stub, uint slot, uint after) {
+    int sp = jit::reg_sp();
+    self.stubs[stub].slot = slot;
+    self.stubs[stub].after = after;
+    self.stubs[stub].label = self.label();
+    self.stub_len = stub + 1;
+    // The position the run must keep.
     self.mov(self.t0, 0, self.s_e, 0);
     self.mov(self.t1, 0, jit::SLJIT_IMM, (long)slot);
-    self.mov(self.t2, 0, jit::SLJIT_IMM, (long)value);
-    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS3WWW,
-                     jit::SLJIT_IMM, (long)(usz)&re_jit_write);
+    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW_R,
+                          jit::SLJIT_IMM, (long)(usz)&re_jit_read);
+    self.mov(jit::SLJIT_MEM | sp, SLOT_RUN_END, self.t0, 0);
+    // One code point back from the current position.
+    if (self.wide) {
+        self.mov(self.t0, 0, self.s_e, 0);
+        self.mov(self.t1, 0, self.s_pos, 0);
+        jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW_R,
+                              jit::SLJIT_IMM, (long)(usz)&re_jit_prev_code_point);
+        self.mov(self.t0, 0, self.t0, 0);
+    } else {
+        void* at_zero = self.cmp(jit::SLJIT_EQUAL, self.s_pos, 0, jit::SLJIT_IMM, 0);
+        self.mov(self.t0, 0, self.s_pos, 0);
+        self.op2(jit::SLJIT_SUB, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, 1);
+        self.bind(at_zero, self.label());
+    }
+    self.mov(self.t1, 0, jit::SLJIT_MEM | sp, SLOT_RUN_END);
+    self.mov_u32(self.t0, 0, self.t0, 0);
+    void* spent = self.cmp(jit::SLJIT_LESS_EQUAL, self.t0, 0, self.t1, 0);
+    // Still above the minimum: the frame keeps the position it gave back to.
+    self.mov(self.s_pos, 0, self.t0, 0);
+    self.mov_u32(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
+    self.op2(jit::SLJIT_SUB, self.t2, 0, self.t2, 0, jit::SLJIT_IMM, 1);
+    self.mov(self.t3, 0, jit::SLJIT_MEM | self.s_e, self.lay.frames);
+    self.op2(jit::SLJIT_SHL, self.t4, 0, self.t2, 0, jit::SLJIT_IMM, 1);
+    self.op2(jit::SLJIT_ADD, self.t4, 0, self.t4, 0, self.t2, 0);
+    self.op2(jit::SLJIT_SHL, self.t4, 0, self.t4, 0, jit::SLJIT_IMM, 3);
+    self.op2(jit::SLJIT_ADD, self.t3, 0, self.t3, 0, self.t4, 0);
+    self.store_u32(self.t3, RE_JIT_FRAME_POS, self.t0);
+    self.go(after, FIX_INSN);
+    // Only the minimum is left: the run is spent and the frame goes with it.
+    self.bind(spent, self.label());
+    self.mov(self.s_pos, 0, self.t1, 0);
+    self.mov_u32(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
+    self.op2(jit::SLJIT_SUB, self.t2, 0, self.t2, 0, jit::SLJIT_IMM, 1);
+    self.store_u32(self.s_e, self.lay.depth, self.t2);
+    self.go(after, FIX_INSN);
+}
+
+// Every failure lands here: resume the innermost frame after restoring what the
+// failed attempt wrote, or, with no frame left, look for another candidate.
+fn void ReAsm.emit_backtrack(&self) {
+    int sp = jit::reg_sp();
+    self.mov_u32(self.t0, 0, jit::SLJIT_MEM | self.s_e, self.lay.depth);
+    void* empty = self.cmp(jit::SLJIT_EQUAL, self.t0, 0, jit::SLJIT_IMM, 0);
+    // The innermost frame.
+    self.op2(jit::SLJIT_SUB, self.t1, 0, self.t0, 0, jit::SLJIT_IMM, 1);
+    self.mov(self.t2, 0, jit::SLJIT_MEM | self.s_e, self.lay.frames);
+    self.op2(jit::SLJIT_SHL, self.t3, 0, self.t1, 0, jit::SLJIT_IMM, 1);
+    self.op2(jit::SLJIT_ADD, self.t3, 0, self.t3, 0, self.t1, 0);
+    self.op2(jit::SLJIT_SHL, self.t3, 0, self.t3, 0, jit::SLJIT_IMM, 3);
+    self.op2(jit::SLJIT_ADD, self.t2, 0, self.t2, 0, self.t3, 0);
+    self.mov(jit::SLJIT_MEM | sp, SLOT_FRAME, self.t2, 0);
+    // A greedy run's frame stays where it is: its stub hands back one code point
+    // per visit and drops the frame itself once only the minimum is left. Every
+    // other frame is spent by resuming it.
+    self.load_u8(self.t3, self.t2, RE_JIT_FRAME_STAR);
+    void* run = self.cmp(jit::SLJIT_NOT_EQUAL, self.t3, 0, jit::SLJIT_IMM, 0);
+    self.op2(jit::SLJIT_SUB, self.t0, 0, self.t0, 0, jit::SLJIT_IMM, 1);
+    self.store_u32(self.s_e, self.lay.depth, self.t0);
+    self.bind(run, self.label());
+    self.mov(self.t0, 0, self.s_e, 0);
+    self.mov_u32(self.t1, 0, jit::SLJIT_MEM | self.t2, RE_JIT_FRAME_UNDO);
+    jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW,
+                          jit::SLJIT_IMM, (long)(usz)&re_jit_unwind);
+    self.mov(self.t2, 0, jit::SLJIT_MEM | sp, SLOT_FRAME);
+    self.mov_u32(self.s_pos, 0, jit::SLJIT_MEM | self.t2, RE_JIT_FRAME_POS);
+    self.mov(self.t0, 0, jit::SLJIT_MEM | self.t2, RE_JIT_FRAME_RESUME);
+    jit::sljit_emit_ijump(self.c, jit::SLJIT_JUMP, self.t0, 0);
+    self.bind(empty, self.label());
 }
 
 // One instruction. Its label is emitted by the caller.
 fn void ReAsm.emit_insn(&self, uint pc) {
     re_native::ReInsn* insn = &self.prog.insns[pc];
     switch (insn.op) {
-        case ReOp.CHAR: case ReOp.CHAR32:
+        case ReOp.CHAR: case ReOp.CHAR_I: case ReOp.CHAR32: case ReOp.CHAR32_I:
+        case ReOp.DOT: case ReOp.ANY: case ReOp.SPACE: case ReOp.NOT_SPACE:
+        case ReOp.RANGE: case ReOp.RANGE_I: case ReOp.RANGE32: case ReOp.RANGE32_I:
             self.emit_read();
-            self.fail_if_not(self.t0, insn.a);
-        case ReOp.CHAR_I: case ReOp.CHAR32_I:
-            self.emit_read();
-            self.emit_canonicalize();
-            self.fail_if_not(self.t0, insn.a);
-        case ReOp.DOT:
-            self.emit_read();
-            self.fail_if_equal(self.t0, '\n');
-            self.fail_if_equal(self.t0, '\r');
-            if (self.wide) {
-                self.fail_if_equal(self.t0, 0x2028);
-                self.fail_if_equal(self.t0, 0x2029);
-            }
-        case ReOp.ANY:
-            self.emit_read();
-        case ReOp.SPACE:
-            self.emit_read();
-            self.emit_space(self.t0, false);
-        case ReOp.NOT_SPACE:
-            self.emit_read();
-            self.emit_space(self.t0, true);
-        case ReOp.RANGE: case ReOp.RANGE_I:
-        case ReOp.RANGE32: case ReOp.RANGE32_I:
-            self.emit_read();
-            self.emit_class(self.t0, self.data.class_at[pc]);
+            self.emit_test(insn, pc);
         case ReOp.LINE_START:
             self.emit_line_start(false);
         case ReOp.LINE_START_M:
@@ -534,6 +928,46 @@ fn void ReAsm.emit_insn(&self, uint pc) {
                 self.emit_value(group * 2, re_native::RE_UNSET);
                 self.emit_value(group * 2 + 1, re_native::RE_UNSET);
             }
+        case ReOp.SET_I32:
+            self.emit_value(self.prog.capture_count * 2 + insn.reg, (uint)insn.a);
+        case ReOp.SET_CHAR_POS:
+            self.emit_write(self.prog.capture_count * 2 + insn.reg, self.s_pos);
+        case ReOp.CHECK_ADVANCE:
+            self.emit_read_reg(self.prog.capture_count * 2 + insn.reg, self.t0);
+            self.fail_if(self.cmp(jit::SLJIT_EQUAL, self.t0, 0, self.s_pos, 0));
+        case ReOp.LOOP:
+            self.emit_read_reg(self.prog.capture_count * 2 + insn.reg, self.t3);
+            self.op2(jit::SLJIT_SUB, self.t3, 0, self.t3, 0, jit::SLJIT_IMM, 1);
+            self.mov(self.t0, 0, self.t3, 0);
+            self.emit_write(self.prog.capture_count * 2 + insn.reg, self.t0);
+            self.emit_read_reg(self.prog.capture_count * 2 + insn.reg, self.t3);
+            void* spent = self.cmp(jit::SLJIT_EQUAL, self.t3, 0, jit::SLJIT_IMM, 0);
+            self.go(insn.target, FIX_INSN);
+            self.bind(spent, self.label());
+        case ReOp.LOOP_SPLIT_GOTO_FIRST: case ReOp.LOOP_SPLIT_NEXT_FIRST:
+        case ReOp.LOOP_CHECK_ADV_SPLIT_GOTO_FIRST: case ReOp.LOOP_CHECK_ADV_SPLIT_NEXT_FIRST:
+            self.emit_loop_split(pc, insn);
+            return;
+        case ReOp.PREV:
+            self.fail_if(self.cmp(jit::SLJIT_EQUAL, self.s_pos, 0, jit::SLJIT_IMM, 0));
+            if (self.wide) {
+                self.mov(self.t0, 0, self.s_e, 0);
+                self.mov(self.t1, 0, self.s_pos, 0);
+                jit::sljit_emit_icall(self.c, jit::SLJIT_CALL, jit::SLJIT_ARGS2WWW_R,
+                                      jit::SLJIT_IMM, (long)(usz)&re_jit_prev_code_point);
+                self.mov_u32(self.s_pos, 0, self.t0, 0);
+            } else {
+                self.op2(jit::SLJIT_SUB, self.s_pos, 0, self.s_pos, 0, jit::SLJIT_IMM, 1);
+            }
+        case ReOp.SPLIT_GOTO_FIRST:
+            self.emit_split(pc, insn, true);
+            return;
+        case ReOp.SPLIT_NEXT_FIRST:
+            self.emit_split(pc, insn, false);
+            return;
+        case ReOp.STAR:
+            self.emit_star(pc);
+            return;
         case ReOp.GOTO:
             self.go(insn.target, FIX_INSN);
             return;
@@ -613,17 +1047,24 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     a.t2 = jit::reg_r(2);
     a.t3 = jit::reg_r(3);
     a.t4 = jit::reg_r(4);
+    a.lay = re_layout();
     a.labels = mem::new_array(void*, (sz)n.prog.insns.len);
     defer mem::free(a.labels);
-    a.fixes = mem::new_array(ReJitFix, (sz)n.prog.insns.len * 4 + 32);
+    a.fixes = mem::new_array(ReJitFix, (sz)n.prog.insns.len * 8 + 64);
     defer mem::free(a.fixes);
     a.fix_len = 0;
     a.attempt = null;
+    a.backtrack = null;
     a.exhausted = null;
+    a.sink = {};
+    a.sink_len = 0;
+    a.stubs = mem::new_array(ReJitStub, (sz)n.prog.insns.len);
+    defer mem::free(a.stubs);
+    a.stub_len = 0;
 
     // The arguments arrive in S0, S1 and S2: the program, the run being
     // resumed, and the position to start at.
-    jit::sljit_emit_enter(c, 0, jit::SLJIT_ARGS3WWW, 5, 6, 16);
+    jit::sljit_emit_enter(c, 0, jit::SLJIT_ARGS3WWW, 5, 6, RE_JIT_LOCALS);
     a.mov(a.t0, 0, a.s_e, 0);
     a.mov(a.t1, 0, a.s_pos, 0);
     a.mov(a.s_pos, 0, a.s_data, 0);
@@ -631,9 +1072,8 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     a.mov(a.s_n, 0, a.t0, 0);
     // The subject is reached through the run, at the offsets the struct has on
     // this build.
-    re_native::ReExec* el = (re_native::ReExec*)(usz)4096;
-    a.mov(a.s_data, 0, jit::SLJIT_MEM | a.s_e, (char*)&el.in.data - (char*)el);
-    a.mov_u32(a.s_len, 0, jit::SLJIT_MEM | a.s_e, (char*)&el.in.len - (char*)el);
+    a.mov(a.s_data, 0, jit::SLJIT_MEM | a.s_e, a.lay.in_data);
+    a.mov_u32(a.s_len, 0, jit::SLJIT_MEM | a.s_e, a.lay.in_len);
     a.mov(a.s_polls, 0, jit::SLJIT_IMM, re_native::RE_POLL_INTERVAL);
     if (a.scanning) {
         a.mov(a.t0, 0, a.s_n, 0);
@@ -655,11 +1095,20 @@ fn void* re_jit_emit(re_native::ReNative* n, ReJitData* data, bool wide) {
     }
     a.attempt = a.label();
     a.emit_attempt();
+    a.backtrack = a.label();
+    a.emit_backtrack();
     a.exhausted = a.label();
     a.emit_exhausted();
     foreach (fix : a.fixes[..a.fix_len]) {
-        void* label = fix.kind == FIX_INSN ? a.labels[fix.target]
-            : (fix.kind == FIX_ATTEMPT ? a.attempt : a.exhausted);
+        void* label;
+        switch (fix.kind) {
+            case FIX_INSN: label = a.labels[fix.target];
+            case FIX_ATTEMPT: label = a.attempt;
+            case FIX_BACKTRACK: label = a.backtrack;
+            case FIX_EXHAUSTED: label = a.exhausted;
+            case FIX_STUB: label = a.stubs[fix.target].label;
+            default: label = a.exhausted;
+        }
         jit::sljit_set_label(fix.jump, label);
     }
     return jit::sljit_generate_code(c, 0, null);
@@ -687,7 +1136,11 @@ fn bool re_jit_op_supported(ReOp op) {
         case ReOp.SAVE_END: case ReOp.SAVE_RESET: case ReOp.WORD_BOUNDARY:
         case ReOp.WORD_BOUNDARY_I: case ReOp.NOT_WORD_BOUNDARY:
         case ReOp.NOT_WORD_BOUNDARY_I: case ReOp.RANGE: case ReOp.RANGE_I:
-        case ReOp.RANGE32: case ReOp.RANGE32_I:
+        case ReOp.RANGE32: case ReOp.RANGE32_I: case ReOp.SPLIT_GOTO_FIRST:
+        case ReOp.SPLIT_NEXT_FIRST: case ReOp.STAR: case ReOp.SET_I32:
+        case ReOp.SET_CHAR_POS: case ReOp.CHECK_ADVANCE: case ReOp.PREV: case ReOp.LOOP:
+        case ReOp.LOOP_SPLIT_GOTO_FIRST: case ReOp.LOOP_SPLIT_NEXT_FIRST:
+        case ReOp.LOOP_CHECK_ADV_SPLIT_GOTO_FIRST: case ReOp.LOOP_CHECK_ADV_SPLIT_NEXT_FIRST:
             return true;
         default:
             return false;
@@ -702,9 +1155,27 @@ fn bool re_jit_program_ok(re_native::ReNative* n, uint first_pc) {
     if (first_pc >= n.prog.insns.len) return false;
     // The position loop stays code: the attempt loop performs it with the
     // first-unit filter, so its three instructions are outside the body.
-    foreach (insn : n.prog.insns[first_pc..]) {
+    for (uint i = first_pc; i < n.prog.insns.len; i++) {
+        re_native::ReInsn* insn = &n.prog.insns[i];
         if (!re_jit_op_supported(insn.op)) return false;
-        if (insn.op == ReOp.GOTO && insn.target < first_pc) return false;
+        bool branches = insn.op == ReOp.GOTO || insn.op == ReOp.SPLIT_GOTO_FIRST
+            || insn.op == ReOp.SPLIT_NEXT_FIRST || insn.op == ReOp.LOOP
+            || insn.op == ReOp.LOOP_SPLIT_GOTO_FIRST || insn.op == ReOp.LOOP_SPLIT_NEXT_FIRST
+            || insn.op == ReOp.LOOP_CHECK_ADV_SPLIT_GOTO_FIRST
+            || insn.op == ReOp.LOOP_CHECK_ADV_SPLIT_NEXT_FIRST;
+        if (branches && insn.target < first_pc) return false;
+        // A split's fall-through, and the instruction a greedy run continues at,
+        // have to exist: both are emitted as a jump.
+        if (insn.op == ReOp.SPLIT_GOTO_FIRST || insn.op == ReOp.SPLIT_NEXT_FIRST
+            || insn.op == ReOp.LOOP_SPLIT_GOTO_FIRST || insn.op == ReOp.LOOP_SPLIT_NEXT_FIRST
+            || insn.op == ReOp.LOOP_CHECK_ADV_SPLIT_GOTO_FIRST
+            || insn.op == ReOp.LOOP_CHECK_ADV_SPLIT_NEXT_FIRST) {
+            if ((usz)i + 1 >= n.prog.insns.len) return false;
+        }
+        if (insn.op == ReOp.STAR) {
+            if (insn.target < first_pc) return false;
+            if (insn.after >= n.prog.insns.len) return false;
+        }
     }
     return true;
 }
@@ -714,7 +1185,6 @@ fn ReJitData* re_jit_data_build(re_native::ReProgram* prog) {
     ReJitData* data = mem::new(ReJitData);
     for (uint unit = 0; unit < 256; unit++) {
         if (re_bindings::re_is_space(unit)) re_jit_bit(&data.space_bits, unit);
-        if (re_bindings::re_is_word_byte(unit)) re_jit_bit(&data.word_bits, unit);
     }
     uint classes = 0;
     foreach (insn : prog.insns) if (re_jit_class_op(insn.op)) classes++;

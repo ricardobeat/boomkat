@@ -429,6 +429,64 @@
         "vendor/sljit/sljit_src"
       ]
     },
+    "re_exec_test_asan": {
+      "name": "re_exec_test_asan",
+      "sanitize": "address",
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/re_exec_test.c3"
+      ],
+      "opt": "O1",
+      "optsize": "small",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
+    "re_input_test": {
+      "type": "executable",
+      "sources": [
+        "src",
+        "test/capi/re_input_test.c3"
+      ],
+      "opt": "O1",
+      "optsize": "small",
+      "single-module": true,
+      "features": [
+        "THREADED_DISPATCH",
+        "PRINT",
+        "CONSOLE",
+        "SLJIT"
+      ],
+      "c-sources": [
+        "vendor/sljit/sljit_src/sljitLir.c",
+        "src/jit/sljit_shim.c"
+      ],
+      "cflags": "-O1 -DSLJIT_DEBUG=0 -DSLJIT_VERBOSE=0",
+      "c-include-dirs": [
+        "vendor/dtoa",
+        "vendor/libregexp",
+        "vendor/libunicode",
+        "src",
+        "vendor/sljit/sljit_src"
+      ]
+    },
     "jit_tiers_asan": {
       "type": "executable",
       "sources": [

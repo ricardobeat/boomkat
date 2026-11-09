@@ -44,10 +44,11 @@ const int RE_ERROR = -1;
 const uint RE_SMALL_FRAMES = 48;
 const uint RE_SMALL_SLOTS = 96;
 
-// One backtracking state: resume at `pc` with `pos`, after undoing every write
-// recorded above `undo`.
+// One backtracking state: resume at `resume` with `pos`, after undoing every
+// write recorded above `undo`. The walk resumes at an instruction index and a
+// compiled body at a code address, so each matcher reads back what it pushed.
 struct ReFrame {
-    uint pc;
+    usz resume;
     uint pos;
     uint undo;
     // A greedy run: each resume gives back one code point, and the frame is
@@ -331,21 +332,25 @@ fn void ReExec.reserve_slots(&self) @inline {
 // Frames
 // ---------------------------------------------------------------------------
 
-fn void ReExec.push(&self, uint pc, uint pos, bool star) @inline {
-    if (self.depth >= self.frame_cap) {
-        uint cap = self.frame_cap * 2;
-        ReFrame* grew;
-        if (self.heap_frames == null) {
-            grew = mem::new_array(ReFrame, (sz)cap).ptr;
-            for (uint i = 0; i < self.depth; i++) grew[i] = self.frames[i];
-        } else {
-            grew = (ReFrame*)mem::realloc(self.heap_frames, (sz)cap * ReFrame::size);
-        }
-        self.heap_frames = grew;
-        self.frames = grew;
-        self.frame_cap = cap;
+// Grow the frame stack so that one more depth is available.
+fn void ReExec.reserve_frame(&self) {
+    if (self.depth < self.frame_cap) return;
+    uint cap = self.frame_cap * 2;
+    ReFrame* grew;
+    if (self.heap_frames == null) {
+        grew = mem::new_array(ReFrame, (sz)cap).ptr;
+        for (uint i = 0; i < self.depth; i++) grew[i] = self.frames[i];
+    } else {
+        grew = (ReFrame*)mem::realloc(self.heap_frames, (sz)cap * ReFrame::size);
     }
-    self.frames[self.depth].pc = pc;
+    self.heap_frames = grew;
+    self.frames = grew;
+    self.frame_cap = cap;
+}
+
+fn void ReExec.push(&self, uint pc, uint pos, bool star) @inline {
+    self.reserve_frame();
+    self.frames[self.depth].resume = pc;
     self.frames[self.depth].pos = pos;
     self.frames[self.depth].undo = self.undo_len;
     self.frames[self.depth].star = star;
@@ -362,7 +367,7 @@ fn bool ReExec.backtrack(&self, uint* pc, uint* pos, ReInput* in) @inline {
     ReFrame* f = &self.frames[self.depth - 1];
     self.unwind(f.undo);
     if (f.star) {
-        ReInsn* star = &self.prog.insns[f.pc];
+        ReInsn* star = &self.prog.insns[(uint)f.resume];
         uint min_end = self.read(self.slot_count() + star.reg);
         uint gave_back = f.pos;
         in.prev_code_point(&gave_back);
@@ -378,7 +383,7 @@ fn bool ReExec.backtrack(&self, uint* pc, uint* pos, ReInput* in) @inline {
         *pc = star.after;
         return true;
     }
-    *pc = f.pc;
+    *pc = (uint)f.resume;
     *pos = f.pos;
     self.depth--;
     return true;
@@ -401,6 +406,7 @@ fn bool re_fs_test(ReNative* n, uint unit) @inline {
 fn uint re_scan_first(ReNative* n, ReInput* in, uint pos) {
     char* data = in.data;
     uint len = in.len;
+    if (pos > len) return RE_NONE;
     if (n.fs_at_start && pos == 0) return 0;
     if (!in.wide) {
         if (n.fs_single >= 0) {
