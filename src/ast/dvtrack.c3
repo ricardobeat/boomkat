@@ -34,8 +34,7 @@ fn void Parser.dv_body_enter(&self, uint params) {
     self.dv_breakable = 0;
     self.dv_iterating = 0;
     self.dv_cur = (uint)self.dv_scopes.len;
-    self.dv_scopes.push({ .kind = ScopeKind.FUNCTION, .parent = 0, .func = self.dv_cur,
-        .first_site = (uint)self.dv_sites.len });
+    self.dv_scopes.push({ .kind = ScopeKind.FUNCTION, .parent = 0, .func = self.dv_cur });
     self.dv_track++;
     uint pc = self.ast.list_len(params);
     for (uint i = 0; i < pc; i++) {
@@ -70,8 +69,7 @@ fn void Parser.dv_push_scope(&self, ScopeKind kind) {
     uint id = (uint)self.dv_scopes.len;
     uint func = id;
     if (kind != ScopeKind.FUNCTION) func = self.dv_scopes.data[self.dv_cur].func;
-    self.dv_scopes.push({ .kind = kind, .parent = self.dv_cur, .func = func,
-        .first_site = (uint)self.dv_sites.len });
+    self.dv_scopes.push({ .kind = kind, .parent = self.dv_cur, .func = func });
     self.dv_cur = id;
 }
 

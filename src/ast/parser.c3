@@ -59,7 +59,6 @@ struct DvScope {
     ScopeKind kind;
     uint parent;
     uint func;         // nearest enclosing function scope
-    uint first_site;   // first site recorded while this scope was open
 }
 
 // One declaration occurrence inside a deferred body, in source order.
