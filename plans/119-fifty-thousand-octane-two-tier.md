@@ -653,10 +653,58 @@ test262 suite; the on/off logs diff to zero lines. `scripts/jit_check.sh` and
 `scripts/run_jit_diff.sh` cover the tiers, and `make test-jit-api-asan`
 covers the C API under AddressSanitizer.
 
-What is left: the walk is 122 ms against the interpreter's 109 ms on
-`bench/mini/regexp.js` (interleaved, five runs each), down from 134 ms before
-the run-loop and inlining work. The remaining levers are keeping the frame and
-undo state in registers instead of through `ReExec*`, and emitting the body as
-native code instead of walking decoded instructions. Until the walk wins, the
-native path stays off by default and the interpreter is the only matcher in
-production.
+That left the walk at 122 ms against the interpreter's 109 ms on
+`bench/mini/regexp.js`, with the body of every pattern still decoded on the way
+through it. Both levers named there are now taken.
+
+### Native regexp compilation, 2026-11-09
+
+The matcher has two tiers in `src/re/`. `exec.c3` is the walk, kept as the
+reference and as the matcher for a build without `SLJIT`. `jit.c3` compiles the
+decoded program into machine code with SLJIT under `@feat(SLJIT)`:
+
+- the program becomes blocks joined by direct jumps, so an opcode is chosen
+  once, at compile time;
+- a run of literal characters is one bounds check, one base pointer and a
+  compare per character, with the ignore-case form folded to a bit test where
+  the pattern is ASCII letters;
+- a class is a membership bitmap for a Latin-1 subject, and the walk's own pair
+  test above it; the bitmap is keyed by subject unit, so the ignore-case form
+  needs no canonicalization in generated code;
+- a frame carries the address to resume at, so a failure unwinds what the
+  attempt wrote and jumps straight to where matching continues, and a greedy
+  run hands back one code point per visit from a stub of its own;
+- capture writes record their undo inline, and both unwinds are inline loops;
+- two bodies are compiled per pattern, one per subject form, since a Latin-1
+  subject never holds a surrogate pair.
+
+Only lookarounds and back references are declined. That set is the walk's
+decoder set, and a program outside it stays on `lre_exec` exactly as before.
+
+Measured on the Apple M3, interleaved runs:
+
+| Workload | libregexp | compiled matcher |
+|---|---:|---:|
+| matcher-bound loop (`/(\w+)\s+(\w+)\s+(\d+)/g` over a 60-unit subject, 1.5M runs) | 4.6 s | 3.35 s |
+| the six-pattern matcher micro (`bench`-style literal, class, alternation, capture, ignore-case and anchored cases) | 788 ms | 590 ms |
+| `bench/mini/regexp.js` | 108 ms | 107 ms |
+
+So the compiled matcher runs matcher-bound work about 1.3–1.35x faster than the
+interpreter, and the Octane RegExp benchmark, which spends most of its time in
+the engine's object, string and property work rather than in the matcher, is
+unchanged. It is on by default; `BOOMKAT_RE_NATIVE=0` opts out, and
+`re_set_native()` forces either answer.
+
+Testing: `make test-native-regexp` runs the differential suite (31,162
+comparisons over the Octane patterns, targeted instructions and subjects long
+enough to force both stacks past their initial capacities), and
+`make test-native-regexp-asan` runs it under AddressSanitizer, which is what
+caught the last two emitted-store faults. The whole 53,380-test test262 suite
+returns identical verdicts with the compiled matcher on and off.
+
+What is left: the Octane RegExp score does not move while the engine's own
+regexp path costs more than the matcher does, so the next lever there is the
+runtime around it rather than the matcher. Inside the matcher, a quantified
+class or `.` run could skip whole runs of a known first byte (`charpos`-style
+scanning), and a wide subject's class test above Latin-1 could be inline
+instead of a call.
