@@ -708,3 +708,80 @@ runtime around it rather than the matcher. Inside the matcher, a quantified
 class or `.` run could skip whole runs of a known first byte (`charpos`-style
 scanning), and a wide subject's class test above Latin-1 could be inline
 instead of a call.
+
+## Milestone 5 status, 2026-11-09: the items named as next
+
+The three exit and refusal groups the milestone listed, measured on branch
+`jit` at `49ead542` and after each change. One process, full suite, all 17
+results, `--jit --opt`; each figure is one run, so ±5%.
+
+| Change | Score |
+|---|---:|
+| as found | 9,386 |
+| `TYPEOF` lowered in an inlined body | 9,669 |
+| object and array literals built in an inlined body | 9,775 |
+| functions that build closures, regexps and cells optimized | 9,835 |
+
+- **`TYPEOF` inside a callee.** A callee holding a `typeof` could not be
+  inlined at all. `OptOp.TYPEOF` reads the operand's tag, stores the interned
+  name, and takes the baseline thunk's path for the cases the tag does not
+  answer; a numeric operand is the constant `number`, with no test, which is
+  the `typeof x === "number"` guard TypeScript-shaped code is full of. The
+  names stored are the heap's own builtin strings, which no collection
+  reclaims, so a destination slot beyond the caller's frame is sound. On the
+  TypeScript mini the inliner's `opcode TYPEOF` rejections go from 17 to 0.
+- **Object and array literals inside a callee.** `OptOp.ALLOC` builds the
+  object inline exactly as the baseline emitter does and stores it to the
+  callee's slot; the allocator adopts it as a temporary root and the only
+  points that can collect are exits, which publish the frames covering the
+  slot. `OptOp.INIT_SLOT` fills an object literal's slots with no shape guard,
+  since the object was just built on that shape. The same node makes a
+  function whose own body fills a literal's slots optimizable, which was a
+  whole-body refusal before (`opt refused opcode INIT_SLOT`).
+- **Closures, regexp literals and cells.** The largest of the three, and not
+  on the list: a function was refused **as a whole** when its bytecode held an
+  instruction the control flow graph did not take. Those are the instructions
+  that build the objects the compiler makes for itself: `NEWREGEXP`,
+  `CLOSURE`, `NEWCELLS`, `GETCELL`, `SETCELL` and `INITELEM`. They only
+  allocate or store and fall through, and the roles already leave A a use and
+  no def, so `bytecode_cfg_build` now takes them behind a flag that only the
+  optimizing tier passes. TypeScript goes from 9 CFG refusals to 2 (both
+  `INITFOR`), pdfjs from 14 to 9 (`TAILCALL_CALL`, `RETEST`, `INITFOR`), and
+  the Octane RegExp benchmark's `runBlockN` functions, which each held one
+  `NEWREGEXP`, now compile at all. `MOVECELL` is deliberately left out: with
+  it admitted, `EarleyBoyer` returns a `TypeError`, and refusing only the
+  functions that hold it makes the failure go away, so the fault is in
+  compiling a function that holds a `MOVECELL` (its A register, which the move
+  clears, is untracked somewhere) rather than in the graph.
+
+### The "no cache" group is a counting artifact
+
+The milestone named property sites with no cache (25,416 skips on TypeScript)
+as the largest refusal group. They are counted once per build attempt, and
+every one of them has an unfilled entry (`ic.key == null`), that is, the
+instruction has never run: 10,819 attempts over 2,504 distinct sites on the
+TypeScript mini, all `GETPROPC`, `GETTHISC`, `PUTPROPC` and `PUTTHISC`. A site
+that has run has its cache filled by the interpreter or the baseline, so
+there is nothing to speculate on and nothing to lower. They are correct as
+`GENERIC` nodes on paths that do not run, and no work belongs here.
+
+### Where the RegExp benchmark's time goes
+
+Sampled on a loop of `re.exec` over one of the benchmark's patterns, inside a
+function so that top-level `var` stores do not dominate: `regexp_run` (the
+matcher, `re_wrapper.c` and the builtin's entry) 26%, property dispatch 9%,
+building the match result array 9%, the JIT relay and thunks 8%,
+`find_prop_idx` 4%, sweeping the result arrays 4%, capture `str_slice` 4%.
+That matches the earlier conclusion from the other side: the matcher is a
+quarter of this loop and less of Octane's mix, so the two matcher levers above
+are worth a few percent at most. The lever that pays is compiling the
+`re.exec(s)` call itself in the optimizing tier, which is the same call-node
+work as a builtin call with a guard and a deoptimization contract.
+
+### What remains for this milestone
+
+- `MOVECELL` in a function the tier compiles, per the caveat above.
+- Region compilation of a hot loop inside a function larger than the CFG
+  budget. Nothing of it exists yet; the budget and the "raising it alone is
+  -0.6%" measurement above still stand.
+- Calls to builtin methods (the `re.exec` case) as graph nodes.
