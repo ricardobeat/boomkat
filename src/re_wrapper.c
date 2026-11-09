@@ -55,9 +55,10 @@ struct ReCompiled {
     int      native_tried;
 };
 
-/* The native matcher. It decodes the compiled program once and walks it; a
- * program it does not model is declined, and the pattern keeps using
- * libregexp's interpreter. */
+/* The native matcher. It decodes the compiled program once and runs the
+ * compiled body, or walks it where the compiler declines; a program neither
+ * models is declined outright, and the pattern keeps using libregexp's
+ * interpreter. */
 void* re_native_prepare(ReCompiled* re);
 void  re_native_free(void* native);
 int   re_native_exec(void* native, const void* input, int input_len,
@@ -66,17 +67,18 @@ int   re_native_exec(void* native, const void* input, int input_len,
                      int* caps_start, int* caps_end, int max_captures,
                      ReInterrupt* interrupt);
 
-/* Whether the native matcher runs. It is off until its walk beats libregexp's
- * interpreter on the RegExp benchmark (122 ms against 109 ms on the mini
- * harness as landed); BOOMKAT_RE_NATIVE=1 opts in, and re_set_native forces
- * either answer, which is how the differential suites compare the two. */
+/* Whether the native matcher runs. It is the default: its compiled body is
+ * faster than libregexp's interpreter on matcher-bound work, and the whole
+ * test262 suite and the differential suites agree with the interpreter.
+ * BOOMKAT_RE_NATIVE=0 opts out, and re_set_native forces either answer, which
+ * is how the differential suites compare the two. */
 static int re_native_state = -1;
 
 static int re_native_enabled(void)
 {
     if (re_native_state < 0) {
         const char* v = getenv("BOOMKAT_RE_NATIVE");
-        re_native_state = (v && v[0] == '1' && v[1] == '\0') ? 1 : 0;
+        re_native_state = (v && v[0] == '0' && v[1] == '\0') ? 0 : 1;
     }
     return re_native_state;
 }

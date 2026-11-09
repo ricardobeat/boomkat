@@ -738,29 +738,41 @@ only the pattern is compiled from CESU-8 text.
 
 ### The native RegExp matcher
 
-The engine can walk a compiled regexp itself instead of running libregexp's
+The engine runs a compiled regexp itself instead of running libregexp's
 bytecode interpreter. The matcher lives in `src/re/` under
 `boomkat::re_native @feat(!NO_REGEXP)`: `prog.c3` decodes the bytecode once
 into indexed instructions with resolved branch targets, unpacked class pairs
 and bounds-checked slots and registers; `input.c3` reads code units and code
 points in either subject form; `class.c3` tests a class and the zero-width
-assertions; `exec.c3` walks the program with a backtracking frame stack and an
-undo stack for capture and register writes. Quantified single-character atoms
-run in a tight loop, and the position loop uses libregexp's first-unit filter
-to skip candidate starts.
+assertions. `exec.c3` is the reference walk, with a backtracking frame stack
+and an undo stack for capture and register writes, and `jit.c3` compiles the
+same program into machine code with SLJIT under `@feat(SLJIT)`.
 
-Only lookarounds and back references are declined. A declined program, or one
-that fails the bounds check, is remembered as declined and stays on
-`lre_exec`; a matcher error or timeout also falls through. The switch is
-`BOOMKAT_RE_NATIVE=1`; `re_set_native()` forces either answer. It is off by
-default because the walk measured 122 ms against the interpreter's 109 ms on
-`bench/mini/regexp.js` as landed, so enabling it would cost the benchmark.
-Both paths are gated by `NO_REGEXP`, and the matcher needs no `SLJIT` feature.
+A compiled body is a graph of blocks joined by direct jumps: the opcode is
+chosen at compile time, a run of literal characters is one bounds check and a
+compare per character, a class is a bitmap lookup, and a failure jumps to a
+shared backtracking path. A frame carries the address to resume at, so a
+failure unwinds what the attempt wrote and jumps straight to where matching
+continues. A greedy run records what it consumed and hands it back one code
+point per visit from a stub of its own. Capture writes record their undo
+inline. Two bodies are compiled per pattern, one per subject form: a Latin-1
+subject never holds a surrogate pair, so the narrow body has none of the
+combining to do.
+
+Only lookarounds and back references are declined. A program the emitter does
+not model keeps the walk, and a program the walk's decoder does not model, or
+one that fails its bounds check, is remembered as declined and stays on
+`lre_exec`; a matcher error also falls through. `re_set_native()` forces
+either answer, which is how the differential suites compare the two. The
+matcher is compiled out under `NO_REGEXP`, and the compiled tier under a build
+without `SLJIT`, which leaves the walk.
 
 `make test-native-regexp` runs the differential suite: every Octane pattern
 plus targeted cases, over every start offset in both subject forms, comparing
-verdict, span and every capture against the interpreter. The native path also
-runs the full test262 suite with identical results.
+verdict, span and every capture against the interpreter, including subjects
+long enough to force both stacks past their initial capacities.
+`make test-native-regexp-asan` runs the same suite under AddressSanitizer,
+which is how the emitted stores and the stack growth are checked.
 
 ### HObject
 
