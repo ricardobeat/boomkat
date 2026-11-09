@@ -165,6 +165,18 @@ enum OptOp : char {
     // numeric operand, whose name is `number` with no test. The names are the heap's own strings,
     // which no collection reclaims, so slot home may lie beyond the caller's frame (see the header).
     TYPEOF,
+    // A NEWOBJ, NEWOBJ_SHAPE, NEWARR or NEWARR_CONST (pc) of an inlined body, allocated inline as the
+    // baseline emitter allocates it and stored boxed to the window slot home. The allocator adopts
+    // the object as a temporary root, and the only points that can collect are exits, which publish
+    // the frames covering the slot (see the header of this file), so home may lie beyond the
+    // caller's frame. A case the inline allocator does not cover, and a failed allocation, exits
+    // (ALLOC_SLOW) with nothing changed to the baseline code at pc.
+    ALLOC,
+    // An INIT_SLOT (imm its pc) of an inlined body: the value of the number or OBJECT node a, or of
+    // window slot c when a is NO_NODE, stored into prop_values()[b] of the object that node b holds,
+    // or of window slot a when b is NO_NODE. It defines nothing and exits (SLOW_PATH) where the
+    // store needs a counted or traced path.
+    INIT_SLOT,
     // A boolean stored to window slot home, defining no node: numbers a, b of rep imm compared by
     // the JMP_* row cc (as BRANCH reads it).
     COMPARE,

@@ -1940,6 +1940,64 @@ fn void OptCg.emit_typeof(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
+// The object an inlined body allocates, built inline as the baseline emitter builds it and stored
+// boxed to its slot. The allocation adopts the object as a temporary root, so the slot needs no
+// scan extent until an exit publishes the frame (see the header of opt_ir.c3); a case the inline
+// allocator does not cover, and a failed allocation, leave for the baseline code at the instruction.
+fn void OptCg.emit_alloc(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.decode(n.pc);
+    a.call.len = 0;
+    InlineAlloc plan;
+    if (!inline_alloc_ok() || !a.inline_alloc_plan(&plan)) {
+        self.exit_at(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.ALLOC_SLOW);
+        return;
+    }
+    Jumps slow;
+    a.emit_inline_alloc(&plan, &slow);
+    // The boxed object into the result register, which holds no count to release.
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    a.store(n.home, R0);
+    a.track_heap_store(n.home);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    for (uint k = 0; k < slow.len; k++) self.exit_at(slow.at[k], i, OptExit.ALLOC_SLOW);
+    sljit_set_label(done, sljit_emit_label(c));
+    self.exit_calls(i, OptExit.ALLOC_SLOW);
+    self.count_alloc(&self.h.opt.alloc_runs);
+}
+
+// The object's slot written from a value of the body, as th_init_slot's store_slot_ref, for an
+// object the body just allocated: the slot index is the instruction's immediate.
+fn void OptCg.emit_init_slot(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    a.decode((uint)n.imm);
+    a.call.len = 0;
+    if (n.b != NO_NODE) {
+        int or = self.obj_reg(n.b, R4);
+        if (or != R0) sljit_emit_op1(c, SLJIT_MOV, R0, 0, or, 0);
+    } else {
+        a.load(R0, a.w.a);
+    }
+    a.unbox_object(R1, R0);
+    a.prop_base(R0, R1);
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)a.w.b * 8);
+    if (n.a != NO_NODE && self.g.nodes[n.a].rep == OptRep.OBJECT) {
+        int vr = self.obj_reg(n.a, R2);
+        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
+        a.guard_old_value();
+        a.store_value_r2();
+    } else if (n.a != NO_NODE) {
+        self.box_node(n.a, R2);
+        a.guard_old_value();
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
+    } else {
+        a.store_slot(a.w.c);
+    }
+    self.exit_calls(i, OptExit.SLOW_PATH);
+}
+
 // A callee's returned window slot copied to the call's result register: the store of an
 // instruction that writes it from another, with publish's watermark and barrier.
 fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
@@ -2453,6 +2511,10 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.a.store(n.home, SLJIT_IMM, n.imm);
         case TYPEOF:
             self.emit_typeof(i, n);
+        case ALLOC:
+            self.emit_alloc(i, n);
+        case INIT_SLOT:
+            self.emit_init_slot(i, n);
         case STORE_OBJ:
             self.store_node(n.a, (uint)n.imm);
         case COPY:

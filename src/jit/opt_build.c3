@@ -334,6 +334,10 @@ fn uint inline_reg_mask(Opcode op) {
         case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case GETVAR: case LDTHIS: case GETCAP:
             return 1;
+        // The objects an inlined body allocates (OptOp.ALLOC), whose B and C are not registers, and
+        // INIT_SLOT, whose A is the object and C the value (B is the slot index).
+        case NEWOBJ: case NEWOBJ_SHAPE: case NEWARR: case NEWARR_CONST: return 1;
+        case INIT_SLOT: return 5;
         case GETPROP: case PUTPROP:
             return 7;
         case LDREG: case TONUMERIC: case UNM: case GETPROPC: case GETPROPC_CACHED: case PUTPROPC: case LNOT: case BNOT:
@@ -398,7 +402,9 @@ fn void inline_rw(DecodedInsn* w, uint* reads, uint* writes) {
     switch (w.op) {
         case LDINT: case LDCONST: case GETTHISC: case LDUNDEF: case LDNULL: case LDTRUE: case LDFALSE:
         case GETGLOBAL: case GETVAR: case LDTHIS: case GETCAP:
-            *writes = 1u << w.a;
+        case NEWOBJ: case NEWOBJ_SHAPE: case NEWARR: case NEWARR_CONST: *writes = 1u << w.a;
+        case INIT_SLOT:
+            *reads = (1u << w.a) | (1u << w.c);
         case GETPROP:
             *reads = (1u << w.b) | (1u << w.c);
             *writes = 1u << w.a;
@@ -1641,6 +1647,59 @@ fn bool OptBuild.typeof_value(&self) {
     self.g.nodes[n].cc = number ? 1 : 0;
     self.snapshot(n);
     self.kill(ra);
+    return true;
+}
+
+// NEWOBJ, NEWOBJ_SHAPE, NEWARR or NEWARR_CONST in an inlined body: the object the baseline emitter
+// allocates inline, into the body's slot. A case the inline allocator does not cover keeps the call.
+fn bool OptBuild.alloc_value(&self) {
+    if (self.cur_fn == 0) return self.generic();
+    uint ra = self.w.a;
+    if (ra >= self.nregs || !inline_alloc_ok()) return self.generic();
+    CompiledFunction* f = self.cur_f();
+    uint count = self.w.get_bc();
+    switch (self.w.op) {
+        case NEWOBJ:
+            break;
+        case NEWOBJ_SHAPE:
+            hobject::Shape* shape = self.h.get_shape(count);
+            if (shape == null || shape.offset + shape.own_count > hobject::SHAPED_INLINE_MAX_PROPS) return self.generic();
+        case NEWARR:
+            if (count == 0 || count > hobject::ARRAY_INLINE_MAX_CAPACITY) return self.generic();
+        case NEWARR_CONST:
+            if (f.constants == null || count >= f.const_count || !f.constants[count].is_fastint()) return self.generic();
+            uint length = (uint)f.constants[count].get_fastint();
+            if (length == 0 || length > hobject::ARRAY_INLINE_MAX_CAPACITY) return self.generic();
+        default:
+            return self.generic();
+    }
+    // The object lives in the callee's slot: an exit publishes the frame that scans it, and the
+    // allocator made it a temporary root, so no collection can see a stale slot (see opt_ir.c3).
+    uint n = self.add(OptOp.ALLOC, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.snapshot(n);
+    self.g.nodes[n].home = ra;
+    self.kill(ra);
+    return true;
+}
+
+// An INIT_SLOT, of an inlined body or of the function's own: the slot index is the instruction's
+// immediate, so the value and the object are taken as nodes where the graph holds them and from the
+// window otherwise. It defines no register, which is why the baseline emitter runs it as a GENERIC
+// only here: its effect on the file is nothing.
+fn bool OptBuild.init_slot(&self) {
+    uint ra = self.w.a;
+    uint rc = self.w.c;
+    if (ra >= self.nregs || rc >= self.nregs) return self.generic();
+    uint obj = NO_NODE;
+    uint value = NO_NODE;
+    // A numeric node in the object's register is not an object.
+    if (self.cur[ra].node != NO_NODE) {
+        if (!self.is_object(ra)) return self.generic();
+        obj = self.cur[ra].node;
+    }
+    if (self.cur[rc].node != NO_NODE) value = self.cur[rc].node;
+    uint n = self.add(OptOp.INIT_SLOT, OptRep.NONE, value, obj, (long)self.pc);
+    self.snapshot(n);
     return true;
 }
 
@@ -3202,6 +3261,13 @@ fn bool OptBuild.lower_op(&self) {
             return self.throw_exit();
         case TYPEOF:
             return self.typeof_value();
+        case NEWOBJ:
+        case NEWOBJ_SHAPE:
+        case NEWARR:
+        case NEWARR_CONST:
+            return self.alloc_value();
+        case INIT_SLOT:
+            return self.init_slot();
         case CALL:
         case CALL_UNDEF_THIS:
         case CALL_VAR:
