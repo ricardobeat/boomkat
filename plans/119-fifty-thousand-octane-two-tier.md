@@ -785,3 +785,35 @@ work as a builtin call with a guard and a deoptimization contract.
   budget. Nothing of it exists yet; the budget and the "raising it alone is
   -0.6%" measurement above still stand.
 - Calls to builtin methods (the `re.exec` case) as graph nodes.
+
+## Element reads, 2026-11-09: measured, not kept
+
+The end of the section above named compiling a builtin method call as the
+lever for RegExp. The first step of it was measured and dropped.
+
+`OptBuild.get_elem` lowers a computed-key `GETPROP` (`a[k]`) into an
+`OptOp.LOAD_ELEM` only inside an inlined body; the function's own body ran the
+baseline's code there. Two changes were built and run: the same node for the
+function's own body, and (needed with it, since the benchmark's arrays hold
+`undefined` for unmatched captures) a `LOAD_ELEM` of rep NONE publishing
+`undefined` for a hole instead of exiting.
+
+The premise was wrong. `--jit-count-ops` shows the baseline already completes
+computed element reads natively: 99.0–99.4% inline on pdfjs and TypeScript,
+100% on Gameboy, with 13.5k thunk calls in 2.5M reads. There was no relay cost
+to remove. Both changes measured inside the run-to-run spread: 9,785 and 9,892
+with them, 9,507 and 9,559 with the hole relaxation alone, 9,778, 9,835 and
+9,835 as committed, all on a machine at load average 3.2 where the composite's
+spread is about 4%. Neither is kept: nothing here is repeatable, and the
+element path already exits on receivers, indexes past the end and holes, so a
+change there needs a calm machine and interleaved runs to judge.
+
+The rest of the `re.exec` cost is the same in both tiers: the builtin call
+machinery (`vm::jit_call_builtin_native` per call), the match result array
+(9%), the sweep of those arrays (4%) and the capture substrings (4%). Compiling
+the call as a graph node would have to replace that machinery rather than the
+relay, and the loop that needs it most (`run(n)` called once, looping over
+`re.exec`) is not credited to the optimizing tier at all: with `--opt` it stays
+in the baseline's loop tier, and only `--opt-always` compiles it (0.21 s to
+0.19 s on 300k iterations). A function that is entered once and loops is the
+case region compilation is for, not call nodes.
