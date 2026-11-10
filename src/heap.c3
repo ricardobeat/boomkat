@@ -651,10 +651,17 @@ struct ValueRoot {
 // Slot indices of the properties RegExp.prototype must still hold, in the order
 // `regexp_proto_pristine` checks them, valid while the prototype keeps this
 // shape. `epoch` is the heap's shape-recycle epoch when `shape_id` was read.
+// `values` holds the intrinsic each slot (a getter's function, for an
+// accessor) was last verified to hold, for the slots `verified` marks.
+// Intrinsics are lightfuncs or promoted builtins, which stay rooted for the
+// realm's life, so an equal value is the same intrinsic and never a new object
+// at a freed address.
 struct RegExpGuard {
     uint shape_id;
     uint epoch;
     ushort[builtins::REGEXP_GUARD_SLOTS] slots;
+    TVal[builtins::REGEXP_GUARD_SLOTS] values;
+    uint verified;
 }
 
 // The shape a RegExp match array ends with, for one capture count and one set of
