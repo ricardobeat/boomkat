@@ -1763,10 +1763,11 @@ fn bool OptBuild.generic(&self) {
     if (!self.cur_cfg().nodes[self.insn].must_def(&def)) {
         def = NO_NODE;
         switch (op) {
-            // The compiler's own cells: NEWCELLS builds one and GETCELL writes A.
+            // The compiler's own cells: NEWCELLS builds one, GETCELL writes A, and MOVECELL clears
+            // the A it moved into the cell (its roles read A and leave the write out).
             case NEWOBJ: case NEWARR: case NEWARR_CONST: case CLOSURE: case NEWREGEXP:
             case NEWOBJ_SHAPE: case NEWTARGET: case DELPROP: case GETPROP_SUPER: case TOPROPKEY: case RESOLVEVAR:
-            case NEWCELLS: case GETCELL:
+            case NEWCELLS: case GETCELL: case MOVECELL:
                 extra_kill = self.w.a;
             case GETPROP_CACHE:
                 extra_kill = self.w.a;

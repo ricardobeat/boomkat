@@ -83,11 +83,10 @@ fn bool bytecode_cfg_fallthrough(Opcode op) {
 }
 
 // The instructions `objects` admits: the compiler's own regexp, closure and cell objects, and the
-// element store of an array literal. MOVECELL is left out until its A register, which the move
-// clears, is tracked through an inlined body.
+// element store of an array literal.
 fn bool bytecode_cfg_object_op(Opcode op) @inline {
     return op == Opcode.NEWREGEXP || op == Opcode.CLOSURE || op == Opcode.NEWCELLS || op == Opcode.GETCELL
-        || op == Opcode.SETCELL || op == Opcode.INITELEM;
+        || op == Opcode.SETCELL || op == Opcode.MOVECELL || op == Opcode.INITELEM;
 }
 
 // Positive control-flow contract: exception handlers, suspension, indirect
