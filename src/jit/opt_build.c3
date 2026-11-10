@@ -12,6 +12,7 @@ import boomkat::vm;
 import boomkat::builtins;
 import boomkat::bytecode;
 import boomkat::compiler;
+import boomkat::features;
 import boomkat::heap;
 import boomkat::hobject;
 import boomkat::types;
@@ -1520,6 +1521,12 @@ fn bool OptBuild.put_elem(&self) {
     if (opt_site_banned(self.f, self.cur_f(), self.next_pc - 1)) return self.generic();
     if (rv >= self.nregs || !self.index_ok(self.w.b)) return self.generic();
     bool numeric = self.cur[rv].node != NO_NODE && !self.is_object(rv);
+    if (!numeric && self.cur[rv].node == NO_NODE && self.load_def[rv] != NO_NODE) {
+        // A copy between typed arrays (a[i] = b[j]) has no numeric use to ask its read for a
+        // number: the store asks for the one its array holds, and the next round has the node.
+        OptRep want = self.typed_store_rep();
+        if (want != OptRep.NONE) self.ask_load(self.load_def[rv], rv, want);
+    }
     if (!numeric && (self.cur_fn == 0 || !self.in_window(rv))) return self.generic();
     if (!self.elem_receiver(self.w.a, &rnode)) return self.generic();
     uint idx = self.operand(self.w.b, OptRep.INT32);
@@ -1538,6 +1545,31 @@ fn bool OptBuild.put_elem(&self) {
         self.g.nodes[n].reload_count = (uint)self.g.dirty.len() - first;
     }
     return true;
+}
+
+// The rep a store to the element at this instruction takes without a conversion, by the typed
+// array class its baseline code recorded: INT32 for an integer kind, FLOAT64 for a float one, and
+// NONE for no record, another class, or Uint8Clamped (whose stores round).
+fn OptRep OptBuild.typed_store_rep(&self) {
+$if features::BUFFERS:
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return OptRep.NONE;
+    long recorded = (long)((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1].fwd_callee & ~(long)ELEM_CLASS_SEEN;
+    if (recorded == 0) return OptRep.NONE;
+    // Layout.class_mask: the class field is bits 16..21.
+    long cls = (recorded >> 16) & 0x3F;
+    foreach (kind : TYPED_KINDS) {
+        if ((long)kind.cls.ordinal != cls) continue;
+        switch (kind.cls) {
+            case UINT8CLAMPEDARRAY: return OptRep.NONE;
+            case FLOAT32ARRAY: case FLOAT64ARRAY: return OptRep.FLOAT64;
+            default: return OptRep.INT32;
+        }
+    }
+    return OptRep.NONE;
+$else
+    return OptRep.NONE;
+$endif
 }
 
 // UNM of a number, as a double.

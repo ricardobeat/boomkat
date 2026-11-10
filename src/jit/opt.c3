@@ -45,7 +45,14 @@ enum OptExit : char (String label) {
     SLOW_PATH {"slow-path"},
     // An inlined body's instruction that had never run was reached.
     COLD {"cold"},
+    // An element access with no recorded class met a receiver that is not an array. The code
+    // recorded the class on the way out, so the rebuild specializes on it.
+    UNPROFILED {"unprofiled"},
 }
+
+// Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a
+// class word of 0 still reads as recorded. No layout mask covers bit 0.
+const uint ELEM_CLASS_SEEN = 1;
 
 const char OPT_NONE = 0;
 const char OPT_ACTIVE = 1;
@@ -70,6 +77,9 @@ const uint OPT_FIELD_SITES = 2;
 const uint OPT_INT_WORK = 8;
 const uint OPT_EXIT_MAX = 8;
 const char OPT_REOPT_MAX = 2;
+// Discards after UNPROFILED exits that do not count as reoptimizations. Each such exit records a
+// class, so a function has at most as many as it has element sites; this bounds the rest.
+const char OPT_RELEARN_MAX = 16;
 // Bytes of optimized code kept; past them the sweep evicts the bodies not entered recently.
 const usz OPT_CODE_MAX = 4 * 1024 * 1024;
 // Exits at one site that discard a body and make the next build lower the site generically.
@@ -689,6 +699,27 @@ fn void opt_discard(Heap* h, CompiledFunction* f) {
     f.opt_state = fresh && f.opt_reopts <= OPT_REOPT_MAX ? OPT_NONE : OPT_REFUSED_EXITS;
 }
 
+// Discard `oc` after an UNPROFILED exit, without charging a reoptimization up to OPT_RELEARN_MAX:
+// the exit recorded the class the rebuild lacked, and a site exits so at most once, since a
+// recorded class is never unrecorded again.
+fn void opt_relearn(Heap* h, OptCode* oc) {
+    CompiledFunction* f = oc.f;
+    if (f.opt_code != oc) return;
+    if (f.opt_relearns >= OPT_RELEARN_MAX) {
+        opt_discard(h, f);
+        return;
+    }
+    f.opt_relearns++;
+    if (h.opt.log) {
+        io::eprintf("opt relearn ");
+        opt_log_fn(f);
+        io::eprintfn("");
+    }
+    opt_retire(h, f, oc);
+    h.opt.discards++;
+    f.opt_state = OPT_NONE;
+}
+
 // Clear the shape ids of `oc` that no live shape holds, before the heap reuses them.
 fn void OptCode.purge_cells(&self, Heap* h) {
     for (uint i = 0; i < self.cell_count; i++) {
@@ -769,6 +800,10 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         opt_note_operands(ds, oc.f, (uint)(ds.curr_pc - ds.code_base), reason);
     }
     if (reason == OptExit.INTERRUPT.ordinal) return 0;
+    if (reason == OptExit.UNPROFILED.ordinal) {
+        opt_relearn(h, oc);
+        return 0;
+    }
     oc.exits++;
     opt_note_exit_op(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base));
     if (h.opt.log) {
@@ -900,6 +935,10 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
     CompiledFunction* callee = site.frames[site.depth - 1].callee;
     if (reason == OptExit.OVERFLOW.ordinal && callee.ic_entries != null) {
         ((hobject::ICEntry*)callee.ic_entries)[site.pc].feedback |= hobject::FB_OVF;
+    }
+    if (reason == OptExit.UNPROFILED.ordinal) {
+        opt_relearn(h, oc);
+        return vm::jit_inline_materialize(ds, site);
     }
     oc.exits++;
     opt_note_exit_op(&h.opt, callee, site.pc);

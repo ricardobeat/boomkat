@@ -851,7 +851,8 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     }
     a.unbox_object(R1, rr);
     long flags;
-    int k = self.typed_kind(0, &flags);
+    bool unseen;
+    int k = self.typed_kind(0, &flags, &unseen);
     if (k >= 0) {
         self.emit_typed_load(i, n, TYPED_KINDS[k], flags);
         return;
@@ -864,8 +865,12 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
-        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
-        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        if (unseen) {
+            self.unprofiled_exit(i);
+        } else {
+            a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_GET_SUB });
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        }
         sljit_set_label(done, sljit_emit_label(c));
     $else
         a.call.add(other);
@@ -886,12 +891,16 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
 // The index into TYPED_KINDS of the typed array the element access being emitted has met, by the
 // class flags its baseline code recorded (Asm.note_elem_class) under array_or_typed's mask with
 // `extra`; -1 for none (an array, a proxy, Uint8Clamped stores, or no record). The flags the
-// specialized access compares against go to `flags`.
-fn int OptCg.typed_kind(&self, long extra, long* flags) {
+// specialized access compares against go to `flags`. `unseen` is set when no class was recorded:
+// the access has never met a receiver that is not an array.
+fn int OptCg.typed_kind(&self, long extra, long* flags, bool* unseen) {
+    *unseen = false;
 $if features::BUFFERS:
     Asm* a = self.a;
     if (a.f.ic_entries == null) return -1;
     long recorded = (long)((hobject::ICEntry*)a.f.ic_entries)[a.next - 1].fwd_callee;
+    *unseen = recorded == 0;
+    recorded &= ~(long)ELEM_CLASS_SEEN;
     Layout* l = a.lay;
     long proxy = 0;
     $if features::PROXY:
@@ -909,6 +918,17 @@ $if features::BUFFERS:
 $else
     return -1;
 $endif
+}
+
+// At an element access with no recorded class, R2 holding the receiver's class flags as
+// array_or_typed left them: record them, and leave for the baseline code (OptExit.UNPROFILED).
+fn void OptCg.unprofiled_exit(&self, uint i) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    hobject::ICEntry* entry = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
+    sljit_emit_op2(c, SLJIT_OR, R2, 0, R2, 0, SLJIT_IMM, ELEM_CLASS_SEEN);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM, (long)(usz)&entry.fwd_callee, R2, 0);
+    self.exit_at(sljit_emit_jump(c, SLJIT_JUMP), i, OptExit.UNPROFILED);
 }
 
 // The address of element `idx` (an INT32 node) of the object in R1, which must be a typed array of
@@ -1377,7 +1397,8 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     }
     a.unbox_object(R1, rr);
     long flags;
-    int k = self.typed_kind(a.lay.indexed_named_mask, &flags);
+    bool unseen;
+    int k = self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
     // A double stored to an integer kind needs ta_store_int's modular conversion: the subroutine's.
     if (k >= 0 && (self.g.nodes[n.b].rep == OptRep.INT32 || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT32ARRAY || TYPED_KINDS[k].cls == hobject::ObjClass.FLOAT64ARRAY)) {
         self.emit_typed_store(i, n, TYPED_KINDS[k], flags);
@@ -1393,9 +1414,13 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
-        self.box_node(n.b, R0);
-        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
-        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        if (unseen) {
+            self.unprofiled_exit(i);
+        } else {
+            self.box_node(n.b, R0);
+            a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        }
         sljit_set_label(done, sljit_emit_label(c));
     $else
         a.call.add(other);
@@ -1422,6 +1447,9 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
         a.load(R0, a.w.a);
     }
     a.unbox_object(R1, rr);
+    long flags;
+    bool unseen;
+    self.typed_kind(a.lay.indexed_named_mask, &flags, &unseen);
     self.box_index(n.a);
     void* other = a.array_or_typed(a.lay.indexed_named_mask);
     a.array_slot();
@@ -1463,9 +1491,13 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     $if features::BUFFERS:
         void* typed_done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
-        a.load(R0, a.w.c);
-        a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
-        a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        if (unseen) {
+            self.unprofiled_exit(i);
+        } else {
+            a.load(R0, a.w.c);
+            a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = TYPED_PUT_SUB });
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, SUB_TRUE));
+        }
         sljit_set_label(typed_done, sljit_emit_label(c));
     $else
         a.call.add(other);
