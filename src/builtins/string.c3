@@ -111,6 +111,17 @@ fn void builtin_string_fromcharcode(BuiltinContext* ctx) {
         ctx.result_string(empty);
         return;
     }
+    // One integer of a Latin-1 unit, the common use: its cached string.
+    TVal* first = &ctx.regs[ctx.base_reg];
+    if (ctx.argc == 1 && first.is_fastint()) {
+        uint unit = (uint)(first.get_fastint() & 0xFFFF);
+        if (unit < heap::UNIT_STR_CACHE_SIZE) {
+            HString* s = ctx.heap.unit_str(unit);
+            if (s == null) { builtin_throw(ctx, ctx.heap.range_err_proto, "Invalid string length"); return; }
+            ctx.result_string(s);
+            return;
+        }
+    }
     UnitBuf out;
     out.init(ctx.heap);
     defer out.free();

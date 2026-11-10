@@ -429,8 +429,8 @@ fn Instruction* th_iter_next_intrinsic(Instruction* pc, HandlerTable* handlers,
         if (index >= source.unit_len()) return th_next(pc + 2, handlers, regs, cold);
 
         uint unit = source.unit_at(index);
-        if (unit >= heap::ASCII_CHAR_CACHE_SIZE) return pc;
-        hstring::HString* character = cold.heap.ascii_char_strs[unit];
+        if (unit >= heap::UNIT_STR_CACHE_SIZE) return pc;
+        hstring::HString* character = cold.heap.unit_strs[unit];
         if (character == null || !((types::HeapHeader*)character).is_pinned()) return pc;
 
         TVal* dest = regs + insn.a;

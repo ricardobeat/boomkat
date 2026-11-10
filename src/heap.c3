@@ -134,7 +134,7 @@ const uint  ABSENT_CACHE_SIZE       = 1024;
 // first use (most programs never nest a join) and grown as needed.
 const uint  JOIN_VISITED_INITIAL_CAP = 16;
 const usz   STRS_CACHE_SIZE         = 256;
-const usz   ASCII_CHAR_CACHE_SIZE   = 128;
+const usz   UNIT_STR_CACHE_SIZE     = 256;
 const usz   CONCAT_CACHE_SIZE       = 16;
 const usz   CONCAT_CACHE_MAX_LENGTH = 256;
 
@@ -1407,9 +1407,9 @@ struct Heap {
     // and makes incref and decref no-ops.
     HString*[256] small_int_strs;
 
-    // Pinned one-byte ASCII strings, interned lazily for character-producing
-    // operations that repeatedly request the same code unit.
-    HString*[ASCII_CHAR_CACHE_SIZE] ascii_char_strs;
+    // Pinned one-unit Latin-1 strings, interned lazily for character-producing
+    // operations that repeatedly request the same code unit (Heap.unit_str).
+    HString*[UNIT_STR_CACHE_SIZE] unit_strs;
 
     // Pooled HObject headers, avoiding a malloc per object. The size classes
     // match alloc_size_for_class():
@@ -3048,8 +3048,8 @@ fn void Heap.reset(&self) {
     for (usz i = 0; i < 256; i++) {
         self.small_int_strs[i] = null;
     }
-    for (usz i = 0; i < ASCII_CHAR_CACHE_SIZE; i++) {
-        self.ascii_char_strs[i] = null;
+    for (usz i = 0; i < UNIT_STR_CACHE_SIZE; i++) {
+        self.unit_strs[i] = null;
     }
 
     mem::clear(&self.lf_deleted_props[0], (sz)(LF_DELETED_WORDS * 8));
@@ -6254,6 +6254,16 @@ fn HString* Heap.str_intern(&self, char[] text) {
     return s == null ? null : self.intern_fresh(s);
 }
 
+// The interned one-unit string of `unit`, a Latin-1 code unit, pinned and
+// cached by its first interning. Null when the allocation fails.
+fn HString* Heap.unit_str(&self, uint unit) @inline {
+    assert(unit < UNIT_STR_CACHE_SIZE);
+    HString* s = self.unit_strs[unit];
+    if (s != null) return s;
+    char[1] text = { (char)unit };
+    return self.str_intern_units(hstring::narrow_units(text[:1]));
+}
+
 // Intern Latin-1 bytes, one unit each.
 fn HString* Heap.str_intern_latin1(&self, char[] data) {
     return self.str_intern_units(hstring::narrow_units(data));
@@ -6287,22 +6297,22 @@ fn HString* Heap.str_intern_units(&self, Units data) {
         }
         return null;
     }
-    bool cache_ascii_char = false;
-    uint ascii_char_index = 0;
+    bool cache_unit = false;
+    uint unit_index = 0;
     if (data.len == 1 && !data.wide) {
-        ascii_char_index = (uint)data.ptr[0];
-        cache_ascii_char = ascii_char_index < ASCII_CHAR_CACHE_SIZE;
-        if (cache_ascii_char) {
-            HString* cached = self.ascii_char_strs[ascii_char_index];
+        unit_index = (uint)data.ptr[0];
+        cache_unit = unit_index < UNIT_STR_CACHE_SIZE;
+        if (cache_unit) {
+            HString* cached = self.unit_strs[unit_index];
             if (cached != null) return cached;
         }
     }
     uint hash = self.hash_units(data);
     HString* existing = self.str_table_lookup(data, hash);
     if (existing != null) {
-        if (cache_ascii_char) {
+        if (cache_unit) {
             ((HeapHeader*)existing).set_pinned();
-            self.ascii_char_strs[ascii_char_index] = existing;
+            self.unit_strs[unit_index] = existing;
         }
         return existing;
     }
@@ -6312,9 +6322,9 @@ fn HString* Heap.str_intern_units(&self, Units data) {
         // marking the string interned. If it cannot, the registry keeps the
         // string reachable for reset and destroy.
         if (!self.str_table_insert(s)) { self.large_string_register(s); }
-        if (cache_ascii_char) {
+        if (cache_unit) {
             ((HeapHeader*)s).set_pinned();
-            self.ascii_char_strs[ascii_char_index] = s;
+            self.unit_strs[unit_index] = s;
         }
         return s;
     }
