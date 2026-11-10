@@ -1387,7 +1387,7 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
         self.emit_store_elem_window(i, n);
         return;
     }
-    a.decode((uint)n.imm);
+    self.decode(n);
     a.call.len = 0;
     int rr = R0;
     if (n.c != NO_NODE) {
@@ -2004,7 +2004,7 @@ fn void OptCg.emit_alloc(&self, uint i, OptNode* n) {
 fn void OptCg.emit_init_slot(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
-    a.decode((uint)n.imm);
+    self.decode(n);
     a.call.len = 0;
     if (n.b != NO_NODE) {
         int or = self.obj_reg(n.b, R4);
