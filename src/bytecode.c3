@@ -2129,7 +2129,8 @@ struct CompiledFunction {
     // off FuncFlags because is_eval has JS declaration-instantiation semantics.
     bool            jit_eval_derived @if($feat(SLJIT));
     void*           opt_code @if($feat(SLJIT));     // jit::OptCode* while optimized code is installed
-    uint            opt_entries @if($feat(SLJIT));  // Entries counted toward optimizing
+    uint            opt_entries @if($feat(SLJIT));  // Entries counted toward optimizing, within a round
+    char            opt_rounds @if($feat(SLJIT));   // Rounds of jit::OPT_ENTRY_THRESHOLD entries counted
     char            opt_state @if($feat(SLJIT));    // jit::OPT_*
     char            opt_reopts @if($feat(SLJIT));   // Optimized code discarded so far
     char            opt_declined @if($feat(SLJIT)); // Attempts on call feedback alone that inlined nothing

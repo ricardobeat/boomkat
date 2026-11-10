@@ -276,27 +276,45 @@ struct OptPolicy {
 // Count an entry into native code of `f` (one for each `credit`) toward
 // optimizing it, and do so when the policy says. A frame looping in `f` passes the loop header
 // it branched back to and its window, which a function compiled by loops needs.
+//
+// Entries count in rounds of OPT_ENTRY_THRESHOLD, the count at which the baseline call entry
+// declines to the helper that calls this: each round folds into f.opt_rounds and starts the count
+// over, so that a function waiting out a longer cool-off (opt_rounds_due) keeps its direct calls.
 fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1, uint osr_pc = uint::max, TVal* regs = null) @noinline {
     if (f.opt_state == OPT_REGION && f.opt_code == null) {
-        if (osr_pc == uint::max) return;
-        f.opt_entries += credit;
-        if (!h.opt.always && f.opt_entries < OPT_ENTRY_THRESHOLD << (f.opt_reopts > 2 ? 2 : (uint)f.opt_reopts)) return;
-        f.opt_entries = 0;
+        // Calls count toward the loop's round as well; only a back edge can compile it.
+        if (osr_pc != uint::max) f.opt_entries += credit;
+        if (!opt_round_due(h, f) || osr_pc == uint::max) return;
+        opt_reset_count(f);
         opt_try_compile(h, f, osr_pc, regs);
         return;
     }
     if (f.opt_state != OPT_NONE || f.opt_code != null) {
         // The baseline call entry declines at the threshold; start its count over.
-        f.opt_entries = 0;
+        opt_reset_count(f);
         if (f.opt_code != null) ((BaselineCode*)f.jit_code).touched = 1;
         return;
     }
     f.opt_entries += credit;
-    // A function whose body was discarded must earn a longer cool-off before each rebuild.
-    uint need = OPT_ENTRY_THRESHOLD << (f.opt_reopts > 2 ? 2 : (uint)f.opt_reopts);
-    if (!h.opt.always && f.opt_entries < need) return;
+    if (!opt_round_due(h, f)) return;
     // Without the feedback to specialize on, the next attempt waits for another round of entries.
-    if (!opt_try_compile(h, f) && f.opt_state == OPT_NONE) f.opt_entries = 0;
+    if (!opt_try_compile(h, f) && f.opt_state == OPT_NONE) opt_reset_count(f);
+}
+
+// Fold f's completed rounds of entries into f.opt_rounds and say whether the rounds due are in. A
+// function whose body was discarded must earn a longer cool-off before each rebuild.
+fn bool opt_round_due(Heap* h, CompiledFunction* f) @inline {
+    if (f.opt_entries >= OPT_ENTRY_THRESHOLD) {
+        uint rounds = f.opt_rounds + f.opt_entries / OPT_ENTRY_THRESHOLD;
+        f.opt_rounds = rounds > 127 ? 127 : (char)rounds;
+        f.opt_entries %= OPT_ENTRY_THRESHOLD;
+    }
+    return h.opt.always || f.opt_rounds >= 1u << (f.opt_reopts > 2 ? 2 : (uint)f.opt_reopts);
+}
+
+fn void opt_reset_count(CompiledFunction* f) @inline {
+    f.opt_entries = 0;
+    f.opt_rounds = 0;
 }
 
 // The optimized code a baseline frame of `f` continues in at the backward
@@ -606,7 +624,7 @@ fn bool opt_refuse_build(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op,
     } else if ((why == OptRefuse.CFG || why == OptRefuse.BUDGET) && !h.opt.no_region) {
         f.opt_state = OPT_REGION;
     }
-    f.opt_entries = 0;
+    opt_reset_count(f);
     return false;
 }
 
@@ -740,7 +758,7 @@ fn void opt_retire(Heap* h, CompiledFunction* f, OptCode* oc) {
     usz bytes = oc.code.code_bytes + oc.code.table_bytes;
     h.opt.live_bytes -= bytes;
     h.jit_stats.live_bytes -= bytes;
-    f.opt_entries = 0;
+    opt_reset_count(f);
 }
 
 // Retire the optimized bodies that were not entered since the previous sweep, and mark the rest
