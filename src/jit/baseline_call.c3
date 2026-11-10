@@ -634,13 +634,11 @@ fn void Asm.emit_call_body(&self) {
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
     slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want));
     self.mov(R4, 0, m | R0, k.fn_builtin, SLJIT_MOV_S32);
-    // A builtin callee of a plain CALL (CALL_METHOD in packed) completes here,
-    // through vm::jit_call_builtin_native, as the CALL thunk would complete it,
-    // and the site continues at its resume point without the thunk. Every other
-    // call shape, and every other callee, keeps the helper's slow path.
+    // A builtin callee of a CALL or CALL_UNDEF_THIS completes here, through
+    // vm::jit_call_builtin_native, as the CALL thunk would complete it, and the
+    // site continues at its resume point without the thunk. The helper declines
+    // every other call shape, and every other callee keeps the slow path.
     void* compiled = sljit_emit_cmp(c, SLJIT_SIG_LESS, R4, 0, SLJIT_IMM, 0);
-    sljit_emit_op2(c, SLJIT_AND, R4, 0, R3, 0, SLJIT_IMM, CALL_METHOD);
-    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, sp, CALL_RESUME_OFF);
     self.mov(R0, 0, ds, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);
@@ -724,11 +722,12 @@ fn void Asm.emit_call_body(&self) {
     done.add(sljit_emit_cmp(c, SLJIT_EQUAL, m | ds, self.pc_off, R1, 0));
     self.mov(R0, 0, SLJIT_IMM, BASELINE_REDISPATCH);
     done.add(sljit_emit_jump(c, SLJIT_JUMP));
-    // A lightfunc callee of a plain CALL completes through the same helper:
+    // A lightfunc callee completes through the same helper:
     // vm::jit_call_builtin_native's th_call_native runs a lightfunc's builtin
     // from its payload index with the receiver slot below it, as the CALL thunk
-    // does, and a decline returns JIT_CALL_SLOW before anything was written.
-    // Any other non-object value keeps the slow path.
+    // does, and a decline returns JIT_CALL_SLOW having written at most the
+    // undefined receiver of a plain call. Any other non-object value keeps the
+    // slow path.
     sljit_set_label(tagged, sljit_emit_label(c));
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
@@ -736,8 +735,6 @@ fn void Asm.emit_call_body(&self) {
     self.mov(sp, CALL_RESUME_OFF, R4, 0);
     self.mov(R0, 0, m | ds, l.ds_act);
     self.mov(m | R0, k.act_curr_pc, R4, 0);
-    sljit_emit_op2(c, SLJIT_AND, R4, 0, R3, 0, SLJIT_IMM, CALL_METHOD);
-    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
     self.mov(R1, 0, sp, CALL_RESUME_OFF);
     self.mov(R0, 0, ds, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);

@@ -1928,7 +1928,7 @@ fn long jit_call_thunk(Dispatch* ds, ulong arg) {
     Instruction* next = (Instruction*)(usz)(arg & ~1UL);
     ds.curr_pc = next;
     Instruction p = next[-1];
-    DecodedInsn insn = { .op = Opcode.CALL, .a = p.a, .b = p.b, .c = p.c };
+    DecodedInsn insn = { .op = p.op, .a = p.a, .b = p.b, .c = p.c };
     if ((arg & 1) != 0) {
         Instruction x = next[-2];
         insn.a |= (uint)x.a << 8;
@@ -1941,7 +1941,7 @@ fn long jit_call_thunk(Dispatch* ds, ulong arg) {
     OpStatus s;
     long raw = vm::JIT_NO_RAW;
     if ((arg & 1) == 0 && vm::jit_call_builtin(ds, next, &s, &raw)) {
-        count_relayed(ds, Opcode.CALL);
+        count_relayed(ds, p.op);
         if (raw != vm::JIT_NO_RAW) return raw;
     } else {
         s = vm::op_call(ds, insn);
@@ -1987,9 +1987,9 @@ fn long jit_call_status(Dispatch* ds, Instruction* next, Activation* act, Compil
 fn void init_thunks() @noinline @private {
     $foreach $op : Opcode::values:
         $if !@excluded($op):
-            $if $op == Opcode.CALL:
-                // The CALL thunk body is shared with the native call site's
-                // direct builtin path (jit_call_thunk).
+            $if $op == Opcode.CALL || $op == Opcode.CALL_UNDEF_THIS:
+                // The CALL and CALL_UNDEF_THIS thunk body is shared with the
+                // native call site's direct builtin path (jit_call_thunk).
                 thunk_table[$op.ordinal] = fn long(Dispatch* ds, ulong arg) {
                     return jit_call_thunk(ds, arg);
                 };

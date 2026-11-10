@@ -837,19 +837,23 @@ $endif
     return (*fo.extra_ptr()).func.builtin_fn_index;
 }
 
-// A CALL whose callee is a builtin, through th_call_native as the threaded
-// burst runs it (identity fast paths such as charCodeAt, then the builtin's
-// own dispatch) instead of op_call. False when it declined before running
-// anything; otherwise `status` is what the operation function would return,
-// with the burst's throw and re-dispatch handoffs completed as vm_dispatch
-// completes them.
+// A CALL or CALL_UNDEF_THIS whose callee is a builtin, through th_call_native
+// as the threaded burst runs it (identity fast paths such as charCodeAt, then
+// the builtin's own dispatch) instead of op_call. False when it declined before
+// running anything but clearing a plain call's receiver slot, as op_call clears
+// it too; otherwise `status` is what the operation function would return, with
+// the burst's throw and re-dispatch handoffs completed as vm_dispatch completes
+// them.
 fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long* raw) {
     if (!jit_relay_ready) jit_relay_init();
     if (ds.ic_base == null || ds.var_ic_base == null) return false;
     Vm* vm = ds.vm;
     Instruction* pc = next - 1;
+    bool plain = pc.op == Opcode.CALL_UNDEF_THIS;
+    if (pc.op != Opcode.CALL && !plain) return false;
     TVal* regs = ds.regs_base;
-    if (th_lean_target(vm, regs[pc.b], regs + pc.b + 2, false) != null) return false;
+    if (th_lean_target(vm, regs[pc.b], regs + pc.b + 2, plain) != null) return false;
+    if (plain) clear_call_regs(vm, ds.act, regs, pc.b + 1, pc.b + 2);
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
     int builtin = jit_builtin_index(regs[pc.b]);

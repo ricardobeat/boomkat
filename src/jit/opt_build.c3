@@ -1473,12 +1473,12 @@ fn bool opt_math_of(uint builtin, OptMath* m) {
     return true;
 }
 
-// A CALL of the Math function the site has always called (hobject::IC_BUILTIN_TARGET) with as many
+// A CALL or CALL_UNDEF_THIS of the Math function the site has always called (hobject::IC_BUILTIN_TARGET) with as many
 // arguments as it takes: a CHECK_BUILTIN of the callee, then a MATH node over the arguments as
 // numbers. FLOOR, CEIL and ROUND of an INT32 are the INT32 itself; ABS, MIN and MAX of INT32s stay
 // INT32 until ABS has overflowed there.
 fn bool OptBuild.math_call(&self) {
-    if (self.w.op != Opcode.CALL || self.wide) return false;
+    if ((self.w.op != Opcode.CALL && self.w.op != Opcode.CALL_UNDEF_THIS) || self.wide) return false;
     CompiledFunction* f = self.cur_f();
     if (f.ic_entries == null) return false;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
