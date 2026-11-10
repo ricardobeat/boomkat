@@ -100,7 +100,9 @@ struct Layout {
     long accessor_mask;
     long writable_mask;
     long symbol_mask;
-    long ascii_mask;
+    // The string flags any of which keeps a string's units from being its inline bytes: a symbol,
+    // UTF-16 units, data in an external buffer.
+    long byte_units_mask;
     long interned_mask;
     long queued_mask;
     long interned_shift;
@@ -346,8 +348,10 @@ fn Layout* layout() {
     sf.is_symbol = true;
     l.symbol_mask = (long)(uint)sf;
     sf = {};
-    sf.is_ascii = true;
-    l.ascii_mask = (long)(uint)sf;
+    sf.is_symbol = true;
+    sf.is_wide = true;
+    sf.has_extdata = true;
+    l.byte_units_mask = (long)(uint)sf;
     sf = {};
     sf.is_interned = true;
     l.interned_mask = (long)(uint)sf;

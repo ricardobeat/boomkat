@@ -42,4 +42,11 @@ log.push(bound(2));
 function ex(s, i) { var o = { s: s }; return o.s.charCodeAt(i) + 1; }
 for (var k = 0; k < 100; k++) ex("loop", k % 4);
 log.push(ex("zz", 1), ex("zz", 9));
+// Latin-1 strings, whose units are their bytes as for ASCII ones, built at run time and in a hot
+// loop, next to wide ones.
+var bin = "";
+for (var i = 0; i < 256; i++) bin += String.fromCharCode(i);
+var sum = 0;
+for (var k = 0; k < 40; k++) for (var i = 0; i < 260; i++) { var c = at(bin, i); sum += c === c ? c : 1000; }
+log.push(sum, at("é", 0), at("\xff\x80", 1), at(bin + "Ā", 255), at(bin + "Ā", 256));
 print(log.join("\n"));

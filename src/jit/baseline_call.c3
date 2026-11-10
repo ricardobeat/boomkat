@@ -484,8 +484,9 @@ fn bool Asm.charcodeat_site(&self) {
     return false;
 }
 
-// `x.charCodeAt(i)` for a plain ASCII string primitive `x` and a fastint in
-// range, as th_call_native completes it, without entering the call machinery.
+// `x.charCodeAt(i)` for a string primitive `x` whose units are its inline
+// bytes and a fastint in range, as th_call_native completes it, without
+// entering the call machinery.
 // `miss` collects every other case, which nothing was written for.
 fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     void* c = self.c;
@@ -506,8 +507,8 @@ fn void Asm.emit_charcodeat(&self, Jumps* miss) {
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_STRING_START);
     miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
     self.mov(R2, 0, m | R1, 0, SLJIT_MOV_U32);
-    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.ascii_mask | l.symbol_mask);
-    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, l.ascii_mask));
+    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.byte_units_mask);
+    miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0));
     self.load(R3, rb + 2);
     sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R3, 0, SLJIT_IMM, 48);
     miss.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, STAG_INT));
