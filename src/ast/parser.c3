@@ -75,6 +75,7 @@ struct DvSite {
 struct DvLabel {
     uint atom;
     bool loop;         // the labelled statement is (through further labels) a loop
+    uint continue_at;  // a `continue` targeting this label, resolved once the body is known
 }
 
 struct Parser {
@@ -130,6 +131,9 @@ struct Parser {
     Vec{uint} dv_slot;       // open addressing over (bscope, atom): binding id, 0 = empty
     uint dv_slot_count;
     uint dv_atom_eval;
+    uint dv_atom_arguments;
+    uint dv_atom_let;
+    uint[9] dv_strict_words;
     uint dv_breakable;   // loop or switch bodies enclosing the current statement
     uint dv_iterating;   // loop bodies enclosing the current statement
     Vec{DvLabel} dv_labels;
@@ -452,6 +456,11 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.dv_label_base = 0;
     p.dv_flags = 0;
     p.dv_atom_eval = p.atom("eval");
+    p.dv_atom_arguments = p.atom("arguments");
+    p.dv_atom_let = p.atom("let");
+    String[9] dv_sr = { "implements", "interface", "let", "package", "private",
+        "protected", "public", "static", "yield" };
+    for (uint i = 0; i < 9; i++) p.dv_strict_words[i] = p.atom((char[])dv_sr[i]);
     if (ast.shared_line_starts.len == 0) build_line_table(ast);
     lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;

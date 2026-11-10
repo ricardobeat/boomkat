@@ -677,6 +677,12 @@ fn uint Parser.ident_node(&self, Token t) {
         // alike; a name that never escapes the body marks nothing.
         self.dv_ref(atom);
         if (t.has_escape) self.dv_escape();
+        // `arguments` is banned in class field initializers and static blocks
+        // (Early.check_ident), whose nodes are discarded with the body.
+        if ((self.ctx.in_field_init || self.ctx.in_static_block)
+            && atom == self.dv_atom_arguments) {
+            self.fail_at(t.pos, "'arguments' is not allowed in class field initializer or static block");
+        }
     }
     return self.node(NodeTag.IDENT, t.pos, atom, 0, t.has_escape ? IDENT_ESCAPED : 0);
 }

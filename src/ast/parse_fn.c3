@@ -509,7 +509,10 @@ fn uint? Parser.class_decl(&self, bool anonymous_ok = false) {
     } else if (!anonymous_ok) {
         return self.unexpected()~;
     }
-    if (name != 0) self.dv_declare(self.ast.lhs.data[name], DeclKind.CLASS, self.ast.main_tok.data[name]);
+    if (name != 0) {
+        self.dv_class_name(name);
+        self.dv_declare(self.ast.lhs.data[name], DeclKind.CLASS, self.ast.main_tok.data[name]);
+    }
     uint rec = self.class_tail(start)!;
     return self.node(NodeTag.CLASS_DECL, start, name, rec);
 }
@@ -523,6 +526,7 @@ fn uint? Parser.class_expr(&self) {
         name = self.ident_node(self.tok);
         self.next()!;
     }
+    self.dv_class_name(name);
     uint rec = self.class_tail(start)!;
     return self.node(NodeTag.CLASS_EXPR, start, name, rec);
 }

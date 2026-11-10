@@ -77,6 +77,62 @@ rejects("break outside a loop or label", "function f(){ break; }");
 rejects("continue outside a loop", "function f(){ continue; }");
 rejects("duplicate label", "function f(){ l: l: ; }");
 
+// ---- declarations in single-statement positions ----
+rejects("function as a while body", "function f(){ while (0) function g(){} }");
+rejects("function as a for body", "function f(){ for (;;) function g(){} }");
+rejects("function as a with body", "function f(){ with ({}) function g(){} }");
+rejects("class as an if body", "function f(){ if (1) class C {} }");
+rejects("const as an if body", "function f(){ if (1) const a = 1; }");
+rejects("async function as an if body", "function f(){ if (1) async function g(){} }");
+rejects("labelled async function", "function f(){ a: async function g(){} }");
+rejects("labelled function in an if body", "function f(){ if (1) a: function g(){} }");
+
+// ---- for-head initializers ----
+rejects("for-in let with initializer", "function f(){ for (let x = 1 in {}) {} }");
+rejects("for-of const with initializer", "function f(){ for (const x = 1 of []) {} }");
+rejects("for-of var with initializer", "function f(){ for (var x = 1 of []) {} }");
+rejects("for-in var pattern with initializer", "function f(){ for (var [x] = 1 in {}) {} }");
+accepts("annex B for-in var with initializer", "function f(){ for (var x = 1 in {}) {} }");
+
+// ---- catch parameter duplicate bound names ----
+rejects("duplicate catch array bindings", "function f(){ try {} catch ([a, a]) {} }");
+rejects("duplicate catch object bindings", "function f(){ try {} catch ({a, a}) {} }");
+rejects("duplicate catch nested bindings", "function f(){ try {} catch ({x:[a], y:a}) {} }");
+
+// ---- using declarations are lexical ----
+rejects("using then let", "function f(){ { using x = 1; let x; } }");
+rejects("using then var", "function f(){ using x = 1; var x; }");
+rejects("duplicate using", "function f(){ { using x = 1; using x = 2; } }");
+rejects("using then class", "function f(){ { using x = 1; class x {} } }");
+
+// ---- lexical binding names and switch defaults ----
+rejects("let named let", "function f(){ let let = 1; }");
+rejects("const named let", "function f(){ const let = 1; }");
+rejects("destructured let named let", "function f(){ let [let] = []; }");
+rejects("duplicate default clause", "function f(){ switch (0) { default: default: } }");
+rejects("class named eval", "function f(){ class eval {} }");
+rejects("class named arguments", "function f(){ class arguments {} }");
+rejects("class named let", "function f(){ class let {} }");
+
+// ---- nested eager bodies are validated at eval time ----
+rejects("dup let in a nested strict body", "function f(){ function g(){ 'use strict'; let a; let a; } }");
+rejects("dup let in a nested generator", "function f(){ function* g(){ let a; let a; } }");
+rejects("dup let in a nested method", "function f(){ ({ m(){ let a; let a; } }) }");
+rejects("dup let in a nested class method", "function f(){ class C { m(){ let a; let a; } } }");
+rejects("break in a nested arrow", "function f(){ var g = () => { break; }; }");
+rejects("with in a nested strict body", "function f(){ function g(){ 'use strict'; with({}){} } }");
+rejects("var eval in a nested strict body", "function f(){ function g(){ 'use strict'; var eval = 1; } }");
+rejects("arguments in a class field", "function f(){ class C { x = arguments; } }");
+rejects("var eval in a class static block", "function f(){ class C { static { var eval = 1; } } }");
+
+// ---- labels survive a nested deferred body, and chains are loop labels ----
+accepts("label survives a nested body", "function f(){ a: { function inner(){} break a; } }");
+accepts("nested label does not collide", "function f(){ a: { function inner(){ b: while(0){ break b; } } break a; } }");
+rejects("duplicate label across a nested body", "function f(){ a: { function inner(){} a: ; } }");
+accepts("continue to an outer label of a chain", "function f(){ a: b: while (0) { continue a; } }");
+accepts("annex B if-function with a later let", "function f(){ if (1) function g(){} let g; }");
+accepts("annex B if-function with a later class", "function f(){ if (1) function g(){} class g {} }");
+
 // ---- sanity: valid deferred bodies are still accepted ----
 accepts("valid uncalled body", "function f(){ let x; return x + 1; }");
 accepts("valid nested capture", "var n = 0; function outer(){ function inner(){ n++; } return inner; }");
