@@ -205,7 +205,7 @@ fn bool Ast.body_was_recorded(&self, uint fn_node) {
     uint rec = self.rhs.data[fn_node];
     if (rec == 0) return false;
     uint body = self.field(rec, FN_BODY);
-    if (body == 0) return false;
+    if (body == 0 || self.tags.data[body] != NodeTag.BLOCK) return false;
     return (self.flags.data[body] & BODY_RECORDED) != 0;
 }
 
@@ -220,6 +220,12 @@ fn bool Parser.call_follows(&self) {
     // `(function () { })()` and one nesting parenthesis: look past the `)`.
     Token save = self.tok;
     Token save_prev = self.prev;
+    // A speculative look-ahead must not latch a lexical fault: the tokens it
+    // passes are parsed for real afterwards, and a stale `failed` would abort
+    // the body with the wrong error position.
+    bool saved_failed = self.failed;
+    uint saved_err_pos = self.err_pos;
+    uint saved_err_len = self.err_len;
     bool invoked = false;
     uint closes = 0;
     while (closes < 2) {
@@ -230,6 +236,9 @@ fn bool Parser.call_follows(&self) {
     }
     self.lex_from(save);
     self.prev = save_prev;
+    self.failed = saved_failed;
+    self.err_pos = saved_err_pos;
+    self.err_len = saved_err_len;
     return invoked;
 }
 
