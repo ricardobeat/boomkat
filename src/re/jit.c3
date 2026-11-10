@@ -20,7 +20,8 @@
 // subject is one byte per code unit and never holds a surrogate pair, so the
 // narrow variant has none of the combining to do; the wide variant carries it.
 // The form is chosen per call, so both live in the same code object.
-module boomkat::re_jit @feat(!NO_REGEXP, SLJIT);
+// A comma in @feat is OR, so this gates on SLJIT alone: no target builds the JIT without regexps.
+module boomkat::re_jit @feat(SLJIT);
 
 import boomkat::jit;
 import boomkat::re_bindings;
