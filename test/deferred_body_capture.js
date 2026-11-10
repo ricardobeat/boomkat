@@ -133,5 +133,11 @@ function check(name, actual, expected) {
     check("with: name present on the object shadows the local", g({ loc: 5 }), 6);
 })();
 
+// ---- a directive-prologue statement's references belong to its own body ----
+(function () {
+    var result = (0, eval)("(function(){ var foo = 41; function B(){ 'x' + (foo = 99); } B(); return foo; })()");
+    check("directive prologue write reaches outer var", result, 99);
+})();
+
 if (failures > 0) throw new Error(failures + " check(s) failed");
 print("deferred body capture: OK");

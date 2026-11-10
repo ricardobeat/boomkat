@@ -250,30 +250,28 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
     self.expect(TokenType.LBRACE)!;
     uint mark = self.scratch_mark();
     AstMark amark = self.ast.mark();
-    char flags = 0;
-    self.directive_prologue(mark, &flags)!;
-    if ((flags & PROGRAM_STRICT) != 0) *fnf |= FNF_USE_STRICT;
-    bool defer_body = skip_ok && (flags & PROGRAM_STRICT) == 0 && !self.ctx.strict
-        && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled;
-    // Inline validation replaces a second pass over transient nodes: a deferred
-    // body's scopes, declarations and references are tracked while its grammar
-    // parses. An eager body's declarations must not leak into an enclosing
-    // deferred body's conflict state, so its tracking is paused.
     uint saved_track = self.dv_track;
     bool saved_on = self.dv_on;
+    // Every body in a deferred subtree is validated inline: the enclosing
+    // recorded body discards its nodes, so the whole-unit Early pass never sees
+    // them. Give each body its own scope tree, whether or not its own nodes are
+    // kept, and start before the directive prologue so its references count.
+    bool track = skip_ok || saved_on;
     uint ref0 = 0;
-    bool tracked = defer_body;
-    if (defer_body) {
+    if (track) {
         self.dv_on = true;
         self.dv_body_enter(params);
         ref0 = self.dv_ref_base;
-    } else {
-        self.dv_track = 0;
     }
     defer {
         self.dv_track = saved_track;
         self.dv_on = saved_on;
     }
+    char flags = 0;
+    self.directive_prologue(mark, &flags)!;
+    if ((flags & PROGRAM_STRICT) != 0) *fnf |= FNF_USE_STRICT;
+    bool defer_body = skip_ok && (flags & PROGRAM_STRICT) == 0 && !self.ctx.strict
+        && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled;
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
         self.scratch_push(self.statement_list_item_in_block()!);
@@ -283,7 +281,7 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
     // A callee `gen` compiles in place keeps its nodes: recording it would parse
     // the whole subtree a second time on the first call.
     if (defer_body && callee && self.call_follows()) defer_body = false;
-    if (tracked) {
+    if (track) {
         // Check this body's redeclaration errors, whether or not it is recorded.
         if (!self.dv_body_leave()) return self.fail_at(self.err_pos, "invalid function body")~;
     }

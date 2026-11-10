@@ -15,22 +15,23 @@ struct DvBinding {
 
 // ---- lifecycle ----
 
-// Enter a deferred body: a fresh scope tree and site list. The formal params are
-// declared first so a body lexical may clash with them. Refs keep accumulating
-// across nesting, so each body's own refs are the slice its walk appended.
+// Enter a function body that sits inside a discarded deferred subtree: a fresh
+// scope tree and site list. The formal params are declared first so a body
+// lexical may clash with them. Refs keep accumulating across nesting, so each
+// body's own refs are the slice its walk appended.
 fn void Parser.dv_body_enter(&self, uint params) {
-    // Only the outermost deferred body starts a fresh reference list. An eager
-    // body in between suspends the scope tracking but not this accumulation.
+    // Only the outermost body starts a fresh reference list. A nested body in
+    // between suspends the enclosing scope tracking but not this accumulation.
     if (self.dv_marks.len == 0) { self.dv_refs.truncate(0); self.dv_flags = 0; }
     self.dv_marks.push((uint)self.dv_scopes.len);
     self.dv_marks.push((uint)self.dv_sites.len);
     self.dv_marks.push(self.dv_cur);
     self.dv_marks.push(self.dv_ref_base);
-    self.dv_marks.push((uint)self.dv_labels.len);
+    self.dv_marks.push(self.dv_label_base);
     self.dv_marks.push(self.dv_breakable);
     self.dv_marks.push(self.dv_iterating);
     self.dv_ref_base = (uint)self.dv_refs.len;
-    self.dv_labels.truncate(0);
+    self.dv_label_base = (uint)self.dv_labels.len;
     self.dv_breakable = 0;
     self.dv_iterating = 0;
     self.dv_cur = (uint)self.dv_scopes.len;
@@ -38,29 +39,29 @@ fn void Parser.dv_body_enter(&self, uint params) {
     self.dv_track++;
     uint pc = self.ast.list_len(params);
     for (uint i = 0; i < pc; i++) {
-        uint p = self.ast.list_item(params, i);
-        // Simple params are the deferral condition, so each is an IDENT.
-        self.dv_declare(self.ast.lhs.data[p], DeclKind.PARAM, self.ast.main_tok.data[p]);
+        self.dv_declare_pattern(self.ast.list_item(params, i), DeclKind.PARAM);
     }
 }
 
-// Leave a deferred body: check its redeclaration errors, then drop its scopes and
+// Leave a function body: check its redeclaration errors, then drop its scopes and
 // sites so the enclosing body's tracking resumes where it was. A label, loop or
 // switch of the enclosing body also resumes: a nested body starts a new one.
 fn bool Parser.dv_body_leave(&self) {
-    if (self.failed) return false;   // a fail_at fired during the walk
     uint n = (uint)self.dv_marks.len - 7;
-    if (!self.dv_conflicts(self.dv_marks.data[n + 1])) return false;
+    bool ok = !self.failed && self.dv_conflicts(self.dv_marks.data[n + 1]);
+    // Restore even when a conflict or an earlier error failed the walk: the
+    // parse aborts, but the unit's tracker state must not stay nested.
     self.dv_scopes.truncate((sz)self.dv_marks.data[n + 0]);
     self.dv_sites.truncate((sz)self.dv_marks.data[n + 1]);
     self.dv_cur = self.dv_marks.data[n + 2];
     self.dv_ref_base = self.dv_marks.data[n + 3];
-    self.dv_labels.truncate((sz)self.dv_marks.data[n + 4]);
+    self.dv_labels.truncate((sz)self.dv_label_base);
+    self.dv_label_base = self.dv_marks.data[n + 4];
     self.dv_breakable = self.dv_marks.data[n + 5];
     self.dv_iterating = self.dv_marks.data[n + 6];
     self.dv_marks.truncate((sz)n);
     self.dv_track--;
-    return true;
+    return ok;
 }
 
 // Open a lexical scope inside a deferred body. No-op outside one.
@@ -296,7 +297,7 @@ fn void Parser.dv_switch_leave(&self) {
 // loop, which the parser sees from the token right after the `:`.
 fn void Parser.dv_label_declare(&self, uint atom, uint at, bool loop) {
     if (!self.dv_on || self.dv_track == 0) return;
-    for (sz i = 0; i < self.dv_labels.len; i++) {
+    for (sz i = (sz)self.dv_label_base; i < self.dv_labels.len; i++) {
         if (self.dv_labels.data[i].atom == atom) { self.fail_at(at, "label has already been declared"); return; }
     }
     self.dv_labels.push({ .atom = atom, .loop = loop });
@@ -316,7 +317,7 @@ fn void Parser.dv_jump(&self, uint label, uint at, bool is_break) {
         if (!is_break && self.dv_iterating == 0) { self.fail_at(at, "continue is only valid inside a loop"); return; }
         return;
     }
-    for (sz i = self.dv_labels.len; i > 0; i--) {
+    for (sz i = self.dv_labels.len; i > (sz)self.dv_label_base; i--) {
         DvLabel* l = &self.dv_labels.data[i - 1];
         if (l.atom != label) continue;
         if (!is_break && !l.loop) { self.fail_at(at, "continue may only target a loop label"); return; }

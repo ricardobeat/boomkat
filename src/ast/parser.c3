@@ -133,6 +133,7 @@ struct Parser {
     uint dv_breakable;   // loop or switch bodies enclosing the current statement
     uint dv_iterating;   // loop bodies enclosing the current statement
     Vec{DvLabel} dv_labels;
+    uint dv_label_base;  // labels below this index belong to an enclosing body
     char[256] err_msg;
     uint err_len;
     uint err_pos;
@@ -448,6 +449,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.dv_track = 0;
     p.dv_cur = 0;
     p.dv_ref_base = 0;
+    p.dv_label_base = 0;
     p.dv_flags = 0;
     p.dv_atom_eval = p.atom("eval");
     if (ast.shared_line_starts.len == 0) build_line_table(ast);
