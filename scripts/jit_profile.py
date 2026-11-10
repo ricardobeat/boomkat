@@ -43,14 +43,17 @@ cur = None
 for line in open(map_path, errors='replace'):
     if line.startswith('map '):
         p = line.split()
-        cur = dict(fn=p[1], name=p[2], start=int(p[3], 16), end=int(p[4], 16), opt=line.rstrip().endswith('opt'), ents=[])
+        # Subroutines and the call entry follow the instruction bodies.
+        lo, hi = int(p[3], 16), int(p[4], 16)
+        tail = min([a for a in (int(x, 16) for x in p[5:7]) if lo < a < hi] or [hi])
+        cur = dict(fn=p[1], name=p[2], start=int(p[3], 16), end=tail, opt=line.rstrip().endswith('opt'), ents=[])
         maps.append(cur)
     elif line.startswith('sub '):
         q = line.split()
         subs.append((int(q[3], 16), q[1] + ' ' + q[2]))
     elif line.startswith('ents ') and cur:
         for tok in line.split()[2:]:
-            ad, op = tok.split(':')
+            ad, op = tok.split(':')[:2]
             cur['ents'].append((int(ad, 16), op))
 maps.sort(key=lambda m: m['start'])
 subs.sort()

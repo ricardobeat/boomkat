@@ -2096,7 +2096,10 @@ fn void baseline_dump_map(Heap* h) {
         io::eprintfn("map fn#%d n%d %x %x %x %x%s", fi, cf.code_count, (usz)bc.exec,
                      (usz)bc.exec + bc.code_bytes, (usz)bc.call_entry, (usz)bc.subs, cf.opt_code != null ? " opt" : "");
         io::eprintf("ents fn#%d", fi);
-        for (usz i = 0; i < bc.insns; i++) io::eprintf(" %x:%s", (usz)bc.entries[i], cf.code[i].op);
+        for (usz i = 0; i < cf.code_count; i++) {
+            usz at = (usz)bc.entries[i];
+            if (at >= (usz)bc.exec && at < (usz)bc.exec + bc.code_bytes) io::eprintf(" %x:%s:%d", at, cf.code[i].op, i);
+        }
         io::eprintfn("");
     }
 }
