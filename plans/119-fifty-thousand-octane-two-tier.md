@@ -897,3 +897,173 @@ against the previous binary on a calm machine, plus `--jit-stats` to confirm
 per-benchmark gains in the full suite, and the differential suites unchanged
 (`scripts/jit_check.sh`, `scripts/run_jit_diff.sh`, and its `--test262` mode
 under `--jit --opt --opt-always`).
+
+## Milestone 5 status, 2026-11-10: the three remaining items
+
+All three items the 2026-11-09 status left are done, on branch `jit` from
+`b77a5ace` to `716b8d37`. Figures are instructions retired
+(`/usr/bin/time -l`) over 15 or 30 iterations of a mini, which do not depend on
+the machine's load, unless they are marked as Octane scores.
+
+### Typed-array sites the profile never saw
+
+A typed-array read or write the profile had not recorded was compiled
+generically, and a copy loop (`dst[i] = src[i]`) between typed arrays built
+the read as a boxed value. Copies now ask the read for the store's
+representation. An unrecorded typed site exits with `UNPROFILED`, which records
+the class and rebuilds without charging a deoptimization (`e81fec7f`).
+Mandreel -19%, zlib -3%.
+
+### `MOVECELL`: the fault was an inlined store, not the cell
+
+With `MOVECELL` admitted, EarleyBoyer's `TypeError` came from inlining.
+`emit_store_elem` and `emit_init_slot` decoded their operands with
+`Asm.decode`, which reads the instruction's registers as numbered in the
+caller's own window. An inlined body's registers live at the callee's register
+base, which `OptCg.decode` adds. So an inlined `cs[k] = v` wrote into the
+caller's register with the callee's number: here `conf_set_merge_new_bang`
+inlined into its caller overwrote the caller's first parameter. Both now use
+`OptCg.decode` (`edc77310`, fixture `test/jit/opt_inline_elem_store.js`).
+`MOVECELL` itself needed only to be admitted as a generic node that kills its
+A register (`70841e32`). That is performance neutral; what it buys is that the
+functions holding one compile at all.
+
+### Region compilation, as built
+
+Built as designed above except for one point: no span widening. A branch out
+of the slice, and the fallthrough past its end, become exit nodes at their
+target pc (`OPT_EXIT_LEAVE`), which leave for the baseline code there without
+counting as a deoptimization. Emscripten's labelled `break` and `continue`
+jump to every corner of a function, so widening would have grown most slices
+back to the whole body.
+
+- `bytecode_cfg_build` takes a pc range and keeps absolute pcs, so the
+  emitter, the caches and the exits need no `pc_base` translation.
+- The registers live into each exit come from the whole function's block
+  liveness at the exit's pc.
+- The header's phis start as the window's values and are promoted where a back
+  edge brings a number, so loop-carried counters and accumulators are in
+  machine registers.
+- Policy: a function whose whole-body build is refused at the CFG or for
+  budget is marked `OPT_REGION`. Its next OSR at a loop header builds the
+  widest enclosing loop within 8,192 words, without inlining, and after each
+  failure (up to `OPT_REGION_TRIES`) a narrower one. `--opt-region-always`
+  compiles every loop this way, and is `jit_check.sh`'s sixth mode.
+
+zlib: 922.6G to 860.2G instructions (-6.8%), about 11% faster. Its `a1`
+region (pcs 28,132–32,373) goes from about 21% of samples to under 1%.
+Mandreel, TypeScript, PdfJS and EarleyBoyer are unchanged: Mandreel's
+`initPhysics` runs once and none of the others has a refused function with a
+hot loop.
+
+### Builtin calls
+
+Counted per mini run, the builtin calls that matter are `Math.*` in Box2D,
+Mandreel and RayTrace, `String.fromCharCode` and `charCodeAt` in PdfJS,
+`Function.prototype.call` in TypeScript, and `Array.prototype.pop` in
+DeltaBlue.
+
+- **Math as graph nodes** (`e599d946`). The baseline's builtin call path now
+  records the builtin it called in the site's call feedback, tagged with
+  `hobject::IC_BUILTIN_TARGET` so that readers bounding targets by the
+  function count skip it. A `CALL` (or `CALL_UNDEF_THIS`) of one `Math`
+  function builds as a `CHECK_BUILTIN` of the callee and an `OptOp.MATH` node.
+  `abs`, `min` and `max` of int32s stay int32, with `abs` exiting on -2^31.
+  `floor`, `ceil` and `round` of an int32 are the int32 itself. Float `abs`,
+  `min` and `max` are inline, with NaN and -0 handled as the builtins handle
+  them. `sqrt`, `floor` and `ceil` are one instruction on arm64 (FSQRT,
+  FRINTM, FRINTP through `sljit_shim`). The rest call the C functions the
+  builtins compute with. Mandreel -0.8%, Box2D -0.5%, RayTrace -0.4%.
+- **`charCodeAt` on every Latin-1 string** (`6b4fadac`). The baseline's inline
+  path took only strings flagged ASCII. Binary strings missed it, and PdfJS
+  made 657K such calls a run. PdfJS -2.9%, Gameboy -1.1%.
+- **Plain calls of builtins** (`47c737d2`). `f(x)` with `f` holding a builtin
+  compiles to `CALL_UNDEF_THIS`, which the baseline declined to the general
+  call path: 171K calls a run on Box2D, 70K on zlib. It now takes the direct
+  builtin path, with the receiver slot cleared as `op_call` clears it. Box2D
+  -0.5%.
+- **`String.fromCharCode` of one Latin-1 unit** (`c5530ed7`). The heap's
+  pinned one-character strings now cover all 256 Latin-1 units, and the
+  builtin answers a single integer argument from them instead of building and
+  interning a string. PdfJS -2.6%.
+
+The generic builtin call costs about 530 instructions: about 125 at the
+baseline call site and about 411 in C over five functions (traced
+instruction by instruction in lldb, since `sample` records no stacks on this
+macOS). No one piece is waste. Merging the layers would save 60 to 80, about
+1% on PdfJS and RegExp, so it was not done. `Function.prototype.call` and
+`pop` were left as they are: at the measured counts their call overhead is
+about 1.5% of TypeScript and 1.3% of DeltaBlue, and each needs its own
+node with its own guards.
+
+### A use after free found by ASan
+
+`Asm.global_callee_trivial` (from `22bac2fc`) read the global a
+`CALL_GLOBAL`'s variable cache points at while compiling, without checking
+that the slot pointer was still current. It goes stale when the global
+object's storage grows. `dict_shapes.js` and `var_ic_invalidation.js` under
+ASan read freed memory. The compiler now checks the recycle epoch first
+(`1d42a663`).
+
+### Validation
+
+- `scripts/jit_check.sh`: 774 files in six modes, no differences, and the
+  optimizing-tier exit check has no failures. Clean under an ASan build of the
+  JIT (a temporary `boomkat_jitasan` target: `boomkat` with
+  `sanitize: address` and `POOL_BYPASS`, C sources uninstrumented, because
+  Apple clang's ASan runtime and c3c's differ).
+- `scripts/run_jit_diff.sh` matches in the default mode, in
+  `--opt --opt-always --jit-stress`, and with every loop compiled as a region.
+- test262, all passing, with only the runner's scoped skips:
+  `built-ins/Math` 327/327, `built-ins/String` 1,223/1,223,
+  `built-ins/Array` 3,083/3,083, `language/expressions` 11,092 (10 skipped),
+  `language/statements` 9,333 (14 skipped).
+- Slim (1,926,656 bytes, under its 2,000,000 limit), tiny and no-NaN-box
+  builds compile. The no-NaN-box local failures are all Intl and Temporal
+  tests outside that build's scope, as with NaN-boxing.
+- `boomkat` grows by 18,288 bytes (0.65%) over the session: about 17 KB for
+  regions and 1 KB for the Math nodes.
+
+### Octane, gate r15
+
+Full suite in one process (`scripts/octane_gate.py`, 3 runs a side,
+alternating), the binary at `b77a5ace` (the start of the session) against
+`716b8d37`'s, both `--jit --opt`. The load
+average was falling from about 5 to 2.6 over the gate.
+
+| Benchmark | Before | After | Ratio |
+|---|---:|---:|---:|
+| Richards | 4,144 | 4,106 | 0.991 |
+| DeltaBlue | 3,458 | 3,745 | 1.083 |
+| Crypto | 8,689 | 8,636 | 0.994 |
+| RayTrace | 7,201 | 6,875 | 0.955 |
+| EarleyBoyer | 5,199 | 5,183 | 0.997 |
+| RegExp | 2,460 | 2,428 | 0.987 |
+| Splay | 10,876 | 10,760 | 0.989 |
+| NavierStokes | 12,674 | 12,796 | 1.010 |
+| PdfJS | 7,528 | 8,114 | 1.078 |
+| Mandreel | 4,272 | 4,930 | 1.154 |
+| Gameboy | 17,070 | 17,542 | 1.028 |
+| CodeLoad | 32,491 | 32,593 | 1.003 |
+| Box2D | 12,026 | 12,495 | 1.039 |
+| zlib | 12,523 | 14,380 | 1.148 |
+| Typescript | 26,957 | 27,350 | 1.015 |
+| **composite** | **9,737** | **10,064** | **1.034** |
+
+RayTrace's drop is spread rather than change: its runs are 6,875 to 7,289
+before and 6,801 to 7,341 after, and the mini retires 0.4% fewer instructions.
+DeltaBlue's gain is within its own spread (3,425 to 3,521 before, 3,441 to
+3,798 after). Mandreel, zlib and PdfJS move by the changes above.
+
+The same binary under `--jit` alone scores 7,830 and in the interpreter 6,106.
+Under `--jit`, RayTrace is still below the interpreter (4,812 against 4,933);
+the baseline's deficit there is the one recorded at acceptance.
+
+### What remains
+
+The composite is 10,064 against a target of 50,000. The weakest results weigh
+most in a geometric mean: RegExp 2,428, DeltaBlue 3,745, Richards 4,106,
+Mandreel 4,930, EarleyBoyer 5,183. The levers measured but not taken here are
+the generic builtin call (about 530 instructions, about 9% of PdfJS and RegExp
+instructions at their call counts) and `Function.prototype.call` and
+`Array.prototype.pop` as nodes.
