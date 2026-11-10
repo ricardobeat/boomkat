@@ -28,6 +28,7 @@ extern fn int sljit_emit_return_to(void* compiler, int src, long srcw);
 extern fn void* sljit_generate_code(void* compiler, int options, void* exec_allocator_data);
 extern fn void sljit_free_code(void* code, void* exec_allocator_data);
 extern fn int sljit_shim_sqrt_f64(void* compiler, int freg);
+extern fn int sljit_shim_round_f64(void* compiler, int freg, int down);
 extern fn int sljit_shim_info(int key);
 extern fn usz sljit_shim_code_size(void* compiler);
 extern fn usz sljit_shim_label_addr(void* label);
@@ -82,6 +83,9 @@ const int SLJIT_ENTER_REG_ARG     = 0x4;
 const int SLJIT_CALL_REG_ARG      = 39;
 const int SLJIT_REWRITABLE_JUMP   = 0x10000;
 const int SLJIT_ARGS1WW           = 0x11;
+// A double argument (FR0, then FR1) and a double result (FR0).
+const int SLJIT_ARGS1_F64         = 0x44;
+const int SLJIT_ARGS2_F64         = 0x444;
 const int SLJIT_ARGS1WW_R         = 0x91;
 const int SLJIT_ARGS2WWW_R        = 0x991;
 const int SLJIT_ARGS2WWW          = 0x111;

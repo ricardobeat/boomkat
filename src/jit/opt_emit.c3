@@ -14,6 +14,8 @@ import boomkat::features;
 import boomkat::hobject;
 import boomkat::env;
 import boomkat::vm;
+import boomkat::builtins;
+import std::math;
 import std::collections::list;
 import std::io;
 
@@ -2075,6 +2077,127 @@ fn void OptCg.emit_check_builtin(&self, uint i, OptNode* n) {
     sljit_set_label(light, sljit_emit_label(c));
 }
 
+// MATH. The INT32 forms and FLOAT64 ABS, MIN and MAX are inline; SQRT, FLOOR and CEIL take the
+// machine's instruction where the shim has one; everything else calls the function the builtin
+// computes with, with the registers in use saved around the call.
+fn void OptCg.emit_math(&self, uint i, OptNode* n) {
+    void* c = self.a.c;
+    OptMath m = (OptMath)n.imm;
+    if (n.rep == OptRep.INT32) {
+        self.emit_math_int(i, n, m);
+        return;
+    }
+    int x = self.flt_reg(n.a, FR0);
+    switch (m) {
+        case ABS:
+            int dst = self.flt_dst(i, FR0);
+            sljit_emit_fop1(c, SLJIT_ABS_F64, dst, 0, x, 0);
+            self.def_flt(i, dst);
+            return;
+        case MIN:
+        case MAX:
+            self.emit_math_minmax(i, n, x, m == MIN);
+            return;
+        case SQRT:
+        case FLOOR:
+        case CEIL:
+            // The instruction works in place, on the result's register. Where there is none, nothing
+            // was emitted and `x` is intact for the call.
+            int dst = self.flt_dst(i, FR0);
+            if (dst != x) sljit_emit_fop1(c, SLJIT_MOV_F64, dst, 0, x, 0);
+            int done = m == SQRT ? sljit_shim_sqrt_f64(c, dst) : sljit_shim_round_f64(c, dst, m == FLOOR ? 1 : 0);
+            if (done == 0) {
+                self.def_flt(i, dst);
+                return;
+            }
+        default:
+    }
+    self.spill_live(i, true);
+    if (x != FR0) sljit_emit_fop1(c, SLJIT_MOV_F64, FR0, 0, x, 0);
+    if (n.b != NO_NODE) {
+        int y = self.flt_reg(n.b, FR1);
+        if (y != FR1) sljit_emit_fop1(c, SLJIT_MOV_F64, FR1, 0, y, 0);
+    }
+    sljit_emit_icall(c, SLJIT_CALL, m.args == 2 ? SLJIT_ARGS2_F64 : SLJIT_ARGS1_F64, SLJIT_IMM, (long)(usz)opt_math_fn(m));
+    self.spill_live(i, false);
+    self.def_flt(i, FR0);
+}
+
+// The function a MATH call of `m` computes with: what the builtin calls.
+fn void* opt_math_fn(OptMath m) {
+    switch (m) {
+        case FLOOR: return &opt_math_floor;
+        case CEIL: return &opt_math_ceil;
+        case ROUND: return &builtins::math_round;
+        case SQRT: return &builtins::math_sqrt;
+        case POW: return &builtins::math_pow_js;
+        case SIN: return &builtins::math_sin;
+        case COS: return &builtins::math_cos;
+        case TAN: return &builtins::math_tan;
+        case EXP: return &builtins::math_exp;
+        case LOG: return &builtins::math_log;
+        case ATAN: return &builtins::math_atan;
+        case ATAN2: return &builtins::math_atan2;
+        default: unreachable("MATH %s is inline", m);
+    }
+}
+
+fn double opt_math_floor(double x) => math::floor(x);
+fn double opt_math_ceil(double x) => math::ceil(x);
+
+// FLOAT64 MIN or MAX of x (in register `x`) and n.b, as builtin_math_min and _max decide: NaN when
+// either is, -0 below +0. Computed in FR0 from copies of the operands in FR0 and FR1, since the
+// result's register may be either operand's.
+fn void OptCg.emit_math_minmax(&self, uint i, OptNode* n, int x, bool min) {
+    void* c = self.a.c;
+    if (x != FR0) sljit_emit_fop1(c, SLJIT_MOV_F64, FR0, 0, x, 0);
+    int y = self.flt_reg(n.b, FR1);
+    if (y != FR1) sljit_emit_fop1(c, SLJIT_MOV_F64, FR1, 0, y, 0);
+    void* nan = sljit_emit_fcmp(c, SLJIT_UNORDERED, FR0, 0, FR1, 0);
+    // The other operand when it is the one on the result's side, the first otherwise.
+    void* keep = sljit_emit_fcmp(c, min ? SLJIT_ORDERED_LESS : SLJIT_ORDERED_GREATER, FR0, 0, FR1, 0);
+    void* other = sljit_emit_fcmp(c, min ? SLJIT_ORDERED_GREATER : SLJIT_ORDERED_LESS, FR0, 0, FR1, 0);
+    // Equal: of +0 and -0 the sign bits decide, the minimum's set when either's is.
+    sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR0, R0);
+    sljit_emit_fcopy(c, SLJIT_COPY_FROM_F64, FR1, R1);
+    sljit_emit_op2(c, min ? SLJIT_OR : SLJIT_AND, R0, 0, R0, 0, R1, 0);
+    sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
+    void* done_eq = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(nan, sljit_emit_label(c));
+    sljit_emit_fop2(c, SLJIT_ADD_F64, FR0, 0, FR0, 0, FR1, 0);
+    void* done_nan = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(other, sljit_emit_label(c));
+    sljit_emit_fop1(c, SLJIT_MOV_F64, FR0, 0, FR1, 0);
+    void* end = sljit_emit_label(c);
+    sljit_set_label(keep, end);
+    sljit_set_label(done_eq, end);
+    sljit_set_label(done_nan, end);
+    self.def_flt(i, FR0);
+}
+
+// INT32 ABS, MIN and MAX. ABS exits (OVERFLOW) for -2^31, whose absolute value is no int32.
+fn void OptCg.emit_math_int(&self, uint i, OptNode* n, OptMath m) {
+    void* c = self.a.c;
+    int x = self.int_reg(n.a, R0);
+    int dst = self.int_dst(i, R2);
+    if (m == ABS) {
+        self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, x, 0, SLJIT_IMM, (long)int::min), i, OptExit.OVERFLOW);
+        if (dst != x) sljit_emit_op1(c, SLJIT_MOV, dst, 0, x, 0);
+        void* pos = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL | SLJIT_32, dst, 0, SLJIT_IMM, 0);
+        sljit_emit_op2(c, SLJIT_SUB, dst, 0, SLJIT_IMM, 0, dst, 0);
+        sljit_set_label(pos, sljit_emit_label(c));
+        self.def_int(i, dst);
+        return;
+    }
+    int y = self.int_reg(n.b, R1);
+    // The result in R2 first: dst may be either operand's register.
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, x, 0);
+    void* keep = sljit_emit_cmp(c, (m == MIN ? SLJIT_SIG_LESS_EQUAL : SLJIT_SIG_GREATER_EQUAL) | SLJIT_32, x, 0, y, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, y, 0);
+    sljit_set_label(keep, sljit_emit_label(c));
+    self.def_int(i, R2);
+}
+
 // ARRAY_PUSH: opt_array_push with the registers in use saved around the call; what it refuses
 // leaves for the baseline code at the CALL.
 fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
@@ -2583,6 +2706,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
         case MUL_F64:
         case DIV_F64:
             self.emit_fop(i, n);
+        case MATH:
+            self.emit_math(i, n);
         case NEG_F64:
             int x = self.flt_reg(n.a, FR0);
             int dst = self.flt_dst(i, FR0);

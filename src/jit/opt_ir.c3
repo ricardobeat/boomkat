@@ -193,6 +193,10 @@ enum OptOp : char {
     // length as an INT32. Exits (SLOW_PATH) before any effect for anything but an extensible plain
     // array with a writable length on the built-in prototype chain.
     ARRAY_PUSH,
+    // A call of a Math function (OptMath imm) on the numbers a and b (b: NO_NODE but for two
+    // arguments), after the CHECK_BUILTIN of its callee. INT32 for ABS, MIN and MAX of INT32
+    // operands, where ABS exits (OVERFLOW) at -2^31; FLOAT64 otherwise.
+    MATH,
     // An unconditional exit (COLD) to the baseline code at pc, with the dirty registers stored: an
     // instruction of an inlined body that has never run, or with cc OPT_EXIT_LEAVE a region's branch
     // out of its loop, which leaves without counting as an exit. The block has no successors.
@@ -374,6 +378,25 @@ struct OptPoly {
 }
 
 // A join (block `pos` in reverse postorder) and a register merged there.
+// The function of a MATH node, with the number of arguments its call passes.
+enum OptMath : char (uint args) {
+    ABS {1},
+    FLOOR {1},
+    CEIL {1},
+    ROUND {1},
+    SQRT {1},
+    MIN {2},
+    MAX {2},
+    POW {2},
+    SIN {1},
+    COS {1},
+    TAN {1},
+    EXP {1},
+    LOG {1},
+    ATAN {1},
+    ATAN2 {2},
+}
+
 // OptNode.cc of an EXIT that leaves a region (OptOp.EXIT).
 const char OPT_EXIT_LEAVE = 1;
 

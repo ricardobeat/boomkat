@@ -445,15 +445,7 @@ $if types::USE_NANBOX:
         return -1;
     }
     if (owner == null || ic.prop_idx >= owner.prop_count) return -1;
-    TVal v = owner.prop_values()[ic.prop_idx].get();
-    if (v.bits >> 48 == types::TAG_LIGHTFUNC) {
-        ulong index = v.bits & 0xFFFFFFFFFFFF;
-        return index < 0x10000 ? (int)index : -1;
-    }
-    if (!v.is_object()) return -1;
-    HObject* fo = (HObject*)v.get_heapptr();
-    if (fo == null || !fo.is_callable() || fo.callable_kind() != hobject::CallableKind.BUILTIN_FN) return -1;
-    return (*fo.extra_ptr()).func.builtin_fn_index;
+    return vm::jit_builtin_index(owner.prop_values()[ic.prop_idx].get());
 $else
     return -1;
 $endif
@@ -680,7 +672,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, T
     defer b.free();
     uint inlined = (uint)g.fns.len() - 1;
     // Call feedback alone is worth optimizing for only when the call was inlined.
-    if (why == OptRefuse.NONE && inlined == 0 && b.pushes == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
+    if (why == OptRefuse.NONE && inlined == 0 && b.builtin_calls == 0 && !p.always && !opt_has_operand_feedback(f) && !opt_has_int_work(f) && !(opt_has_field_feedback(f) && g.polys.len() >= OPT_FIELD_SITES)) {
         f.opt_declined++;
         return false;
     }

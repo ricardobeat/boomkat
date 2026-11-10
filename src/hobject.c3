@@ -3718,6 +3718,10 @@ const char FB_CTOR = 64;
 // (ic_note_forward).
 const char FB_FWD_POLY = 128;
 
+// A call target that is the builtin function numbered by the rest of the word (builtins::Builtin)
+// rather than a func_index: vm::jit_call_builtin records the builtins the baseline code calls.
+const uint IC_BUILTIN_TARGET = 0x80000000;
+
 // The distinct functions a call instruction's feedback names before it is FB_POLY: prop_idx, then
 // shape_id, shape_gen and absent_next_shape holding a func_index plus one (zero for none). The
 // entry's key stays null, so the shape purge and the cache readers never take a call's entry for a

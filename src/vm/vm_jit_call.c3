@@ -823,6 +823,20 @@ fn long jit_try_enter_pushed(Dispatch* ds, Instruction* next, uint count_before)
     return jit_run_entered(ds, entry, old_floor, next);
 }
 
+// The number of the builtin function `v` is (builtins::Builtin), or -1 for any other value.
+fn int jit_builtin_index(TVal v) @inline {
+$if types::USE_NANBOX:
+    if (v.bits >> 48 == types::TAG_LIGHTFUNC) {
+        ulong index = v.bits & 0xFFFFFFFFFFFF;
+        return index < 0x10000 ? (int)index : -1;
+    }
+$endif
+    if (!v.is_object()) return -1;
+    HObject* fo = (HObject*)v.get_heapptr();
+    if (fo == null || !fo.is_callable() || fo.callable_kind() != hobject::CallableKind.BUILTIN_FN) return -1;
+    return (*fo.extra_ptr()).func.builtin_fn_index;
+}
+
 // A CALL whose callee is a builtin, through th_call_native as the threaded
 // burst runs it (identity fast paths such as charCodeAt, then the builtin's
 // own dispatch) instead of op_call. False when it declined before running
@@ -838,6 +852,8 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
     if (th_lean_target(vm, regs[pc.b], regs + pc.b + 2, false) != null) return false;
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
+    int builtin = jit_builtin_index(regs[pc.b]);
+    if (builtin >= 0) hobject::ic_note_callee(th_ic_at(cold, pc), hobject::IC_BUILTIN_TARGET | (uint)builtin);
     Instruction* r = th_call_native(pc, &jit_stop_table, regs, cold, pc.b, pc.a, pc.c);
     ThreadedHandoff handoff = vm.threaded_handoff;
     vm.threaded_handoff = ThreadedHandoff.NONE;

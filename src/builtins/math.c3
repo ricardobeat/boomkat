@@ -62,28 +62,21 @@ fn void builtin_math_ceil(BuiltinContext* ctx) {
 }
 
 fn void builtin_math_round(BuiltinContext* ctx) {
-    double x = math_arg(ctx, 0);
-    ctx.result_number(0.0);
+    ctx.result_number(math_round(math_arg(ctx, 0)));
+}
+
+// Math.round of a number, which optimized code also calls.
+fn double math_round(double x) {
     // ECMA-262 §15.8.2.15: round half away from zero
-    if (math::is_nan(x)) {
-        ctx.result_number(double::nan);
-    } else if (math::is_inf(x) || x == 0.0) {
-        ctx.result_number(x);
-    } else if (x > 0.0 && x < 0.5) {
-        // Per ECMA-262 §20.2.2.34: Math.round(x) for 0 < x < 0.5 returns +0
-        ctx.result_number(0.0);
-    } else if (x < 0.0 && x >= -0.5) {
-        // Per ECMA-262 §20.2.2.34: Math.round(x) for -0.5 ≤ x ≤ -0 returns -0
-        ctx.result_number(-0.0);
-    } else {
-        // Round half away from zero
-        double frac = x - math::floor(x);
-        if (frac < 0.5) {
-            ctx.result_number(math::floor(x));
-        } else {
-            ctx.result_number(math::ceil(x));
-        }
-    }
+    if (math::is_nan(x)) return double::nan;
+    if (math::is_inf(x) || x == 0.0) return x;
+    // Per ECMA-262 §20.2.2.34: Math.round(x) for 0 < x < 0.5 returns +0
+    if (x > 0.0 && x < 0.5) return 0.0;
+    // Per ECMA-262 §20.2.2.34: Math.round(x) for -0.5 ≤ x ≤ -0 returns -0
+    if (x < 0.0 && x >= -0.5) return -0.0;
+    // Round half away from zero
+    double frac = x - math::floor(x);
+    return frac < 0.5 ? math::floor(x) : math::ceil(x);
 }
 
 fn void builtin_math_max(BuiltinContext* ctx) {
@@ -155,29 +148,21 @@ fn void builtin_math_min(BuiltinContext* ctx) {
 fn void builtin_math_pow(BuiltinContext* ctx) {
     double x = math_arg(ctx, 0);
     double y = math_arg(ctx, 1);
-    ctx.result_number(0.0);
+    ctx.result_number(math_pow_js(x, y));
+}
+
+// Math.pow of two numbers, which optimized code also calls.
+fn double math_pow_js(double x, double y) {
     // ECMA-262 §20.2.2.26 Math.pow(x, y):
     // 1. If y is +0 or -0, the result is 1, even if x is NaN
     // 2. If y is NaN, the result is NaN
     // 3. If |x| is 1 and y is ±∞, the result is NaN
     // 4. If x is +1 and y is finite and non-zero, the result is 1
-    if (y == 0.0) {
-        ctx.result_number(1.0);
-        return;
-    }
-    if (math::is_nan(y)) {
-        ctx.result_number(double::nan);
-        return;
-    }
-    if (math::abs(x) == 1.0 && math::is_inf(y)) {
-        ctx.result_number(double::nan);
-        return;
-    }
-    if (x == 1.0) {
-        ctx.result_number(1.0);
-        return;
-    }
-    ctx.result_number(math_pow(x, y));
+    if (y == 0.0) return 1.0;
+    if (math::is_nan(y)) return double::nan;
+    if (math::abs(x) == 1.0 && math::is_inf(y)) return double::nan;
+    if (x == 1.0) return 1.0;
+    return math_pow(x, y);
 }
 
 fn void builtin_math_sqrt(BuiltinContext* ctx) {

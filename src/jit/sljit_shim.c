@@ -28,6 +28,22 @@ int sljit_shim_sqrt_f64(struct sljit_compiler *compiler, int freg)
 }
 
 
+/* Round `freg` in place toward -inf (down != 0) or +inf: FRINTM and FRINTP. Other targets have no
+ * instruction here and return -1, as the C fallback is then the caller's. */
+int sljit_shim_round_f64(struct sljit_compiler *compiler, int freg, int down)
+{
+#if (defined SLJIT_CONFIG_ARM_64 && SLJIT_CONFIG_ARM_64)
+    int r = sljit_get_register_index(SLJIT_FLOAT_REGISTER, freg);
+    sljit_u32 op;
+    if (r < 0 || r > 31) return -1;
+    op = (down ? 0x1e654000u : 0x1e64c000u) | ((sljit_u32)r << 5) | (sljit_u32)r;
+    return sljit_emit_op_custom(compiler, &op, sizeof(op));
+#else
+    (void)compiler; (void)freg; (void)down;
+    return -1;
+#endif
+}
+
 int sljit_shim_info(int key)
 {
     switch (key) {

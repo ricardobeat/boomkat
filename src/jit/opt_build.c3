@@ -237,8 +237,8 @@ struct OptBuild {
     bool inline_failed;
     bool inline_unsafe;
     bool no_inline;
-    // Calls of Array.prototype.push built as ARRAY_PUSH nodes.
-    uint pushes;
+    // Calls of builtins built as nodes: ARRAY_PUSH, MATH.
+    uint builtin_calls;
     // Why the last inline_candidate refused (set with the opcode in rej_op for OPCODE), and the
     // call it was looking at, for --opt-log: the caller, its call word and the callee once known.
     OptInlineReject rej;
@@ -1445,7 +1445,80 @@ fn bool OptBuild.push_call(&self) {
     self.set(ra, n);
     // The array's storage may have moved.
     self.forget_facts();
-    self.pushes++;
+    self.builtin_calls++;
+    return true;
+}
+
+// The Math function of builtin number `builtin`.
+fn bool opt_math_of(uint builtin, OptMath* m) {
+    if (builtin >= builtins::Builtin::values.len) return false;
+    switch ((builtins::Builtin)builtin) {
+        case MATH_ABS: *m = ABS;
+        case MATH_FLOOR: *m = FLOOR;
+        case MATH_CEIL: *m = CEIL;
+        case MATH_ROUND: *m = ROUND;
+        case MATH_SQRT: *m = SQRT;
+        case MATH_MIN: *m = MIN;
+        case MATH_MAX: *m = MAX;
+        case MATH_POW: *m = POW;
+        case MATH_SIN: *m = SIN;
+        case MATH_COS: *m = COS;
+        case MATH_TAN: *m = TAN;
+        case MATH_EXP: *m = EXP;
+        case MATH_LOG: *m = LOG;
+        case MATH_ATAN: *m = ATAN;
+        case MATH_ATAN2: *m = ATAN2;
+        default: return false;
+    }
+    return true;
+}
+
+// A CALL of the Math function the site has always called (hobject::IC_BUILTIN_TARGET) with as many
+// arguments as it takes: a CHECK_BUILTIN of the callee, then a MATH node over the arguments as
+// numbers. FLOOR, CEIL and ROUND of an INT32 are the INT32 itself; ABS, MIN and MAX of INT32s stay
+// INT32 until ABS has overflowed there.
+fn bool OptBuild.math_call(&self) {
+    if (self.w.op != Opcode.CALL || self.wide) return false;
+    CompiledFunction* f = self.cur_f();
+    if (f.ic_entries == null) return false;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[self.next_pc - 1];
+    if (hobject::ic_call_count(ic) != 1 || (ic.prop_idx & hobject::IC_BUILTIN_TARGET) == 0) return false;
+    uint builtin = ic.prop_idx & ~hobject::IC_BUILTIN_TARGET;
+    OptMath m;
+    if (!opt_math_of(builtin, &m) || self.w.c != m.args) return false;
+    if (opt_site_banned(self.f, f, self.next_pc - 1)) return false;
+    uint callee = self.w.b;
+    uint ra = self.w.a;
+    if (callee + 1 + m.args >= self.nregs || ra >= self.nregs) return false;
+    if (self.cur_fn != 0 && callee + 1 + m.args >= self.caller_regs) return false;
+    uint cnode = NO_NODE;
+    if (self.is_object(callee)) {
+        cnode = self.cur[callee].node;
+    } else if (!self.in_window(callee)) {
+        return false;
+    }
+    bool ints = m == ABS || m == MIN || m == MAX || m == FLOOR || m == CEIL || m == ROUND;
+    if (m == ABS && (ic.feedback & hobject::FB_OVF) != 0) ints = false;
+    for (uint k = 0; k < m.args; k++) {
+        uint r = callee + 2 + k;
+        if (self.is_object(r)) return false;
+        if (self.cur[r].node == NO_NODE || self.rep_of(self.cur[r].node) != OptRep.INT32) ints = false;
+    }
+    uint chk = self.add(OptOp.CHECK_BUILTIN, OptRep.NONE, cnode, NO_NODE, (long)builtin);
+    self.g.nodes[chk].home = callee;
+    self.snapshot(chk);
+    OptRep rep = ints ? OptRep.INT32 : OptRep.FLOAT64;
+    uint x = self.operand(callee + 2, rep);
+    uint y = m.args == 2 ? self.operand(callee + 3, rep) : NO_NODE;
+    if (x == NO_NODE || (m.args == 2 && y == NO_NODE)) return self.refuse(OptRefuse.FUNCTION);
+    self.builtin_calls++;
+    if (ints && (m == FLOOR || m == CEIL || m == ROUND)) {
+        self.set(ra, x);
+        return true;
+    }
+    uint n = self.add(OptOp.MATH, rep, x, y, (long)m.ordinal);
+    if (ints && m == ABS) self.snapshot(n);
+    self.set(ra, n);
     return true;
 }
 
@@ -3363,6 +3436,7 @@ fn bool OptBuild.lower_op(&self) {
         case NEW_OBJ:
         case APPLY_ARGS:
             if (self.push_call()) return true;
+            if (self.math_call()) return true;
             if (self.try_inline()) return true;
             return self.generic();
         case CALL_S:
