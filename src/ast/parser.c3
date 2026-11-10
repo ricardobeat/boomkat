@@ -129,6 +129,8 @@ struct Parser {
     Vec{DvBinding} dv_binds;
     Vec{char} dv_bflags;
     Vec{uint} dv_slot;       // open addressing over (bscope, atom): binding id, 0 = empty
+    Vec{uint} dv_seen;       // atom id -> stamp of the stub that last emitted it
+    uint dv_seen_gen;
     uint dv_slot_count;
     uint dv_atom_eval;
     uint dv_atom_arguments;
@@ -450,6 +452,8 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.dv_binds.init(32);
     p.dv_bflags.init(32);
     p.dv_slot.init_zero(128);
+    p.dv_seen.init_zero(256);
+    p.dv_seen_gen = 0;
     p.dv_track = 0;
     p.dv_cur = 0;
     p.dv_ref_base = 0;
@@ -502,6 +506,7 @@ fn void Parser.destroy(&self) {
     self.dv_binds.free();
     self.dv_bflags.free();
     self.dv_slot.free();
+    self.dv_seen.free();
 }
 
 // Return to the state `saved` and `lex` hold, taken before a speculative parse.

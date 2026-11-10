@@ -291,7 +291,7 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
         char body_flags = self.dv_flags;
         self.ast.truncate(amark);
         self.scratch.truncate(mark);
-        uint nrefs = (uint)self.dv_refs.len - ref0;
+        uint nrefs = self.dv_unique_refs(ref0, (uint)self.dv_refs.len - ref0);
         uint at = self.ast.add_record(2 + nrefs);
         self.ast.set_field(at, 0, body_flags);
         self.ast.set_field(at, 1, nrefs);

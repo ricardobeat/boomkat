@@ -167,6 +167,7 @@ fn void Parser.dv_map_insert(&self, uint b) {
 fn void Parser.dv_map_grow(&self) {
     uint ncap = (uint)self.dv_slot.len * 2;
     self.dv_slot.zero(ncap);
+    self.dv_slot_count = 0;
     for (uint b = 1; b < (uint)self.dv_binds.len; b++) self.dv_map_insert(b);
 }
 
@@ -211,13 +212,25 @@ fn bool dv_site_is_var_like(DeclKind k) @inline {
 // source: lexical duplicates and param/catch clashes, then var-like names against
 // the lexical names of the scopes between them and their function.
 fn bool Parser.dv_conflicts(&self, sz first) {
+    sz nb = self.dv_sites.len;
+    // Only lexical and catch declarations can conflict: var/function/param
+    // duplicates are all legal in a sloppy body. Most bodies have none, so
+    // skip the binding map entirely for them.
+    bool risky = false;
+    for (sz i = first; i < nb; i++) {
+        DeclKind k = self.dv_sites.data[i].kind;
+        if (k == DeclKind.LET || k == DeclKind.CONST || k == DeclKind.CLASS
+            || k == DeclKind.FUNC_BLOCK || k == DeclKind.CATCH) { risky = true; break; }
+    }
+    if (!risky) {
+        return !self.failed;
+    }
     self.dv_binds.truncate(0);
     self.dv_binds.push({});   // null binding at index 0; slot 0 means "empty"
     self.dv_bflags.truncate(0);
     self.dv_bflags.push(0);
     self.dv_slot.zero((uint)self.dv_slot.len);
     self.dv_slot_count = 0;
-    sz nb = self.dv_sites.len;
     // Pass 1: lexical duplicates, parameters and catch parameters.
     for (sz i = first; i < nb && !self.failed; i++) {
         DvSite* s = &self.dv_sites.data[i];
@@ -325,6 +338,33 @@ fn void Parser.dv_label_finish(&self, uint body) {
         self.fail_at(l.continue_at, "continue may only target a loop label");
     }
     self.dv_labels.truncate((sz)(self.dv_labels.len - 1));
+}
+
+// A stub's refs are all resolved at the same scope, so repeated atoms are
+// redundant there. Collapse them in place with a generation-stamped table;
+// growing the table re-stamps the atoms already kept for this stub.
+fn uint Parser.dv_unique_refs(&self, uint ref0, uint nrefs) {
+    if (nrefs < 2) return nrefs;
+    uint gen = ++self.dv_seen_gen;
+    if (gen == 0) {
+        self.dv_seen.zero((uint)self.dv_seen.len);
+        gen = self.dv_seen_gen = 1;
+    }
+    uint out = 0;
+    for (uint i = 0; i < nrefs; i++) {
+        uint atom = self.dv_refs.data[ref0 + i];
+        if (atom >= (uint)self.dv_seen.len) {
+            uint ncap = (uint)self.dv_seen.len == 0 ? 16 : (uint)self.dv_seen.len;
+            while (ncap <= atom) ncap *= 2;
+            self.dv_seen.zero(ncap);
+            for (uint j = 0; j < out; j++) self.dv_seen.data[self.dv_refs.data[ref0 + j]] = gen;
+        }
+        if (self.dv_seen.data[atom] == gen) continue;
+        self.dv_seen.data[atom] = gen;
+        self.dv_refs.data[ref0 + out] = atom;
+        out++;
+    }
+    return out;
 }
 
 // A regular for head, unlike a for-in/of head, still requires `const` and
