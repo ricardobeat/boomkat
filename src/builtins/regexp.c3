@@ -1171,10 +1171,12 @@ fn void builtin_regexp_proto_symbol_search(BuiltinContext* ctx) {
 
 // ============================================================================
 // Runs @@replace for a pristine receiver whose pattern has no named groups.
-// False leaves everything untouched for the generic path.
+// False leaves everything untouched for the generic path. `known_pristine`
+// says the caller has checked the receiver with no script run since.
 fn bool regexp_replace_try_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
-                                    bool replace_is_fn, TVal replace_val, HString* replace_hs) {
-    if (!regexp_is_pristine(ctx.heap, rx)) return false;
+                                    bool replace_is_fn, TVal replace_val, HString* replace_hs,
+                                    bool known_pristine = false) {
+    if (!known_pristine && !regexp_is_pristine(ctx.heap, rx)) return false;
     void* re_data = (*rx.extra_ptr()).regexp.regexp_data;
     int jsf = (*rx.extra_ptr()).regexp.flags;
     if (re_bindings::re_get_groupnames(re_data) != null || ((jsf & 32) != 0 && (jsf & 1) == 0)) return false;
@@ -1207,7 +1209,8 @@ fn bool regexp_string_replace_fast(BuiltinContext* ctx, HObject* rx, HString* s_
         if (ctx.should_throw) return true;
         if (replace_hs == null) replace_hs = heap.str(heap::BuiltinStr.UNDEFINED);
     }
-    return regexp_replace_try_pristine(ctx, rx, s_hstr, replace_is_fn, replace_val, replace_hs);
+    // ToString of a primitive runs no script, so the receiver is as checked.
+    return regexp_replace_try_pristine(ctx, rx, s_hstr, replace_is_fn, replace_val, replace_hs, true);
 }
 
 // RegExp.prototype[@@replace], ECMA-262 §22.2.5.8
@@ -1417,6 +1420,7 @@ fn bool regexp_guard_refresh(Heap* heap) {
     HObject* proto = heap.regexp_proto;
     RegExpGuard* g = &heap.regexp_guard;
     g.shape_id = (uint)-1;
+    g.verified = 0;
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
         HString* key = regexp_guard_key(heap, i);
         if (key == null) return false;
@@ -1441,7 +1445,8 @@ fn bool regexp_is_builtin(TVal v, int builtin) @inline {
 
 // True while every guarded property of RegExp.prototype is still its
 // intrinsic. A redefinition can swap a value or a getter without changing the
-// shape, so the slots are read on every call.
+// shape, so the slots are read on every call; each is compared with the value
+// last verified there, and only a changed one is checked again.
 fn bool regexp_proto_pristine(Heap* heap) {
     HObject* proto = heap.regexp_proto;
     RegExpGuard* g = &heap.regexp_guard;
@@ -1451,7 +1456,10 @@ fn bool regexp_proto_pristine(Heap* heap) {
     for (usz i = 0; i < REGEXP_GUARD_SLOTS; i++) {
         TVal v = values[g.slots[i]].get();
         if (regexp_guard_is_getter(i)) v = hobject::hobject_access_getter(v);
+        if ((g.verified & (1u << i)) != 0 && v.same_bits(&g.values[i])) continue;
         if (!regexp_is_builtin(v, REGEXP_GUARD_FNS[i])) return false;
+        g.values[i] = v;
+        g.verified |= 1u << i;
     }
     return true;
 }
