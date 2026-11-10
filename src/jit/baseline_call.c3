@@ -938,7 +938,9 @@ fn void Asm.load_global_callee(&self, Jumps* generic) {
 // which vm::jit_call completes in place faster than a direct call declines.
 fn bool Asm.global_callee_trivial(&self) {
     hobject::VarICEntry* vic = &((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
-    if (vic.slot_ptr == null) return false;
+    // A slot pointer filled before the binding's object last moved its storage
+    // is stale, as th_ic_epoch_hit decides for the interpreter.
+    if (vic.slot_ptr == null || vic.recycle_epoch != self.hp.shape_recycle_epoch) return false;
     CompiledFunction* target = vm::jit_compiled_callee(vic.slot_ptr.get());
     if (target == null) return false;
     target.classify_lean_call();
