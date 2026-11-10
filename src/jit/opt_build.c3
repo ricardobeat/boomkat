@@ -24,6 +24,10 @@ const uint OPT_BLOCK_MAX = 1024;
 const uint OPT_STATE_MAX = 256 * 1024;
 const uint OPT_BUILD_ROUNDS = 5;
 const uint OPT_BUILD_ROUNDS_MAX = 16;
+// The words of a region (OptRegion), and the whole function's graph whose liveness its exits read.
+const uint OPT_REGION_WORDS_MAX = 8192;
+const compiler::DecodedCfgBudget OPT_REGION_CFG_BUDGET = { OPT_REGION_WORDS_MAX, OPT_REGION_WORDS_MAX, 2 * 1024 * 1024 };
+const compiler::DecodedCfgBudget OPT_REGION_LIVENESS_BUDGET = { 65536, 65536, 16 * 1024 * 1024 };
 
 // A loop phi's decision, overriding the speculation from the preheader.
 struct OptOverride {
@@ -190,6 +194,9 @@ struct OptBuild {
     uint* loop_end;
     // By instruction: the target of a backward branch.
     bool* osr_target;
+    // A region's: the live-in set of each exit node, and the words they hold.
+    RegSet* exit_in;
+    uint* exit_words;
     // The caller's register count; nregs also covers the callee windows of the inline sites.
     uint caller_regs;
     // With flat sites, per instruction of the spliced graph: the flat site plus one whose body it
@@ -503,6 +510,8 @@ fn void OptBuild.free(&self) {
     mem::free(self.idom);
     mem::free(self.loop_end);
     mem::free(self.osr_target);
+    mem::free(self.exit_in);
+    mem::free(self.exit_words);
     mem::free(self.cur);
     mem::free(self.load_def);
     mem::free(self.fact_shape);
@@ -560,13 +569,44 @@ fn uint OptBuild.intersect(&self, uint a, uint b) {
     return a;
 }
 
+// The live-in set of each exit node of the region's graph: the registers the function reads after
+// the region from that pc on, by the liveness of the whole function's graph at the block it starts.
+fn bool OptBuild.region_exit_sets(&self) {
+    CompiledFunction* f = self.f;
+    DecodedCfg* cfg = &self.cfg;
+    DecodedCfg whole;
+    if (!compiler::bytecode_cfg_build(&whole, f.code, f.code_count, self.h, budget: OPT_REGION_LIVENESS_BUDGET, resolve: true, objects: true)) return false;
+    defer compiler::bytecode_cfg_free(&whole);
+    uint words = (f.num_regs + 32) / 32;
+    uint nb = whole.block_count;
+    RegSet* block_in = mem::new_array(RegSet, (usz)nb + 1);
+    uint* block_words = mem::new_array(uint, ((usz)nb + 1) * words);
+    defer { mem::free(block_in); mem::free(block_words); }
+    for (uint b = 0; b <= nb; b++) block_in[b] = { .words = block_words + (usz)b * words, .word_count = words };
+    compiler::bytecode_cfg_block_liveness(&whole, block_in, &block_in[nb], true, true);
+    uint exits = cfg.instruction_count - cfg.exit_first;
+    self.exit_in = mem::new_array(RegSet, (usz)exits + 1);
+    self.exit_words = mem::new_array(uint, ((usz)exits + 1) * words);
+    for (uint k = 0; k < exits; k++) {
+        self.exit_in[k] = { .words = self.exit_words + (usz)k * words, .word_count = words };
+        // Every exit's pc starts a block of the whole graph: it is a branch target, or follows the
+        // region's last instruction, which branches.
+        uint i = whole.pc_to_index[cfg.nodes[cfg.exit_first + k].view.pc];
+        if (i == compiler::CFG_NO_INSTRUCTION || !whole.nodes[i].block_entry) return false;
+        self.exit_in[k].copy_from(&block_in[whole.nodes[i].block]);
+    }
+    return true;
+}
+
 // Decode the control flow graph and order its blocks. Fails, naming the
 // reason, for a function the tier does not handle.
 fn bool OptBuild.analyze(&self) {
     CompiledFunction* f = self.f;
-    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, resolve: true, objects: true)) {
+    OptRegion* rg = &self.g.region;
+    compiler::DecodedCfgBudget budget = rg.end != 0 ? OPT_REGION_CFG_BUDGET : compiler::DEFAULT_CFG_BUDGET;
+    if (!compiler::bytecode_cfg_build(&self.cfg, f.code, f.code_count, self.h, budget: budget, resolve: true, objects: true, start: rg.start, end: rg.end)) {
         // Name the first instruction the graph decoder does not take (--opt-log).
-        for (uint pc = 0; pc < f.code_count;) {
+        for (uint pc = rg.start; pc < (rg.end != 0 ? rg.end : f.code_count);) {
             DecodedBytecode view = bytecode::decode_bytecode(f.code, f.code_count, pc);
             if (!view.valid) break;
             if (!compiler::bytecode_cfg_control_supported(view.insn.op) && view.insn.op != Opcode.RESOLVEVAR
@@ -591,7 +631,8 @@ fn bool OptBuild.analyze(&self) {
     self.live_words = mem::new_array(uint, ((usz)count * 2 + 1) * words);
     for (uint i = 0; i < count * 2; i++) self.live_sets[i] = { .words = self.live_words + (usz)i * words, .word_count = words };
     RegSet scratch = { .words = self.live_words + (usz)count * 2 * words, .word_count = words };
-    compiler::bytecode_cfg_liveness(cfg, self.live_sets, self.live_sets + count, &scratch, true, false, true);
+    if (rg.end != 0 && !self.region_exit_sets()) return self.refuse(OptRefuse.CFG);
+    compiler::bytecode_cfg_liveness(cfg, self.live_sets, self.live_sets + count, &scratch, true, false, true, self.exit_in);
     self.live_out = self.live_sets;
     self.live_in = self.live_sets + count;
     self.find_sites();
@@ -1660,6 +1701,15 @@ fn bool OptBuild.throw_exit(&self) {
     self.snapshot(n);
     self.cold_exit = true;
     self.cold_site = self.cur_site;
+    return true;
+}
+
+// An exit node of a region: the code after the loop continues in the baseline code.
+fn bool OptBuild.region_exit(&self) {
+    uint n = self.add(OptOp.EXIT, OptRep.NONE, NO_NODE, NO_NODE, (long)self.pc);
+    self.g.nodes[n].cc = OPT_EXIT_LEAVE;
+    self.snapshot(n);
+    self.cold_exit = true;
     return true;
 }
 
@@ -3128,6 +3178,7 @@ fn bool OptBuild.callee_test(&self) {
 
 // Lower instruction `self.insn`.
 fn bool OptBuild.lower(&self) {
+    if (self.g.region.end != 0 && self.insn >= self.cfg.exit_first) return self.region_exit();
     if (self.fl_kind != null && self.fl_kind[self.insn] == 5) return self.callee_test();
     // The body of a flat site whose call did not enter it this round, which is abandoned.
     if (self.cur_fn == 0 && self.fl_site != null && self.fl_site[self.insn] != 0) return true;
@@ -3389,7 +3440,9 @@ fn void OptBuild.begin_block(&self, uint pos) {
     }
     blk.header = back > 0;
     blk.loop_end = self.loop_end[pos];
-    if (pos != 0) {
+    if (pos == 0 && self.g.region.end != 0) {
+        self.region_phis(first_insn);
+    } else if (pos != 0) {
         bool merge = fwd + back >= 2;
         for (uint r = 0; r < self.nregs; r++) {
             if (!self.live_in[first_insn].test(r)) continue;
@@ -3492,6 +3545,45 @@ fn void OptBuild.end_block(&self, uint pos) {
     mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
 }
 
+// The phis of a region's header, which has no forward predecessor to speculate from: one for each
+// register that repair found a back edge to bring a number into (region_carried).
+fn void OptBuild.region_phis(&self, uint first_insn) {
+    for (uint r = 0; r < self.nregs; r++) {
+        if (!self.live_in[first_insn].test(r)) continue;
+        int ov = self.override_of(0, r);
+        if (ov == 0 || ov == (int)OptRep.NONE.ordinal + 1) continue;
+        if (self.windowed != null && opt_join_windowed(self.windowed, 0, r)) continue;
+        OptRep rep = ov == (int)OptRep.FLOAT64.ordinal + 1 ? OptRep.FLOAT64 : OptRep.INT32;
+        uint phi = self.add(OptOp.PHI, rep, NO_NODE, NO_NODE, (long)r);
+        self.g.nodes[phi].home = r;
+        self.cur[r] = { .node = phi, .dirty = true };
+    }
+}
+
+// A region's header phis: a register that a back edge brings a number into, and that held a
+// number in the window of the frame the region was built for, gets one, of the window value's
+// representation when that is the wider. Whether any was added.
+fn bool OptBuild.region_carried(&self) {
+    bool changed = false;
+    uint first_insn = self.b_first[self.rpo[0]];
+    foreach (p : self.preds(0)) {
+        for (uint r = 0; r < self.nregs; r++) {
+            if (!self.live_in[first_insn].test(r) || self.override_of(0, r) != 0) continue;
+            uint src = self.ends[(usz)p * self.nregs + r].node;
+            if (src == NO_NODE) continue;
+            OptRep rep = self.rep_of(src);
+            if (rep == OptRep.OBJECT) continue;
+            TVal* regs = self.g.region.regs;
+            if (regs != null && !regs[r].is_number()) {
+                changed |= self.set_override(0, r, OptRep.NONE);
+                continue;
+            }
+            changed |= self.set_override(0, r, regs == null || regs[r].is_fastint() ? rep : OptRep.FLOAT64);
+        }
+    }
+    return changed;
+}
+
 fn bool OptBuild.build_round(&self) {
     self.g.clear();
     self.g.fns.size = 1;
@@ -3527,7 +3619,7 @@ fn bool OptBuild.build_round(&self) {
 // Check each back edge against the phis its header speculated; record an
 // override for each that disagrees. Returns whether any was recorded.
 fn bool OptBuild.repair(&self) {
-    bool changed = false;
+    bool changed = self.g.region.end != 0 && self.region_carried();
     for (uint pos = 0; pos < self.nrpo; pos++) {
         if (!self.g.blocks[pos].header) continue;
         uint first_node = self.g.blocks[pos].first;

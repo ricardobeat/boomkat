@@ -2622,6 +2622,8 @@ fn void OptCg.emit_node(&self, uint i, uint pos) {
             self.a.i = n.pc;
             if (n.fidx != 0) {
                 self.emit_inline_exit(n.fidx, n.pc, n.live_mask, OptExit.COLD.ordinal, false);
+            } else if (n.cc == OPT_EXIT_LEAVE) {
+                self.a.emit_opt_leave(self.oc);
             } else {
                 self.a.emit_opt_exit(self.oc, OptExit.COLD.ordinal, false);
             }
@@ -2698,7 +2700,8 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(to_base);
     }
-    bc.entries[0] = (void*)sljit_shim_label_addr(cg.labels[0]);
+    // A region's first block is its loop header, entered only through its OSR entry.
+    if (g.region.end == 0) bc.entries[0] = (void*)sljit_shim_label_addr(cg.labels[0]);
     for (uint pos = 0; pos < blocks; pos++) {
         if (g.blocks[pos].osr) bc.entries[g.blocks[pos].pc] = (void*)sljit_shim_label_addr(cg.osr_labels[pos]);
     }

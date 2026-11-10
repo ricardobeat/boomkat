@@ -2134,6 +2134,7 @@ struct CompiledFunction {
     char            opt_reopts @if($feat(SLJIT));   // Optimized code discarded so far
     char            opt_declined @if($feat(SLJIT)); // Attempts on call feedback alone that inlined nothing
     char            opt_relearns @if($feat(SLJIT)); // Discards after an exit that recorded what the build lacked
+    char            opt_region_fails @if($feat(SLJIT)); // Loops of a refused function that failed to compile
     void*           opt_bans @if($feat(SLJIT));     // jit::OptBans*: sites that exited repeatedly, lowered generically
 }
 

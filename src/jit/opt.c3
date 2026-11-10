@@ -60,6 +60,13 @@ const char OPT_ACTIVE = 1;
 const char OPT_REFUSED = 2;
 // Optimized code exited too often, too many times.
 const char OPT_REFUSED_EXITS = 3;
+// The function's graph was refused, as too large or for an instruction the graph does not take,
+// and its hot loops may compile on their own (OptRegion) when a frame's back edge asks.
+const char OPT_REGION = 4;
+// Region builds that may fail before the function is refused; each tries a narrower loop.
+const char OPT_REGION_TRIES = 4;
+// Loops nested around a region's header that opt_find_region weighs.
+const uint OPT_REGION_NEST = 32;
 
 // Frame entries (and loop credits) before a function with feedback is
 // optimized; exits that discard its code; and the reoptimizations allowed.
@@ -200,6 +207,11 @@ struct OptPolicy {
     bool enabled;
     // Do not inline calls.
     bool no_inline;
+    // Do not compile the loops of a refused function on their own (OptRegion).
+    bool no_region;
+    // Testing aid (--opt-region-always): refuse every function that has a loop, which then
+    // compiles its loops as regions.
+    bool region_always;
     // Bisection aid (--opt-inline-max=N): inline only the first N sites tried, over all compiles.
     uint inline_max;
     uint inline_seen;
@@ -262,8 +274,17 @@ struct OptPolicy {
 }
 
 // Count an entry into native code of `f` (one for each `credit`) toward
-// optimizing it, and do so when the policy says.
-fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1) @noinline {
+// optimizing it, and do so when the policy says. A frame looping in `f` passes the loop header
+// it branched back to and its window, which a function compiled by loops needs.
+fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1, uint osr_pc = uint::max, TVal* regs = null) @noinline {
+    if (f.opt_state == OPT_REGION && f.opt_code == null) {
+        if (osr_pc == uint::max) return;
+        f.opt_entries += credit;
+        if (!h.opt.always && f.opt_entries < OPT_ENTRY_THRESHOLD << (f.opt_reopts > 2 ? 2 : (uint)f.opt_reopts)) return;
+        f.opt_entries = 0;
+        opt_try_compile(h, f, osr_pc, regs);
+        return;
+    }
     if (f.opt_state != OPT_NONE || f.opt_code != null) {
         // The baseline call entry declines at the threshold; start its count over.
         f.opt_entries = 0;
@@ -284,7 +305,7 @@ fn void opt_note_entry(Heap* h, CompiledFunction* f, uint credit = 1) @noinline 
 // loop entry and otherwise hands back to the baseline code.
 fn void* opt_osr(Dispatch* ds, CompiledFunction* f) @noinline {
     Heap* h = ds.heap;
-    opt_note_entry(h, f, OPT_LOOP_CREDIT);
+    opt_note_entry(h, f, OPT_LOOP_CREDIT, (uint)(ds.curr_pc - ds.code_base), ds.regs_base);
     if (f.opt_code == null || f.opt_state != OPT_ACTIVE) return null;
     return ((BaselineCode*)f.jit_code).exec;
 }
@@ -529,10 +550,81 @@ fn OptRefuse opt_window_phis(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild
     return why;
 }
 
-fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
+// The loop of `f` to compile on its own for a frame whose back edge went to `pc`: of the loops
+// that hold the one headed at `pc` (each the span from a header to its last back edge), the widest
+// of at most OPT_REGION_WORDS_MAX words, or the `skip`-th narrower after it.
+fn bool opt_find_region(CompiledFunction* f, uint pc, uint skip, OptRegion* out) {
+    uint[OPT_REGION_NEST] starts;
+    uint[OPT_REGION_NEST] ends;
+    uint n = 0;
+    uint own_end = 0;
+    for (uint at = 0; at < f.code_count;) {
+        bytecode::DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, at);
+        if (!d.valid || d.next_pc <= at) return false;
+        long t;
+        if (compiler::bytecode_cfg_branch(d, &t) && t >= 0 && t <= (long)at && t <= (long)pc && d.next_pc > pc) {
+            uint head = (uint)t;
+            if (head == pc && d.next_pc > own_end) own_end = d.next_pc;
+            uint k = 0;
+            while (k < n && starts[k] != head) k++;
+            if (k == n) {
+                if (n == OPT_REGION_NEST) return false;
+                starts[n] = head;
+                ends[n++] = d.next_pc;
+            } else if (d.next_pc > ends[k]) {
+                ends[k] = d.next_pc;
+            }
+        }
+        at = d.next_pc;
+    }
+    if (own_end == 0) return false;
+    // The candidates, widest first; each holds the loop at `pc` whole, so that pc is an entry.
+    while (true) {
+        uint best = n;
+        for (uint k = 0; k < n; k++) {
+            if (ends[k] < own_end || ends[k] - starts[k] > OPT_REGION_WORDS_MAX) continue;
+            if (best == n || ends[k] - starts[k] > ends[best] - starts[best]) best = k;
+        }
+        if (best == n) return false;
+        if (skip-- == 0) {
+            *out = { .start = starts[best], .end = ends[best] };
+            return true;
+        }
+        ends[best] = 0;
+    }
+}
+
+fn bool opt_has_loop(CompiledFunction* f) {
+    for (uint at = 0; at < f.code_count;) {
+        bytecode::DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, at);
+        if (!d.valid || d.next_pc <= at) return false;
+        long t;
+        if (compiler::bytecode_cfg_branch(d, &t) && t >= 0 && t <= (long)at) return true;
+        at = d.next_pc;
+    }
+    return false;
+}
+
+// Refuse `f` after a failed build. A function refused at its graph may still compile its loops,
+// and a loop that failed leaves the narrower ones to try.
+fn bool opt_refuse_build(Heap* h, CompiledFunction* f, OptRefuse why, Opcode op, bool region) {
+    opt_refuse(h, f, why, op);
+    if (region) {
+        if (++f.opt_region_fails < OPT_REGION_TRIES) f.opt_state = OPT_REGION;
+    } else if ((why == OptRefuse.CFG || why == OptRefuse.BUDGET) && !h.opt.no_region) {
+        f.opt_state = OPT_REGION;
+    }
+    f.opt_entries = 0;
+    return false;
+}
+
+// Optimize `f`: the whole function, or for one in OPT_REGION the loop holding the header `osr_pc`
+// that a frame with window `regs` branched back to.
+fn bool opt_try_compile(Heap* h, CompiledFunction* f, uint osr_pc = uint::max, TVal* regs = null) @noinline {
     OptPolicy* p = &h.opt;
     JitStats* st = &h.jit_stats;
-    if (f.jit_code == null || f.opt_code != null || f.opt_state != OPT_NONE) return false;
+    bool region = f.opt_state == OPT_REGION;
+    if (f.jit_code == null || f.opt_code != null || (f.opt_state != OPT_NONE && !region)) return false;
     if (!p.always && !opt_has_feedback(h, f)) return false;
     // Forcing exits from inlined bodies needs bodies that have a callee to inline.
     if (p.force_inline && !opt_has_call_feedback(f)) return false;
@@ -543,13 +635,19 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
         return false;
     }
     if (!opt_function_eligible(f)) return opt_refuse(h, f, OptRefuse.FUNCTION, Opcode.NOP);
+    if (!region && p.region_always && !p.no_region && opt_has_loop(f)) return opt_refuse_build(h, f, OptRefuse.CFG, Opcode.NOP, false);
     long t0 = st.timing ? (long)clock::now() : 0;
     OptGraph g;
     g.init();
     defer g.free();
+    if (region) {
+        if (!opt_find_region(f, osr_pc, f.opt_region_fails, &g.region)) return opt_refuse_build(h, f, OptRefuse.CFG, Opcode.NOP, true);
+        g.region.regs = regs;
+    }
     OptBuild b;
     Opcode refused_op = Opcode.NOP;
-    OptRefuse why = opt_build_graph(h, f, &g, &b, &refused_op, false);
+    // A region's calls stay calls: an inlined body would bring its own pcs into the loop's.
+    OptRefuse why = opt_build_graph(h, f, &g, &b, &refused_op, region);
     OptPools pools = opt_pools();
     uint sunk = why == OptRefuse.NONE && !p.no_sink ? g.sink() : 0;
     if (why == OptRefuse.NONE && !g.allocate(&pools)) why = OptRefuse.PRESSURE;
@@ -586,7 +684,9 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
         f.opt_declined++;
         return false;
     }
-    if (why != OptRefuse.NONE) return opt_refuse(h, f, why, refused_op);
+    if (why != OptRefuse.NONE) return opt_refuse_build(h, f, why, refused_op, region);
+    // The window is the frame's only while it waits for this compile.
+    g.region.regs = null;
     OptCode* oc = h.alloc_func(h.heap_udata, OptCode::size);
     if (oc == null) return false;
     mem::clear(oc, OptCode::size);
@@ -612,7 +712,7 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
         }
         if (oc.cells != null) h.free_func(h.heap_udata, oc.cells);
         h.free_func(h.heap_udata, oc);
-        return opt_refuse(h, f, OptRefuse.COMPILE, Opcode.NOP);
+        return opt_refuse_build(h, f, OptRefuse.COMPILE, Opcode.NOP, region);
     }
     oc.code = code;
     code.touched = 1;
@@ -630,7 +730,9 @@ fn bool opt_try_compile(Heap* h, CompiledFunction* f) @noinline {
     if (p.log) {
         io::eprintf("opt compile ");
         opt_log_fn(f);
-        io::eprintfn(" words %d nodes %d inlined %d reopt %d", f.code_count, g.nodes.len(), inlined, f.opt_reopts);
+        io::eprintf(" words %d nodes %d inlined %d reopt %d", f.code_count, g.nodes.len(), inlined, f.opt_reopts);
+        if (region) io::eprintf(" region %d-%d", g.region.start, g.region.end);
+        io::eprintfn("");
     }
     return true;
 }
@@ -970,6 +1072,16 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
+}
+
+// Leave `oc` for the baseline code at the instruction self.i without an exit: a region's branch out
+// of its loop, which is the code's normal way out and teaches the next build nothing.
+fn void Asm.emit_opt_leave(&self, OptCode* oc) {
+    void* c = self.c;
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.i * Instruction::size);
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.pc_off, R1, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
+    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
 }
 
 // Count an exit that resumes at word `pc` of `cf` under the opcode found there, for --jit-stats.

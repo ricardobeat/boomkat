@@ -30,8 +30,11 @@ struct DecodedCfgNode {
 }
 struct DecodedCfg {
     DecodedCfgNode* nodes;
-    uint* pc_to_index; // CFG_NO_INSTRUCTION at WIDE payload words
+    uint* pc_to_index; // by pc - pc_base; CFG_NO_INSTRUCTION at WIDE payload words
     uint instruction_count;
+    // A region's first exit node (bytecode_cfg_build), and the pc of its first word.
+    uint exit_first;
+    uint pc_base;
     uint word_count;
     uint block_count;
     bool has_wide;
@@ -129,36 +132,47 @@ fn bool bytecode_cfg_control_supported(Opcode op) {
 // and fill the objects the compiler makes for itself (bytecode_cfg_object_op). None of them jumps,
 // so the control flow is the ordinary one, and the roles leave A a use and no def, which
 // over-approximates the register file for a consumer that lowers the instruction itself.
+// With `end` the graph covers only the words [start, end) of `code`, whose pcs stay those of the
+// whole: a branch out of them, and the fall through past the last, goes to an exit node, one per
+// target pc, appended after the instructions from cfg.exit_first on. An exit node is a NOP at its
+// target that ends its block with no successor.
 fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     heap::Heap* h = null, DecodedOpAllowed allowed = null, bool split_calls = false,
     DecodedCfgBudget budget = DEFAULT_CFG_BUDGET, bool forwarding = false, bool resolve = false,
-    bool objects = false) {
+    bool objects = false, uint start = 0, uint end = 0) {
     *cfg = {};
-    if (code == null || count == 0 || count > budget.max_words) return false;
-    ulong bytes = (ulong)count * (DecodedCfgNode::size + uint::size);
+    bool region = end != 0;
+    if (!region) end = count;
+    if (code == null || start >= end || end > count) return false;
+    uint span = end - start;
+    if (span > budget.max_words) return false;
+    // A region's exits number at most one more than its instructions.
+    uint slots = region ? span * 2 + 1 : span;
+    ulong bytes = (ulong)slots * DecodedCfgNode::size + (ulong)span * uint::size;
     if (bytes > (ulong)budget.max_bytes || bytes > (ulong)usz::max) return false;
     void* storage = h != null ? h.alloc_func(h.heap_udata, (usz)bytes) : libc::malloc((usz)bytes);
     if (storage == null) return false;
     cfg.storage = storage;
     cfg.owner = h;
     cfg.nodes = (DecodedCfgNode*)storage;
-    cfg.pc_to_index = (uint*)((char*)storage + (usz)count * DecodedCfgNode::size);
-    cfg.word_count = count;
+    cfg.pc_to_index = (uint*)((char*)storage + (usz)slots * DecodedCfgNode::size);
+    cfg.word_count = span;
+    cfg.pc_base = start;
     mem::clear(storage, (sz)bytes);
-    for (uint pc = 0; pc < count; pc++) cfg.pc_to_index[pc] = CFG_NO_INSTRUCTION;
+    for (uint k = 0; k < span; k++) cfg.pc_to_index[k] = CFG_NO_INSTRUCTION;
     bool complete;
     defer if (!complete) bytecode_cfg_free(cfg);
     if (!moveelim_roles_ready) moveelim_init_roles();
-    for (uint pc = 0; pc < count;) {
+    for (uint pc = start; pc < end;) {
         DecodedBytecode view = bytecode::decode_bytecode(code, count, pc);
-        if (!view.valid || view.insn.op.ordinal >= Opcode::values.len
+        if (!view.valid || view.next_pc > end || view.insn.op.ordinal >= Opcode::values.len
             || (!bytecode_cfg_control_supported(view.insn.op) && !(forwarding && view.insn.op == Opcode.APPLY_ARGS)
                 && !(resolve && (view.insn.op == Opcode.RESOLVEVAR || view.insn.op == Opcode.THROW_UNRESOLVED))
                 && !(objects && bytecode_cfg_object_op(view.insn.op)))
             || (allowed != null && !allowed(view.insn.op))) return false;
         if (cfg.instruction_count == budget.max_instructions) return false;
         uint index = cfg.instruction_count++;
-        cfg.pc_to_index[pc] = index;
+        cfg.pc_to_index[pc - start] = index;
         DecodedCfgNode* node = &cfg.nodes[index];
         node.view = view;
         node.roles = moveelim_roles[view.insn.op.ordinal];
@@ -167,23 +181,34 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
         cfg.has_wide |= view.wide;
         pc = view.next_pc;
     }
+    uint real = cfg.instruction_count;
+    cfg.exit_first = real;
     cfg.nodes[0].block_entry = true;
     cfg.nodes[0].external = true;
-    for (uint i = 0; i < cfg.instruction_count; i++) {
+    for (uint i = 0; i < real; i++) {
         DecodedCfgNode* node = &cfg.nodes[i];
         long target;
         bool branch = bytecode_cfg_branch(node.view, &target);
         bool fallthrough = bytecode_cfg_fallthrough(node.view.insn.op);
         if (branch) {
             if (target < 0 || target >= (long)count) return false;
-            uint successor = cfg.pc_to_index[target];
-            if (successor == CFG_NO_INSTRUCTION) return false;
+            uint successor;
+            if (target < (long)start || target >= (long)end) {
+                if (!region) return false;
+                successor = bytecode_cfg_exit(cfg, (uint)target);
+            } else {
+                successor = cfg.pc_to_index[(uint)target - start];
+                if (successor == CFG_NO_INSTRUCTION) return false;
+            }
             node.branch_target = successor;
             node.successors[node.successor_count++] = successor;
             cfg.nodes[successor].block_entry = true;
             cfg.has_backedge |= successor <= i;
         }
-        if (i + 1 == cfg.instruction_count) continue;
+        if (i + 1 == real) {
+            if (region && fallthrough) node.successors[node.successor_count++] = bytecode_cfg_exit(cfg, end);
+            continue;
+        }
         if (fallthrough) {
             if (!branch || node.branch_target != i + 1) node.successors[node.successor_count++] = i + 1;
         }
@@ -193,6 +218,20 @@ fn bool bytecode_cfg_build(DecodedCfg* cfg, Instruction* code, uint count,
     bytecode_cfg_number_blocks(cfg);
     complete = true;
     return true;
+}
+
+// The exit node of a region's graph for `pc`, appended on first use.
+fn uint bytecode_cfg_exit(DecodedCfg* cfg, uint pc) {
+    for (uint k = cfg.exit_first; k < cfg.instruction_count; k++) {
+        if (cfg.nodes[k].view.pc == pc) return k;
+    }
+    uint index = cfg.instruction_count++;
+    DecodedCfgNode* node = &cfg.nodes[index];
+    node.view = { .insn = { .op = Opcode.NOP }, .pc = pc, .payload_pc = pc, .next_pc = pc, .valid = true };
+    node.roles = moveelim_roles[Opcode.NOP.ordinal];
+    node.branch_target = CFG_NO_INSTRUCTION;
+    node.block_entry = true;
+    return index;
 }
 
 fn void bytecode_cfg_number_blocks(DecodedCfg* cfg) {
@@ -268,23 +307,29 @@ fn bool DecodedCfgNode.must_def(&self, uint* reg) {
 // By default liveness arrays are indexed by canonical instruction index.
 // word_slots adapts existing callers whose arrays and recovery queries use PCs;
 // WIDE payload slots are cleared but never traversed as instructions.
+// With `exit_in`, the live-in set of each exit node of a region's graph, from exit_first on: the
+// registers the code after the region reads.
 fn void bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in,
-    RegSet* scratch, bool call_windows = true, bool word_slots = false, bool exact = false) {
+    RegSet* scratch, bool call_windows = true, bool word_slots = false, bool exact = false, RegSet* exit_in = null) {
     uint slots = word_slots ? cfg.word_count : cfg.instruction_count;
     for (uint i = 0; i < slots; i++) { live_out[i].clear(); live_in[i].clear(); }
+    if (exit_in != null) {
+        for (uint k = cfg.exit_first; k < cfg.instruction_count; k++) live_in[k].copy_from(&exit_in[k - cfg.exit_first]);
+    }
+    uint scan = exit_in != null ? cfg.exit_first : cfg.instruction_count;
     bool first = true;
     bool changed = true;
     while (changed) {
         if (!first && !cfg.has_backedge) break;
         changed = first;
-        uint index = cfg.instruction_count;
+        uint index = scan;
         while (index > 0) {
             DecodedCfgNode* node = &cfg.nodes[--index];
-            uint slot = word_slots ? node.view.pc : index;
+            uint slot = word_slots ? node.view.pc - cfg.pc_base : index;
             scratch.clear();
             for (uint edge = 0; edge < node.successor_count; edge++) {
                 uint successor = node.successors[edge];
-                uint successor_slot = word_slots ? cfg.nodes[successor].view.pc : successor;
+                uint successor_slot = word_slots ? cfg.nodes[successor].view.pc - cfg.pc_base : successor;
                 scratch.union_with(&live_in[successor_slot]);
             }
             if (!scratch.equals(&live_out[slot])) {
@@ -292,16 +337,50 @@ fn void bytecode_cfg_liveness(DecodedCfg* cfg, RegSet* live_out, RegSet* live_in
                 changed = true;
             } else if (!first) { continue; }
             live_in[slot].copy_from(scratch);
-            uint def;
-            if (node.must_def(&def)) live_in[slot].unset(def);
-            // Exactly, CALL_VAR and CALL_GLOBAL load their callee into A and store undefined into the
-            // receiver slot, which writes both before any argument is read.
-            if (exact && (node.view.insn.op == Opcode.CALL_VAR || node.view.insn.op == Opcode.CALL_GLOBAL)) {
-                live_in[slot].unset((uint)node.view.insn.a);
-                live_in[slot].unset((uint)node.view.insn.a + 1);
-            }
-            node.reads(&live_in[slot], call_windows, exact);
+            node.live_before(&live_in[slot], call_windows, exact);
         }
         first = false;
+    }
+}
+
+// `live`, the registers live after the instruction, becomes those live before it.
+fn void DecodedCfgNode.live_before(&self, RegSet* live, bool call_windows, bool exact) {
+    uint def;
+    if (self.must_def(&def)) live.unset(def);
+    // Exactly, CALL_VAR and CALL_GLOBAL load their callee into A and store undefined into the
+    // receiver slot, which writes both before any argument is read.
+    if (exact && (self.view.insn.op == Opcode.CALL_VAR || self.view.insn.op == Opcode.CALL_GLOBAL)) {
+        live.unset((uint)self.view.insn.a);
+        live.unset((uint)self.view.insn.a + 1);
+    }
+    self.reads(live, call_windows, exact);
+}
+
+// The registers live into each block of `cfg`, in `block_in` (block_count sets), as
+// bytecode_cfg_liveness computes them for its first instructions, without a set per instruction.
+// `scratch` holds one set.
+fn void bytecode_cfg_block_liveness(DecodedCfg* cfg, RegSet* block_in, RegSet* scratch,
+    bool call_windows = true, bool exact = false) {
+    for (uint b = 0; b < cfg.block_count; b++) block_in[b].clear();
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        uint index = cfg.instruction_count;
+        while (index > 0) {
+            uint last = index - 1;
+            uint first = last;
+            while (!cfg.nodes[first].block_entry) first--;
+            DecodedCfgNode* end = &cfg.nodes[last];
+            scratch.clear();
+            for (uint edge = 0; edge < end.successor_count; edge++) scratch.union_with(&block_in[cfg.nodes[end.successors[edge]].block]);
+            for (uint i = last + 1; i > first; i--) cfg.nodes[i - 1].live_before(scratch, call_windows, exact);
+            RegSet* into = &block_in[end.block];
+            if (!scratch.equals(into)) {
+                into.copy_from(scratch);
+                changed = true;
+            }
+            index = first;
+        }
+        if (!cfg.has_backedge) break;
     }
 }

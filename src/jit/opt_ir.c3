@@ -57,6 +57,7 @@ module boomkat::jit @feat(SLJIT);
 
 import boomkat::bytecode;
 import boomkat::hobject;
+import boomkat::types;
 import std::collections::list;
 import std::io;
 
@@ -193,7 +194,8 @@ enum OptOp : char {
     // array with a writable length on the built-in prototype chain.
     ARRAY_PUSH,
     // An unconditional exit (COLD) to the baseline code at pc, with the dirty registers stored: an
-    // instruction of an inlined body that has never run. The block has no successors.
+    // instruction of an inlined body that has never run, or with cc OPT_EXIT_LEAVE a region's branch
+    // out of its loop, which leaves without counting as an exit. The block has no successors.
     EXIT,
     // A jump to succ[0]; a conditional branch (BRANCH: JMP_* row cc over a and b
     // of rep imm, BRANCH_TRUTH: IF_TRUE/IF_FALSE over a, or the window slot imm
@@ -372,6 +374,9 @@ struct OptPoly {
 }
 
 // A join (block `pos` in reverse postorder) and a register merged there.
+// OptNode.cc of an EXIT that leaves a region (OptOp.EXIT).
+const char OPT_EXIT_LEAVE = 1;
+
 struct OptJoin {
     uint pos;
     uint reg;
@@ -382,7 +387,18 @@ fn bool opt_join_windowed(List{OptJoin}* joins, uint pos, uint reg) {
     return false;
 }
 
+// A loop compiled without the rest of its function: the words [start, end), entered only at the
+// loop headers in them, and left for the baseline code at every branch out. `regs` is the window of
+// the frame whose back edge asked for it, which the header's phis speculate on; it is read only
+// while building. An `end` of 0 is the whole function.
+struct OptRegion {
+    uint start;
+    uint end;
+    TVal* regs;
+}
+
 struct OptGraph {
+    OptRegion region;
     List{OptPoly} polys;
     List{OptNode} nodes;
     List{OptBlock} blocks;

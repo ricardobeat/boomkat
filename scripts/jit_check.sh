@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fast JIT validation. For every test/*.js and test/jit/*.js the stdout+stderr+exit code under
 # --jit, --jit --opt, --jit --opt --opt-always, the same with a 20 KB optimized-code cap
-# (eviction) and --jit --opt --jit-stress (every function compiled on first call) must equal
-# the interpreter's (the interpreter
+# (eviction), --jit --opt --jit-stress (every function compiled on first call) and every loop
+# compiled as a region (--opt-region-always --opt-always) must equal the interpreter's (the interpreter
 # runs once per file); then the optimizing-tier exit check (scripts/opt_exit_check.sh, skipped
 # with QUICK=1). Prints "jit-check OK" or "jit-check FAIL n" plus the diffs.
 #   scripts/jit_check.sh [BIN]    BIN defaults to ./out/boomkat; JOBS defaults to the core count.
@@ -17,7 +17,7 @@ echo "jit-check: $BIN, built $(stat -f '%Sm' "$BIN" 2>/dev/null || stat -c %y "$
 start=$(date +%s)
 # The JIT modes each file is compared under, semicolon-separated so the function below can be
 # exported and still split them.
-MODES="--jit;--jit --opt;--jit --opt --opt-always;--jit --opt --opt-always --opt-code-max=20000;--jit --opt --jit-stress"
+MODES="--jit;--jit --opt;--jit --opt --opt-always;--jit --opt --opt-always --opt-code-max=20000;--jit --opt --jit-stress;--jit --opt --opt-region-always --opt-always"
 export MODES
 nmode=$(( $(printf '%s' "$MODES" | tr -cd ';' | wc -c) + 1 ))
 one() {
