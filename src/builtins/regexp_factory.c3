@@ -47,10 +47,7 @@ fn HObject* create_regexp_from_string(Heap* heap, HString* pattern, int js_flags
     // Store pattern string as primitive_value
     (*obj.extra_ptr()).prim.primitive_value.set_string(pattern);
 
-    // Set lastIndex to 0
-    HString* li_key = heap.str(heap::BuiltinStr.LAST_INDEX);
-    TVal zero_tv; zero_tv.set_fastint(0);
-    obj.put_prop(li_key, zero_tv, hobject::PROP_FLAGS_WEC, heap);
+    regexp_init_last_index(heap, obj);
 
     return obj;
 
