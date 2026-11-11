@@ -847,7 +847,7 @@ $endif
     return (*fo.extra_ptr()).func.builtin_fn_index;
 }
 
-// A CALL or CALL_UNDEF_THIS whose callee is a builtin, through th_call_native
+// A CALL, CALL_UNDEF_THIS or CALL_GLOBAL whose callee is a builtin, through th_call_native
 // as the threaded burst runs it (identity fast paths such as charCodeAt, then
 // the builtin's own dispatch) instead of op_call. False when it declined before
 // running anything but clearing a plain call's receiver slot, as op_call clears
@@ -859,16 +859,19 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
     if (ds.ic_base == null || ds.var_ic_base == null) return false;
     Vm* vm = ds.vm;
     Instruction* pc = next - 1;
-    bool plain = pc.op == Opcode.CALL_UNDEF_THIS;
+    // A CALL_GLOBAL's site has stored the callee in its register (load_global_callee).
+    bool global = pc.op == Opcode.CALL_GLOBAL;
+    bool plain = global || pc.op == Opcode.CALL_UNDEF_THIS;
     if (pc.op != Opcode.CALL && !plain) return false;
+    uint callee = global ? pc.a : pc.b;
     TVal* regs = ds.regs_base;
-    if (th_lean_target(vm, regs[pc.b], regs + pc.b + 2, plain) != null) return false;
-    if (plain) clear_call_regs(vm, ds.act, regs, pc.b + 1, pc.b + 2);
+    if (th_lean_target(vm, regs[callee], regs + callee + 2, plain) != null) return false;
+    if (plain) clear_call_regs(vm, ds.act, regs, callee + 1, callee + 2);
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
-    int builtin = jit_builtin_index(regs[pc.b]);
+    int builtin = jit_builtin_index(regs[callee]);
     if (builtin >= 0) hobject::ic_note_callee(th_ic_at(cold, pc), hobject::IC_BUILTIN_TARGET | (uint)builtin);
-    Instruction* r = th_call_native(pc, &jit_stop_table, regs, cold, pc.b, pc.a, pc.c);
+    Instruction* r = th_call_native(pc, &jit_stop_table, regs, cold, callee, pc.a, global ? pc.b : pc.c);
     ThreadedHandoff handoff = vm.threaded_handoff;
     vm.threaded_handoff = ThreadedHandoff.NONE;
     switch (handoff) {

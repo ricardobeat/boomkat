@@ -979,15 +979,18 @@ fn void Asm.emit_return_body(&self) {
 
 // CALL_GLOBAL's callee as @lean_call_global reads it: the global binding the
 // instruction's variable entry caches, stored in the callee register. Any
-// other state, and a callee that is not an object, joins `generic`.
+// other state, and a callee that is neither an object nor a lightfunc, joins `generic`.
 fn void Asm.load_global_callee(&self, Jumps* generic) {
     void* c = self.c;
     long vic = (long)(usz)&((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
     self.var_slot(vic, false);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    // An object is no TDZ hole: the one test routes both.
+    // Neither is a TDZ hole: the tag tests route that too.
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    void* object = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
     self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    sljit_set_label(object, sljit_emit_label(c));
     for (uint k = 0; k < self.call.len; k++) generic.add(self.call.at[k]);
     self.call.len = 0;
     self.store(self.w.a, R0);
