@@ -73,9 +73,13 @@ fn BigIntOpResult vm_bigint_binop(Vm* vm, Opcode op, TVal* ra, TVal* rb, TVal* r
     // first, so a wrapper / @@toPrimitive that yields a BigInt participates as a BigInt.
     TVal pb = *rb;
     TVal pc = *rc;
+    TVal held;
+    held.set_undefined();
+    defer vm.heap.decref_tval(&held);
     if (pb.is_object()) {
         pb = to_primitive_value(vm, rb, 2);
         if (vm.throw_pending) return BigIntOpResult.THREW;
+        vm_hold(vm, &held, &pb);
     }
     if (pc.is_object()) {
         pc = to_primitive_value(vm, rc, 2);

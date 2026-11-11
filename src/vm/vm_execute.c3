@@ -3097,6 +3097,10 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (rb.get_tag() == OBJECT) { prim_b = to_primitive_value(vm, rb, 0); }
         if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
         if (ds.needs_restart) break;
+        TVal held;
+        held.set_undefined();
+        defer vm.heap.decref_tval(&held);
+        vm_hold(vm, &held, &prim_b);
         if (rc.get_tag() == OBJECT) { prim_c = to_primitive_value(vm, rc, 0); }
         if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
         if (ds.needs_restart) break;

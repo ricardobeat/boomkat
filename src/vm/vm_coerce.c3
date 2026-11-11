@@ -52,6 +52,13 @@ fn double vm_to_number(Vm* vm, TVal* val) {
     }
 }
 
+// A primitive that a call returned belongs to the pending return value until
+// the next call replaces it. An operator that converts a second operand holds
+// its own reference to the first in `held`, which it releases when done.
+fn void vm_hold(Vm* vm, TVal* held, TVal* prim) @inline {
+    vm.heap.tval_copy_ref(held, prim);
+}
+
 // ECMA-262 IsLessThan: https://tc39.es/ecma262/#sec-islessthan
 // Returns -1, +1 or 0. Sets *is_undef when either operand is NaN. Sets vm.throw_pending
 // on a ToPrimitive failure; the caller must check it.
@@ -59,9 +66,13 @@ fn int vm_relational_compare(Vm* vm, TVal* x, TVal* y, bool* is_undef) {
     *is_undef = false;
     TVal px = *x;
     TVal py = *y;
+    TVal held;
+    held.set_undefined();
+    defer vm.heap.decref_tval(&held);
     if (px.get_tag() == OBJECT) {
         px = to_primitive_value(vm, x, 2);  // hint: number
         if (vm.throw_pending) return 0;
+        vm_hold(vm, &held, &px);
     }
     if (py.get_tag() == OBJECT) {
         py = to_primitive_value(vm, y, 2);
