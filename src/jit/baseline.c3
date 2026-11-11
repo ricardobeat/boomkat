@@ -578,6 +578,9 @@ struct Asm {
     // Set by every call emitted through the call subroutine (emit_direct_call), which runs the
     // callee in this frame's native frame.
     bool direct_called;
+    // The code reads its frame's scope (Activation.var_env, lex_env), which its call entry then
+    // writes (emit_entry_env). The entry is emitted after the body.
+    bool reads_env;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;

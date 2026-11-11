@@ -1573,8 +1573,8 @@ fn void Asm.var_slot(&self, long vic, bool scoped, uint closure_reg = uint::max,
         if (closure_reg != uint::max) {
             self.closure_lex_env(closure_reg, closure);
         } else {
-            sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.la, 0);
-            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
+            self.reads_env = true;
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.la, l.act_lex_env);
         }
         self.alt.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
     }

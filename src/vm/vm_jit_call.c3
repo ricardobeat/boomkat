@@ -78,6 +78,8 @@ fn void jit_sync(Dispatch* ds, Activation* la) {
 fn void jit_load(Dispatch* ds, Activation* la) {
     Vm* vm = ds.vm;
     CompiledFunction* f = (CompiledFunction*)la.func;
+    if (la.flags & ACT_FLAG_LAZY) jit_fill(vm, la);
+    vm.activation_count = (uint)(la - vm.activations) + 1;
     ds.act = la;
     if (vm.heap.realm != f.realm) vm.heap.enter_realm(f.realm);
     vm.current_func = f;
@@ -86,6 +88,29 @@ fn void jit_load(Dispatch* ds, Activation* la) {
     ds.capture_refs = null;
     jit_view(ds, f);
     th_bind_ic_bias(&ds.cold, f.code, f.ic_entries, f.var_ic_entries);
+}
+
+// Fill in the frames generated code pushed (ACT_FLAG_LAZY) from the bottom of their run up to
+// `top`, as th_publish_lean writes them. Lazy frames sit only above every other frame.
+fn void jit_fill(Vm* vm, Activation* top) @noinline {
+    Activation* low = top;
+    while (low > vm.activations && ((low - 1).flags & ACT_FLAG_LAZY) != 0) low--;
+    for (Activation* a = low; a <= top; a++) {
+        HObject* function = (HObject*)a.tv_func.get_heapptr();
+        HObjectFunction* fd = &(*function.extra_ptr()).func;
+        EnvRecord* env = fd.var_env;
+        EnvRecord* cap = fd.lex_env;
+        a.parent = a - 1;
+        a.var_env = env;
+        a.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
+        a.cat = null;
+        a.forin = null;
+        a.async_gen_state = null;
+        a.async_promise = null;
+        a.new_target = (a.flags & ACT_FLAG_CONSTRUCT) != 0 ? function : null;
+        a.serial = ++vm.activation_serial;
+        a.flags &= ~ACT_FLAG_LAZY;
+    }
 }
 
 // Forget where generated code waits for each live frame (Activation.native_ret), before code a

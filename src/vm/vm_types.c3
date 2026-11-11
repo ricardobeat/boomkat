@@ -244,6 +244,12 @@ const uint ACT_FLAG_CALLEE_OWNED   = 1u << 11;
 // A tail call took over this frame, and Vm.tail_callers names the caller it
 // replaced, so stack traces can still show that frame.
 const uint ACT_FLAG_TAIL_CALLED    = 1u << 12;
+// Generated code pushed the frame and wrote only what it reads itself: func,
+// bottom, curr_pc, retval, flags, heap_reg_count, this_binding, tv_func,
+// caller_valstack_top and native_ret, and var_env, lex_env and parent when
+// its code reads its scope. vm::jit_load fills in the rest, and the
+// activation count, before anything else reads the stack.
+const uint ACT_FLAG_LAZY           = 1u << 13;
 
 // The flags a frame may carry and still return through RET's and RETUNDEF's
 // fast paths. Each of the others asks the pop for work only the general path

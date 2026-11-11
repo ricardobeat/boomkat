@@ -635,9 +635,7 @@ fn void OptCg.emit_room_test(&self, void* to_base) {
     CallLayout* k = call_layout();
     int m = SLJIT_MEM;
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, k.ds_vm);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R0, k.vm_count);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, (long)a.room_acts);
-    sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, R1, 0, m | R0, k.vm_capacity), to_base);
+    sljit_set_label(a.emit_record_room(a.la, R0, R1), to_base);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)a.room_slots * TVal::size);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | R0, k.vm_valstack_end), to_base);
 }

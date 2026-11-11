@@ -160,8 +160,8 @@ fn void Asm.emit_cap_var_alt(&self, uint ra) {
     Layout* l = self.lay;
     long vic = (long)(usz)&((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, vic);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.la, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
+    self.reads_env = true;
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.la, l.act_lex_env);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R2, l.vic_epoch);
     sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | self.heap, l.heap_epoch);
@@ -240,8 +240,8 @@ fn void Asm.emit_resolve_var(&self, uint ra, long vic) {
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, vic);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R2, v.vic_env);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.la, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
+    self.reads_env = true;
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.la, l.act_lex_env);
     self.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R2, l.vic_bindings);
     sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | R1, l.obj_shape);
@@ -345,8 +345,8 @@ fn bool Asm.emit_declvar(&self, uint ra, uint index, long ic) {
     long key = (long)(usz)f.constants[index].get_heapptr();
     int m = SLJIT_MEM;
     // R1 = the scope's bindings.
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.la, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | R0, v.act_var_env);
+    self.reads_env = true;
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.la, v.act_var_env);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R1, v.env_flags);
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, v.env_function_mask | v.env_with_mask);
