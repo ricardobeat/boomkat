@@ -2,8 +2,9 @@
 """Project an Octane composite score from the mini benchmarks.
 
 The upstream Octane bundle is not part of this repository. `bench/mini` holds
-sub-second variants that `bench/mini/gen.sh` derives from it; each runs a fixed
-number of iterations and prints the elapsed milliseconds. A binary's Octane
+short variants that `bench/mini/gen.sh` derives from it; each warms up for a
+fixed number of iterations, as Octane does for a second, and prints the elapsed
+milliseconds of the fixed number of runs that follow. A binary's Octane
 composite is the geometric mean of the per-benchmark scores, and a score is
 proportional to the reciprocal of a benchmark's runtime, so a matched pair of
 mini runs gives every benchmark's projected score:
@@ -18,20 +19,22 @@ covers thirteen.
 Because both sides of the pair share the recorded constant, the projected
 composite is the recorded composite scaled by the geometric mean of the time
 ratios. It makes the goal readable in Octane terms; it is not an independent
-measurement, and warmup and tier thresholds differ between a three-iteration
-mini run and a full Octane run.
+measurement: the counts are fixed where Octane's are timed.
 
 Usage: python3 scripts/octane_score.py [--pairs N] [--json PATH] base candidate
 """
 import argparse
 import json
 import math
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 MINI = ROOT / 'bench' / 'mini'
+# A mini's result line: the timed runs, then the warm-up that preceded them.
+TIMED_RE = re.compile(r': (\d+) ms, warm-up \d+ ms')
 
 # Octane scores of the historical revision, from its full-suite log.
 RECORDED = {
@@ -47,15 +50,10 @@ def run(binary, case):
                          capture_output=True, text=True, timeout=900, cwd=ROOT)
     if out.returncode != 0:
         raise SystemExit(f'{binary} {case}: exit {out.returncode}\n{out.stderr[-400:]}')
-    total = 0.0
-    found = False
-    for line in out.stdout.splitlines():
-        if line.endswith(' ms') and ': ' in line:
-            total += float(line.rsplit(': ', 1)[1][:-3])
-            found = True
-    if not found:
+    timed = TIMED_RE.findall(out.stdout)
+    if not timed:
         raise SystemExit(f'{binary} {case}: no timing line\n{out.stdout[-400:]}')
-    return total
+    return float(sum(map(int, timed)))
 
 
 def geomean(values):

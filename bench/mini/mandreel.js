@@ -277876,7 +277876,8 @@ function PrintScore(score) { return;
 
 
 BenchmarkSuite.RunSuites = function () {
-  var total = 0;
+  var warm = typeof MINI_WARM == "number" ? MINI_WARM : 4;
+  var runs = typeof MINI_RUNS == "number" ? MINI_RUNS : 2;
   // Plain loops: a native callback frame (forEach) would keep the
   // collector from ever finishing a cycle.
   for (var si = 0; si < BenchmarkSuite.suites.length; si++) {
@@ -277884,10 +277885,12 @@ BenchmarkSuite.RunSuites = function () {
    for (var bi = 0; bi < s.benchmarks.length; bi++) {
     var b = s.benchmarks[bi];
     if (b.name.indexOf("Latency") >= 0) continue;
-    if (BenchmarkSuite.ResetRNG) BenchmarkSuite.ResetRNG(); b.Setup(); var t = Date.now();
-    for (var i = 0; i < 1; i++) b.run();
-    var ms = Date.now() - t; total += ms; b.TearDown();
-    print(b.name + ": " + ms + " ms");
+    if (BenchmarkSuite.ResetRNG) BenchmarkSuite.ResetRNG(); b.Setup(); var t0 = Date.now();
+    for (var i = 0; i < warm; i++) b.run();
+    var t1 = Date.now();
+    for (var i = 0; i < runs; i++) b.run();
+    var t2 = Date.now(); b.TearDown();
+    print(b.name + ": " + (t2 - t1) + " ms, warm-up " + (t1 - t0) + " ms");
   } }
 };
 BenchmarkSuite.config.doWarmup = undefined;
