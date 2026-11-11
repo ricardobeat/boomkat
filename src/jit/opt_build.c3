@@ -257,6 +257,8 @@ struct OptBuild {
     // The pc of the GETCAP or GETPROP, still run as GENERIC, that last defined each register in
     // this block, or NO_NODE; a numeric use of the register asks for it to be a typed load.
     uint* load_def;
+    // The STORE_CONST node whose constant each register's window slot still holds, or NO_NODE.
+    uint* const_def;
     // The rep a numeric use asked of the load at each pc (OptOverride.block); the next round
     // builds those as LOAD_CAP and LOAD_ELEM nodes.
     List {OptOverride} load_reps;
@@ -514,6 +516,7 @@ fn void OptBuild.free(&self) {
     mem::free(self.exit_words);
     mem::free(self.cur);
     mem::free(self.load_def);
+    mem::free(self.const_def);
     mem::free(self.fact_shape);
     mem::free(self.fact_plain);
     mem::free(self.ends);
@@ -808,6 +811,7 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
     if (node != NO_NODE && !self.g.nodes[node].is_const() && self.g.nodes[node].op != OptOp.PHI) self.g.nodes[node].home = reg;
     self.cur[reg] = { .node = node, .dirty = dirty };
     self.load_def[reg] = NO_NODE;
+    self.const_def[reg] = NO_NODE;
     self.fact_shape[reg] = heap::SHAPE_NONE;
 }
 
@@ -1545,12 +1549,15 @@ fn bool OptBuild.put_field(&self) {
     uint rv = this_op ? self.w.a : self.w.b;
     // A value in the window may be a heap value, which needs the counted and traced store: the
     // baseline's, with the registers stored and reloaded around it, not an exit on every store.
-    // A property read that defined it is built as an OBJECT node in the next round.
-    if (rv >= self.nregs || self.cur[rv].node == NO_NODE) {
-        if (rv < self.nregs) self.ask_object(rv);
+    // A constant is stored as one; a property read that defined the value is built as an OBJECT
+    // node in the next round.
+    if (rv >= self.nregs) return self.generic();
+    uint value = self.cur[rv].node != NO_NODE ? self.cur[rv].node : self.const_def[rv];
+    if (value == NO_NODE) {
+        self.ask_object(rv);
         return self.generic();
     }
-    uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, self.cur[rv].node, rnode, (long)self.pc);
+    uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, value, rnode, (long)self.pc);
     self.snapshot(n);
     self.g.nodes[n].key = (void*)ic.key.borrow();
     bool mono = ic.chain_len == 0;
@@ -1868,6 +1875,7 @@ fn void OptBuild.kill(&self, uint r) {
     if (r >= self.nregs) return;
     self.cur[r] = { .node = NO_NODE, .dirty = false };
     self.load_def[r] = NO_NODE;
+    self.const_def[r] = NO_NODE;
     self.fact_shape[r] = heap::SHAPE_NONE;
 }
 
@@ -2911,6 +2919,7 @@ fn void OptBuild.store_const(&self, uint reg, long bits) {
     uint n = self.add(OptOp.STORE_CONST, OptRep.NONE, NO_NODE, NO_NODE, bits);
     self.g.nodes[n].home = reg;
     self.kill(reg);
+    if (reg < self.nregs) self.const_def[reg] = n;
 }
 
 // The callee's registers on entry to its inlined body: the arguments keep their state, missing formals
@@ -3503,6 +3512,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
     for (uint r = 0; r < self.nregs; r++) {
         self.cur[r] = { .node = NO_NODE, .dirty = false };
         self.load_def[r] = NO_NODE;
+        self.const_def[r] = NO_NODE;
     }
     uint fwd = 0;
     uint back = 0;
@@ -3797,6 +3807,7 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     uint n = b.nregs;
     b.cur = mem::new_array(OptRegState, n);
     b.load_def = mem::new_array(uint, n);
+    b.const_def = mem::new_array(uint, n);
     b.dead = mem::new_array(bool, b.nrpo);
     b.fact_shape = mem::new_array(uint, (usz)n + 1);
     b.fact_plain = mem::new_array(bool, (usz)n + 1);

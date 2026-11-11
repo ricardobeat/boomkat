@@ -104,8 +104,9 @@ enum OptOp : char {
     LOAD_LENGTH,
     // A PUTPROPC or PUTTHISC (imm its pc) overwrite of the own writable data property its cache
     // names, in a plain object of the cache's shape; exits for any other receiver or a value that
-    // needs a barrier. a is the number or OBJECT node stored, or NO_NODE for a value in the window;
-    // b the OBJECT node receiver, or NO_NODE for the window. It defines nothing.
+    // needs a barrier. a is the number or OBJECT node stored, the STORE_CONST whose constant the
+    // value's slot holds, or NO_NODE for a value in the window; b the OBJECT node receiver, or
+    // NO_NODE for the window. It defines nothing.
     STORE_FIELD,
     PHI,
     // The OBJECT node a, stored to its home window slot imm (the register) and now clean; for the

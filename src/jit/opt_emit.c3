@@ -785,11 +785,13 @@ fn void OptCg.box_index(&self, uint n) {
     sljit_emit_op2(c, SLJIT_OR, R3, 0, R3, 0, SLJIT_IMM, K_INT);
 }
 
-// The boxed value of number node `n` in `dst`.
+// The boxed value of number node `n`, or the constant of STORE_CONST `n`, in `dst`.
 fn void OptCg.box_node(&self, uint n, int dst) {
     void* c = self.a.c;
     OptNode* nd = &self.g.nodes[n];
-    if (nd.op == OptOp.CONST_I32) {
+    if (nd.op == OptOp.STORE_CONST) {
+        sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, nd.imm);
+    } else if (nd.op == OptOp.CONST_I32) {
         sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, K_INT | (nd.imm & (PAYLOAD_SPAN - 1)));
     } else if (nd.op == OptOp.CONST_F64) {
         sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, nd.imm);

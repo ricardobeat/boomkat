@@ -217,7 +217,8 @@ fn bool OptGraph.try_sink(&self, OptSinkScratch* s, uint v, bool trace) {
                 case STORE_FIELD:
                     int idx = -1;
                     for (uint f = 0; f < st.count; f++) if (sk.keys[f] == n.key) idx = (int)f;
-                    if (idx < 0 || n.a == NO_NODE) { ok = false; break; }
+                    // A constant from the window (STORE_CONST) is not a node a read can copy.
+                    if (idx < 0 || n.a == NO_NODE || self.nodes[n.a].rep == OptRep.NONE) { ok = false; break; }
                     st.vals[idx] = n.a;
                     s.edits.push({ .act = FIELD, .node = j });
                 case ADD_FIELD:
