@@ -2956,8 +2956,7 @@ fn void hobject_free_impl(HObject* obj, void* heap_ptr, bool free_header, bool s
     // destroy() and reset() free every node directly and must not also release
     // references into a string table they are sweeping.
     heap::Heap* hp = (heap::Heap*)heap_ptr;
-    // A weak first-link identity must not survive reuse of this address.
-    if (obj.gc.prototype_observed && hp != null) hp.bump_prototype_epoch(obj);
+    if (obj.gc.prototype_observed && hp != null) hp.observed_object_died();
     if (obj.gc.weak_target && hp != null) hp.weak_target_died((HeapHeader*)obj);
 
     // Subtype resources are disjoint. Ordinary objects and arrays own only

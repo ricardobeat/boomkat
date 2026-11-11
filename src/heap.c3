@@ -1357,6 +1357,8 @@ struct Heap {
     uint                shape_recycle_epoch;
     // Advanced only by mutations to prototype objects observed by read caches.
     ulong               prototype_epoch;
+    // The collection, counted from one, whose sweep has moved the epoch for the observed objects it frees.
+    uint                observed_death_cycle;
     // Set when a variable inline cache is filled, cleared when
     // invalidate_var_ic_entries retires them all, so the declarations an eval
     // makes back to back advance the epoch once.
@@ -4528,6 +4530,15 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
 fn void Heap.bump_prototype_epoch(&self, HObject* cause) @noinline {
     self.prototype_epoch++;
     cause.gc.prototype_observed = false;
+}
+
+// The sweep frees an observed object, whose address a read cache may still name as a first link
+// and a later object may take. Every such cache was filled before marking ended, since nothing
+// reaches the object after that, so moving the epoch once per sweep voids them all.
+fn void Heap.observed_object_died(&self) @noinline {
+    if (self.observed_death_cycle == self.gc_cycles + 1) return;
+    self.observed_death_cycle = self.gc_cycles + 1;
+    self.prototype_epoch++;
 }
 
 /**
