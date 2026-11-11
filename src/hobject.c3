@@ -3681,6 +3681,10 @@ struct ICChain {
     }
     // Allocated on the first change of receiver of an epoch read, kept until the function is freed.
     ICProtoSet* protos;
+    // An absent-property store entry's: the prototype epoch at which the snapshot's walk last
+    // held with every link observed (ic_stamp_absent). While the heap's epoch is still that one,
+    // a receiver whose prototype is the snapshot's first link has the same chain, unchanged.
+    ulong absent_epoch;
 }
 
 $assert ICChainEpoch::size <= ICChainSnapshot::size && ICPolySet::size <= ICChainSnapshot::size : "cache payload exceeds bounded snapshot";
@@ -3996,7 +4000,21 @@ fn bool ic_matches_absent_put(ICEntry* ic, HObject* receiver, void* key,
         return false;
     }
 
-    return ic_matches_absent_chain(ic, receiver.prototype) || absent_chain_cached(h, receiver.prototype, key);
+    if (ic.chain_len != 0 && ic.chain.absent_epoch == h.prototype_epoch
+        && (void*)receiver.prototype == ic.chain.snapshot.protos[0]) return true;
+    if (ic_matches_absent_chain(ic, receiver.prototype)) {
+        ic_stamp_absent(ic, h);
+        return true;
+    }
+    return absent_chain_cached(h, receiver.prototype, key);
+}
+
+// The snapshot of the absent-property entry `ic` was just filled or walked and held: observe its
+// links, so that a change to any of them moves the prototype epoch, and stamp the entry with it.
+fn void ic_stamp_absent(ICEntry* ic, heap::Heap* h) {
+    if (ic.chain_len == 0) return;
+    for (uint i = 0; i < (uint)ic.chain_len; i++) ((HObject*)ic.chain.snapshot.protos[i]).gc.prototype_observed = true;
+    ic.chain.absent_epoch = h.prototype_epoch;
 }
 
 // A prototype chain proven to lack a key, which stays true while the heap's
@@ -4183,6 +4201,7 @@ fn bool ic_fill_absent_put(ICEntry* ic, HObject* receiver, void* key,
     ic.prop_flags = PROP_FLAGS_WEC;
     ic.key.set(h, (HString*)key);
     ic.absent_next_shape = next_shape_id;
+    ic_stamp_absent(ic, h);
     return true;
 }
 

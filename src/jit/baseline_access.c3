@@ -32,6 +32,7 @@ struct Layout {
     long heap_gc_phase;
     long heap_shapes;
     long heap_epoch;
+    long heap_proto_epoch;
     long heap_site_key;
     long obj_shape;
     long obj_gc;
@@ -55,11 +56,11 @@ struct Layout {
     long ic_chain;
     long ic_key;
     long chain_proto0;
+    long chain_absent_epoch;
     long epoch_value;
     long epoch_current;
     long epoch_first;
     long epoch_owner;
-    long chain_shape0;
     long ep_value;
     long ep_current;
     long ep_first;
@@ -182,6 +183,7 @@ fn Layout* layout() {
     l.heap_gc_oracle = (char*)&h.gc_oracle_running - base;
     l.heap_shapes = (char*)&h.shapes - base;
     l.heap_epoch = (char*)&h.shape_recycle_epoch - base;
+    l.heap_proto_epoch = (char*)&h.prototype_epoch - base;
     l.heap_site_key = (char*)&h.jit_site_key - base;
     l.heap_mega = (char*)&h.mega_cache - base;
     l.heap_string_proto = (char*)&h.string_proto - base;
@@ -212,12 +214,12 @@ fn Layout* layout() {
     l.ic_chain = (char*)&ic.chain - base;
     l.ic_key = (char*)&ic.key - base;
     l.chain_proto0 = (char*)&ch.snapshot.protos[0] - base;
+    l.chain_absent_epoch = (char*)&ch.absent_epoch - base;
     hobject::ICChainEpoch* ep = (hobject::ICChainEpoch*)(usz)4096;
     l.epoch_value = (char*)&ep.value - (char*)ep;
     l.epoch_current = (char*)&ep.current - (char*)ep;
     l.epoch_first = (char*)&ep.first - (char*)ep;
     l.epoch_owner = (char*)&ep.owner - (char*)ep;
-    l.chain_shape0 = (char*)&ch.snapshot.shapes[0] - base;
     l.ep_value = (char*)&ch.epoch.value - base;
     l.poly_count = (char*)&ch.poly.count - base;
     l.poly_shapes = (char*)&ch.poly.shapes - base;
@@ -1147,7 +1149,7 @@ fn void Asm.emit_put_absent(&self, long ic, long key, int key_reg, uint rv, Jump
 // matched), R3 the address of the value. R0 is nonzero when the key was
 // appended, 0 for the slow path. It is vm::jit_put_absent's common case
 // inline: ic_matches_absent_put (shape, recycle epoch, extensible plain
-// object, the recorded prototype chain ending in null), a value that needs
+// object, the recorded prototype chain under its epoch stamp), a value that needs
 // no barrier work beyond the counted store, spare capacity and no hash table,
 // and a receiver never observed as a prototype (which needs an epoch bump). Any other state
 // calls that helper, which decides again; without `helper` it returns 0, having changed nothing.
@@ -1172,31 +1174,22 @@ fn void Asm.emit_put_absent_body(&self, bool helper = true) {
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | self.heap, l.heap_epoch);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R2, l.ic_gen);
     fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
-    // ic_matches_absent_chain, unrolled: link i is checked while chain_len > i
-    // (a chain_len past IC_MAX_CHAIN, the epoch payload, never matches), then
-    // the walk must have reached the end of the prototype chain.
+    // The chain: none for an entry without one, else the snapshot's first link under the
+    // prototype epoch the entry is stamped with (ICChain.absent_epoch). A stale stamp takes the
+    // helper, which walks the snapshot and stamps it again. A chain_len past IC_MAX_CHAIN, the
+    // epoch payload, never matches.
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R1, l.obj_proto);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R2, l.ic_chain_len);
     fail.add(sljit_emit_cmp(c, SLJIT_GREATER, R0, 0, SLJIT_IMM, (long)hobject::IC_MAX_CHAIN));
-    Jumps walked;
-    for (long i = 0; i < hobject::IC_MAX_CHAIN; i++) {
-        if (i > 0) {
-            sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, m | R2, l.ic_chain_len);
-        }
-        walked.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, SLJIT_IMM, i));
-        fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
-        sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | R2, l.ic_chain);
-        fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, m | R3, l.chain_proto0 + i * 8));
-        sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R3, l.chain_shape0 + i * 4);
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R4, l.obj_shape);
-        fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, R3, 0));
-        sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R4, 0);
-        sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
-        fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object));
-        sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R4, l.obj_proto);
-    }
-    walked.bind(sljit_emit_label(c));
+    void* chained = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0);
     fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    void* unchained = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(chained, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, m | R2, l.ic_chain);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, m | R3, l.chain_proto0));
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | R3, l.chain_absent_epoch);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, m | self.heap, l.heap_proto_epoch));
+    sljit_set_label(unchained, sljit_emit_label(c));
     // Spare capacity, no hash table, not a prototype.
     sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R1, l.obj_prop_count);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, m | R1, l.obj_prop_capacity);
