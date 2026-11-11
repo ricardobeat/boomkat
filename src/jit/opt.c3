@@ -916,7 +916,6 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         opt_relearn(h, oc);
         return 0;
     }
-    oc.exits++;
     opt_note_exit_op(&h.opt, oc.f, (uint)(ds.curr_pc - ds.code_base));
     if (h.opt.log) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
@@ -924,6 +923,8 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         opt_log_fn(oc.f);
         io::eprintfn(" +%d %s %s", at, oc.f.code[at].op, ((OptExit)reason).label);
     }
+    if (opt_exit_transient(h, reason)) return 0;
+    oc.exits++;
     bool repeat = false;
     if (oc.f.opt_code == oc && oc.f.ic_entries != null) {
         uint at = (uint)(ds.curr_pc - ds.code_base);
@@ -990,6 +991,13 @@ fn bool opt_exit_bannable(long reason, bool inlined = false) {
     }
 }
 
+// Whether an exit says nothing about the body's speculation: a slow path taken while the collector
+// marks, when the baseline's fast paths leave to their helpers each value still to mark, each
+// allocation and each return. It is not counted against the body or its site.
+fn bool opt_exit_transient(Heap* h, long reason) @inline {
+    return reason == OptExit.SLOW_PATH.ordinal && h.gc_phase == heap::GcPhase.MARK;
+}
+
 // Count an exit of `oc` at word `pc` of `cf`; true at the OPT_SITE_EXITS-th exit at one site, which
 // discards the body: rebuilding it without those exits is better than taking them OPT_EXIT_MAX
 // times. Only a failed guard of one instruction is counted, since only that changes the next build.
@@ -1052,8 +1060,9 @@ fn void* opt_inline_exit(Dispatch* ds, OptCode* oc, long reason, OptInlineExit* 
         opt_relearn(h, oc);
         return vm::jit_inline_materialize(ds, site);
     }
-    oc.exits++;
     opt_note_exit_op(&h.opt, callee, site.pc);
+    if (opt_exit_transient(h, reason)) return vm::jit_inline_materialize(ds, site);
+    oc.exits++;
     // A site of an inlined body cannot be lowered generically: the next build leaves the call it is
     // in a call (inline_body_ok), as it does a call site that exited.
     bool repeat = oc.f.opt_code == oc && opt_exit_bannable(reason, true) && opt_note_site_exit(oc, callee, site.pc, reason, true);

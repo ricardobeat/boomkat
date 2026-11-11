@@ -752,8 +752,7 @@ fn void OptCg.emit_load_cap(&self, uint i, OptNode* n) {
     }
     self.exit_calls(i, OptExit.SLOW_PATH);
     if (n.rep == OptRep.NONE) {
-        self.a.publish(self.a.w.a);
-        self.exit_calls(i, OptExit.SLOW_PATH);
+        self.publish(i, self.a.w.a);
     } else if (n.rep == OptRep.OBJECT) {
         self.finish_object(i, n);
     } else {
@@ -879,8 +878,7 @@ fn void OptCg.emit_load_elem(&self, uint i, OptNode* n) {
     $endif
     self.exit_calls(i, OptExit.SLOW_PATH);
     if (n.rep == OptRep.NONE) {
-        a.publish(a.w.a);
-        self.exit_calls(i, OptExit.SLOW_PATH);
+        self.publish(i, a.w.a);
         return;
     }
     if (n.rep == OptRep.OBJECT) {
@@ -1120,6 +1118,40 @@ fn void OptCg.select_slot(&self, OptPoly* p) {
     }
 }
 
+// Mark the value in R0 for the collector (vm::jit_opt_shade), with the registers in use saved
+// around the call. R0 keeps the value.
+fn void OptCg.shade(&self, uint i) {
+    void* c = self.a.c;
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.heap, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_shade);
+    self.spill_live(i, false);
+}
+
+// Publish R0 into window slot `slot` as the baseline's store does, leaving for the baseline code
+// where that takes its slow path, except for an object the collector's mark has not reached,
+// which the store refuses: it is marked here and stored. A mark phase would otherwise turn each
+// such load into an exit, and the exits into a discarded body.
+fn void OptCg.publish(&self, uint i, uint slot) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    assert(a.call.len == 0);
+    a.publish(slot);
+    if (a.call.len == 0) return;
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    a.call.bind(sljit_emit_label(c));
+    a.call.len = 0;
+    sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+    sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal), i, OptExit.SLOW_PATH);
+    self.shade(i);
+    a.store(slot, R0);
+    a.track_heap_store(slot);
+    sljit_set_label(done, sljit_emit_label(c));
+}
+
 // The OBJECT result of a load, in R0: an object or an inert value, else leave for the baseline code.
 fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     void* c = self.a.c;
@@ -1129,27 +1161,16 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
     self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
-    void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
-    if (self.g.pinned(n)) {
-        // The slot is beyond the caller's frame, which the collector does not scan: the object is
-        // marked instead (vm::jit_opt_shade), with the registers in use saved around the call.
-        void* quiet = sljit_emit_jump(c, SLJIT_JUMP);
-        sljit_set_label(marking, sljit_emit_label(c));
-        self.spill_live(i, true);
-        sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_shade);
-        self.spill_live(i, false);
-        sljit_set_label(quiet, sljit_emit_label(c));
-    } else {
-        void* quiet = sljit_emit_jump(c, SLJIT_JUMP);
-        // While marking the object is published at once, which marks it as the baseline's store does.
-        sljit_set_label(marking, sljit_emit_label(c));
+    void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
+    // While marking the object is marked, and published at once unless its slot is beyond the
+    // caller's frame, which the collector does not scan.
+    self.shade(i);
+    if (!self.g.pinned(n)) {
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)n.home);
         a.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = PUBLISH_SUB });
         self.exit_at(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
-        sljit_set_label(quiet, sljit_emit_label(c));
     }
+    sljit_set_label(quiet, sljit_emit_label(c));
     sljit_set_label(inert, sljit_emit_label(c));
     self.def_obj(i, R0);
 }
@@ -1325,8 +1346,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
     if (chain && n.fidx != 0) self.chain_miss(n);
     self.exit_calls(i, OptExit.SHAPE);
     if (n.rep == OptRep.NONE) {
-        a.publish(a.w.a);
-        self.exit_calls(i, OptExit.SLOW_PATH);
+        self.publish(i, a.w.a);
     } else if (n.rep == OptRep.OBJECT) {
         self.finish_object(i, n);
     } else {
@@ -2048,8 +2068,7 @@ fn void OptCg.emit_copy_window(&self, uint i, OptNode* n) {
         self.finish_object(i, n);
         return;
     }
-    a.publish(n.home);
-    self.exit_calls(i, OptExit.SLOW_PATH);
+    self.publish(i, n.home);
 }
 
 // The guard of an inlined forwarding call: the value is the builtin function numbered n.imm (an
