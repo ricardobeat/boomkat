@@ -1076,19 +1076,35 @@ fn void OptCg.emit_typed_store(&self, uint i, OptNode* n, TypedKind kind, long f
     sljit_emit_fop1(c, SLJIT_MOV_F64 | f32, elem, kind.shift, fr, 0);
 }
 
-// The shape of the object in `obj` against the id its cell holds, which the heap clears when the
-// id goes out of use. Uses R2 and R3.
-fn void OptCg.guard_shape_cell(&self, int obj, uint shape) {
+// The id `shape` as the second operand of a 32-bit compare, its word in `w`. A shared shape is
+// pinned, so its id never names another, and is compared as a constant. A private shape dies with
+// its object: its id is read into R2 from a cell the heap clears when the id goes out of use.
+fn int OptCg.shape_operand(&self, uint shape, long* w) {
+    hobject::Shape* sh = self.h.get_shape(shape);
+    if (sh != null && sh.parent != hobject::PRIVATE_SHAPE_PARENT) {
+        sh.pinned = true;
+        *w = (long)shape;
+        return SLJIT_IMM;
+    }
     uint* cell = &self.oc.cells[self.oc.cell_count++];
     *cell = shape;
-    sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | obj, self.a.lay.obj_shape);
     sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM, (long)(usz)cell);
-    self.a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, R2, 0));
+    *w = 0;
+    return R2;
+}
+
+// The shape of the object in `obj` against `shape`, leaving for the baseline code on any other.
+// Uses R2 and R3.
+fn void OptCg.guard_shape(&self, int obj, uint shape) {
+    sljit_emit_op1(self.a.c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | obj, self.a.lay.obj_shape);
+    long w;
+    int op = self.shape_operand(shape, &w);
+    self.a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, op, w));
 }
 
 // The slot address in R0 of the property of the plain object in R1, whose shape is one of those
-// `p` names: the shapes are compared in order against cells the heap clears when an id goes out of
-// use, and each has the slot its property has there. A shape none of them matches leaves for the
+// `p` names: the shapes are compared in order (shape_operand), and each has the slot its property
+// has there. A shape none of them matches leaves for the
 // baseline code. Uses R0 to R3.
 fn void OptCg.select_slot(&self, OptPoly* p) {
     void* c = self.a.c;
@@ -1097,13 +1113,12 @@ fn void OptCg.select_slot(&self, OptPoly* p) {
     void*[OPT_POLY_MAX] hit;
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, a.lay.obj_shape);
     for (uint i = 0; i < k; i++) {
-        uint* cell = &self.oc.cells[self.oc.cell_count++];
-        *cell = p.shape[i];
-        sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM, (long)(usz)cell);
+        long w;
+        int op = self.shape_operand(p.shape[i], &w);
         if (i + 1 < k) {
-            hit[i] = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R3, 0, R2, 0);
+            hit[i] = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, R3, 0, op, w);
         } else {
-            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, R2, 0));
+            a.call.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, op, w));
         }
     }
     // The slot of the last shape is the fall-through body; shapes with that slot join it.
@@ -1202,6 +1217,10 @@ fn void* OptCg.settled_chain_slot(&self, hobject::ICEntry* ic) {
     if (!ic.has_proto || ic.chain_len != hobject::IC_CHAIN_EPOCH || ic.chain == null || ic.prop_flags.is_accessor) return null;
     hobject::ICChainEpoch* e = &ic.chain.epoch;
     if (e.value != self.h.prototype_epoch || e.owner == null || e.first == null || ic.prop_idx >= e.owner.prop_count) return null;
+    // The receiver's shape as the entry saw it, shared so that its id can be pinned.
+    hobject::Shape* sh = self.h.get_shape(ic.shape_id);
+    if (sh == null || sh.generation != ic.shape_gen || sh.parent == hobject::PRIVATE_SHAPE_PARENT) return null;
+    sh.pinned = true;
     void*[4] other;
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
     other[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)ic.shape_id);
@@ -1382,7 +1401,7 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
             self.select_slot(poly);
             known_slot = true;
         } else {
-            self.guard_shape_cell(R1, poly.shape[0]);
+            self.guard_shape(R1, poly.shape[0]);
         }
     }
     if (known_slot) {
@@ -1577,7 +1596,7 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
             self.select_slot(poly);
             known_slot = true;
         } else {
-            self.guard_shape_cell(R1, poly.shape[0]);
+            self.guard_shape(R1, poly.shape[0]);
         }
     }
     if (!known_slot) {
