@@ -93,12 +93,10 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     uint chain_len = 0;
     void*[hobject::IC_MAX_CHAIN] chain_protos;
     uint[hobject::IC_MAX_CHAIN] chain_shapes;
-    bool dict_proto = false;
+    bool dict_receiver = !is_own && hobj.in_dict_mode(heap);
+    bool dict_proto = dict_receiver;
     if (!is_own) {
-        if (hobj.in_dict_mode(heap)) {
-            if (!hobj.get_shape(heap).dict_settled()) return false;
-            dict_proto = true;
-        }
+        if (dict_receiver && !hobj.get_shape(heap).dict_settled()) return false;
         HObject* walk = hobj;
         while (chain_len < hobject::IC_MAX_CHAIN) {
             HObject* next = walk.prototype;
@@ -144,7 +142,7 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, heap);
     if (epoch_chain) {
         // A dictionary receiver is skipped like a prototype, and observed like one.
-        if (dict_proto) hobj.gc.prototype_observed = true;
+        if (dict_receiver) hobj.gc.prototype_observed = true;
         for (uint i = 0; i < chain_len; i++) {
             ((HObject*)chain_protos[i]).gc.prototype_observed = true;
         }
