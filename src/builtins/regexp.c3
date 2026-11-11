@@ -1922,6 +1922,68 @@ fn void regexp_split_pristine(BuiltinContext* ctx, HObject* rx, HString* s_hstr,
     ctx.result_object(arr);
 }
 
+// SpeciesConstructor(rx, %RegExp%) into *out. False when it threw.
+fn bool regexp_species_constructor(BuiltinContext* ctx, HObject* rx, TVal* out) {
+    Heap* heap = ctx.heap;
+    out.set_undefined();
+    // Resolve %RegExp% default constructor.
+    // The constructor object is stored on RegExp.prototype as its "constructor"
+    // property, this is available directly via heap.regexp_proto.
+    TVal default_ctor_tv; default_ctor_tv.set_undefined();
+    // Look up %RegExp% from the global environment via the VM's global_env.
+    // ctx.global_env is null when the builtin is called via call_fn (internal
+    // path), but ctx.vm always holds the Vm* pointer when available.
+    EnvRecord* genv = ctx.global_env;
+    if (genv == null && ctx.vm != null) {
+        genv = ((vm::Vm*)ctx.vm).global_env;
+    }
+    if (genv != null) {
+        HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
+        if (regexp_gkey != null) {
+            TVal? gv = env::env_get(genv, regexp_gkey);
+            if (try rgv = gv) { default_ctor_tv = rgv; }
+        }
+    }
+
+    HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
+    TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
+    if (ctx.should_throw) return false;
+    TVal ctor_tv; ctor_tv.set_undefined();
+    if (try cv = ctor_opt) { ctor_tv = cv; }
+
+    if (ctor_tv.is_undefined()) {
+        // Step 4: C is undefined → return defaultConstructor (%RegExp%).
+        *out = default_ctor_tv;
+    } else {
+        if (!ctor_tv.is_object() || ctor_tv.get_heapptr() == null) {
+            builtin_throw_no_result_change(ctx, heap.type_err_proto,
+                "constructor is not an object");
+            return false;
+        }
+        HObject* ctor_obj = (HObject*)ctor_tv.get_heapptr();
+        HString* species_sym = ensure_species_symbol(heap);
+        if (species_sym != null) {
+            TVal? sp_opt = builtins_generic_get(ctor_obj, species_sym, ctx);
+            if (ctx.should_throw) return false;
+            if (try spv = sp_opt) {
+                if (!spv.is_undefined() && !spv.is_null()) {
+                    // Step 5: species is the constructor to use.
+                    *out = spv;
+                } else {
+                    // species is null/undefined → return defaultConstructor.
+                    *out = default_ctor_tv;
+                }
+            } else {
+                // @@species not found → return defaultConstructor.
+                *out = default_ctor_tv;
+            }
+        } else {
+            *out = default_ctor_tv;
+        }
+    }
+    return true;
+}
+
 fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     HObject* rx = regexp_get_symbol_this(ctx);
     if (rx == null) return;
@@ -1976,64 +2038,8 @@ fn void builtin_regexp_proto_symbol_split(BuiltinContext* ctx) {
     //   5. Return species.
     // We always track the resolved constructor in species_ctor_tv.
     // For the default path (%RegExp%), look it up from global_env.
-    TVal species_ctor_tv; species_ctor_tv.set_undefined();
-    {
-        // Resolve %RegExp% default constructor.
-        // The constructor object is stored on RegExp.prototype as its "constructor"
-        // property, this is available directly via heap.regexp_proto.
-        TVal default_ctor_tv; default_ctor_tv.set_undefined();
-        // Look up %RegExp% from the global environment via the VM's global_env.
-        // ctx.global_env is null when the builtin is called via call_fn (internal
-        // path), but ctx.vm always holds the Vm* pointer when available.
-        EnvRecord* genv = ctx.global_env;
-        if (genv == null && ctx.vm != null) {
-            genv = ((vm::Vm*)ctx.vm).global_env;
-        }
-        if (genv != null) {
-            HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
-            if (regexp_gkey != null) {
-                TVal? gv = env::env_get(genv, regexp_gkey);
-                if (try rgv = gv) { default_ctor_tv = rgv; }
-            }
-        }
-
-        HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
-        TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
-        if (ctx.should_throw) return;
-        TVal ctor_tv; ctor_tv.set_undefined();
-        if (try cv = ctor_opt) { ctor_tv = cv; }
-
-        if (ctor_tv.is_undefined()) {
-            // Step 4: C is undefined → return defaultConstructor (%RegExp%).
-            species_ctor_tv = default_ctor_tv;
-        } else {
-            if (!ctor_tv.is_object() || ctor_tv.get_heapptr() == null) {
-                builtin_throw_no_result_change(ctx, heap.type_err_proto,
-                    "constructor is not an object");
-                return;
-            }
-            HObject* ctor_obj = (HObject*)ctor_tv.get_heapptr();
-            HString* species_sym = ensure_species_symbol(heap);
-            if (species_sym != null) {
-                TVal? sp_opt = builtins_generic_get(ctor_obj, species_sym, ctx);
-                if (ctx.should_throw) return;
-                if (try spv = sp_opt) {
-                    if (!spv.is_undefined() && !spv.is_null()) {
-                        // Step 5: species is the constructor to use.
-                        species_ctor_tv = spv;
-                    } else {
-                        // species is null/undefined → return defaultConstructor.
-                        species_ctor_tv = default_ctor_tv;
-                    }
-                } else {
-                    // @@species not found → return defaultConstructor.
-                    species_ctor_tv = default_ctor_tv;
-                }
-            } else {
-                species_ctor_tv = default_ctor_tv;
-            }
-        }
-    }
+    TVal species_ctor_tv;
+    if (!regexp_species_constructor(ctx, rx, &species_ctor_tv)) return;
 
     // Step 7: Let flags be ? ToString(? Get(rx, "flags")).
     HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
@@ -2294,54 +2300,8 @@ fn void builtin_regexp_proto_symbol_matchAll(BuiltinContext* ctx) {
     //    The spec doesn't throw here; the Construct call below triggers IsRegExp on rx.
 
     // 3. Let C be ? SpeciesConstructor(R, %RegExp%).
-    TVal species_ctor_tv; species_ctor_tv.set_undefined();
-    {
-        TVal default_ctor_tv; default_ctor_tv.set_undefined();
-        EnvRecord* genv = ctx.global_env;
-        if (genv == null && ctx.vm != null) {
-            genv = ((vm::Vm*)ctx.vm).global_env;
-        }
-        if (genv != null) {
-            HString* regexp_gkey = builtin_intern_string(heap, "RegExp");
-            if (regexp_gkey != null) {
-                TVal? gv = env::env_get(genv, regexp_gkey);
-                if (try rgv = gv) { default_ctor_tv = rgv; }
-            }
-        }
-
-        HString* ctor_key = heap.str(heap::BuiltinStr.CONSTRUCTOR);
-        TVal? ctor_opt = builtins_generic_get(rx, ctor_key, ctx);
-        if (ctx.should_throw) return;
-        TVal ctor_tv; ctor_tv.set_undefined();
-        if (try cv = ctor_opt) { ctor_tv = cv; }
-
-        if (ctor_tv.is_undefined()) {
-            species_ctor_tv = default_ctor_tv;
-        } else {
-            if (!ctor_tv.is_object() || ctor_tv.get_heapptr() == null) {
-                builtin_throw_no_result_change(ctx, heap.type_err_proto,
-                    "constructor is not an object");
-                return;
-            }
-            HObject* ctor_obj = (HObject*)ctor_tv.get_heapptr();
-            HString* species_sym = ensure_species_symbol(heap);
-            if (species_sym != null) {
-                TVal? sp_opt = builtins_generic_get(ctor_obj, species_sym, ctx);
-                if (ctx.should_throw) return;
-                if (try spv = sp_opt) {
-                    if (!spv.is_undefined() && !spv.is_null()) {
-                        species_ctor_tv = spv;
-                    } else {
-                        species_ctor_tv = default_ctor_tv;
-                    }
-                } else {
-                    species_ctor_tv = default_ctor_tv;
-                }
-            } else {
-                species_ctor_tv = default_ctor_tv;
-            }
-        }
-    }
+    TVal species_ctor_tv;
+    if (!regexp_species_constructor(ctx, rx, &species_ctor_tv)) return;
 
     // 4. Let flags be ? ToString(? Get(R, "flags")).
     HString* flags_key = heap.str(heap::BuiltinStr.FLAGS);
