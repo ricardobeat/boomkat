@@ -1351,7 +1351,7 @@ fn Token? Lexer.scan_number(&self) {
     // Legacy octal — 0777 is 511 in sloppy code (ECMA-262 §B.1.1). When the span
     // is a pure legacy octal (digits 0-7 only, no fractional dot, no exponent),
     // the value is base-8 and js_atod does not see it at all.
-    bool octal_resolved = false;
+    bool resolved = false;
     if (is_legacy_octal_like && !self.strict_mode) {
         bool has_non_octal = false;
         bool has_frac_or_exp = false;
@@ -1362,11 +1362,25 @@ fn Token? Lexer.scan_number(&self) {
         }
         if (!has_non_octal && !has_frac_or_exp) {
             value = parse_octal_double(self.source[start_pos:self.pos - start_pos], (usz)(self.pos - start_pos));
-            octal_resolved = true;
+            resolved = true;
         }
     }
 
-    if (!octal_resolved) {
+    // A short run of decimal digits is an exact integer: most literals are.
+    uint digit_count = self.pos - start_pos;
+    if (!is_legacy_octal_like && digit_count <= 15) {
+        ulong whole = 0;
+        uint i = 0;
+        for (; i < digit_count && is_digit(self.source[start_pos + i]); i++) {
+            whole = whole * 10 + (ulong)(self.source[start_pos + i] - '0');
+        }
+        if (i == digit_count) {
+            value = (double)whole;
+            resolved = true;
+        }
+    }
+
+    if (!resolved) {
         // Use the dtoa parser for precise parsing (handles subnormals, avoids frac*=0.1 rounding).
         // It is correctly rounded, so "8.3 - 1 === 7.3" is true and literals round-trip
         // consistently with parseFloat().
