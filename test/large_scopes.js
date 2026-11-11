@@ -47,6 +47,23 @@ var caps = f();
 assert(caps[0] === SUM && caps[1] === SUM + N && caps[2] === (SUM + N) + 'undefined' && caps[3] === 1 && caps[4] === N,
     'closures over every local of a large function');
 
+// A class with thousands of private names, a nested class that shadows some, and an eval that inherits them.
+f = new Function('class Big {' + seq(N, i => `#f${i} = ${i}; #m${i}() { return this.#f${i}; } static #s${i} = ${i}; get #a${i}() { return ${i}; } set #a${i}(v) { this.#f${i} = v; }`)
+    + 'sum() { return ' + seq(N, i => `this.#m${i}() + this.#a${i}`, '+') + '; }'
+    + 'has(o) { return #f0 in o && #m2999 in o; }'
+    + 'set() { this.#a7 = 70; return this.#f7; }'
+    + 'viaEval() { return eval("this.#f2999 + Big.#s2999"); }'
+    + 'inner() { var big = this; return new class { #f1 = "inner"; #only = 1; get() { return this.#f1 + this.#only + big.#f2; } }().get(); }'
+    + '} return new Big();');
+var big = f();
+assert(big.sum() === 2 * SUM && big.has(big) && !big.has({}) && big.set() === 70, 'thousands of private names');
+assert(big.viaEval() === 2 * 2999 && big.inner() === 'inner12', 'private names through eval and a nested class');
+var dup = 0;
+try { new Function('class D {' + seq(N, i => `#f${i};`) + '#f1500; }'); } catch (e) { dup += e instanceof SyntaxError; }
+try { new Function('class D {' + seq(N, i => `get #f${i}() {}`) + 'get #f1500() {} }'); } catch (e) { dup += e instanceof SyntaxError; }
+try { new Function('class D {' + seq(N, i => `#f${i};`) + 'm() { return this.#missing; } }'); } catch (e) { dup += e instanceof SyntaxError; }
+assert(dup === 3, 'duplicate and undeclared private names among many');
+
 f = new Function(seq(N, i => `class C${i} { m() { return ${i}; } }`) + 'return new C0().m() + new C2999().m();');
 assert(f() === 2999, 'classes');
 

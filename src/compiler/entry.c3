@@ -220,7 +220,7 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
     // requires for eval without an enclosing PrivateEnvironment.
     if (parent_private_names != null && parent_private_name_count > 0) {
         // The caller stashed a snapshot whose `name`/`slot_name`/
-        // `brand_slot_name` slices point at interned HString data (stable).
+        // `brand_slot_name` slices point into the snapshot itself.
         //
         // We COPY the inherited entries into a freshly-allocated table that
         // this context OWNS. Borrowing the snapshot's buffer directly (à la

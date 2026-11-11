@@ -2028,8 +2028,8 @@ struct CompiledFunction {
     // from a parent class body, and null otherwise.
     //
     // Heap.free_compiled_funcs frees this alongside the other sub-arrays. Each
-    // PrivateNameEntry's strings point at interned HString data that outlives
-    // the snapshot, so copying the entry structs is safe.
+    // PrivateNameEntry's strings point at text held after the entries, in the
+    // same allocation.
     //
     // Typed void* because PrivateNameEntry lives in the compiler module, which
     // bytecode.c3 does not import. The compiler and builtin_eval both cast.

@@ -18,6 +18,7 @@ struct EarlyLabel {
 
 struct PrivateName {
     uint atom;
+    uint shadowed;   // private_top's entry for the atom before this declaration
     bool is_static;
     char accessor;   // 0 not an accessor, 1 getter, 2 setter, 3 getter and setter
 }
@@ -48,6 +49,8 @@ struct Early {
     uint breakable;      // enclosing loops and switches in the current function
     uint iterating;      // enclosing loops
     Vec{PrivateName} privates;
+    // By atom, one plus the index in `privates` of its innermost declaration.
+    Vec{uint} private_top;
     Vec{uint} names;           // scratch: BoundNames of a parameter list or catch parameter
     bool failed;
     uint err_pos;
@@ -116,6 +119,7 @@ fn void Early.init(&self, Ast* ast) {
 fn void Early.free(&self) {
     self.labels.free();
     self.privates.free();
+    self.private_top.free();
     self.names.free();
     mem::free(self.strict_bits.ptr);
     mem::free(self.keyword_bits.ptr);
@@ -173,7 +177,7 @@ fn bool Early.run(&self, uint root, ParseOptions opts = {}) {
     self.ctx.strict = (f & PROGRAM_STRICT) != 0;
     self.ctx.await_reserved = self.is_module;
     self.ctx.ban_arguments = opts.in_class_field_init;
-    foreach (name : opts.private_names) self.privates.push({ .atom = self.ast.atoms.intern(name) });
+    foreach (name : opts.private_names) self.declare_private(self.ast.atoms.intern(name));
     self.list(self.ast.lhs.data[root]);
     return !self.failed;
 }
@@ -412,15 +416,20 @@ fn void Early.function(&self, uint n, bool is_arrow) {
 
 // ---- classes ----
 
-fn bool Early.is_private_declared(&self, uint atom) {
-    for (sz i = 0; i < self.privates.len; i++) {
-        if (self.privates.data[i].atom == atom) return true;
-    }
-    return false;
+// One plus the index in `privates` of the innermost declaration of `atom`, or 0.
+fn uint Early.private_decl(&self, uint atom) @inline {
+    return atom < self.private_top.len ? self.private_top.data[atom] : 0;
+}
+
+fn PrivateName* Early.declare_private(&self, uint atom) {
+    while (self.private_top.len <= atom) self.private_top.push(0);
+    self.privates.push({ .atom = atom, .shadowed = self.private_top.data[atom] });
+    self.private_top.data[atom] = (uint)self.privates.len;
+    return &self.privates.data[self.privates.len - 1];
 }
 
 fn void Early.private_ref(&self, uint atom, uint at) {
-    if (!self.is_private_declared(atom)) {
+    if (self.private_decl(atom) == 0) {
         self.fail_at(at, "private name is not declared in an enclosing class");
     }
 }
@@ -444,7 +453,12 @@ fn void Early.class_(&self, uint n) {
     uint members = self.ast.field(rec, CLS_MEMBERS);
     uint count = self.ast.list_len(members);
     uint mark = (uint)self.privates.len;
-    defer self.privates.truncate((sz)mark);
+    defer {
+        while (self.privates.len > mark) {
+            PrivateName* p = &self.privates.data[--self.privates.len];
+            self.private_top.data[p.atom] = p.shadowed;
+        }
+    }
     bool has_ctor = false;
     // Declare the private names first: a use may precede its declaration.
     for (uint i = 0; i < count && !self.failed; i++) {
@@ -463,19 +477,19 @@ fn void Early.class_(&self, uint n) {
             if ((f & MEMBER_SET) != 0) acc = 2;
         }
         bool is_static = (f & MEMBER_STATIC) != 0;
-        bool found = false;
-        for (sz j = (sz)mark; j < self.privates.len; j++) {
-            PrivateName* p = &self.privates.data[j];
-            if (p.atom != atom) continue;
-            // A getter and a setter of the same name and staticness may share it.
-            if (acc != 0 && p.accessor != 0 && p.accessor != acc && p.accessor != 3 && p.is_static == is_static) {
-                p.accessor = 3;
-                found = true;
-                break;
-            }
+        uint declared = self.private_decl(atom);
+        if (declared <= mark) {
+            PrivateName* p = self.declare_private(atom);
+            p.is_static = is_static;
+            p.accessor = acc;
+            continue;
+        }
+        PrivateName* p = &self.privates.data[declared - 1];
+        // A getter and a setter of the same name and staticness may share it.
+        if (acc == 0 || p.accessor == 0 || p.accessor == acc || p.accessor == 3 || p.is_static != is_static) {
             return self.fail_at(at, "duplicate private name declaration");
         }
-        if (!found) self.privates.push({ .atom = atom, .is_static = is_static, .accessor = acc });
+        p.accessor = 3;
     }
     for (uint i = 0; i < count && !self.failed; i++) {
         uint m = self.ast.list_item(members, i);

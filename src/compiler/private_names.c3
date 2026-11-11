@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast;
 import boomkat::types;
 import boomkat::lexer;
 import boomkat::bytecode;
@@ -88,9 +89,46 @@ fn void CompilerContext.push_private_scope(&self) {
 
 // Pop the innermost private-name scope, discarding names declared inside it.
 fn void CompilerContext.pop_private_scope(&self) {
-    if (try scope = self.private_name_table.scopes.pop()) {
-        self.private_name_table.count = scope.start;
+    PrivateNameTable* t = self.private_name_table;
+    if (try scope = t.scopes.pop()) {
+        // The newest entry heads its chain, so the names leave in reverse.
+        while (t.linked > scope.start) {
+            PrivateNameEntry* e = &t.entries[--t.linked];
+            t.heads[e.hash & (t.heads_cap - 1)] = e.next;
+        }
+        t.count = scope.start;
     }
+}
+
+// The innermost entry named `canonical` at index `from` or above, or null.
+// Entries declared since the last search join their chains first.
+fn PrivateNameEntry*? CompilerContext.private_entry(&self, char[] canonical, uint from = 0) {
+    PrivateNameTable* t = self.private_name_table;
+    if (t.count <= from) return null;
+    if (t.count > t.heads_cap) {
+        uint cap = t.heads_cap == 0 ? INITIAL_PRIVATE_NAMES : t.heads_cap;
+        while (cap < t.count) cap *= 2;
+        Heap* h = (Heap*)self.heap;
+        uint* heads = (uint*)h.realloc_func(h.heap_udata, t.heads, (usz)cap * uint::size);
+        if (heads == null) return self.fail("out of memory")~;
+        mem::clear(heads, (sz)cap * uint::size);
+        t.heads = heads;
+        t.heads_cap = cap;
+        t.linked = 0;
+    }
+    for (; t.linked < t.count; t.linked++) {
+        PrivateNameEntry* e = &t.entries[t.linked];
+        e.hash = ast::hash_bytes(e.name);
+        uint* head = &t.heads[e.hash & (t.heads_cap - 1)];
+        e.next = *head;
+        *head = t.linked + 1;
+    }
+    uint hash = ast::hash_bytes(canonical);
+    for (uint i = t.heads[hash & (t.heads_cap - 1)]; i > from; i = t.entries[i - 1].next) {
+        PrivateNameEntry* e = &t.entries[i - 1];
+        if (e.hash == hash && str_eq(e.name, canonical)) return e;
+    }
+    return null;
 }
 
 // The innermost open class body, or a zero scope (start 0, class id 0) when
@@ -112,33 +150,21 @@ fn PrivateNameEntry*? CompilerContext.declare_private_name(&self, char[] name) {
     // interned forms.
     char[] stable_name = self.intern_slot_name(name);
     PrivateNameTable* t = self.private_name_table;
-    uint scope_begin = self.innermost_private_scope().start;
-    for (uint i = scope_begin; i < t.count; i++) {
-        if (str_eq(t.entries[i].name, stable_name)) {
-            return COMPILE_ERROR~;  // duplicate declaration
-        }
+    if (self.private_entry(stable_name, self.innermost_private_scope().start)! != null) {
+        return COMPILE_ERROR~;  // duplicate declaration
     }
     self.ensure_private_name_cap();
     if (t.count >= t.cap) {
         return COMPILE_ERROR~;
     }
-    uint idx = t.count;
-    // `stable_name` points at interned HString data, which settles the form
-    // problem above for decoded and source-slice names alike.
-    t.entries[idx].name = stable_name;
-    t.entries[idx].is_method = false;
-    t.entries[idx].has_getter = false;
-    t.entries[idx].has_setter = false;
-
     // Lexical name such as "#priv:3:foo". A '#' cannot start a source
-    // identifier, so user code cannot collide with it. The slice is interned
-    // because the lex-binding tracker and PrivateNameEntry keep it.
-    uint class_id = self.innermost_private_scope().class_id;
-    char[] slot_name = self.private_slot_name(class_id, stable_name);
-
+    // identifier, so user code cannot collide with it.
+    char[] slot_name = self.private_slot_name(self.innermost_private_scope().class_id, stable_name);
     self.declare_priv_slot(slot_name);
-    t.entries[idx].slot_name = slot_name;
-
+    uint idx = t.count;
+    // `stable_name` is canonical, which settles the form problem above for
+    // decoded and source-slice names alike.
+    t.entries[idx] = { .name = stable_name, .slot_name = slot_name };
     t.count++;
     return &t.entries[idx];
 }
@@ -183,14 +209,8 @@ fn void* CompilerContext.intern_private_binding_name(&self, char[] name) {
 // `name` is re-interned before comparison, since stored names are interned too.
 fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
     char[] canonical_name = self.intern_slot_name(name);
-    PrivateNameTable* t = self.private_name_table;
-    uint i = t.count;
-    while (i > 0) {
-        i--;
-        if (str_eq(t.entries[i].name, canonical_name)) {
-            return &t.entries[i];
-        }
-    }
+    PrivateNameEntry* found = self.private_entry(canonical_name)!;
+    if (found != null) return found;
     char[128] buf;
     usz n = (usz)(io::bprintf(&buf, "private name '#%s' is not declared", (String)name) ?? buf[:0]).len;
     self.record_error(buf[:n]);
@@ -203,22 +223,18 @@ fn PrivateNameEntry*? CompilerContext.resolve_private_name(&self, char[] name) {
 // #x`). Any other re-use of the name (field, method, or a second getter/
 // setter of the same kind) is a duplicate-declaration error.
 fn void? CompilerContext.declare_or_merge_private_accessor(&self, char[] name, bool is_getter, bool is_setter, bool is_static_decl) {
-    PrivateNameTable* t = self.private_name_table;
-    uint scope_begin = self.innermost_private_scope().start;
-    for (uint i = scope_begin; i < t.count; i++) {
-        if (str_eq(t.entries[i].name, name)) {
-            PrivateNameEntry* e = &t.entries[i];
-            // ECMA-262 class early errors: both halves of a private accessor must
-            // agree on static-ness, so `get #f` with `static set #f` is an error.
-            bool mergeable = e.is_method
-                && e.is_static == is_static_decl
-                && ((is_getter && e.has_getter == false && e.has_setter)
-                    || (is_setter && e.has_setter == false && e.has_getter));
-            if (!mergeable) return COMPILE_ERROR~;
-            if (is_getter) e.has_getter = true;
-            if (is_setter) e.has_setter = true;
-            return;
-        }
+    PrivateNameEntry* e = self.private_entry(self.intern_slot_name(name), self.innermost_private_scope().start)!;
+    if (e != null) {
+        // ECMA-262 class early errors: both halves of a private accessor must
+        // agree on static-ness, so `get #f` with `static set #f` is an error.
+        bool mergeable = e.is_method
+            && e.is_static == is_static_decl
+            && ((is_getter && e.has_getter == false && e.has_setter)
+                || (is_setter && e.has_setter == false && e.has_getter));
+        if (!mergeable) return COMPILE_ERROR~;
+        if (is_getter) e.has_getter = true;
+        if (is_setter) e.has_setter = true;
+        return;
     }
     PrivateNameEntry* entry = self.declare_private_name(name)!;
     entry.is_method = true;

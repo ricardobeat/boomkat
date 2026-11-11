@@ -908,6 +908,9 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     pnt.entries = (PrivateNameEntry*)h.alloc_func(h.heap_udata, (usz)(INITIAL_PRIVATE_NAMES * PrivateNameEntry::size));
     pnt.count = 0;
     pnt.cap = INITIAL_PRIVATE_NAMES;
+    pnt.heads = null;
+    pnt.heads_cap = 0;
+    pnt.linked = 0;
     pnt.scopes.init(mem);
     self.private_name_table = pnt;
     self.owns_private_names = true;
@@ -955,14 +958,7 @@ fn void CompilerContext.cleanup(&self) {
     if (self.b33_hoisted_names != null) { h.free_func(h.heap_udata, self.b33_hoisted_names); self.b33_hoisted_names = null; }
     if (self.b33_hoisted_regs != null) { h.free_func(h.heap_udata, self.b33_hoisted_regs); self.b33_hoisted_regs = null; }
     if (self.b33_hoisted_pcs != null) { h.free_func(h.heap_udata, self.b33_hoisted_pcs); self.b33_hoisted_pcs = null; }
-    if (self.owns_private_names && self.private_name_table != null) {
-        if (self.private_name_table.entries != null) {
-            h.free_func(h.heap_udata, self.private_name_table.entries);
-        }
-        self.private_name_table.scopes.free();
-        h.free_func(h.heap_udata, self.private_name_table);
-    }
-    self.private_name_table = null;
+    self.release_private_names();
     if (self.declared_global_name_idxs.is_initialized()) self.declared_global_name_idxs.free();
     if (self.hoisted_fn_set.is_initialized()) self.hoisted_fn_set.free();
     self.slot_global_name_idxs.free();
@@ -981,18 +977,23 @@ fn void CompilerContext.cleanup(&self) {
     self.patches.free();
 }
 
+// Give up the private-names table, freeing it when this context owns it.
+fn void CompilerContext.release_private_names(&self) {
+    PrivateNameTable* t = self.private_name_table;
+    self.private_name_table = null;
+    if (!self.owns_private_names || t == null) return;
+    Heap* h = (Heap*)self.heap;
+    if (t.entries != null) h.free_func(h.heap_udata, t.entries);
+    if (t.heads != null) h.free_func(h.heap_udata, t.heads);
+    t.scopes.free();
+    h.free_func(h.heap_udata, t);
+}
+
 // Borrow the private-names table from an enclosing context. Used by methods, default-parameter
 // thunks and arrow bodies compiled for a class element, which only resolve private names and never
 // declare into the table. Frees this context's own (still-empty) buffer first.
 fn void CompilerContext.adopt_private_names(&self, CompilerContext* parent) {
-    if (self.owns_private_names && self.private_name_table != null) {
-        Heap* h = (Heap*)self.heap;
-        if (self.private_name_table.entries != null) {
-            h.free_func(h.heap_udata, self.private_name_table.entries);
-        }
-        self.private_name_table.scopes.free();
-        h.free_func(h.heap_udata, self.private_name_table);
-    }
+    self.release_private_names();
     // Share the parent's table by pointer, so growth from a nested class's private declarations
     // (which may reallocate entries) is visible to both.
     self.private_name_table = parent.private_name_table;
@@ -2111,12 +2112,24 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         && self.private_name_table.entries != null) {
         uint snap_count = self.private_name_table.count;
         usz snap_bytes = (usz)snap_count * PrivateNameEntry::size;
-        PrivateNameEntry* snap = (PrivateNameEntry*)h.alloc_func(h.heap_udata, snap_bytes);
+        // The entries' names live in this compile's lexer arena, so the
+        // snapshot carries its own copy of the text after the entries.
+        usz text_bytes = 0;
+        foreach (&e : self.private_name_table.entries[:snap_count]) {
+            foreach (part : e.names()) text_bytes += part.len;
+        }
+        PrivateNameEntry* snap = (PrivateNameEntry*)h.alloc_func(h.heap_udata, snap_bytes + text_bytes);
         if (snap != null) {
-            // memcpy the entire entry table, every entry's name/slot_name/
-            // brand_slot_name slices point at interned HString data (stable),
-            // so the byte-level copy is safe.
             mem::copy(snap, self.private_name_table.entries, (sz)(snap_bytes));
+            char* text = (char*)snap + snap_bytes;
+            foreach (&e : snap[:snap_count]) {
+                foreach (part : e.names()) {
+                    if (part.len == 0) continue;
+                    mem::copy(text, part.ptr, part.len);
+                    *part = text[:part.len];
+                    text += part.len;
+                }
+            }
             func.eval_private_names = (void*)snap;
             func.eval_private_name_count = snap_count;
         }
@@ -2184,6 +2197,13 @@ struct ClassMethod {
     // instead of LDCONST from `name`/`computed_key_*`.
     bool   is_private;
     char[] priv_slot_name;          // e.g. "#priv:3:foo", the name's own symbol
+    uint   priv_entry;              // the name's index in the private-name table
+}
+
+// Every name an entry holds, each a slice of the lexer arena.
+fn char[]*[6] PrivateNameEntry.names(&self) {
+    return { &self.name, &self.slot_name, &self.brand_slot_name, &self.method_closure_slot_name,
+             &self.getter_closure_slot_name, &self.setter_closure_slot_name };
 }
 
 // ============================================================================
@@ -2212,6 +2232,11 @@ struct PrivateNameTable {
     PrivateNameEntry* entries;
     uint count;
     uint cap;
+    // Entries chained by name hash, newest first: per bucket, one plus the
+    // index of its first entry. Entries [0, linked) are on the chains.
+    uint* heads;
+    uint heads_cap;
+    uint linked;
     // Open class bodies, innermost last. Each class pushes one around its body
     // and pops it before the context that pushed it resumes, so every context
     // sharing the table sees the class nesting at its own point in the source.
@@ -2231,10 +2256,12 @@ struct PrivateScope {
 // the runtime hidden-symbol value for this name, fresh per class evaluation.
 struct PrivateNameEntry {
     char[] name;         // e.g. "foo" (without '#')
+    uint   hash;         // of `name`, set when the entry joins its chain
+    uint   next;         // one plus the index of the next entry on the chain
     // Lexical binding name of this name's symbol slot, e.g. "#priv:3:foo"
     // (unique per class body via a compile-time class id, so sibling and
-    // nested classes never collide). Points at interned HString data,
-    // stable storage, so any CompilerContext (method body, __field_init__)
+    // nested classes never collide). Lives in the lexer arena for the
+    // whole compilation, so any CompilerContext (method body, __field_init__)
     // can add it to its OWN constant pool: constant indices are context-
     // relative and must never cross function boundaries.
     char[] slot_name;

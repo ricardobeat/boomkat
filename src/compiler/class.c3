@@ -637,7 +637,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             // `entry` points into the shared private-name table's `entries`
             // buffer; a nested class inside the initializer can
             // declare private names and grow (realloc) that buffer, dangling
-            // `entry`. The slot_name slice itself is interned (stable), so
+            // `entry`. The slot_name slice itself is in the lexer arena, so
             // copying the slice is enough, we never touch `entry` again after
             // the initializer compiles.
             char[] entry_slot_name = entry.slot_name;
@@ -1164,6 +1164,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
             if (is_private_member) {
                 PrivateNameEntry* pe = self.resolve_private_name(priv_member_name)!;
                 m.priv_slot_name = pe.slot_name;
+                m.priv_entry = (uint)(pe - self.private_name_table.entries);
             }
             if (is_static && !is_private_member && method_key_name == "name") {
                 class_has_static_name = true;
@@ -1366,17 +1367,9 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
         // re-install it on each instance (return-override case). See the
         // closure-slot fields on PrivateNameEntry in context.c3.
         if (m.is_private && !m.is_static) {
-            // Find the owning entry by its interned slot_name, since the
-            // ClassMethod does not keep its source name.
-            char[] mclo_slot = "";
-            for (uint pei = 0; pei < self.private_name_table.count; pei++) {
-                PrivateNameEntry* pme_install = &self.private_name_table.entries[pei];
-                if (pme_install.slot_name.ptr != m.priv_slot_name.ptr) continue;
-                mclo_slot = m.is_getter ? pme_install.getter_closure_slot_name
-                    : (m.is_setter ? pme_install.setter_closure_slot_name
-                       : pme_install.method_closure_slot_name);
-                break;
-            }
+            PrivateNameEntry* owner = &self.private_name_table.entries[m.priv_entry];
+            char[] mclo_slot = m.is_getter ? owner.getter_closure_slot_name
+                : (m.is_setter ? owner.setter_closure_slot_name : owner.method_closure_slot_name);
             self.emit_a_bc(Opcode.PUTLEX, (uint)method_reg,
                 self.add_string_constant(mclo_slot));
         }
