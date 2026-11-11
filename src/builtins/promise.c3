@@ -2544,10 +2544,14 @@ fn void promise_attach_element_callbacks(HObject* promise, HObject* fulfill_fn, 
 //   \xFFidx    , index in the result array
 // ============================================================================
 
-// Promise.allSettled per-element fulfill handler.
-// Creates {status: "fulfilled", value: x} at result[idx], decrements
-// remaining, settles outer with the full array when remaining reaches 0.
-fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
+// Promise.allSettled per-element handlers.
+// Create {status: "fulfilled", value: x} or {status: "rejected", reason: x}
+// at result[idx], decrement remaining, and settle outer with the full array
+// when remaining reaches 0.
+fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) => promise_allsettled_element(ctx, true);
+fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) => promise_allsettled_element(ctx, false);
+
+fn void promise_allsettled_element(BuiltinContext* ctx, bool fulfilled) {
     Heap* heap = ctx.heap;
     if (ctx.callee_obj == null) return;
 
@@ -2563,15 +2567,14 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
     TVal value;
     promise_element_arg(ctx, &value);
 
-    // Build {status: "fulfilled", value: x}
     HObject*? result_obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
     if (try result_obj = result_obj_raw) {
         heap.set_prototype(result_obj, heap.object_proto);
         HString* status_key = builtin_intern_string(heap, "status");
-        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
-        TVal fulfilled_status;
-        fulfilled_status.set_string_borrowed(builtin_intern_string(heap, "fulfilled"));
-        if (status_key != null) result_obj.put_prop(status_key, fulfilled_status, hobject::PROP_FLAGS_WEC, ctx.heap);
+        HString* value_key = fulfilled ? heap.str(heap::BuiltinStr.VALUE) : builtin_intern_string(heap, "reason");
+        TVal status;
+        status.set_string_borrowed(builtin_intern_string(heap, fulfilled ? "fulfilled" : "rejected"));
+        if (status_key != null) result_obj.put_prop(status_key, status, hobject::PROP_FLAGS_WEC, ctx.heap);
         if (value_key != null) result_obj.put_prop(value_key, value, hobject::PROP_FLAGS_WEC, ctx.heap);
         TVal result_tv;
         result_tv.set_object(result_obj);
@@ -2618,82 +2621,6 @@ fn void builtin_promise_allsettled_resolve_element(BuiltinContext* ctx) {
                 // Drain microtasks inline so combinator-result checks
                 // (e.g. test262 "call-resolve-element") see the outer
                 // settled and any executor callback fired.
-                if (!heap.microtask_draining) {
-                    heap.drain_microtasks(ctx.vm, report: false);
-                }
-            }
-        }
-    }
-}
-
-// Promise.allSettled per-element reject handler.
-// Creates {status: "rejected", reason: x} at result[idx], decrements
-// remaining, settles outer when remaining reaches 0.
-fn void builtin_promise_allsettled_reject_element(BuiltinContext* ctx) {
-    Heap* heap = ctx.heap;
-    if (ctx.callee_obj == null) return;
-
-    if (promise_element_guard(ctx, true)) return;
-
-    usz idx = 0;
-    HObject* state = promise_element_state(ctx, &idx, true);
-    if (state == null) return;
-    HString* arr_key = heap.str_intern_hidden("arr");
-    HString* remaining_key = heap.str_intern_hidden("remaining");
-    HString* outer_key = heap.str_intern_hidden("outer");
-
-    TVal reason;
-    promise_element_arg(ctx, &reason);
-
-    HObject*? result_obj_raw = heap.alloc_object(hobject::ObjClass.OBJECT);
-    if (try result_obj = result_obj_raw) {
-        heap.set_prototype(result_obj, heap.object_proto);
-        HString* status_key = builtin_intern_string(heap, "status");
-        HString* reason_key = builtin_intern_string(heap, "reason");
-        TVal rejected_status;
-        rejected_status.set_string_borrowed(builtin_intern_string(heap, "rejected"));
-        if (status_key != null) result_obj.put_prop(status_key, rejected_status, hobject::PROP_FLAGS_WEC, ctx.heap);
-        if (reason_key != null) result_obj.put_prop(reason_key, reason, hobject::PROP_FLAGS_WEC, ctx.heap);
-        TVal result_tv;
-        result_tv.set_object(result_obj);
-
-        if (arr_key != null) {
-            TVal? arr_opt = state.get_prop(arr_key, ctx.heap);
-            HObject* arr = null;
-            if (try av = arr_opt) {
-                if (av.is_object() && av.get_heapptr() != null) arr = (HObject*)av.get_heapptr();
-            }
-            if (arr != null) {
-                arr.set_array_idx((uint)idx, result_tv, ctx.heap);
-                if ((uint)idx + 1 > *arr.array_len_ptr()) {
-                    array_set_length(arr, (uint)idx + 1, heap);
-                }
-            }
-        }
-    }
-
-    if (remaining_key != null) {
-        TVal? rem_opt = state.get_prop(remaining_key, ctx.heap);
-        long remaining = 0;
-        if (try rv = rem_opt) {
-            if (rv.is_fastint()) remaining = rv.get_fastint();
-        }
-        remaining -= 1;
-        TVal new_rem; new_rem.set_fastint(remaining);
-        state.put_prop(remaining_key, new_rem, hobject::PROP_FLAGS_WEC, ctx.heap);
-
-        if (remaining == 0 && outer_key != null) {
-            TVal? outer_opt = state.get_prop(outer_key, ctx.heap);
-            HObject* outer = null;
-            if (try ov = outer_opt) {
-                if (ov.is_object() && ov.get_heapptr() != null) outer = (HObject*)ov.get_heapptr();
-            }
-            if (outer != null) {
-                TVal arr_val = promise_combinator_result(heap, state);
-                // Per spec: Call(resultCapability.[[Resolve]], «valuesArray»).
-                // Settlement is handled by capability_invoke below, see
-                // the detailed comment in builtin_promise_race_resolve_element.
-                capability_invoke(heap, ctx.vm, state, &arr_val, true, ctx.this_val);
                 if (!heap.microtask_draining) {
                     heap.drain_microtasks(ctx.vm, report: false);
                 }
