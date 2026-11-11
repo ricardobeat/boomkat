@@ -496,7 +496,7 @@ fn bool Asm.emit_access(&self, bool consts_fixed) {
 
 fn void Asm.load_this(&self, int reg) {
     Layout* l = self.lay;
-    sljit_emit_op1(self.c, SLJIT_MOV, reg, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(self.c, SLJIT_MOV, reg, 0, self.la, 0);
     sljit_emit_op1(self.c, SLJIT_MOV, reg, 0, SLJIT_MEM | reg, l.act_this);
 }
 
@@ -639,7 +639,7 @@ fn void Asm.emit_publish_body(&self) {
     publishable.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, mem_index(self.regs, R1), 3, R0, 0);
     // track_heap_store
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, self.la, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.act_hrc);
     void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, R1, 0);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, R1, 0, SLJIT_IMM, 1);
@@ -658,7 +658,7 @@ fn void Asm.track_heap_store(&self, uint ra, int act = R1, int tmp = R2) {
     if (ra < self.frame_regs) return;
     void* c = self.c;
     Layout* l = self.lay;
-    sljit_emit_op1(c, SLJIT_MOV, act, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, act, 0, self.la, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, tmp, 0, SLJIT_MEM | act, l.act_hrc);
     void* covered = sljit_emit_cmp(c, SLJIT_GREATER, tmp, 0, SLJIT_IMM, ra);
     sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | act, l.act_hrc, SLJIT_IMM, (long)ra + 1);
@@ -758,7 +758,7 @@ fn void Asm.emit_get(&self, uint ra, long ic, long key, int key_reg, bool check_
     void* resolved = sljit_emit_jump(c, SLJIT_JUMP);
     general.bind(sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, R2, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ic_owner);
+    self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ic_owner);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_set_label(resolved, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
@@ -793,7 +793,7 @@ fn void Asm.emit_poly_arm(&self, void* back) {
         sljit_emit_op1(c, SLJIT_MOV, R3, 0, R2, 0);
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | R2, self.lay.ic_key);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+        self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
         self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
         void* published = sljit_emit_jump(c, SLJIT_JUMP);
@@ -816,7 +816,7 @@ fn void Asm.emit_poly_arm(&self, void* back) {
         sljit_set_label(not_poly, sljit_emit_label(c));
         self.mov(R1, 0, SLJIT_MEM | reg_sp(), SUB_VALUE_OFF);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_poly_note);
+        self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_poly_note);
         void* noted = sljit_emit_jump(c, SLJIT_JUMP);
         no_note.bind(sljit_emit_label(c));
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, R3, 0);
@@ -915,7 +915,7 @@ fn void Asm.emit_get_keyed(&self, uint ra, uint rb, uint rkey) {
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+    self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
     self.publish(ra);
@@ -1008,7 +1008,7 @@ fn void Asm.store_value_counted(&self, uint rv, Jumps* counted) {
     sljit_emit_op2(c, SLJIT_ADD, R3, 0, self.regs, 0, SLJIT_IMM, (long)rv * TVal::size);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_store_slot);
+    self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_store_slot);
     sljit_set_label(done, sljit_emit_label(c));
 }
 
@@ -1122,9 +1122,9 @@ fn void Asm.emit_put(&self, long ic, long key, int key_reg, uint rv, bool allow_
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
     if (key_reg < 0) {
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.heap, l.heap_site_key, SLJIT_IMM, key);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_site);
+        self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_site);
     } else {
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_missed);
+        self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_missed);
     }
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
@@ -1237,7 +1237,7 @@ fn void Asm.emit_put_absent_body(&self, bool helper = true) {
     if (helper) {
         self.mov(R3, 0, sp, SUB_VALUE_OFF);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.heap, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
+        self.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
         sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     } else {
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, 0);
@@ -1573,7 +1573,7 @@ fn void Asm.var_slot(&self, long vic, bool scoped, uint closure_reg = uint::max,
         if (closure_reg != uint::max) {
             self.closure_lex_env(closure_reg, closure);
         } else {
-            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.la, 0);
             sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, l.act_lex_env);
         }
         self.alt.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_MEM | R2, l.vic_head));
@@ -1634,7 +1634,7 @@ fn void Asm.emit_capture_ref_body(&self) {
     void* c = self.c;
     Layout* l = self.lay;
     Jumps fail;
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.la, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
     fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));

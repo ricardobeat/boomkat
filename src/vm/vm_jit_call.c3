@@ -65,6 +65,29 @@ fn long jit_run_entered(Dispatch* ds, void* entry, uint old_floor, Instruction* 
     return ds.curr_pc == next ? 0 : jit::BASELINE_REDISPATCH;
 }
 
+// Make the VM's frame state describe `la`, the record of the frame generated code runs, as
+// Dispatch.load_frame does but for ds.curr_pc, which the code keeps itself. Calls and returns
+// between generated frames move only the record register; everything that reads the frame state
+// (every call into C, every way out of generated code) runs this first (Asm.emit_sync). The state
+// is whole whenever ds.act is the record register's: every C path that switches frames for
+// generated code to continue in finishes the switch (jit_load).
+fn void jit_sync(Dispatch* ds, Activation* la) {
+    if (ds.act != la) jit_load(ds, la);
+}
+
+fn void jit_load(Dispatch* ds, Activation* la) {
+    Vm* vm = ds.vm;
+    CompiledFunction* f = (CompiledFunction*)la.func;
+    ds.act = la;
+    if (vm.heap.realm != f.realm) vm.heap.enter_realm(f.realm);
+    vm.current_func = f;
+    vm.valstack_bottom = la.bottom;
+    *ds.regs_base_ptr = la.bottom;
+    ds.capture_refs = null;
+    jit_view(ds, f);
+    th_bind_ic_bias(&ds.cold, f.code, f.ic_entries, f.var_ic_entries);
+}
+
 // Forget where generated code waits for each live frame (Activation.native_ret), before code a
 // frame could return into is freed: each such frame returns through jit_ret's general path.
 fn void jit_forget_returns(Vm* vm) {
@@ -586,6 +609,8 @@ fn long jit_ret(Dispatch* ds, ulong next_arg) {
         ds.needs_restart = true;
         return (long)OpStatus.RESTART.ordinal;
     }
+    // Generated code continues in the caller with the frame state whole.
+    jit_load(ds, caller);
     ds.jit_waiter = waiter;
     return jit::BASELINE_RETURNED;
 }

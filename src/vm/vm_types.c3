@@ -493,9 +493,7 @@ struct ColdCtx {
     // frame switch set them.
     usz ic_bias;
     usz var_ic_bias;
-    // Dispatch's view of the function's code and constants. From code_base
-    // to nregs the fields are one block, which native calls copy whole
-    // (jit::BaselineCode.view).
+    // Dispatch's view of the function's code and constants.
     Instruction* code_end;
     TVal* constants;
     uint code_count;

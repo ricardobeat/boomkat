@@ -237,26 +237,7 @@ struct BaselineCode {
     // older bodies. An evicted body waits on this link until it can be freed.
     uint compile_seq;
     BaselineCode* next_retired;
-    // The function's Dispatch view, code_base to nregs in ColdCtx's order,
-    // which native calls and returns copy into the Dispatch whole (fill_view).
-    usz[8] view;
     void*[*] entries;
-}
-
-// Fill `view` for `f`, as Dispatch.load_frame and th_bind_ic_bias set the view.
-fn void BaselineCode.fill_view(&self, CompiledFunction* f) {
-    $assert(usz::size == 8);
-    self.view[0] = (usz)f.code;
-    self.view[1] = (usz)f.ic_entries;
-    self.view[2] = (usz)f.var_ic_entries;
-    self.view[3] = (usz)f.ic_entries - (usz)f.code * vm::TH_IC_SCALE;
-    self.view[4] = (usz)f.var_ic_entries - (usz)f.code * vm::TH_VAR_IC_SCALE;
-    self.view[5] = (usz)(f.code + f.code_count);
-    self.view[6] = (usz)f.constants;
-    // Match the two adjacent uint fields in memory on either byte order.
-    uint* counts = (uint*)&self.view[7];
-    counts[0] = f.code_count;
-    counts[1] = f.num_regs;
 }
 
 alias Thunk = fn long(Dispatch* ds, ulong next_pc);
@@ -571,8 +552,6 @@ const int PUT_ABSENT_SUB = -14;
 const int PUT_ABSENT_FAST_SUB = -15;
 // The inline object allocation's pool pop and accounting (Asm.emit_alloc_body).
 const int ALLOC_SUB = -16;
-// Where a call site continues once its callee's frame returned (Asm.emit_resume_body).
-const int RESUME_SUB = -17;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -589,8 +568,6 @@ struct Asm {
     // window slots from the frame's first. Every entry of the code tests the room for them once.
     uint room_acts;
     uint room_slots;
-    // The code allocation's BaselineCode.view, or null.
-    usz[8]* view;
     // The code is the optimizing tier's, whose call sites record no callee: the build has read
     // what the baseline's recorded.
     bool opt;
@@ -603,7 +580,7 @@ struct Asm {
     bool direct_called;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
-    void*[Opcode::values.len + 17] sub_labels;
+    void*[Opcode::values.len + 16] sub_labels;
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
@@ -611,6 +588,8 @@ struct Asm {
     List{SubCall} subs;
     void* nonzero;
     int ds;
+    // The Activation of the frame running (see jit_sync).
+    int la;
     int regs;
     int thunks;
     int heap;
@@ -665,6 +644,7 @@ fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
         .labels = mem::new_array(void*, (usz)count + 1),
         .starts = mem::new_array(bool, (usz)count + 1),
         .ds = reg_s(0),
+        .la = reg_s(1),
         .regs = reg_s(3),
         .thunks = reg_s(4),
         .heap = reg_s(5),
@@ -706,8 +686,9 @@ fn void Asm.release(&self) {
 // where jit_enter jumps: it stores the native return the trampoline passes in
 // R2 into the frame ds.act names. Generated code that continues a running
 // frame in this code jumps past it, to BaselineCode.exec_jump (jit_switch,
-// opt_osr, the optimized code's exits), which keeps the frame's own. Both set
-// up the saved registers and reach the first instruction's dispatch point.
+// opt_osr, the optimized code's exits), which keeps the frame's own. Both
+// require the frame state synced (vm::jit_sync), set up the saved registers
+// and reach the first instruction's dispatch point.
 // Returns the label that reloads the window and dispatches on ds.curr_pc
 // through the entry table.
 fn void* Asm.emit_prologue(&self, BaselineCode* bc) {
@@ -716,13 +697,13 @@ fn void* Asm.emit_prologue(&self, BaselineCode* bc) {
     Dispatch* dl = (Dispatch*)(usz)4096;
     self.bc = bc;
     self.set_frame();
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.lay.ds_act);
-    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R1, call_layout().act_native_ret, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV, self.la, 0, ds_mem, self.lay.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.la, call_layout().act_native_ret, R2, 0);
     self.exec_jump = sljit_emit_label(c);
+    sljit_emit_op1(c, SLJIT_MOV, self.la, 0, ds_mem, self.lay.ds_act);
     // A frame that ran in the interpreter tracked its registers one by one.
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.lay.ds_act);
-    void* covered = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_MEM | R1, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
+    void* covered = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_MEM | self.la, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | self.la, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
     sljit_set_label(covered, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, self.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, self.thunks, 0, SLJIT_IMM, (long)(usz)&thunks()[0]);
@@ -744,13 +725,13 @@ fn void Asm.emit_nonzero_exit(&self, void* dispatch) {
     // would enter it directly (vm::jit_switch).
     void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_switch);
+    self.c_call(SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_switch);
     void* stay = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     sljit_set_label(stay, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
     sljit_set_label(leave, sljit_emit_label(c));
-    sljit_emit_return(c, SLJIT_MOV, R0, 0);
+    self.emit_leave(R0, 0);
 }
 
 // Emit instruction `i`: its inline path, or a call to its thunk, and record
@@ -822,9 +803,8 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     if (h.jit_stats.dump_feedback) {
         foreach (slot, label : self.sub_labels) {
             if (label == null) continue;
-            String[17] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
-                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT", "PUT_ABSENT_FAST", "ALLOC",
-                                   "RESUME" };
+            String[16] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
+                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT", "PUT_ABSENT_FAST", "ALLOC" };
             if (slot < Opcode::values.len) {
                 io::eprintfn("sub fn#%d %s %x", self.f.func_index, Opcode::values[slot], (usz)sljit_shim_label_addr(label));
             } else {
@@ -854,7 +834,7 @@ fn void* Asm.emit_dispatch(&self, BaselineCode* bc, uint count) {
     void* interpret = sljit_emit_label(c);
     sljit_set_label(out_of_range, interpret);
     sljit_set_label(no_entry, interpret);
-    sljit_emit_return(c, SLJIT_MOV, SLJIT_IMM, BASELINE_INTERPRET);
+    self.emit_leave(SLJIT_IMM, BASELINE_INTERPRET);
     return dispatch;
 }
 
@@ -880,8 +860,6 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     Asm a = asm_new(c, h, f);
     defer a.release();
     a.new_sites = (NewSite*)((char*)bc + BaselineCode::size + (usz)count * void*::size);
-    bc.fill_view(f);
-    a.view = &bc.view;
     a.new_site_count = news;
     void* dispatch = a.emit_dispatch(bc, count);
     a.emit_nonzero_exit(dispatch);
@@ -1017,8 +995,6 @@ fn void Asm.emit_subroutines(&self) {
                 self.emit_index_body();
             case CALL_SUB:
                 self.emit_call_body();
-            case RESUME_SUB:
-                self.emit_resume_body();
             case RETURN_SUB:
                 self.emit_return_body();
             case MEGA_SUB:
@@ -1062,7 +1038,7 @@ fn void Asm.emit_subroutines(&self) {
                     sljit_emit_op2(c, SLJIT_AND, R2, 0, R1, 0, SLJIT_IMM, 1);
                     wide_pair = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, 0);
                     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-                    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_relay);
+                    self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_relay);
                     declined = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
                     self.count(&self.stats.relay_done[0], sub_op);
                     self.count(&self.stats.slow_calls[0], sub_op, -1);
@@ -1074,7 +1050,7 @@ fn void Asm.emit_subroutines(&self) {
                     self.mov(R1, 0, sp, SUB_VALUE_OFF);
                 }
                 sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-                sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_MEM | self.thunks, (long)call.sub * Thunk::size);
+                self.c_call(SLJIT_ARGS2WWW, SLJIT_MEM | self.thunks, (long)call.sub * Thunk::size);
                 sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
                 sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
         }
@@ -1089,8 +1065,8 @@ fn void Asm.emit_subroutines(&self) {
 const long SUB_VALUE_OFF = 8;
 
 // Stack bytes every native frame starts with: a subroutine's return address,
-// the value the typed-array store keeps and a call site's resume point
-// (CALL_RESUME_OFF). Each holds a value only between a store and a load with no
+// the value the typed-array store keeps and a call's result slot
+// (CALL_RETVAL_OFF). Each holds a value only between a store and a load with no
 // call of generated code between them.
 const int CALL_FRAME_BYTES = 32;
 
@@ -1098,18 +1074,23 @@ const int CALL_FRAME_BYTES = 32;
 // every entry from C: the optimizing tier's register pools (a per-platform
 // constant), six saved registers, and the local area: CALL_FRAME_BYTES, the
 // optimized code's register saves around C calls and its capture records
-// (OptCg.cap_slot). Calls between generated frames do not leave it
+// (OptCg.cap_slot), then the sync routine's return address and the registers
+// it keeps (Trampoline.sync). Calls between generated frames do not leave it
 // (baseline_call.c3), and every way out of generated code returns from it.
 struct JitFrame {
     int scratches;
     int locals;
+    int sync_off;
 }
 
 const int JIT_SAVEDS = 6;
+// Words at JitFrame.sync_off: the return address and R0 to R4.
+const int SYNC_WORDS = 6;
 
 fn JitFrame jit_frame() {
     OptPools p = opt_pools();
-    return { .scratches = p.scratches | (p.fscratches << 8), .locals = CALL_FRAME_BYTES + 8 * (p.int_count + p.flt_count + 1) };
+    int sync_off = CALL_FRAME_BYTES + 8 * (p.int_count + p.flt_count + 1);
+    return { .scratches = p.scratches | (p.fscratches << 8), .locals = sync_off + 8 * SYNC_WORDS, .sync_off = sync_off };
 }
 
 // Declare the shared native frame for the code that follows, which has no
@@ -1119,14 +1100,39 @@ fn void Asm.set_frame(&self) {
     sljit_set_context(self.c, 0, SLJIT_ARGS3WWW, fr.scratches, JIT_SAVEDS, fr.locals);
 }
 
+// Make the VM's frame state describe the record register's frame, unless it
+// does (vm::jit_sync). Keeps every register.
+fn void Asm.emit_sync(&self) {
+    void* c = self.c;
+    void* synced = sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | self.ds, self.lay.ds_act, self.la, 0);
+    sljit_emit_ijump(c, SLJIT_FAST_CALL, SLJIT_IMM, (long)(usz)trampoline().sync);
+    sljit_set_label(synced, sljit_emit_label(c));
+}
+
+// Call C at `src`/`srcw` with `arg_types` after the sync, then take the record
+// register from ds.act, which the call may have moved to another frame.
+fn void Asm.c_call(&self, int arg_types, int src, long srcw) {
+    self.emit_sync();
+    sljit_emit_icall(self.c, SLJIT_CALL, arg_types, src, srcw);
+    sljit_emit_op1(self.c, SLJIT_MOV, self.la, 0, SLJIT_MEM | self.ds, self.lay.ds_act);
+}
+
+// Leave generated code with `src`/`srcw` as the status, the frame state synced.
+fn void Asm.emit_leave(&self, int src, long srcw) {
+    self.emit_sync();
+    sljit_emit_return(self.c, SLJIT_MOV, src, srcw);
+}
+
 // The entry from C into generated code: it saves the registers C expects
 // kept and jumps to `target`, an exec entry, with `native_ret` in R2 for the
 // frame ds.act names. Every way out of generated code is a return from this
 // frame; `ret` is where a frame whose C caller waits for it returns
-// (vm::jit_run_entered), which returns its status to that caller.
+// (vm::jit_run_entered), which returns its status to that caller. `sync` is
+// the routine generated code fast-calls to run vm::jit_sync, keeping R0 to R4.
 struct Trampoline {
     void* code;
     void* ret;
+    void* sync;
 }
 
 Trampoline trampoline_data @private;
@@ -1146,11 +1152,26 @@ fn void init_trampoline() @noinline @private {
     sljit_emit_enter(c, 0, SLJIT_ARGS3WWW, fr.scratches, JIT_SAVEDS, fr.locals);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, reg_s(2), 0);
     sljit_emit_ijump(c, SLJIT_JUMP, reg_s(1), 0);
+    int sp = SLJIT_MEM | reg_sp();
+    int la = reg_s(1);
+    // A frame's return to C: the caller the record register names becomes current.
     void* ret = sljit_emit_label(c);
-    sljit_emit_return(c, SLJIT_MOV, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, reg_s(0), 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, la, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_sync);
+    sljit_emit_return(c, SLJIT_MOV, SLJIT_IMM, BASELINE_RETURNED);
+    void* sync = sljit_emit_label(c);
+    sljit_emit_op_dst(c, SLJIT_FAST_ENTER, sp, fr.sync_off);
+    for (int r = 0; r < SYNC_WORDS - 1; r++) sljit_emit_op1(c, SLJIT_MOV, sp, fr.sync_off + 8 * ((long)r + 1), R0 + r, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, reg_s(0), 0);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, la, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_sync);
+    for (int r = 0; r < SYNC_WORDS - 1; r++) sljit_emit_op1(c, SLJIT_MOV, R0 + r, 0, sp, fr.sync_off + 8 * ((long)r + 1));
+    sljit_emit_op_src(c, SLJIT_FAST_RETURN, sp, fr.sync_off);
     void* code = sljit_generate_code(c, 0, null);
     assert(code != null, "no code for the trampoline");
     trampoline_data.ret = (void*)sljit_shim_label_addr(ret);
+    trampoline_data.sync = (void*)sljit_shim_label_addr(sync);
     sljit_free_compiler(c);
     trampoline_data.code = code;
 }
@@ -1196,7 +1217,7 @@ fn bool Asm.emit_call(&self) {
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
+        self.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
         done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
         generic.bind(sljit_emit_label(c));
     }
@@ -1211,7 +1232,7 @@ fn bool Asm.emit_call(&self) {
     }
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call);
+    self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
@@ -1495,7 +1516,7 @@ $else
             ret_helper.bind(sljit_emit_label(c));
             sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
             sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-            sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ret);
+            self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ret);
             self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
             // Popped for the generated code that waits for the frame: return to it.
             void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED);

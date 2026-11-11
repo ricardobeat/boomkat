@@ -260,7 +260,7 @@ fn bool Asm.emit_alloc(&self) {
     }
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_alloc);
+    self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_alloc);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     if (done != null) sljit_set_label(done, sljit_emit_label(c));

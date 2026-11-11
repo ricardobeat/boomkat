@@ -392,7 +392,7 @@ fn void OptCg.emit_inline_exit(&self, uint fidx, uint pc, uint mask, uint reason
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.oc);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)reason);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)(usz)site);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&opt_inline_exit);
+    self.a.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&opt_inline_exit);
     sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
 }
@@ -537,7 +537,7 @@ fn void OptCg.emit_poll_stubs(&self) {
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.a.f.code + (long)h.pc * Instruction::size);
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.a.ds, self.a.pc_off, R1, 0);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&opt_poll);
+        self.a.c_call(SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&opt_poll);
         sljit_emit_op1(c, SLJIT_MOV, R4, 0, R0, 0);
         off = CALL_FRAME_BYTES;
         for (int k = 0; k < self.pools.int_count; k++, off += 8) {
@@ -808,7 +808,7 @@ fn void OptCg.emit_cap_refs(&self) {
     void* c = self.a.c;
     Layout* l = self.a.lay;
     Jumps fail;
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.a.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.a.la, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
     fail.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
@@ -1181,7 +1181,7 @@ fn void OptCg.shade(&self, uint i) {
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_shade);
+    self.a.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_shade);
     self.spill_live(i, false);
 }
 
@@ -1487,7 +1487,7 @@ fn void OptCg.chain_miss(&self, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)key);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
+    self.a.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_get_missed);
     self.spill_live(at, false);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
@@ -1674,7 +1674,7 @@ fn void OptCg.store_counted(&self, uint i, Jumps* counted) {
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, R2, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_store_slot);
+    self.a.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_store_slot);
     self.spill_live(i, false);
     sljit_set_label(done, sljit_emit_label(c));
 }
@@ -1762,7 +1762,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
             miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
         }
         if (n.b == NO_NODE && callee_reg + 1 >= a.frame_regs) {
-            sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, a.lay.ds_act);
+            sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.la, 0);
             sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R0, a.lay.act_hrc);
             miss[misses++] = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, SLJIT_IMM, (long)callee_reg + 1);
         }
@@ -1873,7 +1873,7 @@ fn void OptCg.emit_new_object(&self, uint i, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, ic);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)want);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_new_object);
+    self.a.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_new_object);
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
     if (done != null) sljit_set_label(done, sljit_emit_label(c));
@@ -1934,7 +1934,7 @@ fn void OptCg.emit_sunk_object(&self, uint i, OptNode* n) {
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_sink_check);
+    self.a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_sink_check);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0), i, OptExit.ALLOC_SLOW);
@@ -1982,7 +1982,7 @@ fn void OptCg.materialize(&self, uint node) {
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
         sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)site);
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)m.count);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_sink_materialize);
+        self.a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_sink_materialize);
         for (uint k = 0; k < n.dirty_count; k++) {
             OptDirty d = self.g.dirty[(sz)(n.dirty_first + k)];
             OptNode* nd = &self.g.nodes[d.node];
@@ -2031,7 +2031,7 @@ fn void OptCg.emit_add_field(&self, uint i, OptNode* n) {
     }
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
+    self.a.c_call(SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_put_absent);
     sljit_emit_op1(c, SLJIT_MOV_U8, R0, 0, R0, 0);
     self.spill_live(i, false);
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
@@ -2338,7 +2338,7 @@ fn void OptCg.emit_array_push(&self, uint i, OptNode* n) {
     self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
     self.spill_live(i, true);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_array_push);
+    self.a.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_array_push);
     self.spill_live(i, false);
     self.exit_at(sljit_emit_cmp(c, SLJIT_SIG_LESS, R0, 0, SLJIT_IMM, 0), i, OptExit.SLOW_PATH);
     self.def_int(i, R0);
@@ -2881,8 +2881,6 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     defer sljit_free_compiler(c);
     Asm a = asm_new(c, h, f);
     defer a.release();
-    bc.fill_view(f);
-    a.view = &bc.view;
     a.opt = true;
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;
@@ -2893,6 +2891,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     a.emit_nonzero_exit(dispatch);
     // An entry that is not an entry of the optimized code continues in the baseline code.
     void* to_base = sljit_emit_label(c);
+    a.emit_sync();
     sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_IMM, (long)(usz)oc.base.exec_jump);
 
     uint fields = 0;

@@ -1113,7 +1113,7 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)oc);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)reason);
-    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_exit);
+    self.c_call(SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_exit);
     sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_IMM, (long)(usz)oc.base.exec_jump);
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
 }
@@ -1124,6 +1124,7 @@ fn void Asm.emit_opt_leave(&self, OptCode* oc) {
     void* c = self.c;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.i * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.pc_off, R1, 0);
+    self.emit_sync();
     sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_IMM, (long)(usz)oc.base.exec_jump);
 }
 
