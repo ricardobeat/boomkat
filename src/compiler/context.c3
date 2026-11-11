@@ -281,6 +281,10 @@ bool g_disable_optimize = false;
 
 fn void set_disable_optimize(bool v) { g_disable_optimize = v; }
 
+// Function bodies are deferred only where the compiler compiles them as templates. Trace
+// builds and --no-optimize compile a recorded body as empty, so they never defer.
+fn bool defer_functions_allowed() { return !$feat(TRACE_VM) && !g_disable_optimize; }
+
 
 // ============================================================================
 // CompilerContext

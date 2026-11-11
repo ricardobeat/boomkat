@@ -155,12 +155,12 @@ fn CompiledFunction*? compile_eval(Lexer* lex, void* heap, bool allow_super = fa
             .allow_super_call = allow_super_call,
             .in_class_field_init = is_direct_eval && caller_forbids_arguments,
             .private_names = private_names,
-            .defer_functions = true,
+            .defer_functions = defer_functions_allowed(),
         });
     }
     defer if (cmp != null) ast::index_end(cmp);
     require_ast(lex, cmp)!;
-    cmp.defer_functions = true;
+    cmp.defer_functions = defer_functions_allowed();
     CompilerContext ctx;
     ctx.init(lex, heap);
     defer ctx.cleanup();

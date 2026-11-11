@@ -73,7 +73,7 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     ast::AstIndex* idx = ast::index_begin(source, h, {
         .function_body = true, .function_start = f.lazy_paren - 1,
         .strict = f.flags.is_strict,
-        .defer_functions = true,
+        .defer_functions = defer_functions_allowed(),
     }, f.src_buf);
     defer ast::index_end(idx);
     require_ast(&lex, idx)!;
@@ -85,7 +85,7 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     // The source slice has no declarations for its enclosing scopes. Keep
     // free names in the captured environment rather than proving them global.
     idx.unknown_outer = true;
-    idx.defer_functions = true;
+    idx.defer_functions = defer_functions_allowed();
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
     CompiledFunction saved = *f;
