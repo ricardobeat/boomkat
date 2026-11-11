@@ -16,11 +16,10 @@
 // every other callee and shape; BASELINE_RETURNED, the callee's return, makes
 // the caller current again (the resume subroutine).
 //
-// RET and RETUNDEF of a frame generated code waits for pop the frame inline
-// when th_leaf_return's plain case holds: no catcher, for-in state, construct
-// or tail-call flags, tracked registers, collector work or heap result, and
-// the result slot holds no count; then they return to native_ret. Anything
-// else calls vm::jit_ret, which returns there too when it pops the frame.
+// RET and RETUNDEF pop the frame inline in th_leaf_return's plain case (emit_return_body) and
+// return to native_ret with the result in R1: a frame a call entry pushed to its call site, which
+// stores the result, and a frame C entered to the trampoline, the pop storing the result. Anything
+// else calls vm::jit_ret, which returns there too when it pops the frame, having stored the result.
 module boomkat::jit @feat(SLJIT);
 
 import boomkat::vm;
@@ -306,7 +305,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     self.mov(code, 0, SLJIT_IMM, (long)(usz)f.code);
     self.mov(m | ds, self.pc_off, code, 0);
     // A lazy record, and a heap_reg_count over the whole frame (Asm.frame_regs).
-    self.mov(m | la, k.act_flags, SLJIT_IMM, vm::ACT_FLAG_LAZY, SLJIT_MOV_U32);
+    self.mov(m | la, k.act_flags, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED | vm::ACT_FLAG_LAZY, SLJIT_MOV_U32);
     self.mov(m | la, l.act_hrc, SLJIT_IMM, f.num_regs, SLJIT_MOV_U32);
     self.store_pair(la, k.act_curr_pc, code, k.act_bottom, bottom);
     sljit_emit_op2(c, SLJIT_OR, R1, 0, fr, 0, SLJIT_IMM, K_OBJ);
@@ -330,7 +329,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         }
         self.mov(R1, 0, m | bottom, -(long)TVal::size);
         self.mov(m | la, l.act_this, R1, 0);
-        sljit_emit_op2(c, SLJIT_OR, R1, 0, R4, 0, SLJIT_IMM, vm::ACT_FLAG_THIS_VALID | vm::ACT_FLAG_LAZY);
+        sljit_emit_op2(c, SLJIT_OR, R1, 0, R4, 0, SLJIT_IMM, vm::ACT_FLAG_THIS_VALID | vm::ACT_FLAG_JIT_CALLED | vm::ACT_FLAG_LAZY);
         self.mov(m | la, k.act_flags, R1, 0, SLJIT_MOV_U32);
         bound.bind(sljit_emit_label(c));
     }
@@ -454,9 +453,12 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
     // A builtin the subroutine completed.
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    // The return left the caller's record in the record register.
+    // The return left the caller's record in the record register and the result in R1, whose
+    // store the subroutine has cleared as Asm.publish would.
     sljit_set_label(returned, sljit_emit_label(c));
     self.mov(self.regs, 0, SLJIT_MEM | self.la, call_layout().act_bottom);
+    self.store(self.w.a, R1);
+    self.track_heap_store(self.w.a);
     sljit_set_label(done, sljit_emit_label(c));
     self.count(&self.stats.fast_hits[0], self.w.op);
 }
@@ -709,43 +711,33 @@ fn void Asm.emit_return(&self, Jumps* helper) {
         self.mov(R0, 0, SLJIT_IMM, K_UNDEF);
     }
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = RETURN_SUB });
-    // The subroutine's only nonzero status is BASELINE_RETURNED: the frame is gone, and R1 is
-    // where the code that waited for it continues.
-    void* popped = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_op_src(c, SLJIT_FAST_RETURN, R1, 0);
-    sljit_set_label(popped, sljit_emit_label(c));
-    // The subroutine returns the result in R1 for the helper, which reads it
-    // from the register the subroutine may have cleared.
-    if (self.w.op == Opcode.RET) self.store(self.w.a, R1);
-    helper.add(sljit_emit_jump(c, SLJIT_JUMP));
+    // The subroutine's only nonzero status is BASELINE_RETURNED: the frame is gone, the result is
+    // in R1, and R2 is the site that stores it.
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+    sljit_emit_op_src(c, SLJIT_FAST_RETURN, R2, 0);
 }
 
-// The caller's result slot lies inside the caller's window, which the
-// object result needs (R4 is the returning frame's activation): the caller is
-// a native frame, which tracks its whole window. Clobbers R1-R3.
-fn void Asm.emit_result_window(&self, Jumps* helper) {
-    void* c = self.c;
-    CallLayout* k = call_layout();
-    Layout* l = self.lay;
-    int m = SLJIT_MEM;
-    sljit_emit_op2(c, SLJIT_SUB, R1, 0, R4, 0, SLJIT_IMM, (long)Activation::size);
-    self.mov(R3, 0, m | R1, l.act_func);
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
-    self.mov(R3, 0, m | R3, k.cf_num_regs, SLJIT_MOV_U16);
-    sljit_emit_op2(c, SLJIT_SHL, R3, 0, R3, 0, SLJIT_IMM, 3);
-    self.mov(R2, 0, m | R1, k.act_bottom);
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
-    sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, R2, 0);
-    self.mov(R4, 0, m | self.la, k.act_retval);
-    helper.add(sljit_emit_cmp(c, SLJIT_LESS, R4, 0, R2, 0));
-    helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, R3, 0));
-    self.mov(R4, 0, self.la, 0);
+// Whether a frame of `f` can hold a catcher or for-in state (Activation.cat, forin): only TRY and
+// INITFOR give it one. Every word is read as an instruction, so an operand word can only add a
+// false yes.
+fn bool frame_state_possible(CompiledFunction* f) {
+    for (uint i = 0; i < f.code_count; i++) {
+        Opcode op = f.code[i].op;
+        if (op == Opcode.TRY || op == Opcode.INITFOR) return true;
+    }
+    return false;
 }
 
-// The return subroutine: with a result in R0 that is not a string, buffer or
-// BigInt, pop the frame generated code waits for (Activation.native_ret) in
-// th_leaf_return's plain case and come back with BASELINE_RETURNED and the
-// waiter in R1; otherwise come back with 0, for vm::jit_ret.
+// The return subroutine: with the result in R0, pop the frame in th_leaf_return's plain case and
+// come back with BASELINE_RETURNED, the result in R1 and in R2 where the frame returns to;
+// otherwise come back with 0, for vm::jit_ret. The plain case: no catcher or for-in state, no
+// flags beyond the lean ones (or a base construction, which answers `this` unless the body
+// returned an object), and a value with no heap pointer or an object while the collector is not
+// marking. A frame a call entry pushed (ACT_FLAG_JIT_CALLED) returns to its call site, which
+// stores the result, and its window keeps its values: the caller tracks its whole window
+// (Asm.frame_regs), and every frame pushed above writes all of its own. A frame C entered
+// returns to the trampoline (vm::jit_run_entered), the pop storing the result where the frame's
+// caller tracks it and clearing the window, as th_leaf_return does.
 fn void Asm.emit_return_body(&self) {
     void* c = self.c;
     CallLayout* k = call_layout();
@@ -753,112 +745,126 @@ fn void Asm.emit_return_body(&self) {
     int m = SLJIT_MEM;
     int ds = self.ds;
     int sp = SLJIT_MEM | reg_sp();
+    long tramp_ret = (long)(usz)trampoline().ret;
     Jumps helper;
-    // The result stays at SUB_VALUE_OFF: the sweep below clears the register
-    // it came from.
-    self.mov(sp, SUB_VALUE_OFF, R0, 0);
-    // Generated code waits for the frame (Activation.native_ret).
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, m | self.la, k.act_native_ret, SLJIT_IMM, 0));
-    // No collector work: gc_safepoint_due is false and nothing marks.
-    self.mov(R1, 0, m | self.heap, k.heap_gc_pending, SLJIT_MOV_U8);
-    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    self.mov(R1, 0, m | self.heap, l.heap_gc_phase, SLJIT_MOV_U8);
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
-    // th_frame_is_replaceable, with no tracked registers, or a base
-    // constructor's frame as th_return_general pops it.
-    bool constructs = !self.f.is_arrow() && !self.f.is_derived_ctor() && !self.f.is_generator();
-    self.mov(R4, 0, self.la, 0);
-    self.mov(R1, 0, m | R4, k.act_flags, SLJIT_MOV_U32);
-    // A plain record generated code pushed and nothing filled in has no catcher or for-in state.
-    void* plain_lazy = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_LAZY);
-    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~(long)(vm::TH_LEAN_FRAME_FLAGS | vm::ACT_FLAG_LAZY) & 0xFFFFFFFF);
-    void* lean_frame = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0);
-    helper.add(constructs ? sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_CONSTRUCT) : sljit_emit_jump(c, SLJIT_JUMP));
-    if (constructs) {
+    self.mov(R2, 0, m | self.la, k.act_native_ret);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    if (frame_state_possible(self.f)) {
+        helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | self.la, k.act_cat, SLJIT_IMM, 0));
+        helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | self.la, k.act_forin, SLJIT_IMM, 0));
+    }
+    // The flags but the lean ones, which ask nothing of the pop.
+    long lean = (long)((vm::TH_LEAN_FRAME_FLAGS & ~vm::ACT_FLAG_JIT_CALLED) | vm::ACT_FLAG_LAZY);
+    self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~lean & 0xFFFFFFFF);
+    void* site = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED);
+    void* entered = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0);
+    void* site_value;
+    void* c_value;
+    if (!self.f.is_arrow() && !self.f.is_derived_ctor() && !self.f.is_generator()) {
+        void* site_construct = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED | vm::ACT_FLAG_CONSTRUCT);
+        helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, vm::ACT_FLAG_CONSTRUCT));
+        helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, tramp_ret));
+        sljit_set_label(site_construct, sljit_emit_label(c));
         // [[Construct]] answers `this` unless the body returned an object (ES2015 §9.2.2 step 13).
         sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
         void* returned_object = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT);
-        self.mov(R0, 0, m | R4, l.act_this);
+        self.mov(R0, 0, m | self.la, l.act_this);
         sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
         helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT));
-        self.mov(sp, SUB_VALUE_OFF, R0, 0);
         sljit_set_label(returned_object, sljit_emit_label(c));
         // Idempotent, so a later decline to vm::jit_ret records it again harmlessly.
-        self.mov(R0, 0, R4, 0);
+        self.mov(sp, SUB_VALUE_OFF, R0, 0);
+        self.mov(R0, 0, self.la, 0);
         self.c_call(SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::record_constructor_capacity);
         self.mov(R0, 0, sp, SUB_VALUE_OFF);
-        self.mov(R4, 0, self.la, 0);
+        self.mov(R2, 0, m | self.la, k.act_native_ret);
+        self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
+        sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED);
+        site_value = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0);
+        c_value = sljit_emit_jump(c, SLJIT_JUMP);
+    } else {
+        helper.add(sljit_emit_jump(c, SLJIT_JUMP));
     }
-    sljit_set_label(lean_frame, sljit_emit_label(c));
-    // So has any other lazy record (a construction's).
-    self.mov(R1, 0, m | R4, k.act_flags, SLJIT_MOV_U32);
-    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, vm::ACT_FLAG_LAZY);
-    void* lazy = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0);
-    self.mov(R1, 0, m | R4, k.act_cat);
-    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    self.mov(R1, 0, m | R4, k.act_forin);
-    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    void* checked = sljit_emit_label(c);
-    sljit_set_label(plain_lazy, checked);
-    sljit_set_label(lazy, checked);
-    // A result slot holding no count, unless the frame borrows its callee.
-    self.mov(R2, 0, m | R4, k.act_retval);
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
-    self.mov(R1, 0, m | R2, 0);
+    // A frame C entered: the result slot must hold no count, unless the frame borrows its
+    // callee, and an object result must land inside the caller's window, which tracks it.
+    sljit_set_label(entered, sljit_emit_label(c));
+    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, tramp_ret));
+    if (c_value != null) sljit_set_label(c_value, sljit_emit_label(c));
+    self.mov(R3, 0, m | self.la, k.act_retval);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    self.mov(R1, 0, m | R3, 0);
     sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R1, 0, SLJIT_IMM, 48);
     void* uncounted = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_STRING);
-    self.mov(R1, 0, m | R4, k.act_flags, SLJIT_MOV_U32);
+    self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, vm::ACT_FLAG_BORROWED_CALLEE);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     sljit_set_label(uncounted, sljit_emit_label(c));
-    // The result: a value with no heap pointer, or an object (stored where
-    // the caller's watermark tracks it, as th_leaf_return does). Strings and
-    // the other heap kinds take the helper.
-    sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R0, 0, SLJIT_IMM, 48);
-    void* primitive = sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, (long)types::TAG_STRING);
-    helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT));
-    sljit_emit_op2(c, SLJIT_AND, R1, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    self.emit_result_window(&helper);
-    sljit_set_label(primitive, sljit_emit_label(c));
-    // th_clear_tracked_regs: the frame's whole window (Asm.frame_regs).
-    // Registers hold no counts, so a string clears like an object, as
-    // vm::jit_ret clears it (th_leaf_return's counted_ok).
-    self.mov(R2, 0, m | R4, k.act_bottom);
+    void* c_inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+    self.emit_result_object(&helper);
+    // R3 = [caller.bottom, caller.bottom + its register count) holds the result slot.
+    sljit_emit_op2(c, SLJIT_SUB, R1, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
+    self.mov(R4, 0, m | R1, l.act_func);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
+    self.mov(R4, 0, m | R4, k.cf_num_regs, SLJIT_MOV_U16);
+    self.mov(R1, 0, m | R1, k.act_bottom);
+    helper.add(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, R3, 0));
+    sljit_emit_op2(c, SLJIT_SHL, R4, 0, R4, 0, SLJIT_IMM, 3);
+    sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, R1, 0);
+    helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, R4, 0));
+    sljit_set_label(c_inert, sljit_emit_label(c));
+    // th_clear_tracked_regs over the frame's whole window (Asm.frame_regs), then the write-back.
+    // Registers hold no counts, so a string clears like an object, as vm::jit_ret clears it.
+    self.mov(sp, SUB_VALUE_OFF, R0, 0);
+    self.mov(R2, 0, m | self.la, k.act_bottom);
     self.mov(R1, 0, SLJIT_IMM, K_UNDEF);
     self.mov(R3, 0, R1, 0);
     self.clear_slots(R2, 0, self.f.num_regs, R1, R3, R2, R0);
     self.mov(R0, 0, sp, SUB_VALUE_OFF);
-    // th_leaf_return's write-back and th_pop_frame; the caller is the
-    // activation below the frame.
-    self.mov(R3, 0, m | ds, k.ds_vm);
-    self.mov(R2, 0, m | R4, k.act_retval);
+    self.mov(R2, 0, m | self.la, k.act_retval);
     self.mov(m | R2, 0, R0, 0);
-    self.mov(R0, 0, m | R4, k.act_flags, SLJIT_MOV_U32);
-    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, ~(long)vm::ACT_FLAG_CALLEE_OWNED & 0xFFFFFFFF);
-    self.mov(m | R4, k.act_flags, R0, 0, SLJIT_MOV_U32);
-    // The frame is the last activation, so the caller is the one before it. The caller's record
-    // becomes the record register's; the activation count and the rest of the VM's frame state
-    // wait for vm::jit_sync. A frame state synced for this record describes it no more, and the
-    // next frame pushed here must not pass for it.
-    void* stale = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | ds, l.ds_act, R4, 0);
+    self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~(long)vm::ACT_FLAG_CALLEE_OWNED & 0xFFFFFFFF);
+    self.mov(m | self.la, k.act_flags, R1, 0, SLJIT_MOV_U32);
+    self.mov(R2, 0, SLJIT_IMM, tramp_ret);
+    void* pop = sljit_emit_jump(c, SLJIT_JUMP);
+    // A frame a call entry pushed: its site stores the result as Asm.publish would.
+    sljit_set_label(site, sljit_emit_label(c));
+    if (site_value != null) sljit_set_label(site_value, sljit_emit_label(c));
+    void* site_inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+    self.emit_result_object(&helper);
+    sljit_set_label(site_inert, sljit_emit_label(c));
+    // th_pop_frame: the caller is the record below, which becomes the record register's; the
+    // activation count and the rest of the VM's frame state wait for vm::jit_sync. A frame state
+    // synced for the popped record describes it no more, and the next frame pushed here must not
+    // pass for it.
+    sljit_set_label(pop, sljit_emit_label(c));
+    void* stale = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | ds, l.ds_act, self.la, 0);
     self.mov(m | ds, l.ds_act, SLJIT_IMM, 0);
     sljit_set_label(stale, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_SUB, self.la, 0, R4, 0, SLJIT_IMM, (long)Activation::size);
-    self.mov(R2, 0, m | R4, k.act_caller_top);
-    self.mov(m | R3, k.vm_valstack_top, R2, 0);
-    self.mov(R0, 0, m | self.la, k.act_curr_pc);
-    self.mov(m | ds, self.pc_off, R0, 0);
-    // Return like any subroutine (a return from the function inside it would
-    // leave the call's return address on the CPU's return stack): R0 says
-    // which way the site goes on, R1 where it returns to.
-    self.mov(R1, 0, m | R4, k.act_native_ret);
+    self.mov(R3, 0, m | ds, k.ds_vm);
+    self.mov(R1, 0, m | self.la, k.act_caller_top);
+    self.mov(m | R3, k.vm_valstack_top, R1, 0);
+    sljit_emit_op2(c, SLJIT_SUB, self.la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
+    self.mov(R1, 0, m | self.la, k.act_curr_pc);
+    self.mov(m | ds, self.pc_off, R1, 0);
+    self.mov(R1, 0, R0, 0);
     self.mov(R0, 0, SLJIT_IMM, BASELINE_RETURNED);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
     helper.bind(sljit_emit_label(c));
-    self.mov(R1, 0, sp, SUB_VALUE_OFF);
     self.mov(R0, 0, SLJIT_IMM, 0);
     sljit_set_label(done, sljit_emit_label(c));
+}
+
+// The return's heap result R0 (no inert value): an object, while the collector is not marking,
+// as Asm.publish stores one. Anything else joins `helper`. Clobbers R1.
+fn void Asm.emit_result_object(&self, Jumps* helper) {
+    void* c = self.c;
+    sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    self.mov(R1, 0, SLJIT_MEM | self.heap, self.lay.heap_gc_phase, SLJIT_MOV_U8);
+    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal));
 }
 
 // CALL_GLOBAL's callee as @lean_call_global reads it: the global binding the

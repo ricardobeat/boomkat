@@ -1521,10 +1521,13 @@ $else
             sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
             self.c_call(SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ret);
             self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-            // Popped for the generated code that waits for the frame: return to it.
+            // Popped for the generated code that waits for the frame: return to it with the
+            // result the pop stored, which the site stores again (emit_direct_call).
             void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED);
-            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, call_layout().ds_jit_waiter);
-            sljit_emit_op_src(c, SLJIT_FAST_RETURN, R1, 0);
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.la, (long)Activation::size + call_layout().act_retval);
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | R1, 0);
+            sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_MEM | self.ds, call_layout().ds_jit_waiter);
+            sljit_emit_op_src(c, SLJIT_FAST_RETURN, R2, 0);
             sljit_set_label(other, sljit_emit_label(c));
             sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.nonzero);
         case MUL:

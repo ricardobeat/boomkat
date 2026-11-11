@@ -250,12 +250,15 @@ const uint ACT_FLAG_TAIL_CALLED    = 1u << 12;
 // its code reads its scope. vm::jit_load fills in the rest, and the
 // activation count, before anything else reads the stack.
 const uint ACT_FLAG_LAZY           = 1u << 13;
+// A call entry pushed the frame for a generated call site, which native_ret names unless
+// something has since forgotten it (null). Its inline return hands the result to the site.
+const uint ACT_FLAG_JIT_CALLED     = 1u << 14;
 
 // The flags a frame may carry and still return through RET's and RETUNDEF's
 // fast paths. Each of the others asks the pop for work only the general path
 // does.
 const uint RET_FAST_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
-    | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID | ACT_FLAG_TAIL_CALLED;
+    | ACT_FLAG_THIS_OWNED | ACT_FLAG_THIS_VALID | ACT_FLAG_TAIL_CALLED | ACT_FLAG_JIT_CALLED;
 
 // Write this_binding as a BORROWED value: the caller holds the owning
 // reference for the whole call, so nothing is incref'd here and nothing is

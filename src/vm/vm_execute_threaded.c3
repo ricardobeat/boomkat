@@ -1075,7 +1075,7 @@ macro hobject::VarICEntry* th_ic_entry(Instruction* pc, ColdCtx* cold) @private 
 // The flags a frame may carry and still be entered, replaced and returned
 // from by the lean threaded handlers.
 const uint TH_LEAN_FRAME_FLAGS = ACT_FLAG_BORROWED_CALLEE | ACT_FLAG_CALLEE_OWNED
-    | ACT_FLAG_THIS_VALID | ACT_FLAG_TAIL_CALLED;
+    | ACT_FLAG_THIS_VALID | ACT_FLAG_TAIL_CALLED | ACT_FLAG_JIT_CALLED;
 
 // The baseline tier rearms in place, then runs the same tests the threaded
 // handler runs again after its rearm.
