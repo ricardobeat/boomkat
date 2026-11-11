@@ -1183,7 +1183,7 @@ fn void CompilerContext.hoist_one_var_name(&self, char[] raw_name, bool is_globa
     // the var binding, so reuse it. A block-scoped entry is not the var binding,
     // so an exempt block must still declare it. Only a VAR or parameter entry
     // proves the binding exists.
-    if (try _existing_b33 = self.find_var_or_param_reg(var_name)) {
+    if (try _existing_b33 = self.find_local_reg(var_name)) {
         self.has_local_bindings = true;
         return;
     }

@@ -57,43 +57,42 @@ fn bool capture_name_operand(Instruction* code, uint pc, uint* name) {
 // hoisting binds it before any code runs. Comparing interned keys links the
 // two constant pools without borrowing names.
 fn void CompilerContext.resolve_capture_candidates(&self, CompiledFunction* child) {
-    uint count = 0;
-    for (uint ci = 0; ci < child.capture_count; ci++) {
+    if (child.capture_count == 0) return;
+    Heap* h = (Heap*)self.heap;
+    // One plus the capture index of each resolved name, by the child's pool index.
+    uint* slots = (uint*)h.alloc_func(h.heap_udata, (usz)child.const_count * uint::size);
+    uint candidates = child.capture_count;
+    child.capture_count = 0;
+    if (slots == null) return;
+    defer h.free_func(h.heap_udata, slots);
+    mem::clear(slots, (sz)child.const_count * uint::size);
+    bool lexical = !self.is_global && !self.has_direct_eval && !self.has_with_stmt
+        && !self.outer_with && !self.capture_all;
+    for (uint ci = 0; lexical && ci < candidates; ci++) {
         uint name = child.capture_names[ci];
-        bool found = false;
-        bool scoped = false;
-        if (!self.is_global && !self.has_direct_eval && !self.has_with_stmt
-            && !self.outer_with && !self.capture_all) {
-            for (uint si = self.scope_depth; si > 0; si--) {
-                ScopeEntry entry = self.scope_stack[si - 1];
-                if (entry.binding_id == 0) continue;
-                BindingInfo binding = self.bindings[(sz)(entry.binding_id - 1)];
-                if (self.constants[binding.name_idx].get_heapptr()
-                    != child.constants[name].get_heapptr()) continue;
-                found = binding.is_captured;
-                scoped = true;
-                break;
-            }
-            if (!scoped) found = self.declares_hoisted_name(child.constants[name]);
-        }
+        ScopeEntry* entry = self.scope_entry_of(child.constants[name].get_heapptr());
+        bool found = entry != null ? self.bindings[(sz)(entry.binding_id - 1)].is_captured
+            : self.declares_hoisted_name(child.constants[name]);
         if (!found) continue;
-        for (uint pc = 0; pc < child.code_count; pc++) {
-            Instruction* ins = &child.code[pc];
-            uint operand_name;
-            if (!capture_name_operand(child.code, pc, &operand_name) || operand_name != name) continue;
-            // A prefix word carries BC's high bits; an unprefixed BC holds 16.
-            bool prefixed = pc > 0 && child.code[pc - 1].op == Opcode.WIDE;
-            if (ins.op == Opcode.GETVAR || ins.op == Opcode.PUTVAR_ASSIGN) {
-                if (!prefixed && count > 0xFFFF) continue;
-                ins.op = ins.op == Opcode.GETVAR ? Opcode.GETCAP : Opcode.PUTCAP;
-                bytecode::set_code_bc(child.code, pc, count);
-            } else if (count <= 255) {
-                *ins = bytecode::make_abc(Opcode.PUTCAP_SNAP, ins.a, ins.b, (char)count);
-            }
-        }
-        child.capture_names[count++] = name;
+        child.capture_names[child.capture_count++] = name;
+        slots[name] = child.capture_count;
     }
-    child.capture_count = count;
+    if (child.capture_count == 0) return;
+    for (uint pc = 0; pc < child.code_count; pc++) {
+        Instruction* ins = &child.code[pc];
+        uint name;
+        if (!capture_name_operand(child.code, pc, &name) || name >= child.const_count || slots[name] == 0) continue;
+        uint slot = slots[name] - 1;
+        // A prefix word carries BC's high bits; an unprefixed BC holds 16.
+        bool prefixed = pc > 0 && child.code[pc - 1].op == Opcode.WIDE;
+        if (ins.op == Opcode.GETVAR || ins.op == Opcode.PUTVAR_ASSIGN) {
+            if (!prefixed && slot > 0xFFFF) continue;
+            ins.op = ins.op == Opcode.GETVAR ? Opcode.GETCAP : Opcode.PUTCAP;
+            bytecode::set_code_bc(child.code, pc, slot);
+        } else if (slot <= 255) {
+            *ins = bytecode::make_abc(Opcode.PUTCAP_SNAP, ins.a, ins.b, (char)slot);
+        }
+    }
 }
 
 // True when this function's top-level scope binds the name as a var or a

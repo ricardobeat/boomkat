@@ -84,6 +84,24 @@ fn uint CompilerContext.add_constant(&self, TVal val) {
     return idx;
 }
 
+// The pool index of the interned string `key`, or const_count when the pool
+// does not hold it. Strings enter the pool only through add_string_constant,
+// which keeps one slot per string in the constant hash, so the hash names it;
+// a pool without a hash is scanned.
+fn uint CompilerContext.find_string_constant(&self, void* key) {
+    if (key == null) return self.const_count;
+    if (self.const_hash != null && self.const_hash_cap != 0) {
+        TVal probe;
+        probe.set_string_borrowed((HString*)key);
+        uint idx = self.lookup_constant_hash(probe.get_raw_bits());
+        return idx < self.const_count && self.constants[idx].get_heapptr() == key ? idx : self.const_count;
+    }
+    for (uint i = 0; i < self.const_count; i++) {
+        if (self.constants[i].is_string() && self.constants[i].get_heapptr() == key) return i;
+    }
+    return self.const_count;
+}
+
 // Add a string constant: intern the text and add a STRING TVal to the pool.
 fn uint CompilerContext.add_string_constant(&self, char[] str) {
     // Intern via Heap.str_intern so raw 4-byte UTF-8 astral sequences are

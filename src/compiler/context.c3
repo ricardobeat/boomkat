@@ -151,6 +151,9 @@ struct ScopeEntry {
     // and safely represents an entry without ledger metadata.
     uint binding_id;
     bool is_captured;
+    // One plus the index of the next entry down with this name, or for a
+    // marker of the next marker down. Zero when there is none.
+    uint shadowed;
     // True for a let/const whose PUTLEX/PUTLEX_C is not yet emitted (still in its TDZ).
     // resolve_var returns SCOPE_ERROR for it, so reads compile to GETVAR and throw
     // ReferenceError against the INITTZ sentinel. Cleared by emit_var_store.
@@ -346,6 +349,11 @@ struct CompilerContext {
     ScopeEntry* scope_stack;
     uint scope_cap;
     uint scope_depth;
+    // One plus the index of the topmost entry bound to each pool string, and of
+    // the topmost marker, so a lookup need not walk a wide scope.
+    uint* name_top;
+    uint name_top_cap;
+    uint top_mark;
     List{BindingInfo} bindings;
     ushort cell_frame_reg;
     bool cell_frame_reserved;
@@ -934,6 +942,7 @@ fn void CompilerContext.cleanup(&self) {
     if (self.code != null) { h.free_func(h.heap_udata, self.code); self.code = null; }
     if (self.source_positions != null) { h.free_func(h.heap_udata, self.source_positions); self.source_positions = null; }
     if (self.scope_stack != null) { h.free_func(h.heap_udata, self.scope_stack); self.scope_stack = null; }
+    if (self.name_top != null) { h.free_func(h.heap_udata, self.name_top); self.name_top = null; }
     if (self.constants != null) { h.free_func(h.heap_udata, self.constants); self.constants = null; }
     if (self.const_hash != null) { h.free_func(h.heap_udata, self.const_hash); self.const_hash = null; }
     if (self.inner_funcs != null) { h.free_func(h.heap_udata, self.inner_funcs); self.inner_funcs = null; }
@@ -1014,6 +1023,23 @@ fn void CompilerContext.ensure_code_cap(&self) {
     }
     self.source_positions = (SourcePosition*)lp;
     self.code_cap = new_cap;
+}
+
+// Make name_top cover the pool index `name_idx`. False when allocation fails.
+fn bool CompilerContext.ensure_name_top(&self, uint name_idx) {
+    if (name_idx < self.name_top_cap) return true;
+    uint new_cap = self.name_top_cap == 0 ? 64 : self.name_top_cap;
+    while (new_cap <= name_idx) new_cap *= 2;
+    Heap* h = (Heap*)self.heap;
+    void* p = h.realloc_func(h.heap_udata, self.name_top, (usz)new_cap * uint::size);
+    if (p == null) {
+        self.record_error("out of memory growing the scope index");
+        return false;
+    }
+    self.name_top = (uint*)p;
+    mem::clear(&self.name_top[self.name_top_cap], (sz)(new_cap - self.name_top_cap) * uint::size);
+    self.name_top_cap = new_cap;
+    return true;
 }
 
 // Grow the scope stack. Unlike the code and constant buffers, this has no hard cap; the depth is

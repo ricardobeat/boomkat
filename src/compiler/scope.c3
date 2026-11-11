@@ -19,12 +19,7 @@ fn void CompilerContext.push_scope(&self) {
 
 // Pop the current scope level, freeing any variables declared in it.
 fn void CompilerContext.pop_scope(&self) {
-    while (self.scope_depth > 0) {
-        ScopeEntry* top = &self.scope_stack[self.scope_depth - 1];
-        self.free_reg(top.reg);
-        self.scope_depth--;
-        break;  // We'll be called in a loop by the block parser
-    }
+    if (self.scope_depth > 0) self.pop_scope_to(self.scope_depth - 1);
 }
 
 // Pop all scope entries added since `saved_depth`.
@@ -32,11 +27,36 @@ fn void CompilerContext.pop_scope_to(&self, uint saved_depth) {
     while (self.scope_depth > saved_depth) {
         ScopeEntry* top = &self.scope_stack[self.scope_depth - 1];
         // Scope markers have no register to free.
-        if (top.kind != SCOPEMARK) {
+        if (top.kind == SCOPEMARK) {
+            self.top_mark = top.shadowed;
+        } else {
             self.free_reg(top.reg);
+            self.name_top[self.bindings[(sz)(top.binding_id - 1)].name_idx] = top.shadowed;
         }
         self.scope_depth--;
     }
+}
+
+// Scopes this shallow are searched in place; deeper ones through name_top.
+const uint SCOPE_SCAN_MAX = 16;
+
+// The topmost scope entry bound to the interned string `key`, or null.
+fn ScopeEntry* CompilerContext.scope_entry_of(&self, void* key) {
+    uint name_idx = self.find_string_constant(key);
+    if (name_idx >= self.name_top_cap || self.name_top[name_idx] == 0) return null;
+    return &self.scope_stack[self.name_top[name_idx] - 1];
+}
+
+// The topmost scope entry named `name`, or null.
+fn ScopeEntry* CompilerContext.scope_entry(&self, char[] name) {
+    if (self.scope_depth > SCOPE_SCAN_MAX) {
+        Heap* h = (Heap*)self.heap;
+        return self.scope_entry_of(h.ensure_interned(h.str_intern(name)));
+    }
+    for (uint i = self.scope_depth; i > 0; i--) {
+        if (str_eq(self.scope_stack[i - 1].name, name)) return &self.scope_stack[i - 1];
+    }
+    return null;
 }
 
 // Push a scope marker to delimit block scope boundaries for duplicate
@@ -62,7 +82,9 @@ fn void CompilerContext.push_scope_marker(&self, bool is_body = false) {
         self.scope_stack[self.scope_depth].is_param = false;
         self.scope_stack[self.scope_depth].is_body_mark = is_body;
         self.scope_stack[self.scope_depth].reg_floor = self.scope_reg_floor();
+        self.scope_stack[self.scope_depth].shadowed = self.top_mark;
         self.scope_depth++;
+        self.top_mark = self.scope_depth;
     }
 }
 
@@ -150,6 +172,8 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
     // See push_scope_marker: a dropped entry is a silent wrong answer.
     if (push_scope) { self.ensure_scope_cap(); }
     if (push_scope && self.scope_depth >= self.scope_cap) { self.scope_overflow = true; }
+    uint name_idx = push_scope ? self.add_string_constant(name) : 0;
+    if (push_scope && !self.ensure_name_top(name_idx)) push_scope = false;
     if (push_scope && self.scope_depth < self.scope_cap) {
         // Locals referenced inside nested callable bodies (or reachable by
         // direct eval) must be env-resident: force every access through
@@ -164,7 +188,6 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         // `block()` / `for_of` / `class` install via `INITTZ`).  Cleared by
         // `emit_var_store` after the publishing `PUTLEX` runs.
         bool is_tdz = kind == LET || kind == CONST;
-        uint name_idx = self.add_string_constant(name);
         uint binding_id = (uint)self.bindings.len() + 1;
         self.bindings.push({
             .name_idx = name_idx,
@@ -188,7 +211,9 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         uint floor = self.scope_reg_floor();
         self.scope_stack[self.scope_depth].reg_floor = (uint)reg + 1 > floor ? (uint)reg + 1 : floor;
         if (captured) { self.has_captured_local = true; }
+        self.scope_stack[self.scope_depth].shadowed = self.name_top[name_idx];
         self.scope_depth++;
+        self.name_top[name_idx] = self.scope_depth;
     }
     return reg;
 }
@@ -237,27 +262,15 @@ fn ushort? CompilerContext.resolve_var(&self, char[] name) {
     if (self.in_with()) {
         return SCOPE_ERROR~;
     }
-    // Search from top of scope stack backwards
-    if (self.scope_depth == 0) {
-        return SCOPE_ERROR~;
-    }
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        if (str_eq(self.scope_stack[i].name, name)) {
-            // If captured (e.g. shadowed by a let/const in an inner scope),
-            // force environment lookup so the VM walks the lex_env chain.
-            // Same for a `let`/`const` in its temporal dead zone: register
-            // access would bypass the INITTZ sentinel and return `undefined`,
-            // violating §13.3.1 / §14.3.1.2 (TDZ must throw ReferenceError
-            // until the initialiser's PUTLEX/PUTLEX_C runs).
-            if (self.scope_stack[i].is_captured || self.scope_stack[i].is_tdz) {
-                return SCOPE_ERROR~;
-            }
-            return self.scope_stack[i].reg;
-        }
-    }
-    return SCOPE_ERROR~;
+    // If captured (e.g. shadowed by a let/const in an inner scope),
+    // force environment lookup so the VM walks the lex_env chain.
+    // Same for a `let`/`const` in its temporal dead zone: register
+    // access would bypass the INITTZ sentinel and return `undefined`,
+    // violating §13.3.1 / §14.3.1.2 (TDZ must throw ReferenceError
+    // until the initialiser's PUTLEX/PUTLEX_C runs).
+    ScopeEntry* e = self.scope_entry(name);
+    if (e == null || e.is_captured || e.is_tdz) return SCOPE_ERROR~;
+    return e.reg;
 }
 
 // Resolve a REGISTER-RESIDENT top-level `var` (is_slot_global) to its home
@@ -328,17 +341,9 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
     // Annex B.3.3.1 step ii treats a lex-vs-var conflict as the signal to skip the
     // var binding. Returning a LET/CONST register would make
     // emit_block_scoped_fn_decls overwrite the lexical slot with the closure.
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        ScopeEntry* e = &self.scope_stack[i];
-        if (!str_eq(e.name, name)) continue;
-        if (e.kind == ScopeKind.VAR || e.is_param) {
-            return e.reg;
-        }
-        return SCOPE_ERROR~;
-    }
-    return SCOPE_ERROR~;
+    ScopeEntry* e = self.scope_entry(name);
+    if (e == null || (e.kind != ScopeKind.VAR && !e.is_param)) return SCOPE_ERROR~;
+    return e.reg;
 }
 
 
@@ -403,41 +408,11 @@ fn bool CompilerContext.names_catch_param(&self, char[] name) {
 // pushes that marker, so the binding a textual-position declaration must
 // reuse sits just below it.
 fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
-    bool crossed_body_mark = false;
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind == SCOPEMARK) {
-            if (!e.is_body_mark || crossed_body_mark) break;
-            crossed_body_mark = true;
-            continue;
-        }
-        if (str_eq(e.name, name)) return e.reg;
-    }
-    return SCOPE_ERROR~;
-}
-
-// The var-or-parameter register for `name`, when the VAR binding already
-// exists: a VAR entry (hoisted `var`, including one an earlier B.3.3 scan
-// made) or a formal/catch parameter entry (which doubles as the var binding
-// per §9.2.10 step 27). A LET/CONST entry is block-scoped shadowing, never
-// the var binding, so it does not count — the caller must still declare.
-fn ushort? CompilerContext.find_var_or_param_reg(&self, char[] name) {
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind == SCOPEMARK) {
-            continue;
-        }
-        if (!str_eq(e.name, name)) {
-            continue;
-        }
-        if (e.kind == VAR || e.is_param) return e.reg;
-        return SCOPE_ERROR~;
-    }
-    return SCOPE_ERROR~;
+    uint floor = self.top_mark;
+    if (floor != 0 && self.scope_stack[floor - 1].is_body_mark) floor = self.scope_stack[floor - 1].shadowed;
+    ScopeEntry* e = self.scope_entry(name);
+    if (e == null || e < &self.scope_stack[floor]) return SCOPE_ERROR~;
+    return e.reg;
 }
 
 // True when a same-named lexical binding sits anywhere in the CURRENT
