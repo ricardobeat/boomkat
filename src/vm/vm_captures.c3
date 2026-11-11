@@ -37,6 +37,31 @@ macro hobject::PropValue* capture_read_slot(CaptureRef* ref) {
     return value;
 }
 
+// A capture whose binding did not exist when the closure was created is
+// resolved again on use, as creation would have resolved it. Hoisted function
+// declarations are published after every closure in the body is created, so a
+// closure that calls a sibling declaration would otherwise look the name up on
+// every read.
+fn bool capture_resolve_late(Activation* act, CaptureRef* ref, uint index, Heap* h) @noinline {
+    HObjectFunction* fields = &(*((HObject*)act.tv_func.get_heapptr()).extra_ptr()).func;
+    CompiledFunction* template = fields.comp_func;
+    if (template.capture_names == null) return false;
+    uint name_idx = template.capture_names[index];
+    if (name_idx >= template.const_count || !template.constants[name_idx].is_string()) return false;
+    void* key = template.constants[name_idx].get_heapptr();
+    Vm* vm = (Vm*)h.vm_ptr;
+    CaptureRef found;
+    int resolved = resolve_capture_ref(vm, fields.lex_env, key, &found);
+    if (resolved == 0 && fields.var_env != fields.lex_env) {
+        resolved = resolve_capture_ref(vm, fields.var_env, key, &found);
+    }
+    if (resolved <= 0 || found.owner == null) return false;
+    found.owner.as_header().incref();
+    h.shade_root_object(found.owner);
+    *ref = found;
+    return true;
+}
+
 // Fetch the current slots because adding environment bindings can resize
 // their storage. A writer passes `owner` to receive the object that
 // holds the slot, for the write barrier.
@@ -45,7 +70,7 @@ fn hobject::PropValue* capture_value_slot(Activation* act, uint index, Heap* h, 
     CaptureRef* ref = capture_ref(act, index);
     if (ref == null) return null;
     if (ref.is_value) return write ? null : (hobject::PropValue*)&ref.value;
-    if (ref.owner == null) return null;
+    if (ref.owner == null && !capture_resolve_late(act, ref, index, h)) return null;
     if (ref.is_cell) {
         if (ref.prop_idx >= ref.owner.prop_count) return null;
         if (owner != null) *owner = ref.owner;
