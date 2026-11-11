@@ -19,12 +19,42 @@ import std::math;
 // call overhead; only the loop-bearing unary handlers live out-of-line here.
 // ============================================================================
 
+// ToNumeric on the old value of `++` or `--` (ECMA-262 UpdateExpression), which
+// leaves a Number or a BigInt in *old. A BigInt it converted to belongs to the
+// pending return value, so step it before the next call. False when the
+// conversion threw into a handler: the binding keeps its value and the
+// instruction is over.
+fn bool? incdec_operand(Dispatch* ds, TVal* old) @inline {
+    if (old.is_fastint() || old.is_number() || old.is_bigint() || env::is_tdz_sentinel(old)) return true;
+    return incdec_to_numeric(ds, old);
+}
+
+fn bool? incdec_to_numeric(Dispatch* ds, TVal* old) @noinline {
+    Vm* vm = ds.vm;
+    TVal numeric;
+    if (vm_to_numeric(vm, old, &numeric)) {
+        *old = numeric;
+        return true;
+    }
+    if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) vm_uncaught_error(vm, &vm.throw_value)!;
+    return false;
+}
+
+// incdec_operand for a register stepped in place.
+fn bool? incdec_register(Dispatch* ds, TVal* reg) {
+    TVal numeric = *reg;
+    if (!incdec_operand(ds, &numeric)!) return false;
+    ds.vm.heap.tval_copy_ref(reg, &numeric);
+    return true;
+}
+
 // Computes old ± 1 into *out without writing any binding slot, for the sloppy
 // silent-drop of non-writable bindings (a named fnexpr's own name, the
 // built-in global immutables). The write is dropped but the expression still
 // evaluates to the incremented value (ECMA-262 declarative SetMutableBinding, step 5.2).
 fn TVal? incdec_compute_no_write(Dispatch* ds, TVal old_val, bool is_inc, TVal* out) {
     Vm* vm = ds.vm;
+    if (!incdec_operand(ds, &old_val)!) return (TVal){};
     if (old_val.is_fastint()) {
         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -81,17 +111,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         case Opcode.TONUMERIC:
             // ECMA-262 ToNumeric: BigInt passes through unchanged;
             // everything else behaves like unary plus (ToNumber).
-            if (rb.is_bigint()) {
-                vm.heap.tval_copy_ref(ra, rb);
-                return (TVal){};
-            }
-            if (rb.is_fastint()) {
-                vm.heap.set_reg_fastint(ra, rb.get_fastint());
-            } else {
-                double tn_b = vm_to_number(vm,rb);
-                if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
-                vm.heap.set_reg_number(ra, tn_b);
-            }
+            TVal numeric = *rb;
+            if (incdec_operand(ds, &numeric)!) vm.heap.tval_copy_ref(ra, &numeric);
             return (TVal){};
 
         case Opcode.UNM:
@@ -189,6 +210,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         case Opcode.INC:
             if (ra.is_fastint()) {
                 vm.heap.set_reg_fastint_or_number(ra, ra.get_fastint() + 1L);
+            } else if (!incdec_register(ds, ra)!) {
+                return (TVal){};
             } else if (ra.is_bigint()) {
                 if (vm_bigint_incdec(vm, ra, true) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -206,6 +229,8 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
         case Opcode.DEC:
             if (ra.is_fastint()) {
                 vm.heap.set_reg_fastint_or_number(ra, ra.get_fastint() - 1L);
+            } else if (!incdec_register(ds, ra)!) {
+                return (TVal){};
             } else if (ra.is_bigint()) {
                 if (vm_bigint_incdec(vm, ra, false) == BigIntOpResult.THREW) {
                     if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -274,6 +299,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             // ENV_STRICT: INC_VAR and DEC_VAR read traps are gone. lex_env is the parent
                             // env here, so a hit is a legitimate parent lookup. Own-local leaks throw
                             // 'not defined' and are caught by test/test_register_locals.js.
+                            if (!incdec_operand(ds, &old_val)!) return (TVal){};
                             if (old_val.is_fastint()) {
                                 long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                                 if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -356,6 +382,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             return (TVal){};
                         }
                         TVal new_val = old_val;
+                        if (!incdec_operand(ds, &old_val)!) return (TVal){};
                         if (old_val.is_fastint()) {
                             long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                             if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -499,6 +526,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         }
                         return (TVal){};
                     }
+                    if (!incdec_operand(ds, &old_val)!) return (TVal){};
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -542,6 +570,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     TVal? result = env::env_get(ds.act.var_env, key);
                     if (try v2 = result) {
                         TVal new_val;
+                        if (!incdec_operand(ds, &v2)!) return (TVal){};
                         if (v2.is_fastint()) {
                             long v = v2.get_fastint() + (is_inc ? 1L : -1L);
                             if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -617,15 +646,13 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                             vm.heap.set_reg_number(ra, (double)v);
                         }
                         return (TVal){};
-                    } else if (!old_val.is_bigint() && !env::is_tdz_sentinel(&old_val)) {
-                        double d = vm_to_number(vm,&old_val);
-                        if (!vm_check_to_number_throw(vm, ds.act, &ds.curr_pc, &ds.needs_restart)) return vm_uncaught_error(vm, &vm.throw_value);
-                        double new_d = d + (is_inc ? 1.0 : -1.0);
+                    } else if (old_val.is_number()) {
+                        double new_d = old_val.get_number() + (is_inc ? 1.0 : -1.0);
                         slot.set_number(new_d);
                         vm.heap.set_reg_number(ra, new_d);
                         return (TVal){};
                     }
-                    // BigInt / TDZ: fall through to slow path.
+                    // Anything else, the TDZ sentinel included: fall through to the slow path.
                 }
             }
 
@@ -683,6 +710,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                         }
                         return (TVal){};
                     }
+                    if (!incdec_operand(ds, &old_val)!) return (TVal){};
                     if (old_val.is_fastint()) {
                         long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                         if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {
@@ -730,6 +758,7 @@ fn TVal? dispatch_unary(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
                     TVal old_val = ds.act.var_env.bindings.prop_values()[vidx].get();
                     hobject::PropFlags fl = ds.act.var_env.bindings.get_prop_flags((uint)vidx, ds.vm.heap);
                     if (!fl.is_accessor && fl.writable && !env::is_tdz_sentinel(&old_val)) {
+                        if (!incdec_operand(ds, &old_val)!) return (TVal){};
                         if (old_val.is_fastint()) {
                             long v = old_val.get_fastint() + (is_inc ? 1L : -1L);
                             if (v >= types::FASTINT_MIN && v <= types::FASTINT_MAX) {

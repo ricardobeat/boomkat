@@ -2556,11 +2556,20 @@ macro int @bitop_apply($op, int b, int c) {
 // if it had been written out longhand there. Verified empirically (not just
 // inferred from docs) that this differs from control flow written directly
 // in a macro's own statements.
+// Whether an arithmetic operator must run ToNumeric on its operands before it
+// can tell BigInt arithmetic from Number arithmetic.
+macro bool @needs_to_numeric(TVal* rb, TVal* rc) {
+    return rb.is_bigint() || rc.is_bigint() || rb.get_tag() == OBJECT || rc.get_tag() == OBJECT;
+}
+
 macro @bitop(TVal* ra, TVal* rb, TVal* rc, $op, vm, Dispatch* ds; @body()) {
     TVal* eb = rb; TVal* ec = rc;
     TVal prim_b; TVal prim_c;
+    TVal held;
+    held.set_undefined();
+    defer vm.heap.decref_tval(&held);
     if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-        if (!vm_bitwise_to_primitive(vm, rb, rc, &prim_b, &prim_c)) {
+        if (!vm_to_numeric_pair(vm, rb, rc, &prim_b, &prim_c, &held)) {
             @body();
         }
         eb = &prim_b; ec = &prim_c;
@@ -3144,8 +3153,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.SUB:
-        if (rb.is_bigint() || rc.is_bigint()) {
-            if (vm_bigint_binop(vm, Opcode.SUB, ra, rb, rc) == BigIntOpResult.THREW) {
+        if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.SUB, ra, rb, rc) == BigIntOpResult.THREW) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
             }
@@ -3380,8 +3389,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.MUL:
-        if (rb.is_bigint() || rc.is_bigint()) {
-            if (vm_bigint_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {
+        if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
             }
@@ -3419,8 +3428,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
 
     case Opcode.DIV: {
-        if (rb.is_bigint() || rc.is_bigint()) {
-            if (vm_bigint_binop(vm, Opcode.DIV, ra, rb, rc) == BigIntOpResult.THREW) {
+        if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.DIV, ra, rb, rc) == BigIntOpResult.THREW) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
             }
@@ -3436,8 +3445,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.MOD:
-        if (rb.is_bigint() || rc.is_bigint()) {
-            if (vm_bigint_binop(vm, Opcode.MOD, ra, rb, rc) == BigIntOpResult.THREW) {
+        if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.MOD, ra, rb, rc) == BigIntOpResult.THREW) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
             }
@@ -3462,8 +3471,8 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         continue;
 
     case Opcode.EXP: {
-        if (rb.is_bigint() || rc.is_bigint()) {
-            if (vm_bigint_binop(vm, Opcode.EXP, ra, rb, rc) == BigIntOpResult.THREW) {
+        if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.EXP, ra, rb, rc) == BigIntOpResult.THREW) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
             }
@@ -3474,16 +3483,7 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         if (ds.needs_restart) break;
         double exp_c = vm_to_number(vm,rc);
         if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-        // ECMA-262 §12.6.4 (same result as Math.pow): a NaN exponent is NaN
-        // even for base 1, and abs(base) == 1 with a ±Infinity exponent is
-        // NaN. C99 pow returns 1 for both, so patch them here.
-        double exp_r;
-        if (math::abs(exp_b) == 1.0 && !math::is_finite(exp_c)) {
-            exp_r = double::nan;
-        } else {
-            exp_r = math::pow(exp_b, exp_c);
-        }
-        vm.heap.set_reg_number(ra, exp_r);
+        vm.heap.set_reg_number(ra, number_pow(exp_b, exp_c));
         continue;
     }
 
@@ -3576,8 +3576,11 @@ fn TVal? vm_dispatch(Dispatch* ds) {
         // the same is_bigint() dispatch below is correct here too.
         TVal* eb = rb; TVal* ec = rc;
         TVal ushr_prim_b; TVal ushr_prim_c;
+        TVal held;
+        held.set_undefined();
+        defer vm.heap.decref_tval(&held);
         if (rb.get_tag() == OBJECT || rc.get_tag() == OBJECT) {
-            if (!vm_bitwise_to_primitive(vm, rb, rc, &ushr_prim_b, &ushr_prim_c)) {
+            if (!vm_to_numeric_pair(vm, rb, rc, &ushr_prim_b, &ushr_prim_c, &held)) {
                 if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
                 if (ds.needs_restart) break;
             }

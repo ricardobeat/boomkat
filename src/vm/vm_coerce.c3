@@ -746,22 +746,22 @@ fn TVal to_primitive_value(Vm* vm, TVal* val, int hint = 0) {
     return *val;
 }
 
-// ECMA-262 ToNumeric (hint number) for both operands of a bitwise or shift op:
+// ECMA-262 ToNumeric (hint number) for both operands of a numeric operator:
 // lval is fully converted before rval is touched, so a Symbol lval throws before rval's
 // ToPrimitive runs. Converting first also catches an object whose ToPrimitive yields a
 // BigInt, which a BigInt check on the raw operands would miss (e.g. `Object(1n) << 1n`).
 //
-// Writes BigInts as-is and other values as NUMBER into *out_b/*out_c. Returns false with
-// vm.throw_pending set if either step throws.
-fn bool vm_bitwise_to_primitive(Vm* vm, TVal* rb, TVal* rc, TVal* out_b, TVal* out_c) {
-    if (!vm_to_numeric_bitwise(vm, rb, out_b)) return false;
-    if (!vm_to_numeric_bitwise(vm, rc, out_c)) return false;
-    return true;
+// Writes BigInts as-is and other values as NUMBER into *out_b/*out_c, and keeps *out_b
+// alive in *held (see vm_hold). Returns false with vm.throw_pending set if either step throws.
+fn bool vm_to_numeric_pair(Vm* vm, TVal* rb, TVal* rc, TVal* out_b, TVal* out_c, TVal* held) {
+    if (!vm_to_numeric(vm, rb, out_b)) return false;
+    vm_hold(vm, held, out_b);
+    return vm_to_numeric(vm, rc, out_c);
 }
 
 // ToNumeric for one operand: ToPrimitive (hint number), then BigInt passes through and
 // everything else goes through ToNumber, which throws on a Symbol.
-fn bool vm_to_numeric_bitwise(Vm* vm, TVal* val, TVal* out) {
+fn bool vm_to_numeric(Vm* vm, TVal* val, TVal* out) {
     TVal prim = *val;
     if (val.get_tag() == OBJECT) {
         prim = to_primitive_value(vm, val, 2);
