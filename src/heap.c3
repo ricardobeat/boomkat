@@ -1311,6 +1311,9 @@ struct Heap {
     // until the purge has cleared those entries.
     uint                shape_retired_head;
     uint                shape_retired_count;
+    // Retired slots that make the next purge due: a purge reads every cache
+    // entry, so it waits for a share of that many.
+    uint                shape_purge_due;
     // Transition count at which the next major cycle sweeps unused shapes.
     uint                shape_sweep_at;
     // Source of shape generations. A generation is a value taken from this
@@ -2036,6 +2039,7 @@ fn void Heap.init_shapes(&self) {
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_retired_head = SHAPE_FREE_END;
     self.shape_retired_count = 0;
+    self.shape_purge_due = SHAPE_RETIRED_BATCH;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     usz bytes = (usz)SHAPE_INITIAL_CAP * (void*::size);
@@ -2059,7 +2063,7 @@ fn uint Heap.alloc_shape_slot(&self) {
     // that entry would then read properties at the previous shape's offsets.
     // Every generation after the first comes from one clock, so the pair is
     // never reused.
-    if (self.shape_free_head == SHAPE_FREE_END && self.shape_retired_count >= SHAPE_RETIRED_BATCH) {
+    if (self.shape_free_head == SHAPE_FREE_END && self.shape_retired_count >= self.shape_purge_due) {
         self.purge_retired_shapes();
     }
     if (self.shape_free_head != SHAPE_FREE_END) {
@@ -2146,9 +2150,11 @@ fn void Heap.retire_shape_slot(&self, uint id) {
 // Every function with caches is in compiled_funcs, which the collector also
 // relies on to root the prototypes the entries cache.
 fn void Heap.purge_retired_shapes(&self) @noinline {
+    uint read = 0;
     for (uint fi = 0; fi < self.compiled_func_count; fi++) {
         bytecode::CompiledFunction* cf = (bytecode::CompiledFunction*)self.compiled_funcs[fi];
         if (cf == null || cf.ic_entries == null) continue;
+        read += cf.ic_count;
         hobject::ICEntry* entries = (hobject::ICEntry*)cf.ic_entries;
         for (uint i = 0; i < cf.ic_count; i++) {
             if (!self.ic_names_live_shapes(&entries[i])) {
@@ -2166,6 +2172,7 @@ fn void Heap.purge_retired_shapes(&self) @noinline {
         self.shape_free_head = id;
     }
     self.shape_retired_count = 0;
+    self.shape_purge_due = read / 4 > SHAPE_RETIRED_BATCH ? read / 4 : SHAPE_RETIRED_BATCH;
 }
 
 // False when `ic` names a shape id that is not live: its receiver's, or one
@@ -3019,6 +3026,7 @@ fn void Heap.reset(&self) {
     self.shape_free_head = SHAPE_FREE_END;
     self.shape_retired_head = SHAPE_FREE_END;
     self.shape_retired_count = 0;
+    self.shape_purge_due = SHAPE_RETIRED_BATCH;
     self.shape_sweep_at = SHAPE_SWEEP_MIN_TRANSITIONS;
     self.shape_gen_clock = 0;
     self.shape_reuse_gen = 0;

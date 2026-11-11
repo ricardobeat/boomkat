@@ -64,6 +64,27 @@ try { new Function('class D {' + seq(N, i => `get #f${i}() {}`) + 'get #f1500() 
 try { new Function('class D {' + seq(N, i => `#f${i};`) + 'm() { return this.#missing; } }'); } catch (e) { dup += e instanceof SyntaxError; }
 assert(dup === 3, 'duplicate and undeclared private names among many');
 
+// Array patterns with thousands of elements: declared, assigned, as a parameter, nested, with holes and a rest.
+var src = []; for (var i = 0; i < N + 5; i++) src.push(i);
+f = new Function('a', 'var [' + seq(N, i => `v${i}`, ',') + ', ...more] = a;'
+    + 'let [' + seq(N, i => i % 3 ? `w${i} = -1` : '', ',') + '] = a;'
+    + 'var ' + seq(N, i => `x${i}`, ',') + '; [' + seq(N, i => `x${i}`, ',') + '] = a;'
+    + 'return ' + seq(N, i => `v${i} + ${i % 3 ? `w${i}` : 0} + x${i}`, '+') + ' + more.length;');
+assert(f(src) === 3 * SUM - (N / 3) * (N - 3) / 2 + 5, 'array patterns with thousands of elements');
+f = new Function('[' + seq(N, i => `p${i}`, ',') + ']', 'return ' + seq(N, i => `p${i}`, '+') + ';');
+assert(f(src) === SUM, 'a parameter pattern with thousands of elements');
+var closed = 0;
+function counted(v) {
+    var it = [v, v][Symbol.iterator]();
+    return { [Symbol.iterator]() { return this; }, next() { return it.next(); }, return() { closed++; return {}; } };
+}
+f = new Function('a', 'var [' + seq(N, i => `[n${i}]`, ',') + '] = a; return ' + seq(N, i => `n${i}`, '+') + ';');
+assert(f(src.slice(0, N).map(counted)) === SUM && closed === N, 'each nested pattern closes its own iterator');
+var dupes = 0;
+try { new Function('"use strict"; return function (' + seq(N, i => `q${i}`, ',') + ', q1500) {};'); } catch (e) { dupes += e instanceof SyntaxError; }
+try { new Function('return ([' + seq(N, i => `q${i}`, ',') + '], q7) => 0;'); } catch (e) { dupes += e instanceof SyntaxError; }
+assert(dupes === 2 && new Function('return (' + seq(N, i => `q${i}`, ',') + ') => q2999;')()(...src) === 2999, 'duplicate parameters among thousands');
+
 f = new Function(seq(N, i => `class C${i} { m() { return ${i}; } }`) + 'return new C0().m() + new C2999().m();');
 assert(f() === 2999, 'classes');
 

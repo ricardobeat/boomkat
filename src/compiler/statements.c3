@@ -352,18 +352,8 @@ fn void CompilerContext.emit_var_store(&self, ushort reg, uint name_idx, bool is
         // so subsequent reads inside the same scope can use the fast register
         // path again.
         if (name_idx < self.const_count) {
-            HString* hs = (HString*)self.constants[name_idx].get_heapptr();
-            if (hs != null) {
-                char[] bname = self.name_text(hs);
-                for (uint i = self.scope_depth; i > 0; i--) {
-                    uint idx = i - 1;
-                    if (self.scope_stack[idx].kind == SCOPEMARK) continue;
-                    if (str_eq(self.scope_stack[idx].name, bname)) {
-                        self.scope_stack[idx].is_tdz = false;
-                        break;
-                    }
-                }
-            }
+            ScopeEntry* e = self.scope_entry_of(self.constants[name_idx].get_heapptr());
+            if (e != null) e.is_tdz = false;
         }
     } else if (walk_chain) {
         // DECLVAR writes to the immediate var_env only, which is wrong when the

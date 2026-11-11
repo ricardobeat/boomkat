@@ -51,6 +51,9 @@ struct Early {
     Vec{PrivateName} privates;
     // By atom, one plus the index in `privates` of its innermost declaration.
     Vec{uint} private_top;
+    // By atom, the has_duplicate pass that last met it.
+    Vec{uint} seen;
+    uint seen_pass;
     Vec{uint} names;           // scratch: BoundNames of a parameter list or catch parameter
     bool failed;
     uint err_pos;
@@ -120,6 +123,7 @@ fn void Early.free(&self) {
     self.labels.free();
     self.privates.free();
     self.private_top.free();
+    self.seen.free();
     self.names.free();
     mem::free(self.strict_bits.ptr);
     mem::free(self.keyword_bits.ptr);
@@ -312,10 +316,24 @@ fn void Early.target(&self, uint n) {
 
 // Whether the names collected from `from` on repeat.
 fn bool Early.has_duplicate(&self, uint from) {
-    for (sz i = (sz)from + 1; i < self.names.len; i++) {
-        for (sz j = (sz)from; j < i; j++) {
-            if (self.names.data[i] == self.names.data[j]) return true;
+    // A short list is compared in place, a long one through a table by atom.
+    if (self.names.len - from <= 16) {
+        for (sz i = (sz)from + 1; i < self.names.len; i++) {
+            for (sz j = (sz)from; j < i; j++) {
+                if (self.names.data[i] == self.names.data[j]) return true;
+            }
         }
+        return false;
+    }
+    if (++self.seen_pass == 0) {
+        self.seen.zero(self.seen.len);
+        self.seen_pass = 1;
+    }
+    for (sz i = (sz)from; i < self.names.len; i++) {
+        uint atom = self.names.data[i];
+        while (self.seen.len <= atom) self.seen.push(0);
+        if (self.seen.data[atom] == self.seen_pass) return true;
+        self.seen.data[atom] = self.seen_pass;
     }
     return false;
 }
