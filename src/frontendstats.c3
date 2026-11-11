@@ -48,6 +48,8 @@ tlocal ulong[FS_BODY_MAX_DEPTH] fs_nested_us;
 const uint FS_BODY_DECL = 0;
 const uint FS_BODY_UEXPR = 1;
 const uint FS_BODY_OTHER = 2;
+// A named function expression; counted with FS_BODY_OTHER.
+const uint FS_BODY_NEXPR = 3;
 
 tlocal ulong liveness_calls;
 tlocal ulong liveness_sweeps;

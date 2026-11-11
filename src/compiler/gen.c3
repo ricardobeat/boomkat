@@ -1482,10 +1482,12 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         self.is_async = saved_async;
     }
     if (!method && tree.tags.data[n] != NodeTag.ARROW
-        && (tree.tags.data[n] != NodeTag.FUNC_EXPR || name_node == 0)
         && self.can_defer_body(fnf)
         && (n != self.eager_function || tree.body_was_recorded(n))) {
-        return self.defer_function(scope, name);
+        CompiledFunction* stub = self.defer_function(scope, name)!;
+        // A named function expression: the VM binds the name at call time.
+        stub.flags.is_namebinding = name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR;
+        return stub;
     }
     if (tree.body_was_recorded(n)) return self.fail("internal: a recorded body reached the eager compiler")~;
     CompiledFunction* inner = tree.tags.data[n] == NodeTag.ARROW

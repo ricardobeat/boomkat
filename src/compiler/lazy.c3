@@ -72,7 +72,8 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
     if (self.has_direct_eval || self.has_with_stmt || self.in_with()
         || self.in_eval_code || self.capture_all) return;
     if (idx.unknown_outer && (idx.reparsed == null || !idx.reparsed.lazy_outer_known)) return;
-    for (uint s = idx.res.scopes.data[scope].parent; s != 0; s = idx.res.scopes.data[s].parent) {
+    uint outer = idx.res.scopes.data[scope].parent;
+    for (uint s = outer; s != 0; s = idx.res.scopes.data[s].parent) {
         ast::Scope* sc = &idx.res.scopes.data[s];
         if (sc.kind == ast::ScopeKind.WITH
             || (sc.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS)) != 0) return;
@@ -87,7 +88,8 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
         uint atom = idx.tree.field(refs, 2 + i);
         HString* name = h.ensure_interned(h.str_intern(idx.tree.atoms.get(atom)));
         bool bound = idx.unknown_outer && outer_may_bind(idx, name);
-        for (uint s = idx.res.scopes.data[scope].parent; s != 0 && !bound; s = idx.res.scopes.data[s].parent) {
+        // From the function's own scope, which binds a function expression's name.
+        for (uint s = scope; s != 0 && !bound; s = idx.res.scopes.data[s].parent) {
             bound = idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0;
         }
         if (!bound) continue;
@@ -136,6 +138,8 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     defer ctx.cleanup();
     ctx.is_strict = f.flags.is_strict;
     ctx.is_constructable = f.flags.is_constructable;
+    ctx.is_named_func_expr = f.flags.is_namebinding;
+    if (ctx.is_named_func_expr) ctx.named_func_expr_name = f.name_ptr[:f.name_len];
     // The source slice has no declarations for its enclosing scopes. Keep
     // free names in the captured environment rather than proving them global.
     idx.unknown_outer = true;
@@ -149,6 +153,7 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     f.prev = saved.prev;
     f.flags.reachable = saved.flags.reachable;
     f.flags.temproot = saved.flags.temproot;
+    f.flags.is_namebinding = saved.flags.is_namebinding;
     f.realm = saved.realm;
     f.name_ptr = saved.name_ptr;
     f.name_len = saved.name_len;

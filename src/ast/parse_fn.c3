@@ -75,7 +75,7 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
     }
     if (self.lex.ts_mode && self.tok.type == TokenType.LT) self.ts_skip_generic_params()!;
     uint body_kind = decl ? frontendstats::FS_BODY_DECL
-        : (name == 0 ? frontendstats::FS_BODY_UEXPR : frontendstats::FS_BODY_OTHER);
+        : (name == 0 ? frontendstats::FS_BODY_UEXPR : frontendstats::FS_BODY_NEXPR);
     uint rec = self.function_tail(start, fnf, body_kind)!;
     if (self.ast.field(rec, FN_BODY) == 0) {
         if (!decl) return self.unexpected()~;
@@ -126,7 +126,7 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
     self.ts_annotation()!;
     uint body = 0;
     bool skip_ok = self.defer_bodies
-        && (body_kind == frontendstats::FS_BODY_DECL || body_kind == frontendstats::FS_BODY_UEXPR)
+        && body_kind != frontendstats::FS_BODY_OTHER
         && (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0
         && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled
         && self.params_are_simple(params);
@@ -139,7 +139,7 @@ fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
         self.semicolon()!;
     } else {
         body = self.function_block(&fnf, skip_ok, params,
-            body_kind == frontendstats::FS_BODY_UEXPR)!;
+            body_kind != frontendstats::FS_BODY_DECL)!;
     }
     $if $feat(FRONTEND_STATS):
         frontendstats::fs_body_leave(body_kind, (uint)self.ast.tags.len - fs_nodes,
