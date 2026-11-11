@@ -74,7 +74,10 @@ add under the prototype epoch), `d90793c1` (minis time steady runs),
 `881b2048` (store into an old owner), `579086cc` (room for inlined frames
 tested once per entry), `4e05a8e7` (inlined method proven by its function
 object), `5d54f18c` (shape facts across joins), `c41cf2b9`, `ae019c27`,
-`ff15b34f`, `1aa1e94e` (step 3.0).
+`ff15b34f`, `1aa1e94e` (step 3.0). Then `f5e641b8` (booleans and joined objects in
+registers), `0353b45c` (an inherited megamorphic hit fills an epoch entry),
+`96dd6a13` (an inherited read proves its receiver's shape), `f74b3dfd` (no
+callee note in optimized code): Richards 17.2M, DeltaBlue 27.5M.
 
 **Box2D is unstable under `--opt` and that comes first** (step 0). Inside the
 full bundle it scores 8,000 to 12,700 from run to run (gate median 9,759, r15
@@ -298,56 +301,122 @@ EarleyBoyer 121K: all `needs_env` with `env_call_ok`, entered today through
   `@lean_call_*`. Give those functions a call entry like any other; the frame
   is cheap now and the C classification is not.
 
-**1.4 The protocol.** Traced (lldb single-step, 2026-11-11): a plain call
-and return is about 360 generated instructions: site 30, call subroutine 57,
-entry 115, body, return subroutine 75, after the return 40. TypeScript makes
-160M such calls in 203G instructions, so the protocol is over a quarter of it.
-JSC's baseline is around 30 to 40.
+**1.4 The frame model.** Measured 2026-11-11 at `f74b3dfd` with
+`scripts/call_cost.py` (instructions one call and return add, beyond the work
+of the callee's body):
 
-- Nearly all of it is straight-line bookkeeping for the 17-word `Activation`
-  and the `Dispatch` view; the redundant tests are gone (`127b4c61`, about 10
-  instructions). Under 100 needs structure, in this order: (a) the view block
-  (11 instructions on entry and 11 after the return) written lazily: thunks
-  and helpers reload it from `act.func` through one shared subroutine, and
-  every path that leaves generated code must pass through it; (b) the return
-  subroutine's tests that are static per function (`act.cat` without a `TRY`,
-  `act.forin` without a for-in: needs two function flags from the compiler);
-  (c) local and scratch clears by liveness; (d) `jit_floor`/`jit_depth` as
-  one counter; (e) a slimmer `Activation` (serial, caller_top, async fields
-  written per call for lean frames that never read them).
-- The larger lever on TypeScript is elsewhere: the optimizing tier is worth
-  about 1% there (202.0G against 203.8G even with a 64 MB code budget; 544 of
-  720 bodies discarded). Calls are not inlined when the callee itself calls
-  (`opcode CALL`: 3,431 rejections), is polymorphic (4,025) or too big (2,210).
-- Other measurements: a builtin called from baseline code costs 570 to 830
-  instructions (isNaN 738, Math.abs 569, hasOwnProperty 720, charAt 812), of
-  which the wrapper chain `jit_call_builtin_native` -> `jit_call_builtin` ->
-  `th_call_native` -> `dispatch_builtin` is about half (step 4.1). A callee
-  with a captured variable pays 530 more (`NEWCELLS` thunk), creating a
-  closure 1,400 (`CLOSURE` thunk). Remaining thunk volume per mini:
-  TypeScript GETVAR 2.0M, NEW_OBJ 1.6M, NEWCELLS 1.4M, NEXTFOR 1.2M; PdfJS
-  INITELEM 1.3M, CLOSURE 976K; zlib DECLVAR 852K, IF_TRUE 700K, CALL_VAR 665K.
-- Retraced at `0c06bb31` (one `a += f(i, 1)` iteration): site 40, call
-  subroutine 70 (callee class, kind, code and entry tests, feedback note,
-  receiver test, depth and floor), entry 125 (10 prologue, 30 tests, 45
-  activation stores, 6 register clears, 11 view, 15 for five 48-bit
-  constants), body 27, return subroutine 70 (45 of them guards), 6 epilogue,
-  35 after the return (floor, depth, realm, view again). JSC's baseline
-  configuration scores 8,402 on Richards against our 4,017 with both tiers,
-  so this protocol is the single largest item for Richards, DeltaBlue,
-  RayTrace and TypeScript. The cuts are structural, not local: one
-  "attention" word on the heap replacing the separate gc-pending, marking,
-  hook and interrupt tests at entry and return; a site cache of (function
-  object, entry) replacing the call subroutine's classification; the view
-  written lazily. Design each as its own change with the GC-stress build.
-- PdfJS under `--opt` spends about half its samples in runtime helpers,
-  spread thin: string building 15% of those (`concat_frame_holds_elsewhere`
-  alone 6.5%: it scans the frame's 27 slots on each of 5.9M in-place
-  appends), `move_dense`/`set_array_idx` 7% (splice), `jit_call` 5.5%,
-  collector 9%. The optimizer inlines 2 callees there and TypeScript's
-  instruction count under `--opt` equals `--jit`'s.
-- Target: under 100 instructions for a plain call and return. Measure on
-  `tr.js`-style micros and the Richards, DeltaBlue, RayTrace loops.
+| | plain | method | fib |
+|---|---:|---:|---:|
+| `--jit` | 329 | 395 | 355 |
+| `--jit --opt --opt-no-inline` | 342 | 404 | 367 |
+| JSC baseline (`--useDFGJIT=false`) | 61 | 84 | 90 |
+| JSC FTL (`noInline`) | 37 | 52 | 53 |
+
+Richards spends 37% of its steady instructions in this protocol. Where a call
+goes (lldb trace of Richards' scheduler): call subroutine before the call 53,
+call entry 129 (prologue saving 14 registers 13, tests 16, `Activation`
+stores about 50, view block 12, pinned registers and constants 12), return
+subroutine 92, epilogue 11, call subroutine after the call 33. Each frame is
+written three times: the 17-word `Activation`, the 8-word code view in the
+`Dispatch`, and a native frame. **Target: under 20 instructions for a call
+from optimized code to a proven callee, under 35 from a baseline call site.**
+
+The model, in four rules:
+
+1. **One native frame per entry from C.** C enters generated code through a
+   trampoline (`jit_enter`, emitted once per heap) that saves the callee-saved
+   registers, sets the pinned ones (`ds`, `heap`, `thunks`) and fast-calls the
+   target. Every generated body is compiled with `sljit_set_context` on the
+   trampoline's exact context (the optimizing tier's register pools, which are
+   a per-platform constant, and a fixed local area), so it has no prologue.
+   Calls between generated frames are `SLJIT_FAST_CALL` (one `bl`); the callee
+   stores the return address in its `Activation` (`native_ret`) and returns
+   with `SLJIT_FAST_RETURN`. Any status that leaves generated code is the
+   body's existing `sljit_emit_return`: it unwinds the shared frame straight
+   to the trampoline's C caller, abandoning every generated frame in between
+   for free. That is the existing contract ("each abandoned caller resumes
+   later through the entry table at its saved `curr_pc`"), so the status
+   protocol does not change. `jit_floor`, `jit_depth`, the C-stack depth cap
+   for these calls, the callee-saved register saves and the native locals
+   that survive a call (`CALL_FLOOR_OFF`, `CALL_RESUME_OFF`) all go. The local
+   area is scratch: valid between a store and a load with no generated call
+   in between (verify every `reg_sp()` use; `cap_slot` in `opt_emit` lives
+   across the body and moves to the `Activation` or a register).
+2. **The `Activation` is written by its frame only where nothing can derive
+   it.** A frame pushed by generated code writes `func`, `bottom`,
+   `native_ret` and a constant `flags` word: two pair stores. A `SYNCED` flag
+   bit, clear in that constant, marks a record whose other fields are not yet
+   written. Before generated code calls into C (a thunk, a helper that can
+   collect, throw or read frames) it runs `jit_sync` when `ds.act` is not its
+   record: from the top down to the first synced record, `jit_sync` writes
+   `parent`, `var_env`/`lex_env` (from the function object at `bottom[-2]`),
+   `cat`, `forin`, `new_target`, the async fields, `serial`, `tv_func`,
+   `this_binding` (from `bottom[-1]` and the function's call flags),
+   `caller_valstack_top`, `retval` (from the caller's call instruction) and
+   the parent's `curr_pc` (from this record's `native_ret`, through the
+   caller code's return-address map), and sets `SYNCED`. Synced records form
+   a prefix of the stack: a push writes a fresh record with the bit clear, and
+   a pop never unsyncs what is below. Each record is synced at most once per
+   push, so the cost is paid only by frames that reach C.
+3. **VM-wide frame state is a cache of the top record.** `ds.act`,
+   `vm.activation_count`, `vm.current_func`, `vm.valstack_top`/`bottom`,
+   `ds.regs_base`, `ds.capture_refs` and the 8-word code view are written by
+   `jit_sync`, not by calls and returns. Generated code holds the current
+   record in a pinned register (`la`); `vm.activation_count` is derived from
+   it. The collector, the unwinder, stack traces and every thunk run after a
+   sync, so none of them sees the stale cache.
+4. **Results travel in a register.** The callee returns the value in `R1`
+   and status 0 in `R0`; the caller stores the value (a generated caller) or
+   the trampoline returns it to C, which writes it where the interpreter
+   wants it. The return path no longer needs `retval`, the result-window
+   check, the result kind test (strings included: generated frames hold no
+   counts), the "a native site waits" test or the caller's view reload.
+
+A direct call from optimized code to a lean callee, in instructions:
+caller: advance `regs` by the window offset, `bl`, test status, restore
+`regs` (4); callee entry: return address and record (`add la`, two `stp`
+with the function constant from a literal: 4), one room test against
+`vm.valstack_end` with the activation array sized so that value-stack room
+implies record room (verify the sizes: `MAX_CALLS` against the stack size
+and the minimum frame) (3), the collector and interrupt poll (2); return:
+reload the return address, `sub la`, `ret` (3). About 16. A baseline site
+adds the callee test against its call cache (about 6) and the entry adds the
+argument-count fill only for callees that need it.
+
+Must hold, each checked before its stage lands:
+
+- The window is the frame's truth at every safepoint. Registers past the
+  formals are cleared at entry today (`clear_slots`) and again at return
+  (`th_clear_tracked_regs`); keep only one (the collector scans each frame's
+  span, `activation_span_end`, so clearing at entry is the one that must
+  stay unless pops clear).
+- Stores of heap values into the window while the collector marks shade them
+  (`Asm.publish`); a result stored by the caller goes through the same rule.
+- Generators, async functions, frames with `try` or for-in, derived
+  constructors, `arguments` objects and tail calls keep today's entry and
+  pops. A function is fast-entered only when its generated code reads no
+  record field that `jit_sync` derives (verify per opcode: `LDTHIS` reads
+  `act.this_binding`, `TRY` writes `act.cat`).
+- The code eviction sweep (`opt_make_room`, `baseline_reap`) must not free
+  code a suspended frame returns into: walk `native_ret` of live records.
+
+Stages, one commit each, each measured with `call_cost.py`, the minis and
+`jit_check`:
+
+1. **Trampoline and shared native frame.** Bodies on the trampoline's
+   context; call subroutine fast-calls the call entry; the return subroutine
+   fast-returns; exits unchanged. `Activation` and VM state still written
+   eagerly. Expect about 60 fewer instructions per call (prologue,
+   epilogue, floor and depth, native save area).
+2. **Lazy VM state** (rule 3): sync before C, view and `current_func` and
+   counts no longer written per call. Expect about 50 fewer.
+3. **Lazy record fields** (rule 2) with the return-address map. Expect about
+   60 fewer.
+4. **Results in a register** (rule 4) and static return tests (`cat`,
+   `forin` only in functions with `TRY`/`INITFOR`). Expect about 40 fewer.
+5. **Direct calls from optimized code** (`OptOp.CALL`, step 3.2) to the
+   checked entry, skipping the tests the builder proved. Then measure what is
+   left against the 20-instruction target and cut it.
 
 ### 2. Collector and allocation
 
