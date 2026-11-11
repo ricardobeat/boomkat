@@ -664,7 +664,7 @@ fn bool jit_put_absent(Heap* h, HObject* hobj, hobject::ICEntry* ic, TVal* value
         if (value.is_heap_allocated()) {
             if (hobj.append_cached_prop(ic, *value, h)) return true;
         } else if (hobj.prop_count < hobj.prop_capacity && hobj.prop_hash == null) {
-            if (hobj.gc.prototype_observed) h.bump_prototype_epoch();
+            if (hobj.gc.prototype_observed) h.bump_prototype_epoch(hobj);
             hobject::PropValue* slot = &hobj.prop_values()[hobj.prop_count];
             *slot = (hobject::PropValue)*value;
             hobj.prop_count++;

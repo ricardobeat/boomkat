@@ -4522,8 +4522,12 @@ macro void Heap.@set_edge(&self, HObject* owner, #field, value) {
 
 // The observed-prototype guards stay inline; the uncommon epoch update is
 // shared across layout and prototype mutations instead of cloned at each site.
-fn void Heap.bump_prototype_epoch(&self) @noinline {
+// Moving the epoch voids every cache that observed `cause`, so it is unobserved
+// until a cache is filled over it again: an object that keeps changing moves
+// the epoch once per cache fill, not once per change.
+fn void Heap.bump_prototype_epoch(&self, HObject* cause) @noinline {
     self.prototype_epoch++;
+    cause.gc.prototype_observed = false;
 }
 
 /**
@@ -4531,7 +4535,7 @@ fn void Heap.bump_prototype_epoch(&self) @noinline {
  * barrier so a marker that already scanned the object sees the new prototype.
  */
 fn void Heap.set_prototype(&self, HObject* obj, HObject* proto) @inline {
-    if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch();
+    if (obj.gc.prototype_observed && obj.prototype != proto) self.bump_prototype_epoch(obj);
     if (obj == self.index_clean_proto) self.index_clean_proto = null;
     if (@unlikely(self.realms != null)) self.invalidate_inactive_array_indices(obj);
     obj.prototype = proto;

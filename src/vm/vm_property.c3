@@ -81,8 +81,9 @@ fn void ic_fill_own(Vm* vm, Dispatch* ds, hobject::ICEntry* ic, HObject* hobj,
 // links. The entry records the objects stepped onto, so a hit revalidates the
 // walk by identity and shape instead of searching the chain again. Returns
 // false, leaving the entry alone, when the owner is deeper than the snapshot
-// can describe, a dictionary-mode receiver could gain a shadowing key, or a
-// dictionary-mode prototype sits on a chain the epoch cannot cover.
+// can describe, or a dictionary-mode object, which can gain a shadowing key
+// with its shape unchanged, is the receiver while still gaining keys
+// (Shape.dict_settled) or lies anywhere on a chain the epoch cannot cover.
 fn bool ic_fill_read(Vm* vm, hobject::ICEntry* ic, HObject* hobj, void* key, HObject* owner) {
     return ic_fill_read_heap(vm.heap, ic, hobj, key, owner);
 }
@@ -94,7 +95,10 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     uint[hobject::IC_MAX_CHAIN] chain_shapes;
     bool dict_proto = false;
     if (!is_own) {
-        if (hobj.in_dict_mode(heap)) return false;
+        if (hobj.in_dict_mode(heap)) {
+            if (!hobj.get_shape(heap).dict_settled()) return false;
+            dict_proto = true;
+        }
         HObject* walk = hobj;
         while (chain_len < hobject::IC_MAX_CHAIN) {
             HObject* next = walk.prototype;
@@ -139,6 +143,8 @@ fn bool ic_fill_read_heap(heap::Heap* heap, hobject::ICEntry* ic, HObject* hobj,
     ic.prop_idx = (uint)owner_idx;
     ic.prop_flags = owner.get_prop_flags((uint)owner_idx, heap);
     if (epoch_chain) {
+        // A dictionary receiver is skipped like a prototype, and observed like one.
+        if (dict_proto) hobj.gc.prototype_observed = true;
         for (uint i = 0; i < chain_len; i++) {
             ((HObject*)chain_protos[i]).gc.prototype_observed = true;
         }
