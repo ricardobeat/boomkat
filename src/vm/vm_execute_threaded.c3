@@ -2584,8 +2584,18 @@ fn Instruction* th_getprop_array(Instruction* pc, HandlerTable* handlers, TVal* 
     }
     if (elements == null || idx < 0 || idx >= (long)count) return pc;
     TVal value = elements[idx].get();
-    // Undefined dense slots need named-property and prototype lookup.
-    if (value.is_undefined()) return pc;
+    // Undefined dense slots need named-property and prototype lookup. An
+    // array that keeps an index in its named table (a RegExp match array's
+    // non-participating groups) answers from there when it holds a data
+    // property; anything else continues to the prototype chain.
+    if (value.is_undefined()) {
+        if (cls != hobject::ObjClass.ARRAY || !obj.flags.has_indexed_named_prop) return pc;
+        HString* key = cold.heap.find_int_hstring(idx);
+        if (key == null) return pc;
+        int slot = obj.find_prop_idx((void*)key, cold.heap);
+        if (slot < 0 || obj.get_prop_flags((uint)slot, cold.heap).is_accessor) return pc;
+        value = obj.prop_values()[slot].get();
+    }
     TVal* ra = regs + insn.a;
     if (!th_can_publish(cold.heap, value)) return pc;
     if (value.is_heap_allocated()) {
