@@ -258,11 +258,9 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     // ignored, missing formals start undefined (cleared below, unrolled up to
     // ENTRY_MISSING_MAX formals). A rest parameter's length needs the count.
     uint nf = f.num_formals;
-    sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
-    if (f.call_flags.rest_length_only) {
-        decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, nf));
-    } else if (nf > ENTRY_MISSING_MAX) {
-        decline.add(sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, nf));
+    if (f.call_flags.rest_length_only || nf > ENTRY_MISSING_MAX) {
+        sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
+        decline.add(sljit_emit_cmp(c, f.call_flags.rest_length_only ? SLJIT_NOT_EQUAL : SLJIT_LESS, R1, 0, SLJIT_IMM, nf));
     }
     long forbidden = (f.call_flags.ignores_this ? 0 : CALL_PRIM) | (f.call_flags.lean_plain ? 0 : CALL_PLAIN);
     if (forbidden != 0) {
@@ -668,13 +666,6 @@ fn void Asm.emit_call_body(&self) {
     int sp = SLJIT_MEM | reg_sp();
     Jumps slow;
     Jumps done;
-    self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    // A value that is not a heap object still may be a callee: a lightfunc has
-    // that shape, so route it to the tag test below instead of to the slow
-    // path here.
-    void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
-    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     // The caller's resume point, as th_publish_lean stores it (the slow
     // paths store it too), kept for the test after the return.
     self.mov(sp, CALL_RESUME_OFF, R4, 0);
@@ -682,6 +673,11 @@ fn void Asm.emit_call_body(&self) {
     self.mov(m | R0, k.act_curr_pc, R4, 0);
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    // A value that is not a heap object still may be a callee: a lightfunc has
+    // that shape, so route it to the tag test below instead of to the slow
+    // path here.
+    void* tagged = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
     self.mov(R4, 0, m | R0, 0, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, k.fn_mask);
     slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, k.fn_want));
@@ -784,10 +780,7 @@ fn void Asm.emit_call_body(&self) {
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_LIGHTFUNC);
     slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
-    self.mov(sp, CALL_RESUME_OFF, R4, 0);
-    self.mov(R0, 0, m | ds, l.ds_act);
-    self.mov(m | R0, k.act_curr_pc, R4, 0);
-    self.mov(R1, 0, sp, CALL_RESUME_OFF);
+    self.mov(R1, 0, R4, 0);
     self.mov(R0, 0, ds, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call_builtin_native);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
@@ -992,7 +985,7 @@ fn void Asm.load_global_callee(&self, Jumps* generic) {
     long vic = (long)(usz)&((hobject::VarICEntry*)self.f.var_ic_entries)[self.next - 1];
     self.var_slot(vic, false);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    self.guard_not_tdz();
+    // An object is no TDZ hole: the one test routes both.
     sljit_emit_op2(c, SLJIT_XOR, R1, 0, R0, 0, SLJIT_IMM, K_OBJ);
     self.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, PAYLOAD_SPAN));
     for (uint k = 0; k < self.call.len; k++) generic.add(self.call.at[k]);
