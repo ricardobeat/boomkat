@@ -67,13 +67,14 @@ gate with fewer instructions executed (collector timing; recheck in the next
 gate). Peak RSS 2,013 MiB.
 
 Since r22, ungated (steady instructions per iteration, `scripts/mini_steady.py`,
-`b2df5d27` to `5d54f18c`): Richards 26.1M to 19.1M, DeltaBlue 38.2M to 33.5M,
-RayTrace 148.6M to 141.8M, EarleyBoyer 661M to 641M. JSC FTL: 1.13M, 1.76M,
-6.48M, 39.6M. Commits: `83caf60e` (constant field store), `e9db9974` (cached
+`b2df5d27` to `ff15b34f`): Richards 26.1M to 18.1M, DeltaBlue 38.2M to 32.4M,
+RayTrace 148.6M to 139.2M, EarleyBoyer 661M to 633M (`1aa1e94e`: Richards
+18.0M, DeltaBlue 32.3M). JSC FTL: 1.13M, 1.76M, 6.48M, 39.6M. Commits: `83caf60e` (constant field store), `e9db9974` (cached
 add under the prototype epoch), `d90793c1` (minis time steady runs),
 `881b2048` (store into an old owner), `579086cc` (room for inlined frames
 tested once per entry), `4e05a8e7` (inlined method proven by its function
-object), `5d54f18c` (shape facts across joins).
+object), `5d54f18c` (shape facts across joins), `c41cf2b9`, `ae019c27`,
+`ff15b34f`, `1aa1e94e` (step 3.0).
 
 **Box2D is unstable under `--opt` and that comes first** (step 0). Inside the
 full bundle it scores 8,000 to 12,700 from run to run (gate median 9,759, r15
@@ -445,9 +446,9 @@ cleared per `GENERIC`). Richards is 99% optimized code, flat, 7.6x behind DFG.
 
 **3.0 Where the instructions go.** Richards' scheduler loop
 (`while (this.currentTcb != null) { if (this.currentTcb.isHeldOrSuspended()) this.currentTcb = this.currentTcb.link; else ... }`),
-single-stepped at `5d54f18c`, runs 383 instructions for an iteration that
-makes no call (443 at `b2df5d27`; JSC's FTL runs the whole benchmark in 1/17
-of our instructions). Per node, measured:
+single-stepped, ran 443 instructions at `b2df5d27` for an iteration that
+makes no call and runs 314 at `1aa1e94e` (JSC's FTL runs the whole benchmark
+in 1/16 of our instructions). Per node, as measured at `5d54f18c` (383):
 
 | Node | Now | Floor in this object model |
 |---|---:|---:|
@@ -467,14 +468,40 @@ every emitter re-proves its operands from boxed values (tag, proxy, shape
 through a memory cell), publishes results to the window and reads them back,
 and reuses the baseline's sequences. Work the table top-down by mass, one
 node kind per commit, re-tracing the loop each time (`tracerun.sh`,
-`iter.py`). Done so far: the constant method (`4e05a8e7`, 443 to 401), shape
-facts across joins (`5d54f18c`, 401 to 383). Next, in order: global loads by
-baked slot under the cache epoch with the TDZ test folded into the int test;
-compare-and-branch fusion (the boolean never reaches the window); the int
-conversion with its double path out of line; shape ids as immediates (code
-discarded when a shape id is recycled) and the proxy test folded into the
-shape test where the shape cannot be a proxy's; `this` as an entry node
-(3.1); the field store.
+`iter.py`). Done: the constant method (`4e05a8e7`, 443 to 401); shape facts
+across joins (`5d54f18c`, to 383); the fastint tested first and the TDZ test
+folded into the numeric test of a global (`c41cf2b9`); shared shapes pinned
+and compared as immediates (`ae019c27`); the object tag tested first in
+OBJECT loads and stores (`ff15b34f`, to 322); the receiver test dropped
+where the method's read proved it (`1aa1e94e`, to 314).
+
+Next, by mass in the loop as it stands:
+
+- Compare and branch: the boolean of `(a & K) != 0 || b == K2` is boxed,
+  stored to the window, copied to the caller's slot and tested twice (22),
+  and `!= null` on a window value is 16. A `BOOL` rep (or branch threading
+  through the inlined body's return) makes both 2 to 3.
+- The inherited method read is still 38 (class 6, first prototype 6, epoch
+  2, slot address 3, load, object result 8) plus 11 for the guard. A write
+  watch on the owner's slot (a `GcBits` bit that every store path honours
+  by moving the epoch) removes the load, the compare and the object result;
+  shape implying prototype would remove the prototype compare. Without
+  those the floor is about 25.
+- Global constants are 22 each. A baked slot address saves 3; a write watch
+  on the binding folds the load to a constant.
+- Receiver tests on an OBJECT node: tag 5, proxy 3, shape 3. The proxy test
+  goes if a proxy's shape can be shown never to equal a cached one (proxies
+  keep target and handler outside their properties; not yet audited). The
+  tag test goes when the node is known to be an object (a `KNOWN_OBJECT`
+  flag set by the load that passed its shape guard, kept across blocks like
+  the shape facts).
+- The mark-phase test after each object load (3) exists because an OBJECT
+  node is not a root: shade at the store to the window instead, where
+  `store_object` already tests the phase.
+- `this` is reloaded from the activation at every use (2) and re-proven
+  after each call; an entry node in a register makes each use free (3.1).
+- The field store is about 35: receiver 11, old value 3, new value 3,
+  barrier 6, storage 3.
 
 The same accounting for calls is in 1.4: a non-inlined call is about 313
 instructions of protocol against JSC's 56 to 74, and 29% of Richards' steady
