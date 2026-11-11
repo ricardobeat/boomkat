@@ -1445,7 +1445,7 @@ fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) 
         if (self.can_defer_body(fnf)) {
             inner = self.defer_function(idx.function_scope(s.decl), fn_name2)!;
         } else {
-                inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: idx.function_scope(s.decl))!;
+            inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: idx.function_scope(s.decl))!;
         }
         self.gen_line_end(s.decl);
         self.is_async = false;

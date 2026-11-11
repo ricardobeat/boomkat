@@ -413,7 +413,7 @@ fn void build_line_table(Ast* ast) {
         if (i + 8 <= src.len) {
             ulong w = mem::load((ulong*)(src.ptr + i), 1);
             ulong e = w ^ (BYTES * 0xE2);
-            if ((((w - BYTES * 0x0E) & ~w) | ((e - BYTES) & ~e)) & (BYTES * 0x80) == 0) {
+            if (((((w - BYTES * 0x0E) & ~w) | ((e - BYTES) & ~e)) & (BYTES * 0x80)) == 0) {
                 i += 8;
                 continue;
             }
