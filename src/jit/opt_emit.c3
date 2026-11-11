@@ -571,12 +571,13 @@ fn void OptCg.emit_taken_stubs(&self) {
 
 // The entry of an OSR block: every numeric node live at its start is loaded
 // from the window, guarded by the type the graph assumes.
-fn void OptCg.emit_osr_entries(&self) {
+fn void OptCg.emit_osr_entries(&self, void* to_base) {
     void* c = self.a.c;
     for (uint pos = 0; pos < self.g.blocks.len(); pos++) {
         OptBlock* blk = &self.g.blocks[pos];
         if (!blk.osr) continue;
         self.osr_labels[pos] = sljit_emit_label(c);
+        self.emit_room_test(to_base);
         self.emit_cap_refs();
         for (uint k = 0; k < blk.osr_count; k++) {
             OptDirty d = self.g.dirty[(sz)(blk.osr_first + k)];
@@ -598,6 +599,22 @@ fn void OptCg.emit_osr_entries(&self) {
         }
         self.gotos.push({ .jump = sljit_emit_jump(c, SLJIT_JUMP), .block = pos });
     }
+}
+
+// An entry through the table, into a frame that is published: without the room the inlined bodies'
+// exits need (Asm.room_acts, room_slots), the frame continues in the baseline code at `to_base`.
+fn void OptCg.emit_room_test(&self, void* to_base) {
+    Asm* a = self.a;
+    if (a.room_acts == 0) return;
+    void* c = a.c;
+    CallLayout* k = call_layout();
+    int m = SLJIT_MEM;
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, k.ds_vm);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R0, k.vm_count);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, (long)a.room_acts);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER | SLJIT_32, R1, 0, m | R0, k.vm_capacity), to_base);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)a.room_slots * TVal::size);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | R0, k.vm_valstack_end), to_base);
 }
 
 // --- Nodes ---
@@ -1626,16 +1643,9 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, (long)(char)with_flag);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
     sljit_set_label(no_cap, sljit_emit_label(c));
-    // Room for the activation, and for the callee's registers and scratch slots in the stack.
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, k.ds_vm);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, m | R0, k.vm_count);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, m | R0, k.vm_capacity);
-    // An exit from a nested body publishes the frames of the calls around it as well.
-    if (caller.depth != 0) sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, (long)caller.depth);
-    miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, R2, 0);
-    uint end = callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS;
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, a.regs, 0, SLJIT_IMM, (long)end * TVal::size);
-    miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | R0, k.vm_valstack_end);
+    // An exit from the body publishes its frame and those of the calls around it.
+    a.room_acts = max(a.room_acts, caller.depth + 1);
+    a.room_slots = max(a.room_slots, callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS);
     // A sunk receiver (c names its sink) is an object any exit allocates into the frame it publishes.
     if ((n.cc & 3) == 1 && !cf.call_flags.ignores_this && !(n.b == NO_NODE && n.c != NO_NODE)) {
         // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
@@ -2806,7 +2816,11 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     a.emit_stubs();
     cg.emit_taken_stubs();
     cg.emit_poll_stubs();
-    cg.emit_osr_entries();
+    cg.emit_osr_entries(to_base);
+    // The function's start, entered through the table.
+    void* start = sljit_emit_label(c);
+    cg.emit_room_test(to_base);
+    cg.gotos.push({ .jump = sljit_emit_jump(c, SLJIT_JUMP), .block = 0 });
     cg.emit_exit_stubs();
     // The exit stubs of inlined bodies leave the emitter on a callee; the call entry, its
     // subroutines and the code after a native call's return belong to the function being compiled.
@@ -2824,7 +2838,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(to_base);
     }
     // A region's first block is its loop header, entered only through its OSR entry.
-    if (g.region.end == 0) bc.entries[0] = (void*)sljit_shim_label_addr(cg.labels[0]);
+    if (g.region.end == 0) bc.entries[0] = (void*)sljit_shim_label_addr(start);
     for (uint pos = 0; pos < blocks; pos++) {
         if (g.blocks[pos].osr) bc.entries[g.blocks[pos].pc] = (void*)sljit_shim_label_addr(cg.osr_labels[pos]);
     }

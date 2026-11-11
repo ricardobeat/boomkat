@@ -575,6 +575,10 @@ struct Asm {
     // them all from the entry on (emit_prologue, emit_call_entry), so a store
     // to one raises nothing; only a slot beyond them is tracked (covers).
     uint frame_regs;
+    // What an exit from the deepest inlined body publishes past the frame's own: activations, and
+    // window slots from the frame's first. Every entry of the code tests the room for them once.
+    uint room_acts;
+    uint room_slots;
     // The code allocation's BaselineCode.view, or null.
     usz[8]* view;
     void*[] labels;

@@ -285,11 +285,12 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     self.mov(vm, 0, m | ds, k.ds_vm);
     self.mov(R0, 0, m | vm, k.vm_count, SLJIT_MOV_U32);
     self.mov(R1, 0, m | vm, k.vm_capacity, SLJIT_MOV_U32);
+    if (self.room_acts != 0) sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, self.room_acts);
     decline.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, R1, 0));
     // publish_frame_top clears the scratch slots up to valstack_end; the
-    // entry requires them all inside it.
+    // entry requires them all inside it, and the slots of the inlined bodies.
     uint clear_end = f.num_regs + vm::FRAME_SCRATCH_SLOTS;
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)clear_end * TVal::size);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)max(clear_end, self.room_slots) * TVal::size);
     decline.add(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | vm, k.vm_valstack_end));
     // The function object, boxed, sits two slots below the window.
     self.mov(R3, 0, m | bottom, -2 * (long)TVal::size);
