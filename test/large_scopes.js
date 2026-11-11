@@ -37,6 +37,16 @@ f = new Function(seq(N, i => `var v${i} = ${i};`) + 'var s = 0;'
     + 'return s + g0() + g2999() + v2999;');
 assert(f() === 8 * N + 2 * 2999, 'scopes that shadow a var of a large function');
 
+// One closure reads every local of its function, another writes them, through a nested level too.
+f = (0, eval)('(function () {' + seq(N, i => `var v${i} = ${i};`)
+    + 'function sum() { return ' + seq(N, i => `v${i}`, '+') + '; }'
+    + 'function bump() {' + seq(N, i => `v${i}++;`) + '}'
+    + 'function deep() { return function () { return ' + seq(N, i => `v${i}`, '+') + ' + typeof unbound; }; }'
+    + 'var before = sum(); bump(); return [before, sum(), deep()(), v0, v2999]; })');
+var caps = f();
+assert(caps[0] === SUM && caps[1] === SUM + N && caps[2] === (SUM + N) + 'undefined' && caps[3] === 1 && caps[4] === N,
+    'closures over every local of a large function');
+
 f = new Function(seq(N, i => `class C${i} { m() { return ${i}; } }`) + 'return new C0().m() + new C2999().m();');
 assert(f() === 2999, 'classes');
 

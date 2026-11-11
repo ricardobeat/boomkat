@@ -30,6 +30,8 @@ struct AstIndex {
     // The template being compiled from its own source slice, which carries
     // what its defining compile learned about those declarations.
     bytecode::CompiledFunction* reparsed;
+    // By atom, what that template records of a name: OUTER_BOUND, OUTER_CELL.
+    Vec{char} outer;
     // The unit's ParseOptions.defer_functions: the parser recorded ordinary
     // bodies, so the compiler must turn them into templates.
     bool defer_functions;
@@ -39,6 +41,11 @@ struct AstIndex {
     // The unit's shared source text, copied on the first function that retains a slice.
     bytecode::SourceBuf* src_buf;
 }
+
+// A function around the reparsed one may bind the name.
+const char OUTER_BOUND = 1;
+// The enclosing function keeps the name's binding in a cell.
+const char OUTER_CELL = 2;
 
 tlocal AstIndex* index_state;
 
@@ -105,6 +112,7 @@ fn void index_end(AstIndex* c) {
     c.lexer.free_arena();
     foreach (&candidate : c.scalar_classes.data[:c.scalar_classes.len]) candidate.guards.free();
     c.scalar_classes.free();
+    c.outer.free();
     mem::free(c);
 }
 

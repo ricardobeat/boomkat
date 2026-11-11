@@ -129,10 +129,10 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
     ast::AstIndex* idx = ast::index_state;
     if (idx == null || !idx.use) return false;
     HString* name = (HString*)self.constants[name_idx].get_heapptr();
-    if (idx.unknown_outer && outer_may_bind(idx, name)) return false;
     uint atom = idx.tree.atoms.find(self.name_text(name));
     // A name the source never wrote (a synthetic one) has no binding to find.
     if (atom == 0 || atom == idx.res.atom_arguments) return false;
+    if (idx.unknown_outer && outer_may_bind(idx, atom)) return false;
     // A binding of this function still in its temporal dead zone is read by name.
     if (self.scope_entry_of(name) != null) return false;
     uint s = self.func_ast_scope;
@@ -152,13 +152,10 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
 // to the slot, so no other by-name form may be emitted for such a name. The
 // parent picks a cell only for a name every reference here is free to reach.
 fn bool CompilerContext.is_outer_cell(&self, uint name_idx) {
-    CompiledFunction* f = ast::index_state.reparsed;
-    if (f == null || f.capture_cells == null) return false;
-    void* key = self.constants[name_idx].get_heapptr();
-    for (uint slot = 0; slot < f.capture_count; slot++) {
-        if (f.capture_cells[slot] != 0 && f.constants[f.capture_names[slot]].get_heapptr() == key) return true;
-    }
-    return false;
+    ast::AstIndex* idx = ast::index_state;
+    if (idx.reparsed == null || idx.reparsed.capture_cells == null) return false;
+    uint atom = idx.tree.atoms.find(self.name_text((HString*)self.constants[name_idx].get_heapptr()));
+    return (idx.outer.data[atom] & ast::OUTER_CELL) != 0;
 }
 
 // Store `value` to the outer cell `name_idx` by the plain form, which takes the

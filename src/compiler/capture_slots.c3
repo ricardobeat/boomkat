@@ -104,7 +104,8 @@ fn void rewrite_capture_ops(CompiledFunction* func, uint* slots) {
 // access has to move to it; any other slot serves reads, and writes stay by
 // name, where the cached lookup is the faster one. False when memory runs out
 // or an access to a cell cannot be moved.
-fn bool adopt_capture_slots(CompiledFunction* ready, CompiledFunction* stub, Heap* h) {
+fn bool CompilerContext.adopt_capture_slots(&self, CompiledFunction* ready, CompiledFunction* stub) {
+    Heap* h = (Heap*)self.heap;
     uint candidates = ready.capture_count;
     uint* own = ready.capture_names;
     ready.capture_count = 0;
@@ -124,21 +125,26 @@ fn bool adopt_capture_slots(CompiledFunction* ready, CompiledFunction* stub, Hea
         return false;
     }
     mem::clear(slots, (sz)(pool * uint::size));
+    // The names `ready` offered as captures, marked until a slot claims them.
+    const uint OFFERED = uint::max;
+    for (uint ci = 0; ci < candidates; ci++) slots[own[ci]] = OFFERED;
     for (uint slot = 0; slot < stub.capture_count; slot++) {
         TVal name = stub.constants[stub.capture_names[slot]];
-        uint at = 0;
-        while (at < ready.const_count && ready.constants[at].get_raw_bits() != name.get_raw_bits()) at++;
-        if (at == ready.const_count) {
-            ready.constants[ready.const_count++] = name;
+        // finish copied the pool, so the compiler's index still names its slots.
+        uint at = self.find_string_constant(name.get_heapptr());
+        if (at == self.const_count) {
+            at = ready.const_count++;
+            ready.constants[at] = name;
             ((types::HeapHeader*)name.get_heapptr()).incref();
         }
         names[slot] = at;
         // Only a name `ready` itself offered: one it declares is not a capture.
         // The parent makes a cell only of a name `ready` does not declare.
-        if (stub.capture_cells != null && stub.capture_cells[slot] != 0) slots[at] = slot + 1;
-        for (uint ci = 0; ci < candidates; ci++) {
-            if (own[ci] == at) slots[at] = slot + 1;
-        }
+        bool cell = stub.capture_cells != null && stub.capture_cells[slot] != 0;
+        if (cell || slots[at] == OFFERED) slots[at] = slot + 1;
+    }
+    for (uint ci = 0; ci < candidates; ci++) {
+        if (slots[own[ci]] == OFFERED) slots[own[ci]] = 0;
     }
     ready.capture_names = names;
     ready.capture_count = stub.capture_count;

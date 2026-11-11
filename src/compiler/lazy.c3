@@ -49,15 +49,27 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
     return f;
 }
 
-// Whether a function around the slice being reparsed may bind `name`. Only the
+// Whether a function around the slice being reparsed may bind `atom`. Only the
 // defining compile saw those functions; without its record every name may be.
-fn bool outer_may_bind(ast::AstIndex* idx, HString* name) {
+fn bool outer_may_bind(ast::AstIndex* idx, uint atom) {
     CompiledFunction* f = idx.reparsed;
-    if (f == null || !f.lazy_outer_known) return true;
+    return f == null || !f.lazy_outer_known || idx.outer.data[atom] != 0;
+}
+
+// Index by atom what the template `f` records of the names outside its source,
+// once that source is parsed again.
+fn void CompilerContext.index_outer_names(&self, ast::AstIndex* idx, CompiledFunction* f) {
+    idx.reparsed = f;
+    if (!f.lazy_outer_known) return;
+    idx.outer.zero((sz)idx.tree.atoms.count() + 1);
     for (uint i = 0; i < f.const_count; i++) {
-        if (f.constants[i].get_heapptr() == (void*)name) return true;
+        idx.outer.data[idx.tree.atoms.find(self.name_text((HString*)f.constants[i].get_heapptr()))] = ast::OUTER_BOUND;
     }
-    return false;
+    for (uint slot = 0; f.capture_cells != null && slot < f.capture_count; slot++) {
+        if (f.capture_cells[slot] == 0) continue;
+        HString* name = (HString*)f.constants[f.capture_names[slot]].get_heapptr();
+        idx.outer.data[idx.tree.atoms.find(self.name_text(name))] |= ast::OUTER_CELL;
+    }
 }
 
 // Record on the template `f` of the function scope `scope` which names its body
@@ -97,7 +109,7 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
         uint atom = r & ~ast::REF_INDIRECT;
         if (atom == idx.res.atom_arguments) slotted = false;
         HString* name = h.ensure_interned(h.str_intern(idx.tree.atoms.get(atom)));
-        bool bound = idx.unknown_outer && outer_may_bind(idx, name);
+        bool bound = idx.unknown_outer && outer_may_bind(idx, atom);
         // From the function's own scope, which binds a function expression's name.
         for (uint s = scope; s != 0 && !bound; s = idx.res.scopes.data[s].parent) {
             bound = idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0;
@@ -165,10 +177,10 @@ fn void? materialize_function(CompiledFunction* f, Heap* h, char[] why = {}) @no
     // The source slice has no declarations for its enclosing scopes. Keep
     // free names in the captured environment rather than proving them global.
     idx.unknown_outer = true;
-    idx.reparsed = f;
+    ctx.index_outer_names(idx, f);
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
-    if (!adopt_capture_slots(ready, f, h)) return ctx.fail("internal: a deferred body reads a cell by name")~;
+    if (!ctx.adopt_capture_slots(ready, f)) return ctx.fail("internal: a deferred body reads a cell by name")~;
     CompiledFunction saved = *f;
     *f = *ready;
     if (saved.constants != null) h.free_func(h.heap_udata, saved.constants);
