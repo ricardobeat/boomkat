@@ -92,6 +92,9 @@ struct Parser {
     bool no_in;
     // The class being parsed sits in sloppy code; see Parser.strict_thunk.
     bool class_in_sloppy;
+    // Class bodies around the code being parsed, counting the class whose
+    // private names an eval inherits.
+    uint class_depth;
     // Offset of the first `{a = 1}` cover initialiser not yet claimed by a pattern, or 0.
     uint cover_init;
     // Depth of array / object literals and parenthesised lists that a pattern may still claim.
@@ -427,6 +430,7 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.stack_floor = compiler::compile_stack_floor();
     p.is_module = opts.is_module;
     p.defer_bodies = opts.defer_functions;
+    p.class_depth = opts.private_names.len != 0 ? 1 : 0;
     p.scratch.init(256);
     p.ts_exports.init(8);
     p.ts_param_props.init(8);

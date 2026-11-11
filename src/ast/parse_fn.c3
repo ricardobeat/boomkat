@@ -67,7 +67,7 @@ fn uint? Parser.function_named(&self, uint start, bool is_async, bool decl, bool
         self.next()!;
         if (decl) {
             DeclKind dk = self.dv_is_func_scope() ? DeclKind.FUNC : DeclKind.FUNC_BLOCK;
-            bool plain = (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0;
+            bool plain = !self.ctx.strict && (fnf & (FNF_ASYNC | FNF_GENERATOR)) == 0;
             self.dv_declare(self.ast.lhs.data[name], dk, self.ast.main_tok.data[name], false, plain);
         }
     } else if (decl && !anonymous_ok) {
@@ -279,8 +279,9 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
     char flags = 0;
     self.directive_prologue(mark, &flags)!;
     if ((flags & PROGRAM_STRICT) != 0) *fnf |= FNF_USE_STRICT;
-    bool defer_body = skip_ok && (flags & PROGRAM_STRICT) == 0 && !self.ctx.strict
-        && !self.is_module && !self.lex.ts_mode && !self.lex.jsx.enabled;
+    // The compiler compiles class code in place, and a body anywhere inside a
+    // class may name its private names, which the body's own source cannot show.
+    bool defer_body = skip_ok && self.class_depth == 0;
     while (self.tok.type != TokenType.RBRACE) {
         if (self.tok.type == TokenType.EOF_TOKEN) return self.unexpected()~;
         self.scratch_push(self.statement_list_item_in_block()!);
@@ -589,6 +590,8 @@ fn uint? Parser.class_tail(&self, uint start) {
     defer self.dv_track = saved_track;
     self.class_in_sloppy = !saved_strict;
     defer self.class_in_sloppy = saved_sloppy;
+    self.class_depth++;
+    defer self.class_depth--;
     self.ctx.strict = true;
     self.no_in = false;
     uint heritage = 0;

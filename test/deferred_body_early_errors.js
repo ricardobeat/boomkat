@@ -148,6 +148,11 @@ rejects("nested strict: reserved word as a label", "function outer(){ function i
 rejects("nested strict: update of eval", "function outer(){ function inner(){ 'use strict'; eval++; } }");
 rejects("nested strict: eval as a pattern target", "function outer(){ function inner(){ 'use strict'; ({ eval } = {}); } }");
 rejects("nested strict: reserved function name", "function outer(){ function inner(){ 'use strict'; function interface() {} } }");
+rejects("nested strict: a block function declared twice", "function outer(){ function inner(){ 'use strict'; { function x(){} function x(){} } } }");
+rejects("strict: a block function declared twice", "'use strict'; function outer(){ { function x(){} function x(){} } }");
+rejects("strict body: with", "function outer(){ 'use strict'; with (a) {} }");
+rejects("strict body: delete of a name", "function outer(){ 'use strict'; delete x; }");
+rejects("strict code: legacy octal in an uncalled function", "'use strict'; function outer(){ return 010; }");
 accepts("the same forms in a nested sloppy function", "function outer(){ function inner(){ var eval = 1; delete eval; 010; with (inner) {} } }");
 
 // ---- sanity: valid deferred bodies are still accepted ----
