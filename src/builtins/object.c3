@@ -3743,106 +3743,17 @@ fn void builtin_object_isFrozen(BuiltinContext* ctx) {
 // ============================================================================
 // Returns an array of the given object's own enumerable string-keyed property
 // [key, value] pairs.
-fn void builtin_object_entries(BuiltinContext* ctx) {
-    // A missing argument is `undefined`, which the checks below
-    // handle; returning early here would skip them.
-    TVal arg = builtin_arg(ctx, 0);
-    // TypeError if argument is null or undefined
-    if (arg.is_null() || arg.is_undefined()) {
-        builtin_throw(ctx, ctx.heap.type_err_proto, "Cannot convert undefined or null to object");
-        return;
-    }
-    HObject* obj;
-    if (arg.is_object()) {
-        obj = (HObject*)arg.get_heapptr();
-    } else {
-        if (!builtin_to_object(ctx, arg)) { ctx.result_undefined(); return; }
-        obj = (HObject*)ctx.result.get().get_heapptr();
-    }
-
-    HObject*? arr_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-    if (catch err3 = arr_raw) { ctx.result_undefined(); return; }
-    HObject* arr = arr_raw;
-    ctx.heap.set_prototype(arr, ctx.heap.array_proto);
-    uint idx = 0;
-
-    if (obj.is_proxy()) {
-        // EnumerableOwnProperties §7.3.21: for each key interleave
-        // [[GetOwnProperty]] (descriptor) then [[Get]] (value) before next key.
-        HObject* keys_arr;
-        if (!proxy_mop_own_keys(ctx.vm, ctx.heap, obj, &keys_arr)) { proxy_ctx_ok(ctx); return; }
-        uint n = keys_arr.array_used;
-        for (uint i = 0; i < n; i++) {
-            TVal el = keys_arr.array_part()[i].get();
-            if (!el.is_string()) continue;
-            HString* k = (HString*)el.get_heapptr();
-            if (k.is_symbol()) continue;
-            ProxyDesc d;
-            if (!proxy_mop_get_own(ctx.vm, ctx.heap, obj, k, &d)) { proxy_ctx_ok(ctx); return; }
-            if (!d.found || !d.enumerable) continue;
-            TVal val;
-            TVal recv; recv.set_object(obj);
-            if (!proxy_mop_get(ctx.vm, ctx.heap, obj, k, recv, &val)) { proxy_ctx_ok(ctx); return; }
-            HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (catch e4 = pair_raw) { ctx.result_undefined(); return; }
-            HObject* pair = pair_raw;
-            ctx.heap.set_prototype(pair, ctx.heap.array_proto);
-            TVal key_tv; key_tv.set_string_borrowed(k);
-            array_set_elem(pair, 0, key_tv, ctx.heap);
-            array_set_elem(pair, 1, val, ctx.heap);
-            TVal len_tv; len_tv.set_fastint(2);
-            HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-            TVal pair_tv; pair_tv.set_object(pair);
-            array_set_elem(arr, idx, pair_tv, ctx.heap);
-            idx++;
-        }
-    } else {
-        // Non-proxy: snapshot ALL own string keys first (regardless of
-        // enumerability), then re-check each key's enumerable attribute
-        // immediately before its [[Get]] (EnumerableOwnPropertyNames
-        // interleaves the two per key, so a getter earlier in the walk can
-        // make a later key non-enumerable before that key is reached).
-        uint max_keys = own_key_buf_capacity(obj);
-        HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
-        if (key_buf == null) { ctx.result_undefined(); return; }
-        defer ctx.heap.free_func(ctx.heap.heap_udata, key_buf);
-        uint key_count = collect_own_string_keys(ctx.heap, obj, key_buf, false);
-        for (uint i = 0; i < key_count; i++) {
-            HString* key = key_buf[i];
-            if (!key_is_currently_enumerable(obj, key, ctx.heap)) continue;
-            TVal val;
-            if (!desc_get_enum(ctx, obj, key, &val)) {
-                if (ctx.should_throw) { return; }
-                continue;
-            }
-            HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
-            if (catch err4 = pair_raw) { ctx.result_undefined(); return; }
-            HObject* pair = pair_raw;
-            ctx.heap.set_prototype(pair, ctx.heap.array_proto);
-            TVal key_tv; key_tv.set_string_borrowed(key);
-            array_set_elem(pair, 0, key_tv, ctx.heap);
-            array_set_elem(pair, 1, val, ctx.heap);
-            TVal len_tv; len_tv.set_fastint(2);
-            HString* len_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-            pair.put_prop(len_key, len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-            TVal pair_tv; pair_tv.set_object(pair);
-            array_set_elem(arr, idx, pair_tv, ctx.heap);
-            idx++;
-        }
-    }
-
-    TVal rlen_tv; rlen_tv.set_fastint((long)idx);
-    HString* rlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
-    arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
-    ctx.result_object(arr);
-}
 
 // ============================================================================
 // Object.values, ECMA-262 §19.1.2.22
 // ============================================================================
 // Returns an array of the given object's own enumerable string-keyed property values.
-fn void builtin_object_values(BuiltinContext* ctx) {
+fn void builtin_object_entries(BuiltinContext* ctx) => object_entries_or_values(ctx, true);
+fn void builtin_object_values(BuiltinContext* ctx) => object_entries_or_values(ctx, false);
+
+// Object.entries and Object.values: EnumerableOwnProperties with kind
+// key+value or value.
+fn void object_entries_or_values(BuiltinContext* ctx, bool entries) {
     // A missing argument is `undefined`, which the checks below
     // handle; returning early here would skip them.
     TVal arg = builtin_arg(ctx, 0);
@@ -3881,12 +3792,14 @@ fn void builtin_object_values(BuiltinContext* ctx) {
             TVal val;
             TVal recv; recv.set_object(obj);
             if (!proxy_mop_get(ctx.vm, ctx.heap, obj, k, recv, &val)) { proxy_ctx_ok(ctx); return; }
+            if (entries && !object_entry_pair(ctx, k, &val)) return;
             array_set_elem(arr, idx, val, ctx.heap);
             idx++;
         }
     } else {
-        // Snapshot ALL own string keys, then re-check enumerability per key
-        // right before its [[Get]], see the comment in builtin_object_entries.
+        // Snapshot ALL own string keys, then re-check each key's enumerable
+        // attribute immediately before its [[Get]]: a getter earlier in the
+        // walk can make a later key non-enumerable before it is reached.
         uint max_keys = own_key_buf_capacity(obj);
         HString** key_buf = (HString**)ctx.heap.alloc_func(ctx.heap.heap_udata, (usz)(max_keys * HString*::size));
         if (key_buf == null) { ctx.result_undefined(); return; }
@@ -3900,6 +3813,7 @@ fn void builtin_object_values(BuiltinContext* ctx) {
                 if (ctx.should_throw) { return; }
                 continue;
             }
+            if (entries && !object_entry_pair(ctx, key, &val)) return;
             array_set_elem(arr, idx, val, ctx.heap);
             idx++;
         }
@@ -3909,6 +3823,21 @@ fn void builtin_object_values(BuiltinContext* ctx) {
     HString* rlen_key = ctx.heap.str(heap::BuiltinStr.LENGTH);
     arr.put_prop(rlen_key, rlen_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
     ctx.result_object(arr);
+}
+
+// Replace *val with the array [key, *val].
+fn bool object_entry_pair(BuiltinContext* ctx, HString* key, TVal* val) {
+    HObject*? pair_raw = ctx.heap.alloc_object(hobject::ObjClass.ARRAY);
+    if (catch err = pair_raw) { ctx.result_undefined(); return false; }
+    HObject* pair = pair_raw;
+    ctx.heap.set_prototype(pair, ctx.heap.array_proto);
+    TVal key_tv; key_tv.set_string_borrowed(key);
+    array_set_elem(pair, 0, key_tv, ctx.heap);
+    array_set_elem(pair, 1, *val, ctx.heap);
+    TVal len_tv; len_tv.set_fastint(2);
+    pair.put_prop(ctx.heap.str(heap::BuiltinStr.LENGTH), len_tv, hobject::PROP_FLAGS_WEC, ctx.heap);
+    val.set_object(pair);
+    return true;
 }
 
 // ============================================================================
