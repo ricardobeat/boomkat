@@ -66,6 +66,15 @@ DeltaBlue +3%, RayTrace +3%; PdfJS, Splay and CodeLoad read 5% lower in this
 gate with fewer instructions executed (collector timing; recheck in the next
 gate). Peak RSS 2,013 MiB.
 
+Since r22, ungated (steady instructions per iteration, `scripts/mini_steady.py`,
+`b2df5d27` to `5d54f18c`): Richards 26.1M to 19.1M, DeltaBlue 38.2M to 33.5M,
+RayTrace 148.6M to 141.8M, EarleyBoyer 661M to 641M. JSC FTL: 1.13M, 1.76M,
+6.48M, 39.6M. Commits: `83caf60e` (constant field store), `e9db9974` (cached
+add under the prototype epoch), `d90793c1` (minis time steady runs),
+`881b2048` (store into an old owner), `579086cc` (room for inlined frames
+tested once per entry), `4e05a8e7` (inlined method proven by its function
+object), `5d54f18c` (shape facts across joins).
+
 **Box2D is unstable under `--opt` and that comes first** (step 0). Inside the
 full bundle it scores 8,000 to 12,700 from run to run (gate median 9,759, r15
 13,026 and stable); the mini (`box2d_loop.js`) never shows it. r16 already had
@@ -433,6 +442,46 @@ or `OBJECT` (`OptRep`, `src/jit/opt_ir.c3:66`). Anything else forces a
 `GENERIC` node, and a `GENERIC` node stores every dirty register it may read,
 runs baseline code, reloads, and kills every fact (`OptBuild` facts are
 cleared per `GENERIC`). Richards is 99% optimized code, flat, 7.6x behind DFG.
+
+**3.0 Where the instructions go.** Richards' scheduler loop
+(`while (this.currentTcb != null) { if (this.currentTcb.isHeldOrSuspended()) this.currentTcb = this.currentTcb.link; else ... }`),
+single-stepped at `5d54f18c`, runs 383 instructions for an iteration that
+makes no call (443 at `b2df5d27`; JSC's FTL runs the whole benchmark in 1/17
+of our instructions). Per node, measured:
+
+| Node | Now | Floor in this object model |
+|---|---:|---:|
+| `this.field` read, shape not yet proven (tag 5, proxy 3, shape cell 6, storage 2, load 1) plus the object result test (inert 3, tag 5, mark phase 3) | 31 | 3 to 6 |
+| inherited method read, constant path (`4e05a8e7`) | 42 | 17 |
+| callee guard, constant path (`4e05a8e7`), with receiver test | 18 | 0 (folded into the read) |
+| field read of an OBJECT node as INT32 (receiver 14, storage 3, int conversion 12) | 29 | 7 |
+| global constant as INT32 (cache epoch 8, slot 3, TDZ 6, int conversion 12) | 33 | 9 |
+| compare to a boolean in the window, reloaded and tested twice | 22 | 2 |
+| `!= null` on a window value | 16 | 3 |
+| field store of an object (receiver 19, old value 11, new value 11, barrier 6) | 50 | 9 |
+| loop poll | 9 | 3 |
+
+The floor column sums to about 80. No single node is the problem: each of
+about 25 nodes costs 10 to 30 instructions where 1 to 7 would do, because
+every emitter re-proves its operands from boxed values (tag, proxy, shape
+through a memory cell), publishes results to the window and reads them back,
+and reuses the baseline's sequences. Work the table top-down by mass, one
+node kind per commit, re-tracing the loop each time (`tracerun.sh`,
+`iter.py`). Done so far: the constant method (`4e05a8e7`, 443 to 401), shape
+facts across joins (`5d54f18c`, 401 to 383). Next, in order: global loads by
+baked slot under the cache epoch with the TDZ test folded into the int test;
+compare-and-branch fusion (the boolean never reaches the window); the int
+conversion with its double path out of line; shape ids as immediates (code
+discarded when a shape id is recycled) and the proxy test folded into the
+shape test where the shape cannot be a proxy's; `this` as an entry node
+(3.1); the field store.
+
+The same accounting for calls is in 1.4: a non-inlined call is about 313
+instructions of protocol against JSC's 56 to 74, and 29% of Richards' steady
+state. Inlining removes it only where the callee holds no call of its own
+(`TaskControlBlock.run` is rejected for "opcode CALL", its `this.task.run` for
+"polymorphic call"): nested calls from inlined frames and polymorphic inlining
+(3.2) are worth about 240 instructions per call each.
 
 **3.1 A boxed rep.** Add `OptRep.VALUE`: a boxed `TVal` in a machine register,
 type unknown or partly known.
