@@ -864,9 +864,7 @@ fn void? CompilerContext.gen_for(&self, uint n) {
                         uint id = tree.lhs.data[tree.list_item(decls, j)];
                         char[] head_name = self.gen_name(tree.lhs.data[id]);
                         self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(head_name));
-                        for (uint k = 0; k < saved_scope; k++) {
-                            if (str_eq(self.scope_stack[k].name, head_name)) { self.mark_scope_captured(k); break; }
-                        }
+                        self.capture_outer_name(head_name, saved_scope);
                     }
                 }
             } else if (try existing = (lexical ? SCOPE_ERROR~ : self.resolve_var(name))) {
@@ -1035,9 +1033,7 @@ fn void? CompilerContext.gen_for_each(&self, uint n) {
     }
     if (lexical) {
         // RHS closures retain the head's uninitialised environment, separately from iterations.
-        for (uint i = 0; i < saved_scope; i++) {
-            if (str_eq(self.scope_stack[i].name, name)) { self.mark_scope_captured(i); break; }
-        }
+        self.capture_outer_name(name, saved_scope);
         if (!of) self.mark_scope_captured(self.scope_depth - 1);
         self.emit_simple(Opcode.PUSH_LEX);
         self.cur_lex_depth++;
@@ -3127,12 +3123,7 @@ fn void CompilerContext.gen_tdz_pattern(&self, uint n, uint outer_depth) {
         case IDENT:
             char[] name = self.gen_name(tree.lhs.data[n]);
             self.emit_a_bc(Opcode.INITTZ, 0, self.add_string_constant(name));
-            for (uint k = 0; k < outer_depth; k++) {
-                if (str_eq(self.scope_stack[k].name, name)) {
-                    self.mark_scope_captured(k);
-                    break;
-                }
-            }
+            self.capture_outer_name(name, outer_depth);
         case ARRAY_PAT:
         case OBJECT_PAT:
             uint items = tree.lhs.data[n];
@@ -3710,11 +3701,7 @@ fn void? CompilerContext.gen_block_function(&self, uint n, uint outer_depth) {
     // staging/sm/regress/regress-602621.js expects.
     bool skip = name == "arguments" && (owner.flags & ast::SCOPE_HAS_EVAL) == 0;
     bool publish = !skip && (idx.tree.flags.data[ident] & ast::IDENT_ANNEXB_VAR) != 0;
-    if (publish) {
-        for (uint i = 0; i < outer_depth; i++) {
-            if (self.scope_stack[i].name == name) self.mark_scope_captured(i);
-        }
-    }
+    if (publish) self.capture_outer_name(name, outer_depth, all: true);
     self.has_lexical_bindings = true;
     self.has_local_bindings = true;
     ushort home;

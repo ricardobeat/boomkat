@@ -32,6 +32,11 @@ assert(f() === '2999function', 'block functions reach the function scope');
 f = new Function('p', '{ function p() {} } { function q() {} let r; { function r() {} } } return [typeof p, typeof q, typeof r].join();');
 assert(f(1) === 'number,function,undefined', 'block functions a parameter or a let keeps out');
 
+f = new Function(seq(N, i => `var v${i} = ${i};`) + 'var s = 0;'
+    + seq(N, i => `if (v1) { function g${i}() { return v${i}; } } for (const v${i} of [1, 2]) { s += v${i}; } switch (1) { case 1: let v${i} = 5; s += v${i}; }`)
+    + 'return s + g0() + g2999() + v2999;');
+assert(f() === 8 * N + 2 * 2999, 'scopes that shadow a var of a large function');
+
 f = new Function(seq(N, i => `class C${i} { m() { return ${i}; } }`) + 'return new C0().m() + new C2999().m();');
 assert(f() === 2999, 'classes');
 

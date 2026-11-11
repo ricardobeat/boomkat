@@ -59,6 +59,11 @@ fn ScopeEntry* CompilerContext.scope_entry(&self, char[] name) {
     return null;
 }
 
+// The next entry down with the name of `e`, or null.
+fn ScopeEntry* CompilerContext.shadowed_by(&self, ScopeEntry* e) @inline {
+    return e.shadowed != 0 ? &self.scope_stack[e.shadowed - 1] : null;
+}
+
 // Push a scope marker to delimit block scope boundaries for duplicate
 // let/const detection. The marker has no name and no register.
 //
@@ -207,6 +212,19 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
 
 // Capture status is mirrored into the persistent declaration record so later
 // analyses retain the decision after scope pop and register reuse.
+// Mark captured the bindings named `name` under stack index `depth`: the
+// lowest one, or with `all` each of them. A scope opening at `depth` shadows
+// the name, and code in it may still reach the outer binding by name.
+fn void CompilerContext.capture_outer_name(&self, char[] name, uint depth, bool all = false) {
+    ScopeEntry* lowest = null;
+    for (ScopeEntry* e = self.scope_entry(name); e != null; e = self.shadowed_by(e)) {
+        if (e >= &self.scope_stack[depth]) continue;
+        if (all) self.mark_scope_captured((uint)(e - self.scope_stack));
+        lowest = e;
+    }
+    if (lowest != null && !all) self.mark_scope_captured((uint)(lowest - self.scope_stack));
+}
+
 fn void CompilerContext.mark_scope_captured(&self, uint index) {
     if (index >= self.scope_depth) return;
     ScopeEntry* entry = &self.scope_stack[index];
@@ -367,6 +385,14 @@ fn bool CompilerContext.names_catch_param(&self, char[] name) {
     return e != null && e.is_catch_param;
 }
 
+// The lowest stack index a declaration here shares a scope with: above the
+// nearest marker, or the one under it when that marker opens a function body.
+fn uint CompilerContext.same_scope_floor(&self) {
+    uint floor = self.top_mark;
+    if (floor != 0 && self.scope_stack[floor - 1].is_body_mark) floor = self.scope_stack[floor - 1].shadowed;
+    return floor;
+}
+
 // Resolve `name` to its register only if it is bound in the scope a function
 // declaration at the current position belongs to.
 //
@@ -381,14 +407,6 @@ fn bool CompilerContext.names_catch_param(&self, char[] name) {
 // marker: hoist_decls declares the body's function names before block()
 // pushes that marker, so the binding a textual-position declaration must
 // reuse sits just below it.
-// The lowest stack index a declaration here shares a scope with: above the
-// nearest marker, or the one under it when that marker opens a function body.
-fn uint CompilerContext.same_scope_floor(&self) {
-    uint floor = self.top_mark;
-    if (floor != 0 && self.scope_stack[floor - 1].is_body_mark) floor = self.scope_stack[floor - 1].shadowed;
-    return floor;
-}
-
 fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
     ScopeEntry* e = self.scope_entry(name);
     if (e == null || e < &self.scope_stack[self.same_scope_floor()]) return SCOPE_ERROR~;
@@ -440,8 +458,7 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
 // narrower test keeps this correct if that ever stops holding.
 fn bool CompilerContext.is_param_name(&self, char[] name) {
     ScopeEntry* floor = &self.scope_stack[self.same_scope_floor()];
-    for (ScopeEntry* e = self.scope_entry(name); e != null && e >= floor;
-         e = e.shadowed != 0 ? &self.scope_stack[e.shadowed - 1] : null) {
+    for (ScopeEntry* e = self.scope_entry(name); e != null && e >= floor; e = self.shadowed_by(e)) {
         if (e.is_param) return true;
     }
     return false;
