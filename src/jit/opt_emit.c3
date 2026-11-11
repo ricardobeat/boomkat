@@ -806,6 +806,7 @@ fn void OptCg.emit_cap_refs(&self) {
     void* c = self.a.c;
     Layout* l = self.a.lay;
     Jumps fail;
+    self.a.reads_callee = true;
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, self.a.la, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.act_tv_func);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R0, 0, SLJIT_IMM, K_OBJ);
@@ -1728,18 +1729,10 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     miss[misses++] = sljit_emit_cmp(c, SLJIT_SIG_GREATER_EQUAL, R4, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R0, a.lay.fn_comp_func);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)(usz)cf);
-    sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | R0, k.fn_var_env);
-    miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, m | R0, k.fn_lex_env);
-    void* no_cap = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0);
-    env::EnvFlags with_flag;
-    with_flag.is_with = true;
-    sljit_emit_op1(c, SLJIT_MOV_U8, R4, 0, m | R1, k.env_flags);
-    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, (long)(char)with_flag);
-    miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
-    void* tested = sljit_emit_label(c);
-    sljit_set_label(no_cap, tested);
-    if (constant != null) sljit_set_label(constant, tested);
+    Jumps scope;
+    a.emit_scope_test(R0, R4, &scope);
+    for (uint j = 0; j < scope.len; j++) miss[misses++] = scope.at[j];
+    if (constant != null) sljit_set_label(constant, sljit_emit_label(c));
     // An exit from the body publishes its frame and those of the calls around it.
     a.room_acts = max(a.room_acts, caller.depth + 1);
     a.room_slots = max(a.room_slots, callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS);

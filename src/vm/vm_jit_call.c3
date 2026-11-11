@@ -77,13 +77,14 @@ fn void jit_sync(Dispatch* ds, Activation* la) {
 
 fn void jit_load(Dispatch* ds, Activation* la) {
     Vm* vm = ds.vm;
-    CompiledFunction* f = (CompiledFunction*)la.func;
     if (la.flags & ACT_FLAG_LAZY) jit_fill(vm, la);
+    CompiledFunction* f = (CompiledFunction*)la.func;
     vm.activation_count = (uint)(la - vm.activations) + 1;
     ds.act = la;
     if (vm.heap.realm != f.realm) vm.heap.enter_realm(f.realm);
     vm.current_func = f;
     vm.valstack_bottom = la.bottom;
+    vm.valstack_top = la.bottom + f.num_regs;
     *ds.regs_base_ptr = la.bottom;
     ds.capture_refs = null;
     jit_view(ds, f);
@@ -91,16 +92,22 @@ fn void jit_load(Dispatch* ds, Activation* la) {
 }
 
 // Fill in the frames generated code pushed (ACT_FLAG_LAZY) from the bottom of their run up to
-// `top`, as th_publish_lean writes them. Lazy frames sit only above every other frame.
+// `top`, as th_publish_lean writes them. Lazy frames sit only above every other frame, each
+// called from its parent's code: the function is in the parent's callee register, two slots below
+// the frame's window, and the parent's value stack ends at its registers.
 fn void jit_fill(Vm* vm, Activation* top) @noinline {
     Activation* low = top;
     while (low > vm.activations && ((low - 1).flags & ACT_FLAG_LAZY) != 0) low--;
     for (Activation* a = low; a <= top; a++) {
-        HObject* function = (HObject*)a.tv_func.get_heapptr();
+        Activation* parent = a - 1;
+        HObject* function = (HObject*)a.bottom[-2].get_heapptr();
         HObjectFunction* fd = &(*function.extra_ptr()).func;
         EnvRecord* env = fd.var_env;
         EnvRecord* cap = fd.lex_env;
-        a.parent = a - 1;
+        a.func = fd.comp_func;
+        a.tv_func.set_object_borrowed(function);
+        a.caller_valstack_top = parent.bottom + ((CompiledFunction*)parent.func).num_regs;
+        a.parent = parent;
         a.var_env = env;
         a.lex_env = (cap == null || cap == env || !cap.flags.is_declarative) ? env : cap;
         a.cat = null;

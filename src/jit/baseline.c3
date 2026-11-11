@@ -581,6 +581,9 @@ struct Asm {
     // The code reads its frame's scope (Activation.var_env, lex_env), which its call entry then
     // writes (emit_entry_env). The entry is emitted after the body.
     bool reads_env;
+    // The code reads its frame's function (Activation.func, tv_func), which its call entry then
+    // writes.
+    bool reads_callee;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;

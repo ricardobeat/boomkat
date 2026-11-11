@@ -1624,6 +1624,7 @@ fn void Asm.emit_put_var(&self, uint rv, long vic) {
 // Uses R0 to R3, through the shared subroutine.
 fn void Asm.capture_ref(&self, uint index) {
     void* c = self.c;
+    self.reads_callee = true;
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, index);
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = CAPTURE_REF_SUB });
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));

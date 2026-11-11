@@ -31,9 +31,6 @@ import boomkat::env;
 import boomkat::builtins;
 import boomkat::hstring;
 
-// Stack offset where the call subroutine keeps the result slot for the call entry.
-const long CALL_RETVAL_OFF = 24;
-
 // Bits of a call entry's packed argument above the argument count: the call
 // passes an undefined receiver (CALL_UNDEF_THIS), or a method call's receiver
 // is not a heap value.
@@ -202,7 +199,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     int la = R4 + 2;
     Jumps decline;
     // The call subroutine jumps here, in the caller's native frame, with the callee's window in
-    // R1 and the packed count in R3, and the result slot at CALL_RETVAL_OFF. Its return address,
+    // R1, the result slot in R2 and the packed count in R3. Its return address,
     // the call site's, is at SUB_RET_OFF: the frame returns there (Activation.native_ret), and
     // so does a decline.
     void* entry = sljit_emit_label(c);
@@ -218,10 +215,9 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     }
 
     // th_lean_target, @lean_gate and the receiver test, before any write.
-    self.mov(R0, 0, m | ds, k.ds_heap);
-    self.mov(R1, 0, m | R0, k.heap_realm);
+    self.mov(R1, 0, m | self.heap, k.heap_realm);
     decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)f.realm));
-    self.mov(R1, 0, m | R0, k.heap_gc_pending, SLJIT_MOV_U8);
+    self.mov(R1, 0, m | self.heap, k.heap_gc_pending, SLJIT_MOV_U8);
     decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     // Any argument count, as th_publish_lean takes it: surplus arguments are
     // ignored, missing formals start undefined (cleared below, unrolled up to
@@ -243,32 +239,19 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, forbidden);
         decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     }
-    // The record after the caller's.
+    // The record after the caller's, which takes the result slot (R2) once there is room for it.
     self.mov(vm, 0, m | ds, k.ds_vm);
     sljit_emit_op2(c, SLJIT_ADD, la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
     decline.add(self.emit_record_room(la, vm, R1));
+    self.mov(m | la, k.act_retval, R2, 0);
     // publish_frame_top clears the scratch slots up to valstack_end; the
     // entry requires them all inside it, and the slots of the inlined bodies.
     uint clear_end = f.num_regs + vm::FRAME_SCRATCH_SLOTS;
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)max(clear_end, self.room_slots) * TVal::size);
     decline.add(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, m | vm, k.vm_valstack_end));
-    // The function object, boxed, sits two slots below the window.
-    self.mov(R3, 0, m | bottom, -2 * (long)TVal::size);
-    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
-    self.mov(R2, 0, m | R3, k.fn_var_env);
-    decline.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
-    self.mov(R1, 0, m | R3, k.fn_lex_env);
-    void* no_cap = sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0);
-    env::EnvFlags with_flag;
-    with_flag.is_with = true;
-    self.mov(R4, 0, m | R1, k.env_flags, SLJIT_MOV_U8);
-    sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, (long)(char)with_flag);
-    decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0));
-    sljit_set_label(no_cap, sljit_emit_label(c));
-
-    // th_publish_lean. R1 = lex_env (cap), R2 = var_env (env), R3 = the
-    // function object. Constants the stores share are kept in registers once
-    // they are free: U (packed) undefined, F (R3) the function, C (R2) its code.
+    // th_publish_lean; the caller has tested the function's scope (emit_scope_test). Constants
+    // the stores share are kept in registers once they are free: U (packed) undefined, C (R2)
+    // the code.
     if (kept != 0 && !f.call_flags.rest_length_only) {
         sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
         void* all_given = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, kept);
@@ -285,35 +268,32 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
         sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, SLJIT_IMM, K_INT);
         self.mov(m | bottom, (long)f.arguments_reg * TVal::size, R4, 0);
     }
-    sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN);
-    void* keep_this = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0);
-    self.mov(m | bottom, -(long)TVal::size, SLJIT_IMM, K_UNDEF);
-    sljit_set_label(keep_this, sljit_emit_label(c));
-    self.mov(R4, 0, SLJIT_MEM | reg_sp(), CALL_RETVAL_OFF);
-    self.mov(m | la, k.act_retval, R4, 0);
     self.mov(R4, 0, SLJIT_MEM | reg_sp(), SUB_RET_OFF);
     self.mov(m | la, k.act_native_ret, R4, 0);
-    // The rest of the record waits for vm::jit_fill (ACT_FLAG_LAZY), but for the scope of a body
-    // that reads it: lex_env = cap unless cap is null, the env itself or not declarative.
-    if (self.reads_env) self.emit_entry_env(la);
+    // The rest of the record waits for vm::jit_fill (ACT_FLAG_LAZY), but for what the body reads
+    // itself: the scope (lex_env = cap unless cap is null, the env itself or not declarative), and
+    // the function (capture records).
+    if (self.reads_env || self.reads_callee) self.mov(R3, 0, m | bottom, -2 * (long)TVal::size);
+    if (self.reads_callee) {
+        self.mov(m | la, l.act_tv_func, R3, 0);
+        self.mov(m | la, l.act_func, SLJIT_IMM, (long)(usz)f);
+    }
+    if (self.reads_env) {
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
+        self.mov(R2, 0, m | R3, k.fn_var_env);
+        self.mov(R1, 0, m | R3, k.fn_lex_env);
+        self.emit_entry_env(la);
+    }
     int undef = packed;
-    int fr = R3;
     int code = R2;
     bool takes_this = !f.call_flags.ignores_this;
     if (takes_this) sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM | CALL_CONSTRUCT);
     self.mov(undef, 0, SLJIT_IMM, K_UNDEF);
     self.mov(code, 0, SLJIT_IMM, (long)(usz)f.code);
     self.mov(m | ds, self.pc_off, code, 0);
-    // A lazy record, and a heap_reg_count over the whole frame (Asm.frame_regs).
-    self.mov(m | la, k.act_flags, SLJIT_IMM, vm::ACT_FLAG_JIT_CALLED | vm::ACT_FLAG_LAZY, SLJIT_MOV_U32);
-    self.mov(m | la, l.act_hrc, SLJIT_IMM, f.num_regs, SLJIT_MOV_U32);
+    // A lazy record, and a heap_reg_count over the whole frame (Asm.frame_regs), in one word.
+    self.store_entry_flags(la, vm::ACT_FLAG_JIT_CALLED | vm::ACT_FLAG_LAZY);
     self.store_pair(la, k.act_curr_pc, code, k.act_bottom, bottom);
-    sljit_emit_op2(c, SLJIT_OR, R1, 0, fr, 0, SLJIT_IMM, K_OBJ);
-    self.mov(m | la, l.act_tv_func, R1, 0);
-    self.mov(fr, 0, SLJIT_IMM, (long)(usz)f);
-    self.mov(m | la, l.act_func, fr, 0);
-    self.mov(R1, 0, m | vm, k.vm_valstack_top);
-    self.mov(m | la, k.act_caller_top, R1, 0);
     self.mov(m | la, l.act_this, undef, 0);
     // A method call (R4 is 0) takes the receiver slot's value as `this`; so does a construction,
     // whose new.target, the function, jit_fill writes.
@@ -339,9 +319,7 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     self.mov(R2, 0, undef, 0);
     self.clear_slots(bottom, from, clear_end, undef, R2, R4, R1);
     if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, SLJIT_IMM, K_INT);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)f.num_regs * TVal::size);
-    self.mov(m | vm, k.vm_valstack_top, R1, 0);
-    // The rest of the VM's frame state waits for vm::jit_sync. The body's record and window
+    // The VM's frame state, the value stack's top included, waits for vm::jit_sync. The body's record and window
     // registers; the heap and thunk table registers are the caller's.
     self.mov(self.la, 0, la, 0);
     self.mov(self.regs, 0, bottom, 0);
@@ -378,11 +356,31 @@ fn void Asm.clear_slots(&self, int base, uint from, uint end, int u1, int u2, in
 }
 
 // The jump taken unless the activation storage has room for the record at `rec` and the
-// inlined bodies' records above it (room_acts). `vm` holds ds.vm; clobbers `tmp`.
+// inlined bodies' records above it (room_acts). `vm` holds ds.vm; clobbers `tmp`. The limit is
+// rounded down to a multiple of 4096, which a comparison takes as an immediate on every target:
+// the last few records are left to the helper path, which pushes up to MAX_CALLS.
 fn void* Asm.emit_record_room(&self, int rec, int vm, int tmp) {
     sljit_emit_op2(self.c, SLJIT_SUB, tmp, 0, rec, 0, vm, 0);
     long last = call_layout().vm_storage + (long)(vm::MAX_CALLS - 1 - self.room_acts) * Activation::size;
-    return sljit_emit_cmp(self.c, SLJIT_GREATER, tmp, 0, SLJIT_IMM, last);
+    return sljit_emit_cmp(self.c, SLJIT_GREATER, tmp, 0, SLJIT_IMM, last & ~4095L);
+}
+
+// th_lean_target's test of the scope of the function object `fun`: a variable scope, and a
+// captured scope that is not a `with` object's. Anything else joins `fail`. Clobbers `tmp`.
+fn void Asm.emit_scope_test(&self, int fun, int tmp, Jumps* fail) {
+    void* c = self.c;
+    CallLayout* k = call_layout();
+    int m = SLJIT_MEM;
+    self.mov(tmp, 0, m | fun, k.fn_var_env);
+    fail.add(sljit_emit_cmp(c, SLJIT_EQUAL, tmp, 0, SLJIT_IMM, 0));
+    self.mov(tmp, 0, m | fun, k.fn_lex_env);
+    void* no_cap = sljit_emit_cmp(c, SLJIT_EQUAL, tmp, 0, SLJIT_IMM, 0);
+    env::EnvFlags with_flag;
+    with_flag.is_with = true;
+    self.mov(tmp, 0, m | tmp, k.env_flags, SLJIT_MOV_U8);
+    sljit_emit_op2(c, SLJIT_AND, tmp, 0, tmp, 0, SLJIT_IMM, (long)(char)with_flag);
+    fail.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, tmp, 0, SLJIT_IMM, 0));
+    sljit_set_label(no_cap, sljit_emit_label(c));
 }
 
 // The scope of the record at `la`, for a body that reads it (Asm.reads_env): its parent, the
@@ -405,6 +403,19 @@ fn void Asm.emit_entry_env(&self, int la) {
     self.mov(R1, 0, R2, 0);
     sljit_set_label(lex_done, sljit_emit_label(c));
     self.mov(m | la, self.lay.act_lex_env, R1, 0);
+}
+
+// Store `flags` and a heap_reg_count over the whole frame (Asm.frame_regs) in the record at `la`:
+// one word when the count follows the flags in memory.
+fn void Asm.store_entry_flags(&self, int la, uint flags) {
+    CallLayout* k = call_layout();
+    int m = SLJIT_MEM;
+    if (!std::core::env::BIG_ENDIAN && self.lay.act_hrc == k.act_flags + 4) {
+        self.mov(m | la, k.act_flags, SLJIT_IMM, (long)((ulong)self.f.num_regs << 32 | flags));
+        return;
+    }
+    self.mov(m | la, k.act_flags, SLJIT_IMM, flags, SLJIT_MOV_U32);
+    self.mov(m | la, self.lay.act_hrc, SLJIT_IMM, self.f.num_regs, SLJIT_MOV_U32);
 }
 
 // Store `r1` at base + off1 and `r2` at base + off2, as one pair move when
@@ -437,6 +448,8 @@ fn void Asm.emit_direct_call(&self, Jumps* generic) {
         hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.i];
         if ((ic.feedback & hobject::FB_CALL) == 0) ic.prop_idx = hobject::IC_PROP_ABSENT;
     }
+    // A plain call's receiver is undefined, as th_publish_lean's clear_this makes it.
+    if ((packed & CALL_PLAIN) != 0) self.store(callee + 1, SLJIT_IMM, K_UNDEF);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.regs, 0, SLJIT_IMM, (long)(callee + 2) * TVal::size);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, self.regs, 0, SLJIT_IMM, (long)self.w.a * TVal::size);
     self.mov(R3, 0, SLJIT_IMM, packed);
@@ -615,10 +628,9 @@ fn void Asm.emit_call_body(&self) {
     int sp = SLJIT_MEM | reg_sp();
     Jumps slow;
     Jumps done;
-    // The caller's resume point, as th_publish_lean stores it (the slow paths store it too),
-    // and the result slot for the call entry.
+    // The caller's resume point, as th_publish_lean stores it (the slow paths store it too).
+    // R2, the result slot, stays for the call entry.
     self.mov(m | self.la, k.act_curr_pc, R4, 0);
-    self.mov(sp, CALL_RETVAL_OFF, R2, 0);
     self.mov(R0, 0, m | R1, -2 * (long)TVal::size);
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
     // A value that is not a heap object still may be a callee: a lightfunc has
@@ -647,6 +659,7 @@ fn void Asm.emit_call_body(&self) {
     self.mov(self.regs, 0, m | ds, self.regs_off);
     done.add(sljit_emit_jump(c, SLJIT_JUMP));
     sljit_set_label(compiled, sljit_emit_label(c));
+    self.emit_scope_test(R0, R4, &slow);
     self.mov(R4, 0, m | R0, l.fn_comp_func);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
     self.emit_note_callee();
@@ -826,6 +839,10 @@ fn void Asm.emit_return_body(&self) {
     self.mov(R1, 0, m | self.la, k.act_flags, SLJIT_MOV_U32);
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~(long)vm::ACT_FLAG_CALLEE_OWNED & 0xFFFFFFFF);
     self.mov(m | self.la, k.act_flags, R1, 0, SLJIT_MOV_U32);
+    // C keeps the value stack's top itself (th_pop_frame); generated code leaves it to jit_sync.
+    self.mov(R3, 0, m | ds, k.ds_vm);
+    self.mov(R1, 0, m | self.la, k.act_caller_top);
+    self.mov(m | R3, k.vm_valstack_top, R1, 0);
     self.mov(R2, 0, SLJIT_IMM, tramp_ret);
     void* pop = sljit_emit_jump(c, SLJIT_JUMP);
     // A frame a call entry pushed: its site stores the result as Asm.publish would.
@@ -842,9 +859,6 @@ fn void Asm.emit_return_body(&self) {
     void* stale = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | ds, l.ds_act, self.la, 0);
     self.mov(m | ds, l.ds_act, SLJIT_IMM, 0);
     sljit_set_label(stale, sljit_emit_label(c));
-    self.mov(R3, 0, m | ds, k.ds_vm);
-    self.mov(R1, 0, m | self.la, k.act_caller_top);
-    self.mov(m | R3, k.vm_valstack_top, R1, 0);
     sljit_emit_op2(c, SLJIT_SUB, self.la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
     self.mov(R1, 0, m | self.la, k.act_curr_pc);
     self.mov(m | ds, self.pc_off, R1, 0);
