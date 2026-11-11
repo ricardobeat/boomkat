@@ -366,13 +366,9 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     self.store_pair(la, k.act_cat, zero, k.act_forin, R2);
     self.store_pair(la, k.act_new_target, zero, k.act_async_promise, R2);
     self.mov(m | la, k.act_async_gen_state, zero, 0);
-    // flags and heap_reg_count, both zero.
-    if (l.act_hrc == k.act_flags + 4) {
-        self.mov(m | la, k.act_flags, zero, 0);
-    } else {
-        self.mov(m | la, l.act_hrc, zero, 0, SLJIT_MOV_U32);
-        self.mov(m | la, k.act_flags, zero, 0, SLJIT_MOV_U32);
-    }
+    // No flags, and a heap_reg_count over the whole frame (Asm.frame_regs).
+    self.mov(m | la, k.act_flags, zero, 0, SLJIT_MOV_U32);
+    self.mov(m | la, l.act_hrc, SLJIT_IMM, f.num_regs, SLJIT_MOV_U32);
     self.store_pair(la, k.act_curr_pc, code, k.act_bottom, bottom);
     sljit_emit_op2(c, SLJIT_OR, R1, 0, fr, 0, SLJIT_IMM, K_OBJ);
     self.mov(m | la, l.act_tv_func, R1, 0);
@@ -409,24 +405,8 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     // Locals and the scratch slots start undefined, surplus arguments included
     // unless they are kept for forwarding.
     uint from = forwards ? f.arguments_reg + 1 : f.num_formals;
-    if (clear_end - from <= 12) {
-        self.mov(R2, 0, undef, 0);
-        uint i = from;
-        for (; i + 1 < clear_end; i += 2) self.store_pair(bottom, (long)i * TVal::size, undef, (long)(i + 1) * TVal::size, R2);
-        if (i < clear_end) self.mov(m | bottom, (long)i * TVal::size, undef, 0);
-    } else {
-        sljit_emit_op2(c, SLJIT_ADD, R0, 0, bottom, 0, SLJIT_IMM, (long)from * TVal::size);
-        // The extent is static: clear pairs, then the possible odd tail.
-        uint pair_end = clear_end - ((clear_end - from) & 1);
-        sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)pair_end * TVal::size);
-        self.mov(R2, 0, undef, 0);
-        void* loop = sljit_emit_label(c);
-        self.store_pair(R0, 0, undef, TVal::size, R2);
-        sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 2 * TVal::size);
-        sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R0, 0, R1, 0), loop);
-        if (pair_end < clear_end) self.mov(m | bottom, (long)pair_end * TVal::size, undef, 0);
-        self.mov(zero, 0, SLJIT_IMM, 0);
-    }
+    self.mov(R2, 0, undef, 0);
+    self.clear_slots(bottom, from, clear_end, undef, R2, R4, R1);
     if (f.call_flags.rest_length_only) self.mov(m | bottom, (long)from * TVal::size, SLJIT_IMM, K_INT);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, bottom, 0, SLJIT_IMM, (long)f.num_regs * TVal::size);
     self.mov(m | vm, k.vm_valstack_top, R1, 0);
@@ -483,6 +463,28 @@ fn void Asm.emit_view(&self, CompiledFunction* f, int fr, int code) {
 
 // Store `r1` at base + off1 and `r2` at base + off2, as one pair move when
 // the two words are adjacent.
+// Slots [from, end) of the window at `base` set to undefined, which `u1` and
+// `u2` both hold. `cur`, which may be `base`, and `lim` are scratch.
+fn void Asm.clear_slots(&self, int base, uint from, uint end, int u1, int u2, int cur, int lim) {
+    void* c = self.c;
+    // The extent is static: pairs, then the possible odd slot.
+    uint pair_end = end - ((end - from) & 1);
+    if (end - from <= 12) {
+        for (uint i = from; i < pair_end; i += 2) {
+            self.store_pair(base, (long)i * TVal::size, u1, (long)(i + 1) * TVal::size, u2);
+        }
+        if (pair_end < end) self.mov(SLJIT_MEM | base, (long)pair_end * TVal::size, u1, 0);
+        return;
+    }
+    sljit_emit_op2(c, SLJIT_ADD, lim, 0, base, 0, SLJIT_IMM, (long)pair_end * TVal::size);
+    sljit_emit_op2(c, SLJIT_ADD, cur, 0, base, 0, SLJIT_IMM, (long)from * TVal::size);
+    void* loop = sljit_emit_label(c);
+    self.store_pair(cur, 0, u1, TVal::size, u2);
+    sljit_emit_op2(c, SLJIT_ADD, cur, 0, cur, 0, SLJIT_IMM, 2 * TVal::size);
+    sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, cur, 0, lim, 0), loop);
+    if (pair_end < end) self.mov(SLJIT_MEM | cur, 0, u1, 0);
+}
+
 fn void Asm.store_pair(&self, int base, long off1, int r1, long off2, int r2) {
     if (off2 == off1 + 8) {
         sljit_emit_mem(self.c, SLJIT_MOV | SLJIT_MEM_STORE, r1 | (r2 << 8), SLJIT_MEM | base, off1);
@@ -726,8 +728,8 @@ fn void Asm.emit_call_body(&self) {
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
     self.mov(R4, 0, m | R4, k.bc_call_entry);
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0));
-    // A method call's receiver: an object in a register the caller's frame
-    // tracks, or a value that is not on the heap (CALL_PRIM).
+    // A method call's receiver: an object, in a register the caller's frame
+    // tracks like all its registers, or a value that is not on the heap (CALL_PRIM).
     sljit_emit_op2(c, SLJIT_AND, R0, 0, R3, 0, SLJIT_IMM, CALL_METHOD);
     void* receiver_done = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     self.mov(R0, 0, m | R1, -(long)TVal::size);
@@ -738,14 +740,6 @@ fn void Asm.emit_call_body(&self) {
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
     slow.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN));
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
-    // heap_reg_count > callee + 1: the receiver's slot lies below the
-    // watermark, regs + heap_reg_count.
-    self.mov(R0, 0, m | ds, l.ds_act);
-    self.mov(R0, 0, m | R0, l.act_hrc, SLJIT_MOV_U32);
-    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 3);
-    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, self.regs, 0);
-    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)TVal::size);
-    slow.add(sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, R1, 0));
     sljit_set_label(receiver_done, sljit_emit_label(c));
     sljit_set_label(prim_done, sljit_emit_label(c));
     self.mov(R0, 0, m | ds, k.ds_depth, SLJIT_MOV_U32);
@@ -835,10 +829,9 @@ fn void Asm.emit_return(&self, Jumps* helper) {
 }
 
 // The caller's result slot lies inside the caller's window, which the
-// object result needs (R4 is the returning frame's activation). With `track`
-// it also raises the caller's watermark to cover the slot, as
-// track_heap_store does. Clobbers R1-R3.
-fn void Asm.emit_result_window(&self, Jumps* helper, bool track) {
+// object result needs (R4 is the returning frame's activation): the caller is
+// a native frame, which tracks its whole window. Clobbers R1-R3.
+fn void Asm.emit_result_window(&self, Jumps* helper) {
     void* c = self.c;
     CallLayout* k = call_layout();
     Layout* l = self.lay;
@@ -855,15 +848,6 @@ fn void Asm.emit_result_window(&self, Jumps* helper, bool track) {
     self.mov(R4, 0, m | R4, k.act_retval);
     helper.add(sljit_emit_cmp(c, SLJIT_LESS, R4, 0, R2, 0));
     helper.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, R3, 0));
-    if (track) {
-        sljit_emit_op2(c, SLJIT_SUB, R4, 0, R4, 0, R2, 0);
-        sljit_emit_op2(c, SLJIT_LSHR, R4, 0, R4, 0, SLJIT_IMM, 3);
-        sljit_emit_op2(c, SLJIT_ADD, R4, 0, R4, 0, SLJIT_IMM, 1);
-        self.mov(R3, 0, m | R1, l.act_hrc, SLJIT_MOV_U32);
-        void* covered = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R4, 0, R3, 0);
-        self.mov(m | R1, l.act_hrc, R4, 0, SLJIT_MOV_U32);
-        sljit_set_label(covered, sljit_emit_label(c));
-    }
     self.mov(R4, 0, m | self.ds, self.lay.ds_act);
 }
 
@@ -944,25 +928,15 @@ fn void Asm.emit_return_body(&self) {
     helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)types::TAG_OBJECT));
     sljit_emit_op2(c, SLJIT_AND, R1, 0, R0, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    self.emit_result_window(&helper, true);
+    self.emit_result_window(&helper);
     sljit_set_label(primitive, sljit_emit_label(c));
-    // th_clear_tracked_regs. Registers hold no counts, so a string clears
-    // like an object, as vm::jit_ret clears it (th_leaf_return's counted_ok).
-    uint nregs = self.f.num_regs;
-    self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
-    Jumps cleared;
-    cleared.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
-    void* below = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R1, 0, SLJIT_IMM, (long)nregs);
-    self.mov(R1, 0, SLJIT_IMM, (long)nregs);
-    sljit_set_label(below, sljit_emit_label(c));
-    sljit_emit_op2(c, SLJIT_SHL, R1, 0, R1, 0, SLJIT_IMM, 3);
+    // th_clear_tracked_regs: the frame's whole window (Asm.frame_regs).
+    // Registers hold no counts, so a string clears like an object, as
+    // vm::jit_ret clears it (th_leaf_return's counted_ok).
     self.mov(R2, 0, m | R4, k.act_bottom);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R2, 0);
-    void* sweep = sljit_emit_label(c);
-    self.mov(m | R2, 0, SLJIT_IMM, K_UNDEF);
-    sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, TVal::size);
-    sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), sweep);
-    cleared.bind(sljit_emit_label(c));
+    self.mov(R1, 0, SLJIT_IMM, K_UNDEF);
+    self.mov(R3, 0, R1, 0);
+    self.clear_slots(R2, 0, self.f.num_regs, R1, R3, R2, R0);
     self.mov(R0, 0, sp, SUB_VALUE_OFF);
     // th_leaf_return's write-back and th_pop_frame; the caller is the
     // activation below the frame.

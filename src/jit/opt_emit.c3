@@ -193,14 +193,8 @@ fn int OptCg.obj_reg(&self, uint n, int tmp) {
 // The boxed object or inert value in `src` stored to window slot `slot`, raising the frame's
 // heap_reg_count over it as Asm.publish does. Uses R2 and R3.
 fn void OptCg.store_object(&self, uint slot, int src) {
-    void* c = self.a.c;
-    Layout* l = self.a.lay;
     self.a.store(slot, src);
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.a.ds, l.ds_act);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.act_hrc);
-    void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, (long)slot);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, l.act_hrc, SLJIT_IMM, (long)slot + 1);
-    sljit_set_label(covered, sljit_emit_label(c));
+    self.a.track_heap_store(slot, R3, R2);
 }
 
 // The value of node `n` stored to window slot `slot`, boxed.
@@ -1654,7 +1648,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
         }
         miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
         miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-        if (n.b == NO_NODE) {
+        if (n.b == NO_NODE && callee_reg + 1 >= a.frame_regs) {
             sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, a.lay.ds_act);
             sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R0, a.lay.act_hrc);
             miss[misses++] = sljit_emit_cmp(c, SLJIT_LESS_EQUAL, R0, 0, SLJIT_IMM, (long)callee_reg + 1);
@@ -2284,15 +2278,10 @@ $endif
 // A register move of a forwarding call within the caller's frame: the value is one the frame
 // holds already, so only the heap-register count may have to cover the new slot.
 fn void OptCg.emit_move_window(&self, OptNode* n) {
-    void* c = self.a.c;
     Asm* a = self.a;
     a.load(R0, (uint)n.imm);
     a.store(n.home, R0);
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | a.ds, a.lay.ds_act);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, a.lay.act_hrc);
-    void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, n.home);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, a.lay.act_hrc, SLJIT_IMM, (long)n.home + 1);
-    sljit_set_label(covered, sljit_emit_label(c));
+    a.track_heap_store(n.home, R3, R2);
 }
 
 fn void OptCg.emit_copy(&self, OptNode* n, uint i) {

@@ -571,6 +571,10 @@ const long SUB_SLOW = 2;
 struct Asm {
     void* c;
     CompiledFunction* f;
+    // The registers of the frame the code runs in. Its heap_reg_count covers
+    // them all from the entry on (emit_prologue, emit_call_entry), so a store
+    // to one raises nothing; only a slot beyond them is tracked (covers).
+    uint frame_regs;
     // The code allocation's BaselineCode.view, or null.
     usz[8]* view;
     void*[] labels;
@@ -636,6 +640,7 @@ fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
     Asm a = {
         .c = c,
         .f = f,
+        .frame_regs = f.num_regs,
         .labels = mem::new_array(void*, (usz)count + 1),
         .starts = mem::new_array(bool, (usz)count + 1),
         .ds = reg_s(0),
@@ -686,6 +691,11 @@ fn void* Asm.emit_prologue(&self, int table_reg, BaselineCode* bc, int scratches
     int ds_mem = SLJIT_MEM | self.ds;
     Dispatch* dl = (Dispatch*)(usz)4096;
     sljit_emit_enter(c, 0, SLJIT_ARGS1WW, scratches, 6, locals);
+    // A frame that ran in the interpreter tracked its registers one by one.
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.lay.ds_act);
+    void* covered = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_MEM | R1, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
+    sljit_set_label(covered, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, self.code, 0, ds_mem, (char*)&dl.code_base - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, self.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);

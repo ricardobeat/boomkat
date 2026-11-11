@@ -579,11 +579,8 @@ fn void Asm.publish(&self, uint ra) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | self.heap, l.heap_gc_phase);
     void* marking = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
     self.store(ra, R0);
-    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | self.ds, l.ds_act);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R3, l.act_hrc);
-    void* done_obj = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, ra);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R3, l.act_hrc, SLJIT_IMM, (long)ra + 1);
-    void* done_hrc = sljit_emit_jump(c, SLJIT_JUMP);
+    self.track_heap_store(ra, R3, R2);
+    void* done_obj = sljit_emit_jump(c, SLJIT_JUMP);
     sljit_set_label(not_object, sljit_emit_label(c));
     sljit_set_label(marking, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, ra);
@@ -594,7 +591,6 @@ fn void Asm.publish(&self, uint ra) {
     self.store(ra, R0);
     sljit_set_label(done, sljit_emit_label(c));
     sljit_set_label(done_obj, sljit_emit_label(c));
-    sljit_set_label(done_hrc, sljit_emit_label(c));
 }
 
 // The publish subroutine: store the heap value R0 into the register whose
@@ -654,14 +650,16 @@ fn void Asm.emit_publish_body(&self) {
     sljit_set_label(ok, sljit_emit_label(c));
 }
 
-// track_heap_store for register `ra`. Uses R1 and R2.
-fn void Asm.track_heap_store(&self, uint ra) {
+// track_heap_store for slot `ra`, which only a slot beyond the frame's own
+// registers needs (Asm.frame_regs). Uses `act` and `tmp`.
+fn void Asm.track_heap_store(&self, uint ra, int act = R1, int tmp = R2) {
+    if (ra < self.frame_regs) return;
     void* c = self.c;
     Layout* l = self.lay;
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, l.ds_act);
-    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R1, l.act_hrc);
-    void* covered = sljit_emit_cmp(c, SLJIT_GREATER, R2, 0, SLJIT_IMM, ra);
-    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, l.act_hrc, SLJIT_IMM, (long)ra + 1);
+    sljit_emit_op1(c, SLJIT_MOV, act, 0, SLJIT_MEM | self.ds, l.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV_U32, tmp, 0, SLJIT_MEM | act, l.act_hrc);
+    void* covered = sljit_emit_cmp(c, SLJIT_GREATER, tmp, 0, SLJIT_IMM, ra);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | act, l.act_hrc, SLJIT_IMM, (long)ra + 1);
     sljit_set_label(covered, sljit_emit_label(c));
 }
 
