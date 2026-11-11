@@ -871,7 +871,7 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
     int builtin = jit_builtin_index(regs[callee]);
     if (builtin >= 0) hobject::ic_note_callee(th_ic_at(cold, pc), hobject::IC_BUILTIN_TARGET | (uint)builtin);
-    Instruction* r = th_call_native(pc, &jit_stop_table, regs, cold, callee, pc.a, global ? pc.b : pc.c);
+    Instruction* r = th_call_native(pc, &jit_stop_table, regs, cold, callee, pc.a, global ? pc.b : pc.c) @inline;
     ThreadedHandoff handoff = vm.threaded_handoff;
     vm.threaded_handoff = ThreadedHandoff.NONE;
     switch (handoff) {
@@ -915,7 +915,7 @@ fn long jit_call_builtin_native(Dispatch* ds, Instruction* next) {
     ds.curr_pc = next;
     long raw = JIT_NO_RAW;
     OpStatus status;
-    if (!jit_call_builtin(ds, next, &status, &raw)) return JIT_CALL_SLOW;
+    if (!jit_call_builtin(ds, next, &status, &raw) @inline) return JIT_CALL_SLOW;
     jit::JitStats* st = &ds.heap.jit_stats;
     st.calls_builtin++;
     st.calls_builtin_direct++;
