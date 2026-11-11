@@ -481,7 +481,9 @@ fn void Resolver.hoist_annexb(&self, uint mark) {
         }
         if (ok) {
             uint b = self.bind(fs, c.name, DeclKind.ANNEXB_VAR);
-            self.sites.push({ .binding = b, .node = self.sites.data[c.site].node, .scope = c.scope, .kind = DeclKind.ANNEXB_VAR });
+            uint name = self.sites.data[c.site].node;
+            self.ast.flags.data[name] |= IDENT_ANNEXB_VAR;
+            self.sites.push({ .binding = b, .node = name, .scope = c.scope, .kind = DeclKind.ANNEXB_VAR });
         }
     }
     self.annexb.truncate((sz)mark);

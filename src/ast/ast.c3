@@ -27,7 +27,7 @@ enum NodeTag : char {
     REGEX,           // lhs = atom: the whole literal text `/body/flags`
     TEMPLATE,        // lhs = list: see Ast.template_*; a no-substitution template has one text part
     TAGGED_TEMPLATE, // lhs = tag expression, rhs = TEMPLATE
-    IDENT,           // lhs = atom. flags: IDENT_ESCAPED
+    IDENT,           // lhs = atom. flags: IDENT_ESCAPED, IDENT_ANNEXB_VAR
     THIS,
     NULL_LIT,
     TRUE_LIT,
@@ -133,6 +133,7 @@ const char FLAG_PAREN = 0x80;       // the expression was written in parentheses
 
 const char FLAG_OPTIONAL = 0x01;    // MEMBER / INDEX / PRIVATE_MEMBER / CALL written with `?.`
 const char IDENT_ESCAPED = 0x01;
+const char IDENT_ANNEXB_VAR = 0x02;  // names a block-level function that also binds a var (Annex B)
 const char STR_OCTAL = 0x01;        // the literal holds a legacy octal or \8 \9 escape
 const char STR_DIRECTIVE_RAW = 0x02;
 const char PROP_COMPUTED = 0x01;

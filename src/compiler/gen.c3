@@ -3701,25 +3701,15 @@ fn void? CompilerContext.gen_block_functions(&self, uint stmts, uint outer_depth
 
 fn void? CompilerContext.gen_block_function(&self, uint n, uint outer_depth) {
     ast::AstIndex* idx = ast::index_state;
-    uint atom = idx.tree.lhs.data[idx.tree.lhs.data[n]];
-    char[] name = self.gen_name(atom);
-    uint fn_scope = idx.function_scope(n);
-    uint block = idx.res.scopes.data[fn_scope].parent;
-    bool publish = false;
-    ast::Scope* sc = &idx.res.scopes.data[block];
-    ast::Scope* owner = &idx.res.scopes.data[sc.func];
+    uint ident = idx.tree.lhs.data[n];
+    char[] name = self.gen_name(idx.tree.lhs.data[ident]);
+    uint block = idx.res.scopes.data[idx.function_scope(n)].parent;
+    ast::Scope* owner = &idx.res.scopes.data[idx.res.scopes.data[block].func];
     // Annex B function hoisting skips F when it is in parameterNames, which holds "arguments"
     // whenever the arguments object is needed. A direct eval publishes it anyway, as
     // staging/sm/regress/regress-602621.js expects.
     bool skip = name == "arguments" && (owner.flags & ast::SCOPE_HAS_EVAL) == 0;
-    for (uint i = owner.site_start; i < owner.site_end && !skip; i++) {
-        ast::Site* site = &idx.res.sites.data[i];
-        if (site.kind == ast::DeclKind.ANNEXB_VAR && site.scope == block
-            && idx.tree.lhs.data[site.node] == atom) {
-            publish = true;
-            break;
-        }
-    }
+    bool publish = !skip && (idx.tree.flags.data[ident] & ast::IDENT_ANNEXB_VAR) != 0;
     if (publish) {
         for (uint i = 0; i < outer_depth; i++) {
             if (self.scope_stack[i].name == name) self.mark_scope_captured(i);
