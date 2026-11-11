@@ -263,6 +263,9 @@ struct OptBuild {
     // builds those as LOAD_CAP and LOAD_ELEM nodes.
     List {OptOverride} load_reps;
     bool load_changed;
+    // The facts at the end of each block built so far, by position (nregs + 1 each).
+    uint* end_shape;
+    bool* end_plain;
     // The register states at the end and at the start of each block, by position.
     OptRegState* ends;
     OptRegState* entries;
@@ -519,6 +522,8 @@ fn void OptBuild.free(&self) {
     mem::free(self.const_def);
     mem::free(self.fact_shape);
     mem::free(self.fact_plain);
+    mem::free(self.end_shape);
+    mem::free(self.end_plain);
     mem::free(self.ends);
     mem::free(self.entries);
     self.overrides.free();
@@ -3558,9 +3563,13 @@ fn void OptBuild.begin_block(&self, uint pos) {
             back++;
         }
     }
-    // Facts cross a block start only from the block built just before it, when that is the
-    // one way in: a back edge, a join or an OSR entry may come from any generic.
-    if (pos == 0 || fwd != 1 || back != 0 || single != pos - 1 || self.osr_target[first_insn]) self.forget_facts();
+    // Facts cross a block start as what every way in agrees on, when each is a block already
+    // built: a back edge or an OSR entry may come from any generic.
+    if (fwd == 0 || back != 0 || self.osr_target[first_insn]) {
+        self.forget_facts();
+    } else {
+        self.meet_facts(pos);
+    }
     blk.header = back > 0;
     blk.loop_end = self.loop_end[pos];
     if (pos == 0 && self.g.region.end != 0) {
@@ -3653,7 +3662,7 @@ fn void OptBuild.end_block(&self, uint pos) {
     if (self.dead[pos]) {
         blk.succ_count = 0;
         blk.end = (uint)self.g.nodes.len();
-        mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
+        self.save_ends(pos);
         return;
     }
     blk.succ_count = node.successor_count;
@@ -3665,7 +3674,36 @@ fn void OptBuild.end_block(&self, uint pos) {
     }
     if (blk.succ_count != 0 && !test && !is_terminator_op(node.view.insn.op)) self.terminator(OptOp.JUMP);
     blk.end = (uint)self.g.nodes.len();
+    self.save_ends(pos);
+}
+
+// Record the register states and facts the block at `pos` ends with.
+fn void OptBuild.save_ends(&self, uint pos) {
+    sz w = (sz)self.nregs + 1;
     mem::copy(&self.ends[(usz)pos * self.nregs], self.cur, (usz)self.nregs * OptRegState::size);
+    mem::copy(&self.end_shape[(sz)pos * w], self.fact_shape, w * uint::size);
+    mem::copy(&self.end_plain[(sz)pos * w], self.fact_plain, w);
+}
+
+// The facts at the start of the block at `pos`: those every built block leading to it ends with.
+fn void OptBuild.meet_facts(&self, uint pos) {
+    usz w = (usz)self.nregs + 1;
+    bool first = true;
+    foreach (p : self.preds(pos)) {
+        if (p >= pos || self.dead[p]) continue;
+        uint* shape = &self.end_shape[(usz)p * w];
+        bool* plain = &self.end_plain[(usz)p * w];
+        for (usz r = 0; r < w; r++) {
+            if (first) {
+                self.fact_shape[r] = shape[r];
+                self.fact_plain[r] = plain[r];
+            } else {
+                if (self.fact_shape[r] != shape[r]) self.fact_shape[r] = heap::SHAPE_NONE;
+                self.fact_plain[r] = self.fact_plain[r] && plain[r];
+            }
+        }
+        first = false;
+    }
 }
 
 // The phis of a region's header, which has no forward predecessor to speculate from: one for each
@@ -3845,6 +3883,8 @@ fn OptRefuse opt_build_once(Heap* h, CompiledFunction* f, OptGraph* g, OptBuild*
     b.dead = mem::new_array(bool, b.nrpo);
     b.fact_shape = mem::new_array(uint, (usz)n + 1);
     b.fact_plain = mem::new_array(bool, (usz)n + 1);
+    b.end_shape = mem::new_array(uint, (usz)b.nrpo * ((usz)n + 1));
+    b.end_plain = mem::new_array(bool, (usz)b.nrpo * ((usz)n + 1));
     b.ends = mem::new_array(OptRegState, (usz)b.nrpo * n);
     b.entries = mem::new_array(OptRegState, (usz)b.nrpo * n);
     // A nested site's operands become OBJECT nodes over rounds of their own, each request
