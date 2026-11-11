@@ -105,6 +105,9 @@ make out/boomkat_gc_stress
 ./out/boomkat_gc_stress <file>
 ```
 
+`make out/boomkat_jit_gc_stress` is the same build with the JIT; run scripts
+with `--jit --jit-stress`, since its interpreter overflows the stack on long runs.
+
 Debug targets use full debug info because the configured toolchain's Linux
 DWARF emitter crashes with `"debug-info": "line-tables"`.
 

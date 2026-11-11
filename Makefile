@@ -77,7 +77,7 @@ endif
 
 PREFIX ?= /usr/local
 
-.PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress clean \
+.PHONY: all lib test262_runner test262_runner_asan test262_runner_verify boomkat boomkat_slim boomkat_tiny boomkat_tiny_compile boomkat_debug boomkat_gc_stress boomkat_jit_gc_stress clean \
         shared boomkat-stress install boomkat-full-icu
 
 all: lib test262_runner boomkat boomkat-full-icu
@@ -98,6 +98,9 @@ boomkat_debug: out/boomkat_debug
 # makes the binary orders of magnitude slower. It is the only build that turns a
 # missed GC root into a deterministic failure instead of a rare field crash.
 boomkat_gc_stress: out/boomkat_gc_stress
+# The same with the JIT, built at O1: threaded dispatch overflows the stack
+# without tail calls, so run scripts with --jit --jit-stress.
+boomkat_jit_gc_stress: out/boomkat_jit_gc_stress
 
 out/test262_runner: project.json $(call target_sources,test262_runner) $(SLJIT_DEPS)
 	$(C3C_BUILD) test262_runner $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
@@ -151,6 +154,10 @@ out/boomkat_debug: project.json $(call target_sources,boomkat_debug)
 out/boomkat_gc_stress: project.json $(call target_sources,boomkat_gc_stress)
 	$(C3C_BUILD) boomkat_gc_stress $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
 	@rm -f out/.profile-boomkat_gc_stress
+
+out/boomkat_jit_gc_stress: project.json $(call target_sources,boomkat_jit_gc_stress) $(SLJIT_DEPS)
+	$(C3C_BUILD) boomkat_jit_gc_stress $(C3C_BUILDFLAGS) $(EXE_LINK_FLAGS)
+	@rm -f out/.profile-boomkat_jit_gc_stress
 
 # ---- C embedding ABI targets ------------------------------------------------
 
