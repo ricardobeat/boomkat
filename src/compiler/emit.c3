@@ -127,8 +127,9 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
     if (self.is_global || self.is_module || self.func_ast_scope == 0 || self.in_eval_code) return false;
     if (self.has_direct_eval || self.has_with_stmt || self.outer_with) return false;
     ast::AstIndex* idx = ast::index_state;
-    if (idx == null || !idx.use || idx.unknown_outer) return false;
+    if (idx == null || !idx.use) return false;
     HString* name = (HString*)self.constants[name_idx].get_heapptr();
+    if (idx.unknown_outer && outer_may_bind(idx, name)) return false;
     uint atom = idx.tree.atoms.find(self.name_text(name));
     // A name the source never wrote (a synthetic one) has no binding to find.
     if (atom == 0 || atom == idx.res.atom_arguments) return false;

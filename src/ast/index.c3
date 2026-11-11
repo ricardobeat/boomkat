@@ -27,6 +27,9 @@ struct AstIndex {
     bool built;
     // A reparsed function has no proof about declarations outside its source.
     bool unknown_outer;
+    // The template being compiled from its own source slice, which carries
+    // what its defining compile learned about those declarations.
+    bytecode::CompiledFunction* reparsed;
     // The unit's ParseOptions.defer_functions: the parser recorded ordinary
     // bodies, so the compiler must turn them into templates.
     bool defer_functions;

@@ -1881,6 +1881,9 @@ struct CompiledFunction {
 
     // One plus the source offset of an eval body awaiting first-call compilation.
     uint lazy_paren;
+    // On such a template: its constants are exactly the names it mentions that a
+    // function around it binds, so any other free name is a global.
+    bool lazy_outer_known;
 
     // ---- Bytecode -------------------------------------------------------
 

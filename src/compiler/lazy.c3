@@ -4,6 +4,7 @@ import boomkat::ast;
 import boomkat::features;
 import boomkat::bytecode;
 import boomkat::heap;
+import boomkat::hstring;
 import boomkat::lexer;
 import boomkat::types;
 import boomkat::relexstats;
@@ -42,8 +43,58 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
         f.filename_ptr = file.ptr;
         f.filename_len = (uint)self.lexer.source_name.len;
     }
+    self.record_outer_names(f, scope);
     h.track_compiled_func(f);
     return f;
+}
+
+// Whether a function around the slice being reparsed may bind `name`. Only the
+// defining compile saw those functions; without its record every name may be.
+fn bool outer_may_bind(ast::AstIndex* idx, HString* name) {
+    CompiledFunction* f = idx.reparsed;
+    if (f == null || !f.lazy_outer_known) return true;
+    for (uint i = 0; i < f.const_count; i++) {
+        if (f.constants[i].get_heapptr() == (void*)name) return true;
+    }
+    return false;
+}
+
+// Record on the template `f` of the function scope `scope` which names its body
+// mentions that an enclosing function binds. The body's own source cannot show
+// them once it is reparsed alone, and a free name outside that set is a global.
+// Nothing is recorded when a `with` or a direct eval around the function could
+// bind a name later, or when the body kept no list of the names it mentions.
+fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scope) {
+    ast::AstIndex* idx = ast::index_state;
+    Heap* h = (Heap*)self.heap;
+    uint fn_node = idx.res.scopes.data[scope].node;
+    if (!idx.use || !idx.tree.body_was_recorded(fn_node)) return;
+    if (self.has_direct_eval || self.has_with_stmt || self.in_with()
+        || self.in_eval_code || self.capture_all) return;
+    if (idx.unknown_outer && (idx.reparsed == null || !idx.reparsed.lazy_outer_known)) return;
+    for (uint s = idx.res.scopes.data[scope].parent; s != 0; s = idx.res.scopes.data[s].parent) {
+        ast::Scope* sc = &idx.res.scopes.data[s];
+        if (sc.kind == ast::ScopeKind.WITH
+            || (sc.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS)) != 0) return;
+    }
+    uint refs = idx.tree.rhs.data[idx.tree.field(idx.tree.rhs.data[fn_node], ast::FN_BODY)];
+    uint nrefs = idx.tree.field(refs, 1);
+    // One slot at least, so a template with no outer names still owns a pool.
+    TVal* names = (TVal*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * TVal::size);
+    if (names == null) return;
+    uint count = 0;
+    for (uint i = 0; i < nrefs; i++) {
+        uint atom = idx.tree.field(refs, 2 + i);
+        HString* name = h.ensure_interned(h.str_intern(idx.tree.atoms.get(atom)));
+        bool bound = idx.unknown_outer && outer_may_bind(idx, name);
+        for (uint s = idx.res.scopes.data[scope].parent; s != 0 && !bound; s = idx.res.scopes.data[s].parent) {
+            bound = idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0;
+        }
+        if (bound) names[count++].set_string_borrowed(name);
+    }
+    f.constants = names;
+    f.const_count = count;
+    f.lazy_outer_known = true;
 }
 
 fn void? materialize_function(CompiledFunction* f, Heap* h) {
@@ -85,10 +136,12 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     // The source slice has no declarations for its enclosing scopes. Keep
     // free names in the captured environment rather than proving them global.
     idx.unknown_outer = true;
+    idx.reparsed = f;
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
     CompiledFunction saved = *f;
     *f = *ready;
+    if (saved.constants != null) h.free_func(h.heap_udata, saved.constants);
     f.next = saved.next;
     f.prev = saved.prev;
     f.flags.reachable = saved.flags.reachable;
