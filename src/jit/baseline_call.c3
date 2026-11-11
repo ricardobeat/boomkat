@@ -119,6 +119,13 @@ struct CallLayout {
 CallLayout call_layout_data @private;
 bool call_layout_ready @private;
 
+// Whether the call entry of `f` keeps the arguments in the frame's first
+// registers for APPLY_ARGS, as bind_register_arguments leaves them.
+fn bool entry_forwards(CompiledFunction* f) @inline {
+    return f.call_flags.forward_args && f.num_args == f.num_formals
+        && f.arguments_reg == (uint)f.num_formals + bytecode::FORWARD_ARGS_PAD;
+}
+
 fn CallLayout* call_layout() {
     if (call_layout_ready) return &call_layout_data;
     CallLayout* l = &call_layout_data;
@@ -206,10 +213,11 @@ fn CallLayout* call_layout() {
 }
 
 // Whether `f` gets a call entry: a lean callee (classify_lean_call) whose
-// frame the entry can publish with plain stores.
+// frame the entry can publish with plain stores. An `arguments` register must
+// be the forwarding kind, which holds the count (CallFlags.forward_args).
 fn bool call_entry_eligible(CompiledFunction* f) {
     f.classify_lean_call();
-    return f.call_flags.lean_call && !f.arguments_in_reg() && f.call_flags.trivial_call == 0
+    return f.call_flags.lean_call && (!f.arguments_in_reg() || entry_forwards(f)) && f.call_flags.trivial_call == 0
         && f.ic_entries != null && f.var_ic_entries != null && f.num_formals <= f.num_regs
         && !is_top_level(f);
 }
@@ -262,6 +270,13 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
         decline.add(sljit_emit_cmp(c, f.call_flags.rest_length_only ? SLJIT_NOT_EQUAL : SLJIT_LESS, R1, 0, SLJIT_IMM, nf));
     }
+    // More arguments than the registers reserved for them take the arguments object.
+    bool forwards = entry_forwards(f);
+    uint kept = forwards ? nf + bytecode::FORWARD_ARGS_PAD : nf;
+    if (forwards) {
+        sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
+        decline.add(sljit_emit_cmp(c, SLJIT_GREATER, R1, 0, SLJIT_IMM, kept));
+    }
     long forbidden = (f.call_flags.ignores_this ? 0 : CALL_PRIM) | (f.call_flags.lean_plain ? 0 : CALL_PLAIN);
     if (forbidden != 0) {
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, forbidden);
@@ -294,15 +309,21 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     // var_env (env), R3 = the function object. Constants the stores share are
     // kept in registers once they are free: Z (R0) zero, U (packed) undefined,
     // F (R3) the function, C (retval) its code.
-    if (nf != 0 && !f.call_flags.rest_length_only) {
+    if (kept != 0 && !f.call_flags.rest_length_only) {
         sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
-        void* all_given = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, nf);
-        for (uint i = 0; i < nf; i++) {
+        void* all_given = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, kept);
+        for (uint i = 0; i < kept; i++) {
             void* given = sljit_emit_cmp(c, SLJIT_GREATER, R4, 0, SLJIT_IMM, i);
             self.mov(m | bottom, (long)i * TVal::size, SLJIT_IMM, K_UNDEF);
             sljit_set_label(given, sljit_emit_label(c));
         }
         sljit_set_label(all_given, sljit_emit_label(c));
+    }
+    // The `arguments` register of a forwarding function is the count.
+    if (forwards) {
+        sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
+        sljit_emit_op2(c, SLJIT_OR, R4, 0, R4, 0, SLJIT_IMM, K_INT);
+        self.mov(m | bottom, (long)f.arguments_reg * TVal::size, R4, 0);
     }
     sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN);
     void* keep_this = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0);
@@ -385,8 +406,9 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
         self.mov(m | la, k.act_flags, R1, 0, SLJIT_MOV_U32);
         bound.bind(sljit_emit_label(c));
     }
-    // Locals and the scratch slots start undefined, surplus arguments included.
-    uint from = f.num_formals;
+    // Locals and the scratch slots start undefined, surplus arguments included
+    // unless they are kept for forwarding.
+    uint from = forwards ? f.arguments_reg + 1 : f.num_formals;
     if (clear_end - from <= 12) {
         self.mov(R2, 0, undef, 0);
         uint i = from;
