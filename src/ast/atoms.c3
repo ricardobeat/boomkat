@@ -20,9 +20,9 @@ struct AtomTable {
 
 const uint ATOM_NONE = 0;
 
-fn void AtomTable.init(&self) {
-    self.entries.init(256);
-    self.slots.init_zero(1024);
+fn void AtomTable.init(&self, sz cap = 256) {
+    self.entries.init(cap);
+    self.slots.init_zero(cap * 4);
     // Atom 0 is the "none" entry.
     self.entries.push({ null, 0, 0 });
 }

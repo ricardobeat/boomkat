@@ -641,7 +641,8 @@ int  cur_with_depth;
     // Names referenced inside nested callable bodies, collected by
     // resolution before the body compiles; declare_var marks matching
     // locals is_captured so all their access goes through the environment.
-    List{char[]} captured_names;
+    // Owned copies; empty until the first name is added.
+    ast::AtomTable captured_names;
     // Treat every local as captured when static resolution cannot name the
     // affected binding precisely, including direct eval and class fields.
     bool capture_all;
@@ -911,7 +912,6 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     self.tail_nodes.allocator = mem;
     self.tail_call_pcs.allocator = mem;
     self.bindings.allocator = mem;
-    self.captured_names.allocator = mem;
     self.defaults.allocator = mem;
     self.destruct_defaults.allocator = mem;
     self.loop_stack.allocator = mem;
@@ -962,7 +962,7 @@ fn void CompilerContext.cleanup(&self) {
     self.tail_nodes.free();
     self.tail_call_pcs.free();
     self.bindings.free();
-    foreach (name : self.captured_names) { mem::free(name.ptr); }
+    for (uint id = 1; id < self.captured_names.count(); id++) mem::free(self.captured_names.get(id).ptr);
     self.captured_names.free();
     self.defaults.free();
     self.destruct_defaults.free();

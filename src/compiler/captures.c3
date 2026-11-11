@@ -12,21 +12,20 @@ import std::collections::list;
 fn void CompilerContext.add_captured_name(&self, char[] name) {
     if (self.capture_all) return;
     if (name.len == 0) return;
-    foreach (captured : self.captured_names) {
-        if (str_eq(captured, name)) return;
+    if (self.captured_names.count() == 0) {
+        self.captured_names.init(8);
+    } else if (self.captured_names.find(name) != 0) {
+        return;
     }
     char[] owned = mem::new_array(char, name.len);
     mem::copy(owned.ptr, name.ptr, (sz)name.len);
-    self.captured_names.push(owned);
+    self.captured_names.intern(owned);
 }
 
 // Is this local name captured by a nested callable (or is everything)?
 fn bool CompilerContext.is_captured_name(&self, char[] name) {
     if (self.capture_all) return true;
-    foreach (captured : self.captured_names) {
-        if (str_eq(captured, name)) return true;
-    }
-    return false;
+    return self.captured_names.count() != 0 && self.captured_names.find(name) != 0;
 }
 
 // The same for a function scope the caller already holds.
@@ -72,7 +71,7 @@ fn void CompilerContext.apply_capture_set(&self) {
         && !self.in_class_body && !self.is_named_func_expr
         && !self.has_rest && self.defaults.len() == 0
         && self.destruct_defaults.len() == 0 && !self.has_destructured_param
-        && !self.capture_all && self.captured_names.len() > 0) {
+        && !self.capture_all && self.captured_names.count() > 1) {
         self.cell_frame_reg = self.alloc_persistent_reg();
         self.cell_frame_reserved = true;
     }

@@ -44,7 +44,9 @@ fn void retain_inner_consumers(CompilerContext* ctx, CompiledFunction* inner,
         // bindings by name, and the resolver marked each one it can reach.
         if (!ctx.captures_exact) { *retain_all = true; return; }
         Heap* h = (Heap*)ctx.heap;
-        foreach (name : ctx.captured_names) mark_string_constant(ctx, h.str_intern(name), retain);
+        for (uint id = 1; id < ctx.captured_names.count(); id++) {
+            mark_string_constant(ctx, h.str_intern(ctx.captured_names.get(id)), retain);
+        }
         return;
     }
     for (uint i = 0; i < inner.code_count; i++) {
