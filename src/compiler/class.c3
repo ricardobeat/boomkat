@@ -772,7 +772,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
                 self.free_val(key_value);
                 self.emit_abc(Opcode.TOPROPKEY, (uint)computed_key_reg, 0, 0);
                 computed_key_inner_idx = 0xFFFFFFFE;
-                method_name = lexer::make_token(TokenType.IDENTIFIER, 0, 0);
+                method_name = lexer::make_token(TokenType.IDENTIFIER);
             }
 
         // Check for constructor name and related early errors. Runs once for

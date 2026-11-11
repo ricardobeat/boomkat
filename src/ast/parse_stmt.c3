@@ -144,7 +144,7 @@ fn bool Parser.using_starts_for_head(&self) {
     self.has_peek = false;
     self.peek_failed = false;
     self.tok = using_tok;
-    self.prev = using_tok;
+    self.prev = using_tok.span();
     if (catch err_c = self.next()) return false;
     return is_declaration;
 }
@@ -168,7 +168,7 @@ fn bool Parser.await_using_starts_declaration(&self) {
     self.has_peek = false;
     self.peek_failed = false;
     self.tok = await_tok;
-    self.prev = await_tok;
+    self.prev = await_tok.span();
     if (catch err_c = self.next()) return false;
     return binding;
 }

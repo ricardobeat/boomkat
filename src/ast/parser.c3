@@ -76,7 +76,7 @@ struct Parser {
     Ast* ast;
     Lexer* lex;
     Token tok;               // the current, unconsumed token
-    Token prev;              // the last consumed token
+    Span prev;               // the last consumed token's bytes
     Token peek_tok;
     bool has_peek;
     // A lexing error met while peeking: the next advance reports it.
@@ -179,6 +179,13 @@ fn void? Parser.check_stack(&self) {
 
 // ---- tokens ----
 
+struct Span {
+    uint pos;
+    uint end;
+}
+
+macro Span Token.span(&self) => { self.pos, self.end };
+
 fn Token? Parser.lex_one(&self) {
     Token? t = self.lex.scan_token();
     if (catch err = t) {
@@ -213,7 +220,7 @@ fn void? Parser.next(&self, bool as_name = false) {
 // Advance past the current token without the reserved-word check, for a look-ahead
 // that is undone before the tokens it passed are parsed for real.
 fn void? Parser.advance(&self) {
-    self.prev = self.tok;
+    self.prev = self.tok.span();
     if (self.has_peek) {
         self.has_peek = false;
         self.tok = self.peek_tok;

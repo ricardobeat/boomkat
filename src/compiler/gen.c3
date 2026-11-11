@@ -3594,7 +3594,7 @@ fn Val? CompilerContext.gen_class(&self, uint n) {
 
 fn Token CompilerContext.gen_key_token(&self, uint key) {
     ast::Ast* tree = &ast::index_state.tree;
-    Token token = lexer::make_token(TokenType.IDENTIFIER, tree.position(tree.main_tok.data[key]).line, 0);
+    Token token = lexer::make_token(TokenType.IDENTIFIER);
     switch (tree.tags.data[key]) {
         case NUMBER:
             token.type = TokenType.NUMBER;

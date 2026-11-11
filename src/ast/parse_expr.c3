@@ -715,7 +715,7 @@ fn uint? Parser.async_primary(&self) {
             self.has_peek = false;
             self.tok = t;
             self.next()!;
-            self.prev = t;
+            self.prev = t.span();
             return self.ident_node(t);
         }
         uint id = self.ident_node(param);

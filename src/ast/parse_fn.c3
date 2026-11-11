@@ -226,7 +226,7 @@ fn bool Parser.call_follows(&self) {
     if (self.tok.type != TokenType.RPAREN) return false;
     // `(function () { })()` and one nesting parenthesis: look past the `)`.
     Token save = self.tok;
-    Token save_prev = self.prev;
+    Span save_prev = self.prev;
     // A speculative look-ahead must not latch a lexical fault: the tokens it
     // passes are parsed for real afterwards, and a stale `failed` would abort
     // the body with the wrong error position.

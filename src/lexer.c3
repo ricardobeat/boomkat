@@ -158,11 +158,8 @@ fn void JsxOptions.imply_runtime(&self) {
 
 struct Token {
     TokenType type;
-    uint line;
-    uint col;
-    double num_value;
-    char[] str_value;
-    char[] raw_value;
+    // A line terminator separates the token from the one before it.
+    bool nl_before;
     bool has_octal_escape;
     // A legacy octal escape that was DECODED (sloppy Annex B semantics).
     // Strict-lexed strings only latch has_octal_escape; this flag lets the
@@ -177,27 +174,26 @@ struct Token {
     // literally, an escaped `import` or `meta` is a SyntaxError, so the
     // parser inspects this after re-reading the word token.
     bool has_escape;
-    // Source byte range [pos, end) of the token, and whether a line
-    // terminator separates it from the previous token. Set by scan_token.
+    // Source byte range [pos, end) of the token. Set by scan_token.
     uint pos;
     uint end;
-    bool nl_before;
+    char[] str_value;
+    // A number's value, or the raw text of a string or template part.
+    union {
+        double num_value;
+        char[] raw_value;
+    }
+}
+
+struct SourceMark {
+    uint line;
+    uint col;
+    uint pos;
 }
 
 // Create a simple token with no value payload.
-fn Token make_token(TokenType tt, uint line, uint col) {
-    Token t;
-    t.type = tt;
-    t.line = line;
-    t.col = col;
-    t.num_value = 0.0;
-    t.str_value = {};
-    t.raw_value = {};
-    t.has_octal_escape = false;
-    t.has_decoded_octal = false;
-    t.is_template = false;
-    t.has_invalid_escape = false;
-    return t;
+fn Token make_token(TokenType tt) @inline {
+    return { .type = tt };
 }
 
 // ============================================================================
@@ -481,9 +477,8 @@ struct Lexer {
     // The SourceBuf holding `source`, or null when the caller owns the text. Opaque to avoid an import cycle.
     void* source_buf;
     uint pos;
-    uint line;
-    uint col;
-    Token current;
+    // Where the compiler is in the source: it stamps instructions and errors with this.
+    SourceMark current;
     bool strict_mode;
     // Identifier-reservation strictness, split out from `strict_mode`.
     //
@@ -564,9 +559,7 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.source = source;
     lex.source_name = source_name;
     lex.pos = 0;
-    lex.line = 1;
-    lex.col = 1;
-    lex.current = make_token(TokenType.EOF_TOKEN, 1, 1);
+    lex.current = { 1, 1, 0 };
     lex.strict_mode = true;
     lex.reserved_words_strict = true;
     lex.seen_line_term = false;
@@ -678,7 +671,6 @@ fn void Lexer.skip_hashbang(&self) {
     if (self.source.len < 2) return;
     if (self.source[0] != '#' || self.source[1] != '!') return;
     self.pos = 2;
-    self.col = 3;
     while (!self.at_end()) {
         char c = self.peek_char();
         if (c == '\n' || c == '\r') break;
@@ -690,7 +682,6 @@ fn void Lexer.skip_hashbang(&self) {
             if (n1 == (char)0x80 && (n2 == (char)0xA8 || n2 == (char)0xA9)) break;
         }
         self.pos++;
-        self.col++;
     }
 }
 
@@ -724,12 +715,6 @@ fn char Lexer.advance_char(&self) {
     if (self.pos >= (uint)self.source.len) return 0;
     char c = self.source[self.pos];
     self.pos++;
-    if (c == '\n') {
-        self.line++;
-        self.col = 1;
-    } else {
-        self.col++;
-    }
     return c;
 }
 
@@ -742,12 +727,6 @@ fn uint Lexer.read_codepoint(&self) {
     // ASCII fast path
     if (b0 < 0x80) {
         self.pos++;
-        if (b0 == '\n') {
-            self.line++;
-            self.col = 1;
-        } else {
-            self.col++;
-        }
         return (uint)b0;
     }
 
@@ -765,12 +744,10 @@ fn uint Lexer.read_codepoint(&self) {
     } else {
         // Invalid UTF-8 lead byte
         self.pos++;
-        self.col++;
         return 0xFFFD;
     }
 
     self.pos++;
-    self.col++;
 
     for (uint i = 1; i < seq_len; i++) {
         if (self.pos >= (uint)self.source.len) return 0xFFFD;
@@ -786,12 +763,8 @@ fn uint Lexer.read_codepoint(&self) {
 // Peek at the current UTF-8 codepoint without advancing.
 fn uint Lexer.peek_codepoint(&self) {
     uint saved_pos = self.pos;
-    uint saved_line = self.line;
-    uint saved_col = self.col;
     uint cp = self.read_codepoint();
     self.pos = saved_pos;
-    self.line = saved_line;
-    self.col = saved_col;
     return cp;
 }
 
@@ -826,13 +799,18 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
     while (!self.at_end()) {
         char c = self.peek_char();
 
+        // Most tokens follow the last one directly, on a byte that begins
+        // neither whitespace nor a comment.
+        if (c > ' ' && c < 0x80 && c != '/' && c != '<' && c != '-') {
+            self.at_line_start = false;
+            return;
+        }
+
         // Whitespace
         if (is_whitespace(c) || c == '\n' || c == '\r') {
             if (c == '\r') {
                 // CR and CR+LF each count as one line terminator.
                 self.pos += self.peek_char_at(1) == '\n' ? 2 : 1;
-                self.line++;
-                self.col = 1;
                 self.seen_line_term = true;
                 self.at_line_start = true;
             } else {
@@ -851,8 +829,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             char n2 = self.source[self.pos + 2];
             if ((n1 == (char)0x80 && (n2 == (char)0xA8 || n2 == (char)0xA9))) {
                 self.pos += 3;
-                self.line++;
-                self.col = 1;
                 self.seen_line_term = true;
                 self.at_line_start = true;
                 continue;
@@ -863,7 +839,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
         // line terminator, so it does not set seen_line_term.
         if (c == (char)0xC2 && self.remaining() >= 2 && self.source[self.pos + 1] == (char)0xA0) {
             self.pos += 2;
-            self.col++;
             continue;
         }
 
@@ -877,7 +852,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             && self.source[self.pos + 1] == (char)0x9A
             && self.source[self.pos + 2] == (char)0x80) {
             self.pos += 3;
-            self.col++;
             continue;
         }
         if (c == (char)0xE2 && self.remaining() >= 3
@@ -885,7 +859,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             char e2b = self.source[self.pos + 2];
             if ((e2b >= (char)0x80 && e2b <= (char)0x8A) || e2b == (char)0xAF) {
                 self.pos += 3;
-                self.col++;
                 continue;
             }
         }
@@ -893,14 +866,12 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             && self.source[self.pos + 1] == (char)0x81
             && self.source[self.pos + 2] == (char)0x9F) {
             self.pos += 3;
-            self.col++;
             continue;
         }
         if (c == (char)0xE3 && self.remaining() >= 3
             && self.source[self.pos + 1] == (char)0x80
             && self.source[self.pos + 2] == (char)0x80) {
             self.pos += 3;
-            self.col++;
             continue;
         }
 
@@ -909,14 +880,12 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
         if (c == (char)0xEF && self.remaining() >= 3
             && self.source[self.pos + 1] == (char)0xBB && self.source[self.pos + 2] == (char)0xBF) {
             self.pos += 3;
-            self.col++;
             continue;
         }
 
         // Single-line comment
         if (c == '/' && self.peek_char_at(1) == '/') {
             self.pos += 2;
-            self.col += 2;
             while (!self.at_end()) {
                 char cc = self.peek_char();
                 if (cc == '\n' || cc == '\r') break;
@@ -928,7 +897,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
                     if (cn1 == (char)0x80 && (cn2 == (char)0xA8 || cn2 == (char)0xA9)) break;
                 }
                 self.pos++;
-                self.col++;
             }
             continue;
         }
@@ -936,13 +904,11 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
         // Multi-line comment
         if (c == '/' && self.peek_char_at(1) == '*') {
             self.pos += 2;
-            self.col += 2;
             bool comment_had_newline = false;
             bool closed = false;
             while (!self.at_end()) {
                 if (self.peek_char() == '*' && self.peek_char_at(1) == '/') {
                     self.pos += 2;
-                    self.col += 2;
                     closed = true;
                     break;
                 }
@@ -977,7 +943,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
         if (self.html_comments && c == '<' && self.peek_char_at(1) == '!' &&
             self.peek_char_at(2) == '-' && self.peek_char_at(3) == '-') {
             self.pos += 4;
-            self.col += 4;
             while (!self.at_end()) {
                 char cc = self.peek_char();
                 if (cc == '\n' || cc == '\r') break;
@@ -989,7 +954,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
                     if (cn1 == (char)0x80 && (cn2 == (char)0xA8 || cn2 == (char)0xA9)) break;
                 }
                 self.pos++;
-                self.col++;
             }
             continue;
         }
@@ -1002,7 +966,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             c == '-' && self.peek_char_at(1) == '-' &&
             self.peek_char_at(2) == '>') {
             self.pos += 3;
-            self.col += 3;
             while (!self.at_end()) {
                 char cc = self.peek_char();
                 if (cc == '\n' || cc == '\r') break;
@@ -1014,7 +977,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
                     if (cn1 == (char)0x80 && (cn2 == (char)0xA8 || cn2 == (char)0xA9)) break;
                 }
                 self.pos++;
-                self.col++;
             }
             continue;
         }
@@ -1024,7 +986,6 @@ fn void Lexer.skip_whitespace_and_comments(&self) {
             if (self.source[self.pos + 1] == (char)0xBB &&
                 self.source[self.pos + 2] == (char)0xBF) {
                 self.pos += 3;
-                self.col++;
                 continue;
             }
         }
@@ -1060,8 +1021,6 @@ fn double parse_octal_double(char[] digits, usz len) {
 // Supports: decimal, hex (0x/0X), octal (0o/0O), binary (0b/0B),
 // floating point with optional exponent.
 fn Token? Lexer.scan_number(&self) {
-    uint start_line = self.line;
-    uint start_col = self.col;
     uint start_pos = self.pos;
     double value = 0.0;
 
@@ -1072,7 +1031,6 @@ fn Token? Lexer.scan_number(&self) {
 
         if (next == 'x' || next == 'X') {
             self.pos += 2;
-            self.col += 2;
             if (self.at_end() || !is_hex_digit(self.peek_char())) {
                 return LEX_ERROR~;
             }
@@ -1082,25 +1040,22 @@ fn Token? Lexer.scan_number(&self) {
                 if (c == '_') {
                     if (!prev_was_digit) return LEX_ERROR~;
                     self.pos++;
-                    self.col++;
                     prev_was_digit = false;
                     continue;
                 }
                 if (!is_hex_digit(c)) break;
                 value = value * 16.0 + (double)hex_value(c);
                 self.pos++;
-                self.col++;
                 prev_was_digit = true;
             }
             if (!prev_was_digit) return LEX_ERROR~;
             if (!self.at_end() && self.peek_char() == 'n') {
                 self.pos++;
-                self.col++;
-                Token tok = make_token(TokenType.BIGINT, start_line, start_col);
+                Token tok = make_token(TokenType.BIGINT);
                 tok.str_value = self.source[start_pos..self.pos-2]; // exclude 'n'
                 return tok;
             }
-            Token tok = make_token(TokenType.NUMBER, start_line, start_col);
+            Token tok = make_token(TokenType.NUMBER);
             tok.num_value = value;
             tok.str_value = self.source[start_pos..self.pos-1];
             return tok;
@@ -1108,7 +1063,6 @@ fn Token? Lexer.scan_number(&self) {
 
         if (next == 'o' || next == 'O') {
             self.pos += 2;
-            self.col += 2;
             if (self.at_end() || !is_octal_digit(self.peek_char())) {
                 return LEX_ERROR~;
             }
@@ -1118,25 +1072,22 @@ fn Token? Lexer.scan_number(&self) {
                 if (c == '_') {
                     if (!prev_was_digit) return LEX_ERROR~;
                     self.pos++;
-                    self.col++;
                     prev_was_digit = false;
                     continue;
                 }
                 if (!is_octal_digit(c)) break;
                 value = value * 8.0 + (double)(c - '0');
                 self.pos++;
-                self.col++;
                 prev_was_digit = true;
             }
             if (!prev_was_digit) return LEX_ERROR~;
             if (!self.at_end() && self.peek_char() == 'n') {
                 self.pos++;
-                self.col++;
-                Token tok = make_token(TokenType.BIGINT, start_line, start_col);
+                Token tok = make_token(TokenType.BIGINT);
                 tok.str_value = self.source[start_pos..self.pos-2];
                 return tok;
             }
-            Token tok = make_token(TokenType.NUMBER, start_line, start_col);
+            Token tok = make_token(TokenType.NUMBER);
             tok.num_value = value;
             tok.str_value = self.source[start_pos..self.pos-1];
             return tok;
@@ -1144,7 +1095,6 @@ fn Token? Lexer.scan_number(&self) {
 
         if (next == 'b' || next == 'B') {
             self.pos += 2;
-            self.col += 2;
             if (self.at_end() || !is_binary_digit(self.peek_char())) {
                 return LEX_ERROR~;
             }
@@ -1154,25 +1104,22 @@ fn Token? Lexer.scan_number(&self) {
                 if (c == '_') {
                     if (!prev_was_digit) return LEX_ERROR~;
                     self.pos++;
-                    self.col++;
                     prev_was_digit = false;
                     continue;
                 }
                 if (!is_binary_digit(c)) break;
                 value = value * 2.0 + (double)(c - '0');
                 self.pos++;
-                self.col++;
                 prev_was_digit = true;
             }
             if (!prev_was_digit) return LEX_ERROR~;
             if (!self.at_end() && self.peek_char() == 'n') {
                 self.pos++;
-                self.col++;
-                Token tok = make_token(TokenType.BIGINT, start_line, start_col);
+                Token tok = make_token(TokenType.BIGINT);
                 tok.str_value = self.source[start_pos..self.pos-2];
                 return tok;
             }
-            Token tok = make_token(TokenType.NUMBER, start_line, start_col);
+            Token tok = make_token(TokenType.NUMBER);
             tok.num_value = value;
             tok.str_value = self.source[start_pos..self.pos-1];
             return tok;
@@ -1199,13 +1146,11 @@ fn Token? Lexer.scan_number(&self) {
             if (c == '_') {
                 if (is_legacy_octal_like || !dec_prev_was_digit) return LEX_ERROR~;
                 self.pos++;
-                self.col++;
                 dec_prev_was_digit = false;
                 continue;
             }
             if (!is_digit(c)) break;
             self.pos++;
-            self.col++;
             dec_prev_was_digit = true;
         }
         if (!dec_prev_was_digit) return LEX_ERROR~;
@@ -1221,7 +1166,6 @@ fn Token? Lexer.scan_number(&self) {
         bool is_ellipsis = (next1 == '.' && next2 == '.');
         if (!is_ellipsis) {
             self.pos++;
-            self.col++;
             bool frac_prev_was_digit = false;
             bool frac_saw_separator = false;
             while (!self.at_end()) {
@@ -1229,14 +1173,12 @@ fn Token? Lexer.scan_number(&self) {
                 if (c == '_') {
                     if (!frac_prev_was_digit) return LEX_ERROR~;
                     self.pos++;
-                    self.col++;
                     frac_prev_was_digit = false;
                     frac_saw_separator = true;
                     continue;
                 }
                 if (!is_digit(c)) break;
                 self.pos++;
-                self.col++;
                 frac_prev_was_digit = true;
             }
             // Fraction digits optional: "0." is a valid numeric literal (ECMA-262
@@ -1250,10 +1192,8 @@ fn Token? Lexer.scan_number(&self) {
     // Exponent part
     if (!self.at_end() && (self.peek_char() == 'e' || self.peek_char() == 'E')) {
         self.pos++;
-        self.col++;
         if (!self.at_end() && (self.peek_char() == '+' || self.peek_char() == '-')) {
             self.pos++;
-            self.col++;
         }
         bool exp_prev_was_digit = false;
         while (!self.at_end()) {
@@ -1261,13 +1201,11 @@ fn Token? Lexer.scan_number(&self) {
             if (c == '_') {
                 if (!exp_prev_was_digit) return LEX_ERROR~;
                 self.pos++;
-                self.col++;
                 exp_prev_was_digit = false;
                 continue;
             }
             if (!is_digit(c)) break;
             self.pos++;
-            self.col++;
             exp_prev_was_digit = true;
         }
         if (!exp_prev_was_digit) return LEX_ERROR~;
@@ -1362,8 +1300,7 @@ fn Token? Lexer.scan_number(&self) {
             return LEX_ERROR~;
         }
         self.pos++;
-        self.col++;
-        Token tok = make_token(TokenType.BIGINT, start_line, start_col);
+        Token tok = make_token(TokenType.BIGINT);
         tok.str_value = self.source[start_pos..self.pos-2]; // exclude 'n'
         return tok;
     }
@@ -1383,7 +1320,7 @@ fn Token? Lexer.scan_number(&self) {
         }
     }
 
-    Token tok = make_token(TokenType.NUMBER, start_line, start_col);
+    Token tok = make_token(TokenType.NUMBER);
     tok.num_value = value;
     tok.str_value = self.source[start_pos..self.pos-1];
     return tok;
@@ -1397,8 +1334,6 @@ fn Token? Lexer.scan_number(&self) {
 // Handles escape sequences: \n \r \t \b \f \v \\ \' \" \0
 // \xHH  \uHHHH  \u{H..H}  line continuation (\<newline>)
 fn Token? Lexer.scan_string(&self) {
-    uint start_line = self.line;
-    uint start_col = self.col;
     char quote = self.advance_char();
 
     // Fast path: scan ahead to see if there are any escape sequences.
@@ -1418,12 +1353,11 @@ fn Token? Lexer.scan_string(&self) {
     if (!has_escapes) {
         uint str_start = self.pos;
         self.pos = scan_pos;
-        self.col += scan_pos - str_start;
         if (self.at_end() || self.peek_char() != quote) {
             return LEX_ERROR~;
         }
         self.advance_char(); // consume closing quote
-        Token tok = make_token(TokenType.STRING, start_line, start_col);
+        Token tok = make_token(TokenType.STRING);
         if (scan_pos > str_start) {
             tok.str_value = self.source[str_start..scan_pos-1];
         } else {
@@ -1452,7 +1386,7 @@ fn Token? Lexer.scan_string(&self) {
 
         if (ch == quote) {
             self.advance_char(); // consume closing quote
-            Token tok = make_token(TokenType.STRING, start_line, start_col);
+            Token tok = make_token(TokenType.STRING);
             if (buf.len() > 0) {
                 tok.str_value = self.arena_dup(&buf[0], (usz)buf.len());
             } else {
@@ -1638,15 +1572,12 @@ fn Token? Lexer.scan_string(&self) {
 // Unicode escapes (\uXXXX, \u{H+}) are decoded. Escaped identifiers
 // are never recognised as keywords.
 fn Token? Lexer.scan_identifier(&self) {
-    uint start_line = self.line;
-    uint start_col = self.col;
     uint start_pos = self.pos;
 
     bool has_escape = self.peek_char() == '\\';
     if (!has_escape) {
         if (self.peek_char() < 0x80) {
             self.pos++;
-            self.col++;
         } else {
             self.read_codepoint();
         }
@@ -1657,7 +1588,6 @@ fn Token? Lexer.scan_identifier(&self) {
             if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
                 || (c >= '0' && c <= '9') || c == '_' || c == '$') {
                 self.pos++;
-                self.col++;
                 continue;
             }
             if (c == '\\') has_escape = true;
@@ -1670,11 +1600,11 @@ fn Token? Lexer.scan_identifier(&self) {
     if (!has_escape) {
         char[] name = self.source[start_pos..self.pos-1];
         if (try kw = lookup_keyword(name, self.reserved_words_strict)) {
-            Token tok = make_token(kw, start_line, start_col);
+            Token tok = make_token(kw);
             tok.str_value = name;
             return tok;
         }
-        Token tok = make_token(TokenType.IDENTIFIER, start_line, start_col);
+        Token tok = make_token(TokenType.IDENTIFIER);
         tok.str_value = name;
         return tok;
     }
@@ -1691,12 +1621,12 @@ fn Token? Lexer.scan_identifier(&self) {
     // the same token (the parser relies on keyword tokens to reject reserved
     // words in declaration positions; IDENTIFIER would slip through).
     if (try kw = lookup_keyword(name, self.reserved_words_strict)) {
-        Token tok = make_token(kw, start_line, start_col);
+        Token tok = make_token(kw);
         tok.str_value = name;
         tok.has_escape = true;
         return tok;
     }
-    Token tok = make_token(TokenType.IDENTIFIER, start_line, start_col);
+    Token tok = make_token(TokenType.IDENTIFIER);
     tok.str_value = name;
     tok.has_escape = true;
     return tok;
@@ -1770,27 +1700,24 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 
 // Parse a punctuator (operator or delimiter).
 // Handles all single, double, triple, and quad-character operators.
-fn Token Lexer.single_char_token(&self, TokenType type, uint line, uint col) {
+fn Token Lexer.single_char_token(&self, TokenType type) {
     self.pos++;
-    self.col++;
-    return make_token(type, line, col);
+    return make_token(type);
 }
 
 fn Token? Lexer.scan_punctuator(&self) {
-    uint start_line = self.line;
-    uint start_col = self.col;
     char c = self.peek_char();
     switch (c) {
-        case '{': return self.single_char_token(TokenType.LBRACE, start_line, start_col);
-        case '}': return self.single_char_token(TokenType.RBRACE, start_line, start_col);
-        case '(': return self.single_char_token(TokenType.LPAREN, start_line, start_col);
-        case ')': return self.single_char_token(TokenType.RPAREN, start_line, start_col);
-        case '[': return self.single_char_token(TokenType.LBRACKET, start_line, start_col);
-        case ']': return self.single_char_token(TokenType.RBRACKET, start_line, start_col);
-        case ';': return self.single_char_token(TokenType.SEMICOLON, start_line, start_col);
-        case ',': return self.single_char_token(TokenType.COMMA, start_line, start_col);
-        case ':': return self.single_char_token(TokenType.COLON, start_line, start_col);
-        case '~': return self.single_char_token(TokenType.BIT_NOT, start_line, start_col);
+        case '{': return self.single_char_token(TokenType.LBRACE);
+        case '}': return self.single_char_token(TokenType.RBRACE);
+        case '(': return self.single_char_token(TokenType.LPAREN);
+        case ')': return self.single_char_token(TokenType.RPAREN);
+        case '[': return self.single_char_token(TokenType.LBRACKET);
+        case ']': return self.single_char_token(TokenType.RBRACKET);
+        case ';': return self.single_char_token(TokenType.SEMICOLON);
+        case ',': return self.single_char_token(TokenType.COMMA);
+        case ':': return self.single_char_token(TokenType.COLON);
+        case '~': return self.single_char_token(TokenType.BIT_NOT);
         default: {}
     }
     char c2 = self.peek_char_at(1);
@@ -1801,166 +1728,165 @@ fn Token? Lexer.scan_punctuator(&self) {
 
     // >>>= (unsigned right shift assign)
     if (c == '>' && c2 == '>' && c3 == '>' && c4 == '=') {
-        self.pos += 4; self.col += 4;
-        return make_token(TokenType.USHR_ASSIGN, start_line, start_col);
+        self.pos += 4;
+        return make_token(TokenType.USHR_ASSIGN);
     }
 
     // ---- Three-character operators ----
 
     if (c == '=' && c2 == '=' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.SEQ, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.SEQ);
     }
     if (c == '!' && c2 == '=' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.SNE, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.SNE);
     }
     if (c == '>' && c2 == '>' && c3 == '>') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.USHR, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.USHR);
     }
     if (c == '*' && c2 == '*' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.STARSTAR_ASSIGN, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.STARSTAR_ASSIGN);
     }
     if (c == '.' && c2 == '.' && c3 == '.') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.ELLIPSIS, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.ELLIPSIS);
     }
     if (c == '<' && c2 == '<' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.SHL_ASSIGN, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.SHL_ASSIGN);
     }
     if (c == '>' && c2 == '>' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.SHR_ASSIGN, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.SHR_ASSIGN);
     }
     if (c == '&' && c2 == '&' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.LOG_AND_ASSIGN, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.LOG_AND_ASSIGN);
     }
     if (c == '|' && c2 == '|' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.LOG_OR_ASSIGN, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.LOG_OR_ASSIGN);
     }
     if (c == '?' && c2 == '?' && c3 == '=') {
-        self.pos += 3; self.col += 3;
-        return make_token(TokenType.NULLISH_ASSIGN, start_line, start_col);
+        self.pos += 3;
+        return make_token(TokenType.NULLISH_ASSIGN);
     }
 
     // ---- Two-character operators ----
 
     if (c == '=' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.EQ, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.EQ);
     }
     if (c == '!' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.NE, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.NE);
     }
     if (c == '=' && c2 == '>') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.ARROW, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.ARROW);
     }
     if (c == '<' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.LE, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.LE);
     }
     if (c == '>' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.GE, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.GE);
     }
     if (c == '<' && c2 == '<') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.SHL, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.SHL);
     }
     if (c == '>' && c2 == '>') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.SHR, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.SHR);
     }
     if (c == '+' && c2 == '+') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.INC, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.INC);
     }
     if (c == '-' && c2 == '-') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.DEC, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.DEC);
     }
     if (c == '+' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.PLUS_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.PLUS_ASSIGN);
     }
     if (c == '-' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.MINUS_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.MINUS_ASSIGN);
     }
     if (c == '*' && c2 == '*') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.STARSTAR, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.STARSTAR);
     }
     if (c == '*' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.STAR_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.STAR_ASSIGN);
     }
     if (c == '/' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.SLASH_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.SLASH_ASSIGN);
     }
     if (c == '%' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.PERCENT_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.PERCENT_ASSIGN);
     }
     if (c == '&' && c2 == '&') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.LOG_AND, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.LOG_AND);
     }
     if (c == '|' && c2 == '|') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.LOG_OR, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.LOG_OR);
     }
     if (c == '?' && c2 == '?') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.NULLISH, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.NULLISH);
     }
     if (c == '?' && c2 == '.') {
         // Optional chaining: ?. but NOT ?.digit (that would be ternary + .5)
         if (!is_digit(c3)) {
-            self.pos += 2; self.col += 2;
-            return make_token(TokenType.OPT_CHAIN, start_line, start_col);
+            self.pos += 2;
+            return make_token(TokenType.OPT_CHAIN);
         }
     }
     if (c == '&' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.BIT_AND_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.BIT_AND_ASSIGN);
     }
     if (c == '|' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.BIT_OR_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.BIT_OR_ASSIGN);
     }
     if (c == '^' && c2 == '=') {
-        self.pos += 2; self.col += 2;
-        return make_token(TokenType.BIT_XOR_ASSIGN, start_line, start_col);
+        self.pos += 2;
+        return make_token(TokenType.BIT_XOR_ASSIGN);
     }
 
     // ---- Single-character operators ----
 
     self.pos++;
-    self.col++;
     switch (c) {
-        case '.': return make_token(TokenType.DOT, start_line, start_col);
-        case '<': return make_token(TokenType.LT, start_line, start_col);
-        case '>': return make_token(TokenType.GT, start_line, start_col);
-        case '=': return make_token(TokenType.ASSIGN, start_line, start_col);
-        case '!': return make_token(TokenType.LOG_NOT, start_line, start_col);
-        case '+': return make_token(TokenType.PLUS, start_line, start_col);
-        case '-': return make_token(TokenType.MINUS, start_line, start_col);
-        case '*': return make_token(TokenType.STAR, start_line, start_col);
-        case '/': return make_token(TokenType.SLASH, start_line, start_col);
-        case '%': return make_token(TokenType.PERCENT, start_line, start_col);
-        case '&': return make_token(TokenType.BIT_AND, start_line, start_col);
-        case '|': return make_token(TokenType.BIT_OR, start_line, start_col);
-        case '^': return make_token(TokenType.BIT_XOR, start_line, start_col);
-        case '?': return make_token(TokenType.QUESTION, start_line, start_col);
+        case '.': return make_token(TokenType.DOT);
+        case '<': return make_token(TokenType.LT);
+        case '>': return make_token(TokenType.GT);
+        case '=': return make_token(TokenType.ASSIGN);
+        case '!': return make_token(TokenType.LOG_NOT);
+        case '+': return make_token(TokenType.PLUS);
+        case '-': return make_token(TokenType.MINUS);
+        case '*': return make_token(TokenType.STAR);
+        case '/': return make_token(TokenType.SLASH);
+        case '%': return make_token(TokenType.PERCENT);
+        case '&': return make_token(TokenType.BIT_AND);
+        case '|': return make_token(TokenType.BIT_OR);
+        case '^': return make_token(TokenType.BIT_XOR);
+        case '?': return make_token(TokenType.QUESTION);
         case '#':
             // Private identifier: #name. The '#' is already consumed; scan
             // the identifier body and return HASH_IDENT with the text
@@ -1983,7 +1909,7 @@ fn Token? Lexer.scan_punctuator(&self) {
                 if (!is_identifier_part(cp3)) break;
                 self.read_codepoint();
             }
-            Token tok = make_token(TokenType.HASH_IDENT, start_line, start_col);
+            Token tok = make_token(TokenType.HASH_IDENT);
             if (has_escape) {
                 self.pos = name_start;
                 tok.str_value = self.scan_ident_body_decoded()!;
@@ -2003,8 +1929,6 @@ fn Token? Lexer.scan_punctuator(&self) {
 // This should be called when the parser context indicates a regexp is
 // expected (i.e., not a division operator).
 fn Token? Lexer.scan_regexp(&self) {
-    uint start_line = self.line;
-    uint start_col = self.col;
     uint start_pos = self.pos;
 
     self.advance_char();
@@ -2061,7 +1985,7 @@ fn Token? Lexer.scan_regexp(&self) {
         }
     }
 
-    Token tok = make_token(TokenType.REGEXP, start_line, start_col);
+    Token tok = make_token(TokenType.REGEXP);
     tok.str_value = self.source[start_pos..self.pos-1];
     return tok;
 }
@@ -2121,14 +2045,6 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     if (!found_escapes) {
         uint text_len = scan_pos - start_pos;
         self.pos = scan_pos;
-        self.col += text_len;
-        // Count newlines in the text
-        for (uint i = start_pos; i < scan_pos; i++) {
-            if (self.source[i] == '\n') {
-                self.line++;
-                self.col = 1;
-            }
-        }
         *has_escapes = false;
         if (text_len > 0) {
             char[] slice = self.source[start_pos..scan_pos - 1];
@@ -2374,8 +2290,6 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
 // Parse a template literal heading (opening backtick to first "${" or closing backtick).
 // Returns TEMPLATE_HEAD if we found "${", or STRING if no substitutions (simple template).
 fn Token? Lexer.scan_template_head(&self) {
-    uint start_line = self.line;
-    uint start_col = self.col;
 
     self.advance_char();
 
@@ -2392,7 +2306,7 @@ fn Token? Lexer.scan_template_head(&self) {
     if (end_char == '`') {
         // With no substitutions this is a simple string template.
         self.advance_char(); // consume closing backtick
-        Token tok = make_token(TokenType.STRING, start_line, start_col);
+        Token tok = make_token(TokenType.STRING);
         tok.str_value = content;
         tok.raw_value = raw_text;
         tok.is_template = true;
@@ -2404,7 +2318,7 @@ fn Token? Lexer.scan_template_head(&self) {
         // Template expression start: "${"
         self.advance_char(); // $
         self.advance_char(); // {
-        Token tok = make_token(TokenType.TEMPLATE_HEAD, start_line, start_col);
+        Token tok = make_token(TokenType.TEMPLATE_HEAD);
         tok.str_value = content;
         tok.raw_value = raw_text;
         tok.is_template = true;
@@ -2418,8 +2332,6 @@ fn Token? Lexer.scan_template_head(&self) {
 // Scan the part of a template literal after a closing "}" of an expression.
 // Produces TEMPLATE_MIDDLE or TEMPLATE_TAIL.
 fn Token? Lexer.scan_template_after_expr(&self) {
-    uint start_line = self.line;
-    uint start_col = self.col;
 
     char end_char = 0;
     bool has_escapes = false;
@@ -2433,7 +2345,7 @@ fn Token? Lexer.scan_template_after_expr(&self) {
 
     if (end_char == '`') {
         self.advance_char(); // consume closing backtick
-        Token tok = make_token(TokenType.TEMPLATE_TAIL, start_line, start_col);
+        Token tok = make_token(TokenType.TEMPLATE_TAIL);
         tok.str_value = content;
         tok.raw_value = raw_text;
         tok.is_template = true;
@@ -2444,7 +2356,7 @@ fn Token? Lexer.scan_template_after_expr(&self) {
     if (end_char == '$') {
         self.advance_char(); // $
         self.advance_char(); // {
-        Token tok = make_token(TokenType.TEMPLATE_MIDDLE, start_line, start_col);
+        Token tok = make_token(TokenType.TEMPLATE_MIDDLE);
         tok.str_value = content;
         tok.raw_value = raw_text;
         tok.is_template = true;
@@ -2472,7 +2384,7 @@ fn Token? Lexer.scan_token(&self) {
     uint start = self.pos;
     Token tok;
     if (self.at_end()) {
-        tok = make_token(TokenType.EOF_TOKEN, self.line, self.col);
+        tok = make_token(TokenType.EOF_TOKEN);
     } else {
         char c = self.peek_char();
         // Decide on the raw byte where possible: decoding a codepoint and
@@ -2507,8 +2419,6 @@ fn Token? Lexer.scan_token(&self) {
 // `}`) and discards anything it lexed past it.
 fn void Lexer.seek_to_token(&self, Token tok) {
     self.pos = tok.pos;
-    self.line = tok.line;
-    self.col = tok.col;
     self.seen_line_term = tok.nl_before;
 }
 

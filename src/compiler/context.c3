@@ -262,8 +262,8 @@ struct DestructParamDefault {
 // err_line/err_col themselves.
 fn void CompilerContext.record_error(&self, char[] msg) {
     if (self.lexer.err_msg[0] != 0) return;
-    self.lexer.err_line = self.lexer.line;
-    self.lexer.err_col  = self.lexer.col;
+    self.lexer.err_line = self.lexer.current.line;
+    self.lexer.err_col  = self.lexer.current.col;
     usz copy_len = msg.len < (self.lexer.err_msg.len - 1) ? msg.len : (self.lexer.err_msg.len - 1);
     mem::copy(&self.lexer.err_msg[0], msg.ptr, (sz)(copy_len));
     self.lexer.err_msg[copy_len] = 0;
