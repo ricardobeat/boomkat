@@ -150,42 +150,38 @@ that has to be checked in the code before building on it.
 
 ### 0. Close the open ends
 
-1. **Box2D's slow mode.** What is known (logs: `--opt-log --jit-stats` on the
-   bundle, Box2D is source lines 334900 to 335400 of `octane-all.js`):
-   - A slow run has about 210 shape exits in Box2D against about 45, starting
-     at one moment at which many functions exit at their `GETPROPC_CACHED`
-     inherited reads together; twice as many bodies are discarded for reaching
-     `OPT_EXIT_MAX` with no repeated site, and they end refused. The run then
-     makes ten times the builtin calls through C (2.7M against 275K).
-   - Those reads guard `Heap.prototype_epoch` against the value in the site's
-     cache (`opt_emit.c3`, the `IC_CHAIN_EPOCH` case), and the exit is reported
-     as a shape exit and counted against the body.
-   - Tried and reverted, none fixed it: rebuilding at once when
-     `opt_note_proto_exit` learns a receiver (always slow, the rebuild exits
-     again); rebuilding bodies whose cells `purge_cells` cleared (never fires
-     in Box2D); not counting exits whose cache epoch is behind the heap's
-     (38,000 to 64,000 shape exits per run instead of 1,300: the epoch keeps
-     moving or the caches are not refilled at the exit, still bimodal).
-   - With no eviction (`--opt-code-max=67108864`) Box2D is always slow, so the
-     fast mode is an eviction resetting bodies at a lucky time.
-   - Next: count `bump_prototype_epoch` by caller during Box2D in the bundle
-     and find what moves the epoch there (suspects: the collector's shape
-     reuse, an earlier benchmark leaving a dictionary-mode prototype behind);
-     then check that a baseline miss on an epoch entry refills it. Bisect
-     `716b8d37`..`370ba16d` on the bundle, six runs per build.
+1. **Box2D's slow mode: explained, two causes fixed, one left to step 2.**
+   Box2D in the bundle scores about 12,700 or about 8,500 from run to run.
+   - Fixed (`f49f90f3`): `ic_fill_read_heap` marked every receiver observed
+     when any object on its chain was a dictionary, so Crypto's instances
+     moved `prototype_epoch` 28,000 times a run. Only a dictionary receiver
+     is observed now; 31,700 moves per bundle run became 179.
+   - Fixed (`d5efe152`): freeing an observed object moved the epoch, once per
+     object. A major sweep that freed fourteen (dictionary objects CodeLoad
+     left behind) voided every inherited-read cache fourteen times. One move
+     per sweep now; shape exits in an affected Box2D run 180 to about 70.
+   - Left: the slow runs are exactly the runs in which a major collection
+     starts inside Box2D's timed window (`GCSTART`/`GCEND` stamps: one major
+     cycle of 260 to 290 ms wall in each slow run, no collection at all in
+     each fast one, 6 of 6 runs). That cycle costs Box2D a quarter of its
+     score. Which benchmark pays for a major cycle depends on allocation
+     volume, which depends on how many iterations the timed benchmarks before
+     it ran. This is the collector's cost (step 2), not a JIT defect.
+   - Gate r18 (`f49f90f3`, 5 runs, against r17): composite 10,554 against
+     10,587; Box2D per run 12796, 12721, 11050, 12708 (and 8522 in a run the
+     machine disturbed) against 11308, 12561, 9569, 9569, 12721.
 2. Layer validation of `1b5ad136`..`91dd8227` done so far: `jit_check`
    (789 files, 6 modes), `test-local`, `test-jit`, `test-jit-diff`,
    `test262-jit-diff`, slim, tiny, no-NaN-box build. Still owed: ASan JIT
    build, GC-stress, the full test262 gate.
-3. Remove merged worktrees (`jit-alloc`, `jit-cp`, `jit-elems`, `jit-gbemu`,
-   `jit-md`, `jit-newobj`, `jit-ops`, `jit-pl`, `jit-props`, `jit-puts`,
-   `jit-strings`, `jit-vars`, `jit-regexp`) after checking each one's status.
+3. Merged worktrees removed (branches kept). `jit-strings` stays: it holds
+   eight `STRING_TRACE` prototype commits that are not in `jit`.
 
 Done since r16: optimized code kept through the mark phase (`c03a4ffd`),
 inline string-content equality (`06ada748`), inherited reads cached through a
 settled dictionary receiver (`1ab1b419`, Gameboy), inline global step
 (`d6baf093`) and bitwise not (`338d581d`), call-path trims (`127b4c61`), the
-global accessor store bug (`91dd8227`).
+global accessor store bug (`91dd8227`), the two epoch fixes above.
 
 ### 1. Calls in the baseline tier
 
@@ -259,11 +255,26 @@ EarleyBoyer 121K: all `needs_env` with `env_call_ok`, entered today through
   cache inline, as `load_global_callee` does for `CALL_GLOBAL`, then fall into
   the same direct call. Verify which of the 1.3M are cache misses (those stay
   slow) before writing it.
-- *`APPLY_ARGS`* (Box2D 592K, RayTrace 225K): for a forwarding function
-  (`CallFlags.forward_args`) the arguments are already in the frame's
-  registers; the site copies them to the call window (count from
-  `act.nargs`, bounded by the window) and uses the call entry with that count,
-  which the entry accepts since `370ba16d`. Other `apply` shapes stay in C.
+- *`APPLY_ARGS`* and the `NEW_OBJ` before it. Calls that still enter through
+  `jit_call` (C), by opcode, per mini (`--jit`, 2026-11-11): RayTrace
+  `NEW_OBJ` 995K and `APPLY_ARGS` 994K (the class wrapper
+  `function() { this.initialize.apply(this, arguments) }`: one construction
+  is both), Box2D 322K and 485K, TypeScript `NEW_OBJ` 3.7M, `CALL` 921K,
+  `CALL_VAR` 387K, PdfJS `CALL` 2.2M, `CALL_VAR` 1.3M, EarleyBoyer
+  `CALL_UNDEF_THIS` 204K. Three parts, in order:
+  (a) a call entry for a `forward_args` function (`call_entry_eligible`
+  refuses `arguments_in_reg`): decline above `num_args + FORWARD_ARGS_PAD`
+  arguments, clear the pad from the argument count up rather than from the
+  formals, store the count in `arguments_reg`. This alone takes the wrapper's
+  `NEW_OBJ` off the C path.
+  (b) `APPLY_ARGS` inline: when the register holds a count, the callee slot
+  is `%Function.prototype.apply%` and the collector is not marking, do the
+  window shuffle `jit_apply_lean` does and raise `heap_reg_count` to cover
+  it; the state is then exactly the one `CALL_S` expects.
+  (c) `CALL_S` as a direct-call site with its count read from the register
+  (the call subroutine already takes the count in a register).
+  Worth about 250 instructions per call saved: 11% of RayTrace under `--jit`,
+  about 4% under `--opt` (which inlines most of these), 2% of Box2D.
 - *Returns while marking* (TypeScript 850K): the inline return bails when the
   collector is marking because the result store needs shading. Emit the shade
   as a call to `jit_opt_shade` on that path instead of leaving through
@@ -358,6 +369,39 @@ born during marking is allocate-black and not allocate-grey.
 **2.4 Peak RSS** is 2.0 to 2.3 GiB for the suite. Record where it goes
 (`--stats` at the high-water mark: object pools, strings, code, AST and
 bytecode retained by lazy compilation) before deciding anything.
+
+**2.5 Pauses.** Measured over the bundle (`--jit --opt`, every `gc_step`
+call timed, 2026-11-11): 1.47 million slices, all under 250 microseconds
+(99.8% under 50), 3.0 s of collector work in a 45 s run. No blocking loop
+(`while (gc_phase != IDLE) gc_step(uint::max, ...)`) ran. Two kinds of slice
+exceed 1 ms, each once or twice a run, both in a major sweep:
+
+- `sweep_shapes` (sweep stage 2) runs whole: 4 to 6 ms in the one cycle where
+  `trans_count` reaches `shape_sweep_at`. Its cost is `mark_object_shapes`,
+  a walk of every live object. Design, not built: mark each survivor's shape
+  chain into the bitmap as the object sweep visits it (stage 0 touches every
+  survivor anyway), so stage 2 keeps only the passes over shapes and the
+  transition table. What that needs, and why it was not done in passing:
+  objects that change shape or are born after the sweep passed them. Advance
+  `shape_recycle_epoch` when the bitmap is created (every cached shape id is
+  either checked against that epoch or pinned, which is today's invariant),
+  mark at every C store of `HObject.shape_id` (12 sites), clear a recycled
+  slot's bit in `alloc_shape_slot` (`mark_shape_chain` stops at a set bit, so
+  a stale one would hide the new shape's parent), grow the bitmap for ids
+  past its size, and require `native_frame_depth == 0` at creation. The hole
+  to close first: a cache filled during the sweep from the current shape of
+  an object the sweep has not reached (`NewSite`, the baseline allocation
+  template, the regexp result shape, opt `NEW_OBJECT`) can hand that shape to
+  new objects in generated code after the source object has left it; mark at
+  those fills, or walk `objects_young` at stage 2. A wrong enumeration frees
+  a shape in use, so this wants its own pass with the GC-stress build.
+- One or two slices of 2 to 8 ms in sweep stage 0, on a different ordinary
+  object each run (two properties, no array). Not reproducible per object;
+  the suspects are the scheduler taking the thread and `PagePool.dealloc`
+  returning a page. Unverified: time the slice with thread CPU time.
+- Prefetching headers ahead of the sweep cursor measured nothing (3M-object
+  live heap with churn, 6.3 to 6.9G cycles either way): objects are swept in
+  allocation order, which the hardware prefetcher already follows.
 
 ### 3. Values in the optimizing tier
 
