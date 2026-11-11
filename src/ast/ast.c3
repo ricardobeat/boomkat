@@ -221,6 +221,8 @@ struct Ast {
     // Borrowed from the source buffer retained by AstIndex during a reparse.
     uint[] shared_line_starts;
     AtomTable atoms;
+    // Zero-based line of the last Ast.position answer, where the next search starts.
+    sz position_line;
 }
 
 fn void Ast.init(&self, char[] source) {
@@ -352,11 +354,20 @@ fn void Ast.truncate(&self, AstMark m) {
 fn SourcePos Ast.position(&self, uint offset) {
     uint[] starts = self.shared_line_starts.len > 0
         ? self.shared_line_starts : self.line_starts.data[:self.line_starts.len];
-    sz lo = 0;
+    // Consecutive queries mostly land on the last line found or the one after.
+    sz lo = self.position_line;
+    if (lo >= starts.len || starts[lo] > offset) lo = 0;
     sz hi = starts.len;
+    if (lo + 1 < hi && starts[lo + 1] > offset) {
+        hi = lo + 1;
+    } else if (lo + 2 < hi && starts[lo + 2] > offset) {
+        lo++;
+        hi = lo + 1;
+    }
     while (hi - lo > 1) {
         sz mid = (lo + hi) / 2;
         if (starts[mid] <= offset) { lo = mid; } else { hi = mid; }
     }
+    self.position_line = lo;
     return { (uint)lo + 1, offset - starts[lo] + 1 };
 }
