@@ -1,7 +1,7 @@
 // Baseline tier: native calls and returns published in generated code.
 //
-// Every function the threaded handlers would enter as a lean call with an
-// exact argument count gets a second native entry, its call entry
+// Every function the threaded handlers would enter as a lean call gets a
+// second native entry, its call entry
 // (BaselineCode.call_entry), with the arguments (ds, bottom, retval, packed).
 // It tests what th_lean_target, @lean_gate and the method shape test, then
 // publishes the callee's Activation field for field as th_publish_lean does,
@@ -39,6 +39,10 @@ const long CALL_PLAIN = 1L << 16;
 const long CALL_PRIM = 1L << 17;
 // A call site's packed bit for a method call (CALL), cleared for the entry.
 const long CALL_METHOD = 1L << 18;
+
+// Formals a call entry clears for a call that passes fewer arguments; a callee
+// with more takes such calls through the helper.
+const uint ENTRY_MISSING_MAX = 8;
 
 // Stack offsets where the call subroutine keeps the floor it restores and
 // the caller's resume point.
@@ -240,8 +244,16 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)f.realm));
     self.mov(R1, 0, m | R0, k.heap_gc_pending, SLJIT_MOV_U8);
     decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
+    // Any argument count, as th_publish_lean takes it: surplus arguments are
+    // ignored, missing formals start undefined (cleared below, unrolled up to
+    // ENTRY_MISSING_MAX formals). A rest parameter's length needs the count.
+    uint nf = f.num_formals;
     sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
-    decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, f.num_formals));
+    if (f.call_flags.rest_length_only) {
+        decline.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, nf));
+    } else if (nf > ENTRY_MISSING_MAX) {
+        decline.add(sljit_emit_cmp(c, SLJIT_LESS, R1, 0, SLJIT_IMM, nf));
+    }
     long forbidden = (f.call_flags.ignores_this ? 0 : CALL_PRIM) | (f.call_flags.lean_plain ? 0 : CALL_PLAIN);
     if (forbidden != 0) {
         sljit_emit_op2(c, SLJIT_AND, R1, 0, packed, 0, SLJIT_IMM, forbidden);
@@ -274,6 +286,16 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     // var_env (env), R3 = the function object. Constants the stores share are
     // kept in registers once they are free: Z (R0) zero, U (packed) undefined,
     // F (R3) the function, C (retval) its code.
+    if (nf != 0 && !f.call_flags.rest_length_only) {
+        sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN - 1);
+        void* all_given = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R4, 0, SLJIT_IMM, nf);
+        for (uint i = 0; i < nf; i++) {
+            void* given = sljit_emit_cmp(c, SLJIT_GREATER, R4, 0, SLJIT_IMM, i);
+            self.mov(m | bottom, (long)i * TVal::size, SLJIT_IMM, K_UNDEF);
+            sljit_set_label(given, sljit_emit_label(c));
+        }
+        sljit_set_label(all_given, sljit_emit_label(c));
+    }
     sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN);
     void* keep_this = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0);
     self.mov(m | bottom, -(long)TVal::size, SLJIT_IMM, K_UNDEF);
@@ -341,7 +363,7 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
         self.mov(m | la, k.act_flags, R1, 0, SLJIT_MOV_U32);
         sljit_set_label(no_this, sljit_emit_label(c));
     }
-    // Locals and the scratch slots start undefined (exact arity: no surplus).
+    // Locals and the scratch slots start undefined, surplus arguments included.
     uint from = f.num_formals;
     if (clear_end - from <= 12) {
         self.mov(R2, 0, undef, 0);
