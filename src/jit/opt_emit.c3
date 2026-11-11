@@ -197,6 +197,15 @@ fn void OptCg.store_object(&self, uint slot, int src) {
     self.a.track_heap_store(slot, R3, R2);
 }
 
+// The value of OBJECT node `nd`, in `src`, stored to window slot `slot`: plainly when a boolean.
+fn void OptCg.store_obj(&self, OptNode* nd, uint slot, int src) {
+    if (self.g.is_boolean(nd)) {
+        self.a.store(slot, src);
+    } else {
+        self.store_object(slot, src);
+    }
+}
+
 // The value of node `n` stored to window slot `slot`, boxed.
 fn void OptCg.store_node(&self, uint n, uint slot) {
     void* c = self.a.c;
@@ -208,7 +217,7 @@ fn void OptCg.store_node(&self, uint n, uint slot) {
     } else if (nd.reg < 0) {
         // Lives in its home slot already.
     } else if (nd.rep == OptRep.OBJECT) {
-        self.store_object(slot, nd.reg);
+        self.store_obj(nd, slot, nd.reg);
     } else if (nd.rep == OptRep.INT32) {
         sljit_emit_op2(c, SLJIT_AND, R0, 0, nd.reg, 0, SLJIT_IMM, PAYLOAD_SPAN - 1);
         sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_INT);
@@ -245,7 +254,19 @@ fn void OptCg.def_obj(&self, uint n, int src) {
         if (nd.reg != src) sljit_emit_op1(self.a.c, SLJIT_MOV, nd.reg, 0, src, 0);
         return;
     }
-    self.store_object(nd.home, src);
+    self.store_obj(nd, nd.home, src);
+}
+
+// The result of boolean node `n`: `yes` when the jump `taken` is, else `no`.
+fn void OptCg.def_bool(&self, uint n, void* taken, long yes, long no) {
+    void* c = self.a.c;
+    int dst = self.int_dst(n, R0);
+    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, no);
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(taken, sljit_emit_label(c));
+    sljit_emit_op1(c, SLJIT_MOV, dst, 0, SLJIT_IMM, yes);
+    sljit_set_label(done, sljit_emit_label(c));
+    self.def_obj(n, dst);
 }
 
 fn void OptCg.def_flt(&self, uint n, int fsrc) {
@@ -385,7 +406,13 @@ fn void OptCg.emit_item(&self, OptMoveItem* m) {
     OptNode* d = &self.g.nodes[m.dst];
     OptNode* s = &self.g.nodes[m.src];
     bool is_const = s.is_const();
-    if (d.rep == OptRep.INT32) {
+    if (d.rep == OptRep.OBJECT) {
+        if (m.src_reg >= 0) {
+            sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, m.src_reg, 0);
+        } else {
+            self.a.load(d.reg, s.home);
+        }
+    } else if (d.rep == OptRep.INT32) {
         if (is_const) {
             sljit_emit_op1(c, SLJIT_MOV, d.reg, 0, SLJIT_IMM, s.imm);
         } else if (m.src_reg >= 0) {
@@ -2433,16 +2460,7 @@ fn void OptCg.emit_mod(&self, uint i, OptNode* n) {
 }
 
 // Store `yes` to window slot `home` where the jumps in `taken` land, `no` on the way through.
-fn void OptCg.store_bool(&self, uint home, void* taken, long yes, long no) {
-    void* c = self.a.c;
-    self.a.store(home, SLJIT_IMM, no);
-    void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(taken, sljit_emit_label(c));
-    self.a.store(home, SLJIT_IMM, yes);
-    sljit_set_label(done, sljit_emit_label(c));
-}
-
-// COMPARE: the boolean of a numeric comparison, stored to the window.
+// COMPARE: the boolean of a numeric comparison.
 fn void OptCg.emit_compare(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     void* holds;
@@ -2457,7 +2475,7 @@ fn void OptCg.emit_compare(&self, uint i, OptNode* n) {
         int y = self.flt_reg(n.b, FR1);
         holds = sljit_emit_fcmp(c, JMP_FLOAT_COND[n.cc], x, 0, y, 0);
     }
-    self.store_bool(n.home, holds, K_BOOL | 1, K_BOOL);
+    self.def_bool(i, holds, K_BOOL | 1, K_BOOL);
 }
 
 // COMPARE_WINDOW: the baseline's equality test of two window slots, stored as a boolean.
@@ -2479,11 +2497,18 @@ fn void OptCg.emit_compare_window(&self, uint i, OptNode* n) {
     sljit_set_label(done, sljit_emit_label(c));
 }
 
-// LNOT: the negated truth of a number node or window slot, stored as a boolean.
+// LNOT: the negated truth of a number or boolean node, or of a window slot, stored as a boolean.
 fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     if (n.a != NO_NODE) {
         void* truthy;
+        if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
+            int x = self.obj_reg(n.a, R0);
+            int dst = self.int_dst(i, R0);
+            sljit_emit_op2(c, SLJIT_XOR, dst, 0, x, 0, SLJIT_IMM, 1);
+            self.def_obj(i, dst);
+            return;
+        }
         if (self.g.nodes[n.a].rep == OptRep.INT32) {
             int x = self.int_reg(n.a, R0);
             truthy = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, x, 0, SLJIT_IMM, 0);
@@ -2493,7 +2518,7 @@ fn void OptCg.emit_lnot(&self, uint i, OptNode* n) {
             sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR1, R4);
             truthy = sljit_emit_fcmp(c, SLJIT_ORDERED_NOT_EQUAL, x, 0, FR1, 0);
         }
-        self.store_bool(n.home, truthy, K_BOOL, K_BOOL | 1);
+        self.def_bool(i, truthy, K_BOOL, K_BOOL | 1);
         return;
     }
     Jumps truthy;
@@ -2646,7 +2671,12 @@ fn uint OptCg.emit_test(&self, uint i, OptNode* n, void** jumps) {
     }
     bool negate = n.cc != 0;
     if (n.a != NO_NODE) {
-        if (self.g.nodes[n.a].rep == OptRep.INT32) {
+        if (self.g.nodes[n.a].rep == OptRep.OBJECT) {
+            // A boolean: its low bit.
+            int x = self.obj_reg(n.a, R0);
+            sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, x, 0, SLJIT_IMM, 1);
+            jumps[0] = sljit_emit_jump(c, negate ? SLJIT_EQUAL : SLJIT_NOT_EQUAL);
+        } else if (self.g.nodes[n.a].rep == OptRep.INT32) {
             int x = self.int_reg(n.a, R0);
             jumps[0] = sljit_emit_cmp(c, negate ? SLJIT_EQUAL : SLJIT_NOT_EQUAL, x, 0, SLJIT_IMM, 0);
         } else {

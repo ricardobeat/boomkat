@@ -1208,8 +1208,8 @@ fn bool OptBuild.is_object(&self, uint r) {
 fn void OptBuild.publish_object(&self, uint r) {
     if (!self.cur[r].dirty) return;
     // An OBJECT node of an inlined body's slot beyond the caller's frame is never stored in the
-    // normal flow (see the header of opt_ir.c3): the site stays a call.
-    if (self.cur_fn != 0 && r >= self.caller_regs) self.inline_unsafe = true;
+    // normal flow, unless a boolean (see the header of opt_ir.c3): the site stays a call.
+    if (self.cur_fn != 0 && r >= self.caller_regs && !self.g.is_boolean(&self.g.nodes[self.cur[r].node])) self.inline_unsafe = true;
     self.add(OptOp.STORE_OBJ, OptRep.NONE, self.cur[r].node, NO_NODE, (long)r);
     self.cur[r].dirty = false;
 }
@@ -1810,26 +1810,37 @@ fn bool OptBuild.compare_value(&self) {
     uint y = self.operand(rc, rep);
     if (x == NO_NODE || y == NO_NODE) return self.generic();
     uint row = equality ? ((op == Opcode.EQ || op == Opcode.SEQ) ? 8 : 9) : 4 + op.ordinal - Opcode.LT.ordinal;
-    uint n = self.add(OptOp.COMPARE, OptRep.NONE, x, y, (long)rep.ordinal);
+    uint n = self.add(OptOp.COMPARE, OptRep.OBJECT, x, y, (long)rep.ordinal);
     self.g.nodes[n].cc = (char)row;
-    self.g.nodes[n].home = ra;
-    self.kill(ra);
+    self.set(ra, n);
     return true;
 }
 
-// `A = !B`, stored to the window slot of A.
+// `A = !B`: a boolean node when B is a number or a boolean, else stored to the window slot of A.
 fn bool OptBuild.not_value(&self) {
     uint ra = self.w.a;
     uint rb = self.w.b;
     if (ra >= self.nregs || rb >= self.nregs) return self.generic();
-    if (self.is_object(rb)) self.publish_object(rb);
-    uint node = self.is_object(rb) ? NO_NODE : self.cur[rb].node;
-    uint n = self.add(OptOp.LNOT, OptRep.NONE, node, NO_NODE, (long)rb);
-    self.g.nodes[n].home = ra;
+    uint node = self.truth_operand(rb);
+    uint n = self.add(OptOp.LNOT, node == NO_NODE ? OptRep.NONE : OptRep.OBJECT, node, NO_NODE, (long)rb);
     // (A known operand cannot exit, but the test hook exits at any LNOT, with the frame it describes.)
     self.snapshot(n);
-    self.kill(ra);
+    if (node == NO_NODE) {
+        self.g.nodes[n].home = ra;
+        self.kill(ra);
+    } else {
+        self.set(ra, n);
+    }
     return true;
+}
+
+// The node whose truth a test of register `r` reads, a number or a boolean; NO_NODE for a value
+// in the window, where any other OBJECT node is stored first.
+fn uint OptBuild.truth_operand(&self, uint r) {
+    uint node = self.cur[r].node;
+    if (!self.is_object(r) || self.g.is_boolean(&self.g.nodes[node])) return node;
+    self.publish_object(r);
+    return NO_NODE;
 }
 
 // THROW in an inlined body is a cold path: leave for the callee's baseline code, which throws.
@@ -2020,12 +2031,11 @@ fn bool OptBuild.cmp_branch(&self) {
     return self.terminator(OptOp.BRANCH, x, y, (long)rep.ordinal, (char)row);
 }
 
-// IF_TRUE / IF_FALSE over a numeric node or the window slot.
+// IF_TRUE / IF_FALSE over a number or boolean node or the window slot.
 fn bool OptBuild.truth_branch(&self) {
     uint r = self.w.a;
     if (r >= self.nregs) return self.refuse(OptRefuse.BRANCH_OPERANDS);
-    if (self.is_object(r)) self.publish_object(r);
-    uint node = self.is_object(r) ? NO_NODE : self.cur[r].node;
+    uint node = self.truth_operand(r);
     bool negate = self.w.op == Opcode.IF_FALSE;
     if (!self.terminator(OptOp.BRANCH_TRUTH, node, NO_NODE, (long)r, negate ? 1 : 0)) return false;
     // A window value can leave through the slow path.
@@ -3608,7 +3618,7 @@ fn void OptBuild.begin_block(&self, uint pos) {
                 if (self.rep_of(s.node) == OptRep.FLOAT64) rep = OptRep.FLOAT64;
             }
             if (!numeric) {
-                if (back == 0) self.cur[r] = self.same_object(pos, r);
+                if (back == 0) self.cur[r] = self.joined_object(pos, r);
                 continue;
             }
             int ov = self.override_of(pos, r);
@@ -3650,19 +3660,28 @@ fn void OptBuild.begin_block(&self, uint pos) {
     }
 }
 
-// The OBJECT node every forward predecessor of the block at `pos` holds in register `r`: the one
-// node, kept where it is, needs no phi and no store on the edges. A nested call's callee or receiver
-// beyond the caller's frame cannot be stored there at all. Else nothing.
-fn OptRegState OptBuild.same_object(&self, uint pos, uint r) {
+// Register `r` at the block at `pos`, a join of forward edges, when every predecessor holds an
+// OBJECT node in it: the one node, kept where it is with no store on the edges, or a phi of the
+// nodes that differ (of booleans when all are). A nested call's callee or receiver beyond the
+// caller's frame cannot be stored there at all. Else the window.
+fn OptRegState OptBuild.joined_object(&self, uint pos, uint r) {
     OptRegState same = { .node = NO_NODE };
+    bool differ = false;
+    bool boolean = true;
     foreach (p : self.preds(pos)) {
         if (p >= pos || self.dead[p]) continue;
         OptRegState s = self.ends[(usz)p * self.nregs + r];
         if (s.node == NO_NODE || self.rep_of(s.node) != OptRep.OBJECT) return { .node = NO_NODE };
-        if (same.node != NO_NODE && s.node != same.node) return { .node = NO_NODE };
+        differ |= same.node != NO_NODE && s.node != same.node;
+        boolean = boolean && self.g.is_boolean(&self.g.nodes[s.node]);
         same.node = s.node;
         same.dirty |= s.dirty;
     }
+    if (!differ) return same;
+    if (self.windowed != null && opt_join_windowed(self.windowed, pos, r)) return { .node = NO_NODE };
+    same.node = self.add(OptOp.PHI, OptRep.OBJECT, NO_NODE, NO_NODE, (long)r);
+    self.g.nodes[same.node].home = r;
+    self.g.nodes[same.node].cc = boolean ? 1 : 0;
     return same;
 }
 
@@ -3841,7 +3860,7 @@ fn bool OptBuild.compute_edges(&self) {
                 } else if (pn.node != NO_NODE && pn.dirty) {
                     // An OBJECT node of an inlined body that must be stored beyond the caller's
                     // frame on this edge: the site is built as a call instead.
-                    if (self.g.nodes[pn.node].rep == OptRep.OBJECT && r >= self.caller_regs) {
+                    if (self.g.nodes[pn.node].rep == OptRep.OBJECT && r >= self.caller_regs && !self.g.is_boolean(&self.g.nodes[pn.node])) {
                         uint fi = self.g.nodes[pn.node].fidx;
                         for (uint si = 0; si < (uint)self.sites.len(); si++) {
                             if (self.site_fn[si] != fi || !self.sites[si].flat) continue;

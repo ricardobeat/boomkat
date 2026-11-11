@@ -20,9 +20,9 @@
 // created only while incremental marking is off (else the load leaves for the baseline code,
 // which shades what it publishes), and it is stored to its home slot, raising the frame's
 // heap_reg_count as Asm.publish does, before anything that can collect or inspect the window
-// runs: a GENERIC node, an exit, a back edge's poll (the registers that cross a block join are
-// stored on the edge, as OBJECT nodes never form phis) and any node that reads the window slot
-// (STORE_OBJ). Marking cannot begin in between, as only those points can allocate or call. A
+// runs: a GENERIC node, an exit, a back edge's poll (a loop header holds no OBJECT node: the
+// registers that reach one are stored on the edge; a forward join gives the nodes that differ a
+// phi) and any node that reads the window slot (STORE_OBJ). Marking cannot begin in between, as only those points can allocate or call. A
 // node that finds no machine register lives in its home slot from its definition on, as the
 // numeric ones do.
 //
@@ -37,6 +37,10 @@
 // builder refuses the inline for a STORE_OBJ of it or an edge store of it, the allocator never
 // spills it (the function is then built without inlining), and its load exits instead of
 // publishing while the collector is marking.
+//
+// A boolean a comparison or `!` computes is an OBJECT node as well (OptGraph.is_boolean). No
+// collector reads it and no store counts it, so none of the above binds it: it is stored to any
+// slot, plainly.
 //
 // An inlined NEW_OBJ allocates (OptOp.NEW_OBJECT) and its constructor body may call the put-absent
 // helper (OptOp.ADD_FIELD). Neither is a point that can collect: the heap's allocators only request
@@ -179,14 +183,14 @@ enum OptOp : char {
     // or of window slot a when b is NO_NODE. It defines nothing and exits (SLOW_PATH) where the
     // store needs a counted or traced path.
     INIT_SLOT,
-    // A boolean stored to window slot home, defining no node: numbers a, b of rep imm compared by
-    // the JMP_* row cc (as BRANCH reads it).
+    // The boolean (an OBJECT node) of numbers a, b of rep imm compared by the JMP_* row cc (as
+    // BRANCH reads it).
     COMPARE,
     // The same for the window slots imm (b | c << 20) by the equality test of BRANCH_WINDOW (cc
     // 0 SEQ, 1 SNEQ, 2 EQ, 3 NEQ); the rare cases exit through the slow path.
     COMPARE_WINDOW,
-    // `!` of the number node a, or of the window slot imm when a is NO_NODE (the slow path exits),
-    // stored to window slot home.
+    // `!` of the number or boolean node a, a boolean (an OBJECT node); or, when a is NO_NODE, of
+    // the window slot imm (the slow path exits), stored to window slot home.
     LNOT,
     // A CALL (pc) of Array.prototype.push, after the CHECK_BUILTIN of its callee: the value a (a
     // node, or the window slot after the receiver when NO_NODE) appended to the array b (an OBJECT
@@ -470,6 +474,13 @@ fn void OptGraph.free(&self) {
 }
 
 fn bool OptNode.is_const(&self) @inline => self.op == OptOp.CONST_I32 || self.op == OptOp.CONST_F64;
+
+// Whether OBJECT node `n` holds a boolean: a comparison, a `!`, a phi of such (cc 1), or a copy.
+fn bool OptGraph.is_boolean(&self, OptNode* n) {
+    while (n.op == OptOp.COPY) n = &self.nodes[n.a];
+    if (n.rep != OptRep.OBJECT) return false;
+    return n.op == OptOp.COMPARE || n.op == OptOp.LNOT || (n.op == OptOp.PHI && n.cc == 1);
+}
 
 // Whether a node of this rep lives in an integer register.
 fn bool OptRep.is_gpr(self) @inline => self == OptRep.INT32 || self == OptRep.OBJECT;

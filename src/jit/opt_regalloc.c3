@@ -45,10 +45,11 @@ fn void OptGraph.use(&self, uint node, uint at) @inline {
 }
 
 // A synthetic value with no bytecode slot cannot spill into the frame. An OBJECT
-// beyond the caller frame must also stay in a machine register: the collector
-// cannot see its slot until an exit publishes the callee frame (opt_ir.c3).
+// beyond the caller frame, unless a boolean, must also stay in a machine register: the
+// collector cannot see its slot until an exit publishes the callee frame (opt_ir.c3).
 fn bool OptGraph.pinned(&self, OptNode* n) @inline {
-    return n.home == NO_NODE || (n.rep == OptRep.OBJECT && n.fidx != 0 && n.home >= self.fns[0].f.num_regs);
+    if (n.home == NO_NODE) return true;
+    return n.rep == OptRep.OBJECT && n.fidx != 0 && n.home >= self.fns[0].f.num_regs && !self.is_boolean(n);
 }
 
 fn bool OptNode.allocated(&self) @inline {
