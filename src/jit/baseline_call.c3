@@ -207,10 +207,10 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     self.mov(bottom, 0, R1, 0);
     self.mov(packed, 0, R3, 0);
     if (count_opt) {
-        long counter = (long)(usz)&f.opt_entries;
-        self.mov(R0, 0, m, counter, SLJIT_MOV_U32);
+        self.mov(R4, 0, SLJIT_IMM, (long)(usz)&f.opt_entries);
+        self.mov(R0, 0, m | R4, 0, SLJIT_MOV_U32);
         sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 1);
-        self.mov(m, counter, R0, 0, SLJIT_MOV_U32);
+        self.mov(m | R4, 0, R0, 0, SLJIT_MOV_U32);
         decline.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, OPT_ENTRY_THRESHOLD));
     }
 
@@ -290,7 +290,6 @@ fn void* Asm.emit_call_entry(&self, BaselineCode* bc, bool count_opt = false, bo
     if (takes_this) sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM | CALL_CONSTRUCT);
     self.mov(undef, 0, SLJIT_IMM, K_UNDEF);
     self.mov(code, 0, SLJIT_IMM, (long)(usz)f.code);
-    self.mov(m | ds, self.pc_off, code, 0);
     // A lazy record, and a heap_reg_count over the whole frame (Asm.frame_regs), in one word.
     self.store_entry_flags(la, vm::ACT_FLAG_JIT_CALLED | vm::ACT_FLAG_LAZY);
     self.store_pair(la, k.act_curr_pc, code, k.act_bottom, bottom);
@@ -760,8 +759,8 @@ fn void Asm.emit_return_body(&self) {
     int sp = SLJIT_MEM | reg_sp();
     long tramp_ret = (long)(usz)trampoline().ret;
     Jumps helper;
+    // Null for a frame nothing waits for, which then carries no ACT_FLAG_JIT_CALLED either.
     self.mov(R2, 0, m | self.la, k.act_native_ret);
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
     if (frame_state_possible(self.f)) {
         helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | self.la, k.act_cat, SLJIT_IMM, 0));
         helper.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, m | self.la, k.act_forin, SLJIT_IMM, 0));
@@ -843,6 +842,9 @@ fn void Asm.emit_return_body(&self) {
     self.mov(R3, 0, m | ds, k.ds_vm);
     self.mov(R1, 0, m | self.la, k.act_caller_top);
     self.mov(m | R3, k.vm_valstack_top, R1, 0);
+    // vm::jit_run_entered reads the caller's resume point there.
+    self.mov(R1, 0, m | self.la, k.act_curr_pc - (long)Activation::size);
+    self.mov(m | ds, self.pc_off, R1, 0);
     self.mov(R2, 0, SLJIT_IMM, tramp_ret);
     void* pop = sljit_emit_jump(c, SLJIT_JUMP);
     // A frame a call entry pushed: its site stores the result as Asm.publish would.
@@ -860,8 +862,6 @@ fn void Asm.emit_return_body(&self) {
     self.mov(m | ds, l.ds_act, SLJIT_IMM, 0);
     sljit_set_label(stale, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_SUB, self.la, 0, self.la, 0, SLJIT_IMM, (long)Activation::size);
-    self.mov(R1, 0, m | self.la, k.act_curr_pc);
-    self.mov(m | ds, self.pc_off, R1, 0);
     self.mov(R1, 0, R0, 0);
     self.mov(R0, 0, SLJIT_IMM, BASELINE_RETURNED);
     void* done = sljit_emit_jump(c, SLJIT_JUMP);

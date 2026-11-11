@@ -704,7 +704,13 @@ fn void* Asm.emit_prologue(&self, BaselineCode* bc) {
     self.bc = bc;
     self.set_frame();
     sljit_emit_op1(c, SLJIT_MOV, self.la, 0, ds_mem, self.lay.ds_act);
-    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.la, call_layout().act_native_ret, R2, 0);
+    // C now waits for the frame, or nothing does (a null R2): no call site does
+    // (Activation.forget_return).
+    CallLayout* k = call_layout();
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.la, k.act_native_ret, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R1, 0, SLJIT_MEM | self.la, k.act_flags);
+    sljit_emit_op2(c, SLJIT_AND, R1, 0, R1, 0, SLJIT_IMM, ~(long)vm::ACT_FLAG_JIT_CALLED & 0xFFFFFFFF);
+    sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | self.la, k.act_flags, R1, 0);
     self.exec_jump = sljit_emit_label(c);
     sljit_emit_op1(c, SLJIT_MOV, self.la, 0, ds_mem, self.lay.ds_act);
     // A frame that ran in the interpreter tracked its registers one by one.

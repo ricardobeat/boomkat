@@ -250,8 +250,8 @@ const uint ACT_FLAG_TAIL_CALLED    = 1u << 12;
 // it reads its captures. vm::jit_load fills in the rest, and the VM's frame
 // state, before anything else reads the stack.
 const uint ACT_FLAG_LAZY           = 1u << 13;
-// A call entry pushed the frame for a generated call site, which native_ret names unless
-// something has since forgotten it (null). Its inline return hands the result to the site.
+// A call entry pushed the frame for the generated call site native_ret names. Forgetting the
+// site (Activation.forget_return) clears both. Its inline return hands the result to the site.
 const uint ACT_FLAG_JIT_CALLED     = 1u << 14;
 
 // The flags a frame may carry and still return through RET's and RETUNDEF's

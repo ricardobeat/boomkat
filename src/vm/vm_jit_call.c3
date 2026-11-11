@@ -52,7 +52,7 @@ fn long jit_run_entered(Dispatch* ds, void* entry, uint old_floor, Instruction* 
     Vm* vm = ds.vm;
     if (status != jit::BASELINE_RETURNED) {
         // Nothing waits for the frame any more, if it is still there.
-        if (vm.activation_count > callee) vm.activations[callee].native_ret = null;
+        if (vm.activation_count > callee) vm.activations[callee].forget_return();
         return status;
     }
     Activation* act = &vm.activations[vm.activation_count - 1];
@@ -66,7 +66,8 @@ fn long jit_run_entered(Dispatch* ds, void* entry, uint old_floor, Instruction* 
 }
 
 // Make the VM's frame state describe `la`, the record of the frame generated code runs, as
-// Dispatch.load_frame does but for ds.curr_pc, which the code keeps itself. Calls and returns
+// Dispatch.load_frame does but for ds.curr_pc, which each call from generated code into C sets
+// itself (a thunk or helper is handed its resume point). Calls and returns
 // between generated frames move only the record register; everything that reads the frame state
 // (every call into C, every way out of generated code) runs this first (Asm.emit_sync). The state
 // is whole whenever ds.act is the record register's: every C path that switches frames for
@@ -123,10 +124,16 @@ fn void jit_fill(Vm* vm, Activation* top) @noinline {
 // Forget where generated code waits for each live frame (Activation.native_ret), before code a
 // frame could return into is freed: each such frame returns through jit_ret's general path.
 fn void jit_forget_returns(Vm* vm) {
-    for (uint i = 0; i < vm.activation_count; i++) vm.activations[i].native_ret = null;
+    for (uint i = 0; i < vm.activation_count; i++) vm.activations[i].forget_return();
     for (ShadowActFrame* s = (ShadowActFrame*)vm.shadow_act_list; s != null; s = (ShadowActFrame*)s.prev) {
-        for (uint i = 0; i < s.count; i++) s.acts[i].native_ret = null;
+        for (uint i = 0; i < s.count; i++) s.acts[i].forget_return();
     }
+}
+
+// The frame returns through jit_ret's general path: nothing in generated code waits for it.
+fn void Activation.forget_return(&self) @inline {
+    self.native_ret = null;
+    self.flags &= ~ACT_FLAG_JIT_CALLED;
 }
 
 // Enter the realm of the frame a native call site resumes.
