@@ -1489,7 +1489,6 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         stub.flags.is_namebinding = name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR;
         return stub;
     }
-    if (tree.body_was_recorded(n)) return self.fail("internal: a recorded body reached the eager compiler")~;
     CompiledFunction* inner = tree.tags.data[n] == NodeTag.ARROW
         ? self.compile_arrow_ast(scope, name)!
         : self.compile_inner_function(name, name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR,

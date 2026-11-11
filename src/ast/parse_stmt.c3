@@ -275,7 +275,7 @@ fn uint? Parser.statement(&self) {
         uint label = self.atom(t.str_value);
         self.next()!;
         self.next()!;
-        uint body = self.sub_statement(true)!;
+        uint body = self.sub_statement()!;
         return self.node(NodeTag.LABELED, t.pos, label, body);
     }
     return self.expression_statement();
@@ -390,27 +390,25 @@ fn uint? Parser.paren_expression(&self) {
     return e;
 }
 
-// The body of an if, loop, with or label: Resolver.sub_stmt wraps an Annex B
-// function declaration in an implicit block, and Early.sub_stmt rejects the
-// declarations that are not allowed in a single-statement position.
-fn uint? Parser.sub_statement(&self, bool if_body = false) {
+// The body of an if, loop, with or label. Resolver.sub_stmt wraps an Annex B
+// function declaration in an implicit block, and so does the tracker.
+fn uint? Parser.sub_statement(&self) {
     self.dv_push_scope(ScopeKind.BLOCK);
     defer self.dv_pop_scope();
-    uint n = self.statement()!;
-    return n;
+    return self.statement();
 }
 
 fn uint? Parser.if_statement(&self) {
     uint pos = self.tok.pos;
     self.next()!;
     uint test = self.paren_expression()!;
-    uint cons = self.sub_statement(true)!;
+    uint cons = self.sub_statement()!;
     uint alt = 0;
     uint else_pos = 0;
     if (self.tok.type == TokenType.ELSE) {
         else_pos = self.tok.pos;
         self.next()!;
-        alt = self.sub_statement(true)!;
+        alt = self.sub_statement()!;
     }
     return self.node(NodeTag.IF, pos, test, self.triple(cons, alt, else_pos));
 }
@@ -419,14 +417,14 @@ fn uint? Parser.while_statement(&self) {
     uint pos = self.tok.pos;
     self.next()!;
     uint test = self.paren_expression()!;
-    uint body = self.sub_statement(false)!;
+    uint body = self.sub_statement()!;
     return self.node(NodeTag.WHILE, pos, test, body);
 }
 
 fn uint? Parser.do_statement(&self) {
     uint pos = self.tok.pos;
     self.next()!;
-    uint body = self.sub_statement(false)!;
+    uint body = self.sub_statement()!;
     self.expect(TokenType.WHILE)!;
     uint test = self.paren_expression()!;
     // A semicolon after `do ... while ( )` is optional even without a line break.
@@ -561,7 +559,7 @@ fn uint? Parser.with_statement(&self) {
     self.dv_with();
     self.dv_push_scope(ScopeKind.WITH);
     defer self.dv_pop_scope();
-    uint body = self.sub_statement(false)!;
+    uint body = self.sub_statement()!;
     return self.node(NodeTag.WITH, pos, obj, body);
 }
 
@@ -654,7 +652,7 @@ fn uint? Parser.for_statement(&self) {
         uint right = is_of ? self.assign_expr()! : self.expression()!;
         self.expect(TokenType.RPAREN)!;
         uint header_end = self.prev.pos;
-        uint body = self.sub_statement(false)!;
+        uint body = self.sub_statement()!;
         uint rec = self.ast.add_record(3);
         self.ast.set_field(rec, 0, right);
         self.ast.set_field(rec, 1, body);
@@ -688,6 +686,6 @@ fn uint? Parser.for_rest(&self, uint pos, uint init) {
     self.expect(TokenType.SEMICOLON)!;
     if (self.tok.type != TokenType.RPAREN) update = self.expression()!;
     self.expect(TokenType.RPAREN)!;
-    uint body = self.sub_statement(false)!;
+    uint body = self.sub_statement()!;
     return self.node(NodeTag.FOR, pos, self.quad(init, test, update, body));
 }

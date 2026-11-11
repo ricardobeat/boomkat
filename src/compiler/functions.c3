@@ -1357,7 +1357,6 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
     if (self.can_defer_body(fnf)) {
         inner = self.defer_function(ast_scope, fn_name2)!;
     } else {
-        if (idx.tree.body_was_recorded(s.decl)) return self.fail("internal: a recorded body reached the eager compiler")~;
         inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: ast_scope)!;
     }
     self.gen_line(idx.tree.field(rec, ast::FN_SRC_END) - 1);
@@ -1445,8 +1444,7 @@ fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) 
         if (self.can_defer_body(fnf)) {
             inner = self.defer_function(idx.function_scope(s.decl), fn_name2)!;
         } else {
-            if (idx.tree.body_was_recorded(s.decl)) return self.fail("internal: a recorded body reached the eager compiler")~;
-            inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: idx.function_scope(s.decl))!;
+                inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: idx.function_scope(s.decl))!;
         }
         self.gen_line_end(s.decl);
         self.is_async = false;
@@ -2094,6 +2092,8 @@ fn CompiledFunction*? CompilerContext.compile_inner_function(&self, char[] name,
 
     ast::AstIndex* idx = ast::index_state;
     uint node = idx.res.scopes.data[ast_scope].node;
+    // The gates of Parser.function_tail and can_defer_body have drifted apart.
+    if (idx.tree.body_was_recorded(node)) return self.fail("internal: a recorded body reached the eager compiler")~;
     uint end = idx.tree.field(idx.tree.rhs.data[node], ast::FN_SRC_END);
     inner_ctx.gen_function(ast_scope)!;
     CompiledFunction* func = inner_ctx.finish()!;

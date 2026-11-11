@@ -71,7 +71,7 @@ fn void CompilerContext.apply_capture_set(&self) {
         && !self.in_class_body && !self.is_named_func_expr
         && !self.has_rest && self.defaults.len() == 0
         && self.destruct_defaults.len() == 0 && !self.has_destructured_param
-        && !self.capture_all && self.captured_names.count() > 1) {
+        && !self.capture_all && self.captured_names.count() != 0) {
         self.cell_frame_reg = self.alloc_persistent_reg();
         self.cell_frame_reserved = true;
     }

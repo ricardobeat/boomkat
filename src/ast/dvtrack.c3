@@ -1,8 +1,7 @@
-// Deferred-body inline validation: the scope tree, declarations and references a
-// discarded body leaves behind, checked while its grammar is parsed. The whole-
-// unit resolver reads the refs and flags off the body's stub; the declarations
-// and scopes exist only to run the redeclaration early errors at eval time, and
-// are dropped when the body ends.
+// Deferred-body tracking: the scope tree, declarations and references of a body
+// whose nodes are discarded. The whole-unit resolver reads the refs and flags
+// off the body's stub; the declarations and scopes exist only to report the
+// redeclaration early errors, and are dropped when the body ends.
 module boomkat::ast;
 
 import boomkat::ast::vec;

@@ -72,8 +72,7 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
     if (self.has_direct_eval || self.has_with_stmt || self.in_with()
         || self.in_eval_code || self.capture_all) return;
     if (idx.unknown_outer && (idx.reparsed == null || !idx.reparsed.lazy_outer_known)) return;
-    uint outer = idx.res.scopes.data[scope].parent;
-    for (uint s = outer; s != 0; s = idx.res.scopes.data[s].parent) {
+    for (uint s = idx.res.scopes.data[scope].parent; s != 0; s = idx.res.scopes.data[s].parent) {
         ast::Scope* sc = &idx.res.scopes.data[s];
         if (sc.kind == ast::ScopeKind.WITH
             || (sc.flags & (ast::SCOPE_HAS_EVAL | ast::SCOPE_EVAL_PARAMS)) != 0) return;
