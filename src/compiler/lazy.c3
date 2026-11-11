@@ -99,6 +99,12 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
     f.constants = names;
     f.const_count = count;
     f.lazy_outer_known = true;
+    // Each of them may be a capture; add_inner_func keeps the ones this
+    // function's parent can resolve, and so fixes the slot layout.
+    f.capture_names = (uint*)h.alloc_func(h.heap_udata, (usz)(count + 1) * uint::size);
+    if (f.capture_names == null) return;
+    for (uint i = 0; i < count; i++) f.capture_names[i] = i;
+    f.capture_count = count;
 }
 
 fn void? materialize_function(CompiledFunction* f, Heap* h) {
@@ -145,9 +151,11 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     idx.reparsed = f;
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
+    if (!adopt_capture_slots(ready, f, h)) return COMPILE_ERROR~;
     CompiledFunction saved = *f;
     *f = *ready;
     if (saved.constants != null) h.free_func(h.heap_udata, saved.constants);
+    if (saved.capture_names != null) h.free_func(h.heap_udata, saved.capture_names);
     f.next = saved.next;
     f.prev = saved.prev;
     f.flags.reachable = saved.flags.reachable;
