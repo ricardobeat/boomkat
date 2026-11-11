@@ -3308,6 +3308,22 @@ fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, 
                                       char[] getter_name = "") {
     HString* key = heap.str_intern(name);
     if (key == null) return false;
+    builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
+    return define_getter(proto, heap, key, fn_index, getter_name.len > 0 ? getter_name : name,
+        meta.arity >= 0 ? meta.arity : 0);
+}
+
+// A getter named "get `name`" with length 0, as the spec gives most prototype accessors.
+fn bool register_get_accessor(HObject* proto, Heap* heap, char[] name, uint fn_index) {
+    HString* key = heap.str_intern(name);
+    if (key == null) return false;
+    char[64] buf;
+    return define_getter(proto, heap, key, fn_index, io::bprintf(&buf, "get %s", (String)name) ?? name, 0);
+}
+
+// Define `key` on `proto` as a configurable, non-enumerable accessor whose
+// getter is builtin `fn_index`, named `fn_name` with length `length`.
+fn bool define_getter(HObject* proto, Heap* heap, HString* key, uint fn_index, char[] fn_name, long length) {
     HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
     if (catch err = func_raw) return false;
     HObject* func_obj = func_raw;
@@ -3315,15 +3331,14 @@ fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, 
     func_obj.flags.callable = true;
     func_obj.flags.constructable = false;
     heap.set_prototype(func_obj, heap.function_proto);
-    builtins::BuiltinMeta meta = builtins::builtin_get_metadata(fn_index);
     HString* length_str = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
     if (length_str != null) {
         TVal len_tv;
-        len_tv.set_fastint((long)(meta.arity >= 0 ? meta.arity : 0));
+        len_tv.set_fastint(length);
         func_obj.put_prop(length_str, len_tv, hobject::PROP_FLAGS_NWC, heap);
     }
     HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-    HString* name_val = builtin_intern_string(heap, getter_name.len > 0 ? getter_name : name);
+    HString* name_val = builtin_intern_string(heap, fn_name);
     if (name_prop_key != null && name_val != null) {
         TVal name_tv;
         name_tv.set_string_borrowed(name_val);
@@ -3332,14 +3347,8 @@ fn bool register_proto_getter_accessor(HObject* proto, Heap* heap, char[] name, 
     TVal getter_tv;
     getter_tv.set_object(func_obj);
     TVal undef; undef.set_undefined();
-    TVal gs = hobject::hobject_create_accessors(heap, getter_tv, undef);
-    PropFlags pflags = {
-        .writable = true,
-        .enumerable = false,
-        .configurable = true,
-        .is_accessor = true
-    };
-    proto.put_prop(key, gs, pflags, heap);
+    PropFlags pflags = { .configurable = true, .is_accessor = true };
+    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), pflags, heap);
     return true;
 }
 

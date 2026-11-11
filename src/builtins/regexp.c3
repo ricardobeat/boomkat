@@ -2923,50 +2923,6 @@ fn void builtin_regexp_proto_get_unicodeSets(BuiltinContext* ctx) {
     ctx.result_boolean(((*this_r.obj.extra_ptr()).regexp.flags & 128) != 0);
 }
 
-fn bool register_proto_accessor(HObject* proto, Heap* heap, char[] name, uint getter_index) {
-    HString* key = builtin_intern_string(heap, name);
-    if (key == null) return false;
-
-    // Create getter function object (builtin)
-    HObject*? func_raw = heap.alloc_object(hobject::ObjClass.FUNCTION);
-    if (catch err = func_raw) return false;
-    HObject* func_obj = func_raw;
-    (*func_obj.extra_ptr()).func.builtin_fn_index = (int)getter_index;
-    func_obj.flags.callable = true;
-    heap.set_prototype(func_obj, heap.function_proto);
-
-    // Set .name = "get <name>" per ECMA-262 §17 (non-writable, non-enumerable, configurable)
-    char[64] name_buf;
-    usz total_len = (usz)(io::bprintf(&name_buf, "get %s", (String)name) ?? name_buf[:0]).len;
-    HString* fn_name = builtin_intern_string(heap, name_buf[:total_len]);
-    if (fn_name != null) {
-        TVal name_tv;
-        name_tv.set_string_borrowed(fn_name);
-        HString* name_prop_key = heap.str(heap::BuiltinStr.NAME);
-        func_obj.put_prop(name_prop_key, name_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-    // Set .length = 0
-    HString* length_key = (HString*)heap.strs[heap::BuiltinStr.LENGTH];
-    if (length_key != null) {
-        TVal len_tv;
-        len_tv.set_fastint(0);
-        func_obj.put_prop(length_key, len_tv, hobject::PROP_FLAGS_NWC, heap);
-    }
-
-    // Register as a non-enumerable, configurable accessor (ECMA-262)
-    TVal getter_tv;
-    getter_tv.set_object(func_obj);
-    TVal undef;
-    undef.set_undefined();
-    hobject::PropFlags acc_flags;
-    acc_flags.writable = false;
-    acc_flags.enumerable = false;
-    acc_flags.configurable = true;
-    acc_flags.is_accessor = true;
-    proto.put_prop(key, hobject::hobject_create_accessors(heap, getter_tv, undef), acc_flags, heap);
-    return true;
-}
-
 // ============================================================================
 // RegExp constructor registration
 // ============================================================================
@@ -3132,16 +3088,16 @@ fn bool register_regexp_constructor(EnvRecord* global_env, Heap* heap) {
     }
 
     // Add RegExp.prototype accessor getters (ECMA-262 §21.2.5)
-    if (!register_proto_accessor(proto, heap, "flags", Builtin.REGEXP_PROTO_GET_FLAGS.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "source", Builtin.REGEXP_PROTO_GET_SOURCE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "global", Builtin.REGEXP_PROTO_GET_GLOBAL.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "ignoreCase", Builtin.REGEXP_PROTO_GET_IGNORECASE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "multiline", Builtin.REGEXP_PROTO_GET_MULTILINE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "dotAll", Builtin.REGEXP_PROTO_GET_DOTALL.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "sticky", Builtin.REGEXP_PROTO_GET_STICKY.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "unicode", Builtin.REGEXP_PROTO_GET_UNICODE.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "hasIndices", Builtin.REGEXP_PROTO_GET_HASINDICES.ordinal)) return false;
-    if (!register_proto_accessor(proto, heap, "unicodeSets", Builtin.REGEXP_PROTO_GET_UNICODESETS.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "flags", Builtin.REGEXP_PROTO_GET_FLAGS.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "source", Builtin.REGEXP_PROTO_GET_SOURCE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "global", Builtin.REGEXP_PROTO_GET_GLOBAL.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "ignoreCase", Builtin.REGEXP_PROTO_GET_IGNORECASE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "multiline", Builtin.REGEXP_PROTO_GET_MULTILINE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "dotAll", Builtin.REGEXP_PROTO_GET_DOTALL.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "sticky", Builtin.REGEXP_PROTO_GET_STICKY.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "unicode", Builtin.REGEXP_PROTO_GET_UNICODE.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "hasIndices", Builtin.REGEXP_PROTO_GET_HASINDICES.ordinal)) return false;
+    if (!register_get_accessor(proto, heap, "unicodeSets", Builtin.REGEXP_PROTO_GET_UNICODESETS.ordinal)) return false;
 
     // Register RegExp.prototype[@@match] (ECMA-262 §21.2.5.6)
     {
