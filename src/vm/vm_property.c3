@@ -1944,6 +1944,13 @@ fn TVal? dispatch_property(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc
                                 }
                                 mapped_args_write(vm, hobj, dense_ai, &put_val);
                             }
+                            // A dense `undefined` reads as a hole, so storing one
+                            // moves the element to the named table, which records
+                            // that the index is still present.
+                            if (put_val.is_undefined()) {
+                                hobj.put_prop(key, put_val, hobject::PROP_FLAGS_WEC, ds.vm.heap);
+                                return (TVal){};
+                            }
                             vm.heap.store_slot_ref(hobj, &hobj.array_part()[dense_ai], &put_val);
                             return (TVal){};
                         }
