@@ -19,7 +19,7 @@ fn void CompilerContext.collect_capture_candidates(&self, CompiledFunction* func
     @pool() {
         // Names that are no candidate, or already one: this function's own, then each one met.
         bool[] settled = mem::temp_array(bool, (sz)func.const_count);
-        for (sz bi = 0; bi < self.bindings.len(); bi++) {
+        for (sz bi = 0; bi < self.bindings.len; bi++) {
             if (self.bindings[bi].name_idx < func.const_count) settled[self.bindings[bi].name_idx] = true;
         }
         for (uint pc = 0; pc < func.code_count; pc++) {

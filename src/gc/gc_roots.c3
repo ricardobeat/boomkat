@@ -74,7 +74,7 @@ fn bool Heap.gc_scan_roots_step(&self, uint budget) {
                 self.gc_root_value_cursor = value_root.previous;
                 self.mark_tval(&value_root.value);
             case 3:
-                if (self.gc_root_index >= (uint)self.gc_roots.len()) {
+                if (self.gc_root_index >= (uint)self.gc_roots.len) {
                     self.gc_root_index = 0;
                     self.gc_root_stage++;
                     continue;

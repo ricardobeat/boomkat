@@ -9,7 +9,7 @@ fn void lower_rest_length(CompilerContext* ctx, CompiledFunction* func, Heap* he
     if (ctx.disable_optimize || ctx.has_wide || !ctx.has_rest
         || ctx.has_direct_eval || ctx.has_with_stmt || ctx.outer_with
         || ctx.uses_arguments || ctx.has_destructured_param
-        || ctx.defaults.len() != 0 || ctx.destruct_defaults.len() != 0
+        || ctx.defaults.len != 0 || ctx.destruct_defaults.len != 0
         || ctx.is_async || ctx.is_generator || ctx.is_arrow
         || func.inner_count != 0 || func.field_init_func != null
         || func.flags.needs_env) return;

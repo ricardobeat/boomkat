@@ -4,7 +4,6 @@ import boomkat::bytecode;
 import boomkat::lexer;
 import boomkat::ast;
 import std::io;
-import std::collections::list;
 
 // Captured bindings and dynamic scopes use environment-backed storage.
 
@@ -69,8 +68,8 @@ fn void CompilerContext.apply_capture_set(&self) {
     if (!self.cell_frame_reserved && !self.disable_optimize && !self.is_global
         && !self.is_arrow && !self.is_generator && !self.is_async
         && !self.in_class_body && !self.is_named_func_expr
-        && !self.has_rest && self.defaults.len() == 0
-        && self.destruct_defaults.len() == 0 && !self.has_destructured_param
+        && !self.has_rest && self.defaults.len == 0
+        && self.destruct_defaults.len == 0 && !self.has_destructured_param
         && !self.capture_all && self.captured_names.count() != 0) {
         self.cell_frame_reg = self.alloc_persistent_reg();
         self.cell_frame_reserved = true;
@@ -110,7 +109,7 @@ fn void CompilerContext.reserve_arguments_register(&self) {
     if (self.is_global || self.is_arrow || self.is_generator || self.is_async
         || self.eval_mode || self.in_class_body || self.is_named_func_expr
         || self.disable_optimize || self.capture_all || self.has_rest
-        || self.defaults.len() > 0 || self.destruct_defaults.len() > 0
+        || self.defaults.len > 0 || self.destruct_defaults.len > 0
         || self.has_destructured_param || self.forbid_arguments
         || self.scan_has_with || self.outer_with || self.has_with_stmt
         || !self.scan_arguments_mentioned || self.scan_arguments_declared

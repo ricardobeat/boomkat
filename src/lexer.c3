@@ -7,6 +7,7 @@
 // ECMA-262 punctuators and keywords.
 module boomkat::lexer;
 
+import boomkat::ast::vec;
 import boomkat::relexstats;
 import boomkat::types;
 import boomkat::features;
@@ -15,7 +16,6 @@ import boomkat::unicode_bindings;
 import boomkat::heap;
 import std::math;
 import std::io;
-import std::collections::list;
 
 // ============================================================================
 // Fault codes
@@ -426,7 +426,7 @@ fn bool is_whitespace(char c) {
 
 // Append a Unicode codepoint to the buffer as standard UTF-8, four bytes for
 // the supplementary planes, matching how such a character reads in source.
-fn void push_utf8(List{char}* buf, uint cp) {
+fn void push_utf8(Vec{char}* buf, uint cp) {
     if (cp < 0x10000) {
         encode_utf8_push(buf, cp);
         return;
@@ -438,7 +438,7 @@ fn void push_utf8(List{char}* buf, uint cp) {
 }
 
 // Append a Unicode codepoint to the buffer as UTF-8.
-fn void encode_utf8_push(List{char}* buf, uint cp) {
+fn void encode_utf8_push(Vec{char}* buf, uint cp) {
     if (cp < 0x80) {
         buf.push((char)cp);
         return;
@@ -1369,8 +1369,7 @@ fn Token? Lexer.scan_string(&self) {
     // Slow path: build the decoded string in a scratch list, then copy it into
     // the lexer's arena: the token's `str_value` stays live while later tokens
     // are lexed, after `buf` is freed.
-    List{char} buf;
-    buf.init(mem);
+    Vec{char} buf;
     defer buf.free();
     bool found_octal = false;
     bool decoded_octal = false;
@@ -1387,8 +1386,8 @@ fn Token? Lexer.scan_string(&self) {
         if (ch == quote) {
             self.advance_char(); // consume closing quote
             Token tok = make_token(TokenType.STRING);
-            if (buf.len() > 0) {
-                tok.str_value = self.arena_dup(&buf[0], (usz)buf.len());
+            if (buf.len > 0) {
+                tok.str_value = self.arena_dup(&buf[0], (usz)buf.len);
             } else {
                 tok.str_value = {};
             }
@@ -1639,8 +1638,7 @@ fn Token? Lexer.scan_identifier(&self) {
 // Every codepoint (escaped or not) is validated against
 // is_identifier_start/is_identifier_part as it is decoded.
 fn char[]? Lexer.scan_ident_body_decoded(&self) {
-    List{char} buf;
-    buf.init(mem);
+    Vec{char} buf;
     defer buf.free();
     bool first = true;
 
@@ -1688,8 +1686,8 @@ fn char[]? Lexer.scan_ident_body_decoded(&self) {
 
     // Copy the decoded name into the arena so an identifier's text stays
     // valid for the whole compile like a slice of the source does.
-    if (buf.len() > 0) {
-        return self.arena_dup(&buf[0], (usz)buf.len());
+    if (buf.len > 0) {
+        return self.arena_dup(&buf[0], (usz)buf.len);
     }
     return {};
 }
@@ -2058,11 +2056,9 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     // The raw buffer mirrors the source text exactly except that bare CR and
     // CRLF sequences are normalized to LF, per the TRV of LineTerminatorSequence
     // (ECMA-262 11.8.6.1), which applies to raw text just as much as cooked.
-    List{char} buf;
-    buf.init(mem);
+    Vec{char} buf;
     defer buf.free();
-    List{char} raw_buf;
-    raw_buf.init(mem);
+    Vec{char} raw_buf;
     defer raw_buf.free();
 
     while (!self.at_end()) {
@@ -2263,8 +2259,8 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
                 ri++;
             }
             char[] slice = self.source[start_pos..raw_end - 1];
-            if (raw_buf.len() > 0) {
-                *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_buf.len());
+            if (raw_buf.len > 0) {
+                *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_buf.len);
             } else {
                 *raw_out = {};
             }
@@ -2278,11 +2274,11 @@ fn char[]? Lexer.scan_template_content(&self, char* end_char, bool* has_escapes,
     // Copy cooked and raw bodies out of the scratch lists into the
     // arena so the returned/`raw_out` slices survive past this frame (a token's
     // str_value/raw_value stays live while later template parts are lexed).
-    if (raw_buf.len() > 0) {
-        *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_buf.len());
+    if (raw_buf.len > 0) {
+        *raw_out = self.arena_dup(&raw_buf[0], (usz)raw_buf.len);
     }
-    if (buf.len() > 0) {
-        return self.arena_dup(&buf[0], (usz)buf.len());
+    if (buf.len > 0) {
+        return self.arena_dup(&buf[0], (usz)buf.len);
     }
     return {};
 }

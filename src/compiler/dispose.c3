@@ -76,7 +76,7 @@ fn bool CompilerContext.declares_using(&self, uint stmts, bool* is_async) {
 
 // The scope a `using` declaration in hand belongs to.
 fn DisposeScope* CompilerContext.current_dispose_scope(&self) {
-    if (self.dispose_scopes.len() == 0) return null;
+    if (self.dispose_scopes.len == 0) return null;
     return &self.dispose_scopes[^1];
 }
 

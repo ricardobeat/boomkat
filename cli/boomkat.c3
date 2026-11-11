@@ -9,7 +9,7 @@ import boomkat::features;
 
 import boomkat::image;
 import boomkat::builtins;
-import std::collections::list;
+import boomkat::ast::vec;
 import boomkat::compiler;
 import boomkat::vm;
 import boomkat::heap;
@@ -453,18 +453,17 @@ fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output
         io::eprintfn("%s:%d:%d: SyntaxError: %s", path, lex.err_line, lex.err_col, (ZString)&lex.err_msg[0]);
         return 1;
     }
-    if (!script && module_def.req_modules.len() != 0) {
+    if (!script && module_def.req_modules.len != 0) {
         io::eprintfn("Bytecode images require a self-contained module"); return 1;
     }
-    List{image::ModuleDecl} declarations;
-    declarations.init(mem);
+    Vec{image::ModuleDecl} declarations;
     defer declarations.free();
     if (!script) {
         foreach (decl : module_def.func_decls) {
             declarations.push({decl.name, compiled.inner_funcs[decl.inner_func_idx]});
         }
     }
-    char[]? encoded = image::encode(hp, compiled, declarations.entries[:declarations.len()]);
+    char[]? encoded = image::encode(hp, compiled, declarations.array_view());
     if (catch err = encoded) { io::eprintfn("Could not encode bytecode: %s", err); return 1; }
     char[] bytes = encoded;
     defer mem::free(bytes);
@@ -477,8 +476,7 @@ fn int compile_bytecode_file(Heap* hp, char[] source, String path, String output
 // Loading through the source-capable tool keeps eval and Function available.
 // The image supplies the goal; command-line flags cannot change its scope.
 fn int run_bytecode_image(Heap* hp, Vm* v, char[] bytes) @feat(BYTECODE_GENERATOR) {
-    List{image::ModuleDecl} declarations;
-    declarations.init(mem);
+    Vec{image::ModuleDecl} declarations;
     defer declarations.free();
     CompiledFunction*? decoded = image::decode(hp, bytes, &declarations);
     if (catch err = decoded) {
@@ -498,7 +496,7 @@ fn int run_bytecode_image(Heap* hp, Vm* v, char[] bytes) @feat(BYTECODE_GENERATO
             TVal value; value.set_object(closure);
             env::env_declare(module_env, name, value);
         }
-    } else if (declarations.len() != 0 || function.has_tla()) {
+    } else if (declarations.len != 0 || function.has_tla()) {
         io::eprintfn("Invalid script bytecode metadata"); return 1;
     }
     if (function.has_tla()) {

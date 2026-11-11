@@ -102,7 +102,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
         && !ctx.is_generator && !ctx.is_async
         && !ctx.has_direct_eval && !ctx.has_with_stmt && !ctx.outer_with
         && !arguments_observes_bindings(ctx)
-        && !ctx.has_thunk_defaults() && ctx.destruct_defaults.len() == 0;
+        && !ctx.has_thunk_defaults() && ctx.destruct_defaults.len == 0;
     if (ctx.disable_optimize || ctx.has_wide
         || (!ordinary_ok && !can_remove_empty_arrow_scopes)) return false;
 
@@ -192,7 +192,7 @@ fn bool prune_unobserved_environment_stores(CompilerContext* ctx, Heap* heap,
             case Opcode.POP_VAR:
                 // The body scope of a function with parameter defaults holds
                 // only declarations the pruning above removed.
-                if (!can_remove_empty_arrow_scopes && ctx.defaults.len() == 0) needs_scope_layout = true;
+                if (!can_remove_empty_arrow_scopes && ctx.defaults.len == 0) needs_scope_layout = true;
             case Opcode.PUSH_LEX:
                 if (ctx.code[i].a != 0) needs_scope_layout = true;
             default:
@@ -219,7 +219,7 @@ fn bool can_reuse_binding_environment(CompilerContext* ctx) {
         || ctx.has_direct_eval || ctx.has_with_stmt || ctx.outer_with
         || ctx.capture_all
         || arguments_observes_bindings(ctx) || ctx.has_thunk_defaults()
-        || ctx.destruct_defaults.len() != 0 || ctx.has_destructured_param) {
+        || ctx.destruct_defaults.len != 0 || ctx.has_destructured_param) {
         return false;
     }
 

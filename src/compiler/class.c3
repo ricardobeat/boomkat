@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast::vec;
 import boomkat::types;
 import boomkat::ast;
 import boomkat::lexer;
@@ -11,7 +12,6 @@ import boomkat::hbigint;
 import boomkat::dtoa_bindings;
 import std::io;
 import std::math;
-import std::collections::list;
 
 // ============================================================================
 // Class parsing (ECMA-262)
@@ -573,8 +573,7 @@ fn ushort? CompilerContext.gen_class_body(&self, char[] class_name, uint class_s
     }
 
     // Methods found in the class body, installed once the whole body is generated.
-    List{ClassMethod} methods;
-    methods.init(mem);
+    Vec{ClassMethod} methods;
     defer methods.free();
     // Per-class-body counter for computed public-field-key hidden slots
     // (P7), combined with the class id to build unique binding names.

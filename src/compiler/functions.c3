@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast::vec;
 import boomkat::types;
 import boomkat::ast;
 import boomkat::lexer;
@@ -7,7 +8,6 @@ import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
-import std::collections::list;
 import std::io;
 
 // A parameter slot that records no name: destructuring patterns bind their
@@ -17,15 +17,15 @@ const uint NO_PARAM_NAME = 0xFFFFFFFF;
 
 // Record `idx`'s name index, filling any skipped (destructured) slots with
 // NO_PARAM_NAME so the list stays addressable by arg index.
-fn void param_name_set(List{uint}* names, uint idx, uint name_idx) {
-    while (names.len() <= (sz)idx) names.push(NO_PARAM_NAME);
+fn void param_name_set(Vec{uint}* names, uint idx, uint name_idx) {
+    while (names.len <= (sz)idx) names.push(NO_PARAM_NAME);
     names.set((sz)idx, name_idx);
 }
 
 // A slice covering every arg index, including trailing destructured params
 // that never recorded a name.
-fn uint[] param_name_view(List{uint}* names, uint arg_count) {
-    while (names.len() < (sz)arg_count) names.push(NO_PARAM_NAME);
+fn uint[] param_name_view(Vec{uint}* names, uint arg_count) {
+    while (names.len < (sz)arg_count) names.push(NO_PARAM_NAME);
     return names.array_view();
 }
 
@@ -142,18 +142,18 @@ struct DestructBind {
 // A destructuring pattern flattened in source order. A child's parent_idx is
 // its synthetic's index in the same list, so a pattern holds at most 0xFFFF
 // binds (0xFFFF itself means "no parent").
-alias DestructBinds = List{DestructBind};
+alias DestructBinds = Vec{DestructBind};
 
 // Append `b` to a pattern with its registers unassigned, returning its index.
 fn ushort? CompilerContext.add_bind(&self, DestructBinds* binds, DestructBind b) {
-    if (binds.len() >= 0xFFFF) {
+    if (binds.len >= 0xFFFF) {
         return self.fail("destructuring pattern has too many elements")~;
     }
     b.group_reg = 0xFFFF;
     b.binding_reg = 0xFFFF;
     b.rest_index_reg = 0xFFFF;
     binds.push(b);
-    return (ushort)(binds.len() - 1);
+    return (ushort)(binds.len - 1);
 }
 
 fn void free_destruct_binds(DestructBinds* binds) {
@@ -1420,7 +1420,7 @@ fn void? CompilerContext.emit_param_prologue(&self, ushort arg_count,
                                              uint[] param_name_indices) {
     // Function-level lexical scope, above the block-level PUSH_LEX from block().
     // Only needed with default parameters, so skipped otherwise.
-    bool has_func_lex = self.defaults.len() > 0;
+    bool has_func_lex = self.defaults.len > 0;
     if (has_func_lex) {
         self.emit_simple(Opcode.PUSH_LEX);
 

@@ -180,7 +180,7 @@ fn ushort CompilerContext.declare_var(&self, char[] name, ScopeKind kind, bool i
         // `block()` / `for_of` / `class` install via `INITTZ`).  Cleared by
         // `emit_var_store` after the publishing `PUTLEX` runs.
         bool is_tdz = kind == LET || kind == CONST;
-        uint binding_id = (uint)self.bindings.len() + 1;
+        uint binding_id = (uint)self.bindings.len + 1;
         self.bindings.push({
             .name_idx = name_idx,
             .reg = reg,
@@ -230,7 +230,7 @@ fn void CompilerContext.mark_scope_captured(&self, uint index) {
     ScopeEntry* entry = &self.scope_stack[index];
     if (entry.kind == SCOPEMARK) return;
     entry.is_captured = true;
-    if (entry.binding_id != 0 && entry.binding_id <= (usz)self.bindings.len()) {
+    if (entry.binding_id != 0 && entry.binding_id <= (usz)self.bindings.len) {
         self.bindings[(sz)(entry.binding_id - 1)].is_captured = true;
     }
     self.has_captured_local = true;
@@ -241,7 +241,7 @@ fn void CompilerContext.mark_scope_catch_param(&self, uint index) {
     ScopeEntry* entry = &self.scope_stack[index];
     if (entry.kind == SCOPEMARK) return;
     entry.is_catch_param = true;
-    if (entry.binding_id != 0 && entry.binding_id <= (usz)self.bindings.len()) {
+    if (entry.binding_id != 0 && entry.binding_id <= (usz)self.bindings.len) {
         self.bindings[(sz)(entry.binding_id - 1)].is_catch_param = true;
     }
 }
@@ -313,7 +313,7 @@ fn bool CompilerContext.is_slot_global_name(&self, char[] name) {
 
 // True when the constant-pool index names a REGISTER-RESIDENT top-level var.
 fn bool CompilerContext.is_slot_global_name_index(&self, uint name_idx) {
-    if (self.slot_global_name_idxs.len() == 0) return false;
+    if (self.slot_global_name_idxs.len == 0) return false;
     return self.slot_global_name_idxs.contains(name_idx);
 }
 

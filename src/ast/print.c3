@@ -132,16 +132,16 @@ fn void AstPrinter.slot(&self, Slot k, uint v, uint depth, uint tag_flags_unused
         case CASES: self.list(self.ast.extra[v], depth);
         case PAIR:
             self.node(self.ast.extra[v], depth);
-            self.node(self.ast.extra[v + 1], depth);
+            self.node(self.ast.extra.data[v + 1], depth);
         case TRIPLE:
             self.node(self.ast.extra[v], depth);
-            self.node(self.ast.extra[v + 1], depth);
-            self.node(self.ast.extra[v + 2], depth);
+            self.node(self.ast.extra.data[v + 1], depth);
+            self.node(self.ast.extra.data[v + 2], depth);
         case QUAD:
             self.node(self.ast.extra[v], depth);
-            self.node(self.ast.extra[v + 1], depth);
-            self.node(self.ast.extra[v + 2], depth);
-            self.node(self.ast.extra[v + 3], depth);
+            self.node(self.ast.extra.data[v + 1], depth);
+            self.node(self.ast.extra.data[v + 2], depth);
+            self.node(self.ast.extra.data[v + 3], depth);
         case FUNC:
             self.function(v, depth);
         case CLASS:
@@ -214,7 +214,7 @@ fn void AstPrinter.node(&self, uint n, uint depth) {
         case IF:
             self.node(self.ast.lhs[n], depth + 1);
             self.node(self.ast.extra[self.ast.rhs[n]], depth + 1);
-            self.node(self.ast.extra[self.ast.rhs[n] + 1], depth + 1);
+            self.node(self.ast.extra.data[self.ast.rhs[n] + 1], depth + 1);
         default:
             self.slot(sl[0], self.ast.lhs[n], depth + 1, 0);
             self.slot(sl[1], self.ast.rhs[n], depth + 1, 0);

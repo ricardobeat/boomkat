@@ -317,7 +317,7 @@ fn uint Ast.list_len(&self, uint list) @inline {
 }
 
 fn uint Ast.list_item(&self, uint list, uint i) @inline {
-    return self.extra[list + 1 + i];
+    return self.extra.data[list + 1 + i];
 }
 
 // Reserve `n` zeroed `extra` slots (a record) and return the index of the first.
@@ -328,11 +328,11 @@ fn uint Ast.add_record(&self, uint n) {
 }
 
 fn uint Ast.field(&self, uint rec, uint field) @inline {
-    return self.extra[rec + field];
+    return self.extra.data[rec + field];
 }
 
 fn void Ast.set_field(&self, uint rec, uint field, uint v) @inline {
-    self.extra[rec + field] = v;
+    self.extra.data[rec + field] = v;
 }
 
 // A template literal's `lhs` list holds `cooked0, raw0, tok0, expr0, ..., cookedN, rawN, tokN`

@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast::vec;
 import boomkat::ast;
 
 import boomkat::types;
@@ -11,7 +12,6 @@ import boomkat::heap;
 import boomkat::frontendstats;
 import std::io;
 import std::time;
-import std::collections::list;
 import std::collections::set;
 
 // ============================================================================
@@ -354,7 +354,7 @@ struct CompilerContext {
     uint* name_top;
     uint name_top_cap;
     uint top_mark;
-    List{BindingInfo} bindings;
+    Vec{BindingInfo} bindings;
     ushort cell_frame_reg;
     bool cell_frame_reserved;
     // What resolution records of `arguments` in the body's own text (outside
@@ -380,20 +380,20 @@ struct CompilerContext {
     bool forward_violation;
 
     // Enclosing loops and switches, innermost last.
-    List{LoopInfo} loop_stack;
+    Vec{LoopInfo} loop_stack;
     // The disposal scopes in effect, innermost last. A scope owns the
     // resources of the `using` declarations in one block: the register
     // holding its resource list, the register holding the failure in flight
     // when the block is left, and the register telling whether there is one.
-    List{DisposeScope} dispose_scopes;
+    Vec{DisposeScope} dispose_scopes;
     // Number of enclosing try statements. A break/continue compares it with its
     // target loop's saved_try_depth to decide whether it crosses a finally.
     uint try_depth;
     // Labels in scope, innermost last.
-    List{LabelInfo} labels;
+    Vec{LabelInfo} labels;
     // Break/continue forward-patch chains for the whole function. Entries are
     // never removed mid-function; each chain links through PatchEntry.next.
-    List{PatchEntry} patches;
+    Vec{PatchEntry} patches;
     // Set when the scope stack overflowed; finish() turns this into a compile
     // error. A dropped scope entry makes a declaration invisible to
     // shadowing/TDZ/duplicate checks rather than reporting anything.
@@ -484,10 +484,10 @@ struct CompilerContext {
     bool   eval_direct_in_function;
 
     // Default parameter tracking
-    List{ParamDefault} defaults;
+    Vec{ParamDefault} defaults;
 
     // Destructured-parameter outer-default tracking (deferred emission)
-    List{DestructParamDefault} destruct_defaults;
+    Vec{DestructParamDefault} destruct_defaults;
 
     // Set while parsing FormalParameters when a parameter is a destructuring pattern. With
     // has_rest and defaults, this makes IsSimpleParameterList false (see params_are_simple).
@@ -713,7 +713,7 @@ int  cur_with_depth;
     // Constant-pool indices of a module's top-level `var`s that
     // resolution keeps in registers: reads and writes
     // compile to the name's home register, a live slot for the whole body.
-    List{uint} slot_global_name_idxs;
+    Vec{uint} slot_global_name_idxs;
 
     // Direct eval tracking, when true, the CALL path must create a fresh env.
     bool has_direct_eval;
@@ -725,16 +725,16 @@ int  cur_with_depth;
     // them). has_direct_eval cannot say which call is which, so `eval(x)` and `(0, eval)(x)` in one
     // function need these: builtin_eval looks up the call site it was reached through. finish()
     // copies the list into CompiledFunction.direct_eval_offsets.
-    List{uint} direct_eval_offsets;
+    Vec{uint} direct_eval_offsets;
     // Conditional branches and TRY catch offsets too far for their 16-bit
     // field, by instruction index. widen_far_offsets gives each a WIDE prefix.
-    List{FarOffset} far_offsets;
+    Vec{FarOffset} far_offsets;
     // Call nodes in syntactic tail position (ECMA-262 IsInTailPosition) while
     // the return operand naming them compiles, and the instruction index of
     // each call emitted for one. run_tail_calls rewrites only those calls:
     // `const r = f(); return r;` compiles to the same CALL; RET shape.
-    List{uint} tail_nodes;
-    List{uint} tail_call_pcs;
+    Vec{uint} tail_nodes;
+    Vec{uint} tail_call_pcs;
 
     // Arrow/async tracking, needed for needs_env computation in finish().
     bool is_arrow;
@@ -911,23 +911,12 @@ fn void CompilerContext.init(&self, Lexer* lex, void* heap) {
     pnt.heads = null;
     pnt.heads_cap = 0;
     pnt.linked = 0;
-    pnt.scopes.init(mem);
+    pnt.scopes = {};
     self.private_name_table = pnt;
     self.owns_private_names = true;
 
     // Persistent (non-temp) allocator for the declared-global name-index set so
     // entries survive the whole compile; freed in cleanup().
-    self.slot_global_name_idxs.allocator = mem;
-    self.direct_eval_offsets.allocator = mem;
-    self.far_offsets.allocator = mem;
-    self.tail_nodes.allocator = mem;
-    self.tail_call_pcs.allocator = mem;
-    self.bindings.allocator = mem;
-    self.defaults.allocator = mem;
-    self.destruct_defaults.allocator = mem;
-    self.loop_stack.allocator = mem;
-    self.labels.allocator = mem;
-    self.patches.allocator = mem;
 
     // Phase 3 (plans/083): do NOT default the lexer to strict mode here. Each
     // compilation entry point (compile/compile_eval/compile_function/etc.) is
@@ -1297,7 +1286,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // nested closures on the regular scope path.
     bool can_remove_empty_arrow_scopes = self.is_arrow
                                    && !self.has_thunk_defaults()
-                                   && self.destruct_defaults.len() == 0
+                                   && self.destruct_defaults.len == 0
                                    && !self.has_captured_local
                                    && !self.has_direct_eval
                                    && !self.has_with_stmt
@@ -1662,7 +1651,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
         me_pinned.clear();
         bool me_has_pinned = false;
         if (!self.is_strict && self.uses_arguments && !self.has_rest
-            && !self.ast_param_scope && self.defaults.len() == 0 && self.destruct_defaults.len() == 0
+            && !self.ast_param_scope && self.defaults.len == 0 && self.destruct_defaults.len == 0
             && !self.has_destructured_param && !self.is_arrow && !self.eval_mode) {
             // Parameters occupy r0..r(num_args-1) in declaration order (see
             // emit_param_prologue).
@@ -1707,7 +1696,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     //
     // TRY is always followed by a NOP whose BC field holds the finally_offset. The VM reads that word
     // unconditionally, so it must survive compaction: mark those slots in keep[] before building pc_map.
-    if (self.far_offsets.len() > 0) self.widen_far_offsets()!;
+    if (self.far_offsets.len > 0) self.widen_far_offsets()!;
     if (self.code_count > 0) {
         bool* nop_keep = null;
         uint* pc_map = null;
@@ -1858,8 +1847,8 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // builtin_eval can tell a direct call from an indirect one made from the
     // same body. The offsets index the pre-compaction stream, so they go
     // through pc_map alongside the jump targets.
-    if (self.direct_eval_offsets.len() > 0) {
-        uint de_count = (uint)self.direct_eval_offsets.len();
+    if (self.direct_eval_offsets.len > 0) {
+        uint de_count = (uint)self.direct_eval_offsets.len;
         uint* de_buf = (uint*)h.alloc_func(h.heap_udata, (usz)de_count * uint::size);
         if (de_buf != null) {
             for (uint i = 0; i < de_count; i++) {
@@ -1968,8 +1957,8 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     // the flag only guarantees an object exists for the eval body, and the
     // eval body is not this function's own parameter scope.
     func.flags.mapped_arguments = !self.is_strict && self.uses_arguments
-                             && !self.has_rest && self.defaults.len() == 0
-                             && self.destruct_defaults.len() == 0
+                             && !self.has_rest && self.defaults.len == 0
+                             && self.destruct_defaults.len == 0
                              && !self.has_destructured_param
                              && !self.is_arrow && !self.eval_mode;
     // Direct eval must run in the caller's lexical environment: the CALL
@@ -1995,7 +1984,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     //     in default expressions don't see body var declarations)
     // Functions with var declarations but no closures, eval, or arguments
     // can reuse the parent's env directly.
-    bool has_params_needing_env = self.ast_param_scope || self.has_rest || self.defaults.len() > 0;
+    bool has_params_needing_env = self.ast_param_scope || self.has_rest || self.defaults.len > 0;
     bool needs_runtime_env = ((self.has_local_bindings || self.has_lexical_bindings || self.num_args > 0) && self.has_closures)
                           || (self.uses_arguments && !self.arguments_in_reg)
                           || self.has_direct_eval;
@@ -2070,7 +2059,7 @@ fn CompiledFunction*? CompilerContext.finish(&self, bool track = true) {
     }
     if (self.has_rest) {
         func.num_formals = self.rest_formal_count;
-    } else if (self.defaults.len() > 0 || self.destruct_defaults.len() > 0) {
+    } else if (self.defaults.len > 0 || self.destruct_defaults.len > 0) {
         // First default param doesn't count toward .length; formals before it do.
         func.num_formals = self.formal_count;
     } else {
@@ -2240,7 +2229,7 @@ struct PrivateNameTable {
     // Open class bodies, innermost last. Each class pushes one around its body
     // and pops it before the context that pushed it resumes, so every context
     // sharing the table sees the class nesting at its own point in the source.
-    List{PrivateScope} scopes;
+    Vec{PrivateScope} scopes;
 }
 
 // One open class body: where its names begin in `entries` (pop trims back to

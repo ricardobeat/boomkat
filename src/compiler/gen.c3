@@ -1,5 +1,6 @@
 module boomkat::compiler;
 
+import boomkat::ast::vec;
 import boomkat::features;
 
 import boomkat::types;
@@ -9,7 +10,6 @@ import boomkat::bytecode;
 import boomkat::hstring;
 import boomkat::hobject;
 import boomkat::heap;
-import std::collections::list;
 import std::io;
 import std::core::string;
 import std::math;
@@ -83,10 +83,10 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
     ushort arg_count = 0;
     ushort first_default = 0xFFFF;
     ushort formals = 0;
-    List{uint} param_names;
-    param_names.init(mem, initial_capacity: MAX_PARAMS);
+    Vec{uint} param_names;
+    param_names.init(MAX_PARAMS);
     defer param_names.free();
-    DestructBinds param_binds = { .allocator = mem };
+    DestructBinds param_binds = {};
     defer free_destruct_binds(&param_binds);
     uint nparams = tree.list_len(params);
     bool inline_defaults = !self.disable_optimize && !self.capture_all
@@ -160,7 +160,7 @@ fn void? CompilerContext.gen_function(&self, uint scope) {
     } else {
         self.emit_param_prologue(arg_count, first_default, param_name_view(&param_names, arg_count))!;
     }
-    bool has_defaults = self.defaults.len() > 0 || self.ast_param_scope;
+    bool has_defaults = self.defaults.len > 0 || self.ast_param_scope;
     if (self.is_user_generator) self.emit_simple(Opcode.GEN_START);
     if (has_defaults) self.emit_simple(Opcode.PUSH_VAR);
     if (arrow) self.emit_simple(Opcode.PUSH_LEX);
@@ -521,8 +521,7 @@ fn void? CompilerContext.gen_switch(&self, uint n) {
         for (uint i = 0; i < count; i++) self.gen_block_functions(tree.field(tree.rhs.data[tree.list_item(cases, i)], 0), saved_depth)!;
     }
     if (self.eval_mode) self.emit_abc(Opcode.LDUNDEF, (uint)self.eval_acc_reg, 0, 0);
-    List{SwitchClause} clauses;
-    clauses.init(mem, initial_capacity: (sz)count);
+    Vec{SwitchClause} clauses;
     defer clauses.free();
     uint default_idx = count;
     for (uint i = 0; i < count; i++) {
@@ -563,7 +562,7 @@ fn void? CompilerContext.gen_switch(&self, uint n) {
     self.pop_scope_to(saved_depth);
     self.pop_loop();
     foreach (i, clause : clauses) {
-        uint target = i + 1 < clauses.len() ? clauses[i + 1].body_addr : end_pc;
+        uint target = i + 1 < clauses.len ? clauses[i + 1].body_addr : end_pc;
         self.code[clause.ft_jump_addr] = bytecode::make_sabc(Opcode.JUMP, (int)target - (int)clause.ft_jump_addr - 1);
     }
     self.free_val(disc);
@@ -595,7 +594,7 @@ fn void? CompilerContext.gen_try(&self, uint n) {
             self.emit_a_bc(Opcode.PUSH_LEX, 1, 0);
             self.cur_lex_depth++;
             catch_scope = true;
-            DestructBinds binds = { .allocator = mem };
+            DestructBinds binds = {};
             defer free_destruct_binds(&binds);
             self.gen_collect_pattern(param, &binds)!;
             self.gen_tdz_pattern(param, saved_depth);
@@ -804,7 +803,6 @@ fn void? CompilerContext.gen_for(&self, uint n) {
     }
     bool per_iter = false;
     PerIterBindings bindings;
-    bindings.init(mem);
     defer bindings.free();
 
     bool patterns = false;
@@ -965,7 +963,7 @@ fn void? CompilerContext.gen_label(&self, uint n) {
     self.labels.push({ .name = self.gen_name(tree.lhs.data[n]), .is_loop = loop,
         .loop_index = self.loop_depth() - (loop ? 0u : 1u) });
     self.gen_stmt(body)!;
-    self.labels.remove_last()!!;
+    self.labels.pop()!!;
     if (!loop) self.pop_loop();
 }
 
@@ -1517,14 +1515,14 @@ fn CompiledFunction*? CompilerContext.compile_arrow_ast(&self, uint scope, char[
 fn Val? CompilerContext.gen_binary(&self, uint n) {
     ast::Ast* tree = &ast::index_state.tree;
     uint current = n;
-    List{uint} chain = { .allocator = mem };
+    Vec{uint} chain = {};
     defer chain.free();
     while (true) {
         uint left = tree.lhs.data[current];
         NodeTag tag = tree.tags.data[left];
         if ((tag != NodeTag.BINARY && tag != NodeTag.LOGICAL) || (tree.flags.data[left] & ast::FLAG_PAREN) != 0) {
             Val value = self.gen_binary_step(current, self.gen_expr(left, 0)!)!;
-            for (sz i = chain.len(); i > 0;) value = self.gen_binary_step(chain[--i], value)!;
+            for (sz i = chain.len; i > 0;) value = self.gen_binary_step(chain[--i], value)!;
             return value;
         }
         chain.push(current);
@@ -2237,7 +2235,7 @@ fn Val? CompilerContext.gen_super(&self, uint n, MemberTarget* target) {
 
 // A chain of member accesses and calls. `call_prop_obj_reg` holds the object of the last member
 // step, the receiver of a call that follows it.
-fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target = null, uint rhs = 0, List{uint}* optional = null) {
+fn Val? CompilerContext.gen_chain(&self, uint n, Phase* ph, MemberTarget* target = null, uint rhs = 0, Vec{uint}* optional = null) {
     self.check_stack()!;
     ast::Ast* tree = &ast::index_state.tree;
     NodeTag tag = tree.tags.data[n];
@@ -2365,7 +2363,7 @@ fn void CompilerContext.collect_tail_nodes(&self, uint n) {
 // Record the call instruction emitted for `n` since `start` when `n` is in
 // tail position.
 fn void CompilerContext.note_tail_call(&self, uint n, uint start) {
-    if (self.tail_nodes.len() == 0) return;
+    if (self.tail_nodes.len == 0) return;
     if (!self.tail_nodes.contains(n)) return;
     for (uint pc = self.code_count; pc > start; pc--) {
         if (tailcall_form(self.code[pc - 1].op) != Opcode.NOP) {
@@ -2379,7 +2377,7 @@ fn void CompilerContext.note_tail_call(&self, uint n, uint start) {
 // arguments in consecutive registers; the result replaces the callee. A by-name callee read
 // fuses into CALL_VAR / CALL_GLOBAL, which loads and calls at once; a member callee passes the
 // pending receiver as `this`.
-fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional = null) {
+fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, Vec{uint}* optional = null) {
     ast::Ast* tree = &ast::index_state.tree;
     uint callee_node = tree.lhs.data[n];
     uint saved_eager_function = self.eager_function;
@@ -2892,8 +2890,7 @@ fn Val? CompilerContext.gen_object(&self, uint n) {
     ushort obj_reg = self.alloc_reg();
     uint new_pc = self.code_count;
     self.emit_abc(Opcode.NEWOBJ, (uint)obj_reg, 0, 0);
-    List{LiteralSlot} slots;
-    slots.init(mem);
+    Vec{LiteralSlot} slots;
     defer slots.free();
     bool fixed_shape = !self.disable_optimize;
     bool seen_proto_key = false;
@@ -2939,7 +2936,7 @@ fn Val? CompilerContext.gen_object(&self, uint n) {
 
 // `key: value`. A static `__proto__` key sets the prototype instead of defining a property. A
 // computed key is coerced before the value runs (ECMA-262 PropertyDefinitionEvaluation).
-fn void? CompilerContext.gen_init_property(&self, uint p, ushort obj_reg, List{LiteralSlot}* slots, bool* fixed_shape, bool* seen_proto_key, uint* home) {
+fn void? CompilerContext.gen_init_property(&self, uint p, ushort obj_reg, Vec{LiteralSlot}* slots, bool* fixed_shape, bool* seen_proto_key, uint* home) {
     ast::Ast* tree = &ast::index_state.tree;
     uint key_node = tree.lhs.data[p];
     uint value = tree.rhs.data[p];
@@ -3147,7 +3144,7 @@ fn void CompilerContext.gen_declare_pattern(&self, DestructBind[] binds, ScopeKi
 }
 
 fn void? CompilerContext.gen_destruct_decl(&self, uint pattern, uint init, ScopeKind kind) {
-    DestructBinds binds = { .allocator = mem };
+    DestructBinds binds = {};
     defer free_destruct_binds(&binds);
     self.gen_collect_pattern(pattern, &binds)!;
     self.gen_declare_pattern(binds.array_view(), kind);
@@ -3271,7 +3268,7 @@ fn bool? CompilerContext.gen_scalar_array_pattern(&self, uint init,
 }
 
 fn Val? CompilerContext.gen_destruct_assign(&self, uint pattern, uint rhs) {
-    DestructBinds binds = { .allocator = mem };
+    DestructBinds binds = {};
     defer free_destruct_binds(&binds);
     self.gen_collect_pattern(pattern, &binds)!;
     self.resolve_assign_targets(binds.array_view());
@@ -3292,7 +3289,7 @@ fn void? CompilerContext.gen_for_pattern(&self, uint n, uint pattern, bool decla
     ast::Ast* tree = &ast::index_state.tree;
     uint rec = tree.rhs.data[n];
     bool of = tree.tags.data[n] == NodeTag.FOR_OF;
-    DestructBinds binds = { .allocator = mem };
+    DestructBinds binds = {};
     defer free_destruct_binds(&binds);
     self.gen_collect_pattern(pattern, &binds)!;
     if (declared) {
@@ -3336,12 +3333,11 @@ fn void? CompilerContext.gen_for_pattern(&self, uint n, uint pattern, bool decla
     self.gen_line_end(body);
     self.innermost_loop().continue_target = self.code_count;
     PerIterBindings cycle;
-    cycle.init(mem);
     defer cycle.free();
     foreach (b : binds) {
         if (!b.is_synthetic && lexical && self.is_captured_name(self.bind_name(&b))) cycle.push({ b.name_idx, constant });
     }
-    if (cycle.len() != 0) self.emit_create_per_iteration_env(cycle.array_view());
+    if (cycle.len != 0) self.emit_create_per_iteration_env(cycle.array_view());
     self.emit(bytecode::make_sabc(Opcode.JUMP, (int)loop - (int)self.code_count - 1));
     self.patch_jump(exit);
     self.pop_loop();
@@ -3356,7 +3352,7 @@ fn void? CompilerContext.gen_for_pattern(&self, uint n, uint pattern, bool decla
 
 fn void? CompilerContext.gen_pattern_parameters(&self, uint params, DestructBind[] binds) {
     ast::Ast* tree = &ast::index_state.tree;
-    bool tdz = self.defaults.len() != 0 || self.destruct_defaults.len() != 0;
+    bool tdz = self.defaults.len != 0 || self.destruct_defaults.len != 0;
     foreach (bind : binds) tdz |= bind.has_default || bind.is_computed_key;
     self.ast_param_scope = tdz;
     if (tdz) {
@@ -3418,7 +3414,7 @@ fn void? CompilerContext.gen_pattern_parameters(&self, uint params, DestructBind
     }
 }
 
-fn void CompilerContext.gen_optional_test(&self, ushort value, List{uint}* jumps) {
+fn void CompilerContext.gen_optional_test(&self, ushort value, Vec{uint}* jumps) {
     ushort compare = self.alloc_reg();
     self.emit_abc(Opcode.LDNULL, (uint)compare, 0, 0);
     self.emit_abc(Opcode.SEQ, (uint)compare, (uint)value, (uint)compare);
@@ -3434,8 +3430,7 @@ fn Val? CompilerContext.gen_optional_chain(&self, uint n, bool deleting = false)
     uint inner = tree.lhs.data[n];
     NodeTag tag = tree.tags.data[inner];
     bool member_delete = deleting && (tag == NodeTag.MEMBER || tag == NodeTag.INDEX);
-    List{uint} jumps;
-    jumps.init(mem);
+    Vec{uint} jumps;
     defer jumps.free();
     Phase phase = MEMBER;
     MemberTarget target;
@@ -3514,11 +3509,9 @@ fn Val? CompilerContext.gen_tagged_template(&self, uint n) {
         self.emit_abc(Opcode.LDREG, (uint)saved, (uint)receiver, 0);
         receiver = saved;
     }
-    List{TemplatePart} parts;
-    parts.init(mem);
+    Vec{TemplatePart} parts;
     defer parts.free();
-    List{ushort} expressions;
-    expressions.init(mem);
+    Vec{ushort} expressions;
     defer expressions.free();
     uint list = tree.lhs.data[tree.rhs.data[n]];
     uint count = tree.template_exprs(list);

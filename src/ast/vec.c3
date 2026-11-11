@@ -52,15 +52,15 @@ fn void Vec.push(&self, Type v) @inline {
     self.len++;
 }
 
-fn Type Vec.get(&self, uint i) @operator([]) @inline {
+fn Type Vec.get(&self, sz i) @operator([]) @inline {
     return self.data[i];
 }
 
-fn Type* Vec.get_ref(&self, uint i) @operator(&[]) @inline {
+fn Type* Vec.get_ref(&self, sz i) @operator(&[]) @inline {
     return &self.data[i];
 }
 
-fn void Vec.set(&self, uint i, Type v) @operator([]=) @inline {
+fn void Vec.set(&self, sz i, Type v) @operator([]=) @inline {
     self.data[i] = v;
 }
 
@@ -71,4 +71,40 @@ fn void Vec.truncate(&self, sz n) @inline {
 
 fn Type[] Vec.slice(&self, sz from, sz to) @inline {
     return self.data[from:to - from];
+}
+
+faultdef EMPTY;
+
+fn sz Vec.count(&self) @operator(len) @inline => self.len;
+
+fn void Vec.clear(&self) @inline {
+    self.len = 0;
+}
+
+fn Type[] Vec.array_view(&self) @inline => self.data[:self.len];
+
+fn Type? Vec.pop(&self) @inline {
+    if (self.len == 0) return EMPTY~;
+    return self.data[--self.len];
+}
+
+fn Type? Vec.last(&self) @inline {
+    if (self.len == 0) return EMPTY~;
+    return self.data[self.len - 1];
+}
+
+fn void Vec.push_all(&self, Type[] items) {
+    while (self.len + items.len > self.cap) self.grow();
+    mem::copy(self.data + self.len, items.ptr, items.len * Type::size);
+    self.len += items.len;
+}
+
+fn void Vec.remove_at(&self, sz i) {
+    mem::move(self.data + i, self.data + i + 1, (self.len - i - 1) * Type::size);
+    self.len--;
+}
+
+macro bool Vec.contains(&self, value) {
+    foreach (v : self.data[:self.len]) if (v == value) return true;
+    return false;
 }

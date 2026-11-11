@@ -9,7 +9,6 @@ module boomkat::ast;
 
 import boomkat::ast::vec;
 import boomkat::compiler;
-import std::collections::list;
 
 enum ScopeKind : char {
     NONE,
@@ -975,7 +974,7 @@ fn void Resolver.binary_chain(&self, uint n) {
         self.generic(n);
         return;
     }
-    List{uint} right = { .allocator = mem };
+    Vec{uint} right = {};
     defer right.free();
     do {
         right.push(self.ast.rhs.data[n]);
@@ -983,5 +982,5 @@ fn void Resolver.binary_chain(&self, uint n) {
         tag = self.ast.tags.data[n];
     } while (tag == NodeTag.BINARY || tag == NodeTag.LOGICAL);
     self.node(n);
-    for (sz i = right.len(); i > 0;) self.node(right[--i]);
+    for (sz i = right.len; i > 0;) self.node(right[--i]);
 }

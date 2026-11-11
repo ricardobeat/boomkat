@@ -1,5 +1,6 @@
 module boomkat::heap;
 
+import boomkat::ast::vec;
 import boomkat::types;
 import boomkat::gcprofile;
 import boomkat::hstring;
@@ -11,7 +12,6 @@ import boomkat::builtins;
 import boomkat::lexer;
 import boomkat::vm;
 import std::io;
-import std::collections::list;
 import std::collections::map;
 import boomkat::pagepool;
 import boomkat::agent;
@@ -850,10 +850,10 @@ struct Heap {
     // Marking and teardown iterate these vectors. Sweeping takes ownership
     // of a generation's vector; new allocations and survivors go into the
     // emptied partner, so sweep-time allocations cannot enter its snapshot.
-    List{HeapHeader*} objects_young;
-    List{HeapHeader*} objects_old;
-    List{HeapHeader*} gc_sweep_young;
-    List{HeapHeader*} gc_sweep_old;
+    Vec{HeapHeader*} objects_young;
+    Vec{HeapHeader*} objects_old;
+    Vec{HeapHeader*} gc_sweep_young;
+    Vec{HeapHeader*} gc_sweep_old;
 
     // String interning table (open-addressing)
     HString**    str_table;
@@ -1145,7 +1145,7 @@ struct Heap {
     // module env's bindings object registers here, so whole-library import
     // graphs (60+ modules) run past any fixed size; a capped array silently
     // dropped registrations and the sweep collected live module envs.
-    List{void*} gc_roots;
+    Vec{void*} gc_roots;
 
     GeneratorState* generator_states;
 
@@ -1788,7 +1788,6 @@ fn Heap*? create(
     // The pools must exist before the first string does: pre-interning the
     // well-known strings below allocates through the size-class pools.
     {
-        for (uint i = 0; i < 4; i++) h.object_list(i).allocator = mem;
         h.obj_pool_plain.init(hobject::OBJ_SIZE_PLAIN);
         h.obj_pool_compact.init(hobject::OBJ_SIZE_COMPACT);
         foreach (i, &pool : h.obj_pool_shaped) {
@@ -3910,7 +3909,7 @@ fn void Heap.tval_move_slot_fast(&self, HObject* owner, hobject::PropValue* dst,
 
 struct HeapObjectCursor { uint list; sz index; }
 
-fn List{HeapHeader*}* Heap.object_list(&self, uint index) {
+fn Vec{HeapHeader*}* Heap.object_list(&self, uint index) {
     switch (index) {
         case 0: return &self.objects_young;
         case 1: return &self.objects_old;
@@ -3921,8 +3920,8 @@ fn List{HeapHeader*}* Heap.object_list(&self, uint index) {
 
 fn HeapHeader* Heap.next_object(&self, HeapObjectCursor* cursor) {
     while (cursor.list < 4) {
-        List{HeapHeader*}* objects = self.object_list(cursor.list);
-        if (cursor.index < objects.len()) return (*objects)[cursor.index++];
+        Vec{HeapHeader*}* objects = self.object_list(cursor.list);
+        if (cursor.index < objects.len) return (*objects)[cursor.index++];
         cursor.list++;
         cursor.index = 0;
     }
@@ -3936,10 +3935,10 @@ fn void Heap.register_allocation(&self, HeapHeader* header) @inline {
 
 // List.push reserves out of line on every call. The ASan build keeps it for
 // the container annotations that guard the unused capacity.
-macro void push_header(List{HeapHeader*}* list, HeapHeader* header) {
+macro void push_header(Vec{HeapHeader*}* list, HeapHeader* header) {
     $if !env::ADDRESS_SANITIZER:
-        if (list.size < list.capacity) {
-            list.entries[list.size++] = header;
+        if (list.len < list.cap) {
+            list.data[list.len++] = header;
             return;
         }
     $endif
@@ -3947,12 +3946,12 @@ macro void push_header(List{HeapHeader*}* list, HeapHeader* header) {
 }
 
 fn void Heap.prepare_object_sweep(&self) {
-    assert(self.gc_sweep_young.len() == 0 && self.gc_sweep_old.len() == 0);
-    List{HeapHeader*} young = self.objects_young;
+    assert(self.gc_sweep_young.len == 0 && self.gc_sweep_old.len == 0);
+    Vec{HeapHeader*} young = self.objects_young;
     self.objects_young = self.gc_sweep_young;
     self.gc_sweep_young = young;
     if (self.gc_kind == GcKind.MAJOR) {
-        List{HeapHeader*} old = self.objects_old;
+        Vec{HeapHeader*} old = self.objects_old;
         self.objects_old = self.gc_sweep_old;
         self.gc_sweep_old = old;
     }
@@ -3967,12 +3966,6 @@ fn void Heap.prepare_object_sweep(&self) {
  * reachable, so they are never freed.
  */
 fn void Heap.register_gc_root(&self, HeapHeader* hdr) {
-    // A zero-initialized Heap carries a zeroed List (null entries); arm its
-    // allocator on first use so every creation path is covered without an
-    // explicit init order.
-    if (self.gc_roots.entries == null && self.gc_roots.size == 0) {
-        self.gc_roots.allocator = mem;
-    }
     self.gc_roots.push((void*)hdr);
     if (self.gc_phase == GcPhase.MARK && hdr != null) {
         self.mark_header(hdr);
@@ -4718,7 +4711,7 @@ fn void Heap.mark_roots(&self) {
         self.mark_env_chain(r.env);
     }
 
-    for (uint i = 0; i < (uint)self.gc_roots.len(); i++) {
+    for (uint i = 0; i < (uint)self.gc_roots.len; i++) {
         HeapHeader* hdr = (HeapHeader*)self.gc_roots[(sz)i];
         self.mark_header(hdr);
     }
