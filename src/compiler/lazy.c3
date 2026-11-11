@@ -118,12 +118,9 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
     f.capture_count = slotted ? slot_count : 0;
 }
 
-fn void? materialize_function(CompiledFunction* f, Heap* h) {
-    if (f.lazy_paren == 0) return;
-    materialize_function_body(f, h)!;
-}
-
-fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
+// Compile the deferred body of `f`, which has one while lazy_paren is set. A
+// failure leaves its message in `why`, NUL-terminated.
+fn void? materialize_function(CompiledFunction* f, Heap* h, char[] why = {}) @noinline {
     $if $feat(RELEX_STATS):
         relexstats::RelexKind relex_prev = relexstats::relex_enter(relexstats::RelexKind.MATERIALIZE);
         defer relexstats::relex_leave(relex_prev);
@@ -142,6 +139,14 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     Lexer lex = lexer::lexer_init(source, h);
     lex.source_name = f.filename_ptr[:f.filename_len];
     defer lex.free_arena();
+    defer catch {
+        if (why.len != 0) {
+            sz n = 0;
+            while (n + 1 < why.len && lex.err_msg[n] != 0) n++;
+            mem::copy(why.ptr, lex.err_msg.ptr, n);
+            why[n] = 0;
+        }
+    }
     ast::AstIndex* idx = ast::index_begin(source, h, {
         .function_body = true, .function_start = f.lazy_paren - 1,
         .strict = f.flags.is_strict,

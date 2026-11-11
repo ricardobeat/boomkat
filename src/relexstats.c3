@@ -8,7 +8,7 @@
 //
 // PARSE covers everything outside a named pre-scan, so its excess over 1.0 is
 // the parser's own speculation and loop re-parsing. MATERIALIZE covers the
-// re-lex of a deferred body on first call; materialize_function_body enters it.
+// re-lex of a deferred body on first call; materialize_function enters it.
 //
 // relex_source counts each lexer_init's full source slice, so a unit that
 // creates both an outer and an inner lexer counts its bytes twice and the

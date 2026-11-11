@@ -15,7 +15,7 @@ tlocal ulong initial_units;
 tlocal ulong initial_us;
 tlocal ulong materialize_units;
 tlocal ulong materialize_us;
-// Whole materialize_function_body timing, including emit and finish.
+// Whole materialize_function timing, including emit and finish.
 tlocal ulong materialize_calls;
 tlocal ulong materialize_total_us;
 // CompilerContext.finish timing, across every compiled function.

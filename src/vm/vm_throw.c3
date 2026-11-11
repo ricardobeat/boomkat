@@ -6,6 +6,7 @@ import boomkat::hobject;
 import boomkat::hstring;
 import boomkat::heap;
 import boomkat::builtins;
+import boomkat::compiler;
 
 // ============================================================================
 // Catcher chain helpers
@@ -302,6 +303,28 @@ fn bool vm_throw_value(Vm* vm, TVal thrown_val, Activation* act,
         vm_complete_gen_on_unwind(vm, search_act);
         search_act = search_act.parent;
         if (search_act == null) break;
+    }
+    return false;
+}
+
+// Compile the deferred body of `f`. Its early errors were reported when it was
+// parsed, so what stops it now is a limit of the compiler, thrown as a
+// SyntaxError: to a handler from the activation `act`, or without one to the
+// host. False when the error was thrown.
+fn bool? vm_materialize(Vm* vm, CompiledFunction* f, Activation* act = null,
+                        Instruction** curr_pc = null, bool* needs_restart = null) @inline {
+    return f.lazy_paren == 0 || vm_materialize_body(vm, f, act, curr_pc, needs_restart)!;
+}
+
+fn bool? vm_materialize_body(Vm* vm, CompiledFunction* f, Activation* act,
+                             Instruction** curr_pc, bool* needs_restart) @noinline @local {
+    char[256] why @noinit;
+    if (try compiler::materialize_function(f, vm.heap, &why)) return true;
+    String msg = ((ZString)&why).str_view();
+    if (act == null) {
+        vm_host_throw(vm, vm.heap.syntax_err_proto, msg);
+    } else if (!vm_throw_error(vm, vm.heap.syntax_err_proto, msg, act, curr_pc, needs_restart)) {
+        return VM_ERROR~;
     }
     return false;
 }

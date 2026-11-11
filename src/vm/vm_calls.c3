@@ -1652,8 +1652,13 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
             } else if (kind == hobject::CallableKind.COMPILED_FN) {
                 hobj_fast = hb;
                 target_fast = (*hb.extra_ptr()).func.comp_func;
+                // A body that cannot be compiled is reported by the general path.
+                if (target_fast != null && target_fast.lazy_paren != 0
+                    && @catch(compiler::materialize_function(target_fast, vm.heap))) {
+                    hobj_fast = null;
+                    target_fast = null;
+                }
                 if (target_fast != null && vm.heap.realm != target_fast.realm) vm.heap.enter_realm(target_fast.realm);
-                if (target_fast != null) compiler::materialize_function(target_fast, vm.heap)!;
             }
         }
     }
@@ -2671,8 +2676,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             // Only dereference if hobj is a compiled-function HObject.
             if (hobj != null && (*hobj.extra_ptr()).func.comp_func != null) {
                 target = (*hobj.extra_ptr()).func.comp_func;
+                if (target != null && !vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
                 if (target != null && vm.heap.realm != target.realm) vm.heap.enter_realm(target.realm);
-                if (target != null) compiler::materialize_function(target, vm.heap)!;
             } else {
                 // Not a compiled function, so the handler has already set the result.
                 ds.regs_base[result_reg].set_undefined();
@@ -3555,8 +3560,8 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
 
             if (super_hobj == null) { vm.heap.set_reg_undefined(ra); return (TVal){}; }
             CompiledFunction* super_target = (*super_hobj.extra_ptr()).func.comp_func;
+            if (super_target != null && !vm_materialize(vm, super_target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
             if (super_target != null && vm.heap.realm != super_target.realm) vm.heap.enter_realm(super_target.realm);
-            if (super_target != null) compiler::materialize_function(super_target, vm.heap)!;
 
             // OrdinaryCreateFromConstructor (§9.1.13): allocate the new object
             // using new.target.prototype, but only when the superclass is a
@@ -3921,7 +3926,7 @@ fn TVal? dispatch_calls(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* rc, D
             }
 
             CompiledFunction* target = (*hobj.extra_ptr()).func.comp_func;
-            compiler::materialize_function(target, vm.heap)!;
+            if (!vm_materialize(vm, target, ds.act, &ds.curr_pc, &ds.needs_restart)!) return (TVal){};
 
             // Arrow functions cannot be used as constructors (ECMA-262 §14.2.2)
             if (target.is_arrow()) {

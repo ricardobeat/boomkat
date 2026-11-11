@@ -510,7 +510,7 @@ fn bool invoke_getter(Vm* vm, hobject::AccessorResult* acc,
 
     CompiledFunction* target = (*func_obj.extra_ptr()).func.comp_func;
     if (target == null) return false;
-    if (catch compiler::materialize_function(target, vm.heap)) return false;
+    if (!(vm_materialize(vm, target, act, curr_pc, needs_restart) ?? false)) return false;
     // The threaded getter call only enters functions already classified.
     target.classify_lean_call();
 
