@@ -39,7 +39,14 @@ fn void mark_string_constant(CompilerContext* ctx, void* key, bool* marks) {
 fn void retain_inner_consumers(CompilerContext* ctx, CompiledFunction* inner,
                                bool* retain, bool* retain_all) {
     if (inner == null || *retain_all) return;
-    if (inner.lazy_paren != 0) { *retain_all = true; return; }
+    if (inner.lazy_paren != 0) {
+        // A deferred body has no code to scan. It reaches this function's
+        // bindings by name, and the resolver marked each one it can reach.
+        if (!ctx.captures_exact) { *retain_all = true; return; }
+        Heap* h = (Heap*)ctx.heap;
+        foreach (name : ctx.captured_names) mark_string_constant(ctx, h.str_intern(name), retain);
+        return;
+    }
     for (uint i = 0; i < inner.code_count; i++) {
         Instruction ins = inner.code[i];
         if (ins.op == Opcode.WIDE) {

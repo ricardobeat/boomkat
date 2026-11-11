@@ -39,9 +39,14 @@ fn bool CompilerContext.index_captures_of(&self, uint scope) {
         self.capture_all = true;
     }
     uint arguments_atom = idx.res.atom_arguments;
+    self.captures_exact = !self.capture_all;
     for (uint i = idx.res.func_start.data[scope]; i < idx.res.func_start.data[scope + 1]; i++) {
         ast::Binding* b = &idx.res.bindings.data[idx.res.func_items.data[i]];
-        if (idx.is_register_capture(b)) self.add_captured_name(idx.tree.atoms.get(b.name));
+        if (idx.is_register_capture(b)) {
+            self.add_captured_name(idx.tree.atoms.get(b.name));
+        } else if (b.captured) {
+            self.captures_exact = false;
+        }
         if (b.kind == ast::DeclKind.PARAM) {
             if (b.captured) self.scan_params_captured = true;
             if (b.written) self.scan_params_written = true;

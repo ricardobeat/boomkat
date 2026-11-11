@@ -645,6 +645,9 @@ int  cur_with_depth;
     // Treat every local as captured when static resolution cannot name the
     // affected binding precisely, including direct eval and class fields.
     bool capture_all;
+    // captured_names lists every binding of this function a nested function
+    // can reach by name, so a deferred child retains only those.
+    bool captures_exact;
 
     // Hoisted function declaration names (so main pass can skip recompilation).
     // Top-level function declarations seen by the hoisting pre-pass. Heap-grown: one scope can
