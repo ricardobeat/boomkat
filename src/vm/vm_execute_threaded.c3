@@ -2871,28 +2871,22 @@ fn Instruction* th_get_shared(Instruction* pc, HandlerTable* handlers, TVal* reg
     return th_publish_read(pc, handlers, regs, cold, slot.get());
 }
 
-// Fill an empty read entry from a megamorphic hit. A hit on the receiver's
-// immediate prototype becomes a one-link snapshot: the lookup has just checked
-// that link and the owner's shape, which are what the snapshot re-checks. A
-// GETPROPC becomes GETPROPC_CACHED, as when the switch fills its entry.
+// Fill an empty read entry from a megamorphic hit. An inherited one is filled as a miss would
+// have (ic_fill_read_heap), so that the site gets the epoch entry its chain allows, which the
+// optimizer reads as constants. A GETPROPC becomes GETPROPC_CACHED, as when the switch fills its
+// entry.
 fn void th_fill_from_mega(Instruction* pc, heap::Heap* h, hobject::ICEntry* ic, HObject* hobj, void* key,
                           hobject::MegamorphicEntry* me) @private @noinline {
     if (me.proto != null) {
-        if (!hobject::ic_reserve_chain(ic, h)) return;
-        HObject* owner = (HObject*)me.proto;
-        ic.chain.snapshot.protos[0] = (void*)owner;
-        ic.chain.snapshot.shapes[0] = owner.shape_id;
-        ic.chain_len = 1;
-        ic.has_proto = true;
-        h.shade_root_object(owner);
+        if (!ic_fill_read_heap(h, ic, hobj, key, (HObject*)me.proto)) return;
     } else {
         ic.chain_len = 0;
         ic.has_proto = false;
+        ic.shape_id = hobj.shape_id;
+        ic.prop_idx = me.prop_idx;
+        ic.prop_flags = me.flags;
+        ic.key.set(h, (hstring::HString*)key);
     }
-    ic.shape_id = hobj.shape_id;
-    ic.prop_idx = me.prop_idx;
-    ic.prop_flags = me.flags;
-    ic.key.set(h, (hstring::HString*)key);
     if (pc.op == Opcode.GETPROPC) *pc = bytecode::make_abc(Opcode.GETPROPC_CACHED, pc.a, pc.b, pc.c);
 }
 
