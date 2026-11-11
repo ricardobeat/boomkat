@@ -2129,6 +2129,12 @@ fn void Heap.free_shape_slot(&self, uint id) {
 
 fn void Heap.release_shape_slot(&self, uint id) {
     hobject::shape_free(self.shapes[id], self);
+    self.retire_shape_slot(id);
+}
+
+// Take `id` out of use until purge_retired_shapes has cleared the caches that
+// name it. The shape it held is the caller's to free or to keep under another id.
+fn void Heap.retire_shape_slot(&self, uint id) {
     self.shapes[id] = (hobject::Shape*)(SHAPE_FREE_TAG | (uptr)self.shape_retired_head);
     self.shape_retired_head = id;
     self.shape_retired_count++;

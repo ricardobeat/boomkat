@@ -1773,27 +1773,30 @@ fn PropFlags HObject.get_prop_flags(&self, uint idx, heap::Heap* h) @inline {
 
 // Flatten this object's shape chain into one standalone shape it alone uses.
 // The result stays out of the transition table, so no other object can reach
-// it and per-object flag edits cannot leak.
+// it and per-object flag edits cannot leak. The shape always gets a new id, so
+// a cache that named the old one misses. One already private is not copied:
+// that would cost a property count per edit, and a dictionary its spare room.
 fn void HObject.make_shape_private(&self, heap::Heap* h) {
-    if (self.get_shape(h) == null) return;
+    hobject::Shape* cur = self.get_shape(h);
+    if (cur == null) return;
+    bool owned = self.shape_id != 0 && cur.parent == PRIVATE_SHAPE_PARENT;
     $if $feat(OP_PROFILE):
         opprof_shape_site[0]++;
         opprof_private_class[(uint)self.get_class().ordinal & 63]++;
     $endif
-    hobject::Shape* ns = shape_flatten(self.get_shape(h), 0, h);
+    hobject::Shape* ns = owned ? cur : shape_flatten(cur, 0, h);
     if (ns == null) return;
 
-    // The shape being replaced is dead once the swap lands. Reclaim it first so
-    // a long-running privatise loop reuses one slot instead of leaking one per
-    // call; free_shape_slot ignores shared transition-table shapes.
     uint old_slot = (uint)self.shape_id;
     uint slot = h.alloc_shape_slot();
     if (slot != heap::SHAPE_NONE) {
         h.store_new_shape(slot, ns);
         self.shape_id = slot;
         self.layout_moved(h);
-        if (old_slot != slot) h.free_shape_slot(old_slot);
-    } else {
+        // A shared shape stays for its other users; an owned one moved, and
+        // its old id is retired so a long privatise loop does not leak ids.
+        if (owned) h.retire_shape_slot(old_slot);
+    } else if (!owned) {
         shape_free(ns, h);
     }
 }
