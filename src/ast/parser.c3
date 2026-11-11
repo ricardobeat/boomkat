@@ -395,10 +395,22 @@ fn uint Parser.quad(&self, uint a, uint b, uint c, uint d) {
 // ---- line table ----
 
 // Line terminators are \n, \r, \r\n, U+2028 and U+2029, as the lexer counts them.
+const ulong BYTES @local = 0x0101010101010101;
+
 fn void build_line_table(Ast* ast) {
     char[] src = ast.source;
     usz i = 0;
     while (i < src.len) {
+        // Every line terminator has a byte below 0x0E or the lead byte 0xE2;
+        // step over a word that holds neither.
+        if (i + 8 <= src.len) {
+            ulong w = mem::load((ulong*)(src.ptr + i), 1);
+            ulong e = w ^ (BYTES * 0xE2);
+            if ((((w - BYTES * 0x0E) & ~w) | ((e - BYTES) & ~e)) & (BYTES * 0x80) == 0) {
+                i += 8;
+                continue;
+            }
+        }
         char c = src[i];
         if (c == '\n') {
             ast.line_starts.push((uint)i + 1);
