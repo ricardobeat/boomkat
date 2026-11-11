@@ -74,6 +74,7 @@ import boomkat::vm;
 import boomkat::bytecode;
 import boomkat::heap;
 import boomkat::hobject;
+import boomkat::hstring;
 import boomkat::types;
 import std::collections::list;
 import std::io;
@@ -1852,8 +1853,10 @@ fn void Asm.equality(&self, bool strict, Jumps* eq, Jumps* ne, Jumps* slow) {
     } else {
         slow.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, R3, 0));
     }
-    // Two BigInts compare by value in the switch; two strings differ when
-    // both are interned.
+    // Two BigInts compare by value in the switch. Two strings differ when both are interned;
+    // otherwise two of inline byte units compare by content, a word at a time. The last word
+    // read ends at the last unit, so it starts in earlier units or in the header, and its bytes
+    // below the units left over are shifted out (the low ones: little-endian).
     slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, (long)types::TAG_BIGINT));
     ne.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, SLJIT_IMM, (long)types::TAG_STRING));
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_STRING_START);
@@ -1861,8 +1864,36 @@ fn void Asm.equality(&self, bool strict, Jumps* eq, Jumps* ne, Jumps* slow) {
     sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R0, l.str_flags);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.str_flags);
     sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, R3, 0);
-    sljit_emit_op2(c, SLJIT_AND, R2, 0, R2, 0, SLJIT_IMM, l.interned_mask);
-    slow.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R2, 0, SLJIT_IMM, l.interned_mask);
+    ne.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R0, l.str_flags);
+    sljit_emit_op2(c, SLJIT_OR, R2, 0, R2, 0, R3, 0);
+    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R2, 0, SLJIT_IMM, l.byte_units_mask);
+    slow.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
+    sljit_emit_op1(c, SLJIT_MOV_U32, R2, 0, SLJIT_MEM | R0, l.str_length);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.str_length);
+    ne.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R2, 0, R3, 0));
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)hstring::HSTRING_HDR_SIZE);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, (long)hstring::HSTRING_HDR_SIZE);
+    void* words = sljit_emit_label(c);
+    void* tail = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, 8);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R0, 0);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_MEM | R1, 0);
+    ne.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, 0));
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, 8);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, SLJIT_IMM, 8);
+    sljit_emit_op2(c, SLJIT_SUB, R2, 0, R2, 0, SLJIT_IMM, 8);
+    sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), words);
+    sljit_set_label(tail, sljit_emit_label(c));
+    eq.add(sljit_emit_cmp(c, SLJIT_EQUAL, R2, 0, SLJIT_IMM, 0));
+    sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, R2, 0);
+    sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R0, -8);
+    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_MEM | R1, -8);
+    sljit_emit_op2(c, SLJIT_SUB, R0, 0, SLJIT_IMM, 8, R2, 0);
+    sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 3);
+    sljit_emit_op2(c, SLJIT_LSHR, R3, 0, R3, 0, R0, 0);
+    eq.add(sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0));
     ne.add(sljit_emit_jump(c, SLJIT_JUMP));
 }
 
