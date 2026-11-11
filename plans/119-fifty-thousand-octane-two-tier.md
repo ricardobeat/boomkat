@@ -1,6 +1,6 @@
 # 119: 50K Octane on a two-tier JIT
 
-Status: **ACTIVE** on branch `jit` (worktree `.worktrees/jit`), last revised 2026-11-11 at `504534d7`.
+Status: **ACTIVE** on branch `jit` (worktree `.worktrees/jit`), last revised 2026-11-11 at `e7e0c034`.
 The composite is about 10,000. The target is 50,000.
 
 This file holds the current state and the work ahead. The history of how the
@@ -417,6 +417,86 @@ Stages, one commit each, each measured with `call_cost.py`, the minis and
 5. **Direct calls from optimized code** (`OptOp.CALL`, step 3.2) to the
    checked entry, skipping the tests the builder proved. Then measure what is
    left against the 20-instruction target and cut it.
+
+**Progress (2026-11-11, `79332700`).** `call_cost.py` (plain/method/fib):
+
+| stage | commit | `--jit` | `--opt --opt-no-inline` |
+|---|---|---:|---:|
+| before | `c2ee8c2d` | 328/396/355 | 346/410/370 |
+| 1 trampoline | `cd7fc64e` | 305/366/325 | 312/373/337 |
+| 2 lazy VM state | `25eff28e` | 245/306/265 | 252/313/277 |
+| 3 lazy record fields | `46027126` | 218/286/238 | 228/293/251 |
+| 4 results in a register | `f5ac3a54` | 194/256/211 | 201/268/226 |
+| 5 fewer entry stores | `f1445652`, `79332700` | 165/227/182 | 174/236/192 |
+
+Richards' steady instructions, stage against stage: 1 -5.8%, 2 -12.7%, 4
+-6.0%, `f1445652` -3.6%. Stage 5 so far: the entry leaves `func`, `tv_func` and `caller_valstack_top` to
+`jit_fill` (it reads the function from `bottom[-2]`), sets neither the value
+stack's top nor `ds.curr_pc` (every call into C is handed its resume point),
+writes flags and `heap_reg_count` as one word, and takes the result slot in a
+register. The scope tests moved to the call subroutine (`emit_scope_test`,
+shared with `CHECK_CALLEE`). `ACT_FLAG_JIT_CALLED` now implies a live
+`native_ret` (`Activation.forget_return`, and the trampoline prologue clears
+it), so the return tests the flags alone.
+
+Findings that change the stage 5 plan:
+
+- `call_cost.py`'s opt row does not measure optimized-to-optimized calls for
+  plain and method: `run` is called twice and stays baseline code (no OSR
+  into a loop that only calls), so that row is a baseline call plus the
+  callee's tier-up counter. Only fib runs optimized code on both sides. Add
+  an opt shape whose caller is hot by calls before measuring 5a.
+- Value-stack room does not imply record room: the value stack grows past
+  any multiple of `MAX_CALLS`, so the entry keeps both tests.
+- A JIT GC-stress run of the whole list is clean (after `c8177a9b`, a
+  `yield*` uncaught-throw bug the normal build had too), with the
+  interpreter under `ulimit -s 65520`.
+
+Where a plain baseline call's 165 instructions go now (lldb trace):
+
+- Call subroutine, 47: the callee tests 26 (tag 3, header mask 6 with two
+  materialized constants, builtin 3, scope 7, `comp_func` 2, code and entry
+  lookups 4, the construct bit 2), the callee feedback 10 (re-deriving the
+  cache from `curr_pc` with a multiply and a 64-bit constant), saves 2.
+- Call entry, 36: gates 4 (realm, collector), record room and `retval` 6,
+  value-stack room 4, argument count 3, `native_ret` 2, flags 4, `curr_pc`
+  and `bottom` and `this` 2, clearing 6 slots 4, registers 2, jump 1; a
+  baseline entry adds its tier-up counter (5).
+- Return, 25: subroutine call and return 6, flags 4, result kind 3, `ds.act`
+  test 3, pop 2, status 2, the body's fast return 3.
+- Site, about 20: the callee read (a variable cache, 12 for a global), the
+  undefined receiver, argument moves with heap tests, the four call
+  registers; after the call 4.
+
+Next cuts, in order:
+
+- 5a. **Direct calls with a proven callee** (optimized code). When the
+  builder names the callee object (`method_constant`; for a global or
+  closure variable, the binding's current value, made `prototype_observed`
+  so its death moves the epoch like a method's), the site guards with the
+  object compare and the epoch (5 instructions) and fast-calls a `direct`
+  label in front of the callee's entry, which stores its return address at
+  `SUB_RET_OFF` and skips what the site proved statically (realm, argument
+  count, receiver kind). Skips the whole call subroutine: about 35 fewer.
+  A miss takes the existing subroutine path, so a polymorphic site costs
+  the compare and no exit.
+- 5b. **Lean-callable bit** in the function object's header, set at closure
+  creation when `var_env` is set and `lex_env` is not a `with` scope, folded
+  into the header mask test: the scope test's 7 go. First verify that
+  neither field changes after creation.
+- 5c. **The site hands over its cache address** with its resume point: the
+  feedback check is 4 instructions instead of 10.
+- 5d. **Inline the return** in functions with one or two `RET`s: about 6.
+
+Those reach about 110 baseline and 70 optimized. The 20 and 35 targets need
+the optimized tier's own convention, the one JSC's numbers reflect: an
+optimized-to-optimized call passes the window in machine registers and
+pushes no `Activation`, publishing the frame only when it exits or calls C,
+the way an inlined body's frame is published today ("an exit from the body
+publishes its frame and those of the calls around it"). A non-inlined
+callee then costs the inlined guard plus a `bl`, a stack adjust and a
+`ret`. That is the design to write next, reusing the inliner's
+frame-publication machinery rather than the call entry.
 
 ### 2. Collector and allocation
 
