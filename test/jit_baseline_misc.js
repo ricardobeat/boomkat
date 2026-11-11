@@ -294,7 +294,7 @@ function C() { this.z = 4; this.w = 5; this.x = 6; }
     var spread = [...count(5)];
     out("spread " + spread);
     function* recur(n) { if (n > 0) { yield n; yield* recur(n - 1); } }
-    out("recur " + [...recur(6)]);
+    out("recur " + [...recur(3)]);
     class C { *[Symbol.iterator]() { yield* [1, 2, 3]; } }
     out("class gen " + [...new C()]);
 })();

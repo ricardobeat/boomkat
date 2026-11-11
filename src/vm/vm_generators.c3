@@ -1136,9 +1136,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     TVal err_ta = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                     gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                                     if (!vm_throw_value(vm, err_ta, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                        vm.has_error = true; vm.heap.has_error = true;
-                                        vm.heap.tval_copy_ref(&vm.return_val, &err_ta);
+                                        gs.delegated_iter = null;
+                                        return vm_uncaught_error(vm, &err_ta);
                                     }
                                     ds.needs_restart = true; break;
                                 }
@@ -1176,9 +1175,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                         TVal err_ric = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                         gs.delegated_iter = null;
                                         if (!vm_throw_value(vm, err_ric, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                            gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                            vm.has_error = true; vm.heap.has_error = true;
-                                            vm.heap.tval_copy_ref(&vm.return_val, &err_ric);
+                                            return vm_uncaught_error(vm, &err_ric);
                                         }
                                         ds.needs_restart = true; ric_break = true;
                                     } else {
@@ -1203,9 +1200,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     TVal err_ric2 = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                     gs.delegated_iter = null;
                                     if (!vm_throw_value(vm, err_ric2, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                        vm.has_error = true; vm.heap.has_error = true;
-                                        vm.heap.tval_copy_ref(&vm.return_val, &err_ric2);
+                                        return vm_uncaught_error(vm, &err_ric2);
                                     }
                                     ds.needs_restart = true; ric_break = true;
                                 }
@@ -1230,9 +1225,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         TVal err_tc = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                         gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                         if (!vm_throw_value(vm, err_tc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                            vm.has_error = true; vm.heap.has_error = true;
-                            vm.heap.tval_copy_ref(&vm.return_val, &err_tc);
+                            gs.delegated_iter = null;
+                            return vm_uncaught_error(vm, &err_tc);
                         }
                         ds.needs_restart = true; break;
                     }
@@ -1261,9 +1255,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     TVal err_td = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                     gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                                     if (!vm_throw_value(vm, err_td, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                        vm.has_error = true; vm.heap.has_error = true;
-                                        vm.heap.tval_copy_ref(&vm.return_val, &err_td);
+                                        gs.delegated_iter = null;
+                                        return vm_uncaught_error(vm, &err_td);
                                     }
                                     ds.needs_restart = true; break;
                                 }
@@ -1287,9 +1280,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     if (vm.has_error) {
                                         TVal err_tv = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                         if (!vm_throw_value(vm, err_tv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                            gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                            vm.has_error = true; vm.heap.has_error = true;
-                                            vm.heap.tval_copy_ref(&vm.return_val, &err_tv);
+                                            gs.delegated_iter = null;
+                                            return vm_uncaught_error(vm, &err_tv);
                                         }
                                         ds.needs_restart = true; break;
                                     }
@@ -1320,9 +1312,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     TVal err_ra2 = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                     gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                                     if (!vm_throw_value(vm, err_ra2, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                        vm.has_error = true; vm.heap.has_error = true;
-                                        vm.heap.tval_copy_ref(&vm.return_val, &err_ra2);
+                                        gs.delegated_iter = null;
+                                        return vm_uncaught_error(vm, &err_ra2);
                                     }
                                     ds.needs_restart = true; break;
                                 }
@@ -1372,9 +1363,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                         TVal err_rc = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                         gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                         if (!vm_throw_value(vm, err_rc, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                            gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                            vm.has_error = true; vm.heap.has_error = true;
-                            vm.heap.tval_copy_ref(&vm.return_val, &err_rc);
+                            gs.delegated_iter = null;
+                            return vm_uncaught_error(vm, &err_rc);
                         }
                         ds.needs_restart = true; break;
                     }
@@ -1403,9 +1393,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     TVal err_rd = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                     gs.resume_kind = NEXT; gs.resume_value.set_undefined();
                                     if (!vm_throw_value(vm, err_rd, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                        vm.has_error = true; vm.heap.has_error = true;
-                                        vm.heap.tval_copy_ref(&vm.return_val, &err_rd);
+                                        gs.delegated_iter = null;
+                                        return vm_uncaught_error(vm, &err_rd);
                                     }
                                     ds.needs_restart = true; break;
                                 }
@@ -1429,9 +1418,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                     if (vm.has_error) {
                                         TVal err_rv2 = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                         if (!vm_throw_value(vm, err_rv2, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                            gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                            vm.has_error = true; vm.heap.has_error = true;
-                                            vm.heap.tval_copy_ref(&vm.return_val, &err_rv2);
+                                            gs.delegated_iter = null;
+                                            return vm_uncaught_error(vm, &err_rv2);
                                         }
                                         ds.needs_restart = true; break;
                                     }
@@ -1500,9 +1488,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             if (vm.has_error) {
                                 TVal err_gi = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                 if (!vm_throw_value(vm, err_gi, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                    vm.has_error = true; vm.heap.has_error = true;
-                                    vm.heap.tval_copy_ref(&vm.return_val, &err_gi);
+                                    gs.delegated_iter = null;
+                                    return vm_uncaught_error(vm, &err_gi);
                                 }
                                 ds.needs_restart = true; break;
                             }
@@ -1529,9 +1516,7 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (vm.has_error) {
                     TVal err_ic = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                     if (!vm_throw_value(vm, err_ic, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                        vm.has_error = true; vm.heap.has_error = true;
-                        vm.heap.tval_copy_ref(&vm.return_val, &err_ic);
+                        return vm_uncaught_error(vm, &err_ic);
                     }
                     ds.needs_restart = true; break;
                 }
@@ -1565,9 +1550,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             if (vm.has_error) {
                                 TVal err_nk = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                 if (!vm_throw_value(vm, err_nk, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                    vm.has_error = true; vm.heap.has_error = true;
-                                    vm.heap.tval_copy_ref(&vm.return_val, &err_nk);
+                                    gs.delegated_iter = null;
+                                    return vm_uncaught_error(vm, &err_nk);
                                 }
                                 ds.needs_restart = true; break;
                             }
@@ -1593,9 +1577,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                 if (vm.has_error) {
                     TVal err_nr = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                     if (!vm_throw_value(vm, err_nr, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                        gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                        vm.has_error = true; vm.heap.has_error = true;
-                        vm.heap.tval_copy_ref(&vm.return_val, &err_nr);
+                        gs.delegated_iter = null;
+                        return vm_uncaught_error(vm, &err_nr);
                     }
                     ds.needs_restart = true; break;
                 }
@@ -1622,9 +1605,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                             if (vm.has_error) {
                                 TVal err_nd = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                 if (!vm_throw_value(vm, err_nd, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                    gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                    vm.has_error = true; vm.heap.has_error = true;
-                                    vm.heap.tval_copy_ref(&vm.return_val, &err_nd);
+                                    gs.delegated_iter = null;
+                                    return vm_uncaught_error(vm, &err_nd);
                                 }
                                 ds.needs_restart = true; break;
                             }
@@ -1647,9 +1629,8 @@ fn TVal? dispatch_generators(Dispatch* ds, Opcode op, TVal* ra, TVal* rb, TVal* 
                                 if (vm.has_error) {
                                     TVal err_nv = vm.return_val; vm.has_error = false; vm.heap.has_error = false;
                                     if (!vm_throw_value(vm, err_nv, ds.act, &ds.curr_pc, &ds.needs_restart)) {
-                                        gs.delegated_iter = null; gs.state = GEN_COMPLETED; vm.heap.resume_gen = null;
-                                        vm.has_error = true; vm.heap.has_error = true;
-                                        vm.heap.tval_copy_ref(&vm.return_val, &err_nv);
+                                        gs.delegated_iter = null;
+                                        return vm_uncaught_error(vm, &err_nv);
                                     }
                                     ds.needs_restart = true; break;
                                 }
