@@ -265,14 +265,30 @@ fn uint Ast.node_count(&self) @inline {
 
 // Append a node and return its id.
 fn uint Ast.add(&self, NodeTag tag, char flags, uint tok, uint end, uint lhs, uint rhs) {
-    uint id = (uint)self.tags.len;
-    self.tags.push(tag);
-    self.flags.push(flags);
-    self.main_tok.push(tok);
-    self.end_tok.push(end);
-    self.lhs.push(lhs);
-    self.rhs.push(rhs);
-    return id;
+    sz id = self.tags.len;
+    // The columns grow together, so one check covers them all.
+    if (id == self.tags.cap) {
+        self.tags.grow();
+        self.flags.grow();
+        self.main_tok.grow();
+        self.end_tok.grow();
+        self.lhs.grow();
+        self.rhs.grow();
+    }
+    self.tags.data[id] = tag;
+    self.flags.data[id] = flags;
+    self.main_tok.data[id] = tok;
+    self.end_tok.data[id] = end;
+    self.lhs.data[id] = lhs;
+    self.rhs.data[id] = rhs;
+    sz len = id + 1;
+    self.tags.len = len;
+    self.flags.len = len;
+    self.main_tok.len = len;
+    self.end_tok.len = len;
+    self.lhs.len = len;
+    self.rhs.len = len;
+    return (uint)id;
 }
 
 macro NodeTag Ast.tag(&self, uint n) => self.tags[n];
