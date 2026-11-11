@@ -35,10 +35,9 @@ faultdef NOT_A_KEYWORD;
 
 // Default payload size of a token-string arena block. Escape-decoded string
 // and template bodies are copied here so their `char[]` slices point at
-// stable heap memory that outlives the lexer's stack frames (a token's
-// `str_value`/`raw_value` must stay valid while `current`, `lookahead`, and
-// `pushed_back` are simultaneously alive, and while pre-scan helpers re-lex a
-// region). Requests larger than this get a dedicated right-sized block.
+// stable heap memory that outlives the lexer's stack frames: the parser holds
+// several tokens at once. Requests larger than this get a dedicated
+// right-sized block.
 const usz LEX_ARENA_BLOCK_SIZE = 8192;
 
 // ============================================================================
@@ -385,10 +384,6 @@ fn bool is_binary_digit(char c) {
     return c == '0' || c == '1';
 }
 
-fn bool is_line_terminator(char c) {
-    return c == '\n' || c == '\r';
-}
-
 // Check if a Unicode codepoint is a valid identifier start character.
 //
 // Backed by libregexp's vendored ID_Start property tables (per Unicode
@@ -489,21 +484,6 @@ struct Lexer {
     uint line;
     uint col;
     Token current;
-    Token lookahead;
-    bool has_lookahead;
-    // Byte position at the start of the most recently produced token.
-    // Updated on each `next_token()` call so callers can capture the source
-    // span of a just-consumed token by reading `source[token_start..pos-1]`.
-    // Used by Function.prototype.toString source-text retention.
-    uint token_start;
-    // Byte position at the start of the token stored in `lookahead`, when
-    // the lookahead was created by `peek()`. Set inside peek, used inside
-    // next_token's lookahead-consume path to keep `token_start` correct
-    // when a peek-then-advance sequence consumes the lookahead.
-    uint lookahead_token_start;
-    // Single-token pushback buffer for limited backtracking (e.g. label detection).
-    Token pushed_back;
-    bool has_pushed_back;
     bool strict_mode;
     // Identifier-reservation strictness, split out from `strict_mode`.
     //
@@ -520,39 +500,6 @@ struct Lexer {
     bool reserved_words_strict;
     // True if a line terminator was skipped between the previous and next token.
     bool seen_line_term;
-    // Set by the parser after consuming a `}` that closes a Block/function/
-    // class body in statement position; makes the next `/` a RegExp literal
-    // (not division). Cleared by the next `next_token()`.
-    bool force_regex_after_brace;
-    // The [Await] / [Yield] grammar parameters, kept in sync by the parser
-    // (see CompilerContext.sync_keyword_operand_flags). They decide whether
-    // AWAIT / YIELD is the start of an AwaitExpression / YieldExpression or
-    // an ordinary IdentifierName, which in turn decides whether a following
-    // `/` is division or begins a RegExp literal:
-    //     await /re/          -- [+Await], `await` is the operator, `/` starts a regexp
-    //     o.await / r / g     -- a property name, `/` is division
-    //     var await = 8; await/r/g   -- [~Await], an identifier, `/` is division
-    // Only the lexer's caller knows which, so prev_was_operand cannot decide
-    // it from the token stream alone.
-    bool await_is_operator;
-    bool yield_is_operator;
-    // Set by the parser after consuming a `yield` or `await` token as an
-    // IdentifierReference instead of its operator form. The token after one of
-    // those is an operand position, so `/` there is division, not a regexp
-    // literal: `prev_was_operand` cannot tell the two apart from the previous
-    // token alone, and YIELD/AWAIT are not in its operand set because as
-    // operators they DO precede a regexp-legal operand. Cleared by the next
-    // `next_token()`, exactly like `force_regex_after_brace`.
-    bool force_division_next;
-    // Statement-structure tracking, on only while a compiler pre-scan runs
-    // the lexer ahead of the parser (see lexer_hint.c3).
-    ScanHint hint;
-    // The AST parser (src/ast) chooses regex versus division and template
-    // continuation itself and rescans: with this set, `/` and `/=` always
-    // lex as punctuators, `}` always lexes as RBRACE, and a `\8` or `\9`
-    // string escape latches has_octal_escape so the parser can reject it in
-    // strict code.
-    bool ast_mode;
     // True when, since the start of source or the most recent real line
     // terminator, only whitespace and/or comments have been produced (i.e.
     // no real token has appeared yet on the current line). Persists across
@@ -620,11 +567,6 @@ fn Lexer lexer_init(char[] source, void* heap, char[] source_name = {}) {
     lex.line = 1;
     lex.col = 1;
     lex.current = make_token(TokenType.EOF_TOKEN, 1, 1);
-    lex.lookahead = make_token(TokenType.EOF_TOKEN, 1, 1);
-    lex.has_lookahead = false;
-    lex.token_start = 0;
-    lex.lookahead_token_start = 0;
-    lex.has_pushed_back = false;
     lex.strict_mode = true;
     lex.reserved_words_strict = true;
     lex.seen_line_term = false;
@@ -750,23 +692,6 @@ fn void Lexer.skip_hashbang(&self) {
         self.pos++;
         self.col++;
     }
-}
-
-// Reinitialize a lexer with new source text.
-fn void Lexer.reset(&self, char[] source) {
-    self.source = source;
-    self.pos = 0;
-    self.line = 1;
-    self.col = 1;
-    self.current = make_token(TokenType.EOF_TOKEN, 1, 1);
-    self.lookahead = make_token(TokenType.EOF_TOKEN, 1, 1);
-    self.has_lookahead = false;
-    self.at_line_start = true;
-    self.token_start = 0;
-    self.lookahead_token_start = 0;
-    self.has_pushed_back = false;
-    self.force_regex_after_brace = false;
-    self.force_division_next = false;
 }
 
 // ============================================================================
@@ -1583,7 +1508,7 @@ fn Token? Lexer.scan_string(&self) {
                     } else {
                         buf.push(0);
                     }
-                    if ((self.strict_mode || self.ast_mode) && !self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
+                    if (!self.at_end() && self.peek_char() >= '0' && self.peek_char() <= '9') {
                         found_octal = true;
                     }
                 case '\'': buf.push('\'');
@@ -1687,8 +1612,7 @@ fn Token? Lexer.scan_string(&self) {
                         encode_utf8_push(&buf, oval2);
                         break;
                     }
-                    if ((self.strict_mode && esc >= '1' && esc <= '9')
-                        || (self.ast_mode && (esc == '8' || esc == '9'))) {
+                    if ((self.strict_mode && esc >= '1' && esc <= '9') || esc == '8' || esc == '9') {
                         found_octal = true;
                     }
                     buf.push(esc);
@@ -2514,14 +2438,12 @@ fn Token? Lexer.scan_template_after_expr(&self) {
         tok.raw_value = raw_text;
         tok.is_template = true;
         tok.has_invalid_escape = has_invalid_escape;
-        self.hint.on_template_part(TokenType.TEMPLATE_TAIL);
         return tok;
     }
 
     if (end_char == '$') {
         self.advance_char(); // $
         self.advance_char(); // {
-        self.hint.on_template_part(TokenType.TEMPLATE_MIDDLE);
         Token tok = make_token(TokenType.TEMPLATE_MIDDLE, start_line, start_col);
         tok.str_value = content;
         tok.raw_value = raw_text;
@@ -2533,228 +2455,50 @@ fn Token? Lexer.scan_template_after_expr(&self) {
     return LEX_ERROR~;
 }
 
-// Called by the parser immediately after consuming a `}` that closes a
-// BlockStatement, function body, or class body in statement position,
-// contexts where a following `/` must be read as a RegularExpressionLiteral
-// rather than division.
-fn void Lexer.note_block_close(&self) {
-    self.force_regex_after_brace = true;
-}
-
-// Check if the previous token was an operand, meaning `/` should be
-// treated as division rather than the start of a regexp literal.
-// Follows the ECMAScript lexical grammar: after identifiers, literals,
-// closing brackets, `this`, `true`, `false`, `null`, the `/` is
-// division; otherwise it starts a regexp.
-// Postfix `++`/`--` end an operand (unlike prefix `++`/`--`, which is an
-// operator applied to a following operand), `x++ / 2` must lex `/` as
-// division, not the start of a regexp literal. The lexer has no syntactic
-// distinction between prefix and postfix INC/DEC at this point, but a
-// `++`/`--` immediately after an operand can only be the postfix form
-// (prefix would have been consumed before the operand), so treating
-// INC/DEC as operand-ending here is always correct.
-fn bool Lexer.prev_was_operand(&self) {
-    switch (self.current.type) {
-        case TokenType.RPAREN:
-        case TokenType.RBRACKET:
-        case TokenType.RBRACE:
-        case TokenType.IDENTIFIER:
-        case TokenType.HASH_IDENT:
-        case TokenType.NUMBER:
-        case TokenType.BIGINT:
-        case TokenType.STRING:
-        case TokenType.REGEXP:
-        case TokenType.TEMPLATE:
-        case TokenType.TEMPLATE_HEAD:
-        case TokenType.TEMPLATE_MIDDLE:
-        case TokenType.TEMPLATE_TAIL:
-        case TokenType.THIS:
-        case TokenType.INC:
-        case TokenType.DEC:
-            return true;
-        // `let` and `static` are contextual keywords that never begin a
-        // unary expression, so they always end an operand for `/` purposes:
-        // `o.let / r / g` and `o.static / r / g` are division.
-        case TokenType.LET:
-        case TokenType.STATIC:
-            return true;
-        // `await` / `yield` end an operand only where they are ordinary
-        // identifiers rather than expression operators.
-        case TokenType.AWAIT:
-            return !self.await_is_operator;
-        case TokenType.YIELD:
-            return !self.yield_is_operator;
-        default:
-            return false;
-    }
-}
-
 // ============================================================================
 // Lexer, main tokenisation entry point
 // ============================================================================
 
-// Advance to the next token and return it.
-fn Token? Lexer.next_token(&self) {
-    // The scan hint (lexer_hint.c3) is updated as each token is delivered, so
-    // a token the parser peeked before a pre-scan began still reaches it.
-    if (self.has_pushed_back) {
-        self.has_pushed_back = false;
-        self.current = self.pushed_back;
-        // No token_start update, pushback is purely speculative; the prior
-        // token_start still reflects the most recently *consumed* token.
-        if (self.hint.on) self.hint.update(&self.current);
-        return self.current;
-    }
-
-    if (self.has_lookahead) {
-        self.has_lookahead = false;
-        self.current = self.lookahead;
-        // Restore the token-start saved when peek() built the lookahead so
-        // that `token_start` reflects the position of the token we're now
-        // actually consuming (matches the non-lookahead path's contract).
-        self.token_start = self.lookahead_token_start;
-        if (self.hint.on) self.hint.update(&self.current);
-        return self.current;
-    }
-
-    Token tok = self.scan_token()!;
-    if (self.hint.on) self.hint.update(&tok);
-    return tok;
-}
-
-// Scan one token from the source, bypassing the pushback and lookahead
-// buffers that next_token drains first.
+// Scan the next token. `/` and `/=` always lex as punctuators and `}` as
+// RBRACE: the parser knows where a regexp or a template part is due and
+// rescans there.
 fn Token? Lexer.scan_token(&self) {
-    Token tok = self.scan_token_raw()!;
-    if (!features::BIGINT && tok.type == TokenType.BIGINT) return LEX_ERROR~;
-    tok.pos = self.token_start;
-    tok.end = self.pos;
-    tok.nl_before = self.seen_line_term;
-    self.current = tok;
-    return tok;
-}
-
-fn Token? Lexer.scan_token_raw(&self) {
     $if $feat(RELEX_STATS):
         uint relex_begin = self.pos;
         defer relexstats::relex_lexed(relex_begin, self.pos);
     $endif
     self.skip_whitespace_and_comments();
     if (self.unterminated_comment) return LEX_ERROR~;
-
-    // Capture the start of the upcoming token so callers can recover the source
-    // span after consumption (Function.prototype.toString retention).
-    self.token_start = self.pos;
-
-    // Consume the block-close regex hint: it only affects the immediately
-    // following token's `/` disambiguation, so clear it now.
-    bool force_regex = self.force_regex_after_brace || (self.hint.on && self.hint.regex_next);
-    self.force_regex_after_brace = false;
-    bool force_division = self.force_division_next;
-    self.force_division_next = false;
-
+    uint start = self.pos;
+    Token tok;
     if (self.at_end()) {
-        Token tok = make_token(TokenType.EOF_TOKEN, self.line, self.col);
-        self.current = tok;
-        return tok;
-    }
-
-    char c = self.peek_char();
-
-    // Pre-scan with auto_template: the `}` that closes a substitution resumes
-    // template text, so produce the next template part instead of RBRACE.
-    if (c == '}' && self.hint.on && self.hint.auto_template && self.hint.top_is_subst()) {
-        self.advance_char();
-        Token tok = self.scan_template_after_expr()!;
-        self.current = tok;
-        return tok;
-    }
-
-    if (is_digit(c) || (c == '.' && self.remaining() >= 2 && is_digit(self.peek_char_at(1)))) {
-        Token tok = self.scan_number()!;
-        self.current = tok;
-        return tok;
-    }
-
-    if (c == '\'' || c == '"') {
-        Token tok = self.scan_string()!;
-        self.current = tok;
-        return tok;
-    }
-
-    if (c == '`') {
-        Token tok = self.scan_template_head()!;
-        self.current = tok;
-        return tok;
-    }
-
-    // Decide on the raw byte where possible: decoding a codepoint and consulting
-    // the Unicode tables is only reachable for multi-byte source, so the common
-    // punctuator and ASCII-identifier tokens skip both.
-    bool starts_identifier;
-    if (c < 0x80) {
-        starts_identifier = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-            || c == '_' || c == '$' || c == '\\';
+        tok = make_token(TokenType.EOF_TOKEN, self.line, self.col);
     } else {
-        uint cp = self.peek_codepoint();
-        starts_identifier = is_identifier_start(cp) || cp == '\\';
-    }
-    if (starts_identifier) {
-        Token tok = self.scan_identifier()!;
-        self.current = tok;
-        return tok;
-    }
-
-    // Check for regexp literal vs division operator. A `/=` prefix does NOT
-    // automatically mean division-assign: `/=/` is a valid regexp literal
-    // whose body is "=". Only treat `/=` as the division-assign punctuator
-    // when a regexp is not syntactically expected at this position.
-    if (c == '/') {
-        if (!self.ast_mode && !force_division && (force_regex || !self.prev_was_operand())) {
-            Token tok = self.scan_regexp()!;
-            self.current = tok;
-            return tok;
+        char c = self.peek_char();
+        // Decide on the raw byte where possible: decoding a codepoint and
+        // consulting the Unicode tables is only reachable for multi-byte source.
+        if (c < 0x80) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$' || c == '\\') {
+                tok = self.scan_identifier()!;
+            } else if (is_digit(c) || (c == '.' && self.remaining() >= 2 && is_digit(self.peek_char_at(1)))) {
+                tok = self.scan_number()!;
+            } else if (c == '\'' || c == '"') {
+                tok = self.scan_string()!;
+            } else if (c == '`') {
+                tok = self.scan_template_head()!;
+            } else {
+                tok = self.scan_punctuator()!;
+            }
+        } else if (is_identifier_start(self.peek_codepoint())) {
+            tok = self.scan_identifier()!;
+        } else {
+            tok = self.scan_punctuator()!;
         }
     }
-
-    // Punctuator
-    Token tok = self.scan_punctuator()!;
-    self.current = tok;
-    return tok;
-}
-
-// Peek at the next token without consuming it.
-fn Token? Lexer.peek(&self) {
-    if (self.has_pushed_back) {
-        return self.pushed_back;
-    }
-
-    if (self.has_lookahead) {
-        return self.lookahead;
-    }
-
-    // Save current state, including token_start so peek doesn't shift it.
-    // Without this guard, after peeking the lookahead, `lexer.token_start`
-    // would reflect the *peeked* token rather than the most recently *consumed*
-    // one, so e.g. capturing `lexer.token_start` after `check(ARROW)` for an
-    // `IDENT ARROW` arrow head would yield the arrow's position, not `IDENT`'s.
-    Token saved_current = self.current;
-    uint saved_token_start = self.token_start;
-
-    // The lookahead token's source start is whatever `next_token` set
-    // `token_start` to (position after skip_whitespace). Capture it AFTER
-    // `next_token` returns so we get the actual start of the scanned token,
-    // not whatever stale value `token_start` held before. The lookahead
-    // consume path in next_token() restores this via lookahead_token_start.
-    Token tok = self.scan_token()!;
-    self.lookahead = tok;
-    self.has_lookahead = true;
-    self.lookahead_token_start = self.token_start;
-
-    // Restore current and token_start (next_token overwrote them)
-    self.current = saved_current;
-    self.token_start = saved_token_start;
-
+    if (!features::BIGINT && tok.type == TokenType.BIGINT) return LEX_ERROR~;
+    tok.pos = start;
+    tok.end = self.pos;
+    tok.nl_before = self.seen_line_term;
     return tok;
 }
 
@@ -2765,20 +2509,16 @@ fn void Lexer.seek_to_token(&self, Token tok) {
     self.pos = tok.pos;
     self.line = tok.line;
     self.col = tok.col;
-    self.has_lookahead = false;
-    self.has_pushed_back = false;
     self.seen_line_term = tok.nl_before;
 }
 
 // Lex the `/` or `/=` token `slash` as a RegularExpressionLiteral.
 fn Token? Lexer.rescan_regexp(&self, Token slash) {
     self.seek_to_token(slash);
-    self.token_start = slash.pos;
     Token tok = self.scan_regexp()!;
     tok.pos = slash.pos;
     tok.end = self.pos;
     tok.nl_before = slash.nl_before;
-    self.current = tok;
     return tok;
 }
 
@@ -2786,80 +2526,12 @@ fn Token? Lexer.rescan_regexp(&self, Token slash) {
 // closed it. Produces TEMPLATE_MIDDLE or TEMPLATE_TAIL.
 fn Token? Lexer.rescan_template_part(&self, Token rbrace) {
     self.seek_to_token(rbrace);
-    self.token_start = rbrace.pos;
     self.advance_char();
     Token tok = self.scan_template_after_expr()!;
     tok.pos = rbrace.pos;
     tok.end = self.pos;
     tok.nl_before = rbrace.nl_before;
-    self.current = tok;
     return tok;
-}
-
-// Expect the next token to be of the given type.
-// If it matches, advance past it and return the consumed token.
-// Otherwise return LEX_ERROR.
-fn Token? Lexer.expect(&self, TokenType expected) {
-    Token tok = self.next_token()!;
-    if (tok.type != expected) {
-        return LEX_ERROR~;
-    }
-    return tok;
-}
-
-// Refresh `token_start` to point at the start of the next-to-be-consumed
-// token. Call when the caller wants to remember the source position of the
-// next token without committing the consume; subsequent calls to
-// `next_token` will return that same token unchanged.
-//
-// Use case: class-body loops where each iteration needs to remember the
-// offset of its *first* token (e.g. for Function.prototype.toString), but
-// `token_start` may be stale from the previous iteration (reflects the last
-// consumed token's position).
-fn void Lexer.refresh_token_start(&self) {
-    if (self.has_pushed_back) return;
-    if (self.has_lookahead) {
-        // The lookahead was produced by peek(); its source start is saved in
-        // lookahead_token_start. Copy it over so token_start agrees.
-        self.token_start = self.lookahead_token_start;
-        return;
-    }
-    // No cached token, scan one forward, then pushback so the lexer state
-    // appears unchanged for the next consumer.
-    if (try tok = self.next_token()) {
-        self.pushed_back = tok;
-        self.has_pushed_back = true;
-        // next_token() set token_start to the start of `tok`'s source text, so
-        // keep it.
-    }
-    // On lex failure, leave token_start stale; the next consumer will fail
-    // anyway.
-}
-
-// Check if the next token is of the given type without consuming it.
-fn bool Lexer.check(&self, TokenType tt) {
-    if (try tok = self.peek()) {
-        return tok.type == tt;
-    }
-    return false;
-}
-
-// If the next token matches the given type, consume it and return true.
-// Otherwise leave the lexer state unchanged and return false.
-fn bool Lexer.match_token(&self, TokenType tt) {
-    if (self.check(tt)) {
-        if (try _tok = self.next_token()) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Push a token back into the input stream for limited backtracking.
-// The next call to next_token() will return this token.
-fn void Lexer.pushback(&self, Token tok) {
-    self.pushed_back = tok;
-    self.has_pushed_back = true;
 }
 
 // Enable or disable strict-mode keyword recognition.

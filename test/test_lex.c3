@@ -14,7 +14,7 @@ fn int main() {
     lexer::Lexer lex = lexer::lexer_init(source, (void*)heap);
     
     for (int i = 0; i < 10; i++) {
-        lexer::Token tok = lex.next_token()!!;
+        lexer::Token tok = lex.scan_token()!!;
         io::printfn("Token %d: type=%d, line=%d, col=%d", i, tok.type.ordinal, tok.line, tok.col);
         if (tok.type == lexer::TokenType.EOF_TOKEN) break;
     }

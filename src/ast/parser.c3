@@ -1,6 +1,6 @@
 // Recursive-descent parser producing the flat AST.
 //
-// The parser streams tokens from the existing Lexer in `ast_mode`: `/` always
+// The parser streams tokens from the Lexer: `/` always
 // lexes as a punctuator and `}` as RBRACE, and the parser rescans a token as a
 // regular expression or a template continuation where the grammar says so, so
 // no source byte is lexed twice outside a rescan. Strictness never changes how
@@ -434,8 +434,7 @@ struct ParseResult {
     uint err_col;
 }
 
-// Parse a whole Script or Module into `ast`. The lexer must be freshly initialised on `ast.source`;
-// it is put in ast_mode and left there.
+// Parse a whole Script or Module into `ast`. The lexer must be freshly initialised on `ast.source`.
 fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.ast = ast;
     p.lex = lex;
@@ -464,7 +463,6 @@ fn uint? parse_program(Parser* p, Ast* ast, Lexer* lex, ParseOptions opts) {
     p.dv_flags = 0;
     p.dv_atom_eval = p.atom("eval");
     if (ast.shared_line_starts.len == 0) build_line_table(ast);
-    lex.ast_mode = true;
     lex.ts_mode = features::TYPESCRIPT && opts.ts_mode;
     lex.jsx = opts.jsx;
     lex.set_strict(false);
