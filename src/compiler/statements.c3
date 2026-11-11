@@ -468,7 +468,7 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
         ushort sym_reg = self.alloc_reg();
         self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
         ushort iter_key_reg = self.alloc_reg();
-        self.emit_abc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"), 0);
+        self.emit_a_bc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"));
         ushort symbol_val_reg = self.alloc_reg();
         self.emit_abc(Opcode.GETPROP, (uint)symbol_val_reg, (uint)sym_reg, (uint)iter_key_reg);
         self.emit_abc(Opcode.GETPROP, (uint)method_reg, (uint)src_reg, (uint)symbol_val_reg);
@@ -492,7 +492,7 @@ fn IterRec? CompilerContext.emit_iter_open(&self, ushort src_reg, bool is_await)
     }
 
     ushort next_key_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"));
     self.emit_abc(Opcode.GETPROP, (uint)next_reg, (uint)method_reg, (uint)next_key_reg);
     self.free_reg(next_key_reg);
     if (!is_await) self.patch_jump(open_done_jump);
@@ -558,13 +558,13 @@ fn uint? CompilerContext.emit_iter_step(&self, IterRec rec, ushort val_slot, uin
 
     ushort done_key_reg = self.alloc_reg();
     ushort done_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"));
     self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
     uint exit_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
 
     ushort value_key_reg = self.alloc_reg();
     ushort val_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"));
     self.emit_abc(Opcode.GETPROP, (uint)val_reg, (uint)result_reg, (uint)value_key_reg);
 
     // Move the value below the callee window, then release the above-window

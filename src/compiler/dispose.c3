@@ -86,7 +86,7 @@ fn void CompilerContext.emit_scope_add_resource(&self, ushort list_reg, ushort v
     Builtin helper = is_async ? Builtin.SCOPE_ADD_RESOURCE_ASYNC : Builtin.SCOPE_ADD_RESOURCE;
     TVal callee_fn = types::make_lightfunc((void*)(usz)helper.ordinal);
     ushort callee = self.alloc_regs(4);
-    self.emit_abc(Opcode.LDCONST, (uint)callee, self.add_constant(callee_fn), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)callee, self.add_constant(callee_fn));
     self.emit_abc(Opcode.LDUNDEF, (uint)(callee + 1), 0, 0);
     self.emit_abc(Opcode.LDREG, (uint)(callee + 2), (uint)list_reg, 0);
     self.emit_abc(Opcode.LDREG, (uint)(callee + 3), (uint)value_reg, 0);
@@ -104,7 +104,7 @@ fn void CompilerContext.emit_scope_dispose(&self, DisposeScope scope) {
     Builtin helper = scope.is_async ? Builtin.SCOPE_DISPOSE_ASYNC : Builtin.SCOPE_DISPOSE;
     TVal callee_fn = types::make_lightfunc((void*)(usz)helper.ordinal);
     ushort callee = self.alloc_regs(5);
-    self.emit_abc(Opcode.LDCONST, (uint)callee, self.add_constant(callee_fn), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)callee, self.add_constant(callee_fn));
     self.emit_abc(Opcode.LDUNDEF, (uint)(callee + 1), 0, 0);
     self.emit_abc(Opcode.LDREG, (uint)(callee + 2), (uint)scope.list_reg, 0);
     self.emit_abc(Opcode.LDREG, (uint)(callee + 3), (uint)scope.pending_reg, 0);

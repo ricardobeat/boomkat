@@ -201,7 +201,7 @@ fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, Destruct
     self.emit_a_bc(Opcode.GETVAR, (uint)sym_reg, self.add_string_constant("Symbol"));
 
     ushort iter_key_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)iter_key_reg, self.add_string_constant("iterator"));
 
     ushort symbol_val_reg = self.alloc_reg();
     self.emit_abc(Opcode.GETPROP, (uint)symbol_val_reg, (uint)sym_reg, (uint)iter_key_reg);
@@ -229,7 +229,7 @@ fn void CompilerContext.emit_destruct_iter_setup(&self, ushort src_reg, Destruct
 
     // Get .next method from iterator
     ushort next_key_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)next_key_reg, self.add_string_constant("next"));
 
     ushort next_reg = self.alloc_reg();
     self.emit_abc(Opcode.GETPROP, (uint)next_reg, (uint)method_reg, (uint)next_key_reg);
@@ -309,12 +309,12 @@ fn void CompilerContext.emit_destruct_iter_next(&self, DestructIterState* state,
     // `.value` getter must not run when the iterator reports done:true.
     ushort key_reg = self.alloc_reg();
     ushort done_reg = self.alloc_reg();
-    self.emit_abc(Opcode.LDCONST, (uint)key_reg, self.add_string_constant("done"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, self.add_string_constant("done"));
     self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)key_reg);
     uint mark_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
 
     // Not done: extract .value.
-    self.emit_abc(Opcode.LDCONST, (uint)key_reg, self.add_string_constant("value"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)key_reg, self.add_string_constant("value"));
     self.emit_abc(Opcode.GETPROP, (uint)dest_reg, (uint)result_reg, (uint)key_reg);
     self.free_reg(done_reg);
     self.free_reg(key_reg);
@@ -378,11 +378,11 @@ fn void CompilerContext.emit_destruct_iter_rest(&self,
 
     // IteratorNext: a non-object step is a TypeError.
     self.emit_abc(Opcode.CHKOBJ, (uint)result_reg, 0, 0);
-    self.emit_abc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)done_key_reg, self.add_string_constant("done"));
     self.emit_abc(Opcode.GETPROP, (uint)done_reg, (uint)result_reg, (uint)done_key_reg);
     uint generic_done_jump = self.emit_cond_jump(Opcode.IF_TRUE, (uint)done_reg);
 
-    self.emit_abc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"), 0);
+    self.emit_a_bc(Opcode.LDCONST, (uint)value_key_reg, self.add_string_constant("value"));
     self.emit_abc(Opcode.GETPROP, (uint)value_reg, (uint)result_reg, (uint)value_key_reg);
     self.emit_abc(Opcode.LDREG, (uint)state.method_reg, (uint)state.save_reg, 0);
     uint generic_value_jump = self.emit_jump(Opcode.JUMP);
