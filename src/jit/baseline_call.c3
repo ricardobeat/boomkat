@@ -812,8 +812,8 @@ fn void Asm.emit_return_body(&self) {
     int ds = self.ds;
     int sp = SLJIT_MEM | reg_sp();
     Jumps helper;
-    // The result stays at SUB_VALUE_OFF: the fused pass below may clear the
-    // register it came from before it finds a reason to take the helper.
+    // The result stays at SUB_VALUE_OFF: the sweep below clears the register
+    // it came from.
     self.mov(sp, SUB_VALUE_OFF, R0, 0);
     // Waiting: jit_floor != 0 and activation_count == jit_floor + 1.
     self.mov(R1, 0, m | ds, k.ds_floor, SLJIT_MOV_U32);
@@ -859,11 +859,8 @@ fn void Asm.emit_return_body(&self) {
     helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R1, 0, SLJIT_IMM, 0));
     self.emit_result_window(&helper, true);
     sljit_set_label(primitive, sljit_emit_label(c));
-    // th_tracked_regs_uncounted and th_clear_tracked_regs in one pass: no
-    // tracked register holds a string, and each is cleared on the way. A
-    // string found part-way takes the helper with the earlier registers
-    // already clear, which it sweeps again harmlessly; the site stores the
-    // result back (see emit_return).
+    // th_clear_tracked_regs. Registers hold no counts, so a string clears
+    // like an object, as vm::jit_ret clears it (th_leaf_return's counted_ok).
     uint nregs = self.f.num_regs;
     self.mov(R1, 0, m | R4, l.act_hrc, SLJIT_MOV_U32);
     Jumps cleared;
@@ -875,9 +872,6 @@ fn void Asm.emit_return_body(&self) {
     self.mov(R2, 0, m | R4, k.act_bottom);
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, R1, 0, R2, 0);
     void* sweep = sljit_emit_label(c);
-    self.mov(R0, 0, m | R2, 0);
-    sljit_emit_op2(c, SLJIT_LSHR, R0, 0, R0, 0, SLJIT_IMM, 48);
-    helper.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, (long)types::TAG_STRING));
     self.mov(m | R2, 0, SLJIT_IMM, K_UNDEF);
     sljit_emit_op2(c, SLJIT_ADD, R2, 0, R2, 0, SLJIT_IMM, TVal::size);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_LESS, R2, 0, R1, 0), sweep);
