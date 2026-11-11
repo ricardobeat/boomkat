@@ -1188,6 +1188,35 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     self.def_obj(i, R0);
 }
 
+// select_chain_slot's result for the receiver the entry `ic` holds now, when that is an epoch case the
+// heap's epoch still proves: its shape, first prototype and the owner's slot as constants, under
+// that epoch. Returns the jump taken with the slot address in R0; every other receiver, and a moved
+// epoch, continue after it with R1 kept. Null, with nothing emitted, for any other entry.
+fn void* OptCg.settled_chain_slot(&self, hobject::ICEntry* ic) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Layout* l = a.lay;
+    if (!ic.has_proto || ic.chain_len != hobject::IC_CHAIN_EPOCH || ic.chain == null || ic.prop_flags.is_accessor) return null;
+    hobject::ICChainEpoch* e = &ic.chain.epoch;
+    if (e.value != self.h.prototype_epoch || e.owner == null || e.first == null || ic.prop_idx >= e.owner.prop_count) return null;
+    void*[4] other;
+    sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_shape);
+    other[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, R3, 0, SLJIT_IMM, (long)ic.shape_id);
+    sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, SLJIT_MEM | R1, 0);
+    sljit_emit_op2(c, SLJIT_AND, R0, 0, R0, 0, SLJIT_IMM, l.class_mask | l.plain_exotic_mask);
+    other[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, l.class_object);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | R1, l.obj_proto);
+    other[2] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(usz)e.first);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_MEM | a.heap, l.heap_proto_epoch);
+    other[3] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)e.value);
+    // An observed object's values stay where they are while the epoch stands (HObject.layout_moved).
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)(usz)&e.owner.prop_values()[ic.prop_idx]);
+    void* settled = sljit_emit_jump(c, SLJIT_JUMP);
+    void* rest = sljit_emit_label(c);
+    foreach (j : other) sljit_set_label(j, rest);
+    return settled;
+}
+
 // The slot address in R0 of the property the read entry `ic` names for the plain object in R1
 // (unboxed, not a proxy): the data property of the prototype the entry's epoch guard or link
 // snapshot describes, as Asm.emit_get does for a hit. The entry is read
@@ -1341,7 +1370,10 @@ fn void OptCg.emit_load_field(&self, uint i, OptNode* n) {
         a.unbox_object(R1, rr);
         a.guard_not_proxy(R1, R2);
         if (chain) {
-            self.select_chain_slot(&((hobject::ICEntry*)a.f.ic_entries)[a.next - 1]);
+            hobject::ICEntry* ic = &((hobject::ICEntry*)a.f.ic_entries)[a.next - 1];
+            void* settled = self.settled_chain_slot(ic);
+            self.select_chain_slot(ic);
+            if (settled != null) sljit_set_label(settled, sljit_emit_label(c));
             known_slot = true;
         } else if (poly.count > 1) {
             self.select_slot(poly);
@@ -1621,6 +1653,19 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
         a.load(R1, callee_reg);
     }
     sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
+    // The function the builder found in the method's slot (OptBuild.method_constant) passes every
+    // test below, and is that function while the epoch it was observed under stands.
+    void* constant = null;
+    void*[2] other;
+    if (n.key != null) {
+        other[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(usz)n.key);
+        sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | a.heap, a.lay.heap_proto_epoch);
+        other[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)self.h.prototype_epoch);
+        constant = sljit_emit_jump(c, SLJIT_JUMP);
+        void* tests = sljit_emit_label(c);
+        sljit_set_label(other[0], tests);
+        sljit_set_label(other[1], tests);
+    }
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R0, 0);
@@ -1642,7 +1687,9 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     sljit_emit_op1(c, SLJIT_MOV_U8, R4, 0, m | R1, k.env_flags);
     sljit_emit_op2(c, SLJIT_AND, R4, 0, R4, 0, SLJIT_IMM, (long)(char)with_flag);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
-    sljit_set_label(no_cap, sljit_emit_label(c));
+    void* tested = sljit_emit_label(c);
+    sljit_set_label(no_cap, tested);
+    if (constant != null) sljit_set_label(constant, tested);
     // An exit from the body publishes its frame and those of the calls around it.
     a.room_acts = max(a.room_acts, caller.depth + 1);
     a.room_slots = max(a.room_slots, callee_reg + 2 + cf.num_regs + vm::FRAME_SCRATCH_SLOTS);

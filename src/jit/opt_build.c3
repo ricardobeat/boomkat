@@ -1252,6 +1252,50 @@ fn void OptBuild.ask_object(&self, uint reg) {
     self.load_changed = true;
 }
 
+// The function object in the callee register of a method call about to be inlined, when the read
+// that defined the register is an inherited one whose cache names the property's owner under the
+// prototype epoch as it stands, and that function is a closure of `cf` the call's guard would pass
+// now; else null. The guard then compares the register with it. It is observed, so its death moves
+// the epoch: while the epoch stands, its address names it alone.
+fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* cf) {
+    if (callee_reg >= self.nregs) return null;
+    CompiledFunction* f;
+    uint pc;
+    // The register's node, through the copies that moved it there, or the read into its slot.
+    uint n = self.cur[callee_reg].node;
+    while (n != NO_NODE && self.g.nodes[n].op == OptOp.COPY) n = self.g.nodes[n].a;
+    if (n != NO_NODE) {
+        OptNode* load = &self.g.nodes[n];
+        if (load.op != OptOp.LOAD_FIELD || load.cc != 2) return null;
+        f = self.g.fns[load.fidx].f;
+        pc = load.pc;
+    } else {
+        uint key = self.load_def[callee_reg];
+        uint site = key >> 24;
+        if (key == NO_NODE || site > (uint)self.sites.len()) return null;
+        f = site == 0 ? self.f : self.sites[(sz)site - 1].cf;
+        pc = key & 0xFFFFFF;
+    }
+    if (pc >= f.code_count || f.ic_entries == null) return null;
+    Opcode op = f.code[pc].op;
+    if (op != Opcode.GETPROPC && op != Opcode.GETPROPC_CACHED && op != Opcode.GETTHISC) return null;
+    // The cache entry is that of the read's last word.
+    bytecode::DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
+    if (!d.valid || d.next_pc <= pc) return null;
+    hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.next_pc - 1];
+    if (!ic.has_proto || ic.chain_len != hobject::IC_CHAIN_EPOCH || ic.chain == null || ic.prop_flags.is_accessor) return null;
+    hobject::ICChainEpoch* e = &ic.chain.epoch;
+    if (e.value != self.h.prototype_epoch || e.owner == null || ic.prop_idx >= e.owner.prop_count) return null;
+    TVal v = e.owner.prop_values()[ic.prop_idx].get();
+    if (!v.is_object()) return null;
+    HObject* fo = (HObject*)v.get_heapptr();
+    if (fo.callable_kind() != hobject::CallableKind.COMPILED_FN || fo.flags.exotic_proxyobj || fo.flags.obj_class != hobject::ObjClass.FUNCTION) return null;
+    hobject::HObjectFunction* fx = &(*fo.extra_ptr()).func;
+    if (fx.comp_func != cf || fx.var_env == null || (fx.lex_env != null && fx.lex_env.flags.is_with)) return null;
+    fo.gc.prototype_observed = true;
+    return fo;
+}
+
 // The cache entry of the instruction being lowered when it names an own data property of a
 // plain object that the optimized code can read by slot, else null.
 fn hobject::ICEntry* OptBuild.own_field(&self, bool inherited = false) {
@@ -2817,6 +2861,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
     }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     self.g.nodes[chk].cc = s.construct ? 2 : (s.method ? 1 : 0);
+    if (s.method && !s.forward) self.g.nodes[chk].key = self.method_constant(callee_reg, s.cf);
     self.snapshot(chk);
     if (s.forward) {
         bool pending = false;
@@ -3151,6 +3196,7 @@ fn bool OptBuild.try_inline(&self) {
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     // Bit 2: the function and receiver are those after the callee register (`apply`, `call`).
     self.g.nodes[chk].cc = (s.construct ? 2 : (s.method ? 1 : 0)) | (s.dotcall ? 4 : 0);
+    if (s.method && !s.forward && !s.dotcall) self.g.nodes[chk].key = self.method_constant(callee_reg, s.cf);
     self.snapshot(chk);
     bool move_pending = false;
     bool moved = true;
