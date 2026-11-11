@@ -814,8 +814,8 @@ fn void OptBuild.set(&self, uint reg, uint node, bool dirty = true) {
 // Facts about objects are only held across nodes that neither run code nor allocate: LOAD_FIELD,
 // STORE_FIELD (an overwrite, so never a shape change), LOAD_ELEM, STORE_ELEM, numeric ops and
 // branches. Nothing then can collect an object, recycle a shape id or rebind a register, so the
-// shape cell a node compared is still the receiver's. Every GENERIC, block start and write to the
-// register drops its facts.
+// shape cell a node compared is still the receiver's. Every GENERIC, write to the register and
+// block start with more than one way in (begin_block) drops its facts.
 fn void OptBuild.forget_facts(&self) {
     for (uint r = 0; r <= self.nregs; r++) self.fact_shape[r] = heap::SHAPE_NONE;
 }
@@ -3500,8 +3500,6 @@ fn void OptBuild.begin_block(&self, uint pos) {
         self.cur[r] = { .node = NO_NODE, .dirty = false };
         self.load_def[r] = NO_NODE;
     }
-    // Facts do not cross a block start: a back edge or a join may come from any generic.
-    self.forget_facts();
     uint fwd = 0;
     uint back = 0;
     uint single = 0;
@@ -3512,6 +3510,9 @@ fn void OptBuild.begin_block(&self, uint pos) {
             back++;
         }
     }
+    // Facts cross a block start only from the block built just before it, when that is the
+    // one way in: a back edge, a join or an OSR entry may come from any generic.
+    if (pos == 0 || fwd != 1 || back != 0 || single != pos - 1 || self.osr_target[first_insn]) self.forget_facts();
     blk.header = back > 0;
     blk.loop_end = self.loop_end[pos];
     if (pos == 0 && self.g.region.end != 0) {
