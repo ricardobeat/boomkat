@@ -3153,13 +3153,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.SUB:
-        if (@needs_to_numeric(rb, rc)) {
-            if (vm_numeric_binop(vm, Opcode.SUB, ra, rb, rc) == BigIntOpResult.THREW) {
-                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                if (ds.needs_restart) break;
-            }
-            continue;
-        }
         if (types::both_fastint(rb, rc)) {
             long diff = rb.get_fastint() - rc.get_fastint();
             if (diff >= types::FASTINT_MIN && diff <= types::FASTINT_MAX) {
@@ -3167,6 +3160,12 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             } else {
                 vm.heap.set_reg_number(ra, (double)diff);
             }
+        } else if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.SUB, ra, rb, rc) == BigIntOpResult.THREW) {
+                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            }
+            continue;
         } else {
             double sub_b = vm_to_number(vm,rb);
             if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -3389,13 +3388,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.MUL:
-        if (@needs_to_numeric(rb, rc)) {
-            if (vm_numeric_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {
-                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                if (ds.needs_restart) break;
-            }
-            continue;
-        }
         if (types::both_fastint(rb, rc)) {
             // 48-bit operands can overflow 64-bit signed long (2^47 * 2^47 = 2^94).
             // Guard: if both operands fit in 31 bits the product fits in 62 bits
@@ -3417,6 +3409,12 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             } else {
                 vm.heap.set_reg_number(ra, (double)mul_b * (double)mul_c);
             }
+        } else if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.MUL, ra, rb, rc) == BigIntOpResult.THREW) {
+                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            }
+            continue;
         } else {
             double mul_b = vm_to_number(vm,rb);
             if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
@@ -3445,13 +3443,6 @@ fn TVal? vm_dispatch(Dispatch* ds) {
     }
 
     case Opcode.MOD:
-        if (@needs_to_numeric(rb, rc)) {
-            if (vm_numeric_binop(vm, Opcode.MOD, ra, rb, rc) == BigIntOpResult.THREW) {
-                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
-                if (ds.needs_restart) break;
-            }
-            continue;
-        }
         if (types::both_fastint(rb, rc) && rc.get_fastint() != 0) {
             long mod_result = rb.get_fastint() % rc.get_fastint();
             if (mod_result == 0 && rb.get_fastint() < 0) {
@@ -3460,6 +3451,12 @@ fn TVal? vm_dispatch(Dispatch* ds) {
             } else {
                 vm.heap.set_reg_fastint(ra, mod_result);
             }
+        } else if (@needs_to_numeric(rb, rc)) {
+            if (vm_numeric_binop(vm, Opcode.MOD, ra, rb, rc) == BigIntOpResult.THREW) {
+                if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
+                if (ds.needs_restart) break;
+            }
+            continue;
         } else {
             double mod_b = vm_to_number(vm,rb);
             if (!@tonum_ok(vm, ds)) return vm_uncaught_error(vm, &vm.throw_value);
