@@ -1417,6 +1417,7 @@ $else
         case SHLI:
         case SHRI:
         case USHRI:
+        case BNOT:
             self.emit_bitop(op, ra, rb, rc, false);
         case EQ:
         case NEQ:
@@ -1565,6 +1566,7 @@ fn void Asm.emit_alt(&self) {
         case SHLI:
         case SHRI:
         case USHRI:
+        case BNOT:
             self.emit_bitop(op, w.a, w.b, w.c, true);
         case LT:
         case LE:
@@ -1658,15 +1660,16 @@ fn void Asm.emit_mul(&self, bool imm, uint ra, uint rb, uint rc) {
 
 // The bitwise and shift operators on fastints, as th_bitop, entering the
 // number path otherwise. The number path (`numbers`) also takes doubles whose
-// ToInt32 is their truncation, which holds within the int32 range.
+// ToInt32 is their truncation, which holds within the int32 range. BNOT is the exclusive or
+// with all ones.
 fn void Asm.emit_bitop(&self, Opcode op, uint ra, uint rb, uint rc, bool numbers) {
     void* c = self.c;
-    bool imm = bytecode::is_imm_form(op);
-    Opcode base = imm ? bytecode::reg_form(op) : op;
+    bool imm = op == BNOT || bytecode::is_imm_form(op);
+    Opcode base = op == BNOT ? Opcode.BXOR : (imm ? bytecode::reg_form(op) : op);
     self.load(R0, rb);
     if (numbers) { self.int32_operand(R0); } else { self.guard_int_alt(R0); }
     int src = SLJIT_IMM;
-    long srcw = (long)(rc & 0xFF);
+    long srcw = op == BNOT ? -1 : (long)(rc & 0xFF);
     if (!imm) {
         self.load(R1, rc);
         if (numbers) { self.int32_operand(R1); } else { self.guard_int_alt(R1); }
