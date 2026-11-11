@@ -39,6 +39,16 @@ const long CALL_PLAIN = 1L << 16;
 const long CALL_PRIM = 1L << 17;
 // A call site's packed bit for a method call (CALL), cleared for the entry.
 const long CALL_METHOD = 1L << 18;
+// A NEW_OBJ of a constructor whose entry takes one (entry_constructs): the receiver slot holds the
+// new object (emit_new_inline), which the frame takes as `this` with ACT_FLAG_CONSTRUCT and the
+// function as new.target.
+const long CALL_CONSTRUCT = 1L << 19;
+
+// Whether `f`'s call entry takes a construction: a plain constructor that reads its `this`. One
+// that never does builds nothing worth a path of its own, and its entry tests no receiver.
+fn bool entry_constructs(CompiledFunction* f) {
+    return f.plain_constructor() && !f.call_flags.ignores_this;
+}
 
 // Formals a call entry clears for a call that passes fewer arguments; a callee
 // with more takes such calls through the helper.
@@ -326,7 +336,8 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     int undef = packed;
     int fr = R3;
     int code = retval;
-    if (!f.call_flags.ignores_this) sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM);
+    bool takes_this = !f.call_flags.ignores_this;
+    if (takes_this) sljit_emit_op2(c, SLJIT_AND, R4, 0, packed, 0, SLJIT_IMM, CALL_PLAIN | CALL_PRIM | CALL_CONSTRUCT);
     // R2 (env, stored) is a second zero, then a second undefined, for the
     // pair stores.
     self.mov(zero, 0, SLJIT_IMM, 0);
@@ -355,13 +366,26 @@ fn void* Asm.emit_call_entry(&self, int table_reg, BaselineCode* bc, int scratch
     self.mov(R1, 0, m | vm, k.vm_valstack_top);
     self.mov(m | la, k.act_caller_top, R1, 0);
     self.mov(m | la, l.act_this, undef, 0);
-    if (!f.call_flags.ignores_this) {
-        void* no_this = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0);
+    // A method call (R4 is 0) takes the receiver slot's value as `this`; so does a construction,
+    // with the function as new.target.
+    if (takes_this) {
+        Jumps bound;
+        if (!entry_constructs(f)) {
+            bound.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, 0));
+        } else {
+            void* method = sljit_emit_cmp(c, SLJIT_EQUAL, R4, 0, SLJIT_IMM, 0);
+            bound.add(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, CALL_CONSTRUCT));
+            self.mov(R1, 0, m | la, l.act_tv_func);
+            sljit_emit_op2(c, SLJIT_XOR, R1, 0, R1, 0, SLJIT_IMM, K_OBJ);
+            self.mov(m | la, k.act_new_target, R1, 0);
+            self.mov(R4, 0, SLJIT_IMM, vm::ACT_FLAG_CONSTRUCT);
+            sljit_set_label(method, sljit_emit_label(c));
+        }
         self.mov(R1, 0, m | bottom, -(long)TVal::size);
         self.mov(m | la, l.act_this, R1, 0);
-        self.mov(R1, 0, SLJIT_IMM, vm::ACT_FLAG_THIS_VALID);
+        sljit_emit_op2(c, SLJIT_OR, R1, 0, R4, 0, SLJIT_IMM, vm::ACT_FLAG_THIS_VALID);
         self.mov(m | la, k.act_flags, R1, 0, SLJIT_MOV_U32);
-        sljit_set_label(no_this, sljit_emit_label(c));
+        bound.bind(sljit_emit_label(c));
     }
     // Locals and the scratch slots start undefined, surplus arguments included.
     uint from = f.num_formals;
@@ -464,18 +488,20 @@ fn bool Asm.emit_view_block(&self, int base, int r1, int r2) {
     return true;
 }
 
-// A CALL, CALL_UNDEF_THIS or CALL_GLOBAL called directly through its callee's
+// A CALL, CALL_UNDEF_THIS, CALL_GLOBAL or NEW_OBJ called directly through its callee's
 // call entry (see the top of this file), by the shared call subroutine. `generic`
 // collects the path that takes the helper call (vm::jit_call) instead.
 fn void Asm.emit_direct_call(&self, Jumps* generic) {
     void* c = self.c;
     bool global = self.w.op == Opcode.CALL_GLOBAL;
+    bool construct = self.w.op == Opcode.NEW_OBJ;
     uint callee = global ? self.w.a : self.w.b;
     uint nargs = global ? self.w.b : self.w.c;
-    long packed = (long)nargs | (self.w.op == Opcode.CALL ? CALL_METHOD : CALL_PLAIN);
+    long packed = (long)nargs | (construct ? CALL_CONSTRUCT : self.w.op == Opcode.CALL ? CALL_METHOD : CALL_PLAIN);
     // A cold site names no function number, so the subroutine's comparison with
-    // the callee's cannot match before the feedback is recorded.
-    if (self.f.ic_entries != null) {
+    // the callee's cannot match before the feedback is recorded. A NEW_OBJ's entry
+    // caches the constructor's prototype instead.
+    if (self.f.ic_entries != null && !construct) {
         hobject::ICEntry* ic = &((hobject::ICEntry*)self.f.ic_entries)[self.i];
         if ((ic.feedback & hobject::FB_CALL) == 0) ic.prop_idx = hobject::IC_PROP_ABSENT;
     }
@@ -567,7 +593,11 @@ fn void Asm.emit_note_callee(&self) {
     }
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM,
                    (long)((usz)self.f.ic_entries - ((usz)self.f.code + Instruction::size) * scale));
-    void* known = sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, m | R0, k.ic_prop_idx, m | R4, k.cf_func_index);
+    Jumps known;
+    known.add(sljit_emit_cmp(c, SLJIT_EQUAL | SLJIT_32, m | R0, k.ic_prop_idx, m | R4, k.cf_func_index));
+    // A NEW_OBJ's entry caches the constructor's prototype, and its site records the constructor.
+    sljit_emit_op2u(c, SLJIT_AND | SLJIT_SET_Z, R3, 0, SLJIT_IMM, CALL_CONSTRUCT);
+    known.add(sljit_emit_jump(c, SLJIT_NOT_EQUAL));
     // R0 = the cache. The test of FB_CALL and the stores use R4, which is
     // rebuilt from the function slot at the end.
     self.mov(R4, 0, m | R0, k.ic_feedback, SLJIT_MOV_U8);
@@ -609,7 +639,7 @@ fn void Asm.emit_note_callee(&self) {
     for (uint j = 0; j < nends; j++) sljit_set_label(ends[j], label);
     sljit_set_label(done, label);
     self.emit_callee_cf(R4);
-    sljit_set_label(known, sljit_emit_label(c));
+    known.bind(sljit_emit_label(c));
 }
 
 // `reg` = the CompiledFunction of the callee in the window R1 (the subroutine
@@ -622,7 +652,7 @@ fn void Asm.emit_callee_cf(&self, int reg) {
 
 // The call subroutine. In: R1 the callee's window (the function two slots
 // below it, the receiver one below), R2 the result slot, R3 the argument
-// count with CALL_METHOD or CALL_PLAIN, R4 the caller's resume point. Tests
+// count with CALL_METHOD, CALL_PLAIN or CALL_CONSTRUCT, R4 the caller's resume point. Tests
 // the callee as th_lean_target does and the receiver as @lean_call_method
 // does, sets ds.jit_floor and ds.jit_depth around the callee's call entry
 // as vm::jit_call does, and makes the caller current again after it

@@ -2257,6 +2257,13 @@ fn void CompiledFunction.classify_lean_call(&self) {
     self.call_flags.lean_known = true;
 }
 
+// Whether `new` of the function is the ordinary [[Construct]] a lean frame can run: a base
+// constructor with no brand and no field initializers.
+fn bool CompiledFunction.plain_constructor(&self) {
+    return self.flags.is_constructable && !self.flags.is_arrow && !self.flags.is_derived_ctor
+        && self.brand_name_hstr == null && self.field_init_func == null;
+}
+
 // Whether a call can enter the function as a lean call does once its function scope is created
 // (the baseline tier's native call, vm::@lean_publish): lean except for needs_env and a name
 // binding, with no `arguments` and no arrow. `plain` asks the same of a call with an undefined

@@ -295,24 +295,14 @@ fn LeanCall jit_new_lean(Instruction* pc, TVal* regs, Dispatch* ds, ColdCtx* col
     if (target == null) return NATIVE;
     // jit_new_simple completed a simple constructor or declined it.
     if (target.call_flags.simple_constructor) return DECLINE;
-    if (target.is_arrow() || target.is_derived_ctor() || target.brand_name_hstr != null
-        || target.field_init_func != null) return DECLINE;
+    if (!target.plain_constructor()) return DECLINE;
     if (target.jit_code == null) return NO_CODE;
     if (th_lean_target(vm, callee, regs + insn.b + 2, false) == null) return DECLINE;
     hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
     hobject::ic_note_constructor(ic, target.func_index);
-    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
-        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
-        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return DECLINE;
-    TVal proto = ctor.prop_values()[ic.prop_idx].get();
-    if (!proto.is_object()) return DECLINE;
     if (@lean_gate(cold, true)) return DECLINE;
-    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    HObject* obj = jit_construct_object(vm, ctor, ic, target.call_flags.constructor_capacity);
     if (obj == null) return DECLINE;
-    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
-    if (target.call_flags.constructor_capacity > hobject::INLINE_PROPS) {
-        obj.reserve_props(vm.heap, constructor_reserve_capacity(target.call_flags.constructor_capacity));
-    }
     // The frame holds the new object as its `this`, and its return answers it
     // unless the body returns an object.
     TVal this_value;
@@ -327,17 +317,8 @@ fn LeanCall jit_new_lean(Instruction* pc, TVal* regs, Dispatch* ds, ColdCtx* col
 // that is not constructable, a cache that does not hold or a failed allocation. The allocation does
 // not collect (Heap.request_gc), so the optimized code's values stay where they are.
 fn ulong jit_opt_new_object(Dispatch* ds, HObject* ctor, hobject::ICEntry* ic, ulong want) {
-    Vm* vm = ds.vm;
-    if (!ctor.is_constructable()) return 0;
-    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
-        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
-        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return 0;
-    TVal proto = ctor.prop_values()[ic.prop_idx].get();
-    if (!proto.is_object()) return 0;
-    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    HObject* obj = jit_construct_object(ds.vm, ctor, ic, (uint)want);
     if (obj == null) return 0;
-    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
-    if (want > hobject::INLINE_PROPS) obj.reserve_props(vm.heap, constructor_reserve_capacity((uint)want));
     TVal value;
     value.set_object(obj);
 $if types::USE_NANBOX:
@@ -345,6 +326,24 @@ $if types::USE_NANBOX:
 $else
     return 0;
 $endif
+}
+
+// A plain object for `new ctor`, with the prototype the NEW_OBJ's cache `ic` reads from `ctor`
+// and room for `want` properties, as th_new_obj builds it. Null, having allocated nothing, for a
+// constructor that is not constructable, a cache that does not hold or a failed allocation. The
+// allocation does not collect (Heap.request_gc).
+fn HObject* jit_construct_object(Vm* vm, HObject* ctor, hobject::ICEntry* ic, uint want) @private {
+    if (!ctor.is_constructable()) return null;
+    if (ic.key.borrow() != (void*)vm.heap.strs[heap::BuiltinStr.PROTOTYPE] || ic.has_proto
+        || ic.shape_id != ctor.shape_id || ic.shape_gen != ctor.shape_generation(vm.heap)
+        || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return null;
+    TVal proto = ctor.prop_values()[ic.prop_idx].get();
+    if (!proto.is_object()) return null;
+    HObject* obj = vm.heap.alloc_plain_object() ?? null;
+    if (obj == null) return null;
+    vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
+    if (want > hobject::INLINE_PROPS) obj.reserve_props(vm.heap, constructor_reserve_capacity(want));
+    return obj;
 }
 
 // Validate the site of a sunk allocation (jit::OptSinkSite) for `ctor`, whose NEW_OBJ optimized
@@ -432,21 +431,19 @@ $else
 $endif
 }
 
-// Arm the site of an inlined NEW_OBJ (jit::NewSite) from the object `obj` that
-// init_simple_constructor has just built for `ctor` through the entry `ic`: the stores it
-// replayed stay valid for any object built while the state recorded here is the state the
-// emitted code compares. Every object of the prototype chain is marked observed first, so
-// that a change to any of them moves the prototype epoch the site records. Leaves the site as
-// it was when a state is not covered (a property block, another realm, a chain that is not
-// plain or has a dictionary).
-fn void jit_new_arm(Heap* h, HObject* ctor, CompiledFunction* target, hobject::ICEntry* ic, HObject* obj, uint nargs,
-                    jit::NewSite* site) @private {
+// Arm the site of an inlined NEW_OBJ (jit::NewSite) for `ctor`, whose `prototype` the entry `ic`
+// reads as `proto`: what the emitted code allocates stays valid while the state recorded here is
+// the state it compares. Every object of the prototype chain is marked observed first, so that a
+// change to any of them moves the prototype epoch the site records. `count` and `final_shape`
+// are what the site's stores leave (none for jit::NEW_SITE_CALLS, which runs the body); the
+// caller fills the store arguments. False, with the site as it was, for a state that is not
+// covered (another realm, a chain that is not plain or has a dictionary).
+fn bool jit_new_arm(Heap* h, HObject* ctor, CompiledFunction* target, hobject::ICEntry* ic, HObject* proto,
+                    uint count, uint final_shape, jit::NewSite* site) @private {
 $if types::USE_NANBOX:
-    if (obj.prop_count > hobject::INLINE_PROPS || obj.prop_alloc != null || obj.prop_hash != null
-        || h.realms != null) return;
-    HObject* proto = obj.prototype;
+    if (h.realms != null) return false;
     for (HObject* cur = proto; cur != null; cur = cur.prototype) {
-        if (!hobject::plain_property_object(cur) || cur.in_dict_mode(h)) return;
+        if (!hobject::plain_property_object(cur) || cur.in_dict_mode(h)) return false;
     }
     for (HObject* cur = proto; cur != null; cur = cur.prototype) cur.gc.prototype_observed = true;
     TVal value;
@@ -456,22 +453,22 @@ $if types::USE_NANBOX:
     site.ctor_shape = ctor.shape_id;
     site.recycle = h.shape_recycle_epoch;
     site.proto_shape = proto.shape_id;
-    site.final_shape = obj.shape_id;
-    site.count = obj.prop_count;
-    for (uint j = 0; j < hobject::INLINE_PROPS; j++) {
-        uint arg = jit::NEW_ARG_NONE;
-        if (j < obj.prop_count) arg = target.code[j].a < nargs ? target.code[j].a : jit::NEW_ARG_UNDEF;
-        site.arg[j] = arg;
-    }
+    site.final_shape = final_shape;
+    site.count = count;
+    foreach (&arg : site.arg) *arg = jit::NEW_ARG_NONE;
     site.cf = target;
     site.epoch = h.prototype_epoch;
+    return true;
+$else
+    return false;
 $endif
 }
 
 // NEW_OBJ of a simple constructor, completed in place as th_new_obj does:
 // 0 when the object is built and stored, JIT_CALL_SLOW to leave the
 // instruction to jit_call. `site`, when the emitted code has an inline path for this
-// instruction, is armed once the object is built.
+// instruction, is armed once the object is built; for another plain constructor the site can
+// enter through its call entry, it is armed to allocate and call from the next construction on.
 fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     Instruction* pc = next - 1;
     Instruction insn = *pc;
@@ -484,9 +481,13 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
     CompiledFunction* target = (*ctor.extra_ptr()).func.comp_func;
     if (target == null) return JIT_CALL_SLOW;
     target.classify_lean_call();
-    // simple_constructor is only set for a constructable, non-derived function
-    // without a brand or field initializers.
-    if (!target.call_flags.simple_constructor) return JIT_CALL_SLOW;
+    // simple_constructor is only set for a constructable, non-derived function without a brand
+    // or field initializers. Any other is left to jit_call, once the site is armed for the
+    // constructions after this one when the body can run on an object the site allocates.
+    bool simple = target.call_flags.simple_constructor;
+    if (!simple && (site == null || !jit::entry_constructs(target) || target.jit_code == null
+                    || ((jit::BaselineCode*)target.jit_code).call_entry == null
+                    || target.call_flags.constructor_capacity > hobject::INLINE_PROPS)) return JIT_CALL_SLOW;
     Vm* vm = ds.vm;
     hobject::ICEntry* ic = ds.ic_base + (uint)(pc - ds.code_base);
     hobject::ic_note_constructor(ic, target.func_index);
@@ -495,12 +496,21 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
         || ic.prop_flags.is_accessor || ic.prop_idx >= ctor.prop_count) return JIT_CALL_SLOW;
     TVal proto = ctor.prop_values()[ic.prop_idx].get();
     if (!proto.is_object()) return JIT_CALL_SLOW;
+    if (!simple) {
+        jit_new_arm(vm.heap, ctor, target, ic, (HObject*)proto.get_heapptr(), jit::NEW_SITE_CALLS, 0, site);
+        return JIT_CALL_SLOW;
+    }
     ds.curr_pc = next;
     HObject* obj = vm.heap.alloc_plain_object() ?? null;
     if (obj == null) return JIT_CALL_SLOW;
     vm.heap.set_prototype(obj, (HObject*)proto.get_heapptr());
     if (!init_simple_constructor(vm, target, obj, regs + insn.b + 2, insn.c)) return JIT_CALL_SLOW;
-    if (site != null) jit_new_arm(vm.heap, ctor, target, ic, obj, insn.c, site);
+    if (site != null && obj.prop_count <= hobject::INLINE_PROPS && obj.prop_alloc == null && obj.prop_hash == null
+        && jit_new_arm(vm.heap, ctor, target, ic, obj.prototype, obj.prop_count, obj.shape_id, site)) {
+        for (uint j = 0; j < obj.prop_count; j++) {
+            site.arg[j] = target.code[j].a < insn.c ? target.code[j].a : jit::NEW_ARG_UNDEF;
+        }
+    }
     TVal* ra = regs + insn.a;
     ra.set_object(obj);
     track_heap_store(ds.act, ra, (uint)insn.a);

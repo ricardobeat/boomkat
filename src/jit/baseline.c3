@@ -182,12 +182,14 @@ struct JitStats {
     ulong[Opcode::values.len] poly_hits;
 }
 
-// The run-time state of one inlined NEW_OBJ of a simple constructor (baseline_alloc.c3
-// Asm.emit_new_inline), armed by vm::jit_new_simple once it has built an object from the
-// constructor's cached stores. The emitted code builds the object itself while the callee is a
-// closure of `cf`, and the constructor's shape and `prototype` slot, the prototype's shape and
-// the heap's prototype and shape-recycle epochs are those it was armed with: every object of
-// the prototype chain is marked observed, so a change to any of them moves the prototype epoch.
+// The run-time state of one inlined NEW_OBJ (baseline_alloc.c3 Asm.emit_new_inline), armed by
+// vm::jit_new_simple: for a simple constructor once it has built an object from the constructor's
+// cached stores, which the emitted code then replays; for any other plain constructor with a call
+// entry (count NEW_SITE_CALLS), whose body the emitted code calls with the object it allocated.
+// The emitted code builds the object itself while the callee is a closure of `cf`, and the
+// constructor's shape and `prototype` slot, the prototype's shape and the heap's prototype and
+// shape-recycle epochs are those it was armed with: every object of the prototype chain is
+// marked observed, so a change to any of them moves the prototype epoch.
 struct NewSite {
     // The constructor's function; 0 while unarmed.
     CompiledFunction* cf;
@@ -208,6 +210,8 @@ struct NewSite {
 
 const uint NEW_ARG_UNDEF = 0xFFFFFFFE;
 const uint NEW_ARG_NONE = 0xFFFFFFFF;
+// NewSite.count of a site that calls the constructor's body.
+const uint NEW_SITE_CALLS = 0xFFFFFFFF;
 
 struct BaselineCode {
     void* exec;
@@ -1072,28 +1076,28 @@ fn bool Asm.emit_call(&self) {
         default:
             return false;
     }
-    void* direct_done = null;
-    void* cc_done = null;
+    Jumps done;
     if (self.charcodeat_site()) {
         Jumps miss;
         self.emit_charcodeat(&miss);
         self.count(&self.stats.fast_hits[0], self.w.op);
-        cc_done = sljit_emit_jump(c, SLJIT_JUMP);
+        done.add(sljit_emit_jump(c, SLJIT_JUMP));
         miss.bind(sljit_emit_label(c));
     }
-    void* new_done = null;
     if (self.w.op == Opcode.NEW_OBJ) {
         Jumps miss;
-        NewSite* site = self.emit_new_inline(&miss);
+        Jumps generic;
+        NewSite* site = self.emit_new_inline(&miss, &generic);
         if (site != null) {
-            new_done = sljit_emit_jump(c, SLJIT_JUMP);
+            done.add(sljit_emit_jump(c, SLJIT_JUMP));
             miss.bind(sljit_emit_label(c));
         }
         sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
         sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
-        direct_done = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
+        done.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+        generic.bind(sljit_emit_label(c));
     }
     bool global = self.w.op == Opcode.CALL_GLOBAL && self.f.ic_entries != null && self.f.var_ic_entries != null
         && !self.global_callee_trivial();
@@ -1101,7 +1105,7 @@ fn bool Asm.emit_call(&self) {
         Jumps generic;
         if (global) self.load_global_callee(&generic);
         self.emit_direct_call(&generic);
-        direct_done = sljit_emit_jump(c, SLJIT_JUMP);
+        done.add(sljit_emit_jump(c, SLJIT_JUMP));
         generic.bind(sljit_emit_label(c));
     }
     sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
@@ -1110,12 +1114,7 @@ fn bool Asm.emit_call(&self) {
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
     sljit_set_label(sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, 0), self.nonzero);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, SLJIT_MEM | self.ds, self.regs_off);
-    if (direct_done != null || cc_done != null || new_done != null) {
-        void* end = sljit_emit_label(c);
-        if (direct_done != null) sljit_set_label(direct_done, end);
-        if (cc_done != null) sljit_set_label(cc_done, end);
-        if (new_done != null) sljit_set_label(new_done, end);
-    }
+    done.bind(sljit_emit_label(c));
     return true;
 }
 

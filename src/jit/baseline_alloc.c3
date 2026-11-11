@@ -272,9 +272,11 @@ fn bool Asm.emit_alloc(&self) {
 // is, which argument each store reads and where the stores leave the shape are in the site's
 // NewSite, which jit_new_simple arms, so the code needs no feedback from before it was compiled:
 // a site whose first construction comes after the function was compiled takes it as well. Every
-// jump in `miss` leaves nothing changed and takes that helper. Null, with nothing emitted, when
-// this build does not allocate inline or the code has no room for the site.
-fn NewSite* Asm.emit_new_inline(&self, Jumps* miss) {
+// jump in `miss` leaves nothing changed and takes that helper. A site armed for a constructor
+// with a body to run (NEW_SITE_CALLS) leaves the object in the call's receiver slot and enters the
+// constructor's call entry (CALL_CONSTRUCT); `generic` is where that call declines to. Null, with
+// nothing emitted, when this build does not allocate inline or the code has no room for the site.
+fn NewSite* Asm.emit_new_inline(&self, Jumps* miss, Jumps* generic) {
     if (self.wide || !inline_alloc_ok() || self.new_sites == null || self.new_site_next >= self.new_site_count) return null;
     Heap* h = self.hp;
     void* c = self.c;
@@ -335,6 +337,13 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss) {
     }
     InlineAlloc plan = self.plain_object_plan();
     self.emit_inline_alloc(&plan, miss);
+    void* replays = sljit_emit_cmp(c, SLJIT_NOT_EQUAL | SLJIT_32, SLJIT_MEM, (long)(usz)&site.count, SLJIT_IMM, (long)NEW_SITE_CALLS);
+    sljit_emit_op2(c, SLJIT_OR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+    self.store(self.w.b + 1, R0);
+    self.track_heap_store(self.w.b + 1);
+    self.emit_direct_call(generic);
+    void* called = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(replays, sljit_emit_label(c));
     // The stores, the slots a store names (a slot past the last is NEW_ARG_NONE), then the
     // count and the shape they lead to.
     long base = (long)hobject::plain_object_gc(false, 0).inline_words * 8;
@@ -369,5 +378,6 @@ fn NewSite* Asm.emit_new_inline(&self, Jumps* miss) {
     self.store(self.w.a, R0);
     self.track_heap_store(self.w.a);
     self.count(&self.stats.fast_hits[0], self.w.op);
+    sljit_set_label(called, sljit_emit_label(c));
     return site;
 }
