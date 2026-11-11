@@ -1188,9 +1188,12 @@ fn void OptCg.finish_object(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
     // An object or an inert value, while the collector is not marking: the invariant of OptRep.OBJECT.
-    void* inert = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, K_STRING_START);
+    // The object is tested first, as what such a node mostly holds.
     sljit_emit_op2(c, SLJIT_XOR, R2, 0, R0, 0, SLJIT_IMM, K_OBJ);
-    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R2, 0, SLJIT_IMM, PAYLOAD_SPAN), i, OptExit.SLOW_PATH);
+    void* object = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, PAYLOAD_SPAN);
+    self.exit_at(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_STRING_START), i, OptExit.SLOW_PATH);
+    void* inert = sljit_emit_jump(c, SLJIT_JUMP);
+    sljit_set_label(object, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV_U8, R3, 0, SLJIT_MEM | a.heap, a.lay.heap_gc_phase);
     void* quiet = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R3, 0, SLJIT_IMM, (long)heap::GcPhase.MARK.ordinal);
     // While marking the object is marked, and published at once unless its slot is beyond the
@@ -1621,9 +1624,11 @@ fn void OptCg.store_slot_value(&self, uint i, uint v, uint rv) {
     } else {
         self.box_node(v, R2);
     }
-    a.guard_old_value(&counted);
-    if (v == NO_NODE || self.g.nodes[v].rep == OptRep.OBJECT) {
-        a.store_value_r2(&counted);
+    // An OBJECT node (an object or an inert value) mostly replaces an object.
+    bool object = v != NO_NODE && self.g.nodes[v].rep == OptRep.OBJECT;
+    a.guard_old_value(&counted, object);
+    if (v == NO_NODE || object) {
+        a.store_value_r2(&counted, object);
     } else {
         // A number or a constant: inert.
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);

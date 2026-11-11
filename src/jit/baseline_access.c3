@@ -1014,11 +1014,21 @@ fn void Asm.store_value_counted(&self, uint rv, Jumps* counted) {
 
 // Jump to `miss` (the slow path by default) unless the value in the slot at R0
 // can be overwritten without work: a number or other inert value, or an
-// object. Uses R3.
-fn void Asm.guard_old_value(&self, Jumps* miss = null) {
+// object, which `object_first` expects. Uses R3.
+fn void Asm.guard_old_value(&self, Jumps* miss = null, bool object_first = false) {
     void* c = self.c;
     if (!miss) miss = &self.call;
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_MEM | R0, 0);
+    if (object_first) {
+        // By the tag alone, the object's first: the heap values' tags run from the string's up.
+        sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R3, 0, SLJIT_IMM, 48);
+        sljit_emit_op2(c, SLJIT_SUB, R3, 0, R3, 0, SLJIT_IMM, K_OBJ >> 48);
+        void* object = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, 0);
+        sljit_emit_op2(c, SLJIT_ADD, R3, 0, R3, 0, SLJIT_IMM, (K_OBJ - K_STRING_START) >> 48);
+        miss.add(sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, -(K_STRING_START >> 48)));
+        sljit_set_label(object, sljit_emit_label(c));
+        return;
+    }
     void* old_ok = sljit_emit_cmp(c, SLJIT_LESS, R3, 0, SLJIT_IMM, K_STRING_START);
     sljit_emit_op2(c, SLJIT_XOR, R3, 0, R3, 0, SLJIT_IMM, K_OBJ);
     miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
@@ -1033,14 +1043,16 @@ fn void Asm.store_value(&self, uint rv, Jumps* miss = null) {
     self.store_value_r2(miss);
 }
 
-// store_value of the value already in R2.
-fn void Asm.store_value_r2(&self, Jumps* miss = null) {
+// store_value of the value already in R2, which `uncounted` says is an object or inert.
+fn void Asm.store_value_r2(&self, Jumps* miss = null, bool uncounted = false) {
     void* c = self.c;
     Layout* l = self.lay;
     if (!miss) miss = &self.call;
     void* inert = sljit_emit_cmp(c, SLJIT_LESS, R2, 0, SLJIT_IMM, K_STRING_START);
-    sljit_emit_op2(c, SLJIT_XOR, R3, 0, R2, 0, SLJIT_IMM, K_OBJ);
-    miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    if (!uncounted) {
+        sljit_emit_op2(c, SLJIT_XOR, R3, 0, R2, 0, SLJIT_IMM, K_OBJ);
+        miss.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R3, 0, SLJIT_IMM, PAYLOAD_SPAN));
+    }
     self.guard_not_marking_to(miss, R3);
     sljit_emit_op1(c, SLJIT_MOV_U32, R3, 0, SLJIT_MEM | R1, l.obj_gc);
     sljit_emit_op2(c, SLJIT_AND, R3, 0, R3, 0, SLJIT_IMM, l.old_mask);
