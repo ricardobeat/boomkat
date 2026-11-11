@@ -599,7 +599,7 @@ fn void Asm.emit_charcodeat(&self, Jumps* miss) {
 // the resume point kept on the stack. A site that already named this callee
 // costs one comparison. Keeps R1-R4; clobbers R0.
 fn void Asm.emit_note_callee(&self) {
-    if (self.f.ic_entries == null) return;
+    if (self.f.ic_entries == null || self.opt) return;
     void* c = self.c;
     CallLayout* k = call_layout();
     Layout* l = self.lay;

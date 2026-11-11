@@ -581,6 +581,9 @@ struct Asm {
     uint room_slots;
     // The code allocation's BaselineCode.view, or null.
     usz[8]* view;
+    // The code is the optimizing tier's, whose call sites record no callee: the build has read
+    // what the baseline's recorded.
+    bool opt;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
     void*[Opcode::values.len + 16] sub_labels;
