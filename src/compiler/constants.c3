@@ -13,15 +13,19 @@ import std::io;
 // Constant pool
 // ============================================================================
 
+// Where a probe for `val_bits` starts, before masking to the table's power-of-two
+// size. Pointers and small integers differ only in a few bits, so they are mixed:
+// their raw bits put every string in one slot of eight and made long runs.
+macro uint const_hash_home(ulong val_bits) => (uint)((val_bits * 0x9E3779B97F4A7C15) >> 32);
+
 // Look up a constant in the hash table and return its index, or const_count if not found.
 fn uint CompilerContext.lookup_constant_hash(&self, ulong val_bits) {
     if (self.const_hash == null || self.const_hash_cap == 0) return self.const_count;
-    // Use the low bits of the TVal as initial hash probe
-    uint hash = (uint)(val_bits >> 1) % self.const_hash_cap;
+    uint hash = const_hash_home(val_bits);
 
     // Linear probe: find empty slot or matching entry
     for (uint attempt = 0; attempt < self.const_hash_cap; attempt++) {
-        uint idx = (hash + attempt) % self.const_hash_cap;
+        uint idx = (hash + attempt) & (self.const_hash_cap - 1);
         if (self.const_hash[idx].hash == 0) {
             return self.const_count;
         }
@@ -42,10 +46,13 @@ fn void CompilerContext.insert_constant_hash(&self, ulong val_bits, uint idx) {
     if (self.const_hash == null || self.const_hash_count >= self.const_hash_fill || val_bits == 0) {
         return;
     }
-    uint hash = (uint)(val_bits >> 1) % self.const_hash_cap;
+    uint hash = const_hash_home(val_bits);
 
     for (uint attempt = 0; attempt < self.const_hash_cap; attempt++) {
-        uint slot = (hash + attempt) % self.const_hash_cap;
+        uint slot = (hash + attempt) & (self.const_hash_cap - 1);
+        // The first slot with these bits is the one a lookup finds. A constant
+        // array repeats values, and a run of equal entries is probed in full.
+        if (self.const_hash[slot].hash == val_bits) return;
         if (self.const_hash[slot].hash == 0) {
             self.const_hash[slot].hash = val_bits;
             self.const_hash[slot].index = idx;
