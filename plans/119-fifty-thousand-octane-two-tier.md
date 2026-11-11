@@ -53,10 +53,17 @@ below the interpreter (4,812 against 4,933).
 - Seven benchmarks gain 3% or less from `--opt`: EarleyBoyer, RegExp, Splay,
   PdfJS, Gameboy, CodeLoad, TypeScript.
 
-Since r15, eleven commits (`1b5ad136`..`370ba16d`) are measured in instructions
-retired only: TypeScript about -10%, EarleyBoyer -9%, Splay -6%, the RegExp loop
--15.7%. Gate r16 ran on a loaded machine (load average 3 to 8) and decides
-nothing; its one calm pair read 10,132 against 9,841. **It has to be rerun.**
+Gate r17 (`127b4c61`, 2026-11-11, calm machine, three alternating runs
+against r15): `--jit --opt` **10,654** against 10,175 (+4.7%), `--jit` 8,349
+(r15: 7,830). Gains: Gameboy +30%, RegExp +20%, PdfJS +16%, DeltaBlue +16%,
+Splay +12%, RayTrace +8%, EarleyBoyer +6%, TypeScript +5%. RayTrace under
+`--jit` is now above the interpreter (5,045). Peak RSS rose from 1,997 to
+2,362 MiB over the bundle; not yet explained.
+
+**Box2D is unstable under `--opt` and that comes first** (step 0). Inside the
+full bundle it scores 8,000 to 12,700 from run to run (gate median 9,759, r15
+13,026 and stable); the mini (`box2d_loop.js`) never shows it. r16 already had
+it, less often.
 
 ## What exists
 
@@ -143,19 +150,42 @@ that has to be checked in the code before building on it.
 
 ### 0. Close the open ends
 
-1. Rerun gate r16 on a calm machine (`--jit --opt` against r15, then `--jit`).
-2. Layer validation for `1b5ad136`..`370ba16d` (Working rules).
-3. Bug, all modes: in a sloppy script, `acc = 42` where `acc` is an accessor
-   on the global object does not call the setter. The bare-name store reaches
-   `env_try_put_lex`, which reports the binding as not found for an accessor
-   and the caller then defines a data property. The fix belongs in the global
-   object-environment put: an accessor found on the global object or its
-   prototype chain calls the setter (or throws in strict code when there is
-   none). Fixture in `test/`, plus the variable-cache path: a cached global
-   store must not arm for an accessor.
-4. Remove merged worktrees (`jit-alloc`, `jit-cp`, `jit-elems`, `jit-gbemu`,
+1. **Box2D's slow mode.** What is known (logs: `--opt-log --jit-stats` on the
+   bundle, Box2D is source lines 334900 to 335400 of `octane-all.js`):
+   - A slow run has about 210 shape exits in Box2D against about 45, starting
+     at one moment at which many functions exit at their `GETPROPC_CACHED`
+     inherited reads together; twice as many bodies are discarded for reaching
+     `OPT_EXIT_MAX` with no repeated site, and they end refused. The run then
+     makes ten times the builtin calls through C (2.7M against 275K).
+   - Those reads guard `Heap.prototype_epoch` against the value in the site's
+     cache (`opt_emit.c3`, the `IC_CHAIN_EPOCH` case), and the exit is reported
+     as a shape exit and counted against the body.
+   - Tried and reverted, none fixed it: rebuilding at once when
+     `opt_note_proto_exit` learns a receiver (always slow, the rebuild exits
+     again); rebuilding bodies whose cells `purge_cells` cleared (never fires
+     in Box2D); not counting exits whose cache epoch is behind the heap's
+     (38,000 to 64,000 shape exits per run instead of 1,300: the epoch keeps
+     moving or the caches are not refilled at the exit, still bimodal).
+   - With no eviction (`--opt-code-max=67108864`) Box2D is always slow, so the
+     fast mode is an eviction resetting bodies at a lucky time.
+   - Next: count `bump_prototype_epoch` by caller during Box2D in the bundle
+     and find what moves the epoch there (suspects: the collector's shape
+     reuse, an earlier benchmark leaving a dictionary-mode prototype behind);
+     then check that a baseline miss on an epoch entry refills it. Bisect
+     `716b8d37`..`370ba16d` on the bundle, six runs per build.
+2. Layer validation of `1b5ad136`..`91dd8227` done so far: `jit_check`
+   (789 files, 6 modes), `test-local`, `test-jit`, `test-jit-diff`,
+   `test262-jit-diff`, slim, tiny, no-NaN-box build. Still owed: ASan JIT
+   build, GC-stress, the full test262 gate.
+3. Remove merged worktrees (`jit-alloc`, `jit-cp`, `jit-elems`, `jit-gbemu`,
    `jit-md`, `jit-newobj`, `jit-ops`, `jit-pl`, `jit-props`, `jit-puts`,
    `jit-strings`, `jit-vars`, `jit-regexp`) after checking each one's status.
+
+Done since r16: optimized code kept through the mark phase (`c03a4ffd`),
+inline string-content equality (`06ada748`), inherited reads cached through a
+settled dictionary receiver (`1ab1b419`, Gameboy), inline global step
+(`d6baf093`) and bitwise not (`338d581d`), call-path trims (`127b4c61`), the
+global accessor store bug (`91dd8227`).
 
 ### 1. Calls in the baseline tier
 
@@ -243,31 +273,37 @@ EarleyBoyer 121K: all `needs_env` with `env_call_ok`, entered today through
   `@lean_call_*`. Give those functions a call entry like any other; the frame
   is cheap now and the C classification is not.
 
-**1.4 The protocol.** A plain call is about 220 instructions over an empty
-loop, a method call about 450; JSC's baseline is around 30 to 40.
+**1.4 The protocol.** Traced (lldb single-step, 2026-11-11): a plain call
+and return is about 360 generated instructions: site 30, call subroutine 57,
+entry 115, body, return subroutine 75, after the return 40. TypeScript makes
+160M such calls in 203G instructions, so the protocol is over a quarter of it.
+JSC's baseline is around 30 to 40.
 
-- First step is a trace, not a change: an lldb single-step script over one
-  call and return (`thread.StepInstruction`, the recipe that produced the
-  builtin-call figure), bucketed into site preamble, entry guards, publish,
-  clears, body entry, return guards, pop, view reload. The method call's extra
-  230 is unexplained and comes first.
-- Known candidates, in the order to try them: (a) the `Dispatch` view
-  (`emit_view`: code, constants, both cache bases, biases) is written on entry
-  and again on return; generated code addresses caches and constants with
-  baked immediates, so the view is needed only when leaving for C. Write it
-  lazily: thunks and helpers reload it from `act.func` through one shared
-  subroutine. That is the invariant to be careful with: every path that
-  leaves generated code must pass through that subroutine. (b) Entry guards
-  that are static per site and target (register-window room, argument count)
-  move to compile time once the site has a monomorphic target in its feedback:
-  emit a guarded direct jump to the body label past the guards. (c) Local and
-  scratch clears: clear only registers the bytecode liveness says are read
-  before written (the opt tier's liveness, `OPT_REGION_LIVENESS_BUDGET`, is
-  already computed per function). The collector then must not scan above
-  `heap_reg_count`; verify that it honours it. (d) `jit_floor`/`jit_depth`
-  bookkeeping: one counter, checked only on entry.
+- Nearly all of it is straight-line bookkeeping for the 17-word `Activation`
+  and the `Dispatch` view; the redundant tests are gone (`127b4c61`, about 10
+  instructions). Under 100 needs structure, in this order: (a) the view block
+  (11 instructions on entry and 11 after the return) written lazily: thunks
+  and helpers reload it from `act.func` through one shared subroutine, and
+  every path that leaves generated code must pass through it; (b) the return
+  subroutine's tests that are static per function (`act.cat` without a `TRY`,
+  `act.forin` without a for-in: needs two function flags from the compiler);
+  (c) local and scratch clears by liveness; (d) `jit_floor`/`jit_depth` as
+  one counter; (e) a slimmer `Activation` (serial, caller_top, async fields
+  written per call for lean frames that never read them).
+- The larger lever on TypeScript is elsewhere: the optimizing tier is worth
+  about 1% there (202.0G against 203.8G even with a 64 MB code budget; 544 of
+  720 bodies discarded). Calls are not inlined when the callee itself calls
+  (`opcode CALL`: 3,431 rejections), is polymorphic (4,025) or too big (2,210).
+- Other measurements: a builtin called from baseline code costs 570 to 830
+  instructions (isNaN 738, Math.abs 569, hasOwnProperty 720, charAt 812), of
+  which the wrapper chain `jit_call_builtin_native` -> `jit_call_builtin` ->
+  `th_call_native` -> `dispatch_builtin` is about half (step 4.1). A callee
+  with a captured variable pays 530 more (`NEWCELLS` thunk), creating a
+  closure 1,400 (`CLOSURE` thunk). Remaining thunk volume per mini:
+  TypeScript GETVAR 2.0M, NEW_OBJ 1.6M, NEWCELLS 1.4M, NEXTFOR 1.2M; PdfJS
+  INITELEM 1.3M, CLOSURE 976K; zlib DECLVAR 852K, IF_TRUE 700K, CALL_VAR 665K.
 - Target: under 100 instructions for a plain call and return. Measure on
-  `callb.js` (experiments dir) and Richards, DeltaBlue, RayTrace loops.
+  `tr.js`-style micros and the Richards, DeltaBlue, RayTrace loops.
 
 ### 2. Collector and allocation
 
