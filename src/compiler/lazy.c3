@@ -85,7 +85,6 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     // The source slice has no declarations for its enclosing scopes. Keep
     // free names in the captured environment rather than proving them global.
     idx.unknown_outer = true;
-    idx.defer_functions = defer_functions_allowed();
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
     CompiledFunction saved = *f;

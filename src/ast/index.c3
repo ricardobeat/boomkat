@@ -27,7 +27,8 @@ struct AstIndex {
     bool built;
     // A reparsed function has no proof about declarations outside its source.
     bool unknown_outer;
-    // Eval defers ordinary bodies; static scripts and inspection stay eager.
+    // The unit's ParseOptions.defer_functions: the parser recorded ordinary
+    // bodies, so the compiler must turn them into templates.
     bool defer_functions;
     bool use;
     bool scalar_classes_known;
@@ -59,6 +60,7 @@ fn AstIndex* index_begin(char[] source, void* heap, ParseOptions opts, void* sou
     }
     c.prev = index_state;
     index_state = c;
+    c.defer_functions = opts.defer_functions;
     c.lexer = lexer::lexer_init(source, heap);
     c.tree.init(source);
     if (c.src_buf != null) c.tree.shared_line_starts = c.src_buf.line_starts;

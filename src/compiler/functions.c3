@@ -1283,10 +1283,10 @@ fn void? CompilerContext.hoist_decls_in(&self, uint scope, bool is_global, bool 
 
 }
 
-// A hoisted declaration is compiled before the deferral gate in
-// gen_compile_function runs, so it needs the same decision here: a body the
-// parser only recorded must become a template, or it would compile as empty.
-fn bool CompilerContext.hoist_can_defer(&self, uint fnf) {
+// Whether a function with these flags becomes a deferred template here. Every
+// body the parser recorded must pass, or it would compile as empty; the parser's
+// own gate in Parser.function_tail is the narrower of the two.
+fn bool CompilerContext.can_defer_body(&self, uint fnf) {
     return ast::index_state.defer_functions
         && (fnf & (ast::FNF_GENERATOR | ast::FNF_ASYNC)) == 0
         && (fnf & ast::FNF_SIMPLE_PARAMS) != 0
@@ -1354,9 +1354,10 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
     self.is_async = hoist_is_async;
     uint ast_scope = idx.function_scope(s.decl);
     CompiledFunction* inner;
-    if (self.hoist_can_defer(fnf)) {
+    if (self.can_defer_body(fnf)) {
         inner = self.defer_function(ast_scope, fn_name2)!;
     } else {
+        if (idx.tree.body_was_recorded(s.decl)) return self.fail("internal: a recorded body reached the eager compiler")~;
         inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: ast_scope)!;
     }
     self.gen_line(idx.tree.field(rec, ast::FN_SRC_END) - 1);
@@ -1441,9 +1442,10 @@ fn bool? CompilerContext.hoist_global_fn_decls_indexed(&self, bool checks_only) 
 
         self.is_async = hoist_is_async;
         CompiledFunction* inner;
-        if (self.hoist_can_defer(fnf)) {
+        if (self.can_defer_body(fnf)) {
             inner = self.defer_function(idx.function_scope(s.decl), fn_name2)!;
         } else {
+            if (idx.tree.body_was_recorded(s.decl)) return self.fail("internal: a recorded body reached the eager compiler")~;
             inner = self.compile_inner_function(fn_name2, false, idx.tree.field(rec, ast::FN_SRC_START), ast_scope: idx.function_scope(s.decl))!;
         }
         self.gen_line_end(s.decl);

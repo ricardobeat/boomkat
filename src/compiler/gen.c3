@@ -1481,17 +1481,13 @@ fn CompiledFunction*? CompilerContext.gen_compile_function(&self, uint n, uint o
         self.is_user_generator = saved_user_gen;
         self.is_async = saved_async;
     }
-    if (ast::index_state.defer_functions
-        && !method && tree.tags.data[n] != NodeTag.ARROW
+    if (!method && tree.tags.data[n] != NodeTag.ARROW
         && (tree.tags.data[n] != NodeTag.FUNC_EXPR || name_node == 0)
-        && (fnf & (ast::FNF_GENERATOR | ast::FNF_ASYNC)) == 0
-        && (fnf & ast::FNF_SIMPLE_PARAMS) != 0
-        && !self.disable_optimize && !$feat(TRACE_VM) && !self.in_class_body
-        && !self.module_goal && !self.lexer.ts_mode && !self.lexer.jsx.enabled
-        && self.private_name_table.count == 0
+        && self.can_defer_body(fnf)
         && (n != self.eager_function || tree.body_was_recorded(n))) {
         return self.defer_function(scope, name);
     }
+    if (tree.body_was_recorded(n)) return self.fail("internal: a recorded body reached the eager compiler")~;
     CompiledFunction* inner = tree.tags.data[n] == NodeTag.ARROW
         ? self.compile_arrow_ast(scope, name)!
         : self.compile_inner_function(name, name_node != 0 && tree.tags.data[n] == NodeTag.FUNC_EXPR,
