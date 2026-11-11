@@ -1257,23 +1257,40 @@ fn void OptBuild.ask_object(&self, uint reg) {
     self.load_changed = true;
 }
 
+// The node `n` is a copy of, through any number of copies.
+fn uint OptBuild.copied(&self, uint n) {
+    while (n != NO_NODE && self.g.nodes[n].op == OptOp.COPY) n = self.g.nodes[n].a;
+    return n;
+}
+
+// Give the guard `chk` of an inlined method call at `callee_reg` the function object its method
+// read names (method_constant), and note a receiver that read already proved an object (bit 3).
+fn void OptBuild.settle_method(&self, uint chk, uint callee_reg, CompiledFunction* cf) {
+    bool proven;
+    self.g.nodes[chk].key = self.method_constant(callee_reg, cf, &proven);
+    if (self.g.nodes[chk].key != null && proven) self.g.nodes[chk].cc |= 8;
+}
+
 // The function object in the callee register of a method call about to be inlined, when the read
 // that defined the register is an inherited one whose cache names the property's owner under the
 // prototype epoch as it stands, and that function is a closure of `cf` the call's guard would pass
 // now; else null. The guard then compares the register with it. It is observed, so its death moves
-// the epoch: while the epoch stands, its address names it alone.
-fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* cf) {
-    if (callee_reg >= self.nregs) return null;
+// the epoch: while the epoch stands, its address names it alone. `read_from_receiver`: the read's
+// receiver node is the call's.
+fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* cf, bool* read_from_receiver) {
+    *read_from_receiver = false;
+    if (callee_reg + 1 >= self.nregs) return null;
     CompiledFunction* f;
     uint pc;
     // The register's node, through the copies that moved it there, or the read into its slot.
-    uint n = self.cur[callee_reg].node;
-    while (n != NO_NODE && self.g.nodes[n].op == OptOp.COPY) n = self.g.nodes[n].a;
+    uint n = self.copied(self.cur[callee_reg].node);
     if (n != NO_NODE) {
         OptNode* load = &self.g.nodes[n];
         if (load.op != OptOp.LOAD_FIELD || load.cc != 2) return null;
         f = self.g.fns[load.fidx].f;
         pc = load.pc;
+        // The read proved its receiver an object: the call's, when that is the same node.
+        *read_from_receiver = load.b != NO_NODE && self.copied(load.b) == self.copied(self.cur[callee_reg + 1].node);
     } else {
         uint key = self.load_def[callee_reg];
         uint site = key >> 24;
@@ -2866,7 +2883,7 @@ fn bool OptBuild.enter_flat(&self, uint si) {
     }
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     self.g.nodes[chk].cc = s.construct ? 2 : (s.method ? 1 : 0);
-    if (s.method && !s.forward) self.g.nodes[chk].key = self.method_constant(callee_reg, s.cf);
+    if (s.method && !s.forward) self.settle_method(chk, callee_reg, s.cf);
     self.snapshot(chk);
     if (s.forward) {
         bool pending = false;
@@ -3201,7 +3218,7 @@ fn bool OptBuild.try_inline(&self) {
     uint chk = self.add(OptOp.CHECK_CALLEE, OptRep.NONE, callee_node, recv_node, (long)(usz)s.cf);
     // Bit 2: the function and receiver are those after the callee register (`apply`, `call`).
     self.g.nodes[chk].cc = (s.construct ? 2 : (s.method ? 1 : 0)) | (s.dotcall ? 4 : 0);
-    if (s.method && !s.forward && !s.dotcall) self.g.nodes[chk].key = self.method_constant(callee_reg, s.cf);
+    if (s.method && !s.forward && !s.dotcall) self.settle_method(chk, callee_reg, s.cf);
     self.snapshot(chk);
     bool move_pending = false;
     bool moved = true;

@@ -1679,13 +1679,12 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     } else {
         a.load(R1, callee_reg);
     }
-    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
     // The function the builder found in the method's slot (OptBuild.method_constant) passes every
     // test below, and is that function while the epoch it was observed under stands.
     void* constant = null;
     void*[2] other;
     if (n.key != null) {
-        other[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)(usz)n.key);
+        other[0] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, (long)(usz)n.key ^ K_OBJ);
         sljit_emit_op1(c, SLJIT_MOV, R4, 0, m | a.heap, a.lay.heap_proto_epoch);
         other[1] = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R4, 0, SLJIT_IMM, (long)self.h.prototype_epoch);
         constant = sljit_emit_jump(c, SLJIT_JUMP);
@@ -1693,6 +1692,7 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
         sljit_set_label(other[0], tests);
         sljit_set_label(other[1], tests);
     }
+    sljit_emit_op2(c, SLJIT_XOR, R0, 0, R1, 0, SLJIT_IMM, K_OBJ);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
     miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_op1(c, SLJIT_MOV_U32, R4, 0, m | R0, 0);
@@ -1724,15 +1724,18 @@ fn void OptCg.emit_check_callee(&self, uint i, OptNode* n) {
     if ((n.cc & 3) == 1 && !cf.call_flags.ignores_this && !(n.b == NO_NODE && n.c != NO_NODE)) {
         // The receiver: an object in a register the caller's frame tracks, or in an OBJECT node
         // that any exit stores into a frame it publishes.
-        if (n.b != NO_NODE) {
-            int r = self.obj_reg(n.b, R0);
-            sljit_emit_op2(c, SLJIT_XOR, R0, 0, r, 0, SLJIT_IMM, K_OBJ);
-        } else {
-            a.load(R0, callee_reg + 1);
-            sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+        // The read of the method proved it an object when it is that read's receiver (bit 3).
+        if ((n.cc & 8) == 0) {
+            if (n.b != NO_NODE) {
+                int r = self.obj_reg(n.b, R0);
+                sljit_emit_op2(c, SLJIT_XOR, R0, 0, r, 0, SLJIT_IMM, K_OBJ);
+            } else {
+                a.load(R0, callee_reg + 1);
+                sljit_emit_op2(c, SLJIT_XOR, R0, 0, R0, 0, SLJIT_IMM, K_OBJ);
+            }
+            miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
+            miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
         }
-        miss[misses++] = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, PAYLOAD_SPAN);
-        miss[misses++] = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
         if (n.b == NO_NODE && callee_reg + 1 >= a.frame_regs) {
             sljit_emit_op1(c, SLJIT_MOV, R0, 0, m | a.ds, a.lay.ds_act);
             sljit_emit_op1(c, SLJIT_MOV_U32, R0, 0, m | R0, a.lay.act_hrc);
