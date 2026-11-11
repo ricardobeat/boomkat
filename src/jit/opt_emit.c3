@@ -632,7 +632,10 @@ fn bool OptCg.force_here(&self, OptNode* n) {
 // Uses R1, R3, FR0 and FR1.
 fn void OptCg.int32_from_r0(&self, uint slot = uint::max) {
     void* c = self.a.c;
-    void* not_double = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT);
+    // The fastint is tested first: its path runs nothing of the double's.
+    sljit_emit_op2(c, SLJIT_ASHR, R3, 0, R0, 0, SLJIT_IMM, 48);
+    void* fastint = sljit_emit_cmp(c, SLJIT_EQUAL, R3, 0, SLJIT_IMM, STAG_INT);
+    self.a.call.add(sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R0, 0, SLJIT_IMM, K_INT));
     sljit_emit_fcopy(c, SLJIT_COPY_TO_F64, FR0, R0);
     sljit_emit_fop1(c, SLJIT_CONV_SW_FROM_F64, R1, 0, FR0, 0);
     sljit_emit_op1(c, SLJIT_MOV_S32, R3, 0, R1, 0);
@@ -650,8 +653,7 @@ fn void OptCg.int32_from_r0(&self, uint slot = uint::max) {
         self.a.store(slot, R3, 0);
     }
     void* done = sljit_emit_jump(c, SLJIT_JUMP);
-    sljit_set_label(not_double, sljit_emit_label(c));
-    self.a.guard_int(R0);
+    sljit_set_label(fastint, sljit_emit_label(c));
     sljit_emit_op2(c, SLJIT_SHL, R0, 0, R0, 0, SLJIT_IMM, 16);
     sljit_emit_op2(c, SLJIT_ASHR, R0, 0, R0, 0, SLJIT_IMM, 16);
     sljit_emit_op1(c, SLJIT_MOV_S32, R1, 0, R0, 0);
@@ -728,7 +730,8 @@ fn void OptCg.emit_load_global(&self, uint i, OptNode* n) {
         a.call.add(sljit_emit_cmp(self.a.c, SLJIT_NOT_EQUAL, R1, 0, SLJIT_IMM, 0));
     }
     sljit_emit_op1(self.a.c, SLJIT_MOV, R0, 0, SLJIT_MEM | R0, 0);
-    a.guard_not_tdz();
+    // A binding in its TDZ is no number: the numeric test below leaves for it too.
+    if (n.rep == OptRep.OBJECT) a.guard_not_tdz();
     for (uint k = 0; k < a.alt.len; k++) self.exit_at(a.alt.at[k], i, OptExit.SLOW_PATH);
     a.alt.len = 0;
     self.exit_calls(i, OptExit.SLOW_PATH);
