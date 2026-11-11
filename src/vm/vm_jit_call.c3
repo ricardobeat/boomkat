@@ -282,6 +282,14 @@ $endif
     return value;
 }
 
+// jit_store_slot of `value`, which the optimized code holds in a machine register.
+fn void jit_opt_store_slot(Heap* h, HObject* hobj, hobject::PropValue* slot, ulong value) {
+$if types::USE_NANBOX:
+    TVal v = { .bits = value };
+    h.store_slot_ref(hobj, slot, &v);
+$endif
+}
+
 // NEW_OBJ of a lean constructor jit_new_simple left: its object and its
 // frame are published as th_new_obj does. DECLINE leaves the instruction to its thunk before
 // anything is written.

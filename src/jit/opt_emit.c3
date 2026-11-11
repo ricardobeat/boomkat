@@ -1427,8 +1427,10 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     a.array_slot();
     a.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, SLJIT_MEM | R0, 0, SLJIT_IMM, K_UNDEF));
     self.box_node(n.b, R2);
-    a.guard_old_value();
+    Jumps counted;
+    a.guard_old_value(&counted);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
+    self.store_counted(i, &counted);
     $if features::BUFFERS:
         void* done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
@@ -1446,20 +1448,14 @@ fn void OptCg.emit_store_elem(&self, uint i, OptNode* n) {
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 
-// PUTPROP of the window value C to an element, as Asm.emit_put_elem: the counted and traced store
-// of th_store_slot_ref takes a C call, so on that path the live nodes are stored first and
-// reloaded after.
+// PUTPROP of the window value C to an element, as Asm.emit_put_elem.
 fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     Asm* a = self.a;
-    int sp = SLJIT_MEM | reg_sp();
     self.decode(n);
     a.call.len = 0;
-    // A receiver in an OBJECT node cannot survive the counted store's call: that store leaves
-    // for the baseline code instead.
-    bool held = n.c != NO_NODE;
     int rr = R0;
-    if (held) {
+    if (n.c != NO_NODE) {
         rr = self.obj_reg(n.c, R0);
     } else {
         a.load(R0, a.w.a);
@@ -1477,35 +1473,7 @@ fn void OptCg.emit_store_elem_window(&self, uint i, OptNode* n) {
     Jumps counted;
     a.guard_old_value(&counted);
     a.store_value_r2(&counted);
-    if (held) {
-        for (uint k = 0; k < counted.len; k++) a.call.add(counted.at[k]);
-        counted.len = 0;
-    }
-    if (!held) {
-        void* done = sljit_emit_jump(c, SLJIT_JUMP);
-        counted.bind(sljit_emit_label(c));
-        sljit_emit_op1(c, SLJIT_MOV, sp, SUB_VALUE_OFF, R0, 0);
-        self.store_dirty(n.dirty_first, n.dirty_count);
-        a.load(R0, a.w.a);
-        a.unbox_object(R1, R0);
-        sljit_emit_op1(c, SLJIT_MOV, R2, 0, sp, SUB_VALUE_OFF);
-        sljit_emit_op2(c, SLJIT_ADD, R3, 0, a.regs, 0, SLJIT_IMM, (long)a.w.c * TVal::size);
-        sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.heap, 0);
-        sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_store_slot);
-        for (uint k = 0; k < n.reload_count; k++) {
-            OptDirty d = self.g.dirty[(sz)(n.reload_first + k)];
-            OptNode* nd = &self.g.nodes[d.node];
-            if (nd.reg < 0 || nd.is_const()) continue;
-            if (nd.rep == OptRep.OBJECT) {
-                a.load(nd.reg, d.reg);
-            } else if (nd.rep == OptRep.INT32) {
-                self.load_unboxed(nd.reg, d.reg);
-            } else {
-                self.reload_flt(nd.reg, d.reg);
-            }
-        }
-        sljit_set_label(done, sljit_emit_label(c));
-    }
+    self.store_counted(i, &counted);
     $if features::BUFFERS:
         void* typed_done = sljit_emit_jump(c, SLJIT_JUMP);
         sljit_set_label(other, sljit_emit_label(c));
@@ -1564,19 +1532,50 @@ fn void OptCg.emit_store_field(&self, uint i, OptNode* n) {
         a.prop_base(R0, R1);
         sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)poly.idx[0] * 8);
     }
-    if (n.a != NO_NODE && self.g.nodes[n.a].rep == OptRep.OBJECT) {
-        int vr = self.obj_reg(n.a, R2);
-        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
-        a.guard_old_value();
-        a.store_value_r2();
-    } else if (n.a != NO_NODE) {
-        self.box_node(n.a, R2);
-        a.guard_old_value();
-        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
-    } else {
-        a.store_slot(this_op ? a.w.a : a.w.b);
-    }
+    self.store_slot_value(i, n.a, this_op ? a.w.a : a.w.b);
     self.exit_calls(i, OptExit.SHAPE);
+}
+
+// Node `i`'s store into the slot at R0 of the object in R1: of node `v`, or of window register
+// `rv` when it has none.
+fn void OptCg.store_slot_value(&self, uint i, uint v, uint rv) {
+    void* c = self.a.c;
+    Asm* a = self.a;
+    Jumps counted;
+    if (v == NO_NODE) {
+        a.load(R2, rv);
+    } else if (self.g.nodes[v].rep == OptRep.OBJECT) {
+        int vr = self.obj_reg(v, R2);
+        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
+    } else {
+        self.box_node(v, R2);
+    }
+    a.guard_old_value(&counted);
+    if (v == NO_NODE || self.g.nodes[v].rep == OptRep.OBJECT) {
+        a.store_value_r2(&counted);
+    } else {
+        // A number or a constant: inert.
+        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
+    }
+    self.store_counted(i, &counted);
+}
+
+// The store of the value in R2 into the slot at R0 of the object in R1 that the plain path of
+// node `i` declined (`counted`): an old value to release, a string to count, an old owner or a
+// running mark. It takes the counted and traced store of th_store_slot_ref, with the registers
+// in use saved around the call. An old owner is the usual state of a long-lived object, so
+// leaving for the baseline code here would discard the body.
+fn void OptCg.store_counted(&self, uint i, Jumps* counted) {
+    void* c = self.a.c;
+    void* done = sljit_emit_jump(c, SLJIT_JUMP);
+    counted.bind(sljit_emit_label(c));
+    self.spill_live(i, true);
+    sljit_emit_op1(c, SLJIT_MOV, R3, 0, R2, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.heap, 0);
+    sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&vm::jit_opt_store_slot);
+    self.spill_live(i, false);
+    sljit_set_label(done, sljit_emit_label(c));
 }
 
 // The guard of an inlined call, run before anything of the call is: the callee register holds a
@@ -2033,18 +2032,7 @@ fn void OptCg.emit_init_slot(&self, uint i, OptNode* n) {
     a.unbox_object(R1, R0);
     a.prop_base(R0, R1);
     sljit_emit_op2(c, SLJIT_ADD, R0, 0, R0, 0, SLJIT_IMM, (long)a.w.b * 8);
-    if (n.a != NO_NODE && self.g.nodes[n.a].rep == OptRep.OBJECT) {
-        int vr = self.obj_reg(n.a, R2);
-        if (vr != R2) sljit_emit_op1(c, SLJIT_MOV, R2, 0, vr, 0);
-        a.guard_old_value();
-        a.store_value_r2();
-    } else if (n.a != NO_NODE) {
-        self.box_node(n.a, R2);
-        a.guard_old_value();
-        sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R0, 0, R2, 0);
-    } else {
-        a.store_slot(a.w.c);
-    }
+    self.store_slot_value(i, n.a, a.w.c);
     self.exit_calls(i, OptExit.SLOW_PATH);
 }
 

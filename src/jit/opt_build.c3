@@ -1637,9 +1637,7 @@ fn bool OptBuild.get_elem(&self) {
 
 // PUTPROP of a value to an element at an integer index, into an object in the window. A numeric
 // node is stored as it is; any other value is read from the window, in an inlined body only (a
-// function's own body runs it as a GENERIC), and stored with the baseline's counted store. A
-// receiver held in an OBJECT node leaves for the baseline code instead of the counted store, which
-// would call out with the node's register live.
+// function's own body runs it as a GENERIC), and stored with the baseline's counted store.
 fn bool OptBuild.put_elem(&self) {
     uint rv = self.w.c;
     uint rnode;
@@ -1659,16 +1657,6 @@ fn bool OptBuild.put_elem(&self) {
     uint n = self.add(OptOp.STORE_ELEM, OptRep.NONE, idx, numeric ? self.cur[rv].node : NO_NODE, (long)self.pc);
     self.g.nodes[n].c = rnode;
     self.snapshot(n);
-    if (!numeric && rnode == NO_NODE) {
-        // The counted store is a C call that clobbers the machine registers: the live nodes are
-        // stored before it on that path, and reloaded after.
-        uint first = (uint)self.g.dirty.len();
-        for (uint r = 0; r < self.nregs; r++) {
-            if (self.cur[r].node != NO_NODE) self.g.dirty.push({ .reg = r, .node = self.cur[r].node });
-        }
-        self.g.nodes[n].reload_first = first;
-        self.g.nodes[n].reload_count = (uint)self.g.dirty.len() - first;
-    }
     return true;
 }
 
