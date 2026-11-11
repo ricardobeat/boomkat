@@ -328,7 +328,7 @@ fn void* opt_osr(Dispatch* ds, CompiledFunction* f) @noinline {
     Heap* h = ds.heap;
     opt_note_entry(h, f, OPT_LOOP_CREDIT, (uint)(ds.curr_pc - ds.code_base), ds.regs_base);
     if (f.opt_code == null || f.opt_state != OPT_ACTIVE) return null;
-    return ((BaselineCode*)f.jit_code).exec;
+    return baseline_jump_entry(f);
 }
 
 // The slow path of a back edge's poll in optimized code: the budget expired or a
@@ -1108,14 +1108,13 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
         sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, 1);
         sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R0, 0, R1, 0);
     }
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.i * Instruction::size);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.i * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.pc_off, R1, 0);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)oc);
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)reason);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&opt_exit);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
+    sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_IMM, (long)(usz)oc.base.exec_jump);
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
 }
 
@@ -1123,10 +1122,9 @@ fn void Asm.emit_opt_exit(&self, OptCode* oc, uint reason, bool counted) {
 // of its loop, which is the code's normal way out and teaches the next build nothing.
 fn void Asm.emit_opt_leave(&self, OptCode* oc) {
     void* c = self.c;
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.i * Instruction::size);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.i * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.ds, self.pc_off, R1, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
+    sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_IMM, (long)(usz)oc.base.exec_jump);
 }
 
 // Count an exit that resumes at word `pc` of `cf` under the opcode found there, for --jit-stats.

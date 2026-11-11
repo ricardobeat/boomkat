@@ -1103,6 +1103,7 @@ fn TVal vm_call_fn_impl(void* vm_ptr, TVal func, TVal* args, uint nargs, TVal th
             act.async_promise = null;
             act.async_gen_state = null;
             act.serial = ++vm.activation_serial;
+            act.native_ret = null;
 
             // Check for generator/async resume: if heap.resume_gen is set
             // and matches this function, restore the saved PC and registers.

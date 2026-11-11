@@ -1907,6 +1907,7 @@ fn TVal? try_fast_compiled_call(Dispatch* ds, Opcode op, DecodedInsn insn, bool*
                     new_act.async_gen_state = null;
                                     new_act.forin = null;
                     new_act.serial = ++vm.activation_serial;
+                    new_act.native_ret = null;
                     new_act.curr_pc = target_fast.code;
                     new_act.bottom = new_bottom;
                     new_act.retval = ds.regs_base + result_reg;

@@ -177,6 +177,10 @@ struct Activation {
     TVal tv_func;
     // The caller's valstack_top at CALL time, restored on RET without recomputing.
     TVal* caller_valstack_top;
+    // Where generated code waits for this frame to return (jit/baseline_call.c3): a call site in
+    // the caller's code, the trampoline's return for a C caller that waits (vm::jit_run_entered),
+    // or null when nothing generated waits. Every push writes it.
+    void* native_ret;
 }
 
 // The most recent frame a tail call replaced in an activation, and where it
@@ -526,12 +530,14 @@ struct Dispatch {
     // The fault a FAULT-status operation function failed the run with.
     fault failure;
     // Baseline tier: the activation count at which a return hands control
-    // back to a native call site waiting for it (0: none waits), and the
+    // back to a C caller waiting for it (vm::jit_call; 0: none waits), and the
     // native calls nested on the C stack, and whether native code is running
     // the frame (a back edge then needs no switch to native code).
     uint jit_floor @if($feat(SLJIT));
     uint jit_depth @if($feat(SLJIT));
     bool jit_native @if($feat(SLJIT));
+    // The native_ret of the frame vm::jit_ret just popped for a waiting caller.
+    void* jit_waiter @if($feat(SLJIT));
 }
 
 // Point the dispatch state at `f`'s inline caches, creating them on the first

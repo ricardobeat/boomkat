@@ -767,6 +767,7 @@ fn bool th_publish_lean(Instruction* pc, TVal* regs, ColdCtx* cold, CompiledFunc
     }
     la.heap_reg_count = 0;
     la.serial = ++vm.activation_serial;
+    la.native_ret = null;
     la.caller_valstack_top = vm.valstack_top;
     la.this_binding = this_value;
     if (this_valid) la.flags |= ACT_FLAG_THIS_VALID;
@@ -1212,6 +1213,7 @@ fn Instruction* th_enter_lean_tail(Instruction* pc, HandlerTable* handlers, TVal
     fa.this_binding = this_value;
     fa.heap_reg_count = tracked ? nargs : 0;
     fa.serial = ++vm.activation_serial;
+    fa.native_ret = null;
 
     TVal* fill = regs + nargs;
     TVal* fill_end = regs + nregs;

@@ -736,6 +736,7 @@ macro Activation* activation_begin(Vm* vm, TVal callee) {
     act.new_target = null;
     act.heap_reg_count = 0;
     act.serial = ++vm.activation_serial;
+    act.native_ret = null;
     act.caller_valstack_top = vm.valstack_top;
     // Sloppy `arguments.callee` returns the running callee. Lightfuncs are
     // already their own TV; heap functions are wrapped in an HObject by the

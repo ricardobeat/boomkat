@@ -393,9 +393,7 @@ fn void OptCg.emit_inline_exit(&self, uint fidx, uint pc, uint mask, uint reason
     sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)reason);
     sljit_emit_op1(c, SLJIT_MOV, R3, 0, SLJIT_IMM, (long)(usz)site);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS4WWWW, SLJIT_IMM, (long)(usz)&opt_inline_exit);
-    sljit_emit_op1(c, SLJIT_MOV, R1, 0, R0, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, R1, 0);
+    sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     if (skip != null) sljit_set_label(skip, sljit_emit_label(c));
 }
 
@@ -536,7 +534,7 @@ fn void OptCg.emit_poll_stubs(&self) {
         for (int k = 0; k < self.pools.flt_count; k++, off += 8) {
             sljit_emit_fop1(c, SLJIT_MOV_F64, SLJIT_MEM | reg_sp(), off, self.pools.flt_first + k, 0);
         }
-        sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.a.code, 0, SLJIT_IMM, (long)h.pc * Instruction::size);
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.a.f.code + (long)h.pc * Instruction::size);
         sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | self.a.ds, self.a.pc_off, R1, 0);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.a.ds, 0);
         sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&opt_poll);
@@ -2705,9 +2703,12 @@ fn void OptCg.emit_generic(&self, uint i, OptNode* n) {
     void* c = self.a.c;
     self.store_dirty(n.dirty_first, n.dirty_count);
     uint at = (uint)n.imm;
+    self.a.direct_called = false;
     self.a.emit_insn(at);
     // The out-of-line paths return here, before the reload.
     self.a.labels[self.a.next] = sljit_emit_label(c);
+    // A callee run in this native frame has used the local area the capture records are kept in.
+    if (self.a.direct_called) self.emit_cap_refs();
     for (uint k = 0; k < n.reload_count; k++) {
         OptDirty d = self.g.dirty[(sz)(n.reload_first + k)];
         OptNode* nd = &self.g.nodes[d.node];
@@ -2883,19 +2884,16 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     bc.fill_view(f);
     a.view = &bc.view;
     a.opt = true;
-    int table_reg = reg_s(2);
     // A slot past the spill area for the capture records, when a read of the function's own uses them.
     long cap_slot = -1;
     foreach (&nd : g.nodes) {
         if (nd.op == OptOp.LOAD_CAP && nd.fidx == 0 && f.capture_count != 0) cap_slot = CALL_FRAME_BYTES + 8 * (long)(pools.int_count + pools.flt_count);
     }
-    int locals = CALL_FRAME_BYTES + 8 * (pools.int_count + pools.flt_count) + (cap_slot >= 0 ? 8 : 0);
-    void* dispatch = a.emit_dispatch(table_reg, bc, count, pools.scratches | (pools.fscratches << 8), locals);
+    void* dispatch = a.emit_dispatch(bc, count);
     a.emit_nonzero_exit(dispatch);
     // An entry that is not an entry of the optimized code continues in the baseline code.
     void* to_base = sljit_emit_label(c);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, a.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)oc.base.exec);
+    sljit_emit_ijump(c, SLJIT_JUMP, SLJIT_IMM, (long)(usz)oc.base.exec_jump);
 
     uint fields = 0;
     foreach (&nd : g.nodes) {
@@ -2938,7 +2936,7 @@ fn BaselineCode* opt_emit(Heap* h, CompiledFunction* f, OptGraph* g, OptCode* oc
     void* call_entry = null;
     if (call_entry_eligible(f) && !g.blocks[0].osr) {
         a.labels[0] = cg.labels[0];
-        call_entry = a.emit_call_entry(table_reg, bc, pools.scratches | (pools.fscratches << 8), locals, touch: true);
+        call_entry = a.emit_call_entry(bc, touch: true);
     }
     foreach (gt : cg.gotos) sljit_set_label(gt.jump, cg.labels[gt.block]);
     if (a.finish(h, bc, call_entry) == null) return null;

@@ -44,11 +44,17 @@ fn long jit_call(Dispatch* ds, ulong next_arg) {
 // Run the native entry of a published callee frame (jit_call_enter) and resume the caller once
 // it returned, as jit_call's contract has it. `old_floor` is the caller's floor.
 fn long jit_run_entered(Dispatch* ds, void* entry, uint old_floor, Instruction* next) @inline {
-    long status = ((jit::BaselineFn)entry)(ds);
+    // The callee's frame, at the floor, returns to the trampoline, which returns here.
+    uint callee = ds.jit_floor;
+    long status = jit::jit_enter(ds, entry, jit::trampoline().ret);
     ds.jit_floor = old_floor;
     ds.jit_depth--;
-    if (status != jit::BASELINE_RETURNED) return status;
     Vm* vm = ds.vm;
+    if (status != jit::BASELINE_RETURNED) {
+        // Nothing waits for the frame any more, if it is still there.
+        if (vm.activation_count > callee) vm.activations[callee].native_ret = null;
+        return status;
+    }
     Activation* act = &vm.activations[vm.activation_count - 1];
     ds.act = act;
     CompiledFunction* f = (CompiledFunction*)act.func;
@@ -57,6 +63,15 @@ fn long jit_run_entered(Dispatch* ds, void* entry, uint old_floor, Instruction* 
     if (f.code != ds.code_base) jit_view(ds, f);
     ds.regs_base = act.bottom;
     return ds.curr_pc == next ? 0 : jit::BASELINE_REDISPATCH;
+}
+
+// Forget where generated code waits for each live frame (Activation.native_ret), before code a
+// frame could return into is freed: each such frame returns through jit_ret's general path.
+fn void jit_forget_returns(Vm* vm) {
+    for (uint i = 0; i < vm.activation_count; i++) vm.activations[i].native_ret = null;
+    for (ShadowActFrame* s = (ShadowActFrame*)vm.shadow_act_list; s != null; s = (ShadowActFrame*)s.prev) {
+        for (uint i = 0; i < s.count; i++) s.acts[i].native_ret = null;
+    }
 }
 
 // Enter the realm of the frame a native call site resumes.
@@ -211,7 +226,7 @@ fn void* jit_inline_materialize(Dispatch* ds, jit::OptInlineExit* site) {
     jit_view(ds, callee);
     ds.curr_pc = callee.code + site.pc;
     ds.act.curr_pc = ds.curr_pc;
-    return jit::baseline_entry(callee);
+    return jit::baseline_jump_entry(callee);
 }
 
 // The compiled function a callee register holds, or null.
@@ -528,16 +543,18 @@ fn long jit_new_simple(Dispatch* ds, Instruction* next, jit::NewSite* site) {
 }
 
 // RET and RETUNDEF as the threaded returns (th_leaf_return and
-// th_pop_frame, else th_return_general). For a frame a native call site waits for, returns
-// BASELINE_RETURNED with the caller current and ds.curr_pc at its resume
-// point; a caller in another realm takes the thunk. For a frame Vm.run
-// entered, returns RESTART with the caller's frame to be loaded, as op_ret's
-// frame switch does. 0 takes the thunk.
+// th_pop_frame, else th_return_general). For a frame generated code waits for
+// (Activation.native_ret), returns BASELINE_RETURNED with the caller current,
+// ds.curr_pc at its resume point and the waiter in ds.jit_waiter; a caller in
+// another realm takes the thunk. For a frame Vm.run entered, returns RESTART
+// with the caller's frame to be loaded, as op_ret's frame switch does. 0
+// takes the thunk.
 fn long jit_ret(Dispatch* ds, ulong next_arg) {
     Vm* vm = ds.vm;
-    bool waiting = ds.jit_floor != 0 && vm.activation_count == ds.jit_floor + 1;
-    if (!waiting && (ds.jit_floor != 0 || ds.jit_depth != 0 || vm.activation_count < 2)) return 0;
     Activation* fa = ds.act;
+    void* waiter = fa.native_ret;
+    bool waiting = waiter != null;
+    if (!waiting && (ds.jit_floor != 0 || ds.jit_depth != 0 || vm.activation_count < 2)) return 0;
     Activation* up = &vm.activations[vm.activation_count - 2];
     if (waiting && up.func != fa.func && (up.func == null || ((CompiledFunction*)up.func).realm != vm.heap.realm)) return 0;
     Instruction* pc = (Instruction*)(usz)next_arg - 1;
@@ -569,6 +586,7 @@ fn long jit_ret(Dispatch* ds, ulong next_arg) {
         ds.needs_restart = true;
         return (long)OpStatus.RESTART.ordinal;
     }
+    ds.jit_waiter = waiter;
     return jit::BASELINE_RETURNED;
 }
 
@@ -587,7 +605,7 @@ fn void* jit_switch(Dispatch* ds) {
     ds.needs_restart = false;
     ds.load_frame();
     ds.heap.jit_stats.switches++;
-    return jit::baseline_entry(f);
+    return jit::baseline_jump_entry(f);
 }
 
 // The owner of the cached prototype property entry `ic` names for the

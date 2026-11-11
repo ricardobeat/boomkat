@@ -10,22 +10,23 @@
 //
 // A CALL, CALL_UNDEF_THIS, CALL_VAR or CALL_GLOBAL whose callee the threaded
 // handlers would enter as a lean call, and a NEW_OBJ or APPLY_ARGS the
-// threaded handlers enter, whose callee has native code, runs it on the C
-// stack (vm::jit_call). The call saves ds.jit_floor in its C
-// frame and sets it to the caller's activation count; the callee's
-// frame sits one above. A thunk that leaves the activation count equal to
-// the floor after switching frames returns BASELINE_RETURNED, and the call
-// site restores the floor, reloads the caller's frame and continues at the
-// following instruction, or through the entry table when a handler moved
-// ds.curr_pc. Vm.run clears the floor (0, never a live count after a
-// switch), so a frame it entered returns with RESTART. Any other status
-// leaves every native frame on the way up unchanged; the activation stack
-// describes the truth and each abandoned caller resumes later through the
-// entry table at its saved curr_pc. A RESTART from code Vm.run entered whose
-// new frame has native code continues there as a tail call instead
-// (vm::jit_switch), and a plain return from such code pops its frame and
-// restarts the same way (vm::jit_ret). Native calls nest at most
-// vm::JIT_NATIVE_DEPTH_CAP deep per Dispatch.
+// threaded handlers enter, whose callee has native code, runs it from C
+// (vm::jit_call), the callee's frame returning to jit_enter's trampoline. The
+// call saves ds.jit_floor in its C frame and sets it to the caller's
+// activation count; the callee's frame sits one above. A thunk that leaves
+// the activation count equal to the floor after switching frames returns
+// BASELINE_RETURNED, and the call site restores the floor, reloads the
+// caller's frame and continues at the following instruction, or through the
+// entry table when a handler moved ds.curr_pc. Vm.run clears the floor (0,
+// never a live count after a switch), so a frame it entered returns with
+// RESTART. Any other status returns from the shared native frame
+// (Asm.set_frame), abandoning every generated frame in it; the activation
+// stack describes the truth and each abandoned caller resumes later through
+// the entry table at its saved curr_pc. A RESTART from code Vm.run entered
+// whose new frame has native code continues there instead (vm::jit_switch),
+// and a plain return from such code pops its frame and restarts the same way
+// (vm::jit_ret). Calls from C nest at most vm::JIT_NATIVE_DEPTH_CAP deep per
+// Dispatch; calls between generated frames use no C stack.
 //
 // Instructions that need no runtime call in the common case (register
 // loads, jumps and branches, number arithmetic, comparisons and bitwise ops)
@@ -215,7 +216,10 @@ const uint NEW_ARG_NONE = 0xFFFFFFFF;
 const uint NEW_SITE_CALLS = 0xFFFFFFFF;
 
 struct BaselineCode {
+    // The code's first instruction: the entry jit_enter jumps to (Asm.emit_prologue).
     void* exec;
+    // The entry generated code jumps to for a frame that is already running (emit_prologue).
+    void* exec_jump;
     usz code_bytes;
     usz table_bytes;
     usz insns;
@@ -255,7 +259,6 @@ fn void BaselineCode.fill_view(&self, CompiledFunction* f) {
     counts[1] = f.num_regs;
 }
 
-alias BaselineFn = fn long(Dispatch* ds);
 alias Thunk = fn long(Dispatch* ds, ulong next_pc);
 
 // Native code for `f`, compiling it when the policy says so, or null when the
@@ -300,17 +303,22 @@ fn long baseline_run(void* exec, Dispatch* ds) @inline {
     ds.jit_depth = 0;
     ds.jit_native = true;
     ds.heap.opt.running++;
-    long status = ((BaselineFn)exec)(ds);
+    long status = jit_enter(ds, exec, null);
     ds.jit_native = false;
     if (--ds.heap.opt.running == 0 && (ds.heap.opt.retired != null || ds.heap.jit_stats.retired_code != null)) {
+        // A frame's native_ret may point into the code about to be freed.
+        vm::jit_forget_returns(ds.vm);
         if (ds.heap.opt.retired != null) opt_reap(ds.heap);
         baseline_reap(ds.heap);
     }
     return status;
 }
 
-// The native entry of a compiled function.
+// The native entry of a compiled function, for jit_enter.
 fn void* baseline_entry(CompiledFunction* f) @inline => ((BaselineCode*)f.jit_code).exec;
+
+// The entry generated code jumps to, to continue the frame ds.act names in `f`'s code.
+fn void* baseline_jump_entry(CompiledFunction* f) @inline => ((BaselineCode*)f.jit_code).exec_jump;
 
 fn void baseline_free(Heap* h, CompiledFunction* f) {
     // Teardown is the last chance to free code that a sweep retired but no
@@ -473,8 +481,8 @@ fn void* baseline_try_compile(Heap* h, CompiledFunction* f, bool optimize = true
 const long BASELINE_REDISPATCH = OpStatus::values.len + 1;
 // A thunk result at least this is the address of code to continue in.
 const long BASELINE_CODE_MIN = 65536;
-// A native function's result when its activation returned to the native call
-// site waiting at ds.jit_floor.
+// A frame's return to the generated code (Activation.native_ret) or C caller
+// (ds.jit_floor) that waits for it.
 const long BASELINE_RETURNED = OpStatus::values.len + 2;
 
 const int R0 = 1;
@@ -563,6 +571,8 @@ const int PUT_ABSENT_SUB = -14;
 const int PUT_ABSENT_FAST_SUB = -15;
 // The inline object allocation's pool pop and accounting (Asm.emit_alloc_body).
 const int ALLOC_SUB = -16;
+// Where a call site continues once its callee's frame returned (Asm.emit_resume_body).
+const int RESUME_SUB = -17;
 // Subroutine results in R2 for the truth and equality subroutines.
 const long SUB_FALSE = 0;
 const long SUB_TRUE = 1;
@@ -584,19 +594,23 @@ struct Asm {
     // The code is the optimizing tier's, whose call sites record no callee: the build has read
     // what the baseline's recorded.
     bool opt;
+    // The code allocation, whose entry table the frame's saved register holds.
+    BaselineCode* bc;
+    // BaselineCode.exec_jump's label.
+    void* exec_jump;
+    // Set by every call emitted through the call subroutine (emit_direct_call), which runs the
+    // callee in this frame's native frame.
+    bool direct_called;
     void*[] labels;
     // The label of each shared subroutine, by sub_slot (--jit-dump-feedback).
-    void*[Opcode::values.len + 16] sub_labels;
+    void*[Opcode::values.len + 17] sub_labels;
     bool[] starts;
     List{Goto} gotos;
     List{Stub} stubs;
     List{void*} stub_jumps;
     List{SubCall} subs;
     void* nonzero;
-    // Leaves with the status in R0, for a status known to need no dispatch.
-    void* leave_exit;
     int ds;
-    int code;
     int regs;
     int thunks;
     int heap;
@@ -651,7 +665,6 @@ fn Asm asm_new(void* c, Heap* h, CompiledFunction* f) {
         .labels = mem::new_array(void*, (usz)count + 1),
         .starts = mem::new_array(bool, (usz)count + 1),
         .ds = reg_s(0),
-        .code = reg_s(1),
         .regs = reg_s(3),
         .thunks = reg_s(4),
         .heap = reg_s(5),
@@ -689,23 +702,29 @@ fn void Asm.release(&self) {
     self.subs.free();
 }
 
-// The function's entry: the saved registers set up, then the first
-// instruction's dispatch point. Leaves the entry table's register in
-// `table_reg` and returns the label that reloads the window and dispatches on
-// ds.curr_pc through it.
-fn void* Asm.emit_prologue(&self, int table_reg, BaselineCode* bc, int scratches = 5 | (2 << 8), int locals = CALL_FRAME_BYTES) {
+// The function's entries. BaselineCode.exec, the code's first instruction, is
+// where jit_enter jumps: it stores the native return the trampoline passes in
+// R2 into the frame ds.act names. Generated code that continues a running
+// frame in this code jumps past it, to BaselineCode.exec_jump (jit_switch,
+// opt_osr, the optimized code's exits), which keeps the frame's own. Both set
+// up the saved registers and reach the first instruction's dispatch point.
+// Returns the label that reloads the window and dispatches on ds.curr_pc
+// through the entry table.
+fn void* Asm.emit_prologue(&self, BaselineCode* bc) {
     void* c = self.c;
     int ds_mem = SLJIT_MEM | self.ds;
     Dispatch* dl = (Dispatch*)(usz)4096;
-    sljit_emit_enter(c, 0, SLJIT_ARGS1WW, scratches, 6, locals);
+    self.bc = bc;
+    self.set_frame();
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.lay.ds_act);
+    sljit_emit_op1(c, SLJIT_MOV, SLJIT_MEM | R1, call_layout().act_native_ret, R2, 0);
+    self.exec_jump = sljit_emit_label(c);
     // A frame that ran in the interpreter tracked its registers one by one.
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.lay.ds_act);
     void* covered = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL | SLJIT_32, SLJIT_MEM | R1, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
     sljit_emit_op1(c, SLJIT_MOV_U32, SLJIT_MEM | R1, self.lay.act_hrc, SLJIT_IMM, self.frame_regs);
     sljit_set_label(covered, sljit_emit_label(c));
-    sljit_emit_op1(c, SLJIT_MOV, self.code, 0, ds_mem, (char*)&dl.code_base - (char*)dl);
     sljit_emit_op1(c, SLJIT_MOV, self.heap, 0, ds_mem, (char*)&dl.heap - (char*)dl);
-    sljit_emit_op1(c, SLJIT_MOV, table_reg, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
     sljit_emit_op1(c, SLJIT_MOV, self.thunks, 0, SLJIT_IMM, (long)(usz)&thunks()[0]);
     return sljit_emit_label(c);
 }
@@ -714,26 +733,20 @@ fn void* Asm.emit_prologue(&self, int table_reg, BaselineCode* bc, int scratches
 // status. `dispatch` is the label that redispatches through the entry table.
 fn void Asm.emit_nonzero_exit(&self, void* dispatch) {
     void* c = self.c;
-    self.leave_exit = sljit_emit_label(c);
-    sljit_emit_return(c, SLJIT_MOV, R0, 0);
     // A thunk's nonzero result: redispatch, or leave with the status.
     self.nonzero = sljit_emit_label(c);
     sljit_set_label(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_REDISPATCH), dispatch);
     // An address: the optimized code to continue in (opt_osr).
     void* status = sljit_emit_cmp(c, SLJIT_LESS, R0, 0, SLJIT_IMM, BASELINE_CODE_MIN);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, R2, 0);
+    sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     sljit_set_label(status, sljit_emit_label(c));
-    // A restart into a frame with native code continues there as a tail
-    // call when Vm.run would enter it directly (vm::jit_switch).
+    // A restart into a frame with native code continues there when Vm.run
+    // would enter it directly (vm::jit_switch).
     void* leave = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS1WW, SLJIT_IMM, (long)(usz)&vm::jit_switch);
     void* stay = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R2, 0, R0, 0);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
-    sljit_emit_icall(c, SLJIT_CALL | SLJIT_CALL_RETURN, SLJIT_ARGS1WW, R2, 0);
+    sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     sljit_set_label(stay, sljit_emit_label(c));
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, SLJIT_IMM, (long)OpStatus.RESTART.ordinal);
     sljit_set_label(leave, sljit_emit_label(c));
@@ -802,14 +815,16 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
     foreach (g : self.gotos) sljit_set_label(g.jump, self.labels[g.target]);
     bc.exec = sljit_generate_code(self.c, 0, null);
     if (bc.exec == null) { h.free_func(h.heap_udata, bc); return null; }
+    bc.exec_jump = (void*)sljit_shim_label_addr(self.exec_jump);
     bc.code_bytes = sljit_shim_code_size(self.c);
     if (call_entry != null) bc.call_entry = (void*)sljit_shim_label_addr(call_entry);
     bc.subs = (void*)sljit_shim_label_addr(subs);
     if (h.jit_stats.dump_feedback) {
         foreach (slot, label : self.sub_labels) {
             if (label == null) continue;
-            String[16] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
-                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT", "PUT_ABSENT_FAST", "ALLOC" };
+            String[17] helpers = { "PUBLISH", "TRUTH", "STRICT_EQ", "LOOSE_EQ", "ARRAY_SLOT", "CAPTURE_REF", "TYPED_GET",
+                                   "TYPED_PUT", "POLY", "INDEX", "CALL", "RETURN", "MEGA", "PUT_ABSENT", "PUT_ABSENT_FAST", "ALLOC",
+                                   "RESUME" };
             if (slot < Opcode::values.len) {
                 io::eprintfn("sub fn#%d %s %x", self.f.func_index, Opcode::values[slot], (usz)sljit_shim_label_addr(label));
             } else {
@@ -823,16 +838,17 @@ fn BaselineCode* Asm.finish(&self, Heap* h, BaselineCode* bc, void* call_entry) 
 // The prologue, then the code that dispatches on ds.curr_pc through the entry
 // table with the register window reloaded. Returns the dispatch label; an
 // instruction without an entry leaves for the interpreter.
-fn void* Asm.emit_dispatch(&self, int table_reg, BaselineCode* bc, uint count, int scratches = 5 | (2 << 8), int locals = CALL_FRAME_BYTES) {
+fn void* Asm.emit_dispatch(&self, BaselineCode* bc, uint count) {
     void* c = self.c;
     int ds_mem = SLJIT_MEM | self.ds;
-    void* dispatch = self.emit_prologue(table_reg, bc, scratches, locals);
+    void* dispatch = self.emit_prologue(bc);
     sljit_emit_op1(c, SLJIT_MOV, self.regs, 0, ds_mem, self.regs_off);
     sljit_emit_op1(c, SLJIT_MOV, R1, 0, ds_mem, self.pc_off);
-    sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, self.code, 0);
+    sljit_emit_op2(c, SLJIT_SUB, R1, 0, R1, 0, SLJIT_IMM, (long)(usz)self.f.code);
     sljit_emit_op2(c, SLJIT_LSHR, R1, 0, R1, 0, SLJIT_IMM, 2);
     void* out_of_range = sljit_emit_cmp(c, SLJIT_GREATER_EQUAL, R1, 0, SLJIT_IMM, count);
-    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(table_reg, R1), 3);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)&bc.entries[0]);
+    sljit_emit_op1(c, SLJIT_MOV, R0, 0, mem_index(R2, R1), 3);
     void* no_entry = sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0);
     sljit_emit_ijump(c, SLJIT_JUMP, R0, 0);
     void* interpret = sljit_emit_label(c);
@@ -867,9 +883,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     bc.fill_view(f);
     a.view = &bc.view;
     a.new_site_count = news;
-    int table_reg = reg_s(2);
-
-    void* dispatch = a.emit_dispatch(table_reg, bc, count);
+    void* dispatch = a.emit_dispatch(bc, count);
     a.emit_nonzero_exit(dispatch);
 
     bool forced_done = false;
@@ -887,7 +901,7 @@ fn BaselineCode* baseline_compile(Heap* h, CompiledFunction* f, OptCode* oc = nu
     a.labels[count] = sljit_emit_label(c);
     sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), dispatch);
     a.emit_stubs();
-    void* call_entry = call_entry_eligible(f) ? a.emit_call_entry(table_reg, bc, count_opt: h.opt.enabled && !h.opt.always) : null;
+    void* call_entry = call_entry_eligible(f) ? a.emit_call_entry(bc, count_opt: h.opt.enabled && !h.opt.always) : null;
     if (a.finish(h, bc, call_entry) == null) return null;
     for (uint i = 0; i < count; i++) {
         if (a.starts[i]) bc.entries[i] = (void*)sljit_shim_label_addr(a.labels[i]);
@@ -954,7 +968,7 @@ fn void Asm.emit_thunk_call(&self, uint i) {
     Opcode op = wide ? self.f.code[i + 1].op : w.op;
     uint next = i + (wide ? 2 : 1);
     self.count(&self.stats.slow_calls[0], op);
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)next * Instruction::size + (wide ? 1 : 0));
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)next * Instruction::size + (wide ? 1 : 0));
     self.subs.push({ .jump = sljit_emit_jump(c, SLJIT_FAST_CALL), .sub = (int)op.ordinal });
 }
 
@@ -1003,6 +1017,8 @@ fn void Asm.emit_subroutines(&self) {
                 self.emit_index_body();
             case CALL_SUB:
                 self.emit_call_body();
+            case RESUME_SUB:
+                self.emit_resume_body();
             case RETURN_SUB:
                 self.emit_return_body();
             case MEGA_SUB:
@@ -1072,10 +1088,77 @@ fn void Asm.emit_subroutines(&self) {
 // Stack offset where the typed-array store subroutine keeps the value.
 const long SUB_VALUE_OFF = 8;
 
-// Stack bytes of a native function's frame: a subroutine's return address,
-// the value the typed-array store keeps and the floor a direct call site
-// restores and its resume point (CALL_FLOOR_OFF, CALL_RESUME_OFF).
+// Stack bytes every native frame starts with: a subroutine's return address,
+// the value the typed-array store keeps and a call site's resume point
+// (CALL_RESUME_OFF). Each holds a value only between a store and a load with no
+// call of generated code between them.
 const int CALL_FRAME_BYTES = 32;
+
+// The one native frame generated code runs in, which jit_enter sets up for
+// every entry from C: the optimizing tier's register pools (a per-platform
+// constant), six saved registers, and the local area: CALL_FRAME_BYTES, the
+// optimized code's register saves around C calls and its capture records
+// (OptCg.cap_slot). Calls between generated frames do not leave it
+// (baseline_call.c3), and every way out of generated code returns from it.
+struct JitFrame {
+    int scratches;
+    int locals;
+}
+
+const int JIT_SAVEDS = 6;
+
+fn JitFrame jit_frame() {
+    OptPools p = opt_pools();
+    return { .scratches = p.scratches | (p.fscratches << 8), .locals = CALL_FRAME_BYTES + 8 * (p.int_count + p.flt_count + 1) };
+}
+
+// Declare the shared native frame for the code that follows, which has no
+// prologue of its own.
+fn void Asm.set_frame(&self) {
+    JitFrame fr = jit_frame();
+    sljit_set_context(self.c, 0, SLJIT_ARGS3WWW, fr.scratches, JIT_SAVEDS, fr.locals);
+}
+
+// The entry from C into generated code: it saves the registers C expects
+// kept and jumps to `target`, an exec entry, with `native_ret` in R2 for the
+// frame ds.act names. Every way out of generated code is a return from this
+// frame; `ret` is where a frame whose C caller waits for it returns
+// (vm::jit_run_entered), which returns its status to that caller.
+struct Trampoline {
+    void* code;
+    void* ret;
+}
+
+Trampoline trampoline_data @private;
+
+alias EnterFn = fn long(Dispatch* ds, void* target, void* native_ret);
+
+fn Trampoline* trampoline() @inline {
+    if (trampoline_data.code == null) init_trampoline();
+    return &trampoline_data;
+}
+
+fn void init_trampoline() @noinline @private {
+    void* c = sljit_create_compiler(null);
+    assert(c != null, "no compiler for the trampoline");
+    JitFrame fr = jit_frame();
+    // ds, target and native_ret arrive in S0 to S2.
+    sljit_emit_enter(c, 0, SLJIT_ARGS3WWW, fr.scratches, JIT_SAVEDS, fr.locals);
+    sljit_emit_op1(c, SLJIT_MOV, R2, 0, reg_s(2), 0);
+    sljit_emit_ijump(c, SLJIT_JUMP, reg_s(1), 0);
+    void* ret = sljit_emit_label(c);
+    sljit_emit_return(c, SLJIT_MOV, R0, 0);
+    void* code = sljit_generate_code(c, 0, null);
+    assert(code != null, "no code for the trampoline");
+    trampoline_data.ret = (void*)sljit_shim_label_addr(ret);
+    sljit_free_compiler(c);
+    trampoline_data.code = code;
+}
+
+// Run generated code from C at `target` (BaselineCode.exec) for the frame ds.act names.
+fn long jit_enter(Dispatch* ds, void* target, void* native_ret) @inline {
+    return ((EnterFn)trampoline().code)(ds, target, native_ret);
+}
 
 // A call the threaded handlers take as a lean call: vm::jit_call publishes
 // the callee's frame and runs the callee's native code on the C stack. A
@@ -1110,7 +1193,7 @@ fn bool Asm.emit_call(&self) {
             done.add(sljit_emit_jump(c, SLJIT_JUMP));
             miss.bind(sljit_emit_label(c));
         }
-        sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
+        sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
         sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
         sljit_emit_op1(c, SLJIT_MOV, R2, 0, SLJIT_IMM, (long)(usz)site);
         sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS3WWW, SLJIT_IMM, (long)(usz)&vm::jit_new_simple);
@@ -1126,7 +1209,7 @@ fn bool Asm.emit_call(&self) {
         done.add(sljit_emit_jump(c, SLJIT_JUMP));
         generic.bind(sljit_emit_label(c));
     }
-    sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
+    sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
     sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
     sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_call);
     self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, vm::JIT_CALL_SLOW));
@@ -1410,10 +1493,15 @@ $else
             Jumps ret_helper;
             self.emit_return(&ret_helper);
             ret_helper.bind(sljit_emit_label(c));
-            sljit_emit_op2(c, SLJIT_ADD, R1, 0, self.code, 0, SLJIT_IMM, (long)self.next * Instruction::size);
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_IMM, (long)(usz)self.f.code + (long)self.next * Instruction::size);
             sljit_emit_op1(c, SLJIT_MOV, R0, 0, self.ds, 0);
             sljit_emit_icall(c, SLJIT_CALL, SLJIT_ARGS2WWW, SLJIT_IMM, (long)(usz)&vm::jit_ret);
             self.call.add(sljit_emit_cmp(c, SLJIT_EQUAL, R0, 0, SLJIT_IMM, 0));
+            // Popped for the generated code that waits for the frame: return to it.
+            void* other = sljit_emit_cmp(c, SLJIT_NOT_EQUAL, R0, 0, SLJIT_IMM, BASELINE_RETURNED);
+            sljit_emit_op1(c, SLJIT_MOV, R1, 0, SLJIT_MEM | self.ds, call_layout().ds_jit_waiter);
+            sljit_emit_op_src(c, SLJIT_FAST_RETURN, R1, 0);
+            sljit_set_label(other, sljit_emit_label(c));
             sljit_set_label(sljit_emit_jump(c, SLJIT_JUMP), self.nonzero);
         case MUL:
         case MULI:
