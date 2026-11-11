@@ -1545,7 +1545,11 @@ fn bool OptBuild.put_field(&self) {
     uint rv = this_op ? self.w.a : self.w.b;
     // A value in the window may be a heap value, which needs the counted and traced store: the
     // baseline's, with the registers stored and reloaded around it, not an exit on every store.
-    if (rv >= self.nregs || self.cur[rv].node == NO_NODE) return self.generic();
+    // A property read that defined it is built as an OBJECT node in the next round.
+    if (rv >= self.nregs || self.cur[rv].node == NO_NODE) {
+        if (rv < self.nregs) self.ask_object(rv);
+        return self.generic();
+    }
     uint n = self.add(OptOp.STORE_FIELD, OptRep.NONE, self.cur[rv].node, rnode, (long)self.pc);
     self.snapshot(n);
     self.g.nodes[n].key = (void*)ic.key.borrow();
