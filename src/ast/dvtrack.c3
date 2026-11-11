@@ -279,29 +279,39 @@ fn bool Parser.dv_conflicts(&self, sz first) {
     return !self.failed;
 }
 
+// From `first` on, the references were made inside a nested function, where
+// the enclosing body cannot reach them through a capture slot.
+fn void Parser.dv_refs_nested(&self, sz first) {
+    if (!self.dv_on) return;
+    for (sz i = first; i < self.dv_refs.len; i++) self.dv_refs.data[i] |= REF_INDIRECT;
+}
+
 // A stub's refs are all resolved at the same scope, so repeated atoms are
-// redundant there. Collapse them in place with a generation-stamped table;
-// growing the table re-stamps the atoms already kept for this stub.
-fn uint Parser.dv_unique_refs(&self, uint ref0, uint nrefs) {
-    if (nrefs < 2) return nrefs;
-    uint gen = ++self.dv_seen_gen;
-    if (gen == 0) {
-        self.dv_seen.zero((uint)self.dv_seen.len);
-        gen = self.dv_seen_gen = 1;
+// redundant there. Collapse them in place with a generation-stamped table. An
+// atom keeps REF_INDIRECT when any of its references has it, or when the body
+// declares the name itself: from `site0` on, the declarations are the body's.
+fn uint Parser.dv_unique_refs(&self, uint ref0, uint nrefs, sz site0) {
+    uint atoms = self.ast.atoms.count();
+    if ((uint)self.dv_seen.len < atoms || self.dv_seen_gen >= uint::max - 2) {
+        uint ncap = (uint)self.dv_seen.len;
+        while (ncap < atoms) ncap *= 2;
+        self.dv_seen.zero(ncap);
+        self.dv_seen_gen = 0;
+    }
+    uint indirect = ++self.dv_seen_gen;
+    uint kept = ++self.dv_seen_gen;
+    for (sz i = site0; i < self.dv_sites.len; i++) self.dv_seen.data[self.dv_sites.data[i].atom] = indirect;
+    for (uint i = 0; i < nrefs; i++) {
+        uint r = self.dv_refs.data[ref0 + i];
+        if ((r & REF_INDIRECT) != 0) self.dv_seen.data[r & ~REF_INDIRECT] = indirect;
     }
     uint out = 0;
     for (uint i = 0; i < nrefs; i++) {
-        uint atom = self.dv_refs.data[ref0 + i];
-        if (atom >= (uint)self.dv_seen.len) {
-            uint ncap = (uint)self.dv_seen.len == 0 ? 16 : (uint)self.dv_seen.len;
-            while (ncap <= atom) ncap *= 2;
-            self.dv_seen.zero(ncap);
-            for (uint j = 0; j < out; j++) self.dv_seen.data[self.dv_refs.data[ref0 + j]] = gen;
-        }
-        if (self.dv_seen.data[atom] == gen) continue;
-        self.dv_seen.data[atom] = gen;
-        self.dv_refs.data[ref0 + out] = atom;
-        out++;
+        uint atom = self.dv_refs.data[ref0 + i] & ~REF_INDIRECT;
+        uint seen = self.dv_seen.data[atom];
+        if (seen == kept) continue;
+        self.dv_seen.data[atom] = kept;
+        self.dv_refs.data[ref0 + out++] = seen == indirect ? atom | REF_INDIRECT : atom;
     }
     return out;
 }

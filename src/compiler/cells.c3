@@ -74,7 +74,18 @@ fn void check_descendant_cell_uses(CompiledFunction* inner,
                                    CellCandidate* candidates, uint count,
                                    bool immediate) {
     if (inner == null) return;
-    if (inner.lazy_paren != 0) { reject_all_cells(candidates, count); return; }
+    if (inner.lazy_paren != 0) {
+        // A deferred body has no code to check. Its template lists the outer
+        // names it mentions; the ones it reaches only by plain reads and writes
+        // of its own became capture slots, and those alone can follow a cell.
+        if (!inner.lazy_outer_known) { reject_all_cells(candidates, count); return; }
+        for (uint i = 0; i < inner.const_count; i++) {
+            void* key = inner.constants[i].get_heapptr();
+            int ci = find_cell_candidate(candidates, count, key);
+            if (ci >= 0 && !(immediate && child_captures_key(inner, key))) candidates[ci].selected = false;
+        }
+        return;
+    }
     for (uint pc = 0; pc < inner.code_count; pc++) {
         Instruction ins = inner.code[pc];
         if (ins.op == Opcode.WIDE || ins.op == Opcode.GETBOUND) {
@@ -285,6 +296,10 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
         };
     }
     if (candidate_count == 0) return;
+    // The lexical forms are proved from the children's code.
+    for (uint i = 0; lexical && i < func.inner_count; i++) {
+        if (func.inner_funcs[i].lazy_paren != 0) return;
+    }
     uint lexical_init = 0;
     if (lexical && (candidate_count != 1
         || !lexical_cell_layout(func, candidates[0].key, &lexical_init))) return;

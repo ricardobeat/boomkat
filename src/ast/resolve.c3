@@ -288,7 +288,7 @@ fn void Resolver.recorded_body(&self, uint block) {
     // These references resolve later, with the rest: a binding declared after
     // the body in the same function still has to see them.
     for (uint i = 0; i < nrefs; i++) {
-        uint atom = self.ast.field(rec, 2 + i);
+        uint atom = self.ast.field(rec, 2 + i) & ~REF_INDIRECT;
         self.refs.push({ .node = 0, .atom = atom, .scope = self.cur, .mode = REF_READ });
     }
     self.agg_flags |= (char)flags;

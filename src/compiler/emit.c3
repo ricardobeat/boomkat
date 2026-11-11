@@ -148,6 +148,30 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
     return true;
 }
 
+// True when `name_idx` names a binding the enclosing function keeps in a cell,
+// which this function, compiled alone from its own source, reaches only
+// through a capture slot. adopt_capture_slots moves the plain reads and writes
+// to the slot, so no other by-name form may be emitted for such a name. The
+// parent picks a cell only for a name every reference here is free to reach.
+fn bool CompilerContext.is_outer_cell(&self, uint name_idx) {
+    CompiledFunction* f = ast::index_state.reparsed;
+    if (f == null || f.capture_cells == null) return false;
+    void* key = self.constants[name_idx].get_heapptr();
+    for (uint slot = 0; slot < f.capture_count; slot++) {
+        if (f.capture_cells[slot] != 0 && f.constants[f.capture_names[slot]].get_heapptr() == key) return true;
+    }
+    return false;
+}
+
+// Store `value` to the outer cell `name_idx` by the plain form, which takes the
+// value out of its register. Returns a register that still holds it.
+fn ushort CompilerContext.emit_cell_store(&self, ushort value, uint name_idx) {
+    ushort kept = self.alloc_reg();
+    self.emit_abc(Opcode.LDREG, (uint)kept, (uint)value, 0);
+    self.emit_a_bc(Opcode.PUTVAR_ASSIGN, (uint)value, name_idx);
+    return kept;
+}
+
 // Emit a bare-identifier read: GETGLOBAL at global slot scope, else GETVAR.
 // Records last_was_getglobal so the assignment write-back picks PUTGLOBAL.
 //

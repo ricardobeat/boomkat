@@ -1639,14 +1639,15 @@ struct Target {
     bool local;
     bool global;       // the by-name read is a GETGLOBAL
     uint name_idx;
+    bool cell;         // an outer cell: see CompilerContext.is_outer_cell
 }
 
 fn Target? CompilerContext.gen_target(&self, char[] name) {
-    if (try reg = self.resolve_var(name)) return { reg, true, false, 0 };
+    if (try reg = self.resolve_var(name)) return { .reg = reg, .local = true };
     uint name_idx = self.add_string_constant(name);
     ushort reg = self.alloc_reg();
     self.emit_ident_read((uint)reg, name_idx)!;
-    return { reg, false, self.last_was_getglobal, name_idx };
+    return { reg, false, self.last_was_getglobal, name_idx, self.is_outer_cell(name_idx) };
 }
 
 fn Opcode compound_assign_opcode(TokenType tt) {
@@ -1717,7 +1718,10 @@ fn Val? CompilerContext.gen_assign(&self, uint n, uint ctx) {
             return { left, true, left };
         }
         Instruction last = self.code[self.code_count - 1];
-        if (t.global) {
+        if (t.cell) {
+            self.emit_a_bc(Opcode.DEC, (uint)left, 0);
+            return { self.emit_cell_store(left, t.name_idx), false, 0 };
+        } else if (t.global) {
             self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_GLOBAL, (uint)last.a, last.get_bc());
         } else {
             self.code[self.code_count - 1] = bytecode::make_a_bc(Opcode.DEC_VAR, (uint)last.a, last.get_bc());
@@ -2001,6 +2005,10 @@ fn Val? CompilerContext.gen_update(&self, uint n, uint ctx) {
         uint const_name = self.find_const_name_idx(operand);
         self.emit_a_bc(const_name != 0xFFFFFFFF ? (inc ? Opcode.INC_VAR : Opcode.DEC_VAR) : step,
             (uint)operand, const_name != 0xFFFFFFFF ? const_name : 0);
+    } else if (t.cell) {
+        self.emit_a_bc(step, (uint)operand, 0);
+        ushort stored = self.emit_cell_store(operand, t.name_idx);
+        return { materialise ? saved : stored, false, 0 };
     } else if (materialise) {
         Opcode fused = t.global ? (inc ? Opcode.INC_GLOBAL : Opcode.DEC_GLOBAL) : (inc ? Opcode.INC_VAR : Opcode.DEC_VAR);
         self.emit_a_bc(fused, (uint)operand, t.name_idx);
@@ -2420,7 +2428,7 @@ fn Val? CompilerContext.gen_call(&self, uint n, Phase* ph, List{uint}* optional 
         }
         global = t.global;
         name_idx = t.name_idx;
-        fusable = (tree.flags.data[n] & ast::FLAG_OPTIONAL) == 0 && !t.local && self.code_count > 0 && t.name_idx <= bytecode::MAX_C
+        fusable = (tree.flags.data[n] & ast::FLAG_OPTIONAL) == 0 && !t.local && !t.cell && self.code_count > 0 && t.name_idx <= bytecode::MAX_C
             && self.code[self.code_count - 1].op == (t.global ? Opcode.GETGLOBAL : Opcode.GETVAR)
             && self.code[self.code_count - 1].a == callee_reg
             && self.call_prop_obj_reg == REG_NONE;
@@ -2599,9 +2607,11 @@ fn Val? CompilerContext.gen_typeof(&self, uint operand) {
             if (try res = self.try_emit_typeof_register(name)) return { res, false, 0 };
             self.note_arguments_reference(name)!;
             uint name_idx = self.add_string_constant(name);
-            ushort res = self.alloc_reg();
-            self.emit_a_bc(Opcode.TYPEOFIDENT, (uint)res, name_idx);
-            return { res, false, 0 };
+            if (!self.is_outer_cell(name_idx)) {
+                ushort res = self.alloc_reg();
+                self.emit_a_bc(Opcode.TYPEOFIDENT, (uint)res, name_idx);
+                return { res, false, 0 };
+            }
         }
     }
     if (tree.tags.data[operand] == NodeTag.MEMBER || tree.tags.data[operand] == NodeTag.INDEX
@@ -2656,10 +2666,14 @@ fn Val? CompilerContext.gen_delete(&self, uint operand) {
     self.gen_line_end(operand);
     ushort result = self.alloc_reg();
     if (tag == NodeTag.IDENT) {
+        uint read_pc = self.code_count - 1;
         if (v.local) {
             self.emit_abc(Opcode.LDFALSE, (uint)result, 0, 0);
+        } else if (self.code[read_pc].op == Opcode.GETVAR && self.is_outer_cell(bytecode::code_bc(self.code, read_pc))) {
+            // A function's variable is never deletable.
+            self.emit_abc(Opcode.LDFALSE, (uint)result, 0, 0);
+            self.code[read_pc] = bytecode::make_abc(Opcode.NOP, 0, 0, 0);
         } else {
-            uint read_pc = self.code_count - 1;
             self.emit_a_bc(Opcode.DELVAR, (uint)result, bytecode::code_bc(self.code, read_pc));
             // Delete resolves the binding itself; the load must not throw for an absent name.
             // A WIDE prefix left before the NOP only widens the NOP.

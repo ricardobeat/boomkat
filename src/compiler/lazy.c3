@@ -82,10 +82,20 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
     uint nrefs = idx.tree.field(refs, 1);
     // One slot at least, so a template with no outer names still owns a pool.
     TVal* names = (TVal*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * TVal::size);
-    if (names == null) return;
+    uint* slots = (uint*)h.alloc_func(h.heap_udata, (usz)(nrefs + 1) * uint::size);
+    if (names == null || slots == null) {
+        if (names != null) h.free_func(h.heap_udata, names);
+        if (slots != null) h.free_func(h.heap_udata, slots);
+        return;
+    }
     uint count = 0;
+    uint slot_count = 0;
+    // A body that names `arguments` is compiled without capture slots.
+    bool slotted = true;
     for (uint i = 0; i < nrefs; i++) {
-        uint atom = idx.tree.field(refs, 2 + i);
+        uint r = idx.tree.field(refs, 2 + i);
+        uint atom = r & ~ast::REF_INDIRECT;
+        if (atom == idx.res.atom_arguments) slotted = false;
         HString* name = h.ensure_interned(h.str_intern(idx.tree.atoms.get(atom)));
         bool bound = idx.unknown_outer && outer_may_bind(idx, name);
         // From the function's own scope, which binds a function expression's name.
@@ -94,18 +104,18 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
         }
         if (!bound) continue;
         // Held like any pool string, so nothing releases it under the template.
+        if ((r & ast::REF_INDIRECT) == 0) slots[slot_count++] = count;
         names[count++].set_string_borrowed(name);
         ((types::HeapHeader*)name).incref();
     }
     f.constants = names;
     f.const_count = count;
     f.lazy_outer_known = true;
-    // Each of them may be a capture; add_inner_func keeps the ones this
-    // function's parent can resolve, and so fixes the slot layout.
-    f.capture_names = (uint*)h.alloc_func(h.heap_udata, (usz)(count + 1) * uint::size);
-    if (f.capture_names == null) return;
-    for (uint i = 0; i < count; i++) f.capture_names[i] = i;
-    f.capture_count = count;
+    // Each name the body reaches directly may be a capture; add_inner_func
+    // keeps the ones this function's parent can resolve, and so fixes the slot
+    // layout. A name left out stays in the parent's environment.
+    f.capture_names = slots;
+    f.capture_count = slotted ? slot_count : 0;
 }
 
 fn void? materialize_function(CompiledFunction* f, Heap* h) {
@@ -153,7 +163,7 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     idx.reparsed = f;
     ctx.gen_function(2)!;
     CompiledFunction* ready = ctx.finish(track: false)!;
-    if (!adopt_capture_slots(ready, f, h)) return COMPILE_ERROR~;
+    if (!adopt_capture_slots(ready, f, h)) return ctx.fail("internal: a deferred body reads a cell by name")~;
     CompiledFunction saved = *f;
     *f = *ready;
     if (saved.constants != null) h.free_func(h.heap_udata, saved.constants);

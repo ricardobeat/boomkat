@@ -821,6 +821,10 @@ fn uint? Parser.arrow_rest(&self, uint params, bool is_async, uint src_start) {
     uint fnf = is_async ? FNF_ASYNC : 0;
     uint body;
     uint body_start = self.tok.pos;
+    // The parameters were read as an expression of the enclosing body; their
+    // defaults are the arrow's code all the same.
+    sz ref_mark = self.params_are_simple(params) ? self.dv_refs.len : (sz)self.dv_ref_base;
+    defer self.dv_refs_nested(ref_mark);
     bool saved_cover_init = self.cover_init != 0;
     uint saved_depth = self.cover_depth;
     self.cover_depth = 0;

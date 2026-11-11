@@ -23,6 +23,11 @@ const uint BODY_HAS_WITH = 2;
 // references cannot be matched to a binding by text: the enclosing compile
 // has to assume every binding it could reach is captured.
 const uint BODY_HAS_ESCAPE = 4;
+// On a recorded reference: the body cannot be shown to reach the name only by
+// plain reads and writes of its own. A nested function mentions it, or the body
+// declares the name itself. The enclosing function then keeps the binding in
+// its environment, where a lookup by name finds it.
+const uint REF_INDIRECT = 0x80000000;
 // Set on a function body's BLOCK node that holds only a stub: `gen` must keep it
 // as a template, and the resolver takes its references from the stub's record
 // instead of from nodes that are not there.
@@ -94,6 +99,8 @@ fn uint? Parser.method_function(&self, uint start, uint fnf, bool unused) {
 fn uint? Parser.function_tail(&self, uint start, uint fnf_in, uint body_kind) {
     if (!features::ASYNC_GENERATORS && (fnf_in & (FNF_ASYNC | FNF_GENERATOR)) != 0) return self.unexpected()~;
     self.check_stack()!;
+    sz ref_mark = self.dv_refs.len;
+    defer self.dv_refs_nested(ref_mark);
     uint fnf = fnf_in;
     FnCtx saved = self.ctx;
     bool saved_no_in = self.no_in;
@@ -291,7 +298,12 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
     // A callee `gen` compiles in place keeps its nodes: recording it would parse
     // the whole subtree a second time on the first call.
     if (defer_body && callee && self.call_follows()) defer_body = false;
+    uint nrefs = 0;
     if (track) {
+        if (defer_body) {
+            nrefs = self.dv_unique_refs(ref0, (uint)self.dv_refs.len - ref0,
+                self.dv_marks.data[self.dv_marks.len - 3]);
+        }
         // Check this body's redeclaration errors, whether or not it is recorded.
         if (!self.dv_body_leave()) return self.fail_at(self.err_pos, "invalid function body")~;
     }
@@ -304,7 +316,6 @@ fn uint? Parser.function_block(&self, uint* fnf, bool skip_ok = false, uint para
         }
         self.ast.truncate(amark);
         self.scratch.truncate(mark);
-        uint nrefs = self.dv_unique_refs(ref0, (uint)self.dv_refs.len - ref0);
         uint at = self.ast.add_record(2 + nrefs);
         self.ast.set_field(at, 0, body_flags);
         self.ast.set_field(at, 1, nrefs);
@@ -592,6 +603,8 @@ fn uint? Parser.class_tail(&self, uint start) {
     defer self.class_in_sloppy = saved_sloppy;
     self.class_depth++;
     defer self.class_depth--;
+    sz ref_mark = self.dv_refs.len;
+    defer self.dv_refs_nested(ref_mark);
     self.ctx.strict = true;
     self.no_in = false;
     uint heritage = 0;
