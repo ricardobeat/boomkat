@@ -277,24 +277,23 @@ fn void lower_captured_bindings(CompilerContext* ctx, CompiledFunction* func, He
         has_var_capture |= binding.is_captured && binding.kind == ScopeKind.VAR
             && !binding.is_catch_param;
     }
-    foreach (binding : ctx.bindings) {
-        if (!binding.is_captured || binding.is_catch_param
-            || (binding.kind != ScopeKind.VAR && (has_var_capture || binding.kind != ScopeKind.LET))) continue;
-        lexical |= binding.kind == ScopeKind.LET;
-        void* key = context_name_key(ctx, binding.name_idx);
-        if (key == null) return;
-
-        uint same_name_count = 0;
-        foreach (other : ctx.bindings) {
-            if (context_name_key(ctx, other.name_idx) == key) same_name_count++;
+    @pool() {
+        uint[] by_name = mem::temp_array(uint, (sz)ctx.const_count + 1);
+        bindings_by_name(ctx, by_name);
+        foreach (bi, binding : ctx.bindings) {
+            if (!binding.is_captured || binding.is_catch_param
+                || (binding.kind != ScopeKind.VAR && (has_var_capture || binding.kind != ScopeKind.LET))) continue;
+            lexical |= binding.kind == ScopeKind.LET;
+            void* key = context_name_key(ctx, binding.name_idx);
+            if (key == null) return;
+            if (by_name[name_slot(ctx, binding.name_idx)] != (uint)bi + 1) continue;
+            if (candidate_count == MAX_LOWERED_CELLS) return;
+            candidates[candidate_count++] = {
+                .key = key,
+                .selected = true,
+            };
         }
-        if (same_name_count != 1) continue;
-        if (candidate_count == MAX_LOWERED_CELLS) return;
-        candidates[candidate_count++] = {
-            .key = key,
-            .selected = true,
-        };
-    }
+    };
     if (candidate_count == 0) return;
     // The lexical forms are proved from the children's code.
     for (uint i = 0; lexical && i < func.inner_count; i++) {

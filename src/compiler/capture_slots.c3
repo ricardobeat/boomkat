@@ -16,25 +16,22 @@ fn void CompilerContext.collect_capture_candidates(&self, CompiledFunction* func
     uint* names = (uint*)h.alloc_func(h.heap_udata, (usz)func.const_count * uint::size);
     if (names == null) return;
     uint count = 0;
-    for (uint pc = 0; pc < func.code_count; pc++) {
-        uint name;
-        if (!capture_name_operand(func.code, pc, &name)) continue;
-        if (name >= func.const_count || !func.constants[name].is_string()) continue;
-        bool local = false;
+    @pool() {
+        // Names that are no candidate, or already one: this function's own, then each one met.
+        bool[] settled = mem::temp_array(bool, (sz)func.const_count);
         for (sz bi = 0; bi < self.bindings.len(); bi++) {
-            if (self.bindings[bi].name_idx == name) { local = true; break; }
+            if (self.bindings[bi].name_idx < func.const_count) settled[self.bindings[bi].name_idx] = true;
         }
-        if (self.is_named_func_expr
-            && ((HString*)func.constants[name].get_heapptr()).equals(self.named_func_expr_name)) {
-            local = true;
+        for (uint pc = 0; pc < func.code_count; pc++) {
+            uint name;
+            if (!capture_name_operand(func.code, pc, &name)) continue;
+            if (name >= func.const_count || settled[name] || !func.constants[name].is_string()) continue;
+            settled[name] = true;
+            if (self.is_named_func_expr
+                && ((HString*)func.constants[name].get_heapptr()).equals(self.named_func_expr_name)) continue;
+            names[count++] = name;
         }
-        if (local) continue;
-        bool present = false;
-        for (uint ci = 0; ci < count; ci++) {
-            if (names[ci] == name) { present = true; break; }
-        }
-        if (!present) names[count++] = name;
-    }
+    };
     func.capture_names = names;
     func.capture_count = count;
 }
