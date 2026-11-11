@@ -1,6 +1,6 @@
 # 119: 50K Octane on a two-tier JIT
 
-Status: **ACTIVE** on branch `jit` (worktree `.worktrees/jit`), last revised 2026-11-11 at `370ba16d`.
+Status: **ACTIVE** on branch `jit` (worktree `.worktrees/jit`), last revised 2026-11-11 at `504534d7`.
 The composite is about 10,000. The target is 50,000.
 
 This file holds the current state and the work ahead. The history of how the
@@ -59,6 +59,12 @@ against r15): `--jit --opt` **10,654** against 10,175 (+4.7%), `--jit` 8,349
 Splay +12%, RayTrace +8%, EarleyBoyer +6%, TypeScript +5%. RayTrace under
 `--jit` is now above the interpreter (5,045). Peak RSS rose from 1,997 to
 2,362 MiB over the bundle; not yet explained.
+
+Gate r22 (`0c06bb31`, five runs against r18, one disturbed): **10,551**
+against 10,472. Box2D 13,238 (the epoch fix `d5efe152`), TypeScript +4%,
+DeltaBlue +3%, RayTrace +3%; PdfJS, Splay and CodeLoad read 5% lower in this
+gate with fewer instructions executed (collector timing; recheck in the next
+gate). Peak RSS 2,013 MiB.
 
 **Box2D is unstable under `--opt` and that comes first** (step 0). Inside the
 full bundle it scores 8,000 to 12,700 from run to run (gate median 9,759, r15
@@ -262,11 +268,9 @@ EarleyBoyer 121K: all `needs_env` with `env_call_ok`, entered today through
   is both), Box2D 322K and 485K, TypeScript `NEW_OBJ` 3.7M, `CALL` 921K,
   `CALL_VAR` 387K, PdfJS `CALL` 2.2M, `CALL_VAR` 1.3M, EarleyBoyer
   `CALL_UNDEF_THIS` 204K. Three parts, in order:
-  (a) a call entry for a `forward_args` function (`call_entry_eligible`
-  refuses `arguments_in_reg`): decline above `num_args + FORWARD_ARGS_PAD`
-  arguments, clear the pad from the argument count up rather than from the
-  formals, store the count in `arguments_reg`. This alone takes the wrapper's
-  `NEW_OBJ` off the C path.
+  (a) done (`504534d7`): a call entry for a `forward_args` function. RayTrace
+  under `--jit` 4.03G to 3.81G instructions, `jit_call` entries 2.0M to 1.0M;
+  0.6% under `--opt`, 0.3% of Box2D.
   (b) `APPLY_ARGS` inline: when the register holds a count, the callee slot
   is `%Function.prototype.apply%` and the collector is not marking, do the
   window shuffle `jit_apply_lean` does and raise `heap_reg_count` to cover
@@ -313,6 +317,25 @@ JSC's baseline is around 30 to 40.
   closure 1,400 (`CLOSURE` thunk). Remaining thunk volume per mini:
   TypeScript GETVAR 2.0M, NEW_OBJ 1.6M, NEWCELLS 1.4M, NEXTFOR 1.2M; PdfJS
   INITELEM 1.3M, CLOSURE 976K; zlib DECLVAR 852K, IF_TRUE 700K, CALL_VAR 665K.
+- Retraced at `0c06bb31` (one `a += f(i, 1)` iteration): site 40, call
+  subroutine 70 (callee class, kind, code and entry tests, feedback note,
+  receiver test, depth and floor), entry 125 (10 prologue, 30 tests, 45
+  activation stores, 6 register clears, 11 view, 15 for five 48-bit
+  constants), body 27, return subroutine 70 (45 of them guards), 6 epilogue,
+  35 after the return (floor, depth, realm, view again). JSC's baseline
+  configuration scores 8,402 on Richards against our 4,017 with both tiers,
+  so this protocol is the single largest item for Richards, DeltaBlue,
+  RayTrace and TypeScript. The cuts are structural, not local: one
+  "attention" word on the heap replacing the separate gc-pending, marking,
+  hook and interrupt tests at entry and return; a site cache of (function
+  object, entry) replacing the call subroutine's classification; the view
+  written lazily. Design each as its own change with the GC-stress build.
+- PdfJS under `--opt` spends about half its samples in runtime helpers,
+  spread thin: string building 15% of those (`concat_frame_holds_elsewhere`
+  alone 6.5%: it scans the frame's 27 slots on each of 5.9M in-place
+  appends), `move_dense`/`set_array_idx` 7% (splice), `jit_call` 5.5%,
+  collector 9%. The optimizer inlines 2 callees there and TypeScript's
+  instruction count under `--opt` equals `--jit`'s.
 - Target: under 100 instructions for a plain call and return. Measure on
   `tr.js`-style micros and the Richards, DeltaBlue, RayTrace loops.
 
@@ -523,7 +546,18 @@ discards 8 of 20 bodies after int32 overflow exits.
 
 ### 4. Builtins and strings
 
-**4.1 The builtin call.** About 530 instructions: 125 at the site, 411 across
+**4.1 The builtin call.** Done so far (2026-11-11): `CALL_GLOBAL` of a
+builtin completes in the call subroutine (`ff9f30f4`); the wrapper chain is
+one function (`ee86985c`); `jit_builtin_leaf` (`6b19cb02`) answers `charAt`,
+`fromCharCode`, `push`, `parseInt` of a number and the Math functions without
+a `BuiltinContext`, reusing `opt_array_push` and `opt_math_fn`, behind a
+kind table by builtin number (a miss costs 7 instructions): PdfJS loop -3.0%,
+Box2D -5.1% under `--jit`. A site of `Function.prototype.call` keeps its
+callee feedback (`0c06bb31`); before, the builtin note made every such site
+polymorphic and the optimizer never inlined through `f.call(...)`. Still
+open: `indexOf`, `substring`, `pop`, `splice` (PdfJS 296K), and calling the
+leaf from the site without the helper's preamble. The original analysis:
+about 530 instructions: 125 at the site, 411 across
 `jit_call_builtin_native` → `jit_call_builtin` → `th_call_native` → the
 builtin's dispatch → the builtin (`vm_jit_call.c3:847`). The C side
 re-classifies the callee, binds cache biases, goes through the threaded
