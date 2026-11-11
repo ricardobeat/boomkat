@@ -126,20 +126,7 @@ fn void? CompilerContext.check_var_lex_conflict(&self, char[] name, ScopeKind ki
 // declaration's own scope. A second crossing would reach an enclosing
 // function's parameters, which this declaration may legally shadow.
 fn void? CompilerContext.check_lexical_redeclares_param(&self, char[] name) {
-    bool crossed_body_mark = false;
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind == SCOPEMARK) {
-            if (!e.is_body_mark || crossed_body_mark) return;
-            crossed_body_mark = true;
-            continue;
-        }
-        if (e.is_param && str_eq(e.name, name)) {
-            return self.fail("lexical declaration cannot redeclare a parameter")~;
-        }
-    }
+    if (self.is_param_name(name)) return self.fail("lexical declaration cannot redeclare a parameter")~;
 }
 
 // Declare a variable in the current scope.
@@ -364,33 +351,20 @@ fn ushort? CompilerContext.find_local_reg(&self, char[] name) {
 // with `undefined` while var_env claims the new value. DECLVAR is correct
 // there.
 fn bool CompilerContext.is_existing_local_env_resident(&self, char[] name) {
-    uint j = self.scope_depth;
-    while (j > 0) {
-        j--;
-        if (!str_eq(self.scope_stack[j].name, name)) continue;
-        ScopeEntry* e = &self.scope_stack[j];
-        if (e.kind == SCOPEMARK) continue;
-        // A catch parameter's binding is published via PUTLEX into the
-        // catch's lex_env above var_env, so any re-declaration that reuses
-        // the existing register must walk the chain to update it (PUTVAR).
-        // is_captured alone misses the top-level case where the force-capture
-        // code is skipped — the binding is still in lex_env but is_captured
-        // stays false.
-        return e.is_captured || e.is_catch_param;
-    }
-    return false;
+    ScopeEntry* e = self.scope_entry(name);
+    // A catch parameter's binding is published via PUTLEX into the
+    // catch's lex_env above var_env, so any re-declaration that reuses
+    // the existing register must walk the chain to update it (PUTVAR).
+    // is_captured alone misses the top-level case where the force-capture
+    // code is skipped — the binding is still in lex_env but is_captured
+    // stays false.
+    return e != null && (e.is_captured || e.is_catch_param);
 }
 
 // Whether the innermost binding of `name` is a catch parameter.
 fn bool CompilerContext.names_catch_param(&self, char[] name) {
-    uint j = self.scope_depth;
-    while (j > 0) {
-        j--;
-        ScopeEntry* e = &self.scope_stack[j];
-        if (e.kind == SCOPEMARK || !str_eq(e.name, name)) continue;
-        return e.is_catch_param;
-    }
-    return false;
+    ScopeEntry* e = self.scope_entry(name);
+    return e != null && e.is_catch_param;
 }
 
 // Resolve `name` to its register only if it is bound in the scope a function
@@ -407,11 +381,17 @@ fn bool CompilerContext.names_catch_param(&self, char[] name) {
 // marker: hoist_decls declares the body's function names before block()
 // pushes that marker, so the binding a textual-position declaration must
 // reuse sits just below it.
-fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
+// The lowest stack index a declaration here shares a scope with: above the
+// nearest marker, or the one under it when that marker opens a function body.
+fn uint CompilerContext.same_scope_floor(&self) {
     uint floor = self.top_mark;
     if (floor != 0 && self.scope_stack[floor - 1].is_body_mark) floor = self.scope_stack[floor - 1].shadowed;
+    return floor;
+}
+
+fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
     ScopeEntry* e = self.scope_entry(name);
-    if (e == null || e < &self.scope_stack[floor]) return SCOPE_ERROR~;
+    if (e == null || e < &self.scope_stack[self.same_scope_floor()]) return SCOPE_ERROR~;
     return e.reg;
 }
 
@@ -459,19 +439,10 @@ fn ushort? CompilerContext.find_same_scope_reg(&self, char[] name) {
 // bindings in scope ARE the parameters (the body has not been parsed), but the
 // narrower test keeps this correct if that ever stops holding.
 fn bool CompilerContext.is_param_name(&self, char[] name) {
-    bool crossed_body_mark = false;
-    uint i = self.scope_depth;
-    while (i > 0) {
-        i--;
-        ScopeEntry* e = &self.scope_stack[i];
-        if (e.kind == SCOPEMARK) {
-            if (!e.is_body_mark || crossed_body_mark) return false;
-            crossed_body_mark = true;
-            continue;
-        }
-        if (e.is_param && str_eq(e.name, name)) {
-            return true;
-        }
+    ScopeEntry* floor = &self.scope_stack[self.same_scope_floor()];
+    for (ScopeEntry* e = self.scope_entry(name); e != null && e >= floor;
+         e = e.shadowed != 0 ? &self.scope_stack[e.shadowed - 1] : null) {
+        if (e.is_param) return true;
     }
     return false;
 }
@@ -543,12 +514,11 @@ fn void CompilerContext.mark_var_captured(&self, char[] name) {
 // string always interns to the same index), so the caller's emitted opcode
 // references a valid pool slot.
 fn uint CompilerContext.find_const_name_idx(&self, ushort reg) {
-    if (self.scope_depth == 0) return 0xFFFFFFFF;
-    for (uint i = 0; i < self.scope_depth; i++) {
+    for (uint i = self.first_entry_reaching(reg); i < self.scope_depth; i++) {
         ScopeEntry* e = &self.scope_stack[i];
-        if (e.reg == reg && e.kind == ScopeKind.CONST) {
-            return self.add_string_constant(e.name);
-        }
+        // A register holds one binding at a time, so the first holder decides.
+        if (e.kind == SCOPEMARK || e.reg != reg) continue;
+        return e.kind == ScopeKind.CONST ? self.add_string_constant(e.name) : 0xFFFFFFFF;
     }
     return 0xFFFFFFFF;
 }
@@ -557,15 +527,23 @@ fn uint CompilerContext.find_const_name_idx(&self, ushort reg) {
 // Returns true if the register holds a live local binding that must NOT be
 // freed by expression_statement (the binding outlives the expression).
 fn bool CompilerContext.is_local_var_reg(&self, ushort reg) {
-    if (self.scope_depth == 0) {
-        return false;
-    }
-    for (uint i = 0; i < self.scope_depth; i++) {
-        if (self.scope_stack[i].reg == reg) {
-            return true;
-        }
+    for (uint i = self.first_entry_reaching(reg); i < self.scope_depth; i++) {
+        if (self.scope_stack[i].kind != SCOPEMARK && self.scope_stack[i].reg == reg) return true;
     }
     return false;
+}
+
+// The lowest stack index whose binding register may be `reg`: reg_floor rises
+// up the stack, and every entry under the first one above `reg` sits below it.
+// Registers mostly rise with it, so a search by register usually ends here.
+fn uint CompilerContext.first_entry_reaching(&self, ushort reg) {
+    uint lo = 0;
+    uint hi = self.scope_depth;
+    while (lo < hi) {
+        uint mid = lo + (hi - lo) / 2;
+        if (self.scope_stack[mid].reg_floor > reg) { hi = mid; } else { lo = mid + 1; }
+    }
+    return lo;
 }
 
 // Shield a computed-member key register from GETPROP's in-place

@@ -134,9 +134,7 @@ fn bool CompilerContext.is_free_global_name(&self, uint name_idx) {
     // A name the source never wrote (a synthetic one) has no binding to find.
     if (atom == 0 || atom == idx.res.atom_arguments) return false;
     // A binding of this function still in its temporal dead zone is read by name.
-    for (uint i = 0; i < self.scope_depth; i++) {
-        if (str_eq(self.scope_stack[i].name, self.name_text(name))) return false;
-    }
+    if (self.scope_entry_of(name) != null) return false;
     uint s = self.func_ast_scope;
     while (s != 0) {
         ast::Scope* sc = &idx.res.scopes.data[s];
