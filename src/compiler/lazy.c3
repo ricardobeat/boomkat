@@ -43,6 +43,7 @@ fn CompiledFunction*? CompilerContext.defer_function(&self, uint scope, char[] n
         f.filename_ptr = file.ptr;
         f.filename_len = (uint)self.lexer.source_name.len;
     }
+    f.lazy_outer_with = self.in_with();
     self.record_outer_names(f, scope);
     h.track_compiled_func(f);
     return f;
@@ -143,6 +144,7 @@ fn void? materialize_function_body(CompiledFunction* f, Heap* h) @noinline {
     defer ctx.cleanup();
     ctx.is_strict = f.flags.is_strict;
     ctx.is_constructable = f.flags.is_constructable;
+    ctx.outer_with = f.lazy_outer_with;
     ctx.is_named_func_expr = f.flags.is_namebinding;
     if (ctx.is_named_func_expr) ctx.named_func_expr_name = f.name_ptr[:f.name_len];
     // The source slice has no declarations for its enclosing scopes. Keep

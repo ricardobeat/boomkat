@@ -1884,6 +1884,8 @@ struct CompiledFunction {
     // On such a template: its constants are exactly the names it mentions that a
     // function around it binds, so any other free name is a global.
     bool lazy_outer_known;
+    // On such a template: a `with` statement encloses the function.
+    bool lazy_outer_with;
 
     // ---- Bytecode -------------------------------------------------------
 
