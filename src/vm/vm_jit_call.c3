@@ -977,7 +977,10 @@ fn bool jit_call_builtin(Dispatch* ds, Instruction* next, OpStatus* status, long
     ColdCtx* cold = &ds.cold;
     th_bind_ic_bias(cold, ds.code_base, ds.ic_base, ds.var_ic_base);
     int builtin = jit_builtin_index(regs[callee]);
-    if (builtin >= 0) hobject::ic_note_callee(th_ic_at(cold, pc), hobject::IC_BUILTIN_TARGET | (uint)builtin);
+    // Function.prototype.call's site records the function it runs instead (th_call_redispatched).
+    if (builtin >= 0 && builtin != (int)builtins::Builtin.FUNCTION_PROTO_CALL.ordinal) {
+        hobject::ic_note_callee(th_ic_at(cold, pc), hobject::IC_BUILTIN_TARGET | (uint)builtin);
+    }
     uint nargs = global ? pc.b : pc.c;
     LeafKind leaf = (uint)builtin < jit_leaf_kinds.len ? jit_leaf_kinds[builtin] : LeafKind.NONE;
     if (leaf != NONE && jit_builtin_leaf(ds, leaf, (uint)builtin, regs[callee + 1], regs + callee + 2, nargs, regs + pc.a)) {
