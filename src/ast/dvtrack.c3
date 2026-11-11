@@ -27,13 +27,7 @@ fn void Parser.dv_body_enter(&self, uint params) {
     self.dv_marks.push((uint)self.dv_sites.len);
     self.dv_marks.push(self.dv_cur);
     self.dv_marks.push(self.dv_ref_base);
-    self.dv_marks.push(self.dv_label_base);
-    self.dv_marks.push(self.dv_breakable);
-    self.dv_marks.push(self.dv_iterating);
     self.dv_ref_base = (uint)self.dv_refs.len;
-    self.dv_label_base = (uint)self.dv_labels.len;
-    self.dv_breakable = 0;
-    self.dv_iterating = 0;
     self.dv_cur = (uint)self.dv_scopes.len;
     self.dv_scopes.push({ .kind = ScopeKind.FUNCTION, .parent = 0, .func = self.dv_cur });
     self.dv_track++;
@@ -47,7 +41,7 @@ fn void Parser.dv_body_enter(&self, uint params) {
 // sites so the enclosing body's tracking resumes where it was. A label, loop or
 // switch of the enclosing body also resumes: a nested body starts a new one.
 fn bool Parser.dv_body_leave(&self) {
-    uint n = (uint)self.dv_marks.len - 7;
+    uint n = (uint)self.dv_marks.len - 4;
     bool ok = !self.failed && self.dv_conflicts(self.dv_marks.data[n + 1]);
     // Restore even when a conflict or an earlier error failed the walk: the
     // parse aborts, but the unit's tracker state must not stay nested.
@@ -55,10 +49,6 @@ fn bool Parser.dv_body_leave(&self) {
     self.dv_sites.truncate((sz)self.dv_marks.data[n + 1]);
     self.dv_cur = self.dv_marks.data[n + 2];
     self.dv_ref_base = self.dv_marks.data[n + 3];
-    self.dv_labels.truncate((sz)self.dv_label_base);
-    self.dv_label_base = self.dv_marks.data[n + 4];
-    self.dv_breakable = self.dv_marks.data[n + 5];
-    self.dv_iterating = self.dv_marks.data[n + 6];
     self.dv_marks.truncate((sz)n);
     self.dv_track--;
     return ok;
@@ -88,13 +78,6 @@ fn bool Parser.dv_is_func_scope(&self) @inline {
 // the kind by the conflict pass (a `var` binds at the function scope).
 fn void Parser.dv_declare(&self, uint atom, DeclKind kind, uint at, bool pattern = false, bool plain = false) {
     if (!self.dv_on || atom == 0) return;
-    // Strict code may not bind `eval` or `arguments` (Early.check_ident). This
-    // also covers class bodies, whose scope tracking is paused but whose nodes
-    // are discarded with the enclosing deferred body.
-    if (self.ctx.strict && (atom == self.dv_atom_eval || atom == self.dv_atom_arguments)) {
-        self.fail_at(at, "reserved word cannot be used as a binding identifier");
-        return;
-    }
     if (self.dv_track == 0) return;
     self.dv_sites.push({ .atom = atom, .kind = kind, .scope = self.dv_cur, .at = at,
         .pattern = pattern, .plain = plain });
@@ -297,49 +280,6 @@ fn bool Parser.dv_conflicts(&self, sz first) {
     return !self.failed;
 }
 
-// ---- labels and jumps ----
-
-// Enter or leave a loop body: `break` needs a loop or switch, `continue` a loop.
-fn void Parser.dv_loop_enter(&self) {
-    if (self.dv_on && self.dv_track != 0) { self.dv_breakable++; self.dv_iterating++; }
-}
-fn void Parser.dv_loop_leave(&self) {
-    if (self.dv_on && self.dv_track != 0) { self.dv_breakable--; self.dv_iterating--; }
-}
-fn void Parser.dv_switch_enter(&self) {
-    if (self.dv_on && self.dv_track != 0) self.dv_breakable++;
-}
-fn void Parser.dv_switch_leave(&self) {
-    if (self.dv_on && self.dv_track != 0) self.dv_breakable--;
-}
-
-// A label is declared: duplicate labels are rejected, then it is pushed so the
-// jumps it names can find it. Whether it names a loop through further labels is
-// only known once the body is parsed, so `dv_label_finish` resolves it.
-fn void Parser.dv_label_declare(&self, uint atom, uint at) {
-    if (!self.dv_on || self.dv_track == 0) return;
-    for (sz i = (sz)self.dv_label_base; i < self.dv_labels.len; i++) {
-        if (self.dv_labels.data[i].atom == atom) { self.fail_at(at, "label has already been declared"); return; }
-    }
-    self.dv_labels.push({ .atom = atom, .loop = false, .continue_at = 0 });
-}
-
-// The labelled statement is done: walk its label chain the way Early.labeled
-// does, then decide any `continue` that named this label and pop it.
-fn void Parser.dv_label_finish(&self, uint body) {
-    if (!self.dv_on || self.dv_track == 0 || self.dv_labels.len <= self.dv_label_base) return;
-    uint b = body;
-    while (b != 0 && self.ast.tags.data[b] == NodeTag.LABELED) b = self.ast.rhs.data[b];
-    NodeTag t = self.ast.tags.data[b];
-    bool loop = b != 0 && (t == NodeTag.FOR || t == NodeTag.FOR_IN || t == NodeTag.FOR_OF
-        || t == NodeTag.WHILE || t == NodeTag.DO_WHILE);
-    DvLabel* l = &self.dv_labels.data[self.dv_labels.len - 1];
-    if (l.continue_at != 0 && !loop) {
-        self.fail_at(l.continue_at, "continue may only target a loop label");
-    }
-    self.dv_labels.truncate((sz)(self.dv_labels.len - 1));
-}
-
 // A stub's refs are all resolved at the same scope, so repeated atoms are
 // redundant there. Collapse them in place with a generation-stamped table;
 // growing the table re-stamps the atoms already kept for this stub.
@@ -365,147 +305,4 @@ fn uint Parser.dv_unique_refs(&self, uint ref0, uint nrefs) {
         out++;
     }
     return out;
-}
-
-// A regular for head, unlike a for-in/of head, still requires `const` and
-// destructuring declarators to have an initializer (Early.var_decl).
-fn void Parser.dv_for_init_check(&self, uint init) {
-    if (!self.dv_on || init == 0) return;
-    if (self.ast.tags.data[init] != NodeTag.VAR_DECL) return;
-    char kind = self.ast.flags.data[init] & VAR_KIND_MASK;
-    if (kind != VAR_KIND_VAR && kind != VAR_KIND_LET && kind != VAR_KIND_CONST) return;
-    uint list = self.ast.lhs.data[init];
-    uint count = self.ast.list_len(list);
-    for (uint i = 0; i < count; i++) {
-        uint d = self.ast.list_item(list, i);
-        if (self.ast.rhs.data[d] != 0) continue;
-        uint target = self.ast.lhs.data[d];
-        uint at = self.ast.main_tok.data[d];
-        if (kind == VAR_KIND_CONST) {
-            self.fail_at(at, "const declaration requires an initializer");
-            return;
-        }
-        if (self.ast.tags.data[target] != NodeTag.IDENT) {
-            self.fail_at(at, "destructuring declaration requires an initializer");
-            return;
-        }
-    }
-}
-
-// A break or continue statement. Mirrors Early.jump.
-fn void Parser.dv_jump(&self, uint label, uint at, bool is_break) {
-    if (!self.dv_on || self.dv_track == 0) return;
-    if (label == 0) {
-        if (is_break && self.dv_breakable == 0) { self.fail_at(at, "break is only valid inside a loop or switch"); return; }
-        if (!is_break && self.dv_iterating == 0) { self.fail_at(at, "continue is only valid inside a loop"); return; }
-        return;
-    }
-    for (sz i = self.dv_labels.len; i > (sz)self.dv_label_base; i--) {
-        DvLabel* l = &self.dv_labels.data[i - 1];
-        if (l.atom != label) continue;
-        if (!is_break && l.continue_at == 0) l.continue_at = at;
-        return;
-    }
-    self.fail_at(at, "undefined label");
-}
-
-// A lexical binding may not be named `let` (Early.no_let).
-fn void Parser.dv_no_let(&self, uint n) {
-    if (!self.dv_on || n == 0 || self.failed) return;
-    switch (self.ast.tags.data[n]) {
-        case IDENT:
-            if (self.ast.lhs.data[n] == self.dv_atom_let) {
-                self.fail_at(self.ast.main_tok.data[n], "'let' cannot be a lexically bound name");
-            }
-        case ARRAY_PAT:
-        case OBJECT_PAT:
-            uint l = self.ast.lhs.data[n];
-            if (l == 0) return;
-            uint c = self.ast.list_len(l);
-            for (uint i = 0; i < c; i++) self.dv_no_let(self.ast.list_item(l, i));
-        case PAT_PROP:
-            if ((self.ast.flags.data[n] & PROP_SHORTHAND_PAT) != 0) {
-                self.dv_no_let(self.ast.lhs.data[n]);
-            } else {
-                self.dv_no_let(self.ast.rhs.data[n]);
-            }
-        case ASSIGN_PAT:
-        case REST:
-            self.dv_no_let(self.ast.lhs.data[n]);
-        default:
-    }
-}
-
-// `eval`, `arguments` and the strict reserved words, which a class name (always
-// strict code) may not use (Early.check_ident / is_strict_reserved).
-fn bool Parser.dv_strict_word(&self, uint atom) {
-    if (atom == self.dv_atom_eval || atom == self.dv_atom_arguments) return true;
-    for (uint i = 0; i < 9; i++) {
-        if (atom == self.dv_strict_words[i]) return true;
-    }
-    return false;
-}
-
-fn void Parser.dv_class_name(&self, uint name) {
-    if (!self.dv_on || name == 0) return;
-    if (self.dv_strict_word(self.ast.lhs.data[name])) {
-        self.fail_at(self.ast.main_tok.data[name], "reserved word cannot be used as an identifier in strict mode");
-    }
-}
-
-// Declarations in a single-statement body: only a sloppy plain function in an
-// `if` body (or as a labelled function) is allowed by Annex B (Early.sub_stmt).
-fn void Parser.dv_sub_stmt(&self, uint n, bool if_body) {
-    if (!self.dv_on || n == 0 || self.failed) return;
-    uint at = self.ast.main_tok.data[n];
-    switch (self.ast.tags.data[n]) {
-        case CLASS_DECL:
-            self.fail_at(at, "declaration not allowed as a single-statement body");
-        case VAR_DECL:
-            if ((self.ast.flags.data[n] & VAR_KIND_MASK) != VAR_KIND_VAR) {
-                self.fail_at(at, "declaration not allowed as a single-statement body");
-            }
-        case FUNC_DECL:
-            uint fnf = self.ast.field(self.ast.rhs.data[n], FN_FLAGS);
-            if (!if_body || self.ctx.strict || (fnf & (FNF_ASYNC | FNF_GENERATOR)) != 0) {
-                self.fail_at(at, "declaration not allowed as a single-statement body");
-            }
-        case LABELED:
-            uint body = n;
-            while (body != 0 && self.ast.tags.data[body] == NodeTag.LABELED) body = self.ast.rhs.data[body];
-            if (body != 0 && self.ast.tags.data[body] == NodeTag.FUNC_DECL) {
-                self.fail_at(at, "declaration not allowed as a single-statement body");
-            }
-        default:
-    }
-}
-
-// Duplicate BoundNames in a catch parameter (Early.try_ / has_duplicate).
-fn void Parser.dv_catch_dup(&self, sz first) {
-    for (sz i = first; i < self.dv_sites.len; i++) {
-        for (sz j = i + 1; j < self.dv_sites.len; j++) {
-            if (self.dv_sites.data[i].atom == self.dv_sites.data[j].atom) {
-                self.fail_at(self.dv_sites.data[j].at, "duplicate catch parameter name");
-                return;
-            }
-        }
-    }
-}
-
-// A for-in/of head may not initialise its binding, except the sloppy Annex B
-// `for (var x = init in obj)` with a plain identifier (Early.for_in_of).
-fn void Parser.dv_for_in_of_head(&self, uint init, bool is_of) {
-    if (!self.dv_on || init == 0) return;
-    if (self.ast.tags.data[init] != NodeTag.VAR_DECL) return;
-    uint list = self.ast.lhs.data[init];
-    if (self.ast.list_len(list) == 0) return;
-    uint d = self.ast.list_item(list, 0);
-    if (self.ast.rhs.data[d] == 0) return;
-    char kind = self.ast.flags.data[init] & VAR_KIND_MASK;
-    uint target = self.ast.lhs.data[d];
-    bool allowed = !is_of && kind == VAR_KIND_VAR && !self.ctx.strict
-        && target != 0 && self.ast.tags.data[target] == NodeTag.IDENT;
-    if (!allowed) {
-        self.fail_at(self.ast.main_tok.data[d], "for-in/of loop variable declaration may not have an initializer");
-    }
 }
