@@ -1369,8 +1369,9 @@ fn void? CompilerContext.hoist_function_indexed(&self, ast::Site* s) {
     uint inner_idx = self.add_inner_func(inner);
     uint name_idx = self.add_string_constant(fn_name2);
 
+    // Only a repeated name has an entry to replace.
     bool recorded = false;
-    for (uint di = 0; di < self.hoisted_defer_count; di++) {
+    for (uint di = 0; already && di < self.hoisted_defer_count; di++) {
         if (str_eq(self.hoisted_defer_names[di], fn_name2)) {
             self.hoisted_defer_regs[di] = func_reg;
             self.hoisted_defer_inner_idxs[di] = inner_idx;
