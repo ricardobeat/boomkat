@@ -842,6 +842,10 @@ struct RealmState {
     uint[5]             args_shapes;
     RegExpGuard         regexp_guard;
     MatchShape[4]       match_shapes;
+    // The shape of a fresh RegExp, whose only property is lastIndex, and the
+    // shape-recycle epoch it was read in; 0 until one has been built.
+    uint                regexp_shape;
+    uint                regexp_shape_epoch;
     // Recent interned results of str_slice, found by a few bytes of content so
     // a repeated substring skips the hash and the string table. Entries are weak
     // like the table's: str_table_remove drops one, reset clears them all.
@@ -2104,6 +2108,7 @@ fn void Heap.init_shapes(&self) {
     self.shape_recycle_epoch = 0;
     self.regexp_guard = {};
     self.match_shapes = {};
+    self.regexp_shape = 0;
     self.slice_cache = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;
@@ -3132,6 +3137,7 @@ fn void Heap.reset(&self) {
     self.var_ic_filled = false;
     self.regexp_guard = {};
     self.match_shapes = {};
+    self.regexp_shape = 0;
     self.slice_cache = {};
     self.promise_species_guard = {};
     self.shape_free_head = SHAPE_FREE_END;

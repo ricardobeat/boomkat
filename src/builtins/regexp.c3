@@ -745,6 +745,37 @@ fn MatchShape* match_shape_slot(Heap* heap, uint ncaps, ulong unmatched) @inline
     return &heap.match_shapes[(h >> 7) & 3];
 }
 
+// Gives a freshly allocated RegExp its one own property, lastIndex = 0
+// (writable, not enumerable, not configurable; RegExpAlloc step 2). Once one
+// RegExp has reached that shape through the transition table, later ones take
+// it in a single step.
+fn bool regexp_init_last_index(Heap* heap, HObject* rx) {
+    TVal zero;
+    zero.set_fastint(0);
+    if (heap.regexp_shape != 0 && heap.regexp_shape_epoch == heap.shape_recycle_epoch
+        && rx.prop_count == 0 && rx.prop_capacity >= 1 && !rx.gc.prototype_observed) {
+        hobject::PropValue* slots = rx.prop_values();
+        mem::clear(&slots[0], (sz)hobject::PropValue::size);
+        heap.store_slot(rx, &slots[0], zero);
+        rx.prop_count = 1;
+        rx.shape_id = heap.regexp_shape;
+        rx.flags.has_nondefault_flags = true;
+        return true;
+    }
+    if (!rx.put_prop(heap.str(heap::BuiltinStr.LAST_INDEX), zero, hobject::PROP_FLAGS_WENC, heap)) return false;
+    if (rx.prop_count == 1) {
+        hobject::Shape* shape = heap.get_shape(rx.shape_id);
+        if (shape != null && shape.parent != hobject::PRIVATE_SHAPE_PARENT && !shape.dict) {
+            // As for match arrays: a shape reached without a transition lookup
+            // must be marked shared, or each object would build its own hash.
+            shape.shared = true;
+            heap.regexp_shape = rx.shape_id;
+            heap.regexp_shape_epoch = heap.shape_recycle_epoch;
+        }
+    }
+    return true;
+}
+
 // Fills a fresh array whose storage was reserved for the shape `shape_id`: its
 // elements, then the named slots in shape order. The result is the array the
 // property-by-property path builds, down to the flag bits that path leaves set.

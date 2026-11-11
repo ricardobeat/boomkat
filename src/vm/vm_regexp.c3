@@ -160,11 +160,7 @@ macro TVal? vm_new_regexp(Dispatch* ds, TVal* ra, DecodedInsn insn) {
                         (*obj.extra_ptr()).regexp.regexp_data = compiled;
                         (*obj.extra_ptr()).regexp.flags = js_flags;
                         (*obj.extra_ptr()).prim.primitive_value.set_string(pattern_hs);
-                        // Set lastIndex, the only own data property (ECMA-262 RegExpAlloc)
-                        HString* lastindex_key = vm.heap.str(heap::BuiltinStr.LAST_INDEX);
-                        TVal lastindex_tv;
-                        lastindex_tv.set_fastint(0);
-                        obj.put_prop(lastindex_key, lastindex_tv, hobject::PROP_FLAGS_WENC, ds.vm.heap);
+                        builtins::regexp_init_last_index(vm.heap, obj);
                         vm.heap.set_reg_object(ra, obj);
                         track_heap_store(ds.act, ra, (uint)insn.a);
                     } else {
