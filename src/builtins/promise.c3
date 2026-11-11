@@ -3083,6 +3083,45 @@ fn void promise_iterator_close(Heap* heap, void* vm, TVal iterator, TVal* comple
     promise_clear_error_channels(heap, vm);
 }
 
+enum CombinatorStep : char {
+    NEXT,
+    DONE,
+    ABRUPT,
+}
+
+// One turn of a combinator's loop: IteratorStep, IteratorValue, then
+// promiseResolve(value) into *next_promise. An abrupt completion rejects the
+// capability; only a throwing promiseResolve closes the iterator, since the
+// others leave iteratorRecord.[[Done]] true (ECMA-262 §7.4.7).
+fn CombinatorStep promise_combinator_next(BuiltinContext* ctx, TVal iterator, TVal resolve_fn,
+                                         TVal this_ctor_val, TVal cap_reject_tv, TVal* next_promise) {
+    Heap* heap = ctx.heap;
+    TVal step_result; step_result.set_undefined();
+    TVal next_value; next_value.set_undefined();
+    bool closes = false;
+    if (promise_iterator_step(heap, ctx.vm, iterator, &step_result)) {
+        HObject* step_obj = (HObject*)step_result.get_heapptr();
+        TVal done; done.set_undefined();
+        if (!promise_object_get(heap, ctx.vm, step_obj, heap.str(heap::BuiltinStr.DONE), &done)) {
+            // IteratorComplete threw: fall through to reject.
+        } else if (builtin_to_boolean(&done)) {
+            return CombinatorStep.DONE;
+        } else if (promise_object_get(heap, ctx.vm, step_obj, heap.str(heap::BuiltinStr.VALUE), &next_value)) {
+            TVal[1] args = { next_value };
+            *next_promise = heap.call_fn(ctx.vm, resolve_fn, &args[0], 1, this_ctor_val);
+            if (!heap.has_error) return CombinatorStep.NEXT;
+            closes = true;
+        }
+    } else if (!heap.has_error) {
+        return CombinatorStep.ABRUPT;
+    }
+    TVal err_val = heap.error_value;
+    promise_clear_error_channels(heap, ctx.vm);
+    if (closes) promise_iterator_close(heap, ctx.vm, iterator, &err_val);
+    promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
+    return CombinatorStep.ABRUPT;
+}
+
 // Reject the promise capability identified by `cap_reject_tv` with `reason`.
 // Used by combinators to handle IfAbruptRejectPromise.
 fn void promise_combinator_reject(Heap* heap, void* vm, TVal cap_reject_tv, TVal* reason) {
@@ -3339,60 +3378,11 @@ fn void builtin_promise_all(BuiltinContext* ctx) {
     cap_reject_tv.set_temproot();
     cap_promise_tv.set_temproot();
 
-    bool iter_done = false;
-    while (!iter_done) {
-        // IteratorStep
-        TVal step_result; step_result.set_undefined();
-        if (!promise_iterator_step(heap, ctx.vm, iterator, &step_result)) {
-            // IteratorStep abrupt: per spec, iteratorRecord.[[done]] is set to true
-            // and ReturnIfAbrupt is applied WITHOUT calling IteratorClose first.
-            if (heap.has_error) {
-                TVal err_val = heap.error_value;
-                promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            }
-            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-            return;
-        }
-        HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = heap.str(heap::BuiltinStr.DONE);
-        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
-        // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
-        bool done = false;
-        if (done_key != null) {
-            TVal dv_done; dv_done.set_undefined();
-            if (!promise_object_get(heap, ctx.vm, step_obj, done_key, &dv_done)) {
-                // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-            done = builtin_to_boolean(&dv_done);
-        }
-        if (done) { iter_done = true; break; }
-
-        // IteratorValue: Get(result, "value"), full Get with accessor invocation.
-        TVal next_value; next_value.set_undefined();
-        if (value_key != null) {
-            if (!promise_object_get(heap, ctx.vm, step_obj, value_key, &next_value)) {
-                // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-        }
-
-        // Call promiseResolve(value) → nextPromise
-        TVal[1] res_args;
-        res_args[0] = next_value;
-        TVal next_promise = heap.call_fn(ctx.vm, resolve_fn, &res_args[0], 1, this_ctor_val);
-        if (heap.has_error) {
-            TVal err_val = heap.error_value;
-            heap.has_error = false;
-            promise_iterator_close(heap, ctx.vm, iterator, &err_val);
-            promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
+    while (true) {
+        TVal next_promise;
+        CombinatorStep step = promise_combinator_next(ctx, iterator, resolve_fn, this_ctor_val, cap_reject_tv, &next_promise);
+        if (step == CombinatorStep.DONE) break;
+        if (step == CombinatorStep.ABRUPT) {
             if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
             return;
         }
@@ -3562,60 +3552,13 @@ fn void builtin_promise_allsettled(BuiltinContext* ctx) {
     HObject* state = state_raw;
     HString* remaining_key = heap.str_intern_hidden("remaining");
 
-    bool iter_done = false;
-    while (!iter_done) {
-        TVal step_result; step_result.set_undefined();
-        if (!promise_iterator_step(heap, ctx.vm, iterator, &step_result)) {
-            // IteratorStep abrupt: per spec, iteratorRecord.[[done]] is set to
-            // true and ReturnIfAbrupt is applied WITHOUT calling IteratorClose
-            // first (the failure came from next() itself, not from processing
-            // its result, ECMA-262 §7.4.7 IteratorStep step 3).
-            if (heap.has_error) {
-                TVal err_val = heap.error_value;
-                promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            }
-            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
-        }
-        HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = heap.str(heap::BuiltinStr.DONE);
-        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
-        // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
-        bool done = false;
-        if (done_key != null) {
-            TVal dv_done; dv_done.set_undefined();
-            if (!promise_object_get(heap, ctx.vm, step_obj, done_key, &dv_done)) {
-                // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-            done = builtin_to_boolean(&dv_done);
-        }
-        if (done) { iter_done = true; break; }
-
-        // IteratorValue: Get(result, "value"), full Get with accessor invocation.
-        TVal next_value; next_value.set_undefined();
-        if (value_key != null) {
-            if (!promise_object_get(heap, ctx.vm, step_obj, value_key, &next_value)) {
-                // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-        }
-
-        TVal[1] res_args;
-        res_args[0] = next_value;
-        TVal next_promise = heap.call_fn(ctx.vm, resolve_fn, &res_args[0], 1, this_ctor_val);
-        if (heap.has_error) {
-            TVal err_val = heap.error_value;
-            promise_clear_error_channels(heap, ctx.vm);
-            promise_iterator_close(heap, ctx.vm, iterator, &err_val);
-            promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
+    while (true) {
+        TVal next_promise;
+        CombinatorStep step = promise_combinator_next(ctx, iterator, resolve_fn, this_ctor_val, cap_reject_tv, &next_promise);
+        if (step == CombinatorStep.DONE) break;
+        if (step == CombinatorStep.ABRUPT) {
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
+            return;
         }
 
         HObject*? fulfill_raw = promise_create_element_callback(heap, Builtin.PROMISE_ALLSETTLED_RESOLVE_ELEMENT.ordinal, state, idx);
@@ -3995,60 +3938,13 @@ fn void builtin_promise_any(BuiltinContext* ctx) {
     usz remaining = 1;
     usz idx = 0;
 
-    bool iter_done = false;
-    while (!iter_done) {
-        TVal step_result; step_result.set_undefined();
-        if (!promise_iterator_step(heap, ctx.vm, iterator, &step_result)) {
-            // IteratorStep abrupt: per spec, iteratorRecord.[[done]] is set to
-            // true and ReturnIfAbrupt is applied WITHOUT calling IteratorClose
-            // first (the failure came from next() itself, not from processing
-            // its result, ECMA-262 §7.4.7 IteratorStep step 3).
-            if (heap.has_error) {
-                TVal err_val = heap.error_value;
-                promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            }
-            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
-        }
-        HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = heap.str(heap::BuiltinStr.DONE);
-        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
-        // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
-        bool done = false;
-        if (done_key != null) {
-            TVal dv_done; dv_done.set_undefined();
-            if (!promise_object_get(heap, ctx.vm, step_obj, done_key, &dv_done)) {
-                // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-            done = builtin_to_boolean(&dv_done);
-        }
-        if (done) { iter_done = true; break; }
-
-        // IteratorValue: Get(result, "value"), full Get with accessor invocation.
-        TVal next_value; next_value.set_undefined();
-        if (value_key != null) {
-            if (!promise_object_get(heap, ctx.vm, step_obj, value_key, &next_value)) {
-                // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-        }
-
-        TVal[1] res_args;
-        res_args[0] = next_value;
-        TVal next_promise = heap.call_fn(ctx.vm, resolve_fn, &res_args[0], 1, this_ctor_val);
-        if (heap.has_error) {
-            TVal err_val = heap.error_value;
-            promise_clear_error_channels(heap, ctx.vm);
-            promise_iterator_close(heap, ctx.vm, iterator, &err_val);
-            promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
+    while (true) {
+        TVal next_promise;
+        CombinatorStep step = promise_combinator_next(ctx, iterator, resolve_fn, this_ctor_val, cap_reject_tv, &next_promise);
+        if (step == CombinatorStep.DONE) break;
+        if (step == CombinatorStep.ABRUPT) {
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
+            return;
         }
 
         HObject*? fulfill_raw = promise_create_element_callback(heap, Builtin.PROMISE_ANY_RESOLVE_ELEMENT.ordinal, state, idx);
@@ -4207,60 +4103,13 @@ fn void builtin_promise_race(BuiltinContext* ctx) {
     if (catch err_s = state_raw) { ctx.result_undefined(); return; }
     HObject* state = state_raw;
 
-    bool iter_done = false;
-    while (!iter_done) {
-        TVal step_result; step_result.set_undefined();
-        if (!promise_iterator_step(heap, ctx.vm, iterator, &step_result)) {
-            // IteratorStep abrupt: per spec, iteratorRecord.[[done]] is set to
-            // true and ReturnIfAbrupt is applied WITHOUT calling IteratorClose
-            // first (the failure came from next() itself, not from processing
-            // its result, ECMA-262 §7.4.7 IteratorStep step 3).
-            if (heap.has_error) {
-                TVal err_val = heap.error_value;
-                promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            }
-            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
-        }
-        HObject* step_obj = (HObject*)step_result.get_heapptr();
-        HString* done_key = heap.str(heap::BuiltinStr.DONE);
-        HString* value_key = heap.str(heap::BuiltinStr.VALUE);
-        // IteratorComplete: Get(result, "done"), full Get with accessor invocation.
-        bool done = false;
-        if (done_key != null) {
-            TVal dv_done; dv_done.set_undefined();
-            if (!promise_object_get(heap, ctx.vm, step_obj, done_key, &dv_done)) {
-                // IteratorComplete abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-            done = builtin_to_boolean(&dv_done);
-        }
-        if (done) { iter_done = true; break; }
-
-        // IteratorValue: Get(result, "value"), full Get with accessor invocation.
-        TVal next_value; next_value.set_undefined();
-        if (value_key != null) {
-            if (!promise_object_get(heap, ctx.vm, step_obj, value_key, &next_value)) {
-                // IteratorValue abrupt: iteratorRecord.[[done]] = true, no IteratorClose.
-                TVal err_val = heap.error_value; promise_clear_error_channels(heap, ctx.vm);
-                promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-                if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
-                return;
-            }
-        }
-
-        TVal[1] res_args;
-        res_args[0] = next_value;
-        TVal next_promise = heap.call_fn(ctx.vm, resolve_fn, &res_args[0], 1, this_ctor_val);
-        if (heap.has_error) {
-            TVal err_val = heap.error_value;
-            promise_clear_error_channels(heap, ctx.vm);
-            promise_iterator_close(heap, ctx.vm, iterator, &err_val);
-            promise_combinator_reject(heap, ctx.vm, cap_reject_tv, &err_val);
-            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); } return;
+    while (true) {
+        TVal next_promise;
+        CombinatorStep step = promise_combinator_next(ctx, iterator, resolve_fn, this_ctor_val, cap_reject_tv, &next_promise);
+        if (step == CombinatorStep.DONE) break;
+        if (step == CombinatorStep.ABRUPT) {
+            if (cap_promise_tv.is_object()) { ctx.copy_result(cap_promise_tv); } else { ctx.result_undefined(); }
+            return;
         }
 
         // For race, onFulfilled = cap_resolve, onRejected = cap_reject
