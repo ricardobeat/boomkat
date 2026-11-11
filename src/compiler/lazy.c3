@@ -90,7 +90,10 @@ fn void CompilerContext.record_outer_names(&self, CompiledFunction* f, uint scop
         for (uint s = idx.res.scopes.data[scope].parent; s != 0 && !bound; s = idx.res.scopes.data[s].parent) {
             bound = idx.res.scopes.data[s].kind != ast::ScopeKind.GLOBAL && idx.res.lookup(s, atom) != 0;
         }
-        if (bound) names[count++].set_string_borrowed(name);
+        if (!bound) continue;
+        // Held like any pool string, so nothing releases it under the template.
+        names[count++].set_string_borrowed(name);
+        ((types::HeapHeader*)name).incref();
     }
     f.constants = names;
     f.const_count = count;
