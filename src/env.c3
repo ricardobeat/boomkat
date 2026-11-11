@@ -836,14 +836,18 @@ fn int env_try_put_lex(EnvRecord* lex_env, void* key, TVal val, bool check_tdz) 
             if (check_tdz && is_tdz_sentinel(&current)) {
                 return -2;
             }
-            if (!cur.bindings.get_prop_flags((uint)idx, h).writable) {
+            hobject::PropFlags pf = cur.bindings.get_prop_flags((uint)idx, h);
+            // An accessor on the global object is no slot to store into: the caller's [[Set]]
+            // runs the setter (ECMA-262 §9.1.1.4.5 step 5).
+            if (pf.is_accessor && !cur.flags.is_declarative) return 0;
+            if (!pf.writable) {
                 // -1 is a const binding, which throws in sloppy code too. A
                 // non-writable property of the global object is an ordinary
                 // [[Set]] failure (ECMA-262 SetMutableBinding for Global
                 // Environment Records), so only strict code throws. -4 carries
                 // that rule.
                 if (!cur.flags.is_declarative) return -4;
-                return cur.bindings.get_prop_flags((uint)idx, h).immut_nonstrict ? -4 : -1;
+                return pf.immut_nonstrict ? -4 : -1;
             }
             TVal old = pv.get();
             if (old.is_string() || old.is_bigint()) { pv.release_ref(h); }
