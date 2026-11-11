@@ -845,6 +845,13 @@ fn bool OptBuild.guards_known(&self, uint reg, uint shape) {
     return self.fact_plain[reg] || (self.w.op != Opcode.PUTPROPC && self.w.op != Opcode.PUTTHISC);
 }
 
+// Register `dst` was given the value of register `src`: what is known of the object goes with it.
+fn void OptBuild.same_facts(&self, uint dst, uint src) {
+    if (dst >= self.nregs) return;
+    self.fact_shape[dst] = self.fact_shape[src];
+    self.fact_plain[dst] = self.fact_plain[src];
+}
+
 fn void OptBuild.learn(&self, uint reg, uint shape) {
     if (reg > self.nregs) return;
     self.fact_shape[reg] = shape;
@@ -1158,9 +1165,11 @@ fn bool OptBuild.load_this(&self) {
     // The receiver of a nested call held in an OBJECT node.
     if (self.is_object(recv)) {
         self.set(ra, self.add(OptOp.COPY, OptRep.OBJECT, self.cur[recv].node));
-        return true;
+    } else if (!self.window_copy(ra, 1)) {
+        return false;
     }
-    return self.window_copy(ra, 1);
+    self.same_facts(ra, recv);
+    return true;
 }
 
 // A window value copied to register `ra` of an inlined body, from the receiver slot (cc 1), register
@@ -1305,9 +1314,8 @@ fn HObject* OptBuild.method_constant(&self, uint callee_reg, CompiledFunction* c
     bytecode::DecodedBytecode d = bytecode::decode_bytecode(f.code, f.code_count, pc);
     if (!d.valid || d.next_pc <= pc) return null;
     hobject::ICEntry* ic = &((hobject::ICEntry*)f.ic_entries)[d.next_pc - 1];
-    if (!ic.has_proto || ic.chain_len != hobject::IC_CHAIN_EPOCH || ic.chain == null || ic.prop_flags.is_accessor) return null;
-    hobject::ICChainEpoch* e = &ic.chain.epoch;
-    if (e.value != self.h.prototype_epoch || e.owner == null || ic.prop_idx >= e.owner.prop_count) return null;
+    hobject::ICChainEpoch* e = opt_epoch_entry(self.h, ic);
+    if (e == null) return null;
     TVal v = e.owner.prop_values()[ic.prop_idx].get();
     if (!v.is_object()) return null;
     HObject* fo = (HObject*)v.get_heapptr();
@@ -1427,9 +1435,12 @@ fn bool OptBuild.get_field(&self) {
         // The receiver of a nested call held in an OBJECT node.
         rnode = self.cur[recv].node;
     }
-    // A property of a prototype is read through the entry at run time, with no shape fact.
+    // A property of a prototype is read through the entry at run time, with no shape fact, unless
+    // the entry has only ever held the one receiver (OptNode.exact). An inlined body's entry is
+    // shared by every caller, and its exits do not teach it.
     bool inherited = ic.has_proto;
     bool mono = ic.chain_len == 0;
+    bool exact = inherited && self.cur_fn == 0 && self.w.op != Opcode.GETTHISC && opt_settled_shape(self.h, ic) != null && ic.chain.protos == null;
     bool known = mono && self.guards_known(recv, ic.shape_id);
     uint shape = ic.shape_id;
     uint n = self.typed_load(OptOp.LOAD_FIELD, NO_NODE);
@@ -1446,10 +1457,11 @@ fn bool OptBuild.get_field(&self) {
         if (self.cur_fn != 0 && ra >= self.caller_regs) self.soft_object(ra);
     }
     self.g.nodes[n].cc = inherited ? 2 : (known ? 1 : 0);
+    self.g.nodes[n].exact = exact;
     self.g.nodes[n].b = rnode;
     self.g.nodes[n].key = (void*)ic.key.borrow();
     self.set_poly(n, ic);
-    if (mono) self.learn(recv, shape);
+    if (mono || exact) self.learn(recv, shape);
     // The load may have overwritten its own receiver register.
     if (recv < self.nregs && recv == self.w.a) self.fact_shape[recv] = heap::SHAPE_NONE;
     return true;
@@ -3369,12 +3381,17 @@ fn bool OptBuild.lower_op(&self) {
             // A property read's result still in the window may be wanted as an object node.
             if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG) self.ask_object(rb);
             // A window value moved within an inlined body, typically an argument of a nested call.
-            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && self.cur_fn != 0) return self.window_copy(ra, 2);
+            if (self.cur[rb].node == NO_NODE && op == Opcode.LDREG && self.cur_fn != 0) {
+                if (!self.window_copy(ra, 2)) return false;
+                self.same_facts(ra, rb);
+                return true;
+            }
             if (self.cur[rb].node == NO_NODE) return self.generic();
             if (op == Opcode.TONUMERIC && self.is_object(rb)) return self.generic();
             uint src = self.cur[rb].node;
             if (!self.g.nodes[src].is_const()) src = self.add(OptOp.COPY, self.rep_of(src), src);
             self.set(ra, src);
+            self.same_facts(ra, rb);
         case ADD: case ADD_FUSED:
             return self.arith(OptOp.ADD_I32, OptOp.ADD_F64, rb, rc, false, 0);
         case SUB:

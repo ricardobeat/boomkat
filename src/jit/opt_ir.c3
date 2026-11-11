@@ -314,6 +314,9 @@ struct OptNode {
     bool sunk;
     // A field value of a sunk object, which an exit stores into it: kept in a register.
     bool held;
+    // An inherited LOAD_FIELD (cc 2) whose entry has only ever held one receiver shape: any other
+    // exits (OptExit.RECEIVER), so the read proves the shape as an own one does.
+    bool exact;
 }
 
 // A sunk allocation: its NEW_OBJECT node, the keys its fields are added under, in order, and the

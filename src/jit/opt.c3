@@ -48,6 +48,9 @@ enum OptExit : char (String label) {
     // An element access with no recorded class met a receiver that is not an array. The code
     // recorded the class on the way out, so the rebuild specializes on it.
     UNPROFILED {"unprofiled"},
+    // An inherited read built for the one receiver shape its entry had ever held met another. The
+    // exit adds it to the entry's set, which the rebuild reads through instead.
+    RECEIVER {"receiver"},
 }
 
 // Marks a recorded element class (ICEntry.fwd_callee) as written by optimized code, so that a
@@ -498,6 +501,25 @@ fn bool opt_has_call_feedback(CompiledFunction* f) {
     return false;
 }
 
+// The epoch case of the inherited data read entry `ic`, when the heap's epoch still proves it: the
+// owner holds the property at the entry's slot. Else null.
+fn hobject::ICChainEpoch* opt_epoch_entry(Heap* h, hobject::ICEntry* ic) {
+    if (!ic.has_proto || ic.chain_len != hobject::IC_CHAIN_EPOCH || ic.chain == null || ic.prop_flags.is_accessor) return null;
+    hobject::ICChainEpoch* e = &ic.chain.epoch;
+    if (e.value != h.prototype_epoch || e.owner == null || ic.prop_idx >= e.owner.prop_count) return null;
+    return e;
+}
+
+// The shape of the receiver that entry holds, when it is the one the entry saw and a shared one,
+// whose id can be pinned and compared as a constant. Else null.
+fn hobject::Shape* opt_settled_shape(Heap* h, hobject::ICEntry* ic) {
+    hobject::ICChainEpoch* e = opt_epoch_entry(h, ic);
+    if (e == null || e.first == null) return null;
+    hobject::Shape* sh = h.get_shape(ic.shape_id);
+    if (sh == null || sh.generation != ic.shape_gen || sh.parent == hobject::PRIVATE_SHAPE_PARENT) return null;
+    return sh;
+}
+
 // Whether the instruction at word `pc` of `cf` (the function `root` is optimizing, or a callee
 // inlined into it) exited from optimized code often enough that it is no longer speculated on.
 fn bool opt_site_banned(CompiledFunction* root, CompiledFunction* cf, uint pc) {
@@ -931,7 +953,11 @@ fn long opt_exit(Dispatch* ds, OptCode* oc, long reason) {
         if (oc.f.code[at].op == Opcode.WIDE) at++;
         // A receiver an inherited read's set lacked joins it: the rebuild reads it too, so the
         // exit does not count towards leaving the site to the baseline.
-        bool learnt = reason == OptExit.SHAPE.ordinal && opt_note_proto_exit(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
+        bool learnt = (reason == OptExit.SHAPE.ordinal || reason == OptExit.RECEIVER.ordinal) && opt_note_proto_exit(ds, oc.f, (uint)(ds.curr_pc - ds.code_base));
+        if (learnt && reason == OptExit.RECEIVER.ordinal) {
+            opt_relearn(h, oc);
+            return 0;
+        }
         if (!learnt) repeat = opt_note_site_exit(oc, oc.f, at, reason);
     }
     if (oc.f.opt_code == oc && (repeat || oc.exits >= opt_exit_limit(h))) opt_discard(h, oc.f);
@@ -982,7 +1008,7 @@ fn uint opt_exit_limit(Heap* h) @inline => h.opt.exit_max != 0 ? h.opt.exit_max 
 // body, whose typed loads it does not re-derive (`inlined`).
 fn bool opt_exit_bannable(long reason, bool inlined = false) {
     switch ((OptExit)reason) {
-        case SHAPE: case SLOW_PATH: case CALLEE: case BOUNDS: case HOLE:
+        case SHAPE: case RECEIVER: case SLOW_PATH: case CALLEE: case BOUNDS: case HOLE:
             return true;
         case NOT_NUMBER: case NOT_INT32:
             return inlined;
